@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Effect, Schema } from "effect";
 import { P4 } from "p4client-ts";
 import { MapHistoryError } from "./errors.js";
-import { perforceProjectLayer } from "./perforce.js";
+import { perforceProjectLayer, toMapHistoryError } from "./perforce.js";
 
 /** One file of a changelist inside the project, at its base and at the change, on disk. */
 export interface ChangelistRevisionFile {
@@ -120,6 +120,27 @@ const failure = (
 		...(cause === undefined ? undefined : { cause })
 	});
 
+/**
+ * A failed Perforce command, classified as Map History classifies any, its message saying what was
+ * being read. A changelist or file Perforce does not know is the caller's to fix.
+ */
+const classified = (doing: string, cause: unknown) => {
+	if (isMapHistoryError(cause)) return cause;
+	const error = toMapHistoryError(doing, cause);
+	const notFound =
+		cause instanceof Object && "category" in cause && cause.category === "not_found";
+	return new MapHistoryError({
+		kind: notFound ? "invalid_target" : error.kind,
+		message: `${doing}: ${error.message}`,
+		recovery: notFound
+			? "Check the changelist number, and whether the change is submitted or shelved."
+			: error.recovery,
+		retrySafe: notFound ? false : error.retrySafe,
+		nextStep: notFound ? "fix_input" : error.nextStep,
+		cause
+	});
+};
+
 /** A revision's cache file: a submitted revision never changes, so its spec names it. */
 const cacheFile = (directory: string, spec: string, digest: string | null) => {
 	const key = createHash("sha256")
@@ -182,18 +203,14 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 	}) {
 		const layer = yield* perforceProjectLayer(options.projectRoot).pipe(
 			Effect.mapError((cause) =>
-				failure(
-					"Perforce has no workspace for this project.",
-					cause,
-					"ambiguous_depot_mapping"
-				)
+				classified("Perforce could not find the project's workspace", cause)
 			)
 		);
 		return yield* Effect.gen(function* () {
 			const p4 = yield* P4;
 			const step = (name: string) =>
 				Effect.mapError((cause: unknown) =>
-					failure(`Perforce could not ${name} for changelist ${options.change}.`, cause)
+					classified(`Perforce could not ${name}`, cause)
 				);
 			const at = options.shelved ? "head" : options.change - 1;
 			// Each command is a round trip to the server, so the independent ones run together.
@@ -201,16 +218,30 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 				[
 					p4
 						.describeChangelist({ change: options.change, shelved: options.shelved })
-						.pipe(step("describe the changelist")),
+						.pipe(step(`describe changelist ${options.change}`)),
 					projectPrefix(options.projectRoot).pipe(step("map the project folder")),
 					options.before === undefined
 						? Effect.succeed(undefined)
 						: listAt(options.projectRoot, options.before, at).pipe(
-								step("list the files it changes from")
+								step(`list the files changelist ${options.change} changes from`)
 							)
 				],
 				{ concurrency: "unbounded" }
 			);
+			// A shelf read of a submitted change, or a submitted read of a pending one, would pair
+			// the wrong revisions.
+			const expected = options.shelved ? "shelved" : "submitted";
+			if (description.status !== expected)
+				return yield* Effect.fail(
+					new MapHistoryError({
+						kind: "invalid_target",
+						message: `Changelist ${options.change} is ${description.status}, not ${expected}.`,
+						recovery:
+							"Read a submitted changelist as submitted, and a pending changelist's shelved files as shelved.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					})
+				);
 			const cached = (spec: string, digest: string | null) =>
 				cacheFile(options.directory, spec, digest);
 			const files: ChangelistRevisionFile[] = [];
@@ -275,7 +306,7 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 				// A shelved add is printed straight to its cache file, untyped, one at a time.
 				for (const item of all.filter((wanted) => wanted.unnumbered)) {
 					bytes += yield* printToFile(item.spec, item.file).pipe(
-						step("print a shelved add")
+						step(`print a shelved add in changelist ${options.change}`)
 					);
 					printed++;
 				}
@@ -286,7 +317,7 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 				);
 				const batch = yield* p4
 					.printBatch({ fileSpec: needed.map((item) => item.spec) })
-					.pipe(step("print the changed files"));
+					.pipe(step(`print the files changelist ${options.change} changes`));
 				if (batch.failures.length > 0 || batch.items.length !== needed.length)
 					return yield* Effect.fail(
 						failure(
@@ -321,7 +352,7 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 							paths: options.before,
 							listed,
 							directory: options.directory
-						}).pipe(step("print the files it changes from"));
+						}).pipe(step(`print the files changelist ${options.change} changes from`));
 			const requested = wanted.base.length + wanted.head.length;
 			yield* Effect.annotateCurrentSpan({
 				"perforce.files": files.length,
@@ -345,9 +376,7 @@ export const readChangelistRevisions = Effect.fn("Perforce.changelistRevisions")
 		}).pipe(
 			Effect.provide(layer),
 			Effect.mapError((cause) =>
-				isMapHistoryError(cause)
-					? cause
-					: failure(`Perforce could not read changelist ${options.change}.`, cause)
+				classified(`Perforce could not read changelist ${options.change}`, cause)
 			)
 		);
 	}
@@ -455,7 +484,7 @@ export const readRevisionFiles = Effect.fn("Perforce.revisionFiles")(function* (
 }) {
 	const layer = yield* perforceProjectLayer(options.projectRoot).pipe(
 		Effect.mapError((cause) =>
-			failure("Perforce has no workspace for this project.", cause, "ambiguous_depot_mapping")
+			classified("Perforce could not find the project's workspace", cause)
 		)
 	);
 	const where =
@@ -475,10 +504,6 @@ export const readRevisionFiles = Effect.fn("Perforce.revisionFiles")(function* (
 		return yield* fetchAt({ ...options, prefix, listed });
 	}).pipe(
 		Effect.provide(layer),
-		Effect.mapError((cause) =>
-			isMapHistoryError(cause)
-				? cause
-				: failure(`Perforce could not read files at ${where}.`, cause)
-		)
+		Effect.mapError((cause) => classified(`Perforce could not read files at ${where}`, cause))
 	);
 });

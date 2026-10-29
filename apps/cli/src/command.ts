@@ -29,6 +29,7 @@ import { cameraCommand } from "./commands/camera-render.js";
 import { worldCommand } from "./commands/world.js";
 import { scenarioCommand } from "./commands/scenario.js";
 import { localizationCommand } from "./commands/localization.js";
+import { guideCommand } from "./commands/guide.js";
 
 export const CliCommand = CliCommandSchema;
 export type CliCommand = CliCommandType;
@@ -40,6 +41,7 @@ export const cliCommand = Command.make("ue-shed").pipe(
 	Command.withSubcommands([
 		versionCommand,
 		doctorCommand,
+		guideCommand,
 		custodianCommand,
 		configCommand,
 		editorCommand,

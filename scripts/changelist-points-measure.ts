@@ -27,7 +27,7 @@ const code =
 	pointTarget === undefined || engine === undefined
 		? {}
 		: {
-				targetName: pointTarget,
+				targetNames: [pointTarget],
 				code: {
 					engine,
 					...(process.env.UE_SHED_ENGINE_ROOT === undefined
@@ -75,9 +75,15 @@ await Effect.runPromise(
 						missing: local.revisions.missing.length,
 						printed: local.revisions.printed,
 						printedBytes: local.revisions.bytes,
-						recordsRead: local.before.read + local.after.read,
-						recordsReused: local.before.reused + local.after.reused,
-						comparison: summary(local.comparison)
+						recordsRead: local.targets.reduce(
+							(sum, item) => sum + item.before.read + item.after.read,
+							0
+						),
+						recordsReused: local.targets.reduce(
+							(sum, item) => sum + item.before.reused + item.after.reused,
+							0
+						),
+						comparisons: local.targets.map((item) => summary(item.comparison))
 					})
 				);
 				continue;
@@ -97,7 +103,10 @@ await Effect.runPromise(
 				);
 				continue;
 			}
-			const { revisions, before, after, comparison } = read.success;
+			const { revisions, targets } = read.success;
+			const [first] = targets;
+			if (first === undefined) continue;
+			const { before, after } = first;
 			const localization = revisions.before;
 			const statuses: Record<string, number> = {};
 			for (const entry of after.entries)
@@ -118,7 +127,7 @@ await Effect.runPromise(
 					hashedBytes: before.bytes + after.bytes,
 					statuses,
 					stages: { before: before.stageSeconds, after: after.stageSeconds },
-					comparison: summary(comparison),
+					comparisons: targets.map((item) => summary(item.comparison)),
 					...(localization === undefined
 						? undefined
 						: {

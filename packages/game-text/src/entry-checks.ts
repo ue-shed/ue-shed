@@ -18,6 +18,7 @@ export {
 
 export {
 	DEFAULT_GATE_FAILURES,
+	LocalizationGateChange,
 	LocalizationGateCheck,
 	LocalizationGateItem,
 	LocalizationGateResult,

@@ -19,9 +19,11 @@
   three engines' gathers, and `ue-shed code text` runs it through the Game Text engine. Phase 2:
   done and reviewed (owner, 2026-10-29). Game Text reads each target's code and judges C++ text
   like asset text. Phase 3: done and reviewed (owner, 2026-10-29): a changelist's or a workspace's
-  two points, with code and the base's localization, read in 1.3–1.6 s warm. Phase 4: done, for
-  owner review: the engine compares two points and judges the change by the gate's checks against
-  the base's localization.
+  two points, with code and the base's localization, read in 1.3–1.6 s warm. Phase 4: done and
+  reviewed (owner, 2026-10-29): the engine compares two points and judges the change by the gate's
+  checks against the base's localization. Phase 5: done, for owner review: `loc gate --change`
+  and `--shelved`, `loc diff`, `--format markdown`, exit codes and an error table from the error's
+  next step, and the agent guide.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -661,12 +663,16 @@ receives 167,507 packages'.
 - **The sample changelists, warm** (points, comparison and Perforce together; Phase 0's warm
   `loc gate` took 9.0–11.9 s):
 
-    | Sample          | Changes                                     | Findings                                                                                                              |  Warm |
-    | --------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----: |
-    | Code, 220336    | none (7 texts unchanged)                    | none                                                                                                                  | 1.4 s |
-    | Asset, 220368   | none (315 unchanged)                        | none                                                                                                                  | 1.3 s |
-    | Mixed, 220253   | 664 added, 35 removed, 20 rekeyed, 1 edited | 1 conflict, 1 translated text changed (9 cultures), 77 not gathered, 11 no key, 1 removed (9 cultures), 2 partly read | 1.6 s |
-    | Shelved, 220258 | 235 added, 11 removed, 34 rekeyed           | 1 conflict, 91 not gathered, 2 no key                                                                                 | 1.6 s |
+    | Sample          | Changes                                     | Findings                                                                                                             |  Warm |
+    | --------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----: |
+    | Code, 220336    | none (7 texts unchanged)                    | none                                                                                                                 | 1.4 s |
+    | Asset, 220368   | none (315 unchanged)                        | none                                                                                                                 | 1.3 s |
+    | Mixed, 220253   | 660 added, 35 removed, 20 rekeyed, 1 edited | 1 conflict, 1 translated text changed (9 cultures), 77 not gathered, 9 no key, 1 removed (9 cultures), 2 partly read | 1.6 s |
+    | Shelved, 220258 | 235 added, 11 removed, 34 rekeyed           | 1 conflict, 91 not gathered, 2 no key                                                                                | 1.6 s |
+
+    The mixed row was first recorded as 664 added and 11 without a key, before empty text was left
+    out; the shelf's rows move as the depot's head, its base, moves (275 added, 8 removed,
+    36 rekeyed and 110 not gathered on 2026-10-29 evening).
 
 - **Against the full `loc gate`** on the same samples (Phase 0's runs): on the mixed sample both
   fail on the same two findings (a `KismetSchema` key given a new text, and translated text
@@ -695,7 +701,69 @@ receives 167,507 packages'.
 5. Docs: `docs/products/game-text.md`, "Checking a changelist", replacing the stated limits of the
    pre-submit check.
 
-**Evidence**: _pending_.
+**Design (2026-10-29, planner)**:
+
+- **`loc gate` takes one change**: `--files <list>` (as before: every line in the files on disk),
+  `--change <CL>` or `--shelved <CL>` (the change from Perforce, judged against each target's
+  localization as the change found it, through `comparePoints` and
+  `localizationGateComparison`). Two of them, or none, is a usage error. The result gains
+  `change`: the two points, the files the change touches in the project, how many were read, how
+  many lie outside, and whether code was read with an engine.
+- **One Perforce read for every target**: `readChangelistPoints` and `readLocalPoints` take the
+  targets' names, fetch the change and every target's manifest and archives together, then read
+  and compare the points one target at a time (a point's id names the change, not the target).
+- **`--format json|text|markdown`**; `--summary` stays as `--format text`. The Markdown is plain
+  (no HTML, so Swarm and build pages show it as written): the outcome, a count per check that
+  found something with its policy, the failing lines with a way forward, the first 20 warnings,
+  and a coverage statement (files read, code read or not, CSVs and wrappers from the workspace,
+  reflected metadata not checked).
+- **`loc diff`** takes the same three change flags, not `--from`/`--to`: every pair the CLI can
+  name today is a change and its base. Two arbitrary depot points need a range read
+  (`p4 files @A,@B`), which Phase 6's point pickers need too; it is left for then. `--limit`
+  (1–1,000) bounds the lines listed; counts are whole. It exits `0` whenever it read the change.
+- **Exit codes from the error's next step**, in one table (`CLI_EXIT_CODES`): `0` done, `1` a
+  failed check, `2` could not run, `3` may succeed if repeated (`nextStep: "retry"`), `4` a crash
+  with no typed cause (was `1`, which a script read as a failed check), `130` interrupted.
+  `escalate`, `fix_input` and `reconcile` all exit `2`: 53 CLI input errors carry `escalate`, so a
+  finer split would misreport them until each is relabelled. A failure prints its code and its
+  typed cause's recovery, looking through the CLI's generic error.
+- **The error table** (`CHANGE_CHECK_ERRORS`): each code `loc gate` and `loc diff` can end with,
+  its cause, its fix and its exit code. Both tables are generated into the product docs, and a
+  test fails when the docs differ.
+- **Perforce failures by cause**: the revision reader now classifies a failed command as Map
+  History does (authentication, configuration, not in the workspace's view, a dropped connection
+  that may be retried), and a changelist Perforce does not know is `invalid_target`, the caller's
+  to fix. Before, every failure there read "Perforce has no workspace for this project".
+- **The agent guide** ships in `apps/cli/guides` and prints with `ue-shed guide changelist-check`;
+  a test runs `--help` for every command it names and checks each flag.
+
+**Evidence (2026-10-29)**:
+
+- **`loc gate --change` through the CLI** on the UE 4.27 project, warm, one process per run (a dev
+  run: Node and the TypeScript loader start in about 2 s of it); Phase 0's `loc gate --files`
+  took 9.0–11.9 s the same way:
+
+    | Run                                 | Exit | Outcome                                                           |  Time |
+    | ----------------------------------- | ---: | ----------------------------------------------------------------- | ----: |
+    | `--change 220253` (mixed), Markdown |    1 | 716 changed lines; the `KismetSchema` conflict and `Merfolk`      | 3.1 s |
+    | `--change 220253`, every target     |    1 | the same; the project has one target                              | 3.1 s |
+    | `--shelved 220258`, text            |    1 | 319 changed lines; one conflict                                   | 3.0 s |
+    | `--change 220336` (code only)       |    0 | no changed lines                                                  | 3.0 s |
+    | `--change 220368` (asset only)      |    0 | no changed lines                                                  | 2.9 s |
+    | `loc diff --change 220253`, text    |    0 | 660 added, 35 removed, 20 rekeyed, 1 edited, and the impact       | 3.2 s |
+    | `loc diff --files` (the mixed list) |    0 | the workspace has those revisions: 1,019 unchanged, 2 partly read | 3.0 s |
+    | `--change 99999999`                 |    2 | `invalid_target`: "no such changelist"                            | 2.9 s |
+    | `--shelved 220253` (submitted)      |    2 | `invalid_target`: "Changelist 220253 is submitted, not shelved."  | 3.0 s |
+    | `--change 220258` (pending)         |    2 | `invalid_target`: "Changelist 220258 is pending, not submitted."  | 3.0 s |
+
+- **Found on the way**: `--shelved` on a submitted changelist read its files at the submitted
+  revision on both sides and judged them as a shelf. The revision reader now refuses a change
+  whose status is not the one asked for. A stale reader is refused by the engine's contract
+  check (`index_failed`, exit 2), as designed.
+- **Tests**: the gate's selection errors, the Markdown and text verdicts for a changelist and a
+  shelf, `loc diff`'s text and Markdown, the exit mapping through the CLI's generic error, the
+  docs' generated tables, and the guide's commands and flags against `--help`.
+- **Phase 5 is complete** against its items. Phase 6 is Electroswag's review page and compare.
 
 ## Phase 6: Electroswag
 

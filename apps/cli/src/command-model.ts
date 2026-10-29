@@ -46,6 +46,18 @@ const InputCoActivationFields = {
 };
 const SessionProject = { projectRoot: Schema.String, sessionId: Schema.String };
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
+/**
+ * Which change a localization check reads: files listed in a file (`--files`) as they are on
+ * disk, a submitted changelist (`--change`) or a shelved one (`--shelved`). The workflow takes
+ * exactly one.
+ */
+const ChangeSelection = {
+	changedFiles: Schema.optionalKey(Schema.String),
+	change: Schema.optionalKey(PositiveInt),
+	shelved: Schema.optionalKey(PositiveInt)
+};
+/** JSON for scripts, text for a dialog or a log, Markdown for a build summary or a review. */
+export const ChangeOutputFormat = Schema.Literals(["json", "text", "markdown"]);
 const EditorPlayAction = Schema.Literals([
 	"status",
 	"start",
@@ -126,11 +138,19 @@ export const CliCommand = Schema.TaggedUnion({
 	LocalizationGate: {
 		...Project,
 		...Reader,
+		...ChangeSelection,
 		targets: Schema.Array(Schema.String),
-		changedFiles: Schema.String,
 		failOn: Schema.Array(LocalizationGateCheck),
 		warnOn: Schema.Array(LocalizationGateCheck),
-		summary: Schema.Boolean
+		format: ChangeOutputFormat
+	},
+	LocalizationDiff: {
+		...Project,
+		...Reader,
+		...ChangeSelection,
+		targets: Schema.Array(Schema.String),
+		format: ChangeOutputFormat,
+		limit: PositiveInt.check(Schema.isLessThanOrEqualTo(1000))
 	},
 	LocalizationStatus: {
 		...Project,

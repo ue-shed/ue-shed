@@ -92,9 +92,28 @@ export const LocalizationGateTarget = Schema.Struct({
 export type LocalizationGateTarget = typeof LocalizationGateTarget.Type;
 
 /**
+ * What a check of a changelist read: its two points, the files it changes inside the project,
+ * and how many of those hold text a point reads. `code` says whether code files were read with
+ * an engine; without one their text is `gathered_source`.
+ */
+export const LocalizationGateChange = Schema.Struct({
+	/** `depot@<CL>` or `shelved:<CL>`. */
+	point: Schema.String,
+	base: Schema.String,
+	/** Changed files inside the project. */
+	files: Count,
+	/** Of those, the packages and code or config files the points read. */
+	read: Count,
+	/** Changed files outside the project folder, left out. */
+	outside: Count,
+	code: Schema.Boolean
+});
+export type LocalizationGateChange = typeof LocalizationGateChange.Type;
+
+/**
  * Aggregate gate outcome plus per-target results and skipped targets. failOn records the active
  * host policy, and skipped targets retain reasons instead of being counted as checked
- * successes.
+ * successes. `change` is present when a changelist was checked rather than files on disk.
  */
 export const LocalizationGateResult = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
@@ -102,7 +121,8 @@ export const LocalizationGateResult = Schema.Struct({
 	failOn: Schema.Array(LocalizationGateCheck),
 	targets: Schema.Array(LocalizationGateTarget),
 	/** Targets left out, such as one Unreal has never gathered, with why. */
-	skipped: Schema.Array(Schema.Struct({ target: Schema.String, reason: Schema.String }))
+	skipped: Schema.Array(Schema.Struct({ target: Schema.String, reason: Schema.String })),
+	change: Schema.optionalKey(LocalizationGateChange)
 });
 export type LocalizationGateResult = typeof LocalizationGateResult.Type;
 

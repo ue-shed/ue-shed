@@ -234,7 +234,8 @@ function mapHistoryErrorKind(failure: P4FailureFields): MapHistoryError["kind"] 
 	}
 }
 
-function toMapHistoryError(operation: string, cause: unknown): MapHistoryError {
+/** A Perforce failure as a Map History error: its kind, recovery and whether a read may repeat. */
+export function toMapHistoryError(operation: string, cause: unknown): MapHistoryError {
 	const isString = Schema.is(Schema.String);
 	const tag = cause instanceof Object && "_tag" in cause ? cause._tag : undefined;
 	const category = cause instanceof Object && "category" in cause ? cause.category : undefined;

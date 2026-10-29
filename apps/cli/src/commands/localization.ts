@@ -17,6 +17,26 @@ import {
 } from "./localization-flags.js";
 import { LocalizationOperation, LocalizationReviewFlag } from "@ue-shed/localization/browser";
 import { lazyWorkflow } from "../lazy-workflows.js";
+import { ChangeOutputFormat } from "../command-model.js";
+
+/** `--files`, `--change` and `--shelved`: the change a check reads; the workflow takes one. */
+const changeFlags = () => ({
+	files: Flag.String("files").pipe(Flag.optional),
+	change: Flag.Int("change").pipe(Flag.optional),
+	shelved: Flag.Int("shelved").pipe(Flag.optional)
+});
+
+function changeSelection(flags: {
+	readonly files: Option.Option<string>;
+	readonly change: Option.Option<number>;
+	readonly shelved: Option.Option<number>;
+}) {
+	return {
+		...(Option.isSome(flags.files) ? { changedFiles: flags.files.value } : undefined),
+		...(Option.isSome(flags.change) ? { change: flags.change.value } : undefined),
+		...(Option.isSome(flags.shelved) ? { shelved: flags.shelved.value } : undefined)
+	};
+}
 
 const runLocalizationCheck = lazyWorkflow(
 	() => import("../workflows/localization-check.js"),
@@ -25,6 +45,10 @@ const runLocalizationCheck = lazyWorkflow(
 const runLocalizationGate = lazyWorkflow(
 	() => import("../workflows/localization-gate.js"),
 	(module) => module.runLocalizationGate
+);
+const runLocalizationDiff = lazyWorkflow(
+	() => import("../workflows/localization-diff.js"),
+	(module) => module.runLocalizationDiff
 );
 const runLocalizationReport = lazyWorkflow(
 	() => import("../workflows/localization-report.js"),
@@ -293,7 +317,7 @@ export const localizationCommand = Command.make("loc").pipe(
 			"gate",
 			{
 				projectRoot: Argument.String("project-root"),
-				files: Flag.String("files"),
+				...changeFlags(),
 				targets: Flag.String("target").pipe(Flag.atMost(50)),
 				failOn: Flag.Literals("fail-on", LocalizationGateCheck.literals).pipe(
 					Flag.atMost(LocalizationGateCheck.literals.length)
@@ -301,23 +325,52 @@ export const localizationCommand = Command.make("loc").pipe(
 				warnOn: Flag.Literals("warn-on", LocalizationGateCheck.literals).pipe(
 					Flag.atMost(LocalizationGateCheck.literals.length)
 				),
+				format: Flag.Literals("format", ChangeOutputFormat.literals).pipe(Flag.optional),
 				summary: Flag.Boolean("summary").pipe(Flag.withDefault(false)),
 				reader: Flag.String("reader").pipe(Flag.optional)
 			},
-			({ projectRoot, files, targets, failOn, warnOn, summary, reader }) =>
+			({ projectRoot, targets, failOn, warnOn, format, summary, reader, ...flags }) =>
 				runLocalizationGate({
 					_tag: "LocalizationGate",
 					projectRoot,
-					changedFiles: files,
+					...changeSelection(flags),
 					targets,
 					failOn,
 					warnOn,
-					summary,
+					// `--summary` is `--format text`, as it was before formats.
+					format: Option.getOrElse(format, () => (summary ? "text" : "json")),
 					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
 				})
 		).pipe(
 			Command.withDescription(
-				"Check the text in a change's files; exits 1 when it fails, 2 when it could not check."
+				"Check the text a change touches: listed files on disk, or a submitted or shelved changelist; exits 1 when it fails."
+			)
+		),
+		Command.make(
+			"diff",
+			{
+				projectRoot: Argument.String("project-root"),
+				...changeFlags(),
+				targets: Flag.String("target").pipe(Flag.atMost(50)),
+				format: Flag.Literals("format", ChangeOutputFormat.literals).pipe(
+					Flag.withDefault("json")
+				),
+				limit: Flag.Int("limit").pipe(Flag.withDefault(200)),
+				reader: Flag.String("reader").pipe(Flag.optional)
+			},
+			({ projectRoot, targets, format, limit, reader, ...flags }) =>
+				runLocalizationDiff({
+					_tag: "LocalizationDiff",
+					projectRoot,
+					...changeSelection(flags),
+					targets,
+					format,
+					limit,
+					...(Option.isSome(reader) ? { reader: reader.value } : undefined)
+				})
+		).pipe(
+			Command.withDescription(
+				"List the text a change adds, removes, rekeys or edits, and what it does to translations, without a verdict."
 			)
 		),
 		Command.make(

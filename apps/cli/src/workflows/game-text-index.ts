@@ -10,17 +10,21 @@ import {
 	gameTextIndexRefreshLayer,
 	gameTextIndexSourceNodeLayer,
 	GameTextIndexBuilderLive,
+	type GameTextCodeSource,
 	type GameTextIndexRefreshRequest
 } from "@ue-shed/game-text/index";
 import { readerLayer } from "../cli-operation.js";
 import { resolveCodeEngine } from "./code-engine.js";
 
+/** The cache root the CLI's Game Text index, records and revisions live under. */
+export const cliCacheRoot = Config.String("UE_SHED_PROJECT_INDEX_CACHE_ROOT").pipe(
+	Config.withDefault(join(homedir(), ".cache", "ue-shed"))
+);
+
 export function cliGameTextIndexLayer(reader?: string) {
 	return Layer.unwrap(
 		Effect.gen(function* () {
-			const cacheRoot = yield* Config.String("UE_SHED_PROJECT_INDEX_CACHE_ROOT").pipe(
-				Config.withDefault(join(homedir(), ".cache", "ue-shed"))
-			);
+			const cacheRoot = yield* cliCacheRoot;
 			return gameTextIndexRefreshLayer(cacheRoot).pipe(
 				Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
 				Layer.provide(GameTextIndexBuilderLive),
@@ -32,15 +36,12 @@ export function cliGameTextIndexLayer(reader?: string) {
 }
 
 /**
- * A target's code is read with the engine `UE_SHED_ENGINE_VERSION` and `UE_SHED_ENGINE_ROOT` name,
- * as `code text`'s flags do, else with the one the project's association names. A setting that
- * names no usable engine fails; a project whose associated engine is not installed is indexed
- * without its code, as before code was read.
+ * The engine a project's code is read with: the one `UE_SHED_ENGINE_VERSION` and
+ * `UE_SHED_ENGINE_ROOT` name, as `code text`'s flags do, else the one the project's association
+ * names. A setting that names no usable engine fails; undefined when the project's associated
+ * engine is not installed, so its code is not read.
  */
-const withProjectCode = Effect.fn("Cli.game_text.code")(function* (
-	request: GameTextIndexRefreshRequest
-) {
-	if (request.targetName === undefined || request.code !== undefined) return request;
+export const cliProjectCode = Effect.fn("Cli.game_text.code")(function* (projectRoot: string) {
 	const engineVersion = Option.getOrUndefined(
 		yield* Config.option(Config.String("UE_SHED_ENGINE_VERSION"))
 	);
@@ -48,7 +49,7 @@ const withProjectCode = Effect.fn("Cli.game_text.code")(function* (
 		yield* Config.option(Config.String("UE_SHED_ENGINE_ROOT"))
 	);
 	const resolve = resolveCodeEngine({
-		projectRoot: request.projectRoot,
+		projectRoot,
 		engineVersion,
 		engineRoot
 	}).pipe(
@@ -58,31 +59,36 @@ const withProjectCode = Effect.fn("Cli.game_text.code")(function* (
 			...(found.engineRoot === undefined ? undefined : { engineRoot: found.engineRoot })
 		}))
 	);
-	const resolved =
-		engineVersion !== undefined || engineRoot !== undefined
-			? yield* resolve.pipe(
-					Effect.catchTag("CliCommandError", (cause) =>
-						Effect.fail(
-							new GameTextIndexError({
-								nextStep: "fix_input",
-								retrySafe: false,
-								code: "index_failed",
-								operation: "configuration",
-								cause,
-								message: cause.message,
-								recovery: cause.recovery
-							})
-						)
+	return engineVersion !== undefined || engineRoot !== undefined
+		? yield* resolve.pipe(
+				Effect.catchTag("CliCommandError", (cause) =>
+					Effect.fail(
+						new GameTextIndexError({
+							nextStep: "fix_input",
+							retrySafe: false,
+							code: "index_failed",
+							operation: "configuration",
+							cause,
+							message: cause.message,
+							recovery: cause.recovery
+						})
 					)
 				)
-			: yield* resolve.pipe(
-					Effect.catchTag("CliCommandError", (error) =>
-						Effect.annotateCurrentSpan({ "code.unavailable": error.message }).pipe(
-							Effect.as(undefined)
-						)
+			)
+		: yield* resolve.pipe(
+				Effect.catchTag("CliCommandError", (error) =>
+					Effect.annotateCurrentSpan({ "code.unavailable": error.message }).pipe(
+						Effect.as<GameTextCodeSource | undefined>(undefined)
 					)
-				);
-	return resolved === undefined ? request : { ...request, code: resolved };
+				)
+			);
+});
+
+/** A target's code is read with the engine {@link cliProjectCode} finds, when it finds one. */
+const withProjectCode = Effect.fnUntraced(function* (request: GameTextIndexRefreshRequest) {
+	if (request.targetName === undefined || request.code !== undefined) return request;
+	const code = yield* cliProjectCode(request.projectRoot);
+	return code === undefined ? request : { ...request, code };
 });
 
 export const refreshCliGameTextIndex = Effect.fn("Cli.game_text.refresh")(

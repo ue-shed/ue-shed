@@ -1236,13 +1236,16 @@ takes the `loc status` filters and never overwrites a file. The CSV is for readi
 with the usual spreadsheet protections (UTF-8 BOM, CRLF, a leading apostrophe before formula
 characters). Edits still go through PO change sets.
 
-### Checking a change before submit
+### Checking a change
 
-`ue-shed loc gate <project-root> --files <list-file>` checks the text in a change's files and exits
-`0` when it passes, `1` when it fails and `2` when it could not check. It only reads, and a failure
-is only an exit code and a list: it stops a submit only where a team wires it into a submit script
-or a required build. It judges every line whose text lives in a listed file, as the files are on
-disk now, so a problem already in a touched file counts too.
+`ue-shed loc gate <project-root>` checks the text a change touches and exits `0` when it passes
+and `1` when it fails; `2` and above mean it could not check (see [Exit codes](#exit-codes)). It
+only reads, and a failure is only an exit code and a list: it stops a submit only where a team
+wires it into a submit script, a Swarm review or a required build. It reads one of:
+
+- `--change <CL>`: a submitted changelist, straight from Perforce.
+- `--shelved <CL>`: a shelved changelist, over the revisions it is based on.
+- `--files <list-file>`: listed files as they are on disk.
 
 | Check                     | Default | When                                                                        |
 | ------------------------- | ------- | --------------------------------------------------------------------------- |
@@ -1252,38 +1255,123 @@ disk now, so a problem already in a touched file counts too.
 | `text_changed`            | warns   | Text changed since the last gather, with nothing translated yet             |
 | `not_gathered`            | warns   | New text Unreal has not gathered, including a key change that loses nothing |
 | `unresolved_key`          | warns   | Text without a reliable key, which cannot be translated                     |
-| `removed`                 | warns   | Gathered text its file no longer has, or a file that could not be read      |
-| `gathered_source`         | warns   | Gathered text in a changed code file the index did not read                 |
-| `partial_read`            | warns   | A listed package read only in part: what was not read, and why              |
+| `removed`                 | warns   | Gathered text the change removes, or a file that could not be read          |
+| `gathered_source`         | warns   | Gathered text in a changed code file that was not read                      |
+| `partial_read`            | warns   | A changed package read only in part: what was not read, and why             |
 
 - `--fail-on <check>` and `--warn-on <check>` (repeatable) change the defaults for a project.
 - `--target <name>` (repeatable) picks targets. Without it every target is checked, and a target
   with no manifest (Unreal has never gathered it) is listed as skipped; a named target must have
   one.
 - It never passes what it cannot see. A manifest, archive or PO file that exists but cannot be
-  read, or a listed package the scan could not read at all, stops the check with exit `2`. A
-  missing archive or PO file means nothing is translated. A listed package read only in part, such
-  as a UE 4.27 Blueprint whose graph pins the reader does not decode, is checked for the text it
-  did read and listed as `partial_read`: how many properties were not read, why, and one of them,
-  so a reviewer knows what to look at in Unreal. `--fail-on partial_read` stops such a change
-  instead. A listed package Unreal's gather does not select (`not_gatherable`, such as a material)
-  has no text to judge.
-- The output is JSON: `status` (`passed` or `failed`), and per target the lines checked, a count
-  per check, up to 200 lines with their check, key, text, file and a way forward, and the
-  changed-file summary. A run that could not check prints `status: "not_checked"` with the error.
-  `--summary` prints the same verdict as a few lines for a pre-submit dialog.
-- The list file is the one `--files` takes elsewhere: one path per line from any version control
-  tool, relative to the project folder or absolute. With Git, run
-  `git diff --cached --name-only --relative > changed.txt` in the project folder to list a staged
-  change; with Perforce, list the changelist's opened files and map them to local paths.
-- Run it where the change is: on the submitter's machine, or in a build that has the change
-  applied. A Perforce server trigger has no workspace to read.
-- Text in a changed C++, config or String Table CSV file is judged like asset text when the index
-  read the target's code (the project's engine is installed): a new `LOCTEXT` is `not_gathered`, an
-  edited one `text_changed` or `translated_text_changed`. Without the engine, gathered text in those
-  files only warns `gathered_source`.
+  read, or a changed package that could not be read at all, stops the check with exit `2`. A
+  missing archive or PO file means nothing is translated. A package read only in part, such as a
+  UE 4.27 Blueprint whose graph pins the reader does not decode, is checked for the text it did
+  read and listed as `partial_read`: how many properties were not read, why, and one of them, so a
+  reviewer knows what to look at in Unreal. `--fail-on partial_read` stops such a change instead.
+  A package Unreal's gather does not select (`not_gatherable`, such as a material) has no text to
+  judge.
+- Text in a changed C++ or config file is judged like asset text when the project's engine is
+  found (installed, or named by `UE_SHED_ENGINE_VERSION` or `UE_SHED_ENGINE_ROOT`): a new
+  `LOCTEXT` is `not_gathered`, an edited one `text_changed` or `translated_text_changed`. Without
+  an engine, gathered text in those files only warns `gathered_source`.
 - Fixes are made in Unreal (ADR 0009 addendum); the way forward names the step, such as carrying
   translations with `loc run prepare --carry`.
+
+#### A changelist
+
+With `--change` or `--shelved`, the check reads the change from Perforce, not the workspace, so it
+runs anywhere the project's workspace exists: on a build agent, for someone else's change, or for
+a shelf under review. It judges the change against the target's localization as the change found
+it, so only what the change introduces counts: a problem a touched file already had is not
+reported.
+
+- It reads the files the change touches inside the project at both revisions (before a submitted
+  change and at it; a shelf over the revisions it is based on), and each target's manifest and
+  archives at the base: the changelist before a submitted change, the depot's head for a shelf.
+  The workspace's own copies are read where they hold that revision; anything else is printed once
+  into a revision cache and reused by every later check. A warm check of a large UE 4.27 project's
+  changelist takes 1.3–1.6 s, against 9–12 s for a full scan of the files on disk.
+- The target's localization is parsed once per gather into a lookup that every later check opens
+  in under a millisecond.
+- It only reads Perforce, with `describe`, `where`, `files` and `print`. It never opens, edits or
+  submits anything.
+- String Table CSVs and wrapper macros come from the workspace on disk, as a full scan reads them.
+
+#### Listed files
+
+With `--files`, the check judges every line whose text lives in a listed file, as the files are on
+disk now, so a problem already in a touched file counts too. The list file holds one path per line
+from any version control tool, relative to the project folder or absolute. With Git, run
+`git diff --cached --name-only --relative > changed.txt` in the project folder to list a staged
+change; with Perforce, list the changelist's opened files and map them to local paths. Run it where
+the change is: on the submitter's machine, or in a build that has the change applied.
+
+#### Output
+
+- The default, `--format json`, is for scripts: `status` (`passed` or `failed`), and per target
+  the lines checked, a count per check, and up to 200 lines with their check, severity, key, text,
+  file and a way forward. A changelist check adds `change`: its two points and the files it read.
+  A run that could not check prints `status: "not_checked"` with the error and its `code`.
+- `--format text` (or `--summary`) prints the verdict as a few lines for a pre-submit dialog or a
+  build log.
+- `--format markdown` prints a summary for a build's page or a review comment: the outcome, a count
+  per check that found something, the failing lines with a way forward, the first 20 warnings, and
+  a coverage statement saying what was read and what a check cannot see.
+
+#### Differences without a verdict
+
+`ue-shed loc diff <project-root> --change <CL>` (or `--shelved`, or `--files`) lists each line the
+change adds, removes, rekeys or edits, with its key, text and place (a package's object and
+property, or a code file's line), and what it does to each target's translations, without failing
+anything. `--limit <n>` (up to 1,000, default 200) bounds the lines listed; counts are always
+whole. `--format text` and `--format markdown` print it for people.
+
+#### Exit codes
+
+Every `ue-shed` command exits with one of these. A failure prints its message, its code and what to
+do on standard error, or, for `loc gate` in JSON, as `error`.
+
+<!-- exit table: generated from CLI_EXIT_CODES in apps/cli/src/cli-exit.ts; do not edit -->
+
+| Exit | Name          | Meaning                                                                                                                        |
+| ---- | ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | `done`        | The command finished; a check passed.                                                                                          |
+| 1    | `failed`      | A check ran, and the change failed it.                                                                                         |
+| 2    | `not_run`     | It could not do its work. The error's code and recovery say why: usually the command, the project or the setup needs changing. |
+| 3    | `retry`       | Something it reads, such as Perforce, was unavailable; the same command may succeed later.                                     |
+| 4    | `crashed`     | An internal error with no typed cause; report it with the output.                                                              |
+| 130  | `interrupted` | Stopped by Ctrl+C or a termination signal.                                                                                     |
+
+<!-- end of generated table -->
+
+The failures `loc gate` and `loc diff` can end with:
+
+<!-- error table: generated from CHANGE_CHECK_ERRORS in apps/cli/src/cli-exit.ts; do not edit -->
+
+| Code                      | Cause                                                                                                                      | Fix                                                                                               | Exit   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------ |
+| `cli_command_failed`      | The flags contradict each other, such as `--change` with `--files`, or a check passed to both `--fail-on` and `--warn-on`. | Pass one of `--files`, `--change` and `--shelved`, and each check to one policy flag.             | 2      |
+| `target_not_found`        | A `--target` the project does not have, or a project with no localization target.                                          | Run `loc targets` and name a listed target.                                                       | 2      |
+| `missing_manifest`        | A named target has no manifest: Unreal has not gathered it, or had not when the change was made.                           | Run the target's gather in Unreal, or leave the target out.                                       | 2      |
+| `unreadable_manifest`     | The target's manifest exists but cannot be read or parsed.                                                                 | Get the manifest again from version control, or gather again.                                     | 2      |
+| `unreadable_evidence`     | An archive or PO file exists but cannot be read, so translations are unknown.                                              | Get the file again from version control, then check again.                                        | 2      |
+| `unreadable_package`      | A changed package could not be read at all, so its text cannot be judged.                                                  | Check that the package is saved and not damaged, and that the reader supports its engine version. | 2      |
+| `invalid_target`          | Perforce does not know the changelist, or `--change` names a pending change or `--shelved` a submitted one.                | Check the number; pass `--change` for a submitted change and `--shelved` for a shelf.             | 2      |
+| `ambiguous_depot_mapping` | No Perforce workspace maps the project folder.                                                                             | Run it from a workspace that maps the project, or set `P4CLIENT` to one.                          | 2      |
+| `perforce_authentication` | Perforce refused the session or the depot path.                                                                            | Log in with `p4 login`, or ask for access to the project's depot path.                            | 2      |
+| `perforce_configuration`  | Perforce has no usable server or client settings.                                                                          | Check `P4PORT`, `P4USER` and `P4CLIENT`, or the project's P4CONFIG file.                          | 2      |
+| `perforce_command`        | A Perforce read failed: the connection dropped or timed out, or the server reported an error.                              | Run it again; if it keeps failing, report it with the Perforce message.                           | 3 or 2 |
+| `index_failed`            | The Game Text engine could not read the change's files or compare them, or its cache settings are wrong.                   | Follow the error's recovery; a busy or interrupted engine can be run again.                       | 2 or 3 |
+| `cli_signal_failed`       | Ctrl+C or a termination signal stopped the run.                                                                            | Run it again.                                                                                     | 130    |
+
+<!-- end of generated table -->
+
+#### For agents
+
+`ue-shed guide changelist-check` prints a guide for a coding agent asked to check a changelist:
+the commands, how to read the outcome, what each failing check means, and what not to do. A test
+keeps every command and flag it names in step with the CLI.
 
 ### Fixing keys in assets
 

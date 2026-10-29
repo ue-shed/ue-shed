@@ -4,6 +4,7 @@ import { describe, expect } from "vitest";
 import { joinLocalizationTarget } from "./localization.js";
 import {
 	DEFAULT_GATE_FAILURES,
+	localizationGateComparison,
 	localizationGateFailures,
 	localizationGateResult,
 	localizationGateTarget,
@@ -436,4 +437,82 @@ describe("checking a change's text", () => {
 			expect(result.omitted).toBe(30);
 		})
 	);
+});
+
+describe("checking a change from its two points", () => {
+	const finding = (
+		check: LocalizationGateCheck,
+		key: string,
+		cultures: readonly string[] = []
+	) => ({
+		check,
+		path: "Source/Shop.cpp",
+		namespace: "Shop",
+		key,
+		source: key,
+		cultures: [...cultures]
+	});
+	const comparison = {
+		point: "local",
+		base: "before.local",
+		counts: { added: 2, removed: 0, rekeyed: 1, edited: 1, unchanged: 3 },
+		complete: true,
+		total: 4,
+		changes: [],
+		stageSeconds: {},
+		findings: {
+			counts: {
+				keyChanged: 1,
+				conflictingSource: 0,
+				translatedTextChanged: 1,
+				textChanged: 0,
+				notGathered: 1,
+				unresolvedKey: 0,
+				removed: 0,
+				gatheredSource: 0,
+				partialRead: 0
+			},
+			total: 3,
+			built: false,
+			rows: [
+				{
+					...finding("key_changed", "SellItem", ["de"]),
+					earlier: { namespace: "Shop", key: "Sell" }
+				},
+				finding("translated_text_changed", "Buy", ["de", "fr"]),
+				finding("not_gathered", "New")
+			]
+		}
+	};
+
+	it("fails on the checks the policy fails, naming the cultures each finding affects", () => {
+		const result = localizationGateComparison({
+			target: "Game",
+			comparison,
+			failOn: localizationGateFailures()
+		});
+		expect(result.status).toBe("failed");
+		expect(result.lines).toBe(4);
+		expect(result.checks).toMatchObject({
+			key_changed: 1,
+			translated_text_changed: 1,
+			not_gathered: 1
+		});
+		expect(result.items.map((item) => [item.check, item.severity])).toEqual([
+			["key_changed", "fail"],
+			["translated_text_changed", "fail"],
+			["not_gathered", "warn"]
+		]);
+		expect(result.items[0]?.guidance).toContain("Shop,Sell is translated in de");
+		expect(result.items[1]?.guidance).toContain("in de, fr");
+	});
+
+	it("passes when only warnings remain", () => {
+		const result = localizationGateComparison({
+			target: "Game",
+			comparison,
+			failOn: localizationGateFailures([], ["key_changed", "translated_text_changed"])
+		});
+		expect(result.status).toBe("passed");
+	});
 });

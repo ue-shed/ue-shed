@@ -17,10 +17,11 @@
 - **State**: In progress. Phase 0: done (oracle on 5.7, 5.8 and 4.27; baseline and sample
   changelists, 2026-10-29). Phase 1: done and reviewed (owner, 2026-10-29). The scanner matches all
   three engines' gathers, and `ue-shed code text` runs it through the Game Text engine. Phase 2:
-  done and reviewed (owner, 2026-10-29).
-  Game Text reads each target's code and judges C++ text like asset text. Phase 3: done, for
-  owner review: a changelist's or a workspace's two points, with code and the base's
-  localization, read in 1.3–1.6 s warm.
+  done and reviewed (owner, 2026-10-29). Game Text reads each target's code and judges C++ text
+  like asset text. Phase 3: done and reviewed (owner, 2026-10-29): a changelist's or a workspace's
+  two points, with code and the base's localization, read in 1.3–1.6 s warm. Phase 4: done, for
+  owner review: the engine compares two points and judges the change by the gate's checks against
+  the base's localization.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -609,7 +610,76 @@ receives 167,507 packages'.
 3. `loc gate`'s checks read the impact instead of a full corpus scan when a point pair is given.
 4. Contract types generated; the host reads paged columns, never every line as JSON.
 
-**Evidence**: _pending_.
+**Design (2026-10-29, planner)**:
+
+- **One engine call, `compare_points`**: a point, its base, and optionally the base's
+  localization. It answers the changes, the findings, and their counts, with a bounded page of
+  each; the host never receives a point's text in bulk. It runs in the engine without a pinned
+  index reader and without the store's writer lease, so it never waits on a refresh.
+- **The diff** reads both points' records (the staged columns the reader wrote) file by file.
+  Package places pair as `diffPackageText` pairs them: by place inside the package, identical
+  text first, then saved order. Code places pair by file and identity, not by line, so an edit
+  above a macro does not show as text removed and added; a code place left over on both sides with
+  the same text and another key is `rekeyed`. A file only one point has is all `added` or all
+  `removed`.
+- **The base's localization lookup**: the target's manifest and archives at the base, parsed once
+  into a file sorted by namespace and key (each identity's manifest contexts, and per culture the
+  translation and the source it was made for). It is keyed by the files' depot revisions, which
+  Perforce fixes, so finding it hashes nothing, and every review between two gathers shares it.
+  A review reads only the identities its changes name, by binary search.
+- **Findings use `loc gate`'s checks, judged against the base**, so only what the change
+  introduces counts; a problem already in a changed file before the change is not reported.
+  Empty text is left out, as Unreal's gather leaves it out:
+    - `key_changed`: a place's key changed, or text moved to a new key in the change, and the
+      earlier key had translations the new one lacks; per culture.
+    - `conflicting_source`: after the change, a key has more than one text, across the changed
+      files or against its manifest contexts in files the change did not touch, and the base's
+      manifest gave it one.
+    - `translated_text_changed`: a gathered key's text changed and some culture's translation
+      was made for the earlier text; per culture. Otherwise `text_changed`.
+    - `not_gathered`: text the change places at a key the base's manifest does not have.
+    - `unresolved_key`: changed text with no reliable key.
+    - `removed`: a gathered key the change removes from its last place; the next gather drops it
+      and its translations.
+    - `partial_read` from the points' statuses, and `gathered_source` for code files a point did
+      not read.
+- **Where the TypeScript diff goes**: `diffPackageText` stays until Electroswag's review page
+  reads `compare_points` (Phase 6); the CLI never uses it.
+
+**Evidence (2026-10-29)**:
+
+- **The diff**: `diffPackageText`'s cases, ported to the native package diff, pass unchanged
+  (place by place, identical text first, a new namespace or a table reference as a rekey,
+  branched package names lining up, cells and entries kept apart). A reader test edits a code file
+  and judges it against a written manifest and two archives: a line added above every macro leaves
+  the moved text unchanged, and the test gets each finding kind with the cultures it names
+  (`key_changed` by rekey and by moving text to a new key, `conflicting_source`,
+  `translated_text_changed`, `not_gathered`, `removed`).
+- **The lookup**: built in 5.6 s from the UE 4.27 project's 757 MB of manifest and archives, four
+  files at a time, once per set of revisions; opened in under 1 ms by every later review.
+  Judging a change takes 0.04–0.10 s for the largest samples (700 changed texts).
+- **The sample changelists, warm** (points, comparison and Perforce together; Phase 0's warm
+  `loc gate` took 9.0–11.9 s):
+
+    | Sample          | Changes                                     | Findings                                                                                                              |  Warm |
+    | --------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----: |
+    | Code, 220336    | none (7 texts unchanged)                    | none                                                                                                                  | 1.4 s |
+    | Asset, 220368   | none (315 unchanged)                        | none                                                                                                                  | 1.3 s |
+    | Mixed, 220253   | 664 added, 35 removed, 20 rekeyed, 1 edited | 1 conflict, 1 translated text changed (9 cultures), 77 not gathered, 11 no key, 1 removed (9 cultures), 2 partly read | 1.6 s |
+    | Shelved, 220258 | 235 added, 11 removed, 34 rekeyed           | 1 conflict, 91 not gathered, 2 no key                                                                                 | 1.6 s |
+
+- **Against the full `loc gate`** on the same samples (Phase 0's runs): on the mixed sample both
+  fail on the same two findings (a `KismetSchema` key given a new text, and translated text
+  changed on `TownieGroupMerfolk`). The comparison leaves out keyless text the changed widgets
+  already had before the change, and adds a key the change removes from its last place, whose
+  translations in 9 cultures the next gather drops. On the shelf, the full gate read the
+  workspace's files rather than the shelved ones; the comparison judges the shelved text.
+- **The gate from a comparison**: `localizationGateComparison` turns the findings into the gate's
+  target result (checks, fail or warn by policy, items with guidance naming the cultures and the
+  earlier key). Phase 5 puts it behind `loc gate --change` and `--shelved`.
+- **Left as the full gate has it**: text audience is not applied (the full gate does not apply
+  it either), and a key the base's manifest already gave several texts is not reported as the
+  change's conflict.
 
 ## Phase 5: The command line
 

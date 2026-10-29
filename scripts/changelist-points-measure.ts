@@ -37,6 +37,19 @@ const code =
 			};
 if (projectRoot === undefined || cacheRoot === undefined || reader === undefined)
 	throw new Error("Usage: <project> <cache-root> <reader> <change>[s]...");
+/** A comparison's counts and stage times, without its rows. */
+const summary = (comparison: {
+	readonly counts: object;
+	readonly complete: boolean;
+	readonly findings?: { readonly counts: object; readonly built: boolean };
+	readonly stageSeconds: object;
+}) => ({
+	changes: comparison.counts,
+	complete: comparison.complete,
+	findings: comparison.findings?.counts,
+	lookupBuilt: comparison.findings?.built,
+	stages: comparison.stageSeconds
+});
 const config = ConfigProvider.layer(
 	ConfigProvider.fromUnknown({ UE_SHED_PROJECT_INDEX_CACHE_ROOT: cacheRoot })
 );
@@ -63,7 +76,8 @@ await Effect.runPromise(
 						printed: local.revisions.printed,
 						printedBytes: local.revisions.bytes,
 						recordsRead: local.before.read + local.after.read,
-						recordsReused: local.before.reused + local.after.reused
+						recordsReused: local.before.reused + local.after.reused,
+						comparison: summary(local.comparison)
 					})
 				);
 				continue;
@@ -83,7 +97,7 @@ await Effect.runPromise(
 				);
 				continue;
 			}
-			const { revisions, before, after } = read.success;
+			const { revisions, before, after, comparison } = read.success;
 			const localization = revisions.before;
 			const statuses: Record<string, number> = {};
 			for (const entry of after.entries)
@@ -104,6 +118,7 @@ await Effect.runPromise(
 					hashedBytes: before.bytes + after.bytes,
 					statuses,
 					stages: { before: before.stageSeconds, after: after.stageSeconds },
+					comparison: summary(comparison),
 					...(localization === undefined
 						? undefined
 						: {

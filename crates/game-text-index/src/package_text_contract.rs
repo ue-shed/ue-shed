@@ -1,5 +1,6 @@
 //! Package snapshot preparation input shared by the reader and its hosts.
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -246,6 +247,246 @@ pub struct PointOutcome {
     #[cfg_attr(test, ts(type = "number"))]
     pub bytes: u64,
     pub entries: Vec<PointEntry>,
+}
+
+/// Compares a point with its base: what changed, and with the base's localization, what the
+/// change does to it, judged by the gate's checks.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ComparePointsRequest {
+    pub point: String,
+    pub base: String,
+    /// Whether the target gathers editor-only text from packages; when not, such package text is
+    /// left out of both points. Code text follows each gather step, as the scan marked it.
+    pub gather_editor_only: bool,
+    /// The target's manifest and archives at the base; without them there are no findings.
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
+    pub localization: Option<BaseLocalization>,
+    pub changes: PageRequest,
+    pub findings: PageRequest,
+}
+
+/// Which rows of a list to return; the total is always counted.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PageRequest {
+    pub offset: u32,
+    pub limit: u32,
+}
+
+/// A target's localization at a point's base, as files on disk the host fetched.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BaseLocalization {
+    pub native_culture: String,
+    pub manifest: LocalizationRevision,
+    pub archives: Vec<CultureArchive>,
+}
+
+/// One localization file at a revision: its project path, where its bytes are, and a name for its
+/// content that never changes, such as `//depot/Game.manifest#421`. The lookup built from a set of
+/// files is kept under the names, so equal names must mean equal bytes.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LocalizationRevision {
+    pub path: String,
+    pub file: String,
+    pub revision: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CultureArchive {
+    pub culture: String,
+    pub archive: LocalizationRevision,
+}
+
+/// How one place's text changed between a point's base and the point.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum PointChangeKind {
+    Added,
+    Removed,
+    /// The same place with another identity.
+    Rekeyed,
+    /// The same place and identity with other text or notes.
+    Edited,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum PointPlaceKind {
+    AssetProperty,
+    DataTableCell,
+    StringTableEntry,
+    Code,
+}
+
+/// Where a text lives in its file: in a package, the object path below the package and the row,
+/// entry or property; in code, the macro and its line.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointPlace {
+    pub kind: PointPlaceKind,
+    pub object: String,
+    /// DataTable row or String Table entry key; empty otherwise.
+    pub entry: String,
+    /// Property chain, or the macro in code.
+    pub property: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub line: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum PointIdentityStatus {
+    Resolved,
+    /// A String Table reference: `namespace` is the table id.
+    StringTable,
+    CultureInvariant,
+    MissingKey,
+}
+
+/// A text at one side of a change.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointText {
+    pub status: PointIdentityStatus,
+    pub namespace: String,
+    pub key: String,
+    pub source: String,
+    pub notes: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointChange {
+    pub kind: PointChangeKind,
+    pub path: String,
+    pub place: PointPlace,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub before: Option<PointText>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub after: Option<PointText>,
+    pub source_changed: bool,
+    pub notes_changed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointChangeCounts {
+    pub added: u32,
+    pub removed: u32,
+    pub rekeyed: u32,
+    pub edited: u32,
+    pub unchanged: u32,
+}
+
+/// The gate's checks, as `loc gate` names them.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum GateCheck {
+    KeyChanged,
+    ConflictingSource,
+    TranslatedTextChanged,
+    TextChanged,
+    NotGathered,
+    UnresolvedKey,
+    Removed,
+    GatheredSource,
+    PartialRead,
+}
+
+/// What a change does to the base's localization at one key, or to one file's checking.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointFinding {
+    pub check: GateCheck,
+    pub path: String,
+    /// The key the finding is about; none for a file's finding or text with no key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub namespace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub key: Option<String>,
+    pub source: String,
+    /// The cultures whose translations the change makes stale or leaves behind.
+    pub cultures: Vec<String>,
+    /// For a key change, the earlier key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub earlier: Option<PointKey>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointKey {
+    pub namespace: String,
+    pub key: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointFindingCounts {
+    pub key_changed: u32,
+    pub conflicting_source: u32,
+    pub translated_text_changed: u32,
+    pub text_changed: u32,
+    pub not_gathered: u32,
+    pub unresolved_key: u32,
+    pub removed: u32,
+    pub gathered_source: u32,
+    pub partial_read: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointFindings {
+    pub counts: PointFindingCounts,
+    pub total: u32,
+    pub rows: Vec<PointFinding>,
+    /// Whether the lookup was built from the files now, rather than found.
+    pub built: bool,
+}
+
+/// A point against its base. `complete` is false when a file was read only in part, failed, or
+/// was not read, so a change there may be missing.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PointComparison {
+    pub point: String,
+    pub base: String,
+    pub counts: PointChangeCounts,
+    pub complete: bool,
+    pub total: u32,
+    pub changes: Vec<PointChange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub findings: Option<PointFindings>,
+    pub stage_seconds: BTreeMap<String, f64>,
 }
 
 /// Diagnostics a code layer outcome carries at most; the count says how many there were.

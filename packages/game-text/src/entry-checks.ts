@@ -25,6 +25,7 @@ export {
 	MAX_GATE_ITEMS,
 	localizationGateFailures,
 	localizationGateResult,
+	localizationGateComparison,
 	localizationGateTarget,
 	localizationGateUnreadEvidence,
 	localizationGateUnreadPackages,

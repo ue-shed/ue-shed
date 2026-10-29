@@ -54,6 +54,7 @@ import {
 	type GameTextIndexRefreshResult,
 	type IndexFailure
 } from "./index-contract.js";
+import { localizationGathersEditorOnlyData } from "./localization.js";
 import { codeLayerName, PACKAGE_TEXT_FORMAT } from "./package-text-layer.js";
 import { packageTextAudienceRules } from "./package-text-native.js";
 import { SAVED_TEXT_AUDIENCE_POLICY_KEY, TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
@@ -757,6 +758,62 @@ export const makeGameTextIndexSteps = (
 		});
 
 		/**
+		 * Compares a point with its base, both read with `readPoint`. With the target's localization
+		 * at the base, it judges the change by the gate's checks; whether the target gathers
+		 * editor-only text comes from the target.
+		 */
+		const comparePoints = Effect.fn("GameTextIndex.comparePoints")(function* (request: {
+			readonly projectRoot: string;
+			readonly point: string;
+			readonly base: string;
+			readonly targetName?: string;
+			readonly localization?: GameTextContract.BaseLocalization;
+			readonly changes?: GameTextContract.PageRequest;
+			readonly findings?: GameTextContract.PageRequest;
+		}) {
+			const { projectRoot } = yield* openProject(request);
+			if (!queries.comparePoints)
+				return yield* Effect.fail(
+					failure("point", "This index cannot compare points.", "Use the native reader.")
+				);
+			const target =
+				request.targetName === undefined
+					? undefined
+					: (yield* evidence
+							.discover({ projectRoot })
+							.pipe(Effect.mapError(manifestIndexFailure))).targets.find(
+							(item) => item.name === request.targetName
+						);
+			const page = { offset: 0, limit: 200 };
+			const comparison = yield* queries.comparePoints({
+				configuration: configurationFor(cacheRoot, projectRoot),
+				request: {
+					point: request.point,
+					base: request.base,
+					gatherEditorOnly:
+						target !== undefined && localizationGathersEditorOnlyData(target) === true,
+					...(request.localization === undefined
+						? undefined
+						: { localization: request.localization }),
+					changes: request.changes ?? page,
+					findings: request.findings ?? page
+				}
+			});
+			yield* Effect.annotateCurrentSpan({
+				"point.changes": comparison.total,
+				"point.findings": comparison.findings?.total ?? 0,
+				"point.complete": comparison.complete,
+				...Object.fromEntries(
+					Object.entries(comparison.stageSeconds).map(([stage, seconds]) => [
+						`${stage}Seconds`,
+						seconds
+					])
+				)
+			});
+			return comparison;
+		});
+
+		/**
 		 * Scans the target's code in the reader and publishes its code layer when it changed, or
 		 * removes the layer when the host names no engine or the target reads no code.
 		 */
@@ -1397,6 +1454,7 @@ export const makeGameTextIndexSteps = (
 			openTarget: sliced(openTarget),
 			openCommitted: sliced(openCommitted),
 			readPoint: sliced(readPoint),
+			comparePoints: sliced(comparePoints),
 			invalidate: sliced(invalidate)
 		};
 	});

@@ -401,4 +401,207 @@ mod tests {
         let _ = fs::remove_dir_all(&configuration.cache_root);
         Ok(())
     }
+
+    /// A code file before and after an edit, judged against a manifest and two archives.
+    #[test]
+    fn a_change_is_judged_against_the_localization_it_started_from() -> Result<()> {
+        use game_text_index::package_text_contract::{
+            BaseLocalization, ComparePointsRequest, CultureArchive, GateCheck,
+            LocalizationRevision, PageRequest, PointChangeKind,
+        };
+        let configuration = configuration();
+        let project = configuration.cache_root.join("project");
+        fs::create_dir_all(project.join("Source"))?;
+        let write = |name: &str, text: &str| -> Result<String> {
+            let file = project.join(name);
+            fs::write(&file, text)?;
+            Ok(file.to_string_lossy().into_owned())
+        };
+        let before = write(
+            "before.cpp",
+            "#define LOCTEXT_NAMESPACE \"Shop\"\n\
+             LOCTEXT(\"Buy\", \"Buy\");\n\
+             LOCTEXT(\"Sell\", \"Sell\");\n\
+             LOCTEXT(\"Gone\", \"Gone\");\n\
+             LOCTEXT(\"Same\", \"Same\");\n\
+             LOCTEXT(\"Moving\", \"Moving\");\n\
+             #undef LOCTEXT_NAMESPACE\n",
+        )?;
+        let after = write(
+            "after.cpp",
+            "// A line above moves every macro down.\n\
+             #define LOCTEXT_NAMESPACE \"Shop\"\n\
+             LOCTEXT(\"Same\", \"Same\");\n\
+             LOCTEXT(\"Buy\", \"Purchase\");\n\
+             LOCTEXT(\"SellItem\", \"Sell\");\n\
+             LOCTEXT(\"New\", \"New text\");\n\
+             LOCTEXT(\"Shared\", \"Different\");\n\
+             NSLOCTEXT(\"Other\", \"Moved\", \"Moving\");\n\
+             #undef LOCTEXT_NAMESPACE\n",
+        )?;
+        let manifest = write(
+            "Game.manifest",
+            r#"{"FormatVersion":1,"Namespace":"","Subnamespaces":[{"Namespace":"Shop","Children":[
+                {"Source":{"Text":"Buy"},"Keys":[{"Key":"Buy","Path":"Source/Shop.cpp(2)"}]},
+                {"Source":{"Text":"Sell"},"Keys":[{"Key":"Sell","Path":"Source/Shop.cpp(3)"}]},
+                {"Source":{"Text":"Gone"},"Keys":[{"Key":"Gone","Path":"Source/Shop.cpp(4)"}]},
+                {"Source":{"Text":"Same"},"Keys":[{"Key":"Same","Path":"Source/Shop.cpp(5)"}]},
+                {"Source":{"Text":"Moving"},"Keys":[{"Key":"Moving","Path":"Source/Shop.cpp(6)"}]},
+                {"Source":{"Text":"Original"},"Keys":[{"Key":"Shared","Path":"Source/Other.cpp(9)"}]}]}]}"#,
+        )?;
+        let archive = |culture: &str,
+                       translations: &[(&str, &str, &str)]|
+         -> Result<CultureArchive> {
+            let children = translations
+                .iter()
+                .map(|(key, source, text)| {
+                    format!(
+                        r#"{{"Source":{{"Text":"{source}"}},"Translation":{{"Text":"{text}"}},"Key":"{key}"}}"#
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let file = write(
+                &format!("{culture}.archive"),
+                &format!(
+                    r#"{{"FormatVersion":2,"Namespace":"","Subnamespaces":[{{"Namespace":"Shop","Children":[{children}]}}]}}"#
+                ),
+            )?;
+            Ok(CultureArchive {
+                culture: culture.into(),
+                archive: LocalizationRevision {
+                    path: format!("{culture}/Game.archive"),
+                    file,
+                    revision: format!("{culture}#1"),
+                },
+            })
+        };
+        let localization = BaseLocalization {
+            native_culture: "en".into(),
+            manifest: LocalizationRevision {
+                path: "Game.manifest".into(),
+                file: manifest,
+                revision: "manifest#1".into(),
+            },
+            archives: vec![
+                archive(
+                    "en",
+                    &[
+                        ("Buy", "Buy", "Buy"),
+                        ("Sell", "Sell", "Sell"),
+                        ("Gone", "Gone", "Gone"),
+                    ],
+                )?,
+                archive(
+                    "de",
+                    &[
+                        ("Buy", "Buy", "Kaufen"),
+                        ("Sell", "Sell", "Verkaufen"),
+                        ("Gone", "Gone", "Weg"),
+                        ("Moving", "Moving", "Bewegt"),
+                    ],
+                )?,
+            ],
+        };
+        let code = PointCode {
+            policy_json: "{}".into(),
+            scan: unreal_code::CodeTextRequest {
+                project_root: project.to_string_lossy().into_owned(),
+                engine_root: None,
+                engine: unreal_code::EngineLine::Ue5_7,
+                targets: vec![unreal_code::CodeTarget {
+                    name: "Game".into(),
+                    steps: vec![unreal_code::GatherStep {
+                        search_directory_paths: vec!["Source".into()],
+                        exclude_path_filters: Vec::new(),
+                        file_name_filters: vec!["*.cpp".into()],
+                        gather_editor_only: false,
+                    }],
+                }],
+                cache_root: None,
+                refresh_engine_wrappers: false,
+            },
+        };
+        for (point, file) in [("before.local", before), ("local", after)] {
+            let mut request = request(
+                point,
+                vec![PointFile {
+                    path: "Source/Shop.cpp".into(),
+                    file: Some(file),
+                }],
+            );
+            request.code = Some(code.clone());
+            read(&configuration, &request)?;
+        }
+        let page = PageRequest {
+            offset: 0,
+            limit: 100,
+        };
+        let compared = game_text_index::point_compare::compare(
+            &configuration,
+            &ComparePointsRequest {
+                point: "local".into(),
+                base: "before.local".into(),
+                gather_editor_only: false,
+                localization: Some(localization),
+                changes: page,
+                findings: page,
+            },
+        )?;
+        let kinds = compared
+            .changes
+            .iter()
+            .map(|change| {
+                (
+                    change.kind,
+                    change
+                        .after
+                        .as_ref()
+                        .or(change.before.as_ref())
+                        .map_or("", |text| text.key.as_str()),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            [
+                (PointChangeKind::Edited, "Buy"),
+                (PointChangeKind::Rekeyed, "SellItem"),
+                (PointChangeKind::Added, "New"),
+                (PointChangeKind::Added, "Shared"),
+                (PointChangeKind::Added, "Moved"),
+                (PointChangeKind::Removed, "Gone"),
+                (PointChangeKind::Removed, "Moving"),
+            ]
+        );
+        // `Same` moved down a line and is unchanged.
+        assert_eq!(compared.counts.unchanged, 1);
+        let findings = compared.findings.ok_or("findings")?;
+        assert!(findings.built);
+        let found = findings
+            .rows
+            .iter()
+            .map(|finding| {
+                (
+                    finding.check,
+                    finding.key.clone().unwrap_or_default(),
+                    finding.cultures.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let de = || vec!["de".to_owned()];
+        assert_eq!(
+            found,
+            [
+                (GateCheck::KeyChanged, "SellItem".into(), de()),
+                (GateCheck::KeyChanged, "Moved".into(), de()),
+                (GateCheck::ConflictingSource, "Shared".into(), Vec::new()),
+                (GateCheck::TranslatedTextChanged, "Buy".into(), de()),
+                (GateCheck::NotGathered, "New".into(), Vec::new()),
+                (GateCheck::Removed, "Gone".into(), de()),
+            ]
+        );
+        let _ = fs::remove_dir_all(&configuration.cache_root);
+        Ok(())
+    }
 }

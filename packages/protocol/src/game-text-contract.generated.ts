@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "1f16bd5d876ac46de9adef01b4b0fa553e2646096d9b8c40be3a10a5098a19cb"
+	contractHash: "49dea7dd5f14534841dc6b1803e3db50cbe4e3e7bde1b5665529cd24b827211a"
 } as const;
 
 /**
@@ -56,7 +56,7 @@ rules: RuleDocumentV4, collationLocale: string, } | { "action": "findings_accept
 /**
  * The v4 rule document.
  */
-rules: RuleDocumentV4, } | { "action": "code_text", request: CodeTextRequest, };
+rules: RuleDocumentV4, } | { "action": "code_text", request: CodeTextRequest, } | { "action": "compare_points", configuration: IndexConfiguration, request: ComparePointsRequest, };
 
 export type CodeTextRequest = { projectRoot: string, 
 /**
@@ -601,6 +601,75 @@ reused: number,
  * Bytes of the files read: every file is hashed; only misses are parsed.
  */
 bytes: number, entries: ReadonlyArray<PointEntry>, };
+
+export type ComparePointsRequest = { point: string, base: string, 
+/**
+ * Whether the target gathers editor-only text from packages; when not, such package text is
+ * left out of both points. Code text follows each gather step, as the scan marked it.
+ */
+gatherEditorOnly: boolean, 
+/**
+ * The target's manifest and archives at the base; without them there are no findings.
+ */
+localization?: BaseLocalization, changes: PageRequest, findings: PageRequest, };
+
+export type PageRequest = { offset: number, limit: number, };
+
+export type BaseLocalization = { nativeCulture: string, manifest: LocalizationRevision, archives: ReadonlyArray<CultureArchive>, };
+
+export type LocalizationRevision = { path: string, file: string, revision: string, };
+
+export type CultureArchive = { culture: string, archive: LocalizationRevision, };
+
+export type PointChangeKind = "added" | "removed" | "rekeyed" | "edited";
+
+export type PointPlaceKind = "asset_property" | "data_table_cell" | "string_table_entry" | "code";
+
+export type PointPlace = { kind: PointPlaceKind, object: string, 
+/**
+ * DataTable row or String Table entry key; empty otherwise.
+ */
+entry: string, 
+/**
+ * Property chain, or the macro in code.
+ */
+property: string, line?: number, };
+
+export type PointIdentityStatus = "resolved" | "string_table" | "culture_invariant" | "missing_key";
+
+export type PointText = { status: PointIdentityStatus, namespace: string, key: string, source: string, notes: string, };
+
+export type PointChange = { kind: PointChangeKind, path: string, place: PointPlace, before?: PointText, after?: PointText, sourceChanged: boolean, notesChanged: boolean, };
+
+export type PointChangeCounts = { added: number, removed: number, rekeyed: number, edited: number, unchanged: number, };
+
+export type GateCheck = "key_changed" | "conflicting_source" | "translated_text_changed" | "text_changed" | "not_gathered" | "unresolved_key" | "removed" | "gathered_source" | "partial_read";
+
+export type PointFinding = { check: GateCheck, path: string, 
+/**
+ * The key the finding is about; none for a file's finding or text with no key.
+ */
+namespace?: string, key?: string, source: string, 
+/**
+ * The cultures whose translations the change makes stale or leaves behind.
+ */
+cultures: ReadonlyArray<string>, 
+/**
+ * For a key change, the earlier key.
+ */
+earlier?: PointKey, };
+
+export type PointKey = { namespace: string, key: string, };
+
+export type PointFindingCounts = { keyChanged: number, conflictingSource: number, translatedTextChanged: number, textChanged: number, notGathered: number, unresolvedKey: number, removed: number, gatheredSource: number, partialRead: number, };
+
+export type PointFindings = { counts: PointFindingCounts, total: number, rows: ReadonlyArray<PointFinding>, 
+/**
+ * Whether the lookup was built from the files now, rather than found.
+ */
+built: boolean, };
+
+export type PointComparison = { point: string, base: string, counts: PointChangeCounts, complete: boolean, total: number, changes: ReadonlyArray<PointChange>, findings?: PointFindings, stageSeconds: { [key in string]: number }, };
 
 export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
 

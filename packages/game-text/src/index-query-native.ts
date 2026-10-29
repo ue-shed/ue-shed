@@ -1,14 +1,16 @@
 import { Context, Effect, Layer, RcMap, Schema, type Scope } from "effect";
-import { GameTextIndexConfiguration } from "@ue-shed/protocol";
+import { GameTextIndexConfiguration, type GameTextContract } from "@ue-shed/protocol";
 import { TEXT_AUDIENCE_POLICY } from "./text-audience.js";
 import {
+	answerJson,
+	NativeGameTextEngineClient,
 	nativeGameTextEngineClientLayer,
 	type AssetReaderConfiguration
 } from "@ue-shed/unreal-assets";
 import { openNativeTextQuery } from "./native-query.js";
 import { nativeIndexConfiguration } from "./native-index-configuration.js";
 import type { SharedIndexOptions } from "./shared-index.js";
-import type { GameTextIndexError } from "./index-contract.js";
+import { GameTextIndexError } from "./index-contract.js";
 
 /** Native snapshot acquisition used by the headless indexing workflow. */
 export class GameTextIndexQuery extends Context.Service<
@@ -23,8 +25,28 @@ export class GameTextIndexQuery extends Context.Service<
 			GameTextIndexError,
 			Scope.Scope
 		>;
+		/**
+		 * A point against its base, and with the base's localization, the gate's findings
+		 * (`compare_points`). It reads only the two points and the localization lookup, so it pins
+		 * no snapshot and never waits on a refresh.
+		 */
+		readonly comparePoints?: (input: {
+			readonly configuration: SharedIndexOptions;
+			readonly request: GameTextContract.ComparePointsRequest;
+		}) => Effect.Effect<GameTextContract.PointComparison, GameTextIndexError>;
 	}
 >()("@ue-shed/game-text/GameTextIndexQuery") {}
+
+const compareFailed = (cause: unknown) =>
+	new GameTextIndexError({
+		code: "index_failed",
+		operation: "compare_points",
+		nextStep: "reconcile",
+		retrySafe: false,
+		message: "The native Game Text point comparison could not complete.",
+		recovery: "Read both points again, then compare them.",
+		cause
+	});
 
 /**
  * The host's engine: one process, started by the first read, holds every open snapshot's reader.
@@ -63,7 +85,21 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 						}).pipe(Effect.provide(engine));
 					})
 			});
+			const client = Context.get(engine, NativeGameTextEngineClient);
 			return GameTextIndexQuery.of({
+				comparePoints: Effect.fn("GameTextIndexQuery.comparePoints")(function* (input) {
+					const answer = yield* client
+						.execute({
+							action: "compare_points",
+							configuration: nativeIndexConfiguration(input.configuration),
+							request: input.request
+						})
+						.pipe(Effect.mapError(compareFailed));
+					const comparison = answerJson<GameTextContract.PointComparison>(answer);
+					if (comparison === undefined)
+						return yield* Effect.fail(compareFailed("The engine sent no comparison."));
+					return comparison;
+				}),
 				open: Effect.fn("GameTextIndexQuery.open")(function* (input) {
 					return yield* RcMap.get(
 						readers,

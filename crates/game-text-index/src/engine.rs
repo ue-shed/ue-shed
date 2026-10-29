@@ -151,6 +151,12 @@ pub enum EngineRequest {
     CodeText {
         request: unreal_code::CodeTextRequest,
     },
+    /// A point against its base, and with the base's localization, the gate's findings; needs no
+    /// reader and never waits on a refresh (Plan 060).
+    ComparePoints {
+        configuration: Configuration,
+        request: Box<crate::package_text_contract::ComparePointsRequest>,
+    },
 }
 impl EngineRequest {
     pub fn validate(&self) -> Result<()> {
@@ -158,6 +164,13 @@ impl EngineRequest {
         let _span = crate::benchmark_timings::Span::new("requestValidate");
         match self {
             Self::Capabilities | Self::RulesCheck { .. } | Self::CodeText { .. } => {}
+            Self::ComparePoints {
+                configuration,
+                request,
+            } => {
+                configuration.identity()?;
+                crate::point_compare::validate(request)?;
+            }
             Self::Open {
                 configuration,
                 expected_generation,
@@ -369,6 +382,16 @@ impl EngineSession {
             EngineRequest::CodeText { request } => (
                 "code_text",
                 Some(serde_json::to_string(&unreal_code::run(request))?),
+            ),
+            EngineRequest::ComparePoints {
+                configuration,
+                request,
+            } => (
+                "compare_points",
+                Some(serde_json::to_string(&crate::point_compare::compare(
+                    configuration,
+                    request,
+                )?)?),
             ),
             EngineRequest::Open {
                 configuration,

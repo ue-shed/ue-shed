@@ -5,6 +5,7 @@ import { TextFileScopeSummary, type TextCorpus, type TextWhere } from "./schema.
 import type { LocalizationLineView } from "./index-reads.js";
 import type { NativeTextQuery } from "./native-query-contract.js";
 import type { LocalizationTargetEvidence } from "@ue-shed/localization/browser";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { textFileKey, textFileLabel, textFileScope } from "./text-origin.js";
 
 /**
@@ -343,6 +344,89 @@ export function localizationGateTarget(input: {
 		items: items.slice(0, MAX_GATE_ITEMS),
 		omitted: Math.max(0, items.length - MAX_GATE_ITEMS),
 		...(fileScope === undefined ? undefined : { fileScope })
+	};
+}
+
+/** A comparison finding's guidance: the gate's, naming the cultures and earlier key it has. */
+function comparisonGuidance(finding: GameTextContract.PointFinding): string {
+	const cultures = finding.cultures.join(", ");
+	switch (finding.check) {
+		case "key_changed": {
+			const earlier =
+				finding.earlier === undefined
+					? "Its earlier key"
+					: `Its earlier key ${finding.earlier.namespace},${finding.earlier.key}`;
+			return (
+				`${earlier} is translated in ${cultures}, and this key is not. ` +
+				"Carry the translations to the new key and synchronize them with the project, or keep the earlier key in Unreal."
+			);
+		}
+		case "translated_text_changed":
+			return `Its translations in ${cultures} were written for the earlier text. After the next gather those languages show this text untranslated until it is translated again.`;
+		case "removed":
+			return cultures === ""
+				? "The change removes this text's last place. The next gather drops it."
+				: `The change removes this text's last place. The next gather drops it and its translations in ${cultures}.`;
+		case "gathered_source":
+			return "Code or config this change touches that the check did not read, so its text is not checked. Name the target's engine to read it.";
+		default:
+			return guidance(finding.check, { identity: null });
+	}
+}
+
+/**
+ * Judges a change for one target from the comparison of its two points (`comparePoints` with the
+ * target's localization at the base). Unlike `localizationGateTarget`, only what the change
+ * introduces counts: a problem a changed file already had at the base is not reported.
+ */
+export function localizationGateComparison(input: {
+	readonly target: string;
+	readonly comparison: GameTextContract.PointComparison;
+	readonly failOn: readonly LocalizationGateCheck[];
+}): LocalizationGateTarget {
+	const failing = new Set(input.failOn);
+	const findings = input.comparison.findings;
+	const counts = findings?.counts;
+	const checks = {
+		key_changed: counts?.keyChanged ?? 0,
+		conflicting_source: counts?.conflictingSource ?? 0,
+		translated_text_changed: counts?.translatedTextChanged ?? 0,
+		text_changed: counts?.textChanged ?? 0,
+		not_gathered: counts?.notGathered ?? 0,
+		unresolved_key: counts?.unresolvedKey ?? 0,
+		removed: counts?.removed ?? 0,
+		gathered_source: counts?.gatheredSource ?? 0,
+		partial_read: counts?.partialRead ?? 0
+	} satisfies Record<LocalizationGateCheck, number>;
+	const items = (findings?.rows ?? []).map(
+		(finding): LocalizationGateItem => ({
+			check: finding.check,
+			severity: failing.has(finding.check) ? "fail" : "warn",
+			namespace: finding.namespace ?? null,
+			key: finding.key ?? null,
+			source:
+				finding.source.length > MAX_SOURCE
+					? finding.source.slice(0, MAX_SOURCE - 1) + "…"
+					: finding.source,
+			file: finding.path,
+			guidance: comparisonGuidance(finding)
+		})
+	);
+	const order = (item: LocalizationGateItem) =>
+		(item.severity === "fail" ? 0 : LocalizationGateCheck.literals.length) +
+		LocalizationGateCheck.literals.indexOf(item.check);
+	items.sort((left, right) => order(left) - order(right));
+	const total = findings?.total ?? 0;
+	const failed = LocalizationGateCheck.literals.some(
+		(check) => failing.has(check) && checks[check] > 0
+	);
+	return {
+		target: input.target,
+		status: failed ? "failed" : "passed",
+		lines: input.comparison.total,
+		checks,
+		items: items.slice(0, MAX_GATE_ITEMS),
+		omitted: Math.max(0, total - Math.min(items.length, MAX_GATE_ITEMS))
 	};
 }
 

@@ -550,6 +550,7 @@ const testIndexStepsLayer = Layer.effect(
 					: Effect.die("Missing test request");
 			},
 			readPoint: () => Effect.die("This test reads no points."),
+			comparePoints: () => Effect.die("This test compares no points."),
 			invalidate: legacy.invalidate
 		});
 		return steps;

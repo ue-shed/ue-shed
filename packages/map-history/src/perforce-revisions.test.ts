@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changelistRevisionSpecs } from "./perforce-revisions.js";
+import { changelistRevisionSpecs, workspaceHolds } from "./perforce-revisions.js";
 
 const file = (action: string, revision: number) => ({
 	depotPath: "//Project/Main/Content/UI/WBP_Menu.uasset",
@@ -35,5 +35,15 @@ describe("a changelist's revisions", () => {
 		expect(changelistRevisionSpecs(file("delete", 4), 230, true)).toEqual({
 			base: "//Project/Main/Content/UI/WBP_Menu.uasset#4"
 		});
+	});
+});
+
+describe("a file at a revision", () => {
+	it("is read from the workspace only when the workspace has that revision unopened", () => {
+		expect(workspaceHolds(7, 7, false)).toBe(true);
+		expect(workspaceHolds(7, 8, false)).toBe(false);
+		expect(workspaceHolds(7, undefined, false)).toBe(false);
+		// Checked out: the workspace copy may hold edits.
+		expect(workspaceHolds(7, 7, true)).toBe(false);
 	});
 });

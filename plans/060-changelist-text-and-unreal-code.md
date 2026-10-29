@@ -18,7 +18,9 @@
   changelists, 2026-10-29). Phase 1: done and reviewed (owner, 2026-10-29). The scanner matches all
   three engines' gathers, and `ue-shed code text` runs it through the Game Text engine. Phase 2:
   done and reviewed (owner, 2026-10-29).
-  Game Text reads each target's code and judges C++ text like asset text.
+  Game Text reads each target's code and judges C++ text like asset text. Phase 3: done, for
+  owner review: a changelist's or a workspace's two points, with code and the base's
+  localization, read in 1.3–1.6 s warm.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: MEDIUM-HIGH. It adds a second source of text (C++, config and String Table CSVs) next
@@ -562,7 +564,39 @@ receives 167,507 packages'.
     Perforce and starting the processes. Against Phase 0's warm `loc gate`, 9.0–11.9 s, a warm
     changelist read is 1.5 s.
 
-- **Next in this phase**: the base point's manifest and archives.
+**Evidence (2026-10-29, third slice: the base's localization, and local points)**:
+
+- **The target's manifest and archives as the change found them**: at the changelist before a
+  submitted change, and at the depot's head for a shelf. On the UE 4.27 project they are 757 MB
+  at a revision (a 78 MB manifest and ten archives of 61–72 MB), so they are never printed when
+  the workspace has them: `p4 files` lists them at the base and at `#have`, and a file the
+  workspace has at that revision and has not checked out is read where it is. Any other revision
+  is printed once with `print -o`, straight to the revision cache, never held in memory. Every
+  base after the last gather, which is every changelist review but a gather's own, prints nothing.
+- **Round trips**: each Perforce command costs about 0.4 s on this server, and resolving the
+  workspace about 0.8 s. A changelist read now resolves the workspace once and runs `describe`,
+  `where` and both `files` lookups together.
+- **Local points**: `local` (the files on disk) over `before.local` (the workspace's revisions),
+  for a list of files, the way `loc gate --files` names them. A checked-out file's `#have` is
+  printed; an unopened one is read in place.
+- **The sample changelists' points with code and the base's localization**, cold then warm:
+
+    | Kind                           |     Read | Localization                  |   Cold |  Warm |
+    | ------------------------------ | -------: | ----------------------------- | -----: | ----: |
+    | Code only, 220336              | 19 files | from the workspace            |  3.8 s | 1.4 s |
+    | Asset only, 220368             |  9 files | from the workspace            |  3.0 s | 1.4 s |
+    | Mixed, 220253                  | 36 files | from the workspace            |  4.9 s | 1.4 s |
+    | Gather commit, 219062          |  0 files | printed: 11 revisions, 757 MB | 13.0 s | 1.4 s |
+    | Shelved, 220258                | 26 files | from the workspace (head)     |  6.5 s | 1.6 s |
+    | Local, the code sample's list  | 19 files | from the workspace            |  1.5 s | 1.3 s |
+    | Local, the mixed sample's list | 36 files | from the workspace            |  1.3 s | 1.4 s |
+
+    A warm changelist read, the base's localization included, is 1.3–1.6 s against Phase 0's
+    9.0–11.9 s warm `loc gate`; Perforce is about 0.8 s of it.
+
+- **Phase 3 is complete** against its items: records and points, revisions through Map History's
+  connection, the submitted, shelved and local pairs, and the measurements. Phase 4 joins two
+  points' records and the base's localization into the impact.
 
 ## Phase 4: Diff and impact, natively
 

@@ -5,11 +5,16 @@
  *
  *   node --import tsx scripts/changelist-points-measure.ts <project> <cache-root> <reader> <change>[s]...
  *
- * A trailing `s` reads a shelf. It only reads Perforce.
+ * A trailing `s` reads a shelf; `local=<list>` reads the workspace's points for a file list, one
+ * project-relative path a line. It only reads Perforce.
  */
+import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { ConfigProvider, Effect, Layer } from "effect";
-import { readChangelistPoints } from "../apps/cli/src/workflows/changelist-points.ts";
+import {
+	readChangelistPoints,
+	readLocalPoints
+} from "../apps/cli/src/workflows/changelist-points.ts";
 import { cliGameTextIndexLayer } from "../apps/cli/src/workflows/game-text-index.ts";
 
 const [projectRoot, cacheRoot, reader, ...changes] = process.argv.slice(2);
@@ -40,6 +45,29 @@ const steps = cliGameTextIndexLayer(reader).pipe(Layer.provide(config));
 await Effect.runPromise(
 	Effect.gen(function* () {
 		for (const argument of changes) {
+			if (argument.startsWith("local=")) {
+				const files = readFileSync(argument.slice("local=".length), "utf8")
+					.split(/\r?\n/u)
+					.filter((line) => line.length > 0);
+				const started = performance.now();
+				const local = yield* readLocalPoints({ projectRoot, files, cacheRoot, ...code });
+				console.log(
+					JSON.stringify({
+						local: argument.slice("local=".length),
+						ms: Math.round(performance.now() - started),
+						files: files.length,
+						skipped: local.skipped.length,
+						fromWorkspace: local.revisions.files.filter((file) => file.workspace)
+							.length,
+						missing: local.revisions.missing.length,
+						printed: local.revisions.printed,
+						printedBytes: local.revisions.bytes,
+						recordsRead: local.before.read + local.after.read,
+						recordsReused: local.before.reused + local.after.reused
+					})
+				);
+				continue;
+			}
 			const shelved = argument.endsWith("s");
 			const change = Number.parseInt(argument, 10);
 			const started = performance.now();
@@ -56,6 +84,7 @@ await Effect.runPromise(
 				continue;
 			}
 			const { revisions, before, after } = read.success;
+			const localization = revisions.before;
 			const statuses: Record<string, number> = {};
 			for (const entry of after.entries)
 				statuses[entry.status] = (statuses[entry.status] ?? 0) + 1;
@@ -74,7 +103,20 @@ await Effect.runPromise(
 					recordsReused: before.reused + after.reused,
 					hashedBytes: before.bytes + after.bytes,
 					statuses,
-					stages: { before: before.stageSeconds, after: after.stageSeconds }
+					stages: { before: before.stageSeconds, after: after.stageSeconds },
+					...(localization === undefined
+						? undefined
+						: {
+								localization: {
+									files: localization.files.length,
+									fromWorkspace: localization.files.filter(
+										(file) => file.workspace
+									).length,
+									missing: localization.missing.length,
+									printed: localization.printed,
+									printedBytes: localization.bytes
+								}
+							})
 				})
 			);
 		}

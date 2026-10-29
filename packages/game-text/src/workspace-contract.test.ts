@@ -296,6 +296,25 @@ describe("GameTextWorkspaceContract", () => {
 							}
 						)
 					).toMatchObject({ status: "failed", code: "capability_missing" });
+					// A headless host cancels the file dialog, and files nobody chose are not read.
+					expect(
+						yield* serve(
+							GameTextWorkspaceContract.chooseLocalizationFile,
+							workspace.chooseLocalizationFile,
+							{ side: "before" }
+						)
+					).toEqual({ status: "cancelled" });
+					expect(
+						yield* serve(
+							GameTextWorkspaceContract.compareLocalizationFiles,
+							workspace.compareLocalizationFiles,
+							{
+								files: { before: "C:/old/Game.po", after: "C:/new/Game.po" },
+								filter: { groups: ["added"], query: "", asset: "", preview: 0 },
+								changes: { offset: 0, limit: 50 }
+							}
+						)
+					).toMatchObject({ status: "failed", code: "file_not_chosen" });
 					const lines = yield* serve(GameTextWorkspaceContract.search, workspace.search, {
 						...search,
 						localization: { target, cultures: ["de"] }

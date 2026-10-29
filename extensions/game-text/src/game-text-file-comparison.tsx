@@ -224,11 +224,13 @@ export interface FilePairNames {
 /** The shortest ends of two paths that tell them apart, `before\Game.po` and `after\Game.po`. */
 export function distinctNames(before: string, after: string): FilePairNames {
 	const parts = (path: string) => path.split(/[/\\]/u);
+	// Tails keep the paths' own separator.
+	const separator = before.includes("\\") ? "\\" : "/";
 	const a = parts(before);
 	const b = parts(after);
 	for (let length = 1; length <= Math.max(a.length, b.length); length += 1) {
-		const tailA = a.slice(-length).join("\\");
-		const tailB = b.slice(-length).join("\\");
+		const tailA = a.slice(-length).join(separator);
+		const tailB = b.slice(-length).join(separator);
 		if (tailA !== tailB) return { before: tailA, after: tailB };
 	}
 	return { before: textDiffFileName(before).name, after: textDiffFileName(after).name };
@@ -246,13 +248,31 @@ interface ChosenFile {
 	readonly format: LocalizationFileFormat;
 }
 
+/** What the comparison lists: the diff's group and text filter, and a rollup's asset. */
+interface ComparisonView {
+	readonly filter: TextDiffFilter;
+	/** Only this asset's changes, picked from a rollup; every asset when empty. */
+	readonly asset: string;
+}
+
+const EVERYTHING: ComparisonView = { filter: { query: "" }, asset: "" };
+
+/** Whether a view lists everything, as an overview of a few changes per group. */
+const overview = (view: ComparisonView) =>
+	view.filter.kind === undefined && view.filter.query.trim() === "" && view.asset === "";
+
 /**
  * Compare two localization files: choose an older and a newer `.po`, `.archive` or `.manifest`,
  * and see which keys came, went, moved to a new key or changed, grouped by what that means for
  * their translations. The engine filters and pages over every change; unfiltered, each group shows
  * a few changes and the assets most of them come from.
+ *
+ * `hidden` keeps the chosen files and the comparison while another view is shown.
  */
-export function GameTextFileComparison(props: { readonly client: GameTextClientApi }) {
+export function GameTextFileComparison(props: {
+	readonly client: GameTextClientApi;
+	readonly hidden?: boolean;
+}) {
 	const choose = createEffectAction();
 	const compare = createEffectAction();
 	const [before, setBefore] = createSignal<ChosenFile>();
@@ -260,12 +280,16 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 	const [comparison, setComparison] = createSignal<ReadyFileComparison>();
 	// Entries are mapped once per page and appended, so a later page leaves earlier ones as they are.
 	const [entries, setEntries] = createSignal<readonly TextDiffEntry[]>([]);
-	const [filter, setFilter] = createSignal<TextDiffFilter>({ query: "" });
+	const [view, setView] = createSignal<ComparisonView>(EVERYTHING);
 	const [loading, setLoading] = createSignal(false);
 	const [problem, setProblem] = createSignal<string>();
 	let generation = 0;
 	let typing: ReturnType<typeof setTimeout> | undefined;
-	onCleanup(() => clearTimeout(typing));
+	const stopTyping = () => {
+		clearTimeout(typing);
+		typing = undefined;
+	};
+	onCleanup(stopTyping);
 
 	const pick = (side: "before" | "after") => {
 		const action = props.client.chooseLocalizationFile;
@@ -278,7 +302,6 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 					setProblem(`${result.message} ${result.recovery}`);
 					return;
 				}
-				setProblem(undefined);
 				(side === "before" ? setBefore : setAfter)({
 					path: result.path,
 					format: result.format
@@ -287,13 +310,16 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 			}
 		});
 	};
+	/** Forgets the comparison and anything about to load, for files that changed. */
 	const reset = () => {
 		generation += 1;
+		stopTyping();
 		compare.cancel();
 		setLoading(false);
+		setProblem(undefined);
 		setComparison(undefined);
 		setEntries([]);
-		setFilter({ query: "" });
+		setView(EVERYTHING);
 	};
 	const swap = () => {
 		const older = before();
@@ -302,31 +328,42 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 		setAfter(older);
 		reset();
 	};
-	const mismatch = () => {
+	/** Why the chosen files cannot be compared, if they cannot. */
+	const blocked = () => {
 		const older = before();
 		const newer = after();
-		return older !== undefined && newer !== undefined && older.format !== newer.format;
+		if (older === undefined || newer === undefined) return undefined;
+		if (older.path === newer.path)
+			return "Before and after are the same file. Choose two revisions.";
+		if (older.format !== newer.format)
+			return "Both files must be the same kind: two .po, two .archive or two .manifest files.";
+		return undefined;
 	};
 	/**
-	 * The first page of a filter, or with `more` the next page of the open one. The filter is passed
-	 * in: a signal set in the same tick still reads its old value. Without a group it is an
-	 * overview: a few changes of each group.
+	 * The first page of a view, or with `more` the next page of the open one. The view is passed
+	 * in: a signal set in the same tick still reads its old value. If a fresh view fails, `restore`
+	 * puts back the one whose list is still on screen.
 	 */
-	const load = (more = false, current = filter()) => {
+	const load = (more: boolean, current: ComparisonView, restore?: ComparisonView) => {
 		const action = props.client.compareLocalizationFiles;
 		const older = before();
 		const newer = after();
-		if (!action || !older || !newer || older.format !== newer.format) return;
+		if (!action || !older || !newer || blocked() !== undefined) return;
 		const version = more ? generation : ++generation;
-		const kind = LocalizationFileGroup.literals.find((group) => group === current.kind);
+		const kind = LocalizationFileGroup.literals.find((group) => group === current.filter.kind);
+		const failed = (message: string) => {
+			setProblem(message);
+			if (!more && restore !== undefined) setView(restore);
+		};
 		setLoading(true);
 		compare.run(
 			action({
 				files: { before: older.path, after: newer.path },
 				filter: {
 					groups: kind === undefined ? [] : [kind],
-					query: current.query,
-					preview: kind === undefined ? PREVIEW : 0
+					query: current.filter.query,
+					asset: current.asset,
+					preview: overview(current) ? PREVIEW : 0
 				},
 				changes: { offset: more ? entries().length : 0, limit: PAGE }
 			}),
@@ -334,13 +371,13 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 				onFailure: () => {
 					if (version !== generation) return;
 					setLoading(false);
-					setProblem("Couldn’t compare the files. Try again.");
+					failed("Couldn’t compare the files. Try again.");
 				},
 				onSuccess: (result) => {
 					if (version !== generation) return;
 					setLoading(false);
 					if (result.status === "failed") {
-						setProblem(`${result.message} ${result.recovery}`);
+						failed(`${result.message} ${result.recovery}`);
 						return;
 					}
 					setProblem(undefined);
@@ -359,19 +396,30 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 			}
 		);
 	};
-	// Two files of one kind compare as soon as both are chosen.
+	// Two files that can be compared are compared as soon as both are chosen.
 	createEffect(
 		() => [before(), after()] as const,
 		([older, newer]) => {
-			if (older && newer && older.format === newer.format) load(false, { query: "" });
+			if (older && newer && blocked() === undefined) load(false, EVERYTHING);
 		}
 	);
-	const refilter = (next: TextDiffFilter) => {
-		const typed = next.query !== filter().query;
-		setFilter(next);
-		clearTimeout(typing);
-		if (typed) typing = setTimeout(() => load(false, next), QUERY_DELAY_MS);
-		else load(false, next);
+	/** Shows a new view: at once for a click, after a pause for typing. */
+	const show = (next: ComparisonView, typed: boolean) => {
+		const shown = view();
+		setView(next);
+		stopTyping();
+		if (typed) typing = setTimeout(() => load(false, next, shown), QUERY_DELAY_MS);
+		else load(false, next, shown);
+	};
+	const refilter = (filter: TextDiffFilter) =>
+		show({ ...view(), filter }, filter.query !== view().filter.query);
+	/** The next page; a filter still being typed loads its first page instead. */
+	const more = () => {
+		if (typing === undefined) load(true, view());
+		else {
+			stopTyping();
+			load(false, view());
+		}
 	};
 	const names = createMemo(() => {
 		const older = before();
@@ -386,18 +434,24 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 	const lead = (group: TextDiffGroup) => {
 		const open = comparison();
 		const assets = open?.assets.filter((asset) => asset.group === group.id) ?? [];
-		// One asset with one change says nothing the entry does not.
-		if (assets.length === 0 || (assets.length === 1 && (assets[0]?.count ?? 0) < 2))
+		// One asset with one change says nothing the entry does not; a picked asset is shown above.
+		if (
+			view().asset !== "" ||
+			assets.length === 0 ||
+			(assets.length === 1 && (assets[0]?.count ?? 0) < 2)
+		)
 			return <></>;
 		return (
 			<Rollup
 				assets={assets}
-				onPick={(asset) => refilter({ kind: group.id, query: asset })}
+				onPick={(asset) =>
+					show({ filter: { kind: group.id, query: view().filter.query }, asset }, false)
+				}
 			/>
 		);
 	};
 	return (
-		<div {...stylex.attrs(styles.compare)}>
+		<div {...stylex.attrs(styles.compare, props.hidden === true && styles.hidden)}>
 			<section aria-label="Files to compare" {...stylex.attrs(styles.picker)}>
 				<Slot
 					label="Before"
@@ -425,18 +479,16 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 				/>
 				<Button
 					tone="quiet"
-					disabled={!before() || !after() || mismatch() || loading()}
-					onClick={() => load(false, filter())}
+					disabled={!before() || !after() || blocked() !== undefined || loading()}
+					onClick={() => {
+						stopTyping();
+						load(false, view());
+					}}
 				>
 					{loading() ? "Comparing…" : "Compare again"}
 				</Button>
 			</section>
-			<Show when={mismatch()}>
-				<p role="alert" {...stylex.attrs(styles.problem)}>
-					Both files must be the same kind: two .po, two .archive or two .manifest files.
-				</p>
-			</Show>
-			<Show when={problem()}>
+			<Show when={blocked() ?? problem()}>
 				{(message) => (
 					<p role="alert" {...stylex.attrs(styles.problem)}>
 						{message()}
@@ -458,6 +510,20 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 						<p role="status" {...stylex.attrs(styles.summary)}>
 							{fileComparisonSummary(open().format, open().counts)}
 						</p>
+						<Show when={view().asset !== "" ? view().asset : undefined}>
+							{(asset) => (
+								<p {...stylex.attrs(styles.assetFilter)}>
+									Only changes from <code>{asset()}</code>
+									<Button
+										size="compact"
+										tone="quiet"
+										onClick={() => show({ ...view(), asset: "" }, false)}
+									>
+										Show every asset
+									</Button>
+								</p>
+							)}
+						</Show>
 						<TextDiff
 							label="Changed entries"
 							entries={entries()}
@@ -467,12 +533,12 @@ export function GameTextFileComparison(props: { readonly client: GameTextClientA
 								open().listed
 							)}
 							total={open().total}
-							filter={filter()}
+							filter={view().filter}
 							onFilter={refilter}
-							overview
+							overview={overview(view())}
 							sectionLead={lead}
 							loadingMore={loading()}
-							onMore={() => load(true)}
+							onMore={more}
 						/>
 					</section>
 				)}
@@ -629,6 +695,15 @@ const styles = stylex.create({
 	intro: { margin: 0, maxWidth: 720, fontSize: 13, color: tokens.colorTextMuted },
 	result: { display: "grid", gap: 10 },
 	summary: { margin: 0, fontSize: 13, color: tokens.colorTextStrong },
+	hidden: { display: "none" },
+	assetFilter: {
+		display: "flex",
+		alignItems: "center",
+		gap: 8,
+		margin: 0,
+		fontSize: 12,
+		color: tokens.colorText
+	},
 	rollup: {
 		display: "flex",
 		flexWrap: "wrap",

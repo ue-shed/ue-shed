@@ -71,7 +71,7 @@ describe.skipIf(!executable)("comparing two localization files in the engine", (
 					options: { format: "po" as const },
 					before: { file: before, path: "before.po" },
 					after: { file: after, path: "after.po" },
-					filter: { groups: [], query: "", preview: 0 },
+					filter: { groups: [], query: "", preview: 0, asset: "" },
 					changes: { offset: 0, limit: 1 }
 				};
 				const first = yield* index.compareTextFiles(request);

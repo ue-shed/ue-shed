@@ -2,6 +2,9 @@ import * as stylex from "@stylexjs/stylex";
 import type { JSX } from "@solidjs/web";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createMemo, createSignal } from "solid-js";
+
+/** The longest text filter a host accepts. */
+const MAX_QUERY = 1000;
 import {
 	TEXT_DIFF_KINDS,
 	TEXT_DIFF_KIND_LABELS,
@@ -76,6 +79,16 @@ export function TextDiff(props: {
 			}))
 	);
 	const all = () => chips().reduce((sum, chip) => sum + chip.count, 0);
+	const allListed = () =>
+		chips().some((chip) => chip.listed !== undefined)
+			? chips().reduce((sum, chip) => sum + (chip.listed ?? chip.count), 0)
+			: undefined;
+	// Chip buttons by group, so "Show all" can hand focus to the chip it pressed.
+	const chipButtons = new Map<string, HTMLButtonElement>();
+	const showAll = (group: string) => {
+		setFilter({ kind: group, query: filter().query });
+		queueMicrotask(() => chipButtons.get(group)?.focus());
+	};
 	const shown = createMemo(() => {
 		if (props.onFilter) return props.entries;
 		const selected = filter().kind;
@@ -102,30 +115,31 @@ export function TextDiff(props: {
 					}
 					aria-label="Filter by text or key"
 					placeholder="Filter by text or key"
+					maxlength={MAX_QUERY}
 					{...stylex.attrs(styles.search)}
 				/>
 				<div role="group" aria-label="Show" {...stylex.attrs(styles.kinds)}>
 					<KindButton
 						label="All"
 						count={all()}
+						listed={allListed()}
 						pressed={filter().kind === undefined}
 						onClick={() => setFilter({ query: filter().query })}
 					/>
-					<For each={chips()}>
+					<For each={chips()} keyed={(chip) => chip.id}>
 						{(chip) => (
 							<KindButton
-								label={chip.label}
-								count={chip.count}
-								{...(chip.listed === undefined
-									? undefined
-									: { listed: chip.listed })}
-								tone={chip.tone}
-								pressed={filter().kind === chip.id}
+								ref={(button) => chipButtons.set(chip().id, button)}
+								label={chip().label}
+								count={chip().count}
+								listed={chip().listed}
+								tone={chip().tone}
+								pressed={filter().kind === chip().id}
 								onClick={() =>
 									setFilter(
-										filter().kind === chip.id
+										filter().kind === chip().id
 											? { query: filter().query }
-											: { kind: chip.id, query: filter().query }
+											: { kind: chip().id, query: filter().query }
 									)
 								}
 							/>
@@ -165,7 +179,7 @@ export function TextDiff(props: {
 							groups={groups()}
 							open={filter().kind !== undefined}
 							overview={props.overview === true && filter().kind === undefined}
-							onShowAll={(group) => setFilter({ kind: group, query: filter().query })}
+							onShowAll={showAll}
 							{...(props.sectionLead ? { lead: props.sectionLead } : undefined)}
 						/>
 					)}
@@ -286,6 +300,7 @@ function Section(props: {
 	const shown = () => props.group.listed ?? props.group.count;
 	const folded = () => props.group.folded === true && !props.open && !unfolded();
 	const heading = () => `section-${props.group.id}`;
+	const list = () => `section-${props.group.id}-entries`;
 	return (
 		<section aria-labelledby={heading()} {...stylex.attrs(styles.section)}>
 			<header {...stylex.attrs(styles.sectionHeader)}>
@@ -307,6 +322,8 @@ function Section(props: {
 				<Show when={props.group.folded === true && !props.open}>
 					<button
 						type="button"
+						aria-label={`${folded() ? "Show" : "Hide"} ${props.group.label}`}
+						aria-controls={list()}
 						aria-expanded={folded() ? "false" : "true"}
 						onClick={() => setUnfolded(!unfolded())}
 						{...stylex.attrs(styles.moreButton, styles.sectionToggle)}
@@ -317,7 +334,11 @@ function Section(props: {
 			</header>
 			<Show when={!folded()}>
 				<Show when={props.lead}>{(lead) => lead()(props.group)}</Show>
-				<ul aria-label={props.group.label} {...stylex.attrs(styles.plainList, styles.file)}>
+				<ul
+					id={list()}
+					aria-label={props.group.label}
+					{...stylex.attrs(styles.plainList, styles.file)}
+				>
 					<For each={props.entries}>
 						{(entry) => <Entry entry={entry} tone={props.group.tone} />}
 					</For>
@@ -344,15 +365,17 @@ function countLabel(count: number, listed: number | undefined): string {
 }
 
 function KindButton(props: {
+	readonly ref?: (button: HTMLButtonElement) => void;
 	readonly label: string;
 	readonly count: number;
-	readonly listed?: number;
+	readonly listed?: number | undefined;
 	readonly tone?: TextDiffTone;
 	readonly pressed: boolean;
 	readonly onClick: () => void;
 }) {
 	return (
 		<button
+			ref={(button) => props.ref?.(button)}
 			type="button"
 			aria-pressed={props.pressed ? "true" : "false"}
 			aria-label={`${props.label}, ${countLabel(props.count, props.listed)}`}

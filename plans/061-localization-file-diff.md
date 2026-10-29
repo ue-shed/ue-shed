@@ -12,8 +12,8 @@
 
 ## Status
 
-- **State**: In progress. Phase 1 started 2026-10-30, overnight, before owner review: the owner
-  asked for a start on the UE Shed side and will decide in the morning whether it joins 0.24.0.
+- **State**: Phases 1 to 3 built and reviewed by subagents on 2026-10-30, overnight; waiting for
+  the owner's review and the call on whether it joins 0.24.0.
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: LOW. It reads two files with the parsers the localization import already uses, and
@@ -116,4 +116,55 @@ source. This plan gives it a second source: two revisions of one localization fi
 
 ## Evidence
 
-(Recorded at the end of each phase.)
+### Phases 1 to 3 (2026-10-30, overnight, before owner review)
+
+**Measured** with a release engine, on one large UE 4.27 project's German localization at two
+revisions a week apart, each file about 133,000 keys. Times are the first page; a later page or a
+new filter of the same files took 1–2 ms, reading the kept comparison.
+
+| File        | Size  | Changes | First page | Parse  | Diff   |
+| ----------- | ----- | ------- | ---------- | ------ | ------ |
+| `.po`       | 67 MB | 2,204   | 1.2 s      | 0.85 s | 0.15 s |
+| `.archive`  | 72 MB | 1,767   | 1.4 s      | 1.1 s  | 0.13 s |
+| `.manifest` | 78 MB | 2,185   | 1.8 s      | 1.5 s  | 0.13 s |
+
+Parsing both files, one thread each, is the cost; the fixture's files compare in milliseconds,
+so the STOP condition on the fixture's largest archive is not near. A project file over a second
+is a direction for later (the JSON parser is the import's), not a gate.
+
+**The `.po` week by group**, after both design reviews: 2 new keys that lost their translation,
+224 reworded sources, 328 sources with only case, punctuation or spacing changed, 453 removed,
+113 added, 19 changed translations, 533 new keys that kept their translation, 432 with only notes
+or references changed, 131,083 unchanged. Pairing repeated texts by reference turned 100 removed
+and 100 added into new keys. The rollup names the one table whose written keys became generated
+ones (302 of 303 rows) and the renamed assets behind the notes-only group.
+
+**UI reviews**, two rounds each, as the owner asked:
+
+- Design (Claude subagents, from screenshots of the running app on the fixture and the real
+  `.po`).
+    - Round 1: filters reached only the loaded page, the order was key hash, notes-only edits
+      flooded the list, a translation's fate was invisible, and small edits could not be seen.
+    - Round 2: sections should follow what happens to the translation, retouched sources should
+      split from reworded ones, repeated texts were being missed as rekeys, and changes should roll
+      up by asset.
+    - All taken.
+- Code (Muse Wonder 1.0, through T3).
+    - Round 1 found quadratic re-rendering on "Load more", a stale comparison in Reports, Windows
+      paths, entries with no fields, and kind-only accessible names.
+    - Round 2 found a debounce that outlived a file change, search capped by the overview, a failed
+      filter leaving the old list under the new chips, lost files on leaving the tab, "Load more"
+      during typing, the rollup reusing the text filter, unnamed toggles, and a file compared with
+      itself.
+    - All fixed except per-keystroke lowercasing in the component's own filter, which this view no
+      longer uses.
+
+**Checks:**
+
+- Engine tests: 12.
+- `@ue-shed/ui` text diff tests: 15.
+- Extension tests: 8.
+- The workspace contract test now serves both new methods.
+- Integration test against the engine.
+- Workbench IPC contract tests.
+- Workbench e2e `game-text-file-diff.e2e.ts` on the fixture, with no scan.

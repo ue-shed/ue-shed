@@ -367,6 +367,7 @@ fn changes_come_by_consequence_and_filters_page_over_all_of_them() -> Result<()>
         groups: vec![TextFileGroup::Reworded, TextFileGroup::Translation],
         query: String::new(),
         preview: 0,
+        asset: String::new(),
     };
     request.changes.limit = 1;
     let page = compare(&request)?;
@@ -377,6 +378,7 @@ fn changes_come_by_consequence_and_filters_page_over_all_of_them() -> Result<()>
         groups: Vec::new(),
         query: "QUITTER LE".into(),
         preview: 0,
+        asset: String::new(),
     };
     request.changes.limit = 10;
     let found = compare(&request)?;
@@ -559,6 +561,26 @@ fn a_repeated_text_pairs_by_its_reference_and_a_lost_translation_comes_first() -
     let overview = compare(&request)?;
     assert_eq!(overview.total, 2, "one of each group the text matches");
     assert_eq!((overview.listed.rekeyed, overview.listed.context), (1, 0));
+    request.filter = TextFileFilter {
+        asset: "DT_Ben_New".into(),
+        ..TextFileFilter::default()
+    };
+    let renamed = compare(&request)?;
+    assert_eq!(
+        (
+            renamed.total,
+            renamed.listed.context,
+            renamed.listed.carried
+        ),
+        (1, 1, 0),
+        "an asset filter lists exactly the rollup's asset"
+    );
+    request.filter.asset = "DT_Ben".into();
+    assert_eq!(
+        compare(&request)?.total,
+        0,
+        "the older name is not the asset"
+    );
     Ok(())
 }
 

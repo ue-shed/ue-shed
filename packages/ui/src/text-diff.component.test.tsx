@@ -196,7 +196,7 @@ it("folds a folded group's section until it is shown", () => {
 		/>
 	));
 	expect(screen.queryByRole("listitem", { name: /^Edited:/u })).toBeNull();
-	fireEvent.click(screen.getByRole("button", { name: "Show" }));
+	fireEvent.click(screen.getByRole("button", { name: "Show Notes only" }));
 	expect(screen.getByRole("listitem", { name: /^Edited:/u })).toBeTruthy();
 });
 

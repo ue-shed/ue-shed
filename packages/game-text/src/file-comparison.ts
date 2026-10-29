@@ -76,6 +76,8 @@ export const LocalizationFileComparisonRequest = Schema.Struct({
 		Schema.Struct({
 			groups: Schema.Array(LocalizationFileGroup),
 			query: Schema.String.check(Schema.isMaxLength(1000)),
+			/** Only changes from this asset, as the rollup names it. */
+			asset: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(1000))),
 			/** At most this many changes of each group, for an overview; all of them when 0. */
 			preview: Schema.optionalKey(
 				Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 50 }))

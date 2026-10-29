@@ -1440,9 +1440,14 @@ export function GameTextRoute(props: {
 				{...stylex.attrs(styles.workspace)}
 			>
 				<Show
-					when={mode() !== "compare"}
-					fallback={<GameTextFileComparison client={props.client} />}
+					when={
+						props.client.compareLocalizationFiles && props.client.chooseLocalizationFile
+					}
 				>
+					{/* Kept while hidden, so leaving the tab keeps the chosen files. */}
+					<GameTextFileComparison client={props.client} hidden={mode() !== "compare"} />
+				</Show>
+				<Show when={mode() !== "compare"}>
 					<Show
 						when={summary()}
 						fallback={

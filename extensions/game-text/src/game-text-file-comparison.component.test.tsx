@@ -8,7 +8,7 @@ import type {
 } from "@ue-shed/game-text/schema";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Effect, Layer, ManagedRuntime, Stream } from "effect";
-import { afterAll, afterEach, expect, it } from "vitest";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 import type { GameTextClientApi } from "./game-text-client.js";
 import {
 	GameTextFileComparison,
@@ -69,7 +69,8 @@ const notUsed = () => Effect.die("Not used");
 
 function client(
 	choices: string[],
-	requests: LocalizationFileComparisonRequest[]
+	requests: LocalizationFileComparisonRequest[],
+	failing: (request: LocalizationFileComparisonRequest) => boolean = () => false
 ): GameTextClientApi {
 	return {
 		focus: notUsed,
@@ -91,6 +92,13 @@ function client(
 		},
 		compareLocalizationFiles: (request) => {
 			requests.push(request);
+			if (failing(request))
+				return Effect.succeed({
+					status: "failed",
+					code: "compare_failed",
+					message: "The engine stopped.",
+					recovery: "Compare again."
+				});
 			const groups = request.filter?.groups ?? [];
 			const listed = changes.filter(
 				(change) => groups.length === 0 || groups.includes(change.group)
@@ -156,7 +164,7 @@ it("compares as soon as both files are chosen, as an overview filtered in the en
 	await user.click(within(before).getByRole("button", { name: "Choose…" }));
 	await user.click(within(after).getByRole("button", { name: "Choose…" }));
 	await user.click(screen.getByRole("button", { name: "Swap before and after" }));
-	expect(within(before).getByText("old\\de\\Game.po")).toBeTruthy();
+	expect(within(before).getByText("old/de/Game.po")).toBeTruthy();
 	const comparison = await screen.findByRole("region", { name: "File comparison" });
 	expect(within(comparison).getByRole("status").textContent).toContain(
 		"For translators: 1 lost on a new key"
@@ -174,10 +182,15 @@ it("compares as soon as both files are chosen, as an overview filtered in the en
 	);
 	expect(requests.at(-2)).toEqual({
 		files: { before: "C:/old/de/Game.po", after: "C:/new/de/Game.po" },
-		filter: { groups: [], query: "", preview: 5 },
+		filter: { groups: [], query: "", asset: "", preview: 5 },
 		changes: { offset: 0, limit: 200 }
 	});
-	expect(requests.at(-1)?.filter).toEqual({ groups: ["added"], query: "", preview: 0 });
+	expect(requests.at(-1)?.filter).toEqual({
+		groups: ["added"],
+		query: "",
+		asset: "",
+		preview: 0
+	});
 });
 
 it("will not compare files of two kinds", async () => {
@@ -199,5 +212,88 @@ it("will not compare files of two kinds", async () => {
 	expect(screen.getByRole("button", { name: "Compare again" }).hasAttribute("disabled")).toBe(
 		true
 	);
+	expect(requests).toEqual([]);
+});
+
+async function chooseBoth(api: GameTextClientApi, fakeTimers = false) {
+	const user = userEvent.setup(fakeTimers ? { advanceTimers: vi.advanceTimersByTime } : {});
+	render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<GameTextFileComparison client={api} />
+		</EffectRuntimeProvider>
+	));
+	for (const side of ["Before", "After"])
+		await user.click(
+			within(screen.getByRole("group", { name: side })).getByRole("button", {
+				name: "Choose…"
+			})
+		);
+	return user;
+}
+
+it("drops a filter still being typed when the files change, and searches every match", async () => {
+	vi.useFakeTimers({ shouldAdvanceTime: true });
+	try {
+		const requests: LocalizationFileComparisonRequest[] = [];
+		const user = await chooseBoth(client(["C:/old/Game.po", "C:/new/Game.po"], requests), true);
+		await screen.findByRole("region", { name: "File comparison" });
+		await user.type(screen.getByRole("searchbox", { name: "Filter by text or key" }), "fish");
+		await user.click(screen.getByRole("button", { name: "Swap before and after" }));
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(requests.some((request) => request.filter?.query === "fish")).toBe(false);
+		await screen.findByRole("region", { name: "File comparison" });
+		await user.type(screen.getByRole("searchbox", { name: "Filter by text or key" }), "where");
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(requests.at(-1)?.filter).toEqual({
+			groups: [],
+			query: "where",
+			asset: "",
+			preview: 0
+		});
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it("puts back the view on screen when a new filter fails", async () => {
+	const requests: LocalizationFileComparisonRequest[] = [];
+	const user = await chooseBoth(
+		client(["C:/old/Game.po", "C:/new/Game.po"], requests, (request) =>
+			(request.filter?.groups ?? []).includes("added")
+		)
+	);
+	const comparison = await screen.findByRole("region", { name: "File comparison" });
+	await user.click(within(comparison).getByRole("button", { name: "Added, 1" }));
+	await waitFor(() =>
+		expect(screen.getByRole("alert").textContent).toContain("The engine stopped.")
+	);
+	expect(
+		within(comparison).getByRole("button", { name: "Added, 1" }).getAttribute("aria-pressed")
+	).toBe("false");
+	expect(within(comparison).getAllByRole("heading", { level: 4 })).toHaveLength(3);
+});
+
+it("filters to a rollup's asset at once, exactly, and offers every asset back", async () => {
+	const requests: LocalizationFileComparisonRequest[] = [];
+	const user = await chooseBoth(client(["C:/old/Game.po", "C:/new/Game.po"], requests));
+	const comparison = await screen.findByRole("region", { name: "File comparison" });
+	await user.click(within(comparison).getByRole("button", { name: /^DT_Scott/u }));
+	expect(requests.at(-1)?.filter).toEqual({
+		groups: ["rekeyed"],
+		query: "",
+		asset: "DT_Scott",
+		preview: 0
+	});
+	expect(
+		within(comparison).getByRole("searchbox", { name: "Filter by text or key" })
+	).toHaveProperty("value", "");
+	await user.click(within(comparison).getByRole("button", { name: "Show every asset" }));
+	expect(requests.at(-1)?.filter?.asset).toBe("");
+});
+
+it("will not compare a file with itself", async () => {
+	const requests: LocalizationFileComparisonRequest[] = [];
+	await chooseBoth(client(["C:/a/Game.po", "C:/a/Game.po"], requests));
+	expect(screen.getByRole("alert").textContent).toContain("the same file");
 	expect(requests).toEqual([]);
 });

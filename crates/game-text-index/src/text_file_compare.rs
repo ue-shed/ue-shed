@@ -71,6 +71,9 @@ pub struct TextFileFilter {
     /// At most this many changes of each group, for an overview; every change when 0.
     #[serde(default)]
     pub preview: u32,
+    /// Only changes from this asset, as the rollup names it; every asset when empty.
+    #[serde(default)]
+    pub asset: String,
 }
 
 /// What a change means for the text and its translations, in the order changes are listed.
@@ -255,6 +258,8 @@ struct Compared {
     po_format: Option<String>,
     counts: TextFileCounts,
     changes: Vec<TextFileChange>,
+    /// Each change's asset, as the rollup names it.
+    places: Vec<Option<String>>,
     assets: Vec<TextFileAsset>,
     stage_seconds: BTreeMap<String, f64>,
 }
@@ -304,9 +309,13 @@ pub fn compare(request: &CompareTextFilesRequest) -> Result<TextFileComparison> 
     };
     let started = Instant::now();
     let needle = request.filter.query.trim().to_lowercase();
+    let asset = request.filter.asset.as_str();
     let matching = compared
         .changes
         .iter()
+        .zip(&compared.places)
+        .filter(|(_, place)| asset.is_empty() || place.as_deref() == Some(asset))
+        .map(|(change, _)| change)
         .filter(|change| needle.is_empty() || holds(change, &needle))
         .collect::<Vec<_>>();
     let mut listed_counts = TextFileCounts {
@@ -420,11 +429,16 @@ fn compare_files(request: &CompareTextFilesRequest) -> Result<Compared> {
     let started = Instant::now();
     let (counts, changes) = diff(&before, &after, request.options.format != Format::Manifest);
     let assets = rollup(&changes);
+    let places = changes
+        .iter()
+        .map(|change| change_asset(change).map(|(name, _)| name))
+        .collect();
     stage_seconds.insert("text_files.diff".into(), started.elapsed().as_secs_f64());
     Ok(Compared {
         po_format,
         counts,
         changes,
+        places,
         assets,
         stage_seconds,
     })
@@ -611,27 +625,31 @@ fn asset(place: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
 }
 
+/// The asset a change's reference or manifest path points at, newer side first, and its older name
+/// when the reference moved to another asset.
+fn change_asset(change: &TextFileChange) -> Option<(String, Option<String>)> {
+    let place = change.fields.iter().find(|field| {
+        field.form.is_none()
+            && matches!(
+                field.name,
+                TextFileFieldName::References | TextFileFieldName::Path
+            )
+    })?;
+    let before = place.before.as_deref().and_then(asset);
+    let after = place.after.as_deref().and_then(asset);
+    let name = after.clone().or_else(|| before.clone())?;
+    let previous = before.filter(|before| after.as_ref().is_some_and(|after| after != before));
+    Some((name, previous))
+}
+
 /// Per group, the assets most of its changes come from: where a reference or path points, and
 /// what it pointed at before when that changed.
 fn rollup(changes: &[TextFileChange]) -> Vec<TextFileAsset> {
     let mut assets = BTreeMap::<(TextFileGroup, String, Option<String>), (u32, u32)>::new();
     for change in changes {
-        let place = change.fields.iter().find(|field| {
-            field.form.is_none()
-                && matches!(
-                    field.name,
-                    TextFileFieldName::References | TextFileFieldName::Path
-                )
-        });
-        let Some(place) = place else {
+        let Some((name, previous)) = change_asset(change) else {
             continue;
         };
-        let before = place.before.as_deref().and_then(asset);
-        let after = place.after.as_deref().and_then(asset);
-        let Some(name) = after.clone().or_else(|| before.clone()) else {
-            continue;
-        };
-        let previous = before.filter(|before| after.as_ref().is_some_and(|after| after != before));
         let written = change
             .before
             .as_ref()

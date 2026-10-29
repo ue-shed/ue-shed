@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "8b4182da6802dd3d7ef91684960f8ccb2a14df40f1dba99fcc0fed6c1242862f"
+	contractHash: "abe0724a222bde861b404c37394fb1dfd37e36420e75839f0db1864cc8b6a01d"
 } as const;
 
 /**
@@ -695,7 +695,11 @@ query: string,
 /**
  * At most this many changes of each group, for an overview; every change when 0.
  */
-preview: number, };
+preview: number, 
+/**
+ * Only changes from this asset, as the rollup names it; every asset when empty.
+ */
+asset: string, };
 
 export type TextFileGroup = "rekeyed" | "reworded" | "retouched" | "removed" | "added" | "translation" | "carried" | "context";
 

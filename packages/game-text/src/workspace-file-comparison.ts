@@ -88,7 +88,8 @@ export function workspaceFileComparison(
 				filter: {
 					groups: [...(request.filter?.groups ?? [])],
 					query: request.filter?.query ?? "",
-					preview: request.filter?.preview ?? 0
+					preview: request.filter?.preview ?? 0,
+					asset: request.filter?.asset ?? ""
 				},
 				changes: request.changes
 			});

@@ -315,6 +315,25 @@ impl PackageColumns {
             _ => false,
         }
     }
+    /// The String Table entry a place defines, as `(table, key)`: an asset String Table's object
+    /// and entry, or for a `LOCTABLE_*` code place, the table ID it carries in its wrapper's
+    /// column, and its key. References name the same pair.
+    pub fn table_entry(&self, row: usize, strings: &[String], empty: u32) -> Option<(u32, u32)> {
+        let c = &self.occurrence;
+        if c[O_IDENTITY][row] != 0 || c[O_KEY][row] == empty {
+            return None;
+        }
+        match c[O_LOCATION][row] {
+            2 => Some((c[O_OBJECT][row], c[O_ROW][row])),
+            CODE_PLACE
+                if c[O_CLASS][row] != empty
+                    && code_table_macro(&strings[c[O_PROPERTY][row] as usize]) =>
+            {
+                Some((c[O_CLASS][row], c[O_KEY][row]))
+            }
+            _ => None,
+        }
+    }
     pub fn unit_id(&self, row: usize, strings: &[String], empty: u32) -> Result<String> {
         let c = &self.occurrence;
         let text = |field: usize| -> Result<&str> {
@@ -356,6 +375,12 @@ impl PackageColumns {
             self.relative_paths[self.package_row[row] as usize]
         ))
     }
+}
+
+/// Whether a code place's macro defines a String Table entry. Such a place has no wrapper; its
+/// class column holds the table ID instead.
+pub(crate) fn code_table_macro(name: &str) -> bool {
+    name.starts_with("LOCTABLE_")
 }
 
 /// Whether a place's namespace is kept as saved. Unreal strips the package marker from `FText`

@@ -147,6 +147,30 @@ impl Fixture {
     }
 
     fn packages_with_status(&mut self, rows: &[Value], status: u32) -> Result<()> {
+        self.layer(
+            "package-text.0",
+            "Content/Text/Example.uasset",
+            rows,
+            status,
+        )
+    }
+
+    /// The target's code layer: one file's code places, in the package shards' columns.
+    fn code(&mut self, file: &str, rows: &[Value]) -> Result<()> {
+        let rows = rows
+            .iter()
+            .map(|row| {
+                let mut row = row.clone();
+                row["object"] = json!(file);
+                row["location"] = json!(3);
+                row
+            })
+            .collect::<Vec<_>>();
+        let name = crate::package_text_contract::code_layer("Game");
+        self.layer(&name, file, &rows, 0)
+    }
+
+    fn layer(&mut self, name: &str, path: &str, rows: &[Value], status: u32) -> Result<()> {
         let mut columns = Vec::new();
         for field in OCCURRENCE_FIELDS {
             let values = if [
@@ -193,11 +217,7 @@ impl Fixture {
                 values,
             ));
         }
-        columns.push((
-            "package.path".into(),
-            "source".into(),
-            self.ids(&["Content/Text/Example.uasset"])?,
-        ));
+        columns.push(("package.path".into(), "source".into(), self.ids(&[path])?));
         columns.push(("package.status".into(), String::new(), vec![status]));
         columns.push((
             "package.occurrence_start".into(),
@@ -212,7 +232,7 @@ impl Fixture {
         }
         columns.push(("gap.reason".into(), String::new(), vec![]));
         self.store()?.publish_global(
-            "package-text.0",
+            name,
             &format!("test:packages:{}", crate::store::token()),
             &columns,
             b"",
@@ -1425,6 +1445,64 @@ fn missing_table_entry_retains_unknown_without_claiming_an_unavailable_namespace
             assert_eq!(mark["state"], "unknown");
             assert_eq!(mark["unknownReasons"], json!([reason]));
         }
+    }
+    Ok(())
+}
+
+#[test]
+fn asset_text_uses_a_string_table_its_code_defines() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    // Unreal gathers a code entry under its table's namespace; assets name the table by its ID.
+    let entry = json!({"namespace":"Game.MenuTable","key":"Start","source":"Start game","path":"Source/Game/Menu.cpp(12)"});
+    fixture.file("Game.manifest", "manifest", std::slice::from_ref(&entry))?;
+    fixture.file("en.archive", "archive", &[json!({"namespace":"Game.MenuTable","key":"Start","source":"Start game","translation":"Start game"})])?;
+    fixture.file("de.archive", "archive", &[json!({"namespace":"Game.MenuTable","key":"Start","source":"Start game","translation":"Spiel starten"})])?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    fixture.packages(&[
+        json!({"source":"Start game","namespace":"Game.Menu","key":"Start","object":"/Game/Text/Example.Example","property":"Button","identity":1}),
+        json!({"source":"","namespace":"Game.Menu","key":"Absent","object":"/Game/Text/Example.Example","property":"Missing","identity":1}),
+    ])?;
+    fixture.code(
+        "Source/Game/Menu.cpp",
+        &[
+            json!({"source":"Start game","namespace":"Game.MenuTable","key":"Start","property":"LOCTABLE_SETSTRING","class":"Game.Menu","row":"12"}),
+            // A wrapper sits in the same column, and never makes a table.
+            json!({"source":"Quit","namespace":"Game","key":"Quit","property":"LOCTEXT","class":"Start","row":"14"}),
+        ],
+    )?;
+    let lines = fixture.lines()?;
+    let line = lines
+        .iter()
+        .find(|line| line["identity"]["key"] == "Start")
+        .ok_or("expected the table entry's line")?;
+    assert_eq!(line["identity"]["namespace"], "Game.MenuTable");
+    let units = line["origin"]["unitIds"].as_array().ok_or("line units")?;
+    assert!(
+        units.contains(&json!("string-table:Game.Menu:Start")),
+        "the asset's reference joins the code entry's line: {units:?}"
+    );
+    let german = line["cultures"]
+        .as_array()
+        .ok_or("culture marks")?
+        .iter()
+        .find(|mark| mark["culture"] == "de")
+        .ok_or("German mark")?;
+    assert_eq!(german["state"], "translated");
+    // A key the code table lacks is a missing entry, not an unknown table.
+    let missing = lines
+        .iter()
+        .find(|line| {
+            line["origin"]["unitIds"]
+                .as_array()
+                .is_some_and(|units| units.contains(&json!("string-table:Game.Menu:Absent")))
+        })
+        .ok_or("expected the missing reference")?;
+    for mark in missing["cultures"].as_array().ok_or("culture marks")? {
+        assert_eq!(
+            mark["unknownReasons"],
+            json!(["string_table_entry_missing"])
+        );
     }
     Ok(())
 }

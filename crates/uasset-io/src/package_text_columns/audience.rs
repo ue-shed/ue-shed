@@ -207,6 +207,7 @@ mod tests {
                 line: Some(12),
                 macro_name: macro_name.into(),
                 wrapper: Some("GAME_LOCTEXT".into()),
+                table: None,
             },
             edit_capability: EditCapability::ReadOnly,
             gather_editor_only: Some(editor_only),

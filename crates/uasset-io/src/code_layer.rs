@@ -180,6 +180,7 @@ fn occurrence(place: &CodePlace) -> Occurrence {
             line: place.line,
             macro_name: place.macro_name.clone(),
             wrapper: place.wrapper.clone(),
+            table: place.table.clone(),
         },
         // UE Shed never edits code (Plan 060, decision 8).
         edit_capability: EditCapability::ReadOnly,

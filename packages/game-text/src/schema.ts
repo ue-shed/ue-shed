@@ -94,7 +94,12 @@ export const TextLocation = Schema.Union([
 		line: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 		macro: Schema.String,
 		/** The `#define` wrapper the macro was expanded from. */
-		wrapper: Schema.optionalKey(Schema.String)
+		wrapper: Schema.optionalKey(Schema.String),
+		/**
+		 * The String Table ID a `LOCTABLE_*` entry belongs to, which an asset's text names to use
+		 * it. Such an entry has no wrapper.
+		 */
+		table: Schema.optionalKey(Schema.String)
 	})
 ]);
 export type TextLocation = Schema.Schema.Type<typeof TextLocation>;

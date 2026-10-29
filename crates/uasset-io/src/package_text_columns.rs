@@ -692,12 +692,20 @@ pub fn location(location: &TextExtractionLocation) -> (&str, &str, &str, &str, u
             object_path,
             entry_key,
         } => (object_path, "", "", entry_key, 2),
-        // The line is a number; `Columns::feed` writes it to the row column itself.
+        // The line is a number; `Columns::feed` writes it to the row column itself. A String
+        // Table entry has no wrapper, so its table ID takes the class column.
         TextExtractionLocation::CodePlace {
             file,
             macro_name,
             wrapper,
+            table,
             ..
-        } => (file, macro_name, wrapper.as_deref().unwrap_or(""), "", 3),
+        } => (
+            file,
+            macro_name,
+            wrapper.as_deref().or(table.as_deref()).unwrap_or(""),
+            "",
+            3,
+        ),
     }
 }

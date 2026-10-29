@@ -31,6 +31,9 @@ pub(crate) struct OccurrenceData {
     pub packages: Vec<u32>,
     pub files: Vec<String>,
     pub statuses: Vec<UnitStatus>,
+    /// The macros of code places that define String Table entries, whose class column holds the
+    /// table ID rather than a wrapper.
+    pub table_macros: std::collections::HashSet<u32>,
 }
 impl OccurrenceData {
     pub fn build(query: &EngineQuery, measure: &mut Measure) -> Result<Arc<Self>> {
@@ -65,6 +68,25 @@ impl OccurrenceData {
             .filter(|(_, text)| text.is_empty())
             .map(|(id, _)| id)
             .collect::<std::collections::HashSet<_>>();
+        let mut code_macros = shards
+            .iter()
+            .flat_map(|(columns, _, _)| {
+                columns["location"]
+                    .iter()
+                    .zip(columns["property"].iter())
+                    .filter(|(location, _)| **location == 3)
+                    .map(|(_, property)| *property)
+            })
+            .collect::<Vec<_>>();
+        code_macros.sort_unstable();
+        code_macros.dedup();
+        let table_macros = code_macros
+            .iter()
+            .copied()
+            .zip(query.reader.strings_batch(&code_macros)?)
+            .filter(|(_, text)| crate::join_columns::code_table_macro(text))
+            .map(|(id, _)| id)
+            .collect();
         let project = query.reader.meta["input"]["projectRoot"]
             .as_str()
             .ok_or("Missing project identity.")?
@@ -119,10 +141,20 @@ impl OccurrenceData {
             packages: packages.into_iter().flatten().collect(),
             statuses: statuses.into_iter().flatten().collect(),
             files,
+            table_macros,
         }))
     }
     pub fn value(&self, row: usize, field: &str) -> u32 {
         self.columns[field][row]
+    }
+    /// The class column's member for a code place: `table` for a String Table entry, else
+    /// `wrapper`.
+    pub fn code_class(&self, row: usize) -> &'static str {
+        if self.table_macros.contains(&self.value(row, "property")) {
+            "table"
+        } else {
+            "wrapper"
+        }
     }
     pub fn len(&self) -> usize {
         self.packages.len()
@@ -161,7 +193,7 @@ impl OccurrenceData {
                 location["line"] = json!(line);
             }
             if !text("class").is_empty() {
-                location["wrapper"] = json!(text("class"));
+                location[self.code_class(row)] = json!(text("class"));
             }
             return location;
         }
@@ -285,8 +317,8 @@ impl Arena {
         };
         let row = row as usize;
         let kind = data.value(row, "location");
-        // A code place's members (`file`, `macro`, `wrapper`) sit in the object, property and
-        // class columns. Its line is not a rule field.
+        // A code place's members (`file`, `macro`, and `wrapper` or `table`) sit in the object,
+        // property and class columns. Its line is not a rule field.
         let field = match name {
             "objectPath" if kind != 3 => "object",
             "propertyPath" if kind < 2 => "property",
@@ -295,7 +327,11 @@ impl Arena {
             "entryKey" if kind == 2 => "row",
             "file" if kind == 3 => "object",
             "macro" if kind == 3 => "property",
-            "wrapper" if kind == 3 && data.value(row, "class") != 0 => "class",
+            "wrapper" | "table"
+                if kind == 3 && data.value(row, "class") != 0 && data.code_class(row) == name =>
+            {
+                "class"
+            }
             "kind" => {
                 return self
                     .occurrences

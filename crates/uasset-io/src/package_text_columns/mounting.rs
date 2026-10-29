@@ -114,12 +114,13 @@ pub fn native_stored(
                         file,
                         macro_name,
                         wrapper,
+                        table,
                         ..
                     } => {
                         view(file);
                         view(macro_name);
-                        if let Some(wrapper) = wrapper {
-                            view(wrapper);
+                        for name in [wrapper, table].into_iter().flatten() {
+                            view(name);
                         }
                     }
                 }

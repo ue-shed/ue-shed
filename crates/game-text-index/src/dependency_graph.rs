@@ -355,12 +355,13 @@ impl Graph {
                     .entry((c[O_NS][member], c[O_KEY][member]))
                     .or_default()
                     .push(member as u32);
-            } else if c[O_LOCATION][member] == 2
-                && c[O_IDENTITY][member] == 0
-                && c[O_KEY][member] != joined.empty
+            } else if let Some((table, key)) =
+                joined
+                    .packages
+                    .table_entry(member, &joined.strings, joined.empty)
             {
-                definitions[member] = c[O_OBJECT][member];
-                definition_keys[member] = c[O_ROW][member];
+                definitions[member] = table;
+                definition_keys[member] = key;
             }
         }
         columns.insert("site.ordinal".into(), ordinal);

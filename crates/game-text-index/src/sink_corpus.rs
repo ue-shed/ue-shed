@@ -106,7 +106,7 @@ fn occurrence(value: &Value) -> Value {
         match value["location"]["kind"].as_str() {
             Some("data_table_cell") => &["kind", "objectPath", "row", "propertyPath"],
             Some("string_table_entry") => &["kind", "objectPath", "entryKey"],
-            Some("code_place") => &["kind", "file", "line", "macro", "wrapper"],
+            Some("code_place") => &["kind", "file", "line", "macro", "wrapper", "table"],
             _ => &["kind", "objectPath", "classPath", "propertyPath"],
         },
     );

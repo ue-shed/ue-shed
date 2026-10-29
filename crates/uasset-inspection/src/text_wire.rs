@@ -89,6 +89,9 @@ pub enum TextExtractionLocation {
         /// The `#define` wrapper the macro was expanded from.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         wrapper: Option<String>,
+        /// The String Table ID a `LOCTABLE_*` entry belongs to. Such an entry has no wrapper.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        table: Option<String>,
     },
 }
 

@@ -53,7 +53,10 @@ export function textContext(location: TextLocation): TextContextPresentation {
 	if (location.kind === "code_place") {
 		const file = location.file.split("/").at(-1) ?? location.file;
 		return {
-			detail: `${location.wrapper ?? location.macro} in code`,
+			detail:
+				location.table === undefined
+					? `${location.wrapper ?? location.macro} in code`
+					: `String Table ${location.table}, in code`,
 			kind: "Code",
 			title: location.line === undefined ? file : `${file}:${location.line}`
 		};

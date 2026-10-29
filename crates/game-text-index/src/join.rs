@@ -646,9 +646,8 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     let mut tables = HashMap::<(u32, u32), usize>::new();
     let mut known_tables = HashSet::new();
     for row in 0..count {
-        if c[O_LOCATION][row] == 2 && c[O_IDENTITY][row] == 0 && c[O_KEY][row] != empty {
-            known_tables.insert(c[O_OBJECT][row]);
-            let key = (c[O_OBJECT][row], c[O_ROW][row]);
+        if let Some(key) = packages.table_entry(row, &strings, empty) {
+            known_tables.insert(key.0);
             let select = tables.get(&key).is_none_or(|previous| {
                 (c[O_NS][row], c[O_KEY][row]) == (c[O_NS][*previous], c[O_KEY][*previous])
                     || locale(&unit_ids[row], &unit_ids[*previous]) != Ordering::Less

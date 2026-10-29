@@ -492,7 +492,8 @@ impl EngineQuery {
         Ok(result)
     }
 
-    /// A code place: its file, line, macro and wrapper (`TextLocation`'s `code_place`).
+    /// A code place: its file, line, macro, and wrapper or String Table (`TextLocation`'s
+    /// `code_place`).
     fn code_location(&self, occurrence: usize, file: String) -> Result<Value> {
         let line = self
             .reader
@@ -511,7 +512,12 @@ impl EngineQuery {
             );
         }
         if !wrapper.is_empty() {
-            result["wrapper"] = json!(wrapper);
+            let member = if crate::join_columns::code_table_macro(&macro_name) {
+                "table"
+            } else {
+                "wrapper"
+            };
+            result[member] = json!(wrapper);
         }
         Ok(result)
     }

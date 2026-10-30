@@ -190,7 +190,7 @@ commandlet) is still to do.
 
 **Corpus again**, the same 121 pairs with components and class defaults: read both sides median
 12 ms (95th percentile 71 ms, largest 194 ms), diff median 1.7 ms (10 ms, 29 ms), diff JSON median
-10 KB, largest 236 KB. Components changed in 4 pairs and class defaults by 52 properties in 29.
+10 KB, largest 236 KB. Components changed in 4 pairs and class defaults by 54 properties in 30.
 16 pairs still list no change; 15 are widgets whose change is in their layout, which the request
 now names.
 
@@ -243,5 +243,12 @@ marked:
 
 Not checked by the editor: class defaults. The T3D export does not include the class default
 object, so the 10 class-default changes in the sample were read against the changelists only.
+
+**Review fixes.** A value one side lacks now reads `(not set)`, apart from an empty one, so an
+empty array item added or removed is listed. The node layout filter applies to node properties
+only. A variable list, class defaults, construction script or component template one side could
+not read is not compared, rather than read as removed or added. On the corpus this listed 3 edits
+that had been hidden (two added array items with an empty class, one empty local-variable
+default); no other count moved, so the editor check stands.
 
 **Next: Phase 3**, after the owner's review: the diff on the review page through `TextDiff`.

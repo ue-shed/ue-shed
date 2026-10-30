@@ -581,8 +581,8 @@ fn components_pair_by_guid_and_list_what_changed_on_them() {
                 Some("Panel"),
                 vec![
                     "parent: Frame -> Hinge2".to_owned(),
-                    "socket:  -> HingeSocket".to_owned(),
-                    "TranslucencySortPriority:  -> 2".to_owned(),
+                    "socket: (not set) -> HingeSocket".to_owned(),
+                    "TranslucencySortPriority: (not set) -> 2".to_owned(),
                 ]
             ),
         ]
@@ -751,4 +751,153 @@ fn a_wire_into_a_pin_the_node_lost_reads_as_removed() {
         }]
     );
     assert_eq!(diff.counts.wires_removed, 1);
+}
+
+fn names(values: &[&str]) -> PropertyOutput {
+    PropertyOutput {
+        name: "Tags".to_owned(),
+        type_name: "ArrayProperty".to_owned(),
+        value: serde_json::from_value(serde_json::json!({
+            "value_kind": "array",
+            "values": values
+                .iter()
+                .map(|value| serde_json::json!({ "value_kind": "string", "value": value }))
+                .collect::<Vec<_>>()
+        }))
+        .expect("an array value"),
+    }
+}
+
+fn class_defaults(properties: Vec<PropertyOutput>) -> BlueprintSavedObject {
+    BlueprintSavedObject {
+        native_data: None,
+        object_path: "/Game/BP_Door.Default__BP_Door_C".to_owned(),
+        class_path: "/Game/BP_Door.BP_Door_C".to_owned(),
+        properties,
+    }
+}
+
+#[test]
+fn an_empty_item_added_or_removed_is_a_change() {
+    let with = |values: &[&str]| {
+        let mut blueprint = door();
+        blueprint.definition.default_object = Some(class_defaults(vec![names(values)]));
+        blueprint
+    };
+    let edit = |before: &str, after: &str| BlueprintFieldEdit {
+        field: "Tags[1]".to_owned(),
+        before: before.to_owned(),
+        after: after.to_owned(),
+    };
+    let diff = diff_blueprints(&with(&["hello"]), &with(&["hello", ""]));
+    assert_eq!(diff.defaults, vec![edit("(not set)", "")]);
+    let diff = diff_blueprints(&with(&["hello", ""]), &with(&["hello"]));
+    assert_eq!(diff.defaults, vec![edit("", "(not set)")]);
+}
+
+#[test]
+fn layout_names_are_quiet_only_on_nodes() {
+    let with = |x: i64| {
+        let mut blueprint = with_components(vec![component(
+            "Frame",
+            "C-FRAME",
+            "StaticMeshComponent",
+            &[],
+        )]);
+        blueprint.definition.default_object =
+            Some(class_defaults(vec![int_property("NodePosX", x)]));
+        if let Some(script) = &mut blueprint.definition.construction_script
+            && let Some(template) = &mut script.nodes[0].template
+        {
+            template.properties.push(int_property("NodeWidth", x));
+        }
+        blueprint
+    };
+    let diff = diff_blueprints(&with(1), &with(2));
+    assert_eq!(
+        diff.defaults,
+        vec![BlueprintFieldEdit {
+            field: "NodePosX".to_owned(),
+            before: "1".to_owned(),
+            after: "2".to_owned(),
+        }]
+    );
+    assert_eq!(diff.components.len(), 1);
+    assert_eq!(diff.components[0].edits[0].field, "NodeWidth");
+}
+
+#[test]
+fn a_definition_one_side_could_not_read_is_not_compared() {
+    let read = || {
+        let mut blueprint = with_components(vec![component(
+            "Frame",
+            "C-FRAME",
+            "StaticMeshComponent",
+            &[],
+        )]);
+        blueprint.definition.default_object = Some(class_defaults(vec![int_property("Speed", 3)]));
+        blueprint.definition.variables = Some(vec![BlueprintVariable {
+            name: Some("Locked".to_owned()),
+            guid: Some("V-LOCKED".to_owned()),
+            pin_type: Some(pin_type("bool")),
+            category: None,
+            property_flags: None,
+            default_value: None,
+            properties: Vec::new(),
+        }]);
+        blueprint
+    };
+    let unread = || {
+        let mut blueprint = read();
+        blueprint.definition.parent_class = None;
+        blueprint.definition.default_object = None;
+        blueprint.definition.variables = None;
+        blueprint.definition.construction_script = None;
+        blueprint.coverage_gaps.push(BlueprintGraphCoverageGap {
+            object_path: blueprint.object_path.clone(),
+            reason: BlueprintGraphCoverageGapReason::IncompleteDefinition,
+            detail: "Blueprint root properties were not decoded".to_owned(),
+        });
+        blueprint
+    };
+    for diff in [
+        diff_blueprints(&read(), &unread()),
+        diff_blueprints(&unread(), &read()),
+    ] {
+        assert_eq!(diff.parent_class, None);
+        assert_eq!(diff.variables, Vec::new());
+        assert_eq!(diff.components, Vec::new());
+        assert_eq!(diff.defaults, Vec::new());
+        assert_eq!(diff.total(), 0);
+    }
+
+    // A side that read in full and has no class defaults compares as empty.
+    let mut empty = read();
+    empty.definition.default_object = None;
+    assert_eq!(
+        diff_blueprints(&read(), &empty).defaults[0].after,
+        "(not set)"
+    );
+}
+
+#[test]
+fn a_component_template_one_side_could_not_read_is_not_compared() {
+    let read = || {
+        let mut frame = component("Frame", "C-FRAME", "StaticMeshComponent", &[]);
+        if let Some(template) = &mut frame.template {
+            template.properties.push(int_property("CastShadow", 1));
+        }
+        with_components(vec![frame])
+    };
+    let mut unread = read();
+    if let Some(script) = &mut unread.definition.construction_script {
+        script.nodes[0].template = None;
+        unread.coverage_gaps.push(BlueprintGraphCoverageGap {
+            object_path: script.nodes[0].object_path.clone(),
+            reason: BlueprintGraphCoverageGapReason::IncompleteDefinition,
+            detail: "component template unavailable".to_owned(),
+        });
+    }
+    assert_eq!(diff_blueprints(&read(), &unread).components, Vec::new());
+    assert_eq!(diff_blueprints(&unread, &read()).components, Vec::new());
 }

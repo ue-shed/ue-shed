@@ -8,7 +8,8 @@
 //! Moving a node, renumbering it and editor or compiler bookkeeping (comment bubbles, compiler
 //! messages, a pin's hidden flag) are not changes. Moves and renumbering are counted, so a reader
 //! can tell a tidied graph from an untouched one. A node one side could not read is neither added
-//! nor removed: it is counted as unread.
+//! nor removed: it is counted as unread. The same holds for the definition: a variable list, class
+//! defaults, construction script or component template one side could not read is not compared.
 
 use std::collections::{HashMap, HashSet};
 
@@ -17,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use crate::blueprint::{
     BlueprintComponentNode, BlueprintGraph, BlueprintGraphCoverageGapReason,
     BlueprintGraphProjection, BlueprintNode, BlueprintPin, BlueprintPinContainerType,
-    BlueprintPinDirection, BlueprintPinReference, BlueprintPinType, BlueprintVariable,
+    BlueprintPinDirection, BlueprintPinReference, BlueprintPinType, BlueprintSavedObject,
+    BlueprintVariable,
 };
 use crate::generic::PropertyOutput;
 
@@ -29,6 +31,10 @@ const LEAVES_PER_PROPERTY: usize = 6;
 
 /// The "before" of a default on a pin that had a wire.
 const WIRED: &str = "(wired)";
+
+/// A value one side does not have: a property left at its default, an array item past the end.
+/// Distinct from an empty one, so adding an empty item still shows.
+const NOT_SET: &str = "(not set)";
 
 /// `bHidden`, the first bit of a saved pin's flags. The editor hides a pin it fills in itself,
 /// such as a static function's target, whose default object it rewrites as it likes.
@@ -336,49 +342,62 @@ pub fn diff_blueprints(
         before: missing_nodes(before),
         after: missing_nodes(after),
     };
+    let incomplete = (incomplete(before), incomplete(after));
+    let root = (
+        incomplete.0.contains(before.object_path.as_str()),
+        incomplete.1.contains(after.object_path.as_str()),
+    );
+    let (old, new) = (&before.definition, &after.definition);
 
-    let before_parent = before.definition.parent_class.clone().unwrap_or_default();
-    let after_parent = after.definition.parent_class.clone().unwrap_or_default();
-    if before_parent != after_parent {
-        diff.parent_class = Some(BlueprintValueChange {
-            before: before_parent,
-            after: after_parent,
-        });
+    if let Some((before_parent, after_parent)) =
+        both(old.parent_class.as_ref(), new.parent_class.as_ref(), root)
+    {
+        let (before_parent, after_parent) = (
+            before_parent.cloned().unwrap_or_default(),
+            after_parent.cloned().unwrap_or_default(),
+        );
+        if before_parent != after_parent {
+            diff.parent_class = Some(BlueprintValueChange {
+                before: before_parent,
+                after: after_parent,
+            });
+        }
     }
-    diff.variables = diff_variables(
-        before.definition.variables.as_deref().unwrap_or_default(),
-        after.definition.variables.as_deref().unwrap_or_default(),
-    );
+    if let Some((before_variables, after_variables)) =
+        both(old.variables.as_ref(), new.variables.as_ref(), root)
+    {
+        diff.variables = diff_variables(
+            before_variables.map_or(&[], Vec::as_slice),
+            after_variables.map_or(&[], Vec::as_slice),
+        );
+    }
     diff.counts.variables_changed = count(diff.variables.len());
-    diff.components = diff_components(
-        before
-            .definition
-            .construction_script
-            .as_ref()
-            .map_or(&[], |script| &script.nodes),
-        after
-            .definition
-            .construction_script
-            .as_ref()
-            .map_or(&[], |script| &script.nodes),
-    );
+    if let Some((before_script, after_script)) = both(
+        old.construction_script.as_ref(),
+        new.construction_script.as_ref(),
+        root,
+    ) {
+        diff.components = diff_components(
+            before_script.map_or(&[], |script| &script.nodes),
+            after_script.map_or(&[], |script| &script.nodes),
+            &incomplete,
+        );
+    }
     diff.counts.components_changed = count(diff.components.len());
-    let defaults = |projection: &BlueprintGraphProjection| {
-        projection
-            .definition
-            .default_object
-            .as_ref()
-            .map(|object| object.properties.clone())
-            .unwrap_or_default()
-    };
-    diff.defaults = property_changes(&defaults(before), &defaults(after))
-        .into_iter()
-        .map(|(field, before, after)| BlueprintFieldEdit {
-            field,
-            before,
-            after,
-        })
-        .collect();
+    if let Some((before_defaults, after_defaults)) = both(
+        old.default_object.as_ref(),
+        new.default_object.as_ref(),
+        root,
+    ) {
+        diff.defaults = property_changes(saved(before_defaults), saved(after_defaults), &[])
+            .into_iter()
+            .map(|(field, before, after)| BlueprintFieldEdit {
+                field,
+                before,
+                after,
+            })
+            .collect();
+    }
     diff.counts.defaults_changed = count(diff.defaults.len());
 
     let pairs = pair_graphs(&before.graphs, &after.graphs);
@@ -426,6 +445,28 @@ pub fn diff_blueprints(
 struct Unread {
     before: HashSet<String>,
     after: HashSet<String>,
+}
+
+/// The objects whose part of the definition one side could not read in full. A section or component
+/// template a side lacks is empty when its owner read in full; when it did not, it is unread.
+fn incomplete(projection: &BlueprintGraphProjection) -> HashSet<&str> {
+    projection
+        .coverage_gaps
+        .iter()
+        .filter(|gap| gap.reason == BlueprintGraphCoverageGapReason::IncompleteDefinition)
+        .map(|gap| gap.object_path.as_str())
+        .collect()
+}
+
+/// Both sides of a definition section to compare, or `None` when a side lacks it because its
+/// owner was incomplete, so an unread section reads as neither removed nor added.
+fn both<'a, T>(
+    before: Option<&'a T>,
+    after: Option<&'a T>,
+    (before_incomplete, after_incomplete): (bool, bool),
+) -> Option<(Option<&'a T>, Option<&'a T>)> {
+    let unread = (before.is_none() && before_incomplete) || (after.is_none() && after_incomplete);
+    (!unread).then_some((before, after))
 }
 
 fn missing_nodes(projection: &BlueprintGraphProjection) -> HashSet<String> {
@@ -951,7 +992,9 @@ fn node_edits(
             });
         }
     }
-    for (name, old_value, new_value) in property_changes(&before.properties, &after.properties) {
+    for (name, old_value, new_value) in
+        property_changes(&before.properties, &after.properties, QUIET_NODE_PROPERTIES)
+    {
         edits.push(BlueprintNodeEdit::Property {
             name,
             before: old_value,
@@ -961,18 +1004,19 @@ fn node_edits(
     edits
 }
 
-/// Changed node properties, leaving out layout and editor state. A struct or array compares by
-/// its leaves, named by path (`FunctionReference.MemberParent`, `Options[2]`), so a change shows
-/// the field that changed rather than the whole value; a property lists at most
-/// `LEAVES_PER_PROPERTY` of them, then how many more.
+/// Changed properties, leaving out the `quiet` ones (a node's layout and editor state). A struct or
+/// array compares by its leaves, named by path (`FunctionReference.MemberParent`, `Options[2]`),
+/// so a change shows the field that changed rather than the whole value; a property lists at most
+/// `LEAVES_PER_PROPERTY` of them, then how many more. A leaf one side lacks shows as `NOT_SET`.
 fn property_changes(
     before: &[PropertyOutput],
     after: &[PropertyOutput],
+    quiet: &[&str],
 ) -> Vec<(String, String, String)> {
     let leaves = |properties: &[PropertyOutput]| -> Vec<(String, Vec<(String, String)>)> {
         properties
             .iter()
-            .filter(|property| !QUIET_NODE_PROPERTIES.contains(&property.name.as_str()))
+            .filter(|property| !quiet.contains(&property.name.as_str()))
             .map(|property| {
                 let mut leaves = Vec::new();
                 let value = serde_json::to_value(&property.value).unwrap_or_default();
@@ -1009,9 +1053,8 @@ fn property_changes(
                 if path.ends_with(".MemberGuid") {
                     return None;
                 }
-                let previous = old_leaves.get(path).map_or("", String::as_str);
-                let value = new_leaves.get(path).map_or("", String::as_str);
-                (previous != value).then(|| (path.clone(), clip(previous), clip(value)))
+                let (previous, value) = (old_leaves.get(path), new_leaves.get(path));
+                (previous != value).then(|| (path.clone(), shown(previous), shown(value)))
             })
             .collect();
         let more = changed.len().saturating_sub(LEAVES_PER_PROPERTY);
@@ -1122,12 +1165,12 @@ fn diff_variables(
             if old != new {
                 edits.push(BlueprintFieldEdit {
                     field: field.to_owned(),
-                    before: clip(&old.unwrap_or_default()),
-                    after: clip(&new.unwrap_or_default()),
+                    before: shown(old.as_ref()),
+                    after: shown(new.as_ref()),
                 });
             }
         }
-        for (field, old, new) in property_changes(&previous.properties, &variable.properties) {
+        for (field, old, new) in property_changes(&previous.properties, &variable.properties, &[]) {
             edits.push(BlueprintFieldEdit {
                 field,
                 before: old,
@@ -1173,6 +1216,7 @@ fn node_title(node: &BlueprintNode) -> String {
 fn diff_components(
     before: &[BlueprintComponentNode],
     after: &[BlueprintComponentNode],
+    (old_incomplete, new_incomplete): &(HashSet<&str>, HashSet<&str>),
 ) -> Vec<BlueprintComponentChange> {
     let (old_parents, new_parents) = (component_parents(before), component_parents(after));
     let by_guid = unique_by(before, |node| node.guid.as_deref());
@@ -1218,8 +1262,8 @@ fn diff_components(
             ),
             (
                 "socket",
-                previous.attach_to_name.clone().unwrap_or_default(),
-                node.attach_to_name.clone().unwrap_or_default(),
+                shown(previous.attach_to_name.as_ref()),
+                shown(node.attach_to_name.as_ref()),
             ),
         ];
         for (field, old, new) in fields {
@@ -1231,18 +1275,23 @@ fn diff_components(
                 });
             }
         }
-        let template = |node: &BlueprintComponentNode| {
-            node.template
-                .as_ref()
-                .map(|template| template.properties.clone())
-                .unwrap_or_default()
-        };
-        for (field, old, new) in property_changes(&template(previous), &template(node)) {
-            edits.push(BlueprintFieldEdit {
-                field,
-                before: old,
-                after: new,
-            });
+        let templates = both(
+            previous.template.as_ref(),
+            node.template.as_ref(),
+            (
+                old_incomplete.contains(previous.object_path.as_str()),
+                new_incomplete.contains(node.object_path.as_str()),
+            ),
+        );
+        if let Some((old_template, new_template)) = templates {
+            for (field, old, new) in property_changes(saved(old_template), saved(new_template), &[])
+            {
+                edits.push(BlueprintFieldEdit {
+                    field,
+                    before: old,
+                    after: new,
+                });
+            }
         }
         let renamed = component_name(previous) != component_name(node);
         if renamed || !edits.is_empty() {
@@ -1369,6 +1418,16 @@ fn type_label(pin_type: &BlueprintPinType) -> String {
 
 fn short_name(path: &str) -> &str {
     path.rsplit(['.', ':', '/']).next().unwrap_or(path)
+}
+
+/// A saved object's properties; none when the side has no object.
+fn saved(object: Option<&BlueprintSavedObject>) -> &[PropertyOutput] {
+    object.map_or(&[], |object| &object.properties)
+}
+
+/// A value as a change shows it: clipped, or `NOT_SET` when the side has none.
+fn shown(value: Option<&String>) -> String {
+    value.map_or_else(|| NOT_SET.to_owned(), |value| clip(value))
 }
 
 fn clip(value: &str) -> String {

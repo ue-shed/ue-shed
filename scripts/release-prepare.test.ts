@@ -3,7 +3,13 @@ import test from "node:test";
 import type { SpanRecord } from "./gate-trace.ts";
 import { gateFingerprint, type ReleaseEvidence, type TreeEntry } from "./release-evidence.ts";
 import { RELEASE_GATES } from "./release-gates.ts";
-import { assertUnrealPathBudget, planGates, recordValidation } from "./release-prepare.ts";
+import {
+	assertUnrealPathBudget,
+	planGates,
+	recordValidation,
+	runLaneGates,
+	type GateRun
+} from "./release-prepare.ts";
 import {
 	formatDuration,
 	gateSteps,
@@ -173,4 +179,48 @@ test("validation never presents stale reused evidence as covering the release", 
 		validation(evidenceFor(previous)),
 		/not rerun; its evidence from `c{10}` has different inputs and does not cover this commit/
 	);
+});
+
+test("a lane stops at its first failed gate unless it keeps going", async () => {
+	const ran: string[] = [];
+	const run = async (gate: (typeof RELEASE_GATES)[number]): Promise<GateRun> => {
+		ran.push(gate.id);
+		const status = gate.id === "engine-matrix" ? "failed" : "passed";
+		return {
+			gate,
+			timing: {
+				name: gate.id,
+				command: "",
+				depth: 0,
+				startMs: 0,
+				durationMs: 0,
+				status,
+				children: []
+			},
+			result: {
+				status,
+				scope: gate.scope,
+				fingerprint: gateFingerprint(gate.scope, tree),
+				commit: "a".repeat(40),
+				finishedAt: "2026-10-30T00:00:00.000Z",
+				durationMs: 0,
+				trace: "out"
+			}
+		};
+	};
+	const unreal = RELEASE_GATES.filter((gate) => gate.lane === "unreal");
+	const stopped = await runLaneGates(unreal, run, false);
+	assert.deepEqual(ran, ["engine-matrix"]);
+	assert.deepEqual(
+		stopped.skipped.map((gate) => gate.id),
+		unreal.slice(1).map((gate) => gate.id)
+	);
+
+	ran.length = 0;
+	const kept = await runLaneGates(unreal, run, true);
+	assert.deepEqual(
+		ran,
+		unreal.map((gate) => gate.id)
+	);
+	assert.deepEqual(kept.skipped, []);
 });

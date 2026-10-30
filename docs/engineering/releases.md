@@ -94,6 +94,10 @@ passed. Unreal gates write their evidence and build output under the lane checko
 directory, whose path must stay within 85 characters so UnrealBuildTool's paths below it stay
 under Windows' 260-character limit; `--unreal-worktree <path>` moves the lane.
 
+A lane stops at its first failed gate and lists the rest as skipped: fixing the failure almost
+always changes their inputs, so their results would be stale before they were used.
+`--keep-going` runs them anyway, as it runs a gate's later steps.
+
 Each result is recorded in `out/release-evidence/<version>.json` with a fingerprint of the files its
 gate depends on. A later `release:prepare` reuses every gate whose fingerprint still matches and
 reruns only the rest; `--only <gates>` narrows the run and `--force` reruns regardless. After a

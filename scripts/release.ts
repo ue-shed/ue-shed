@@ -7,6 +7,10 @@
  *   pnpm release
  *   pnpm release --checked
  *   pnpm release --without-unreal "portable-only documentation fix"
+ *
+ * `--checked` runs no checks. On a machine with no evidence for the version, such as one that only
+ * holds the npm login, it first fetches the handoff `pnpm release:handoff` uploaded from the
+ * machine that ran the gates (see release-handoff.ts), then verifies it like local evidence.
  */
 
 import { spawnSync } from "node:child_process";
@@ -31,6 +35,7 @@ import {
 	type TreeEntry
 } from "./release-evidence.ts";
 import { RELEASE_GATES, type ReleaseGate } from "./release-gates.ts";
+import { fetchReleaseHandoff } from "./release-handoff.ts";
 import { assertCleanReleaseSource } from "./release-source.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -280,6 +285,7 @@ function verifyRelease(
 	checked: boolean
 ): Verification {
 	const tree = readTree(commit);
+	if (checked) fetchReleaseHandoff(PUBLIC_VERSION);
 	let evidence = readReleaseEvidence(PUBLIC_VERSION);
 	const releaseText = RELEASE_GATES.find((gate) => gate.id === "release-text")!;
 	// Release text is cheap and the release notes often change after the long gates, so rerun it

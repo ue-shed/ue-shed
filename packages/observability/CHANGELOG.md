@@ -1,5 +1,9 @@
 # @ue-shed/observability
 
+## 0.24.0
+
+No direct behavioral change: released to keep the suite aligned.
+
 ## 0.23.0
 
 ## 0.22.0

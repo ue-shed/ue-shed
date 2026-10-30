@@ -28,6 +28,9 @@ import {
 	writeReleaseEvidence
 } from "./release-evidence.ts";
 import { assertCleanReleaseSource } from "./release-source.ts";
+// release.ts imports this module back. Neither uses the other's bindings while it loads, so the
+// cycle resolves; a dynamic import here would wait on this module's own top-level `await main()`.
+import { releaseGateCoverage, verifyPackedRelease } from "./release.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
@@ -125,7 +128,6 @@ async function main() {
 	const commit = assertCleanReleaseSource();
 	const version = PUBLIC_VERSION;
 	// The same checks `pnpm release --checked` makes, so a handoff that would be refused is not sent.
-	const { releaseGateCoverage, verifyPackedRelease } = await import("./release.ts");
 	const evidence = readReleaseEvidence(version);
 	const { problems } = releaseGateCoverage(evidence, readTree(commit));
 	if (problems.length > 0) {

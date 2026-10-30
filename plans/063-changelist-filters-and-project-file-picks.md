@@ -16,9 +16,9 @@
 - **Priority**: P1 (Phases 1 and 2), P2 (Phases 3 to 5)
 - **Effort**: L over all five phases; Phases 1 and 2 are M each.
 - **Risk**: LOW for Phases 1 to 3, which read Perforce and the project and write only local
-  caches. MEDIUM for Phase 4, which takes facts from signed-in clients into a shared store.
+  caches. MEDIUM for Phase 5, which takes facts from signed-in clients into a shared store.
 - **Depends on**: Plan 060 (changelist reads, the revision cache), Plan 061 (`compare_text_files`),
-  the Tools Perforce core's compact store (Phase 5 only).
+  the Tools Perforce core's compact store (Phases 4 and 5).
 - **Category**: product
 - **Planned at**: `release/0.25.0`, 2026-10-30
 
@@ -136,18 +136,10 @@ the workspace's revision. So the filter's first answer needs no prints.
 - Done when: the Phase 2 hand check passes with no unknown files, and the cold cost of a page is
   recorded with its print count and bytes.
 
-### Phase 4: the shared fact store in the Tools Perforce Worker
+### Phase 4: both projects in the Worker, and digests from it
 
-- Tools: an additive `file_facts` table keyed by (MD5, size, producer version), `publishFileFacts`
-  with the checks in decision 7, and `fileFacts` for up to 500 keys. Through the existing
-  authenticated `/api/perforce/compact` route, like actor metadata.
-- UE Shed and Electroswag: look up the shared store between the local cache and production;
-  publish what was produced when signed in.
-- Done when: a second PC filters a page with no production at all; a forged fact (wrong digest, an
-  unrecorded revision, an unknown producer version, a changed payload) is rejected and the
-  conflict is recorded.
-
-### Phase 5: digests from the Worker
+The checks in decision 7 need the Worker to know each revision a fact names, so the two scopes'
+revisions come before the shared store.
 
 - Tools and Electroswag: compact inventories for ProjectCoral-MP and ManaBreak Research, kept
   current by Electroswag's `perforce sync`. Check first: `mbp-research` is `perforce sync`'s
@@ -158,9 +150,20 @@ the workspace's revision. So the filter's first answer needs no prints.
 - Done when: a page that both cover gets its file lists, digests and facts from the Worker in one
   round trip each, and changelists older than the Worker's window still filter.
 
+### Phase 5: the shared fact store in the Tools Perforce Worker
+
+- Tools: an additive `file_facts` table keyed by (MD5, size, producer version), `publishFileFacts`
+  with the checks in decision 7, and `fileFacts` for up to 500 keys. Through the existing
+  authenticated `/api/perforce/compact` route, like actor metadata.
+- UE Shed and Electroswag: look up the shared store between the local cache and production;
+  publish what was produced when signed in.
+- Done when: a second PC filters a page with no production at all; a forged fact (wrong digest, an
+  unrecorded revision, an unknown producer version, a changed payload) is rejected and the
+  conflict is recorded.
+
 ## STOP conditions
 
 - A fact's meaning would change for the same producer version: stop and make a new version.
 - The Worker would need to read raw `.uasset` bytes: it doesn't, by design. Stop and ask.
 - A page needs file lists in TypeScript in bulk: stop; counts only cross.
-- Phase 5's inventory work needs Perforce writes or a Tools schema change that isn't additive.
+- Phase 4's inventory work needs Perforce writes or a Tools schema change that isn't additive.

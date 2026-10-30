@@ -5781,6 +5781,634 @@
 			"required": ["schema_version", "object_path", "graphs", "definition", "coverage_gaps"],
 			"additionalProperties": false
 		},
+		"BlueprintDiffCounts": {
+			"type": "object",
+			"properties": {
+				"graphs_added": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"graphs_removed": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"graphs_changed": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"graphs_unchanged": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"nodes_added": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"nodes_removed": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"nodes_changed": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"nodes_unchanged": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"nodes_moved": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"nodes_renumbered": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"nodes_unread": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"wires_added": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"wires_removed": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"wires_rewired": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"variables_changed": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"components_changed": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"defaults_changed": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				}
+			},
+			"required": [
+				"graphs_added",
+				"graphs_removed",
+				"graphs_changed",
+				"graphs_unchanged",
+				"nodes_added",
+				"nodes_removed",
+				"nodes_changed",
+				"nodes_unchanged",
+				"nodes_moved",
+				"nodes_renumbered",
+				"nodes_unread",
+				"wires_added",
+				"wires_removed",
+				"wires_rewired",
+				"variables_changed",
+				"components_changed",
+				"defaults_changed"
+			],
+			"additionalProperties": false
+		},
+		"BlueprintValueChange": {
+			"type": "object",
+			"properties": {
+				"before": {
+					"type": "string"
+				},
+				"after": {
+					"type": "string"
+				}
+			},
+			"required": ["before", "after"],
+			"additionalProperties": false
+		},
+		"BlueprintFieldEdit": {
+			"type": "object",
+			"properties": {
+				"field": {
+					"type": "string"
+				},
+				"before": {
+					"type": "string"
+				},
+				"after": {
+					"type": "string"
+				}
+			},
+			"required": ["field", "before", "after"],
+			"additionalProperties": false
+		},
+		"BlueprintVariableChange": {
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["added", "removed", "changed"]
+				},
+				"name": {
+					"type": "string"
+				},
+				"previous_name": {
+					"type": "string"
+				},
+				"edits": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintFieldEdit"
+					}
+				}
+			},
+			"required": ["status", "name", "edits"],
+			"additionalProperties": false
+		},
+		"BlueprintComponentChange": {
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["added", "removed", "changed"]
+				},
+				"name": {
+					"type": "string"
+				},
+				"previous_name": {
+					"type": "string"
+				},
+				"class": {
+					"type": "string"
+				},
+				"edits": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintFieldEdit"
+					}
+				}
+			},
+			"required": ["status", "name", "class", "edits"],
+			"additionalProperties": false
+		},
+		"BlueprintNodeLabel": {
+			"type": "object",
+			"properties": {
+				"title": {
+					"type": "string"
+				},
+				"class": {
+					"type": "string"
+				},
+				"object_path": {
+					"type": "string"
+				}
+			},
+			"required": ["title", "class", "object_path"],
+			"additionalProperties": false
+		},
+		"BlueprintNodeEdit": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["pin_added"]
+						},
+						"pin": {
+							"type": "string"
+						},
+						"direction": {
+							"type": "string",
+							"enum": ["input", "output"]
+						},
+						"pin_type": {
+							"type": "string"
+						}
+					},
+					"required": ["kind", "pin", "direction", "pin_type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["pin_removed"]
+						},
+						"pin": {
+							"type": "string"
+						},
+						"direction": {
+							"type": "string",
+							"enum": ["input", "output"]
+						},
+						"pin_type": {
+							"type": "string"
+						}
+					},
+					"required": ["kind", "pin", "direction", "pin_type"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["pin_default"]
+						},
+						"pin": {
+							"type": "string"
+						},
+						"before": {
+							"type": "string"
+						},
+						"after": {
+							"type": "string"
+						}
+					},
+					"required": ["kind", "pin", "before", "after"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["pin_type"]
+						},
+						"pin": {
+							"type": "string"
+						},
+						"before": {
+							"type": "string"
+						},
+						"after": {
+							"type": "string"
+						}
+					},
+					"required": ["kind", "pin", "before", "after"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["property"]
+						},
+						"name": {
+							"type": "string"
+						},
+						"before": {
+							"type": "string"
+						},
+						"after": {
+							"type": "string"
+						}
+					},
+					"required": ["kind", "name", "before", "after"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"BlueprintEndpoint": {
+			"type": "object",
+			"properties": {
+				"node": {
+					"type": "string"
+				},
+				"pin": {
+					"type": "string"
+				}
+			},
+			"required": ["node", "pin"],
+			"additionalProperties": false
+		},
+		"BlueprintNodeChange": {
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["added", "removed", "changed"]
+				},
+				"node": {
+					"$ref": "#/$defs/BlueprintNodeLabel"
+				},
+				"previous": {
+					"$ref": "#/$defs/BlueprintNodeLabel"
+				},
+				"edits": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintNodeEdit"
+					}
+				},
+				"wires": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"pin": {
+								"type": "string"
+							},
+							"other": {
+								"$ref": "#/$defs/BlueprintEndpoint"
+							}
+						},
+						"required": ["pin", "other"],
+						"additionalProperties": false
+					}
+				}
+			},
+			"required": ["status", "node", "edits", "wires"],
+			"additionalProperties": false
+		},
+		"BlueprintWireChange": {
+			"type": "object",
+			"properties": {
+				"status": {
+					"type": "string",
+					"enum": ["added", "removed", "changed"]
+				},
+				"from": {
+					"$ref": "#/$defs/BlueprintEndpoint"
+				},
+				"to": {
+					"$ref": "#/$defs/BlueprintEndpoint"
+				},
+				"previous": {
+					"type": "object",
+					"properties": {
+						"end": {
+							"type": "string",
+							"enum": ["from", "to"]
+						},
+						"endpoint": {
+							"$ref": "#/$defs/BlueprintEndpoint"
+						}
+					},
+					"required": ["end", "endpoint"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["status", "from", "to"],
+			"additionalProperties": false
+		},
+		"BlueprintGraphDiff": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"previous_name": {
+					"type": "string"
+				},
+				"status": {
+					"type": "string",
+					"enum": ["added", "removed", "changed"]
+				},
+				"nodes": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintNodeChange"
+					}
+				},
+				"wires": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintWireChange"
+					}
+				}
+			},
+			"required": ["name", "status", "nodes", "wires"],
+			"additionalProperties": false
+		},
+		"BlueprintDiffPage": {
+			"type": "object",
+			"properties": {
+				"counts": {
+					"$ref": "#/$defs/BlueprintDiffCounts"
+				},
+				"parent_class": {
+					"$ref": "#/$defs/BlueprintValueChange"
+				},
+				"total": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"offset": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 0
+						}
+					]
+				},
+				"variables": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintVariableChange"
+					}
+				},
+				"components": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintComponentChange"
+					}
+				},
+				"defaults": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintFieldEdit"
+					}
+				},
+				"graphs": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/BlueprintGraphDiff"
+					}
+				}
+			},
+			"required": [
+				"counts",
+				"total",
+				"offset",
+				"variables",
+				"components",
+				"defaults",
+				"graphs"
+			],
+			"additionalProperties": false
+		},
+		"BlueprintComparison": {
+			"type": "object",
+			"properties": {
+				"page": {
+					"$ref": "#/$defs/BlueprintDiffPage"
+				},
+				"partial": {
+					"type": "object",
+					"properties": {
+						"before": {
+							"type": "boolean"
+						},
+						"after": {
+							"type": "boolean"
+						}
+					},
+					"required": ["before", "after"],
+					"additionalProperties": false
+				},
+				"not_compared": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": ["widget_layout", "widget_animations", "timelines"]
+					}
+				},
+				"stage_seconds": {
+					"type": "object",
+					"properties": {
+						"read": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"project": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						},
+						"diff": {
+							"anyOf": [
+								{
+									"type": "number"
+								},
+								{
+									"type": "string",
+									"enum": ["NaN"]
+								},
+								{
+									"type": "string",
+									"enum": ["Infinity"]
+								},
+								{
+									"type": "string",
+									"enum": ["-Infinity"]
+								}
+							]
+						}
+					},
+					"required": ["read", "project", "diff"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["page", "partial", "not_compared", "stage_seconds"],
+			"additionalProperties": false
+		},
 		"SequenceRate": {
 			"type": "object",
 			"properties": {
@@ -10744,6 +11372,20 @@
 				{
 					"type": "object",
 					"properties": {
+						"comparison": {
+							"$ref": "#/$defs/BlueprintComparison"
+						},
+						"kind": {
+							"type": "string",
+							"enum": ["blueprint_comparison"]
+						}
+					},
+					"required": ["comparison", "kind"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
 						"sequence": {
 							"$ref": "#/$defs/LevelSequenceProjection"
 						},
@@ -10969,6 +11611,7 @@
 								"game_text_index",
 								"inspect",
 								"blueprint",
+								"compare_blueprints",
 								"level_sequence",
 								"authoring",
 								"scan",

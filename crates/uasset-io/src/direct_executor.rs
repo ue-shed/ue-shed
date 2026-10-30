@@ -34,7 +34,7 @@ use crate::protocol_result::{
     SavedAssetScanEntry, SavedAssetScanSummary,
 };
 
-pub(crate) use blueprint::blueprint_with_cancellation;
+pub(crate) use blueprint::{blueprint_with_cancellation, compare_blueprints_with_cancellation};
 pub(crate) use project_index::RefreshProgress;
 pub(crate) use project_index_io::gathered;
 pub(crate) use project_index_io::{

@@ -1,0 +1,83 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 21
+		}
+	},
+	"kind": "result",
+	"requestId": "compare-blueprints-001",
+	"sequence": 1,
+	"result": {
+		"kind": "blueprint_comparison",
+		"comparison": {
+			"page": {
+				"counts": {
+					"graphs_added": 2,
+					"graphs_removed": 0,
+					"graphs_changed": 0,
+					"graphs_unchanged": 0,
+					"nodes_added": 6,
+					"nodes_removed": 0,
+					"nodes_changed": 0,
+					"nodes_unchanged": 0,
+					"nodes_moved": 0,
+					"nodes_renumbered": 0,
+					"nodes_unread": 0,
+					"wires_added": 0,
+					"wires_removed": 0,
+					"wires_rewired": 0,
+					"variables_changed": 0,
+					"components_changed": 1,
+					"defaults_changed": 0
+				},
+				"parent_class": {
+					"before": "",
+					"after": "/Script/Engine.Actor"
+				},
+				"total": 7,
+				"offset": 0,
+				"variables": [],
+				"components": [
+					{
+						"status": "added",
+						"name": "DefaultSceneRoot",
+						"class": "SceneComponent",
+						"edits": []
+					}
+				],
+				"defaults": [],
+				"graphs": [
+					{
+						"name": "EventGraph",
+						"status": "added",
+						"nodes": [
+							{
+								"status": "added",
+								"node": {
+									"title": "ReceiveBeginPlay",
+									"class": "K2Node_Event",
+									"object_path": "/Game/Fixture/Blueprints/BP_GraphFixture.BP_GraphFixture.EventGraph.K2Node_Event_0"
+								},
+								"edits": [],
+								"wires": []
+							}
+						],
+						"wires": []
+					}
+				]
+			},
+			"partial": {
+				"before": false,
+				"after": false
+			},
+			"not_compared": [],
+			"stage_seconds": {
+				"read": 0.0002,
+				"project": 0.0065,
+				"diff": 0.0002
+			}
+		}
+	}
+}

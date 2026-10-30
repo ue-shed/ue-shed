@@ -455,6 +455,7 @@ fn operation_kind(operation: &Operation) -> &'static str {
         Operation::Inspect { .. } => "inspect",
         Operation::Blueprint { .. } => "blueprint",
         Operation::LevelSequence { .. } => "level_sequence",
+        Operation::CompareBlueprints { .. } => "compare_blueprints",
         Operation::Authoring { .. } => "authoring",
         Operation::Scan { .. } => "scan",
         Operation::ExtractText { .. } => "extract_text",
@@ -480,6 +481,7 @@ fn execute_direct(
             &request.operation,
             Operation::Inspect { .. }
                 | Operation::Blueprint { .. }
+                | Operation::CompareBlueprints { .. }
                 | Operation::LevelSequence { .. }
                 | Operation::Authoring { .. }
                 | Operation::ProjectIndexQuery { .. }
@@ -490,7 +492,7 @@ fn execute_direct(
     {
         return Err(Failure::new(
             "unsupported_session_operation",
-            "protocol-session accepts inspect, blueprint, authoring, and project index query/count/status operations",
+            "protocol-session accepts inspect, blueprint, compare_blueprints, authoring, and project index query/count/status operations",
             false,
         ));
     }
@@ -596,6 +598,31 @@ fn execute_direct(
                 },
             )?;
             Ok(output.partial)
+        }
+        Operation::CompareBlueprints {
+            before,
+            after,
+            offset,
+            limit,
+        } => {
+            let output = direct_executor::compare_blueprints_with_cancellation(
+                before.as_deref(),
+                after.as_deref(),
+                *offset,
+                *limit,
+                cancellation,
+            )?;
+            for diagnostic in &output.diagnostics {
+                emit_diagnostic(emitter, diagnostic)?;
+            }
+            let partial = output.comparison.partial.before || output.comparison.partial.after;
+            emit_typed_result(
+                emitter,
+                &ResultFrame::BlueprintComparison {
+                    comparison: output.comparison,
+                },
+            )?;
+            Ok(partial)
         }
         Operation::LevelSequence { asset_path } => {
             let output =

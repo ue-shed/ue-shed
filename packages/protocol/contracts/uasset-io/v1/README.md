@@ -194,6 +194,19 @@ From 1.20 the engine's `capabilities` outcome also carries `contract`: the engin
 the `contractHash` of its Rust-owned contract. A host compares them once, on a session's first
 call, refuses a different contract and then trusts the session's messages.
 
+Minor version 1.21 adds `compare_blueprints`, in `protocol` and `protocol-session`. Its request
+names a `before` and an `after` saved Blueprint file (either may be absent for an asset a change
+adds or deletes; a request that names neither is rejected), an `offset` and a `limit` of 1 to
+1,000 entries. The `blueprint_comparison` result carries one page of the native graph diff: the
+whole diff's counts and parent class, then up to `limit` entries from `offset` (variables,
+components, class defaults, then each changed graph's nodes and wires, a graph renamed and
+nothing else being one entry), with `total` counting them all. It also says which sides read in
+part (the outcome is then partial), what either file holds that the diff does not read
+(`widget_layout`, `widget_animations`, `timelines`), and the seconds spent reading, projecting and
+comparing. Graphs, nodes, pins, variables and components pair by saved identity, so moved and
+renumbered nodes are counted rather than listed. Older workers reject the operation before
+acceptance.
+
 ### Active package input budget
 
 `limits.maximumInFlightPackageBytes` is an optional positive integer byte limit for text and

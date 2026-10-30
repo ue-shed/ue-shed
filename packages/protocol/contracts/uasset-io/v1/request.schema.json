@@ -510,6 +510,36 @@
 				}
 			]
 		},
+		"UAssetIoBlueprintComparisonContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 21
+								}
+							]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
 		"UAssetIoPackageTextStagingContract": {
 			"type": "object",
 			"properties": {
@@ -3863,6 +3893,53 @@
 									"additionalProperties": false
 								}
 							]
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
+							"$ref": "#/$defs/UAssetIoBlueprintComparisonContract"
+						},
+						"operation": {
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["compare_blueprints"]
+								},
+								"before": {
+									"$ref": "#/$defs/UAssetIoNonEmptyString"
+								},
+								"after": {
+									"$ref": "#/$defs/UAssetIoNonEmptyString"
+								},
+								"offset": {
+									"$ref": "#/$defs/UAssetIoNonNegativeInt"
+								},
+								"limit": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 1
+										},
+										{
+											"maximum": 1000
+										}
+									]
+								}
+							},
+							"required": ["kind", "offset", "limit"],
+							"additionalProperties": false
 						}
 					},
 					"required": ["limits", "requestId", "contract", "operation"],

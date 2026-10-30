@@ -1,0 +1,20 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 21
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"after": "C:/project/Content/BP_Example.uasset",
+		"kind": "compare_blueprints",
+		"limit": 2,
+		"offset": 0
+	},
+	"requestId": "compare-blueprints-001"
+}

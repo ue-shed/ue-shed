@@ -13,6 +13,7 @@ import {
 } from "./game-text-index.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
 import { AuthoringTableSnapshot } from "./authoring.js";
+import { BlueprintComparison } from "./blueprint-diff.js";
 import { BlueprintGraphProjection } from "./blueprint-graph.js";
 import { LevelSequenceProjection } from "./level-sequence.js";
 import { SavedWorld } from "./saved-world.js";
@@ -439,6 +440,18 @@ const ExistingOperation = Schema.Union([
 		query: UAssetIoProjectIndexQuery
 	})
 ]);
+/**
+ * v1.21: two saved revisions of one Blueprint compared, and up to `limit` (at most 1,000) of the
+ * diff's entries from `offset`. A side is absent for an asset the change adds or deletes; the
+ * worker rejects a request that names neither.
+ */
+const CompareBlueprintsOperation = Schema.Struct({
+	kind: Schema.Literal("compare_blueprints"),
+	before: Schema.optionalKey(NonEmptyString),
+	after: Schema.optionalKey(NonEmptyString),
+	offset: NonNegativeInt,
+	limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 }))
+});
 const GameTextIndexOperation = Schema.Struct({
 	kind: Schema.Literal("game_text_index"),
 	request: GameTextIndexBuildRequest
@@ -450,6 +463,7 @@ const GameTextIndexOperation = Schema.Struct({
 export const UAssetIoOperation = Schema.Union([
 	GameTextIndexOperation,
 	...ExistingOperation.members,
+	CompareBlueprintsOperation,
 	StagedPackageTextOperation,
 	SnapshotPackageTextOperation,
 	PackageTextOperation
@@ -507,6 +521,18 @@ export const UAssetIoRequest = Schema.Union([
 			Schema.fieldsAssign({
 				version: Schema.Struct({
 					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(21))
+				})
+			})
+		).annotate({ identifier: "UAssetIoBlueprintComparisonContract" }),
+		operation: CompareBlueprintsOperation
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
 					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(20))
 				})
 			})
@@ -544,6 +570,7 @@ const UAssetIoOperationKind = Schema.Literals([
 	"game_text_index",
 	"inspect",
 	"blueprint",
+	"compare_blueprints",
 	"level_sequence",
 	"authoring",
 	"scan",
@@ -569,6 +596,11 @@ export const UAssetIoResult = Schema.Union([
 	}),
 	Schema.Struct({ inspection: SavedAssetInspection, kind: Schema.Literal("inspect") }),
 	Schema.Struct({ blueprint: BlueprintGraphProjection, kind: Schema.Literal("blueprint") }),
+	/** v1.21: one page of a Blueprint comparison. */
+	Schema.Struct({
+		comparison: BlueprintComparison,
+		kind: Schema.Literal("blueprint_comparison")
+	}),
 	Schema.Struct({ sequence: LevelSequenceProjection, kind: Schema.Literal("level_sequence") }),
 	Schema.Struct({ kind: Schema.Literal("authoring"), snapshot: AuthoringTableSnapshot }),
 	Schema.Struct({ entry: SavedAssetScanEntry, kind: Schema.Literal("scan_asset") }),

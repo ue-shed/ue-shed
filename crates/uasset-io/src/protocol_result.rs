@@ -28,6 +28,9 @@ pub enum ResultFrame {
     LevelSequence {
         sequence: uasset_inspection::level_sequence::LevelSequenceProjection,
     },
+    /// v1.21: one page of a Blueprint comparison.
+    #[serde(rename = "blueprint_comparison")]
+    BlueprintComparison { comparison: BlueprintComparison },
     #[serde(rename = "authoring")]
     Authoring { snapshot: AuthoringTableSnapshot },
     #[serde(rename = "scan_asset")]
@@ -598,4 +601,33 @@ mod package_text_tests {
         assert_eq!(record.gap_counts.property_decoder_rejected, 2);
         assert_eq!(record.text_gap_counts, previous_text_counts);
     }
+}
+
+/// One page of what a change did to a Blueprint, and what the comparison could not see.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BlueprintComparison {
+    pub page: uasset_inspection::blueprint_diff::BlueprintDiffPage,
+    /// Sides some of whose graphs or definition could not be read; the page leaves those parts out.
+    pub partial: BlueprintComparisonSides,
+    /// What either side holds that the comparison does not read: `widget_layout`,
+    /// `widget_animations` or `timelines`.
+    pub not_compared: Vec<String>,
+    /// Seconds spent reading both files, projecting their graphs and comparing them.
+    pub stage_seconds: BlueprintComparisonStages,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BlueprintComparisonSides {
+    pub before: bool,
+    pub after: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BlueprintComparisonStages {
+    pub read: f64,
+    pub project: f64,
+    pub diff: f64,
 }

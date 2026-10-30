@@ -15,9 +15,9 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::blueprint::{
-    BlueprintGraph, BlueprintGraphCoverageGapReason, BlueprintGraphProjection, BlueprintNode,
-    BlueprintPin, BlueprintPinContainerType, BlueprintPinDirection, BlueprintPinReference,
-    BlueprintPinType, BlueprintVariable,
+    BlueprintComponentNode, BlueprintGraph, BlueprintGraphCoverageGapReason,
+    BlueprintGraphProjection, BlueprintNode, BlueprintPin, BlueprintPinContainerType,
+    BlueprintPinDirection, BlueprintPinReference, BlueprintPinType, BlueprintVariable,
 };
 use crate::generic::PropertyOutput;
 
@@ -29,6 +29,14 @@ const LEAVES_PER_PROPERTY: usize = 6;
 
 /// The "before" of a default on a pin that had a wire.
 const WIRED: &str = "(wired)";
+
+/// `bHidden`, the first bit of a saved pin's flags. The editor hides a pin it fills in itself,
+/// such as a static function's target, whose default object it rewrites as it likes.
+const PIN_HIDDEN: u32 = 1;
+
+fn hidden(pin: &BlueprintPin) -> bool {
+    pin.flags & PIN_HIDDEN != 0
+}
 
 /// Node properties that record layout, editor state or compiler output rather than logic, or
 /// that repeat pins the diff already lists as added and removed.
@@ -58,6 +66,10 @@ pub struct BlueprintDiff {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_class: Option<BlueprintValueChange>,
     pub variables: Vec<BlueprintVariableChange>,
+    /// Components the Blueprint adds, by the after side's order, then removed ones.
+    pub components: Vec<BlueprintComponentChange>,
+    /// Changed class defaults, by property path.
+    pub defaults: Vec<BlueprintFieldEdit>,
     /// Graphs with at least one change: the after side's order, then removed graphs.
     pub graphs: Vec<BlueprintGraphDiff>,
 }
@@ -83,6 +95,8 @@ pub struct BlueprintDiffCounts {
     pub wires_removed: u32,
     pub wires_rewired: u32,
     pub variables_changed: u32,
+    pub components_changed: u32,
+    pub defaults_changed: u32,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -204,15 +218,111 @@ pub struct BlueprintVariableChange {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previous_name: Option<String>,
-    pub edits: Vec<BlueprintVariableEdit>,
+    pub edits: Vec<BlueprintFieldEdit>,
 }
 
+/// A component the Blueprint's construction script adds, as a change names it.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BlueprintVariableEdit {
-    /// `type`, `default`, `category`, `flags` or a metadata property's name.
+pub struct BlueprintComponentChange {
+    pub status: BlueprintChangeStatus,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_name: Option<String>,
+    /// The component class's short name, such as `StaticMeshComponent`.
+    pub class: String,
+    /// What changed on a kept component: `class`, `parent`, `socket` or a template property.
+    pub edits: Vec<BlueprintFieldEdit>,
+}
+
+/// One changed field of a variable, a component or the class defaults.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BlueprintFieldEdit {
+    /// `type`, `default`, `category`, `flags`, a component's `class`, `parent` or `socket`, or a
+    /// property's path.
     pub field: String,
     pub before: String,
     pub after: String,
+}
+
+/// One page of a diff: its counts and parent class always, and up to `limit` of its entries from
+/// `offset`, in the diff's order. An entry is a variable, a component, a class default, or a node
+/// or wire of a graph; a graph with no node or wire entry (renamed only) is one entry itself.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BlueprintDiffPage {
+    pub counts: BlueprintDiffCounts,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_class: Option<BlueprintValueChange>,
+    /// Entries in the whole diff.
+    pub total: u32,
+    pub offset: u32,
+    pub variables: Vec<BlueprintVariableChange>,
+    pub components: Vec<BlueprintComponentChange>,
+    pub defaults: Vec<BlueprintFieldEdit>,
+    /// The graphs this page's entries belong to, each with only those entries.
+    pub graphs: Vec<BlueprintGraphDiff>,
+}
+
+impl BlueprintDiff {
+    /// Entries in the diff, as [`BlueprintDiff::page`] counts them.
+    #[must_use]
+    pub fn total(&self) -> usize {
+        self.variables.len()
+            + self.components.len()
+            + self.defaults.len()
+            + self
+                .graphs
+                .iter()
+                .map(|graph| (graph.nodes.len() + graph.wires.len()).max(1))
+                .sum::<usize>()
+    }
+
+    /// Up to `limit` entries from `offset`.
+    #[must_use]
+    pub fn page(&self, offset: usize, limit: usize) -> BlueprintDiffPage {
+        let end = offset.saturating_add(limit);
+        let mut at = 0;
+        // The part of the next `length` entries the page holds, as positions within them.
+        let mut window = |length: usize| {
+            let start = at;
+            at += length;
+            let from = offset.clamp(start, at) - start;
+            let to = end.clamp(start, at) - start;
+            from..to
+        };
+        let variables = self.variables[window(self.variables.len())].to_vec();
+        let components = self.components[window(self.components.len())].to_vec();
+        let defaults = self.defaults[window(self.defaults.len())].to_vec();
+        let mut graphs = Vec::new();
+        for graph in &self.graphs {
+            let nodes = graph.nodes.len();
+            let range = window((nodes + graph.wires.len()).max(1));
+            if range.is_empty() {
+                continue;
+            }
+            let wires = range.start.max(nodes) - nodes..range.end.max(nodes) - nodes;
+            graphs.push(BlueprintGraphDiff {
+                name: graph.name.clone(),
+                previous_name: graph.previous_name.clone(),
+                status: graph.status,
+                nodes: graph.nodes[range.start.min(nodes)..range.end.min(nodes)].to_vec(),
+                wires: graph
+                    .wires
+                    .get(wires)
+                    .map(<[_]>::to_vec)
+                    .unwrap_or_default(),
+            });
+        }
+        BlueprintDiffPage {
+            counts: self.counts,
+            parent_class: self.parent_class.clone(),
+            total: count(self.total()),
+            offset: count(offset),
+            variables,
+            components,
+            defaults,
+            graphs,
+        }
+    }
 }
 
 /// Compares two projections of one Blueprint.
@@ -240,6 +350,36 @@ pub fn diff_blueprints(
         after.definition.variables.as_deref().unwrap_or_default(),
     );
     diff.counts.variables_changed = count(diff.variables.len());
+    diff.components = diff_components(
+        before
+            .definition
+            .construction_script
+            .as_ref()
+            .map_or(&[], |script| &script.nodes),
+        after
+            .definition
+            .construction_script
+            .as_ref()
+            .map_or(&[], |script| &script.nodes),
+    );
+    diff.counts.components_changed = count(diff.components.len());
+    let defaults = |projection: &BlueprintGraphProjection| {
+        projection
+            .definition
+            .default_object
+            .as_ref()
+            .map(|object| object.properties.clone())
+            .unwrap_or_default()
+    };
+    diff.defaults = property_changes(&defaults(before), &defaults(after))
+        .into_iter()
+        .map(|(field, before, after)| BlueprintFieldEdit {
+            field,
+            before,
+            after,
+        })
+        .collect();
+    diff.counts.defaults_changed = count(diff.defaults.len());
 
     let pairs = pair_graphs(&before.graphs, &after.graphs);
     let mut paired_before = HashSet::new();
@@ -401,10 +541,10 @@ impl<'a> Side<'a> {
     fn endpoint(&self, reference: &BlueprintPinReference) -> BlueprintEndpoint {
         let node_path = reference.node_object_path.as_deref().unwrap_or_default();
         BlueprintEndpoint {
-            node: self.nodes.get(node_path).map_or_else(
-                || short_name(node_path).to_owned(),
-                |node| node.title.clone(),
-            ),
+            node: self
+                .nodes
+                .get(node_path)
+                .map_or_else(|| short_name(node_path).to_owned(), |node| node_title(node)),
             pin: self
                 .pins
                 .get(&(node_path, reference.pin_id.as_str()))
@@ -484,7 +624,8 @@ fn diff_graph(
             );
         }
         let edits = node_edits(previous, node, &pins);
-        let relabeled = previous.title != node.title || previous.class_path != node.class_path;
+        let relabeled =
+            node_title(previous) != node_title(node) || previous.class_path != node.class_path;
         if edits.is_empty() && !relabeled {
             counts.nodes_unchanged += 1;
             continue;
@@ -546,12 +687,16 @@ fn diff_graph(
         });
     }
 
-    // Wires between paired nodes, in after-side identity.
+    // Wires between paired nodes, in after-side identity. A pin the after side no longer has keeps
+    // its before id, which no after wire uses, so its wires read as removed.
     let translate = |reference: &BlueprintPinReference| -> Option<(String, String)> {
         let node = reference.node_object_path.as_deref()?;
         let after_node = renamed.get(node)?;
-        let pin = pin_map.get(&(node, reference.pin_id.as_str()))?;
-        Some(((*after_node).to_owned(), (*pin).to_owned()))
+        let pin = pin_map.get(&(node, reference.pin_id.as_str())).map_or_else(
+            || format!("removed:{}", reference.pin_id),
+            |pin| (*pin).to_owned(),
+        );
+        Some(((*after_node).to_owned(), pin))
     };
     let own = |reference: &BlueprintPinReference| -> Option<(String, String)> {
         let node = reference.node_object_path.as_deref()?;
@@ -741,10 +886,11 @@ fn node_edits(
     let mut edits = Vec::new();
     let paired_after: HashSet<&str> = pins.iter().map(|(pin, _)| pin.id.as_str()).collect();
     let paired_before: HashSet<&str> = pins.iter().map(|(_, pin)| pin.id.as_str()).collect();
+    // Hidden pins are the editor's: their coming and going, types and defaults are not listed.
     for pin in after
         .pins
         .iter()
-        .filter(|pin| !paired_after.contains(pin.id.as_str()))
+        .filter(|pin| !paired_after.contains(pin.id.as_str()) && !hidden(pin))
     {
         edits.push(BlueprintNodeEdit::PinAdded {
             pin: pin_name(pin),
@@ -755,7 +901,7 @@ fn node_edits(
     for pin in before
         .pins
         .iter()
-        .filter(|pin| !paired_before.contains(pin.id.as_str()))
+        .filter(|pin| !paired_before.contains(pin.id.as_str()) && !hidden(pin))
     {
         edits.push(BlueprintNodeEdit::PinRemoved {
             pin: pin_name(pin),
@@ -768,6 +914,9 @@ fn node_edits(
         let Some((_, previous)) = pins.iter().find(|(paired, _)| paired.id == pin.id) else {
             continue;
         };
+        if hidden(pin) {
+            continue;
+        }
         let (old_type, new_type) = (type_label(&previous.pin_type), type_label(&pin.pin_type));
         if !same_type(&previous.pin_type, &pin.pin_type) {
             edits.push(BlueprintNodeEdit::PinType {
@@ -779,7 +928,12 @@ fn node_edits(
         // A linked pin's default is unused: a pin that is now wired lists the wire instead. An
         // input that lost its wire shows the default that now applies, if it has one; the wire
         // it lost is listed already.
-        let (old_default, new_default) = (pin_default(previous), pin_default(pin));
+        let old_default = if hidden(previous) {
+            String::new()
+        } else {
+            pin_default(previous)
+        };
+        let new_default = pin_default(pin);
         let unwired = !previous.linked_to.is_empty()
             && pin.direction == BlueprintPinDirection::Input
             && !new_default.is_empty();
@@ -941,7 +1095,7 @@ fn diff_variables(
             .map(type_label)
             .unwrap_or_default();
         if old_type != new_type {
-            edits.push(BlueprintVariableEdit {
+            edits.push(BlueprintFieldEdit {
                 field: "type".to_owned(),
                 before: old_type,
                 after: new_type,
@@ -966,7 +1120,7 @@ fn diff_variables(
         ];
         for (field, old, new) in fields {
             if old != new {
-                edits.push(BlueprintVariableEdit {
+                edits.push(BlueprintFieldEdit {
                     field: field.to_owned(),
                     before: clip(&old.unwrap_or_default()),
                     after: clip(&new.unwrap_or_default()),
@@ -974,7 +1128,7 @@ fn diff_variables(
             }
         }
         for (field, old, new) in property_changes(&previous.properties, &variable.properties) {
-            edits.push(BlueprintVariableEdit {
+            edits.push(BlueprintFieldEdit {
                 field,
                 before: old,
                 after: new,
@@ -1003,9 +1157,154 @@ fn diff_variables(
     changes
 }
 
+/// A node's title as the editor would read it: the member it calls or reads, else its class
+/// without the `K2Node_` prefix, as the graph viewer shows it.
+fn node_title(node: &BlueprintNode) -> String {
+    let class = short_name(&node.class_path);
+    if node.title == class {
+        class.strip_prefix("K2Node_").unwrap_or(class).to_owned()
+    } else {
+        node.title.clone()
+    }
+}
+
+/// Components pair by GUID, then by variable name. A kept component lists its class, the parent
+/// it attaches to and the socket it uses if they changed, then its template's changed properties.
+fn diff_components(
+    before: &[BlueprintComponentNode],
+    after: &[BlueprintComponentNode],
+) -> Vec<BlueprintComponentChange> {
+    let (old_parents, new_parents) = (component_parents(before), component_parents(after));
+    let by_guid = unique_by(before, |node| node.guid.as_deref());
+    let by_name = unique_by(before, |node| node.variable_name.as_deref());
+    let mut taken = HashSet::new();
+    let mut changes = Vec::new();
+    for node in after {
+        let previous = [
+            node.guid.as_deref().and_then(|guid| by_guid.get(guid)),
+            node.variable_name
+                .as_deref()
+                .and_then(|variable| by_name.get(variable)),
+        ]
+        .into_iter()
+        .flatten()
+        .copied()
+        .find(|index| !taken.contains(index));
+        let Some(index) = previous else {
+            changes.push(BlueprintComponentChange {
+                status: BlueprintChangeStatus::Added,
+                name: component_name(node),
+                previous_name: None,
+                class: component_class(node),
+                edits: Vec::new(),
+            });
+            continue;
+        };
+        taken.insert(index);
+        let previous = &before[index];
+        let mut edits = Vec::new();
+        let fields = [
+            ("class", component_class(previous), component_class(node)),
+            (
+                "parent",
+                old_parents
+                    .get(&previous.object_path)
+                    .cloned()
+                    .unwrap_or_default(),
+                new_parents
+                    .get(&node.object_path)
+                    .cloned()
+                    .unwrap_or_default(),
+            ),
+            (
+                "socket",
+                previous.attach_to_name.clone().unwrap_or_default(),
+                node.attach_to_name.clone().unwrap_or_default(),
+            ),
+        ];
+        for (field, old, new) in fields {
+            if old != new {
+                edits.push(BlueprintFieldEdit {
+                    field: field.to_owned(),
+                    before: clip(&old),
+                    after: clip(&new),
+                });
+            }
+        }
+        let template = |node: &BlueprintComponentNode| {
+            node.template
+                .as_ref()
+                .map(|template| template.properties.clone())
+                .unwrap_or_default()
+        };
+        for (field, old, new) in property_changes(&template(previous), &template(node)) {
+            edits.push(BlueprintFieldEdit {
+                field,
+                before: old,
+                after: new,
+            });
+        }
+        let renamed = component_name(previous) != component_name(node);
+        if renamed || !edits.is_empty() {
+            changes.push(BlueprintComponentChange {
+                status: BlueprintChangeStatus::Changed,
+                name: component_name(node),
+                previous_name: renamed.then(|| component_name(previous)),
+                class: component_class(node),
+                edits,
+            });
+        }
+    }
+    for (index, node) in before.iter().enumerate() {
+        if !taken.contains(&index) {
+            changes.push(BlueprintComponentChange {
+                status: BlueprintChangeStatus::Removed,
+                name: component_name(node),
+                previous_name: None,
+                class: component_class(node),
+                edits: Vec::new(),
+            });
+        }
+    }
+    changes
+}
+
+fn component_name(node: &BlueprintComponentNode) -> String {
+    node.variable_name
+        .clone()
+        .unwrap_or_else(|| short_name(&node.object_path).to_owned())
+}
+
+fn component_class(node: &BlueprintComponentNode) -> String {
+    node.component_class
+        .as_deref()
+        .map(short_name)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Each component's parent, by its object path: the component whose children name it, else the
+/// inherited component a root attaches to.
+fn component_parents(nodes: &[BlueprintComponentNode]) -> HashMap<String, String> {
+    let mut parents = HashMap::new();
+    for node in nodes {
+        for child in node.children.iter().flatten() {
+            parents.insert(child.clone(), component_name(node));
+        }
+    }
+    for node in nodes {
+        if let Some(parent) = &node.parent_component_name {
+            parents
+                .entry(node.object_path.clone())
+                .or_insert_with(|| parent.clone());
+        }
+    }
+    parents
+}
+
 fn label(node: &BlueprintNode) -> BlueprintNodeLabel {
     BlueprintNodeLabel {
-        title: node.title.clone(),
+        title: node_title(node),
         class: short_name(&node.class_path).to_owned(),
         object_path: node.object_path.clone(),
     }
@@ -1044,7 +1343,7 @@ fn type_label(pin_type: &BlueprintPinType) -> String {
         .subcategory_object
         .as_deref()
         .map(short_name)
-        .filter(|name| !name.is_empty())
+        .filter(|name| !name.is_empty() && *name != "None")
         .or_else(|| (!pin_type.subcategory.is_empty()).then_some(pin_type.subcategory.as_str()))
         .unwrap_or(pin_type.category.as_str());
     let mut label = match pin_type.container_type {

@@ -1,7 +1,8 @@
 use super::*;
 use crate::blueprint::{
-    BLUEPRINT_GRAPH_SCHEMA_VERSION, BlueprintDefinition, BlueprintGraphCoverageGap, BlueprintLink,
-    BlueprintMemberReference, BlueprintNodeKind, BlueprintNodePosition,
+    BLUEPRINT_GRAPH_SCHEMA_VERSION, BlueprintConstructionScript, BlueprintDefinition,
+    BlueprintGraphCoverageGap, BlueprintLink, BlueprintMemberReference, BlueprintNodeKind,
+    BlueprintNodePosition, BlueprintSavedObject,
 };
 use crate::generic::PropertyValueOutput;
 
@@ -482,4 +483,272 @@ fn a_struct_property_names_the_field_that_changed() {
             after: "/Script/Game.GateLibrary".to_owned(),
         }]
     );
+}
+
+fn component(name: &str, guid: &str, class: &str, children: &[&str]) -> BlueprintComponentNode {
+    BlueprintComponentNode {
+        object_path: format!("/Game/BP_Door.BP_Door_C:SCS_Node_{name}"),
+        variable_name: Some(name.to_owned()),
+        guid: Some(guid.to_owned()),
+        component_class: Some(format!("/Script/Engine.{class}")),
+        template: Some(BlueprintSavedObject {
+            native_data: None,
+            object_path: format!("/Game/BP_Door.BP_Door_C:{name}_GEN_VARIABLE"),
+            class_path: format!("/Script/Engine.{class}"),
+            properties: Vec::new(),
+        }),
+        children: Some(
+            children
+                .iter()
+                .map(|child| format!("/Game/BP_Door.BP_Door_C:SCS_Node_{child}"))
+                .collect(),
+        ),
+        attach_to_name: None,
+        parent_component_name: None,
+        parent_owner_class_name: None,
+        parent_is_native: None,
+    }
+}
+
+fn with_components(nodes: Vec<BlueprintComponentNode>) -> BlueprintGraphProjection {
+    let mut blueprint = door();
+    blueprint.definition.construction_script = Some(BlueprintConstructionScript {
+        object_path: "/Game/BP_Door.BP_Door_C:SimpleConstructionScript".to_owned(),
+        root_nodes: None,
+        nodes,
+    });
+    blueprint
+}
+
+fn int_property(name: &str, value: i64) -> PropertyOutput {
+    PropertyOutput {
+        name: name.to_owned(),
+        type_name: "IntProperty".to_owned(),
+        value: PropertyValueOutput::Int { value },
+    }
+}
+
+#[test]
+fn components_pair_by_guid_and_list_what_changed_on_them() {
+    let before = with_components(vec![
+        component("Frame", "C-FRAME", "StaticMeshComponent", &["Panel"]),
+        component("Panel", "C-PANEL", "StaticMeshComponent", &[]),
+        component("Hinge", "C-HINGE", "SceneComponent", &[]),
+    ]);
+    let mut panel = component("DoorPanel", "C-PANEL", "StaticMeshComponent", &[]);
+    panel.attach_to_name = Some("HingeSocket".to_owned());
+    if let Some(template) = &mut panel.template {
+        template
+            .properties
+            .push(int_property("TranslucencySortPriority", 2));
+    }
+    let after = with_components(vec![
+        component("Frame", "C-FRAME", "StaticMeshComponent", &[]),
+        component("Light", "C-LIGHT", "PointLightComponent", &[]),
+        component("Hinge2", "C-HINGE", "SceneComponent", &["DoorPanel"]),
+        panel,
+    ]);
+    let diff = diff_blueprints(&before, &after);
+    let summary: Vec<_> = diff
+        .components
+        .iter()
+        .map(|change| {
+            (
+                change.status,
+                change.name.as_str(),
+                change.previous_name.as_deref(),
+                change
+                    .edits
+                    .iter()
+                    .map(|edit| format!("{}: {} -> {}", edit.field, edit.before, edit.after))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        vec![
+            (BlueprintChangeStatus::Added, "Light", None, vec![]),
+            (
+                BlueprintChangeStatus::Changed,
+                "Hinge2",
+                Some("Hinge"),
+                vec![]
+            ),
+            (
+                BlueprintChangeStatus::Changed,
+                "DoorPanel",
+                Some("Panel"),
+                vec![
+                    "parent: Frame -> Hinge2".to_owned(),
+                    "socket:  -> HingeSocket".to_owned(),
+                    "TranslucencySortPriority:  -> 2".to_owned(),
+                ]
+            ),
+        ]
+    );
+    assert_eq!(diff.counts.components_changed, 3);
+}
+
+#[test]
+fn a_removed_component_is_listed_and_an_unchanged_one_is_not() {
+    let before = with_components(vec![
+        component("Frame", "C-FRAME", "StaticMeshComponent", &[]),
+        component("Knocker", "C-KNOCK", "StaticMeshComponent", &[]),
+    ]);
+    let after = with_components(vec![component(
+        "Frame",
+        "C-FRAME",
+        "StaticMeshComponent",
+        &[],
+    )]);
+    let diff = diff_blueprints(&before, &after);
+    assert_eq!(diff.components.len(), 1);
+    assert_eq!(diff.components[0].status, BlueprintChangeStatus::Removed);
+    assert_eq!(diff.components[0].name, "Knocker");
+    assert_eq!(diff.components[0].class, "StaticMeshComponent");
+}
+
+#[test]
+fn class_defaults_list_each_changed_property() {
+    let defaults = |speed: i64| BlueprintSavedObject {
+        native_data: None,
+        object_path: "/Game/BP_Door.Default__BP_Door_C".to_owned(),
+        class_path: "/Game/BP_Door.BP_Door_C".to_owned(),
+        properties: vec![int_property("OpenSpeed", speed), int_property("Locks", 1)],
+    };
+    let mut before = door();
+    before.definition.default_object = Some(defaults(3));
+    let mut after = door();
+    after.definition.default_object = Some(defaults(5));
+    let diff = diff_blueprints(&before, &after);
+    assert_eq!(
+        diff.defaults,
+        vec![BlueprintFieldEdit {
+            field: "OpenSpeed".to_owned(),
+            before: "3".to_owned(),
+            after: "5".to_owned(),
+        }]
+    );
+    assert_eq!(diff.counts.defaults_changed, 1);
+}
+
+#[test]
+fn a_node_with_no_member_reads_as_its_class() {
+    let mut after = door();
+    let mut select = node("K2Node_Select_0", "G-SELECT", "K2Node_Select", vec![]);
+    select.class_path = "/Script/BlueprintGraph.K2Node_Select".to_owned();
+    after.graphs[0].nodes.push(select);
+    let diff = diff_blueprints(&door(), &after);
+    assert_eq!(diff.graphs[0].nodes[0].node.title, "Select");
+}
+
+#[test]
+fn pages_hold_entries_in_order_and_cut_inside_a_graph() {
+    let before = door();
+    let mut after = door();
+    after.definition.variables = Some(vec![BlueprintVariable {
+        name: Some("IsLocked".to_owned()),
+        guid: Some("V-LOCK".to_owned()),
+        pin_type: Some(pin_type("bool")),
+        category: None,
+        property_flags: None,
+        default_value: None,
+        properties: Vec::new(),
+    }]);
+    // Two added nodes, and a second graph that is only renamed.
+    for (name, guid) in [
+        ("K2Node_CallFunction_8", "G-A"),
+        ("K2Node_CallFunction_9", "G-B"),
+    ] {
+        after.graphs[0].nodes.push(node(
+            name,
+            guid,
+            "Delay",
+            vec![exec_in(&format!("{guid}-in"))],
+        ));
+    }
+    let mut before = before;
+    let mut renamed = before.graphs[0].clone();
+    renamed.object_path = format!("{GRAPH}2");
+    renamed.guid = Some("SECOND".to_owned());
+    renamed.name = "Open".to_owned();
+    before.graphs.push(renamed.clone());
+    renamed.name = "OpenSlowly".to_owned();
+    after.graphs.push(renamed);
+
+    let diff = diff_blueprints(&before, &after);
+    assert_eq!(diff.total(), 4);
+    let first = diff.page(0, 2);
+    assert_eq!((first.total, first.offset), (4, 0));
+    assert_eq!(first.variables.len(), 1);
+    assert_eq!(first.graphs.len(), 1);
+    assert_eq!(first.graphs[0].nodes.len(), 1);
+    assert_eq!(first.counts, diff.counts);
+
+    let second = diff.page(2, 2);
+    assert!(second.variables.is_empty());
+    assert_eq!(
+        second
+            .graphs
+            .iter()
+            .map(|graph| (graph.name.as_str(), graph.nodes.len()))
+            .collect::<Vec<_>>(),
+        vec![("EventGraph", 1), ("OpenSlowly", 0)]
+    );
+    assert_eq!(second.graphs[1].previous_name.as_deref(), Some("Open"));
+    assert!(diff.page(4, 10).graphs.is_empty());
+}
+
+#[test]
+fn a_wire_into_a_pin_the_node_lost_reads_as_removed() {
+    let speed = || {
+        node(
+            "K2Node_CallFunction_3",
+            "G-SPEED",
+            "GetSpeed",
+            vec![pin(
+                "speed-out",
+                "ReturnValue",
+                BlueprintPinDirection::Output,
+                "real",
+            )],
+        )
+    };
+    let mut before = door();
+    before.graphs[0].nodes.push(speed());
+    before.graphs[0].links.push(wire(
+        ("K2Node_CallFunction_3", "speed-out"),
+        ("K2Node_CallFunction_1", "open-speed"),
+    ));
+    let mut after = door();
+    after.graphs[0].nodes[1].pins.remove(2);
+    after.graphs[0].nodes.push(speed());
+
+    let diff = diff_blueprints(&before, &after);
+    let graph = &diff.graphs[0];
+    assert_eq!(
+        graph.nodes[0].edits,
+        vec![BlueprintNodeEdit::PinRemoved {
+            pin: "Speed".to_owned(),
+            direction: BlueprintPinDirection::Input,
+            pin_type: "real".to_owned(),
+        }]
+    );
+    assert_eq!(
+        graph.wires,
+        vec![BlueprintWireChange {
+            status: BlueprintChangeStatus::Removed,
+            from: BlueprintEndpoint {
+                node: "GetSpeed".to_owned(),
+                pin: "ReturnValue".to_owned(),
+            },
+            to: BlueprintEndpoint {
+                node: "OpenDoor".to_owned(),
+                pin: "Speed".to_owned(),
+            },
+            previous: None,
+        }]
+    );
+    assert_eq!(diff.counts.wires_removed, 1);
 }

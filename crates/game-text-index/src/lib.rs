@@ -67,6 +67,7 @@ pub mod points;
 pub mod snapshot;
 pub mod store;
 mod summary_state;
+pub mod text_file_compare;
 mod text_problem;
 mod text_trigrams;
 #[rustfmt::skip]

@@ -10,3 +10,5 @@ export * from "./effect-solid.js";
 export * from "./page-header.js";
 export * from "./saved-map-picker.js";
 export * from "./file-drop-zone.js";
+export * from "./text-diff.js";
+export * from "./text-diff-model.js";

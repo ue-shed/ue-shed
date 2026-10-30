@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.23.0",
-	contractHash: "02006c09855b4038434ea54ab32bb6256b70035c6b3244d7c80987e20d0d78fa"
+	contractHash: "0352aa50783cdcc862c11091385943ec095501a00c18346571370a396343c70b"
 } as const;
 
 /**
@@ -56,7 +56,7 @@ rules: RuleDocumentV4, collationLocale: string, } | { "action": "findings_accept
 /**
  * The v4 rule document.
  */
-rules: RuleDocumentV4, } | { "action": "code_text", request: CodeTextRequest, } | { "action": "compare_points", configuration: IndexConfiguration, request: ComparePointsRequest, };
+rules: RuleDocumentV4, } | { "action": "code_text", request: CodeTextRequest, } | { "action": "compare_points", configuration: IndexConfiguration, request: ComparePointsRequest, } | { "action": "compare_text_files", request: CompareTextFilesRequest, };
 
 export type CodeTextRequest = { projectRoot: string, 
 /**
@@ -670,6 +670,84 @@ export type PointFindings = { counts: PointFindingCounts, total: number, rows: R
 built: boolean, };
 
 export type PointComparison = { point: string, base: string, counts: PointChangeCounts, complete: boolean, total: number, changes: ReadonlyArray<PointChange>, findings?: PointFindings, stageSeconds: { [key in string]: number }, };
+
+export type CompareTextFilesRequest = { options: LocalizationOptions, before?: TextFileSide, after?: TextFileSide, filter: TextFileFilter, changes: PageRequest, };
+
+export type TextFileSide = { 
+/**
+ * The file on disk.
+ */
+file: string, 
+/**
+ * The name it is reported under, such as its depot path and revision.
+ */
+path: string, };
+
+export type TextFileFilter = { 
+/**
+ * Only these groups; every group when empty.
+ */
+groups: ReadonlyArray<TextFileGroup>, 
+/**
+ * Only changes whose key, namespace or any field holds this text, ignoring case.
+ */
+query: string, 
+/**
+ * At most this many changes of each group, for an overview; every change when 0.
+ */
+preview: number, 
+/**
+ * Only changes from this asset, as the rollup names it; every asset when empty.
+ */
+asset: string, };
+
+export type TextFileGroup = "rekeyed" | "reworded" | "retouched" | "removed" | "added" | "translation" | "carried" | "context";
+
+export type TextFileCounts = { rekeyed: number, reworded: number, retouched: number, removed: number, added: number, translation: number, carried: number, context: number, unchanged: number, };
+
+export type TextFileAsset = { group: TextFileGroup, asset: string, 
+/**
+ * The asset's name in the older file, when its entries now point at a renamed asset.
+ */
+previous?: string, count: number, 
+/**
+ * New keys among them where a key someone wrote became one Unreal generated.
+ */
+generated: number, };
+
+export type TextFileFieldName = "source" | "source_plural" | "translation" | "path" | "notes" | "comments" | "references" | "flags";
+
+export type TextFileField = { name: TextFileFieldName, 
+/**
+ * The PO plural form of a translation.
+ */
+form?: number, before?: string, after?: string, };
+
+export type TextFileKey = { namespace: string, key: string, };
+
+export type TextFileChange = { kind: PointChangeKind, group: TextFileGroup, before?: TextFileKey, after?: TextFileKey, fields: ReadonlyArray<TextFileField>, };
+
+export type TextFileComparison = { format: LocalizationFormat, 
+/**
+ * The PO dialect read from the newer side, such as "Crowdin".
+ */
+poFormat?: string, counts: TextFileCounts, 
+/**
+ * Changes per group that hold the filter's text: `counts` when there is none.
+ */
+listed: TextFileCounts, 
+/**
+ * Changes the filter lists, in all pages.
+ */
+total: number, 
+/**
+ * Per group, the assets most of its changes come from, most first.
+ */
+assets: ReadonlyArray<TextFileAsset>, changes: ReadonlyArray<TextFileChange>, 
+/**
+ * Whether the comparison was kept from the previous request for the same revisions.
+ */
+kept: boolean, stageSeconds: { [key in string]: number }, };
 
 export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
 

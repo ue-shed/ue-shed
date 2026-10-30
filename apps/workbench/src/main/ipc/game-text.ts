@@ -47,6 +47,12 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:localization:lines-file"], (request) =>
 		gameText.localizationLinesFile(request)
 	);
+	yield* ipc.register(invokeContracts["game-text:localization:choose-file"], (request) =>
+		gameText.chooseLocalizationFile(request)
+	);
+	yield* ipc.register(invokeContracts["game-text:localization:compare-files"], (request) =>
+		gameText.compareLocalizationFiles(request)
+	);
 	yield* ipc.register(invokeContracts["game-text:localization:report-file"], (request) =>
 		gameText.localizationReportFile(request)
 	);

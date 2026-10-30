@@ -1,5 +1,25 @@
 # @ue-shed/protocol
 
+## 0.24.0
+
+### Minor Changes
+
+- 177d71e: Compare two saved revisions of a Blueprint without Unreal: `compareBlueprintRevisions` returns a
+  page of the nodes, wires, variables, components and class defaults a change added, removed or
+  changed, paired by saved identity so moved and renumbered nodes are counted rather than listed.
+  It needs the native reader's uasset-io v1.21 `compare_blueprints` request, and says what it did
+  not compare, such as a widget's layout.
+- Compare two revisions of a localization file (`.po`, `.archive` or `.manifest`) without a scan. The
+  workspace's new `chooseLocalizationFile` asks the person for each side through the host's file
+  chooser, and `compareLocalizationFiles` compares only files chosen that way. The engine pairs
+  entries by identity, then by occurrence, finds rekeyed texts, and sorts each change by what it means
+  for the translations: a new key that lost its translation, changed wording, a case, punctuation or
+  spacing change only, removed, added, a changed translation, a new key that kept its translation, or
+  notes and references only. Filtering by group, text or asset and paging run in the engine, and each
+  group lists its top assets. The schemas are in `/schema`; the index steps and query gain
+  `compareTextFiles`. On a large UE 4.27 project's 67–78 MB files the first page takes 1.2–1.8 s and a
+  later page or filter 1–2 ms.
+
 ## 0.23.0
 
 ### Patch Changes

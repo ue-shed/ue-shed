@@ -395,9 +395,10 @@ struct Shared {
     live: Live,
 }
 
-/// What a request frame asks for.
+/// What a request frame asks for. A parsed request is boxed: its largest variants would size
+/// every queued frame.
 enum Work {
-    Request(Result<EngineRequest>),
+    Request(Box<Result<EngineRequest>>),
     /// A body too large to parse on the reader thread.
     Body(Vec<u8>),
     #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
@@ -410,14 +411,14 @@ impl Work {
             return Self::Probe(probe);
         }
         if body.len() <= PARSED_ON_READ {
-            Self::Request(request(&body))
+            Self::Request(Box::new(request(&body)))
         } else {
             Self::Body(body)
         }
     }
     fn class(&self) -> Class {
         match self {
-            Self::Request(Ok(request)) => Class::of(request),
+            Self::Request(parsed) => parsed.as_ref().as_ref().map_or(Class::Bulk, Class::of),
             #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
             Self::Probe(probe) => probe.class(),
             _ => Class::Bulk,
@@ -430,7 +431,7 @@ impl Work {
         reply: &mut dyn Reply,
     ) -> Result<Profile> {
         let parsed = match self {
-            Self::Request(parsed) => parsed?,
+            Self::Request(parsed) => (*parsed)?,
             Self::Body(body) => request(&body)?,
             #[cfg(any(test, debug_assertions, feature = "engine-probes"))]
             Self::Probe(probe) => return probe.run(cancelled, reply),

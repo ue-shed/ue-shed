@@ -97,6 +97,8 @@ export {
 	makeAssetReaderTestLayer,
 	readSavedAsset,
 	readSavedBlueprint,
+	compareBlueprintRevisions,
+	BLUEPRINT_COMPARISON_PAGE,
 	readSavedLevelSequence,
 	readSavedTable,
 	readSavedWorld,
@@ -109,6 +111,7 @@ export type {
 	AssetReaderConfiguration,
 	AssetReaderOptions,
 	AssetReaderProtocolObservation,
+	BlueprintComparisonOptions,
 	AssetReaderApi,
 	AssetReaderTestApi,
 	ProtocolTerminalState,
@@ -127,6 +130,9 @@ export {
 } from "./protocol-request-limit.js";
 export { resolveScanTarget, type ResolvedScanTarget } from "./scan-target.js";
 export {
+	BlueprintComparison,
+	BlueprintComparisonRead,
+	BlueprintDiffPage,
 	BlueprintGraphDiagnostic,
 	BlueprintGraphProjection,
 	BlueprintGraphRead,

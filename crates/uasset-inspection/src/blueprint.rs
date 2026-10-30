@@ -6,10 +6,10 @@
 
 mod definition;
 pub use definition::{
-    BlueprintComponentNode, BlueprintConstructionScript, BlueprintDefinition, BlueprintSavedObject,
-    BlueprintVariable,
+    BlueprintComponentNode, BlueprintConstructionScript, BlueprintDefinition,
+    BlueprintDefinitionUnread, BlueprintSavedObject, BlueprintVariable,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use uasset_parser::asset::{

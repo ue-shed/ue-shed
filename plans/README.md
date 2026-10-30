@@ -25,6 +25,7 @@ the status row when done.
 | [059](059-game-text-query-and-rule-engine.md)            | One query and rule engine inside the Game Text index                       | P1       | XL     | 057, Game Text fixture    | IN PROGRESS — Phase 0             |
 | [060](060-changelist-text-and-unreal-code.md)            | Text in a changelist, and the text in a project's code                     | P1       | XL     | 059, Game Text fixture    | DONE — release with 0.24.0        |
 | [061](061-localization-file-diff.md)                     | What changed between two localization files                                | P2       | M      | 060                       | IN PROGRESS — owner review        |
+| [062](062-blueprint-graph-diff.md)                       | What a change does to a Blueprint's graph                                  | P2       | L      | 060, 061                  | IN PROGRESS — Phase 3 waits       |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this

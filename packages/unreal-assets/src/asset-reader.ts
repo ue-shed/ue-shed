@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import {
 	ErrorCauseFields,
 	ErrorGuidanceFields,
+	BlueprintComparisonRead,
 	BlueprintGraphRead,
 	LevelSequenceRead,
 	isHeaderScanEntry,
@@ -163,6 +164,7 @@ export class AssetReaderError extends Schema.TaggedError<AssetReaderError>()("As
 		"game_text_index",
 		"authoring",
 		"blueprint",
+		"compare_blueprints",
 		"level_sequence",
 		"catalog",
 		"extract_text",
@@ -233,6 +235,22 @@ export function assetReaderGuidance(
  */
 export interface AssetReaderOptions {
 	readonly assetPath: string;
+}
+
+/** Entries a Blueprint comparison page holds when the caller does not say. */
+export const BLUEPRINT_COMPARISON_PAGE = 200;
+
+/**
+ * Two saved files of one Blueprint, such as a changelist's revisions, and the page of the diff
+ * to return. `before` is absent for an asset the change adds, `after` for one it deletes.
+ */
+export interface BlueprintComparisonOptions {
+	readonly before?: string;
+	readonly after?: string;
+	/** The first entry to return; 0 when absent. */
+	readonly offset?: number;
+	/** At most 1,000; `BLUEPRINT_COMPARISON_PAGE` when absent. */
+	readonly limit?: number;
 }
 
 /**
@@ -416,6 +434,14 @@ export interface AssetReaderApi {
 	readonly readBlueprint: (
 		assetPath: string
 	) => Effect.Effect<BlueprintGraphRead, AssetReaderError>;
+	/**
+	 * Requires uasset-io v1.21: compares two saved revisions of one Blueprint by graph identity
+	 * and returns one page of what changed. A side is absent for an asset the change adds or
+	 * deletes; naming neither fails.
+	 */
+	readonly compareBlueprints?: (
+		options: BlueprintComparisonOptions
+	) => Effect.Effect<BlueprintComparisonRead, AssetReaderError>;
 	readonly readLevelSequence: (
 		assetPath: string
 	) => Effect.Effect<LevelSequenceRead, AssetReaderError>;
@@ -796,6 +822,37 @@ function makeAssetReader(
 			outcome: evidence.outcome
 		};
 	});
+	const compareBlueprints = Effect.fn("AssetReader.compareBlueprints")(function* (
+		options: BlueprintComparisonOptions
+	) {
+		const evidence = yield* invokeSingleWithEvidence({
+			configuration,
+			operation: "compare_blueprints",
+			path: options.after ?? options.before ?? "",
+			request: makeProtocolRequest(
+				{
+					kind: "compare_blueprints",
+					...(options.before === undefined ? undefined : { before: options.before }),
+					...(options.after === undefined ? undefined : { after: options.after }),
+					offset: options.offset ?? 0,
+					limit: options.limit ?? BLUEPRINT_COMPARISON_PAGE
+				},
+				{
+					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
+					timeoutMs: configuration.timeoutMs
+				},
+				{ contractMinor: 21 }
+			),
+			expected: "blueprint_comparison",
+			select: (result) =>
+				result.kind === "blueprint_comparison" ? result.comparison : undefined
+		});
+		return {
+			comparison: evidence.value,
+			diagnostics: evidence.diagnostics,
+			outcome: evidence.outcome
+		};
+	});
 	const readLevelSequence = Effect.fn("AssetReader.readLevelSequence")(function* (
 		assetPath: string
 	) {
@@ -912,6 +969,7 @@ function makeAssetReader(
 		extractProjectTextures,
 		readAsset,
 		readBlueprint,
+		compareBlueprints,
 		readLevelSequence,
 		readSavedWorld,
 		readTable,
@@ -1069,6 +1127,30 @@ export function readSavedBlueprint(
 	options: AssetReaderOptions
 ): Effect.Effect<BlueprintGraphRead, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readBlueprint(options.assetPath));
+}
+/**
+ * Compares two saved revisions of one Blueprint through AssetReader, by graph identity, without
+ * an editor: one page of the nodes, wires, variables, components and class defaults the change
+ * added, removed or changed. Fails as a contract error when the reader predates uasset-io v1.21.
+ */
+export function compareBlueprintRevisions(
+	options: BlueprintComparisonOptions
+): Effect.Effect<BlueprintComparisonRead, AssetReaderError, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) =>
+		reader.compareBlueprints === undefined
+			? Effect.fail(
+					new AssetReaderError({
+						kind: "contract",
+						operation: "compare_blueprints",
+						message: "This asset reader cannot compare Blueprints.",
+						recovery:
+							"Install the native reader from the same UE Shed build as this host.",
+						retrySafe: false,
+						nextStep: "reconcile"
+					})
+				)
+			: reader.compareBlueprints(options)
+	);
 }
 /**
  * Reads saved LevelSequence evidence through AssetReader without an editor. Returned

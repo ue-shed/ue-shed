@@ -1,5 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
+use std::time::Instant;
 
+use uasset_inspection::blueprint::{BlueprintDefinition, BlueprintDefinitionUnread};
+use uasset_inspection::blueprint_diff::diff_blueprints;
 use uasset_inspection::{
     BlueprintGraphProjection, is_control_rig_blueprint_package, project_blueprint_graphs,
     saved_blueprint_graph_node_paths,
@@ -12,11 +15,109 @@ use uasset_parser::asset::{
 
 use super::{Diagnostic, Failure, checkpoint, scan_failure_code};
 use crate::cancellation::CancellationToken;
+use crate::protocol_result::{
+    BlueprintComparison, BlueprintComparisonSides, BlueprintComparisonStages,
+};
 
 pub(crate) struct BlueprintOutput {
     pub(crate) blueprint: BlueprintGraphProjection,
     pub(crate) diagnostics: Vec<Diagnostic>,
     pub(crate) partial: bool,
+    /// What the package holds that the projection does not read, such as `widget_layout`.
+    pub(crate) not_projected: BTreeSet<&'static str>,
+}
+
+/// Export classes a Blueprint package can hold whose content the graph projection leaves out, and
+/// what a comparison calls them.
+const NOT_PROJECTED: &[(&str, &str)] = &[
+    ("WidgetTree", "widget_layout"),
+    ("WidgetAnimation", "widget_animations"),
+    ("TimelineTemplate", "timelines"),
+];
+
+pub(crate) struct BlueprintComparisonOutput {
+    pub(crate) comparison: BlueprintComparison,
+    pub(crate) diagnostics: Vec<Diagnostic>,
+}
+
+/// Reads both sides, compares them and returns `limit` entries from `offset`. An absent side is an
+/// empty Blueprint, so every graph and variable of the other reads as added or removed.
+pub(crate) fn compare_blueprints_with_cancellation(
+    before: Option<&str>,
+    after: Option<&str>,
+    offset: u32,
+    limit: u32,
+    cancellation: &CancellationToken,
+) -> Result<BlueprintComparisonOutput, Failure> {
+    let mut stages = BlueprintComparisonStages::default();
+    let mut side = |path: Option<&str>| -> Result<Option<BlueprintOutput>, Failure> {
+        let Some(path) = path else { return Ok(None) };
+        checkpoint(cancellation, "read")?;
+        let started = Instant::now();
+        let bytes = super::level_sequence::read_review_asset(path)?;
+        stages.read += started.elapsed().as_secs_f64();
+        let started = Instant::now();
+        let output = blueprint_bytes_with_cancellation(path, &bytes, cancellation)?;
+        stages.project += started.elapsed().as_secs_f64();
+        Ok(Some(output))
+    };
+    let (old, new) = (side(before)?, side(after)?);
+    let empty = |other: &BlueprintGraphProjection| BlueprintGraphProjection {
+        schema_version: other.schema_version,
+        object_path: other.object_path.clone(),
+        graphs: Vec::new(),
+        definition: BlueprintDefinition {
+            parent_class: None,
+            variables: None,
+            default_object: None,
+            construction_script: None,
+            unread: BlueprintDefinitionUnread::default(),
+        },
+        coverage_gaps: Vec::new(),
+    };
+    let (old_projection, new_projection) = match (&old, &new) {
+        (Some(old), Some(new)) => (old.blueprint.clone(), new.blueprint.clone()),
+        (Some(old), None) => (old.blueprint.clone(), empty(&old.blueprint)),
+        (None, Some(new)) => (empty(&new.blueprint), new.blueprint.clone()),
+        (None, None) => unreachable!("the request names a side"),
+    };
+    checkpoint(cancellation, "comparing")?;
+    let started = Instant::now();
+    let diff = diff_blueprints(&old_projection, &new_projection);
+    let page = diff.page(offset as usize, limit as usize);
+    stages.diff = started.elapsed().as_secs_f64();
+    let not_compared = old
+        .iter()
+        .chain(&new)
+        .flat_map(|output| output.not_projected.iter())
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let mut diagnostics = Vec::new();
+    for (name, output) in [("before", &old), ("after", &new)] {
+        for diagnostic in output.iter().flat_map(|output| &output.diagnostics) {
+            diagnostics.push(Diagnostic {
+                code: diagnostic.code.clone(),
+                message: format!("{name}: {}", diagnostic.message),
+                path: diagnostic.path.clone(),
+                retry_safe: diagnostic.retry_safe,
+            });
+        }
+    }
+    Ok(BlueprintComparisonOutput {
+        comparison: BlueprintComparison {
+            page,
+            partial: BlueprintComparisonSides {
+                before: old.as_ref().is_some_and(|output| output.partial),
+                after: new.as_ref().is_some_and(|output| output.partial),
+            },
+            not_compared,
+            stage_seconds: stages,
+        },
+        diagnostics,
+    })
 }
 
 pub(crate) fn blueprint_with_cancellation(
@@ -138,10 +239,23 @@ fn blueprint_bytes_with_cancellation(
         ..Default::default()
     })?;
     let partial = !diagnostics.is_empty() || !blueprint.coverage_gaps.is_empty();
+    let not_projected = package
+        .exports
+        .iter()
+        .filter_map(|export| {
+            let class = export.class_path.as_ref()?.to_string();
+            let short = class.rsplit('.').next()?.to_owned();
+            NOT_PROJECTED
+                .iter()
+                .find(|(name, _)| *name == short)
+                .map(|(_, what)| *what)
+        })
+        .collect();
     Ok(BlueprintOutput {
         blueprint,
         diagnostics,
         partial,
+        not_projected,
     })
 }
 

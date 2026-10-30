@@ -639,6 +639,7 @@ export function makeProtocolRequest(
 		}
 		return { ...fields, operation };
 	}
+	if (operation.kind === "compare_blueprints") return { ...fields, operation };
 	return { ...fields, operation };
 }
 

@@ -5,6 +5,8 @@
 //! to `protocol_adapter`, which is the only process-output seam.
 
 mod blueprint;
+#[cfg(test)]
+mod blueprint_diff_corpus;
 mod level_sequence;
 pub(crate) use level_sequence::level_sequence_with_cancellation;
 mod catalog;
@@ -32,7 +34,7 @@ use crate::protocol_result::{
     SavedAssetScanEntry, SavedAssetScanSummary,
 };
 
-pub(crate) use blueprint::blueprint_with_cancellation;
+pub(crate) use blueprint::{blueprint_with_cancellation, compare_blueprints_with_cancellation};
 pub(crate) use project_index::RefreshProgress;
 pub(crate) use project_index_io::gathered;
 pub(crate) use project_index_io::{

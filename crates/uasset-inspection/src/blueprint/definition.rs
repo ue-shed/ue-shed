@@ -7,6 +7,24 @@ pub struct BlueprintDefinition {
     pub variables: Option<Vec<BlueprintVariable>>,
     pub default_object: Option<BlueprintSavedObject>,
     pub construction_script: Option<BlueprintConstructionScript>,
+    /// What the reader could not read, as against what the Blueprint does not have. In-process
+    /// only, for the diff: it does not cross the protocol, so a deserialized definition reads as
+    /// fully read.
+    #[serde(skip)]
+    pub unread: BlueprintDefinitionUnread,
+}
+
+/// Definition parts the reader could not read. A part that is `None` and not marked here is one
+/// the Blueprint does not have; the diff compares that as empty and leaves an unread one out.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BlueprintDefinitionUnread {
+    pub parent_class: bool,
+    /// The list is absent or lost an entry that was not a record.
+    pub variables: bool,
+    pub default_object: bool,
+    pub construction_script: bool,
+    /// Component nodes whose template was not read, by object path.
+    pub templates: BTreeSet<String>,
 }
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct BlueprintVariable {
@@ -72,9 +90,22 @@ pub(super) fn project(
             variables: None,
             default_object: None,
             construction_script: None,
+            unread: BlueprintDefinitionUnread {
+                parent_class: true,
+                variables: true,
+                default_object: true,
+                construction_script: true,
+                templates: BTreeSet::new(),
+            },
         };
     };
     let fields = &root.properties;
+    let mut unread = BlueprintDefinitionUnread::default();
+    // A reference that is absent or null is a part the Blueprint does not have; one that raised a
+    // gap is a part that was not read.
+    let start = gaps.len();
+    let parent_class = reference(package, fields, "ParentClass", path, gaps);
+    unread.parent_class = parent_class.is_none() && gaps.len() > start;
     let variables = match property(package, fields, "NewVariables") {
         None => None,
         Some(PropertyValue::Array(values)) => Some(
@@ -83,6 +114,7 @@ pub(super) fn project(
                 .filter_map(|v| {
                     let PropertyValue::Struct(v) = v else {
                         issue(gaps, path, "NewVariables contains a non-record value");
+                        unread.variables = true;
                         return None;
                     };
                     let pin_type =
@@ -122,9 +154,11 @@ pub(super) fn project(
         ),
         _ => {
             issue(gaps, path, "NewVariables is not an array");
+            unread.variables = true;
             None
         }
     };
+    let start = gaps.len();
     let generated = reference(package, fields, "GeneratedClass", path, gaps);
     // RF_ClassDefaultObject proves identity; avoid guessing from a Default__ name.
     let default_object = generated.as_ref().and_then(|class| {
@@ -150,6 +184,8 @@ pub(super) fn project(
         }
         object.map(|o| saved_object(package, o, gaps))
     });
+    unread.default_object = default_object.is_none() && gaps.len() > start;
+    let start = gaps.len();
     let scs_path = reference(package, fields, "SimpleConstructionScript", path, gaps);
     let construction_script = scs_path.and_then(|p| {
         let Some(scs) = all.get(p.as_str()) else {
@@ -173,6 +209,7 @@ pub(super) fn project(
             let f = &node.properties;
             let children = references(package, f, "ChildNodes", &node_path, gaps);
             pending.extend(children.iter().flatten().cloned());
+            let start = gaps.len();
             let template_path = reference(package, f, "ComponentTemplate", &node_path, gaps);
             let template = template_path.and_then(|p| {
                 let object = all.get(p.as_str());
@@ -185,6 +222,9 @@ pub(super) fn project(
                 }
                 object.map(|o| saved_object(package, o, gaps))
             });
+            if template.is_none() && gaps.len() > start {
+                unread.templates.insert(node_path.clone());
+            }
             nodes.push(BlueprintComponentNode {
                 object_path: node_path.clone(),
                 variable_name: name_property(package, f, "InternalVariableName"),
@@ -244,11 +284,13 @@ pub(super) fn project(
             nodes,
         })
     });
+    unread.construction_script = construction_script.is_none() && gaps.len() > start;
     BlueprintDefinition {
-        parent_class: reference(package, fields, "ParentClass", path, gaps),
+        parent_class,
         variables,
         default_object,
         construction_script,
+        unread,
     }
 }
 

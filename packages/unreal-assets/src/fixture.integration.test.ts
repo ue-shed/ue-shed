@@ -7,6 +7,7 @@ import { useSavedFixtureProject } from "../../../fixtures/unreal-project/saved-p
 import {
 	AssetReader,
 	assetReaderLayer,
+	compareBlueprintRevisions,
 	discoverSavedAssets,
 	discoverSavedTables,
 	extractProjectText,
@@ -119,6 +120,33 @@ describe.skipIf(!executable)("batched project scan", () => {
 		expect(nodes.flatMap((node) => node.pins)).toHaveLength(15);
 		expect(blueprint.graphs.flatMap((graph) => graph.links)).toHaveLength(1);
 		expect(blueprint.coverage_gaps).toEqual([]);
+	});
+
+	it("compares Blueprint revisions natively, a page at a time", async () => {
+		const assetPath = join(fixture.root, "Content/Fixture/Blueprints/BP_GraphFixture.uasset");
+		const same = await runReader(
+			compareBlueprintRevisions({ before: assetPath, after: assetPath })
+		);
+		expect(same.outcome).toBe("complete");
+		expect(same.comparison.page.total).toBe(0);
+		expect(same.comparison.page.counts.nodes_unchanged).toBe(6);
+
+		// A Blueprint the change adds: its component and every node read as added.
+		const added = await runReader(compareBlueprintRevisions({ after: assetPath, limit: 3 }));
+		const page = added.comparison.page;
+		expect(page.counts).toMatchObject({
+			graphs_added: 2,
+			nodes_added: 6,
+			components_changed: 1
+		});
+		expect(page.total).toBe(7);
+		expect(page.components.map((component) => component.name)).toEqual(["DefaultSceneRoot"]);
+		expect(page.graphs.flatMap((graph) => graph.nodes)).toHaveLength(2);
+		const rest = await runReader(
+			compareBlueprintRevisions({ after: assetPath, offset: 3, limit: 3 })
+		);
+		expect(rest.comparison.page.graphs.flatMap((graph) => graph.nodes)).toHaveLength(3);
+		expect(added.comparison.not_compared).toEqual([]);
 	});
 
 	it("decodes only packages a header filter selects", async () => {

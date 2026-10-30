@@ -38,6 +38,9 @@ pub struct ResourceLimits {
 }
 
 /// Upper bound on staging groups a package-text request may name.
+/// Most entries one `compare_blueprints` page returns.
+pub const MAX_BLUEPRINT_COMPARISON_PAGE: u32 = 1000;
+
 pub const MAX_PACKAGE_TEXT_STAGING_GROUPS: u32 = 4096;
 
 /// v1.19 package-text staging: the reader writes each requested package's record as one JSON
@@ -92,6 +95,15 @@ pub enum Operation {
     LevelSequence {
         #[serde(rename = "assetPath")]
         asset_path: String,
+    },
+    /// v1.21: two saved revisions of one Blueprint compared, and one page of what changed. A side
+    /// is absent for an asset the change adds or deletes.
+    #[serde(rename = "compare_blueprints")]
+    CompareBlueprints {
+        before: Option<String>,
+        after: Option<String>,
+        offset: u32,
+        limit: u32,
     },
     #[serde(rename = "authoring")]
     Authoring {
@@ -284,6 +296,8 @@ pub enum OperationKind {
     Blueprint,
     #[serde(rename = "level_sequence")]
     LevelSequence,
+    #[serde(rename = "compare_blueprints")]
+    CompareBlueprints,
     Authoring,
     Scan,
     #[serde(rename = "extract_text")]
@@ -646,6 +660,32 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
         | Operation::Blueprint { asset_path }
         | Operation::LevelSequence { asset_path }
         | Operation::Authoring { asset_path } => validate_non_empty(asset_path, "assetPath"),
+        Operation::CompareBlueprints {
+            before,
+            after,
+            limit,
+            ..
+        } => {
+            if request.contract.version.minor < 21 {
+                return Err(ProtocolError(
+                    "compare_blueprints requires uasset-io v1.21".into(),
+                ));
+            }
+            if before.is_none() && after.is_none() {
+                return Err(ProtocolError(
+                    "compare_blueprints needs a before or an after asset".into(),
+                ));
+            }
+            for path in [before, after].into_iter().flatten() {
+                validate_non_empty(path, "before and after")?;
+            }
+            if *limit == 0 || *limit > MAX_BLUEPRINT_COMPARISON_PAGE {
+                return Err(ProtocolError(format!(
+                    "compare_blueprints limit must be 1 to {MAX_BLUEPRINT_COMPARISON_PAGE}"
+                )));
+            }
+            Ok(())
+        }
         Operation::Scan {
             cache_path,
             selection,
@@ -1389,5 +1429,25 @@ mod game_text_contract_tests {
         assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-index-capabilities-request.json")).is_ok());
         assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/game-text-index-request-old-minor.json")).is_err());
         assert!(super::decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-index-result-event.json")).is_ok());
+    }
+
+    #[test]
+    fn a_blueprint_comparison_needs_minor_21_a_side_and_a_bounded_page() {
+        let request = super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/compare-blueprints-request.json")).unwrap();
+        assert!(matches!(
+            request.operation,
+            super::Operation::CompareBlueprints {
+                before: None,
+                after: Some(_),
+                offset: 0,
+                limit: 2
+            }
+        ));
+        assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/compare-blueprints-request-old-minor.json")).is_err());
+        assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/compare-blueprints-request-zero-limit.json")).is_err());
+        let neither = String::from_utf8_lossy(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/compare-blueprints-request.json"))
+            .replace("\"after\": \"C:/project/Content/BP_Example.uasset\",", "");
+        assert!(super::decode_request(neither.as_bytes()).is_err());
+        assert!(super::decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/compare-blueprints-result-event.json")).is_ok());
     }
 }

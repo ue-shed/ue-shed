@@ -373,6 +373,23 @@ export {
 	decodeBlueprintGraphProjection
 } from "./blueprint-graph.js";
 export {
+	BlueprintChangeStatus,
+	BlueprintComparison,
+	BlueprintComparisonRead,
+	BlueprintComponentChange,
+	BlueprintDiffCounts,
+	BlueprintDiffPage,
+	BlueprintEndpoint,
+	BlueprintFieldEdit,
+	BlueprintGraphDiff,
+	BlueprintNodeChange,
+	BlueprintNodeEdit,
+	BlueprintNodeLabel,
+	BlueprintValueChange,
+	BlueprintVariableChange,
+	BlueprintWireChange
+} from "./blueprint-diff.js";
+export {
 	CompanionCapabilityManifest,
 	CompanionProducerIdentity,
 	decodeCompanionCapabilityManifest

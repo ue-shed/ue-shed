@@ -13,12 +13,12 @@
 ## Status
 
 - **State**: TODO. Written 2026-10-30 with the owner; Phase 1 first.
-- **Priority**: P1 (Phase 1), P2 (Phases 2 to 4)
-- **Effort**: L over all four phases; Phase 1 is M.
-- **Risk**: LOW for Phases 1 and 2, which read Perforce and the project and write only local
-  caches. MEDIUM for Phase 3, which takes facts from signed-in clients into a shared store.
+- **Priority**: P1 (Phases 1 and 2), P2 (Phases 3 to 5)
+- **Effort**: L over all five phases; Phases 1 and 2 are M each.
+- **Risk**: LOW for Phases 1 to 3, which read Perforce and the project and write only local
+  caches. MEDIUM for Phase 4, which takes facts from signed-in clients into a shared store.
 - **Depends on**: Plan 060 (changelist reads, the revision cache), Plan 061 (`compare_text_files`),
-  the Tools Perforce core's compact store (Phase 4 only).
+  the Tools Perforce core's compact store (Phase 5 only).
 - **Category**: product
 - **Planned at**: `release/0.25.0`, 2026-10-30
 
@@ -106,20 +106,37 @@ French `Game.po` of ProjectCoral were compared for 1.11.0.
 - Done when: on ProjectCoral-MP, French `Game.po` against its 21 October revision takes two clicks
   and gives the 5,515 changes measured for 1.11.0; the spans show the print time.
 
-### Phase 2: changelists that touch text, from Perforce alone
+### Phase 2: changelists that touch text, first from what the project already knows
 
-- UE Shed engine: the fact model, the producer (decision 4), the local cache, and
-  `changelistFacts` for a page of changelists: one batched `p4 describe -s` (`-S` for shelves),
-  digests with `p4 fstat -Ol`, then local lookups and production for the misses.
+Producing exact facts costs a Perforce print per package not on disk at that revision, and a
+cold page of 50 changelists can name thousands. Whether an asset holds text rarely changes
+between its revisions, and the Project Index already has every package's header evidence for
+the workspace's revision. So the filter's first answer needs no prints.
+
+- UE Shed engine: `changelistTextCounts` for a page of changelists: one batched
+  `p4 describe -s` (`-S` for shelves), each file mapped through the client view, and matched by
+  path against the Project Index's header evidence, the localization extensions and the files
+  Game Text's code layer found text in. A file the index doesn't have (deleted since, or added
+  after the workspace's revision) counts as unknown, not as no text.
 - Electroswag: **Only changes to text**, on by default, in Compare › Changelists. Rows show their
-  counts ("3 text assets · 1 .po · 2 C++"); a line at the end says how many were hidden. A
-  shift-click range still compares everything between its ends. While facts are being produced,
-  rows show without counts and the filter applies as they arrive.
+  counts ("3 text assets · 1 .po · 2 C++"); a changelist with only unknown files stays, marked so;
+  a line at the end says how many were hidden. A shift-click range still compares everything
+  between its ends.
 - Done when: the newest 200 changelists of both projects filter correctly against a hand check of
-  20 of them, including a delete, a shelf and a C++-only change; a warm page of 50 filters in under
-  a second, and the cold cost is recorded.
+  20 of them, including a delete, a shelf and a C++-only change; a page of 50 filters in under a
+  second; the share of files that came back unknown is recorded, since it decides how much
+  Phase 3 is worth.
 
-### Phase 3: the shared fact store in the Tools Perforce Worker
+### Phase 3: exact facts by content
+
+- UE Shed engine: the fact model, the producer (decision 4), the local cache keyed as decision 1
+  says, and digests with `p4 fstat -Ol`. A file's fact replaces its Phase 2 answer: unknown files
+  get one, and an asset whose text came or went between revisions is counted right.
+- Electroswag: rows show their Phase 2 counts at once and settle as facts arrive.
+- Done when: the Phase 2 hand check passes with no unknown files, and the cold cost of a page is
+  recorded with its print count and bytes.
+
+### Phase 4: the shared fact store in the Tools Perforce Worker
 
 - Tools: an additive `file_facts` table keyed by (MD5, size, producer version), `publishFileFacts`
   with the checks in decision 7, and `fileFacts` for up to 500 keys. Through the existing
@@ -130,7 +147,7 @@ French `Game.po` of ProjectCoral were compared for 1.11.0.
   unrecorded revision, an unknown producer version, a changed payload) is rejected and the
   conflict is recorded.
 
-### Phase 4: digests from the Worker
+### Phase 5: digests from the Worker
 
 - Tools and Electroswag: compact inventories for ProjectCoral-MP and ManaBreak Research, kept
   current by Electroswag's `perforce sync`. Check first: `mbp-research` is `perforce sync`'s
@@ -146,4 +163,4 @@ French `Game.po` of ProjectCoral were compared for 1.11.0.
 - A fact's meaning would change for the same producer version: stop and make a new version.
 - The Worker would need to read raw `.uasset` bytes: it doesn't, by design. Stop and ask.
 - A page needs file lists in TypeScript in bulk: stop; counts only cross.
-- Phase 4's inventory work needs Perforce writes or a Tools schema change that isn't additive.
+- Phase 5's inventory work needs Perforce writes or a Tools schema change that isn't additive.

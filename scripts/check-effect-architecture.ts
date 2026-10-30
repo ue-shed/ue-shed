@@ -180,6 +180,9 @@ const approvedResourceAdapters = new Set([
 	// Ctrl+K, page-hide and the preference save timer belong to the Solid owner; onSettled cleanup
 	// removes them and flushes the pending save.
 	"extensions/game-text/src/game-text-query-route.tsx",
+	// The file comparison's typing pause belongs to the Solid owner: each new view, and onCleanup,
+	// clear it.
+	"extensions/game-text/src/game-text-file-comparison.tsx",
 	// Parser workers and their listeners are closed on success, failure and scope cancellation.
 	"packages/game-text/src/localization-cold-import.ts",
 	// Cold layer listeners and workers terminate in the publication adapter's finally block.

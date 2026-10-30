@@ -3,6 +3,7 @@ import { MAX_CHANGE_PAGE } from "./change-comparison.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
+/** A localization file a comparison reads: a `.po`, an `.archive` or a `.manifest`. */
 export const LocalizationFileFormat = Schema.Literals(["po", "archive", "manifest"]);
 export type LocalizationFileFormat = typeof LocalizationFileFormat.Type;
 
@@ -49,6 +50,10 @@ export const LocalizationFileChoiceRequest = Schema.Struct({
 });
 export type LocalizationFileChoiceRequest = typeof LocalizationFileChoiceRequest.Type;
 
+/**
+ * `chooseLocalizationFile`: the file chosen and its format, or that the person cancelled, or why
+ * the file cannot be compared.
+ */
 export const LocalizationFileChoiceResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("cancelled") }),
 	Schema.Struct({

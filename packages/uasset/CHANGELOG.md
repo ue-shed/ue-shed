@@ -2,6 +2,9 @@
 
 ## 0.24.0
 
+No direct behavioral change: released to keep the suite aligned. It launches the 0.24.0 reader,
+which adds Blueprint comparison (see `@ue-shed/uasset-win32-x64`).
+
 ## 0.23.0
 
 ## 0.22.0

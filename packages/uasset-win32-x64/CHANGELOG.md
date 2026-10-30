@@ -2,6 +2,12 @@
 
 ## 0.24.0
 
+### Minor Changes
+
+- The reader answers uasset-io v1.21's `compare_blueprints` request, which compares two saved
+  revisions of a Blueprint a page at a time; `compareBlueprintRevisions` in
+  `@ue-shed/unreal-assets` uses it.
+
 ## 0.23.0
 
 ## 0.22.0

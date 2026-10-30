@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.23.0",
+	"VersionName": "0.24.0",
 	"FriendlyName": "UE Shed Scenarios",
 	"Description": "Bounded, isolated gameplay scenario execution in Play In Editor.",
 	"Category": "UE Shed",

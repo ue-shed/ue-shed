@@ -1,5 +1,24 @@
 # @ue-shed/map-history
 
+## 0.24.0
+
+### Minor Changes
+
+- f6f6bd1: Game Text reads a target's C++ and config text (`@ue-shed/code`) and compares two points natively: `comparePoints` lists the lines a change adds, removes, rekeys or edits, and `localizationGateComparison` judges the change against the target's localization as the change found it, so only what the change introduces counts. Package editor text a target does not gather, by Unreal's gather table or else the audience policy, is left out of both points as the index leaves it out of scope, unless the base's manifest names it in that file. A text that only moved to another object of its package, keeping its key, text and property, is unchanged: a Blueprint's generated functions renumber on compile. The gate result gains an optional `change` describing what a changelist check read. `readGameTextChangePoints` reads a submitted changelist, a shelf, a range of submitted changelists or listed working-copy files through revisions the host supplies, and the workspace's new `compareChange` method serves it to hosts that pass `changeRevisions`. Map History reads revisions at a changelist, across a range (`readRangeRevisions`, listing a long range's files in batches a Windows command line holds), at the depot's head or the workspace's; `perforceChangeRevisions` hands those reads to Game Text; it uses a workspace the host names as named; it classifies Perforce failures by cause and refuses a changelist whose status is not the one asked for.
+
+### Patch Changes
+
+- 9a896fc: The workspace's `compareChange` gives no verdict over a change with a package or code file it could not read, as `loc gate` does: it answers `failed` with `unreadable_package` and the files, rather than a verdict that never saw them. Both share `unreadableChangePaths`. A change's points read `.hxx` sources, as the index's join policy does. Map History prints a change's revisions 16 at a time, each batch written before the next, rather than holding a side's files in memory, and keeps each Perforce server's revisions in their own cache folder, so two servers with the same depot path and revision never share bytes. Every revision file names its server's key, workspace copies included, and Game Text names a base localization revision by it.
+
+    The engine's change comparison finds a package text's translations under its namespace without the package marker, as Unreal gathers it, so editing a translated line in an asset is reported. A text edited while its Blueprint function renumbered is judged as an edit of its key's text rather than passing as a move. A code file whose String Table text needs another file (a table registered elsewhere on 4.27) or a CSV that did not import reads as partial, and a file importing a CSV (in UTF-8 or UTF-16) is scanned again rather than reused, since the CSV is read from the project as it is now; its record is named by what the scan found, so an earlier point keeps its own. Code records cached before carry an older version and are read again. Code text scanning imports large String Table CSVs in linear time, reads no engine CSV without an engine root, leaves Unreal Header Tool output out of a revision's files as the full scan does on 5.x, and does not keep an engine wrapper prepass that could not read a header.
+
+- 7d82d07: `changelistRevisions` reads a changelist's revisions with the Perforce client the caller provides;
+  `readChangelistRevisions` still finds the project's workspace itself.
+- Updated dependencies [177d71e]
+- Updated dependencies
+    - @ue-shed/protocol@0.24.0
+    - @ue-shed/unreal-assets@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes

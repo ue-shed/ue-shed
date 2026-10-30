@@ -1,5 +1,14 @@
 # @ue-shed/config-explorer
 
+## 0.24.0
+
+### Patch Changes
+
+- Updated dependencies [177d71e]
+- Updated dependencies
+    - @ue-shed/protocol@0.24.0
+    - @ue-shed/engine@0.24.0
+
 ## 0.23.0
 
 ### Patch Changes

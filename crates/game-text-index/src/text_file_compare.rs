@@ -486,6 +486,15 @@ fn rows(
             fields.insert((name, form), value);
         }
     };
+    // Both parsers return WTF-8 scalar views, as the import feeds them; text leaves as UTF-8, so
+    // a private-use character such as U+F0001 reads as itself.
+    let shown = |value: String| {
+        if value.as_bytes().contains(&0xf3) {
+            String::from_utf8_lossy(Wtf8Buf::from_view(&value).as_bytes()).into_owned()
+        } else {
+            value
+        }
+    };
     if options.format != Format::Po {
         let document = parse_json(&text, &side.path, options.format, &limits).map_err(failed)?;
         let rows = document
@@ -497,23 +506,23 @@ fn rows(
                     &mut fields,
                     TextFileFieldName::Source,
                     None,
-                    row.source.text,
+                    shown(row.source.text),
                 );
                 if let Some(translation) = row.translation {
                     field(
                         &mut fields,
                         TextFileFieldName::Translation,
                         None,
-                        translation.text,
+                        shown(translation.text),
                     );
                 }
                 if let Some(path) = row.path {
-                    field(&mut fields, TextFileFieldName::Path, None, path);
+                    field(&mut fields, TextFileFieldName::Path, None, shown(path));
                 }
                 Row {
                     key: TextFileKey {
-                        namespace: row.namespace,
-                        key: row.key,
+                        namespace: shown(row.namespace),
+                        key: shown(row.key),
                     },
                     fields,
                 }
@@ -521,16 +530,8 @@ fn rows(
             .collect();
         return Ok((rows, None));
     }
-    // The PO parser reads WTF-8 views, as the import feeds it; text leaves as UTF-8.
     let view = Wtf8Buf::from_utf8(&text).into_view();
     let document = parse_po(&view, &side.path, options, &limits).map_err(failed)?;
-    let shown = |value: String| {
-        if value.as_bytes().contains(&0xf3) {
-            String::from_utf8_lossy(Wtf8Buf::from_view(&value).as_bytes()).into_owned()
-        } else {
-            value
-        }
-    };
     let rows = document
         .rows
         .into_iter()

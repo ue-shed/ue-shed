@@ -284,6 +284,9 @@ export function GameTextFileComparison(props: {
 	const [loading, setLoading] = createSignal(false);
 	const [problem, setProblem] = createSignal<string>();
 	let generation = 0;
+	// The view whose first page is on screen: the next page continues it, and a new view that
+	// fails gives way to it. `view` runs ahead of it while a filter is typed or loads.
+	let shown: ComparisonView = EVERYTHING;
 	let typing: ReturnType<typeof setTimeout> | undefined;
 	const stopTyping = () => {
 		clearTimeout(typing);
@@ -320,6 +323,7 @@ export function GameTextFileComparison(props: {
 		setComparison(undefined);
 		setEntries([]);
 		setView(EVERYTHING);
+		shown = EVERYTHING;
 	};
 	const swap = () => {
 		const older = before();
@@ -340,11 +344,11 @@ export function GameTextFileComparison(props: {
 		return undefined;
 	};
 	/**
-	 * The first page of a view, or with `more` the next page of the open one. The view is passed
-	 * in: a signal set in the same tick still reads its old value. If a fresh view fails, `restore`
-	 * puts back the one whose list is still on screen.
+	 * The first page of a view, or with `more` the next page of the one on screen. The view is
+	 * passed in: a signal set in the same tick still reads its old value. If a fresh view fails, the
+	 * one whose list is still on screen comes back.
 	 */
-	const load = (more: boolean, current: ComparisonView, restore?: ComparisonView) => {
+	const load = (more: boolean, current: ComparisonView) => {
 		const action = props.client.compareLocalizationFiles;
 		const older = before();
 		const newer = after();
@@ -353,7 +357,7 @@ export function GameTextFileComparison(props: {
 		const kind = LocalizationFileGroup.literals.find((group) => group === current.filter.kind);
 		const failed = (message: string) => {
 			setProblem(message);
-			if (!more && restore !== undefined) setView(restore);
+			if (!more) setView(shown);
 		};
 		setLoading(true);
 		compare.run(
@@ -381,6 +385,7 @@ export function GameTextFileComparison(props: {
 						return;
 					}
 					setProblem(undefined);
+					if (!more) shown = current;
 					const file = result.files.after ?? result.files.before ?? "";
 					setEntries((previous) => {
 						const page = fileComparisonEntries(
@@ -405,17 +410,21 @@ export function GameTextFileComparison(props: {
 	);
 	/** Shows a new view: at once for a click, after a pause for typing. */
 	const show = (next: ComparisonView, typed: boolean) => {
-		const shown = view();
 		setView(next);
 		stopTyping();
-		if (typed) typing = setTimeout(() => load(false, next, shown), QUERY_DELAY_MS);
-		else load(false, next, shown);
+		if (typed)
+			typing = setTimeout(() => {
+				typing = undefined;
+				load(false, next);
+			}, QUERY_DELAY_MS);
+		else load(false, next);
 	};
 	const refilter = (filter: TextDiffFilter) =>
 		show({ ...view(), filter }, filter.query !== view().filter.query);
 	/** The next page; a filter still being typed loads its first page instead. */
 	const more = () => {
-		if (typing === undefined) load(true, view());
+		if (loading()) return;
+		if (typing === undefined) load(true, shown);
 		else {
 			stopTyping();
 			load(false, view());

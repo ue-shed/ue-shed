@@ -605,3 +605,31 @@ fn a_new_key_in_a_manifest_is_always_a_risk() -> Result<()> {
     assert_eq!(comparison.counts.rekeyed, 1);
     Ok(())
 }
+
+#[test]
+fn private_use_text_in_an_archive_reads_as_itself() -> Result<()> {
+    // U+F0001, written literally before and as an escaped surrogate pair after.
+    let before = file(
+        "archive-private-use",
+        "before.archive",
+        archive(&[("Gem\u{f0001}", "\u{f0001}", "Jouer")]).as_bytes(),
+    );
+    let after = file(
+        "archive-private-use",
+        "after.archive",
+        archive(&[("Gem\u{f0001}", "\\udb80\\udc01", "Lancer")]).as_bytes(),
+    );
+    let comparison = compare(&request(Format::Archive, Some(before), Some(after)))?;
+    assert_eq!(
+        kinds(&comparison),
+        [(PointChangeKind::Edited, "Gem\u{f0001}".to_owned())]
+    );
+    let source = comparison.changes[0]
+        .fields
+        .iter()
+        .find(|field| field.name == TextFileFieldName::Source)
+        .expect("a source");
+    assert_eq!(source.before.as_deref(), Some("\u{f0001}"));
+    assert_eq!(source.after.as_deref(), Some("\u{f0001}"));
+    Ok(())
+}

@@ -70,7 +70,13 @@ const notUsed = () => Effect.die("Not used");
 function client(
 	choices: string[],
 	requests: LocalizationFileComparisonRequest[],
-	failing: (request: LocalizationFileComparisonRequest) => boolean = () => false
+	failing: (request: LocalizationFileComparisonRequest) => boolean = () => false,
+	options: {
+		/** Every comparison's total, when more than the changes it lists. */
+		readonly total?: number;
+		/** Milliseconds a request takes to answer. */
+		readonly delay?: (request: LocalizationFileComparisonRequest) => number;
+	} = {}
 ): GameTextClientApi {
 	return {
 		focus: notUsed,
@@ -92,9 +98,10 @@ function client(
 		},
 		compareLocalizationFiles: (request) => {
 			requests.push(request);
+			const wait = Effect.sleep(options.delay?.(request) ?? 0);
 			if (failing(request))
-				return Effect.succeed({
-					status: "failed",
+				return Effect.as(wait, {
+					status: "failed" as const,
 					code: "compare_failed",
 					message: "The engine stopped.",
 					recovery: "Compare again."
@@ -103,13 +110,13 @@ function client(
 			const listed = changes.filter(
 				(change) => groups.length === 0 || groups.includes(change.group)
 			);
-			return Effect.succeed({
-				status: "ready",
+			return Effect.as(wait, {
+				status: "ready" as const,
 				files: request.files,
-				format: "po",
+				format: "po" as const,
 				counts,
 				listed: counts,
-				total: listed.length,
+				total: options.total ?? listed.length,
 				changes: listed,
 				assets: [{ group: "rekeyed", asset: "DT_Scott", count: 2, generated: 2 }]
 			});
@@ -296,4 +303,76 @@ it("will not compare a file with itself", async () => {
 	await chooseBoth(client(["C:/a/Game.po", "C:/a/Game.po"], requests));
 	expect(screen.getByRole("alert").textContent).toContain("the same file");
 	expect(requests).toEqual([]);
+});
+
+it("pages on from a typed filter once it has loaded", async () => {
+	vi.useFakeTimers({ shouldAdvanceTime: true });
+	try {
+		const requests: LocalizationFileComparisonRequest[] = [];
+		const user = await chooseBoth(
+			client(["C:/old/Game.po", "C:/new/Game.po"], requests, () => false, { total: 401 }),
+			true
+		);
+		await screen.findByRole("region", { name: "File comparison" });
+		await user.type(screen.getByRole("searchbox", { name: "Filter by text or key" }), "e");
+		await vi.advanceTimersByTimeAsync(1000);
+		await waitFor(() => expect(requests.at(-1)?.filter?.query).toBe("e"));
+		await user.click(await screen.findByRole("button", { name: "Load more" }));
+		expect(requests.at(-1)).toMatchObject({
+			filter: { query: "e" },
+			changes: { offset: 3, limit: 200 }
+		});
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it("puts back the filter whose list is on screen when a quickly typed one fails", async () => {
+	vi.useFakeTimers({ shouldAdvanceTime: true });
+	try {
+		const requests: LocalizationFileComparisonRequest[] = [];
+		const user = await chooseBoth(
+			client(
+				["C:/old/Game.po", "C:/new/Game.po"],
+				requests,
+				(request) => request.filter?.query === "fish"
+			),
+			true
+		);
+		await screen.findByRole("region", { name: "File comparison" });
+		const search = screen.getByRole("searchbox", { name: "Filter by text or key" });
+		await user.type(search, "fish");
+		await vi.advanceTimersByTimeAsync(1000);
+		await waitFor(() =>
+			expect(screen.getByRole("alert").textContent).toContain("The engine stopped.")
+		);
+		expect(requests.map((request) => request.filter?.query)).toEqual(["", "fish"]);
+		expect(search).toHaveProperty("value", "");
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it("does not put back a view that was still loading when the next one fails", async () => {
+	const requests: LocalizationFileComparisonRequest[] = [];
+	const user = await chooseBoth(
+		client(
+			["C:/old/Game.po", "C:/new/Game.po"],
+			requests,
+			(request) => (request.filter?.groups ?? []).includes("reworded"),
+			{ delay: (request) => ((request.filter?.groups ?? []).includes("added") ? 200 : 0) }
+		)
+	);
+	const comparison = await screen.findByRole("region", { name: "File comparison" });
+	await user.click(within(comparison).getByRole("button", { name: "Added, 1" }));
+	await user.click(within(comparison).getByRole("button", { name: "Wording changed, 1" }));
+	await waitFor(() =>
+		expect(screen.getByRole("alert").textContent).toContain("The engine stopped.")
+	);
+	await new Promise((resolve) => setTimeout(resolve, 300));
+	for (const name of ["Added, 1", "Wording changed, 1"])
+		expect(within(comparison).getByRole("button", { name }).getAttribute("aria-pressed")).toBe(
+			"false"
+		);
+	expect(within(comparison).getAllByRole("heading", { level: 4 })).toHaveLength(3);
 });

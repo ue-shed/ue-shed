@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 use std::time::Instant;
 
-use uasset_inspection::blueprint::BlueprintDefinition;
+use uasset_inspection::blueprint::{BlueprintDefinition, BlueprintDefinitionUnread};
 use uasset_inspection::blueprint_diff::diff_blueprints;
 use uasset_inspection::{
     BlueprintGraphProjection, is_control_rig_blueprint_package, project_blueprint_graphs,
@@ -71,6 +71,7 @@ pub(crate) fn compare_blueprints_with_cancellation(
             variables: None,
             default_object: None,
             construction_script: None,
+            unread: BlueprintDefinitionUnread::default(),
         },
         coverage_gaps: Vec::new(),
     };

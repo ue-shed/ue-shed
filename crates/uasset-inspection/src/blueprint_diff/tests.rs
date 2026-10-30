@@ -1,8 +1,8 @@
 use super::*;
 use crate::blueprint::{
     BLUEPRINT_GRAPH_SCHEMA_VERSION, BlueprintConstructionScript, BlueprintDefinition,
-    BlueprintGraphCoverageGap, BlueprintLink, BlueprintMemberReference, BlueprintNodeKind,
-    BlueprintNodePosition, BlueprintSavedObject,
+    BlueprintDefinitionUnread, BlueprintGraphCoverageGap, BlueprintLink, BlueprintMemberReference,
+    BlueprintNodeKind, BlueprintNodePosition, BlueprintSavedObject,
 };
 use crate::generic::PropertyValueOutput;
 
@@ -99,6 +99,7 @@ fn projection(nodes: Vec<BlueprintNode>, links: Vec<BlueprintLink>) -> Blueprint
             variables: Some(Vec::new()),
             default_object: None,
             construction_script: None,
+            unread: BlueprintDefinitionUnread::default(),
         },
         coverage_gaps: Vec::new(),
     }
@@ -853,11 +854,13 @@ fn a_definition_one_side_could_not_read_is_not_compared() {
         blueprint.definition.default_object = None;
         blueprint.definition.variables = None;
         blueprint.definition.construction_script = None;
-        blueprint.coverage_gaps.push(BlueprintGraphCoverageGap {
-            object_path: blueprint.object_path.clone(),
-            reason: BlueprintGraphCoverageGapReason::IncompleteDefinition,
-            detail: "Blueprint root properties were not decoded".to_owned(),
-        });
+        blueprint.definition.unread = BlueprintDefinitionUnread {
+            parent_class: true,
+            variables: true,
+            default_object: true,
+            construction_script: true,
+            templates: Default::default(),
+        };
         blueprint
     };
     for diff in [
@@ -878,6 +881,17 @@ fn a_definition_one_side_could_not_read_is_not_compared() {
         diff_blueprints(&read(), &empty).defaults[0].after,
         "(not set)"
     );
+
+    // One part that was not read leaves the others compared: the last variable removed still
+    // lists while the class defaults are unread.
+    let mut after = read();
+    after.definition.variables = None;
+    after.definition.default_object = None;
+    after.definition.unread.default_object = true;
+    let diff = diff_blueprints(&read(), &after);
+    assert_eq!(diff.defaults, Vec::new());
+    assert_eq!(diff.counts.variables_changed, 1);
+    assert_eq!(diff.variables[0].status, BlueprintChangeStatus::Removed);
 }
 
 #[test]
@@ -892,11 +906,11 @@ fn a_component_template_one_side_could_not_read_is_not_compared() {
     let mut unread = read();
     if let Some(script) = &mut unread.definition.construction_script {
         script.nodes[0].template = None;
-        unread.coverage_gaps.push(BlueprintGraphCoverageGap {
-            object_path: script.nodes[0].object_path.clone(),
-            reason: BlueprintGraphCoverageGapReason::IncompleteDefinition,
-            detail: "component template unavailable".to_owned(),
-        });
+        unread
+            .definition
+            .unread
+            .templates
+            .insert(script.nodes[0].object_path.clone());
     }
     assert_eq!(diff_blueprints(&read(), &unread).components, Vec::new());
     assert_eq!(diff_blueprints(&unread, &read()).components, Vec::new());

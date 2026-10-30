@@ -16,10 +16,10 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::blueprint::{
-    BlueprintComponentNode, BlueprintGraph, BlueprintGraphCoverageGapReason,
-    BlueprintGraphProjection, BlueprintNode, BlueprintPin, BlueprintPinContainerType,
-    BlueprintPinDirection, BlueprintPinReference, BlueprintPinType, BlueprintSavedObject,
-    BlueprintVariable,
+    BlueprintComponentNode, BlueprintDefinitionUnread, BlueprintGraph,
+    BlueprintGraphCoverageGapReason, BlueprintGraphProjection, BlueprintNode, BlueprintPin,
+    BlueprintPinContainerType, BlueprintPinDirection, BlueprintPinReference, BlueprintPinType,
+    BlueprintSavedObject, BlueprintVariable,
 };
 use crate::generic::PropertyOutput;
 
@@ -342,16 +342,14 @@ pub fn diff_blueprints(
         before: missing_nodes(before),
         after: missing_nodes(after),
     };
-    let incomplete = (incomplete(before), incomplete(after));
-    let root = (
-        incomplete.0.contains(before.object_path.as_str()),
-        incomplete.1.contains(after.object_path.as_str()),
-    );
     let (old, new) = (&before.definition, &after.definition);
+    let (old_unread, new_unread) = (&old.unread, &new.unread);
 
-    if let Some((before_parent, after_parent)) =
-        both(old.parent_class.as_ref(), new.parent_class.as_ref(), root)
-    {
+    if let Some((before_parent, after_parent)) = both(
+        old.parent_class.as_ref(),
+        new.parent_class.as_ref(),
+        (old_unread.parent_class, new_unread.parent_class),
+    ) {
         let (before_parent, after_parent) = (
             before_parent.cloned().unwrap_or_default(),
             after_parent.cloned().unwrap_or_default(),
@@ -363,9 +361,11 @@ pub fn diff_blueprints(
             });
         }
     }
-    if let Some((before_variables, after_variables)) =
-        both(old.variables.as_ref(), new.variables.as_ref(), root)
-    {
+    if let Some((before_variables, after_variables)) = both(
+        old.variables.as_ref(),
+        new.variables.as_ref(),
+        (old_unread.variables, new_unread.variables),
+    ) {
         diff.variables = diff_variables(
             before_variables.map_or(&[], Vec::as_slice),
             after_variables.map_or(&[], Vec::as_slice),
@@ -375,19 +375,22 @@ pub fn diff_blueprints(
     if let Some((before_script, after_script)) = both(
         old.construction_script.as_ref(),
         new.construction_script.as_ref(),
-        root,
+        (
+            old_unread.construction_script,
+            new_unread.construction_script,
+        ),
     ) {
         diff.components = diff_components(
             before_script.map_or(&[], |script| &script.nodes),
             after_script.map_or(&[], |script| &script.nodes),
-            &incomplete,
+            (old_unread, new_unread),
         );
     }
     diff.counts.components_changed = count(diff.components.len());
     if let Some((before_defaults, after_defaults)) = both(
         old.default_object.as_ref(),
         new.default_object.as_ref(),
-        root,
+        (old_unread.default_object, new_unread.default_object),
     ) {
         diff.defaults = property_changes(saved(before_defaults), saved(after_defaults), &[])
             .into_iter()
@@ -447,26 +450,14 @@ struct Unread {
     after: HashSet<String>,
 }
 
-/// The objects whose part of the definition one side could not read in full. A section or component
-/// template a side lacks is empty when its owner read in full; when it did not, it is unread.
-fn incomplete(projection: &BlueprintGraphProjection) -> HashSet<&str> {
-    projection
-        .coverage_gaps
-        .iter()
-        .filter(|gap| gap.reason == BlueprintGraphCoverageGapReason::IncompleteDefinition)
-        .map(|gap| gap.object_path.as_str())
-        .collect()
-}
-
-/// Both sides of a definition section to compare, or `None` when a side lacks it because its
-/// owner was incomplete, so an unread section reads as neither removed nor added.
+/// Both sides of a definition part to compare, or `None` when a side could not read it, so an
+/// unread part reads as neither removed nor added.
 fn both<'a, T>(
     before: Option<&'a T>,
     after: Option<&'a T>,
-    (before_incomplete, after_incomplete): (bool, bool),
+    (before_unread, after_unread): (bool, bool),
 ) -> Option<(Option<&'a T>, Option<&'a T>)> {
-    let unread = (before.is_none() && before_incomplete) || (after.is_none() && after_incomplete);
-    (!unread).then_some((before, after))
+    (!before_unread && !after_unread).then_some((before, after))
 }
 
 fn missing_nodes(projection: &BlueprintGraphProjection) -> HashSet<String> {
@@ -1216,7 +1207,7 @@ fn node_title(node: &BlueprintNode) -> String {
 fn diff_components(
     before: &[BlueprintComponentNode],
     after: &[BlueprintComponentNode],
-    (old_incomplete, new_incomplete): &(HashSet<&str>, HashSet<&str>),
+    (old_unread, new_unread): (&BlueprintDefinitionUnread, &BlueprintDefinitionUnread),
 ) -> Vec<BlueprintComponentChange> {
     let (old_parents, new_parents) = (component_parents(before), component_parents(after));
     let by_guid = unique_by(before, |node| node.guid.as_deref());
@@ -1279,8 +1270,8 @@ fn diff_components(
             previous.template.as_ref(),
             node.template.as_ref(),
             (
-                old_incomplete.contains(previous.object_path.as_str()),
-                new_incomplete.contains(node.object_path.as_str()),
+                old_unread.templates.contains(&previous.object_path),
+                new_unread.templates.contains(&node.object_path),
             ),
         );
         if let Some((old_template, new_template)) = templates {

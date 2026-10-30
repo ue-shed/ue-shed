@@ -246,8 +246,9 @@ object, so the 10 class-default changes in the sample were read against the chan
 
 **Review fixes.** A value one side lacks now reads `(not set)`, apart from an empty one, so an
 empty array item added or removed is listed. The node layout filter applies to node properties
-only. A variable list, class defaults, construction script or component template one side could
-not read is not compared, rather than read as removed or added. On the corpus this listed 3 edits
+only. A parent class, variable list, class defaults, construction script or component template
+one side could not read is not compared, rather than read as removed or added; the reader marks
+each part it could not read, so the others still compare. On the corpus this listed 3 edits
 that had been hidden (two added array items with an empty class, one empty local-variable
 default); no other count moved, so the editor check stands.
 

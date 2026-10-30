@@ -1,0 +1,23 @@
+{
+	"wall_seconds": 94.5303736,
+	"cpu_seconds": 460.46875,
+	"peak_working_set_bytes": 3506438144,
+	"peak_private_bytes": 3556769792,
+	"counts": null,
+	"transport": {
+		"outcome": "partial",
+		"summary": {
+			"scannedAssets": 167401,
+			"emittedAssets": 167401,
+			"failedAssets": 0,
+			"partialAssets": 2129,
+			"skippedAssets": 0
+		},
+		"decodeErrors": 139919,
+		"packageRecords": 167401,
+		"frames": 168715,
+		"bytes": 635975448,
+		"digest": "020a80b295bf722a0654b583ccffc261853681376306a53f5a91cdffefb6614a",
+		"wallSeconds": 94.64051439999999
+	}
+}

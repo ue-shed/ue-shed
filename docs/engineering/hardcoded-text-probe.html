@@ -1,0 +1,701 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<style>
+			body {
+				font: 13px/1.45 var(--font-sans, system-ui);
+				color: var(--foreground, #222);
+			}
+			h3 {
+				font-size: 16px;
+				margin: 22px 0 8px;
+			}
+			p {
+				color: var(--muted-foreground, #666);
+				margin: 8px 0 14px;
+			}
+			.table {
+				overflow-x: auto;
+			}
+			table {
+				border-collapse: collapse;
+				width: 100%;
+				font-variant-numeric: tabular-nums;
+			}
+			th,
+			td {
+				padding: 6px 8px;
+				border-bottom: 1px solid var(--border, #ddd);
+				text-align: left;
+				vertical-align: top;
+			}
+			th {
+				font-size: 11px;
+				color: var(--muted-foreground, #666);
+				font-weight: 600;
+			}
+			td.num {
+				text-align: right;
+				white-space: nowrap;
+			}
+			td:first-child {
+				overflow-wrap: anywhere;
+			}
+			th:first-child,
+			td:first-child {
+				padding-left: 0;
+			}
+			.grid {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 22px;
+			}
+			@media (max-width: 600px) {
+				.grid {
+					grid-template-columns: 1fr;
+				}
+			}
+			summary {
+				cursor: pointer;
+				font-weight: 600;
+				padding: 12px 0;
+			}
+			details {
+				border-top: 1px solid var(--border, #ddd);
+			}
+			.mono {
+				font-family: var(--font-mono, monospace);
+				font-size: 11px;
+			}
+		</style>
+	</head>
+	<body>
+		<p>
+			Released project · 2026-10-26 · reader 22b3f8cf · 12 workers · one off/on run each.
+			Counts cover decoded saved strings/names and pin literals, including copies; survivors
+			are candidates, not verified visible text.
+		</p>
+		<h3>Volume and shapes</h3>
+		<div class="table">
+			<table>
+				<thead>
+					<tr>
+						<th>Measure</th>
+						<th>Occurrences</th>
+						<th>Distinct</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td class="">all</td>
+						<td class="num">23,801,518</td>
+						<td class="num">1,345,045</td>
+					</tr>
+					<tr>
+						<td class="">remaining</td>
+						<td class="num">13,942,584</td>
+						<td class="num">624,177</td>
+					</tr>
+					<tr>
+						<td class="">FName</td>
+						<td class="num">15,758,329</td>
+						<td class="num">224,114</td>
+					</tr>
+					<tr>
+						<td class="">FString</td>
+						<td class="num">7,906,078</td>
+						<td class="num">1,143,158</td>
+					</tr>
+					<tr>
+						<td class="">FName pin literal</td>
+						<td class="num">91,061</td>
+						<td class="num">658</td>
+					</tr>
+					<tr>
+						<td class="">user pin literal</td>
+						<td class="num">41,774</td>
+						<td class="num">4</td>
+					</tr>
+					<tr>
+						<td class="">FString pin literal</td>
+						<td class="num">4,276</td>
+						<td class="num">449</td>
+					</tr>
+					<tr>
+						<td class="">contains space</td>
+						<td class="num">2,392,637</td>
+						<td class="num">217,877</td>
+					</tr>
+					<tr>
+						<td class="">sentence-like</td>
+						<td class="num">1,789,591</td>
+						<td class="num">183,940</td>
+					</tr>
+					<tr>
+						<td class="">CamelCase/snake_case identifier</td>
+						<td class="num">8,420,276</td>
+						<td class="num">358,759</td>
+					</tr>
+					<tr>
+						<td class="">Capitalized</td>
+						<td class="num">2,513,514</td>
+						<td class="num">6,971</td>
+					</tr>
+					<tr>
+						<td class="">multiple words</td>
+						<td class="num">2,397,261</td>
+						<td class="num">218,780</td>
+					</tr>
+					<tr>
+						<td class="">other single token</td>
+						<td class="num">407,128</td>
+						<td class="num">38,079</td>
+					</tr>
+					<tr>
+						<td class="">lowercase</td>
+						<td class="num">204,405</td>
+						<td class="num">1,588</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+		<div class="grid">
+			<section>
+				<h3>Exclusions</h3>
+				<div class="table">
+					<table>
+						<thead>
+							<tr>
+								<th>Measure</th>
+								<th>Occurrences</th>
+								<th>Distinct</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td class="">dotted tag-like name</td>
+								<td class="num">3,733,214</td>
+								<td class="num">533,336</td>
+							</tr>
+							<tr>
+								<td class="">None</td>
+								<td class="num">3,475,994</td>
+								<td class="num">4</td>
+							</tr>
+							<tr>
+								<td class="">file path/extension</td>
+								<td class="num">1,756,163</td>
+								<td class="num">142,931</td>
+							</tr>
+							<tr>
+								<td class="">empty</td>
+								<td class="num">412,560</td>
+								<td class="num">1</td>
+							</tr>
+							<tr>
+								<td class="">number</td>
+								<td class="num">188,467</td>
+								<td class="num">897</td>
+							</tr>
+							<tr>
+								<td class="">GUID/hex</td>
+								<td class="num">163,838</td>
+								<td class="num">40,853</td>
+							</tr>
+							<tr>
+								<td class="">object path/soft reference</td>
+								<td class="num">128,659</td>
+								<td class="num">2,843</td>
+							</tr>
+							<tr>
+								<td class="">whitespace-only</td>
+								<td class="num">39</td>
+								<td class="num">3</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+			<section>
+				<h3>Where survivors occur</h3>
+				<div class="table">
+					<table>
+						<thead>
+							<tr>
+								<th>Measure</th>
+								<th>Occurrences</th>
+								<th>Distinct</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td class="">struct member</td>
+								<td class="num">4,584,704</td>
+								<td class="num">155,309</td>
+							</tr>
+							<tr>
+								<td class="">CDO</td>
+								<td class="num">4,198,081</td>
+								<td class="num">20,391</td>
+							</tr>
+							<tr>
+								<td class="">DataTable cell</td>
+								<td class="num">2,301,060</td>
+								<td class="num">140,889</td>
+							</tr>
+							<tr>
+								<td class="">array/map/set element</td>
+								<td class="num">1,680,283</td>
+								<td class="num">159,236</td>
+							</tr>
+							<tr>
+								<td class="">plain property</td>
+								<td class="num">1,175,309</td>
+								<td class="num">268,679</td>
+							</tr>
+							<tr>
+								<td class="">graph pin</td>
+								<td class="num">3,147</td>
+								<td class="num">1,040</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+		</div>
+		<h3>Extraction cost</h3>
+		<div class="table">
+			<table>
+				<thead>
+					<tr>
+						<th>Pass</th>
+						<th>Native wall s</th>
+						<th>CPU s</th>
+						<th>Peak WS GiB</th>
+						<th>Peak private GiB</th>
+						<th>Transport wall s</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td class="">off</td>
+						<td class="num">94.530</td>
+						<td class="num">460.469</td>
+						<td class="num">3.266</td>
+						<td class="num">3.313</td>
+						<td class="num">94.641</td>
+					</tr>
+					<tr>
+						<td class="">on</td>
+						<td class="num">138.144</td>
+						<td class="num">533.969</td>
+						<td class="num">3.599</td>
+						<td class="num">3.655</td>
+						<td class="num">138.871</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+		<p>
+			Observed on-minus-off: wall 43.614 s (46.1%), CPU 73.500 s (16.0%), peak working set
+			0.333 GiB. One run each; no variance estimate or cache control.
+		</p>
+		<details open>
+			<summary>Top 40 properties · examples for the top 20</summary>
+			<p>
+				Examples are shapes only: c = characters, w = words, p = sentence punctuation. Up to
+				three distinct values per property.
+			</p>
+			<div class="table">
+				<table>
+					<thead>
+						<tr>
+							<th>Property</th>
+							<th>Count</th>
+							<th>Distinct</th>
+							<th>Example shapes</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td class="">Name</td>
+							<td class="num">1,588,170</td>
+							<td class="num">75,352</td>
+							<td class="num">8c/1w, 16c/1w, 16c/2w</td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty01</td>
+							<td class="num">888,681</td>
+							<td class="num">2,216</td>
+							<td class="num">12c/1w, 12c/1w, 12c/1w</td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty02</td>
+							<td class="num">804,211</td>
+							<td class="num">1,034</td>
+							<td class="num">9c/1w, 14c/1w, 13c/1w</td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty03</td>
+							<td class="num">746,537</td>
+							<td class="num">3,531</td>
+							<td class="num">10c/1w, 10c/1w, 10c/1w</td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty04</td>
+							<td class="num">729,732</td>
+							<td class="num">105,450</td>
+							<td class="num">63c/11w, 6c/1w/p, 12c/2w</td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty05</td>
+							<td class="num">716,700</td>
+							<td class="num">19,846</td>
+							<td class="num">62c/14w, 7c/1w/p, 13c/2w</td>
+						</tr>
+						<tr>
+							<td class="">Channel</td>
+							<td class="num">595,724</td>
+							<td class="num">38</td>
+							<td class="num">11c/1w, 12c/1w, 11c/1w</td>
+						</tr>
+						<tr>
+							<td class="">PayloadVariables</td>
+							<td class="num">510,765</td>
+							<td class="num">160</td>
+							<td class="num">12c/1w, 6c/1w, 11c/1w</td>
+						</tr>
+						<tr>
+							<td class="">ExpansionStates</td>
+							<td class="num">453,685</td>
+							<td class="num">89,048</td>
+							<td class="num">10c/1w, 30c/1w, 26c/1w</td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty06</td>
+							<td class="num">417,679</td>
+							<td class="num">162</td>
+							<td class="num">27c/1w, 27c/1w, 21c/1w</td>
+						</tr>
+						<tr>
+							<td class="">MemberName</td>
+							<td class="num">399,824</td>
+							<td class="num">18,311</td>
+							<td class="num">8c/1w, 21c/1w, 22c/1w</td>
+						</tr>
+						<tr>
+							<td class="">ActorLabel</td>
+							<td class="num">340,030</td>
+							<td class="num">176,123</td>
+							<td class="num">13c/1w, 14c/1w, 25c/1w</td>
+						</tr>
+						<tr>
+							<td class="">FuncMap</td>
+							<td class="num">327,476</td>
+							<td class="num">34,130</td>
+							<td class="num">20c/1w, 19c/1w, 9c/1w</td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty07</td>
+							<td class="num">285,052</td>
+							<td class="num">394</td>
+							<td class="num">11c/1w, 11c/1w, 16c/1w</td>
+						</tr>
+						<tr>
+							<td class="">BoundObjectPinName</td>
+							<td class="num">278,925</td>
+							<td class="num">3,181</td>
+							<td class="num">12c/1w, 25c/1w, 8c/1w</td>
+						</tr>
+						<tr>
+							<td class="">RowName</td>
+							<td class="num">215,551</td>
+							<td class="num">12,813</td>
+							<td class="num">4c/1w, 9c/1w, 4c/1w</td>
+						</tr>
+						<tr>
+							<td class="">Value</td>
+							<td class="num">193,258</td>
+							<td class="num">13,346</td>
+							<td class="num">8c/1w, 5c/1w, 29c/1w/p</td>
+						</tr>
+						<tr>
+							<td class="">StaticMeshDerivedDataKey</td>
+							<td class="num">188,282</td>
+							<td class="num">19,718</td>
+							<td class="num">382c/1w, 382c/1w, 382c/1w</td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty08</td>
+							<td class="num">157,735</td>
+							<td class="num">8,675</td>
+							<td class="num">10c/1w, 10c/1w, 10c/1w</td>
+						</tr>
+						<tr>
+							<td class="">PropertyName</td>
+							<td class="num">155,315</td>
+							<td class="num">1,518</td>
+							<td class="num">54c/1w, 54c/1w, 54c/1w</td>
+						</tr>
+						<tr>
+							<td class="">BindingName</td>
+							<td class="num">150,330</td>
+							<td class="num">9,045</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">CustomFunctionName</td>
+							<td class="num">149,654</td>
+							<td class="num">22,683</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty09</td>
+							<td class="num">140,141</td>
+							<td class="num">213</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">CollisionProfileName</td>
+							<td class="num">131,356</td>
+							<td class="num">27</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty10</td>
+							<td class="num">113,482</td>
+							<td class="num">5,425</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">SectionOriginalMaterialName</td>
+							<td class="num">93,360</td>
+							<td class="num">9,522</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">FriendlyName</td>
+							<td class="num">91,328</td>
+							<td class="num">6,752</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">PropertyPath</td>
+							<td class="num">88,218</td>
+							<td class="num">91</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">UniqueTrackName</td>
+							<td class="num">88,191</td>
+							<td class="num">90</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">Type</td>
+							<td class="num">87,745</td>
+							<td class="num">17</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty11</td>
+							<td class="num">85,770</td>
+							<td class="num">4,664</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">FullName</td>
+							<td class="num">81,427</td>
+							<td class="num">2,302</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty12</td>
+							<td class="num">80,351</td>
+							<td class="num">1,989</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">Tags</td>
+							<td class="num">80,184</td>
+							<td class="num">139</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty13</td>
+							<td class="num">79,981</td>
+							<td class="num">620</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty14</td>
+							<td class="num">79,981</td>
+							<td class="num">539</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">ProjectProperty15</td>
+							<td class="num">77,423</td>
+							<td class="num">4,964</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">FunctionDisplayName</td>
+							<td class="num">69,872</td>
+							<td class="num">290</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">ImportMaterialOriginalNameData</td>
+							<td class="num">65,560</td>
+							<td class="num">11,526</td>
+							<td class="num"></td>
+						</tr>
+						<tr>
+							<td class="">CategoryName</td>
+							<td class="num">64,698</td>
+							<td class="num">242</td>
+							<td class="num"></td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</details>
+		<details open>
+			<summary>Top 20 owning asset classes</summary>
+			<div class="table">
+				<table>
+					<thead>
+						<tr>
+							<th>Class</th>
+							<th>Count</th>
+							<th>Distinct</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td class="">Blueprint</td>
+							<td class="num">4,606,101</td>
+							<td class="num">49,175</td>
+						</tr>
+						<tr>
+							<td class="">LevelSequence</td>
+							<td class="num">2,816,734</td>
+							<td class="num">138,817</td>
+						</tr>
+						<tr>
+							<td class="">DataTable</td>
+							<td class="num">2,303,324</td>
+							<td class="num">141,247</td>
+						</tr>
+						<tr>
+							<td class="">NiagaraSystem</td>
+							<td class="num">1,296,697</td>
+							<td class="num">34,088</td>
+						</tr>
+						<tr>
+							<td class="">World</td>
+							<td class="num">1,142,232</td>
+							<td class="num">180,281</td>
+						</tr>
+						<tr>
+							<td class="">WidgetBlueprint</td>
+							<td class="num">352,132</td>
+							<td class="num">30,449</td>
+						</tr>
+						<tr>
+							<td class="">StaticMesh</td>
+							<td class="num">320,188</td>
+							<td class="num">10,877</td>
+						</tr>
+						<tr>
+							<td class="">AnimBlueprint</td>
+							<td class="num">239,492</td>
+							<td class="num">4,945</td>
+						</tr>
+						<tr>
+							<td class="">BlueprintGeneratedClass</td>
+							<td class="num">210,298</td>
+							<td class="num">27,528</td>
+						</tr>
+						<tr>
+							<td class="">MaterialInstanceConstant</td>
+							<td class="num">194,366</td>
+							<td class="num">17,658</td>
+						</tr>
+						<tr>
+							<td class="">ProjectClass01</td>
+							<td class="num">91,865</td>
+							<td class="num">3,977</td>
+						</tr>
+						<tr>
+							<td class="">PhysicsAsset</td>
+							<td class="num">78,948</td>
+							<td class="num">1,904</td>
+						</tr>
+						<tr>
+							<td class="">ProjectClass02</td>
+							<td class="num">47,184</td>
+							<td class="num">3,829</td>
+						</tr>
+						<tr>
+							<td class="">Material</td>
+							<td class="num">38,756</td>
+							<td class="num">4,635</td>
+						</tr>
+						<tr>
+							<td class="">PaperSprite</td>
+							<td class="num">32,598</td>
+							<td class="num">2</td>
+						</tr>
+						<tr>
+							<td class="">AnimMontage</td>
+							<td class="num">28,429</td>
+							<td class="num">5,682</td>
+						</tr>
+						<tr>
+							<td class="">ProjectClass03</td>
+							<td class="num">21,666</td>
+							<td class="num">616</td>
+						</tr>
+						<tr>
+							<td class="">AnimSequence</td>
+							<td class="num">20,103</td>
+							<td class="num">11,126</td>
+						</tr>
+						<tr>
+							<td class="">ProjectClass04</td>
+							<td class="num">17,938</td>
+							<td class="num">9,058</td>
+						</tr>
+						<tr>
+							<td class="">SkeletalMesh</td>
+							<td class="num">17,820</td>
+							<td class="num">3,148</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</details>
+		<p>
+			Top 20 properties cover 71.7% of remaining occurrences; top 40 cover 85.3%; top 20
+			classes cover 99.5%. Sentence-like values cover 12.8%. These are occurrence proportions,
+			not distinct-value unions.
+		</p>
+		<p>
+			167,401 packages; 6,917,776 successful decoded exports; 139,919 export decode errors;
+			2,129 partial packages; 653,331 Raw property/container nodes; 0 unresolved names; cap
+			reached: false. No package read failures. Off/on streams are byte-identical: 635,975,448
+			bytes.
+		</p>
+		<p>
+			All Content packages were selected explicitly, bypassing the FText prefilter. No value
+			or project path was saved. Missing decodes/native tails/compiled string bytecode are
+			outside the census. Sentence-like = whitespace plus punctuation or ≥4 words. Thresholds
+			are research heuristics. Working set/private memory are native process lifetime peaks;
+			timing excludes aggregate-report construction. The shared lock was held for builds and
+			runs.
+		</p>
+	</body>
+</html>

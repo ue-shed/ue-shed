@@ -153,6 +153,33 @@ running any checks during publication. It refuses missing, failed or stale evide
 release-text evidence, and still verifies the clean source commit and packed tarball integrity.
 Run `pnpm release:prepare` again if it reports stale gates.
 
+### Publishing from another machine
+
+The gates need the engines and toolchains; publishing needs only the npm login. To publish from a
+machine that has the login but did not run the gates, hand the prepared release over:
+
+```powershell
+# On the machine that ran pnpm release:prepare, with the release commit pushed:
+pnpm release:handoff
+
+# On the publishing machine, in a clean checkout of that same commit:
+pnpm install --frozen-lockfile
+npm whoami
+pnpm release --checked
+```
+
+`release:handoff` makes the same checks `--checked` does, then uploads the evidence and the kept
+pack (tarballs, publication manifest, pack evidence) as a draft GitHub release named
+`release-handoff-<version>`. A draft is visible only to people who can push to the repository and
+creates no tag. Running it again replaces the draft whole.
+
+`pnpm release --checked` on a checkout with no `out/release-evidence/<version>.json` downloads
+that draft with the GitHub CLI into `out/release-handoff/<version>` and records its evidence there.
+Nothing is trusted on arrival: the gate fingerprints must match the publishing checkout's own
+tree, and every tarball must match the digest the pack recorded, exactly as for local evidence.
+Both machines need the GitHub CLI signed in to an account that can push to the repository; the
+publishing machine needs neither Rust nor Unreal. Delete the draft after publishing.
+
 After `pnpm install`, `pnpm release` needs no per-session toolchain environment setup. The private
 workspace pins Node 26 through `devEngines.runtime`; pnpm installs and selects that runtime for
 scripts. Release reuses the invoking pnpm CLI. It builds nothing, so it needs no Rust. Release

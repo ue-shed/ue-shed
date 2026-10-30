@@ -551,6 +551,7 @@ const testIndexStepsLayer = Layer.effect(
 			},
 			readPoint: () => Effect.die("This test reads no points."),
 			comparePoints: () => Effect.die("This test compares no points."),
+			compareTextFiles: () => Effect.die("This test compares no files."),
 			invalidate: legacy.invalidate
 		});
 		return steps;

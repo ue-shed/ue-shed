@@ -813,6 +813,32 @@ export const makeGameTextIndexSteps = (
 			return comparison;
 		});
 
+		/** Two revisions of one localization file, and a page of what changed between them. */
+		const compareTextFiles = Effect.fn("GameTextIndex.compareTextFiles")(function* (
+			request: GameTextContract.CompareTextFilesRequest
+		) {
+			if (!queries.compareTextFiles)
+				return yield* Effect.fail(
+					failure(
+						"text_files",
+						"This index cannot compare localization files.",
+						"Use the native reader."
+					)
+				);
+			const comparison = yield* queries.compareTextFiles(request);
+			yield* Effect.annotateCurrentSpan({
+				"textFiles.changes": comparison.total,
+				"textFiles.kept": comparison.kept,
+				...Object.fromEntries(
+					Object.entries(comparison.stageSeconds).map(([stage, seconds]) => [
+						`${stage}Seconds`,
+						seconds
+					])
+				)
+			});
+			return comparison;
+		});
+
 		/**
 		 * Scans the target's code in the reader and publishes its code layer when it changed, or
 		 * removes the layer when the host names no engine or the target reads no code.
@@ -1455,6 +1481,7 @@ export const makeGameTextIndexSteps = (
 			openCommitted: sliced(openCommitted),
 			readPoint: sliced(readPoint),
 			comparePoints: sliced(comparePoints),
+			compareTextFiles: sliced(compareTextFiles),
 			invalidate: sliced(invalidate)
 		};
 	});

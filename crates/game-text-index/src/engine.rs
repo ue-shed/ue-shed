@@ -157,6 +157,11 @@ pub enum EngineRequest {
         configuration: Configuration,
         request: Box<crate::package_text_contract::ComparePointsRequest>,
     },
+    /// Two revisions of one localization file and what changed between them, a page at a time;
+    /// needs no reader (Plan 061).
+    CompareTextFiles {
+        request: crate::text_file_compare::CompareTextFilesRequest,
+    },
 }
 impl EngineRequest {
     pub fn validate(&self) -> Result<()> {
@@ -164,6 +169,7 @@ impl EngineRequest {
         let _span = crate::benchmark_timings::Span::new("requestValidate");
         match self {
             Self::Capabilities | Self::RulesCheck { .. } | Self::CodeText { .. } => {}
+            Self::CompareTextFiles { request } => crate::text_file_compare::validate(request)?,
             Self::ComparePoints {
                 configuration,
                 request,
@@ -390,6 +396,12 @@ impl EngineSession {
                 "compare_points",
                 Some(serde_json::to_string(&crate::point_compare::compare(
                     configuration,
+                    request,
+                )?)?),
+            ),
+            EngineRequest::CompareTextFiles { request } => (
+                "compare_text_files",
+                Some(serde_json::to_string(&crate::text_file_compare::compare(
                     request,
                 )?)?),
             ),

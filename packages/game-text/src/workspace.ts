@@ -2,6 +2,13 @@ import type { RelatedLinesRequest, RelatedLinesResult } from "./related-lines.js
 import { indexPublicFailure } from "./index-public-error.js";
 import type { ChangeComparisonRequest, ChangeComparisonResult } from "./change-comparison.js";
 import { makeWorkspaceChangeComparison } from "./workspace-change.js";
+import type {
+	LocalizationFileChoiceRequest,
+	LocalizationFileChoiceResult,
+	LocalizationFileComparisonRequest,
+	LocalizationFileComparisonResult
+} from "./file-comparison.js";
+import { makeWorkspaceFileComparison } from "./workspace-file-comparison.js";
 import { type IndexFailure } from "./index-contract.js";
 import {
 	GameTextInvestigationPreset,
@@ -220,6 +227,14 @@ export interface GameTextWorkspaceApi {
 	readonly compareChange: (
 		request: ChangeComparisonRequest
 	) => Effect.Effect<ChangeComparisonResult>;
+	/** One localization file for one side of a comparison, chosen by the person. */
+	readonly chooseLocalizationFile: (
+		request: LocalizationFileChoiceRequest
+	) => Effect.Effect<LocalizationFileChoiceResult>;
+	/** Two chosen localization files compared; see `LocalizationFileComparisonResult`. */
+	readonly compareLocalizationFiles: (
+		request: LocalizationFileComparisonRequest
+	) => Effect.Effect<LocalizationFileComparisonResult>;
 	readonly investigationExport: (
 		request: GameTextInvestigationExportRequest
 	) => Effect.Effect<InvestigationFileResult>;
@@ -321,6 +336,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		).pipe(Effect.forkIn(workspaceScope));
 	const steps = yield* GameTextIndexSteps;
 	const compareChange = yield* makeWorkspaceChangeComparison(host);
+	const { chooseLocalizationFile, compareLocalizationFiles } =
+		yield* makeWorkspaceFileComparison(host);
 	const codeSource = (projectRoot: string) =>
 		host.codeSource ? host.codeSource(projectRoot) : Effect.succeed(undefined);
 	const refreshIndex = yield* makeRetainedGameTextIndexWith(
@@ -1678,6 +1695,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		),
 		related: scoped(related),
 		compareChange,
+		chooseLocalizationFile,
+		compareLocalizationFiles,
 		investigationExport: scoped((request: GameTextInvestigationExportRequest) =>
 			investigationExport(request.query, request.format)
 		),

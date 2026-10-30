@@ -200,6 +200,10 @@ const workbenchRendererApi = {
 			ipcRenderer.invoke("game-text:localization:report-file", request),
 		localizationLinesFile: (request) =>
 			ipcRenderer.invoke("game-text:localization:lines-file", request),
+		chooseLocalizationFile: (request) =>
+			ipcRenderer.invoke("game-text:localization:choose-file", request),
+		compareLocalizationFiles: (request) =>
+			ipcRenderer.invoke("game-text:localization:compare-files", request),
 		localizationTargets: () => ipcRenderer.invoke("game-text:localization:targets"),
 		localizationTarget: (target) => ipcRenderer.invoke("game-text:localization:target", target),
 		localizationFocus: (request) => ipcRenderer.invoke("game-text:localization:focus", request),

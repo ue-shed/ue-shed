@@ -795,6 +795,14 @@ export const invokeContracts = {
 		"game-text:localization:lines-file",
 		"localizationLinesFile"
 	),
+	"game-text:localization:choose-file": gameTextInvoke(
+		"game-text:localization:choose-file",
+		"chooseLocalizationFile"
+	),
+	"game-text:localization:compare-files": gameTextInvoke(
+		"game-text:localization:compare-files",
+		"compareLocalizationFiles"
+	),
 	"game-text:localization:targets": gameTextInvoke(
 		"game-text:localization:targets",
 		"localizationTargets"

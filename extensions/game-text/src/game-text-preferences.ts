@@ -128,7 +128,7 @@ const StoredPreferences = Schema.Struct({
 	lens: lenient(Schema.optionalKey(LegacyReviewLens)),
 	withoutNotes: lenient(Schema.optionalKey(Schema.Boolean)),
 	where: lenient(Schema.optionalKey(TextWhere)),
-	mode: lenient(Schema.optionalKey(Schema.Literals(["corpus", "quality", "reports"]))),
+	mode: lenient(Schema.optionalKey(Schema.Literals(["corpus", "quality", "reports", "compare"]))),
 	qualityFilter: lenient(Schema.optionalKey(WorkspaceQualityFilter)),
 	selectedId: lenient(Schema.optionalKey(TextUnitId)),
 	selectedFindingId: lenient(Schema.optionalKey(TextQualityFindingId)),
@@ -174,7 +174,7 @@ export interface GameTextPreferences {
 	readonly lens?: LegacyFilters["lens"];
 	readonly withoutNotes?: boolean;
 	readonly where?: Schema.Schema.Type<typeof TextWhere> | undefined;
-	readonly mode?: "corpus" | "quality" | "reports";
+	readonly mode?: "corpus" | "quality" | "reports" | "compare";
 	readonly qualityFilter?: Schema.Schema.Type<typeof WorkspaceQualityFilter>;
 	readonly selectedId: Schema.Schema.Type<typeof TextUnitId> | undefined;
 	readonly selectedFindingId?: Schema.Schema.Type<typeof TextQualityFindingId> | undefined;

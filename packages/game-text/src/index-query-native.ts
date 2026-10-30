@@ -34,6 +34,14 @@ export class GameTextIndexQuery extends Context.Service<
 			readonly configuration: SharedIndexOptions;
 			readonly request: GameTextContract.ComparePointsRequest;
 		}) => Effect.Effect<GameTextContract.PointComparison, GameTextIndexError>;
+		/**
+		 * Two revisions of one localization file and a page of what changed between them
+		 * (`compare_text_files`). The engine reads both files and keeps the comparison, so a later
+		 * page reads neither again.
+		 */
+		readonly compareTextFiles?: (
+			request: GameTextContract.CompareTextFilesRequest
+		) => Effect.Effect<GameTextContract.TextFileComparison, GameTextIndexError>;
 	}
 >()("@ue-shed/game-text/GameTextIndexQuery") {}
 
@@ -45,6 +53,17 @@ const compareFailed = (cause: unknown) =>
 		retrySafe: false,
 		message: "The native Game Text point comparison could not complete.",
 		recovery: "Read both points again, then compare them.",
+		cause
+	});
+
+const fileCompareFailed = (cause: unknown) =>
+	new GameTextIndexError({
+		code: "index_failed",
+		operation: "compare_text_files",
+		nextStep: "reconcile",
+		retrySafe: true,
+		message: "The localization files could not be compared.",
+		recovery: "Check that both revisions are readable localization files, then compare again.",
 		cause
 	});
 
@@ -100,6 +119,23 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 						return yield* Effect.fail(compareFailed("The engine sent no comparison."));
 					return comparison;
 				}),
+				compareTextFiles: Effect.fn("GameTextIndexQuery.compareTextFiles")(
+					function* (request) {
+						const answer = yield* client
+							.execute({ action: "compare_text_files", request })
+							.pipe(Effect.mapError(fileCompareFailed));
+						const comparison = answerJson<GameTextContract.TextFileComparison>(answer);
+						if (comparison === undefined)
+							return yield* Effect.fail(
+								fileCompareFailed("The engine sent no comparison.")
+							);
+						yield* Effect.annotateCurrentSpan({
+							"textFiles.total": comparison.total,
+							"textFiles.kept": comparison.kept
+						});
+						return comparison;
+					}
+				),
 				open: Effect.fn("GameTextIndexQuery.open")(function* (input) {
 					return yield* RcMap.get(
 						readers,

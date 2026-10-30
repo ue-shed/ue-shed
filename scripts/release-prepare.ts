@@ -8,7 +8,10 @@
  *   and plugin compatibility on UE 5.7, 5.8 and 4.27, one after another (UnrealBuildTool shares
  *   one log file across engines, and these gates rebuild package output `pnpm check` reads).
  *
- * The lanes run in parallel unless `--serial`. A gate whose recorded evidence still covers the
+ * The lanes run in parallel unless `--serial`. A lane stops at its first failed gate, since the fix
+ * almost always changes the later gates' inputs and leaves their results stale; `--keep-going`
+ * runs them anyway (and, as in `pnpm check:time`, a gate's later steps). A gate whose recorded
+ * evidence still covers the
  * release commit's inputs is reused instead of rerun, so after a changelog-only edit only the
  * release-text and pack gates run again. Writes `out/release-prepare/<version>-<time>/` with the
  * trace, logs, `report.html` and `validation.md`.
@@ -16,6 +19,7 @@
  *   pnpm release:prepare
  *   pnpm release:prepare --only check,pack
  *   pnpm release:prepare --serial --record
+ *   pnpm release:prepare --keep-going
  */
 
 import { spawnSync } from "node:child_process";
@@ -92,6 +96,27 @@ function describeState(planned: PlannedGate) {
 		case "missing":
 			return "run: no evidence";
 	}
+}
+
+/**
+ * Runs a lane's gates in order. After a failed gate the rest are skipped, unless `keepGoing`:
+ * fixing the failure almost always changes their inputs too.
+ */
+export async function runLaneGates(
+	gates: readonly ReleaseGate[],
+	run: (gate: ReleaseGate) => Promise<GateRun>,
+	keepGoing: boolean
+): Promise<{ readonly runs: GateRun[]; readonly skipped: ReleaseGate[] }> {
+	const runs: GateRun[] = [];
+	const skipped: ReleaseGate[] = [];
+	for (const gate of gates) {
+		if (!keepGoing && runs.some((previous) => previous.result.status === "failed")) {
+			skipped.push(gate);
+			continue;
+		}
+		runs.push(await run(gate));
+	}
+	return { runs, skipped };
 }
 
 interface Lane {
@@ -459,49 +484,48 @@ async function main() {
 		tree,
 		keepGoing: values["keep-going"]
 	};
-	const runs = (
-		await Promise.all(
-			lanes
-				.filter((lane) => lane.gates.length > 0)
-				.map(async (lane) => {
-					const laneRuns: GateRun[] = [];
-					if (
-						lane.setup !== undefined &&
-						!(await lane.setup(session, session.rootSpan))
-					) {
-						for (const gate of lane.gates) {
-							laneRuns.push({
-								gate,
-								timing: {
-									name: gate.id,
-									command: "",
-									depth: 0,
-									startMs: 0,
-									durationMs: 0,
-									status: "skipped",
-									children: []
-								},
-								result: {
-									status: "failed",
-									scope: gate.scope,
-									fingerprint: gateFingerprint(gate.scope, tree),
-									commit,
-									finishedAt: new Date().toISOString(),
-									durationMs: 0,
-									trace: runDirectory,
-									detail: `The ${lane.name} lane's checkout could not be prepared.`
-								}
-							});
-						}
-						return laneRuns;
+	const laneResults = await Promise.all(
+		lanes
+			.filter((lane) => lane.gates.length > 0)
+			.map(async (lane): Promise<{ runs: GateRun[]; skipped: ReleaseGate[] }> => {
+				const laneRuns: GateRun[] = [];
+				if (lane.setup !== undefined && !(await lane.setup(session, session.rootSpan))) {
+					for (const gate of lane.gates) {
+						laneRuns.push({
+							gate,
+							timing: {
+								name: gate.id,
+								command: "",
+								depth: 0,
+								startMs: 0,
+								durationMs: 0,
+								status: "skipped",
+								children: []
+							},
+							result: {
+								status: "failed",
+								scope: gate.scope,
+								fingerprint: gateFingerprint(gate.scope, tree),
+								commit,
+								finishedAt: new Date().toISOString(),
+								durationMs: 0,
+								trace: runDirectory,
+								detail: `The ${lane.name} lane's checkout could not be prepared.`
+							}
+						});
 					}
-					// Gates are independent evidence, so a failure does not stop the rest of the lane.
-					for (const gate of lane.gates)
-						laneRuns.push(await runGate(gate, lane, context));
-					return laneRuns;
-				})
-		)
-	).flat();
+					return { runs: laneRuns, skipped: [] };
+				}
+				return runLaneGates(
+					lane.gates,
+					(gate) => runGate(gate, lane, context),
+					context.keepGoing
+				);
+			})
+	);
+	const runs = laneResults.flatMap((lane) => lane.runs);
+	// A skipped gate keeps its earlier evidence, which no longer covers this commit.
+	const skipped = laneResults.flatMap((lane) => lane.skipped);
 
 	const gates = { ...evidence.gates };
 	for (const run of runs) gates[run.gate.id] = run.result;
@@ -563,6 +587,12 @@ async function main() {
 			`  ${run.gate.id.padEnd(14)} ${run.result.status.padEnd(12)} ${seconds(run.result.durationMs)}${run.result.detail ? `  ${run.result.detail}` : ""}`
 		);
 	}
+	for (const gate of skipped) {
+		console.log(
+			`  ${gate.id.padEnd(14)} ${"skipped".padEnd(12)} an earlier gate in its lane failed`
+		);
+	}
+	if (skipped.length > 0) console.log("  (--keep-going runs gates after a failure)");
 	console.log(`\nEvidence: ${relative(repositoryRoot, evidencePath)}`);
 	console.log(`Report:   ${relative(repositoryRoot, reportPath)}`);
 	console.log(`Notes:    ${relative(repositoryRoot, validationPath)}`);

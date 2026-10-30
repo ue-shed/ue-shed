@@ -213,6 +213,19 @@ jobs:
                       scripts/native-game-text-join.test.ts \
                       packages/enhanced-input/src/dogfood.integration.test.ts \
                       2>&1 | tee -a evidence/uasset-io-check.log
+            - name: Lint the native crates with Windows type layouts
+              # The engine and reader ship for Windows, where types such as PathBuf are larger, so a
+              # size lint (large_enum_variant) can pass here and fail there. The GNU Windows target
+              # has those layouts and builds zstd with mingw.
+              if: >-
+                  !cancelled() && needs.changes.outputs.uasset_io == 'true'
+              shell: bash
+              run: |
+                  set -o pipefail
+                  sudo apt-get update -qq
+                  sudo apt-get install -y -qq --no-install-recommends gcc-mingw-w64-x86-64
+                  rustup target add x86_64-pc-windows-gnu
+                  pnpm run uasset:check:windows-layout 2>&1 | tee evidence/uasset-windows-layout.log
             - name: Collect compiler cache diagnostics
               if: always()
               shell: bash

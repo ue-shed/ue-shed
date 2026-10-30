@@ -52,6 +52,7 @@ test("Game Text, native index and CLI changes exercise IO without the site or Ca
 	for (const file of [
 		"packages/game-text/src/entry-schema.ts",
 		"crates/game-text-index/src/lib.rs",
+		"crates/unreal-code/src/scanner.rs",
 		"apps/cli/src/localization.test.ts",
 		"scripts/native-game-text-join.test.ts",
 		"scripts/package-text-reader.test-support.ts"

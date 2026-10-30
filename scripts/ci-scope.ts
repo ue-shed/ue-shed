@@ -71,7 +71,7 @@ export function selectCiScope(
 		libraries ||
 		files.some(
 			(path) =>
-				/^(?:crates\/(?:uasset-io|game-text-index)|packages\/(?:uasset|uasset-win32-x64|unreal-assets|blueprints|game-text|enhanced-input|authoring|protocol)|apps\/cli|fixtures)\//.test(
+				/^(?:crates\/(?:uasset-io|game-text-index|unreal-code)|packages\/(?:uasset|uasset-win32-x64|unreal-assets|blueprints|game-text|enhanced-input|authoring|protocol)|apps\/cli|fixtures)\//.test(
 					path
 				) ||
 				/^scripts\/(?:test-saved-review|native-game-text-join|columnar-join-fuzz\.test-support|package-text-.*)\.(?:test\.)?ts$/.test(

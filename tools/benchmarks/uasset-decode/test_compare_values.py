@@ -1,11 +1,21 @@
 """The structural check must reject every change except newly decoded raw values."""
 
 import runpy
+import json
 import unittest
 from pathlib import Path
 
-compare = runpy.run_path(str(Path(__file__).with_name("compare-values.py")))["compare"]
+compare_ordered = runpy.run_path(str(Path(__file__).with_name("compare-values.py")))["compare_ordered"]
 merge = runpy.run_path(str(Path(__file__).with_name("census.py")))["merge"]
+
+
+def compare(old, new):
+    def rows(values):
+        for (export, path), (kind, digest) in values.items():
+            yield json.dumps({"package": "fixture.uasset", "export": export, "path": path,
+                              "kind": kind, "digest": digest}, separators=(",", ":"))
+    _, improvements = compare_ordered(rows(old), rows(new))
+    return sum(improvements.values())
 
 
 class EvidenceComparisonTests(unittest.TestCase):

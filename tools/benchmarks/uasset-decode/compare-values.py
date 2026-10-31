@@ -2,38 +2,56 @@
 """Require existing decoded property evidence to survive raw-to-typed improvements unchanged."""
 
 import argparse
-import itertools
 import json
 from pathlib import Path
 
 
-def packages(path):
-    with path.open(encoding="utf8") as stream:
-        rows = (json.loads(line) for line in stream)
-        for package, group in itertools.groupby(rows, key=lambda row: row["package"]):
-            values = {}
-            for row in group:
-                key = (row["export"], row["path"])
-                if key in values:
-                    raise ValueError(f"duplicate evidence: {package} {key}")
-                values[key] = (row["kind"], row["digest"])
-            yield package, values
+def identity(row):
+    return row["package"], row["export"], row["path"]
 
 
-def compare(old, new):
-    replacements = []
-    for key, value in old.items():
-        if key not in new:
-            raise ValueError(f"existing value removed: {key}")
-        if new[key] != value:
-            if value[0] != "raw" or new[key][0] == "raw":
-                raise ValueError(f"existing decoded value or raw reason changed: {key}")
-            replacements.append(key)
-    for export, path in new.keys() - old.keys():
-        if not any(export == parent_export and path.startswith(parent + "/")
-                   for parent_export, parent in replacements):
-            raise ValueError(f"unrelated value added: {(export, path)}")
-    return len(replacements)
+def compare_ordered(before, after):
+    """Compare preorder JSON lines, retaining only one witness from each input."""
+    after = iter(after)
+    current_line = next(after, None)
+    checked = 0
+    previous_package = None
+    package_marker = None
+    improved = {}
+    for old_line in before:
+        old = None
+        if package_marker is None or package_marker not in old_line:
+            old = json.loads(old_line)
+            if old["package"] != previous_package:
+                checked += 1
+                previous_package = old["package"]
+            package_marker = '"package":' + json.dumps(previous_package, ensure_ascii=False) + ','
+        # Exact serialized equality proves both identity and value equality. Most
+        # evidence is unchanged, so avoid decoding tens of gigabytes of identical JSON.
+        if old_line == current_line:
+            current_line = next(after, None)
+            continue
+        old = old if old is not None else json.loads(old_line)
+        current = json.loads(current_line) if current_line is not None else None
+        if current is None or identity(current) != identity(old):
+            raise ValueError(f"existing value removed, reordered, or unrelated value added: {identity(old)}")
+        changed = (old["kind"], old["digest"]) != (current["kind"], current["digest"])
+        if changed and (old["kind"] != "raw" or current["kind"] == "raw"):
+            raise ValueError(f"existing decoded value or raw reason changed: {identity(old)}")
+        current_line = next(after, None)
+        if changed:
+            improved[old["package"]] = improved.get(old["package"], 0) + 1
+            # A formerly raw node had no descendants. Only its new descendants may
+            # precede the next unchanged witness; neighboring fields stay checked.
+            while current_line is not None:
+                current = json.loads(current_line)
+                if (current["package"] != old["package"] or current["export"] != old["export"]
+                        or not current["path"].startswith(old["path"] + "/")):
+                    break
+                current_line = next(after, None)
+    if current_line is not None:
+        raise ValueError(f"unrelated value added: {identity(json.loads(current_line))}")
+    return checked, improved
 
 
 def main():
@@ -42,26 +60,14 @@ def main():
     parser.add_argument("after", type=Path)
     parser.add_argument("--output", type=Path, help="optional JSON report including improved package paths")
     args = parser.parse_args()
-    checked = replacements = changed_packages = 0
-    improved = {}
-    for before, after in itertools.zip_longest(packages(args.before / "values.jsonl"),
-                                              packages(args.after / "values.jsonl")):
-        if before is None or after is None or before[0] != after[0]:
-            raise ValueError("package evidence order or membership changed")
-        try:
-            changed = compare(before[1], after[1])
-        except ValueError as error:
-            raise ValueError(f"{before[0]}: {error}") from error
-        checked += 1
-        replacements += changed
-        changed_packages += bool(changed)
-        if changed:
-            improved[before[0]] = changed
+    with (args.before / "values.jsonl").open(encoding="utf8") as before, \
+            (args.after / "values.jsonl").open(encoding="utf8") as after:
+        checked, improved = compare_ordered(before, after)
     if (args.before / "errors.jsonl").read_bytes() != (args.after / "errors.jsonl").read_bytes():
         raise ValueError("parse/export failures changed; investigate before proceeding")
     summary = {"packages_with_property_evidence": checked,
-                      "packages_improved": changed_packages,
-                      "raw_values_decoded": replacements,
+                      "packages_improved": len(improved),
+                      "raw_values_decoded": sum(improved.values()),
                       "existing_values_unchanged": True}
     if args.output:
         args.output.write_text(json.dumps({**summary, "improved_packages": improved}, indent=2), encoding="utf8")

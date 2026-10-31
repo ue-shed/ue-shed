@@ -1,0 +1,482 @@
+{
+	"schemaVersion": 1,
+	"sampling": {
+		"method": "perf cpu-clock:u at 499 Hz, DWARF stacks with 16 KiB stack dumps. Inlining disabled in reporting; flat self samples, not inclusive cost. Percentages are relative to each lane, not directly additive speedups.",
+		"profiles": {
+			"baseline": {
+				"parse": {
+					"lostSamples": 0,
+					"topSelfSamples": [
+						{
+							"percent": 13.95,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::package::Package>::parse_header"
+						},
+						{
+							"percent": 12.78,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_bytes::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 5.97,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::package::read_archive_bool::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 4.38,
+							"object": "libc.so.6",
+							"symbol": "malloc"
+						},
+						{
+							"percent": 3.65,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::package::read_non_negative_u64::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 2.96,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::package::IndexPathResolver>::ensure_resolved"
+						},
+						{
+							"percent": 2.69,
+							"object": "libc.so.6",
+							"symbol": "cfree"
+						},
+						{
+							"percent": 2.48,
+							"object": "libc.so.6",
+							"symbol": "realloc"
+						},
+						{
+							"percent": 2.32,
+							"object": "parser-speed",
+							"symbol": "alloc[dd4eceadba51cea0]::fmt::format::format_inner"
+						},
+						{
+							"percent": 2.32,
+							"object": "parser-speed",
+							"symbol": "<alloc[dd4eceadba51cea0]::string::String as core[7f68c50a89fc67d0]::fmt::Write>::write_str"
+						},
+						{
+							"percent": 2.22,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_name_ref::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 1.43,
+							"object": "libc.so.6",
+							"symbol": "memcmp"
+						},
+						{
+							"percent": 1.37,
+							"object": "parser-speed",
+							"symbol": "<core[7f68c50a89fc67d0]::str::lossy::Utf8Chunks as core[7f68c50a89fc67d0]::iter::traits::iterator::Iterator>::next"
+						},
+						{
+							"percent": 1.32,
+							"object": "libc.so.6",
+							"symbol": "0x0000000000140864"
+						},
+						{
+							"percent": 1.32,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::package::normalize_object_path"
+						},
+						{
+							"percent": 1.16,
+							"object": "parser-speed",
+							"symbol": "<alloc[dd4eceadba51cea0]::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc[dd4eceadba51cea0]::alloc::Global>"
+						},
+						{
+							"percent": 1.16,
+							"object": "parser-speed",
+							"symbol": "core[7f68c50a89fc67d0]::fmt::write"
+						},
+						{
+							"percent": 1.11,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_fstring::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 1.06,
+							"object": "libc.so.6",
+							"symbol": "0x00000000000941a4"
+						},
+						{
+							"percent": 1,
+							"object": "parser-speed",
+							"symbol": "<alloc[dd4eceadba51cea0]::raw_vec::RawVecInner>::finish_grow"
+						}
+					]
+				},
+				"decode": {
+					"lostSamples": 0,
+					"topSelfSamples": [
+						{
+							"percent": 6.93,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_bytes::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 6.06,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::property::read_tagged_property_stream"
+						},
+						{
+							"percent": 5.48,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_name_ref::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 5.37,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::codec::decode_property_stream_values_at_depth"
+						},
+						{
+							"percent": 5.2,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::property::read_property_type_name_at_depth::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 4.62,
+							"object": "libc.so.6",
+							"symbol": "malloc"
+						},
+						{
+							"percent": 3.7,
+							"object": "libc.so.6",
+							"symbol": "memcmp"
+						},
+						{
+							"percent": 3.35,
+							"object": "parser-speed",
+							"symbol": "core[7f68c50a89fc67d0]::slice::memchr::memrchr_aligned"
+						},
+						{
+							"percent": 2.66,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::codec::decode_typed_value::<uasset_parser[6297cd4f9444000]::codec::PropertyPath>"
+						},
+						{
+							"percent": 2.6,
+							"object": "libc.so.6",
+							"symbol": "cfree"
+						},
+						{
+							"percent": 2.02,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::asset::decode_export"
+						},
+						{
+							"percent": 1.85,
+							"object": "parser-speed",
+							"symbol": "<alloc[dd4eceadba51cea0]::raw_vec::RawVecInner>::try_allocate_in"
+						},
+						{
+							"percent": 1.79,
+							"object": "libc.so.6",
+							"symbol": "realloc"
+						},
+						{
+							"percent": 1.62,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::schema::SourceModel as uasset_parser[6297cd4f9444000]::schema::SchemaProvider>::class_is_a"
+						},
+						{
+							"percent": 1.56,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::asset::decode_uobject_properties"
+						},
+						{
+							"percent": 1.39,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::codec::resolve_struct_type_path"
+						},
+						{
+							"percent": 1.15,
+							"object": "parser-speed",
+							"symbol": "core[7f68c50a89fc67d0]::ptr::drop_glue::<uasset_parser[6297cd4f9444000]::property::PropertyTypeName>"
+						},
+						{
+							"percent": 1.04,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::validate_remaining::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 1.04,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::validate_allocation::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 0.98,
+							"object": "parser-speed",
+							"symbol": "core[7f68c50a89fc67d0]::fmt::write"
+						}
+					]
+				}
+			},
+			"final": {
+				"parse": {
+					"lostSamples": 0,
+					"topSelfSamples": [
+						{
+							"percent": 19.86,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::package::Package>::parse_header"
+						},
+						{
+							"percent": 4.84,
+							"object": "libc.so.6",
+							"symbol": "cfree"
+						},
+						{
+							"percent": 4.72,
+							"object": "libc.so.6",
+							"symbol": "malloc"
+						},
+						{
+							"percent": 4.41,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::package::IndexPathResolver>::ensure_resolved"
+						},
+						{
+							"percent": 4.35,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_name_ref::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 3.66,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::package::read_archive_bool::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 3.35,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::package::read_non_negative_u64::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 2.11,
+							"object": "libc.so.6",
+							"symbol": "memcmp"
+						},
+						{
+							"percent": 2.05,
+							"object": "parser-speed",
+							"symbol": "<core[7f68c50a89fc67d0]::str::lossy::Utf8Chunks as core[7f68c50a89fc67d0]::iter::traits::iterator::Iterator>::next"
+						},
+						{
+							"percent": 1.74,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_ansi_string::<core[7f68c50a89fc67d0]::fmt::Arguments>::{closure#0}"
+						},
+						{
+							"percent": 1.61,
+							"object": "libc.so.6",
+							"symbol": "realloc"
+						},
+						{
+							"percent": 1.55,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::package::normalize_object_path"
+						},
+						{
+							"percent": 1.43,
+							"object": "parser-speed",
+							"symbol": "<alloc[dd4eceadba51cea0]::string::String as core[7f68c50a89fc67d0]::fmt::Write>::write_str"
+						},
+						{
+							"percent": 1.37,
+							"object": "parser-speed",
+							"symbol": "alloc[dd4eceadba51cea0]::fmt::format::format_inner"
+						},
+						{
+							"percent": 1.24,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_fstring::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 1.18,
+							"object": "libc.so.6",
+							"symbol": "0x0000000000092a00"
+						},
+						{
+							"percent": 1.18,
+							"object": "parser-speed",
+							"symbol": "core[7f68c50a89fc67d0]::ptr::drop_glue::<uasset_parser[6297cd4f9444000]::package::Package>"
+						},
+						{
+							"percent": 1.06,
+							"object": "libc.so.6",
+							"symbol": "0x00000000000a19d8"
+						},
+						{
+							"percent": 0.99,
+							"object": "libc.so.6",
+							"symbol": "0x0000000000092a4c"
+						},
+						{
+							"percent": 0.93,
+							"object": "libc.so.6",
+							"symbol": "0x00000000000a19d4"
+						}
+					]
+				},
+				"decode": {
+					"lostSamples": 0,
+					"topSelfSamples": [
+						{
+							"percent": 6.87,
+							"object": "libc.so.6",
+							"symbol": "memcmp"
+						},
+						{
+							"percent": 6.43,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::codec::decode_property_stream_values_at_depth"
+						},
+						{
+							"percent": 5.19,
+							"object": "libc.so.6",
+							"symbol": "malloc"
+						},
+						{
+							"percent": 4.55,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::asset::decode_uobject_properties_with_replay"
+						},
+						{
+							"percent": 3.36,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::codec::decode_typed_value::<uasset_parser[6297cd4f9444000]::codec::PropertyPath>"
+						},
+						{
+							"percent": 2.82,
+							"object": "libc.so.6",
+							"symbol": "cfree"
+						},
+						{
+							"percent": 2.72,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::codec::resolve_struct_type_path"
+						},
+						{
+							"percent": 2.67,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::property::read_tagged_property_stream::<str>"
+						},
+						{
+							"percent": 2.62,
+							"object": "parser-speed",
+							"symbol": "core[7f68c50a89fc67d0]::ptr::drop_glue::<uasset_parser[6297cd4f9444000]::property::PropertyTypeName>"
+						},
+						{
+							"percent": 2.37,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::asset::decode_data_table_rows"
+						},
+						{
+							"percent": 2.13,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::property::read_property_type_name_at_depth::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 2.03,
+							"object": "libc.so.6",
+							"symbol": "realloc"
+						},
+						{
+							"percent": 1.88,
+							"object": "parser-speed",
+							"symbol": "uasset_parser[6297cd4f9444000]::asset::decode_export_with_replay"
+						},
+						{
+							"percent": 1.83,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::archive::Reader>::read_name_ref::<core[7f68c50a89fc67d0]::fmt::Arguments>"
+						},
+						{
+							"percent": 1.68,
+							"object": "parser-speed",
+							"symbol": "<alloc[dd4eceadba51cea0]::vec::Vec<uasset_parser[6297cd4f9444000]::property::PropertyTypeName> as core[7f68c50a89fc67d0]::clone::Clone>::clone"
+						},
+						{
+							"percent": 1.43,
+							"object": "parser-speed",
+							"symbol": "core[7f68c50a89fc67d0]::ptr::drop_glue::<uasset_parser[6297cd4f9444000]::property::PropertyValue>"
+						},
+						{
+							"percent": 1.43,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::schema::SourceModel as uasset_parser[6297cd4f9444000]::schema::SchemaProvider>::class_is_a"
+						},
+						{
+							"percent": 1.34,
+							"object": "parser-speed",
+							"symbol": "<uasset_parser[6297cd4f9444000]::schema::SourceModel as uasset_parser[6297cd4f9444000]::schema::SchemaProvider>::find_class"
+						},
+						{
+							"percent": 1.19,
+							"object": "libc.so.6",
+							"symbol": "0x0000000000140864"
+						},
+						{
+							"percent": 1.19,
+							"object": "parser-speed",
+							"symbol": "core[7f68c50a89fc67d0]::slice::memchr::memrchr_aligned"
+						}
+					]
+				}
+			}
+		}
+	},
+	"counters": {
+		"method": "Whole-process user hardware events for identical corpus work: 101 samples, 3 warmups and one calibration sweep, batch-ms=0; 105 combined sweeps plus startup/input/model initialization. Pinned CPU6. This kernel exposes two overlapping ARM PMUs and perf prints identical counts under both aliases; each unique event is counted ONCE, never summed. Timing claims use the separate interleaved measurements.",
+		"baseline": {
+			"rawCsv": "# started on Sat Oct 31 21:10:14 2026\n\n70978377251,,armv8_cortex_a55/instructions:u/,14052569986,100.00,2.44,insn per cycle\n70978377251,,armv8_cortex_a78/instructions:u/,14052569986,100.00,2.44,insn per cycle\n29122073127,,armv8_cortex_a55/cycles:u/,14052569986,100.00,2.072,GHz\n29122073127,,armv8_cortex_a78/cycles:u/,14052569986,100.00,2.072,GHz\n13416208037,,armv8_cortex_a55/branches:u/,14052569986,100.00,954.716,M/sec\n13416208037,,armv8_cortex_a78/branches:u/,14052569986,100.00,954.716,M/sec\n70537064,,armv8_cortex_a55/branch-misses:u/,14052569986,100.00,0.53,of all branches\n70537064,,armv8_cortex_a78/branch-misses:u/,14052569986,100.00,0.53,of all branches\n14052.57,msec,task-clock:u,14052569986,100.00,1.000,CPUs utilized\n",
+			"uniqueEvents": {
+				"instructions": 70978377251,
+				"cycles": 29122073127,
+				"branches": 13416208037,
+				"branch-misses": 70537064
+			}
+		},
+		"optimized": {
+			"rawCsv": "# started on Sat Oct 31 21:10:28 2026\n\n45554809145,,armv8_cortex_a55/instructions:u/,8669152998,100.00,2.40,insn per cycle\n45554809145,,armv8_cortex_a78/instructions:u/,8669152998,100.00,2.40,insn per cycle\n18955140430,,armv8_cortex_a55/cycles:u/,8669152998,100.00,2.187,GHz\n18955140430,,armv8_cortex_a78/cycles:u/,8669152998,100.00,2.187,GHz\n9111957534,,armv8_cortex_a55/branches:u/,8669152998,100.00,1.051,G/sec\n9111957534,,armv8_cortex_a78/branches:u/,8669152998,100.00,1.051,G/sec\n40293621,,armv8_cortex_a55/branch-misses:u/,8669152998,100.00,0.44,of all branches\n40293621,,armv8_cortex_a78/branch-misses:u/,8669152998,100.00,0.44,of all branches\n8669.15,msec,task-clock:u,8669152998,100.00,0.999,CPUs utilized\n",
+			"uniqueEvents": {
+				"instructions": 45554809145,
+				"cycles": 18955140430,
+				"branches": 9111957534,
+				"branch-misses": 40293621
+			}
+		},
+		"reductionPercent": {
+			"instructions": 35.818750851537416,
+			"cycles": 34.9114317949223,
+			"branches": 32.08246690219387,
+			"branch-misses": 42.875959509740866
+		}
+	},
+	"errorSizesBytes": {
+		"original-errors": {
+			"ArchiveError": 64,
+			"PropertyError": 104,
+			"ResultName": 64,
+			"ResultValue": 104,
+			"ResultUnit": 104
+		},
+		"boxed-errors": {
+			"ArchiveError": 8,
+			"PropertyError": 8,
+			"ResultName": 16,
+			"ResultValue": 32,
+			"ResultUnit": 8
+		}
+	},
+	"rejectedAncestryBorrow": {
+		"method": "strace summaries, 32 large-table streaming inspections; same operation count.",
+		"beforeHeapGrowthCalls": 149,
+		"afterHeapGrowthCalls": 2820,
+		"beforeRaw": "% time     seconds  usecs/call     calls    errors syscall\n------ ----------- ----------- --------- --------- ----------------\n 37.35    0.001218           8       149           brk\n 36.37    0.001186          91        13           munmap\n 26.28    0.000857          24        35           mmap\n------ ----------- ----------- --------- --------- ----------------\n100.00    0.003261          16       197           total\n",
+		"afterRaw": "% time     seconds  usecs/call     calls    errors syscall\n------ ----------- ----------- --------- --------- ----------------\n 98.49    0.078575          27      2820           brk\n  0.99    0.000792          22        35           mmap\n  0.52    0.000411          31        13           munmap\n------ ----------- ----------- --------- --------- ----------------\n100.00    0.079778          27      2868           total\n"
+	}
+}

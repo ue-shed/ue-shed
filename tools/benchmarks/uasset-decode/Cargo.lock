@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-inspection"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-parser"
-version = "0.24.0"
+version = "0.25.0"
 dependencies = [
  "once_cell",
  "serde",

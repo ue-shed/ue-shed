@@ -8,6 +8,9 @@ use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Reader, Span
 use crate::package::PackageIndex;
 use crate::version::VersionContext;
 
+mod replay;
+pub(crate) use replay::TaggedStreamReplay;
+
 const UE5_PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION: i32 = 1011;
 const UE5_PROPERTY_TAG_COMPLETE_TYPE_NAME: i32 = 1012;
 
@@ -306,71 +309,95 @@ pub enum PropertyErrorKind {
     UnsupportedCapability,
 }
 
-#[derive(Debug)]
 pub struct PropertyError {
+    // Property-value results carry this pointer instead of full diagnostic storage.
+    inner: Box<PropertyErrorData>,
+}
+
+struct PropertyErrorData {
     kind: PropertyErrorKind,
     offset: Option<u64>,
     path: String,
     detail: String,
-    source: Option<Box<ArchiveError>>,
-    pub(crate) raw_reason: Option<RawReason>,
+    source: Option<ArchiveError>,
+    raw_reason: Option<RawReason>,
 }
 
 impl PropertyError {
     pub(crate) fn new(
         kind: PropertyErrorKind,
         offset: Option<u64>,
-        path: impl Into<String>,
+        path: impl fmt::Display,
         detail: impl Into<String>,
     ) -> Self {
         Self {
-            kind,
-            offset,
-            path: path.into(),
-            detail: detail.into(),
-            source: None,
-            raw_reason: None,
+            inner: Box::new(PropertyErrorData {
+                kind,
+                offset,
+                path: path.to_string(),
+                detail: detail.into(),
+                source: None,
+                raw_reason: None,
+            }),
         }
     }
 
     #[must_use]
     pub const fn kind(&self) -> PropertyErrorKind {
-        self.kind
+        self.inner.kind
     }
 
     pub(crate) fn with_raw_reason(mut self, reason: RawReason) -> Self {
-        self.raw_reason = Some(reason);
+        self.inner.raw_reason = Some(reason);
         self
+    }
+
+    pub(crate) fn raw_reason(&self) -> Option<&RawReason> {
+        self.inner.raw_reason.as_ref()
     }
 
     #[must_use]
     pub const fn offset(&self) -> Option<u64> {
-        self.offset
+        self.inner.offset
     }
 
     #[must_use]
     pub fn path(&self) -> &str {
-        &self.path
+        &self.inner.path
     }
 
     #[must_use]
     pub fn detail(&self) -> &str {
-        &self.detail
+        &self.inner.detail
+    }
+}
+
+impl fmt::Debug for PropertyError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PropertyError")
+            .field("kind", &self.inner.kind)
+            .field("offset", &self.inner.offset)
+            .field("path", &self.inner.path)
+            .field("detail", &self.inner.detail)
+            .field("source", &self.inner.source)
+            .field("raw_reason", &self.inner.raw_reason)
+            .finish()
     }
 }
 
 impl fmt::Display for PropertyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.offset {
+        match self.inner.offset {
             Some(offset) => write!(
                 formatter,
                 "{:?} at byte {offset} while reading {}: {}",
-                self.kind, self.path, self.detail
+                self.inner.kind, self.inner.path, self.inner.detail
             ),
             None => write!(
                 formatter,
                 "{:?} while reading {}: {}",
-                self.kind, self.path, self.detail
+                self.inner.kind, self.inner.path, self.inner.detail
             ),
         }
     }
@@ -378,9 +405,10 @@ impl fmt::Display for PropertyError {
 
 impl std::error::Error for PropertyError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source
+        self.inner
+            .source
             .as_ref()
-            .map(|source| source.as_ref() as &(dyn std::error::Error + 'static))
+            .map(|source| source as &(dyn std::error::Error + 'static))
     }
 }
 
@@ -398,12 +426,14 @@ impl From<ArchiveError> for PropertyError {
             ArchiveErrorKind::AllocationLimit => PropertyErrorKind::ResourceLimit,
         };
         Self {
-            kind,
-            offset: Some(source.offset()),
-            path: source.path().to_owned(),
-            detail: source.detail().to_owned(),
-            source: Some(Box::new(source)),
-            raw_reason: None,
+            inner: Box::new(PropertyErrorData {
+                kind,
+                offset: Some(source.offset()),
+                path: source.path().to_owned(),
+                detail: source.detail().to_owned(),
+                source: Some(source),
+                raw_reason: None,
+            }),
         }
     }
 }
@@ -421,7 +451,7 @@ pub fn read_uobject_tagged_property_stream(
     reader: &mut Reader<'_>,
     versions: &VersionContext,
     names: &[String],
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyStream, PropertyError> {
     validate_tagged_property_versions(versions, reader.tell(), path)?;
     // UE 5.7/5.8 Class.cpp, PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION (1011).
@@ -430,7 +460,7 @@ pub fn read_uobject_tagged_property_stream(
         .then(|| {
             read_class_serialization_control_extensions(
                 reader,
-                &format!("{path}.SerializationControlExtensions"),
+                &format_args!("{path}.SerializationControlExtensions"),
             )
         })
         .transpose()?;
@@ -453,7 +483,7 @@ pub fn read_tagged_property_stream(
     reader: &mut Reader<'_>,
     versions: &VersionContext,
     names: &[String],
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyStream, PropertyError> {
     validate_tagged_property_versions(versions, reader.tell(), path)?;
     let legacy = versions.uses_legacy_property_tags();
@@ -510,7 +540,7 @@ pub fn read_tagged_property_stream(
             Some(read_property_extensions(
                 reader,
                 versions,
-                &format!("{path}.Tag.PropertyExtensions"),
+                &format_args!("{path}.Tag.PropertyExtensions"),
             )?)
         } else {
             None
@@ -537,7 +567,7 @@ pub fn read_tagged_property_stream(
 fn validate_tagged_property_versions(
     versions: &VersionContext,
     offset: u64,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<(), PropertyError> {
     if versions.ue4 < 522
         || (!versions.uses_legacy_property_tags()
@@ -558,7 +588,7 @@ pub(crate) fn read_legacy_property_tag(
     versions: &VersionContext,
     names: &[String],
     name: NameRef,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyRecord, PropertyError> {
     validate_name_ref(names, name, &format_args!("{path}.Tag.Name"))?;
     let type_ref = reader.read_name_ref(&format_args!("{path}.Tag.Type"))?;
@@ -646,7 +676,7 @@ pub(crate) fn read_legacy_property_tag(
 
 fn read_class_serialization_control_extensions(
     reader: &mut Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<ClassSerializationControlExtensions, PropertyError> {
     let extension_offset = reader.tell();
     let raw_flags = reader.read_u8(path)?;
@@ -660,7 +690,7 @@ fn read_class_serialization_control_extensions(
     }
     let overridable_operation = (raw_flags & CLASS_EXTENSION_OVERRIDABLE_SERIALIZATION_INFORMATION
         != 0)
-        .then(|| reader.read_u8(&format!("{path}.OverridableOperation")))
+        .then(|| reader.read_u8(&format_args!("{path}.OverridableOperation")))
         .transpose()?;
     Ok(ClassSerializationControlExtensions {
         raw_flags,
@@ -723,7 +753,7 @@ fn read_property_type_name_at_depth(
 fn read_property_extensions(
     reader: &mut Reader<'_>,
     versions: &VersionContext,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyTagExtensions, PropertyError> {
     if !versions.is_at_least_ue5(UE5_PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION) {
         return Err(PropertyError::new(
@@ -746,10 +776,10 @@ fn read_property_extensions(
     let (override_operation, experimental_overridable_logic) =
         if raw_flags & PROPERTY_EXTENSION_OVERRIDABLE_INFORMATION != 0 {
             (
-                Some(reader.read_u8(&format!("{path}.OverriddenPropertyOperation"))?),
+                Some(reader.read_u8(&format_args!("{path}.OverriddenPropertyOperation"))?),
                 Some(read_archive_bool(
                     reader,
-                    &format!("{path}.ExperimentalOverridableLogic"),
+                    &format_args!("{path}.ExperimentalOverridableLogic"),
                 )?),
             )
         } else {
@@ -762,7 +792,10 @@ fn read_property_extensions(
     })
 }
 
-fn read_archive_bool(reader: &mut Reader<'_>, path: &str) -> Result<bool, PropertyError> {
+fn read_archive_bool(
+    reader: &mut Reader<'_>,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<bool, PropertyError> {
     let offset = reader.tell();
     match reader.read_u32(path)? {
         0 => Ok(false),
@@ -817,6 +850,47 @@ mod tests {
             "Shop".into(),
             "Forge".into(),
         ]
+    }
+
+    #[test]
+    fn tagged_breadcrumbs_are_lazy_but_preserve_failure_paths() {
+        struct UnformattedPath;
+        impl fmt::Display for UnformattedPath {
+            fn fmt(&self, _: &mut fmt::Formatter<'_>) -> fmt::Result {
+                panic!("successful reads must not format diagnostic paths")
+            }
+        }
+
+        let mut bytes = Vec::new();
+        write_property_tag(
+            &mut bytes,
+            3,
+            &TypeParam {
+                type_index: 1,
+                parameters: Vec::new(),
+            },
+            0,
+            &42_i32.to_le_bytes(),
+        );
+        write_property_terminator(&mut bytes, 0);
+        let stream = read_tagged_property_stream(
+            &mut Reader::new(&bytes),
+            &ue5_versions(),
+            &names(),
+            &UnformattedPath,
+        )
+        .unwrap();
+        assert_eq!(stream.records.len(), 1);
+
+        let error = read_tagged_property_stream(
+            &mut Reader::new(&bytes[..12]),
+            &ue5_versions(),
+            &names(),
+            &format_args!("Rows[{}].Value", 7),
+        )
+        .unwrap_err();
+        assert_eq!(error.offset(), Some(12));
+        assert_eq!(error.path(), "Rows[7].Value.Tag.Type.Name.Number");
     }
 
     #[test]

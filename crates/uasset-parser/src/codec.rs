@@ -241,10 +241,10 @@ fn decode_property_record(
     scope: DecodeScope<'_>,
 ) -> Result<(), PropertyError> {
     if let Err(error) = decode_property_record_inner(source, record, package, scope) {
-        if !package.summary.versions.uses_legacy_property_tags() && error.raw_reason.is_none() {
+        if !package.summary.versions.uses_legacy_property_tags() && error.raw_reason().is_none() {
             return Err(error);
         }
-        let reason = error.raw_reason.clone().unwrap_or_else(|| {
+        let reason = error.raw_reason().cloned().unwrap_or_else(|| {
             if error.kind() == crate::property::PropertyErrorKind::UnsupportedVersion {
                 RawReason::FeatureUnavailableForEngineVersion(error.to_string().into())
             } else {
@@ -1308,7 +1308,7 @@ fn decode_container_element(
                 )
                 .map(Some)
                 .map_err(|error| {
-                    if error.raw_reason.is_some()
+                    if error.raw_reason().is_some()
                         || error.kind() == crate::property::PropertyErrorKind::ResourceLimit
                     {
                         return error;
@@ -1370,7 +1370,7 @@ impl ContainerSerializer {
 /// A successful new element must not make a later malformed value/count discard
 /// an export that previously retained the entire binary container as an opaque gap.
 fn preserve_opaque_container(error: PropertyError, decoded_new_layout: bool) -> PropertyError {
-    if decoded_new_layout && error.raw_reason.is_none() {
+    if decoded_new_layout && error.raw_reason().is_none() {
         let detail = error.to_string();
         error.with_raw_reason(RawReason::DecoderRejected(detail.into()))
     } else {
@@ -2424,7 +2424,7 @@ mod tests {
             .unwrap_err();
             assert_eq!(actual.kind(), expected.kind(), "{name}");
             assert_eq!(actual.to_string(), expected.to_string(), "{name}");
-            assert_eq!(actual.raw_reason, expected.raw_reason, "{name}");
+            assert_eq!(actual.raw_reason(), expected.raw_reason(), "{name}");
         }
     }
 

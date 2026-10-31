@@ -157,7 +157,7 @@ pub trait SchemaProvider {
     }
 
     fn class_is_a(&self, path: &ObjectPath, base_path: &str) -> bool {
-        let mut current = Some(path.clone());
+        let mut current = Some(path);
         for _ in 0..64 {
             let Some(path) = current else {
                 return false;
@@ -166,8 +166,8 @@ pub trait SchemaProvider {
                 return true;
             }
             current = self
-                .find_class(&path)
-                .and_then(|schema| schema.super_path.clone());
+                .find_class(path)
+                .and_then(|schema| schema.super_path.as_ref());
         }
         false
     }

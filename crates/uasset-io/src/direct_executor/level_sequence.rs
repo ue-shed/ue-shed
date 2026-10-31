@@ -3,7 +3,7 @@ use std::io::Read;
 
 use uasset_inspection::level_sequence::{LevelSequenceProjection, project_level_sequence};
 use uasset_parser::Package;
-use uasset_parser::asset::{AssetDecodeContext, decode_export};
+use uasset_parser::asset::{AssetDecodeContext, AssetDecodeSession};
 
 use super::blueprint::{asset_error_code, package_error_code};
 use super::{Diagnostic, Failure, checkpoint, scan_failure_code};
@@ -56,9 +56,10 @@ pub(crate) fn level_sequence_with_cancellation(
     };
     let mut assets = Vec::new();
     let mut diagnostics = Vec::new();
+    let mut decoder = AssetDecodeSession::new(&context);
     for export in &package.exports {
         checkpoint(cancellation, "inspection")?;
-        match decode_export(export, &context) {
+        match decoder.decode(export) {
             Ok(Some(asset)) => assets.push(asset),
             Ok(None) => {}
             Err(error) => diagnostics.push(Diagnostic {

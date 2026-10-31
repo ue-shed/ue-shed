@@ -11,6 +11,7 @@ pub struct Span {
 
 impl Span {
     /// Creates a span after checking that its end is representable.
+    #[inline(always)]
     pub fn new(offset: u64, len: u64) -> Result<Self, ArchiveError> {
         offset.checked_add(len).ok_or_else(|| {
             ArchiveError::new(
@@ -76,8 +77,14 @@ pub enum ArchiveErrorKind {
 }
 
 /// A parse failure with an absolute source offset and logical field path.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ArchiveError {
+    // A small error keeps successful primitive Result values small as well.
+    inner: Box<ArchiveErrorData>,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct ArchiveErrorData {
     kind: ArchiveErrorKind,
     offset: u64,
     path: String,
@@ -85,6 +92,7 @@ pub struct ArchiveError {
 }
 
 impl ArchiveError {
+    #[cold]
     fn new(
         kind: ArchiveErrorKind,
         offset: u64,
@@ -92,31 +100,33 @@ impl ArchiveError {
         detail: impl Into<String>,
     ) -> Self {
         Self {
-            kind,
-            offset,
-            path: path.to_string(),
-            detail: detail.into(),
+            inner: Box::new(ArchiveErrorData {
+                kind,
+                offset,
+                path: path.to_string(),
+                detail: detail.into(),
+            }),
         }
     }
 
     #[must_use]
     pub const fn kind(&self) -> ArchiveErrorKind {
-        self.kind
+        self.inner.kind
     }
 
     #[must_use]
     pub const fn offset(&self) -> u64 {
-        self.offset
+        self.inner.offset
     }
 
     #[must_use]
     pub fn path(&self) -> &str {
-        &self.path
+        &self.inner.path
     }
 
     #[must_use]
     pub fn detail(&self) -> &str {
-        &self.detail
+        &self.inner.detail
     }
 }
 
@@ -125,8 +135,20 @@ impl fmt::Display for ArchiveError {
         write!(
             formatter,
             "{:?} at byte {} while reading {}: {}",
-            self.kind, self.offset, self.path, self.detail
+            self.inner.kind, self.inner.offset, self.inner.path, self.inner.detail
         )
+    }
+}
+
+impl fmt::Debug for ArchiveError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ArchiveError")
+            .field("kind", &self.inner.kind)
+            .field("offset", &self.inner.offset)
+            .field("path", &self.inner.path)
+            .field("detail", &self.inner.detail)
+            .finish()
     }
 }
 
@@ -253,6 +275,7 @@ impl<'a> Reader<'a> {
         self.span.end() - self.position
     }
 
+    #[inline(always)]
     pub fn seek(
         &mut self,
         absolute_offset: u64,
@@ -274,6 +297,7 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
+    #[inline(always)]
     pub fn skip(
         &mut self,
         byte_count: u64,
@@ -291,6 +315,7 @@ impl<'a> Reader<'a> {
     }
 
     /// Creates an independently positioned child reader inside this reader's region.
+    #[inline(always)]
     pub fn bounded(
         &self,
         span: Span,
@@ -319,6 +344,7 @@ impl<'a> Reader<'a> {
     }
 
     /// Takes the next `byte_count` bytes as a child reader and advances this reader.
+    #[inline(always)]
     pub fn take_bounded(
         &mut self,
         byte_count: u64,
@@ -330,6 +356,9 @@ impl<'a> Reader<'a> {
         Ok(child)
     }
 
+    // Keep constant-sized scalar loads visible to callers instead of copying a full
+    // Result through an out-of-line byte-reader call for every primitive.
+    #[inline(always)]
     pub fn read_bytes(
         &mut self,
         byte_count: usize,
@@ -388,6 +417,7 @@ impl<'a> Reader<'a> {
         Ok(self.read_bytes(1, path)?[0])
     }
 
+    #[inline]
     pub fn read_i8(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<i8, ArchiveError> {
         Ok(i8::from_le_bytes([self.read_u8(path)?]))
     }
@@ -397,6 +427,7 @@ impl<'a> Reader<'a> {
         Ok(u16::from_le_bytes(self.read_array(path)?))
     }
 
+    #[inline]
     pub fn read_i16(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<i16, ArchiveError> {
         Ok(i16::from_le_bytes(self.read_array(path)?))
     }
@@ -406,6 +437,7 @@ impl<'a> Reader<'a> {
         Ok(u32::from_le_bytes(self.read_array(path)?))
     }
 
+    #[inline]
     pub fn read_bool(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<bool, ArchiveError> {
         let offset = self.tell();
         match self.read_u32(path)? {
@@ -420,6 +452,7 @@ impl<'a> Reader<'a> {
         }
     }
 
+    #[inline]
     pub fn read_i32(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<i32, ArchiveError> {
         Ok(i32::from_le_bytes(self.read_array(path)?))
     }
@@ -429,14 +462,17 @@ impl<'a> Reader<'a> {
         Ok(u64::from_le_bytes(self.read_array(path)?))
     }
 
+    #[inline]
     pub fn read_i64(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<i64, ArchiveError> {
         Ok(i64::from_le_bytes(self.read_array(path)?))
     }
 
+    #[inline]
     pub fn read_f32(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<f32, ArchiveError> {
         Ok(f32::from_le_bytes(self.read_array(path)?))
     }
 
+    #[inline]
     pub fn read_f64(&mut self, path: &(impl fmt::Display + ?Sized)) -> Result<f64, ArchiveError> {
         Ok(f64::from_le_bytes(self.read_array(path)?))
     }
@@ -871,6 +907,7 @@ impl<'a> Reader<'a> {
         Ok(code_units)
     }
 
+    #[inline(always)]
     fn read_array<const N: usize>(
         &mut self,
         path: &(impl fmt::Display + ?Sized),

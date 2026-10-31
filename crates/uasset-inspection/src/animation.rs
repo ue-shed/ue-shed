@@ -1,7 +1,9 @@
 //! Saved animation inventory. No pose evaluation, external loads, or inferred CDO defaults.
 use serde::Serialize;
 use std::collections::HashMap;
-use uasset_parser::asset::{AssetDecodeContext, DecodedAnimSequence, DecodedAsset, DecodedUObject};
+use uasset_parser::asset::{
+    AssetDecodeContext, AssetDecodeSession, DecodedAnimSequence, DecodedAsset, DecodedUObject,
+};
 
 use crate::decoded_exports::DecodedExports;
 use uasset_parser::property::{PropertyStream, PropertyValue, RangeBoundKind};
@@ -110,8 +112,9 @@ pub fn inspect_animation_from_package(
         package,
         schemas: uasset_parser::schema::embedded_source_model(),
     };
+    let mut decoder = AssetDecodeSession::new(&context);
     for (index, export) in package.exports.iter().enumerate() {
-        let decoded = DecodedExports::decode(cache, index, export, &context);
+        let decoded = DecodedExports::decode_with_session(cache, index, export, &mut decoder);
         if let Err(error) = &*decoded {
             diagnostics.push(AnimationDiagnostic {
                 object_path: export.object_path.to_string(),

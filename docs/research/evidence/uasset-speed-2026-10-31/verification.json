@@ -1,0 +1,169 @@
+{
+	"schemaVersion": 1,
+	"baselineRevision": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+	"sourceSnapshot": "summary.json sourceFiles",
+	"correctnessBoundary": "Existing starting parser and retained fixture expectations; no installed Unreal Engine.",
+	"oracle": {
+		"boundary": "Standalone probes, including each allocator and trained build",
+		"fixtureComparisons": 140,
+		"malformedComparisons": 267,
+		"fullPackageAndDecodedModelsEqual": true,
+		"ownedInspectionEqual": true,
+		"streamingInspectionEqual": true,
+		"diagnosticKindTextPathOffsetEqual": true
+	},
+	"checks": [
+		{
+			"command": "pnpm run uasset:check",
+			"status": "passed",
+			"rustTests": {
+				"passed": 707,
+				"failed": 0,
+				"ignored": 8
+			},
+			"log": "out/uasset-speed-2026-10-31/verification/final-uasset-check.log"
+		},
+		{
+			"command": "pnpm run uasset:check:windows-layout",
+			"status": "passed",
+			"log": "out/uasset-speed-2026-10-31/verification/final-windows-layout.log"
+		},
+		{
+			"command": "Final WASM against preserved original native reader",
+			"status": "passed",
+			"nodeVersions": ["24.21.0", "26.13.0"],
+			"inspectionFixtures": 23,
+			"authoringFixtures": 12,
+			"compactFixtures": 13,
+			"additionalCoverage": ["Blueprint", "Level Sequence", "typed failures and limits"]
+		},
+		{
+			"command": "pnpm test:adoption:data-authoring",
+			"status": "passed",
+			"fixtureTables": 18,
+			"log": "out/uasset-speed-2026-10-31/verification/final-adoption.log"
+		},
+		{
+			"command": "pnpm test:game-text:responsiveness",
+			"status": "passed",
+			"tests": 3,
+			"log": "out/uasset-speed-2026-10-31/verification/final-responsiveness.log"
+		},
+		{
+			"command": "pnpm check",
+			"status": "failed",
+			"reason": "Initial missing Windows Rust target was installed; resumed public-package consumer install fails with pnpm ENOTDIR while opening @ue-shed/engine-win32-x64/package.json.",
+			"log": "out/uasset-speed-2026-10-31/verification/portable-resume.log"
+		},
+		{
+			"command": "pnpm run check:repository",
+			"status": "interruptedAfterFailures",
+			"exitCode": 143,
+			"passedPhases": ["static", "type", "contract", "release"],
+			"reason": "UI component failures in unchanged camera-review/game-text/operations/translation files; Vitest run stopped. Not a passing repository gate.",
+			"log": "out/uasset-speed-2026-10-31/verification/final-repository.log"
+		},
+		{
+			"command": "pnpm test:uasset-engine-matrix",
+			"status": "unavailable",
+			"versions": [
+				{
+					"version": "5.7",
+					"status": "unavailable"
+				},
+				{
+					"version": "5.8",
+					"status": "unavailable"
+				}
+			],
+			"reason": "Neither Unreal Engine installation is available; matrix stops on missing 5.7, both versions were independently discovered unavailable.",
+			"log": "out/uasset-speed-2026-10-31/verification/final-engine-matrix.log"
+		},
+		{
+			"command": "pnpm run check:static",
+			"status": "passed",
+			"architectureTests": 119,
+			"log": "out/uasset-speed-2026-10-31/verification/final-static.log"
+		},
+		{
+			"command": "cargo fmt --manifest-path tools/benchmarks/uasset-decode/Cargo.toml -- --check",
+			"status": "passed"
+		},
+		{
+			"command": "cargo clippy --locked --manifest-path tools/benchmarks/uasset-decode/Cargo.toml --bin parser-speed -- -D warnings",
+			"status": "passed"
+		},
+		{
+			"command": "Frozen production source SHA-256 and git diff --check",
+			"status": "passed"
+		}
+	],
+	"binaries": [
+		{
+			"path": "out/uasset-speed-2026-10-31/baseline/parser-speed",
+			"sha256": "1446be8f47aa99a5e5150c83a2ac17e99090eeb5728dbc971477c612934d1abc"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"sha256": "f02404a4f7f31db9c04d5ad234dc69174eb27a37d899c2a38d022599160c5243"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/final/parser-speed",
+			"sha256": "b54abb1d2421db466a82fcc1f7354cb42e7d8be753e150e9a91df889279e2da0"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/final/uasset-decode-counting",
+			"sha256": "d0409c399bd9e8e2f29c3624eb833bfc3d48c18167975f4722cc3e40d25edd5e"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"sha256": "9c2cbd0a3450adfee69074295a8b2003cd688bd358dafb0784ea0bdfb63deba3"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/pgo-verified/parser-speed",
+			"sha256": "2d89f330652bfa2cd12ba543222df4f846d2e9b4d9361cd2bc5dedbafebe7086"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/bolt-verified/parser-speed",
+			"sha256": "942daad3698335f83becf3e43046bb3eb1cedc3c13b8b3c665eaee53872bb663"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/mimalloc/baseline/parser-speed",
+			"sha256": "50fc4a57f7ae510ad858aa47bf2e3cde7978aaadfd655ffa9628a52d6d5e84c7"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/mimalloc/final/parser-speed",
+			"sha256": "7262a0b8bcc74f04cc1907f8cdbbb14b5d3b567d377dc73f9660bd52e2b3dc45"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/native-cpu/parser-speed",
+			"sha256": "40d83287814b75f4d60d88257b47b5c60b06ddbcac96da8c4be955698d889b3e"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/panic-abort/parser-speed",
+			"sha256": "a010b3679a9f1712fd0ee1bbd6aeae837cb9bbb5b496e3941644d103839633d1"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/opt-size/parser-speed",
+			"sha256": "41e351aa2ac3e52e6db04ec7ddbabda16448e61e0f73f8e221775939f7f95ad4"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/pgo-mimalloc/parser-speed",
+			"sha256": "60f7f410d69be85d0a0f0d03cb656554d57b9cf4992fe28e1336e1029d890914"
+		},
+		{
+			"path": "out/uasset-speed-2026-10-31/bolt-mimalloc/parser-speed",
+			"sha256": "95154eac765b81c888598e8e837df6d9c9fd7c14ab595433356b8e5a60d62468"
+		}
+	],
+	"engineDiscovery": [
+		{
+			"version": "5.7",
+			"root": null
+		},
+		{
+			"version": "5.8",
+			"root": null
+		}
+	]
+}

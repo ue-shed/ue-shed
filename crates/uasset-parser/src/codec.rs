@@ -1508,8 +1508,8 @@ fn has_niagara_identity(package: &Package, ty: &PropertyTypeName) -> bool {
         .is_some_and(|module| module == "/Script/Niagara")
 }
 
-/// Native structs whose `WithSerializer` sets the container flag but whose `Serialize` returns
-/// `false`, so `UScriptStruct::SerializeItem` falls back to tagged properties. Each entry is
+/// Structs whose native flag still saves tagged fields, either by returning `false` from
+/// `Serialize` or by calling `SerializeTaggedProperties` explicitly. Each entry is
 /// checked against the UE 5.7 and 5.8 source; the bytes alone cannot show the fallback.
 ///
 /// - `FAnimNotifyEvent::Serialize` (AnimTypes.cpp) only records a custom version.
@@ -1523,6 +1523,9 @@ const TAGGED_FALLBACK_NATIVE_STRUCTS: &[(&str, &str)] = &[
     // UE 5.6–5.8 NiagaraVariant.h has reflected fields and no native serializer.
     // A map's binary flag may come from its NiagaraVariableBase key alone.
     ("/Script/Niagara", "NiagaraVariant"),
+    // UE4.27 NiagaraModule.cpp returns false. UE5.7/5.8 explicitly save tagged
+    // fields and return true; LWC conversion and index caching happen after load.
+    ("/Script/Niagara", "NiagaraTypeDefinition"),
 ];
 
 fn is_tagged_fallback_native_struct(package: &Package, type_tree: &PropertyTypeName) -> bool {
@@ -3557,12 +3560,13 @@ mod tests {
     }
 
     #[test]
-    fn version_registration_only_serializers_use_tagged_fallback_without_new_export_errors() {
+    fn source_declared_tagged_serializers_preserve_fallback_without_new_export_errors() {
         for (name, module) in [
             ("PostProcessSettings", "/Script/Engine"),
             ("HierarchicalSimplification", "/Script/Engine"),
             ("FontOutlineSettings", "/Script/SlateCore"),
             ("NiagaraVariant", "/Script/Niagara"),
+            ("NiagaraTypeDefinition", "/Script/Niagara"),
         ] {
             for version in [1016, 1017, 1018] {
                 let (mut package, bytes) = unknown_struct_set(0x08, &[&[0; 8]]);
@@ -3620,6 +3624,7 @@ mod tests {
         // key successfully, then reject the value, a later entry, or the entry count.
         for key in [
             "NiagaraVariableBase",
+            "NiagaraTypeDefinition",
             "PostProcessSettings",
             "Spline",
             "PerPlatformFloat",
@@ -3671,7 +3676,7 @@ mod tests {
                     version: 1,
                     friendly_name: None,
                 });
-            package.names[5] = if key == "NiagaraVariableBase" {
+            package.names[5] = if matches!(key, "NiagaraVariableBase" | "NiagaraTypeDefinition") {
                 "/Script/Niagara"
             } else if key == "PerPlatformFrameRate" {
                 "/Script/CoreUObject"

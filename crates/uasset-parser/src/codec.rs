@@ -2867,6 +2867,7 @@ mod tests {
                 "DataTableRowHandle",
                 "PerPlatformFloat",
                 "SkeletalMeshSamplingLODBuiltData",
+                "GameplayTagContainer",
             ] {
                 let package = versioned_package(
                     &[

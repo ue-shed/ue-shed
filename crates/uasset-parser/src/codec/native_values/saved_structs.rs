@@ -17,6 +17,9 @@ pub(in crate::codec) fn optional_struct(
         "SkeletalMeshSamplingLODBuiltData" => {
             return super::sampling::optional(ty, reader, package, path);
         }
+        "GameplayTagContainer" => {
+            return super::gameplay_tags::optional(ty, reader, package, path);
+        }
         _ => {}
     }
     let module = package.resolve_name_cow(identity.parameters.first()?.name)?;

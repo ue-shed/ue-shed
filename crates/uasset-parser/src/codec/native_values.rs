@@ -1,4 +1,5 @@
 use super::*;
+pub(super) mod delegates;
 pub(super) mod niagara;
 mod per_platform;
 mod pin_type;

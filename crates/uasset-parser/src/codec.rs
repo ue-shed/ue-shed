@@ -465,6 +465,15 @@ fn decode_typed_value(
             package,
             &path.to_string(),
         )),
+        "DelegateProperty"
+        | "MulticastDelegateProperty"
+        | "MulticastInlineDelegateProperty"
+        | "MulticastSparseDelegateProperty" => Ok(native_values::delegates::optional(
+            type_spec.name,
+            payload,
+            package,
+            &path.to_string(),
+        )),
         "TextProperty" => {
             let path = path.to_string();
             decode_text_value(payload, package, &path)
@@ -648,6 +657,20 @@ fn decode_binary_or_native_value(
     // name collides with a native type. Their payload is a tagged field stream.
     if type_spec.is_user_defined_struct() {
         return Ok(None);
+    }
+    if matches!(
+        type_spec.name,
+        "DelegateProperty"
+            | "MulticastDelegateProperty"
+            | "MulticastInlineDelegateProperty"
+            | "MulticastSparseDelegateProperty"
+    ) {
+        return Ok(native_values::delegates::optional(
+            type_spec.name,
+            payload,
+            package,
+            &path.to_string(),
+        ));
     }
     let type_tree = type_spec.tree;
     if type_spec.name == "StructProperty" {

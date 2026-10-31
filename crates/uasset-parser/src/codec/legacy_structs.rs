@@ -55,6 +55,7 @@ pub(crate) fn object_containers(
             class,
             "/Script/Niagara.NiagaraComponent"
                 | "/Script/NiagaraEditor.NiagaraNodeFunctionCall"
+                | "/Script/NiagaraEditor.NiagaraNodeAssignment"
                 | "/Script/NiagaraEditor.NiagaraGraph"
                 | "/Script/NiagaraEditor.NiagaraNodeParameterMapGet"
         )
@@ -68,9 +69,13 @@ pub(crate) fn object_containers(
             ("/Script/Niagara.NiagaraComponent", Some("InstanceParameterOverrides")) => {
                 Some((Element::NiagaraVariableBase, Element::Tagged))
             }
-            ("/Script/NiagaraEditor.NiagaraNodeFunctionCall", Some("BoundPinNames")) => {
-                Some((Element::Guid, Element::Name))
-            }
+            // NiagaraNodeAssignment.h inherits this reflected field from
+            // UNiagaraNodeFunctionCall in UE 4.27 / 5.7 / 5.8.
+            (
+                "/Script/NiagaraEditor.NiagaraNodeFunctionCall"
+                | "/Script/NiagaraEditor.NiagaraNodeAssignment",
+                Some("BoundPinNames"),
+            ) => Some((Element::Guid, Element::Name)),
             ("/Script/NiagaraEditor.NiagaraGraph", Some("VariableToScriptVariable")) => {
                 Some((Element::NiagaraVariable, Element::Object))
             }
@@ -590,6 +595,7 @@ mod tests {
         let package = niagara_package();
         for (class, field, value_kind) in [
             ("/Script/NiagaraEditor.NiagaraNodeFunctionCall", 6, 3),
+            ("/Script/NiagaraEditor.NiagaraNodeAssignment", 6, 3),
             ("/Script/NiagaraEditor.NiagaraGraph", 7, 4),
             ("/Script/NiagaraEditor.NiagaraNodeParameterMapGet", 8, 1),
         ] {

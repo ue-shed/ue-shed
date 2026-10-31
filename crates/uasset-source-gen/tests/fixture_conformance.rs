@@ -50,6 +50,7 @@ fn decoded_assets_with(
     let bytes = fs::read(path).expect("fixture bytes");
     let package = Package::parse(&bytes).expect("fixture package parses");
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas,
@@ -98,9 +99,11 @@ fn assert_value_has_no_raw(value: &PropertyValue, path: &str) {
                 assert_value_has_no_raw(&field.value, path);
             }
         }
-        PropertyValue::InstancedStruct {
-            value: Some(value), ..
-        } => assert_value_has_no_raw(value, path),
+        PropertyValue::InstancedStruct(instance) => {
+            if let Some(value) = &instance.value {
+                assert_value_has_no_raw(value, path);
+            }
+        }
         PropertyValue::Raw { reason } => panic!("{path} contains raw value: {reason:?}"),
         _ => {}
     }

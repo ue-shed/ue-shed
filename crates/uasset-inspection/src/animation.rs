@@ -1,9 +1,9 @@
 //! Saved animation inventory. No pose evaluation, external loads, or inferred CDO defaults.
 use serde::Serialize;
 use std::collections::HashMap;
-use uasset_parser::asset::{
-    AssetDecodeContext, DecodedAnimSequence, DecodedAsset, DecodedUObject, decode_export,
-};
+use uasset_parser::asset::{AssetDecodeContext, DecodedAnimSequence, DecodedAsset, DecodedUObject};
+
+use crate::decoded_exports::DecodedExports;
 use uasset_parser::property::{PropertyStream, PropertyValue, RangeBoundKind};
 use uasset_parser::{Package, PackageError};
 
@@ -91,32 +91,45 @@ pub struct AnimationCoverageGap {
 
 pub fn inspect_animation_bytes(path: &str, bytes: &[u8]) -> Result<AnimationOutput, PackageError> {
     let package = Package::parse(bytes)?;
-    let context = AssetDecodeContext {
-        source: bytes,
-        package: &package,
-        schemas: uasset_parser::schema::embedded_source_model(),
-    };
+    Ok(inspect_animation_from_package(path, &package, bytes, None))
+}
+
+/// Projects animation summaries from an already parsed package, optionally sharing a cache of
+/// exports decoded with the embedded source model.
+pub fn inspect_animation_from_package(
+    path: &str,
+    package: &Package,
+    bytes: &[u8],
+    cache: Option<&DecodedExports>,
+) -> AnimationOutput {
     let mut assets = Vec::new();
     let mut diagnostics = Vec::new();
-    for export in &package.exports {
-        match decode_export(export, &context) {
-            Ok(Some(asset)) => assets.push(asset),
-            Ok(None) => {}
-            Err(error) => diagnostics.push(AnimationDiagnostic {
+    let context = AssetDecodeContext {
+        property_filter: None,
+        source: bytes,
+        package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    for (index, export) in package.exports.iter().enumerate() {
+        let decoded = DecodedExports::decode(cache, index, export, &context);
+        if let Err(error) = &*decoded {
+            diagnostics.push(AnimationDiagnostic {
                 object_path: export.object_path.to_string(),
                 message: error.to_string(),
-            }),
+            });
+        } else if let Some(asset) = decoded.into_asset() {
+            assets.push(asset);
         }
     }
-    let animations = project_animations(&package, &assets);
+    let animations = project_animations(package, &assets);
     let partial = !diagnostics.is_empty() || animations.iter().any(|a| !a.coverage_gaps.is_empty());
-    Ok(AnimationOutput {
+    AnimationOutput {
         schema_version: 1,
         status: if partial { "partial" } else { "complete" },
         path: path.into(),
         animations,
         diagnostics,
-    })
+    }
 }
 
 pub fn project_animations(package: &Package, assets: &[DecodedAsset]) -> Vec<AnimationSummary> {
@@ -157,6 +170,9 @@ impl Context<'_> {
     ) -> Option<&'a PropertyValue> {
         let value = property(self.package, stream, name);
         match value {
+            Some(PropertyValue::Raw {
+                reason: uasset_parser::property::RawReason::NotRequested,
+            }) => return None,
             None => self.gap(path, AnimationGapReason::MissingSavedProperty),
             Some(PropertyValue::Raw { .. }) => self.gap(path, AnimationGapReason::UndecodedValue),
             _ => {}

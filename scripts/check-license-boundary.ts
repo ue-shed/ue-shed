@@ -31,7 +31,7 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	licensed("BSD-3-Clause", "atomic-write-file"),
 	licensed(
 		"MIT",
-		"cfg_aliases engine-process-supervisor libsqlite3-sys rusqlite nix uasset-inspection uasset-io uasset-parser uasset-source-gen zmij"
+		"cfg_aliases engine-process-supervisor libmimalloc-sys libsqlite3-sys mimalloc rusqlite nix uasset-inspection uasset-io uasset-parser uasset-source-gen zmij"
 	),
 	licensed(
 		"MIT OR Apache-2.0",

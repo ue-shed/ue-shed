@@ -1,10 +1,16 @@
-use super::{Diagnostic, Limits, Options, Parsed, PoRow, failure, identity, js_space, trim};
+use super::{
+    Diagnostic, Limits, Options, Parsed, PoRow, failure, identity, js_space, trim, trim_start,
+    utf16_len,
+};
 use indexmap::IndexMap;
 
 fn malformed(file: &str, line: usize) -> Diagnostic {
     failure(file, "malformed_po", &format!(" at line {line}"))
 }
 fn decode(value: &str) -> String {
+    if !value.contains('\\') {
+        return value.into();
+    }
     // packages/localization/src/po.ts:28-36: replacement order includes literal backslashes.
     value
         .replace("\\t", "\t")
@@ -17,28 +23,31 @@ fn quoted(value: &str, file: &str, line: usize) -> Parsed<String> {
     if !value.starts_with('"') {
         return Err(malformed(file, line));
     }
-    let mut chars = value[1..].char_indices();
-    while let Some((i, c)) = chars.next() {
-        match c {
-            '\\' => {
-                if chars.next().is_none() {
+    let bytes = value.as_bytes();
+    let mut i = 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => {
+                i += 1;
+                if i == bytes.len() {
                     return Err(malformed(file, line));
                 }
             }
-            '"' => {
-                if !trim(&value[i + 2..]).is_empty() {
+            b'"' => {
+                if !trim(&value[i + 1..]).is_empty() {
                     return Err(malformed(file, line));
                 }
-                return Ok(value[1..i + 1].into());
+                return Ok(value[1..i].into());
             }
             _ => {}
         }
+        i += 1;
     }
     Err(malformed(file, line))
 }
 #[derive(Clone)]
 struct Field {
-    name: String,
+    name: &'static str,
     index: Option<u64>,
     raw: String,
     line: usize,
@@ -70,11 +79,9 @@ fn block(lines: &[(&str, &str)], offset: usize, file: &str) -> Parsed<Option<(bo
         if let Some(comment) = text.strip_prefix('#') {
             current = None;
             if let Some(comment) = text.strip_prefix("#.") {
-                row.extracted_comments
-                    .push(comment.trim_start_matches(js_space).into());
+                row.extracted_comments.push(trim_start(comment).into());
             } else if let Some(comment) = text.strip_prefix("#:") {
-                row.reference_comments
-                    .push(comment.trim_start_matches(js_space).into());
+                row.reference_comments.push(trim_start(comment).into());
             } else if let Some(comment) = text.strip_prefix("#,") {
                 row.flags.extend(
                     comment
@@ -99,10 +106,13 @@ fn block(lines: &[(&str, &str)], offset: usize, file: &str) -> Parsed<Option<(bo
         let name_end = text
             .find(|c: char| c == '[' || js_space(c))
             .unwrap_or(text.len());
-        let name = &text[..name_end];
-        if !matches!(name, "msgctxt" | "msgid_plural" | "msgid" | "msgstr") {
-            return Err(malformed(file, line));
-        }
+        let name = match &text[..name_end] {
+            "msgctxt" => "msgctxt",
+            "msgid_plural" => "msgid_plural",
+            "msgid" => "msgid",
+            "msgstr" => "msgstr",
+            _ => return Err(malformed(file, line)),
+        };
         let mut rest = &text[name_end..];
         let mut field_index = None;
         if rest.starts_with('[') {
@@ -129,9 +139,9 @@ fn block(lines: &[(&str, &str)], offset: usize, file: &str) -> Parsed<Option<(bo
             return Err(malformed(file, line));
         }
         fields.push(Field {
-            name: name.into(),
+            name,
             index: field_index,
-            raw: quoted(rest.trim_start_matches(js_space), file, line)?,
+            raw: quoted(trim_start(rest), file, line)?,
             line,
         });
         current = Some(fields.len() - 1);
@@ -146,7 +156,7 @@ fn block(lines: &[(&str, &str)], offset: usize, file: &str) -> Parsed<Option<(bo
     let id = id.ok_or_else(|| malformed(file, offset + 1))?;
     row.msgid = decode(&id.raw);
     for field in &fields {
-        match field.name.as_str() {
+        match field.name {
             "msgctxt" => row.msgctxt = Some(decode(&field.raw)),
             "msgid_plural" => row.msgid_plural = Some(decode(&field.raw)),
             "msgstr" => {
@@ -191,7 +201,7 @@ fn crowdin(header: &str) -> bool {
             {
                 return false;
             }
-            let rest = line[20..].trim_start_matches(js_space);
+            let rest = trim_start(&line[20..]);
             if !rest
                 .get(..6)
                 .is_some_and(|word| word.eq_ignore_ascii_case("msgstr"))
@@ -317,7 +327,7 @@ pub(super) fn parse_po_outcome(
                 finished = false;
             }
             lines.push((raw, ending));
-            bytes += (raw.encode_utf16().count() + ending.len()) * 2;
+            bytes += (utf16_len(raw) + ending.len()) * 2;
             if bytes > limits.max_record_bytes {
                 return Err(failure(
                     file,

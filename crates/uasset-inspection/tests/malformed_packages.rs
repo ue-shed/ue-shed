@@ -41,6 +41,7 @@ fn exercise(path: &str, bytes: &[u8]) {
         return;
     };
     let context = AssetDecodeContext {
+        property_filter: None,
         source: bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),

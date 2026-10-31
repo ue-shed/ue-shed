@@ -52,7 +52,7 @@ pub(super) fn decode(
         let mut terminal = record_fields(read_layout(reader, "FEdGraphTerminalType", path)?);
         convert_index(&mut terminal, "TerminalSubCategoryObject");
         fields.push(NativeProperty {
-            name: "PinValueType".into(),
+            name: Cow::Borrowed("PinValueType"),
             value: PropertyValue::NativeStruct { fields: terminal },
         });
     }

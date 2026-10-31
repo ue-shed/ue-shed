@@ -119,6 +119,7 @@ fn decoded(root: &std::path::Path, evidence: &AssetEvidence) -> (Package, Decode
         evidence.class_path.as_str()
     );
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -391,9 +392,7 @@ fn conformance(version: &str, ue5: Option<i32>) {
                         assert!(
                             matches!(
                                 &native.value,
-                                PropertyValue::Raw {
-                                    reason: RawReason::LegacyContainerElementWithoutTypeInformation
-                                }
+                                PropertyValue::Raw { reason } if matches!(reason, RawReason::LegacyContainerElementWithoutTypeInformation)
                             ),
                             "native struct map must be Raw, never a guessed value"
                         );

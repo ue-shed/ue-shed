@@ -56,7 +56,7 @@ pub(crate) fn property(value: NativeValue) -> PropertyValue {
                 .into_iter()
                 .filter_map(|(name, value)| {
                     (!matches!(value, NativeValue::Padding)).then(|| NativeProperty {
-                        name,
+                        name: Cow::Owned(name),
                         value: property(value),
                     })
                 })
@@ -108,11 +108,11 @@ pub(super) fn known_struct(
     reader: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     match name {
         "NiagaraVariable" | "NiagaraVariableBase" | "NiagaraVariableWithOffset" => {
-            niagara::decode(source, name, reader, package, path, depth)
+            niagara::decode(source, name, reader, package, path, scope)
         }
         // UE 5.7 SlateCore/Private/Types/SlateVector2.cpp,
         // FDeprecateSlateVector2D::Serialize always writes FVector2f (two floats).
@@ -121,7 +121,7 @@ pub(super) fn known_struct(
                 .into_iter()
                 .map(|name| {
                     Ok(NativeProperty {
-                        name: name.into(),
+                        name: Cow::Borrowed(name),
                         value: PropertyValue::Float(reader.read_f32(path)?),
                     })
                 })
@@ -207,9 +207,9 @@ pub(super) fn known_struct(
             validate_channel(&value, reader, path)?;
             Ok(Some(value))
         }
-        "InstancedStruct" => instanced(source, reader, package, path, depth).map(Some),
+        "InstancedStruct" => instanced(source, reader, package, path, scope).map(Some),
         "InstancedPropertyBag" if package.summary.versions.uses_legacy_property_tags() => {
-            property_bag::decode(source, reader, package, path, depth).map(Some)
+            property_bag::decode(source, reader, package, path, scope).map(Some)
         }
         "EdGraphPinType" if package.summary.versions.uses_legacy_property_tags() => {
             pin_type::decode(reader, package, path).map(Some)
@@ -249,7 +249,7 @@ pub(super) fn generated_value(
     reader: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_path == "/Script/SlateCore.DeprecateSlateVector2D" {
         return known_struct(
@@ -258,7 +258,7 @@ pub(super) fn generated_value(
             reader,
             package,
             path,
-            depth,
+            scope,
         );
     }
     if let Some(name) = type_path.strip_prefix("/Script/CoreUObject.")
@@ -281,7 +281,7 @@ pub(super) fn generated_value(
             .map(Some);
     }
     if type_path == "/Script/CoreUObject.InstancedPropertyBag" {
-        return property_bag::decode(source, reader, package, path, depth).map(Some);
+        return property_bag::decode(source, reader, package, path, scope).map(Some);
     }
     generated_struct(type_path, reader, package, path)
 }
@@ -306,13 +306,13 @@ pub(super) fn math_struct(
         })
     };
     let fields =
-        |reader: &mut Reader<'_>, names: &[&str]| -> Result<PropertyValue, PropertyError> {
+        |reader: &mut Reader<'_>, names: &[&'static str]| -> Result<PropertyValue, PropertyError> {
             Ok(PropertyValue::NativeStruct {
                 fields: names
                     .iter()
                     .map(|name| {
                         Ok(NativeProperty {
-                            name: (*name).to_owned(),
+                            name: Cow::Borrowed(*name),
                             value: PropertyValue::Double(component(reader, name)?),
                         })
                     })
@@ -352,15 +352,15 @@ pub(super) fn math_struct(
             PropertyValue::NativeStruct {
                 fields: vec![
                     NativeProperty {
-                        name: "Min".into(),
+                        name: Cow::Borrowed("Min"),
                         value: min,
                     },
                     NativeProperty {
-                        name: "Max".into(),
+                        name: Cow::Borrowed("Max"),
                         value: max,
                     },
                     NativeProperty {
-                        name: valid_name.into(),
+                        name: Cow::Borrowed(valid_name),
                         value: PropertyValue::UInt(u64::from(valid)),
                     },
                 ],
@@ -371,7 +371,7 @@ pub(super) fn math_struct(
                 .iter()
                 .map(|plane| {
                     Ok(NativeProperty {
-                        name: (*plane).to_owned(),
+                        name: Cow::Borrowed(*plane),
                         value: fields(reader, &["X", "Y", "Z", "W"])?,
                     })
                 })
@@ -503,9 +503,9 @@ fn instanced(
     reader: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<PropertyValue, PropertyError> {
-    if depth >= MAX_PROPERTY_DECODE_DEPTH {
+    if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
         return Err(error(
             reader,
             path,
@@ -569,7 +569,8 @@ fn instanced(
             )
         })?;
         let name = type_path.rsplit('.').next().unwrap_or(type_path);
-        let generated = generated_value(source, type_path, &mut inner, package, path, depth + 1)?;
+        let generated =
+            generated_value(source, type_path, &mut inner, package, path, scope.nested())?;
         let decoded = if generated.is_some() {
             generated
         } else {
@@ -580,7 +581,7 @@ fn instanced(
                 "/Script/CoreUObject.Guid" => {
                     Some(PropertyValue::Guid(decode_guid_value(&mut inner, path)?))
                 }
-                _ => known_struct(source, name, &mut inner, package, path, depth + 1)?,
+                _ => known_struct(source, name, &mut inner, package, path, scope.nested())?,
             }
         };
         let decoded = if let Some(value) = decoded {
@@ -595,8 +596,13 @@ fn instanced(
                     &package.names,
                     path,
                 )?;
-                decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
-                Ok::<_, PropertyError>(PropertyValue::Struct(stream))
+                decode_property_stream_values_at_depth(
+                    source,
+                    &mut stream,
+                    package,
+                    scope.nested(),
+                )?;
+                Ok::<_, PropertyError>(PropertyValue::Struct(Box::new(stream)))
             })();
             match attempt {
                 Ok(value) if inner.remaining() == 0 => value,
@@ -604,9 +610,9 @@ fn instanced(
                     return Err(failure);
                 }
                 _ => PropertyValue::Raw {
-                    reason: RawReason::DecoderRejected(format!(
-                        "unsupported InstancedStruct payload for {type_path}"
-                    )),
+                    reason: RawReason::DecoderRejected(
+                        format!("unsupported InstancedStruct payload for {type_path}").into(),
+                    ),
                 },
             }
         };
@@ -620,11 +626,13 @@ fn instanced(
         }
         Some(Box::new(decoded))
     };
-    Ok(PropertyValue::InstancedStruct {
-        struct_type,
-        payload,
-        value,
-    })
+    Ok(PropertyValue::InstancedStruct(Box::new(
+        crate::property::InstancedStructValue {
+            struct_type,
+            payload,
+            value,
+        },
+    )))
 }
 
 #[cfg(test)]
@@ -664,7 +672,15 @@ mod tests {
         FIXTURE[span.offset() as usize..span.end() as usize].to_vec()
     }
     fn decode(bytes: &[u8], package: &Package, name: &str) -> Result<PropertyValue, PropertyError> {
-        known_struct(bytes, name, &mut Reader::new(bytes), package, "test", 0).map(Option::unwrap)
+        known_struct(
+            bytes,
+            name,
+            &mut Reader::new(bytes),
+            package,
+            "test",
+            DecodeScope::root(None),
+        )
+        .map(Option::unwrap)
     }
     #[test]
     fn property_bags_reject_truncation_invalid_names_counts_types_and_custom_versions() {
@@ -677,7 +693,7 @@ mod tests {
                 &mut Reader::new(bytes),
                 package,
                 "bag",
-                0,
+                DecodeScope::root(None),
             )
         };
         assert!(read(&bytes, &package).is_ok());
@@ -732,7 +748,10 @@ mod tests {
                 &mut Reader::new(&bytes),
                 &package,
                 "bag",
-                MAX_PROPERTY_DECODE_DEPTH
+                DecodeScope {
+                    depth: MAX_PROPERTY_DECODE_DEPTH,
+                    filter: None
+                }
             )
             .unwrap_err()
             .kind(),
@@ -829,7 +848,7 @@ mod tests {
             &mut reader,
             &package,
             "Fixture.Channel",
-            0,
+            DecodeScope::root(None),
         )
         .unwrap()
         .unwrap();
@@ -850,7 +869,7 @@ mod tests {
                     &mut Reader::new(&bytes[..end]),
                     &package,
                     "Fixture.Channel",
-                    0
+                    DecodeScope::root(None)
                 )
                 .is_err()
             );
@@ -905,9 +924,16 @@ mod tests {
                     }
                     let mut reader = Reader::new(&bytes);
                     assert!(
-                        known_struct(&bytes, name, &mut reader, &package, "Fixture", 0)
-                            .unwrap()
-                            .is_some()
+                        known_struct(
+                            &bytes,
+                            name,
+                            &mut reader,
+                            &package,
+                            "Fixture",
+                            DecodeScope::root(None)
+                        )
+                        .unwrap()
+                        .is_some()
                     );
                     assert_eq!(reader.remaining(), 0);
                     for end in 0..bytes.len() {
@@ -918,7 +944,7 @@ mod tests {
                                 &mut Reader::new(&bytes[..end]),
                                 &package,
                                 "Fixture",
-                                0
+                                DecodeScope::root(None)
                             )
                             .is_err()
                         );
@@ -944,7 +970,7 @@ mod tests {
                     &mut reader,
                     &package,
                     "Fixture",
-                    0
+                    DecodeScope::root(None)
                 )
                 .is_err()
             );
@@ -971,21 +997,16 @@ mod tests {
         let null = decode(&[0; 8], &package, "InstancedStruct").unwrap();
         assert!(matches!(
             null,
-            PropertyValue::InstancedStruct {
-                struct_type: PackageIndex::Null,
-                value: None,
-                ..
-            }
+            PropertyValue::InstancedStruct(instance) if instance.struct_type == PackageIndex::Null && instance.value.is_none()
         ));
         let opaque = payload(&package, "OpaqueValue");
-        let PropertyValue::InstancedStruct {
-            payload,
-            value: Some(value),
-            ..
-        } = decode(&opaque, &package, "InstancedStruct").unwrap()
+        let PropertyValue::InstancedStruct(instance) =
+            decode(&opaque, &package, "InstancedStruct").unwrap()
         else {
             panic!()
         };
+        let crate::property::InstancedStructValue { payload, value, .. } = *instance;
+        let value = value.unwrap();
         assert_eq!(payload.len(), 8);
         assert!(matches!(*value, PropertyValue::Raw { .. }));
         assert_eq!(
@@ -994,7 +1015,10 @@ mod tests {
                 &mut Reader::new(&bytes),
                 &package,
                 "test",
-                MAX_PROPERTY_DECODE_DEPTH
+                DecodeScope {
+                    depth: MAX_PROPERTY_DECODE_DEPTH,
+                    filter: None
+                }
             )
             .unwrap_err()
             .kind(),

@@ -6,13 +6,15 @@ use serde::{Serialize, Serializer};
 use uasset_parser::archive::{Guid, NameRef};
 use uasset_parser::asset::{
     ANIM_SEQUENCE_CLASS, AssetDecodeContext, DecodedAsset, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
-    USERDEFINEDSTRUCT_CLASS, decode_export,
+    USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{ObjectPath, Package, PackageIndex, TableLocation};
 use uasset_parser::property::{
     MapEntry, PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory,
 };
 use uasset_parser::schema::{SchemaProvider, embedded_source_model};
+
+use crate::decoded_exports::DecodedExports;
 
 use super::{
     DecodeErrorOutput, ErrorOutput, SCHEMA_VERSION, asset_error_kind_name, data_asset_kind,
@@ -83,7 +85,37 @@ pub fn write_inspection_json_with_schemas(
     let package = Package::parse(bytes).map_err(|error| {
         InspectionJsonError::Inspection(Box::new(ErrorOutput::package(path.to_owned(), &error)))
     })?;
-    let inspection = StreamingInspection::new(path, bytes, package, schemas);
+    write_inspection_json_from_package_with_schemas(path, bytes, &package, schemas, None, writer)
+}
+
+/// Writes generic inspection JSON from an already parsed package.
+pub fn write_inspection_json_from_package(
+    path: &str,
+    bytes: &[u8],
+    package: &Package,
+    writer: impl io::Write,
+) -> Result<InspectionJsonStatus, InspectionJsonError> {
+    write_inspection_json_from_package_with_schemas(
+        path,
+        bytes,
+        package,
+        embedded_source_model(),
+        None,
+        writer,
+    )
+}
+
+/// Writes generic inspection JSON from an already parsed package, optionally sharing a cache of
+/// exports decoded with the same schemas.
+pub fn write_inspection_json_from_package_with_schemas(
+    path: &str,
+    bytes: &[u8],
+    package: &Package,
+    schemas: &dyn SchemaProvider,
+    decoded: Option<&DecodedExports>,
+    writer: impl io::Write,
+) -> Result<InspectionJsonStatus, InspectionJsonError> {
+    let inspection = StreamingInspection::new(path, bytes, package, schemas, decoded);
     serde_json::to_writer(writer, &inspection)
         .map_err(|error| InspectionJsonError::Serialization(error.to_string()))?;
     Ok(inspection.status())
@@ -118,8 +150,9 @@ struct StreamingInspection<'a> {
     metadata: Option<uasset_parser::metadata::PackageMetadata>,
     path: &'a str,
     source: &'a [u8],
-    package: Package,
+    package: &'a Package,
     schemas: &'a dyn SchemaProvider,
+    decoded: Option<&'a DecodedExports>,
     decode_errors: RefCell<Vec<DecodeErrorOutput>>,
 }
 
@@ -127,8 +160,9 @@ impl<'a> StreamingInspection<'a> {
     fn new(
         path: &'a str,
         source: &'a [u8],
-        package: Package,
+        package: &'a Package,
         schemas: &'a dyn SchemaProvider,
+        decoded: Option<&'a DecodedExports>,
     ) -> Self {
         let mut decode_errors = Vec::new();
         let metadata = match package.read_metadata(source) {
@@ -152,6 +186,7 @@ impl<'a> StreamingInspection<'a> {
             source,
             package,
             schemas,
+            decoded,
             metadata,
             decode_errors: RefCell::new(decode_errors),
         }
@@ -178,13 +213,14 @@ impl Serialize for StreamingInspection<'_> {
             output.serialize_field("metadata", metadata)?;
         }
         output.serialize_field("path", self.path)?;
-        output.serialize_field("package", &PackageView(&self.package))?;
+        output.serialize_field("package", &PackageView(self.package))?;
         output.serialize_field(
             "assets",
             &StreamingAssetsView {
-                package: &self.package,
+                package: self.package,
                 source: self.source,
                 schemas: self.schemas,
+                decoded: self.decoded,
                 decode_errors: &self.decode_errors,
             },
         )?;
@@ -286,6 +322,7 @@ struct StreamingAssetsView<'a> {
     package: &'a Package,
     source: &'a [u8],
     schemas: &'a dyn SchemaProvider,
+    decoded: Option<&'a DecodedExports>,
     decode_errors: &'a RefCell<Vec<DecodeErrorOutput>>,
 }
 
@@ -295,16 +332,17 @@ impl Serialize for StreamingAssetsView<'_> {
         S: Serializer,
     {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: self.source,
             package: self.package,
             schemas: self.schemas,
         };
         let mut sequence = serializer.serialize_seq(None)?;
-        for export in &self.package.exports {
-            match decode_export(export, &context) {
+        for (index, export) in self.package.exports.iter().enumerate() {
+            match &*DecodedExports::decode(self.decoded, index, export, &context) {
                 Ok(Some(asset)) => sequence.serialize_element(&AssetView {
                     package: self.package,
-                    asset: &asset,
+                    asset,
                 })?,
                 Ok(None) => {}
                 Err(error) => self.decode_errors.borrow_mut().push(DecodeErrorOutput {
@@ -1154,19 +1192,16 @@ impl<'a> PropertyValueView<'a> {
             PropertyValue::NativeStruct { fields } => Self::NativeStruct {
                 fields: NativeFieldsView { package, fields },
             },
-            PropertyValue::InstancedStruct {
-                struct_type,
-                payload,
-                value,
-            } => Self::InstancedStruct {
+            PropertyValue::InstancedStruct(instance) => Self::InstancedStruct {
                 struct_type: ObjectReferenceView {
                     package,
-                    index: *struct_type,
+                    index: instance.struct_type,
                 },
-                size: payload.len(),
-                value: value
+                size: instance.payload.len(),
+                value: instance
+                    .value
                     .as_ref()
-                    .map(|value| Box::new(Self::new(package, value, payload.len()))),
+                    .map(|value| Box::new(Self::new(package, value, instance.payload.len()))),
             },
             PropertyValue::Bool(value) => Self::Bool { value: *value },
             PropertyValue::Int(value) => Self::Int { value: *value },

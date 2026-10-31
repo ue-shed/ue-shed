@@ -416,6 +416,7 @@ fn compiled_pin_identity_requires_a_readable_matching_pin() {
         let original = std::fs::read(fixtures.join(relative)).unwrap();
         let package = uasset_parser::Package::parse(&original).unwrap();
         let context = uasset_parser::asset::AssetDecodeContext {
+            property_filter: None,
             source: &original,
             package: &package,
             schemas: uasset_parser::schema::embedded_source_model(),

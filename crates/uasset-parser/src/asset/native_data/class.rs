@@ -2,6 +2,7 @@
 use super::*;
 use crate::archive::Reader;
 use crate::property::NativeProperty;
+use std::borrow::Cow;
 
 pub(super) fn is_blueprint_class(export: &Export) -> bool {
     // UE 4.27 Animation/AnimBlueprintGeneratedClass.cpp and
@@ -133,18 +134,18 @@ pub(super) fn decode(
     // script: decode_struct_definition rejects any nonzero bytecode/storage size.
     let fields = decode_struct_definition(reader, context, path)?;
     let mut data = vec![NativeProperty {
-        name: "ChildProperties".into(),
+        name: Cow::Borrowed("ChildProperties"),
         value: PropertyValue::Array(
             fields
                 .into_iter()
                 .map(|field| PropertyValue::NativeStruct {
                     fields: vec![
                         NativeProperty {
-                            name: "Name".into(),
+                            name: Cow::Borrowed("Name"),
                             value: PropertyValue::Name(field.name),
                         },
                         NativeProperty {
-                            name: "Type".into(),
+                            name: Cow::Borrowed("Type"),
                             value: PropertyValue::Name(field.type_name),
                         },
                     ],
@@ -168,15 +169,15 @@ pub(super) fn decode(
         });
     }
     data.push(NativeProperty {
-        name: "FuncMap".into(),
+        name: Cow::Borrowed("FuncMap"),
         value: PropertyValue::Map(functions),
     });
     data.push(NativeProperty {
-        name: "ClassFlags".into(),
+        name: Cow::Borrowed("ClassFlags"),
         value: PropertyValue::UInt(u64::from(reader.read_u32(path.as_str())?)),
     });
     data.push(NativeProperty {
-        name: "ClassWithin".into(),
+        name: Cow::Borrowed("ClassWithin"),
         value: reference(reader, context, path, "ClassWithin")?,
     });
     for field in ["ClassConfigName", "ClassGeneratedBy"] {
@@ -190,7 +191,7 @@ pub(super) fn decode(
             reference(reader, context, path, field)?
         };
         data.push(NativeProperty {
-            name: field.into(),
+            name: Cow::Borrowed(field),
             value,
         });
     }
@@ -201,26 +202,26 @@ pub(super) fn decode(
         interfaces.push(PropertyValue::NativeStruct {
             fields: vec![
                 NativeProperty {
-                    name: "Class".into(),
+                    name: Cow::Borrowed("Class"),
                     value: reference(reader, context, path, "InterfaceClass")?,
                 },
                 NativeProperty {
-                    name: "PointerOffset".into(),
+                    name: Cow::Borrowed("PointerOffset"),
                     value: PropertyValue::Int(i64::from(reader.read_i32(path.as_str())?)),
                 },
                 NativeProperty {
-                    name: "ImplementedByK2".into(),
+                    name: Cow::Borrowed("ImplementedByK2"),
                     value: PropertyValue::Bool(read_archive_bool(reader, path.as_str())?),
                 },
             ],
         });
     }
     data.push(NativeProperty {
-        name: "Interfaces".into(),
+        name: Cow::Borrowed("Interfaces"),
         value: PropertyValue::Array(interfaces),
     });
     data.push(NativeProperty {
-        name: "DeprecatedForceScriptOrder".into(),
+        name: Cow::Borrowed("DeprecatedForceScriptOrder"),
         value: PropertyValue::Bool(read_archive_bool(reader, path.as_str())?),
     });
     let dummy = reader.read_name_ref(&format!("{path}.Dummy"))?;
@@ -231,7 +232,7 @@ pub(super) fn decode(
         return Err(invalid_layout(path, "cooked class"));
     }
     data.push(NativeProperty {
-        name: "ClassDefaultObject".into(),
+        name: Cow::Borrowed("ClassDefaultObject"),
         value: reference(reader, context, path, "ClassDefaultObject")?,
     });
     Ok((guid, PropertyValue::NativeStruct { fields: data }))
@@ -279,6 +280,7 @@ mod tests {
         for version in [1016, 1017, 1018] {
             package.summary.versions.ue5 = version;
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: embedded_source_model(),
@@ -312,6 +314,7 @@ mod tests {
         for version in [999, 1019] {
             package.summary.versions.ue5 = version;
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: embedded_source_model(),
@@ -328,6 +331,7 @@ mod tests {
             bytes.extend_from_slice(&word.to_le_bytes());
         }
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -372,6 +376,7 @@ mod tests {
             });
         }
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &[],
             package: &package,
             schemas: embedded_source_model(),

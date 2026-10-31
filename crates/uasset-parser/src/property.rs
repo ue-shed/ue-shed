@@ -1,6 +1,8 @@
 //! Generic tagged-property model and envelope parsing.
 
 use std::fmt;
+#[cfg(target_pointer_width = "64")]
+use std::mem::size_of;
 
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Reader, Span};
 use crate::package::PackageIndex;
@@ -54,13 +56,17 @@ impl PropertyTagFlags {
     }
 }
 
+/// Why a property value stayed raw. Details are `Box<str>` so the reason, and with it
+/// `PropertyValue`, stays small: a capacity word per value adds up across every record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RawReason {
+    /// The decode filter did not request this property.
+    NotRequested,
     UnsupportedType,
-    DecoderRejected(String),
-    LegacyDecoderRejected(String),
+    DecoderRejected(Box<str>),
+    LegacyDecoderRejected(Box<str>),
     LegacyContainerElementWithoutTypeInformation,
-    FeatureUnavailableForEngineVersion(String),
+    FeatureUnavailableForEngineVersion(Box<str>),
     UnsupportedTextHistory(i8),
 }
 
@@ -68,10 +74,11 @@ impl RawReason {
     #[must_use]
     pub fn detail(&self) -> std::borrow::Cow<'_, str> {
         match self {
+            Self::NotRequested => "not requested by the decode filter".into(),
             Self::UnsupportedType => "unsupported type".into(),
             Self::DecoderRejected(detail)
             | Self::LegacyDecoderRejected(detail)
-            | Self::FeatureUnavailableForEngineVersion(detail) => detail.as_str().into(),
+            | Self::FeatureUnavailableForEngineVersion(detail) => (&**detail).into(),
             Self::LegacyContainerElementWithoutTypeInformation => {
                 "legacy container struct element has no type information".into()
             }
@@ -206,8 +213,16 @@ pub struct MapEntry {
 /// A named field from native serialization, without a fabricated property tag.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativeProperty {
-    pub name: String,
+    pub name: std::borrow::Cow<'static, str>,
     pub value: PropertyValue,
+}
+
+/// Saved type reference, payload span, and optional decoded value of an instanced struct.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InstancedStructValue {
+    pub struct_type: PackageIndex,
+    pub payload: Span,
+    pub value: Option<Box<PropertyValue>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -220,7 +235,7 @@ pub enum PropertyValue {
     Name(NameRef),
     Enum(NameRef),
     String(String),
-    Text(TextValue),
+    Text(Box<TextValue>),
     Vector(VectorValue),
     IntPoint(IntPointValue),
     Rotator(RotatorValue),
@@ -236,19 +251,19 @@ pub enum PropertyValue {
     Array(Vec<PropertyValue>),
     Set(Vec<PropertyValue>),
     Map(Vec<MapEntry>),
-    Struct(PropertyStream),
+    Struct(Box<PropertyStream>),
     NativeStruct {
         fields: Vec<NativeProperty>,
     },
-    InstancedStruct {
-        struct_type: PackageIndex,
-        payload: Span,
-        value: Option<Box<PropertyValue>>,
-    },
+    InstancedStruct(Box<InstancedStructValue>),
     Raw {
         reason: RawReason,
     },
 }
+
+// Keep container elements compact on 64-bit targets.
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<PropertyValue>() <= 32);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PropertyRecord {

@@ -1,12 +1,14 @@
 //! Semantic property decoding seam.
 
-use std::fmt;
+use std::borrow::Cow;
+use std::fmt::{self, Write};
 
 mod legacy_structs;
 pub(crate) mod native_values;
 pub(crate) use legacy_structs::object_containers;
 
 use crate::archive::{Guid, Reader};
+use crate::asset::PropertyDecodeFilter;
 use crate::package::{Package, PackageIndex};
 use crate::property::{
     ColorValue, DataTableRowHandleValue, FrameRangeBound, FrameRangeValue, IntPointValue,
@@ -21,6 +23,25 @@ const MAX_PROPERTY_DECODE_DEPTH: usize = 64;
 const RICH_CURVE_KEY_SERIALIZED_BYTES: u64 = 27;
 
 #[derive(Clone, Copy)]
+pub(crate) struct DecodeScope<'f> {
+    pub(crate) depth: usize,
+    pub(crate) filter: Option<&'f dyn PropertyDecodeFilter>,
+}
+
+impl<'f> DecodeScope<'f> {
+    pub(crate) fn root(filter: Option<&'f dyn PropertyDecodeFilter>) -> Self {
+        Self { depth: 0, filter }
+    }
+
+    fn nested(self) -> Self {
+        Self {
+            depth: self.depth + 1,
+            filter: self.filter,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 struct TypeSpec<'a> {
     name: &'a str,
     tree: &'a PropertyTypeName,
@@ -30,6 +51,124 @@ struct TypeSpec<'a> {
 impl TypeSpec<'_> {
     fn is_user_defined_struct(self) -> bool {
         self.name == "StructProperty" && self.struct_guid.is_some_and(|guid| !guid.is_zero())
+    }
+}
+
+/// Pure type resolution shared by every element of a container.
+struct StructFacts<'a> {
+    struct_name: Option<Cow<'a, str>>,
+    math_name: Option<Cow<'a, str>>,
+    type_path: Option<&'static str>,
+    unknown_layout_name: Option<Cow<'a, str>>,
+    tagged_fallback: bool,
+    user_defined_identity: bool,
+    niagara_identity: bool,
+    fixed_size: Option<usize>,
+}
+
+fn struct_facts<'a>(package: &'a Package, type_spec: TypeSpec<'_>) -> StructFacts<'a> {
+    let mut facts = StructFacts {
+        struct_name: None,
+        math_name: None,
+        type_path: None,
+        unknown_layout_name: None,
+        tagged_fallback: false,
+        user_defined_identity: false,
+        niagara_identity: false,
+        fixed_size: fixed_serialized_size(type_spec.name, type_spec.tree),
+    };
+    if type_spec.name == "StructProperty" {
+        facts.struct_name = resolve_struct_type_name(package, type_spec.tree);
+        facts.math_name = resolve_math_struct_name(package, type_spec.tree);
+        facts.type_path = resolve_struct_type_path(package, type_spec.tree);
+        facts.unknown_layout_name = unknown_layout_struct_name(package, type_spec.tree);
+        facts.tagged_fallback = is_tagged_fallback_native_struct(package, type_spec.tree);
+        facts.user_defined_identity = is_user_defined_struct_identity(package, type_spec.tree);
+        facts.niagara_identity = has_niagara_identity(package, type_spec.tree);
+    }
+    facts
+}
+
+/// Scalar array elements whose values cannot fail once their bytes are available.
+#[derive(Clone, Copy)]
+enum ScalarKind {
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Float,
+    Double,
+    ObjectRef,
+    Guid,
+}
+
+impl ScalarKind {
+    fn from_type(type_spec: TypeSpec<'_>) -> Option<Self> {
+        Some(match type_spec.name {
+            "Int8Property" => Self::Int8,
+            "Int16Property" => Self::Int16,
+            "IntProperty" | "Int32Property" => Self::Int32,
+            "Int64Property" => Self::Int64,
+            "UInt8Property" => Self::UInt8,
+            "ByteProperty" if type_spec.tree.parameters.is_empty() => Self::UInt8,
+            "UInt16Property" => Self::UInt16,
+            "UInt32Property" => Self::UInt32,
+            "UInt64Property" => Self::UInt64,
+            "FloatProperty" => Self::Float,
+            "DoubleProperty" => Self::Double,
+            "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
+                Self::ObjectRef
+            }
+            "LazyObjectProperty" => Self::Guid,
+            _ => return None,
+        })
+    }
+
+    fn decode(self, bytes: &[u8]) -> PropertyValue {
+        // chunks_exact uses this kind's fixed serialized size, so all byte indices exist.
+        match self {
+            Self::Int8 => PropertyValue::Int(i64::from(i8::from_le_bytes([bytes[0]]))),
+            Self::Int16 => PropertyValue::Int(i64::from(i16::from_le_bytes(std::array::from_fn(
+                |index| bytes[index],
+            )))),
+            Self::Int32 => PropertyValue::Int(i64::from(i32::from_le_bytes(std::array::from_fn(
+                |index| bytes[index],
+            )))),
+            Self::Int64 => PropertyValue::Int(i64::from_le_bytes(std::array::from_fn(|index| {
+                bytes[index]
+            }))),
+            Self::UInt8 => PropertyValue::UInt(u64::from(bytes[0])),
+            Self::UInt16 => PropertyValue::UInt(u64::from(u16::from_le_bytes(
+                std::array::from_fn(|index| bytes[index]),
+            ))),
+            Self::UInt32 => PropertyValue::UInt(u64::from(u32::from_le_bytes(
+                std::array::from_fn(|index| bytes[index]),
+            ))),
+            Self::UInt64 => PropertyValue::UInt(u64::from_le_bytes(std::array::from_fn(|index| {
+                bytes[index]
+            }))),
+            Self::Float => PropertyValue::Float(f32::from_le_bytes(std::array::from_fn(|index| {
+                bytes[index]
+            }))),
+            Self::Double => {
+                PropertyValue::Double(f64::from_le_bytes(std::array::from_fn(|index| {
+                    bytes[index]
+                })))
+            }
+            Self::ObjectRef => PropertyValue::ObjectRef(PackageIndex::from_raw(
+                i32::from_le_bytes(std::array::from_fn(|index| bytes[index])),
+            )),
+            Self::Guid => PropertyValue::Guid(Guid {
+                a: u32::from_le_bytes(std::array::from_fn(|index| bytes[index])),
+                b: u32::from_le_bytes(std::array::from_fn(|index| bytes[4 + index])),
+                c: u32::from_le_bytes(std::array::from_fn(|index| bytes[8 + index])),
+                d: u32::from_le_bytes(std::array::from_fn(|index| bytes[12 + index])),
+            }),
+        }
     }
 }
 
@@ -67,17 +206,30 @@ pub fn decode_property_stream_values(
     stream: &mut PropertyStream,
     package: &Package,
 ) -> Result<(), PropertyError> {
-    decode_property_stream_values_at_depth(source, stream, package, 0)
+    decode_property_stream_values_at_depth(source, stream, package, DecodeScope::root(None))
 }
 
-fn decode_property_stream_values_at_depth(
+/// Applies the host filter to every tagged stream, keeping parser-owned reads materialized.
+pub(crate) fn decode_property_stream_values_at_depth(
     source: &[u8],
     stream: &mut PropertyStream,
     package: &Package,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<(), PropertyError> {
     for record in &mut stream.records {
-        decode_property_record(source, record, package, depth)?;
+        let requested = scope.filter.is_none_or(|filter| {
+            package
+                .resolve_name_str(record.name)
+                .is_some_and(|name| crate::asset::DECODER_READ_PROPERTIES.contains(&name))
+                || filter.decode(package, record)
+        });
+        if requested {
+            decode_property_record(source, record, package, scope)?;
+        } else {
+            record.value = PropertyValue::Raw {
+                reason: RawReason::NotRequested,
+            };
+        }
     }
     Ok(())
 }
@@ -86,17 +238,17 @@ fn decode_property_record(
     source: &[u8],
     record: &mut PropertyRecord,
     package: &Package,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<(), PropertyError> {
-    if let Err(error) = decode_property_record_inner(source, record, package, depth) {
+    if let Err(error) = decode_property_record_inner(source, record, package, scope) {
         if !package.summary.versions.uses_legacy_property_tags() && error.raw_reason.is_none() {
             return Err(error);
         }
         let reason = error.raw_reason.clone().unwrap_or_else(|| {
             if error.kind() == crate::property::PropertyErrorKind::UnsupportedVersion {
-                RawReason::FeatureUnavailableForEngineVersion(error.to_string())
+                RawReason::FeatureUnavailableForEngineVersion(error.to_string().into())
             } else {
-                RawReason::LegacyDecoderRejected(error.to_string())
+                RawReason::LegacyDecoderRejected(error.to_string().into())
             }
         });
         record.value = PropertyValue::Raw { reason };
@@ -108,18 +260,20 @@ fn decode_property_record_inner(
     source: &[u8],
     record: &mut PropertyRecord,
     package: &Package,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<(), PropertyError> {
     if record.flags.is_skipped() {
         record.value = PropertyValue::Raw {
-            reason: RawReason::DecoderRejected("property serialization was skipped".to_owned()),
+            reason: RawReason::DecoderRejected(
+                "property serialization was skipped".to_owned().into(),
+            ),
         };
         return Ok(());
     }
 
     let Some(type_name) = package.resolve_name_cow(record.type_name.name) else {
         record.value = PropertyValue::Raw {
-            reason: RawReason::DecoderRejected("unresolved property type name".to_owned()),
+            reason: RawReason::DecoderRejected("unresolved property type name".to_owned().into()),
         };
         return Ok(());
     };
@@ -143,7 +297,7 @@ fn decode_property_record_inner(
     {
         match decode_binary_or_native_value(
             source,
-            depth,
+            scope,
             TypeSpec {
                 name: type_name.as_ref(),
                 tree: &record.type_name,
@@ -173,7 +327,7 @@ fn decode_property_record_inner(
                     &mut payload,
                     package,
                     &path,
-                    depth,
+                    scope,
                 ) {
                     Ok(Some(value)) => value,
                     Ok(None) => {
@@ -184,7 +338,7 @@ fn decode_property_record_inner(
                     }
                     Err(error) if new_tagged_fallback => {
                         record.value = PropertyValue::Raw {
-                            reason: RawReason::DecoderRejected(error.to_string()),
+                            reason: RawReason::DecoderRejected(error.to_string().into()),
                         };
                         return Ok(());
                     }
@@ -211,7 +365,7 @@ fn decode_property_record_inner(
             &mut payload,
             package,
             &path,
-            depth,
+            scope,
         ) {
             Ok(Some(value)) => value,
             Ok(None) => {
@@ -226,10 +380,13 @@ fn decode_property_record_inner(
 
     if payload.remaining() != 0 {
         record.value = PropertyValue::Raw {
-            reason: RawReason::DecoderRejected(format!(
-                "{} trailing bytes left in decoded {type_name} payload",
-                payload.remaining()
-            )),
+            reason: RawReason::DecoderRejected(
+                format!(
+                    "{} trailing bytes left in decoded {type_name} payload",
+                    payload.remaining()
+                )
+                .into(),
+            ),
         };
         return Ok(());
     }
@@ -245,7 +402,7 @@ fn decode_typed_value(
     payload: &mut Reader<'_>,
     package: &Package,
     path: &(impl fmt::Display + ?Sized),
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     // Scalar leaves pass their error breadcrumb as `format_args!`: the reader
     // only stringifies `path` when it actually fails, so the happy path is
@@ -308,7 +465,8 @@ fn decode_typed_value(
         )),
         "TextProperty" => {
             let path = path.to_string();
-            decode_text_value(payload, package, &path).map(|text| text.map(PropertyValue::Text))
+            decode_text_value(payload, package, &path)
+                .map(|text| text.map(|text| PropertyValue::Text(Box::new(text))))
         }
         "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
             Ok(Some(PropertyValue::ObjectRef(PackageIndex::from_raw(
@@ -333,7 +491,7 @@ fn decode_typed_value(
                 payload,
                 package,
                 &path,
-                depth,
+                scope,
                 serializer,
             )
             .map(Some)
@@ -347,7 +505,7 @@ fn decode_typed_value(
                 payload,
                 package,
                 &path,
-                depth,
+                scope,
                 serializer,
             )
             .map(Some)
@@ -361,14 +519,15 @@ fn decode_typed_value(
                 payload,
                 package,
                 &path,
-                depth,
+                scope,
                 serializer,
             )
             .map(Some)
         }
         "StructProperty" => {
             let path = path.to_string();
-            decode_struct_value(source, type_spec, payload, package, &path, depth).map(Some)
+            let facts = struct_facts(package, type_spec);
+            decode_struct_value(source, type_spec, &facts, payload, package, &path, scope).map(Some)
         }
         _ => Ok(None),
     }
@@ -477,7 +636,7 @@ pub(super) fn decode_soft_object_path(
 
 fn decode_binary_or_native_value(
     source: &[u8],
-    depth: usize,
+    scope: DecodeScope<'_>,
     type_spec: TypeSpec<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
@@ -509,7 +668,7 @@ fn decode_binary_or_native_value(
         }
         if let Some(type_path) = resolve_struct_type_path(package, type_tree)
             && let Some(value) =
-                native_values::generated_value(source, type_path, payload, package, &path, depth)?
+                native_values::generated_value(source, type_path, payload, package, &path, scope)?
         {
             return Ok(Some(value));
         }
@@ -519,7 +678,7 @@ fn decode_binary_or_native_value(
                 || !is_niagara_variable(name)
                 || has_niagara_identity(package, type_tree))
             && let Some(value) =
-                native_values::known_struct(source, name, payload, package, &path, depth)?
+                native_values::known_struct(source, name, payload, package, &path, scope)?
         {
             return Ok(Some(value));
         }
@@ -600,7 +759,7 @@ fn decode_array_value(
     payload: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
     let (inner_type, inner_name) = resolve_inner_type(package, type_tree, path, "ArrayProperty")?;
@@ -636,7 +795,7 @@ fn decode_array_value(
             &mut inner_payload,
             package,
             path,
-            depth,
+            scope,
             count,
             serializer,
         )?;
@@ -660,7 +819,7 @@ fn decode_array_value(
         payload,
         package,
         path,
-        depth,
+        scope,
         count,
         serializer,
     )
@@ -673,10 +832,11 @@ fn decode_array_elements(
     payload: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
     count: usize,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
+    let facts = struct_facts(package, inner);
     let mut decoded_new_layout = false;
     let is_new_layout = speculative_container_struct(package, inner.tree, serializer);
     let result = (|| {
@@ -690,8 +850,18 @@ fn decode_array_elements(
         // before it applying; the element breadcrumb is rendered only if an element fails.
         if !inner.is_user_defined_struct()
             && inner.name != "StructProperty"
-            && let Some(byte_count) = fixed_serialized_size(inner.name, inner.tree)
+            && let Some(byte_count) = facts.fixed_size
         {
+            if let Some(kind) = ScalarKind::from_type(inner) {
+                // checked_vec_capacity already validated count * byte_count against remaining
+                // bytes and integer overflow; no element decoding in this branch can fail.
+                let bytes = payload.read_bytes(count * byte_count, path)?;
+                for element in bytes.chunks_exact(byte_count) {
+                    values.push(kind.decode(element));
+                    decoded_new_layout |= is_new_layout;
+                }
+                return Ok(PropertyValue::Array(values));
+            }
             for index in 0..count {
                 let element_path = ElementPath { path, index };
                 let mut element_payload = payload
@@ -703,7 +873,7 @@ fn decode_array_elements(
                     &mut element_payload,
                     package,
                     &element_path,
-                    depth,
+                    scope,
                 )?
                 .ok_or_else(|| {
                     unsupported_container_type(
@@ -718,16 +888,20 @@ fn decode_array_elements(
             }
             return Ok(PropertyValue::Array(values));
         }
+        let mut element_path = String::with_capacity(path.len() + 12);
         for index in 0..count {
-            let element_path = format!("{path}[{index}]");
+            element_path.clear();
+            write!(element_path, "{path}[{index}]")
+                .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
             values.push(
                 decode_container_element(
                     source,
                     inner,
+                    &facts,
                     payload,
                     package,
                     &element_path,
-                    depth,
+                    scope,
                     serializer,
                 )?
                 .ok_or_else(|| {
@@ -759,7 +933,7 @@ fn decode_set_value(
     payload: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
     let mut decoded_new_layout = false;
@@ -767,6 +941,14 @@ fn decode_set_value(
         let (element_type, element_name) =
             resolve_inner_type(package, type_tree, path, "SetProperty")?;
 
+        let element_spec = TypeSpec {
+            name: &element_name,
+            tree: element_type,
+            struct_guid: None,
+        };
+        let facts = struct_facts(package, element_spec);
+
+        let mut element_path = String::with_capacity(path.len() + 12);
         let is_new_layout = speculative_container_struct(package, element_type, serializer);
         let remove_count = payload.read_i32(&format_args!("{path}.ElementsToRemove.Count"))?;
         if remove_count < 0 {
@@ -783,18 +965,17 @@ fn decode_set_value(
             &format!("{path}.ElementsToRemove.Count"),
         )?;
         for index in 0..remove_count {
-            let element_path = format!("{path}.ElementsToRemove[{index}]");
+            element_path.clear();
+            write!(element_path, "{path}.ElementsToRemove[{index}]")
+                .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
             decode_container_element(
                 source,
-                TypeSpec {
-                    name: &element_name,
-                    tree: element_type,
-                    struct_guid: None,
-                },
+                element_spec,
+                &facts,
                 payload,
                 package,
                 &element_path,
-                depth,
+                scope,
                 serializer,
             )?
             .ok_or_else(|| {
@@ -811,19 +992,18 @@ fn decode_set_value(
         )?;
         let mut values = Vec::with_capacity(capacity);
         for index in 0..count {
-            let element_path = format!("{path}.Elements[{index}]");
+            element_path.clear();
+            write!(element_path, "{path}.Elements[{index}]")
+                .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
             values.push(
                 decode_container_element(
                     source,
-                    TypeSpec {
-                        name: &element_name,
-                        tree: element_type,
-                        struct_guid: None,
-                    },
+                    element_spec,
+                    &facts,
                     payload,
                     package,
                     &element_path,
-                    depth,
+                    scope,
                     serializer,
                 )?
                 .ok_or_else(|| {
@@ -843,7 +1023,7 @@ fn decode_map_value(
     payload: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
     let mut decoded_new_layout = false;
@@ -851,6 +1031,20 @@ fn decode_map_value(
         let (key_type, key_name) = resolve_map_key_type(package, type_tree, path)?;
         let (value_type, value_name) = resolve_map_value_type(package, type_tree, path)?;
 
+        let key_spec = TypeSpec {
+            name: &key_name,
+            tree: key_type,
+            struct_guid: None,
+        };
+        let key_facts = struct_facts(package, key_spec);
+        let value_spec = TypeSpec {
+            name: &value_name,
+            tree: value_type,
+            struct_guid: None,
+        };
+        let value_facts = struct_facts(package, value_spec);
+
+        let mut element_path = String::with_capacity(path.len() + 12);
         let new_key_layout = speculative_container_struct(package, key_type, serializer);
         let new_value_layout = speculative_container_struct(package, value_type, serializer);
         let keys_to_remove = payload.read_i32(&format_args!("{path}.KeysToRemove.Count"))?;
@@ -861,22 +1055,21 @@ fn decode_map_value(
                 &format!("{path}.KeysToRemove.Count"),
             )?;
             for index in 0..keys_to_remove {
-                let key_path = format!("{path}.KeysToRemove[{index}]");
+                element_path.clear();
+                write!(element_path, "{path}.KeysToRemove[{index}]")
+                    .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
                 decode_container_element(
                     source,
-                    TypeSpec {
-                        name: &key_name,
-                        tree: key_type,
-                        struct_guid: None,
-                    },
+                    key_spec,
+                    &key_facts,
                     payload,
                     package,
-                    &key_path,
-                    depth,
+                    &element_path,
+                    scope,
                     serializer,
                 )?
                 .ok_or_else(|| {
-                    unsupported_container_type(payload, &key_path, "map key", &key_name)
+                    unsupported_container_type(payload, &element_path, "map key", &key_name)
                 })?;
                 decoded_new_layout |= new_key_layout;
             }
@@ -899,39 +1092,37 @@ fn decode_map_value(
         )?;
         let mut entries = Vec::with_capacity(capacity);
         for index in 0..count {
-            let entry_path = format!("{path}.Entries[{index}]");
-            let key_path = format!("{entry_path}.Key");
-            let value_path = format!("{entry_path}.Value");
+            element_path.clear();
+            write!(element_path, "{path}.Entries[{index}].Key")
+                .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
             let key = decode_container_element(
                 source,
-                TypeSpec {
-                    name: &key_name,
-                    tree: key_type,
-                    struct_guid: None,
-                },
+                key_spec,
+                &key_facts,
                 payload,
                 package,
-                &key_path,
-                depth,
-                serializer,
-            )?
-            .ok_or_else(|| unsupported_container_type(payload, &key_path, "map key", &key_name))?;
-            decoded_new_layout |= new_key_layout;
-            let value = decode_container_element(
-                source,
-                TypeSpec {
-                    name: &value_name,
-                    tree: value_type,
-                    struct_guid: None,
-                },
-                payload,
-                package,
-                &value_path,
-                depth,
+                &element_path,
+                scope,
                 serializer,
             )?
             .ok_or_else(|| {
-                unsupported_container_type(payload, &value_path, "map value", &value_name)
+                unsupported_container_type(payload, &element_path, "map key", &key_name)
+            })?;
+            decoded_new_layout |= new_key_layout;
+            element_path.truncate(element_path.len() - "Key".len());
+            element_path.push_str("Value");
+            let value = decode_container_element(
+                source,
+                value_spec,
+                &value_facts,
+                payload,
+                package,
+                &element_path,
+                scope,
+                serializer,
+            )?
+            .ok_or_else(|| {
+                unsupported_container_type(payload, &element_path, "map value", &value_name)
             })?;
             decoded_new_layout |= new_value_layout;
             entries.push(MapEntry { key, value });
@@ -941,27 +1132,30 @@ fn decode_map_value(
     result.map_err(|error| preserve_opaque_container(error, decoded_new_layout))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decode_container_element(
     source: &[u8],
     type_spec: TypeSpec<'_>,
+    facts: &StructFacts<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_spec.is_user_defined_struct() {
-        return decode_struct_value(source, type_spec, payload, package, path, depth).map(Some);
+        return decode_struct_value(source, type_spec, facts, payload, package, path, scope)
+            .map(Some);
     }
     if type_spec.name == "StructProperty" {
-        let math_name = resolve_math_struct_name(package, type_spec.tree);
+        let math_name = &facts.math_name;
         if let Some(value) =
             native_values::math_struct(math_name.as_deref().unwrap_or(""), payload, package, path)?
         {
             return Ok(Some(value));
         }
         if matches!(
-            resolve_struct_type_name(package, type_spec.tree).as_deref(),
+            facts.struct_name.as_deref(),
             Some("SoftObjectPath" | "SoftClassPath")
         ) && package.summary.versions.is_at_least_ue5(1008)
             && !package.soft_object_paths.is_empty()
@@ -979,12 +1173,11 @@ fn decode_container_element(
         // UE5 recipes probe only qualified native values. On rejection, decode restores
         // the reader and the unchanged tagged/opaque container path below still applies.
         if (package.summary.versions.ue5 == 0
-            || (serializer != ContainerSerializer::Tagged
-                && has_niagara_identity(package, type_spec.tree)))
-            && let Some(name) = resolve_struct_type_name(package, type_spec.tree)
-            && is_niagara_variable(&name)
+            || (serializer != ContainerSerializer::Tagged && facts.niagara_identity))
+            && let Some(name) = &facts.struct_name
+            && is_niagara_variable(name)
             && let Some(value) =
-                native_values::niagara::decode(source, &name, payload, package, path, depth)?
+                native_values::niagara::decode(source, name, payload, package, path, scope)?
         {
             return Ok(Some(value));
         }
@@ -992,7 +1185,7 @@ fn decode_container_element(
         if package.summary.versions.uses_legacy_property_tags()
             && type_spec.tree.parameters.is_empty()
         {
-            return decode_struct_value(source, type_spec, payload, package, path, depth)
+            return decode_struct_value(source, type_spec, facts, payload, package, path, scope)
                 .map(Some)
                 .map_err(|error| {
                     error.with_raw_reason(RawReason::LegacyContainerElementWithoutTypeInformation)
@@ -1004,9 +1197,7 @@ fn decode_container_element(
     if type_spec.name == "BoolProperty" {
         return Ok(Some(PropertyValue::Bool(payload.read_u8(path)? != 0)));
     }
-    if type_spec.name == "StructProperty"
-        && resolve_struct_type_name(package, type_spec.tree).as_deref() == Some("RichCurveKey")
-    {
+    if type_spec.name == "StructProperty" && facts.struct_name.as_deref() == Some("RichCurveKey") {
         let mut element = payload.take_bounded(RICH_CURVE_KEY_SERIALIZED_BYTES, path)?;
         return native_values::known_struct(
             source,
@@ -1014,13 +1205,11 @@ fn decode_container_element(
             &mut element,
             package,
             path,
-            depth,
+            scope,
         );
     }
 
-    if type_spec.name == "StructProperty"
-        && resolve_struct_type_name(package, type_spec.tree).as_deref() == Some("Guid")
-    {
+    if type_spec.name == "StructProperty" && facts.struct_name.as_deref() == Some("Guid") {
         let mut element_payload = payload.take_bounded(16, path)?;
         return Ok(Some(PropertyValue::Guid(
             element_payload.read_guid(&format_args!("{path}.Value"))?,
@@ -1029,7 +1218,7 @@ fn decode_container_element(
 
     if type_spec.name == "FrameNumber"
         || (type_spec.name == "StructProperty"
-            && resolve_struct_type_name(package, type_spec.tree).as_deref() == Some("FrameNumber"))
+            && facts.struct_name.as_deref() == Some("FrameNumber"))
     {
         let mut element_payload = payload.take_bounded(4, path)?;
         return Ok(Some(PropertyValue::Int(i64::from(
@@ -1049,11 +1238,11 @@ fn decode_container_element(
             &mut element_payload,
             package,
             path,
-            depth,
+            scope,
         );
     }
 
-    if let Some(byte_count) = fixed_serialized_size(type_spec.name, type_spec.tree) {
+    if let Some(byte_count) = facts.fixed_size {
         let mut element_payload =
             payload.take_bounded(crate::convert::u64_from_usize(byte_count), path)?;
         return decode_typed_value(
@@ -1063,7 +1252,7 @@ fn decode_container_element(
             &mut element_payload,
             package,
             path,
-            depth,
+            scope,
         );
     }
 
@@ -1076,31 +1265,23 @@ fn decode_container_element(
     }
 
     if type_spec.name == "StructProperty"
-        && let Some(struct_name) = unknown_layout_struct_name(package, type_spec.tree)
+        && let Some(struct_name) = &facts.unknown_layout_name
     {
         match serializer {
             // The owning tag (or a content-package struct identity) proves a tagged stream, so a
             // failure below is malformed data and propagates like any other modern payload.
             ContainerSerializer::Tagged => {}
-            _ if is_tagged_fallback_native_struct(package, type_spec.tree)
-                && struct_name != "AnimNotifyEvent" =>
-            {
-                return decode_typed_value(
-                    source,
-                    type_spec,
-                    PropertyTagFlags::default(),
-                    payload,
-                    package,
-                    path,
-                    depth,
+            _ if facts.tagged_fallback && struct_name != "AnimNotifyEvent" => {
+                return decode_struct_value(
+                    source, type_spec, facts, payload, package, path, scope,
                 )
+                .map(Some)
                 .map_err(|error| {
                     let detail = error.to_string();
-                    error.with_raw_reason(RawReason::DecoderRejected(detail))
+                    error.with_raw_reason(RawReason::DecoderRejected(detail.into()))
                 });
             }
-            _ if is_user_defined_struct_identity(package, type_spec.tree)
-                || is_tagged_fallback_native_struct(package, type_spec.tree) => {}
+            _ if facts.user_defined_identity || facts.tagged_fallback => {}
             // Some element type is binary or native and this one has no recipe. A tagged parse
             // could succeed on native bytes by accident (an int64 equal to the `None` name index
             // reads as an empty struct), so the property is skipped without guessing.
@@ -1111,37 +1292,41 @@ fn decode_container_element(
                     path,
                     format!("struct {struct_name} has no known binary or native layout"),
                 )
-                .with_raw_reason(RawReason::DecoderRejected(format!(
-                    "skipped: struct {struct_name} in a container is binary or native \
+                .with_raw_reason(RawReason::DecoderRejected(
+                    format!(
+                        "skipped: struct {struct_name} in a container is binary or native \
                      serialized and has no known layout"
-                ))));
+                    )
+                    .into(),
+                )));
             }
             // Legacy tags carry no serializer evidence. Keep the tagged attempt they always had,
             // but a failure marks the owning property as skipped instead of failing the export.
-            ContainerSerializer::Unknown => return decode_typed_value(
-                source,
-                type_spec,
-                PropertyTagFlags::default(),
-                payload,
-                package,
-                path,
-                depth,
-            )
-            .map_err(|error| {
-                if error.raw_reason.is_some()
-                    || error.kind() == crate::property::PropertyErrorKind::ResourceLimit
-                {
-                    return error;
-                }
-                let reason = RawReason::DecoderRejected(format!(
+            ContainerSerializer::Unknown => {
+                return decode_struct_value(
+                    source, type_spec, facts, payload, package, path, scope,
+                )
+                .map(Some)
+                .map_err(|error| {
+                    if error.raw_reason.is_some()
+                        || error.kind() == crate::property::PropertyErrorKind::ResourceLimit
+                    {
+                        return error;
+                    }
+                    let reason = RawReason::DecoderRejected(format!(
                     "skipped: struct {struct_name} in a container has no known layout and did not \
                  decode as a tagged stream ({error})"
-                ));
-                error.with_raw_reason(reason)
-            }),
+                ).into());
+                    error.with_raw_reason(reason)
+                });
+            }
         }
     }
 
+    if type_spec.name == "StructProperty" {
+        return decode_struct_value(source, type_spec, facts, payload, package, path, scope)
+            .map(Some);
+    }
     decode_typed_value(
         source,
         type_spec,
@@ -1149,7 +1334,7 @@ fn decode_container_element(
         payload,
         package,
         path,
-        depth,
+        scope,
     )
 }
 
@@ -1187,7 +1372,7 @@ impl ContainerSerializer {
 fn preserve_opaque_container(error: PropertyError, decoded_new_layout: bool) -> PropertyError {
     if decoded_new_layout && error.raw_reason.is_none() {
         let detail = error.to_string();
-        error.with_raw_reason(RawReason::DecoderRejected(detail))
+        error.with_raw_reason(RawReason::DecoderRejected(detail.into()))
     } else {
         error
     }
@@ -1319,14 +1504,17 @@ fn decode_container_binary_struct(
 ///
 /// Math and core binary structs, source-generated layouts and handwritten native structs are
 /// known; anything else is attempted as a tagged stream.
-fn unknown_layout_struct_name(package: &Package, type_tree: &PropertyTypeName) -> Option<String> {
+fn unknown_layout_struct_name<'a>(
+    package: &'a Package,
+    type_tree: &PropertyTypeName,
+) -> Option<Cow<'a, str>> {
     let name = resolve_struct_type_name(package, type_tree)?;
     if resolve_struct_type_path(package, type_tree).is_some()
         || native_values::is_known_struct(&name, package)
     {
         return None;
     }
-    Some(name.into_owned())
+    Some(name)
 }
 
 fn unsupported_container_type(
@@ -1442,12 +1630,13 @@ fn resolve_map_value_type<'a>(
 fn decode_struct_value(
     source: &[u8],
     type_spec: TypeSpec<'_>,
+    facts: &StructFacts<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<PropertyValue, PropertyError> {
-    if depth >= MAX_PROPERTY_DECODE_DEPTH {
+    if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
         return Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
             Some(payload.tell()),
@@ -1456,46 +1645,50 @@ fn decode_struct_value(
         ));
     }
     let type_tree = type_spec.tree;
-    let struct_name = resolve_struct_type_name(package, type_tree);
+    let struct_name = &facts.struct_name;
     if !type_spec.is_user_defined_struct() {
         if let Some(value) = native_values::math_struct(
-            resolve_math_struct_name(package, type_tree)
-                .as_deref()
-                .unwrap_or(""),
+            facts.math_name.as_deref().unwrap_or(""),
             payload,
             package,
             path,
         )? {
             return Ok(value);
         }
-        if let Some(type_path) = resolve_struct_type_path(package, type_tree)
+        if let Some(type_path) = facts.type_path
             && let Some(value) =
-                native_values::generated_value(source, type_path, payload, package, path, depth)?
+                native_values::generated_value(source, type_path, payload, package, path, scope)?
         {
             return Ok(value);
         }
-        if let Some(name) = &struct_name
+        if let Some(name) = struct_name
             && !(package.summary.versions.ue5 != 0
                 && matches!(
                     name.as_ref(),
                     "NiagaraVariable" | "NiagaraVariableBase" | "NiagaraVariableWithOffset"
                 ))
             && let Some(value) =
-                native_values::known_struct(source, name, payload, package, path, depth)?
+                native_values::known_struct(source, name, payload, package, path, scope)?
         {
             return Ok(value);
         }
     }
     let mut stream =
         read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?;
-    decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
+    decode_property_stream_values_at_depth(source, &mut stream, package, scope.nested())?;
     if !type_spec.is_user_defined_struct() {
-        legacy_structs::declared_containers(source, &mut stream, type_tree, package, depth + 1);
+        legacy_structs::declared_containers(
+            source,
+            &mut stream,
+            type_tree,
+            package,
+            scope.nested(),
+        );
     }
     if !type_spec.is_user_defined_struct() && struct_name.as_deref() == Some("DataTableRowHandle") {
         return decode_data_table_row_handle(&stream, package, path);
     }
-    Ok(PropertyValue::Struct(stream))
+    Ok(PropertyValue::Struct(Box::new(stream)))
 }
 
 fn decode_data_table_row_handle(
@@ -1537,7 +1730,7 @@ fn decode_data_table_row_handle(
     // into UScriptStruct::SerializeItem/SerializeTaggedProperties (Class.cpp). Either
     // field can be elided. Retain saved fields without inventing inherited values.
     let (Some(table), Some(row_name)) = (table, row_name) else {
-        return Ok(PropertyValue::Struct(stream.clone()));
+        return Ok(PropertyValue::Struct(Box::new(stream.clone())));
     };
     Ok(PropertyValue::DataTableRowHandle(DataTableRowHandleValue {
         table,
@@ -1776,6 +1969,494 @@ mod tests {
         write_property_terminator,
     };
 
+    #[test]
+    fn filtered_stream_keeps_records_and_spans_and_protects_decoder_reads() {
+        struct RejectAll;
+        impl crate::asset::PropertyDecodeFilter for RejectAll {
+            fn decode(&self, _package: &Package, _record: &PropertyRecord) -> bool {
+                false
+            }
+        }
+        let mut names = vec![
+            "None".to_owned(),
+            "IntProperty".to_owned(),
+            "Unrequested".to_owned(),
+        ];
+        names.extend(
+            crate::asset::DECODER_READ_PROPERTIES
+                .iter()
+                .map(|name| (*name).to_owned()),
+        );
+        let package = test_package(names);
+        let mut bytes = Vec::new();
+        for index in 2..package.names.len() {
+            write_property_tag(
+                &mut bytes,
+                index as i32,
+                &TypeParam {
+                    type_index: 1,
+                    parameters: vec![],
+                },
+                0,
+                &42_i32.to_le_bytes(),
+            );
+        }
+        write_property_terminator(&mut bytes, 0);
+        let original = read_tagged_property_stream(
+            &mut Reader::new(&bytes),
+            &package.summary.versions,
+            &package.names,
+            "Filter",
+        )
+        .unwrap();
+        let mut expected = original.clone();
+        decode_property_stream_values(&bytes, &mut expected, &package).unwrap();
+        let mut unfiltered = original.clone();
+        decode_property_stream_values_at_depth(
+            &bytes,
+            &mut unfiltered,
+            &package,
+            DecodeScope::root(None),
+        )
+        .unwrap();
+        assert_eq!(unfiltered, expected);
+        let mut filtered = original.clone();
+        decode_property_stream_values_at_depth(
+            &bytes,
+            &mut filtered,
+            &package,
+            DecodeScope::root(Some(&RejectAll)),
+        )
+        .unwrap();
+        expected.records[0].value = PropertyValue::Raw {
+            reason: RawReason::NotRequested,
+        };
+        assert_eq!(filtered, expected);
+        assert_eq!(filtered.records.len(), original.records.len());
+        for (actual, original) in filtered.records.iter().zip(&original.records) {
+            assert_eq!(actual.payload, original.payload);
+        }
+        assert_eq!(
+            RawReason::NotRequested.detail(),
+            "not requested by the decode filter"
+        );
+    }
+
+    #[test]
+    fn filtered_stream_filters_nested_properties_in_decoder_owned_structs() {
+        struct RejectAll;
+        impl crate::asset::PropertyDecodeFilter for RejectAll {
+            fn decode(&self, _package: &Package, _record: &PropertyRecord) -> bool {
+                false
+            }
+        }
+        let package = test_package(
+            [
+                "None",
+                "Nodes",
+                "StructProperty",
+                "IntProperty",
+                "Nested",
+                "FixtureStruct",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
+        let mut nested = Vec::new();
+        write_property_tag(
+            &mut nested,
+            4,
+            &TypeParam {
+                type_index: 3,
+                parameters: vec![],
+            },
+            0,
+            &42_i32.to_le_bytes(),
+        );
+        write_property_terminator(&mut nested, 0);
+        let mut bytes = Vec::new();
+        write_property_tag(
+            &mut bytes,
+            1,
+            &TypeParam {
+                type_index: 2,
+                parameters: vec![TypeParam {
+                    type_index: 5,
+                    parameters: vec![],
+                }],
+            },
+            0,
+            &nested,
+        );
+        write_property_terminator(&mut bytes, 0);
+        let mut stream = read_tagged_property_stream(
+            &mut Reader::new(&bytes),
+            &package.summary.versions,
+            &package.names,
+            "Filter",
+        )
+        .unwrap();
+        decode_property_stream_values_at_depth(
+            &bytes,
+            &mut stream,
+            &package,
+            DecodeScope::root(Some(&RejectAll)),
+        )
+        .unwrap();
+        let PropertyValue::Struct(nested) = &stream.records[0].value else {
+            panic!("decoded nested struct")
+        };
+        assert_eq!(
+            nested.records[0].value,
+            PropertyValue::Raw {
+                reason: RawReason::NotRequested,
+            }
+        );
+    }
+
+    #[test]
+    fn filtered_nested_stream_preserves_text_tags_and_payload_spans() {
+        struct TextAndStructs;
+        impl PropertyDecodeFilter for TextAndStructs {
+            fn decode(&self, package: &Package, record: &PropertyRecord) -> bool {
+                matches!(
+                    package.resolve_name_str(record.type_name.name),
+                    Some("TextProperty" | "StructProperty")
+                )
+            }
+        }
+        let package = test_package(
+            [
+                "None",
+                "Root",
+                "StructProperty",
+                "FixtureStruct",
+                "Count",
+                "IntProperty",
+                "Samples",
+                "ArrayProperty",
+                "FloatProperty",
+                "Label",
+                "TextProperty",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
+        let mut nested = Vec::new();
+        write_property_tag(
+            &mut nested,
+            4,
+            &TypeParam {
+                type_index: 5,
+                parameters: vec![],
+            },
+            0,
+            &42_i32.to_le_bytes(),
+        );
+        let mut floats = Vec::new();
+        push_i32(&mut floats, 2);
+        push_f32(&mut floats, 1.25);
+        push_f32(&mut floats, -2.5);
+        write_property_tag(
+            &mut nested,
+            6,
+            &TypeParam {
+                type_index: 7,
+                parameters: vec![TypeParam {
+                    type_index: 8,
+                    parameters: vec![],
+                }],
+            },
+            0,
+            &floats,
+        );
+        let mut text = Vec::new();
+        push_i32(&mut text, 0);
+        text.push(0); // Base history
+        push_fstring(&mut text, "Fixture");
+        push_fstring(&mut text, "Label");
+        push_fstring(&mut text, "Nested text");
+        write_property_tag(
+            &mut nested,
+            9,
+            &TypeParam {
+                type_index: 10,
+                parameters: vec![],
+            },
+            0,
+            &text,
+        );
+        write_property_terminator(&mut nested, 0);
+        let mut bytes = Vec::new();
+        write_property_tag(
+            &mut bytes,
+            1,
+            &TypeParam {
+                type_index: 2,
+                parameters: vec![TypeParam {
+                    type_index: 3,
+                    parameters: vec![],
+                }],
+            },
+            0,
+            &nested,
+        );
+        write_property_terminator(&mut bytes, 0);
+        let original = read_tagged_property_stream(
+            &mut Reader::new(&bytes),
+            &package.summary.versions,
+            &package.names,
+            "Filter",
+        )
+        .unwrap();
+        let mut expected = original.clone();
+        let mut nested_reader = Reader::new(&bytes)
+            .bounded(original.records[0].payload, "Nested")
+            .unwrap();
+        let mut expected_nested = read_tagged_property_stream(
+            &mut nested_reader,
+            &package.summary.versions,
+            &package.names,
+            "Nested",
+        )
+        .unwrap();
+        expected_nested.records[0].value = PropertyValue::Int(42);
+        expected_nested.records[1].value =
+            PropertyValue::Array(vec![PropertyValue::Float(1.25), PropertyValue::Float(-2.5)]);
+        expected_nested.records[2].value = PropertyValue::Text(Box::new(TextValue {
+            source: "Nested text".to_owned(),
+            history: TextHistory::Base {
+                namespace: "Fixture".to_owned(),
+                key: "Label".to_owned(),
+                dev_notes: String::new(),
+            },
+        }));
+        expected.records[0].value = PropertyValue::Struct(Box::new(expected_nested));
+        let mut unfiltered = original.clone();
+        decode_property_stream_values(&bytes, &mut unfiltered, &package).unwrap();
+        assert_eq!(unfiltered, expected);
+        let mut unfiltered_scope = original.clone();
+        decode_property_stream_values_at_depth(
+            &bytes,
+            &mut unfiltered_scope,
+            &package,
+            DecodeScope::root(None),
+        )
+        .unwrap();
+        assert_eq!(unfiltered_scope, expected);
+        let mut filtered = original;
+        decode_property_stream_values_at_depth(
+            &bytes,
+            &mut filtered,
+            &package,
+            DecodeScope::root(Some(&TextAndStructs)),
+        )
+        .unwrap();
+        let PropertyValue::Struct(nested) = &mut expected.records[0].value else {
+            panic!("expected nested struct")
+        };
+        for record in &mut nested.records[..2] {
+            record.value = PropertyValue::Raw {
+                reason: RawReason::NotRequested,
+            };
+        }
+        // Full equality also checks every original tag, payload span and stream boundary.
+        assert_eq!(filtered, expected);
+    }
+
+    #[test]
+    fn scalar_arrays_match_bounded_typed_decoding() {
+        for name in [
+            "Int8Property",
+            "Int16Property",
+            "IntProperty",
+            "Int32Property",
+            "Int64Property",
+            "UInt8Property",
+            "UInt16Property",
+            "UInt32Property",
+            "UInt64Property",
+            "FloatProperty",
+            "DoubleProperty",
+            "ObjectProperty",
+            "ClassProperty",
+            "WeakObjectProperty",
+            "InterfaceProperty",
+            "LazyObjectProperty",
+            "ByteProperty",
+        ] {
+            let tree = PropertyTypeName {
+                name: crate::test_support::name_ref(0, 0),
+                parameters: vec![],
+            };
+            let spec = TypeSpec {
+                name,
+                tree: &tree,
+                struct_guid: None,
+            };
+            let size = fixed_serialized_size(name, &tree).unwrap();
+            let bytes: Vec<u8> = match name {
+                "FloatProperty" => [0.0_f32, -2.25, f32::MAX]
+                    .into_iter()
+                    .flat_map(f32::to_le_bytes)
+                    .collect(),
+                "DoubleProperty" => [0.0_f64, -2.25, f64::MAX]
+                    .into_iter()
+                    .flat_map(f64::to_le_bytes)
+                    .collect(),
+                _ => [vec![0; size], vec![0xff; size], (0..size as u8).collect()].concat(),
+            };
+            let package = test_package(vec![]);
+            let mut reference = Reader::new(&bytes);
+            let mut expected = Vec::new();
+            for index in 0..3 {
+                let path = ElementPath {
+                    path: "Array",
+                    index,
+                };
+                let mut element = reference.take_bounded(size as u64, &path).unwrap();
+                expected.push(
+                    decode_typed_value(
+                        &bytes,
+                        spec,
+                        PropertyTagFlags::default(),
+                        &mut element,
+                        &package,
+                        &path,
+                        DecodeScope::root(None),
+                    )
+                    .unwrap()
+                    .unwrap(),
+                );
+                assert_eq!(element.remaining(), 0, "{name}");
+            }
+            for serializer in [
+                ContainerSerializer::Tagged,
+                ContainerSerializer::BinaryOrNative,
+                ContainerSerializer::Unknown,
+            ] {
+                let mut payload = Reader::new(&bytes);
+                assert_eq!(
+                    decode_array_elements(
+                        &bytes,
+                        spec,
+                        &mut payload,
+                        &package,
+                        "Array",
+                        DecodeScope::root(None),
+                        3,
+                        serializer
+                    )
+                    .unwrap(),
+                    PropertyValue::Array(expected.clone()),
+                    "{name}: {serializer:?}"
+                );
+                assert_eq!(payload.tell(), reference.tell(), "{name}");
+                let mut empty = Reader::new(&[]);
+                assert_eq!(
+                    decode_array_elements(
+                        &[],
+                        spec,
+                        &mut empty,
+                        &package,
+                        "Array",
+                        DecodeScope::root(None),
+                        0,
+                        serializer
+                    )
+                    .unwrap(),
+                    PropertyValue::Array(vec![]),
+                    "{name}: empty"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn validated_name_arrays_keep_per_element_errors() {
+        for name in ["NameProperty", "EnumProperty", "ByteProperty"] {
+            let tree = PropertyTypeName {
+                name: crate::test_support::name_ref(0, 0),
+                parameters: if name == "ByteProperty" {
+                    vec![PropertyTypeName {
+                        name: crate::test_support::name_ref(1, 0),
+                        parameters: vec![],
+                    }]
+                } else {
+                    vec![]
+                },
+            };
+            let spec = TypeSpec {
+                name,
+                tree: &tree,
+                struct_guid: None,
+            };
+            assert!(ScalarKind::from_type(spec).is_none());
+            let package = test_package(vec![]);
+            let bytes = [0xff; 8];
+            let mut reference = Reader::new(&bytes);
+            let expected = decode_typed_value(
+                &bytes,
+                spec,
+                PropertyTagFlags::default(),
+                &mut reference,
+                &package,
+                &ElementPath {
+                    path: "Array",
+                    index: 0,
+                },
+                DecodeScope::root(None),
+            )
+            .unwrap_err();
+            let mut payload = Reader::new(&bytes);
+            let actual = decode_array_elements(
+                &bytes,
+                spec,
+                &mut payload,
+                &package,
+                "Array",
+                DecodeScope::root(None),
+                1,
+                ContainerSerializer::Tagged,
+            )
+            .unwrap_err();
+            assert_eq!(actual.kind(), expected.kind(), "{name}");
+            assert_eq!(actual.to_string(), expected.to_string(), "{name}");
+            assert_eq!(actual.raw_reason, expected.raw_reason, "{name}");
+        }
+    }
+
+    #[test]
+    fn wide_strings_keep_utf16_values_and_errors() {
+        let text = "Wide \u{732b} \u{1f680}";
+        let units: Vec<u16> = text.encode_utf16().chain([0]).collect();
+        let mut bytes = (-(units.len() as i32)).to_le_bytes().to_vec();
+        bytes.extend(units.iter().flat_map(|unit| unit.to_le_bytes()));
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(reader.read_fstring("Text").unwrap(), text);
+        assert_eq!(reader.remaining(), 0);
+
+        for units in [[0xd800_u16, 0], [0xdc00, 0]] {
+            let mut bytes = (-2_i32).to_le_bytes().to_vec();
+            bytes.extend(units.into_iter().flat_map(u16::to_le_bytes));
+            let mut reader = Reader::new(&bytes);
+            let error = reader.read_fstring("Text").unwrap_err();
+            assert_eq!(
+                error.kind(),
+                crate::archive::ArchiveErrorKind::InvalidString
+            );
+            assert_eq!(error.offset(), 0);
+            assert_eq!(error.path(), "Text");
+            assert_eq!(
+                error.detail(),
+                "wide FString is invalid UTF-16: invalid utf-16: lone surrogate found"
+            );
+            assert_eq!(reader.remaining(), 0);
+        }
+    }
+
     fn decode_record(
         names: Vec<String>,
         type_index: i32,
@@ -1821,7 +2502,7 @@ mod tests {
             },
         };
         let mut record = record;
-        decode_property_record(&source, &mut record, &package, 0)?;
+        decode_property_record(&source, &mut record, &package, DecodeScope::root(None))?;
         Ok(record.value)
     }
 
@@ -1886,10 +2567,8 @@ mod tests {
             .unwrap();
             decode_property_stream_values(&bytes, &mut stream, &package).unwrap();
             assert!(matches!(
-                stream.records[0].value,
-                PropertyValue::Raw {
-                    reason: RawReason::LegacyDecoderRejected(_)
-                }
+                &stream.records[0].value,
+                PropertyValue::Raw { reason } if matches!(reason, RawReason::LegacyDecoderRejected(_))
             ));
             assert_eq!(stream.records[0].payload.len(), 1);
             assert_eq!(stream.records[1].value, PropertyValue::Int(42));
@@ -2119,7 +2798,7 @@ mod tests {
                         assert_eq!(nested.records.len(), 1);
                         assert_eq!(
                             nested.records[0].value,
-                            PropertyValue::Text(TextValue {
+                            PropertyValue::Text(Box::new(TextValue {
                                 source: "Hello".into(),
                                 history: TextHistory::Base {
                                     namespace: "Fixture".into(),
@@ -2130,7 +2809,7 @@ mod tests {
                                         String::new()
                                     }
                                 }
-                            }),
+                            })),
                             "{name}, {ue5}, array={array}"
                         );
                     }
@@ -2374,9 +3053,7 @@ mod tests {
                     .unwrap();
                     assert!(matches!(
                         invalid,
-                        PropertyValue::Raw {
-                            reason: RawReason::LegacyDecoderRejected(_)
-                        }
+                        PropertyValue::Raw { reason } if matches!(reason, RawReason::LegacyDecoderRejected(_))
                     ));
                 }
             }
@@ -2404,14 +3081,14 @@ mod tests {
                             .unwrap();
                     assert_eq!(
                         value,
-                        PropertyValue::Text(TextValue {
+                        PropertyValue::Text(Box::new(TextValue {
                             source: if gated && invariant {
                                 "Invariant".into()
                             } else {
                                 String::new()
                             },
                             history: TextHistory::None,
-                        })
+                        }))
                     );
                 }
             }
@@ -2994,14 +3671,14 @@ mod tests {
     }
 
     fn assert_skipped(stream: &PropertyStream) {
-        let PropertyValue::Raw {
-            reason: RawReason::DecoderRejected(reason),
-        } = &stream.records[0].value
-        else {
+        let PropertyValue::Raw { reason } = &stream.records[0].value else {
             panic!(
                 "expected a skipped property, got {:?}",
                 stream.records[0].value
             );
+        };
+        let RawReason::DecoderRejected(reason) = reason else {
+            panic!("expected decoder rejection");
         };
         assert!(reason.starts_with("skipped: struct "), "{reason}");
         assert_eq!(stream.records[1].value, PropertyValue::Int(99));
@@ -3203,11 +3880,11 @@ mod tests {
                     &[],
                 )
                 .unwrap();
-                let PropertyValue::Raw {
-                    reason: RawReason::FeatureUnavailableForEngineVersion(detail),
-                } = value
-                else {
+                let PropertyValue::Raw { reason } = value else {
                     panic!("expected version coverage gap for {name}");
+                };
+                let RawReason::FeatureUnavailableForEngineVersion(detail) = reason else {
+                    panic!("expected version coverage gap");
                 };
                 assert!(detail.contains(message), "{detail}");
             }
@@ -3308,7 +3985,7 @@ mod tests {
                     .unwrap();
                     assert_eq!(
                         value,
-                        PropertyValue::Text(TextValue {
+                        PropertyValue::Text(Box::new(TextValue {
                             source: "Hello".into(),
                             history: TextHistory::Base {
                                 namespace: "Fixture".into(),
@@ -3319,7 +3996,7 @@ mod tests {
                                     String::new()
                                 },
                             },
-                        })
+                        }))
                     );
                     payload.pop();
                     assert!(matches!(
@@ -3331,9 +4008,7 @@ mod tests {
                             &payload,
                         )
                         .unwrap(),
-                        PropertyValue::Raw {
-                            reason: RawReason::LegacyDecoderRejected(_)
-                        }
+                        PropertyValue::Raw { reason } if matches!(reason, RawReason::LegacyDecoderRejected(_))
                     ));
                 }
             }
@@ -3624,10 +4299,10 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
         assert_eq!(
             value,
-            PropertyValue::Text(TextValue {
+            PropertyValue::Text(Box::new(TextValue {
                 source: String::new(),
                 history: TextHistory::None,
-            })
+            }))
         );
     }
 
@@ -3644,14 +4319,14 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
         assert_eq!(
             value,
-            PropertyValue::Text(TextValue {
+            PropertyValue::Text(Box::new(TextValue {
                 source: "Hello".to_owned(),
                 history: TextHistory::Base {
                     namespace: String::new(),
                     key: "deadbeef".to_owned(),
                     dev_notes: String::new(),
                 },
-            })
+            }))
         );
     }
 
@@ -3695,14 +4370,14 @@ mod tests {
             };
             assert_eq!(
                 decode(&payload).unwrap(),
-                PropertyValue::Text(TextValue {
+                PropertyValue::Text(Box::new(TextValue {
                     source: "Hello".into(),
                     history: TextHistory::Base {
                         namespace: "Fixture".into(),
                         key: "Greeting".into(),
                         dev_notes: notes.unwrap_or_default().into()
                     },
-                })
+                }))
             );
             // A valid text must consume exactly the versioned payload.
             let mut trailing = payload.clone();
@@ -3743,13 +4418,13 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
         assert_eq!(
             value,
-            PropertyValue::Text(TextValue {
+            PropertyValue::Text(Box::new(TextValue {
                 source: String::new(),
                 history: TextHistory::StringTableEntry {
                     table_id: "/Game/Fixture/Text/ST_Game.ST_Game".to_owned(),
                     key: "PromptContinue".to_owned(),
                 },
-            })
+            }))
         );
     }
 
@@ -3985,9 +4660,7 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
         assert!(matches!(
             value,
-            PropertyValue::Raw {
-                reason: RawReason::DecoderRejected(_),
-            }
+            PropertyValue::Raw { reason } if matches!(reason, RawReason::DecoderRejected(_))
         ));
     }
 
@@ -4112,7 +4785,8 @@ mod tests {
                 reason: RawReason::UnsupportedType,
             },
         };
-        decode_property_record(&source, &mut record, &package, 0).expect("decode");
+        decode_property_record(&source, &mut record, &package, DecodeScope::root(None))
+            .expect("decode");
         assert_eq!(
             record.value,
             PropertyValue::SoftObjectPath(
@@ -4144,7 +4818,7 @@ mod tests {
                     reason: RawReason::UnsupportedType,
                 },
             };
-            decode_property_record(&source, &mut record, &package, 0)?;
+            decode_property_record(&source, &mut record, &package, DecodeScope::root(None))?;
             Ok(record.value)
         }
 
@@ -4199,7 +4873,8 @@ mod tests {
             },
         };
 
-        decode_property_record(&source, &mut record, &package, 0).expect("decode");
+        decode_property_record(&source, &mut record, &package, DecodeScope::root(None))
+            .expect("decode");
 
         assert_eq!(
             record.value,
@@ -4478,9 +5153,7 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &[0x01]);
         assert!(matches!(
             value,
-            PropertyValue::Raw {
-                reason: RawReason::UnsupportedType,
-            }
+            PropertyValue::Raw { reason } if matches!(reason, RawReason::UnsupportedType)
         ));
     }
 

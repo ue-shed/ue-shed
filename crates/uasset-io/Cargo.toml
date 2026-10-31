@@ -11,6 +11,7 @@ repository = "https://github.com/ue-shed/ue-shed"
 game-text-index = { path = "../game-text-index" }
 atomic-write-file = { version = "=0.3.0", default-features = false }
 crc32fast = "=1.5.0"
+mimalloc = { version = "=0.1.52", default-features = false }
 process-metrics = { path = "../process-metrics" }
 rusqlite = { version = "=0.37.0", default-features = false, features = [
 	"bundled"

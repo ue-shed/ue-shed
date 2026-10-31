@@ -7,7 +7,7 @@ use uasset_parser::archive::NameRef;
 use uasset_parser::asset::{
     ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetErrorKind, DATA_ASSET_CLASS, DecodedAsset,
     EnumCppForm, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
-    USERDEFINEDSTRUCT_CLASS, decode_export,
+    USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{ObjectPath, PackageErrorKind, PackageIndex};
 use uasset_parser::property::{
@@ -15,6 +15,7 @@ use uasset_parser::property::{
 };
 use uasset_parser::schema::embedded_source_model;
 
+use crate::decoded_exports::DecodedExports;
 use crate::generic::SCHEMA_VERSION;
 
 pub fn inspect_bytes_with_checkpoint(
@@ -28,6 +29,18 @@ pub fn inspect_bytes_with_checkpoint(
         message: error.detail().to_owned(),
         retry_safe: false,
     })?;
+    inspect_package_with_checkpoint(path, bytes, &package, checkpoint, None)
+}
+
+/// Inspects an already parsed package, optionally sharing a cache of exports decoded with the
+/// embedded source model.
+pub fn inspect_package_with_checkpoint(
+    path: &str,
+    bytes: &[u8],
+    package: &Package,
+    checkpoint: &impl Fn(&'static str) -> Result<(), InspectionError>,
+    cache: Option<&DecodedExports>,
+) -> Result<(SavedAssetInspection, bool), InspectionError> {
     checkpoint("parsing")?;
 
     let version = &package.summary.versions;
@@ -41,22 +54,24 @@ pub fn inspect_bytes_with_checkpoint(
     let mut assets = Vec::with_capacity(package.exports.len());
     let mut decode_errors = Vec::new();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: bytes,
-        package: &package,
+        package,
         schemas: embedded_source_model(),
     };
-    for export in &package.exports {
-        match decode_export(export, &context) {
-            Ok(Some(decoded)) => assets.push(saved_asset(&package, decoded)),
-            Ok(None) => {}
-            Err(error) => decode_errors.push(SavedAssetDecodeError {
+    for (index, export) in package.exports.iter().enumerate() {
+        let decoded = DecodedExports::decode(cache, index, export, &context);
+        if let Err(error) = &*decoded {
+            decode_errors.push(SavedAssetDecodeError {
                 object_path: export.object_path.to_string(),
                 class_path: export.class_path.as_ref().map(ToString::to_string),
                 kind: asset_error_kind(error.kind()),
                 message: error.message().to_owned(),
                 field: error.field().map(ToOwned::to_owned),
                 offset: error.offset(),
-            }),
+            });
+        } else if let Some(asset) = decoded.into_asset() {
+            assets.push(saved_asset(package, asset));
         }
     }
     checkpoint("inspection")?;
@@ -444,28 +459,31 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
             fields: fields
                 .into_iter()
                 .map(|field| SavedNativeField {
-                    name: field.name,
+                    name: field.name.into_owned(),
                     value: saved_value(package, field.value),
                 })
                 .collect(),
         },
-        PropertyValue::InstancedStruct {
-            struct_type,
-            payload,
-            value,
-        } => SavedPropertyValue::InstancedStruct {
-            struct_type: resolve_object(package, struct_type),
-            size: payload.len(),
-            value: value.map(|value| {
-                let mut output = saved_value(package, *value);
-                if let SavedPropertyValue::Raw { size, .. } = &mut output {
-                    *size = payload.len();
-                }
-                Box::new(output)
-            }),
-        },
+        PropertyValue::InstancedStruct(instance) => {
+            let uasset_parser::property::InstancedStructValue {
+                struct_type,
+                payload,
+                value,
+            } = *instance;
+            SavedPropertyValue::InstancedStruct {
+                struct_type: resolve_object(package, struct_type),
+                size: payload.len(),
+                value: value.map(|value| {
+                    let mut output = saved_value(package, *value);
+                    if let SavedPropertyValue::Raw { size, .. } = &mut output {
+                        *size = payload.len();
+                    }
+                    Box::new(output)
+                }),
+            }
+        }
         PropertyValue::Struct(properties) => SavedPropertyValue::Struct {
-            properties: saved_properties(package, properties),
+            properties: saved_properties(package, *properties),
         },
         PropertyValue::Raw { reason } => SavedPropertyValue::Raw {
             reason: reason.detail().into_owned(),
@@ -573,6 +591,16 @@ pub fn inspect_bytes(
     bytes: &[u8],
 ) -> Result<(SavedAssetInspection, bool), InspectionError> {
     inspect_bytes_with_checkpoint(path, bytes, &|_| Ok(()))
+}
+
+/// Inspects an already parsed package without re-parsing it.
+pub fn inspect_package(
+    path: &str,
+    bytes: &[u8],
+    package: &Package,
+    cache: Option<&DecodedExports>,
+) -> Result<(SavedAssetInspection, bool), InspectionError> {
+    inspect_package_with_checkpoint(path, bytes, package, &|_| Ok(()), cache)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

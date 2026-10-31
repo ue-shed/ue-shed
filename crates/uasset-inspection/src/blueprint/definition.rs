@@ -147,7 +147,7 @@ pub(super) fn project(
                         category,
                         property_flags,
                         default_value: string_property(package, v, "DefaultValue"),
-                        properties: property_outputs(package, v.clone()),
+                        properties: property_outputs(package, (**v).clone()),
                     })
                 })
                 .collect(),
@@ -332,14 +332,18 @@ fn check_properties(
 }
 fn contains_raw(value: &PropertyValue) -> bool {
     match value {
-        PropertyValue::Raw { .. } => true,
+        PropertyValue::Raw { reason } => {
+            !matches!(reason, uasset_parser::property::RawReason::NotRequested)
+        }
         PropertyValue::Struct(v) => v.records.iter().any(|v| contains_raw(&v.value)),
         PropertyValue::NativeStruct { fields } => fields.iter().any(|v| contains_raw(&v.value)),
         PropertyValue::Array(v) | PropertyValue::Set(v) => v.iter().any(contains_raw),
         PropertyValue::Map(v) => v
             .iter()
             .any(|v| contains_raw(&v.key) || contains_raw(&v.value)),
-        PropertyValue::InstancedStruct { value, .. } => value.as_deref().is_some_and(contains_raw),
+        PropertyValue::InstancedStruct(instance) => {
+            instance.value.as_deref().is_some_and(contains_raw)
+        }
         _ => false,
     }
 }

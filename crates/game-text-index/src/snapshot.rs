@@ -1,5 +1,6 @@
 //! Byte-compatible UESHT004 sections. Payload staging is bounded to one section.
 use crate::{Result, require};
+use std::cell::RefCell;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -106,17 +107,45 @@ pub(crate) fn encode_section(kind: u32, raw: &[u8], level: i32) -> Result<(Vec<u
         (raw.to_vec(), CODEC_RAW)
     })
 }
+// Each thread keeps its zstd contexts. A fresh context per section is a large heap block, and
+// on Windows those share one heap lock, so parallel publication of thousands of small sections
+// stalled on allocation instead of compressing.
+thread_local! {
+    static COMPRESSOR: RefCell<Option<(i32, zstd::bulk::Compressor<'static>)>> =
+        const { RefCell::new(None) };
+    static DECOMPRESSOR: RefCell<Option<zstd::bulk::Decompressor<'static>>> =
+        const { RefCell::new(None) };
+}
 fn measured_compress(raw: &[u8], level: i32) -> std::io::Result<Vec<u8>> {
     let _span = crate::scan_timings::Span::new("snapshot.compress");
-    zstd::bulk::compress(raw, level)
+    COMPRESSOR.with_borrow_mut(|slot| match slot {
+        Some((current, compressor)) if *current == level => compressor.compress(raw),
+        _ => {
+            let mut compressor = zstd::bulk::Compressor::new(level)?;
+            let compressed = compressor.compress(raw);
+            *slot = Some((level, compressor));
+            compressed
+        }
+    })
+}
+fn decompress(stored: &[u8], raw: usize) -> std::io::Result<Vec<u8>> {
+    DECOMPRESSOR.with_borrow_mut(|slot| match slot {
+        Some(decompressor) => decompressor.decompress(stored, raw),
+        None => {
+            let mut decompressor = zstd::bulk::Decompressor::new()?;
+            let decompressed = decompressor.decompress(stored, raw);
+            *slot = Some(decompressor);
+            decompressed
+        }
+    })
 }
 /// A section's raw bytes from its stored bytes.
 pub(crate) fn decode_section(codec: u32, stored: Vec<u8>, raw: usize) -> Result<Vec<u8>> {
     Ok(match codec {
         CODEC_RAW => stored,
-        CODEC_ZSTD => zstd::bulk::decompress(&stored, raw)?,
+        CODEC_ZSTD => decompress(&stored, raw)?,
         CODEC_SHUFFLED | CODEC_DELTA => {
-            let shuffled = zstd::bulk::decompress(&stored, raw)?;
+            let shuffled = decompress(&stored, raw)?;
             require(
                 shuffled.len() == raw && raw.is_multiple_of(4),
                 "section length",

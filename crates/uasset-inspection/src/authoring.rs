@@ -10,7 +10,31 @@ pub fn inspect_authoring_bytes(
     path: &str,
     bytes: &[u8],
 ) -> Result<(AuthoringTableSnapshot, bool), InspectionError> {
-    let (inspection, partial) = crate::saved_inspection::inspect_bytes(path, bytes)?;
+    let package = uasset_parser::Package::parse(bytes).map_err(|error| InspectionError {
+        code: match error.kind() {
+            uasset_parser::PackageErrorKind::MalformedData => "malformed_data",
+            uasset_parser::PackageErrorKind::ResourceLimit => "resource_limit",
+            uasset_parser::PackageErrorKind::UnsupportedFormat => "unsupported_format",
+            uasset_parser::PackageErrorKind::UnsupportedVersion => "unsupported_version",
+            uasset_parser::PackageErrorKind::UnsupportedCapability => "unsupported_capability",
+        }
+        .to_owned(),
+        message: error.detail().to_owned(),
+        retry_safe: false,
+    })?;
+    inspect_authoring_from_package(path, bytes, &package, None)
+}
+
+/// Projects the authoring table from an already parsed package, optionally sharing a cache of
+/// exports decoded with the embedded source model.
+pub fn inspect_authoring_from_package(
+    path: &str,
+    bytes: &[u8],
+    package: &uasset_parser::Package,
+    cache: Option<&crate::decoded_exports::DecodedExports>,
+) -> Result<(AuthoringTableSnapshot, bool), InspectionError> {
+    let (inspection, partial) =
+        crate::saved_inspection::inspect_package(path, bytes, package, cache)?;
     project_authoring_table(inspection, partial, &|_| Ok(()))
 }
 

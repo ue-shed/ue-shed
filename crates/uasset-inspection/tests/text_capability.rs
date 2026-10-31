@@ -34,6 +34,48 @@ fn gaps_keep_type_evidence_through_containers_and_unknown_types_remain_text_capa
         ("TextProperty", "", "ArrayProperty", true),
         ("StructProperty", "SoftObjectPath", "", false),
         ("StructProperty", "Guid", "", false),
+        ("StructProperty", "Vector3f", "", false),
+        ("StructProperty", "Vector3d", "", false),
+        ("StructProperty", "Vector2f", "", false),
+        ("StructProperty", "Vector4f", "", false),
+        ("StructProperty", "Vector4d", "", false),
+        ("StructProperty", "Quat4f", "", false),
+        ("StructProperty", "Quat4d", "", false),
+        ("StructProperty", "Rotator3f", "", false),
+        ("StructProperty", "Rotator3d", "", false),
+        ("StructProperty", "Box3f", "", false),
+        ("StructProperty", "Box3d", "", false),
+        ("StructProperty", "Box2f", "", false),
+        ("StructProperty", "Plane4f", "", false),
+        ("StructProperty", "Plane4d", "", false),
+        ("StructProperty", "Matrix44f", "", false),
+        ("StructProperty", "Matrix44d", "", false),
+        ("StructProperty", "Transform", "", false),
+        ("StructProperty", "Transform3f", "", false),
+        ("StructProperty", "Transform3d", "", false),
+        ("StructProperty", "FrameTime", "", false),
+        ("StructProperty", "IntVector2", "", false),
+        ("StructProperty", "IntVector4", "", false),
+        ("StructProperty", "Int32Point", "", false),
+        ("StructProperty", "Int64Point", "", false),
+        ("StructProperty", "UintPoint", "", false),
+        ("StructProperty", "Uint32Point", "", false),
+        ("StructProperty", "Uint64Point", "", false),
+        ("StructProperty", "Int32Vector2", "", false),
+        ("StructProperty", "Int64Vector2", "", false),
+        ("StructProperty", "Uint32Vector2", "", false),
+        ("StructProperty", "Uint64Vector2", "", false),
+        ("StructProperty", "UintVector2", "", false),
+        ("StructProperty", "Int32Vector", "", false),
+        ("StructProperty", "Int64Vector", "", false),
+        ("StructProperty", "Uint32Vector", "", false),
+        ("StructProperty", "Uint64Vector", "", false),
+        ("StructProperty", "UintVector", "", false),
+        ("StructProperty", "Int32Vector4", "", false),
+        ("StructProperty", "Int64Vector4", "", false),
+        ("StructProperty", "Uint32Vector4", "", false),
+        ("StructProperty", "Uint64Vector4", "", false),
+        ("StructProperty", "UintVector4", "", false),
         ("StructProperty", "UnknownStruct", "", true),
         ("UnknownProperty", "", "", true),
     ] {
@@ -75,6 +117,9 @@ fn gaps_keep_type_evidence_through_containers_and_unknown_types_remain_text_capa
     });
     records.push((collision, true));
     for (record, expected) in records {
+        use uasset_inspection::projection::TextDecodeFilter;
+        use uasset_parser::PropertyDecodeFilter;
+        assert_eq!(TextDecodeFilter.decode(&package, &record), expected);
         let object = DecodedUObject {
             native_data: None,
             object_path: ObjectPath::new("Fixture.Asset"),
@@ -87,9 +132,18 @@ fn gaps_keep_type_evidence_through_containers_and_unknown_types_remain_text_capa
             },
             tail: Span::default(),
         };
-        let projection = project_text_asset(&package, &DecodedAsset::UObject(object));
+        let mut asset = DecodedAsset::UObject(object);
+        let projection = project_text_asset(&package, &asset);
         assert_eq!(projection.coverage_gaps.len(), 1);
         assert_eq!(projection.coverage_gaps[0].may_contain_text, expected);
+        if let DecodedAsset::UObject(object) = &mut asset {
+            object.properties.records[0].value = PropertyValue::Raw {
+                reason: RawReason::NotRequested,
+            };
+        }
+        let omitted = project_text_asset(&package, &asset);
+        assert!(omitted.coverage_gaps.is_empty());
+        assert!(omitted.occurrences.is_empty());
     }
 }
 
@@ -174,10 +228,10 @@ fn decoded_native_records_keep_text_and_unknown_values_in_the_projection() {
             fields: vec![
                 NativeProperty {
                     name: "Label".into(),
-                    value: PropertyValue::Text(TextValue {
+                    value: PropertyValue::Text(Box::new(TextValue {
                         source: "Native label".into(),
                         history: TextHistory::None,
-                    }),
+                    })),
                 },
                 NativeProperty {
                     name: "Unknown".into(),

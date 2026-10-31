@@ -782,9 +782,16 @@ impl<'a> Reader<'a> {
     ) -> Result<String, ArchiveError> {
         let capacity = self.validate_string_length(code_units, 2, length_offset, path)?;
         let mut units = Vec::with_capacity(capacity);
-        for index in 0..capacity {
-            units.push(self.read_u16(&format_args!("{path}.Data[{index}]"))?);
-        }
+        let bytes = self.read_bytes(capacity * 2, &format_args!("{path}.Data"))?;
+        #[expect(
+            clippy::chunks_exact_to_as_chunks,
+            reason = "keep the validated block on the same chunk iterator as scalar arrays"
+        )]
+        units.extend(
+            bytes
+                .chunks_exact(2)
+                .map(|unit| u16::from_le_bytes([unit[0], unit[1]])),
+        );
         let decode = |content: &[u16]| {
             String::from_utf16(content).map_err(|error| {
                 ArchiveError::new(

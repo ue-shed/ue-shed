@@ -205,6 +205,7 @@ mod tests {
         );
         let package = Package::parse(bytes).unwrap();
         let context = AssetDecodeContext {
+            property_filter: None,
             source: bytes,
             package: &package,
             schemas: uasset_parser::schema::embedded_source_model(),

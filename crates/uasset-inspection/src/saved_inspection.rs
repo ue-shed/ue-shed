@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use uasset_parser::Package;
 use uasset_parser::archive::NameRef;
 use uasset_parser::asset::{
-    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetErrorKind, DATA_ASSET_CLASS, DecodedAsset,
-    EnumCppForm, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
+    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetError, AssetErrorKind, DATA_ASSET_CLASS,
+    DecodedAsset, EnumCppForm, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
     USERDEFINEDSTRUCT_CLASS, decode_export,
 };
 use uasset_parser::package::{ObjectPath, PackageErrorKind, PackageIndex};
@@ -28,6 +28,18 @@ pub fn inspect_bytes_with_checkpoint(
         message: error.detail().to_owned(),
         retry_safe: false,
     })?;
+    inspect_package_with_checkpoint(path, bytes, &package, checkpoint, None)
+}
+
+/// Inspects an already parsed package, optionally reusing decoded exports produced by
+/// `decode_export` with the embedded source model.
+pub fn inspect_package_with_checkpoint(
+    path: &str,
+    bytes: &[u8],
+    package: &Package,
+    checkpoint: &impl Fn(&'static str) -> Result<(), InspectionError>,
+    decoded: Option<&[Result<Option<DecodedAsset>, AssetError>]>,
+) -> Result<(SavedAssetInspection, bool), InspectionError> {
     checkpoint("parsing")?;
 
     let version = &package.summary.versions;
@@ -42,21 +54,38 @@ pub fn inspect_bytes_with_checkpoint(
     let mut decode_errors = Vec::new();
     let context = AssetDecodeContext {
         source: bytes,
-        package: &package,
+        package,
         schemas: embedded_source_model(),
     };
-    for export in &package.exports {
-        match decode_export(export, &context) {
-            Ok(Some(decoded)) => assets.push(saved_asset(&package, decoded)),
-            Ok(None) => {}
-            Err(error) => decode_errors.push(SavedAssetDecodeError {
-                object_path: export.object_path.to_string(),
-                class_path: export.class_path.as_ref().map(ToString::to_string),
-                kind: asset_error_kind(error.kind()),
-                message: error.message().to_owned(),
-                field: error.field().map(ToOwned::to_owned),
-                offset: error.offset(),
-            }),
+    if let Some(decoded) = decoded {
+        for (export, result) in package.exports.iter().zip(decoded.iter()) {
+            match result {
+                Ok(Some(decoded)) => assets.push(saved_asset(package, decoded.clone())),
+                Ok(None) => {}
+                Err(error) => decode_errors.push(SavedAssetDecodeError {
+                    object_path: export.object_path.to_string(),
+                    class_path: export.class_path.as_ref().map(ToString::to_string),
+                    kind: asset_error_kind(error.kind()),
+                    message: error.message().to_owned(),
+                    field: error.field().map(ToOwned::to_owned),
+                    offset: error.offset(),
+                }),
+            }
+        }
+    } else {
+        for export in &package.exports {
+            match decode_export(export, &context) {
+                Ok(Some(decoded)) => assets.push(saved_asset(package, decoded)),
+                Ok(None) => {}
+                Err(error) => decode_errors.push(SavedAssetDecodeError {
+                    object_path: export.object_path.to_string(),
+                    class_path: export.class_path.as_ref().map(ToString::to_string),
+                    kind: asset_error_kind(error.kind()),
+                    message: error.message().to_owned(),
+                    field: error.field().map(ToOwned::to_owned),
+                    offset: error.offset(),
+                }),
+            }
         }
     }
     checkpoint("inspection")?;
@@ -573,6 +602,16 @@ pub fn inspect_bytes(
     bytes: &[u8],
 ) -> Result<(SavedAssetInspection, bool), InspectionError> {
     inspect_bytes_with_checkpoint(path, bytes, &|_| Ok(()))
+}
+
+/// Inspects an already parsed package without re-parsing it.
+pub fn inspect_package(
+    path: &str,
+    bytes: &[u8],
+    package: &Package,
+    decoded: Option<&[Result<Option<DecodedAsset>, AssetError>]>,
+) -> Result<(SavedAssetInspection, bool), InspectionError> {
+    inspect_package_with_checkpoint(path, bytes, package, &|_| Ok(()), decoded)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

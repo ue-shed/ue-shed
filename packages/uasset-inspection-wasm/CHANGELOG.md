@@ -1,5 +1,15 @@
 # @ue-shed/uasset-inspection-wasm
 
+## Unreleased
+
+### Minor Changes
+
+- Add a parse-once package handle: `runtime.openPackage(path, bytes)` returns a handle whose
+  `inspect`, `extractText`, `extractTextures`, `extractAuthoringTable`, `extractLevelSequences`,
+  `extractBlueprints`, and `extractAnimations` methods reuse one parse and one lazy export decode,
+  returning the same results as the matching per-call runtime methods. Call `free()` (idempotent) to
+  release the handle.
+
 ## 0.24.0
 
 No direct behavioral change: released to keep the suite aligned.

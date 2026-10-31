@@ -2,7 +2,8 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use uasset_parser::asset::{
-    AssetDecodeContext, DecodedAnimSequence, DecodedAsset, DecodedUObject, decode_export,
+    AssetDecodeContext, AssetError, DecodedAnimSequence, DecodedAsset, DecodedUObject,
+    decode_export,
 };
 use uasset_parser::property::{PropertyStream, PropertyValue, RangeBoundKind};
 use uasset_parser::{Package, PackageError};
@@ -91,32 +92,56 @@ pub struct AnimationCoverageGap {
 
 pub fn inspect_animation_bytes(path: &str, bytes: &[u8]) -> Result<AnimationOutput, PackageError> {
     let package = Package::parse(bytes)?;
-    let context = AssetDecodeContext {
-        source: bytes,
-        package: &package,
-        schemas: uasset_parser::schema::embedded_source_model(),
-    };
+    Ok(inspect_animation_from_package(path, &package, bytes, None))
+}
+
+/// Projects animation summaries from an already parsed package, optionally reusing
+/// decoded exports produced by `decode_export` with the embedded source model.
+pub fn inspect_animation_from_package(
+    path: &str,
+    package: &Package,
+    bytes: &[u8],
+    decoded: Option<&[Result<Option<DecodedAsset>, AssetError>]>,
+) -> AnimationOutput {
     let mut assets = Vec::new();
     let mut diagnostics = Vec::new();
-    for export in &package.exports {
-        match decode_export(export, &context) {
-            Ok(Some(asset)) => assets.push(asset),
-            Ok(None) => {}
-            Err(error) => diagnostics.push(AnimationDiagnostic {
-                object_path: export.object_path.to_string(),
-                message: error.to_string(),
-            }),
+    if let Some(decoded) = decoded {
+        for (export, result) in package.exports.iter().zip(decoded.iter()) {
+            match result {
+                Ok(Some(asset)) => assets.push(asset.clone()),
+                Ok(None) => {}
+                Err(error) => diagnostics.push(AnimationDiagnostic {
+                    object_path: export.object_path.to_string(),
+                    message: error.to_string(),
+                }),
+            }
+        }
+    } else {
+        let context = AssetDecodeContext {
+            source: bytes,
+            package,
+            schemas: uasset_parser::schema::embedded_source_model(),
+        };
+        for export in &package.exports {
+            match decode_export(export, &context) {
+                Ok(Some(asset)) => assets.push(asset),
+                Ok(None) => {}
+                Err(error) => diagnostics.push(AnimationDiagnostic {
+                    object_path: export.object_path.to_string(),
+                    message: error.to_string(),
+                }),
+            }
         }
     }
-    let animations = project_animations(&package, &assets);
+    let animations = project_animations(package, &assets);
     let partial = !diagnostics.is_empty() || animations.iter().any(|a| !a.coverage_gaps.is_empty());
-    Ok(AnimationOutput {
+    AnimationOutput {
         schema_version: 1,
         status: if partial { "partial" } else { "complete" },
         path: path.into(),
         animations,
         diagnostics,
-    })
+    }
 }
 
 pub fn project_animations(package: &Package, assets: &[DecodedAsset]) -> Vec<AnimationSummary> {

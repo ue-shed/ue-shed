@@ -18,6 +18,7 @@ mod json;
 
 pub use json::{
     InspectionJsonError, InspectionJsonStatus, inspect_bytes_json, write_inspection_json,
+    write_inspection_json_from_package, write_inspection_json_from_package_with_schemas,
     write_inspection_json_with_schemas,
 };
 
@@ -1061,7 +1062,7 @@ pub struct ErrorOutput {
 }
 
 impl ErrorOutput {
-    fn package(path: String, error: &PackageError) -> Self {
+    pub fn package(path: String, error: &PackageError) -> Self {
         let kind = match error.kind() {
             PackageErrorKind::MalformedData => "malformed_data",
             PackageErrorKind::ResourceLimit => "resource_limit",

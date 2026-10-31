@@ -10,6 +10,19 @@
 /** @typedef {import("./types.d.ts").BlueprintResult} BlueprintResult */
 /** @typedef {import("./types.d.ts").AnimationResult} AnimationResult */
 /** @typedef {import("./types.d.ts").AuthoringTableResult} AuthoringTableResult */
+/** @typedef {import("./types.d.ts").PackageHandle} PackageHandle */
+
+/**
+ * @typedef WasmPackageBinding
+ * @property {() => string} inspect
+ * @property {() => string} extractText
+ * @property {() => string} extractTextures
+ * @property {() => string} extractLevelSequences
+ * @property {() => string} extractBlueprints
+ * @property {() => string} extractAnimations
+ * @property {() => string} extractAuthoringTable
+ * @property {() => void} free
+ */
 
 /**
  * @typedef WasmBinding
@@ -20,6 +33,7 @@
  * @property {(path: string, bytes: Uint8Array) => string} extract_blueprints
  * @property {(path: string, bytes: Uint8Array) => string} extract_animations
  * @property {(path: string, bytes: Uint8Array) => string} extract_authoring_table
+ * @property {new (path: string, bytes: Uint8Array) => WasmPackageBinding} ParsedPackage
  * @property {() => string} version
  */
 
@@ -180,6 +194,72 @@ function decodeResult(operation, raw, schemaVersion, maxOutputBytes) {
 
 /**
  * @param {WasmBinding} binding
+ * @param {RuntimeLimits} limits
+ * @param {string} path
+ * @param {Uint8Array} bytes
+ * @returns {PackageHandle}
+ */
+function createPackageHandle(binding, limits, path, bytes) {
+	const input = assertInputBytes(bytes, limits.maxInputBytes);
+	if (!isFunction(binding.ParsedPackage)) {
+		throw new WasmProtocolError(
+			"openPackage",
+			"the generated binding is missing the ParsedPackage export"
+		);
+	}
+	const raw = new binding.ParsedPackage(path, input);
+	let freed = false;
+	/** @returns {void} */
+	function free() {
+		if (freed) return;
+		freed = true;
+		raw.free();
+	}
+	/**
+	 * @template T
+	 * @param {string} operation
+	 * @param {() => string} call
+	 * @param {number} schemaVersion
+	 * @returns {T}
+	 */
+	function invoke(operation, call, schemaVersion) {
+		if (freed) {
+			throw new Error("PackageHandle has been freed.");
+		}
+		return /** @type {T} */ (
+			/** @type {unknown} */ (
+				decodeResult(operation, call(), schemaVersion, limits.maxOutputBytes)
+			)
+		);
+	}
+	return Object.freeze({
+		inspect() {
+			return invoke("inspect", () => raw.inspect(), 8);
+		},
+		extractText() {
+			return invoke("extractText", () => raw.extractText(), 1);
+		},
+		extractTextures() {
+			return invoke("extractTextures", () => raw.extractTextures(), 1);
+		},
+		extractAuthoringTable() {
+			return invoke("extractAuthoringTable", () => raw.extractAuthoringTable(), 1);
+		},
+		extractLevelSequences() {
+			return invoke("extractLevelSequences", () => raw.extractLevelSequences(), 1);
+		},
+		extractBlueprints() {
+			return invoke("extractBlueprints", () => raw.extractBlueprints(), 1);
+		},
+		extractAnimations() {
+			return invoke("extractAnimations", () => raw.extractAnimations(), 1);
+		},
+		free
+	});
+}
+
+/**
+ * @param {WasmBinding} binding
  * @param {RuntimeOptions | undefined} options
  * @returns {WasmRuntime}
  */
@@ -199,6 +279,9 @@ export function createRuntime(binding, options = undefined) {
 	}
 	return Object.freeze({
 		limits,
+		openPackage(/** @type {string} */ path, /** @type {Uint8Array} */ bytes) {
+			return createPackageHandle(binding, limits, path, bytes);
+		},
 		inspect(/** @type {string} */ path, /** @type {Uint8Array} */ bytes) {
 			const input = assertInputBytes(bytes, limits.maxInputBytes);
 			return /** @type {InspectionResult} */ (

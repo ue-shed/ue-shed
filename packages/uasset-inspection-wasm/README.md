@@ -127,6 +127,27 @@ void blueprints;
 void sameInspection;
 ```
 
+## Parse-once package handle
+
+When several operations run on the same bytes, `openPackage` parses the package once and decodes
+its exports lazily at most once. Every handle method returns exactly the same result as the
+matching runtime method called with the same path and bytes. Call `free()` when done; it is
+idempotent.
+
+```js
+const runtime = createNodeRuntime();
+const bytes = new Uint8Array(await readFile("Content/Fixture/Example.uasset"));
+const handle = runtime.openPackage("Content/Fixture/Example.uasset", bytes);
+try {
+	const inspection = handle.inspect();
+	const blueprints = handle.extractBlueprints();
+	void inspection;
+	void blueprints;
+} finally {
+	handle.free();
+}
+```
+
 ## Browser
 
 Use the explicit browser entry so bundlers do not select the Node loader:

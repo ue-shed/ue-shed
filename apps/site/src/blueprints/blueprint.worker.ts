@@ -54,39 +54,47 @@ const decode = Effect.fn("Website.Blueprints.workerDecode")(function* (
 				};
 			}
 			if (request.operation === "inspect") {
-				const inspection = runtime.inspect(request.path, bytes);
-				// Inspection already tells us the class. Avoid a third package parse for other assets.
-				const isSequence =
-					inspection.status !== "error" &&
-					inspection.assets.some((asset) => asset.class_path?.endsWith(".LevelSequence"));
-				return {
-					status: "inspected",
-					inspection,
-					authoringOutput:
+				const handle = runtime.openPackage(request.path, bytes);
+				try {
+					const inspection = handle.inspect();
+					// Inspection already tells us the class. Avoid a third package parse for other assets.
+					const isSequence =
 						inspection.status !== "error" &&
-						inspection.assets.some(
-							(asset) =>
-								asset.kind === "DataTable" || asset.kind === "CompositeDataTable"
-						)
-							? runtime.extractAuthoringTable(request.path, bytes)
+						inspection.assets.some((asset) =>
+							asset.class_path?.endsWith(".LevelSequence")
+						);
+					return {
+						status: "inspected",
+						inspection,
+						authoringOutput:
+							inspection.status !== "error" &&
+							inspection.assets.some(
+								(asset) =>
+									asset.kind === "DataTable" ||
+									asset.kind === "CompositeDataTable"
+							)
+								? handle.extractAuthoringTable()
+								: {
+										schema_version: 1,
+										status: "error",
+										path: request.path,
+										kind: "unsupported_capability",
+										message: "package contains no supported DataTable export"
+									},
+						sequenceOutput: isSequence
+							? handle.extractLevelSequences()
 							: {
 									schema_version: 1,
-									status: "error",
+									status: "complete",
 									path: request.path,
-									kind: "unsupported_capability",
-									message: "package contains no supported DataTable export"
+									sequences: [],
+									diagnostics: []
 								},
-					sequenceOutput: isSequence
-						? runtime.extractLevelSequences(request.path, bytes)
-						: {
-								schema_version: 1,
-								status: "complete",
-								path: request.path,
-								sequences: [],
-								diagnostics: []
-							},
-					output: runtime.extractBlueprints(request.path, bytes)
-				};
+						output: handle.extractBlueprints()
+					};
+				} finally {
+					handle.free();
+				}
 			}
 			return { status: "ok", output: runtime.extractBlueprints(request.path, bytes) };
 		},

@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use uasset_parser::Package;
 use uasset_parser::archive::NameRef;
 use uasset_parser::asset::{
-    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetError, AssetErrorKind, DATA_ASSET_CLASS,
-    DecodedAsset, EnumCppForm, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
-    USERDEFINEDSTRUCT_CLASS, decode_export,
+    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetErrorKind, DATA_ASSET_CLASS, DecodedAsset,
+    EnumCppForm, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
+    USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{ObjectPath, PackageErrorKind, PackageIndex};
 use uasset_parser::property::{
@@ -15,6 +15,7 @@ use uasset_parser::property::{
 };
 use uasset_parser::schema::embedded_source_model;
 
+use crate::decoded_exports::DecodedExports;
 use crate::generic::SCHEMA_VERSION;
 
 pub fn inspect_bytes_with_checkpoint(
@@ -31,14 +32,14 @@ pub fn inspect_bytes_with_checkpoint(
     inspect_package_with_checkpoint(path, bytes, &package, checkpoint, None)
 }
 
-/// Inspects an already parsed package, optionally reusing decoded exports produced by
-/// `decode_export` with the embedded source model.
+/// Inspects an already parsed package, optionally sharing a cache of exports decoded with the
+/// embedded source model.
 pub fn inspect_package_with_checkpoint(
     path: &str,
     bytes: &[u8],
     package: &Package,
     checkpoint: &impl Fn(&'static str) -> Result<(), InspectionError>,
-    decoded: Option<&[Result<Option<DecodedAsset>, AssetError>]>,
+    cache: Option<&DecodedExports>,
 ) -> Result<(SavedAssetInspection, bool), InspectionError> {
     checkpoint("parsing")?;
 
@@ -58,35 +59,19 @@ pub fn inspect_package_with_checkpoint(
         package,
         schemas: embedded_source_model(),
     };
-    if let Some(decoded) = decoded {
-        for (export, result) in package.exports.iter().zip(decoded.iter()) {
-            match result {
-                Ok(Some(decoded)) => assets.push(saved_asset(package, decoded.clone())),
-                Ok(None) => {}
-                Err(error) => decode_errors.push(SavedAssetDecodeError {
-                    object_path: export.object_path.to_string(),
-                    class_path: export.class_path.as_ref().map(ToString::to_string),
-                    kind: asset_error_kind(error.kind()),
-                    message: error.message().to_owned(),
-                    field: error.field().map(ToOwned::to_owned),
-                    offset: error.offset(),
-                }),
-            }
-        }
-    } else {
-        for export in &package.exports {
-            match decode_export(export, &context) {
-                Ok(Some(decoded)) => assets.push(saved_asset(package, decoded)),
-                Ok(None) => {}
-                Err(error) => decode_errors.push(SavedAssetDecodeError {
-                    object_path: export.object_path.to_string(),
-                    class_path: export.class_path.as_ref().map(ToString::to_string),
-                    kind: asset_error_kind(error.kind()),
-                    message: error.message().to_owned(),
-                    field: error.field().map(ToOwned::to_owned),
-                    offset: error.offset(),
-                }),
-            }
+    for (index, export) in package.exports.iter().enumerate() {
+        let decoded = DecodedExports::decode(cache, index, export, &context);
+        if let Err(error) = &*decoded {
+            decode_errors.push(SavedAssetDecodeError {
+                object_path: export.object_path.to_string(),
+                class_path: export.class_path.as_ref().map(ToString::to_string),
+                kind: asset_error_kind(error.kind()),
+                message: error.message().to_owned(),
+                field: error.field().map(ToOwned::to_owned),
+                offset: error.offset(),
+            });
+        } else if let Some(asset) = decoded.into_asset() {
+            assets.push(saved_asset(package, asset));
         }
     }
     checkpoint("inspection")?;
@@ -613,9 +598,9 @@ pub fn inspect_package(
     path: &str,
     bytes: &[u8],
     package: &Package,
-    decoded: Option<&[Result<Option<DecodedAsset>, AssetError>]>,
+    cache: Option<&DecodedExports>,
 ) -> Result<(SavedAssetInspection, bool), InspectionError> {
-    inspect_package_with_checkpoint(path, bytes, package, &|_| Ok(()), decoded)
+    inspect_package_with_checkpoint(path, bytes, package, &|_| Ok(()), cache)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

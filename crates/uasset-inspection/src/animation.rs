@@ -1,10 +1,9 @@
 //! Saved animation inventory. No pose evaluation, external loads, or inferred CDO defaults.
 use serde::Serialize;
 use std::collections::HashMap;
-use uasset_parser::asset::{
-    AssetDecodeContext, AssetError, DecodedAnimSequence, DecodedAsset, DecodedUObject,
-    decode_export,
-};
+use uasset_parser::asset::{AssetDecodeContext, DecodedAnimSequence, DecodedAsset, DecodedUObject};
+
+use crate::decoded_exports::DecodedExports;
 use uasset_parser::property::{PropertyStream, PropertyValue, RangeBoundKind};
 use uasset_parser::{Package, PackageError};
 
@@ -95,43 +94,31 @@ pub fn inspect_animation_bytes(path: &str, bytes: &[u8]) -> Result<AnimationOutp
     Ok(inspect_animation_from_package(path, &package, bytes, None))
 }
 
-/// Projects animation summaries from an already parsed package, optionally reusing
-/// decoded exports produced by `decode_export` with the embedded source model.
+/// Projects animation summaries from an already parsed package, optionally sharing a cache of
+/// exports decoded with the embedded source model.
 pub fn inspect_animation_from_package(
     path: &str,
     package: &Package,
     bytes: &[u8],
-    decoded: Option<&[Result<Option<DecodedAsset>, AssetError>]>,
+    cache: Option<&DecodedExports>,
 ) -> AnimationOutput {
     let mut assets = Vec::new();
     let mut diagnostics = Vec::new();
-    if let Some(decoded) = decoded {
-        for (export, result) in package.exports.iter().zip(decoded.iter()) {
-            match result {
-                Ok(Some(asset)) => assets.push(asset.clone()),
-                Ok(None) => {}
-                Err(error) => diagnostics.push(AnimationDiagnostic {
-                    object_path: export.object_path.to_string(),
-                    message: error.to_string(),
-                }),
-            }
-        }
-    } else {
-        let context = AssetDecodeContext {
-            property_filter: None,
-            source: bytes,
-            package,
-            schemas: uasset_parser::schema::embedded_source_model(),
-        };
-        for export in &package.exports {
-            match decode_export(export, &context) {
-                Ok(Some(asset)) => assets.push(asset),
-                Ok(None) => {}
-                Err(error) => diagnostics.push(AnimationDiagnostic {
-                    object_path: export.object_path.to_string(),
-                    message: error.to_string(),
-                }),
-            }
+    let context = AssetDecodeContext {
+        property_filter: None,
+        source: bytes,
+        package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    for (index, export) in package.exports.iter().enumerate() {
+        let decoded = DecodedExports::decode(cache, index, export, &context);
+        if let Err(error) = &*decoded {
+            diagnostics.push(AnimationDiagnostic {
+                object_path: export.object_path.to_string(),
+                message: error.to_string(),
+            });
+        } else if let Some(asset) = decoded.into_asset() {
+            assets.push(asset);
         }
     }
     let animations = project_animations(package, &assets);

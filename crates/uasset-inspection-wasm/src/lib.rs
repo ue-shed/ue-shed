@@ -10,6 +10,7 @@ use uasset_inspection::blueprint::{
     saved_blueprint_graph_node_paths,
 };
 use uasset_inspection::blueprint_text::reconcile_blueprint_text;
+use uasset_inspection::decoded_exports::DecodedExports;
 use uasset_inspection::gather_coverage::{DecodedTextKeys, gather_coverage};
 use uasset_inspection::generic::{
     ErrorOutput, InspectionJsonError, PropertyValueOutput,
@@ -21,8 +22,8 @@ use uasset_inspection::projection::{
     project_texture_asset, text_feature_version_gap,
 };
 use uasset_parser::asset::{
-    AssetDecodeContext, AssetError, AssetErrorKind, DecodedAsset, decode_export,
-    decode_saved_blueprint_graph_node, supports_blueprint_graph_package_version,
+    AssetDecodeContext, AssetErrorKind, DecodedAsset, decode_saved_blueprint_graph_node,
+    supports_blueprint_graph_package_version,
 };
 use uasset_parser::schema::embedded_source_model;
 use uasset_parser::{Package, PackageError, PackageErrorKind, PackageSummary};
@@ -54,46 +55,16 @@ pub const MAX_EXPORTS: usize = 100_000;
 /// Maximum number of records emitted by a compact projection.
 pub const MAX_PROJECTION_ITEMS: usize = 1_000_000;
 
-type DecodedExports = Vec<Result<Option<DecodedAsset>, AssetError>>;
-
-fn decode_exports(package: &Package, bytes: &[u8]) -> DecodedExports {
-    let context = AssetDecodeContext {
-        property_filter: None,
-        source: bytes,
-        package,
-        schemas: embedded_source_model(),
-    };
-    package
-        .exports
-        .iter()
-        .map(|export| decode_export(export, &context))
-        .collect()
-}
-
-fn resolve_decoded<'a>(
-    package: &Package,
-    bytes: &[u8],
-    decoded: Option<&'a DecodedExports>,
-    owned: &'a mut Option<DecodedExports>,
-) -> &'a DecodedExports {
-    match decoded {
-        Some(decoded) => decoded,
-        None => {
-            *owned = Some(decode_exports(package, bytes));
-            match owned {
-                Some(decoded) => decoded,
-                None => unreachable!("decoded exports were just stored"),
-            }
-        }
-    }
-}
-
-/// A package parsed once, with its exports decoded lazily at most once.
+/// A package parsed once, its exports decoded on first use and kept for later operations.
+///
+/// Input size and the summary's export count are checked before the full parse, so a package over
+/// the WASM limits is rejected without being parsed or decoded.
 #[wasm_bindgen]
 pub struct ParsedPackage {
     path: String,
     bytes: Vec<u8>,
-    package: Result<Package, PackageError>,
+    /// `None` for input over the WASM limits; every operation then reports the limit.
+    package: Option<Result<Package, PackageError>>,
     decoded: OnceCell<DecodedExports>,
 }
 
@@ -101,7 +72,7 @@ pub struct ParsedPackage {
 impl ParsedPackage {
     #[wasm_bindgen(constructor)]
     pub fn new(path: String, bytes: Vec<u8>) -> Self {
-        let package = Package::parse(&bytes);
+        let package = within_limits(&bytes).then(|| Package::parse(&bytes));
         Self {
             path,
             bytes,
@@ -112,95 +83,106 @@ impl ParsedPackage {
 
     #[wasm_bindgen(js_name = inspect)]
     pub fn inspect(&self) -> String {
-        if let Some(error) = input_limit_error(8, &self.path, &self.bytes) {
-            return error;
+        match self.admit(8) {
+            Ok(package) => inspect_impl(&self.path, &self.bytes, package, self.cache(package)),
+            Err(error) => error,
         }
-        if let Some(error) = export_limit_error(8, &self.path, &self.bytes) {
-            return error;
-        }
-        inspect_impl(&self.path, &self.bytes, &self.package, self.decoded_opt())
     }
 
     #[wasm_bindgen(js_name = extractText)]
     pub fn extract_text(&self) -> String {
-        if let Some(error) = input_limit_error(1, &self.path, &self.bytes) {
-            return error;
-        }
-        match &self.package {
-            Ok(package) => extract_text_from_package_decoded(
+        match self.admit(1) {
+            Ok(Ok(package)) => extract_text_from_package_decoded(
                 &self.path,
                 &self.bytes,
                 package,
-                self.decoded_opt(),
+                Some(self.cache_for(package)),
             ),
-            Err(error) => serialize_projection_error(&self.path, error),
+            Ok(Err(error)) => serialize_projection_error(&self.path, error),
+            Err(error) => error,
         }
     }
 
     #[wasm_bindgen(js_name = extractTextures)]
     pub fn extract_textures(&self) -> String {
-        if let Some(error) = input_limit_error(1, &self.path, &self.bytes) {
-            return error;
+        match self.admit(1) {
+            Ok(package) => {
+                extract_textures_impl(&self.path, &self.bytes, package, self.cache(package))
+            }
+            Err(error) => error,
         }
-        extract_textures_impl(&self.path, &self.bytes, &self.package, self.decoded_opt())
     }
 
     #[wasm_bindgen(js_name = extractLevelSequences)]
     pub fn extract_level_sequences(&self) -> String {
-        if let Some(error) = input_limit_error(1, &self.path, &self.bytes) {
-            return error;
+        match self.admit(1) {
+            Ok(package) => {
+                extract_level_sequences_impl(&self.path, &self.bytes, package, self.cache(package))
+            }
+            Err(error) => error,
         }
-        extract_level_sequences_impl(&self.path, &self.bytes, &self.package, self.decoded_opt())
     }
 
     #[wasm_bindgen(js_name = extractBlueprints)]
     pub fn extract_blueprints(&self) -> String {
-        if let Some(error) = input_limit_error(1, &self.path, &self.bytes) {
-            return error;
-        }
-        match &self.package {
-            Ok(package) => extract_blueprints_from_package_decoded(
+        match self.admit(1) {
+            Ok(Ok(package)) => extract_blueprints_from_package_decoded(
                 &self.path,
                 &self.bytes,
                 package,
-                self.decoded_opt(),
+                Some(self.cache_for(package)),
             ),
-            Err(error) => serialize_projection_error(&self.path, error),
+            Ok(Err(error)) => serialize_projection_error(&self.path, error),
+            Err(error) => error,
         }
     }
 
     #[wasm_bindgen(js_name = extractAnimations)]
     pub fn extract_animations(&self) -> String {
-        if let Some(error) = input_limit_error(1, &self.path, &self.bytes) {
-            return error;
+        match self.admit(1) {
+            Ok(package) => {
+                extract_animations_impl(&self.path, &self.bytes, package, self.cache(package))
+            }
+            Err(error) => error,
         }
-        if let Some(error) = export_limit_error(1, &self.path, &self.bytes) {
-            return error;
-        }
-        extract_animations_impl(&self.path, &self.bytes, &self.package, self.decoded_opt())
     }
 
     #[wasm_bindgen(js_name = extractAuthoringTable)]
     pub fn extract_authoring_table(&self) -> String {
-        if let Some(error) = input_limit_error(1, &self.path, &self.bytes) {
-            return error;
+        match self.admit(1) {
+            Ok(package) => {
+                extract_authoring_table_impl(&self.path, &self.bytes, package, self.cache(package))
+            }
+            Err(error) => error,
         }
-        if let Some(error) = export_limit_error(1, &self.path, &self.bytes) {
-            return error;
-        }
-        extract_authoring_table_impl(&self.path, &self.bytes, &self.package, self.decoded_opt())
     }
 }
 
 impl ParsedPackage {
-    fn decoded_opt(&self) -> Option<&DecodedExports> {
-        match &self.package {
-            Ok(package) => Some(
-                self.decoded
-                    .get_or_init(|| decode_exports(package, &self.bytes)),
-            ),
-            Err(_) => None,
+    /// The parsed package, or the limit error an operation of `schema_version` reports.
+    fn admit(&self, schema_version: u8) -> Result<&Result<Package, PackageError>, String> {
+        if let Some(error) = input_limit_error(schema_version, &self.path, &self.bytes)
+            .or_else(|| export_limit_error(schema_version, &self.path, &self.bytes))
+        {
+            return Err(error);
         }
+        self.package.as_ref().ok_or_else(|| {
+            let message = "package exceeds the WASM limits";
+            if schema_version == 8 {
+                serialize_generic_error(&self.path, "resource_limit", message)
+            } else {
+                serialize_projection_limit_error(&self.path, message)
+            }
+        })
+    }
+
+    fn cache(&self, package: &Result<Package, PackageError>) -> Option<&DecodedExports> {
+        package.as_ref().ok().map(|package| self.cache_for(package))
+    }
+
+    fn cache_for(&self, package: &Package) -> &DecodedExports {
+        self.decoded
+            .get_or_init(|| DecodedExports::new(package.exports.len()))
     }
 }
 
@@ -225,10 +207,7 @@ fn extract_authoring_table_impl(
 ) -> String {
     let result = match package {
         Ok(package) => uasset_inspection::authoring::inspect_authoring_from_package(
-            path,
-            bytes,
-            package,
-            decoded.map(|decoded| decoded.as_slice()),
+            path, bytes, package, decoded,
         ),
         Err(error) => Err(uasset_inspection::saved_inspection::InspectionError {
             code: package_error_kind_name(error.kind()).to_owned(),
@@ -349,7 +328,7 @@ fn inspect_impl(
         bytes,
         package,
         embedded_source_model(),
-        decoded.map(|decoded| decoded.as_slice()),
+        decoded,
         &mut writer,
     ) {
         Ok(_) => writer.finish(),
@@ -396,14 +375,12 @@ fn extract_text_from_package_decoded(
         package,
         schemas: uasset_parser::schema::embedded_source_model(),
     };
-    let mut owned = None;
-    let decoded = resolve_decoded(package, bytes, decoded, &mut owned);
     let mut occurrences = Vec::new();
     let mut coverage_gaps = Vec::new();
     let mut diagnostics = Vec::new();
     let mut decoded_keys = DecodedTextKeys::default();
-    for (export, result) in package.exports.iter().zip(decoded.iter()) {
-        match result {
+    for (index, export) in package.exports.iter().enumerate() {
+        match &*DecodedExports::decode(decoded, index, export, &context) {
             Ok(Some(asset)) => {
                 let projection = project_text_asset(package, asset);
                 decoded_keys.record(&projection.occurrences);
@@ -489,11 +466,15 @@ fn extract_textures_impl(
             if let Some(error) = projection_export_limit(path, package.exports.len()) {
                 return error;
             }
-            let mut owned = None;
-            let decoded = resolve_decoded(package, bytes, decoded, &mut owned);
+            let context = AssetDecodeContext {
+                property_filter: None,
+                source: bytes,
+                package,
+                schemas: embedded_source_model(),
+            };
             let mut records = Vec::new();
             let mut diagnostics = Vec::new();
-            for (export, result) in package.exports.iter().zip(decoded.iter()) {
+            for (index, export) in package.exports.iter().enumerate() {
                 if export
                     .class_path
                     .as_ref()
@@ -501,7 +482,7 @@ fn extract_textures_impl(
                 {
                     continue;
                 }
-                match result {
+                match &*DecodedExports::decode(decoded, index, export, &context) {
                     Ok(Some(asset)) => {
                         if let Some(record) =
                             project_texture_asset(package, asset, bytes.len() as u64)
@@ -560,10 +541,7 @@ fn extract_animations_impl(
 ) -> String {
     let output = match package {
         Ok(package) => uasset_inspection::animation::inspect_animation_from_package(
-            path,
-            package,
-            bytes,
-            decoded.map(|decoded| decoded.as_slice()),
+            path, package, bytes, decoded,
         ),
         Err(error) => return serialize_projection_error(path, error),
     };
@@ -608,20 +586,25 @@ fn extract_level_sequences_impl(
             if let Some(error) = projection_export_limit(path, package.exports.len()) {
                 return error;
             }
-            let mut owned = None;
-            let decoded = resolve_decoded(package, bytes, decoded, &mut owned);
+            let context = AssetDecodeContext {
+                property_filter: None,
+                source: bytes,
+                package,
+                schemas: embedded_source_model(),
+            };
             let mut assets = Vec::new();
             let mut diagnostics = Vec::new();
-            for (export, result) in package.exports.iter().zip(decoded.iter()) {
-                match result {
-                    Ok(Some(asset)) => assets.push(asset.clone()),
-                    Ok(None) => {}
-                    Err(error) => diagnostics.push(ProjectionDiagnostic {
+            for (index, export) in package.exports.iter().enumerate() {
+                let decoded = DecodedExports::decode(decoded, index, export, &context);
+                if let Err(error) = &*decoded {
+                    diagnostics.push(ProjectionDiagnostic {
                         object_path: export.object_path.to_string(),
                         class_path: export.class_path.as_ref().map(ToString::to_string),
                         code: asset_error_kind_name(error.kind()),
                         message: error.message().to_owned(),
-                    }),
+                    });
+                } else if let Some(asset) = decoded.into_asset() {
+                    assets.push(asset);
                 }
             }
             let sequences: Vec<_> = project_level_sequence(package, &assets)
@@ -702,20 +685,19 @@ fn extract_blueprints_from_package_decoded(
         package,
         schemas: uasset_parser::schema::embedded_source_model(),
     };
-    let mut owned = None;
-    let decoded = resolve_decoded(package, bytes, decoded, &mut owned);
     let mut assets = Vec::new();
     let mut pending_errors = Vec::new();
-    for (export, result) in package.exports.iter().zip(decoded.iter()) {
-        match result {
-            Ok(Some(asset)) => assets.push(asset.clone()),
-            Ok(None) => {}
-            Err(error) => pending_errors.push((
+    for (index, export) in package.exports.iter().enumerate() {
+        let decoded = DecodedExports::decode(decoded, index, export, &context);
+        if let Err(error) = &*decoded {
+            pending_errors.push((
                 export.object_path.to_string(),
                 export.class_path.as_ref().map(ToString::to_string),
                 error.kind(),
                 error.message().to_owned(),
-            )),
+            ));
+        } else if let Some(asset) = decoded.into_asset() {
+            assets.push(asset);
         }
     }
     let node_paths: HashSet<_> = saved_blueprint_graph_node_paths(package, &assets)
@@ -1223,13 +1205,22 @@ fn input_limit_error(schema_version: u8, path: &str, bytes: &[u8]) -> Option<Str
     })
 }
 
+fn summary_export_count(bytes: &[u8]) -> Option<u64> {
+    PackageSummary::parse(bytes)
+        .ok()
+        .map(|summary| u64::from(summary.exports.count))
+}
+
+/// Whether input is within the size and export-count limits checked before a full parse.
+fn within_limits(bytes: &[u8]) -> bool {
+    bytes.len() <= MAX_INPUT_BYTES
+        && summary_export_count(bytes).is_none_or(|count| count <= MAX_EXPORTS as u64)
+}
+
 fn export_limit_error(schema_version: u8, path: &str, bytes: &[u8]) -> Option<String> {
-    let summary = PackageSummary::parse(bytes).ok()?;
-    (u64::from(summary.exports.count) > MAX_EXPORTS as u64).then(|| {
-        let message = format!(
-            "export count {} exceeds the WASM limit of {}",
-            summary.exports.count, MAX_EXPORTS
-        );
+    let count = summary_export_count(bytes)?;
+    (count > MAX_EXPORTS as u64).then(|| {
+        let message = format!("export count {count} exceeds the WASM limit of {MAX_EXPORTS}");
         if schema_version == 8 {
             serialize_generic_error(path, "resource_limit", message)
         } else {
@@ -1845,6 +1836,94 @@ mod tests {
         assert_eq!(
             handle.extract_animations(),
             super::extract_animations(path, &bytes)
+        );
+    }
+
+    #[test]
+    fn handles_reject_too_many_exports_before_parsing() {
+        let summary =
+            uasset_parser::PackageSummary::parse(BLUEPRINT_FIXTURE).expect("fixture summary");
+        let mut location = summary.exports.count.to_le_bytes().to_vec();
+        let offset = u32::try_from(summary.exports.offset.get()).expect("offset fits in u32");
+        location.extend_from_slice(&offset.to_le_bytes());
+        let at = BLUEPRINT_FIXTURE
+            .windows(location.len())
+            .position(|window| window == location)
+            .expect("export table location in the summary");
+        let too_many = u32::try_from(MAX_EXPORTS + 1).expect("limit fits in u32");
+        let mut bytes = BLUEPRINT_FIXTURE.to_vec();
+        bytes[at..at + 4].copy_from_slice(&too_many.to_le_bytes());
+        let patched = uasset_parser::PackageSummary::parse(&bytes).expect("patched summary");
+        assert_eq!(patched.exports.count, too_many);
+
+        let handle = super::ParsedPackage::new("many.uasset".to_owned(), bytes);
+        assert!(
+            handle.package.is_none(),
+            "an over-limit package is not parsed"
+        );
+        for output in [
+            handle.inspect(),
+            handle.extract_text(),
+            handle.extract_textures(),
+            handle.extract_level_sequences(),
+            handle.extract_blueprints(),
+            handle.extract_animations(),
+            handle.extract_authoring_table(),
+        ] {
+            let value: Value = serde_json::from_str(&output).expect("limit result is JSON");
+            assert_eq!(value["kind"], "resource_limit", "{output}");
+        }
+        assert!(
+            handle.decoded.get().is_none(),
+            "no export cache was created"
+        );
+    }
+
+    #[test]
+    fn handles_decode_only_the_exports_an_operation_reads() {
+        let handle =
+            super::ParsedPackage::new("graph.uasset".to_owned(), BLUEPRINT_FIXTURE.to_vec());
+        let value: Value =
+            serde_json::from_str(&handle.extract_textures()).expect("texture result is JSON");
+        assert_eq!(value["records"], serde_json::json!([]));
+        let cache = handle.decoded.get().expect("export cache");
+        assert_eq!(cache.decoded_count(), 0, "no export is a texture");
+
+        handle.extract_text();
+        let package = handle
+            .package
+            .as_ref()
+            .and_then(|package| package.as_ref().ok())
+            .expect("fixture parses");
+        assert_eq!(cache.decoded_count(), package.exports.len());
+
+        let texture = include_bytes!(
+            "../../../fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_Defaults_256.uasset"
+        );
+        let handle = super::ParsedPackage::new("texture.uasset".to_owned(), texture.to_vec());
+        let value: Value =
+            serde_json::from_str(&handle.extract_textures()).expect("texture result is JSON");
+        assert_eq!(value["records"].as_array().map(Vec::len), Some(1));
+        let package = handle
+            .package
+            .as_ref()
+            .and_then(|package| package.as_ref().ok())
+            .expect("fixture parses");
+        let textures = package
+            .exports
+            .iter()
+            .filter(|export| {
+                export
+                    .class_path
+                    .as_ref()
+                    .is_some_and(|class_path| class_path.as_str() == super::TEXTURE2D_CLASS)
+            })
+            .count();
+        let cache = handle.decoded.get().expect("export cache");
+        assert_eq!(cache.decoded_count(), textures);
+        assert!(
+            textures < package.exports.len(),
+            "the fixture has other exports"
         );
     }
 

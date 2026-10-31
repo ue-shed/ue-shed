@@ -5,14 +5,16 @@ use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Serialize, Serializer};
 use uasset_parser::archive::{Guid, NameRef};
 use uasset_parser::asset::{
-    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetError, DecodedAsset, SKELETON_CLASS,
-    USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS, decode_export,
+    ANIM_SEQUENCE_CLASS, AssetDecodeContext, DecodedAsset, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
+    USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{ObjectPath, Package, PackageIndex, TableLocation};
 use uasset_parser::property::{
     MapEntry, PropertyRecord, PropertyStream, PropertyValue, RawReason, TextHistory,
 };
 use uasset_parser::schema::{SchemaProvider, embedded_source_model};
+
+use crate::decoded_exports::DecodedExports;
 
 use super::{
     DecodeErrorOutput, ErrorOutput, SCHEMA_VERSION, asset_error_kind_name, data_asset_kind,
@@ -103,14 +105,14 @@ pub fn write_inspection_json_from_package(
     )
 }
 
-/// Writes generic inspection JSON from an already parsed package, optionally reusing
-/// decoded exports produced by `decode_export` with the same schemas.
+/// Writes generic inspection JSON from an already parsed package, optionally sharing a cache of
+/// exports decoded with the same schemas.
 pub fn write_inspection_json_from_package_with_schemas(
     path: &str,
     bytes: &[u8],
     package: &Package,
     schemas: &dyn SchemaProvider,
-    decoded: Option<&[Result<Option<DecodedAsset>, AssetError>]>,
+    decoded: Option<&DecodedExports>,
     writer: impl io::Write,
 ) -> Result<InspectionJsonStatus, InspectionJsonError> {
     let inspection = StreamingInspection::new(path, bytes, package, schemas, decoded);
@@ -150,7 +152,7 @@ struct StreamingInspection<'a> {
     source: &'a [u8],
     package: &'a Package,
     schemas: &'a dyn SchemaProvider,
-    decoded: Option<&'a [Result<Option<DecodedAsset>, AssetError>]>,
+    decoded: Option<&'a DecodedExports>,
     decode_errors: RefCell<Vec<DecodeErrorOutput>>,
 }
 
@@ -160,7 +162,7 @@ impl<'a> StreamingInspection<'a> {
         source: &'a [u8],
         package: &'a Package,
         schemas: &'a dyn SchemaProvider,
-        decoded: Option<&'a [Result<Option<DecodedAsset>, AssetError>]>,
+        decoded: Option<&'a DecodedExports>,
     ) -> Self {
         let mut decode_errors = Vec::new();
         let metadata = match package.read_metadata(source) {
@@ -320,7 +322,7 @@ struct StreamingAssetsView<'a> {
     package: &'a Package,
     source: &'a [u8],
     schemas: &'a dyn SchemaProvider,
-    decoded: Option<&'a [Result<Option<DecodedAsset>, AssetError>]>,
+    decoded: Option<&'a DecodedExports>,
     decode_errors: &'a RefCell<Vec<DecodeErrorOutput>>,
 }
 
@@ -336,31 +338,11 @@ impl Serialize for StreamingAssetsView<'_> {
             schemas: self.schemas,
         };
         let mut sequence = serializer.serialize_seq(None)?;
-        if let Some(decoded) = self.decoded {
-            for (export, result) in self.package.exports.iter().zip(decoded.iter()) {
-                match result {
-                    Ok(Some(asset)) => sequence.serialize_element(&AssetView {
-                        package: self.package,
-                        asset,
-                    })?,
-                    Ok(None) => {}
-                    Err(error) => self.decode_errors.borrow_mut().push(DecodeErrorOutput {
-                        object_path: export.object_path.to_string(),
-                        class_path: export.class_path.as_ref().map(ToString::to_string),
-                        kind: asset_error_kind_name(error.kind()),
-                        message: error.message().to_owned(),
-                        field: error.field().map(ToOwned::to_owned),
-                        offset: error.offset(),
-                    }),
-                }
-            }
-            return sequence.end();
-        }
-        for export in &self.package.exports {
-            match decode_export(export, &context) {
+        for (index, export) in self.package.exports.iter().enumerate() {
+            match &*DecodedExports::decode(self.decoded, index, export, &context) {
                 Ok(Some(asset)) => sequence.serialize_element(&AssetView {
                     package: self.package,
-                    asset: &asset,
+                    asset,
                 })?,
                 Ok(None) => {}
                 Err(error) => self.decode_errors.borrow_mut().push(DecodeErrorOutput {

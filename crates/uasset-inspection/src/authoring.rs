@@ -25,18 +25,16 @@ pub fn inspect_authoring_bytes(
     inspect_authoring_from_package(path, bytes, &package, None)
 }
 
-/// Projects the authoring table from an already parsed package, optionally reusing
-/// decoded exports produced by `decode_export` with the embedded source model.
+/// Projects the authoring table from an already parsed package, optionally sharing a cache of
+/// exports decoded with the embedded source model.
 pub fn inspect_authoring_from_package(
     path: &str,
     bytes: &[u8],
     package: &uasset_parser::Package,
-    decoded: Option<
-        &[Result<Option<uasset_parser::asset::DecodedAsset>, uasset_parser::asset::AssetError>],
-    >,
+    cache: Option<&crate::decoded_exports::DecodedExports>,
 ) -> Result<(AuthoringTableSnapshot, bool), InspectionError> {
     let (inspection, partial) =
-        crate::saved_inspection::inspect_package(path, bytes, package, decoded)?;
+        crate::saved_inspection::inspect_package(path, bytes, package, cache)?;
     project_authoring_table(inspection, partial, &|_| Ok(()))
 }
 

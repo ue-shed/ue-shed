@@ -2,6 +2,7 @@
 use super::*;
 use crate::archive::Reader;
 use crate::property::NativeProperty;
+use std::borrow::Cow;
 
 type DecodedObjectTail = (Option<Guid>, Option<Box<PropertyValue>>, Span);
 
@@ -103,15 +104,15 @@ fn member(
     Ok(PropertyValue::NativeStruct {
         fields: vec![
             NativeProperty {
-                name: "MemberParent".into(),
+                name: Cow::Borrowed("MemberParent"),
                 value: PropertyValue::ObjectRef(parent),
             },
             NativeProperty {
-                name: "MemberName".into(),
+                name: Cow::Borrowed("MemberName"),
                 value: PropertyValue::Name(name),
             },
             NativeProperty {
-                name: "MemberGuid".into(),
+                name: Cow::Borrowed("MemberGuid"),
                 value: PropertyValue::Guid(Guid {
                     a: words[0],
                     b: words[1],
@@ -206,7 +207,7 @@ pub(crate) fn decode(
     let mut fields = Vec::new();
     if actor && custom_version(context.package, SPECIAL_PROJECT) >= 4 {
         fields.push(NativeProperty {
-            name: "ActorLabelIsCooked".into(),
+            name: Cow::Borrowed("ActorLabelIsCooked"),
             value: native_bool(reader, context, "AActor.CookedLabel", &export.object_path)?,
         });
     }
@@ -221,7 +222,7 @@ pub(crate) fn decode(
             return Err(invalid_layout(&export.object_path, "UCSModifiedProperties"));
         };
         fields.push(NativeProperty {
-            name: "UCSModifiedProperties".into(),
+            name: Cow::Borrowed("UCSModifiedProperties"),
             value: PropertyValue::Array(
                 values
                     .into_iter()
@@ -243,7 +244,7 @@ pub(crate) fn decode(
         if let Some(record) = compute {
             match record.value {
                 PropertyValue::Bool(true) => fields.push(NativeProperty {
-                    name: "StaticBoundsIsCooked".into(),
+                    name: Cow::Borrowed("StaticBoundsIsCooked"),
                     value: native_bool(
                         reader,
                         context,
@@ -274,7 +275,7 @@ pub(crate) fn decode(
         let mut probe = reader.clone();
         if probe.read_i32(&format!("{}.LODData.Count", export.object_path))? == 0 {
             fields.push(NativeProperty {
-                name: "LODData".into(),
+                name: Cow::Borrowed("LODData"),
                 value: PropertyValue::Array(Vec::new()),
             });
             *reader = probe;
@@ -308,7 +309,7 @@ fn niagara_system(
         guid,
         PropertyValue::NativeStruct {
             fields: vec![NativeProperty {
-                name: "EmitterCompiledData".into(),
+                name: Cow::Borrowed("EmitterCompiledData"),
                 value: PropertyValue::Array(values),
             }],
         },

@@ -829,7 +829,7 @@ pub(crate) fn value_output(package: &Package, value: PropertyValue) -> PropertyV
             fields: fields
                 .into_iter()
                 .map(|field| NativeFieldOutput {
-                    name: field.name,
+                    name: field.name.into_owned(),
                     value: value_output(package, field.value),
                 })
                 .collect(),

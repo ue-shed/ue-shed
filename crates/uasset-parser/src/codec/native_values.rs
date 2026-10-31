@@ -56,7 +56,7 @@ pub(crate) fn property(value: NativeValue) -> PropertyValue {
                 .into_iter()
                 .filter_map(|(name, value)| {
                     (!matches!(value, NativeValue::Padding)).then(|| NativeProperty {
-                        name,
+                        name: Cow::Owned(name),
                         value: property(value),
                     })
                 })
@@ -121,7 +121,7 @@ pub(super) fn known_struct(
                 .into_iter()
                 .map(|name| {
                     Ok(NativeProperty {
-                        name: name.into(),
+                        name: Cow::Borrowed(name),
                         value: PropertyValue::Float(reader.read_f32(path)?),
                     })
                 })
@@ -306,13 +306,13 @@ pub(super) fn math_struct(
         })
     };
     let fields =
-        |reader: &mut Reader<'_>, names: &[&str]| -> Result<PropertyValue, PropertyError> {
+        |reader: &mut Reader<'_>, names: &[&'static str]| -> Result<PropertyValue, PropertyError> {
             Ok(PropertyValue::NativeStruct {
                 fields: names
                     .iter()
                     .map(|name| {
                         Ok(NativeProperty {
-                            name: (*name).to_owned(),
+                            name: Cow::Borrowed(*name),
                             value: PropertyValue::Double(component(reader, name)?),
                         })
                     })
@@ -352,15 +352,15 @@ pub(super) fn math_struct(
             PropertyValue::NativeStruct {
                 fields: vec![
                     NativeProperty {
-                        name: "Min".into(),
+                        name: Cow::Borrowed("Min"),
                         value: min,
                     },
                     NativeProperty {
-                        name: "Max".into(),
+                        name: Cow::Borrowed("Max"),
                         value: max,
                     },
                     NativeProperty {
-                        name: valid_name.into(),
+                        name: Cow::Borrowed(valid_name),
                         value: PropertyValue::UInt(u64::from(valid)),
                     },
                 ],
@@ -371,7 +371,7 @@ pub(super) fn math_struct(
                 .iter()
                 .map(|plane| {
                     Ok(NativeProperty {
-                        name: (*plane).to_owned(),
+                        name: Cow::Borrowed(*plane),
                         value: fields(reader, &["X", "Y", "Z", "W"])?,
                     })
                 })

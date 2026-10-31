@@ -75,11 +75,11 @@ fn decode_record(
     decode_property_stream_values_at_depth(source, &mut type_def, package, depth + 1)?;
     let mut fields = vec![
         NativeProperty {
-            name: "Name".into(),
+            name: Cow::Borrowed("Name"),
             value: PropertyValue::Name(variable_name),
         },
         NativeProperty {
-            name: "TypeDefHandle".into(),
+            name: Cow::Borrowed("TypeDefHandle"),
             value: PropertyValue::Struct(type_def),
         },
     ];
@@ -88,7 +88,7 @@ fn decode_record(
         reader.checked_vec_capacity::<PropertyValue>(count, 1, path)?;
         let bytes = reader.read_bytes(count, path)?;
         fields.push(NativeProperty {
-            name: "VarData".into(),
+            name: Cow::Borrowed("VarData"),
             value: PropertyValue::Array(
                 bytes
                     .iter()
@@ -98,7 +98,7 @@ fn decode_record(
         });
     } else if name == "NiagaraVariableWithOffset" {
         fields.push(NativeProperty {
-            name: "Offset".into(),
+            name: Cow::Borrowed("Offset"),
             value: PropertyValue::Int(i64::from(reader.read_i32(path)?)),
         });
     }

@@ -206,7 +206,7 @@ pub struct MapEntry {
 /// A named field from native serialization, without a fabricated property tag.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NativeProperty {
-    pub name: String,
+    pub name: std::borrow::Cow<'static, str>,
     pub value: PropertyValue,
 }
 

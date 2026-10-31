@@ -444,7 +444,7 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
             fields: fields
                 .into_iter()
                 .map(|field| SavedNativeField {
-                    name: field.name,
+                    name: field.name.into_owned(),
                     value: saved_value(package, field.value),
                 })
                 .collect(),

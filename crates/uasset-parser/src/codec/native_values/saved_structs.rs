@@ -28,9 +28,9 @@ pub(in crate::codec) fn optional_struct(
     Some(value)
 }
 
-fn named(name: &str, value: PropertyValue) -> NativeProperty {
+fn named(name: &'static str, value: PropertyValue) -> NativeProperty {
     NativeProperty {
-        name: name.into(),
+        name: Cow::Borrowed(name),
         value,
     }
 }

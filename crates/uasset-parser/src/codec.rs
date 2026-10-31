@@ -1451,12 +1451,20 @@ fn speculative_container_struct(
         .parameters
         .first()
         .and_then(|module| package.resolve_name_cow(module.name));
-    module.as_deref() == Some("/Script/Engine")
-        && match name.as_ref() {
-            "KeyHandleMap" => matches!(package.summary.versions.ue5, 1000..=1018),
-            "Spline" => matches!(package.summary.versions.ue5, 1017..=1018),
-            _ => false,
+    match (module.as_deref(), name.as_ref()) {
+        (Some("/Script/Engine"), "KeyHandleMap" | "SkeletalMeshSamplingLODBuiltData") => {
+            matches!(package.summary.versions.ue5, 1000..=1018)
         }
+        (Some("/Script/Engine"), "Spline") => matches!(package.summary.versions.ue5, 1017..=1018),
+        (
+            Some("/Script/Engine" | "/Script/CoreUObject"),
+            "PerPlatformFloat" | "PerPlatformInt" | "PerPlatformBool",
+        )
+        | (Some("/Script/CoreUObject"), "PerPlatformFrameRate") => {
+            matches!(package.summary.versions.ue5, 1000..=1018)
+        }
+        _ => false,
+    }
 }
 
 fn is_niagara_variable(name: &str) -> bool {
@@ -2835,6 +2843,7 @@ mod tests {
                 "RichCurveKey",
                 "DataTableRowHandle",
                 "PerPlatformFloat",
+                "SkeletalMeshSamplingLODBuiltData",
             ] {
                 let package = versioned_package(
                     &[
@@ -3566,10 +3575,24 @@ mod tests {
         use crate::test_support::TypeParam;
         // A binary map formerly skipped at its first unknown native key. Decode that
         // key successfully, then reject the value, a later entry, or the entry count.
-        for key in ["NiagaraVariableBase", "PostProcessSettings", "Spline"] {
+        for key in [
+            "NiagaraVariableBase",
+            "PostProcessSettings",
+            "Spline",
+            "PerPlatformFloat",
+            "PerPlatformInt",
+            "PerPlatformBool",
+            "PerPlatformFrameRate",
+            "SkeletalMeshSamplingLODBuiltData",
+        ] {
             let mut native_key = match key {
                 "NiagaraVariableBase" => vec![0; 16],
                 "Spline" => vec![0; 49],
+                "PerPlatformFloat"
+                | "PerPlatformInt"
+                | "PerPlatformBool"
+                | "SkeletalMeshSamplingLODBuiltData" => vec![0; 12],
+                "PerPlatformFrameRate" => vec![0; 16],
                 _ => vec![0; 8],
             };
             if key == "Spline" {
@@ -3592,6 +3615,8 @@ mod tests {
             package.names[4] = key.into();
             package.names[5] = if key == "NiagaraVariableBase" {
                 "/Script/Niagara"
+            } else if key == "PerPlatformFrameRate" {
+                "/Script/CoreUObject"
             } else {
                 "/Script/Engine"
             }

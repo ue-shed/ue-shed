@@ -8,11 +8,17 @@ pub(in crate::codec) fn optional_struct(
     package: &Package,
     path: &str,
 ) -> Option<PropertyValue> {
-    if let Some(value) = super::per_platform::optional(ty, reader, package, path) {
-        return Some(value);
-    }
     let identity = ty.parameters.first()?;
     let name = package.resolve_name_cow(identity.name)?;
+    match name.as_ref() {
+        "PerPlatformFloat" | "PerPlatformInt" | "PerPlatformBool" | "PerPlatformFrameRate" => {
+            return super::per_platform::optional(ty, reader, package, path);
+        }
+        "SkeletalMeshSamplingLODBuiltData" => {
+            return super::sampling::optional(ty, reader, package, path);
+        }
+        _ => {}
+    }
     let module = package.resolve_name_cow(identity.parameters.first()?.name)?;
     if !matches!(package.summary.versions.ue5, 1000..=1018) {
         return None;

@@ -8,6 +8,9 @@ pub(in crate::codec) fn optional_struct(
     package: &Package,
     path: &str,
 ) -> Option<PropertyValue> {
+    if let Some(value) = super::per_platform::optional(ty, reader, package, path) {
+        return Some(value);
+    }
     let identity = ty.parameters.first()?;
     let name = package.resolve_name_cow(identity.name)?;
     let module = package.resolve_name_cow(identity.parameters.first()?.name)?;
@@ -28,7 +31,7 @@ pub(in crate::codec) fn optional_struct(
     Some(value)
 }
 
-fn named(name: &'static str, value: PropertyValue) -> NativeProperty {
+pub(super) fn named(name: &'static str, value: PropertyValue) -> NativeProperty {
     NativeProperty {
         name: Cow::Borrowed(name),
         value,

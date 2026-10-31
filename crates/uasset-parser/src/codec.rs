@@ -2834,6 +2834,7 @@ mod tests {
                 "Guid",
                 "RichCurveKey",
                 "DataTableRowHandle",
+                "PerPlatformFloat",
             ] {
                 let package = versioned_package(
                     &[

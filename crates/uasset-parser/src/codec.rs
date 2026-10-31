@@ -1463,6 +1463,9 @@ fn speculative_container_struct(
     if name != "AnimNotifyEvent" && is_tagged_fallback_native_struct(package, ty) {
         return true;
     }
+    if native_values::materials::applies(ty, package) {
+        return true;
+    }
     if package.summary.versions.ue5 != 0
         && is_niagara_variable(&name)
         && has_niagara_identity(package, ty)
@@ -2868,8 +2871,11 @@ mod tests {
                 "PerPlatformFloat",
                 "SkeletalMeshSamplingLODBuiltData",
                 "GameplayTagContainer",
+                "ExpressionInput",
+                "ScalarMaterialInput",
+                "ColorMaterialInput",
             ] {
-                let package = versioned_package(
+                let mut package = versioned_package(
                     &[
                         "None",
                         "Value",
@@ -2882,6 +2888,19 @@ mod tests {
                     ],
                     ue5,
                 );
+                package
+                    .summary
+                    .custom_versions
+                    .push(crate::package::CustomVersion {
+                        key: Guid {
+                            a: 0x375EC13C,
+                            b: 0x06E448FB,
+                            c: 0xB50084F0,
+                            d: 0x262A717E,
+                        },
+                        version: 1,
+                        friendly_name: None,
+                    });
                 let mut text = Vec::new();
                 push_i32(&mut text, 0);
                 text.push(0); // FTextHistory::Base
@@ -3608,6 +3627,7 @@ mod tests {
             "PerPlatformBool",
             "PerPlatformFrameRate",
             "SkeletalMeshSamplingLODBuiltData",
+            "ExpressionInput",
         ] {
             let mut native_key = match key {
                 "NiagaraVariableBase" => vec![0; 16],
@@ -3617,6 +3637,7 @@ mod tests {
                 | "PerPlatformBool"
                 | "SkeletalMeshSamplingLODBuiltData" => vec![0; 12],
                 "PerPlatformFrameRate" => vec![0; 16],
+                "ExpressionInput" => vec![0; 32],
                 _ => vec![0; 8],
             };
             if key == "Spline" {
@@ -3637,6 +3658,19 @@ mod tests {
                 &payload,
             );
             package.names[4] = key.into();
+            package
+                .summary
+                .custom_versions
+                .push(crate::package::CustomVersion {
+                    key: Guid {
+                        a: 0x375EC13C,
+                        b: 0x06E448FB,
+                        c: 0xB50084F0,
+                        d: 0x262A717E,
+                    },
+                    version: 1,
+                    friendly_name: None,
+                });
             package.names[5] = if key == "NiagaraVariableBase" {
                 "/Script/Niagara"
             } else if key == "PerPlatformFrameRate" {

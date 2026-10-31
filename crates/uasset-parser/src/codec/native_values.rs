@@ -1,6 +1,7 @@
 use super::*;
 pub(super) mod delegates;
 mod gameplay_tags;
+pub(super) mod materials;
 pub(super) mod niagara;
 mod per_platform;
 mod pin_type;

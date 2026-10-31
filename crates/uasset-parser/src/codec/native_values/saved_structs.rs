@@ -10,6 +10,9 @@ pub(in crate::codec) fn optional_struct(
 ) -> Option<PropertyValue> {
     let identity = ty.parameters.first()?;
     let name = package.resolve_name_cow(identity.name)?;
+    if let Some(value) = super::materials::optional(ty, reader, package, path) {
+        return Some(value);
+    }
     match name.as_ref() {
         "PerPlatformFloat" | "PerPlatformInt" | "PerPlatformBool" | "PerPlatformFrameRate" => {
             return super::per_platform::optional(ty, reader, package, path);

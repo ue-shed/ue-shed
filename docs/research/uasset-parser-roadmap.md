@@ -148,6 +148,18 @@ binary flag comes from another element type. Numeric channels follow Sequencer-1
 framing. New optional recipes probe without advancing the old tagged/opaque fallback on rejection;
 unknown spline implementations and unsupported class fields remain reported gaps.
 
+The coverage census now walks every decoded property value, including nested containers, struct
+defaults and DataTable rows. It distinguishes raw-value gaps, decode-filter exclusions and export
+failures, and records bounded examples outside the repository. Source-verified additions cover
+legacy byte-enum arrays, per-platform defaults and overrides, skeletal mesh LOD sampling tables,
+legacy field paths, delegate bindings, gameplay-tag containers, material input connections and
+constants, and declared Niagara maps and shader parameter records. Simple named and ordered text
+formats preserve their format and text arguments; numeric formatting and modifiers remain raw.
+Optional recipes preserve the previous tagged or raw fallback when their framing cannot be proved.
+Fixed-list comparisons accept only raw-to-typed replacements and verify that existing tags, values,
+container shapes and error records remain unchanged; see the
+[benchmark guide](../../tools/benchmarks/README.md).
+
 The next saved-review increment adds common Sequencer section settings, scoped camera cuts and
 possessable/spawnable identities, plus string and object-path channels. Blueprint definitions now
 include variable declarations and native source-checked pin types, distinct saved CDO overrides,

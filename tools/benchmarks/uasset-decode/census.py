@@ -90,6 +90,7 @@ def main():
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--jobs", type=int, default=4, choices=range(1, 9))
     args = parser.parse_args()
+    started = time.monotonic()
     paths = [line.strip() for line in args.list.read_text(encoding="utf8").splitlines()
              if line.strip() and not line.strip().startswith("#")]
     if len(set(str(Path(path).resolve()).casefold() for path in paths)) != len(paths):
@@ -97,7 +98,6 @@ def main():
     if not paths:
         raise ValueError("package list is empty")
     args.out.mkdir(parents=True, exist_ok=False)
-    started = time.monotonic()
     jobs = min(args.jobs, len(paths))
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = [pool.submit(run_worker, args.executable.resolve(), args.coverage_root.resolve(),

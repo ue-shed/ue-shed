@@ -59,10 +59,9 @@ are counted separately. Native tails and intentionally skipped exports do not co
 the raw-free package count does not assert complete native-byte coverage.
 
 Add `--evidence` on a fixed smaller list to write `values.jsonl`: deterministic hashes of every
-existing tag, scalar value and container shape. Compare before/after evidence with:
-
-Fully typed scalar arrays and sets use one streaming hash of all their contents; nested and
-partly raw containers retain individual evidence. This bounds evidence for large byte arrays.
+existing tag, scalar value and container shape. Fully typed scalar arrays and sets use one streaming
+hash of all their contents; nested and partly raw containers retain individual evidence. This bounds
+evidence for large byte arrays. Compare before/after evidence with:
 
 ```powershell
 python tools/benchmarks/uasset-decode/compare-values.py <before-output> <after-output>
@@ -78,8 +77,9 @@ lists, reports and examples must stay outside the repository.
 For a whole project, `census.py --executable <harness> --list <list> --coverage-root <Content>
 --out <new-directory> --jobs 4` runs one census with bounded worker processes. It distributes
 distinct packages across disjoint shards, sums counts and affected packages, preserves bounded
-examples and worker logs, and records total wall time. Stage times sum worker time. Performance
-measurements and ordered `--evidence` runs continue to use the single-process harness directly.
+examples and worker logs, and records wall time including path validation and worker setup. Stage
+times sum worker time. Performance measurements and ordered `--evidence` runs continue to use the
+single-process harness directly.
 
 ## Header pipeline profiling
 

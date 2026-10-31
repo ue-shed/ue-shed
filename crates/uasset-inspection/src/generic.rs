@@ -978,7 +978,7 @@ fn text_value_output(text: uasset_parser::property::TextValue) -> PropertyValueO
             table_id: Some(table_id),
             key: Some(key),
         },
-        TextHistory::NamedFormat { format, .. } => {
+        TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
             let (history, namespace, table_id, key) = text_identity_parts(&format);
             PropertyValueOutput::Text {
                 value: text.source,
@@ -1001,7 +1001,9 @@ fn text_identity_parts(
         TextHistory::Base { namespace, key, .. } => {
             ("base", Some(namespace.clone()), None, Some(key.clone()))
         }
-        TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
+        TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
+            text_identity_parts(format)
+        }
         TextHistory::None => ("none", None, None, None),
         TextHistory::StringTableEntry { table_id, key } => (
             "string_table",

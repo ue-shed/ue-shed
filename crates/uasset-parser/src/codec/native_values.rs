@@ -756,7 +756,8 @@ mod tests {
                 "bag",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
-                    filter: None
+                    filter: None,
+                    formatted_text_budget: None
                 }
             )
             .unwrap_err()
@@ -1023,7 +1024,8 @@ mod tests {
                 "test",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
-                    filter: None
+                    filter: None,
+                    formatted_text_budget: None
                 }
             )
             .unwrap_err()

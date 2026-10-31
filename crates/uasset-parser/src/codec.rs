@@ -5,6 +5,7 @@ use std::fmt::{self, Write};
 
 mod legacy_structs;
 pub(crate) mod native_values;
+mod text_formats;
 pub(crate) use legacy_structs::object_containers;
 
 use crate::archive::{Guid, Reader};
@@ -26,17 +27,23 @@ const RICH_CURVE_KEY_SERIALIZED_BYTES: u64 = 27;
 pub(crate) struct DecodeScope<'f> {
     pub(crate) depth: usize,
     pub(crate) filter: Option<&'f dyn PropertyDecodeFilter>,
+    formatted_text_budget: Option<&'f std::cell::Cell<usize>>,
 }
 
 impl<'f> DecodeScope<'f> {
     pub(crate) fn root(filter: Option<&'f dyn PropertyDecodeFilter>) -> Self {
-        Self { depth: 0, filter }
+        Self {
+            depth: 0,
+            filter,
+            formatted_text_budget: None,
+        }
     }
 
     fn nested(self) -> Self {
         Self {
             depth: self.depth + 1,
             filter: self.filter,
+            formatted_text_budget: self.formatted_text_budget,
         }
     }
 }
@@ -252,6 +259,20 @@ fn decode_property_record(
             }
         });
         record.value = PropertyValue::Raw { reason };
+    }
+    // Retry only an actual unsupported history, after the original decoder has
+    // established its raw result. A failed whole-record probe retains that result,
+    // even when an earlier container element decoded successfully in the probe.
+    if scope.formatted_text_budget.is_none()
+        && matches!(
+            record.value,
+            PropertyValue::Raw {
+                reason: RawReason::UnsupportedTextHistory(1 | 2)
+            }
+        )
+        && let Some(value) = text_formats::retry_record(source, record, package, scope)
+    {
+        record.value = value;
     }
     Ok(())
 }
@@ -476,6 +497,13 @@ fn decode_typed_value(
         )),
         "TextProperty" => {
             let path = path.to_string();
+            if let Some(budget) = scope.formatted_text_budget {
+                let mut probe = payload.clone();
+                if let Some(text) = text_formats::read_text(&mut probe, package, &path, 0, budget) {
+                    *payload = probe;
+                    return Ok(Some(PropertyValue::Text(Box::new(text))));
+                }
+            }
             decode_text_value(payload, package, &path)
                 .map(|text| text.map(|text| PropertyValue::Text(Box::new(text))))
         }

@@ -860,7 +860,9 @@ fn identity_for_text(text: &TextValue) -> TextIdentity {
             namespace: namespace.clone(),
             key: key.clone(),
         },
-        TextHistory::NamedFormat { format, .. } => identity_for_text(format),
+        TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
+            identity_for_text(format)
+        }
         TextHistory::StringTableEntry { table_id, key } => TextIdentity::StringTable {
             table_id: table_id.clone(),
             key: key.clone(),

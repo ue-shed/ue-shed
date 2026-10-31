@@ -376,7 +376,8 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
                     table_id: Some(table_id),
                     key: Some(key),
                 },
-                ParserTextHistory::NamedFormat { format, .. } => {
+                ParserTextHistory::NamedFormat { format, .. }
+                | ParserTextHistory::OrderedFormat { format, .. } => {
                     let (history, namespace, table_id, key) = text_identity_parts(*format);
                     SavedPropertyValue::Text {
                         value: text.source,
@@ -506,7 +507,8 @@ fn text_identity_parts(
         ParserTextHistory::Base { namespace, key, .. } => {
             (TextHistory::Base, Some(namespace), None, Some(key))
         }
-        ParserTextHistory::NamedFormat { format, .. } => text_identity_parts(*format),
+        ParserTextHistory::NamedFormat { format, .. }
+        | ParserTextHistory::OrderedFormat { format, .. } => text_identity_parts(*format),
     }
 }
 

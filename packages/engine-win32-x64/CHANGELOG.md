@@ -1,5 +1,7 @@
 # @ue-shed/engine-win32-x64
 
+## 0.25.0
+
 ## 0.24.0
 
 No direct behavioral change: released to keep the suite aligned.

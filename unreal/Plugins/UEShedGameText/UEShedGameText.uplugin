@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "0.24.0",
+	"VersionName": "0.25.0",
 	"FriendlyName": "UE Shed Game Text",
 	"Description": "Game Text identity actions: change, regenerate and adopt text keys and retype source in assets, through the editor's own id rules.",
 	"Category": "Developer Tools",

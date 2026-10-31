@@ -1,5 +1,12 @@
 # @ue-shed/map-history
 
+## 0.25.0
+
+### Patch Changes
+
+- @ue-shed/unreal-assets@0.25.0
+    - @ue-shed/protocol@0.25.0
+
 ## 0.24.0
 
 ### Minor Changes

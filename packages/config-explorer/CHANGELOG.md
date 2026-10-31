@@ -1,5 +1,12 @@
 # @ue-shed/config-explorer
 
+## 0.25.0
+
+### Patch Changes
+
+- @ue-shed/engine@0.25.0
+    - @ue-shed/protocol@0.25.0
+
 ## 0.24.0
 
 ### Patch Changes

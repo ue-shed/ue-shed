@@ -20,6 +20,7 @@ pub fn custom_graph_fixture(damage: &str) -> (Vec<u8>, uasset_parser::Package) {
     package.exports[graph as usize].class_path =
         Some(ObjectPath::new("/Script/Plugin.CustomContainer"));
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -43,6 +44,7 @@ pub fn custom_graph_fixture(damage: &str) -> (Vec<u8>, uasset_parser::Package) {
             // Leave the element payload behind so the array decoder rejects trailing bytes.
             bytes[offset..offset + 4].copy_from_slice(&0_i32.to_le_bytes());
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: uasset_parser::schema::embedded_source_model(),
@@ -67,6 +69,7 @@ pub fn custom_graph_fixture(damage: &str) -> (Vec<u8>, uasset_parser::Package) {
             let offset = export.serial_offset.get() as usize;
             bytes[offset..offset + export.serial_size as usize].fill(0xff);
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: uasset_parser::schema::embedded_source_model(),
@@ -76,6 +79,7 @@ pub fn custom_graph_fixture(damage: &str) -> (Vec<u8>, uasset_parser::Package) {
         _ => panic!("unknown fixture damage"),
     }
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),

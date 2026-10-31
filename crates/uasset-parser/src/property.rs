@@ -60,6 +60,8 @@ impl PropertyTagFlags {
 /// `PropertyValue`, stays small: a capacity word per value adds up across every record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RawReason {
+    /// The decode filter did not request this property.
+    NotRequested,
     UnsupportedType,
     DecoderRejected(Box<str>),
     LegacyDecoderRejected(Box<str>),
@@ -72,6 +74,7 @@ impl RawReason {
     #[must_use]
     pub fn detail(&self) -> std::borrow::Cow<'_, str> {
         match self {
+            Self::NotRequested => "not requested by the decode filter".into(),
             Self::UnsupportedType => "unsupported type".into(),
             Self::DecoderRejected(detail)
             | Self::LegacyDecoderRejected(detail)

@@ -49,6 +49,7 @@ pub(crate) fn level_sequence_with_cancellation(
         Failure::new(package_error_code(error.kind()), error.to_string(), false)
     })?;
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),

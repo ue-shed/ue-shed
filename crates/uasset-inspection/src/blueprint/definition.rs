@@ -332,7 +332,9 @@ fn check_properties(
 }
 fn contains_raw(value: &PropertyValue) -> bool {
     match value {
-        PropertyValue::Raw { .. } => true,
+        PropertyValue::Raw { reason } => {
+            !matches!(reason, uasset_parser::property::RawReason::NotRequested)
+        }
         PropertyValue::Struct(v) => v.records.iter().any(|v| contains_raw(&v.value)),
         PropertyValue::NativeStruct { fields } => fields.iter().any(|v| contains_raw(&v.value)),
         PropertyValue::Array(v) | PropertyValue::Set(v) => v.iter().any(contains_raw),

@@ -100,6 +100,7 @@ fn parse_count(
 
 fn decode_package(source: &[u8], package: &Package) -> DecodeCounts {
     let context = AssetDecodeContext {
+        property_filter: None,
         source,
         package,
         schemas: embedded_source_model(),

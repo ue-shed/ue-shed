@@ -7,14 +7,33 @@
 use serde::Serialize;
 
 use uasset_parser::asset::{
-    ANIM_SEQUENCE_CLASS, CURVETABLE_CLASS, DecodedAsset, DecodedUObject, SKELETON_CLASS,
-    USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
+    ANIM_SEQUENCE_CLASS, CURVETABLE_CLASS, DecodedAsset, DecodedUObject, PropertyDecodeFilter,
+    SKELETON_CLASS, USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::Package;
 use uasset_parser::property::{
     PropertyRecord, PropertyStream, PropertyTypeName, PropertyValue, RawReason, TextHistory,
     TextValue,
 };
+
+// Decoded properties read by text consumers, independently of whether their type holds FText.
+const TEXT_PROJECTION_READ_PROPERTIES: &[&str] = &[
+    "Nodes",          // project_text_asset
+    "GeneratedClass", // crate::blueprint_classes::blueprint_classes
+];
+
+/// Materializes tagged properties needed by text projection and Blueprint class identity.
+pub struct TextDecodeFilter;
+
+impl PropertyDecodeFilter for TextDecodeFilter {
+    fn decode(&self, package: &Package, record: &PropertyRecord) -> bool {
+        type_may_contain_text(package, &record.type_name)
+            || record.struct_guid.is_some_and(|guid| !guid.is_zero())
+            || package
+                .resolve_name_str(record.name)
+                .is_some_and(|name| TEXT_PROJECTION_READ_PROPERTIES.contains(&name))
+    }
+}
 
 /// The property path of a text literal in a compiled function's script bytecode.
 pub const SCRIPT_BYTECODE_PROPERTY_PATH: &str = "ScriptBytecode";
@@ -510,6 +529,7 @@ fn visit_text_value<F>(
         }),
         PropertyValue::Raw { reason } => {
             let reason = match reason {
+                RawReason::NotRequested => None,
                 RawReason::LegacyContainerElementWithoutTypeInformation => {
                     Some(TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation)
                 }

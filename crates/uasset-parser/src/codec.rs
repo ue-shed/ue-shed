@@ -189,6 +189,31 @@ pub fn decode_property_stream_values(
     decode_property_stream_values_at_depth(source, stream, package, 0)
 }
 
+/// Applies the host filter only to this stream, keeping parser-owned reads materialized.
+pub(crate) fn decode_property_stream_values_filtered(
+    source: &[u8],
+    stream: &mut PropertyStream,
+    package: &Package,
+    filter: Option<&dyn crate::asset::PropertyDecodeFilter>,
+) -> Result<(), PropertyError> {
+    let Some(filter) = filter else {
+        return decode_property_stream_values(source, stream, package);
+    };
+    for record in &mut stream.records {
+        let decoder_reads = package
+            .resolve_name_str(record.name)
+            .is_some_and(|name| crate::asset::DECODER_READ_PROPERTIES.contains(&name));
+        if decoder_reads || filter.decode(package, record) {
+            decode_property_record(source, record, package, 0)?;
+        } else {
+            record.value = PropertyValue::Raw {
+                reason: RawReason::NotRequested,
+            };
+        }
+    }
+    Ok(())
+}
+
 fn decode_property_stream_values_at_depth(
     source: &[u8],
     stream: &mut PropertyStream,
@@ -1929,6 +1954,131 @@ mod tests {
         TypeParam, push_f32, push_f64, push_fstring, push_i32, ue5_versions, write_property_tag,
         write_property_terminator,
     };
+
+    #[test]
+    fn filtered_stream_keeps_records_and_spans_and_protects_decoder_reads() {
+        struct RejectAll;
+        impl crate::asset::PropertyDecodeFilter for RejectAll {
+            fn decode(&self, _package: &Package, _record: &PropertyRecord) -> bool {
+                false
+            }
+        }
+        let mut names = vec![
+            "None".to_owned(),
+            "IntProperty".to_owned(),
+            "Unrequested".to_owned(),
+        ];
+        names.extend(
+            crate::asset::DECODER_READ_PROPERTIES
+                .iter()
+                .map(|name| (*name).to_owned()),
+        );
+        let package = test_package(names);
+        let mut bytes = Vec::new();
+        for index in 2..package.names.len() {
+            write_property_tag(
+                &mut bytes,
+                index as i32,
+                &TypeParam {
+                    type_index: 1,
+                    parameters: vec![],
+                },
+                0,
+                &42_i32.to_le_bytes(),
+            );
+        }
+        write_property_terminator(&mut bytes, 0);
+        let original = read_tagged_property_stream(
+            &mut Reader::new(&bytes),
+            &package.summary.versions,
+            &package.names,
+            "Filter",
+        )
+        .unwrap();
+        let mut expected = original.clone();
+        decode_property_stream_values(&bytes, &mut expected, &package).unwrap();
+        let mut unfiltered = original.clone();
+        decode_property_stream_values_filtered(&bytes, &mut unfiltered, &package, None).unwrap();
+        assert_eq!(unfiltered, expected);
+        let mut filtered = original.clone();
+        decode_property_stream_values_filtered(&bytes, &mut filtered, &package, Some(&RejectAll))
+            .unwrap();
+        expected.records[0].value = PropertyValue::Raw {
+            reason: RawReason::NotRequested,
+        };
+        assert_eq!(filtered, expected);
+        assert_eq!(filtered.records.len(), original.records.len());
+        for (actual, original) in filtered.records.iter().zip(&original.records) {
+            assert_eq!(actual.payload, original.payload);
+        }
+        assert_eq!(
+            RawReason::NotRequested.detail(),
+            "not requested by the decode filter"
+        );
+    }
+
+    #[test]
+    fn filtered_stream_does_not_filter_nested_properties() {
+        struct RejectAll;
+        impl crate::asset::PropertyDecodeFilter for RejectAll {
+            fn decode(&self, _package: &Package, _record: &PropertyRecord) -> bool {
+                false
+            }
+        }
+        let package = test_package(
+            [
+                "None",
+                "Nodes",
+                "StructProperty",
+                "IntProperty",
+                "Nested",
+                "FixtureStruct",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
+        let mut nested = Vec::new();
+        write_property_tag(
+            &mut nested,
+            4,
+            &TypeParam {
+                type_index: 3,
+                parameters: vec![],
+            },
+            0,
+            &42_i32.to_le_bytes(),
+        );
+        write_property_terminator(&mut nested, 0);
+        let mut bytes = Vec::new();
+        write_property_tag(
+            &mut bytes,
+            1,
+            &TypeParam {
+                type_index: 2,
+                parameters: vec![TypeParam {
+                    type_index: 5,
+                    parameters: vec![],
+                }],
+            },
+            0,
+            &nested,
+        );
+        write_property_terminator(&mut bytes, 0);
+        let mut stream = read_tagged_property_stream(
+            &mut Reader::new(&bytes),
+            &package.summary.versions,
+            &package.names,
+            "Filter",
+        )
+        .unwrap();
+        decode_property_stream_values_filtered(&bytes, &mut stream, &package, Some(&RejectAll))
+            .unwrap();
+        let PropertyValue::Struct(nested) = &stream.records[0].value else {
+            panic!("decoded nested struct")
+        };
+        assert_eq!(nested.records[0].value, PropertyValue::Int(42));
+    }
 
     #[test]
     fn scalar_arrays_match_bounded_typed_decoding() {

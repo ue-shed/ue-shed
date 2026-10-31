@@ -75,6 +75,9 @@ fn gaps_keep_type_evidence_through_containers_and_unknown_types_remain_text_capa
     });
     records.push((collision, true));
     for (record, expected) in records {
+        use uasset_inspection::projection::TextDecodeFilter;
+        use uasset_parser::PropertyDecodeFilter;
+        assert_eq!(TextDecodeFilter.decode(&package, &record), expected);
         let object = DecodedUObject {
             native_data: None,
             object_path: ObjectPath::new("Fixture.Asset"),
@@ -87,9 +90,18 @@ fn gaps_keep_type_evidence_through_containers_and_unknown_types_remain_text_capa
             },
             tail: Span::default(),
         };
-        let projection = project_text_asset(&package, &DecodedAsset::UObject(object));
+        let mut asset = DecodedAsset::UObject(object);
+        let projection = project_text_asset(&package, &asset);
         assert_eq!(projection.coverage_gaps.len(), 1);
         assert_eq!(projection.coverage_gaps[0].may_contain_text, expected);
+        if let DecodedAsset::UObject(object) = &mut asset {
+            object.properties.records[0].value = PropertyValue::Raw {
+                reason: RawReason::NotRequested,
+            };
+        }
+        let omitted = project_text_asset(&package, &asset);
+        assert!(omitted.coverage_gaps.is_empty());
+        assert!(omitted.occurrences.is_empty());
     }
 }
 

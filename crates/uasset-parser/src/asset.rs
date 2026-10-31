@@ -18,19 +18,44 @@ mod script;
 pub use script::{DecodedFunction, FUNCTION_CLASS, FunctionDecoder};
 
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Span};
-use crate::codec::decode_property_stream_values;
+use crate::codec::decode_property_stream_values_filtered;
 use crate::package::{Export, ObjectPath, Package, PackageError, PackageErrorKind, PackageIndex};
 use crate::property::{
-    NamedTextFormatArgument, PropertyError, PropertyErrorKind, PropertyStream, PropertyValue,
-    TextFormatArgumentValue, TextHistory, TextValue, read_tagged_property_stream,
+    NamedTextFormatArgument, PropertyError, PropertyErrorKind, PropertyRecord, PropertyStream,
+    PropertyValue, TextFormatArgumentValue, TextHistory, TextValue, read_tagged_property_stream,
     read_uobject_tagged_property_stream,
 };
 use crate::schema::{SchemaProvider, SerializationOperation};
+
+/// Decides which top-level tagged properties a decode materializes. A host supplies the
+/// policy; the parser still decodes every property its own decoders read by name.
+pub trait PropertyDecodeFilter: Sync {
+    fn decode(&self, package: &Package, record: &PropertyRecord) -> bool;
+}
+
+// These names are read from decoded streams by parser helpers, independently of host policy.
+// Nested codec reads are included as well; recursive property decoding remains unfiltered.
+pub(crate) const DECODER_READ_PROPERTIES: &[&str] = &[
+    "Nodes",                      // graph_node_paths
+    "DisplayNameMap",             // display_name_map
+    "Keys",                       // decode_simple_curve_keys, decode_rich_curve_keys
+    "ParentTables",               // parent_tables_paths
+    "RowStruct",                  // row_struct_path
+    "PropertyGuids",              // native_data::class::property_guids
+    "bComputeBoundsOnceForGame",  // native_data::object::decode
+    "InstanceParameterOverrides", // codec::legacy_structs::object_containers
+    "DataTable",                  // codec::decode_data_table_row_handle
+    "RowName",                    // codec::decode_data_table_row_handle
+    "BindingIdToReferences",      // codec::legacy_structs::declared_containers
+    "AnimSequenceInstances",      // codec::legacy_structs::declared_containers
+    "UserParameterRedirects",     // codec::legacy_structs::declared_containers
+];
 
 pub struct AssetDecodeContext<'a> {
     pub source: &'a [u8],
     pub package: &'a Package,
     pub schemas: &'a dyn SchemaProvider,
+    pub property_filter: Option<&'a dyn PropertyDecodeFilter>,
 }
 
 pub const DATATABLE_CLASS: &str = "/Script/Engine.DataTable";
@@ -817,7 +842,12 @@ fn decode_data_table_rows(
             &context.package.names,
             &format!("{row_path}.Value"),
         )?;
-        decode_property_stream_values(context.source, &mut row_properties, context.package)?;
+        decode_property_stream_values_filtered(
+            context.source,
+            &mut row_properties,
+            context.package,
+            context.property_filter,
+        )?;
         rows.push(DataTableRow {
             name,
             properties: row_properties,
@@ -1442,7 +1472,12 @@ fn decode_struct_default_instance(
         &context.package.names,
         &format!("{object_path}.DefaultInstance"),
     )?;
-    decode_property_stream_values(context.source, &mut default_values, context.package)?;
+    decode_property_stream_values_filtered(
+        context.source,
+        &mut default_values,
+        context.package,
+        context.property_filter,
+    )?;
     Ok(default_values)
 }
 
@@ -3314,7 +3349,12 @@ fn decode_uobject_properties<'a>(
         &context.package.names,
         export.object_path.as_str(),
     )?;
-    decode_property_stream_values(context.source, &mut properties, context.package)?;
+    decode_property_stream_values_filtered(
+        context.source,
+        &mut properties,
+        context.package,
+        context.property_filter,
+    )?;
     native_data::property_guids(export, context, &mut properties);
     if let Some(class) = saved_native_class(context.package, export) {
         crate::codec::object_containers(context.source, &mut properties, class, context.package);
@@ -3625,6 +3665,7 @@ mod tests {
             let mut package = test_package(vec!["None".into()]);
             package.summary.versions.ue5 = ue5;
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &[],
                 package: &package,
                 schemas: &EmptySchemas,
@@ -3684,6 +3725,7 @@ mod tests {
                     bytes.push(state);
                     let export = test_export(bytes.len() as u64, "Fixture.Node", class.as_str());
                     let context = AssetDecodeContext {
+                        property_filter: None,
                         source: &bytes,
                         package: &package,
                         schemas: &EmptySchemas,
@@ -3694,6 +3736,7 @@ mod tests {
                     bytes.pop(); // truncated suffix still retains the decoded node
                     let export = test_export(bytes.len() as u64, "Fixture.Node", class.as_str());
                     let context = AssetDecodeContext {
+                        property_filter: None,
                         source: &bytes,
                         package: &package,
                         schemas: &EmptySchemas,
@@ -3775,6 +3818,7 @@ mod tests {
             })
             .unwrap();
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: crate::schema::embedded_source_model(),
@@ -3785,6 +3829,7 @@ mod tests {
         assert_eq!(&bytes[count..count + 4], &[0; 4]);
         bytes[count..count + 4].copy_from_slice(&(-1_i32).to_le_bytes());
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: crate::schema::embedded_source_model(),
@@ -3983,6 +4028,7 @@ mod tests {
             "/Script/Engine.DataTable",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -3997,6 +4043,7 @@ mod tests {
         assert!(error.message().contains("exceeds element limit"));
 
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -4013,6 +4060,7 @@ mod tests {
         export: Export,
     ) -> DecodedDataTable {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4055,6 +4103,7 @@ mod tests {
         schemas: &dyn SchemaProvider,
     ) -> DecodedCurveTable {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: export_bytes,
             package,
             schemas,
@@ -4097,6 +4146,7 @@ mod tests {
         export: Export,
     ) -> DecodedStringTable {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4190,6 +4240,7 @@ mod tests {
         schemas: &dyn SchemaProvider,
     ) -> DecodedEnum {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: export_bytes,
             package,
             schemas,
@@ -4244,6 +4295,7 @@ mod tests {
             "/Script/Engine.StaticMesh",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4271,6 +4323,7 @@ mod tests {
             "/Script/BlueprintGraph.K2Node_CallFunction",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4290,6 +4343,7 @@ mod tests {
         let path =
             "/Game/L.L:PersistentLevel.Proxy.Heightmap_0.LandscapeHeightmapTextureEdgeFixup_0";
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4337,6 +4391,7 @@ mod tests {
             ANIM_SEQUENCE_CLASS,
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4348,6 +4403,7 @@ mod tests {
             panic!("expected an AnimSequence decode");
         };
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -4380,6 +4436,7 @@ mod tests {
             ANIM_SEQUENCE_CLASS,
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4390,6 +4447,7 @@ mod tests {
         assert!(error.message().contains("compressed animation data"));
 
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -4419,11 +4477,13 @@ mod tests {
             );
             let legacy_schemas = EmptySchemas;
             let legacy_context = AssetDecodeContext {
+                property_filter: None,
                 source: &export_bytes,
                 package: &package,
                 schemas: &legacy_schemas,
             };
             let generated_context = AssetDecodeContext {
+                property_filter: None,
                 source: &export_bytes,
                 package: &package,
                 schemas: embedded_source_model(),
@@ -4453,6 +4513,7 @@ mod tests {
             })
             .expect("AnimSequence export");
         let context = AssetDecodeContext {
+            property_filter: None,
             source: bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4464,6 +4525,7 @@ mod tests {
             panic!("expected an AnimSequence decode");
         };
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -4526,6 +4588,7 @@ mod tests {
             SKELETON_CLASS,
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4537,6 +4600,7 @@ mod tests {
             panic!("expected a Skeleton decode");
         };
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -4554,6 +4618,7 @@ mod tests {
             let mut malformed = export_bytes.clone();
             malformed[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &malformed,
                 package: &package,
                 schemas: embedded_source_model(),
@@ -4564,6 +4629,7 @@ mod tests {
             let mut truncated_export = export.clone();
             truncated_export.serial_size = end as u64;
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &export_bytes[..end],
                 package: &package,
                 schemas: embedded_source_model(),
@@ -4598,6 +4664,7 @@ mod tests {
             .expect("Skeleton export");
         let legacy_schemas = EmptySchemas;
         let legacy_context = AssetDecodeContext {
+            property_filter: None,
             source: bytes,
             package: &package,
             schemas: &legacy_schemas,
@@ -4608,6 +4675,7 @@ mod tests {
             panic!("expected legacy Skeleton decode");
         };
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -4636,6 +4704,7 @@ mod tests {
         );
         let legacy_schemas = EmptySchemas;
         let legacy_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &legacy_schemas,
@@ -4644,6 +4713,7 @@ mod tests {
             .decode(&export, &legacy_context)
             .expect_err("legacy path rejects negative bone count");
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -4671,6 +4741,7 @@ mod tests {
             "/Script/UnrealEd.FbxStaticMeshImportData",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4700,6 +4771,7 @@ mod tests {
             "/Script/Engine.SomePlainObject",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4757,6 +4829,7 @@ mod tests {
             "/Script/Engine.DataTable",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4801,6 +4874,7 @@ mod tests {
             "/Script/Engine.DataTable",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4941,6 +5015,7 @@ mod tests {
             CURVETABLE_CLASS,
         );
         let legacy_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -4949,6 +5024,7 @@ mod tests {
             .decode(&export, &legacy_context)
             .expect_err("legacy path rejects negative rows");
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -5013,12 +5089,14 @@ mod tests {
             STRINGTABLE_CLASS,
         );
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
         };
         let legacy_schemas = EmptySchemas;
         let legacy_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &legacy_schemas,
@@ -5055,6 +5133,7 @@ mod tests {
         );
         let decode = |schemas: &dyn SchemaProvider| {
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas,
@@ -5078,6 +5157,7 @@ mod tests {
                 embedded_source_model(),
             ] {
                 let context = AssetDecodeContext {
+                    property_filter: None,
                     source: &bytes[..end],
                     package: &package,
                     schemas,
@@ -5090,6 +5170,7 @@ mod tests {
         }
         let no_metadata_name = test_package(vec!["None".into()]);
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &no_metadata_name,
             schemas: embedded_source_model(),
@@ -5141,6 +5222,7 @@ mod tests {
                     STRINGTABLE_CLASS,
                 );
                 let context = AssetDecodeContext {
+                    property_filter: None,
                     source: &bytes,
                     package: &package,
                     schemas,
@@ -5158,6 +5240,7 @@ mod tests {
                     let export =
                         test_export(end as u64, "/Game/Test/ST_Test.ST_Test", STRINGTABLE_CLASS);
                     let context = AssetDecodeContext {
+                        property_filter: None,
                         source: &bytes[..end],
                         package: &package,
                         schemas,
@@ -5218,11 +5301,13 @@ mod tests {
         );
         let legacy_schemas = EmptySchemas;
         let legacy_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &legacy_schemas,
         };
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -5381,6 +5466,7 @@ mod tests {
                 embedded_source_model(),
             ] {
                 let context = AssetDecodeContext {
+                    property_filter: None,
                     source: &export_bytes,
                     package: &package,
                     schemas,
@@ -5411,11 +5497,13 @@ mod tests {
         );
         let legacy_schemas = EmptySchemas;
         let legacy_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &legacy_schemas,
         };
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -5482,6 +5570,7 @@ mod tests {
 
     fn decode_struct(export_bytes: Vec<u8>, package: Package, export: Export) -> DecodedStruct {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -5518,6 +5607,7 @@ mod tests {
 
         let decoded = decode_struct(export_bytes.clone(), package.clone(), export.clone());
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -5555,6 +5645,7 @@ mod tests {
             USERDEFINEDSTRUCT_CLASS,
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -5565,6 +5656,7 @@ mod tests {
             .expect_err("unsupported field type");
         assert_eq!(error.kind(), AssetErrorKind::UnsupportedCapability);
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -5603,6 +5695,7 @@ mod tests {
             USERDEFINEDSTRUCT_CLASS,
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -5615,6 +5708,7 @@ mod tests {
         assert_eq!(error.kind(), AssetErrorKind::MalformedData);
         assert!(error.message().contains("depth limit"));
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -5635,6 +5729,7 @@ mod tests {
             "/Script/Engine.Blueprint",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -5675,6 +5770,7 @@ mod tests {
 
     fn decode_uobject(export_bytes: Vec<u8>, package: Package, export: Export) -> DecodedUObject {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -5695,6 +5791,7 @@ mod tests {
     ) -> DecodedUObject {
         let legacy_schemas = EmptySchemas;
         let legacy_context = AssetDecodeContext {
+            property_filter: None,
             source: export_bytes,
             package,
             schemas: &legacy_schemas,
@@ -5706,6 +5803,7 @@ mod tests {
             panic!("expected legacy UObject decode");
         };
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: export_bytes,
             package,
             schemas: embedded_source_model(),
@@ -5811,6 +5909,7 @@ mod tests {
             "/Script/Engine.DataTable",
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -5832,6 +5931,7 @@ mod tests {
             DATATABLE_CLASS,
         );
         let table_context = AssetDecodeContext {
+            property_filter: None,
             source: &table_bytes,
             package: &table_package,
             schemas: embedded_source_model(),
@@ -5849,6 +5949,7 @@ mod tests {
             PRIMARY_DATA_ASSET_CLASS,
         );
         let data_asset_context = AssetDecodeContext {
+            property_filter: None,
             source: &data_asset_bytes,
             package: &data_asset_package,
             schemas: embedded_source_model(),
@@ -5872,12 +5973,14 @@ mod tests {
             PRIMARY_DATA_ASSET_CLASS,
         );
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
         };
         let legacy_schemas = EmptySchemas;
         let legacy_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &legacy_schemas,
@@ -5907,6 +6010,7 @@ mod tests {
             DATATABLE_CLASS,
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -5943,6 +6047,7 @@ mod tests {
             native_layouts: std::collections::BTreeMap::new(),
         };
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &model,
@@ -5959,6 +6064,7 @@ mod tests {
         export: Export,
     ) -> DecodedDataAsset {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -6013,6 +6119,7 @@ mod tests {
             PRIMARY_DATA_ASSET_CLASS,
         );
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: &EmptySchemas,
@@ -6025,6 +6132,7 @@ mod tests {
         assert!(error.message().contains("trailing bytes"));
 
         let generated_context = AssetDecodeContext {
+            property_filter: None,
             source: &export_bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -6040,6 +6148,7 @@ mod tests {
         for ue5 in [0, 1000, 1004, 1009, 1010, 1011] {
             let (bytes, package) = crate::test_support::legacy_text_package(ue5);
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: crate::schema::embedded_source_model(),

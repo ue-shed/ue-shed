@@ -58,6 +58,7 @@ type DecodedExports = Vec<Result<Option<DecodedAsset>, AssetError>>;
 
 fn decode_exports(package: &Package, bytes: &[u8]) -> DecodedExports {
     let context = AssetDecodeContext {
+        property_filter: None,
         source: bytes,
         package,
         schemas: embedded_source_model(),
@@ -390,6 +391,7 @@ fn extract_text_from_package_decoded(
         return error;
     }
     let context = AssetDecodeContext {
+        property_filter: None,
         source: bytes,
         package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -695,6 +697,7 @@ fn extract_blueprints_from_package_decoded(
         );
     }
     let context = AssetDecodeContext {
+        property_filter: None,
         source: bytes,
         package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -1261,6 +1264,7 @@ mod tests {
             let original = std::fs::read(root.join(relative)).unwrap();
             let package = uasset_parser::Package::parse(&original).unwrap();
             let context = uasset_parser::asset::AssetDecodeContext {
+                property_filter: None,
                 source: &original,
                 package: &package,
                 schemas: uasset_parser::schema::embedded_source_model(),
@@ -1428,6 +1432,7 @@ mod tests {
         for ue5 in [0, 1000, 1009, 1010, 1011] {
             let (bytes, package) = crate::test_support::legacy_text_package(ue5);
             let context = uasset_parser::asset::AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: uasset_parser::schema::embedded_source_model(),

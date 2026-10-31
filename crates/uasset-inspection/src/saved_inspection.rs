@@ -53,6 +53,7 @@ pub fn inspect_package_with_checkpoint(
     let mut assets = Vec::with_capacity(package.exports.len());
     let mut decode_errors = Vec::new();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: bytes,
         package,
         schemas: embedded_source_model(),

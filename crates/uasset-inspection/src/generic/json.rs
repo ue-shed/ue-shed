@@ -330,6 +330,7 @@ impl Serialize for StreamingAssetsView<'_> {
         S: Serializer,
     {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: self.source,
             package: self.package,
             schemas: self.schemas,

@@ -20,6 +20,7 @@ fn decoded_assets(path: &str) -> (Vec<u8>, Package, Vec<DecodedAsset>) {
     let bytes = fs::read(path).expect("fixture package");
     let package = Package::parse(&bytes).expect("fixture parses");
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -197,6 +198,7 @@ fn blueprint_projection(path: &str) -> BlueprintGraphProjection {
     let bytes = fs::read(path).expect("Blueprint sample package");
     let package = Package::parse(&bytes).expect("Blueprint sample parses");
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),

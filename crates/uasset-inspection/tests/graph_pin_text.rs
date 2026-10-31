@@ -38,6 +38,7 @@ fn saved_repaired_pins_match_fresh_unreal_reload_on_all_four_engines() {
         assert_eq!(expected.len(), 3);
         let package = Package::parse(&bytes).unwrap();
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: uasset_parser::schema::embedded_source_model(),
@@ -123,6 +124,7 @@ fn ue56_pin_window_preserves_the_verified_ue57_field_layout_and_text() {
         .clone();
     let read = |package: &Package| {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: bytes,
             package,
             schemas: uasset_parser::schema::embedded_source_model(),
@@ -147,6 +149,7 @@ fn unknown_graph_revision_has_a_named_pin_coverage_gap() {
         .find(|export| export.object_path.as_str().ends_with("EventGraph.split"))
         .unwrap();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -171,6 +174,7 @@ fn graph_owned_plugin_nodes_do_not_fall_back_to_an_opaque_uobject() {
         .position(|export| export.object_path.as_str().ends_with("EventGraph.split"))
         .unwrap();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -204,6 +208,7 @@ fn custom_graph_membership_failures_keep_named_pin_gaps() {
     for damage in ["decoded", "rejected", "unreadable"] {
         let (bytes, package) = support::custom_graph_fixture(damage);
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: uasset_parser::schema::embedded_source_model(),

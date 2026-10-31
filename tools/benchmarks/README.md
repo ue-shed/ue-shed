@@ -29,6 +29,8 @@ Timed runs write last-pass `packages.jsonl`, per-pass totals and build metadata 
 first-pass `digests.tsv`. `--digest-only` performs one untimed pass and writes only `digests.tsv`;
 comparison reports unavailable measurements as `n/a`. Every invocation prints the three parser
 type sizes. Comparison prints every changed path and exits 1 for digest differences.
+Use `--text-filter` to apply `TextDecodeFilter` to export decoding while keeping generic inspection
+unfiltered.
 
 Allocation counts and requested bytes include successful reallocations. Only the first pass
 serializes and hashes outputs inside the parse-through-drop window, so with `--runs 2` or more the

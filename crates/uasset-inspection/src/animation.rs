@@ -118,6 +118,7 @@ pub fn inspect_animation_from_package(
         }
     } else {
         let context = AssetDecodeContext {
+            property_filter: None,
             source: bytes,
             package,
             schemas: uasset_parser::schema::embedded_source_model(),
@@ -182,6 +183,9 @@ impl Context<'_> {
     ) -> Option<&'a PropertyValue> {
         let value = property(self.package, stream, name);
         match value {
+            Some(PropertyValue::Raw {
+                reason: uasset_parser::property::RawReason::NotRequested,
+            }) => return None,
             None => self.gap(path, AnimationGapReason::MissingSavedProperty),
             Some(PropertyValue::Raw { .. }) => self.gap(path, AnimationGapReason::UndecodedValue),
             _ => {}

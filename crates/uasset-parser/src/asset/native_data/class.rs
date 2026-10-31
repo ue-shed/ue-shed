@@ -280,6 +280,7 @@ mod tests {
         for version in [1016, 1017, 1018] {
             package.summary.versions.ue5 = version;
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: embedded_source_model(),
@@ -313,6 +314,7 @@ mod tests {
         for version in [999, 1019] {
             package.summary.versions.ue5 = version;
             let context = AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: embedded_source_model(),
@@ -329,6 +331,7 @@ mod tests {
             bytes.extend_from_slice(&word.to_le_bytes());
         }
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -373,6 +376,7 @@ mod tests {
             });
         }
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &[],
             package: &package,
             schemas: embedded_source_model(),

@@ -50,6 +50,7 @@ fn decoded_assets_with(
     let bytes = fs::read(path).expect("fixture bytes");
     let package = Package::parse(&bytes).expect("fixture package parses");
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas,

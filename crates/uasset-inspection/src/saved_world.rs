@@ -359,6 +359,9 @@ fn collect_undecoded_value(
     found: &mut Vec<SavedWorldUndecodedProperty>,
 ) {
     match value {
+        PropertyValue::Raw {
+            reason: uasset_parser::property::RawReason::NotRequested,
+        } => {}
         PropertyValue::Raw { reason } => {
             let reason = reason.detail().into_owned();
             let type_name = reason
@@ -1321,6 +1324,8 @@ mod tests {
                 raw(RawReason::DecoderRejected("skipped".to_owned().into())),
             ),
             record(6, 0, PropertyValue::Bool(true)),
+            // A host deliberately omitted this value; it is not a skipped-property report.
+            record(7, 0, raw(RawReason::NotRequested)),
         ]);
 
         assert_eq!(

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uasset_inspection::blueprint_classes::blueprint_classes;
 use uasset_inspection::generic::inspect_bytes_json;
-use uasset_inspection::projection::project_text_asset;
+use uasset_inspection::projection::{TextDecodeFilter, project_text_asset};
 use uasset_parser::Package;
 use uasset_parser::asset::{AssetDecodeContext, decode_export};
 use uasset_parser::property::{PropertyRecord, PropertyValue, TextValue};
@@ -121,6 +121,7 @@ struct Args {
     out: PathBuf,
     runs: usize,
     digest_only: bool,
+    text_filter: bool,
 }
 
 impl Args {
@@ -130,6 +131,7 @@ impl Args {
         let mut out = None;
         let mut runs = 3;
         let mut digest_only = false;
+        let mut text_filter = false;
         while let Some(argument) = arguments.next() {
             match argument.as_str() {
                 "--list" => list = Some(PathBuf::from(next_argument(&mut arguments, "--list")?)),
@@ -141,8 +143,11 @@ impl Args {
                     }
                 }
                 "--digest-only" => digest_only = true,
+                "--text-filter" => text_filter = true,
                 "--help" | "-h" => {
-                    println!("uasset-decode --list <file> --out <dir> [--runs N] [--digest-only]");
+                    println!(
+                        "uasset-decode --list <file> --out <dir> [--runs N] [--digest-only] [--text-filter]"
+                    );
                     std::process::exit(0);
                 }
                 _ => return Err(format!("unknown argument: {argument}").into()),
@@ -153,6 +158,7 @@ impl Args {
             out: out.ok_or("--out is required")?,
             runs: if digest_only { 1 } else { runs },
             digest_only,
+            text_filter,
         })
     }
 }
@@ -271,7 +277,12 @@ fn hash_payload(digest: &mut Sha256, bytes: &[u8]) {
 
 /// Digest work (projection serialization and hashing) runs only when `digest` is set, so passes
 /// without it keep allocation and timing figures free of harness work.
-fn inspect_package(path: &str, timed: bool, digest: bool) -> Fallible<PackageResult<'_>> {
+fn inspect_package(
+    path: &str,
+    timed: bool,
+    digest: bool,
+    text_filter: bool,
+) -> Fallible<PackageResult<'_>> {
     let bytes = fs::read(path)
         .map_err(|error| io::Error::new(error.kind(), format!("reading {path}: {error}")))?;
     let mut result = PackageResult {
@@ -302,6 +313,11 @@ fn inspect_package(path: &str, timed: bool, digest: bool) -> Fallible<PackageRes
     };
     result.exports = package.exports.len();
     let context = AssetDecodeContext {
+        property_filter: if text_filter {
+            Some(&TextDecodeFilter)
+        } else {
+            None
+        },
         source: &bytes,
         package: &package,
         schemas: embedded_source_model(),
@@ -416,7 +432,7 @@ fn run() -> Fallible<()> {
             None
         };
         for path in &paths {
-            let package = inspect_package(path, !args.digest_only, pass == 0)?;
+            let package = inspect_package(path, !args.digest_only, pass == 0, args.text_filter)?;
             totals.add(&package.metrics);
             if pass == 0 {
                 writeln!(
@@ -446,6 +462,7 @@ fn run() -> Fallible<()> {
         let output = json!({
             "git_commit": git_commit(),
             "list": args.list,
+            "text_filter": args.text_filter,
             "type_sizes": type_sizes,
             "runs": runs.iter().enumerate().map(|(index, totals)| {
                 let mut value = totals.json();

@@ -495,6 +495,9 @@ fn inventory_property_value(
                 );
             }
         }
+        PropertyValue::Raw {
+            reason: uasset_parser::property::RawReason::NotRequested,
+        } => {}
         PropertyValue::Raw { .. } => gaps.push(SequenceReferenceCoverageGap {
             owner_path: owner.object_path.to_string(),
             property_path: property_path.to_owned(),
@@ -1088,6 +1091,7 @@ mod tests {
         .expect("fixture package");
         let package = Package::parse(&bytes).expect("fixture parses");
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: uasset_parser::schema::embedded_source_model(),

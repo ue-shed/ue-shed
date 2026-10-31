@@ -302,7 +302,12 @@ fn niagara_system(
             &context.package.names,
             path.as_str(),
         )?;
-        decode_property_stream_values(context.source, &mut stream, context.package)?;
+        decode_property_stream_values_filtered(
+            context.source,
+            &mut stream,
+            context.package,
+            context.property_filter,
+        )?;
         values.push(PropertyValue::Struct(Box::new(stream)));
     }
     Ok((
@@ -414,6 +419,7 @@ mod tests {
         .unwrap();
         assert!(native.is_some() && tail.is_empty());
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: embedded_source_model(),
@@ -509,6 +515,7 @@ mod tests {
         decode(
             &export,
             &AssetDecodeContext {
+                property_filter: None,
                 source: bytes,
                 package,
                 schemas: embedded_source_model(),
@@ -737,6 +744,7 @@ mod tests {
         let mut cdo = test_export(0, "/Game/Test.Default__Generated_C", class);
         cdo.object_flags |= 0x10;
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &[],
             package: &package,
             schemas: embedded_source_model(),

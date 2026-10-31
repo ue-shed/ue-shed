@@ -174,6 +174,7 @@ impl InspectOutput {
             }
         };
         let context = AssetDecodeContext {
+            property_filter: None,
             source,
             package,
             schemas,

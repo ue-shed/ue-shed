@@ -30,6 +30,7 @@ fn decode(bytes: &[u8], package: &Package) -> (DecodedTextKeys, usize) {
 /// [`decode`], plus the source string of every projected occurrence in order.
 fn decode_with_sources(bytes: &[u8], package: &Package) -> (DecodedTextKeys, usize, Vec<String>) {
     let context = AssetDecodeContext {
+        property_filter: None,
         source: bytes,
         package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -146,6 +147,7 @@ fn saved_enum_display_names_are_map_values() {
 
     let (bytes, package) = fixture("unreal-project/Content/Fixture/Text/E_TextDisplayNames.uasset");
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),

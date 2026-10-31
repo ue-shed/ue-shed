@@ -15,7 +15,7 @@ sha2 = "0.10"
 
 # Mirrors the root release profile; must be kept in sync.
 [profile.release]
-lto = "thin"
+lto = "fat"
 codegen-units = 1
 
 [lints.clippy]

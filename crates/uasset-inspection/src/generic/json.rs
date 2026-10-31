@@ -1209,19 +1209,16 @@ impl<'a> PropertyValueView<'a> {
             PropertyValue::NativeStruct { fields } => Self::NativeStruct {
                 fields: NativeFieldsView { package, fields },
             },
-            PropertyValue::InstancedStruct {
-                struct_type,
-                payload,
-                value,
-            } => Self::InstancedStruct {
+            PropertyValue::InstancedStruct(instance) => Self::InstancedStruct {
                 struct_type: ObjectReferenceView {
                     package,
-                    index: *struct_type,
+                    index: instance.struct_type,
                 },
-                size: payload.len(),
-                value: value
+                size: instance.payload.len(),
+                value: instance
+                    .value
                     .as_ref()
-                    .map(|value| Box::new(Self::new(package, value, payload.len()))),
+                    .map(|value| Box::new(Self::new(package, value, instance.payload.len()))),
             },
             PropertyValue::Bool(value) => Self::Bool { value: *value },
             PropertyValue::Int(value) => Self::Int { value: *value },

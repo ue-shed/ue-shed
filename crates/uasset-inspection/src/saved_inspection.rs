@@ -478,23 +478,26 @@ fn saved_value(package: &Package, value: PropertyValue) -> SavedPropertyValue {
                 })
                 .collect(),
         },
-        PropertyValue::InstancedStruct {
-            struct_type,
-            payload,
-            value,
-        } => SavedPropertyValue::InstancedStruct {
-            struct_type: resolve_object(package, struct_type),
-            size: payload.len(),
-            value: value.map(|value| {
-                let mut output = saved_value(package, *value);
-                if let SavedPropertyValue::Raw { size, .. } = &mut output {
-                    *size = payload.len();
-                }
-                Box::new(output)
-            }),
-        },
+        PropertyValue::InstancedStruct(instance) => {
+            let uasset_parser::property::InstancedStructValue {
+                struct_type,
+                payload,
+                value,
+            } = *instance;
+            SavedPropertyValue::InstancedStruct {
+                struct_type: resolve_object(package, struct_type),
+                size: payload.len(),
+                value: value.map(|value| {
+                    let mut output = saved_value(package, *value);
+                    if let SavedPropertyValue::Raw { size, .. } = &mut output {
+                        *size = payload.len();
+                    }
+                    Box::new(output)
+                }),
+            }
+        }
         PropertyValue::Struct(properties) => SavedPropertyValue::Struct {
-            properties: saved_properties(package, properties),
+            properties: saved_properties(package, *properties),
         },
         PropertyValue::Raw { reason } => SavedPropertyValue::Raw {
             reason: reason.detail().into_owned(),

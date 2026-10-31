@@ -596,7 +596,7 @@ fn instanced(
                     path,
                 )?;
                 decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
-                Ok::<_, PropertyError>(PropertyValue::Struct(stream))
+                Ok::<_, PropertyError>(PropertyValue::Struct(Box::new(stream)))
             })();
             match attempt {
                 Ok(value) if inner.remaining() == 0 => value,
@@ -604,9 +604,9 @@ fn instanced(
                     return Err(failure);
                 }
                 _ => PropertyValue::Raw {
-                    reason: RawReason::DecoderRejected(format!(
-                        "unsupported InstancedStruct payload for {type_path}"
-                    )),
+                    reason: RawReason::DecoderRejected(
+                        format!("unsupported InstancedStruct payload for {type_path}").into(),
+                    ),
                 },
             }
         };
@@ -620,11 +620,13 @@ fn instanced(
         }
         Some(Box::new(decoded))
     };
-    Ok(PropertyValue::InstancedStruct {
-        struct_type,
-        payload,
-        value,
-    })
+    Ok(PropertyValue::InstancedStruct(Box::new(
+        crate::property::InstancedStructValue {
+            struct_type,
+            payload,
+            value,
+        },
+    )))
 }
 
 #[cfg(test)]
@@ -971,21 +973,16 @@ mod tests {
         let null = decode(&[0; 8], &package, "InstancedStruct").unwrap();
         assert!(matches!(
             null,
-            PropertyValue::InstancedStruct {
-                struct_type: PackageIndex::Null,
-                value: None,
-                ..
-            }
+            PropertyValue::InstancedStruct(instance) if instance.struct_type == PackageIndex::Null && instance.value.is_none()
         ));
         let opaque = payload(&package, "OpaqueValue");
-        let PropertyValue::InstancedStruct {
-            payload,
-            value: Some(value),
-            ..
-        } = decode(&opaque, &package, "InstancedStruct").unwrap()
+        let PropertyValue::InstancedStruct(instance) =
+            decode(&opaque, &package, "InstancedStruct").unwrap()
         else {
             panic!()
         };
+        let crate::property::InstancedStructValue { payload, value, .. } = *instance;
+        let value = value.unwrap();
         assert_eq!(payload.len(), 8);
         assert!(matches!(*value, PropertyValue::Raw { .. }));
         assert_eq!(

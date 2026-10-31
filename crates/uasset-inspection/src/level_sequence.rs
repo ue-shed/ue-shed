@@ -473,20 +473,18 @@ fn inventory_property_value(
                 );
             }
         }
-        PropertyValue::InstancedStruct {
-            struct_type, value, ..
-        } => {
+        PropertyValue::InstancedStruct(instance) => {
             inventory_index_reference(
                 package,
                 owner,
                 &join_property_path(property_path, "StructType"),
-                *struct_type,
+                instance.struct_type,
                 SequenceReferenceKind::Object,
                 None,
                 references,
                 gaps,
             );
-            if let Some(value) = value {
+            if let Some(value) = &instance.value {
                 inventory_property_value(
                     package,
                     owner,
@@ -1108,11 +1106,11 @@ mod tests {
         let synthetic = PropertyValue::Array(vec![
             PropertyValue::Map(vec![MapEntry {
                 key: PropertyValue::SoftObjectPath("/Game/Other/DA_Config.DA_Config".to_owned()),
-                value: PropertyValue::Struct(PropertyStream {
+                value: PropertyValue::Struct(Box::new(PropertyStream {
                     class_extensions: None,
                     records: vec![nested_record],
                     terminator: Default::default(),
-                }),
+                })),
             }]),
             PropertyValue::Set(vec![PropertyValue::ObjectRef(PackageIndex::Export(0))]),
         ]);

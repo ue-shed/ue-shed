@@ -220,7 +220,7 @@ pub(super) fn decode(
         ));
     }
     decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
-    fields.push(named("Value", PropertyValue::Struct(stream)));
+    fields.push(named("Value", PropertyValue::Struct(Box::new(stream))));
     Ok(PropertyValue::NativeStruct { fields })
 }
 

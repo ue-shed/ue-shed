@@ -391,9 +391,7 @@ fn conformance(version: &str, ue5: Option<i32>) {
                         assert!(
                             matches!(
                                 &native.value,
-                                PropertyValue::Raw {
-                                    reason: RawReason::LegacyContainerElementWithoutTypeInformation
-                                }
+                                PropertyValue::Raw { reason } if matches!(reason, RawReason::LegacyContainerElementWithoutTypeInformation)
                             ),
                             "native struct map must be Raw, never a guessed value"
                         );

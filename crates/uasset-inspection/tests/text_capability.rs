@@ -174,10 +174,10 @@ fn decoded_native_records_keep_text_and_unknown_values_in_the_projection() {
             fields: vec![
                 NativeProperty {
                     name: "Label".into(),
-                    value: PropertyValue::Text(TextValue {
+                    value: PropertyValue::Text(Box::new(TextValue {
                         source: "Native label".into(),
                         history: TextHistory::None,
-                    }),
+                    })),
                 },
                 NativeProperty {
                     name: "Unknown".into(),

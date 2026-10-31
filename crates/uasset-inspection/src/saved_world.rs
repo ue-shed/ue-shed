@@ -407,9 +407,11 @@ fn collect_undecoded_value(
                 );
             }
         }
-        PropertyValue::InstancedStruct {
-            value: Some(value), ..
-        } => collect_undecoded_value(package, value, path, label, found),
+        PropertyValue::InstancedStruct(instance) => {
+            if let Some(value) = &instance.value {
+                collect_undecoded_value(package, value, path, label, found);
+            }
+        }
         _ => {}
     }
 }
@@ -1299,12 +1301,14 @@ mod tests {
                 0,
                 PropertyValue::Map(vec![MapEntry {
                     key: PropertyValue::Int(1),
-                    value: raw(RawReason::DecoderRejected("skipped: struct X".to_owned())),
+                    value: raw(RawReason::DecoderRejected(
+                        "skipped: struct X".to_owned().into(),
+                    )),
                 }]),
             ),
         ]);
         let properties = stream(vec![
-            record(1, 0, PropertyValue::Struct(nested)),
+            record(1, 0, PropertyValue::Struct(Box::new(nested))),
             record(
                 4,
                 0,
@@ -1314,7 +1318,7 @@ mod tests {
             record(
                 5,
                 0x20,
-                raw(RawReason::DecoderRejected("skipped".to_owned())),
+                raw(RawReason::DecoderRejected("skipped".to_owned().into())),
             ),
             record(6, 0, PropertyValue::Bool(true)),
         ]);

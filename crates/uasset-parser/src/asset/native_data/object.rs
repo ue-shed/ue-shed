@@ -303,7 +303,7 @@ fn niagara_system(
             path.as_str(),
         )?;
         decode_property_stream_values(context.source, &mut stream, context.package)?;
-        values.push(PropertyValue::Struct(stream));
+        values.push(PropertyValue::Struct(Box::new(stream)));
     }
     Ok((
         guid,

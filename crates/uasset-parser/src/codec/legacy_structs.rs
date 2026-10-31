@@ -124,7 +124,7 @@ fn tagged(
         "DeclaredContainer",
     )?;
     decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
-    Ok(PropertyValue::Struct(stream))
+    Ok(PropertyValue::Struct(Box::new(stream)))
 }
 
 fn element(
@@ -421,7 +421,7 @@ mod tests {
             records: vec![],
             terminator: Span::default(),
         };
-        let expected = PropertyValue::Struct(stream.clone());
+        let expected = PropertyValue::Struct(Box::new(stream.clone()));
         assert_eq!(
             decode_data_table_row_handle(&stream, &package, "Fixture").unwrap(),
             expected

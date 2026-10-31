@@ -213,9 +213,9 @@ fn decode_property_record(
         }
         let reason = error.raw_reason.clone().unwrap_or_else(|| {
             if error.kind() == crate::property::PropertyErrorKind::UnsupportedVersion {
-                RawReason::FeatureUnavailableForEngineVersion(error.to_string())
+                RawReason::FeatureUnavailableForEngineVersion(error.to_string().into())
             } else {
-                RawReason::LegacyDecoderRejected(error.to_string())
+                RawReason::LegacyDecoderRejected(error.to_string().into())
             }
         });
         record.value = PropertyValue::Raw { reason };
@@ -231,14 +231,16 @@ fn decode_property_record_inner(
 ) -> Result<(), PropertyError> {
     if record.flags.is_skipped() {
         record.value = PropertyValue::Raw {
-            reason: RawReason::DecoderRejected("property serialization was skipped".to_owned()),
+            reason: RawReason::DecoderRejected(
+                "property serialization was skipped".to_owned().into(),
+            ),
         };
         return Ok(());
     }
 
     let Some(type_name) = package.resolve_name_cow(record.type_name.name) else {
         record.value = PropertyValue::Raw {
-            reason: RawReason::DecoderRejected("unresolved property type name".to_owned()),
+            reason: RawReason::DecoderRejected("unresolved property type name".to_owned().into()),
         };
         return Ok(());
     };
@@ -303,7 +305,7 @@ fn decode_property_record_inner(
                     }
                     Err(error) if new_tagged_fallback => {
                         record.value = PropertyValue::Raw {
-                            reason: RawReason::DecoderRejected(error.to_string()),
+                            reason: RawReason::DecoderRejected(error.to_string().into()),
                         };
                         return Ok(());
                     }
@@ -345,10 +347,13 @@ fn decode_property_record_inner(
 
     if payload.remaining() != 0 {
         record.value = PropertyValue::Raw {
-            reason: RawReason::DecoderRejected(format!(
-                "{} trailing bytes left in decoded {type_name} payload",
-                payload.remaining()
-            )),
+            reason: RawReason::DecoderRejected(
+                format!(
+                    "{} trailing bytes left in decoded {type_name} payload",
+                    payload.remaining()
+                )
+                .into(),
+            ),
         };
         return Ok(());
     }
@@ -427,7 +432,8 @@ fn decode_typed_value(
         )),
         "TextProperty" => {
             let path = path.to_string();
-            decode_text_value(payload, package, &path).map(|text| text.map(PropertyValue::Text))
+            decode_text_value(payload, package, &path)
+                .map(|text| text.map(|text| PropertyValue::Text(Box::new(text))))
         }
         "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
             Ok(Some(PropertyValue::ObjectRef(PackageIndex::from_raw(
@@ -1239,7 +1245,7 @@ fn decode_container_element(
                 .map(Some)
                 .map_err(|error| {
                     let detail = error.to_string();
-                    error.with_raw_reason(RawReason::DecoderRejected(detail))
+                    error.with_raw_reason(RawReason::DecoderRejected(detail.into()))
                 });
             }
             _ if facts.user_defined_identity || facts.tagged_fallback => {}
@@ -1253,29 +1259,34 @@ fn decode_container_element(
                     path,
                     format!("struct {struct_name} has no known binary or native layout"),
                 )
-                .with_raw_reason(RawReason::DecoderRejected(format!(
-                    "skipped: struct {struct_name} in a container is binary or native \
+                .with_raw_reason(RawReason::DecoderRejected(
+                    format!(
+                        "skipped: struct {struct_name} in a container is binary or native \
                      serialized and has no known layout"
-                ))));
+                    )
+                    .into(),
+                )));
             }
             // Legacy tags carry no serializer evidence. Keep the tagged attempt they always had,
             // but a failure marks the owning property as skipped instead of failing the export.
-            ContainerSerializer::Unknown => return decode_struct_value(
-                source, type_spec, facts, payload, package, path, depth,
-            )
-            .map(Some)
-            .map_err(|error| {
-                if error.raw_reason.is_some()
-                    || error.kind() == crate::property::PropertyErrorKind::ResourceLimit
-                {
-                    return error;
-                }
-                let reason = RawReason::DecoderRejected(format!(
+            ContainerSerializer::Unknown => {
+                return decode_struct_value(
+                    source, type_spec, facts, payload, package, path, depth,
+                )
+                .map(Some)
+                .map_err(|error| {
+                    if error.raw_reason.is_some()
+                        || error.kind() == crate::property::PropertyErrorKind::ResourceLimit
+                    {
+                        return error;
+                    }
+                    let reason = RawReason::DecoderRejected(format!(
                     "skipped: struct {struct_name} in a container has no known layout and did not \
                  decode as a tagged stream ({error})"
-                ));
-                error.with_raw_reason(reason)
-            }),
+                ).into());
+                    error.with_raw_reason(reason)
+                });
+            }
         }
     }
 
@@ -1328,7 +1339,7 @@ impl ContainerSerializer {
 fn preserve_opaque_container(error: PropertyError, decoded_new_layout: bool) -> PropertyError {
     if decoded_new_layout && error.raw_reason.is_none() {
         let detail = error.to_string();
-        error.with_raw_reason(RawReason::DecoderRejected(detail))
+        error.with_raw_reason(RawReason::DecoderRejected(detail.into()))
     } else {
         error
     }
@@ -1638,7 +1649,7 @@ fn decode_struct_value(
     if !type_spec.is_user_defined_struct() && struct_name.as_deref() == Some("DataTableRowHandle") {
         return decode_data_table_row_handle(&stream, package, path);
     }
-    Ok(PropertyValue::Struct(stream))
+    Ok(PropertyValue::Struct(Box::new(stream)))
 }
 
 fn decode_data_table_row_handle(
@@ -1680,7 +1691,7 @@ fn decode_data_table_row_handle(
     // into UScriptStruct::SerializeItem/SerializeTaggedProperties (Class.cpp). Either
     // field can be elided. Retain saved fields without inventing inherited values.
     let (Some(table), Some(row_name)) = (table, row_name) else {
-        return Ok(PropertyValue::Struct(stream.clone()));
+        return Ok(PropertyValue::Struct(Box::new(stream.clone())));
     };
     Ok(PropertyValue::DataTableRowHandle(DataTableRowHandleValue {
         table,
@@ -2220,10 +2231,8 @@ mod tests {
             .unwrap();
             decode_property_stream_values(&bytes, &mut stream, &package).unwrap();
             assert!(matches!(
-                stream.records[0].value,
-                PropertyValue::Raw {
-                    reason: RawReason::LegacyDecoderRejected(_)
-                }
+                &stream.records[0].value,
+                PropertyValue::Raw { reason } if matches!(reason, RawReason::LegacyDecoderRejected(_))
             ));
             assert_eq!(stream.records[0].payload.len(), 1);
             assert_eq!(stream.records[1].value, PropertyValue::Int(42));
@@ -2453,7 +2462,7 @@ mod tests {
                         assert_eq!(nested.records.len(), 1);
                         assert_eq!(
                             nested.records[0].value,
-                            PropertyValue::Text(TextValue {
+                            PropertyValue::Text(Box::new(TextValue {
                                 source: "Hello".into(),
                                 history: TextHistory::Base {
                                     namespace: "Fixture".into(),
@@ -2464,7 +2473,7 @@ mod tests {
                                         String::new()
                                     }
                                 }
-                            }),
+                            })),
                             "{name}, {ue5}, array={array}"
                         );
                     }
@@ -2708,9 +2717,7 @@ mod tests {
                     .unwrap();
                     assert!(matches!(
                         invalid,
-                        PropertyValue::Raw {
-                            reason: RawReason::LegacyDecoderRejected(_)
-                        }
+                        PropertyValue::Raw { reason } if matches!(reason, RawReason::LegacyDecoderRejected(_))
                     ));
                 }
             }
@@ -2738,14 +2745,14 @@ mod tests {
                             .unwrap();
                     assert_eq!(
                         value,
-                        PropertyValue::Text(TextValue {
+                        PropertyValue::Text(Box::new(TextValue {
                             source: if gated && invariant {
                                 "Invariant".into()
                             } else {
                                 String::new()
                             },
                             history: TextHistory::None,
-                        })
+                        }))
                     );
                 }
             }
@@ -3328,14 +3335,14 @@ mod tests {
     }
 
     fn assert_skipped(stream: &PropertyStream) {
-        let PropertyValue::Raw {
-            reason: RawReason::DecoderRejected(reason),
-        } = &stream.records[0].value
-        else {
+        let PropertyValue::Raw { reason } = &stream.records[0].value else {
             panic!(
                 "expected a skipped property, got {:?}",
                 stream.records[0].value
             );
+        };
+        let RawReason::DecoderRejected(reason) = reason else {
+            panic!("expected decoder rejection");
         };
         assert!(reason.starts_with("skipped: struct "), "{reason}");
         assert_eq!(stream.records[1].value, PropertyValue::Int(99));
@@ -3537,11 +3544,11 @@ mod tests {
                     &[],
                 )
                 .unwrap();
-                let PropertyValue::Raw {
-                    reason: RawReason::FeatureUnavailableForEngineVersion(detail),
-                } = value
-                else {
+                let PropertyValue::Raw { reason } = value else {
                     panic!("expected version coverage gap for {name}");
+                };
+                let RawReason::FeatureUnavailableForEngineVersion(detail) = reason else {
+                    panic!("expected version coverage gap");
                 };
                 assert!(detail.contains(message), "{detail}");
             }
@@ -3642,7 +3649,7 @@ mod tests {
                     .unwrap();
                     assert_eq!(
                         value,
-                        PropertyValue::Text(TextValue {
+                        PropertyValue::Text(Box::new(TextValue {
                             source: "Hello".into(),
                             history: TextHistory::Base {
                                 namespace: "Fixture".into(),
@@ -3653,7 +3660,7 @@ mod tests {
                                     String::new()
                                 },
                             },
-                        })
+                        }))
                     );
                     payload.pop();
                     assert!(matches!(
@@ -3665,9 +3672,7 @@ mod tests {
                             &payload,
                         )
                         .unwrap(),
-                        PropertyValue::Raw {
-                            reason: RawReason::LegacyDecoderRejected(_)
-                        }
+                        PropertyValue::Raw { reason } if matches!(reason, RawReason::LegacyDecoderRejected(_))
                     ));
                 }
             }
@@ -3958,10 +3963,10 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
         assert_eq!(
             value,
-            PropertyValue::Text(TextValue {
+            PropertyValue::Text(Box::new(TextValue {
                 source: String::new(),
                 history: TextHistory::None,
-            })
+            }))
         );
     }
 
@@ -3978,14 +3983,14 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
         assert_eq!(
             value,
-            PropertyValue::Text(TextValue {
+            PropertyValue::Text(Box::new(TextValue {
                 source: "Hello".to_owned(),
                 history: TextHistory::Base {
                     namespace: String::new(),
                     key: "deadbeef".to_owned(),
                     dev_notes: String::new(),
                 },
-            })
+            }))
         );
     }
 
@@ -4029,14 +4034,14 @@ mod tests {
             };
             assert_eq!(
                 decode(&payload).unwrap(),
-                PropertyValue::Text(TextValue {
+                PropertyValue::Text(Box::new(TextValue {
                     source: "Hello".into(),
                     history: TextHistory::Base {
                         namespace: "Fixture".into(),
                         key: "Greeting".into(),
                         dev_notes: notes.unwrap_or_default().into()
                     },
-                })
+                }))
             );
             // A valid text must consume exactly the versioned payload.
             let mut trailing = payload.clone();
@@ -4077,13 +4082,13 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
         assert_eq!(
             value,
-            PropertyValue::Text(TextValue {
+            PropertyValue::Text(Box::new(TextValue {
                 source: String::new(),
                 history: TextHistory::StringTableEntry {
                     table_id: "/Game/Fixture/Text/ST_Game.ST_Game".to_owned(),
                     key: "PromptContinue".to_owned(),
                 },
-            })
+            }))
         );
     }
 
@@ -4319,9 +4324,7 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &payload);
         assert!(matches!(
             value,
-            PropertyValue::Raw {
-                reason: RawReason::DecoderRejected(_),
-            }
+            PropertyValue::Raw { reason } if matches!(reason, RawReason::DecoderRejected(_))
         ));
     }
 
@@ -4812,9 +4815,7 @@ mod tests {
         let value = decode_record(names, 0, Vec::new(), PropertyTagFlags(0), &[0x01]);
         assert!(matches!(
             value,
-            PropertyValue::Raw {
-                reason: RawReason::UnsupportedType,
-            }
+            PropertyValue::Raw { reason } if matches!(reason, RawReason::UnsupportedType)
         ));
     }
 

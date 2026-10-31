@@ -835,21 +835,24 @@ pub(crate) fn value_output(package: &Package, value: PropertyValue) -> PropertyV
                 })
                 .collect(),
         },
-        PropertyValue::InstancedStruct {
-            struct_type,
-            payload,
-            value,
-        } => PropertyValueOutput::InstancedStruct {
-            struct_type: resolve_object_ref(package, struct_type),
-            size: payload.len(),
-            value: value.map(|value| {
-                let mut output = value_output(package, *value);
-                if let PropertyValueOutput::Raw { size, .. } = &mut output {
-                    *size = payload.len();
-                }
-                Box::new(output)
-            }),
-        },
+        PropertyValue::InstancedStruct(instance) => {
+            let uasset_parser::property::InstancedStructValue {
+                struct_type,
+                payload,
+                value,
+            } = *instance;
+            PropertyValueOutput::InstancedStruct {
+                struct_type: resolve_object_ref(package, struct_type),
+                size: payload.len(),
+                value: value.map(|value| {
+                    let mut output = value_output(package, *value);
+                    if let PropertyValueOutput::Raw { size, .. } = &mut output {
+                        *size = payload.len();
+                    }
+                    Box::new(output)
+                }),
+            }
+        }
         PropertyValue::Bool(value) => PropertyValueOutput::Bool { value },
         PropertyValue::Int(value) => PropertyValueOutput::Int { value },
         PropertyValue::UInt(value) => PropertyValueOutput::Uint { value },
@@ -862,7 +865,7 @@ pub(crate) fn value_output(package: &Package, value: PropertyValue) -> PropertyV
             value: resolve_name_or_placeholder(package, name),
         },
         PropertyValue::String(value) => PropertyValueOutput::String { value },
-        PropertyValue::Text(text) => text_value_output(text),
+        PropertyValue::Text(text) => text_value_output(*text),
         PropertyValue::Vector(vector) => PropertyValueOutput::Vector {
             x: vector.x,
             y: vector.y,
@@ -930,7 +933,7 @@ pub(crate) fn value_output(package: &Package, value: PropertyValue) -> PropertyV
                 .collect(),
         },
         PropertyValue::Struct(stream) => PropertyValueOutput::Struct {
-            properties: property_outputs(package, stream),
+            properties: property_outputs(package, *stream),
         },
         PropertyValue::Raw { reason } => PropertyValueOutput::Raw {
             reason: render_raw_reason(reason),

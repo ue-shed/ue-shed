@@ -80,7 +80,7 @@ fn decode_record(
         },
         NativeProperty {
             name: Cow::Borrowed("TypeDefHandle"),
-            value: PropertyValue::Struct(type_def),
+            value: PropertyValue::Struct(Box::new(type_def)),
         },
     ];
     if name == "NiagaraVariable" {

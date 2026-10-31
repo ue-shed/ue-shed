@@ -139,7 +139,7 @@ pub(super) fn settings(
             field,
             |v| {
                 if let PropertyValue::Struct(v) = v {
-                    Some(property_outputs(package, v.clone()))
+                    Some(property_outputs(package, (**v).clone()))
                 } else {
                     None
                 }

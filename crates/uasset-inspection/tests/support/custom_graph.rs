@@ -57,10 +57,8 @@ pub fn custom_graph_fixture(damage: &str) -> (Vec<u8>, uasset_parser::Package) {
             assert!(object.properties.records.iter().any(|property| {
                 package.resolve_name(property.name).as_deref() == Some("Nodes")
                     && matches!(
-                        property.value,
-                        PropertyValue::Raw {
-                            reason: RawReason::DecoderRejected(_)
-                        }
+                        &property.value,
+                        PropertyValue::Raw { reason } if matches!(reason, RawReason::DecoderRejected(_))
                     )
             }));
         }

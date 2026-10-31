@@ -410,10 +410,8 @@ fn visit_text_stream<F>(
         let property_path = append_property_path(prefix, &resolve_name(package, property.name));
         if property_type_is_text(package, property)
             && matches!(
-                property.value,
-                PropertyValue::Raw {
-                    reason: RawReason::UnsupportedType
-                }
+                &property.value,
+                PropertyValue::Raw { reason } if matches!(reason, RawReason::UnsupportedType)
             )
         {
             output.coverage_gaps.push(TextCoverageGap {
@@ -449,7 +447,7 @@ fn may_hold_text_facts(value: &PropertyValue) -> bool {
         | PropertyValue::Map(_)
         | PropertyValue::Struct(_)
         | PropertyValue::NativeStruct { .. } => true,
-        PropertyValue::InstancedStruct { value, .. } => value.is_some(),
+        PropertyValue::InstancedStruct(instance) => instance.value.is_some(),
         PropertyValue::Bool(_)
         | PropertyValue::Float(_)
         | PropertyValue::Double(_)
@@ -600,9 +598,10 @@ fn visit_text_value<F>(
                 );
             }
         }
-        PropertyValue::InstancedStruct {
-            value: Some(value), ..
-        } => {
+        PropertyValue::InstancedStruct(instance) => {
+            let Some(value) = &instance.value else {
+                return;
+            };
             visit_text_value(
                 package,
                 value,

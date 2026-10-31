@@ -293,8 +293,10 @@ fn decode_property_record_inner(
         && is_tagged_fallback_native_struct(package, &record.type_name)
         && resolve_struct_type_name(package, &record.type_name).as_deref()
             != Some("AnimNotifyEvent");
-    let decoded = if record.flags.is_binary_or_native() || (legacy && type_name == "StructProperty")
+    let decoded = if let Some(value) = legacy_byte_enum_array(record, &mut payload, package, &path)
     {
+        value
+    } else if record.flags.is_binary_or_native() || (legacy && type_name == "StructProperty") {
         match decode_binary_or_native_value(
             source,
             scope,
@@ -751,6 +753,47 @@ fn decode_int_point_value(
         x: payload.read_i32(&format_args!("{path}.X"))?,
         y: payload.read_i32(&format_args!("{path}.Y"))?,
     })
+}
+
+/// Only a tagged property's exact span proves the stride; nested container readers may
+/// include subsequent elements. Probe without changing the existing fallback on rejection.
+fn legacy_byte_enum_array(
+    record: &PropertyRecord,
+    payload: &mut Reader<'_>,
+    package: &Package,
+    path: &(impl fmt::Display + ?Sized),
+) -> Option<PropertyValue> {
+    // UE 4.27 / 5.7 / 5.8 PropertyByte.cpp FByteProperty::SerializeItem saves an enum
+    // as an FName, but a plain byte as uint8. Legacy array tags save only InnerType,
+    // omitting the enum identity (PropertyTag.cpp). The complete bounded array size
+    // distinguishes these homogeneous layouts for non-empty arrays.
+    if !package.summary.versions.uses_legacy_property_tags()
+        || package.resolve_name_str(record.type_name.name) != Some("ArrayProperty")
+        || record.type_name.parameters.len() != 1
+    {
+        return None;
+    }
+    let inner = record.type_name.parameters.first()?;
+    if package.resolve_name_str(inner.name) != Some("ByteProperty") || !inner.parameters.is_empty()
+    {
+        return None;
+    }
+    let mut probe = payload.clone();
+    let count = probe.read_count(&format_args!("{path}.Count")).ok()?;
+    if count == 0 || (count as u64).checked_mul(8) != Some(probe.remaining()) {
+        return None;
+    }
+    let capacity = probe
+        .checked_vec_capacity::<PropertyValue>(count, 8, path)
+        .ok()?;
+    let mut values = Vec::with_capacity(capacity);
+    for _ in 0..count {
+        let name = probe.read_name_ref(path).ok()?;
+        package.resolve_name_cow(name)?;
+        values.push(PropertyValue::Enum(name));
+    }
+    *payload = probe;
+    Some(PropertyValue::Array(values))
 }
 
 fn decode_array_value(
@@ -2573,6 +2616,81 @@ mod tests {
             assert_eq!(stream.records[0].payload.len(), 1);
             assert_eq!(stream.records[1].value, PropertyValue::Int(42));
             assert_eq!(reader.tell(), bytes.len() as u64);
+        }
+    }
+
+    #[test]
+    fn legacy_byte_arrays_recover_enum_names_only_from_the_exact_bounded_stride() {
+        let inner = PropertyTypeName {
+            name: crate::test_support::name_ref(2, 0),
+            parameters: vec![],
+        };
+        for ue5 in [0, 1000, 1004, 1009, 1011, 1012] {
+            let package = versioned_package(
+                &[
+                    "Value",
+                    "ArrayProperty",
+                    "ByteProperty",
+                    "Fixture::One",
+                    "Fixture::Two",
+                ],
+                ue5,
+            );
+            let decode = |payload: &[u8]| {
+                decode_record_with_package(
+                    package.clone(),
+                    1,
+                    vec![inner.clone()],
+                    PropertyTagFlags::default(),
+                    payload,
+                )
+            };
+            // Plain byte arrays (including an eight-byte array) retain the uint8 layout.
+            for bytes in [vec![], vec![3], vec![0, 1, 2, 3, 4, 5, 6, 7]] {
+                let mut payload = (bytes.len() as i32).to_le_bytes().to_vec();
+                payload.extend(&bytes);
+                assert_eq!(
+                    decode(&payload).unwrap(),
+                    PropertyValue::Array(
+                        bytes
+                            .into_iter()
+                            .map(|value| PropertyValue::UInt(u64::from(value)))
+                            .collect()
+                    )
+                );
+            }
+            let mut payload = 2_i32.to_le_bytes().to_vec();
+            for name in [3_i32, 4] {
+                push_i32(&mut payload, name);
+                push_i32(&mut payload, 0);
+            }
+            let decoded = decode(&payload).unwrap();
+            if ue5 < 1012 {
+                assert_eq!(
+                    decoded,
+                    PropertyValue::Array(vec![
+                        PropertyValue::Enum(crate::test_support::name_ref(3, 0)),
+                        PropertyValue::Enum(crate::test_support::name_ref(4, 0))
+                    ])
+                );
+            } else {
+                // Complete type names are authoritative; omitted enum identity means uint8.
+                assert!(matches!(decoded, PropertyValue::Raw { .. }));
+            }
+            for end in [5, 11, 12, 19] {
+                assert!(matches!(
+                    decode(&payload[..end]),
+                    Ok(PropertyValue::Raw { .. }) | Err(_)
+                ));
+            }
+            let mut bad = payload.clone();
+            bad[4..8].copy_from_slice(&i32::MAX.to_le_bytes());
+            assert!(matches!(decode(&bad).unwrap(), PropertyValue::Raw { .. }));
+            payload.push(0);
+            assert!(matches!(
+                decode(&payload).unwrap(),
+                PropertyValue::Raw { .. }
+            ));
         }
     }
 

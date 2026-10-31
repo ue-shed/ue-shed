@@ -1466,6 +1466,9 @@ fn speculative_container_struct(
     if native_values::materials::applies(ty, package) {
         return true;
     }
+    if native_values::niagara_gpu::applies(ty, package) {
+        return true;
+    }
     if package.summary.versions.ue5 != 0
         && is_niagara_variable(&name)
         && has_niagara_identity(package, ty)
@@ -2877,6 +2880,8 @@ mod tests {
                 "ExpressionInput",
                 "ScalarMaterialInput",
                 "ColorMaterialInput",
+                "NiagaraDataInterfaceGPUParamInfo",
+                "NiagaraDataInterfaceGeneratedFunction",
             ] {
                 let mut package = versioned_package(
                     &[
@@ -3625,6 +3630,7 @@ mod tests {
         for key in [
             "NiagaraVariableBase",
             "NiagaraTypeDefinition",
+            "NiagaraDataInterfaceGPUParamInfo",
             "PostProcessSettings",
             "Spline",
             "PerPlatformFloat",
@@ -3643,6 +3649,7 @@ mod tests {
                 | "SkeletalMeshSamplingLODBuiltData" => vec![0; 12],
                 "PerPlatformFrameRate" => vec![0; 16],
                 "ExpressionInput" => vec![0; 32],
+                "NiagaraDataInterfaceGPUParamInfo" => vec![0; 12],
                 _ => vec![0; 8],
             };
             if key == "Spline" {
@@ -3680,6 +3687,8 @@ mod tests {
                 "/Script/Niagara"
             } else if key == "PerPlatformFrameRate" {
                 "/Script/CoreUObject"
+            } else if key == "NiagaraDataInterfaceGPUParamInfo" {
+                "/Script/NiagaraShader"
             } else {
                 "/Script/Engine"
             }

@@ -13,6 +13,9 @@ pub(in crate::codec) fn optional_struct(
     if let Some(value) = super::materials::optional(ty, reader, package, path) {
         return Some(value);
     }
+    if let Some(value) = super::niagara_gpu::optional(ty, reader, package, path) {
+        return Some(value);
+    }
     match name.as_ref() {
         "PerPlatformFloat" | "PerPlatformInt" | "PerPlatformBool" | "PerPlatformFrameRate" => {
             return super::per_platform::optional(ty, reader, package, path);

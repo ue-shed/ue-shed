@@ -3,6 +3,7 @@ pub(super) mod delegates;
 mod gameplay_tags;
 pub(super) mod materials;
 pub(super) mod niagara;
+pub(super) mod niagara_gpu;
 mod per_platform;
 mod pin_type;
 mod sampling;

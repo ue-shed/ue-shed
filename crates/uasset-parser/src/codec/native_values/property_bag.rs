@@ -7,9 +7,9 @@ pub(super) fn decode(
     reader: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<PropertyValue, PropertyError> {
-    if depth >= MAX_PROPERTY_DECODE_DEPTH {
+    if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
         return Err(error(
             reader,
             path,
@@ -219,7 +219,7 @@ pub(super) fn decode(
             "trailing bytes in property-bag value",
         ));
     }
-    decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
+    decode_property_stream_values_at_depth(source, &mut stream, package, scope.nested())?;
     fields.push(named("Value", PropertyValue::Struct(Box::new(stream))));
     Ok(PropertyValue::NativeStruct { fields })
 }

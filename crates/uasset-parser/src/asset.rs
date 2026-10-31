@@ -18,7 +18,7 @@ mod script;
 pub use script::{DecodedFunction, FUNCTION_CLASS, FunctionDecoder};
 
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Span};
-use crate::codec::decode_property_stream_values_filtered;
+use crate::codec::{DecodeScope, decode_property_stream_values_at_depth};
 use crate::package::{Export, ObjectPath, Package, PackageError, PackageErrorKind, PackageIndex};
 use crate::property::{
     NamedTextFormatArgument, PropertyError, PropertyErrorKind, PropertyRecord, PropertyStream,
@@ -27,14 +27,14 @@ use crate::property::{
 };
 use crate::schema::{SchemaProvider, SerializationOperation};
 
-/// Decides which top-level tagged properties a decode materializes. A host supplies the
+/// Decides which tagged properties a decode materializes. A host supplies the
 /// policy; the parser still decodes every property its own decoders read by name.
 pub trait PropertyDecodeFilter: Sync {
     fn decode(&self, package: &Package, record: &PropertyRecord) -> bool;
 }
 
 // These names are read from decoded streams by parser helpers, independently of host policy.
-// Nested codec reads are included as well; recursive property decoding remains unfiltered.
+// Nested codec reads are included as well; the filter applies at every tagged stream.
 pub(crate) const DECODER_READ_PROPERTIES: &[&str] = &[
     "Nodes",                      // graph_node_paths
     "DisplayNameMap",             // display_name_map
@@ -842,11 +842,11 @@ fn decode_data_table_rows(
             &context.package.names,
             &format!("{row_path}.Value"),
         )?;
-        decode_property_stream_values_filtered(
+        decode_property_stream_values_at_depth(
             context.source,
             &mut row_properties,
             context.package,
-            context.property_filter,
+            DecodeScope::root(context.property_filter),
         )?;
         rows.push(DataTableRow {
             name,
@@ -1472,11 +1472,11 @@ fn decode_struct_default_instance(
         &context.package.names,
         &format!("{object_path}.DefaultInstance"),
     )?;
-    decode_property_stream_values_filtered(
+    decode_property_stream_values_at_depth(
         context.source,
         &mut default_values,
         context.package,
-        context.property_filter,
+        DecodeScope::root(context.property_filter),
     )?;
     Ok(default_values)
 }
@@ -3349,15 +3349,21 @@ fn decode_uobject_properties<'a>(
         &context.package.names,
         export.object_path.as_str(),
     )?;
-    decode_property_stream_values_filtered(
+    decode_property_stream_values_at_depth(
         context.source,
         &mut properties,
         context.package,
-        context.property_filter,
+        DecodeScope::root(context.property_filter),
     )?;
     native_data::property_guids(export, context, &mut properties);
     if let Some(class) = saved_native_class(context.package, export) {
-        crate::codec::object_containers(context.source, &mut properties, class, context.package);
+        crate::codec::object_containers(
+            context.source,
+            &mut properties,
+            class,
+            context.package,
+            DecodeScope::root(context.property_filter),
+        );
     }
     Ok((properties, reader))
 }

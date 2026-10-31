@@ -21,6 +21,7 @@ pub(crate) fn object_containers(
     stream: &mut PropertyStream,
     class: &str,
     package: &Package,
+    scope: DecodeScope<'_>,
 ) {
     // UE 4.27 / 5.7 Niagara/Public/NiagaraComponent.h:
     // InstanceParameterOverrides is TMap<FNiagaraVariableBase, FNiagaraVariant>.
@@ -39,7 +40,7 @@ pub(crate) fn object_containers(
                 source,
                 record,
                 package,
-                0,
+                scope,
                 Element::NiagaraVariableBase,
                 Some(Element::Tagged),
             )
@@ -54,7 +55,7 @@ pub(super) fn declared_containers(
     stream: &mut PropertyStream,
     owner: &PropertyTypeName,
     package: &Package,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) {
     if !package.summary.versions.uses_legacy_property_tags() {
         return;
@@ -96,7 +97,7 @@ pub(super) fn declared_containers(
         };
         if let Some((key, value)) = layout
             && has_legacy_struct_elements(record, package, if value.is_some() { 2 } else { 1 })
-            && let Ok(decoded) = container(source, record, package, depth, key, value)
+            && let Ok(decoded) = container(source, record, package, scope, key, value)
         {
             record.value = decoded;
         }
@@ -107,9 +108,9 @@ fn tagged(
     source: &[u8],
     reader: &mut Reader<'_>,
     package: &Package,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<PropertyValue, PropertyError> {
-    if depth >= MAX_PROPERTY_DECODE_DEPTH {
+    if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
         return Err(PropertyError::new(
             crate::property::PropertyErrorKind::ResourceLimit,
             Some(reader.tell()),
@@ -123,7 +124,7 @@ fn tagged(
         &package.names,
         "DeclaredContainer",
     )?;
-    decode_property_stream_values_at_depth(source, &mut stream, package, depth + 1)?;
+    decode_property_stream_values_at_depth(source, &mut stream, package, scope.nested())?;
     Ok(PropertyValue::Struct(Box::new(stream)))
 }
 
@@ -131,14 +132,14 @@ fn element(
     source: &[u8],
     reader: &mut Reader<'_>,
     package: &Package,
-    depth: usize,
+    scope: DecodeScope<'_>,
     kind: Element,
 ) -> Result<PropertyValue, PropertyError> {
     match kind {
         Element::Guid => Ok(PropertyValue::Guid(
             reader.read_guid("DeclaredContainer.Guid")?,
         )),
-        Element::Tagged => tagged(source, reader, package, depth),
+        Element::Tagged => tagged(source, reader, package, scope),
         Element::NiagaraVariable | Element::NiagaraVariableBase => {
             super::native_values::niagara::decode(
                 source,
@@ -150,9 +151,9 @@ fn element(
                 reader,
                 package,
                 "DeclaredContainer.Variable",
-                depth,
+                scope,
             )?
-            .map_or_else(|| tagged(source, reader, package, depth), Ok)
+            .map_or_else(|| tagged(source, reader, package, scope), Ok)
         }
     }
 }
@@ -161,7 +162,7 @@ fn container(
     source: &[u8],
     record: &PropertyRecord,
     package: &Package,
-    depth: usize,
+    scope: DecodeScope<'_>,
     key: Element,
     value: Option<Element>,
 ) -> Result<PropertyValue, PropertyError> {
@@ -181,7 +182,7 @@ fn container(
         "DeclaredContainer.Removed",
     )?;
     for _ in 0..removed.max(0) {
-        element(source, &mut reader, package, depth, key)?;
+        element(source, &mut reader, package, scope, key)?;
     }
     let count = reader.read_count("DeclaredContainer.Count")?;
     let capacity = reader.checked_vec_capacity::<PropertyValue>(count, 8, "DeclaredContainer")?;
@@ -189,15 +190,15 @@ fn container(
         let mut entries = Vec::with_capacity(capacity);
         for _ in 0..count {
             entries.push(MapEntry {
-                key: element(source, &mut reader, package, depth, key)?,
-                value: element(source, &mut reader, package, depth, value)?,
+                key: element(source, &mut reader, package, scope, key)?,
+                value: element(source, &mut reader, package, scope, value)?,
             });
         }
         PropertyValue::Map(entries)
     } else {
         let mut values = Vec::with_capacity(capacity);
         for _ in 0..count {
-            values.push(element(source, &mut reader, package, depth, key)?);
+            values.push(element(source, &mut reader, package, scope, key)?);
         }
         PropertyValue::Set(values)
     };
@@ -255,7 +256,7 @@ mod tests {
                 &bytes,
                 &entry,
                 &package,
-                0,
+                DecodeScope::root(None),
                 Element::Guid,
                 map.then_some(Element::Tagged),
             )
@@ -271,7 +272,7 @@ mod tests {
                         &bytes,
                         &record(end, 0, 0),
                         &package,
-                        0,
+                        DecodeScope::root(None),
                         Element::Guid,
                         map.then_some(Element::Tagged)
                     )
@@ -286,7 +287,7 @@ mod tests {
                     &extra,
                     &record(extra.len(), 0, 0),
                     &package,
-                    0,
+                    DecodeScope::root(None),
                     Element::Guid,
                     map.then_some(Element::Tagged)
                 )
@@ -299,7 +300,7 @@ mod tests {
                     &invalid,
                     &entry,
                     &package,
-                    0,
+                    DecodeScope::root(None),
                     Element::Guid,
                     map.then_some(Element::Tagged)
                 )
@@ -346,20 +347,38 @@ mod tests {
             terminator: Span::default(),
         };
         let mut decoded = stream.clone();
-        declared_containers(&bytes, &mut decoded, &owner, &package, 0);
+        declared_containers(
+            &bytes,
+            &mut decoded,
+            &owner,
+            &package,
+            DecodeScope::root(None),
+        );
         assert_eq!(decoded.records[0].value, PropertyValue::Map(vec![]));
         owner.parameters[0].parameters.push(PropertyTypeName {
             name: name_ref(5, 0),
             parameters: vec![],
         });
         let mut other = stream.clone();
-        declared_containers(&bytes, &mut other, &owner, &package, 0);
+        declared_containers(
+            &bytes,
+            &mut other,
+            &owner,
+            &package,
+            DecodeScope::root(None),
+        );
         assert_eq!(other, stream);
         owner.parameters[0].parameters.clear();
         let mut truncated = stream.clone();
         truncated.records[0].payload = Span::new(0, 7).unwrap();
         let original = truncated.clone();
-        declared_containers(&bytes, &mut truncated, &owner, &package, 0);
+        declared_containers(
+            &bytes,
+            &mut truncated,
+            &owner,
+            &package,
+            DecodeScope::root(None),
+        );
         assert_eq!(truncated, original);
     }
 
@@ -397,11 +416,19 @@ mod tests {
                 (Element::NiagaraVariableBase, Element::Tagged)
             };
             assert!(
-                matches!(container(&bytes, &record(bytes.len(), 0, 0), &package, 0, key, Some(value)).unwrap(), PropertyValue::Map(ref entries) if entries.len() == 1)
+                matches!(container(&bytes, &record(bytes.len(), 0, 0), &package, DecodeScope::root(None), key, Some(value)).unwrap(), PropertyValue::Map(ref entries) if entries.len() == 1)
             );
             for end in 0..bytes.len() {
                 assert!(
-                    container(&bytes, &record(end, 0, 0), &package, 0, key, Some(value)).is_err(),
+                    container(
+                        &bytes,
+                        &record(end, 0, 0),
+                        &package,
+                        DecodeScope::root(None),
+                        key,
+                        Some(value)
+                    )
+                    .is_err(),
                     "{redirects}, {end}"
                 );
             }

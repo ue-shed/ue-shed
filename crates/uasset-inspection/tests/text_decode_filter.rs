@@ -85,7 +85,7 @@ fn text_filter_preserves_every_fixture_export_text_and_blueprint_classes() {
                             .collect::<Vec<_>>(),
                         "{label}: text-capable coverage gaps"
                     );
-                    // Decoder-owned reads, nested streams and native tails may retain text-free
+                    // Decoder-owned reads and native tails may retain text-free
                     // gaps. Only text-free gaps may disappear, and none may be introduced.
                     for gap in filtered
                         .coverage_gaps

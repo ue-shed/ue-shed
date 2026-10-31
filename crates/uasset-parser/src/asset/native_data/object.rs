@@ -302,11 +302,11 @@ fn niagara_system(
             &context.package.names,
             path.as_str(),
         )?;
-        decode_property_stream_values_filtered(
+        decode_property_stream_values_at_depth(
             context.source,
             &mut stream,
             context.package,
-            context.property_filter,
+            DecodeScope::root(context.property_filter),
         )?;
         values.push(PropertyValue::Struct(Box::new(stream)));
     }

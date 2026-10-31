@@ -465,9 +465,9 @@ fn project_graph(
 
 fn contains_unprojected_rich_curve_key(value: &PropertyValue) -> bool {
     match value {
-        PropertyValue::Raw {
-            reason: RawReason::DecoderRejected(detail),
-        } => detail.contains("FRichCurveKey"),
+        PropertyValue::Raw { reason } => {
+            matches!(reason, RawReason::DecoderRejected(detail) if detail.contains("FRichCurveKey"))
+        }
         PropertyValue::Array(values) | PropertyValue::Set(values) => {
             values.iter().any(contains_unprojected_rich_curve_key)
         }

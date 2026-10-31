@@ -7,6 +7,38 @@ the ignored `test-results/` directory. See
 [the 2026-09-05 review](../../docs/research/rust-core-review-2026-09-05.md) for measured results,
 limitations, and the baseline commit.
 
+## Export decode timing and equivalence
+
+`uasset-decode` is a single-threaded harness with an independent Cargo workspace. It reads an
+ordered list of absolute `.uasset`/`.umap` paths (blank lines and `#` comments are ignored), measures
+parse, export decode, text/Blueprint projection, decoded-result drop and generic inspection JSON,
+and hashes text projections and inspection JSON with SHA-256. Keep lists and all results under the
+gitignored `test-results/` directory.
+
+Build, run two builds against the same list, then compare their output directories:
+
+```powershell
+$env:CARGO_TARGET_DIR = "E:\ue-shed-artifacts\decode-perf\target-harness"
+cargo build --release -j 6 --manifest-path tools/benchmarks/uasset-decode/Cargo.toml
+& "$env:CARGO_TARGET_DIR/release/uasset-decode.exe" --list test-results/decode-harness/fixtures.list --out test-results/decode-harness/before --runs 3
+# After rebuilding the parser changes, use --out test-results/decode-harness/after.
+python tools/benchmarks/uasset-decode/compare.py test-results/decode-harness/before test-results/decode-harness/after
+```
+
+Timed runs write last-pass `packages.jsonl`, per-pass totals and build metadata in `runs.json`, and
+first-pass `digests.tsv`. `--digest-only` performs one untimed pass and writes only `digests.tsv`;
+comparison reports unavailable measurements as `n/a`. Every invocation prints the three parser
+type sizes. Comparison prints every changed path and exits 1 for digest differences.
+Use `--text-filter` to apply `TextDecodeFilter` to export decoding while keeping generic inspection
+unfiltered.
+
+Allocation counts and requested bytes include successful reallocations. Only the first pass
+serializes and hashes outputs inside the parse-through-drop window, so with `--runs 2` or more the
+last pass's `packages.jsonl` excludes that harness work. Inspection allocations are excluded from
+the window and its peak is measured separately. Peaks are live
+heap bytes above the window's starting live heap, not process RSS. File reads are excluded from
+all stage timers. No warmup passes are hidden; medians include every requested pass.
+
 ## Header pipeline profiling
 
 Compare complete query outputs across both page encodings with:

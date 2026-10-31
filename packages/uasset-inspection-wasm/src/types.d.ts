@@ -544,7 +544,21 @@ export interface BrowserRuntimeOptions extends RuntimeOptions {
 	readonly module?: BrowserWasmModule;
 }
 
+/** A package parsed once; call `free()` when done. */
+export interface PackageHandle {
+	readonly inspect: () => InspectionResult;
+	readonly extractText: () => TextResult;
+	readonly extractTextures: () => TextureResult;
+	readonly extractAuthoringTable: () => AuthoringTableResult;
+	readonly extractLevelSequences: () => LevelSequenceResult;
+	readonly extractBlueprints: () => BlueprintResult;
+	readonly extractAnimations: () => AnimationResult;
+	readonly free: () => void;
+}
+
 export interface WasmRuntime {
+	/** Opens a package handle that parses the bytes once and reuses the parse across operations. */
+	readonly openPackage: (path: string, bytes: Uint8Array) => PackageHandle;
 	readonly extractAnimations: (path: string, bytes: Uint8Array) => AnimationResult;
 	readonly limits: RuntimeLimits;
 	readonly inspect: (path: string, bytes: Uint8Array) => InspectionResult;

@@ -18,6 +18,7 @@ mod json;
 
 pub use json::{
     InspectionJsonError, InspectionJsonStatus, inspect_bytes_json, write_inspection_json,
+    write_inspection_json_from_package, write_inspection_json_from_package_with_schemas,
     write_inspection_json_with_schemas,
 };
 
@@ -173,6 +174,7 @@ impl InspectOutput {
             }
         };
         let context = AssetDecodeContext {
+            property_filter: None,
             source,
             package,
             schemas,
@@ -829,26 +831,29 @@ pub(crate) fn value_output(package: &Package, value: PropertyValue) -> PropertyV
             fields: fields
                 .into_iter()
                 .map(|field| NativeFieldOutput {
-                    name: field.name,
+                    name: field.name.into_owned(),
                     value: value_output(package, field.value),
                 })
                 .collect(),
         },
-        PropertyValue::InstancedStruct {
-            struct_type,
-            payload,
-            value,
-        } => PropertyValueOutput::InstancedStruct {
-            struct_type: resolve_object_ref(package, struct_type),
-            size: payload.len(),
-            value: value.map(|value| {
-                let mut output = value_output(package, *value);
-                if let PropertyValueOutput::Raw { size, .. } = &mut output {
-                    *size = payload.len();
-                }
-                Box::new(output)
-            }),
-        },
+        PropertyValue::InstancedStruct(instance) => {
+            let uasset_parser::property::InstancedStructValue {
+                struct_type,
+                payload,
+                value,
+            } = *instance;
+            PropertyValueOutput::InstancedStruct {
+                struct_type: resolve_object_ref(package, struct_type),
+                size: payload.len(),
+                value: value.map(|value| {
+                    let mut output = value_output(package, *value);
+                    if let PropertyValueOutput::Raw { size, .. } = &mut output {
+                        *size = payload.len();
+                    }
+                    Box::new(output)
+                }),
+            }
+        }
         PropertyValue::Bool(value) => PropertyValueOutput::Bool { value },
         PropertyValue::Int(value) => PropertyValueOutput::Int { value },
         PropertyValue::UInt(value) => PropertyValueOutput::Uint { value },
@@ -861,7 +866,7 @@ pub(crate) fn value_output(package: &Package, value: PropertyValue) -> PropertyV
             value: resolve_name_or_placeholder(package, name),
         },
         PropertyValue::String(value) => PropertyValueOutput::String { value },
-        PropertyValue::Text(text) => text_value_output(text),
+        PropertyValue::Text(text) => text_value_output(*text),
         PropertyValue::Vector(vector) => PropertyValueOutput::Vector {
             x: vector.x,
             y: vector.y,
@@ -929,7 +934,7 @@ pub(crate) fn value_output(package: &Package, value: PropertyValue) -> PropertyV
                 .collect(),
         },
         PropertyValue::Struct(stream) => PropertyValueOutput::Struct {
-            properties: property_outputs(package, stream),
+            properties: property_outputs(package, *stream),
         },
         PropertyValue::Raw { reason } => PropertyValueOutput::Raw {
             reason: render_raw_reason(reason),
@@ -1061,7 +1066,7 @@ pub struct ErrorOutput {
 }
 
 impl ErrorOutput {
-    fn package(path: String, error: &PackageError) -> Self {
+    pub fn package(path: String, error: &PackageError) -> Self {
         let kind = match error.kind() {
             PackageErrorKind::MalformedData => "malformed_data",
             PackageErrorKind::ResourceLimit => "resource_limit",

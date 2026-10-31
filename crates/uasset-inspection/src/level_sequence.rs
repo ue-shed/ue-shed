@@ -473,20 +473,18 @@ fn inventory_property_value(
                 );
             }
         }
-        PropertyValue::InstancedStruct {
-            struct_type, value, ..
-        } => {
+        PropertyValue::InstancedStruct(instance) => {
             inventory_index_reference(
                 package,
                 owner,
                 &join_property_path(property_path, "StructType"),
-                *struct_type,
+                instance.struct_type,
                 SequenceReferenceKind::Object,
                 None,
                 references,
                 gaps,
             );
-            if let Some(value) = value {
+            if let Some(value) = &instance.value {
                 inventory_property_value(
                     package,
                     owner,
@@ -497,6 +495,9 @@ fn inventory_property_value(
                 );
             }
         }
+        PropertyValue::Raw {
+            reason: uasset_parser::property::RawReason::NotRequested,
+        } => {}
         PropertyValue::Raw { .. } => gaps.push(SequenceReferenceCoverageGap {
             owner_path: owner.object_path.to_string(),
             property_path: property_path.to_owned(),
@@ -1090,6 +1091,7 @@ mod tests {
         .expect("fixture package");
         let package = Package::parse(&bytes).expect("fixture parses");
         let context = AssetDecodeContext {
+            property_filter: None,
             source: &bytes,
             package: &package,
             schemas: uasset_parser::schema::embedded_source_model(),
@@ -1108,11 +1110,11 @@ mod tests {
         let synthetic = PropertyValue::Array(vec![
             PropertyValue::Map(vec![MapEntry {
                 key: PropertyValue::SoftObjectPath("/Game/Other/DA_Config.DA_Config".to_owned()),
-                value: PropertyValue::Struct(PropertyStream {
+                value: PropertyValue::Struct(Box::new(PropertyStream {
                     class_extensions: None,
                     records: vec![nested_record],
                     terminator: Default::default(),
-                }),
+                })),
             }]),
             PropertyValue::Set(vec![PropertyValue::ObjectRef(PackageIndex::Export(0))]),
         ]);

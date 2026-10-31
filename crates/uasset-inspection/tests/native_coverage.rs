@@ -47,6 +47,7 @@ fn discrete_sequence_matches_loaded_apis_and_retains_absent_fields() {
     let bytes = fixture_bytes("LS_Discrete");
     let package = uasset_parser::Package::parse(&bytes).unwrap();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -538,6 +539,7 @@ fn animation_summary_matches_unreal_and_preserves_missing_evidence() {
 
     let package = uasset_parser::Package::parse(&bytes).unwrap();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -694,6 +696,7 @@ fn numeric_sequence_projection_matches_unreal_channels_masks_and_reports_gaps() 
     let bytes = fixture_bytes("LS_Numeric");
     let package = uasset_parser::Package::parse(&bytes).unwrap();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -833,6 +836,7 @@ fn saved_sequence_rejects_bad_key_arrays_settings_cut_ids_and_binding_metadata()
     let bytes = fixture_bytes("LS_SavedDetails");
     let package = uasset_parser::Package::parse(&bytes).unwrap();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -954,6 +958,7 @@ fn blueprint_definition_reports_unavailable_defaults_templates_bad_variables_and
         .unwrap();
     let package = uasset_parser::Package::parse(&bytes).unwrap();
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),
@@ -1074,6 +1079,7 @@ fn saved_actor_component_native_data_matches_independent_loaded_apis() {
     let bytes = fixture_bytes("LS_SavedDetails");
     let package = uasset_parser::Package::parse(&bytes).unwrap();
     let context = uasset_parser::asset::AssetDecodeContext {
+        property_filter: None,
         source: &bytes,
         package: &package,
         schemas: uasset_parser::schema::embedded_source_model(),

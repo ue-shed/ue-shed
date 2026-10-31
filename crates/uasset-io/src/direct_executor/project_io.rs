@@ -1635,6 +1635,12 @@ fn project_parsed_package(
     checkpoint(cancellation, "parsing")?;
     checkpoint(cancellation, "inspection")?;
     let context = AssetDecodeContext {
+        property_filter: match kind {
+            ProjectionKind::Text | ProjectionKind::TextPackages => {
+                Some(&uasset_inspection::projection::TextDecodeFilter)
+            }
+            ProjectionKind::Texture => None,
+        },
         source: bytes,
         package,
         schemas: embedded_source_model(),
@@ -2966,6 +2972,7 @@ fn read_saved_world_package(
     };
     checkpoint(cancellation, "parsing")?;
     let context = AssetDecodeContext {
+        property_filter: None,
         source: &source,
         package: &package,
         schemas: embedded_source_model(),
@@ -3792,7 +3799,7 @@ mod tests {
     }
 
     #[test]
-    fn a_text_free_decode_gap_stays_reported_without_making_a_package_partial() {
+    fn text_free_decode_gaps_stay_unfiltered_and_are_omitted_from_text_packages() {
         use crate::protocol_result::{ResultFrame, SavedAssetPackageTextEvent};
         use crate::test_support::{push_i32, write_legacy_property_tag, write_property_terminator};
         for (kind, partial) in [("NameProperty", false), ("TextProperty", true)] {
@@ -3806,11 +3813,27 @@ mod tests {
             let start = export.serial_offset.get() as usize;
             let mut source = vec![0; start];
             // Both declarations have a rejected one-byte payload. A name cannot hold text;
-            // FText can. Recovery retains the tag boundary and every gap in both cases.
+            // FText can. Unfiltered recovery retains both gaps; text extraction requests only FText.
             write_legacy_property_tag(&mut source, 1, 2, &[0], &[0xFF]);
             write_property_terminator(&mut source, 0);
             push_i32(&mut source, 0);
             export.serial_size = (source.len() - start) as u64;
+            let context = uasset_parser::asset::AssetDecodeContext {
+                source: &source,
+                package: &package,
+                schemas: uasset_parser::schema::embedded_source_model(),
+                property_filter: None,
+            };
+            let asset = uasset_parser::asset::decode_export(&package.exports[0], &context)
+                .unwrap()
+                .unwrap();
+            let unfiltered = super::project_text_asset(&package, &asset);
+            assert_eq!(unfiltered.coverage_gaps.len(), 1);
+            assert_eq!(unfiltered.coverage_gaps[0].may_contain_text, partial);
+            assert_eq!(
+                unfiltered.coverage_gaps[0].reason,
+                uasset_inspection::projection::TextCoverageGapReason::PropertyDecoderRejected
+            );
             let output = super::project_parsed_package(
                 super::ProjectionKind::TextPackages,
                 "Fixture.uasset".into(),
@@ -3834,7 +3857,10 @@ mod tests {
                     crate::protocol_result::ProjectionStatus::Complete
                 }
             );
-            assert_eq!(record.gap_counts.property_decoder_rejected, 1);
+            assert_eq!(
+                record.gap_counts.property_decoder_rejected,
+                u64::from(partial)
+            );
             assert_eq!(
                 record
                     .text_gap_counts
@@ -3843,7 +3869,12 @@ mod tests {
                     .property_decoder_rejected,
                 u64::from(partial)
             );
-            assert_eq!(record.gap_samples[0].may_contain_text, Some(partial));
+            if partial {
+                assert_eq!(record.gap_samples.len(), 1);
+                assert_eq!(record.gap_samples[0].may_contain_text, Some(true));
+            } else {
+                assert!(record.gap_samples.is_empty());
+            }
         }
     }
 
@@ -3853,6 +3884,7 @@ mod tests {
         for ue5 in [0, 1000, 1009, 1010, 1011] {
             let (bytes, package) = crate::test_support::legacy_text_package(ue5);
             let context = uasset_parser::asset::AssetDecodeContext {
+                property_filter: None,
                 source: &bytes,
                 package: &package,
                 schemas: uasset_parser::schema::embedded_source_model(),

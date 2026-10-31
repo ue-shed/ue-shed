@@ -709,6 +709,7 @@ mod tests {
             .find(|export| export.object_path.as_str().ends_with(name))
             .expect("function export");
         let context = AssetDecodeContext {
+            property_filter: None,
             source: SIGN,
             package: &package,
             schemas: embedded_source_model(),
@@ -743,6 +744,7 @@ mod tests {
             version.version = saved;
         }
         let context = AssetDecodeContext {
+            property_filter: None,
             source: script,
             package: &package,
             schemas: embedded_source_model(),

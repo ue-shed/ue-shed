@@ -1,4 +1,4 @@
-use super::{Format, Limits, Options, Parsed, failure};
+use super::{Diagnostic, Format, Limits, Options, Parsed, failure, utf16_len};
 use crate::snapshot::{Entry, u32_bytes};
 use crate::wtf8::Wtf8Buf;
 use rustc_hash::FxHashMap;
@@ -105,6 +105,59 @@ fn extra(value: &Map<String, Value>) -> String {
     }
 }
 
+fn canonical_context(context: &str, namespace: &str, key: &str) -> bool {
+    fn escaped(text: &str) -> impl Iterator<Item = char> + '_ {
+        text.chars().flat_map(|c| {
+            (c == ',')
+                .then_some('\\')
+                .into_iter()
+                .chain(std::iter::once(c))
+        })
+    }
+    context.chars().eq(escaped(namespace)
+        .chain(std::iter::once(','))
+        .chain(escaped(key)))
+}
+fn extra_member(out: &mut String, name: &str) {
+    out.push(if out.is_empty() { '{' } else { ',' });
+    out.push('"');
+    out.push_str(name);
+    out.push_str("\":");
+}
+pub(super) fn write_string(out: &mut String, value: &str) {
+    if memchr::memchr(0xf3, value.as_bytes()).is_some() {
+        out.push_str(&Wtf8Buf::from_view(value).json_string());
+        return;
+    }
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    out.push('"');
+    let mut start = 0;
+    for (i, byte) in value.bytes().enumerate() {
+        let escaped = match byte {
+            b'"' => "\\\"",
+            b'\\' => "\\\\",
+            8 => "\\b",
+            9 => "\\t",
+            10 => "\\n",
+            12 => "\\f",
+            13 => "\\r",
+            0..=31 => "",
+            _ => continue,
+        };
+        out.push_str(&value[start..i]);
+        if escaped.is_empty() {
+            out.push_str("\\u00");
+            out.push(HEX[(byte >> 4) as usize] as char);
+            out.push(HEX[(byte & 15) as usize] as char);
+        } else {
+            out.push_str(escaped);
+        }
+        start = i + 1;
+    }
+    out.push_str(&value[start..]);
+    out.push('"');
+}
+
 struct Table {
     values: Vec<Vec<u8>>,
     ids: FxHashMap<String, u32>,
@@ -149,13 +202,23 @@ impl Table {
         if let Some(id) = self.ids.get(value) {
             return Ok(*id);
         }
-        let bytes = Wtf8Buf::from_view(value).into_bytes();
+        let ordinary = memchr::memchr(0xf3, value.as_bytes()).is_none();
+        let bytes = if ordinary {
+            value.as_bytes().to_vec()
+        } else {
+            Wtf8Buf::from_view(value).into_bytes()
+        };
         if bytes.len() > 1024 * 1024 {
             return Err(failure(file, "limit_exceeded", ""));
         }
         if self.identity {
-            self.identity_bytes +=
-                bytes.len() + 128 + Wtf8Buf::from_view(value).to_utf16().len() * 2;
+            self.identity_bytes += bytes.len()
+                + 128
+                + if ordinary {
+                    utf16_len(value)
+                } else {
+                    Wtf8Buf::from_view(value).to_utf16().len()
+                } * 2;
             if self.identity_bytes > limits.max_identity_bytes {
                 return Err(failure(file, "limit_exceeded", ""));
             }
@@ -242,7 +305,12 @@ impl Builder<'_> {
         let mut value = value;
         let row = self.columns[0].len() - 1;
         if field == 4 && !value.is_empty() {
-            if Wtf8Buf::from_view(value).as_bytes().len() > 1024 * 1024 {
+            let length = if memchr::memchr(0xf3, value.as_bytes()).is_none() {
+                value.len()
+            } else {
+                Wtf8Buf::from_view(value).as_bytes().len()
+            };
+            if length > 1024 * 1024 {
                 return Err(failure(self.file, "limit_exceeded", ""));
             }
             if self.path_prefix.is_empty() {
@@ -294,6 +362,68 @@ fn parse_columns_inner(
     limits: &Limits,
     finalize: bool,
 ) -> Parsed<LocalLayer> {
+    let (document, error) = if options.format == Format::Po {
+        let (document, error) =
+            super::po::parse_po_outcome(&chunks.concat(), file, options, limits, finalize);
+        (Document::Po(document), error)
+    } else {
+        let (document, error) = super::json::parse_json_outcome(
+            &chunks.iter().map(String::as_str).collect::<Vec<_>>(),
+            file,
+            options.format,
+            limits,
+            finalize,
+        );
+        (Document::Json(document), error)
+    };
+    build(document, error, file, options, limits, finalize)
+}
+enum Document {
+    Po(super::po::PoDocument),
+    Json(super::json::JsonDocument),
+}
+pub(super) fn build_po(
+    document: super::po::PoDocument,
+    error: Option<Diagnostic>,
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+    finalize: bool,
+) -> Parsed<LocalLayer> {
+    build(
+        Document::Po(document),
+        error,
+        file,
+        options,
+        limits,
+        finalize,
+    )
+}
+pub(super) fn build_json(
+    document: super::json::JsonDocument,
+    error: Option<Diagnostic>,
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+    finalize: bool,
+) -> Parsed<LocalLayer> {
+    build(
+        Document::Json(document),
+        error,
+        file,
+        options,
+        limits,
+        finalize,
+    )
+}
+fn build(
+    document: Document,
+    error: Option<Diagnostic>,
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+    finalize: bool,
+) -> Parsed<LocalLayer> {
     let mut b = Builder {
         file,
         limits,
@@ -311,10 +441,8 @@ fn parse_columns_inner(
         table.add("", file, limits)?;
     }
     let mut po_format = options.po_format.clone().unwrap_or_else(|| "Unreal".into());
-    if options.format == Format::Po {
+    if let Document::Po(document) = document {
         // packages/game-text/src/localization-columns.ts:381-459: compact flags retain PO extras.
-        let (document, error) =
-            super::po::parse_po_outcome(&chunks.concat(), file, options, limits, finalize);
         po_format = document.format;
         let keyed = po_format == "Crowdin"
             && options
@@ -322,9 +450,10 @@ fn parse_columns_inner(
                 .as_deref()
                 .unwrap_or("IdenticalTextIdAndSource")
                 == "IdenticalTextIdAndSource";
+        let mut buffer = String::new();
         for (i, entry) in document.rows.iter().enumerate() {
             b.row();
-            let id = entry.initial_identity.clone();
+            let id = &entry.initial_identity;
             b.columns[0][i] = b.id(&id.namespace)?;
             b.columns[1][i] = b.id(&id.key)?;
             b.columns[10][i] = if entry.identity.is_none() { 16 } else { 0 };
@@ -335,66 +464,96 @@ fn parse_columns_inner(
             } else {
                 b.put(3, entry.msgstr.get(&0).map_or("", String::as_str))?;
             }
-            let mut extras = Map::new();
-            if let Some(plural) = &entry.msgid_plural {
-                extras.insert("msgidPlural".into(), json!(plural));
-            }
             let mut extracted = entry.extracted_comments.as_slice();
-            if options.po_format.is_some() && extracted.first() == Some(&format!("Key: {}", id.key))
+            if options.po_format.is_some()
+                && extracted.first().and_then(|s| s.strip_prefix("Key: ")) == Some(id.key.as_str())
             {
                 b.columns[10][i] |= 256;
                 extracted = &extracted[1..];
             }
-            for (name, values) in [
+            if let Some(path) = entry.reference_comments.first() {
+                b.columns[10][i] |= 512;
+                b.put(4, path)?;
+            }
+            let arrays = [
                 ("extractedComments", extracted),
                 ("translatorComments", entry.translator_comments.as_slice()),
                 ("flags", entry.flags.as_slice()),
                 ("previousMsgidLines", entry.previous_msgid_lines.as_slice()),
-            ] {
-                if !values.is_empty() {
-                    extras.insert(name.into(), json!(values));
-                }
-            }
-            if let Some(path) = entry.reference_comments.first() {
-                b.columns[10][i] |= 512;
-                b.put(4, path)?;
-                if entry.reference_comments.len() > 1 {
-                    extras.insert(
-                        "referenceComments".into(),
-                        json!(&entry.reference_comments[1..]),
-                    );
-                }
-            }
-            let translations = entry
-                .msgstr
-                .iter()
-                .filter(|(key, _)| **key != 0)
-                .map(|(key, value)| (key.to_string(), json!(value)))
-                .collect::<Map<_, _>>();
-            if !translations.is_empty() {
-                extras.insert("msgstr".into(), Value::Object(translations));
-            }
+                (
+                    "referenceComments",
+                    entry.reference_comments.get(1..).unwrap_or(&[]),
+                ),
+            ];
             if entry.msgstr.contains_key(&0) {
                 b.columns[10][i] |= 64;
             }
-            if let Some(context) = &entry.msgctxt {
+            let context = entry.msgctxt.as_deref().filter(|context| {
                 let canonical =
-                    if keyed || context.contains('\\') || context.matches(',').count() != 1 {
-                        format!(
-                            "{},{}",
-                            id.namespace.replace(',', "\\,"),
-                            id.key.replace(',', "\\,")
-                        )
-                    } else {
-                        context.clone()
-                    };
-                if options.po_format.is_some() && context == &canonical {
+                    !(keyed || context.contains('\\') || context.matches(',').count() != 1)
+                        || canonical_context(context, &id.namespace, &id.key);
+                if options.po_format.is_some() && canonical {
                     b.columns[10][i] |= 32;
+                    false
                 } else {
+                    true
+                }
+            });
+            if entry.msgid_plural.is_none()
+                && entry.msgstr.len() == 1
+                && entry.msgstr.contains_key(&0)
+            {
+                buffer.clear();
+                for (name, values) in arrays {
+                    if values.is_empty() {
+                        continue;
+                    }
+                    extra_member(&mut buffer, name);
+                    buffer.push('[');
+                    for (j, value) in values.iter().enumerate() {
+                        if j > 0 {
+                            buffer.push(',');
+                        }
+                        write_string(&mut buffer, value);
+                    }
+                    buffer.push(']');
+                }
+                if let Some(context) = context {
+                    extra_member(&mut buffer, "msgctxt");
+                    write_string(&mut buffer, context);
+                }
+                if !buffer.is_empty() {
+                    buffer.push('}');
+                }
+                if memchr::memchr(0xf3, buffer.as_bytes()).is_some() {
+                    b.put(9, &Wtf8Buf::from_utf8(&buffer).into_view())?;
+                } else {
+                    b.put(9, &buffer)?;
+                }
+            } else {
+                let mut extras = Map::new();
+                if let Some(plural) = &entry.msgid_plural {
+                    extras.insert("msgidPlural".into(), json!(plural));
+                }
+                for (name, values) in arrays {
+                    if !values.is_empty() {
+                        extras.insert(name.into(), json!(values));
+                    }
+                }
+                let translations = entry
+                    .msgstr
+                    .iter()
+                    .filter(|(key, _)| **key != 0)
+                    .map(|(key, value)| (key.to_string(), json!(value)))
+                    .collect::<Map<_, _>>();
+                if !translations.is_empty() {
+                    extras.insert("msgstr".into(), Value::Object(translations));
+                }
+                if let Some(context) = context {
                     extras.insert("msgctxt".into(), json!(context));
                 }
+                b.put(9, &extra(&extras))?;
             }
-            b.put(9, &extra(&extras))?;
         }
         // The streaming host reports a retained-column failure before any later parser failure.
         if let Some(error) = error {
@@ -419,14 +578,7 @@ fn parse_columns_inner(
                 b.columns[1][i] = b.id(&id.key)?;
             }
         }
-    } else {
-        let (document, error) = super::json::parse_json_outcome(
-            &chunks.iter().map(String::as_str).collect::<Vec<_>>(),
-            file,
-            options.format,
-            limits,
-            finalize,
-        );
+    } else if let Document::Json(document) = document {
         for (i, entry) in document.rows.iter().enumerate() {
             b.row();
             b.columns[1][i] = b.id(&entry.key)?;

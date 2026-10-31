@@ -17,14 +17,14 @@ pub(in crate::codec) fn decode(
     reader: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if package.summary.versions.ue5 != 0 {
         if !applies(package) {
             return Ok(None);
         }
         let mut probe = reader.clone();
-        return match decode_record(source, name, &mut probe, package, path, depth) {
+        return match decode_record(source, name, &mut probe, package, path, scope) {
             Ok(value) => {
                 *reader = probe;
                 Ok(value)
@@ -32,7 +32,7 @@ pub(in crate::codec) fn decode(
             Err(_) => Ok(None),
         };
     }
-    decode_record(source, name, reader, package, path, depth)
+    decode_record(source, name, reader, package, path, scope)
 }
 
 fn decode_record(
@@ -41,7 +41,7 @@ fn decode_record(
     reader: &mut Reader<'_>,
     package: &Package,
     path: &str,
-    depth: usize,
+    scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     // UE 4.27 / 5.6–5.8 Niagara/Private/NiagaraModule.cpp, FNiagaraVariableBase::Serialize,
     // FNiagaraVariable::Serialize and operator<<(FNiagaraTypeDefinitionHandle&);
@@ -53,7 +53,7 @@ fn decode_record(
     if !applies(package) {
         return Ok(None);
     }
-    if depth >= MAX_PROPERTY_DECODE_DEPTH {
+    if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
         return Err(error(
             reader,
             path,
@@ -72,15 +72,15 @@ fn decode_record(
     }
     let mut type_def =
         read_tagged_property_stream(reader, &package.summary.versions, &package.names, path)?;
-    decode_property_stream_values_at_depth(source, &mut type_def, package, depth + 1)?;
+    decode_property_stream_values_at_depth(source, &mut type_def, package, scope.nested())?;
     let mut fields = vec![
         NativeProperty {
-            name: "Name".into(),
+            name: Cow::Borrowed("Name"),
             value: PropertyValue::Name(variable_name),
         },
         NativeProperty {
-            name: "TypeDefHandle".into(),
-            value: PropertyValue::Struct(type_def),
+            name: Cow::Borrowed("TypeDefHandle"),
+            value: PropertyValue::Struct(Box::new(type_def)),
         },
     ];
     if name == "NiagaraVariable" {
@@ -88,7 +88,7 @@ fn decode_record(
         reader.checked_vec_capacity::<PropertyValue>(count, 1, path)?;
         let bytes = reader.read_bytes(count, path)?;
         fields.push(NativeProperty {
-            name: "VarData".into(),
+            name: Cow::Borrowed("VarData"),
             value: PropertyValue::Array(
                 bytes
                     .iter()
@@ -98,7 +98,7 @@ fn decode_record(
         });
     } else if name == "NiagaraVariableWithOffset" {
         fields.push(NativeProperty {
-            name: "Offset".into(),
+            name: Cow::Borrowed("Offset"),
             value: PropertyValue::Int(i64::from(reader.read_i32(path)?)),
         });
     }
@@ -140,17 +140,31 @@ mod tests {
                 }
                 let mut reader = Reader::new(&bytes);
                 assert!(
-                    decode(&bytes, name, &mut reader, &package, "Fixture", 0)
-                        .unwrap()
-                        .is_some()
+                    decode(
+                        &bytes,
+                        name,
+                        &mut reader,
+                        &package,
+                        "Fixture",
+                        DecodeScope::root(None)
+                    )
+                    .unwrap()
+                    .is_some()
                 );
                 assert_eq!(reader.remaining(), 0);
                 for end in 0..bytes.len() {
                     let mut reader = Reader::new(&bytes[..end]);
                     assert!(
-                        decode(&bytes, name, &mut reader, &package, "Fixture", 0)
-                            .unwrap()
-                            .is_none()
+                        decode(
+                            &bytes,
+                            name,
+                            &mut reader,
+                            &package,
+                            "Fixture",
+                            DecodeScope::root(None)
+                        )
+                        .unwrap()
+                        .is_none()
                     );
                     assert_eq!(reader.tell(), 0);
                 }
@@ -158,9 +172,16 @@ mod tests {
                 let tagged = [0; 8];
                 let mut reader = Reader::new(&tagged);
                 assert!(
-                    decode(&tagged, name, &mut reader, &package, "Fixture", 0)
-                        .unwrap()
-                        .is_none()
+                    decode(
+                        &tagged,
+                        name,
+                        &mut reader,
+                        &package,
+                        "Fixture",
+                        DecodeScope::root(None)
+                    )
+                    .unwrap()
+                    .is_none()
                 );
                 assert!(
                     read_tagged_property_stream(
@@ -212,9 +233,16 @@ mod tests {
             }
             let mut reader = Reader::new(&bytes);
             assert!(
-                decode(&bytes, name, &mut reader, &package, "Fixture", 0)
-                    .unwrap()
-                    .is_some()
+                decode(
+                    &bytes,
+                    name,
+                    &mut reader,
+                    &package,
+                    "Fixture",
+                    DecodeScope::root(None)
+                )
+                .unwrap()
+                .is_some()
             );
             assert_eq!(reader.remaining(), 0);
             for end in 0..bytes.len() {
@@ -225,7 +253,7 @@ mod tests {
                         &mut Reader::new(&bytes[..end]),
                         &package,
                         "Fixture",
-                        0
+                        DecodeScope::root(None)
                     )
                     .is_err(),
                     "{name}, {end}"
@@ -235,9 +263,16 @@ mod tests {
             old.summary.custom_versions.last_mut().unwrap().version = 63;
             let mut reader = Reader::new(&bytes);
             assert!(
-                decode(&bytes, name, &mut reader, &old, "Fixture", 0)
-                    .unwrap()
-                    .is_none()
+                decode(
+                    &bytes,
+                    name,
+                    &mut reader,
+                    &old,
+                    "Fixture",
+                    DecodeScope::root(None)
+                )
+                .unwrap()
+                .is_none()
             );
             assert_eq!(reader.tell(), 0);
             // Containers treat these as known layouts only where this recipe reads them;
@@ -248,9 +283,16 @@ mod tests {
             assert!(!is_known_struct(name, &old));
             assert!(!is_known_struct(name, &ue5));
             assert!(
-                decode(&bytes, name, &mut Reader::new(&bytes), &ue5, "Fixture", 0)
-                    .unwrap()
-                    .is_none()
+                decode(
+                    &bytes,
+                    name,
+                    &mut Reader::new(&bytes),
+                    &ue5,
+                    "Fixture",
+                    DecodeScope::root(None)
+                )
+                .unwrap()
+                .is_none()
             );
             let mut invalid = bytes.clone();
             invalid[..4].copy_from_slice(&99_i32.to_le_bytes());
@@ -261,7 +303,7 @@ mod tests {
                     &mut Reader::new(&invalid),
                     &package,
                     "Fixture",
-                    0
+                    DecodeScope::root(None)
                 )
                 .is_err()
             );

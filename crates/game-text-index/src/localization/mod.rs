@@ -1,5 +1,6 @@
 //! Authored localization input. Grammar and retained rows follow the TypeScript importer.
 pub mod columns;
+mod fast;
 pub mod import;
 mod json;
 mod po;
@@ -143,12 +144,50 @@ pub struct PoRow {
 }
 
 fn js_space(c: char) -> bool {
+    if c.is_ascii() {
+        return matches!(c, '\t'..='\r' | ' ');
+    }
     matches!(c, '\u{9}'..='\u{d}' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}')
 }
 pub(super) fn trim(text: &str) -> &str {
-    text.trim_matches(js_space)
+    let text = trim_start(text);
+    let mut end = text.len();
+    while end > 0 && matches!(text.as_bytes()[end - 1], b'\t'..=b'\r' | b' ') {
+        end -= 1;
+    }
+    let text = &text[..end];
+    if text.as_bytes().last().is_some_and(|b| !b.is_ascii()) {
+        text.trim_end_matches(js_space)
+    } else {
+        text
+    }
+}
+pub(super) fn trim_start(text: &str) -> &str {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() && matches!(bytes[at], b'\t'..=b'\r' | b' ') {
+        at += 1;
+    }
+    let text = &text[at..];
+    if text.as_bytes().first().is_some_and(|b| !b.is_ascii()) {
+        text.trim_start_matches(js_space)
+    } else {
+        text
+    }
+}
+pub(super) fn utf16_len(text: &str) -> usize {
+    text.bytes()
+        .map(|b| usize::from(b & 0xc0 != 0x80) + usize::from(b >= 0xf0))
+        .sum()
 }
 pub fn identity(value: &str) -> Identity {
+    if !value.contains('\\') {
+        let (namespace, key) = value.split_once(',').unwrap_or((value, ""));
+        return Identity {
+            namespace: namespace.into(),
+            key: key.into(),
+        };
+    }
     // packages/localization/src/po.ts:44-69: only unescaped commas split the identity.
     let mut escaped = false;
     let comma = value.char_indices().find_map(|(i, c)| {
@@ -183,6 +222,28 @@ pub fn parse_bytes(
     parse_bytes_with_chunk(bytes, file, options, limits, 256 * 1024)
 }
 fn parse_bytes_with_chunk(
+    bytes: &[u8],
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+    chunk_bytes: usize,
+) -> Parsed<columns::LocalLayer> {
+    if let Some(layer) = fast::parse(bytes, file, options, limits) {
+        return Ok(layer);
+    }
+    parse_bytes_reference_with_chunk(bytes, file, options, limits, chunk_bytes)
+}
+
+#[doc(hidden)]
+pub fn parse_bytes_reference(
+    bytes: &[u8],
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+) -> Parsed<columns::LocalLayer> {
+    parse_bytes_reference_with_chunk(bytes, file, options, limits, 256 * 1024)
+}
+fn parse_bytes_reference_with_chunk(
     bytes: &[u8],
     file: &str,
     options: &Options,

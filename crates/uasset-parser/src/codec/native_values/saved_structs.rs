@@ -10,6 +10,24 @@ pub(in crate::codec) fn optional_struct(
 ) -> Option<PropertyValue> {
     let identity = ty.parameters.first()?;
     let name = package.resolve_name_cow(identity.name)?;
+    if let Some(value) = super::materials::optional(ty, reader, package, path) {
+        return Some(value);
+    }
+    if let Some(value) = super::niagara_gpu::optional(ty, reader, package, path) {
+        return Some(value);
+    }
+    match name.as_ref() {
+        "PerPlatformFloat" | "PerPlatformInt" | "PerPlatformBool" | "PerPlatformFrameRate" => {
+            return super::per_platform::optional(ty, reader, package, path);
+        }
+        "SkeletalMeshSamplingLODBuiltData" => {
+            return super::sampling::optional(ty, reader, package, path);
+        }
+        "GameplayTagContainer" => {
+            return super::gameplay_tags::optional(ty, reader, package, path);
+        }
+        _ => {}
+    }
     let module = package.resolve_name_cow(identity.parameters.first()?.name)?;
     if !matches!(package.summary.versions.ue5, 1000..=1018) {
         return None;
@@ -28,7 +46,7 @@ pub(in crate::codec) fn optional_struct(
     Some(value)
 }
 
-fn named(name: &'static str, value: PropertyValue) -> NativeProperty {
+pub(super) fn named(name: &'static str, value: PropertyValue) -> NativeProperty {
     NativeProperty {
         name: Cow::Borrowed(name),
         value,
@@ -121,16 +139,19 @@ pub(in crate::codec) fn field_path(
     package: &Package,
     path: &str,
 ) -> Option<PropertyValue> {
-    if !matches!(package.summary.versions.ue5, 1000..=1018)
-        || !matches!(
-            custom_version(package, [0x601D1886, 0xAC644F84, 0xAA16D3DE, 0x0DEAC7D6]),
-            Some(33..)
-        )
-    {
+    let has_owner = matches!(
+        custom_version(package, [0x601D1886, 0xAC644F84, 0xAA16D3DE, 0x0DEAC7D6]),
+        Some(33..)
+    ) || matches!(
+        custom_version(package, [0x9C54D522, 0xA8264FBE, 0x94210746, 0x61B482D0]),
+        Some(30..)
+    );
+    if !matches!(package.summary.versions.ue5, 0 | 1000..=1018) || !has_owner {
         return None;
     }
-    // UE 5.6–5.8 CoreUObject/Private/UObject/FieldPath.cpp operator<<:
-    // FName path array and owner package index from FortniteMain=33.
+    // UE 4.27/5.7/5.8 CoreUObject/Private/UObject/FieldPath.cpp operator<<:
+    // FName path array and owner package index when FortniteMain >=33 OR Release >=30.
+    // Earlier paths encode the owner differently; retain their existing raw fallback.
     let mut probe = reader.clone();
     let count = probe.read_count(path).ok()?;
     let capacity = probe
@@ -253,7 +274,7 @@ mod tests {
         for word in [1, 1, 0, 0] {
             push_i32(&mut bytes, word);
         }
-        for version in [1016, 1017, 1018] {
+        for version in [0, 1000, 1011, 1016, 1017, 1018] {
             package.summary.versions.ue5 = version;
             text_version(&mut package, Some(33), 0);
             let mut reader = Reader::new(&bytes);
@@ -266,6 +287,81 @@ mod tests {
             }
             text_version(&mut package, Some(32), 0);
             assert!(field_path(&mut Reader::new(&bytes), &package, "Fixture").is_none());
+        }
+    }
+
+    #[test]
+    fn field_path_owner_is_enabled_by_either_version_stream_and_rejected_probes_do_not_advance() {
+        let mut package = test_package(vec!["None".into(), "Value".into()]);
+        let mut bytes = vec![];
+        for word in [1, 1, 0, 0] {
+            push_i32(&mut bytes, word);
+        }
+        for version in [0, 1000, 1011, 1017, 1018] {
+            package.summary.versions.ue5 = version;
+            for fortnite in [None, Some(32), Some(33)] {
+                for release in [None, Some(29), Some(30)] {
+                    text_version(&mut package, fortnite, 0);
+                    if let Some(version) = release {
+                        package
+                            .summary
+                            .custom_versions
+                            .push(crate::package::CustomVersion {
+                                key: crate::archive::Guid {
+                                    a: 0x9C54D522,
+                                    b: 0xA8264FBE,
+                                    c: 0x94210746,
+                                    d: 0x61B482D0,
+                                },
+                                version,
+                                friendly_name: None,
+                            });
+                    }
+                    let expected = fortnite.is_some_and(|version| version >= 33)
+                        || release.is_some_and(|version| version >= 30);
+                    let mut reader = Reader::new(&bytes);
+                    let value = field_path(&mut reader, &package, "Fixture");
+                    assert_eq!(
+                        value.is_some(),
+                        expected,
+                        "{version} {fortnite:?} {release:?}"
+                    );
+                    if let Some(value) = value {
+                        assert_eq!(
+                            field(&value, "Path"),
+                            Some(&PropertyValue::Array(vec![PropertyValue::Name(name_ref(
+                                1, 0
+                            ))]))
+                        );
+                        assert_eq!(
+                            field(&value, "Owner"),
+                            Some(&PropertyValue::ObjectRef(PackageIndex::Null))
+                        );
+                        assert_eq!(reader.remaining(), 0);
+                    } else {
+                        assert_eq!(reader.tell(), 0);
+                    }
+                }
+            }
+            text_version(&mut package, Some(33), 0);
+            for (offset, value) in [
+                (0, -1),
+                (0, i32::MAX),
+                (4, i32::MAX),
+                (8, -1),
+                (12, i32::MAX),
+            ] {
+                let mut bad = bytes.clone();
+                bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+                let mut reader = Reader::new(&bad);
+                assert!(field_path(&mut reader, &package, "Fixture").is_none());
+                assert_eq!(reader.tell(), 0);
+            }
+            let empty = [0; 8];
+            let mut reader = Reader::new(&empty);
+            let value = field_path(&mut reader, &package, "Fixture").unwrap();
+            assert_eq!(field(&value, "Path"), Some(&PropertyValue::Array(vec![])));
+            assert_eq!(reader.remaining(), 0);
         }
     }
 }

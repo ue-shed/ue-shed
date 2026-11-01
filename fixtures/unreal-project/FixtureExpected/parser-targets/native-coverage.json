@@ -469,7 +469,8 @@
 		"box_min": [-5.5, -4.25, -3.125],
 		"box_max": [7.75, 8.5, 9.25],
 		"box_valid": true,
-		"grid": [-2147483647, 0, 2147483647]
+		"grid": [-2147483647, 0, 2147483647],
+		"position3f": [0.3333333432674408, -2.5, 16777216]
 	},
 	"tags": ["Fixture.Action.Move", "Fixture.State.Ready"],
 	"property_bag": {
@@ -487,7 +488,7 @@
 		"descriptors": [
 			{
 				"name": "Enabled",
-				"id": "1ccd19354a2a07b64248ddaa5f788c25",
+				"id": "c47cf6e540ded9411ec3cba87828dd56",
 				"type": "bool",
 				"type_object": "",
 				"containers": [],
@@ -498,7 +499,7 @@
 			},
 			{
 				"name": "Count",
-				"id": "4c5a333e42d332337456bcbdf4b04588",
+				"id": "2843e243416d38a599a4179ace951b45",
 				"type": "int32",
 				"type_object": "",
 				"containers": [],
@@ -506,7 +507,7 @@
 			},
 			{
 				"name": "Unsigned",
-				"id": "23c630664c150283a77aa08706890eeb",
+				"id": "bbc55c224674ffcaa578459e676c995d",
 				"type": "uint32",
 				"type_object": "",
 				"containers": [],
@@ -514,7 +515,7 @@
 			},
 			{
 				"name": "Weight",
-				"id": "cea61b5c4788866e8e027a86393f310f",
+				"id": "a4e028c444513df20d3f64b2a51ed5b7",
 				"type": "double",
 				"type_object": "",
 				"containers": [],
@@ -522,7 +523,7 @@
 			},
 			{
 				"name": "Label",
-				"id": "ee469bef40044058c4fee29d1db3ebc1",
+				"id": "e9b3ca31408d357aa3dfadb3e0d7270e",
 				"type": "string",
 				"type_object": "",
 				"containers": [],
@@ -530,7 +531,7 @@
 			},
 			{
 				"name": "Offset",
-				"id": "fac8e25d4e3bf14a063390bd51e1c623",
+				"id": "aea7946648269fdbfee7108125c42773",
 				"type": "struct",
 				"type_object": "/Script/CoreUObject.Vector",
 				"containers": [],
@@ -538,7 +539,7 @@
 			},
 			{
 				"name": "Reference",
-				"id": "5e21c82e41594b628640879840fff60b",
+				"id": "897e7b7e40ff1dbcbb9fb9bd3cfae14e",
 				"type": "object",
 				"type_object": "/Script/CoreUObject.Object",
 				"containers": [],
@@ -546,7 +547,7 @@
 			},
 			{
 				"name": "Samples",
-				"id": "d17cf430415beb29b8546e8773ed00cf",
+				"id": "2699f4e64dc6ad0cc843f9b52340b44a",
 				"type": "float",
 				"type_object": "",
 				"containers": ["array"],
@@ -554,7 +555,7 @@
 			},
 			{
 				"name": "Nested",
-				"id": "b90dfbfe40e8cd739926709fc1e4f330",
+				"id": "5e004b3c4e760a8ab84b65b941345735",
 				"type": "struct",
 				"type_object": "/Script/CoreUObject.InstancedPropertyBag",
 				"containers": [],
@@ -593,7 +594,7 @@
 		"root": {
 			"FixturePurpose": "Shared native layouts",
 			"EmptyRoot": "",
-			"PackageLocalizationNamespace": "865D067AFD702F5010F718F623BEBA24"
+			"PackageLocalizationNamespace": "F4FCE759F3F68908CBF4D95463B6E035"
 		},
 		"objects": {
 			"/Game/Fixture/ParserNative/DA_Native.DA_Native": {
@@ -1373,5 +1374,80 @@
 				"compute_static_bounds": true
 			}
 		]
+	},
+	"coverage_batch": {
+		"cell": [-2147483648, 2147483647],
+		"direction": [-0.125, 0.3333333432674408, 16777216, -8.5],
+		"bounds_min": [-4.25, -8.5],
+		"bounds_max": [16, 32.5],
+		"bounds_valid": true,
+		"ordered_text": "Fixture|Category",
+		"named_text": "Fixture|Named",
+		"escaped_text": "{literal} Fixture | `",
+		"optional_unset": false,
+		"optional_false": false,
+		"optional_true": true,
+		"optional_text": "Fixture|Category",
+		"subobject_path": "FixtureComponent",
+		"actor_path": "/Game/Fixture/Worlds/FixtureMap.FixtureMap:PersistentLevel.FixtureActor",
+		"anim_instance_type": 1,
+		"direct_path": "/Game/Fixture/ParserNative/CF_Native.CF_Native",
+		"empty_fragment": true,
+		"base_variable": {
+			"name": "Fixture.Base",
+			"type": "/Script/Niagara.NiagaraInt32"
+		},
+		"data_variable": {
+			"name": "Fixture.Value",
+			"type": "/Script/Niagara.NiagaraFloat"
+		},
+		"data_value": 1.25,
+		"variable_offset": 24,
+		"function": {
+			"name": "FixtureFunction",
+			"owner": "FixtureOwner",
+			"inputs": [true, false, true],
+			"outputs": 2,
+			"specifier": "Fixture"
+		}
+	},
+	"landscape_constraint": {
+		"layers": [
+			{
+				"guid": [1, 2, 3, 4],
+				"debug_name": "Fixture.Painted",
+				"weight_texture_count": 1,
+				"allocations": [
+					{
+						"texture_index": 3,
+						"channel": 2
+					}
+				]
+			},
+			{
+				"guid": [5, 6, 7, 8],
+				"debug_name": "Fixture.Empty",
+				"weight_texture_count": 0,
+				"allocations": []
+			}
+		],
+		"constraint": {
+			"joint": "FixtureJoint",
+			"bone1": "Root",
+			"bone2": "Tip",
+			"pos1": [-1.25, 2.5, 3.75],
+			"pos2": [8, -16, 32],
+			"disable_collision": true,
+			"linear_breakable": true,
+			"break_threshold": 5123.75,
+			"x_motion": "LCM_Limited",
+			"linear_limit": 27.5,
+			"soft_limit": true,
+			"stiffness": 321,
+			"damping": 17.25,
+			"swing1_motion": "ACM_Limited",
+			"swing1_limit": 37.5
+		},
+		"constraint_array_count": 2
 	}
 }

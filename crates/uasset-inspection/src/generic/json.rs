@@ -1240,7 +1240,8 @@ impl<'a> PropertyValueView<'a> {
                     table_id: Some(table_id),
                     key: Some(key),
                 },
-                TextHistory::NamedFormat { format, .. } => {
+                TextHistory::NamedFormat { format, .. }
+                | TextHistory::OrderedFormat { format, .. } => {
                     let (history, namespace, table_id, key) = text_identity_parts(format);
                     Self::Text {
                         value: &text.source,
@@ -1348,7 +1349,9 @@ fn text_identity_parts(
             ("string_table", None, Some(table_id), Some(key))
         }
         TextHistory::Base { namespace, key, .. } => ("base", Some(namespace), None, Some(key)),
-        TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
+        TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
+            text_identity_parts(format)
+        }
     }
 }
 

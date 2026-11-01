@@ -148,6 +148,36 @@ binary flag comes from another element type. Numeric channels follow Sequencer-1
 framing. New optional recipes probe without advancing the old tagged/opaque fallback on rejection;
 unknown spline implementations and unsupported class fields remain reported gaps.
 
+UE5 `Vector3f` properties, container elements, and instanced structs retain three `float` components,
+independently of the large-world-coordinate width used by ordinary `Vector`. Qualified identities
+must name `/Script/CoreUObject`; project structs with the same short name keep their own layout.
+`Vector4f`, `IntVector2` and `Box2f` likewise retain fixed-width components and the box validity byte.
+Complete-type-name `OptionalProperty` values expose the saved `IsSet` flag and, when present, the
+decoded `Value`; unset, false and zero remain distinct. Older optional framing remains raw.
+Stock Universal Object Locator fragments preserve their type ID and tagged payload. Unknown
+registered fragment types remain raw because their payload serializer has no skip length.
+
+Landscape layer maps retain GUID keys and tagged layer data, including heightmap/weightmap references
+and layer allocations. Legacy `LayersData` maps recover identities only on the exact engine component
+class. `ConstraintInstance` retains saved tagged joint geometry and profile fields; its native
+serializer only registers versions and returns control to tagged serialization. Unreal's post-load
+physics conversions are not applied to saved evidence. Failed probes preserve the opaque property.
+
+The coverage census now walks every decoded property value, including nested containers, struct
+defaults and DataTable rows. It distinguishes raw-value gaps, decode-filter exclusions and export
+failures, and records bounded examples outside the repository. Source-verified additions cover
+legacy byte-enum arrays, per-platform defaults and overrides, skeletal mesh LOD sampling tables,
+legacy field paths, delegate bindings, gameplay-tag containers, material input connections and
+constants, and declared Niagara maps and shader parameter records. VM external function bindings
+retain their declared tagged fields. Legacy variable records recover omitted identities only inside
+source-declared Niagara fields, without changing already decoded values. Named and ordered text
+formats preserve their format and text arguments, including literal pipes and default punctuation
+escapes; numeric formatting and modifiers remain raw.
+Optional recipes preserve the previous tagged or raw fallback when their framing cannot be proved.
+Fixed-list comparisons accept only raw-to-typed replacements and verify that existing tags, values,
+container shapes and error records remain unchanged; see the
+[benchmark guide](../../tools/benchmarks/README.md).
+
 The next saved-review increment adds common Sequencer section settings, scoped camera cuts and
 possessable/spawnable identities, plus string and object-path channels. Blueprint definitions now
 include variable declarations and native source-checked pin types, distinct saved CDO overrides,

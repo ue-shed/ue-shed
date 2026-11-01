@@ -851,7 +851,7 @@ describe("fixture project", () => {
 		const pluginNames = project.Plugins.flatMap((plugin) =>
 			isJsonObject(plugin) && isJsonString(plugin.Name) ? [plugin.Name] : []
 		);
-		expect(pluginNames).toEqual(["EnhancedInput", "RemoteControl"]);
+		expect(pluginNames).toEqual(["Niagara", "EnhancedInput", "RemoteControl"]);
 	});
 
 	it("builds fixture modules without UE Shed plugin dependencies", () => {

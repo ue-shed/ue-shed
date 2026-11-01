@@ -105,6 +105,10 @@ pub enum TextHistory {
         format: Box<TextValue>,
         arguments: Vec<NamedTextFormatArgument>,
     },
+    OrderedFormat {
+        format: Box<TextValue>,
+        arguments: Vec<TextFormatArgumentValue>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -118,7 +122,9 @@ impl TextValue {
     pub fn dev_notes(&self) -> Option<&str> {
         match &self.history {
             TextHistory::Base { dev_notes, .. } => Some(dev_notes),
-            TextHistory::NamedFormat { format, .. } => format.dev_notes(),
+            TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
+                format.dev_notes()
+            }
             TextHistory::None | TextHistory::StringTableEntry { .. } => None,
         }
     }

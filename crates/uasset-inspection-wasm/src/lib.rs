@@ -1614,9 +1614,30 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_blueprint_revision_keeps_text_available_with_named_pin_gaps() {
+    fn supported_blueprint_revision_keeps_text_and_graphs_complete() {
         let mut package = Package::parse(BLUEPRINT_FIXTURE).expect("parse Blueprint fixture");
         package.summary.versions.ue5 = 1016;
+        let text: Value = serde_json::from_str(&extract_text_from_package(
+            "BP_SupportedRevision.uasset",
+            BLUEPRINT_FIXTURE,
+            &package,
+        ))
+        .expect("text projection is JSON");
+        assert_eq!(text["status"], "complete");
+        assert!(text["diagnostics"].as_array().unwrap().is_empty());
+        let blueprint: Value = serde_json::from_str(&extract_blueprints_from_package(
+            "BP_SupportedRevision.uasset",
+            BLUEPRINT_FIXTURE,
+            &package,
+        ))
+        .expect("Blueprint projection is JSON");
+        assert_eq!(blueprint["status"], "ok");
+    }
+
+    #[test]
+    fn unsupported_blueprint_revision_keeps_text_available_with_named_pin_gaps() {
+        let mut package = Package::parse(BLUEPRINT_FIXTURE).expect("parse Blueprint fixture");
+        package.summary.versions.ue5 = i32::MAX;
 
         let text =
             extract_text_from_package("BP_OlderRevision.uasset", BLUEPRINT_FIXTURE, &package);

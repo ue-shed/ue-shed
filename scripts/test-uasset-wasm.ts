@@ -23,6 +23,9 @@ const nativeExecutable = ensureUassetExecutable();
 const fixtureRoot = process.env.UE_SHED_UASSET_FIXTURE_ROOT
 	? resolve(process.env.UE_SHED_UASSET_FIXTURE_ROOT)
 	: join(repositoryRoot, "fixtures", "unreal-project");
+const coverageBatchFixture = process.env.UE_SHED_UASSET_FIXTURE_ROOT
+	? join(fixtureRoot, "Content/Fixture/ParserNative/DA_CoverageBatch.uasset")
+	: join(repositoryRoot, "fixtures/parser-coverage/5.7/DA_CoverageBatch.uasset");
 // SAFETY: checked-in JSON Schema is a development contract, validated against real output below.
 const sequenceSchema: JsonSchema.JsonSchema = JSON.parse(
 	readFileSync(
@@ -63,6 +66,7 @@ const fixtures = [
 	"Content/Fixture/Text/ST_Game.uasset",
 	"Content/Fixture/Cameras/L_CameraLoad.umap"
 ].map((path) => join(fixtureRoot, path));
+fixtures.push(coverageBatchFixture);
 
 const legacyRoot = join(repositoryRoot, "fixtures", "legacy-unreal-project", "Generated");
 const legacyFixtures = legacyVersions.flatMap((version) => {
@@ -99,6 +103,11 @@ const projectionFixtures: ReadonlyArray<{
 	readonly kind: "text" | "texture";
 	readonly root?: string;
 }> = [
+	{
+		path: coverageBatchFixture,
+		kind: "text",
+		root: process.env.UE_SHED_UASSET_FIXTURE_ROOT ? fixtureRoot : dirname(coverageBatchFixture)
+	},
 	...legacyFixtures.map((fixture) => ({ ...fixture, kind: "text" as const })),
 	...["4.27", "5.6", "5.7", "5.8"].map((engine) => ({
 		path: join(repositoryRoot, "fixtures/graph-pin-text", engine, "BP_Keys.uasset"),

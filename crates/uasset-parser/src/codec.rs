@@ -5,6 +5,7 @@ use std::fmt::{self, Write};
 
 mod legacy_structs;
 pub(crate) mod native_values;
+mod optionals;
 mod text_formats;
 pub(crate) use legacy_structs::object_containers;
 
@@ -432,6 +433,15 @@ fn decode_typed_value(
     // allocation-free. The container/struct arms below still need an owned
     // `&str` for their deeper recursion, so they materialize `path` once.
     match type_spec.name {
+        "OptionalProperty" => Ok(optionals::decode(
+            source,
+            type_spec.tree,
+            payload,
+            package,
+            &path.to_string(),
+            scope,
+            ContainerSerializer::from_tag(package, flags),
+        )),
         "BoolProperty" => Ok(Some(PropertyValue::Bool(flags.bool_value()))),
         "Int8Property" => Ok(Some(PropertyValue::Int(i64::from(
             payload.read_i8(&format_args!("{path}.Int8"))?,
@@ -681,6 +691,17 @@ fn decode_binary_or_native_value(
     package: &Package,
     path: &(impl fmt::Display + ?Sized),
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_spec.name == "OptionalProperty" {
+        return Ok(optionals::decode(
+            source,
+            type_spec.tree,
+            payload,
+            package,
+            &path.to_string(),
+            scope,
+            ContainerSerializer::BinaryOrNative,
+        ));
+    }
     // Legacy UUserDefinedStruct tags retain a custom GUID even when their short
     // name collides with a native type. Their payload is a tagged field stream.
     if type_spec.is_user_defined_struct() {
@@ -1237,6 +1258,17 @@ fn decode_container_element(
     scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<Option<PropertyValue>, PropertyError> {
+    if type_spec.name == "OptionalProperty" {
+        return Ok(optionals::decode(
+            source,
+            type_spec.tree,
+            payload,
+            package,
+            path,
+            scope,
+            serializer,
+        ));
+    }
     if type_spec.is_user_defined_struct() {
         return decode_struct_value(source, type_spec, facts, payload, package, path, scope)
             .map(Some);

@@ -4,6 +4,10 @@ This investigation records a new baseline on the local ARM64 machine. Earlier de
 remain separate measurements. The starting parser is commit
 `3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5`; its source and executable were preserved before edits.
 
+These results describe the overnight checkpoint, committed as `6254a1fc`. The subsequently
+authorized [source follow-up](uasset-parser-speed-followup-2026-10-31.md) records seven further
+trials, including final-configuration ablations and the retained common-scalar decoding shortcut.
+
 ## Machine and measurement
 
 Ubuntu 24.04, ARM64 Qualcomm Kryo-4XX Gold/Silver, eight cores, 5.4 GiB RAM. Single-thread

@@ -256,6 +256,20 @@ fn decode_property_record(
     Ok(())
 }
 
+// An unexpected width or source range falls back to the ordinary reader, which
+// owns malformed/trailing-byte diagnostics and legacy raw-value behavior.
+#[inline]
+fn exact_scalar_bytes<const N: usize>(
+    source: &[u8],
+    span: crate::archive::Span,
+) -> Option<[u8; N]> {
+    if span.len() != crate::convert::u64_from_usize(N) {
+        return None;
+    }
+    let start = usize::try_from(span.offset()).ok()?;
+    source.get(start..start.checked_add(N)?)?.try_into().ok()
+}
+
 fn decode_property_record_inner(
     source: &[u8],
     record: &mut PropertyRecord,
@@ -277,6 +291,29 @@ fn decode_property_record_inner(
         };
         return Ok(());
     };
+
+    if !record.flags.is_binary_or_native() {
+        let value = match type_name.as_ref() {
+            "IntProperty" | "Int32Property" => exact_scalar_bytes::<4>(source, record.payload)
+                .map(|bytes| PropertyValue::Int(i64::from(i32::from_le_bytes(bytes)))),
+            "FloatProperty" => exact_scalar_bytes::<4>(source, record.payload)
+                .map(|bytes| PropertyValue::Float(f32::from_le_bytes(bytes))),
+            "DoubleProperty" => exact_scalar_bytes::<8>(source, record.payload)
+                .map(|bytes| PropertyValue::Double(f64::from_le_bytes(bytes))),
+            "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
+                exact_scalar_bytes::<4>(source, record.payload).map(|bytes| {
+                    PropertyValue::ObjectRef(PackageIndex::from_raw(i32::from_le_bytes(bytes)))
+                })
+            }
+            "BoolProperty" => exact_scalar_bytes::<0>(source, record.payload)
+                .map(|_| PropertyValue::Bool(record.flags.bool_value())),
+            _ => None,
+        };
+        if let Some(value) = value {
+            record.value = value;
+            return Ok(());
+        }
+    }
 
     let reader = Reader::new(source);
     let mut payload = reader.bounded(record.payload, "Property.Payload")?;
@@ -1970,6 +2007,54 @@ mod tests {
     };
 
     #[test]
+    fn bool_scalar_shortcut_keeps_flag_precedence_and_trailing_bytes() {
+        use crate::test_support::name_ref;
+        let package = test_package(vec!["BoolProperty".to_owned(), "Value".to_owned()]);
+        for flags in 0..64 {
+            for len in [0, 1] {
+                let mut record = PropertyRecord {
+                    name: name_ref(1, 0),
+                    type_name: PropertyTypeName {
+                        name: name_ref(0, 0),
+                        parameters: vec![],
+                    },
+                    array_index: 0,
+                    flags: PropertyTagFlags(flags),
+                    property_guid: None,
+                    struct_guid: None,
+                    extensions: None,
+                    payload: Span::new(0, len).unwrap(),
+                    value: PropertyValue::Raw {
+                        reason: RawReason::UnsupportedType,
+                    },
+                };
+                decode_property_record(&[0xab], &mut record, &package, DecodeScope::root(None))
+                    .unwrap();
+                let expected = if flags & 0x20 != 0 {
+                    PropertyValue::Raw {
+                        reason: RawReason::DecoderRejected(
+                            "property serialization was skipped".into(),
+                        ),
+                    }
+                } else if flags & 0x08 != 0 {
+                    PropertyValue::Raw {
+                        reason: RawReason::UnsupportedType,
+                    }
+                } else if len != 0 {
+                    PropertyValue::Raw {
+                        reason: RawReason::DecoderRejected(
+                            "1 trailing bytes left in decoded BoolProperty payload".into(),
+                        ),
+                    }
+                } else {
+                    PropertyValue::Bool(flags & 0x10 != 0)
+                };
+                assert_eq!(record.value, expected, "flags={flags:#x}, payload={len}");
+            }
+        }
+    }
+
+    #[test]
     fn filtered_stream_keeps_records_and_spans_and_protects_decoder_reads() {
         struct RejectAll;
         impl crate::asset::PropertyDecodeFilter for RejectAll {
@@ -2331,6 +2416,32 @@ mod tests {
                     .unwrap(),
                 );
                 assert_eq!(element.remaining(), 0, "{name}");
+            }
+            // Scalar tags must agree with the existing bounded typed decoder, including
+            // relocated payload spans; the scalar shortcut is independent of array decoding.
+            let tagged_package = test_package(vec![name.to_owned(), "Value".to_owned()]);
+            for (index, expected_value) in expected.iter().enumerate() {
+                let mut record = PropertyRecord {
+                    name: crate::test_support::name_ref(1, 0),
+                    type_name: tree.clone(),
+                    array_index: 0,
+                    flags: PropertyTagFlags::default(),
+                    property_guid: None,
+                    struct_guid: None,
+                    extensions: None,
+                    payload: Span::new((index * size) as u64, size as u64).unwrap(),
+                    value: PropertyValue::Raw {
+                        reason: RawReason::UnsupportedType,
+                    },
+                };
+                decode_property_record(
+                    &bytes,
+                    &mut record,
+                    &tagged_package,
+                    DecodeScope::root(None),
+                )
+                .unwrap();
+                assert_eq!(&record.value, expected_value, "tagged {name}: {index}");
             }
             for serializer in [
                 ContainerSerializer::Tagged,

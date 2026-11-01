@@ -95,6 +95,8 @@ should follow [Website and illustrated guides](engineering/website.md).
 
 - [UAsset parser speed on ARM64 (2026-10-31)](research/uasset-parser-speed-arm64-2026-10-31.md) —
   local machine baseline, profile-guided experiments, unchanged-output evidence and verification.
+  The [source follow-up](research/uasset-parser-speed-followup-2026-10-31.md) records final-configuration
+  ablations and additional scalar decoding trials.
 
 - [Architecture and API catalog (2026-10-21)](research/architecture-api-catalog-2026-10-21.md) —
   per-package findings for downstream hosts: Workbench- and CLI-only capabilities, unexported

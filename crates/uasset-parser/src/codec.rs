@@ -1603,6 +1603,8 @@ const TAGGED_FALLBACK_NATIVE_STRUCTS: &[(&str, &str)] = &[
     // UE4.27 NiagaraModule.cpp returns false. UE5.7/5.8 explicitly save tagged
     // fields and return true; LWC conversion and index caching happen after load.
     ("/Script/Niagara", "NiagaraTypeDefinition"),
+    // UE4.27/5.7/5.8 NiagaraCommon.cpp calls SerializeTaggedProperties explicitly.
+    ("/Script/Niagara", "VMExternalFunctionBindingInfo"),
 ];
 
 fn is_tagged_fallback_native_struct(package: &Package, type_tree: &PropertyTypeName) -> bool {
@@ -3981,6 +3983,7 @@ mod tests {
             ("FontOutlineSettings", "/Script/SlateCore"),
             ("NiagaraVariant", "/Script/Niagara"),
             ("NiagaraTypeDefinition", "/Script/Niagara"),
+            ("VMExternalFunctionBindingInfo", "/Script/Niagara"),
         ] {
             for version in [1016, 1017, 1018] {
                 let (mut package, bytes) = unknown_struct_set(0x08, &[&[0; 8]]);
@@ -4039,6 +4042,7 @@ mod tests {
         for key in [
             "NiagaraVariableBase",
             "NiagaraTypeDefinition",
+            "VMExternalFunctionBindingInfo",
             "NiagaraDataInterfaceGPUParamInfo",
             "PostProcessSettings",
             "Spline",
@@ -4092,7 +4096,10 @@ mod tests {
                     version: 1,
                     friendly_name: None,
                 });
-            package.names[5] = if matches!(key, "NiagaraVariableBase" | "NiagaraTypeDefinition") {
+            package.names[5] = if matches!(
+                key,
+                "NiagaraVariableBase" | "NiagaraTypeDefinition" | "VMExternalFunctionBindingInfo"
+            ) {
                 "/Script/Niagara"
             } else if key == "PerPlatformFrameRate" {
                 "/Script/CoreUObject"

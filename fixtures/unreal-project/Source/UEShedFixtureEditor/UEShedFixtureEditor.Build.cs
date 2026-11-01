@@ -25,6 +25,8 @@ public class UEShedFixtureEditor : ModuleRules
 				"Localization",
 				"MovieScene",
 				"MovieSceneTracks",
+				"Niagara",
+				"UniversalObjectLocator",
 				"UEShedFixture",
 				"UMG",
 				"UMGEditor",

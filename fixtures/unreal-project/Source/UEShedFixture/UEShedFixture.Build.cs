@@ -15,7 +15,9 @@ public class UEShedFixture : ModuleRules
 				"GameplayTags",
 				"EnhancedInput",
 				"Json",
-				"MovieScene"
+				"MovieScene",
+				"Niagara",
+				"UniversalObjectLocator"
 			}
 		);
 	}

@@ -7,6 +7,9 @@
 #include "StructUtils/InstancedStruct.h"
 #include "GameplayTagContainer.h"
 #include "StructUtils/PropertyBag.h"
+#include "NiagaraCommon.h"
+#include "NiagaraParameterStore.h"
+#include "UniversalObjectLocatorFragment.h"
 #include "UEShedNativeParserTypes.generated.h"
 
 USTRUCT()
@@ -55,6 +58,34 @@ public:
 	UPROPERTY() FInstancedPropertyBag EmptyParameters;
 	UPROPERTY() TArray<FInstancedPropertyBag> ParameterBags;
 	UPROPERTY() FInstancedStruct BagInstance;
+};
+
+UCLASS()
+class UUEShedCoverageBatchAsset : public UDataAsset
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY() FIntVector2 Cell2D = FIntVector2::ZeroValue;
+	UPROPERTY() FVector4f Direction4f = FVector4f(0, 0, 0, 0);
+	UPROPERTY() FBox2f Bounds2f;
+	UPROPERTY() TArray<FIntVector2> Cells2D;
+	UPROPERTY() TArray<FVector4f> Directions4f;
+	UPROPERTY() TArray<FBox2f> Rectangles2f;
+	UPROPERTY() TArray<FInstancedStruct> AliasInstances;
+	UPROPERTY() FText CategoryText;
+	UPROPERTY() FText NamedCategoryText;
+	UPROPERTY() FText EscapedFormatText;
+	UPROPERTY() TOptional<bool> OptionalUnset = TOptional<bool>(true);
+	UPROPERTY() TOptional<bool> OptionalFalse;
+	UPROPERTY() TOptional<bool> OptionalTrue;
+	UPROPERTY() TOptional<FText> OptionalText;
+	UPROPERTY() TArray<FUniversalObjectLocatorFragment> LocatorFragments;
+	UPROPERTY() FNiagaraVariableBase BaseVariable;
+	UPROPERTY() FNiagaraVariable DataVariable;
+	UPROPERTY() FNiagaraVariableWithOffset OffsetVariable;
+	UPROPERTY() TArray<FNiagaraVariable> VariableRecords;
+	UPROPERTY() FVMExternalFunctionBindingInfo ExternalFunction;
+	UPROPERTY() TArray<FVMExternalFunctionBindingInfo> ExternalFunctions;
 };
 
 USTRUCT()

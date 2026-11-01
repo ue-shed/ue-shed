@@ -17,6 +17,13 @@ fn fixture_root() -> PathBuf {
 }
 
 fn fixture_bytes(name: &str) -> Vec<u8> {
+    if name == "DA_CoverageBatch" && std::env::var_os("UE_SHED_UASSET_FIXTURE_ROOT").is_none() {
+        return fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/parser-coverage/5.7/DA_CoverageBatch.uasset"),
+        )
+        .unwrap();
+    }
     fs::read(fixture_root().join(format!("Content/Fixture/ParserNative/{name}.uasset"))).unwrap()
 }
 
@@ -196,6 +203,122 @@ fn properties(values: &Value) -> Value {
         .iter()
         .map(|field| (field["name"].as_str().unwrap().to_owned(), fields(field)))
         .collect()
+}
+
+#[test]
+fn coverage_batch_matches_fresh_unreal_values_and_nested_container_records() {
+    let output = fixture("DA_CoverageBatch");
+    let asset = &output["assets"][0];
+    let oracle = &evidence()["coverage_batch"];
+    let read = |name| fields(property(asset, name));
+    let function = read("ExternalFunction");
+    let fragments = read("LocatorFragments");
+    let variable = |value: &Value| json!({"name":value["Name"],"type":value["TypeDefHandle"]["ClassStructOrEnum"]});
+    let actual = json!({
+        "cell":components(&read("Cell2D"), &["X","Y"]),
+        "direction":components(&read("Direction4f"), &["X","Y","Z","W"]),
+        "bounds_min":components(&read("Bounds2f")["Min"], &["X","Y"]),
+        "bounds_max":components(&read("Bounds2f")["Max"], &["X","Y"]),
+        "bounds_valid":read("Bounds2f")["bIsValid"] == 1,
+        "ordered_text":read("CategoryText"),
+        "named_text":read("NamedCategoryText"),
+        "escaped_text":read("EscapedFormatText"),
+        "optional_unset":read("OptionalUnset")["IsSet"],
+        "optional_false":read("OptionalFalse")["Value"],
+        "optional_true":read("OptionalTrue")["Value"],
+        "optional_text":read("OptionalText")["Value"],
+        "subobject_path":fragments[0]["Payload"]["PathWithinContext"],
+        "actor_path":fragments[1]["Payload"]["Path"],
+        "anim_instance_type":if fragments[2]["Payload"]["Type"].as_str().unwrap().ends_with("::PostProcessAnimInstance") {1} else {panic!("unexpected anim instance locator")},
+        "direct_path":fragments[3]["Payload"]["Path"],
+        "empty_fragment":fragments[4]["FragmentTypeID"]=="None",
+        "base_variable":variable(&read("BaseVariable")),
+        "data_variable":variable(&read("DataVariable")),
+        "data_value":f32::from_le_bytes(read("DataVariable")["VarData"].as_array().unwrap().iter().map(|byte|u8::try_from(byte.as_u64().unwrap()).unwrap()).collect::<Vec<_>>().try_into().unwrap()),
+        "variable_offset":read("OffsetVariable")["Offset"],
+        "function":{"name":function["Name"],"owner":function["OwnerName"],"inputs":function["InputParamLocations"],"outputs":function["NumOutputs"],"specifier":function["FunctionSpecifiers"][0]["Value"]}
+    });
+    equivalent(&actual, oracle, "coverage_batch");
+    assert_eq!(fragments.as_array().unwrap().len(), 5);
+    for (index, id) in ["subobj", "actor", "animinst", "uobj", "None"]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(fragments[index]["FragmentTypeID"], *id);
+    }
+    for (array, scalar) in [
+        ("Cells2D", "Cell2D"),
+        ("Directions4f", "Direction4f"),
+        ("Rectangles2f", "Bounds2f"),
+    ] {
+        assert_eq!(read(array)[0], read(scalar));
+        assert_eq!(read(array).as_array().unwrap().len(), 2);
+    }
+    assert_eq!(read("Rectangles2f")[1]["bIsValid"], 0);
+    let aliases = &property(asset, "AliasInstances")["values"];
+    for (index, (scalar, size)) in [("Cell2D", 8), ("Direction4f", 16), ("Bounds2f", 17)]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(fields(&aliases[index]["value"]), read(scalar));
+        assert_eq!(aliases[index]["size"], *size);
+    }
+    assert_eq!(read("OptionalUnset"), json!({"IsSet":false}));
+    assert_eq!(read("OptionalFalse")["IsSet"], true);
+    assert_eq!(read("OptionalTrue")["IsSet"], true);
+    assert_eq!(read("ExternalFunctions"), json!([function]));
+    assert_eq!(
+        read("ExternalFunction")["VariadicInputs"][0],
+        read("BaseVariable")
+    );
+    assert_eq!(
+        read("ExternalFunction")["VariadicOutputs"][0],
+        variable_base(&read("DataVariable"))
+    );
+    assert_eq!(read("VariableRecords")[0], read("DataVariable"));
+    assert_eq!(read("VariableRecords")[1]["VarData"], json!([]));
+
+    // Exercise the filtered domain path used by Game Text, independently of generic JSON.
+    use uasset_inspection::projection::{TextDecodeFilter, TextLocation, project_text_asset};
+    use uasset_parser::asset::{AssetDecodeContext, decode_export};
+    use uasset_parser::schema::embedded_source_model;
+    let bytes = fixture_bytes("DA_CoverageBatch");
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let context = AssetDecodeContext {
+        source: &bytes,
+        package: &package,
+        schemas: embedded_source_model(),
+        property_filter: Some(&TextDecodeFilter),
+    };
+    let projections: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|export| {
+            decode_export(export, &context)
+                .unwrap()
+                .map(|asset| project_text_asset(&package, &asset))
+        })
+        .collect();
+    for (path, source) in [
+        ("CategoryText", "Fixture|Category"),
+        ("NamedCategoryText", "Fixture|Named"),
+        ("EscapedFormatText", "{literal} Fixture | `"),
+        ("OptionalText.Value", "Fixture|Category"),
+    ] {
+        assert!(projections.iter().flat_map(|p| &p.occurrences).any(|text| {
+            matches!(&text.location, TextLocation::AssetProperty { property_path, .. } if property_path == path) && text.source == source
+        }), "missing filtered text: {path}");
+    }
+    assert!(
+        !projections
+            .iter()
+            .flat_map(|p| &p.coverage_gaps)
+            .any(|gap| gap.property_path.starts_with("OptionalText"))
+    );
+}
+
+fn variable_base(value: &Value) -> Value {
+    json!({"Name":value["Name"],"TypeDefHandle":value["TypeDefHandle"]})
 }
 fn property<'a>(asset: &'a Value, name: &str) -> &'a Value {
     asset["properties"]

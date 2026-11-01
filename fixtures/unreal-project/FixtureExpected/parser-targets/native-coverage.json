@@ -488,7 +488,7 @@
 		"descriptors": [
 			{
 				"name": "Enabled",
-				"id": "715f40854b47769841bf999ff907191e",
+				"id": "c47cf6e540ded9411ec3cba87828dd56",
 				"type": "bool",
 				"type_object": "",
 				"containers": [],
@@ -499,7 +499,7 @@
 			},
 			{
 				"name": "Count",
-				"id": "2a17e02e4224447dcece8b82a7f1c67a",
+				"id": "2843e243416d38a599a4179ace951b45",
 				"type": "int32",
 				"type_object": "",
 				"containers": [],
@@ -507,7 +507,7 @@
 			},
 			{
 				"name": "Unsigned",
-				"id": "e5a5dc104804ec53e4f9bfa196e4a3af",
+				"id": "bbc55c224674ffcaa578459e676c995d",
 				"type": "uint32",
 				"type_object": "",
 				"containers": [],
@@ -515,7 +515,7 @@
 			},
 			{
 				"name": "Weight",
-				"id": "fc2ed3534f3bc5b654820eafaab90787",
+				"id": "a4e028c444513df20d3f64b2a51ed5b7",
 				"type": "double",
 				"type_object": "",
 				"containers": [],
@@ -523,7 +523,7 @@
 			},
 			{
 				"name": "Label",
-				"id": "63b6f63341ef9c1f43c4eda6e041d7f8",
+				"id": "e9b3ca31408d357aa3dfadb3e0d7270e",
 				"type": "string",
 				"type_object": "",
 				"containers": [],
@@ -531,7 +531,7 @@
 			},
 			{
 				"name": "Offset",
-				"id": "de391c584acda7a1c44b7886bf6de4e3",
+				"id": "aea7946648269fdbfee7108125c42773",
 				"type": "struct",
 				"type_object": "/Script/CoreUObject.Vector",
 				"containers": [],
@@ -539,7 +539,7 @@
 			},
 			{
 				"name": "Reference",
-				"id": "3a7ce2d44f070db381fe82ae756570e7",
+				"id": "897e7b7e40ff1dbcbb9fb9bd3cfae14e",
 				"type": "object",
 				"type_object": "/Script/CoreUObject.Object",
 				"containers": [],
@@ -547,7 +547,7 @@
 			},
 			{
 				"name": "Samples",
-				"id": "7c3e33334a6d461d505ecbab26525bfc",
+				"id": "2699f4e64dc6ad0cc843f9b52340b44a",
 				"type": "float",
 				"type_object": "",
 				"containers": ["array"],
@@ -555,7 +555,7 @@
 			},
 			{
 				"name": "Nested",
-				"id": "7bba2f934ec0db1f00d08d969ab85d9d",
+				"id": "5e004b3c4e760a8ab84b65b941345735",
 				"type": "struct",
 				"type_object": "/Script/CoreUObject.InstancedPropertyBag",
 				"containers": [],
@@ -594,7 +594,7 @@
 		"root": {
 			"FixturePurpose": "Shared native layouts",
 			"EmptyRoot": "",
-			"PackageLocalizationNamespace": "83E6DAB284B7541CA52F96BDF1C8BC67"
+			"PackageLocalizationNamespace": "F4FCE759F3F68908CBF4D95463B6E035"
 		},
 		"objects": {
 			"/Game/Fixture/ParserNative/DA_Native.DA_Native": {
@@ -1374,5 +1374,41 @@
 				"compute_static_bounds": true
 			}
 		]
+	},
+	"coverage_batch": {
+		"cell": [-2147483648, 2147483647],
+		"direction": [-0.125, 0.3333333432674408, 16777216, -8.5],
+		"bounds_min": [-4.25, -8.5],
+		"bounds_max": [16, 32.5],
+		"bounds_valid": true,
+		"ordered_text": "Fixture|Category",
+		"named_text": "Fixture|Named",
+		"escaped_text": "{literal} Fixture | `",
+		"optional_unset": false,
+		"optional_false": false,
+		"optional_true": true,
+		"optional_text": "Fixture|Category",
+		"subobject_path": "FixtureComponent",
+		"actor_path": "/Game/Fixture/Worlds/FixtureMap.FixtureMap:PersistentLevel.FixtureActor",
+		"anim_instance_type": 1,
+		"direct_path": "/Game/Fixture/ParserNative/CF_Native.CF_Native",
+		"empty_fragment": true,
+		"base_variable": {
+			"name": "Fixture.Base",
+			"type": "/Script/Niagara.NiagaraInt32"
+		},
+		"data_variable": {
+			"name": "Fixture.Value",
+			"type": "/Script/Niagara.NiagaraFloat"
+		},
+		"data_value": 1.25,
+		"variable_offset": 24,
+		"function": {
+			"name": "FixtureFunction",
+			"owner": "FixtureOwner",
+			"inputs": [true, false, true],
+			"outputs": 2,
+			"specifier": "Fixture"
+		}
 	}
 }

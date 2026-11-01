@@ -151,14 +151,22 @@ unknown spline implementations and unsupported class fields remain reported gaps
 UE5 `Vector3f` properties, container elements, and instanced structs retain three `float` components,
 independently of the large-world-coordinate width used by ordinary `Vector`. Qualified identities
 must name `/Script/CoreUObject`; project structs with the same short name keep their own layout.
+`Vector4f`, `IntVector2` and `Box2f` likewise retain fixed-width components and the box validity byte.
+Complete-type-name `OptionalProperty` values expose the saved `IsSet` flag and, when present, the
+decoded `Value`; unset, false and zero remain distinct. Older optional framing remains raw.
+Stock Universal Object Locator fragments preserve their type ID and tagged payload. Unknown
+registered fragment types remain raw because their payload serializer has no skip length.
 
 The coverage census now walks every decoded property value, including nested containers, struct
 defaults and DataTable rows. It distinguishes raw-value gaps, decode-filter exclusions and export
 failures, and records bounded examples outside the repository. Source-verified additions cover
 legacy byte-enum arrays, per-platform defaults and overrides, skeletal mesh LOD sampling tables,
 legacy field paths, delegate bindings, gameplay-tag containers, material input connections and
-constants, and declared Niagara maps and shader parameter records. Simple named and ordered text
-formats preserve their format and text arguments; numeric formatting and modifiers remain raw.
+constants, and declared Niagara maps and shader parameter records. VM external function bindings
+retain their declared tagged fields. Legacy variable records recover omitted identities only inside
+source-declared Niagara fields, without changing already decoded values. Named and ordered text
+formats preserve their format and text arguments, including literal pipes and default punctuation
+escapes; numeric formatting and modifiers remain raw.
 Optional recipes preserve the previous tagged or raw fallback when their framing cannot be proved.
 Fixed-list comparisons accept only raw-to-typed replacements and verify that existing tags, values,
 container shapes and error records remain unchanged; see the

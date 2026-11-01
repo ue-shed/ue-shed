@@ -27,6 +27,7 @@
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
+#include "UEShedCoverageBatchFixture.h"
 
 namespace
 {
@@ -266,6 +267,9 @@ bool GenerateNativeParserFixtures()
 	Metadata.SetValue(Asset, TEXT("Comment"), TEXT("caf\u00e9 / \u4fdd\u5b58"));
 	Metadata.SetValue(Asset, TEXT("Empty"), TEXT(""));
 	if (!Save(Asset)) return false;
+	UUEShedCoverageBatchAsset* CoverageBatch = CreateAsset<UUEShedCoverageBatchAsset>(TEXT("DA_CoverageBatch"));
+	FillCoverageBatchFixture(CoverageBatch, Float);
+	if (!Save(CoverageBatch)) return false;
 
 	ULevelSequence* Sequence = CreateAsset<ULevelSequence>(TEXT("LS_Numeric"));
 	Sequence->Initialize();
@@ -360,6 +364,9 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	Math->SetBoolField(TEXT("box_valid"), Asset->Bounds.IsValid != 0);
 	Math->SetArrayField(TEXT("grid"), Numbers({double(Asset->Grid.X), double(Asset->Grid.Y), double(Asset->Grid.Z)}));
 	Result->SetObjectField(TEXT("math"), Math);
+	const auto* CoverageBatch = LoadAsset<UUEShedCoverageBatchAsset>(TEXT("DA_CoverageBatch"));
+	if (!CoverageBatch) return false;
+	Result->SetObjectField(TEXT("coverage_batch"), CoverageBatchFixtureEvidence(CoverageBatch));
 	TArray<FString> TagNames;
 	for (const FGameplayTag& Tag : Asset->Tags) TagNames.Add(Tag.ToString());
 	TagNames.Sort();

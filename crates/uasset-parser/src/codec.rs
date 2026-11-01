@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::fmt::{self, Write};
 
 mod legacy_structs;
+mod locators;
 pub(crate) mod native_values;
 mod optionals;
 mod text_formats;
@@ -727,6 +728,9 @@ fn decode_binary_or_native_value(
         // wants an owned `&str`; materialize the breadcrumb once here rather
         // than per read.
         let path = path.to_string();
+        if let Some(value) = locators::decode(source, type_tree, payload, package, &path, scope) {
+            return Ok(Some(value));
+        }
         if let Some(value) = native_values::optional_struct(type_tree, payload, package, &path) {
             return Ok(Some(value));
         }
@@ -1275,6 +1279,12 @@ fn decode_container_element(
     }
     if type_spec.name == "StructProperty" {
         let math_name = &facts.math_name;
+        if serializer != ContainerSerializer::Tagged
+            && let Some(value) =
+                locators::decode(source, type_spec.tree, payload, package, path, scope)
+        {
+            return Ok(Some(value));
+        }
         if let Some(value) =
             native_values::math_struct(math_name.as_deref().unwrap_or(""), payload, package, path)?
         {
@@ -1527,6 +1537,9 @@ fn speculative_container_struct(
         return true;
     }
     if native_values::niagara_gpu::applies(ty, package) {
+        return true;
+    }
+    if locators::applies(ty, package) {
         return true;
     }
     if package.summary.versions.ue5 != 0

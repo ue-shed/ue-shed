@@ -9,7 +9,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uasset_parser::Package;
-use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
+use uasset_parser::asset::{AssetDecodeContext, AssetDecodeSession, DecodedAsset};
 use uasset_parser::property::{PropertyStream, PropertyTypeName, PropertyValue, RawReason};
 use uasset_parser::schema::embedded_source_model;
 
@@ -572,9 +572,10 @@ pub(super) fn run(paths: &[String], root: &Path, out: &Path, keep_evidence: bool
                     schemas: embedded_source_model(),
                     property_filter: None,
                 };
+                let mut decoder = AssetDecodeSession::new(&context);
                 for (export_index, export) in package.exports.iter().enumerate() {
                     let started = Instant::now();
-                    let decoded = decode_export(export, &context);
+                    let decoded = decoder.decode(export);
                     census.stage_ns[1] += started.elapsed().as_nanos() as u64;
                     match decoded {
                         Ok(Some(asset)) => {

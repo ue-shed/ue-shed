@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use uasset_parser::Package;
 use uasset_parser::archive::NameRef;
 use uasset_parser::asset::{
-    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetErrorKind, DATA_ASSET_CLASS, DecodedAsset,
-    EnumCppForm, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
+    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetDecodeSession, AssetErrorKind, DATA_ASSET_CLASS,
+    DecodedAsset, EnumCppForm, PRIMARY_DATA_ASSET_CLASS, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
     USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{ObjectPath, PackageErrorKind, PackageIndex};
@@ -59,8 +59,9 @@ pub fn inspect_package_with_checkpoint(
         package,
         schemas: embedded_source_model(),
     };
+    let mut decoder = AssetDecodeSession::new(&context);
     for (index, export) in package.exports.iter().enumerate() {
-        let decoded = DecodedExports::decode(cache, index, export, &context);
+        let decoded = DecodedExports::decode_with_session(cache, index, export, &mut decoder);
         if let Err(error) = &*decoded {
             decode_errors.push(SavedAssetDecodeError {
                 object_path: export.object_path.to_string(),

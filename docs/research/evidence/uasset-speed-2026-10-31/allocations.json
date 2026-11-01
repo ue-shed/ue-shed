@@ -1,0 +1,63 @@
+{
+	"method": "System allocator instrumentation: parse, retain every decoded export, text projection, then drop; input reads excluded. Streaming inspection peak measured separately. First pass includes initialization/digest work; compare passes 2–3. Instrumented timings are excluded.",
+	"baseline": {
+		"typeSizes": {
+			"PropertyRecord": 144,
+			"PropertyValue": 32,
+			"TextValue": 96
+		},
+		"runs": [
+			{
+				"pass": 1,
+				"alloc_count": 902601,
+				"alloc_bytes": 104393097,
+				"peak_live_bytes": 34713044,
+				"inspect_peak_live_bytes": 27347894
+			},
+			{
+				"pass": 2,
+				"alloc_count": 864957,
+				"alloc_bytes": 99276777,
+				"peak_live_bytes": 34713040,
+				"inspect_peak_live_bytes": 27347894
+			},
+			{
+				"pass": 3,
+				"alloc_count": 864957,
+				"alloc_bytes": 99276777,
+				"peak_live_bytes": 34713040,
+				"inspect_peak_live_bytes": 27347894
+			}
+		]
+	},
+	"optimized": {
+		"typeSizes": {
+			"PropertyRecord": 144,
+			"PropertyValue": 32,
+			"TextValue": 96
+		},
+		"runs": [
+			{
+				"pass": 1,
+				"alloc_count": 723630,
+				"alloc_bytes": 66116010,
+				"peak_live_bytes": 28941405,
+				"inspect_peak_live_bytes": 26209954
+			},
+			{
+				"pass": 2,
+				"alloc_count": 685986,
+				"alloc_bytes": 60999690,
+				"peak_live_bytes": 28941405,
+				"inspect_peak_live_bytes": 26209954
+			},
+			{
+				"pass": 3,
+				"alloc_count": 685986,
+				"alloc_bytes": 60999690,
+				"peak_live_bytes": 28941405,
+				"inspect_peak_live_bytes": 26209954
+			}
+		]
+	}
+}

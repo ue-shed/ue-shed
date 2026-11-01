@@ -1,0 +1,1623 @@
+{
+	"recordedAt": "2026-11-01T05:23:49.970Z",
+	"original": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+	"roundCheckpoint": "97d555be8008f60bbc1a373467f9ea5241d22030",
+	"source": "Formatted/commented trial112, frozen under verification/core-1/source.sha256. Checkout HEAD in benchmark metadata is not the uncommitted source identity.",
+	"comparisons": {
+		"checkpoint": {
+			"folder": "out/uasset-speed-2026-10-31/architecture/core-1-vs-checkpoint",
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 12.56946,
+					"candidateMs": 12.630484333333333,
+					"reductionPercent": -0.48549685772765194,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 12.912534666666668,
+							"candidateMs": 12.630484333333333,
+							"reductionPercent": 2.184314238949836
+						},
+						{
+							"block": 1,
+							"baselineMs": 12.56946,
+							"candidateMs": 12.665832,
+							"reductionPercent": -0.7667155152250027
+						},
+						{
+							"block": 2,
+							"baselineMs": 12.551890666666667,
+							"candidateMs": 12.621057333333333,
+							"reductionPercent": -0.5510458026084297
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "combined",
+					"baselineMs": 66.929422,
+					"candidateMs": 61.780436,
+					"reductionPercent": 7.693157726657196,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 67.590884,
+							"candidateMs": 61.780436,
+							"reductionPercent": 8.596496533467446
+						},
+						{
+							"block": 1,
+							"baselineMs": 66.929422,
+							"candidateMs": 61.969187000000005,
+							"reductionPercent": 7.411142740781473
+						},
+						{
+							"block": 2,
+							"baselineMs": 66.580776,
+							"candidateMs": 61.310486,
+							"reductionPercent": 7.915633185170446
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "decode",
+					"baselineMs": 53.217056,
+					"candidateMs": 47.999424,
+					"reductionPercent": 9.804435630561759,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 53.217056,
+							"candidateMs": 47.999424,
+							"reductionPercent": 9.804435630561759
+						},
+						{
+							"block": 1,
+							"baselineMs": 52.612627,
+							"candidateMs": 47.810257,
+							"reductionPercent": 9.127789798445162
+						},
+						{
+							"block": 2,
+							"baselineMs": 53.695445,
+							"candidateMs": 48.142135,
+							"reductionPercent": 10.342236664581128
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 122.3117,
+					"candidateMs": 118.856367,
+					"reductionPercent": 2.825022463100424,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 121.57607,
+							"candidateMs": 118.856367,
+							"reductionPercent": 2.2370380947500546
+						},
+						{
+							"block": 1,
+							"baselineMs": 122.98961999999999,
+							"candidateMs": 119.160693,
+							"reductionPercent": 3.113211505166036
+						},
+						{
+							"block": 2,
+							"baselineMs": 122.3117,
+							"candidateMs": 118.812202,
+							"reductionPercent": 2.861131028348063
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-owned",
+					"baselineMs": 110.49278199999999,
+					"candidateMs": 104.376552,
+					"reductionPercent": 5.535411353838471,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 111.003877,
+							"candidateMs": 103.9466,
+							"reductionPercent": 6.357685146438619
+						},
+						{
+							"block": 1,
+							"baselineMs": 109.81611099999999,
+							"candidateMs": 104.817439,
+							"reductionPercent": 4.551856694324208
+						},
+						{
+							"block": 2,
+							"baselineMs": 110.49278199999999,
+							"candidateMs": 104.376552,
+							"reductionPercent": 5.535411353838471
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 8.66382275,
+					"candidateMs": 8.86424025,
+					"reductionPercent": -2.313268701163129,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 9.20063525,
+							"candidateMs": 9.13144225,
+							"reductionPercent": 0.7520458981351341
+						},
+						{
+							"block": 1,
+							"baselineMs": 8.60750725,
+							"candidateMs": 8.59632225,
+							"reductionPercent": 0.12994470611685793
+						},
+						{
+							"block": 2,
+							"baselineMs": 8.66382275,
+							"candidateMs": 8.86424025,
+							"reductionPercent": -2.313268701163129
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "combined",
+					"baselineMs": 45.581078,
+					"candidateMs": 43.290858,
+					"reductionPercent": 5.024497226678138,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 45.581078,
+							"candidateMs": 42.628927,
+							"reductionPercent": 6.476702898514164
+						},
+						{
+							"block": 1,
+							"baselineMs": 46.164155,
+							"candidateMs": 43.375129,
+							"reductionPercent": 6.041540238308274
+						},
+						{
+							"block": 2,
+							"baselineMs": 45.366807,
+							"candidateMs": 43.290858,
+							"reductionPercent": 4.575920452149084
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "decode",
+					"baselineMs": 37.095199,
+					"candidateMs": 32.986739,
+					"reductionPercent": 11.075449413278527,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 37.095199,
+							"candidateMs": 32.986739,
+							"reductionPercent": 11.075449413278527
+						},
+						{
+							"block": 1,
+							"baselineMs": 37.592493,
+							"candidateMs": 33.951433,
+							"reductionPercent": 9.685603984816849
+						},
+						{
+							"block": 2,
+							"baselineMs": 36.774417,
+							"candidateMs": 32.907261,
+							"reductionPercent": 10.515886628467829
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 87.037395,
+					"candidateMs": 85.533586,
+					"reductionPercent": 1.7277734472636808,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 87.037395,
+							"candidateMs": 85.909055,
+							"reductionPercent": 1.296385306568526
+						},
+						{
+							"block": 1,
+							"baselineMs": 87.18901,
+							"candidateMs": 85.160145,
+							"reductionPercent": 2.3269733192291087
+						},
+						{
+							"block": 2,
+							"baselineMs": 87.007031,
+							"candidateMs": 85.533586,
+							"reductionPercent": 1.693478082248312
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-owned",
+					"baselineMs": 81.138301,
+					"candidateMs": 77.047809,
+					"reductionPercent": 5.041382367619452,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 81.138301,
+							"candidateMs": 77.047809,
+							"reductionPercent": 5.041382367619452
+						},
+						{
+							"block": 1,
+							"baselineMs": 80.6896,
+							"candidateMs": 76.88958,
+							"reductionPercent": 4.709429715849378
+						},
+						{
+							"block": 2,
+							"baselineMs": 81.175385,
+							"candidateMs": 77.107603,
+							"reductionPercent": 5.011102811523482
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 1.184717,
+					"candidateMs": 1.1928052105263158,
+					"reductionPercent": -0.6827124559127373,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.184717,
+							"candidateMs": 1.255110894736842,
+							"reductionPercent": -5.941832077774012
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.1846390526315789,
+							"candidateMs": 1.1756395263157895,
+							"reductionPercent": 0.7596850952868439
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.1961659999999998,
+							"candidateMs": 1.1928052105263158,
+							"reductionPercent": 0.28096346775313696
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "combined",
+					"baselineMs": 8.94344675,
+					"candidateMs": 7.006798000000001,
+					"reductionPercent": 21.65438900835407,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 9.007861,
+							"candidateMs": 7.0495795999999995,
+							"reductionPercent": 21.739693807442194
+						},
+						{
+							"block": 1,
+							"baselineMs": 8.91233975,
+							"candidateMs": 6.999620800000001,
+							"reductionPercent": 21.461468072960287
+						},
+						{
+							"block": 2,
+							"baselineMs": 8.94344675,
+							"candidateMs": 7.006798000000001,
+							"reductionPercent": 21.65438900835407
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "decode",
+					"baselineMs": 7.734651250000001,
+					"candidateMs": 5.7140933333333335,
+					"reductionPercent": 26.123452129359638,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 7.54768375,
+							"candidateMs": 5.7439892,
+							"reductionPercent": 23.89732545431571
+						},
+						{
+							"block": 1,
+							"baselineMs": 8.241724000000001,
+							"candidateMs": 5.645999000000001,
+							"reductionPercent": 31.494927517592195
+						},
+						{
+							"block": 2,
+							"baselineMs": 7.734651250000001,
+							"candidateMs": 5.7140933333333335,
+							"reductionPercent": 26.123452129359638
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 19.338047,
+					"candidateMs": 17.555251000000002,
+					"reductionPercent": 9.21911090608063,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 19.286692000000002,
+							"candidateMs": 17.5796,
+							"reductionPercent": 8.851139428161147
+						},
+						{
+							"block": 1,
+							"baselineMs": 19.4792715,
+							"candidateMs": 17.510875,
+							"reductionPercent": 10.105082728581516
+						},
+						{
+							"block": 2,
+							"baselineMs": 19.338047,
+							"candidateMs": 17.555251000000002,
+							"reductionPercent": 9.21911090608063
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-owned",
+					"baselineMs": 15.937298999999998,
+					"candidateMs": 13.841237666666665,
+					"reductionPercent": 13.151923254582432,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 15.620683,
+							"candidateMs": 14.101187000000001,
+							"reductionPercent": 9.727461981015805
+						},
+						{
+							"block": 1,
+							"baselineMs": 15.937298999999998,
+							"candidateMs": 13.755994333333334,
+							"reductionPercent": 13.68679013091656
+						},
+						{
+							"block": 2,
+							"baselineMs": 16.157014,
+							"candidateMs": 13.841237666666665,
+							"reductionPercent": 14.332947494712423
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 0.19042888785046727,
+					"candidateMs": 0.19123530188679247,
+					"reductionPercent": -0.4234725337252554,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 0.19042888785046727,
+							"candidateMs": 0.19123530188679247,
+							"reductionPercent": -0.4234725337252554
+						},
+						{
+							"block": 1,
+							"baselineMs": 0.1905204018691589,
+							"candidateMs": 0.1916917735849057,
+							"reductionPercent": -0.6148274432841383
+						},
+						{
+							"block": 2,
+							"baselineMs": 0.1897542336448598,
+							"candidateMs": 0.19040835849056606,
+							"reductionPercent": -0.3447221351226881
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "combined",
+					"baselineMs": 2.046317818181818,
+					"candidateMs": 2.053211818181818,
+					"reductionPercent": -0.33689781414918407,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.046317818181818,
+							"candidateMs": 2.053211818181818,
+							"reductionPercent": -0.33689781414918407
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.0449541818181816,
+							"candidateMs": 2.0737753636363636,
+							"reductionPercent": -1.409380321301712
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.0529134545454544,
+							"candidateMs": 2.0517298181818187,
+							"reductionPercent": 0.05765641805380861
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "decode",
+					"baselineMs": 1.7870208461538462,
+					"candidateMs": 1.764576846153846,
+					"reductionPercent": 1.2559450578489728,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.7870208461538462,
+							"candidateMs": 1.762890076923077,
+							"reductionPercent": 1.350335072067288
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.7878501538461538,
+							"candidateMs": 1.7660632307692308,
+							"reductionPercent": 1.2186101296047247
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.7831506153846155,
+							"candidateMs": 1.764576846153846,
+							"reductionPercent": 1.041626493607395
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 2.4582997,
+					"candidateMs": 2.4686539,
+					"reductionPercent": -0.42119355910916756,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.4577684,
+							"candidateMs": 2.4716487,
+							"reductionPercent": -0.5647521548409529
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.4582997,
+							"candidateMs": 2.4686539,
+							"reductionPercent": -0.42119355910916756
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.476460111111111,
+							"candidateMs": 2.4641747,
+							"reductionPercent": 0.496087583078364
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-owned",
+					"baselineMs": 2.2826321,
+					"candidateMs": 2.2894446,
+					"reductionPercent": -0.29844932085201226,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.2813144000000003,
+							"candidateMs": 2.2894446,
+							"reductionPercent": -0.356382268046862
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.2826321,
+							"candidateMs": 2.3526168,
+							"reductionPercent": -3.0659649445918147
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.2848508,
+							"candidateMs": 2.2840748,
+							"reductionPercent": 0.03396283030822067
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 2.1329150833333332,
+					"candidateMs": 2.1404565454545454,
+					"reductionPercent": -0.3535753570379496,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.1327434545454547,
+							"candidateMs": 2.135319583333333,
+							"reductionPercent": -0.12078943589712843
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.1329150833333332,
+							"candidateMs": 2.199044,
+							"reductionPercent": -3.1004008168632913
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.138883,
+							"candidateMs": 2.1404565454545454,
+							"reductionPercent": -0.0735685614662307
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "combined",
+					"baselineMs": 9.34755,
+					"candidateMs": 9.27710725,
+					"reductionPercent": 0.75359586201732,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 9.390949,
+							"candidateMs": 9.282549750000001,
+							"reductionPercent": 1.1542949493176913
+						},
+						{
+							"block": 1,
+							"baselineMs": 9.34755,
+							"candidateMs": 9.27710725,
+							"reductionPercent": 0.75359586201732
+						},
+						{
+							"block": 2,
+							"baselineMs": 9.319672500000001,
+							"candidateMs": 9.24727625,
+							"reductionPercent": 0.7768110950250762
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "decode",
+					"baselineMs": 6.868693400000001,
+					"candidateMs": 6.746807200000001,
+					"reductionPercent": 1.774517989112745,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 6.8789538,
+							"candidateMs": 6.753026,
+							"reductionPercent": 1.8306243022013002
+						},
+						{
+							"block": 1,
+							"baselineMs": 6.854849199999999,
+							"candidateMs": 6.7410154,
+							"reductionPercent": 1.660631717470884
+						},
+						{
+							"block": 2,
+							"baselineMs": 6.868693400000001,
+							"candidateMs": 6.746807200000001,
+							"reductionPercent": 1.774517989112745
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 12.867517,
+					"candidateMs": 12.854878,
+					"reductionPercent": 0.09822407850714754,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 12.904236,
+							"candidateMs": 12.879374666666669,
+							"reductionPercent": 0.19266024996233977
+						},
+						{
+							"block": 1,
+							"baselineMs": 12.864235666666666,
+							"candidateMs": 12.854878,
+							"reductionPercent": 0.07274172293744163
+						},
+						{
+							"block": 2,
+							"baselineMs": 12.867517,
+							"candidateMs": 12.839131666666667,
+							"reductionPercent": 0.22059682014278215
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-owned",
+					"baselineMs": 11.153011333333332,
+					"candidateMs": 11.047542,
+					"reductionPercent": 0.9456579051265956,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 11.075285,
+							"candidateMs": 11.047542,
+							"reductionPercent": 0.2504946825296117
+						},
+						{
+							"block": 1,
+							"baselineMs": 11.164782333333333,
+							"candidateMs": 11.028132333333334,
+							"reductionPercent": 1.2239378782335941
+						},
+						{
+							"block": 2,
+							"baselineMs": 11.153011333333332,
+							"candidateMs": 11.065788666666668,
+							"reductionPercent": 0.7820548554987927
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 150
+		},
+		"original": {
+			"folder": "out/uasset-speed-2026-10-31/architecture/core-1-vs-original",
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 19.5293505,
+					"candidateMs": 12.540301333333332,
+					"reductionPercent": 35.787412216636014,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 19.5546365,
+							"candidateMs": 12.655380666666666,
+							"reductionPercent": 35.28194366248299
+						},
+						{
+							"block": 1,
+							"baselineMs": 19.5293505,
+							"candidateMs": 12.290135666666666,
+							"reductionPercent": 37.0683850102098
+						},
+						{
+							"block": 2,
+							"baselineMs": 19.461834,
+							"candidateMs": 12.540301333333332,
+							"reductionPercent": 35.564647538698914
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "combined",
+					"baselineMs": 106.42104300000001,
+					"candidateMs": 61.779656,
+					"reductionPercent": 41.947894647114104,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 106.42104300000001,
+							"candidateMs": 61.779656,
+							"reductionPercent": 41.947894647114104
+						},
+						{
+							"block": 1,
+							"baselineMs": 108.383814,
+							"candidateMs": 61.847365,
+							"reductionPercent": 42.93671470169891
+						},
+						{
+							"block": 2,
+							"baselineMs": 106.337846,
+							"candidateMs": 61.71567,
+							"reductionPercent": 41.96264799270054
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "decode",
+					"baselineMs": 86.56694900000001,
+					"candidateMs": 48.055989000000004,
+					"reductionPercent": 44.48690920133965,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 86.526925,
+							"candidateMs": 48.075884,
+							"reductionPercent": 44.438238155348756
+						},
+						{
+							"block": 1,
+							"baselineMs": 86.680728,
+							"candidateMs": 48.055989000000004,
+							"reductionPercent": 44.55977688604553
+						},
+						{
+							"block": 2,
+							"baselineMs": 86.56694900000001,
+							"candidateMs": 47.852761,
+							"reductionPercent": 44.72167316420035
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 162.681866,
+					"candidateMs": 118.253345,
+					"reductionPercent": 27.31006355680725,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 162.681866,
+							"candidateMs": 118.253345,
+							"reductionPercent": 27.31006355680725
+						},
+						{
+							"block": 1,
+							"baselineMs": 162.518899,
+							"candidateMs": 121.46757,
+							"reductionPercent": 25.25941859844867
+						},
+						{
+							"block": 2,
+							"baselineMs": 162.794961,
+							"candidateMs": 118.224555,
+							"reductionPercent": 27.37824667681207
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-owned",
+					"baselineMs": 152.042828,
+					"candidateMs": 104.82790899999999,
+					"reductionPercent": 31.053696922817032,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 152.021497,
+							"candidateMs": 104.82790899999999,
+							"reductionPercent": 31.044022675293093
+						},
+						{
+							"block": 1,
+							"baselineMs": 152.042828,
+							"candidateMs": 104.64491500000001,
+							"reductionPercent": 31.174053800156877
+						},
+						{
+							"block": 2,
+							"baselineMs": 152.322845,
+							"candidateMs": 104.841961,
+							"reductionPercent": 31.17121663529854
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 14.342265,
+					"candidateMs": 8.647189,
+					"reductionPercent": 39.708344532749884,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.342265,
+							"candidateMs": 8.59031975,
+							"reductionPercent": 40.104859657801605
+						},
+						{
+							"block": 1,
+							"baselineMs": 14.396208999999999,
+							"candidateMs": 8.647189,
+							"reductionPercent": 39.93426324944296
+						},
+						{
+							"block": 2,
+							"baselineMs": 14.327720999999999,
+							"candidateMs": 8.86845375,
+							"reductionPercent": 38.10283051994102
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "combined",
+					"baselineMs": 70.833203,
+					"candidateMs": 42.820189,
+					"reductionPercent": 39.547857238645555,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 70.430536,
+							"candidateMs": 42.957471,
+							"reductionPercent": 39.00732063149428
+						},
+						{
+							"block": 1,
+							"baselineMs": 71.756323,
+							"candidateMs": 42.820189,
+							"reductionPercent": 40.32555291329518
+						},
+						{
+							"block": 2,
+							"baselineMs": 70.833203,
+							"candidateMs": 42.333577999999996,
+							"reductionPercent": 40.23483873798563
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "decode",
+					"baselineMs": 56.356072,
+					"candidateMs": 33.525389000000004,
+					"reductionPercent": 40.5114873868427,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 56.470357,
+							"candidateMs": 33.525389000000004,
+							"reductionPercent": 40.631880545752516
+						},
+						{
+							"block": 1,
+							"baselineMs": 55.927072,
+							"candidateMs": 33.186845999999996,
+							"reductionPercent": 40.66049801427116
+						},
+						{
+							"block": 2,
+							"baselineMs": 56.356072,
+							"candidateMs": 34.157821999999996,
+							"reductionPercent": 39.38927823074682
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 114.26637000000001,
+					"candidateMs": 86.28291300000001,
+					"reductionPercent": 24.489670057778156,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 114.537076,
+							"candidateMs": 86.505415,
+							"reductionPercent": 24.4738751668499
+						},
+						{
+							"block": 1,
+							"baselineMs": 114.183168,
+							"candidateMs": 86.28291300000001,
+							"reductionPercent": 24.43464784581909
+						},
+						{
+							"block": 2,
+							"baselineMs": 114.26637000000001,
+							"candidateMs": 85.936849,
+							"reductionPercent": 24.792527320155532
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-owned",
+					"baselineMs": 108.19006300000001,
+					"candidateMs": 77.28067800000001,
+					"reductionPercent": 28.569523062390665,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 108.431887,
+							"candidateMs": 77.58416899999999,
+							"reductionPercent": 28.44893587437062
+						},
+						{
+							"block": 1,
+							"baselineMs": 108.19006300000001,
+							"candidateMs": 77.28067800000001,
+							"reductionPercent": 28.569523062390665
+						},
+						{
+							"block": 2,
+							"baselineMs": 107.85697499999999,
+							"candidateMs": 76.375152,
+							"reductionPercent": 29.18849059135953
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 1.6581376428571428,
+					"candidateMs": 1.1829971052631578,
+					"reductionPercent": 28.655072131121074,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.6866356923076924,
+							"candidateMs": 1.1829971052631578,
+							"reductionPercent": 29.86054364564319
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.6581376428571428,
+							"candidateMs": 1.1815606315789473,
+							"reductionPercent": 28.741703882737024
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.6467837857142857,
+							"candidateMs": 1.1832304210526317,
+							"reductionPercent": 28.149011951838578
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "combined",
+					"baselineMs": 22.389789,
+					"candidateMs": 7.011461,
+					"reductionPercent": 68.68455973390371,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 22.4597565,
+							"candidateMs": 7.0041004000000004,
+							"reductionPercent": 68.81488719612788
+						},
+						{
+							"block": 1,
+							"baselineMs": 22.1479325,
+							"candidateMs": 7.16973925,
+							"reductionPercent": 67.62795240594129
+						},
+						{
+							"block": 2,
+							"baselineMs": 22.389789,
+							"candidateMs": 7.011461,
+							"reductionPercent": 68.68455973390371
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "decode",
+					"baselineMs": 20.219104,
+					"candidateMs": 5.647738800000001,
+					"reductionPercent": 72.0673141599153,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 20.171644999999998,
+							"candidateMs": 5.6526556,
+							"reductionPercent": 71.97722049936928
+						},
+						{
+							"block": 1,
+							"baselineMs": 20.270604000000002,
+							"candidateMs": 5.647738800000001,
+							"reductionPercent": 72.13828063534761
+						},
+						{
+							"block": 2,
+							"baselineMs": 20.219104,
+							"candidateMs": 5.6427898,
+							"reductionPercent": 72.09179101111503
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 32.818027,
+					"candidateMs": 17.6460845,
+					"reductionPercent": 46.23051379657893,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 32.808510999999996,
+							"candidateMs": 17.671007,
+							"reductionPercent": 46.138954614551075
+						},
+						{
+							"block": 1,
+							"baselineMs": 32.856063,
+							"candidateMs": 17.6460845,
+							"reductionPercent": 46.29276033467552
+						},
+						{
+							"block": 2,
+							"baselineMs": 32.818027,
+							"candidateMs": 17.549121500000002,
+							"reductionPercent": 46.52597031503447
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-owned",
+					"baselineMs": 28.33971,
+					"candidateMs": 13.839536333333333,
+					"reductionPercent": 51.16556826681242,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 28.33971,
+							"candidateMs": 13.834015666666666,
+							"reductionPercent": 51.1850485884765
+						},
+						{
+							"block": 1,
+							"baselineMs": 28.442914,
+							"candidateMs": 13.839536333333333,
+							"reductionPercent": 51.342762090644676
+						},
+						{
+							"block": 2,
+							"baselineMs": 28.2276165,
+							"candidateMs": 13.862040666666667,
+							"reductionPercent": 50.89191938445576
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 0.26809797333333335,
+					"candidateMs": 0.19170675925925926,
+					"reductionPercent": 28.49376782833597,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 0.26817509210526314,
+							"candidateMs": 0.19170675925925926,
+							"reductionPercent": 28.51433078504875
+						},
+						{
+							"block": 1,
+							"baselineMs": 0.26809797333333335,
+							"candidateMs": 0.19103713592233007,
+							"reductionPercent": 28.743535974138634
+						},
+						{
+							"block": 2,
+							"baselineMs": 0.2666812236842105,
+							"candidateMs": 0.19211245283018868,
+							"reductionPercent": 27.961762670746594
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "combined",
+					"baselineMs": 2.3470386999999997,
+					"candidateMs": 2.0525025384615385,
+					"reductionPercent": 12.549267361397199,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.3437314000000002,
+							"candidateMs": 2.0507401818181816,
+							"reductionPercent": 12.501057850819365
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.3470386999999997,
+							"candidateMs": 2.0553661818181816,
+							"reductionPercent": 12.427256447957935
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.357335230769231,
+							"candidateMs": 2.0525025384615385,
+							"reductionPercent": 12.931240679257193
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "decode",
+					"baselineMs": 1.9738995833333333,
+					"candidateMs": 1.7718646153846154,
+					"reductionPercent": 10.235321475043857,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.9638344166666668,
+							"candidateMs": 1.762697769230769,
+							"reductionPercent": 10.242036992981262
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.9750366666666668,
+							"candidateMs": 1.8163279230769231,
+							"reductionPercent": 8.035736564709028
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.9738995833333333,
+							"candidateMs": 1.7718646153846154,
+							"reductionPercent": 10.235321475043857
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 2.7804722222222225,
+					"candidateMs": 2.470034,
+					"reductionPercent": 11.164946002377697,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.7770867777777775,
+							"candidateMs": 2.4986801,
+							"reductionPercent": 10.025134252396617
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.7804722222222225,
+							"candidateMs": 2.4633934999999996,
+							"reductionPercent": 11.403772340829422
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.8976771111111113,
+							"candidateMs": 2.470034,
+							"reductionPercent": 14.758135386144932
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-owned",
+					"baselineMs": 2.6128313,
+					"candidateMs": 2.2849654999999998,
+					"reductionPercent": 12.548295789322495,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.6555756666666666,
+							"candidateMs": 2.2938405,
+							"reductionPercent": 13.621723199502123
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.6124042222222226,
+							"candidateMs": 2.2849654999999998,
+							"reductionPercent": 12.533999119925221
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.6128313,
+							"candidateMs": 2.2760854999999998,
+							"reductionPercent": 12.88815699658834
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 2.9845704444444445,
+					"candidateMs": 2.134980833333333,
+					"reductionPercent": 28.46605992137191,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.9845704444444445,
+							"candidateMs": 2.1282785454545454,
+							"reductionPercent": 28.690624494517213
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.977105111111111,
+							"candidateMs": 2.1354933333333332,
+							"reductionPercent": 28.269468035801815
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.9916011111111107,
+							"candidateMs": 2.134980833333333,
+							"reductionPercent": 28.634174342167572
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "combined",
+					"baselineMs": 11.078983333333333,
+					"candidateMs": 9.26436,
+					"reductionPercent": 16.37896979115111,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 11.078983333333333,
+							"candidateMs": 9.26436,
+							"reductionPercent": 16.37896979115111
+						},
+						{
+							"block": 1,
+							"baselineMs": 11.069573666666665,
+							"candidateMs": 9.29340975,
+							"reductionPercent": 16.045459112984194
+						},
+						{
+							"block": 2,
+							"baselineMs": 11.133907666666667,
+							"candidateMs": 9.25907925,
+							"reductionPercent": 16.83890753180608
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "decode",
+					"baselineMs": 7.608829999999999,
+					"candidateMs": 6.750796800000001,
+					"reductionPercent": 11.27680865520716,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 7.608829999999999,
+							"candidateMs": 6.750796800000001,
+							"reductionPercent": 11.27680865520716
+						},
+						{
+							"block": 1,
+							"baselineMs": 7.5882830000000006,
+							"candidateMs": 6.9434854,
+							"reductionPercent": 8.49727929229841
+						},
+						{
+							"block": 2,
+							"baselineMs": 7.6124202499999996,
+							"candidateMs": 6.7475114000000005,
+							"reductionPercent": 11.361811639340313
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 14.733085666666666,
+					"candidateMs": 12.863246666666667,
+					"reductionPercent": 12.691428274461714,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.743933666666669,
+							"candidateMs": 12.884149333333333,
+							"reductionPercent": 12.613895147520681
+						},
+						{
+							"block": 1,
+							"baselineMs": 14.686225333333333,
+							"candidateMs": 12.863246666666667,
+							"reductionPercent": 12.412846904432618
+						},
+						{
+							"block": 2,
+							"baselineMs": 14.733085666666666,
+							"candidateMs": 12.828184,
+							"reductionPercent": 12.92941417544643
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-owned",
+					"baselineMs": 13.108421666666667,
+					"candidateMs": 11.110355,
+					"reductionPercent": 15.242618199775638,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 13.061858666666666,
+							"candidateMs": 11.474072333333332,
+							"reductionPercent": 12.155898895042405
+						},
+						{
+							"block": 1,
+							"baselineMs": 13.108421666666667,
+							"candidateMs": 11.110355,
+							"reductionPercent": 15.242618199775638
+						},
+						{
+							"block": 2,
+							"baselineMs": 13.128983333333332,
+							"candidateMs": 11.041025333333335,
+							"reductionPercent": 15.90342486534243
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 150
+		},
+		"nativeOriginal": {
+			"folder": "out/uasset-speed-2026-10-31/architecture/core-1-native",
+			"summary": [
+				{
+					"case": "level",
+					"operation": "inspect-process",
+					"baselineMs": 178.7107649999998,
+					"candidateMs": 157.11084299999993,
+					"reductionPercent": 12.086525397616587,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 181.31102999999985,
+							"candidateMs": 157.11084299999993,
+							"reductionPercent": 13.347333033186082
+						},
+						{
+							"block": 1,
+							"baselineMs": 178.7107649999998,
+							"candidateMs": 161.50081200000022,
+							"reductionPercent": 9.630059498653932
+						},
+						{
+							"block": 2,
+							"baselineMs": 177.13008699999773,
+							"candidateMs": 150.74973699999828,
+							"reductionPercent": 14.893206708581241
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-process",
+					"baselineMs": 71.37086699999963,
+					"candidateMs": 53.89278600000034,
+					"reductionPercent": 24.489097211050247,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 71.37086699999963,
+							"candidateMs": 53.89278600000034,
+							"reductionPercent": 24.489097211050247
+						},
+						{
+							"block": 1,
+							"baselineMs": 70.47451200000069,
+							"candidateMs": 54.5963840000004,
+							"reductionPercent": 22.530312803017537
+						},
+						{
+							"block": 2,
+							"baselineMs": 71.56368500000099,
+							"candidateMs": 52.506014000002324,
+							"reductionPercent": 26.63036566660646
+						}
+					]
+				},
+				{
+					"case": "blueprint",
+					"operation": "inspect-process",
+					"baselineMs": 14.190152999999555,
+					"candidateMs": 13.97483900000043,
+					"reductionPercent": 1.5173479806675272,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.190152999999555,
+							"candidateMs": 13.97483900000043,
+							"reductionPercent": 1.5173479806675272
+						},
+						{
+							"block": 1,
+							"baselineMs": 13.090512999999191,
+							"candidateMs": 13.178325999997469,
+							"reductionPercent": -0.6708140467702295
+						},
+						{
+							"block": 2,
+							"baselineMs": 14.584321000002092,
+							"candidateMs": 14.338590999999724,
+							"reductionPercent": 1.6848916038143424
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 18
+		}
+	},
+	"memory": {
+		"boundary": "Counting System allocator; complete package parse, retain all decoded exports, text/Blueprint projection, drop. Sum requests across corpus; peak is maximum additional live requested bytes for a package. Inspection has a separate peak. Pass1 includes initialization/digest work and is excluded from warm comparisons. Instrumented times are not throughput.",
+		"original": {
+			"git_commit": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+			"list": "out/uasset-speed-2026-10-31/corpus.txt",
+			"runs": [
+				{
+					"alloc_bytes": 104393097,
+					"alloc_count": 902601,
+					"decode_ns": 135419681,
+					"drop_ns": 19099297,
+					"inspect_ns": 207191884,
+					"inspect_peak_live_bytes": 27347894,
+					"parse_ns": 24991095,
+					"pass": 1,
+					"peak_live_bytes": 34713044,
+					"project_ns": 14243852
+				},
+				{
+					"alloc_bytes": 99276777,
+					"alloc_count": 864957,
+					"decode_ns": 118750047,
+					"drop_ns": 18669136,
+					"inspect_ns": 202664100,
+					"inspect_peak_live_bytes": 27347894,
+					"parse_ns": 23601025,
+					"pass": 2,
+					"peak_live_bytes": 34713040,
+					"project_ns": 13451769
+				},
+				{
+					"alloc_bytes": 99276777,
+					"alloc_count": 864957,
+					"decode_ns": 118526375,
+					"drop_ns": 18505074,
+					"inspect_ns": 199850752,
+					"inspect_peak_live_bytes": 27347894,
+					"parse_ns": 23659157,
+					"pass": 3,
+					"peak_live_bytes": 34713040,
+					"project_ns": 13545377
+				}
+			],
+			"text_filter": false,
+			"type_sizes": {
+				"PropertyRecord": 144,
+				"PropertyValue": 32,
+				"TextValue": 96
+			}
+		},
+		"candidate": {
+			"git_commit": "97d555be8008f60bbc1a373467f9ea5241d22030",
+			"list": "/home/user/git/ue-shed/out/uasset-speed-2026-10-31/corpus.txt",
+			"runs": [
+				{
+					"alloc_bytes": 64400852,
+					"alloc_count": 665930,
+					"decode_ns": 138527516,
+					"drop_ns": 12509390,
+					"inspect_ns": 198974921,
+					"inspect_peak_live_bytes": 26209954,
+					"parse_ns": 52112562,
+					"pass": 1,
+					"peak_live_bytes": 28943237,
+					"project_ns": 14677264
+				},
+				{
+					"alloc_bytes": 59284532,
+					"alloc_count": 628286,
+					"decode_ns": 82384471,
+					"drop_ns": 18878743,
+					"inspect_ns": 156001159,
+					"inspect_peak_live_bytes": 26209954,
+					"parse_ns": 19858020,
+					"pass": 2,
+					"peak_live_bytes": 28943237,
+					"project_ns": 12749051
+				},
+				{
+					"alloc_bytes": 59284532,
+					"alloc_count": 628286,
+					"decode_ns": 63720503,
+					"drop_ns": 17130408,
+					"inspect_ns": 140894872,
+					"inspect_peak_live_bytes": 26209954,
+					"parse_ns": 16400869,
+					"pass": 3,
+					"peak_live_bytes": 28943237,
+					"project_ns": 11865958
+				}
+			],
+			"text_filter": false,
+			"type_sizes": {
+				"PropertyRecord": 144,
+				"PropertyValue": 32,
+				"TextValue": 96
+			}
+		},
+		"comparison": [
+			{
+				"metric": "alloc_count",
+				"original": 864957,
+				"candidate": 628286,
+				"reductionPercent": 27.362169448885897
+			},
+			{
+				"metric": "alloc_bytes",
+				"original": 99276777,
+				"candidate": 59284532,
+				"reductionPercent": 40.28358515305145
+			},
+			{
+				"metric": "peak_live_bytes",
+				"original": 34713040,
+				"candidate": 28943237,
+				"reductionPercent": 16.62142814342967
+			},
+			{
+				"metric": "inspect_peak_live_bytes",
+				"original": 27347894,
+				"candidate": 26209954,
+				"reductionPercent": 4.160978538237714
+			}
+		]
+	},
+	"verification": {
+		"clippy": 0,
+		"fullCheck": 1,
+		"fullCheckTail": "ℹ tests 63\nℹ suites 0\nℹ pass 63\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 4855.840172\n$ node scripts/test-public-packages.ts\nfile:///home/user/git/ue-shed/scripts/test-public-packages.ts:51\n\t\tthrow new Error(\n\t\t      ^\n\nError: pnpm install --offline --ignore-scripts --frozen-lockfile failed:\n✓ Lockfile passes supply-chain policies (verified 2s ago)\nLockfile is up to date, resolution step is skipped\nProgress: resolved 1, reused 0, downloaded 0, added 0\nPackages: +108\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nProgress: resolved 108, reused 108, downloaded 0, added 108, done\n[ENOTDIR] ENOTDIR: not a directory, open '/tmp/ue-shed-public-packages-o8KYoI/consumer/node_modules/.pnpm/@ue-shed+engine@file+..+packages+ue-shed-engine-0.25.0.tgz_effect@4.0.0/node_modules/@ue-shed/engine-win32-x64/package.json'\n\npnpm: ENOTDIR: not a directory, open '/tmp/ue-shed-public-packages-o8KYoI/consumer/node_modules/.pnpm/@ue-shed+engine@file+..+packages+ue-shed-engine-0.25.0.tgz_effect@4.0.0/node_modules/@ue-shed/engine-win32-x64/package.json'\n\n\n    at run (file:///home/user/git/ue-shed/scripts/test-public-packages.ts:51:9)\n    at file:///home/user/git/ue-shed/scripts/test-public-packages.ts:361:2\n\nNode.js v26.13.0\n[ELIFECYCLE] Command failed with exit code 1.\n[ELIFECYCLE] Command failed with exit code 1.\n",
+		"uassetRust": {
+			"passed": 714,
+			"ignored": 8
+		},
+		"windowsLayout": 0,
+		"originalWasmNode24": 0,
+		"originalWasmNode26": 0,
+		"engineMatrix": 1,
+		"engineDiscovery": [
+			{
+				"version": "5.7",
+				"root": null
+			},
+			{
+				"version": "5.8",
+				"root": null
+			}
+		],
+		"sourceManifest": "c78e04b81f3c34f9686721bf1d74d58038702f126425aab2b436994249f77124  crates/uasset-parser/src/codec.rs\n1e7c075ddc8e763cf9dec58928b888b792787193956b6a3808178b42cb6adb32  crates/uasset-parser/src/asset.rs\n56a49787992de793c612ea015ea952c643b12ded88c1d2be5eaba84a0d46a709  crates/uasset-parser/src/property/replay.rs\na4a1df17bc341b2a8ed6ef668b733f29cbc5c573924f694c8d18e97571f5add3  crates/uasset-parser/src/asset/native_data/object.rs\n",
+		"sourceAfter": "crates/uasset-parser/src/codec.rs: OK\ncrates/uasset-parser/src/asset.rs: OK\ncrates/uasset-parser/src/property/replay.rs: OK\ncrates/uasset-parser/src/asset/native_data/object.rs: OK\n",
+		"selection": {
+			"trial": 112,
+			"referenceTrial": 97,
+			"compactTagComparison": 118,
+			"reason": "Lazy preparation consistently improved corpus/level/table. Adding compact tags did not improve corpus/table in the direct comparison; keep the simpler112 representation.",
+			"appliedAt": "2026-11-01T04:49:26.621Z"
+		}
+	},
+	"binaries": "7b3bc73e5315d1490ef10f6c8bca14b3545a3f62cfd5370d569cee1c2f86ee2c  /home/user/git/ue-shed/out/uasset-speed-2026-10-31/architecture/core-1/parser-speed\nc5bbec50ff95ca64e0612698629053d2d05a677dcfec1e4fde8ddce538298be2  /home/user/git/ue-shed/out/uasset-speed-2026-10-31/architecture/core-1/uasset\nddf8d0f303af8c8631cc17060108f79d62c13e7b94122c1fbd306ee62e2013b7  /home/user/git/ue-shed/out/uasset-speed-2026-10-31/architecture/core-1/uasset-decode-counting\n",
+	"oracle": "PASS: 140 fixtures + 267 malformed inputs match initial parser\nPASS: all currently available synthetic stress oracles\n",
+	"wireOracle": "PASS: synthetic codec cases exactly match the pre-session original parser\n",
+	"rawEvidence": {
+		"path": "source-core-1-raw.json.gz",
+		"sha256": "c472592e30d9599353f7defef936280de4b2037b6253c880a933df384c3eb599",
+		"compressedBytes": 89688,
+		"uncompressedBytes": 2604462
+	}
+}

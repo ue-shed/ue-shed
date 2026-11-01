@@ -1,0 +1,2247 @@
+{
+	"schemaVersion": 1,
+	"recordedAt": "2026-10-31T21:12:24.563Z",
+	"baselineRevision": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+	"machine": {
+		"platform": "linux",
+		"arch": "arm64",
+		"release": {
+			"lto": "fat",
+			"codegenUnits": 1,
+			"debug": 1
+		},
+		"memoryBytes": 5804580864,
+		"node": "v24.21.0",
+		"cpuModels": ["unknown"],
+		"pinnedCpu": 6,
+		"cpuMaxKHz": 2304000,
+		"rust": "1.99.1 (58cf8f9c3 2026-10-13)",
+		"deviceTreeModel": "Xiaomi POCO X3 NFC (Huaxing)",
+		"deviceTreeCompatible": ["xiaomi,surya-huaxing", "xiaomi,surya", "qcom,sm7150"],
+		"pinnedCpuImplementer": "0x51",
+		"pinnedCpuPart": "0x804"
+	},
+	"corpus": {
+		"packages": 140,
+		"bytes": 13709449,
+		"exports": 17454,
+		"decoded": 17405,
+		"skipped": 49,
+		"decodeErrors": 0
+	},
+	"sourceFiles": [
+		{
+			"path": "crates/uasset-inspection/src/animation.rs",
+			"sha256": "97e98f83e9ddca6ea8e9c24c1f8e3e7bceb603d70a91e6a50297a0c2cbd9cada"
+		},
+		{
+			"path": "crates/uasset-inspection/src/authoring.rs",
+			"sha256": "6528d42a21100f2382042fbdb07c1b26450c95c08b59d9858119bf9f9734c9ae"
+		},
+		{
+			"path": "crates/uasset-inspection/src/blueprint.rs",
+			"sha256": "2f9cf078a0ce5db502ec7e97bb9470fa135164e2e4059ebca84952bd75351b8d"
+		},
+		{
+			"path": "crates/uasset-inspection/src/blueprint/definition.rs",
+			"sha256": "45e6643f22508550d9d6eb0cbe3da3f95c7e9ff1d1a9cefb1967d03256d35aaf"
+		},
+		{
+			"path": "crates/uasset-inspection/src/blueprint_classes.rs",
+			"sha256": "46a35b447d28e14014271f43ed4e290d55fa841e1a887ebb2953d66d33cf4e1a"
+		},
+		{
+			"path": "crates/uasset-inspection/src/blueprint_diff.rs",
+			"sha256": "a88244442e42dd9f70efcad98adb837f5fafe7243b4f94cf5b84c26f47988b1a"
+		},
+		{
+			"path": "crates/uasset-inspection/src/blueprint_diff/tests.rs",
+			"sha256": "83dfc329491e0a3909d48e00160dca66ff7a0358bc34746b452e95c803e02a24"
+		},
+		{
+			"path": "crates/uasset-inspection/src/blueprint_text.rs",
+			"sha256": "698598bf7c8a1bda3229aeded41c0d560ed2a5f3b83d213a2a6d30fb04ecffbb"
+		},
+		{
+			"path": "crates/uasset-inspection/src/decoded_exports.rs",
+			"sha256": "03a7c8794f66411a03ccb9ecbab33a6042e89193d82e52f8626f8adbf5fa7084"
+		},
+		{
+			"path": "crates/uasset-inspection/src/gather_coverage.rs",
+			"sha256": "94e4534dcb920c31762165aca6ac05f55856736ab8551f65fc3693d1050f9342"
+		},
+		{
+			"path": "crates/uasset-inspection/src/generic.rs",
+			"sha256": "873d9deddaf58e4d36c20596ed974067753f8c20054c62f771552a29f87b25e5"
+		},
+		{
+			"path": "crates/uasset-inspection/src/generic/json.rs",
+			"sha256": "242d7326813e03d22d16261d53b17ddd74dc8ff9cbba4e9a311ce008e702349a"
+		},
+		{
+			"path": "crates/uasset-inspection/src/level_sequence.rs",
+			"sha256": "03af0b386ef8de81003020d806fd48a123a8030d655b95ebbb277797a001f369"
+		},
+		{
+			"path": "crates/uasset-inspection/src/level_sequence/discrete.rs",
+			"sha256": "5a2a341dc0167fff0e9199d6c62852941dd12d11ba2ee34444bdb17e18e77795"
+		},
+		{
+			"path": "crates/uasset-inspection/src/level_sequence/numeric.rs",
+			"sha256": "c20a63d87e9cf4fa4ab5ebdb5f8dff8dbf4355fd5acde737d5d03d9520a5a113"
+		},
+		{
+			"path": "crates/uasset-inspection/src/level_sequence/saved.rs",
+			"sha256": "02afb3e958d0a134f7dc365fddf05e340588300e3e2213ea59669f2fca94241b"
+		},
+		{
+			"path": "crates/uasset-inspection/src/lib.rs",
+			"sha256": "b60e0ee1dec1e341f545137924225e19205ac1c3937f88d608c83b1a37acc601"
+		},
+		{
+			"path": "crates/uasset-inspection/src/package_header.rs",
+			"sha256": "ee5b2a97f2dbbed1a7262a7e88e0940632746da5ec5a85a308be5da1960d7fc7"
+		},
+		{
+			"path": "crates/uasset-inspection/src/projection.rs",
+			"sha256": "8d04dd6169c3a3e148194024945062565ec76b495f287cae03d546cef1bd17a1"
+		},
+		{
+			"path": "crates/uasset-inspection/src/saved_inspection.rs",
+			"sha256": "1dcb3f3ee61e49c0a3c16a8db3503d60bd89049a10d876ba0e03557aba788abb"
+		},
+		{
+			"path": "crates/uasset-inspection/src/saved_world.rs",
+			"sha256": "80bcf5724eb0a87f563d29e45f63882c02281b687f69187089ad755847f6504d"
+		},
+		{
+			"path": "crates/uasset-inspection/src/saved_world_wire.rs",
+			"sha256": "8df62913337af6532468d08019fb641a83d54113a51dd702c30b8549c4672b1d"
+		},
+		{
+			"path": "crates/uasset-inspection/src/text_wire.rs",
+			"sha256": "3b276c54c471da0e58ea57d50c91ef261caa22645c31a9cfd8a092fb4d924461"
+		},
+		{
+			"path": "crates/uasset-inspection/src/texture_wire.rs",
+			"sha256": "a26c52a5e1f964e8115866cd9dc3929cf0fdcbea9f450c90e7869985f36546a9"
+		},
+		{
+			"path": "crates/uasset-parser/src/archive.rs",
+			"sha256": "5f901ecf8edbfe79a0c8dc41637f3d01f3b46e59c380bc71be553919c9cfd699"
+		},
+		{
+			"path": "crates/uasset-parser/src/asset.rs",
+			"sha256": "1a58413019c5bc4503fe99581d0c5f752e61ba09130cafa2b93af171643d498d"
+		},
+		{
+			"path": "crates/uasset-parser/src/asset/native_data.rs",
+			"sha256": "17bdcda2d0cdc534af45edd6417686247d1e93fe1f0a8fa2493da80e5700b1d6"
+		},
+		{
+			"path": "crates/uasset-parser/src/asset/native_data/class.rs",
+			"sha256": "7a077781db5c98d253e3ee91614cf73c2c30e19ac01f193bce233939fe0eb75a"
+		},
+		{
+			"path": "crates/uasset-parser/src/asset/native_data/object.rs",
+			"sha256": "3b28485c4405017c10c17bd469b44930de853acb56e770b2b8f2cc77ab081f0f"
+		},
+		{
+			"path": "crates/uasset-parser/src/asset/script.rs",
+			"sha256": "4faff04fd6a9270a37c07a2409431789e13112633507635c0e2d8d34f91c3abf"
+		},
+		{
+			"path": "crates/uasset-parser/src/codec.rs",
+			"sha256": "fb8b5a4ceb4d45b03e4fe8d2ce9d3bcd69ba55e3d2057501ad9d2076fbb9b0ab"
+		},
+		{
+			"path": "crates/uasset-parser/src/codec/legacy_structs.rs",
+			"sha256": "4526a24146111adc194ce608addf925a374cb4e2981663ff6f26e7437152fd58"
+		},
+		{
+			"path": "crates/uasset-parser/src/codec/native_values.rs",
+			"sha256": "81cb1f1878c88bfde1460079548d9c763eff0302212a6876164a0a4096f7cc68"
+		},
+		{
+			"path": "crates/uasset-parser/src/codec/native_values/niagara.rs",
+			"sha256": "a7b6619aca02799702978f62c323105b77faf4a32ba0bf16884a0da0bad1cb64"
+		},
+		{
+			"path": "crates/uasset-parser/src/codec/native_values/pin_type.rs",
+			"sha256": "36c698a8fd4d75643e2af375dd2f4ab38089212629edccf008d63e835de1fa5a"
+		},
+		{
+			"path": "crates/uasset-parser/src/codec/native_values/property_bag.rs",
+			"sha256": "c25611496fea7b1557cd14438743fff88471a5958f8cc351a5f05e630227ee6e"
+		},
+		{
+			"path": "crates/uasset-parser/src/codec/native_values/saved_structs.rs",
+			"sha256": "a601f39be5b4d9519ad5dee2f03b958d97e8e79eecf70bce48e69d24514b8a91"
+		},
+		{
+			"path": "crates/uasset-parser/src/convert.rs",
+			"sha256": "9f457b78ff2146c1ffb48fd1cbdc2b3b2f46911778945818eba94e2e20320d3e"
+		},
+		{
+			"path": "crates/uasset-parser/src/gatherable_text.rs",
+			"sha256": "e25e61d8dd08bb548f49052617ba3a3bf696c826b6bcea932cdbfd2e05736e9b"
+		},
+		{
+			"path": "crates/uasset-parser/src/lib.rs",
+			"sha256": "14d83ee39ac50c8547851affd4e668a01b623e57b0ac183ef629e9fefd63a02d"
+		},
+		{
+			"path": "crates/uasset-parser/src/metadata.rs",
+			"sha256": "2656e1f6521cd5e791a67dd89db94c7282ce677030e63f7715752bbf74406623"
+		},
+		{
+			"path": "crates/uasset-parser/src/native.rs",
+			"sha256": "92de9357330301b2047b7ebf58add9a8ccd030d88468e059dd7e5c475a48827b"
+		},
+		{
+			"path": "crates/uasset-parser/src/package.rs",
+			"sha256": "47873963d15d01053515fd333e72296144c88e34b3bbf4ea802ff232405d2d9a"
+		},
+		{
+			"path": "crates/uasset-parser/src/property.rs",
+			"sha256": "b431e7e0d34ee8d78cba075add1e3bf7deae8a8dd25f424deb1007a269c7618f"
+		},
+		{
+			"path": "crates/uasset-parser/src/property/replay.rs",
+			"sha256": "0eadff5f57cdf9ec88272cbb34f16cca51999c018db131aaae6f21d2365f4f57"
+		},
+		{
+			"path": "crates/uasset-parser/src/schema.rs",
+			"sha256": "88e4dd6924a2be0c62912ba72aa37cd778924be305dcb211a04bcbf82499b780"
+		},
+		{
+			"path": "crates/uasset-parser/src/test_support.rs",
+			"sha256": "a192ed219522e1e5051c371d97f86dc5ac7d75b7d952d84483c9b16f7868d1cd"
+		},
+		{
+			"path": "crates/uasset-parser/src/version.rs",
+			"sha256": "1dfdc73ed32b4ea1d3a5396eb91f2c9b2795729afe399154b502e7852f974c67"
+		},
+		{
+			"path": "tools/benchmarks/uasset-decode/src/bin/parser-speed.rs",
+			"sha256": "03f1a39d60d32d6d76680ab9e8b95334bb15467887a899b5f86505609ebb5443"
+		},
+		{
+			"path": "tools/benchmarks/uasset-decode/src/main.rs",
+			"sha256": "babd0ee96ca362c75df4b785bcf86ef1d3ad02b45da6b23b15dc6c9c4e9c7e21"
+		}
+	],
+	"ordinary": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 23.51077,
+			"optimizedP50Ms": 16.1105495,
+			"reductionPercent": 31.47587467360703,
+			"pairedReductionPercentByBlock": [
+				31.61997671705351, 32.29502619076106, 30.636738267395824
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 104.638594,
+			"optimizedP50Ms": 65.531943,
+			"reductionPercent": 37.37306619391312,
+			"pairedReductionPercentByBlock": [
+				37.054818612485754, 38.3356093496667, 37.702727542382696
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 133.65082,
+			"optimizedP50Ms": 82.21989,
+			"reductionPercent": 38.48156711646064,
+			"pairedReductionPercentByBlock": [
+				38.68252261083613, 38.01855861927537, 38.32868964066214
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 185.517853,
+			"optimizedP50Ms": 136.518859,
+			"reductionPercent": 26.412010061371294,
+			"pairedReductionPercentByBlock": [
+				26.571683755713405, 26.412010061371294, 26.59226810830331
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 200.55393099999998,
+			"optimizedP50Ms": 155.773642,
+			"reductionPercent": 22.328302804496005,
+			"pairedReductionPercentByBlock": [
+				21.65263965830716, 22.297019201874612, 22.50086332004051
+			]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 17.0115445,
+			"optimizedP50Ms": 11.100801666666667,
+			"reductionPercent": 34.74548024333318,
+			"pairedReductionPercentByBlock": [
+				34.189884992511985, 35.07100007470607, 35.009517832280935
+			]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 65.686628,
+			"optimizedP50Ms": 41.406875,
+			"reductionPercent": 36.96300714355439,
+			"pairedReductionPercentByBlock": [
+				36.07364359485912, 37.75647808980731, 36.896565919017796
+			]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 81.155773,
+			"optimizedP50Ms": 51.97719,
+			"reductionPercent": 35.953798382278976,
+			"pairedReductionPercentByBlock": [
+				35.89665607387354, 35.033049343267294, 36.268839027277444
+			]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 124.868335,
+			"optimizedP50Ms": 95.46740700000001,
+			"reductionPercent": 23.54554339176541,
+			"pairedReductionPercentByBlock": [
+				24.996006182279583, 23.54554339176541, 23.696178802262825
+			]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 139.938466,
+			"optimizedP50Ms": 111.83212400000001,
+			"reductionPercent": 20.084786408906318,
+			"pairedReductionPercentByBlock": [
+				20.679357739994096, 20.89176482855103, 19.276000333305277
+			]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 2.392938090909091,
+			"optimizedP50Ms": 1.9472293076923075,
+			"reductionPercent": 18.626005616695917,
+			"pairedReductionPercentByBlock": [
+				18.625866501445188, 17.138579241441455, 18.71732847153622
+			]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 23.604544,
+			"optimizedP50Ms": 9.11710325,
+			"reductionPercent": 61.375643393068735,
+			"pairedReductionPercentByBlock": [
+				61.74121994650965, 61.49079129349377, 61.307080323178454
+			]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 26.181720499999997,
+			"optimizedP50Ms": 11.124742666666668,
+			"reductionPercent": 57.50950489801971,
+			"pairedReductionPercentByBlock": [
+				57.124637142671084, 58.36347096052592, 57.479049522719805
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 36.805286,
+			"optimizedP50Ms": 21.9931055,
+			"reductionPercent": 40.24470968653797,
+			"pairedReductionPercentByBlock": [
+				40.106308409719695, 41.489363455949146, 40.81033631962539
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 41.103644,
+			"optimizedP50Ms": 30.331609,
+			"reductionPercent": 26.207007339787204,
+			"pairedReductionPercentByBlock": [
+				26.34169856083807, 26.09022553644048, 26.632231360979496
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "parse",
+			"baselineP50Ms": 0.3760844117647059,
+			"optimizedP50Ms": 0.29849921875,
+			"reductionPercent": 20.629728483201916,
+			"pairedReductionPercentByBlock": [
+				21.961168390821186, 20.629728483201916, 20.396648677480034
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "decode",
+			"baselineP50Ms": 2.898439,
+			"optimizedP50Ms": 2.800736625,
+			"reductionPercent": 3.370861867370689,
+			"pairedReductionPercentByBlock": [
+				1.990571476577574, 2.1263315453808884, 4.756805195330416
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "combined",
+			"baselineP50Ms": 3.7315141428571432,
+			"optimizedP50Ms": 3.419228285714286,
+			"reductionPercent": 8.368877758124926,
+			"pairedReductionPercentByBlock": [
+				8.99092388996493, 8.339968657834573, 8.368877758124926
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "inspect-json",
+			"baselineP50Ms": 4.218337,
+			"optimizedP50Ms": 3.9101236666666668,
+			"reductionPercent": 7.3065128114072735,
+			"pairedReductionPercentByBlock": [
+				6.749591299820457, 7.3065128114072735, 7.653909417963356
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 4.3427215,
+			"optimizedP50Ms": 4.012034,
+			"reductionPercent": 7.614752638408884,
+			"pairedReductionPercentByBlock": [
+				7.290811878143122, 7.609157068902517, 7.644841410363956
+			]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 4.089856571428571,
+			"optimizedP50Ms": 3.195243875,
+			"reductionPercent": 21.873938139500236,
+			"pairedReductionPercentByBlock": [
+				22.820036500465037, 21.62212910613155, 21.82873178647271
+			]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 10.894047666666665,
+			"optimizedP50Ms": 10.131890666666665,
+			"reductionPercent": 6.996086517337618,
+			"pairedReductionPercentByBlock": [
+				5.971689188190609, 7.130563635894505, 7.115836138539122
+			]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 16.5349,
+			"optimizedP50Ms": 14.533719,
+			"reductionPercent": 12.102770503601478,
+			"pairedReductionPercentByBlock": [
+				12.185895672845238, 11.912554977900669, 12.133432920670828
+			]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 20.790416999999998,
+			"optimizedP50Ms": 18.654494500000002,
+			"reductionPercent": 10.273591433976515,
+			"pairedReductionPercentByBlock": [
+				9.91998380792458, 10.17333885453625, 10.625547643069222
+			]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 20.0838245,
+			"optimizedP50Ms": 18.0398295,
+			"reductionPercent": 10.17731956381116,
+			"pairedReductionPercentByBlock": [
+				10.006598020004265, 10.100294891543182, 10.2900342151772
+			]
+		}
+	],
+	"native": [
+		{
+			"case": "level",
+			"operation": "inspect-native-json",
+			"baselineP50Ms": 187.37998599999992,
+			"optimizedP50Ms": 159.20062999999936,
+			"reductionPercent": 15.038615703600577,
+			"pairedReductionPercentByBlock": [
+				15.335475954732491, 19.224564366277896, 11.114474626973948
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-native-json",
+			"baselineP50Ms": 73.43796700000075,
+			"optimizedP50Ms": 59.20899100000133,
+			"reductionPercent": 19.375503681902405,
+			"pairedReductionPercentByBlock": [
+				19.375503681902405, 16.43970877273325, 21.606676330652196
+			]
+		},
+		{
+			"case": "blueprint",
+			"operation": "inspect-native-json",
+			"baselineP50Ms": 14.438145000000077,
+			"optimizedP50Ms": 14.479446999999709,
+			"reductionPercent": -0.28606167897351487,
+			"pairedReductionPercentByBlock": [
+				-0.28606167897351487, 6.196093560364013, 4.13122230799533
+			]
+		}
+	],
+	"pgo": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 16.407007750000002,
+			"optimizedP50Ms": 15.618045500000001,
+			"reductionPercent": 4.808690664511939,
+			"pairedReductionPercentByBlock": [5.297749474557445, 4.3107665933747485]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 67.1980385,
+			"optimizedP50Ms": 55.446079499999996,
+			"reductionPercent": 17.488544699113508,
+			"pairedReductionPercentByBlock": [15.694517592634604, 19.208794187297297]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 82.428686,
+			"optimizedP50Ms": 72.72915950000001,
+			"reductionPercent": 11.767173505592442,
+			"pairedReductionPercentByBlock": [10.111349623918475, 13.398296878863547]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 136.4051485,
+			"optimizedP50Ms": 118.2517785,
+			"reductionPercent": 13.308419953078232,
+			"pairedReductionPercentByBlock": [13.309690165934507, 13.307155762259903]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 11.357304,
+			"optimizedP50Ms": 10.897128000000002,
+			"reductionPercent": 4.051806661158286,
+			"pairedReductionPercentByBlock": [0.21230458911322136, 7.677151936819648]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 41.4243965,
+			"optimizedP50Ms": 33.43714249999999,
+			"reductionPercent": 19.281521699416928,
+			"pairedReductionPercentByBlock": [19.655533360975753, 18.9052407886088]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 52.618618,
+			"optimizedP50Ms": 44.270139,
+			"reductionPercent": 15.866017233671926,
+			"pairedReductionPercentByBlock": [15.600381831045384, 16.130222723109245]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 95.9256015,
+			"optimizedP50Ms": 81.7332145,
+			"reductionPercent": 14.795202509102845,
+			"pairedReductionPercentByBlock": [14.45541242107713, 15.132973449670672]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.9533843205128205,
+			"optimizedP50Ms": 1.6217899642857143,
+			"reductionPercent": 16.975377182307525,
+			"pairedReductionPercentByBlock": [17.001941724839188, 16.94884218842956]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 9.101385875000002,
+			"optimizedP50Ms": 7.7466852500000005,
+			"reductionPercent": 14.884553227450114,
+			"pairedReductionPercentByBlock": [14.572324635763401, 15.193609541906405]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 11.1503325,
+			"optimizedP50Ms": 9.469428125,
+			"reductionPercent": 15.07492601678021,
+			"pairedReductionPercentByBlock": [15.379008499046453, 14.76816335560538]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 22.03732175,
+			"optimizedP50Ms": 18.509114250000003,
+			"reductionPercent": 16.010146514287726,
+			"pairedReductionPercentByBlock": [16.88795641866736, 15.127122121133741]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 3.2022813125000003,
+			"optimizedP50Ms": 2.8865563888888888,
+			"reductionPercent": 9.859375014265282,
+			"pairedReductionPercentByBlock": [10.663376012001036, 9.058317420104956]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 10.2075675,
+			"optimizedP50Ms": 9.254146875,
+			"reductionPercent": 9.34033132771348,
+			"pairedReductionPercentByBlock": [9.430378315391486, 9.250954789858401]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 14.532206666666667,
+			"optimizedP50Ms": 13.278632833333333,
+			"reductionPercent": 8.62617675406947,
+			"pairedReductionPercentByBlock": [8.720671894014309, 8.531757896231284]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 18.59591175,
+			"optimizedP50Ms": 17.25207675,
+			"reductionPercent": 7.226507729582011,
+			"pairedReductionPercentByBlock": [6.909056733588814, 7.542800993436205]
+		}
+	],
+	"bolt": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 15.90115825,
+			"optimizedP50Ms": 15.442627250000001,
+			"reductionPercent": 2.8836327064413636,
+			"pairedReductionPercentByBlock": [5.30697280059168, 0.4054536168357159]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 55.9424085,
+			"optimizedP50Ms": 54.797298999999995,
+			"reductionPercent": 2.046943509770416,
+			"pairedReductionPercentByBlock": [0.7199644446850839, 3.348745653897711]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 72.5045725,
+			"optimizedP50Ms": 69.6631525,
+			"reductionPercent": 3.9189528356987413,
+			"pairedReductionPercentByBlock": [4.971053873903209, 2.8489460098631847]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 118.1258105,
+			"optimizedP50Ms": 116.30624499999999,
+			"reductionPercent": 1.5403623410482403,
+			"pairedReductionPercentByBlock": [0.9379186981752219, 2.1401473745849664]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 11.284030666666668,
+			"optimizedP50Ms": 10.749904833333332,
+			"reductionPercent": 4.733466693875254,
+			"pairedReductionPercentByBlock": [2.2722367372626007, 7.11418833885582]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 33.488470500000005,
+			"optimizedP50Ms": 33.387715,
+			"reductionPercent": 0.30086623394760537,
+			"pairedReductionPercentByBlock": [2.3641032316253474, -1.7832146194247223]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 45.6571495,
+			"optimizedP50Ms": 43.754354,
+			"reductionPercent": 4.167574018172127,
+			"pairedReductionPercentByBlock": [0.9507018022314684, 7.207279144929013]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 81.97079049999999,
+			"optimizedP50Ms": 82.274464,
+			"reductionPercent": -0.3704655013666125,
+			"pairedReductionPercentByBlock": [1.1573571867500299, -1.9122991424844082]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.6476863626373626,
+			"optimizedP50Ms": 1.6234286785714287,
+			"reductionPercent": 1.4722270339790788,
+			"pairedReductionPercentByBlock": [0.22853666678717133, 2.686361516324942]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 7.7508972499999995,
+			"optimizedP50Ms": 7.74278525,
+			"reductionPercent": 0.10465885094786964,
+			"pairedReductionPercentByBlock": [0.28113133753228103, -0.0723456937999023]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 9.398366249999999,
+			"optimizedP50Ms": 9.753712875000002,
+			"reductionPercent": -3.780940384186482,
+			"pairedReductionPercentByBlock": [0.0008273987081364176, -7.610477203442212]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 18.31475075,
+			"optimizedP50Ms": 18.396404750000002,
+			"reductionPercent": -0.44583735326018115,
+			"pairedReductionPercentByBlock": [-0.3261185228006669, -0.5658138482496744]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 2.884687111111111,
+			"optimizedP50Ms": 2.734347777777778,
+			"reductionPercent": 5.211633967311835,
+			"pairedReductionPercentByBlock": [4.126298100814319, 6.27571376863969]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 9.28749325,
+			"optimizedP50Ms": 8.84039475,
+			"reductionPercent": 4.813984656193437,
+			"pairedReductionPercentByBlock": [4.823933612149556, 4.8039549762718075]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 13.309900000000003,
+			"optimizedP50Ms": 12.499036666666667,
+			"reductionPercent": 6.092182009882386,
+			"pairedReductionPercentByBlock": [5.91014790350175, 6.27305517689789]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 17.189654249999997,
+			"optimizedP50Ms": 16.43987175,
+			"reductionPercent": 4.361824205975518,
+			"pairedReductionPercentByBlock": [4.929273148711677, 3.7953896278716592]
+		}
+	],
+	"allocations": {
+		"method": "System allocator instrumentation: parse, retain every decoded export, text projection, then drop; input reads excluded. Streaming inspection peak measured separately. First pass includes initialization/digest work; compare passes 2–3. Instrumented timings are excluded.",
+		"baseline": {
+			"typeSizes": {
+				"PropertyRecord": 144,
+				"PropertyValue": 32,
+				"TextValue": 96
+			},
+			"runs": [
+				{
+					"pass": 1,
+					"alloc_count": 902601,
+					"alloc_bytes": 104393097,
+					"peak_live_bytes": 34713044,
+					"inspect_peak_live_bytes": 27347894
+				},
+				{
+					"pass": 2,
+					"alloc_count": 864957,
+					"alloc_bytes": 99276777,
+					"peak_live_bytes": 34713040,
+					"inspect_peak_live_bytes": 27347894
+				},
+				{
+					"pass": 3,
+					"alloc_count": 864957,
+					"alloc_bytes": 99276777,
+					"peak_live_bytes": 34713040,
+					"inspect_peak_live_bytes": 27347894
+				}
+			]
+		},
+		"optimized": {
+			"typeSizes": {
+				"PropertyRecord": 144,
+				"PropertyValue": 32,
+				"TextValue": 96
+			},
+			"runs": [
+				{
+					"pass": 1,
+					"alloc_count": 723630,
+					"alloc_bytes": 66116010,
+					"peak_live_bytes": 28941405,
+					"inspect_peak_live_bytes": 26209954
+				},
+				{
+					"pass": 2,
+					"alloc_count": 685986,
+					"alloc_bytes": 60999690,
+					"peak_live_bytes": 28941405,
+					"inspect_peak_live_bytes": 26209954
+				},
+				{
+					"pass": 3,
+					"alloc_count": 685986,
+					"alloc_bytes": 60999690,
+					"peak_live_bytes": 28941405,
+					"inspect_peak_live_bytes": 26209954
+				}
+			]
+		}
+	},
+	"mimalloc": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 19.4395195,
+			"optimizedP50Ms": 12.654608666666666,
+			"reductionPercent": 34.90266739017564,
+			"pairedReductionPercentByBlock": [
+				33.808605043418325, 34.98149424305539, 36.493970439958666
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 86.80734199999999,
+			"optimizedP50Ms": 55.263754,
+			"reductionPercent": 36.33746555677283,
+			"pairedReductionPercentByBlock": [
+				36.33746555677283, 36.26417650852382, 36.88468297604769
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 106.222435,
+			"optimizedP50Ms": 68.839755,
+			"reductionPercent": 35.19282908549405,
+			"pairedReductionPercentByBlock": [
+				35.0539676481715, 35.296634125319514, 35.37345775632479
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 163.129526,
+			"optimizedP50Ms": 126.259765,
+			"reductionPercent": 22.60152524442448,
+			"pairedReductionPercentByBlock": [
+				21.162718072489973, 22.710844510147112, 22.314949771254756
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 151.71702200000001,
+			"optimizedP50Ms": 113.576268,
+			"reductionPercent": 25.139403276713413,
+			"pairedReductionPercentByBlock": [
+				24.309057556280823, 25.817764632175965, 25.139403276713413
+			]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 14.127931333333335,
+			"optimizedP50Ms": 8.84483375,
+			"reductionPercent": 37.39470031871145,
+			"pairedReductionPercentByBlock": [
+				37.39713610848769, 37.35482560823269, 38.89052617611345
+			]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 55.616566,
+			"optimizedP50Ms": 37.920857000000005,
+			"reductionPercent": 31.8173347847474,
+			"pairedReductionPercentByBlock": [
+				31.701034313368638, 31.8173347847474, 31.62373264604742
+			]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 71.135442,
+			"optimizedP50Ms": 46.924443000000004,
+			"reductionPercent": 34.035072137458556,
+			"pairedReductionPercentByBlock": [
+				35.006319385992526, 32.93364458251261, 33.17755022875939
+			]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 114.442368,
+			"optimizedP50Ms": 90.266316,
+			"reductionPercent": 21.125088918118152,
+			"pairedReductionPercentByBlock": [
+				20.948623703769865, 21.0656983259906, 21.92442871683641
+			]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 108.20983600000001,
+			"optimizedP50Ms": 82.366278,
+			"reductionPercent": 23.882817824435122,
+			"pairedReductionPercentByBlock": [
+				20.527511662422448, 24.136086319111293, 24.203812673738835
+			]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.648638785714286,
+			"optimizedP50Ms": 1.20004475,
+			"reductionPercent": 27.209964948139266,
+			"pairedReductionPercentByBlock": [
+				27.536800863533493, 26.94662568938139, 26.871674716793926
+			]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 20.3426495,
+			"optimizedP50Ms": 8.3493235,
+			"reductionPercent": 58.95655823986938,
+			"pairedReductionPercentByBlock": [
+				58.95655823986938, 58.690684203153076, 59.55519647857051
+			]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 22.135599499999998,
+			"optimizedP50Ms": 9.712910333333333,
+			"reductionPercent": 56.12086163135841,
+			"pairedReductionPercentByBlock": [
+				56.710807592769626, 55.57808896674716, 56.12086163135841
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 32.869427,
+			"optimizedP50Ms": 20.4196545,
+			"reductionPercent": 37.87645126883411,
+			"pairedReductionPercentByBlock": [
+				38.714778729693386, 37.57343802463781, 37.87645126883411
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 28.3283635,
+			"optimizedP50Ms": 16.466355,
+			"reductionPercent": 41.873257168561814,
+			"pairedReductionPercentByBlock": [
+				41.79106646110748, 41.76642526756296, 41.97015122317249
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "parse",
+			"baselineP50Ms": 0.2672909090909091,
+			"optimizedP50Ms": 0.19544802970297032,
+			"reductionPercent": 26.87816044035529,
+			"pairedReductionPercentByBlock": [
+				27.138382366578217, 27.052329308023793, 26.600071358306344
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "decode",
+			"baselineP50Ms": 1.971919083333333,
+			"optimizedP50Ms": 1.826411,
+			"reductionPercent": 7.379008832723811,
+			"pairedReductionPercentByBlock": [
+				7.60087782116533, 7.463129957347703, 6.884156628415717
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "combined",
+			"baselineP50Ms": 2.342392727272727,
+			"optimizedP50Ms": 2.0990014545454545,
+			"reductionPercent": 10.390711595602319,
+			"pairedReductionPercentByBlock": [
+				10.220912415897965, 10.403409562145537, 10.613619898811589
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "inspect-json",
+			"baselineP50Ms": 2.7810201111111112,
+			"optimizedP50Ms": 2.5022671,
+			"reductionPercent": 10.02340867645649,
+			"pairedReductionPercentByBlock": [
+				10.23425293963921, 9.881075165118357, 9.929953760772282
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 2.6132104,
+			"optimizedP50Ms": 2.3424331,
+			"reductionPercent": 10.361863706037589,
+			"pairedReductionPercentByBlock": [
+				10.304864851295548, 10.288194719050402, 10.627639796456611
+			]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 2.988909,
+			"optimizedP50Ms": 2.1840823636363633,
+			"reductionPercent": 26.927104049124175,
+			"pairedReductionPercentByBlock": [
+				27.02579618668398, 23.934813253396047, 27.32991378783487
+			]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 7.59710675,
+			"optimizedP50Ms": 6.981199999999999,
+			"reductionPercent": 8.107122491072015,
+			"pairedReductionPercentByBlock": [
+				8.107122491072015, 4.639636352853083, 8.332544550663235
+			]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 11.120365333333332,
+			"optimizedP50Ms": 9.45824825,
+			"reductionPercent": 14.946605021609594,
+			"pairedReductionPercentByBlock": [
+				14.807750814017373, 17.43023962269502, 14.971078138440042
+			]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 14.679409999999999,
+			"optimizedP50Ms": 13.044367666666668,
+			"reductionPercent": 11.138338212048925,
+			"pairedReductionPercentByBlock": [
+				13.591319082573762, 11.469493664936115, 11.009464219529674
+			]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 13.159107666666666,
+			"optimizedP50Ms": 11.338387333333335,
+			"reductionPercent": 13.836199075605993,
+			"pairedReductionPercentByBlock": [
+				14.063975459122657, 13.90849881082361, 13.478237255236392
+			]
+		}
+	],
+	"nativeCpu": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 16.516132999999996,
+			"optimizedP50Ms": 17.00752825,
+			"reductionPercent": -2.9752439629785243,
+			"pairedReductionPercentByBlock": [-1.4048814542459542, -4.559766281545352]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 65.51426749999999,
+			"optimizedP50Ms": 67.4929225,
+			"reductionPercent": -3.0201894572049026,
+			"pairedReductionPercentByBlock": [-1.6733592457598645, -4.3796662133489095]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 83.0978135,
+			"optimizedP50Ms": 84.0177405,
+			"reductionPercent": -1.1070411617990494,
+			"pairedReductionPercentByBlock": [-0.06390386052790298, -2.1738712398546634]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 138.5719555,
+			"optimizedP50Ms": 137.4997895,
+			"reductionPercent": 0.7737250990876077,
+			"pairedReductionPercentByBlock": [-0.2894432250984291, 1.8153508026984455]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 11.2794195,
+			"optimizedP50Ms": 11.183282000000002,
+			"reductionPercent": 0.8523266645060756,
+			"pairedReductionPercentByBlock": [-2.1550702403978494, 3.716184562369862]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 41.603035500000004,
+			"optimizedP50Ms": 42.6319715,
+			"reductionPercent": -2.4732233781354696,
+			"pairedReductionPercentByBlock": [-3.5532646929047784, -1.4142528518949593]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 52.277407999999994,
+			"optimizedP50Ms": 53.637362499999995,
+			"reductionPercent": -2.6014191445757895,
+			"pairedReductionPercentByBlock": [-3.852304337429535, -1.3709036163436883]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 95.5110495,
+			"optimizedP50Ms": 96.5010025,
+			"reductionPercent": -1.0364800776270444,
+			"pairedReductionPercentByBlock": [-0.6818987659594544, -1.3907395942347245]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.9560270416666667,
+			"optimizedP50Ms": 2.0225876666666665,
+			"reductionPercent": -3.402847894336136,
+			"pairedReductionPercentByBlock": [-3.1905761738002747, -3.615804160508751]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 9.102523375,
+			"optimizedP50Ms": 8.993310625,
+			"reductionPercent": 1.1998074105467604,
+			"pairedReductionPercentByBlock": [0.6027097086387267, 1.7886358475860842]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 11.189236833333332,
+			"optimizedP50Ms": 11.140148166666666,
+			"reductionPercent": 0.43871326881229633,
+			"pairedReductionPercentByBlock": [1.4248989800628387, -0.5671176354717256]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 21.8578375,
+			"optimizedP50Ms": 21.7824855,
+			"reductionPercent": 0.3447367563236714,
+			"pairedReductionPercentByBlock": [-0.019343593485299237, 0.7071690455941915]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 3.267521875,
+			"optimizedP50Ms": 3.350159,
+			"reductionPercent": -2.5290458078417677,
+			"pairedReductionPercentByBlock": [-2.406145757278466, -2.652105128734372]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 10.156619,
+			"optimizedP50Ms": 10.841205500000001,
+			"reductionPercent": -6.740299109378833,
+			"pairedReductionPercentByBlock": [-5.762116231973624, -7.706458975017183]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 14.5076985,
+			"optimizedP50Ms": 15.156738,
+			"reductionPercent": -4.473759225145191,
+			"pairedReductionPercentByBlock": [-4.175472362513877, -4.773650629458581]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 18.64191075,
+			"optimizedP50Ms": 19.21740825,
+			"reductionPercent": -3.0871164856316913,
+			"pairedReductionPercentByBlock": [-3.0034174392398194, -3.1705057937079006]
+		}
+	],
+	"panicAbort": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 16.285607499999998,
+			"optimizedP50Ms": 14.797100083333333,
+			"reductionPercent": 9.14001775289417,
+			"pairedReductionPercentByBlock": [8.039099511750248, 10.22124708434341]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 65.2974825,
+			"optimizedP50Ms": 64.212085,
+			"reductionPercent": 1.6622348342449467,
+			"pairedReductionPercentByBlock": [3.0986584924388216, 0.2222571416488628]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 81.96685500000001,
+			"optimizedP50Ms": 79.236005,
+			"reductionPercent": 3.3316515559856485,
+			"pairedReductionPercentByBlock": [3.430042162382274, 3.233724367895152]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 136.893283,
+			"optimizedP50Ms": 132.18973849999998,
+			"reductionPercent": 3.4359205922470437,
+			"pairedReductionPercentByBlock": [2.917648121565164, 3.9526876152252366]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 10.855378666666669,
+			"optimizedP50Ms": 9.54422475,
+			"reductionPercent": 12.078380284354296,
+			"pairedReductionPercentByBlock": [11.493652408917077, 12.653939344639886]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 41.6923115,
+			"optimizedP50Ms": 40.426783,
+			"reductionPercent": 3.03540018403633,
+			"pairedReductionPercentByBlock": [3.1942147281578848, 2.8772214047658617]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 52.443757,
+			"optimizedP50Ms": 49.8333245,
+			"reductionPercent": 4.977584843892846,
+			"pairedReductionPercentByBlock": [2.8932570601816865, 6.996335362207262]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 95.9480345,
+			"optimizedP50Ms": 91.781837,
+			"reductionPercent": 4.342139494269692,
+			"pairedReductionPercentByBlock": [4.990541646082647, 3.688515622623456]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.9558843333333336,
+			"optimizedP50Ms": 1.9294708846153845,
+			"reductionPercent": 1.3504606723309442,
+			"pairedReductionPercentByBlock": [1.392438535885876, 1.308277744359887]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 9.202725375,
+			"optimizedP50Ms": 8.396086375,
+			"reductionPercent": 8.765218640461715,
+			"pairedReductionPercentByBlock": [8.213217485462721, 9.315129073450112]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 11.260337833333331,
+			"optimizedP50Ms": 10.459708,
+			"reductionPercent": 7.110175957272558,
+			"pairedReductionPercentByBlock": [7.3693768359555545, 6.8508899329471795]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 21.811825499999998,
+			"optimizedP50Ms": 20.577964,
+			"reductionPercent": 5.656846557845407,
+			"pairedReductionPercentByBlock": [5.6259239193308, 5.68780990973451]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 3.2325913125000003,
+			"optimizedP50Ms": 3.1539580625,
+			"reductionPercent": 2.4325144256849285,
+			"pairedReductionPercentByBlock": [2.8013418301685133, 2.0607740747800474]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 10.173951,
+			"optimizedP50Ms": 10.086129166666666,
+			"reductionPercent": 0.8632028337205,
+			"pairedReductionPercentByBlock": [1.2095652222965714, 0.5175465923180522]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 14.5362865,
+			"optimizedP50Ms": 14.466425000000001,
+			"reductionPercent": 0.4806007366461751,
+			"pairedReductionPercentByBlock": [0.6159718871851183, 0.3448332165157719]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 18.5620925,
+			"optimizedP50Ms": 18.54226125,
+			"reductionPercent": 0.10683736222087958,
+			"pairedReductionPercentByBlock": [-0.22761248851685956, 0.4398946680647109]
+		}
+	],
+	"optSize": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 16.430018750000002,
+			"optimizedP50Ms": 16.38701075,
+			"reductionPercent": 0.26176476518020575,
+			"pairedReductionPercentByBlock": [-1.6086482203229613, 2.106158700671279]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 65.256036,
+			"optimizedP50Ms": 74.779529,
+			"reductionPercent": -14.594041538165147,
+			"pairedReductionPercentByBlock": [-13.384270565078872, -15.80070457949121]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 82.2265,
+			"optimizedP50Ms": 94.6795935,
+			"reductionPercent": -15.144866314387695,
+			"pairedReductionPercentByBlock": [-19.53184323118169, -10.838992610797282]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 137.19559900000002,
+			"optimizedP50Ms": 189.47533300000003,
+			"reductionPercent": -38.10598472623019,
+			"pairedReductionPercentByBlock": [-37.94709283409308, -38.26696222906034]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 10.8134315,
+			"optimizedP50Ms": 10.680210333333335,
+			"reductionPercent": 1.2319971386202888,
+			"pairedReductionPercentByBlock": [0.9915836033465131, 1.4709299813505994]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 41.8667825,
+			"optimizedP50Ms": 49.66063,
+			"reductionPercent": -18.615826281850055,
+			"pairedReductionPercentByBlock": [-16.975559061626843, -20.279826269864863]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 52.518277499999996,
+			"optimizedP50Ms": 60.969055999999995,
+			"reductionPercent": -16.091118944257076,
+			"pairedReductionPercentByBlock": [-18.519823183322657, -13.640275353518128]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 95.7270215,
+			"optimizedP50Ms": 131.3908525,
+			"reductionPercent": -37.25576168689213,
+			"pairedReductionPercentByBlock": [-37.83808668548922, -36.674088349444055]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.9549876666666668,
+			"optimizedP50Ms": 2.248794,
+			"reductionPercent": -15.02855175727451,
+			"pairedReductionPercentByBlock": [-15.33107694762339, -14.726404450958075]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 9.118413,
+			"optimizedP50Ms": 9.445836875000001,
+			"reductionPercent": -3.5907989142409003,
+			"pairedReductionPercentByBlock": [-4.08894290506423, -3.1006091163603866]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 11.299511,
+			"optimizedP50Ms": 11.765781,
+			"reductionPercent": -4.12646175573439,
+			"pairedReductionPercentByBlock": [-5.869164194684151, -2.4466875541342414]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 21.93614475,
+			"optimizedP50Ms": 34.324290500000004,
+			"reductionPercent": -56.47366887474612,
+			"pairedReductionPercentByBlock": [-56.51100663754698, -56.436460230900074]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 3.235367375,
+			"optimizedP50Ms": 3.5171002857142852,
+			"reductionPercent": -8.707910974539178,
+			"pairedReductionPercentByBlock": [-7.809780483929707, -9.620876138928548]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 10.104582,
+			"optimizedP50Ms": 11.041245500000002,
+			"reductionPercent": -9.269690720506807,
+			"pairedReductionPercentByBlock": [-9.082658883980454, -9.457438940141149]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 14.509226000000002,
+			"optimizedP50Ms": 15.7999755,
+			"reductionPercent": -8.896060341192547,
+			"pairedReductionPercentByBlock": [-8.103230108647264, -9.688671484865763]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 18.582947500000003,
+			"optimizedP50Ms": 22.1118485,
+			"reductionPercent": -18.98999607032199,
+			"pairedReductionPercentByBlock": [-17.08838695315551, -20.88909656479869]
+		}
+	],
+	"pgoMimalloc": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 12.361492499999999,
+			"optimizedP50Ms": 11.429204333333335,
+			"reductionPercent": 7.541873820387501,
+			"pairedReductionPercentByBlock": [7.6771233753096135, 7.406329513311027]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 55.463096,
+			"optimizedP50Ms": 45.870932999999994,
+			"reductionPercent": 17.29467644575775,
+			"pairedReductionPercentByBlock": [17.292596195356413, 17.29675673336627]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 68.9387185,
+			"optimizedP50Ms": 58.1992575,
+			"reductionPercent": 15.57827188214993,
+			"pairedReductionPercentByBlock": [15.334790040394564, 15.821442684681575]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 125.7362215,
+			"optimizedP50Ms": 106.01462699999999,
+			"reductionPercent": 15.68489514375936,
+			"pairedReductionPercentByBlock": [15.081203861867431, 16.287083926251412]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 8.689163,
+			"optimizedP50Ms": 8.475548499999999,
+			"reductionPercent": 2.4584013442952135,
+			"pairedReductionPercentByBlock": [2.2703167533195123, 2.6463033975904438]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 37.76484549999999,
+			"optimizedP50Ms": 30.110168,
+			"reductionPercent": 20.269320312723092,
+			"pairedReductionPercentByBlock": [19.419266747088713, 21.12278058165171]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 47.034245999999996,
+			"optimizedP50Ms": 39.315401,
+			"reductionPercent": 16.41111669994666,
+			"pairedReductionPercentByBlock": [16.09915329773034, 16.719636736550903]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 90.2194615,
+			"optimizedP50Ms": 74.73591149999999,
+			"reductionPercent": 17.16209534236691,
+			"pairedReductionPercentByBlock": [17.73226197248643, 16.588330893127235]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.1963416578947368,
+			"optimizedP50Ms": 0.8640603076923077,
+			"reductionPercent": 27.77478724490473,
+			"pairedReductionPercentByBlock": [27.951231517763453, 27.598011942688473]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 8.320899375,
+			"optimizedP50Ms": 7.0473257,
+			"reductionPercent": 15.305721384234383,
+			"pairedReductionPercentByBlock": [14.874144041093773, 15.731718154289709]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 9.968658000000001,
+			"optimizedP50Ms": 8.174446625,
+			"reductionPercent": 17.998524726196862,
+			"pairedReductionPercentByBlock": [17.026286487380847, 18.92577435664431]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 20.661091750000004,
+			"optimizedP50Ms": 16.9352765,
+			"reductionPercent": 18.033002781665697,
+			"pairedReductionPercentByBlock": [19.58204555558035, 16.427623223184128]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 2.1860299431818184,
+			"optimizedP50Ms": 1.8105575384615382,
+			"reductionPercent": 17.17599550232012,
+			"pairedReductionPercentByBlock": [17.351364188828033, 17.000739942200283]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 6.9804764,
+			"optimizedP50Ms": 6.351441699999999,
+			"reductionPercent": 9.011343409169047,
+			"pairedReductionPercentByBlock": [7.957764405022127, 10.060792504675952]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 9.5200205,
+			"optimizedP50Ms": 8.298620374999999,
+			"reductionPercent": 12.82980561859085,
+			"pairedReductionPercentByBlock": [13.122598961169874, 12.534349541706701]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 13.053788166666667,
+			"optimizedP50Ms": 11.669249,
+			"reductionPercent": 10.6064166890814,
+			"pairedReductionPercentByBlock": [10.281223991459909, 10.930753310020137]
+		}
+	],
+	"boltMimalloc": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 11.535072333333332,
+			"optimizedP50Ms": 11.262501333333335,
+			"reductionPercent": 2.362976079589363,
+			"pairedReductionPercentByBlock": [1.4227662562812937, 3.295641356597989]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 46.28106199999999,
+			"optimizedP50Ms": 45.9793945,
+			"reductionPercent": 0.6518162871889,
+			"pairedReductionPercentByBlock": [0.06633498593112686, 1.2284950058554567]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 58.1627425,
+			"optimizedP50Ms": 58.6649845,
+			"reductionPercent": -0.8635115512305891,
+			"pairedReductionPercentByBlock": [0.7509612860863046, -2.481798459434481]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 105.8456095,
+			"optimizedP50Ms": 106.5715505,
+			"reductionPercent": -0.6858489486991859,
+			"pairedReductionPercentByBlock": [-0.11938990499726909, -1.2545179698294495]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 8.5287385,
+			"optimizedP50Ms": 8.41503975,
+			"reductionPercent": 1.3331250571230302,
+			"pairedReductionPercentByBlock": [1.0347796877588356, 1.6360099279997375]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 30.475532,
+			"optimizedP50Ms": 30.691471,
+			"reductionPercent": -0.7085651531858472,
+			"pairedReductionPercentByBlock": [-0.7572897083369723, -0.659688804456815]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 39.451806000000005,
+			"optimizedP50Ms": 39.2222215,
+			"reductionPercent": 0.581936603865485,
+			"pairedReductionPercentByBlock": [0.4664329518245247, 0.6984853792530221]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 74.8700745,
+			"optimizedP50Ms": 75.0354915,
+			"reductionPercent": -0.2209387410186281,
+			"pairedReductionPercentByBlock": [-1.1073416967382288, 0.668920995921396]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 0.8628728753846153,
+			"optimizedP50Ms": 0.8535152580128205,
+			"reductionPercent": 1.0844723062622408,
+			"pairedReductionPercentByBlock": [1.115374822001114, 1.0535752082484362]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 7.070715999999999,
+			"optimizedP50Ms": 6.987595799999999,
+			"reductionPercent": 1.1755556297268877,
+			"pairedReductionPercentByBlock": [1.7521953312189753, 0.5914654206156666]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 8.06830625,
+			"optimizedP50Ms": 8.227584375,
+			"reductionPercent": -1.9741209625006473,
+			"pairedReductionPercentByBlock": [1.6126192001660211, -5.577076311819118]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 16.94945525,
+			"optimizedP50Ms": 16.906382,
+			"reductionPercent": 0.2541276363439371,
+			"pairedReductionPercentByBlock": [0.31252786448038306, 0.19579081155050027]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 1.808695846153846,
+			"optimizedP50Ms": 1.7417684230769233,
+			"reductionPercent": 3.7003138598036056,
+			"pairedReductionPercentByBlock": [3.760857732083578, 3.6397294707068983]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 6.296378499999999,
+			"optimizedP50Ms": 6.0909189,
+			"reductionPercent": 3.263139279190397,
+			"pairedReductionPercentByBlock": [4.098744910020935, 2.428937014190291]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 8.300612125,
+			"optimizedP50Ms": 8.004627375,
+			"reductionPercent": 3.5658183461981796,
+			"pairedReductionPercentByBlock": [3.7204563530715107, 3.4109883388354967]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 11.6810105,
+			"optimizedP50Ms": 11.388413499999999,
+			"reductionPercent": 2.504894589385065,
+			"pairedReductionPercentByBlock": [1.719506286971506, 3.292020607635493]
+		}
+	],
+	"trainedMimalloc": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 19.45956,
+			"optimizedP50Ms": 11.676920666666668,
+			"reductionPercent": 39.99391216108346,
+			"pairedReductionPercentByBlock": [
+				39.60697295656564, 42.9260468345634, 39.78713849971823
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 86.48734499999999,
+			"optimizedP50Ms": 47.242707,
+			"reductionPercent": 45.376162258189325,
+			"pairedReductionPercentByBlock": [
+				45.62180157194864, 44.96539696067673, 45.888533112143406
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 107.456573,
+			"optimizedP50Ms": 57.971047,
+			"reductionPercent": 46.05165102371169,
+			"pairedReductionPercentByBlock": [
+				45.41523258302808, 46.68839755386578, 45.703471242667135
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 163.622043,
+			"optimizedP50Ms": 105.212244,
+			"reductionPercent": 35.69800127724845,
+			"pairedReductionPercentByBlock": [
+				35.69800127724845, 35.513844349551285, 35.75316580006111
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 151.340413,
+			"optimizedP50Ms": 96.54990400000001,
+			"reductionPercent": 36.203488489224625,
+			"pairedReductionPercentByBlock": [
+				36.203488489224625, 37.040153404596325, 35.59038210240711
+			]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 14.515703666666667,
+			"optimizedP50Ms": 8.49252,
+			"reductionPercent": 41.49425894176998,
+			"pairedReductionPercentByBlock": [
+				40.24154956731534, 41.61513502632657, 42.80462945061958
+			]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 55.47796,
+			"optimizedP50Ms": 29.9822455,
+			"reductionPercent": 45.95647442696163,
+			"pairedReductionPercentByBlock": [
+				46.398324668030334, 44.98495481755709, 47.0646538640756
+			]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 71.238411,
+			"optimizedP50Ms": 39.285838,
+			"reductionPercent": 44.85301195165625,
+			"pairedReductionPercentByBlock": [
+				43.76963994887534, 44.52427089287217, 45.19686697094906
+			]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 113.718739,
+			"optimizedP50Ms": 74.55322000000001,
+			"reductionPercent": 34.440690553207766,
+			"pairedReductionPercentByBlock": [
+				35.12051663733552, 34.46883993269696, 32.23284158998633
+			]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 108.09772500000001,
+			"optimizedP50Ms": 70.450592,
+			"reductionPercent": 34.82694293520054,
+			"pairedReductionPercentByBlock": [
+				35.66928962499871, 34.82694293520054, 33.2745366842189
+			]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.6463854999999998,
+			"optimizedP50Ms": 0.8543883333333334,
+			"reductionPercent": 48.10520784267515,
+			"pairedReductionPercentByBlock": [
+				48.14235604181214, 48.183186880334226, 48.01318265354494
+			]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 20.271829500000003,
+			"optimizedP50Ms": 6.965370999999999,
+			"reductionPercent": 65.64014609534873,
+			"pairedReductionPercentByBlock": [
+				65.02329294058022, 65.64199496646319, 65.53547997674747
+			]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 21.998088499999998,
+			"optimizedP50Ms": 7.971957,
+			"reductionPercent": 63.76068311571708,
+			"pairedReductionPercentByBlock": [
+				61.957099745862074, 63.824311371417565, 63.94906153998935
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 32.846896,
+			"optimizedP50Ms": 16.884545,
+			"reductionPercent": 48.596223521394535,
+			"pairedReductionPercentByBlock": [
+				48.57281089586473, 48.53812642765973, 48.605105639205604
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 28.416925499999998,
+			"optimizedP50Ms": 14.379887333333334,
+			"reductionPercent": 49.39675182899946,
+			"pairedReductionPercentByBlock": [
+				48.55971758633378, 49.39675182899946, 50.12002515444423
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "parse",
+			"baselineP50Ms": 0.26732853333333334,
+			"optimizedP50Ms": 0.1502624135338346,
+			"reductionPercent": 43.79110540120623,
+			"pairedReductionPercentByBlock": [
+				43.93459428146019, 43.76295932681096, 43.901414321233645
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "decode",
+			"baselineP50Ms": 1.963101,
+			"optimizedP50Ms": 1.5667828666666666,
+			"reductionPercent": 20.18837203655509,
+			"pairedReductionPercentByBlock": [
+				20.495780230699623, 23.08504543068087, 18.512729977628396
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "combined",
+			"baselineP50Ms": 2.348143,
+			"optimizedP50Ms": 1.817041076923077,
+			"reductionPercent": 22.617954829706832,
+			"pairedReductionPercentByBlock": [
+				24.813698844587783, 21.727948957963793, 22.29566989873344
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "inspect-json",
+			"baselineP50Ms": 2.784893666666667,
+			"optimizedP50Ms": 2.1581225454545456,
+			"reductionPercent": 22.50610602171841,
+			"pairedReductionPercentByBlock": [
+				20.164590147944406, 22.356699304192485, 25.53288404172347
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 2.6266693333333335,
+			"optimizedP50Ms": 2.0081099166666667,
+			"reductionPercent": 23.54919246274877,
+			"pairedReductionPercentByBlock": [
+				23.64176009879405, 23.54919246274877, 23.87307651654117
+			]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 2.985022,
+			"optimizedP50Ms": 1.737952142857143,
+			"reductionPercent": 41.77757675296386,
+			"pairedReductionPercentByBlock": [
+				40.20238636074065, 41.77757675296386, 41.999152225129386
+			]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 7.60161675,
+			"optimizedP50Ms": 6.0388036,
+			"reductionPercent": 20.55895740863285,
+			"pairedReductionPercentByBlock": [
+				20.029267386134684, 20.49413207138844, 20.71764207265514
+			]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 11.122855333333334,
+			"optimizedP50Ms": 8.05319475,
+			"reductionPercent": 27.597774953829312,
+			"pairedReductionPercentByBlock": [
+				27.660986601113713, 29.932193584671516, 26.655759645170253
+			]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 14.652492666666667,
+			"optimizedP50Ms": 11.269141,
+			"reductionPercent": 23.090621805008926,
+			"pairedReductionPercentByBlock": [
+				22.950053431564065, 25.015661484076002, 23.090621805008926
+			]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 13.095748,
+			"optimizedP50Ms": 9.67916725,
+			"reductionPercent": 26.089237132541033,
+			"pairedReductionPercentByBlock": [
+				26.236390343266724, 26.199599857622104, 25.94099054135739
+			]
+		}
+	],
+	"pgoDirectMimalloc": [
+		{
+			"case": "corpus",
+			"operation": "parse",
+			"baselineP50Ms": 19.527709,
+			"optimizedP50Ms": 11.621798,
+			"reductionPercent": 40.48560432767613,
+			"pairedReductionPercentByBlock": [
+				40.44256975220869, 40.8737868397791, 41.18151496519188
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "decode",
+			"baselineP50Ms": 86.445045,
+			"optimizedP50Ms": 45.706441,
+			"reductionPercent": 47.1265923917328,
+			"pairedReductionPercentByBlock": [
+				47.82256409860107, 47.37771609697236, 46.86281584645151
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "combined",
+			"baselineP50Ms": 107.955732,
+			"optimizedP50Ms": 58.188021,
+			"reductionPercent": 46.10010981167725,
+			"pairedReductionPercentByBlock": [
+				47.70885413387968, 46.08177822368894, 45.276240062013294
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-json",
+			"baselineP50Ms": 163.75353,
+			"optimizedP50Ms": 105.870356,
+			"reductionPercent": 35.347741205945304,
+			"pairedReductionPercentByBlock": [
+				35.619615162493076, 35.347741205945304, 35.11573445018339
+			]
+		},
+		{
+			"case": "corpus",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 150.820281,
+			"optimizedP50Ms": 98.47547399999999,
+			"reductionPercent": 34.70674278878979,
+			"pairedReductionPercentByBlock": [
+				35.47542497382453, 34.678794876098664, 34.57710505127623
+			]
+		},
+		{
+			"case": "level",
+			"operation": "parse",
+			"baselineP50Ms": 14.473809666666666,
+			"optimizedP50Ms": 8.565488499999999,
+			"reductionPercent": 40.820774231083,
+			"pairedReductionPercentByBlock": [
+				39.84121713988708, 41.110177936810835, 40.87673220059156
+			]
+		},
+		{
+			"case": "level",
+			"operation": "decode",
+			"baselineP50Ms": 55.887068,
+			"optimizedP50Ms": 30.567612,
+			"reductionPercent": 45.30467764027269,
+			"pairedReductionPercentByBlock": [
+				44.82965072112395, 46.57442306332816, 45.16833661769481
+			]
+		},
+		{
+			"case": "level",
+			"operation": "combined",
+			"baselineP50Ms": 71.75528,
+			"optimizedP50Ms": 39.979589000000004,
+			"reductionPercent": 44.28341858606084,
+			"pairedReductionPercentByBlock": [
+				43.93622673901233, 44.28341858606084, 43.566648882972345
+			]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-json",
+			"baselineP50Ms": 115.337176,
+			"optimizedP50Ms": 74.882168,
+			"reductionPercent": 35.0754278915239,
+			"pairedReductionPercentByBlock": [
+				35.23887540650743, 34.80927900859512, 35.05479013982446
+			]
+		},
+		{
+			"case": "level",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 108.192091,
+			"optimizedP50Ms": 71.45907799999999,
+			"reductionPercent": 33.95166195651031,
+			"pairedReductionPercentByBlock": [
+				32.76953395789347, 34.1289489471413, 33.725518979657366
+			]
+		},
+		{
+			"case": "table",
+			"operation": "parse",
+			"baselineP50Ms": 1.6487810714285713,
+			"optimizedP50Ms": 0.8627409615384616,
+			"reductionPercent": 47.67401345826055,
+			"pairedReductionPercentByBlock": [
+				48.11652478739844, 47.7692583885804, 46.51095798692844
+			]
+		},
+		{
+			"case": "table",
+			"operation": "decode",
+			"baselineP50Ms": 20.334822,
+			"optimizedP50Ms": 7.0606212,
+			"reductionPercent": 65.27817553554193,
+			"pairedReductionPercentByBlock": [
+				66.38788665078832, 65.29026514222745, 64.91082856831325
+			]
+		},
+		{
+			"case": "table",
+			"operation": "combined",
+			"baselineP50Ms": 22.031185500000003,
+			"optimizedP50Ms": 8.022829250000001,
+			"reductionPercent": 63.584214521728754,
+			"pairedReductionPercentByBlock": [
+				63.5619954500418, 63.64302093502867, 63.534557650748305
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-json",
+			"baselineP50Ms": 32.841322,
+			"optimizedP50Ms": 16.9093615,
+			"reductionPercent": 48.51193414199343,
+			"pairedReductionPercentByBlock": [
+				48.54507988442121, 49.00037411191399, 48.28840175414363
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 28.2620255,
+			"optimizedP50Ms": 14.453115666666667,
+			"reductionPercent": 48.86029783439737,
+			"pairedReductionPercentByBlock": [
+				48.88370908174926, 48.89342316036044, 44.52175411136049
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "parse",
+			"baselineP50Ms": 0.26700352,
+			"optimizedP50Ms": 0.15658434677419356,
+			"reductionPercent": 41.35495038634937,
+			"pairedReductionPercentByBlock": [
+				41.35495038634937, 41.70995116641194, 41.15527332572805
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "decode",
+			"baselineP50Ms": 1.9673542499999999,
+			"optimizedP50Ms": 1.642307857142857,
+			"reductionPercent": 16.52200628621626,
+			"pairedReductionPercentByBlock": [
+				16.54186254022556, 15.805971766355443, 20.07112155926235
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "combined",
+			"baselineP50Ms": 2.3456843000000003,
+			"optimizedP50Ms": 1.8703225,
+			"reductionPercent": 20.265378422833802,
+			"pairedReductionPercentByBlock": [
+				19.902303778717755, 21.121127609744594, 20.563653145196625
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "inspect-json",
+			"baselineP50Ms": 2.7851595555555555,
+			"optimizedP50Ms": 2.2859601,
+			"reductionPercent": 17.923549642238722,
+			"pairedReductionPercentByBlock": [
+				18.44491654098731, 16.1048807312119, 18.018768666157946
+			]
+		},
+		{
+			"case": "blueprints",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 2.607948,
+			"optimizedP50Ms": 2.108571909090909,
+			"reductionPercent": 19.148238036536412,
+			"pairedReductionPercentByBlock": [
+				19.148238036536412, 18.981310444970156, 19.98859684697518
+			]
+		},
+		{
+			"case": "small",
+			"operation": "parse",
+			"baselineP50Ms": 2.9764163333333333,
+			"optimizedP50Ms": 1.8225697692307692,
+			"reductionPercent": 38.76630265667015,
+			"pairedReductionPercentByBlock": [
+				39.22570902400896, 37.04882489218371, 38.73139788708107
+			]
+		},
+		{
+			"case": "small",
+			"operation": "decode",
+			"baselineP50Ms": 7.60146,
+			"optimizedP50Ms": 6.3120858,
+			"reductionPercent": 16.962191473743204,
+			"pairedReductionPercentByBlock": [
+				16.962191473743204, 17.745732336441744, 16.686870778038386
+			]
+		},
+		{
+			"case": "small",
+			"operation": "combined",
+			"baselineP50Ms": 11.074868666666665,
+			"optimizedP50Ms": 8.32055225,
+			"reductionPercent": 24.869969112651013,
+			"pairedReductionPercentByBlock": [
+				19.80427698676095, 24.99212174061286, 25.23843492738711
+			]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-json",
+			"baselineP50Ms": 14.731241666666667,
+			"optimizedP50Ms": 11.770688,
+			"reductionPercent": 20.097108808999476,
+			"pairedReductionPercentByBlock": [
+				19.87387691853806, 20.814587779904148, 19.498888134005465
+			]
+		},
+		{
+			"case": "small",
+			"operation": "inspect-owned",
+			"baselineP50Ms": 13.117639666666667,
+			"optimizedP50Ms": 10.020904333333334,
+			"reductionPercent": 23.607412705522556,
+			"pairedReductionPercentByBlock": [
+				23.607412705522556, 23.586205297885087, 19.363072255147006
+			]
+		}
+	]
+}

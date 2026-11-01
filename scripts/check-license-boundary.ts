@@ -26,6 +26,7 @@ function licensed(license: string, names: string): Record<string, string> {
 export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	{},
 	licensed("(MIT OR Apache-2.0) AND Unicode-3.0", "unicode-ident"),
+	licensed("(Apache-2.0 OR MIT) AND BSD-3-Clause", "encoding_rs"),
 	licensed("Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT", "wasip2 wit-bindgen"),
 	licensed("BSD-2-Clause OR Apache-2.0 OR MIT", "zerocopy zerocopy-derive"),
 	licensed("BSD-3-Clause", "atomic-write-file"),
@@ -35,10 +36,10 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	),
 	licensed(
 		"MIT OR Apache-2.0",
-		"bitflags cc cfg-if crc32fast find-msvc-tools getrandom hashbrown hashlink itoa libc once_cell pkg-config ppv-lite86 proc-macro2 quote rand rand_chacha rand_core serde serde_core serde_derive serde_json shlex smallvec syn windows-link windows-sys"
+		"bitflags cc cfg-if crc32fast find-msvc-tools getrandom hashbrown hashlink itoa libc once_cell pkg-config ppv-lite86 proc-macro2 quote rand rand_chacha rand_core rustversion scopeguard serde serde_core serde_derive serde_json shlex simdutf8 smallvec syn windows-link windows-sys"
 	),
 	licensed("MIT OR Apache-2.0 OR LGPL-2.1-or-later", "r-efi"),
-	licensed("MIT/Apache-2.0", "fallible-iterator fallible-streaming-iterator vcpkg"),
+	licensed("MIT/Apache-2.0", "core_detect fallible-iterator fallible-streaming-iterator vcpkg"),
 	licensed("Unlicense OR MIT", "memchr termcolor winapi-util"),
 	licensed("Zlib", "foldhash"),
 	licensed("Unlicense OR MIT", "aho-corasick"),
@@ -48,7 +49,7 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	),
 	licensed(
 		"Apache-2.0 OR MIT",
-		"bit-set bit-vec equivalent indexmap rustc-hash utf16_iter utf8_iter write16"
+		"bit-set bit-vec equivalent indexmap multiversion_no_op rustc-hash utf16_iter utf8_iter write16"
 	),
 	licensed("Apache-2.0 OR BSL-1.0", "ryu-js"),
 	licensed("Apache-2.0", "fsst-rs"),
@@ -86,6 +87,7 @@ const acceptedRustLicenses = new Set([
 	"MIT OR Zlib OR Apache-2.0",
 	"Unlicense OR MIT",
 	"(MIT OR Apache-2.0) AND Unicode-3.0",
+	"(Apache-2.0 OR MIT) AND BSD-3-Clause",
 	"Zlib"
 ]);
 

@@ -5,7 +5,7 @@ use uasset_parser::asset::{
     USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::asset::{
-    AssetDecodeContext, AssetErrorKind, DecodedAsset, EnumCppForm, decode_export,
+    AssetDecodeContext, AssetDecodeSession, AssetErrorKind, DecodedAsset, EnumCppForm,
 };
 use uasset_parser::package::{
     ObjectPath, PackageError, PackageErrorKind, PackageIndex, TableLocation,
@@ -179,8 +179,9 @@ impl InspectOutput {
             package,
             schemas,
         };
+        let mut decoder = AssetDecodeSession::new(&context);
         for export in &package.exports {
-            match decode_export(export, &context) {
+            match decoder.decode(export) {
                 Ok(Some(decoded)) => {
                     output
                         .assets

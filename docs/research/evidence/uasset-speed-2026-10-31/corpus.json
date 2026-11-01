@@ -1,0 +1,705 @@
+{
+	"revision": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+	"packages": [
+		{
+			"path": "fixtures/graph-pin-text/4.27/BP_Keys.uasset",
+			"bytes": 42790,
+			"sha256": "509a549a269801ee55bc7a379a3e32d9325bb7ddf3ead7618c01f421f373e3cc"
+		},
+		{
+			"path": "fixtures/graph-pin-text/5.6/BP_Keys.uasset",
+			"bytes": 46505,
+			"sha256": "2ff8ace9a6754a22cd218fd9ad5ef05ded5b1928766328c9cf1582fc6e203f07"
+		},
+		{
+			"path": "fixtures/graph-pin-text/5.7/BP_Keys.uasset",
+			"bytes": 46521,
+			"sha256": "f5141640d68b59a308e05907034ea85c7eff966ab332d14613b24f7ec6a2f26f"
+		},
+		{
+			"path": "fixtures/graph-pin-text/5.8/BP_Keys.uasset",
+			"bytes": 46683,
+			"sha256": "035756196fca9d57bb1c99626aa52d1210d9dd47c172adfcffca0a6aa7214194"
+		},
+		{
+			"path": "fixtures/legacy-unreal-project/Generated/4.27/Content/Legacy/DA_LegacyText.uasset",
+			"bytes": 2224,
+			"sha256": "115155c4c702ec94a5487f427d18b0cc452501542c8e8149d8ebb3ff7fa0c784"
+		},
+		{
+			"path": "fixtures/legacy-unreal-project/Generated/4.27/Content/Legacy/DT_LegacyText.uasset",
+			"bytes": 5423,
+			"sha256": "f5a3b52b1da77d4fa2b38e8d917337b100a9bbcd3a752819301d6c2ca5708ed9"
+		},
+		{
+			"path": "fixtures/legacy-unreal-project/Generated/4.27/Content/Legacy/ST_LegacyText.uasset",
+			"bytes": 1882,
+			"sha256": "e10af409def4e3a0a0a2ddc61c846e6a2959e4ed5f981270cb7580173cc43b05"
+		},
+		{
+			"path": "fixtures/legacy-unreal-project/Generated/5.3/Content/Legacy/DA_LegacyText.uasset",
+			"bytes": 2392,
+			"sha256": "9f1d8cf923339a8b489342b36b185447cbba86564e71e514dedfd25e910beca1"
+		},
+		{
+			"path": "fixtures/legacy-unreal-project/Generated/5.3/Content/Legacy/DT_LegacyText.uasset",
+			"bytes": 5780,
+			"sha256": "ebf20b0a0ff2947cb98f4ac89e1ee3ea332b9a1f63a7f9828ff1dfe38ed422b1"
+		},
+		{
+			"path": "fixtures/legacy-unreal-project/Generated/5.3/Content/Legacy/ST_LegacyText.uasset",
+			"bytes": 1993,
+			"sha256": "d2e6e6bfe3676efbc81ec666770eda8d8192ac54c1d487d22b1d9929a77fa001"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/add-arrival/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/7/OS/YFXMLLP69ZY7T5KHTXMUWS.uasset",
+			"bytes": 5265,
+			"sha256": "38bcfcf0040ab4978de5789e6404e2be6d3ab2cc82b86eacb0ed4fbe998e60d6"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/baseline/Content/Fixture/History/L_MapHistoryWorld.umap",
+			"bytes": 11085,
+			"sha256": "1221379bfbaabd705a0ce402f1877efc4bc5f4b5d8425917b2a531c60b73b324"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/baseline/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/0/6T/BA5Z8RENRA6081VFA9SSIZ.uasset",
+			"bytes": 5550,
+			"sha256": "6337db4a2e90dc0fb9b960f8a99f953bf841779e0e32b2fad891b5676e393982"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/baseline/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/0/J3/YO6YFXTK0CF7AGM34U7PQA.uasset",
+			"bytes": 5255,
+			"sha256": "816e5c0e890c6fbb04ede1c8fc82222bef5448bd4dedc6a0fb5cc6544941f29a"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/baseline/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/3/75/FQFCSRE35IMERPMI8K3KT5.uasset",
+			"bytes": 5257,
+			"sha256": "9ce477f94eb68e71c91333d5a24c74ed8ce18c2cfb03eecd053f4aa9d0632c88"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/baseline/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/3/O5/S7MIGESMWT6M0S6ZL89YG3.uasset",
+			"bytes": 5255,
+			"sha256": "9aee44a88cffccd4b2cd38e3d7e116a2495891edd16534f486c9daed3d3088d9"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/baseline/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.uasset",
+			"bytes": 5255,
+			"sha256": "3cc613b7a14f35010f4b745d098dbfddae3a6adaf1872f514858f66ac9313071"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/baseline/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/E/7E/MYCWJK19X4HM01TG834HMB.uasset",
+			"bytes": 5257,
+			"sha256": "94d016944a5c3c0e083134ef5aed6432d06773189976ec1939e37dcbae6ace9e"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/conventional-baseline/Content/Fixture/History/L_ConventionalMapHistory.umap",
+			"bytes": 10339,
+			"sha256": "4fd8ff248bb0072abb605fa823e0a339941bc09b08f1bbd54ac3b48bcc15e34a"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/conventional-move-actor/Content/Fixture/History/L_ConventionalMapHistory.umap",
+			"bytes": 10338,
+			"sha256": "5da97706e0ebc726f3fcbe8d201fee10b1106c31eeee09fbf300a88813d6e4c5"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/label-north/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/E/7E/MYCWJK19X4HM01TG834HMB.uasset",
+			"bytes": 5257,
+			"sha256": "56844443bb83f5ba7eb0d4aac152fe845d483d4d8ed8156c5842a42260fa9b70"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/move-east/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.uasset",
+			"bytes": 5255,
+			"sha256": "9ec3e97244e945e1110a968b211977b02827a79b351f8c1a7bf0c24c36be9dba"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/two-unclassified-package-edits/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/3/O5/S7MIGESMWT6M0S6ZL89YG3.uasset",
+			"bytes": 5255,
+			"sha256": "f418a193938359ea19fef134e7d7668f90f6225cadfb9e6d0e915272ed5bb91b"
+		},
+		{
+			"path": "fixtures/perforce-map-history/revisions/two-unclassified-package-edits/Content/__ExternalActors__/Fixture/History/L_MapHistoryWorld/C/N1/9RPECC7KRB3DWFR00UEDPC.uasset",
+			"bytes": 5255,
+			"sha256": "683efb0fb525cbd9d2b511dafe9700980cd6facc85426c18bee9c31095282d96"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Animation/A_FixtureMotion.uasset",
+			"bytes": 12895,
+			"sha256": "c778b651e96d5e920febc5273c9f41b4d3236ca7cc8abf8081df6a71d98eaf88"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Animation/SK_Fixture.uasset",
+			"bytes": 1823,
+			"sha256": "74b10625a038489c2ed3b9bb6c01b89ce2a234536635cecea0b7e9c305a2aee1"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_Defaults_256.uasset",
+			"bytes": 4070,
+			"sha256": "865770489dd0e55fe66dd8d2ef033697d4db358def5ea6a4b29507b6be993ecb"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_Effects_1024x512.uasset",
+			"bytes": 5319,
+			"sha256": "e59c279c2029515b50eae1c3b3ac54ca491cbb9ea182a33d4daea9546a429ffc"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_Effects_128x256.uasset",
+			"bytes": 4074,
+			"sha256": "3e61bafe9154b2bdf909c0993c0064eb828ed7a906a72b32593abcb3ebb796d7"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_Effects_256.uasset",
+			"bytes": 4357,
+			"sha256": "537f6951e13e8c40dbb2a2b5cdac6b1e2e093c8800001421365ae32a6f63cda5"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_Effects_512.uasset",
+			"bytes": 5082,
+			"sha256": "ab43cbd91099c7f8f837055b876800b4772714680a55914f661417932dc54cd5"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_NonPowerOfTwo_300x180.uasset",
+			"bytes": 4371,
+			"sha256": "237def783c61cd4b22c63dbd30c9e08649cc17b4dc6fdf295a984e89554142c8"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_UI_1024x512.uasset",
+			"bytes": 5395,
+			"sha256": "874788c09b300eda91e723b2e81340e9f0762267465e7b31ef0721aec9f1f570"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_UI_128.uasset",
+			"bytes": 4251,
+			"sha256": "05aa2a84cc19f613f87ad82a6122a95a824385f50a0e77f8fd5fd8d6d64b5337"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_UI_2048x1024.uasset",
+			"bytes": 8272,
+			"sha256": "d7c1ca8a730c830a407bac4e66aa6dd54da7c13e005cd9b06c7cd0728557434d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_UI_256x128.uasset",
+			"bytes": 4165,
+			"sha256": "72b5f6bf1f56ee903eaa37483082ecfbc990fd8e08bf0cf5499619f3ca1fa2ce"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_UI_512.uasset",
+			"bytes": 5158,
+			"sha256": "53d45b8ac2410b5187d8630204a3c1d85eb30bd39445733a8b2d6c0fbcfe1466"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_World_1024.uasset",
+			"bytes": 7323,
+			"sha256": "db58c12398f123c3fcb0ed05836376666d21b59a68e9dc97cf74561843df047a"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_World_128.uasset",
+			"bytes": 3876,
+			"sha256": "1f85b0b40f58877157c850b746863cb4902d54c95d7fe48a0a90ee5ae4bec501"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_World_2048x1024.uasset",
+			"bytes": 7897,
+			"sha256": "a8e0162b039f0aef058a51c98c1d934f302e6f9416776f8855d6a845b15f9b6f"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_World_256.uasset",
+			"bytes": 4058,
+			"sha256": "b535af4fe2b1cba9566fba9844d00e424287c36784674a3d59dd92a1f5501be4"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_World_512.uasset",
+			"bytes": 4783,
+			"sha256": "08ecacd8613e0230c4af971ee73d86354028ebd8e234018df3e8ac05811b38c3"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Audits/Textures/T_Audit_World_512x256.uasset",
+			"bytes": 4045,
+			"sha256": "93125165cb3150e4227a2b3b17d53494c65f397fb30fcd8126793878c84c9fc6"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/CDT_Scalars.uasset",
+			"bytes": 3129,
+			"sha256": "d327f647030a2fa676f5dd4ca05591db4ed99136b40dbcd07f2e27c4eece75a2"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_AssetReferences.uasset",
+			"bytes": 2194,
+			"sha256": "a58ca13501cfcbf6b2a5d30fe5ded9d99d2296e15ec1fadc453ec7d01980f1d5"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_Containers.uasset",
+			"bytes": 2454,
+			"sha256": "ff141c151ffec452a8a62605f668cc6ecb4c6c3df67537d406430fabdcc5b3c9"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_Enums.uasset",
+			"bytes": 2186,
+			"sha256": "37de951c0a88f33434c8afc73b9f214ae28107ab46db3a5ac742301148e2db9d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_LargeScalars.uasset",
+			"bytes": 2402007,
+			"sha256": "c3c3fdc9ee81d2623890469c123a29939fa3d1c182586938444ad64692c9dbe4"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_LeftReferences.uasset",
+			"bytes": 2460,
+			"sha256": "bb2be284474f46632d4e8e3ff8fa9ffbadc6ca7175673479397dbcd214e0ca4b"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_Opaque.uasset",
+			"bytes": 1959,
+			"sha256": "69621248f3aebcffc8acb8cc21ee34e6610b2b7e9f3d965c42c52d35cbf1cfe7"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_RightReferences.uasset",
+			"bytes": 2096,
+			"sha256": "976b356425caa96ecc1fc8c3828dbaf36373358e4563f3529f591a68ba18849d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_Scalars.uasset",
+			"bytes": 2463,
+			"sha256": "b2c23ad20f035745d21d1002e92f1616ca0845039258b45682b8ef5584c145ee"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_ScalarsOverride.uasset",
+			"bytes": 2501,
+			"sha256": "91e8f3f55016aff68ff28afdcb974aa2710f99df9d3645226503321bf8bb239f"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_Structs.uasset",
+			"bytes": 2525,
+			"sha256": "d9d3b1c691a1d25e0174dc785829fc70f61cfce1cc38ef1113edf815c44dc4cf"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Authoring/DT_Text.uasset",
+			"bytes": 2479,
+			"sha256": "8056017f59c6fcee46c1dd441cc05b9cf4c11ddc6cafa5553fa06de6fd31a8b0"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Blueprints/BP_GraphFixture.uasset",
+			"bytes": 29126,
+			"sha256": "b32f701ec6cc6e1e00f513739bb4f64304f21da3c4014458d15c742e0a21d26c"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset",
+			"bytes": 57358,
+			"sha256": "fb755010d9080543aeb27ea94fc6cdfd5b5cb60f7d38b656b5dfdabaa99ac8f6"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap",
+			"bytes": 10058172,
+			"sha256": "952f3ef7fd3aecfa42a901a9afa7143cdb8f2771f2cc994b066eebad3814d17c"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/BP_ActionSign.uasset",
+			"bytes": 42416,
+			"sha256": "23ad83d8225fd1365d7a6fee3cc25909a0354dfa7dca000c8072f8f668bb8b08"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/BP_ActionSign_Duplicate.uasset",
+			"bytes": 41631,
+			"sha256": "ff19de33ef9a67e7c037cb33946f29c518a5193f0f929edc943f674b57685569"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Branched/BP_ActionSign.uasset",
+			"bytes": 42416,
+			"sha256": "23ad83d8225fd1365d7a6fee3cc25909a0354dfa7dca000c8072f8f668bb8b08"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Branched/DA_ActionNotes.uasset",
+			"bytes": 1539,
+			"sha256": "6a498677944ed85676ae84c7d4db11d05b5fa7a4c5ae7f7078f9fca29cd21ea0"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Branched/DT_ActionRows.uasset",
+			"bytes": 3257,
+			"sha256": "e6fccc9d2589761404b94ac222d915535353378b14de34a1fe9a31de7f57ffeb"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Branched/WBP_ActionPanel.uasset",
+			"bytes": 25015,
+			"sha256": "e65a6339d84f5c70da32e121d01ea1be69d5983a97d1c3d8aaa9c8ca6efc0b57"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/DA_ActionNotes.uasset",
+			"bytes": 1494,
+			"sha256": "0b68e7cfe7dbfceb48040dd905c9eeae8ad09b6a2c84ffbc7f7a8d3b3cc61a9f"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/DA_ActionNotes_Duplicate.uasset",
+			"bytes": 1554,
+			"sha256": "3c00f5e592daef76865e09dff8028670ac68fb4107c50d3a517960cc12d95dc1"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/DT_ActionRows.uasset",
+			"bytes": 3162,
+			"sha256": "dab5adcc3264e50175e9921426b96d5a73d6753170d7d285f3848ba43b452099"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/DT_ActionRows_Duplicate.uasset",
+			"bytes": 3282,
+			"sha256": "0d10e1d8efa07fa8de2e9dfba65c4af40c64f80d8a6450a95a586d22bdbaaebb"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Slice2/BP_IdentityChildInherits.uasset",
+			"bytes": 33936,
+			"sha256": "baae6187e7b071a3a4c2422531f3433c8ee07a4f8693641008766159b010c3f3"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Slice2/BP_IdentityChildOverrides.uasset",
+			"bytes": 34113,
+			"sha256": "1809710a087359f58efdeb73f96f754c69c06c167dcae1b8fa09191ebfeac8ff"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Slice2/BP_IdentityLiterals.uasset",
+			"bytes": 40246,
+			"sha256": "9ca188ad3736ce7167c17aefb2e7e243bbe560c745ffb04ebefbbbd1782592c3"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Slice2/BP_IdentityParent.uasset",
+			"bytes": 25671,
+			"sha256": "d35a6767b1fa02154f74f0b0854421f261e28c3a3e99bff35a8c07e6a1003bf2"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Slice2/DA_IdentityReferences.uasset",
+			"bytes": 2072,
+			"sha256": "3c3bd27f78ccda23007708afcb5cbcdc76d0156bbbc96074d0e09df367690f38"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Slice2/L_IdentityLevel.umap",
+			"bytes": 8680,
+			"sha256": "e07421feb2925b6da9daa00717dc426f19df22c8b17ac553f8f8499aa05259b2"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Slice2/L_IdentityWorld.umap",
+			"bytes": 11133,
+			"sha256": "73b76660da9ff8a36cf7f488b92989cce680ae61f2342a8caf8668b9904ebaea"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/Slice2/ST_IdentityTable.uasset",
+			"bytes": 1429,
+			"sha256": "ca3fe3ef74ddb72f5ccbcce4bbce653e5331146c1bd6b4def68ff12d716a6fa0"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/WBP_ActionPanel.uasset",
+			"bytes": 22763,
+			"sha256": "e7a721d5bd5640eda5801e17ff3253def56290699fdade63cc949a6a6a1628fe"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextActions/WBP_ActionPanel_Duplicate.uasset",
+			"bytes": 22206,
+			"sha256": "ecdb754f1a27cfc308ec60150f43f2fd3ff22e3deca7a4ec54b18605f83c0359"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/DA_FixturePartlyRead.uasset",
+			"bytes": 1893,
+			"sha256": "366be6aab820fb1350658658e339ad27411c8b90e7e3bedd311d14a99b28957c"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/DT_FixtureItems.uasset",
+			"bytes": 3766,
+			"sha256": "44f89591150347201557c36d5124dedafc2e60107eccce81693f75c00f4b9f53"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/DT_FixtureQuestLog.uasset",
+			"bytes": 2940,
+			"sha256": "876bd66c43fc71fc4aa7981999e38f9df846a79bc69358580026a6e89a23d425"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/Excluded/DA_FixtureExcluded.uasset",
+			"bytes": 1544,
+			"sha256": "b7f3bfef7008e4caaa2063aa9a02cdc15ce181c93e73f0194d21c9c0a095df5c"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/ST_FixtureMenuA.uasset",
+			"bytes": 1419,
+			"sha256": "e9a821c9e4bf4445e4f47447d200cb7b30a04827eb27d363a9f19aafe6ba8d03"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/ST_FixtureMenuB.uasset",
+			"bytes": 1435,
+			"sha256": "506de4796f509c1e619f25c3c7b3f6008775affd8b8fc8fe33240f087b604b2f"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/ST_FixtureProblemLines.uasset",
+			"bytes": 7474,
+			"sha256": "a627b1293c8e92c8f3de4b2a520869d8a27575ceb43bcf9fe9d877472dfa7a1e"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/WBP_FixtureObjective.uasset",
+			"bytes": 24396,
+			"sha256": "3b46ab1dde2b7e359f861b1b4bc0d621a952546711000d44a78fa43e228e6b9e"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/WBP_FixtureObjective_Copy.uasset",
+			"bytes": 24464,
+			"sha256": "960f938c216a1aa208f0eb63f2e2436a1f9e2a8245c24da9f7ad345cb73a1aa3"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/GameTextProblems/WBP_FixtureStaleCompile.uasset",
+			"bytes": 22812,
+			"sha256": "45ba24384c46f0602a87a5f3d2e6f82313aa6ea0e5c40b4d134fe248a1b8bbba"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Aim.uasset",
+			"bytes": 1305,
+			"sha256": "ad9cc82886ab64b3d4ea5485b531cf007e8ad3d6b747dbac3d5646f8cdeeabd8"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Back.uasset",
+			"bytes": 1230,
+			"sha256": "ec940845d042463eddb61fe0cc315e658bf3be3d2fd9c364b27688f3e92c5579"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Confirm.uasset",
+			"bytes": 1255,
+			"sha256": "1a61b7244489c8a70cd67a96afced97af3e42121f7b1eddb51ee50e2ca361ca6"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Crouch.uasset",
+			"bytes": 1308,
+			"sha256": "8129b74240bfd32790ac5ef9890fc6f158ceb2ff08f2097a93d9de0919d7789f"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_CycleWeapon.uasset",
+			"bytes": 1530,
+			"sha256": "4ba94b21e181a88fdbcb844dca3aea6c8be5beda56c647732ffad39fb49a032b"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_ExitVehicle.uasset",
+			"bytes": 1266,
+			"sha256": "5b2b036774c77d5f85c258d3578b31548fb382943af6fdc993f7916b6b35242c"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Fire.uasset",
+			"bytes": 1237,
+			"sha256": "5ed1f5eb1e612d24e9dddca57dee743137e4653091c5f865b0330f14ae467861"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Handbrake.uasset",
+			"bytes": 1323,
+			"sha256": "6c46bf6d641833c7ffc27024c972f73e34de2fe97acc241e706aae0351914d08"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Interact.uasset",
+			"bytes": 1250,
+			"sha256": "42e0a7dd3a89668c9389f8d0a40d34b0dfcdef34f8fef145926ef585b7fba5ad"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Jump.uasset",
+			"bytes": 1313,
+			"sha256": "e9b944a5bff36b2e8c4318ff3e9beebc13ac4f8f1f1476ec11a1c2915c25b277"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Look.uasset",
+			"bytes": 1501,
+			"sha256": "3c52ded1e886e364739589564de59a51442fcc6b1d8b3871047614422ca4a521"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Melee.uasset",
+			"bytes": 1310,
+			"sha256": "c1dfc0774e4821ba42ac8eda2a70c32323898e0b76e3d4e1e94d321c5c8b06d2"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Move.uasset",
+			"bytes": 1441,
+			"sha256": "6a1df6c31d808980b3c5738975b0c3729b41a35473f4d345594e8062b69591fa"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_NavigateMenu.uasset",
+			"bytes": 1535,
+			"sha256": "b49429ddb7df81ded0c4d411721dd1edeeae84bdee0cbf8e2f7057c9cf401cb3"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_PhotoCapture.uasset",
+			"bytes": 1339,
+			"sha256": "dd5efae0fa8d921cd5e71268e550c89499ea2d39d59548b3612fba13eea756ad"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_PhotoToggle.uasset",
+			"bytes": 1339,
+			"sha256": "43a87c606abbb6c761bacd5d327433947e27d8e710074473973a2f8fee5afa3d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Reload.uasset",
+			"bytes": 1308,
+			"sha256": "0955466c3e4542b8f93d3041ce571839df883c2122f19654940f964fbdd3588d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Sprint.uasset",
+			"bytes": 1308,
+			"sha256": "43d37b419c4a610160136e5d667092fb3358dc2da24d182ea7186e955e811388"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Steer.uasset",
+			"bytes": 1510,
+			"sha256": "787307312411b941747bdc8d6652363b86c0e47dd67db0478984483bf29c31cd"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IA_Throttle.uasset",
+			"bytes": 1522,
+			"sha256": "540a9068f6877377cf05a5e13494a3ba0a4ff6eb5fb8acf5d6ed32f82454b5fc"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IMC_Fixture.uasset",
+			"bytes": 3141,
+			"sha256": "b6484cf594864f1378f852937f2616f65d753bc89e569d22d58f613f800e977d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IMC_Gameplay.uasset",
+			"bytes": 15381,
+			"sha256": "8c87c3a23a7393498b4dae46b3fbed14aa3e5f6fcbe4402ec7f974316841e200"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IMC_Menu.uasset",
+			"bytes": 6809,
+			"sha256": "cd187fbba4bbbe6459aad3119f58053d845bef1bfeddcbb6fa4ba5ef4587514c"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IMC_PhotoMode.uasset",
+			"bytes": 6015,
+			"sha256": "51500f754502f15ce083a49d769720cf515d0e49a4d665be10bfec32c732300b"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Input/IMC_Vehicle.uasset",
+			"bytes": 8454,
+			"sha256": "101cfd30185d4b77ac89cd96b6b4aec8b5ad8d25a2df9704c0aa1b03da89477c"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Localization/DA_Localization.uasset",
+			"bytes": 1954,
+			"sha256": "3e1bdf598fce13c00caa6045822dbfc948ecf942a746f4250b9a6817ee903fb2"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Localization/DT_Localization.uasset",
+			"bytes": 2515,
+			"sha256": "5b811f18bc6d2a93ed53a279c1246e72b08fe35fd5170c9045db0690b6a611e0"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Localization/ST_Localization.uasset",
+			"bytes": 4744,
+			"sha256": "2fe019f1d236f2dabd4295ca27613dd62b883e6ea6ac5a7b973cb1e4a5f12fa8"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Offline/L_OfflineWorld.umap",
+			"bytes": 11067,
+			"sha256": "766fa41cdf80b98ad32ba8c5ec22b8cc39e47c28254109bb50609467145c0235"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/A_Native.uasset",
+			"bytes": 16579,
+			"sha256": "46d0ee1c49447d9f9caca2cfe1781276f87e9092146ed9c8965180569674baee"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/CC_Native.uasset",
+			"bytes": 3053,
+			"sha256": "cf4278fe5e287db2de906a8ff02209072062310e0f55be248322c10c8da03e44"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/CF_Native.uasset",
+			"bytes": 1970,
+			"sha256": "bb8e7bb952b12320d89d5bdd8cea2ecbfae74f514e7cb4e4ae1171d530c38495"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/CV_Native.uasset",
+			"bytes": 2673,
+			"sha256": "447e16afe0ff6749a5347317bfc31d0010d2524bf4e1a4128566b6c510d2bfa6"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/DA_Native.uasset",
+			"bytes": 10055,
+			"sha256": "483cf12941f9edd6dc2d5006dcbc1e0448d09f0be3d559bc781910416748296d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/LS_Discrete.uasset",
+			"bytes": 16222,
+			"sha256": "c410ac180a2fb75777e46dcf20734ea489f0df07ed047d37a63cf0432eef9de5"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/LS_Numeric.uasset",
+			"bytes": 10071,
+			"sha256": "eeb48f4fcec5813b0d9c3fc7f4f0d153820c290a12159314542833ab728b1c4b"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/LS_SavedDetails.uasset",
+			"bytes": 18576,
+			"sha256": "af816f42c20dcd8df573409745b3d761834145a2ed12d80bd91f3a9b5f7f4095"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/ParserNative/SK_Native.uasset",
+			"bytes": 1496,
+			"sha256": "475281aab7e28dbe0ea2d07cb4f04bdcda3d9f92b1c3df6c7cc76a4b4b74adcf"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Scenarios/L_MovementGym.umap",
+			"bytes": 19085,
+			"sha256": "b0265bb73da027612390c10dc56dcf5ef473e8be2e8ed0736ef562cbe89ce08d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Sequences/LS_NestedTimeline.uasset",
+			"bytes": 6371,
+			"sha256": "e6ea3adca42510ff597a4a01af71d579d8b208399e57f6dca975c3f6934b3bc3"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Sequences/LS_TextTimeline.uasset",
+			"bytes": 7243,
+			"sha256": "c4189122e6d6137c040428dc23dd9127c12865e6e37e9704122f8e0103fc590d"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Text/DA_TextOccurrences.uasset",
+			"bytes": 2536,
+			"sha256": "493a7d6066a84bc14269c63bc26d14d8783b23de02b9fe709cefaa51aa538788"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Text/E_TextDisplayNames.uasset",
+			"bytes": 2163,
+			"sha256": "81326f2cc488ce495cb4cc15a42af3407154129f8352fc01ce171cd3380927af"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/Fixture/Text/ST_Game.uasset",
+			"bytes": 1874,
+			"sha256": "5548956a2eec8e969d56aeb58047cd1775dcccfc7417bb670a6644eea550ef57"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/__ExternalActors__/Fixture/GameTextActions/Slice2/L_IdentityWorld/1/SG/KWYCKC1DDA97XCIKBA42M2.uasset",
+			"bytes": 3609,
+			"sha256": "c5da2ce470bd262905ad3c7b786816bc5e54c4061eaa9f6df05cde2e48895f64"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld/0/Q6/2U0F6G10Q256FGSXDH0W7W.uasset",
+			"bytes": 5519,
+			"sha256": "145f2e78ce93797d5cbd4af1978e4647c186ec6319416109b29fcb1e302b0767"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld/2/IP/4RGYST6ZXE556S3K42MB94.uasset",
+			"bytes": 5227,
+			"sha256": "ff3c41c799ec72f409d0d556922b17ec302454aec05b3e082014e3c1890438f9"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld/2/KH/64U4VFBIO27AEBTWENZPJE.uasset",
+			"bytes": 5227,
+			"sha256": "ecac91dcd516194051219f54c2deed6ccb9d1f5117a8671a0ae587e5684dbe21"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld/5/GJ/GP6EX9W7HYZAYPFT2ZJFX1.uasset",
+			"bytes": 5229,
+			"sha256": "b2d067cbd544b03b758a446004b58edf42de8c9fca898137f0abdc60c5766d42"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld/7/2Q/EXWJJAFO1AXLQBG0D639K4.uasset",
+			"bytes": 5227,
+			"sha256": "c6ae39f2252dd5f756e37bfe7ed0a23490ba55867302d573c399e848175ba675"
+		},
+		{
+			"path": "fixtures/unreal-project/Content/__ExternalActors__/Fixture/Offline/L_OfflineWorld/7/DB/S1V7DA40SEM2PN12MLZIF0.uasset",
+			"bytes": 5229,
+			"sha256": "6677414a420560bd1ddff427bd72c2161be2e4dd8acdea2324e0ec228feeeb23"
+		},
+		{
+			"path": "fixtures/unreal-project/FixtureExpected/game-text-actions/ue5.8-saved/BP_IdentityLiterals.uasset",
+			"bytes": 40453,
+			"sha256": "8258c732f425e5bfd5a58f5ba7d3279126a609d2ed0462a20747472388b718b6"
+		}
+	]
+}

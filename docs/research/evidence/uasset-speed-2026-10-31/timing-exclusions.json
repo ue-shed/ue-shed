@@ -1,0 +1,1110 @@
+{
+	"reason": "Verification executable hashing shared CPU/memory resources during these process windows; remeasure complete affected pairs after the main timing run.",
+	"hashWindow": [1793482976137.8416, 1793482977537.8416],
+	"overlappingRows": [
+		{
+			"block": 0,
+			"case": "level",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/mimalloc/baseline/parser-speed",
+			"command": [
+				"taskset",
+				"-c",
+				"6",
+				"out/uasset-speed-2026-10-31/mimalloc/baseline/parser-speed",
+				"--list",
+				"out/uasset-speed-2026-10-31/level.txt",
+				"--operation",
+				"inspect-json",
+				"--runs",
+				"15",
+				"--warmups",
+				"3",
+				"--batch-ms",
+				"30"
+			],
+			"before": {
+				"time": "2026-10-31T21:42:54.447Z",
+				"frequencyKHz": "652800",
+				"thermal": [
+					{
+						"type": "aoss0-thermal",
+						"temperature": "54100"
+					},
+					{
+						"type": "cpu0-thermal",
+						"temperature": "59300"
+					},
+					{
+						"type": "cpu7-thermal",
+						"temperature": "66100"
+					},
+					{
+						"type": "cpu8-thermal",
+						"temperature": "60300"
+					},
+					{
+						"type": "cpu9-thermal",
+						"temperature": "57400"
+					},
+					{
+						"type": "gpuss0-thermal",
+						"temperature": "50900"
+					},
+					{
+						"type": "gpuss1-thermal",
+						"temperature": "53200"
+					},
+					{
+						"type": "aoss1-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "cwlan-thermal",
+						"temperature": "52000"
+					},
+					{
+						"type": "audio-thermal",
+						"temperature": "51400"
+					},
+					{
+						"type": "ddr-thermal",
+						"temperature": "51700"
+					},
+					{
+						"type": "q6-hvx-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "cpu1-thermal",
+						"temperature": "55400"
+					},
+					{
+						"type": "camera-thermal",
+						"temperature": "54600"
+					},
+					{
+						"type": "mdm-core-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "mdm-dsp-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "npu-thermal",
+						"temperature": "54300"
+					},
+					{
+						"type": "video-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "pm6150l-thermal",
+						"temperature": "37000"
+					},
+					{
+						"type": "pm6150-thermal",
+						"temperature": "52023"
+					},
+					{
+						"type": "qcom_qg",
+						"temperature": "39900"
+					},
+					{
+						"type": "cpu2-thermal",
+						"temperature": "57400"
+					},
+					{
+						"type": "cpu3-thermal",
+						"temperature": "57700"
+					},
+					{
+						"type": "cpu4-thermal",
+						"temperature": "59300"
+					},
+					{
+						"type": "cpu5-thermal",
+						"temperature": "63500"
+					},
+					{
+						"type": "cpuss0-thermal",
+						"temperature": "58700"
+					},
+					{
+						"type": "cpuss1-thermal",
+						"temperature": "59000"
+					},
+					{
+						"type": "cpu6-thermal",
+						"temperature": "67000"
+					}
+				]
+			},
+			"after": {
+				"time": "2026-10-31T21:42:56.697Z",
+				"frequencyKHz": "2304000",
+				"thermal": [
+					{
+						"type": "aoss0-thermal",
+						"temperature": "56100"
+					},
+					{
+						"type": "cpu0-thermal",
+						"temperature": "66700"
+					},
+					{
+						"type": "cpu7-thermal",
+						"temperature": "77000"
+					},
+					{
+						"type": "cpu8-thermal",
+						"temperature": "72200"
+					},
+					{
+						"type": "cpu9-thermal",
+						"temperature": "67400"
+					},
+					{
+						"type": "gpuss0-thermal",
+						"temperature": "51200"
+					},
+					{
+						"type": "gpuss1-thermal",
+						"temperature": "53800"
+					},
+					{
+						"type": "aoss1-thermal",
+						"temperature": "54300"
+					},
+					{
+						"type": "cwlan-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "audio-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "ddr-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "q6-hvx-thermal",
+						"temperature": "54600"
+					},
+					{
+						"type": "cpu1-thermal",
+						"temperature": "57700"
+					},
+					{
+						"type": "camera-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "mdm-core-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "mdm-dsp-thermal",
+						"temperature": "54900"
+					},
+					{
+						"type": "npu-thermal",
+						"temperature": "55200"
+					},
+					{
+						"type": "video-thermal",
+						"temperature": "54900"
+					},
+					{
+						"type": "pm6150l-thermal",
+						"temperature": "37000"
+					},
+					{
+						"type": "pm6150-thermal",
+						"temperature": "52185"
+					},
+					{
+						"type": "qcom_qg",
+						"temperature": "40000"
+					},
+					{
+						"type": "cpu2-thermal",
+						"temperature": "59900"
+					},
+					{
+						"type": "cpu3-thermal",
+						"temperature": "59900"
+					},
+					{
+						"type": "cpu4-thermal",
+						"temperature": "62800"
+					},
+					{
+						"type": "cpu5-thermal",
+						"temperature": "69300"
+					},
+					{
+						"type": "cpuss0-thermal",
+						"temperature": "63200"
+					},
+					{
+						"type": "cpuss1-thermal",
+						"temperature": "62500"
+					},
+					{
+						"type": "cpu6-thermal",
+						"temperature": "75400"
+					}
+				]
+			},
+			"bytes": 10058172,
+			"exports": 16605,
+			"iterations": 1,
+			"maxMs": 125.519111,
+			"minMs": 114.443687,
+			"operation": "inspect-json",
+			"p50Ms": 115.29838000000001,
+			"p95Ms": 125.519111,
+			"packages": 1,
+			"parseErrors": 0,
+			"runs": 15,
+			"samplesMs": [
+				114.443687, 114.809992, 114.83837700000001, 115.129993, 115.449631, 116.043331,
+				114.54056299999999, 115.29838000000001, 115.14692, 115.114784, 115.632756,
+				116.131874, 116.735314, 125.519111, 123.91702000000001
+			],
+			"warmups": 3
+		},
+		{
+			"block": 0,
+			"case": "level",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/pgo-mimalloc/parser-speed",
+			"command": [
+				"taskset",
+				"-c",
+				"6",
+				"out/uasset-speed-2026-10-31/pgo-mimalloc/parser-speed",
+				"--list",
+				"out/uasset-speed-2026-10-31/level.txt",
+				"--operation",
+				"inspect-json",
+				"--runs",
+				"15",
+				"--warmups",
+				"3",
+				"--batch-ms",
+				"30"
+			],
+			"before": {
+				"time": "2026-10-31T21:42:56.702Z",
+				"frequencyKHz": "2304000",
+				"thermal": [
+					{
+						"type": "aoss0-thermal",
+						"temperature": "56100"
+					},
+					{
+						"type": "cpu0-thermal",
+						"temperature": "66100"
+					},
+					{
+						"type": "cpu7-thermal",
+						"temperature": "73800"
+					},
+					{
+						"type": "cpu8-thermal",
+						"temperature": "70600"
+					},
+					{
+						"type": "cpu9-thermal",
+						"temperature": "65800"
+					},
+					{
+						"type": "gpuss0-thermal",
+						"temperature": "51200"
+					},
+					{
+						"type": "gpuss1-thermal",
+						"temperature": "53800"
+					},
+					{
+						"type": "aoss1-thermal",
+						"temperature": "54300"
+					},
+					{
+						"type": "cwlan-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "audio-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "ddr-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "q6-hvx-thermal",
+						"temperature": "54600"
+					},
+					{
+						"type": "cpu1-thermal",
+						"temperature": "58000"
+					},
+					{
+						"type": "camera-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "mdm-core-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "mdm-dsp-thermal",
+						"temperature": "54900"
+					},
+					{
+						"type": "npu-thermal",
+						"temperature": "55200"
+					},
+					{
+						"type": "video-thermal",
+						"temperature": "54900"
+					},
+					{
+						"type": "pm6150l-thermal",
+						"temperature": "37000"
+					},
+					{
+						"type": "pm6150-thermal",
+						"temperature": "52152"
+					},
+					{
+						"type": "qcom_qg",
+						"temperature": "40000"
+					},
+					{
+						"type": "cpu2-thermal",
+						"temperature": "60300"
+					},
+					{
+						"type": "cpu3-thermal",
+						"temperature": "59900"
+					},
+					{
+						"type": "cpu4-thermal",
+						"temperature": "62800"
+					},
+					{
+						"type": "cpu5-thermal",
+						"temperature": "68700"
+					},
+					{
+						"type": "cpuss0-thermal",
+						"temperature": "63500"
+					},
+					{
+						"type": "cpuss1-thermal",
+						"temperature": "62200"
+					},
+					{
+						"type": "cpu6-thermal",
+						"temperature": "72500"
+					}
+				]
+			},
+			"after": {
+				"time": "2026-10-31T21:42:58.181Z",
+				"frequencyKHz": "652800",
+				"thermal": [
+					{
+						"type": "aoss0-thermal",
+						"temperature": "56400"
+					},
+					{
+						"type": "cpu0-thermal",
+						"temperature": "61900"
+					},
+					{
+						"type": "cpu7-thermal",
+						"temperature": "74500"
+					},
+					{
+						"type": "cpu8-thermal",
+						"temperature": "62800"
+					},
+					{
+						"type": "cpu9-thermal",
+						"temperature": "59300"
+					},
+					{
+						"type": "gpuss0-thermal",
+						"temperature": "52200"
+					},
+					{
+						"type": "gpuss1-thermal",
+						"temperature": "54500"
+					},
+					{
+						"type": "aoss1-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "cwlan-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "audio-thermal",
+						"temperature": "53600"
+					},
+					{
+						"type": "ddr-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "q6-hvx-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "cpu1-thermal",
+						"temperature": "57700"
+					},
+					{
+						"type": "camera-thermal",
+						"temperature": "56500"
+					},
+					{
+						"type": "mdm-core-thermal",
+						"temperature": "54600"
+					},
+					{
+						"type": "mdm-dsp-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "npu-thermal",
+						"temperature": "56200"
+					},
+					{
+						"type": "video-thermal",
+						"temperature": "55900"
+					},
+					{
+						"type": "pm6150l-thermal",
+						"temperature": "37000"
+					},
+					{
+						"type": "pm6150-thermal",
+						"temperature": "52444"
+					},
+					{
+						"type": "qcom_qg",
+						"temperature": "39900"
+					},
+					{
+						"type": "cpu2-thermal",
+						"temperature": "60300"
+					},
+					{
+						"type": "cpu3-thermal",
+						"temperature": "59900"
+					},
+					{
+						"type": "cpu4-thermal",
+						"temperature": "62200"
+					},
+					{
+						"type": "cpu5-thermal",
+						"temperature": "67000"
+					},
+					{
+						"type": "cpuss0-thermal",
+						"temperature": "60900"
+					},
+					{
+						"type": "cpuss1-thermal",
+						"temperature": "61200"
+					},
+					{
+						"type": "cpu6-thermal",
+						"temperature": "71600"
+					}
+				]
+			},
+			"bytes": 10058172,
+			"exports": 16605,
+			"iterations": 1,
+			"maxMs": 78.13875300000001,
+			"minMs": 74.163523,
+			"operation": "inspect-json",
+			"p50Ms": 75.776083,
+			"p95Ms": 78.13875300000001,
+			"packages": 1,
+			"parseErrors": 0,
+			"runs": 15,
+			"samplesMs": [
+				75.788219, 76.736245, 75.776083, 75.352227, 75.758063, 77.991721, 78.13875300000001,
+				75.855667, 76.63702599999999, 76.823641, 75.679885, 74.67628599999999,
+				74.78201600000001, 74.660505, 74.163523
+			],
+			"warmups": 3
+		}
+	],
+	"excludedCompletePairs": [
+		{
+			"block": 0,
+			"case": "level",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/mimalloc/baseline/parser-speed",
+			"command": [
+				"taskset",
+				"-c",
+				"6",
+				"out/uasset-speed-2026-10-31/mimalloc/baseline/parser-speed",
+				"--list",
+				"out/uasset-speed-2026-10-31/level.txt",
+				"--operation",
+				"inspect-json",
+				"--runs",
+				"15",
+				"--warmups",
+				"3",
+				"--batch-ms",
+				"30"
+			],
+			"before": {
+				"time": "2026-10-31T21:42:54.447Z",
+				"frequencyKHz": "652800",
+				"thermal": [
+					{
+						"type": "aoss0-thermal",
+						"temperature": "54100"
+					},
+					{
+						"type": "cpu0-thermal",
+						"temperature": "59300"
+					},
+					{
+						"type": "cpu7-thermal",
+						"temperature": "66100"
+					},
+					{
+						"type": "cpu8-thermal",
+						"temperature": "60300"
+					},
+					{
+						"type": "cpu9-thermal",
+						"temperature": "57400"
+					},
+					{
+						"type": "gpuss0-thermal",
+						"temperature": "50900"
+					},
+					{
+						"type": "gpuss1-thermal",
+						"temperature": "53200"
+					},
+					{
+						"type": "aoss1-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "cwlan-thermal",
+						"temperature": "52000"
+					},
+					{
+						"type": "audio-thermal",
+						"temperature": "51400"
+					},
+					{
+						"type": "ddr-thermal",
+						"temperature": "51700"
+					},
+					{
+						"type": "q6-hvx-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "cpu1-thermal",
+						"temperature": "55400"
+					},
+					{
+						"type": "camera-thermal",
+						"temperature": "54600"
+					},
+					{
+						"type": "mdm-core-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "mdm-dsp-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "npu-thermal",
+						"temperature": "54300"
+					},
+					{
+						"type": "video-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "pm6150l-thermal",
+						"temperature": "37000"
+					},
+					{
+						"type": "pm6150-thermal",
+						"temperature": "52023"
+					},
+					{
+						"type": "qcom_qg",
+						"temperature": "39900"
+					},
+					{
+						"type": "cpu2-thermal",
+						"temperature": "57400"
+					},
+					{
+						"type": "cpu3-thermal",
+						"temperature": "57700"
+					},
+					{
+						"type": "cpu4-thermal",
+						"temperature": "59300"
+					},
+					{
+						"type": "cpu5-thermal",
+						"temperature": "63500"
+					},
+					{
+						"type": "cpuss0-thermal",
+						"temperature": "58700"
+					},
+					{
+						"type": "cpuss1-thermal",
+						"temperature": "59000"
+					},
+					{
+						"type": "cpu6-thermal",
+						"temperature": "67000"
+					}
+				]
+			},
+			"after": {
+				"time": "2026-10-31T21:42:56.697Z",
+				"frequencyKHz": "2304000",
+				"thermal": [
+					{
+						"type": "aoss0-thermal",
+						"temperature": "56100"
+					},
+					{
+						"type": "cpu0-thermal",
+						"temperature": "66700"
+					},
+					{
+						"type": "cpu7-thermal",
+						"temperature": "77000"
+					},
+					{
+						"type": "cpu8-thermal",
+						"temperature": "72200"
+					},
+					{
+						"type": "cpu9-thermal",
+						"temperature": "67400"
+					},
+					{
+						"type": "gpuss0-thermal",
+						"temperature": "51200"
+					},
+					{
+						"type": "gpuss1-thermal",
+						"temperature": "53800"
+					},
+					{
+						"type": "aoss1-thermal",
+						"temperature": "54300"
+					},
+					{
+						"type": "cwlan-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "audio-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "ddr-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "q6-hvx-thermal",
+						"temperature": "54600"
+					},
+					{
+						"type": "cpu1-thermal",
+						"temperature": "57700"
+					},
+					{
+						"type": "camera-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "mdm-core-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "mdm-dsp-thermal",
+						"temperature": "54900"
+					},
+					{
+						"type": "npu-thermal",
+						"temperature": "55200"
+					},
+					{
+						"type": "video-thermal",
+						"temperature": "54900"
+					},
+					{
+						"type": "pm6150l-thermal",
+						"temperature": "37000"
+					},
+					{
+						"type": "pm6150-thermal",
+						"temperature": "52185"
+					},
+					{
+						"type": "qcom_qg",
+						"temperature": "40000"
+					},
+					{
+						"type": "cpu2-thermal",
+						"temperature": "59900"
+					},
+					{
+						"type": "cpu3-thermal",
+						"temperature": "59900"
+					},
+					{
+						"type": "cpu4-thermal",
+						"temperature": "62800"
+					},
+					{
+						"type": "cpu5-thermal",
+						"temperature": "69300"
+					},
+					{
+						"type": "cpuss0-thermal",
+						"temperature": "63200"
+					},
+					{
+						"type": "cpuss1-thermal",
+						"temperature": "62500"
+					},
+					{
+						"type": "cpu6-thermal",
+						"temperature": "75400"
+					}
+				]
+			},
+			"bytes": 10058172,
+			"exports": 16605,
+			"iterations": 1,
+			"maxMs": 125.519111,
+			"minMs": 114.443687,
+			"operation": "inspect-json",
+			"p50Ms": 115.29838000000001,
+			"p95Ms": 125.519111,
+			"packages": 1,
+			"parseErrors": 0,
+			"runs": 15,
+			"samplesMs": [
+				114.443687, 114.809992, 114.83837700000001, 115.129993, 115.449631, 116.043331,
+				114.54056299999999, 115.29838000000001, 115.14692, 115.114784, 115.632756,
+				116.131874, 116.735314, 125.519111, 123.91702000000001
+			],
+			"warmups": 3
+		},
+		{
+			"block": 0,
+			"case": "level",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/pgo-mimalloc/parser-speed",
+			"command": [
+				"taskset",
+				"-c",
+				"6",
+				"out/uasset-speed-2026-10-31/pgo-mimalloc/parser-speed",
+				"--list",
+				"out/uasset-speed-2026-10-31/level.txt",
+				"--operation",
+				"inspect-json",
+				"--runs",
+				"15",
+				"--warmups",
+				"3",
+				"--batch-ms",
+				"30"
+			],
+			"before": {
+				"time": "2026-10-31T21:42:56.702Z",
+				"frequencyKHz": "2304000",
+				"thermal": [
+					{
+						"type": "aoss0-thermal",
+						"temperature": "56100"
+					},
+					{
+						"type": "cpu0-thermal",
+						"temperature": "66100"
+					},
+					{
+						"type": "cpu7-thermal",
+						"temperature": "73800"
+					},
+					{
+						"type": "cpu8-thermal",
+						"temperature": "70600"
+					},
+					{
+						"type": "cpu9-thermal",
+						"temperature": "65800"
+					},
+					{
+						"type": "gpuss0-thermal",
+						"temperature": "51200"
+					},
+					{
+						"type": "gpuss1-thermal",
+						"temperature": "53800"
+					},
+					{
+						"type": "aoss1-thermal",
+						"temperature": "54300"
+					},
+					{
+						"type": "cwlan-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "audio-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "ddr-thermal",
+						"temperature": "53000"
+					},
+					{
+						"type": "q6-hvx-thermal",
+						"temperature": "54600"
+					},
+					{
+						"type": "cpu1-thermal",
+						"temperature": "58000"
+					},
+					{
+						"type": "camera-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "mdm-core-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "mdm-dsp-thermal",
+						"temperature": "54900"
+					},
+					{
+						"type": "npu-thermal",
+						"temperature": "55200"
+					},
+					{
+						"type": "video-thermal",
+						"temperature": "54900"
+					},
+					{
+						"type": "pm6150l-thermal",
+						"temperature": "37000"
+					},
+					{
+						"type": "pm6150-thermal",
+						"temperature": "52152"
+					},
+					{
+						"type": "qcom_qg",
+						"temperature": "40000"
+					},
+					{
+						"type": "cpu2-thermal",
+						"temperature": "60300"
+					},
+					{
+						"type": "cpu3-thermal",
+						"temperature": "59900"
+					},
+					{
+						"type": "cpu4-thermal",
+						"temperature": "62800"
+					},
+					{
+						"type": "cpu5-thermal",
+						"temperature": "68700"
+					},
+					{
+						"type": "cpuss0-thermal",
+						"temperature": "63500"
+					},
+					{
+						"type": "cpuss1-thermal",
+						"temperature": "62200"
+					},
+					{
+						"type": "cpu6-thermal",
+						"temperature": "72500"
+					}
+				]
+			},
+			"after": {
+				"time": "2026-10-31T21:42:58.181Z",
+				"frequencyKHz": "652800",
+				"thermal": [
+					{
+						"type": "aoss0-thermal",
+						"temperature": "56400"
+					},
+					{
+						"type": "cpu0-thermal",
+						"temperature": "61900"
+					},
+					{
+						"type": "cpu7-thermal",
+						"temperature": "74500"
+					},
+					{
+						"type": "cpu8-thermal",
+						"temperature": "62800"
+					},
+					{
+						"type": "cpu9-thermal",
+						"temperature": "59300"
+					},
+					{
+						"type": "gpuss0-thermal",
+						"temperature": "52200"
+					},
+					{
+						"type": "gpuss1-thermal",
+						"temperature": "54500"
+					},
+					{
+						"type": "aoss1-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "cwlan-thermal",
+						"temperature": "53900"
+					},
+					{
+						"type": "audio-thermal",
+						"temperature": "53600"
+					},
+					{
+						"type": "ddr-thermal",
+						"temperature": "53300"
+					},
+					{
+						"type": "q6-hvx-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "cpu1-thermal",
+						"temperature": "57700"
+					},
+					{
+						"type": "camera-thermal",
+						"temperature": "56500"
+					},
+					{
+						"type": "mdm-core-thermal",
+						"temperature": "54600"
+					},
+					{
+						"type": "mdm-dsp-thermal",
+						"temperature": "55500"
+					},
+					{
+						"type": "npu-thermal",
+						"temperature": "56200"
+					},
+					{
+						"type": "video-thermal",
+						"temperature": "55900"
+					},
+					{
+						"type": "pm6150l-thermal",
+						"temperature": "37000"
+					},
+					{
+						"type": "pm6150-thermal",
+						"temperature": "52444"
+					},
+					{
+						"type": "qcom_qg",
+						"temperature": "39900"
+					},
+					{
+						"type": "cpu2-thermal",
+						"temperature": "60300"
+					},
+					{
+						"type": "cpu3-thermal",
+						"temperature": "59900"
+					},
+					{
+						"type": "cpu4-thermal",
+						"temperature": "62200"
+					},
+					{
+						"type": "cpu5-thermal",
+						"temperature": "67000"
+					},
+					{
+						"type": "cpuss0-thermal",
+						"temperature": "60900"
+					},
+					{
+						"type": "cpuss1-thermal",
+						"temperature": "61200"
+					},
+					{
+						"type": "cpu6-thermal",
+						"temperature": "71600"
+					}
+				]
+			},
+			"bytes": 10058172,
+			"exports": 16605,
+			"iterations": 1,
+			"maxMs": 78.13875300000001,
+			"minMs": 74.163523,
+			"operation": "inspect-json",
+			"p50Ms": 75.776083,
+			"p95Ms": 78.13875300000001,
+			"packages": 1,
+			"parseErrors": 0,
+			"runs": 15,
+			"samplesMs": [
+				75.788219, 76.736245, 75.776083, 75.352227, 75.758063, 77.991721, 78.13875300000001,
+				75.855667, 76.63702599999999, 76.823641, 75.679885, 74.67628599999999,
+				74.78201600000001, 74.660505, 74.163523
+			],
+			"warmups": 3
+		}
+	],
+	"replacedPairs": ["0|level|inspect-json"],
+	"completedAt": "2026-10-31T21:45:07.562Z"
+}

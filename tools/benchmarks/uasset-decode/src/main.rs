@@ -15,7 +15,7 @@ use uasset_inspection::blueprint_classes::blueprint_classes;
 use uasset_inspection::generic::inspect_bytes_json;
 use uasset_inspection::projection::{TextDecodeFilter, project_text_asset};
 use uasset_parser::Package;
-use uasset_parser::asset::{AssetDecodeContext, decode_export};
+use uasset_parser::asset::{AssetDecodeContext, AssetDecodeSession};
 use uasset_parser::property::{PropertyRecord, PropertyValue, TextValue};
 use uasset_parser::schema::embedded_source_model;
 
@@ -338,9 +338,10 @@ fn inspect_package(
         schemas: embedded_source_model(),
     };
     let mut decoded = Vec::with_capacity(package.exports.len());
+    let mut decoder = AssetDecodeSession::new(&context);
     for export in &package.exports {
         let asset = measure(timed, &mut result.metrics.stage_ns[1], || {
-            decode_export(export, &context)
+            decoder.decode(export)
         });
         decoded.push(asset);
     }

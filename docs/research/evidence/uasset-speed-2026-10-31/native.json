@@ -1,0 +1,3676 @@
+{
+	"schemaVersion": 1,
+	"baselineLabel": "Original native CLI",
+	"optimizedLabel": "Optimized native CLI",
+	"method": "Fresh native process, warm filesystem, read/decode/JSON/stdout pipe transfer; mimalloc; alternating variants each run.",
+	"summary": [
+		{
+			"case": "level",
+			"operation": "inspect-native-json",
+			"baselineP50Ms": 187.37998599999992,
+			"optimizedP50Ms": 159.20062999999936,
+			"reductionPercent": 15.038615703600577,
+			"pairedReductionPercentByBlock": [
+				15.335475954732491, 19.224564366277896, 11.114474626973948
+			]
+		},
+		{
+			"case": "table",
+			"operation": "inspect-native-json",
+			"baselineP50Ms": 73.43796700000075,
+			"optimizedP50Ms": 59.20899100000133,
+			"reductionPercent": 19.375503681902405,
+			"pairedReductionPercentByBlock": [
+				19.375503681902405, 16.43970877273325, 21.606676330652196
+			]
+		},
+		{
+			"case": "blueprint",
+			"operation": "inspect-native-json",
+			"baselineP50Ms": 14.438145000000077,
+			"optimizedP50Ms": 14.479446999999709,
+			"reductionPercent": -0.28606167897351487,
+			"pairedReductionPercentByBlock": [
+				-0.28606167897351487, 6.196093560364013, 4.13122230799533
+			]
+		}
+	],
+	"measurements": [
+		{
+			"samplesMs": [
+				199.19301599999994, 194.52377500000011, 205.68830800000023, 175.55852399999958,
+				193.56184200000007, 181.37443900000017, 179.7319819999998, 178.01291200000014,
+				170.21792500000038, 184.75872600000002, 182.85626799999955, 169.71917200000007,
+				190.56573299999945, 201.47276599999987, 203.29767100000026
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:07:45.124Z",
+						"frequencyKHz": "979200",
+						"temperature": "58000"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:45.324Z",
+						"frequencyKHz": "1094400",
+						"temperature": "57700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:45.672Z",
+						"frequencyKHz": "2304000",
+						"temperature": "57400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:45.866Z",
+						"frequencyKHz": "979200",
+						"temperature": "57400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:45.867Z",
+						"frequencyKHz": "979200",
+						"temperature": "57400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:46.072Z",
+						"frequencyKHz": "979200",
+						"temperature": "57400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:46.410Z",
+						"frequencyKHz": "1094400",
+						"temperature": "57000"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:46.586Z",
+						"frequencyKHz": "1555200",
+						"temperature": "57000"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:46.586Z",
+						"frequencyKHz": "1555200",
+						"temperature": "57000"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:46.780Z",
+						"frequencyKHz": "2304000",
+						"temperature": "57000"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:47.083Z",
+						"frequencyKHz": "979200",
+						"temperature": "57000"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:47.265Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:47.265Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:47.445Z",
+						"frequencyKHz": "1555200",
+						"temperature": "57000"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:47.741Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:47.920Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:47.920Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:48.090Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:48.412Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:48.597Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:48.597Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:48.780Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:49.082Z",
+						"frequencyKHz": "2169600",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:49.251Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:49.252Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:49.442Z",
+						"frequencyKHz": "806400",
+						"temperature": "57000"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:49.755Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:49.956Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:49.957Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:50.160Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56700"
+					}
+				}
+			],
+			"digest": "d711ed4b1426678c60364407cba18ebcfebc140d04dd8fc7e3a4b7f9198c3b7e",
+			"bytes": 15756545,
+			"block": 0,
+			"case": "level",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 184.75872600000002,
+			"p95Ms": 205.68830800000023
+		},
+		{
+			"samplesMs": [
+				182.63793499999997, 164.07075899999995, 173.68789000000015, 162.605595, 151.453665,
+				150.46918199999982, 150.39704600000005, 145.43629200000032, 164.18570699999964,
+				156.42509599999994, 144.51800600000024, 156.29691900000034, 164.04513399999996,
+				147.354687, 176.5460809999995
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:07:45.324Z",
+						"frequencyKHz": "1094400",
+						"temperature": "57700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:45.507Z",
+						"frequencyKHz": "806400",
+						"temperature": "57400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:45.507Z",
+						"frequencyKHz": "806400",
+						"temperature": "57400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:45.671Z",
+						"frequencyKHz": "2304000",
+						"temperature": "57400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:46.073Z",
+						"frequencyKHz": "979200",
+						"temperature": "57400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:46.247Z",
+						"frequencyKHz": "1094400",
+						"temperature": "57400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:46.247Z",
+						"frequencyKHz": "1094400",
+						"temperature": "57400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:46.410Z",
+						"frequencyKHz": "1094400",
+						"temperature": "57000"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:46.780Z",
+						"frequencyKHz": "2304000",
+						"temperature": "57000"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:46.932Z",
+						"frequencyKHz": "806400",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:46.932Z",
+						"frequencyKHz": "806400",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:47.083Z",
+						"frequencyKHz": "979200",
+						"temperature": "57000"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:47.445Z",
+						"frequencyKHz": "1555200",
+						"temperature": "57000"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:47.595Z",
+						"frequencyKHz": "1555200",
+						"temperature": "57000"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:47.596Z",
+						"frequencyKHz": "1555200",
+						"temperature": "57000"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:47.741Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:48.090Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:48.255Z",
+						"frequencyKHz": "652800",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:48.255Z",
+						"frequencyKHz": "652800",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:48.412Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:48.780Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:48.925Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:48.925Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:49.081Z",
+						"frequencyKHz": "2169600",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:49.443Z",
+						"frequencyKHz": "806400",
+						"temperature": "57000"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:49.607Z",
+						"frequencyKHz": "1209600",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:49.607Z",
+						"frequencyKHz": "1209600",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:49.755Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:50.160Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:50.337Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56400"
+					}
+				}
+			],
+			"digest": "d711ed4b1426678c60364407cba18ebcfebc140d04dd8fc7e3a4b7f9198c3b7e",
+			"bytes": 15756545,
+			"block": 0,
+			"case": "level",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 156.42509599999994,
+			"p95Ms": 182.63793499999997
+		},
+		{
+			"samplesMs": [
+				76.63418100000035, 72.57108799999969, 74.4446910000006, 73.45630000000074,
+				75.83631200000036, 73.43796700000075, 69.53930200000013, 70.5897759999998,
+				70.13196100000005, 73.71781199999987, 74.52047199999834, 72.09004400000049,
+				71.59587499999907, 82.79306600000018, 73.30260099999941
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:07:50.744Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:50.821Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:50.935Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.008Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.008Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.083Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.199Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.272Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.273Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.349Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.492Z",
+						"frequencyKHz": "806400",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.566Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.566Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.636Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.756Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.827Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.827Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.897Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.014Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.088Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.088Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.163Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.284Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.357Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.357Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.429Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.563Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.646Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.646Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.719Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "6e462d59136e1b03a82fa0c5bc7e11f0af5f13df542430b8d4a225b1a892a8d6",
+			"bytes": 4560470,
+			"block": 0,
+			"case": "table",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Authoring/DT_LargeScalars.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 73.43796700000075,
+			"p95Ms": 82.79306600000018
+		},
+		{
+			"samplesMs": [
+				56.64673800000037, 56.02277700000013, 55.4250660000007, 59.38081500000044,
+				70.55889000000025, 71.77139700000043, 59.1064379999998, 60.07196300000032,
+				58.116641999999956, 56.96298999999999, 59.92461899999944, 60.28524600000128,
+				74.30151300000034, 57.9282549999989, 59.20899100000133
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:07:50.822Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:50.878Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:50.879Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:50.935Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.083Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.139Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.139Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.199Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.349Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.420Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.420Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.492Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.636Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.695Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.696Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.756Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.898Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:51.956Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:51.956Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.014Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.163Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.223Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.224Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.284Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.430Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.504Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.504Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.562Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.720Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.779Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "6e462d59136e1b03a82fa0c5bc7e11f0af5f13df542430b8d4a225b1a892a8d6",
+			"bytes": 4560470,
+			"block": 0,
+			"case": "table",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Authoring/DT_LargeScalars.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 59.20899100000133,
+			"p95Ms": 74.30151300000034
+		},
+		{
+			"samplesMs": [
+				14.438145000000077, 15.03418800000145, 13.640952999998262, 14.415070999999443,
+				13.560900000000402, 14.710957999999664, 14.233611999999994, 13.14501299999938,
+				15.976902000000337, 14.780749999999898, 15.24236700000074, 13.818349999999555,
+				14.406060999999681, 20.62359099999958, 15.245648000000074
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.856Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.871Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.902Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.917Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.918Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.931Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.962Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.976Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.977Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.990Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.020Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.035Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.035Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.050Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.080Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.093Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.094Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.110Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.140Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.155Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.155Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.171Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.201Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.215Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.216Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.230Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.261Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.282Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.282Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.297Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "1156a8f2aa8be1c26f20141be8bb9d157e16c25fa2cdfd250b948e41aebc7f5b",
+			"bytes": 48464,
+			"block": 0,
+			"case": "blueprint",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 14.438145000000077,
+			"p95Ms": 20.62359099999958
+		},
+		{
+			"samplesMs": [
+				15.393305999999939, 14.001734999999826, 14.294758000000002, 14.479446999999709,
+				13.73850499999935, 14.418091999999888, 14.765801999999894, 14.57158299999901,
+				14.878928000000087, 14.066736000000674, 15.045438999999533, 14.194653999998991,
+				15.937318000000232, 13.036992000001192, 15.36471100000017
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.872Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.887Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.888Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.902Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.932Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.946Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.947Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:52.961Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:52.991Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.005Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.005Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.020Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.050Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.065Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.065Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.080Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.110Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.125Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.126Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.140Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.171Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.186Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.187Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.201Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.231Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.247Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.247Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.260Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:53.298Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:53.313Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "1156a8f2aa8be1c26f20141be8bb9d157e16c25fa2cdfd250b948e41aebc7f5b",
+			"bytes": 48464,
+			"block": 0,
+			"case": "blueprint",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 14.479446999999709,
+			"p95Ms": 15.937318000000232
+		},
+		{
+			"samplesMs": [
+				197.09040099999947, 163.80700699999943, 179.26052100000015, 171.67293100000097,
+				202.2079250000006, 203.95736100000067, 207.87415200000032, 193.28996499999994,
+				197.81180999999924, 191.79245700000138, 194.45595999999932, 181.84615799999847,
+				198.67353299999922, 206.67279100000087, 199.18843099999867
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:07:54.578Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:54.776Z",
+						"frequencyKHz": "806400",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:54.776Z",
+						"frequencyKHz": "979200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:54.942Z",
+						"frequencyKHz": "1939200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:55.256Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:55.436Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:55.436Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:55.608Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:55.884Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:56.086Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:56.086Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:56.290Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:56.633Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:56.841Z",
+						"frequencyKHz": "1939200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:56.841Z",
+						"frequencyKHz": "1939200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:57.035Z",
+						"frequencyKHz": "1209600",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:57.344Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:57.542Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:57.542Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:57.734Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:58.083Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:58.278Z",
+						"frequencyKHz": "1209600",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:58.278Z",
+						"frequencyKHz": "1209600",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:58.460Z",
+						"frequencyKHz": "806400",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:58.819Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:59.018Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:59.019Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:59.226Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:59.574Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:59.774Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56100"
+					}
+				}
+			],
+			"digest": "d711ed4b1426678c60364407cba18ebcfebc140d04dd8fc7e3a4b7f9198c3b7e",
+			"bytes": 15756545,
+			"block": 1,
+			"case": "level",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 197.09040099999947,
+			"p95Ms": 207.87415200000032
+		},
+		{
+			"samplesMs": [
+				151.3584039999987, 158.4889600000006, 155.17436100000123, 135.264991,
+				139.54980400000022, 173.48653299999933, 168.25161200000002, 150.97907900000064,
+				157.20036000000073, 159.20062999999936, 188.75218200000018, 179.0077059999985,
+				178.17124400000102, 188.14113700000053, 159.5400580000005
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:07:54.426Z",
+						"frequencyKHz": "1209600",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:54.578Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:54.942Z",
+						"frequencyKHz": "1939200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:55.101Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:55.101Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:55.256Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:55.608Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:55.743Z",
+						"frequencyKHz": "806400",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:55.744Z",
+						"frequencyKHz": "806400",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:55.883Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:56.291Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:56.464Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:56.464Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:56.633Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:57.035Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:57.186Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:57.186Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:57.344Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:57.734Z",
+						"frequencyKHz": "1324800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:57.894Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:57.894Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:58.083Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:58.460Z",
+						"frequencyKHz": "806400",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:58.639Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:58.641Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:58.819Z",
+						"frequencyKHz": "979200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:59.226Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:59.414Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:07:59.414Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:07:59.574Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				}
+			],
+			"digest": "d711ed4b1426678c60364407cba18ebcfebc140d04dd8fc7e3a4b7f9198c3b7e",
+			"bytes": 15756545,
+			"block": 1,
+			"case": "level",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 159.20062999999936,
+			"p95Ms": 188.75218200000018
+		},
+		{
+			"samplesMs": [
+				73.61156100000153, 73.49270699999761, 70.78732899999886, 71.26832099999956,
+				76.6293880000012, 76.87496300000203, 71.01826699999947, 70.58920299999954,
+				74.31099200000244, 74.42437699999937, 72.5897330000007, 72.88968300000124,
+				85.90474600000016, 79.19637999999759, 73.23062199999913
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.256Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.329Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.330Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.403Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.517Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.588Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.589Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.660Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.785Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.862Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.862Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.939Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.065Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.136Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.137Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.207Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.329Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.403Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.404Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.478Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.599Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.672Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.672Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.745Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.871Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.957Z",
+						"frequencyKHz": "979200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.957Z",
+						"frequencyKHz": "979200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.036Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.169Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.242Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				}
+			],
+			"digest": "6e462d59136e1b03a82fa0c5bc7e11f0af5f13df542430b8d4a225b1a892a8d6",
+			"bytes": 4560470,
+			"block": 1,
+			"case": "table",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Authoring/DT_LargeScalars.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 73.49270699999761,
+			"p95Ms": 85.90474600000016
+		},
+		{
+			"samplesMs": [
+				60.08758800000032, 54.79928099999961, 57.94492199999877, 58.477060000001075,
+				64.99740400000155, 62.036973000002035, 61.99025400000028, 61.65639799999917,
+				59.00398900000073, 60.58628899999894, 59.20049999999901, 61.410719999999856,
+				62.56801700000142, 69.01221599999917, 62.3117659999989
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.195Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.255Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.404Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.459Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.459Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.517Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.660Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.719Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.719Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:00.784Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:00.939Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.001Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.002Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.065Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.208Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.269Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.269Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.329Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.479Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.539Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.540Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.599Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.746Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.807Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:01.807Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:01.870Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.037Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.106Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.106Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.169Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "6e462d59136e1b03a82fa0c5bc7e11f0af5f13df542430b8d4a225b1a892a8d6",
+			"bytes": 4560470,
+			"block": 1,
+			"case": "table",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Authoring/DT_LargeScalars.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 61.410719999999856,
+			"p95Ms": 69.01221599999917
+		},
+		{
+			"samplesMs": [
+				14.592414999999164, 15.20210600000064, 16.237685000000056, 16.536176000001433,
+				15.686483999998018, 15.811743999998725, 13.558555999999953, 14.80288599999767,
+				15.645857999999862, 15.546013999999559, 15.186897000003228, 16.067266999998537,
+				15.846431999998458, 16.11747600000308, 14.760177000000112
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.329Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.343Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.344Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.359Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.389Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.405Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.406Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.422Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.454Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.470Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.470Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.486Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.516Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.530Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.530Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.545Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.578Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.594Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.594Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.610Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.642Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.658Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.658Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.674Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.704Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.720Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.720Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.736Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.768Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.783Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				}
+			],
+			"digest": "1156a8f2aa8be1c26f20141be8bb9d157e16c25fa2cdfd250b948e41aebc7f5b",
+			"bytes": 48464,
+			"block": 1,
+			"case": "blueprint",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 15.645857999999862,
+			"p95Ms": 16.536176000001433
+		},
+		{
+			"samplesMs": [
+				14.676425999998173, 14.350903999998991, 14.116945000001579, 14.740958000002138,
+				15.807993999998871, 15.014137000001938, 13.683661999999458, 17.102844999997615,
+				14.609446999998909, 15.529919999997219, 15.472211999996944, 13.858350000002247,
+				14.27882099999988, 14.455957000001945, 15.644295999998576
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.313Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.328Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.359Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.374Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.374Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.389Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.423Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.438Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.438Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.454Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.487Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.502Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.502Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.516Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.545Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.563Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.563Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.578Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.610Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.626Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.626Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.642Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.674Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.688Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.689Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.703Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.737Z",
+						"frequencyKHz": "652800",
+						"temperature": "55400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.751Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:02.752Z",
+						"frequencyKHz": "652800",
+						"temperature": "55100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:02.767Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55400"
+					}
+				}
+			],
+			"digest": "1156a8f2aa8be1c26f20141be8bb9d157e16c25fa2cdfd250b948e41aebc7f5b",
+			"bytes": 48464,
+			"block": 1,
+			"case": "blueprint",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 14.676425999998173,
+			"p95Ms": 17.102844999997615
+		},
+		{
+			"samplesMs": [
+				209.81150400000115, 190.51349200000186, 174.9162789999973, 187.37998599999992,
+				183.20475799999986, 202.49011300000348, 181.53021799999988, 199.1029090000011,
+				197.0474299999987, 182.96189199999935, 202.5536549999997, 165.5124309999992,
+				159.30531599999813, 192.17693700000018, 175.1081030000023
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:03.886Z",
+						"frequencyKHz": "1209600",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:04.097Z",
+						"frequencyKHz": "2304000",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:04.448Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:04.639Z",
+						"frequencyKHz": "1209600",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:04.639Z",
+						"frequencyKHz": "1209600",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:04.814Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:05.131Z",
+						"frequencyKHz": "2169600",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:05.319Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:05.319Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:05.502Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:05.822Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:06.025Z",
+						"frequencyKHz": "1094400",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:06.025Z",
+						"frequencyKHz": "1094400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:06.206Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:06.568Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:06.767Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:06.767Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:06.964Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:07.313Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:07.496Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:07.496Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:07.699Z",
+						"frequencyKHz": "1843200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:08.057Z",
+						"frequencyKHz": "1209600",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:08.223Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:08.223Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:08.382Z",
+						"frequencyKHz": "2169600",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:08.676Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:08.869Z",
+						"frequencyKHz": "1939200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:08.869Z",
+						"frequencyKHz": "1939200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:09.044Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "d711ed4b1426678c60364407cba18ebcfebc140d04dd8fc7e3a4b7f9198c3b7e",
+			"bytes": 15756545,
+			"block": 2,
+			"case": "level",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 187.37998599999992,
+			"p95Ms": 209.81150400000115
+		},
+		{
+			"samplesMs": [
+				175.59555399999954, 174.63153899999816, 151.07392199999958, 165.70998399999735,
+				174.63560099999813, 144.0538349999988, 187.63405000000057, 172.5612680000013,
+				190.5300019999995, 157.06572199999937, 190.52468999999837, 166.5536850000026,
+				147.28187199999957, 145.97483400000056, 141.59408299999996
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:04.097Z",
+						"frequencyKHz": "2304000",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:04.273Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:04.273Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:04.448Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:04.814Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:04.965Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:04.965Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:05.131Z",
+						"frequencyKHz": "2169600",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:05.503Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:05.677Z",
+						"frequencyKHz": "1094400",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:05.678Z",
+						"frequencyKHz": "1094400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:05.822Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:06.207Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:06.394Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:06.395Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:06.567Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:06.965Z",
+						"frequencyKHz": "979200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:07.155Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:07.156Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:07.313Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:07.699Z",
+						"frequencyKHz": "1843200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:07.890Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:07.890Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:08.057Z",
+						"frequencyKHz": "1209600",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:08.382Z",
+						"frequencyKHz": "2169600",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:08.530Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:08.530Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:08.676Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:09.044Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:09.186Z",
+						"frequencyKHz": "1939200",
+						"temperature": "56100"
+					}
+				}
+			],
+			"digest": "d711ed4b1426678c60364407cba18ebcfebc140d04dd8fc7e3a4b7f9198c3b7e",
+			"bytes": 15756545,
+			"block": 2,
+			"case": "level",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Cameras/L_CameraLoad.umap",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 166.5536850000026,
+			"p95Ms": 190.5300019999995
+		},
+		{
+			"samplesMs": [
+				66.2144929999995, 71.62212400000135, 70.64623299999948, 72.61389899999995,
+				73.50499800000034, 58.28059900000153, 63.727709999999206, 71.62597800000003,
+				63.695991000000504, 64.204690999999, 67.33387299999958, 66.21407700000054,
+				66.54527600000074, 77.37032900000122, 70.38675299999886
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:09.603Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:09.670Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:09.784Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:09.856Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:09.856Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:09.927Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.043Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.116Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.116Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.190Z",
+						"frequencyKHz": "2304000",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.296Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.354Z",
+						"frequencyKHz": "1939200",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.354Z",
+						"frequencyKHz": "1939200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.418Z",
+						"frequencyKHz": "806400",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.521Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.593Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.593Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.657Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.758Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.822Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.823Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.890Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.994Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.060Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.061Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.127Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.254Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.331Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.332Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.402Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "6e462d59136e1b03a82fa0c5bc7e11f0af5f13df542430b8d4a225b1a892a8d6",
+			"bytes": 4560470,
+			"block": 2,
+			"case": "table",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Authoring/DT_LargeScalars.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 67.33387299999958,
+			"p95Ms": 77.37032900000122
+		},
+		{
+			"samplesMs": [
+				58.00497300000279, 55.18157399999836, 59.027374000001146, 56.29355899999791,
+				53.12927299999865, 52.1198919999988, 49.61087000000043, 51.75124500000311,
+				47.44163999999728, 52.78526099999726, 48.45284299999912, 52.58635300000242,
+				65.82746000000043, 59.72357499999998, 52.05004899999767
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:09.670Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:09.728Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:09.728Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:09.784Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:09.927Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:09.986Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:09.986Z",
+						"frequencyKHz": "1324800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.043Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.190Z",
+						"frequencyKHz": "2304000",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.243Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.243Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.296Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56700"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.419Z",
+						"frequencyKHz": "806400",
+						"temperature": "56700"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.468Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.469Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.521Z",
+						"frequencyKHz": "652800",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.657Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.705Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.705Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.758Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.892Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.941Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:10.941Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:10.994Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.128Z",
+						"frequencyKHz": "652800",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.194Z",
+						"frequencyKHz": "1094400",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.194Z",
+						"frequencyKHz": "1094400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.254Z",
+						"frequencyKHz": "652800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.403Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.455Z",
+						"frequencyKHz": "1708800",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "6e462d59136e1b03a82fa0c5bc7e11f0af5f13df542430b8d4a225b1a892a8d6",
+			"bytes": 4560470,
+			"block": 2,
+			"case": "table",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Authoring/DT_LargeScalars.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 52.78526099999726,
+			"p95Ms": 65.82746000000043
+		},
+		{
+			"samplesMs": [
+				11.826881000000867, 11.319587000001775, 12.443239000000176, 13.219700000001467,
+				19.742128000001685, 13.657411000000138, 12.946157999998832, 15.442940999997518,
+				14.390435000001162, 14.357883000000584, 14.212986999998975, 13.342722000001231,
+				13.339805000003253, 13.250951000001805, 13.039230999998836
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.539Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.551Z",
+						"frequencyKHz": "2169600",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.575Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.586Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.586Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.599Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.625Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.638Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.638Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.658Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.686Z",
+						"frequencyKHz": "806400",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.700Z",
+						"frequencyKHz": "806400",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.701Z",
+						"frequencyKHz": "806400",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.714Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.741Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.757Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.757Z",
+						"frequencyKHz": "806400",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.772Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.800Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.814Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.814Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.829Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.856Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.870Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.870Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.883Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.910Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.923Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.924Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.937Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "1156a8f2aa8be1c26f20141be8bb9d157e16c25fa2cdfd250b948e41aebc7f5b",
+			"bytes": 48464,
+			"block": 2,
+			"case": "blueprint",
+			"variant": "baseline",
+			"binary": "out/uasset-speed-2026-10-31/baseline/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 13.339805000003253,
+			"p95Ms": 19.742128000001685
+		},
+		{
+			"samplesMs": [
+				11.665162000001146, 11.41661799999929, 12.204538999998476, 12.941470000001573,
+				12.928865000001679, 14.324028999999427, 12.186205999998492, 14.349654000001465,
+				14.28944500000216, 12.534801000001607, 13.425274000001082, 12.958031999998639,
+				12.634490000000369, 12.788708000000042, 12.21474699999817
+			],
+			"observations": [
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.551Z",
+						"frequencyKHz": "2169600",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.563Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.563Z",
+						"frequencyKHz": "1843200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.575Z",
+						"frequencyKHz": "1708800",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.599Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.611Z",
+						"frequencyKHz": "1209600",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.612Z",
+						"frequencyKHz": "1209600",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.625Z",
+						"frequencyKHz": "1094400",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.658Z",
+						"frequencyKHz": "2304000",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.671Z",
+						"frequencyKHz": "806400",
+						"temperature": "56400"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.672Z",
+						"frequencyKHz": "806400",
+						"temperature": "56400"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.686Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.714Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.726Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.727Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.741Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.772Z",
+						"frequencyKHz": "806400",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.786Z",
+						"frequencyKHz": "1555200",
+						"temperature": "56100"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.787Z",
+						"frequencyKHz": "806400",
+						"temperature": "56100"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.799Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.829Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.843Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.843Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.856Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.884Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.897Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.897Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.910Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				},
+				{
+					"before": {
+						"time": "2026-10-31T21:08:11.937Z",
+						"frequencyKHz": "806400",
+						"temperature": "55800"
+					},
+					"after": {
+						"time": "2026-10-31T21:08:11.949Z",
+						"frequencyKHz": "1555200",
+						"temperature": "55800"
+					}
+				}
+			],
+			"digest": "1156a8f2aa8be1c26f20141be8bb9d157e16c25fa2cdfd250b948e41aebc7f5b",
+			"bytes": 48464,
+			"block": 2,
+			"case": "blueprint",
+			"variant": "candidate",
+			"binary": "out/uasset-speed-2026-10-31/final-native/uasset",
+			"input": "fixtures/unreal-project/Content/Fixture/Blueprints/BP_ReviewFixture.uasset",
+			"boundary": "fresh native process, warm filesystem, file read, decode, JSON and stdout pipe transfer",
+			"allocator": "mimalloc",
+			"runs": 15,
+			"p50Ms": 12.788708000000042,
+			"p95Ms": 14.349654000001465
+		}
+	]
+}

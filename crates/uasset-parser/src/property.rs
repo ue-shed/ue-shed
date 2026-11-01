@@ -8,6 +8,9 @@ use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Reader, Span
 use crate::package::PackageIndex;
 use crate::version::VersionContext;
 
+mod replay;
+pub(crate) use replay::TaggedStreamReplay;
+
 const UE5_PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION: i32 = 1011;
 const UE5_PROPERTY_TAG_COMPLETE_TYPE_NAME: i32 = 1012;
 
@@ -312,71 +315,95 @@ pub enum PropertyErrorKind {
     UnsupportedCapability,
 }
 
-#[derive(Debug)]
 pub struct PropertyError {
+    // Property-value results carry this pointer instead of full diagnostic storage.
+    inner: Box<PropertyErrorData>,
+}
+
+struct PropertyErrorData {
     kind: PropertyErrorKind,
     offset: Option<u64>,
     path: String,
     detail: String,
-    source: Option<Box<ArchiveError>>,
-    pub(crate) raw_reason: Option<RawReason>,
+    source: Option<ArchiveError>,
+    raw_reason: Option<RawReason>,
 }
 
 impl PropertyError {
     pub(crate) fn new(
         kind: PropertyErrorKind,
         offset: Option<u64>,
-        path: impl Into<String>,
+        path: impl fmt::Display,
         detail: impl Into<String>,
     ) -> Self {
         Self {
-            kind,
-            offset,
-            path: path.into(),
-            detail: detail.into(),
-            source: None,
-            raw_reason: None,
+            inner: Box::new(PropertyErrorData {
+                kind,
+                offset,
+                path: path.to_string(),
+                detail: detail.into(),
+                source: None,
+                raw_reason: None,
+            }),
         }
     }
 
     #[must_use]
     pub const fn kind(&self) -> PropertyErrorKind {
-        self.kind
+        self.inner.kind
     }
 
     pub(crate) fn with_raw_reason(mut self, reason: RawReason) -> Self {
-        self.raw_reason = Some(reason);
+        self.inner.raw_reason = Some(reason);
         self
+    }
+
+    pub(crate) fn raw_reason(&self) -> Option<&RawReason> {
+        self.inner.raw_reason.as_ref()
     }
 
     #[must_use]
     pub const fn offset(&self) -> Option<u64> {
-        self.offset
+        self.inner.offset
     }
 
     #[must_use]
     pub fn path(&self) -> &str {
-        &self.path
+        &self.inner.path
     }
 
     #[must_use]
     pub fn detail(&self) -> &str {
-        &self.detail
+        &self.inner.detail
+    }
+}
+
+impl fmt::Debug for PropertyError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PropertyError")
+            .field("kind", &self.inner.kind)
+            .field("offset", &self.inner.offset)
+            .field("path", &self.inner.path)
+            .field("detail", &self.inner.detail)
+            .field("source", &self.inner.source)
+            .field("raw_reason", &self.inner.raw_reason)
+            .finish()
     }
 }
 
 impl fmt::Display for PropertyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.offset {
+        match self.inner.offset {
             Some(offset) => write!(
                 formatter,
                 "{:?} at byte {offset} while reading {}: {}",
-                self.kind, self.path, self.detail
+                self.inner.kind, self.inner.path, self.inner.detail
             ),
             None => write!(
                 formatter,
                 "{:?} while reading {}: {}",
-                self.kind, self.path, self.detail
+                self.inner.kind, self.inner.path, self.inner.detail
             ),
         }
     }
@@ -384,9 +411,10 @@ impl fmt::Display for PropertyError {
 
 impl std::error::Error for PropertyError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source
+        self.inner
+            .source
             .as_ref()
-            .map(|source| source.as_ref() as &(dyn std::error::Error + 'static))
+            .map(|source| source as &(dyn std::error::Error + 'static))
     }
 }
 
@@ -404,12 +432,14 @@ impl From<ArchiveError> for PropertyError {
             ArchiveErrorKind::AllocationLimit => PropertyErrorKind::ResourceLimit,
         };
         Self {
-            kind,
-            offset: Some(source.offset()),
-            path: source.path().to_owned(),
-            detail: source.detail().to_owned(),
-            source: Some(Box::new(source)),
-            raw_reason: None,
+            inner: Box::new(PropertyErrorData {
+                kind,
+                offset: Some(source.offset()),
+                path: source.path().to_owned(),
+                detail: source.detail().to_owned(),
+                source: Some(source),
+                raw_reason: None,
+            }),
         }
     }
 }
@@ -427,7 +457,7 @@ pub fn read_uobject_tagged_property_stream(
     reader: &mut Reader<'_>,
     versions: &VersionContext,
     names: &[String],
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyStream, PropertyError> {
     validate_tagged_property_versions(versions, reader.tell(), path)?;
     // UE 5.7/5.8 Class.cpp, PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION (1011).
@@ -436,7 +466,7 @@ pub fn read_uobject_tagged_property_stream(
         .then(|| {
             read_class_serialization_control_extensions(
                 reader,
-                &format!("{path}.SerializationControlExtensions"),
+                &format_args!("{path}.SerializationControlExtensions"),
             )
         })
         .transpose()?;
@@ -459,7 +489,7 @@ pub fn read_tagged_property_stream(
     reader: &mut Reader<'_>,
     versions: &VersionContext,
     names: &[String],
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyStream, PropertyError> {
     validate_tagged_property_versions(versions, reader.tell(), path)?;
     let legacy = versions.uses_legacy_property_tags();
@@ -516,7 +546,7 @@ pub fn read_tagged_property_stream(
             Some(read_property_extensions(
                 reader,
                 versions,
-                &format!("{path}.Tag.PropertyExtensions"),
+                &format_args!("{path}.Tag.PropertyExtensions"),
             )?)
         } else {
             None
@@ -543,7 +573,7 @@ pub fn read_tagged_property_stream(
 fn validate_tagged_property_versions(
     versions: &VersionContext,
     offset: u64,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<(), PropertyError> {
     if versions.ue4 < 522
         || (!versions.uses_legacy_property_tags()
@@ -564,7 +594,7 @@ pub(crate) fn read_legacy_property_tag(
     versions: &VersionContext,
     names: &[String],
     name: NameRef,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyRecord, PropertyError> {
     validate_name_ref(names, name, &format_args!("{path}.Tag.Name"))?;
     let type_ref = reader.read_name_ref(&format_args!("{path}.Tag.Type"))?;
@@ -652,7 +682,7 @@ pub(crate) fn read_legacy_property_tag(
 
 fn read_class_serialization_control_extensions(
     reader: &mut Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<ClassSerializationControlExtensions, PropertyError> {
     let extension_offset = reader.tell();
     let raw_flags = reader.read_u8(path)?;
@@ -666,7 +696,7 @@ fn read_class_serialization_control_extensions(
     }
     let overridable_operation = (raw_flags & CLASS_EXTENSION_OVERRIDABLE_SERIALIZATION_INFORMATION
         != 0)
-        .then(|| reader.read_u8(&format!("{path}.OverridableOperation")))
+        .then(|| reader.read_u8(&format_args!("{path}.OverridableOperation")))
         .transpose()?;
     Ok(ClassSerializationControlExtensions {
         raw_flags,
@@ -695,6 +725,30 @@ fn read_property_type_name_at_depth(
             path.to_string(),
             format!("property type-name nesting exceeds depth limit {MAX_PROPERTY_TYPE_DEPTH}"),
         ));
+    }
+    // Zero children require no allocation; nonzero counts keep the ordinary budget checks.
+    if let Some((name, inner_count)) = reader.try_read_type_header(names.len()) {
+        if inner_count == 0 {
+            return Ok(PropertyTypeName {
+                name,
+                parameters: Vec::new(),
+            });
+        }
+        let capacity = reader.checked_vec_capacity::<PropertyTypeName>(
+            inner_count,
+            12,
+            &format_args!("{path}.InnerCount"),
+        )?;
+        let mut parameters = Vec::with_capacity(capacity);
+        for index in 0..inner_count {
+            parameters.push(read_property_type_name_at_depth(
+                reader,
+                names,
+                &format_args!("{path}.Parameters[{index}]"),
+                depth + 1,
+            )?);
+        }
+        return Ok(PropertyTypeName { name, parameters });
     }
     let name = reader.read_name_ref(&format_args!("{path}.Name"))?;
     validate_name_ref(names, name, &format_args!("{path}.Name"))?;
@@ -729,7 +783,7 @@ fn read_property_type_name_at_depth(
 fn read_property_extensions(
     reader: &mut Reader<'_>,
     versions: &VersionContext,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyTagExtensions, PropertyError> {
     if !versions.is_at_least_ue5(UE5_PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION) {
         return Err(PropertyError::new(
@@ -752,10 +806,10 @@ fn read_property_extensions(
     let (override_operation, experimental_overridable_logic) =
         if raw_flags & PROPERTY_EXTENSION_OVERRIDABLE_INFORMATION != 0 {
             (
-                Some(reader.read_u8(&format!("{path}.OverriddenPropertyOperation"))?),
+                Some(reader.read_u8(&format_args!("{path}.OverriddenPropertyOperation"))?),
                 Some(read_archive_bool(
                     reader,
-                    &format!("{path}.ExperimentalOverridableLogic"),
+                    &format_args!("{path}.ExperimentalOverridableLogic"),
                 )?),
             )
         } else {
@@ -768,7 +822,10 @@ fn read_property_extensions(
     })
 }
 
-fn read_archive_bool(reader: &mut Reader<'_>, path: &str) -> Result<bool, PropertyError> {
+fn read_archive_bool(
+    reader: &mut Reader<'_>,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<bool, PropertyError> {
     let offset = reader.tell();
     match reader.read_u32(path)? {
         0 => Ok(false),
@@ -823,6 +880,47 @@ mod tests {
             "Shop".into(),
             "Forge".into(),
         ]
+    }
+
+    #[test]
+    fn tagged_breadcrumbs_are_lazy_but_preserve_failure_paths() {
+        struct UnformattedPath;
+        impl fmt::Display for UnformattedPath {
+            fn fmt(&self, _: &mut fmt::Formatter<'_>) -> fmt::Result {
+                panic!("successful reads must not format diagnostic paths")
+            }
+        }
+
+        let mut bytes = Vec::new();
+        write_property_tag(
+            &mut bytes,
+            3,
+            &TypeParam {
+                type_index: 1,
+                parameters: Vec::new(),
+            },
+            0,
+            &42_i32.to_le_bytes(),
+        );
+        write_property_terminator(&mut bytes, 0);
+        let stream = read_tagged_property_stream(
+            &mut Reader::new(&bytes),
+            &ue5_versions(),
+            &names(),
+            &UnformattedPath,
+        )
+        .unwrap();
+        assert_eq!(stream.records.len(), 1);
+
+        let error = read_tagged_property_stream(
+            &mut Reader::new(&bytes[..12]),
+            &ue5_versions(),
+            &names(),
+            &format_args!("Rows[{}].Value", 7),
+        )
+        .unwrap_err();
+        assert_eq!(error.offset(), Some(12));
+        assert_eq!(error.path(), "Rows[7].Value.Tag.Type.Name.Number");
     }
 
     #[test]
@@ -1325,5 +1423,127 @@ mod tests {
         names: &[String],
     ) -> Result<PropertyTypeName, PropertyError> {
         read_property_type_name(reader, names, "Test.Type")
+    }
+}
+
+#[cfg(test)]
+fn read_property_type_name_reference(
+    reader: &mut Reader<'_>,
+    names: &[String],
+    path: &(impl fmt::Display + ?Sized),
+    depth: usize,
+) -> Result<PropertyTypeName, PropertyError> {
+    if depth >= MAX_PROPERTY_TYPE_DEPTH {
+        return Err(PropertyError::new(
+            PropertyErrorKind::MalformedData,
+            Some(reader.tell()),
+            path.to_string(),
+            format!("property type-name nesting exceeds depth limit {MAX_PROPERTY_TYPE_DEPTH}"),
+        ));
+    }
+    let name = reader.read_name_ref(&format_args!("{path}.Name"))?;
+    validate_name_ref(names, name, &format_args!("{path}.Name"))?;
+    let inner_count_offset = reader.tell();
+    let inner_count = reader.read_i32(&format_args!("{path}.InnerCount"))?;
+    if inner_count < 0 {
+        return Err(PropertyError::new(
+            PropertyErrorKind::MalformedData,
+            Some(inner_count_offset),
+            format!("{path}.InnerCount"),
+            format!("type-name inner count must be non-negative, got {inner_count}"),
+        ));
+    }
+    let inner_count = crate::convert::usize_from_checked(inner_count);
+    let capacity = reader.checked_vec_capacity::<PropertyTypeName>(
+        inner_count,
+        12,
+        &format_args!("{path}.InnerCount"),
+    )?;
+    let mut parameters = Vec::with_capacity(capacity);
+    for index in 0..inner_count {
+        parameters.push(read_property_type_name_reference(
+            reader,
+            names,
+            &format_args!("{path}.Parameters[{index}]"),
+            depth + 1,
+        )?);
+    }
+    Ok(PropertyTypeName { name, parameters })
+}
+
+#[cfg(test)]
+mod type_prefix_tests {
+    use super::*;
+    use crate::archive::ArchiveLimits;
+
+    fn check(wire: &[u8], offset: usize, length: usize, depth: usize, limits: ArchiveLimits) {
+        let mut bytes = vec![0x55; offset];
+        bytes.extend(wire);
+        bytes.extend([0x33; 8]);
+        let mut actual = Reader::with_limits(&bytes, limits)
+            .bounded(Span::new(offset as u64, length as u64).unwrap(), "Bound")
+            .unwrap();
+        let mut expected = actual.clone();
+        let names = ["None", "IntProperty", "ArrayProperty"]
+            .map(str::to_owned)
+            .to_vec();
+        let a = read_property_type_name_at_depth(&mut actual, &names, "Type", depth);
+        let b = read_property_type_name_reference(&mut expected, &names, "Type", depth);
+        assert_eq!(
+            format!("{a:?}"),
+            format!("{b:?}"),
+            "wire={wire:02x?} offset={offset} length={length} depth={depth}"
+        );
+        assert_eq!(actual.tell(), expected.tell());
+    }
+
+    #[test]
+    fn grouped_type_prefix_keeps_names_counts_depths_bounds_and_failure_priority() {
+        let mut cases = Vec::new();
+        for index in [i32::MIN, -1, 0, 1, 2, 3, i32::MAX] {
+            for number in [-1i32, 0, 1, i32::MAX] {
+                for count in [i32::MIN, -1, 0, 1, 2, i32::MAX] {
+                    let mut bytes = Vec::new();
+                    bytes.extend(index.to_le_bytes());
+                    bytes.extend(number.to_le_bytes());
+                    bytes.extend(count.to_le_bytes());
+                    for _ in 0..2 {
+                        bytes.extend(1i32.to_le_bytes());
+                        bytes.extend(0i32.to_le_bytes());
+                        bytes.extend(0i32.to_le_bytes());
+                    }
+                    cases.push(bytes);
+                }
+            }
+        }
+        let nested: Vec<u8> = [(2i32, 1i32), (2, 1), (1, 0)]
+            .into_iter()
+            .flat_map(|(name, count)| {
+                [name.to_le_bytes(), 0i32.to_le_bytes(), count.to_le_bytes()].concat()
+            })
+            .collect();
+        for i in 0..nested.len() {
+            for mask in [1, 128, 255] {
+                let mut bytes = nested.clone();
+                bytes[i] ^= mask;
+                cases.push(bytes);
+            }
+        }
+        cases.push(nested);
+        for bytes in cases {
+            for offset in [0, 1, 7] {
+                for length in [0, 4, 7, 8, 11, 12, 15, 24, bytes.len()] {
+                    for depth in [0, 63, 64] {
+                        check(&bytes, offset, length, depth, ArchiveLimits::default());
+                    }
+                }
+            }
+            let limits = ArchiveLimits {
+                max_array_elements: 0,
+                max_allocation_bytes: 0,
+                ..ArchiveLimits::default()
+            };
+            check(&bytes, 1, bytes.len(), 0, limits);
+        }
     }
 }

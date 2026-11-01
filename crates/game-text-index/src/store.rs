@@ -1,10 +1,11 @@
 //! Shared Game Text store. The directory, lock and atomic manifest are the Node store's format.
 use crate::snapshot::{Reader, Writer, integers, u32_bytes};
 use crate::{Result, dictionary, require};
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -629,7 +630,7 @@ pub struct Store {
     pub root: Value,
     configuration: Configuration,
     current: Option<Value>,
-    dictionary: Option<HashMap<Vec<u8>, u32>>,
+    dictionary: Option<FxHashMap<Vec<u8>, u32>>,
     dictionary_lengths: Option<Vec<u32>>,
     _lock: WriterLock,
     uncertain: bool,
@@ -820,15 +821,19 @@ impl Store {
     ) -> Result<Vec<u32>> {
         self.localization_lookups += values.len() as u64;
         let _span = crate::scan_timings::Span::new("store.intern");
+        let mut measure = crate::scan_timings::Cursor::new();
         require(
             !self.uncertain && domain.len() <= 23,
             "writer closed or invalid domain",
         )?;
         if self.dictionary.is_none() && values.len() <= 8192 {
-            return crate::bounded_intern::intern(self, domain, values);
+            let ids = crate::bounded_intern::intern(self, domain, values);
+            measure.mark("intern.bounded");
+            return ids;
         }
         if self.dictionary.is_none() {
             let values = dictionary_bytes(&self.directory, &self.root)?;
+            measure.mark("intern.load_dictionary");
             self.dictionary_lengths = Some(values.iter().map(|s| s.len() as u32).collect());
             self.dictionary = Some(
                 values
@@ -837,6 +842,7 @@ impl Store {
                     .map(|(i, s)| (s, i as u32))
                     .collect(),
             );
+            measure.mark("intern.build_lookup");
         }
         let lookup = self.dictionary.as_mut().ok_or("dictionary absent")?;
         let mut missing: Vec<_> = values
@@ -844,10 +850,12 @@ impl Store {
             .filter(|s| !lookup.contains_key(*s))
             .cloned()
             .collect();
+        measure.mark("intern.find_missing");
         if !sorted_unique {
             missing.sort();
             missing.dedup();
         }
+        measure.mark("intern.sort_missing");
         if !missing.is_empty() {
             require(
                 self.root["segments"].as_array().ok_or("segments")?.len() < 256,
@@ -868,6 +876,7 @@ impl Store {
             }
             stream.flush()?;
             drop(stream);
+            measure.mark("intern.stage_strings");
             let segment = dictionary::segment(
                 &raw,
                 &self.directory,
@@ -881,6 +890,7 @@ impl Store {
                 .as_array_mut()
                 .ok_or("segments")?
                 .push(serde_json::to_value(segment?)?);
+            measure.mark("intern.encode_segment");
             for (row, value) in missing.into_iter().enumerate() {
                 self.dictionary_lengths
                     .as_mut()
@@ -888,8 +898,9 @@ impl Store {
                     .push(value.len() as u32);
                 lookup.insert(value, base + row as u32);
             }
+            measure.mark("intern.extend_lookup");
         }
-        values
+        let ids = values
             .iter()
             .map(|s| {
                 lookup
@@ -897,7 +908,9 @@ impl Store {
                     .copied()
                     .ok_or_else(|| "missing interned key".into())
             })
-            .collect()
+            .collect();
+        measure.mark("intern.map_values");
+        ids
     }
     pub fn publish_local(&mut self, name: &str, key: &str, input: &Path) -> Result<Value> {
         if self.root["active"][name].as_str() == Some(key) {
@@ -1082,7 +1095,7 @@ impl Store {
                 .into_iter()
                 .enumerate()
                 .map(|(id, value)| (value, id as u32))
-                .collect::<HashMap<_, _>>();
+                .collect::<FxHashMap<_, _>>();
             &loaded
         };
         let jobs = pending

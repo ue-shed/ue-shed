@@ -125,9 +125,13 @@ describe("fresh-process Game Text benchmark checks", () => {
 		await command("refresh", 111);
 		const fresh = JSON.parse(await readFile(resolve(temporary, "refresh-111.json"), "utf8"));
 		expect(fresh.outcome.kind).toBe("done");
-		expect(
-			fresh.results.find((stage: { stage: string }) => stage.stage === "one-byte-po:target")
-		).toMatchObject({ parsed: 1, lookupStrings: 1 });
+		const refreshed = fresh.results.find(
+			(stage: { stage: string }) => stage.stage === "one-byte-po:target"
+		);
+		expect(refreshed).toMatchObject({ parsed: 1 });
+		// Native import probes the changed string block. Its reuse bound and entry parity are
+		// covered by localization-import.test.ts; this harness checks that the edit is fresh.
+		expect(refreshed.lookupStrings).toBeGreaterThan(0);
 		expect(await readFile(po)).toEqual(original);
 	}, 60000);
 	it("records a run deadline as failure, including worker startup, and permits only lower caps", async () => {

@@ -187,18 +187,20 @@ impl Entries {
         let mut values = values.into_iter().collect::<Vec<_>>();
         values.sort_by(|a, b| ordinal(j.string(*a), j.string(*b)));
         let mut longest = "";
+        let mut longest_length = 0;
         let mut visible = false;
         for id in &values {
             let value = j.string(*id);
             let length = characters(value);
-            if length > characters(longest)
-                || (length == characters(longest) && ordinal(value, longest).is_lt())
+            if length > longest_length
+                || (length == longest_length && ordinal(value, longest).is_lt())
             {
                 longest = value;
+                longest_length = length;
             }
             visible |= !trim(value).is_empty();
         }
-        let characters_count = characters(longest);
+        let characters_count = longest_length;
         let word_count = words(longest);
         self.sources.extend(values);
         self.files.extend(paths);
@@ -319,32 +321,41 @@ fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>>
         representatives.extend(rows);
         line_starts.push(representatives.len() as u32);
     }
-    let mut raw = Entries::new(raw_representatives.len());
-    for (row, first) in raw_representatives.iter().enumerate() {
-        raw.add(
-            j,
-            row,
-            *first as usize,
-            ABSENT,
-            &raw_index,
-            &occurrence_line,
-            &conflicting,
-        );
-    }
-    let mut slice = Entries::new(representatives.len());
-    for row in 0..count {
-        for index in line_starts[row]..line_starts[row + 1] {
-            slice.add(
-                j,
-                index as usize,
-                representatives[index as usize] as usize,
-                row as u32,
-                &raw_index,
-                &occurrence_line,
-                &conflicting,
-            );
-        }
-    }
+    // Both projections read the completed membership tables and own their output columns.
+    let (raw, slice) = rayon::join(
+        || {
+            let mut raw = Entries::new(raw_representatives.len());
+            for (row, first) in raw_representatives.iter().enumerate() {
+                raw.add(
+                    j,
+                    row,
+                    *first as usize,
+                    ABSENT,
+                    &raw_index,
+                    &occurrence_line,
+                    &conflicting,
+                );
+            }
+            raw
+        },
+        || {
+            let mut slice = Entries::new(representatives.len());
+            for row in 0..count {
+                for index in line_starts[row]..line_starts[row + 1] {
+                    slice.add(
+                        j,
+                        index as usize,
+                        representatives[index as usize] as usize,
+                        row as u32,
+                        &raw_index,
+                        &occurrence_line,
+                        &conflicting,
+                    );
+                }
+            }
+            slice
+        },
+    );
     let mut result = vec![(
         "query.occurrence.sources".into(),
         "source".into(),
@@ -366,6 +377,7 @@ fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>>
     ));
     measure.mark("query.raw_ids");
     let mut line_names = Vec::new();
+    let target_view = crate::wtf8::Wtf8Buf::from_utf8(target).to_view();
     for row in 0..count {
         let identity = if line_starts[row] != line_starts[row + 1]
             && j.string(j.line[crate::join::L_KEY][row]).is_empty()
@@ -381,10 +393,7 @@ fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>>
             ]))?)
             .to_view()
         };
-        line_names.push(format!(
-            "{}:{identity}",
-            crate::wtf8::Wtf8Buf::from_utf8(target).to_view()
-        ));
+        line_names.push(format!("{target_view}:{identity}"));
     }
     let (bytes, starts) = packed(&line_names)?;
     result.push(("query.line.id_utf8".into(), String::new(), bytes));

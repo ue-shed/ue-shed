@@ -93,6 +93,10 @@ should follow [Website and illustrated guides](engineering/website.md).
 
 ## Research
 
+- [Game Text publication and query preparation (2026-11-01)](research/game-text-publication-2026-11-01.md) —
+  alternating Windows full-scan measurements, unchanged full exports, bounded parallel preparation,
+  and rejected dictionary/cache/WAL designs.
+
 - [UAsset parser speed on ARM64 (2026-10-31)](research/uasset-parser-speed-arm64-2026-10-31.md) —
   local machine baseline, profile-guided experiments, unchanged-output evidence and verification.
   The [source follow-up](research/uasset-parser-speed-followup-2026-10-31.md) records final-configuration

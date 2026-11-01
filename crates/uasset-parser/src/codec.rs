@@ -1509,6 +1509,7 @@ fn speculative_container_struct(
         .first()
         .and_then(|module| package.resolve_name_cow(module.name));
     match (module.as_deref(), name.as_ref()) {
+        (Some("/Script/CoreUObject"), "Vector3f") => true,
         (Some("/Script/Engine"), "KeyHandleMap" | "SkeletalMeshSamplingLODBuiltData") => {
             matches!(package.summary.versions.ue5, 1000..=1018)
         }
@@ -2765,9 +2766,10 @@ mod tests {
     #[test]
     fn math_struct_components_and_array_strides_follow_lwc_and_inner_tag_gates() {
         use crate::test_support::write_legacy_property_tag;
-        for ue5 in [0, 1003, 1004, 1005, 1011, 1012, 1013] {
+        for ue5 in [0, 1003, 1004, 1005, 1011, 1012, 1013, 1017, 1018] {
             for (name, components) in [
                 ("Vector", 3),
+                ("Vector3f", 3),
                 ("Vector2D", 2),
                 ("Vector4", 4),
                 ("Rotator", 3),
@@ -2777,13 +2779,16 @@ mod tests {
                 ("Box2D", 4),
                 ("Matrix", 16),
             ] {
+                if ue5 == 0 && name == "Vector3f" {
+                    continue;
+                }
                 let package = versioned_package(
                     &["None", "Value", "StructProperty", "ArrayProperty", name],
                     ue5,
                 );
                 let mut element = Vec::new();
                 for index in 0..components {
-                    if ue5 >= 1004 {
+                    if ue5 >= 1004 && name != "Vector3f" {
                         push_f64(&mut element, f64::from(index) + 0.25);
                     } else {
                         push_f32(&mut element, index as f32 + 0.25);
@@ -2865,8 +2870,190 @@ mod tests {
     }
 
     #[test]
+    fn ue4_vector3f_short_names_are_not_claimed_as_builtin_math() {
+        let package = versioned_package(&["StructProperty", "Vector3f"], 0);
+        let bytes = [1.25_f32, -2.5, 3.75]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            decode_record_with_package(
+                package,
+                0,
+                vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: vec![],
+                }],
+                PropertyTagFlags(0),
+                &bytes,
+            )
+            .unwrap(),
+            PropertyValue::Raw { .. }
+        ));
+    }
+
+    #[test]
+    fn vector3f_preserves_float_bits_and_rejects_inexact_property_spans() {
+        for ue5 in [1003, 1004, 1011, 1012, 1017, 1018] {
+            let package =
+                versioned_package(&["StructProperty", "Vector3f", "/Script/CoreUObject"], ue5);
+            let identity = PropertyTypeName {
+                name: crate::test_support::name_ref(1, 0),
+                parameters: vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(2, 0),
+                    parameters: vec![],
+                }],
+            };
+            let values = [-0.0_f32, f32::from_bits(1), f32::MAX];
+            let bytes: Vec<_> = values.into_iter().flat_map(f32::to_le_bytes).collect();
+            let decode = |bytes: &[u8]| {
+                decode_record_with_package(
+                    package.clone(),
+                    0,
+                    vec![identity.clone()],
+                    PropertyTagFlags(0x08),
+                    bytes,
+                )
+            };
+            let PropertyValue::NativeStruct { fields } = decode(&bytes).unwrap() else {
+                panic!("Vector3f was not decoded at version {ue5}");
+            };
+            for ((field, name), expected) in fields.iter().zip(["X", "Y", "Z"]).zip(values) {
+                assert_eq!(field.name, name);
+                let PropertyValue::Float(value) = field.value else {
+                    panic!("Vector3f component lost its float width");
+                };
+                assert_eq!(value.to_bits(), expected.to_bits());
+            }
+            assert_eq!(fields.len(), 3);
+            for end in 0..bytes.len() {
+                assert!(matches!(
+                    decode(&bytes[..end]),
+                    Err(_) | Ok(PropertyValue::Raw { .. })
+                ));
+            }
+            let mut trailing = bytes.clone();
+            trailing.push(0);
+            assert!(matches!(
+                decode(&trailing).unwrap(),
+                PropertyValue::Raw { .. }
+            ));
+            let mut reader = Reader::new(&trailing);
+            assert!(
+                native_values::generated_value(
+                    &trailing,
+                    "/Script/CoreUObject.Vector3f",
+                    &mut reader,
+                    &package,
+                    "Fixture",
+                    DecodeScope::root(None),
+                )
+                .unwrap()
+                .is_some()
+            );
+            assert_eq!(reader.tell(), 12);
+            assert_eq!(reader.read_u8("FollowingField").unwrap(), 0);
+        }
+    }
+
+    #[test]
+    fn binary_vector3f_map_keys_preserve_entry_boundaries_and_opaque_fallback() {
+        for ue5 in [1012, 1017, 1018] {
+            let package = versioned_package(
+                &[
+                    "StructProperty",
+                    "Vector3f",
+                    "/Script/CoreUObject",
+                    "MapProperty",
+                    "IntProperty",
+                    "OpaqueStruct",
+                    "/Script/Fixture",
+                ],
+                ue5,
+            );
+            let vector = PropertyTypeName {
+                name: crate::test_support::name_ref(0, 0),
+                parameters: vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: vec![PropertyTypeName {
+                        name: crate::test_support::name_ref(2, 0),
+                        parameters: vec![],
+                    }],
+                }],
+            };
+            let integer = PropertyTypeName {
+                name: crate::test_support::name_ref(4, 0),
+                parameters: vec![],
+            };
+            let mut bytes = vec![];
+            push_i32(&mut bytes, 0);
+            push_i32(&mut bytes, 2);
+            for (x, value) in [(1.25_f32, 7), (-4.5_f32, -13)] {
+                for component in [x, 2.5, -3.75] {
+                    push_f32(&mut bytes, component);
+                }
+                push_i32(&mut bytes, value);
+            }
+            let decode = |value_type, bytes: &[u8]| {
+                decode_record_with_package(
+                    package.clone(),
+                    3,
+                    vec![vector.clone(), value_type],
+                    PropertyTagFlags(0x08),
+                    bytes,
+                )
+            };
+            let PropertyValue::Map(entries) = decode(integer.clone(), &bytes).unwrap() else {
+                panic!("Vector3f map was not decoded");
+            };
+            assert_eq!(entries.len(), 2);
+            for (entry, (x, value)) in entries.iter().zip([(1.25, 7), (-4.5, -13)]) {
+                let PropertyValue::NativeStruct { fields } = &entry.key else {
+                    panic!("Vector3f map key was not decoded");
+                };
+                assert_eq!(
+                    fields
+                        .iter()
+                        .find(|field| field.name == "X")
+                        .map(|field| &field.value),
+                    Some(&PropertyValue::Float(x))
+                );
+                assert_eq!(entry.value, PropertyValue::Int(value));
+            }
+            // Before Vector3f support this binary container stayed opaque. A later
+            // truncation or unsupported value must still preserve that entire property.
+            bytes.pop();
+            assert!(matches!(
+                decode(integer, &bytes).unwrap(),
+                PropertyValue::Raw { .. }
+            ));
+            let opaque = PropertyTypeName {
+                name: crate::test_support::name_ref(0, 0),
+                parameters: vec![PropertyTypeName {
+                    name: crate::test_support::name_ref(5, 0),
+                    parameters: vec![PropertyTypeName {
+                        name: crate::test_support::name_ref(6, 0),
+                        parameters: vec![],
+                    }],
+                }],
+            };
+            assert!(matches!(
+                decode(opaque, &bytes).unwrap(),
+                PropertyValue::Raw { .. }
+            ));
+        }
+    }
+
+    #[test]
     fn complete_math_identities_do_not_match_a_project_module() {
-        for name in ["Vector", "Quat", "Box", "Box2D", "Matrix"] {
+        for (name, size) in [
+            ("Vector", 24),
+            ("Vector3f", 12),
+            ("Quat", 32),
+            ("Box", 49),
+            ("Box2D", 33),
+            ("Matrix", 128),
+        ] {
             let package = versioned_package(&["StructProperty", name, "/Script/Fixture"], 1012);
             let value = decode_record_with_package(
                 package,
@@ -2879,7 +3066,7 @@ mod tests {
                     }],
                 }],
                 PropertyTagFlags(0x08),
-                &[0; 49],
+                &vec![0; size],
             )
             .unwrap();
             assert_eq!(
@@ -2897,6 +3084,7 @@ mod tests {
         for ue5 in [0, 1000, 1009, 1011] {
             for name in [
                 "Vector",
+                "Vector3f",
                 "Vector2D",
                 "Quat",
                 "Guid",

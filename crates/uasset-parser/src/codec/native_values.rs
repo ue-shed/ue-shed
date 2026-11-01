@@ -227,6 +227,9 @@ pub(super) fn known_struct(
 /// Source-generated property recipes use package-qualified identities, including when nested
 /// in containers or InstancedStruct. A project type sharing an engine short name cannot match.
 pub(super) fn property_type_path(module: &str, name: &str) -> Option<&'static str> {
+    if module == "/Script/CoreUObject" && name == "Vector3f" {
+        return Some("/Script/CoreUObject.Vector3f");
+    }
     if module == "/Script/SlateCore" && name == "DeprecateSlateVector2D" {
         return Some("/Script/SlateCore.DeprecateSlateVector2D");
     }
@@ -326,6 +329,21 @@ pub(super) fn math_struct(
             })
         };
     let value = match name {
+        // UE 5.7/5.8 Vector.h: TVector<float> saves X/Y/Z as float in both archive
+        // serializers. Its width does not follow the double vector's LWC version gate.
+        "Vector3f" if package.summary.versions.ue5 != 0 => PropertyValue::NativeStruct {
+            fields: ["X", "Y", "Z"]
+                .into_iter()
+                .map(|name| {
+                    Ok(NativeProperty {
+                        name: Cow::Borrowed(name),
+                        value: PropertyValue::Float(
+                            reader.read_f32(&format_args!("{path}.{name}"))?,
+                        ),
+                    })
+                })
+                .collect::<Result<_, PropertyError>>()?,
+        },
         "Vector" => PropertyValue::Vector(VectorValue {
             x: component(reader, "X")?,
             y: component(reader, "Y")?,

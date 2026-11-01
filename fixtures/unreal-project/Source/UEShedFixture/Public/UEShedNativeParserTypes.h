@@ -38,6 +38,9 @@ public:
 	UPROPERTY() FQuat Rotation = FQuat::Identity;
 	UPROPERTY() FTransform Transform;
 	UPROPERTY() FVector2D Position2D = FVector2D::ZeroVector;
+	UPROPERTY() FVector3f Position3f = FVector3f::ZeroVector;
+	UPROPERTY() TArray<FVector3f> Positions3f;
+	UPROPERTY() TMap<FName, FVector3f> NamedPositions3f;
 	UPROPERTY() FBox Bounds;
 	UPROPERTY() FIntVector Grid = FIntVector::ZeroValue;
 	UPROPERTY() TArray<FQuat> Rotations;
@@ -47,6 +50,7 @@ public:
 	UPROPERTY() TSet<FIntVector> Grids;
 	UPROPERTY() TMap<FName, FTransform> NamedTransforms;
 	UPROPERTY() TArray<FInstancedStruct> MathInstances;
+	UPROPERTY() FInstancedStruct Vector3fInstance;
 	UPROPERTY() FInstancedPropertyBag Parameters;
 	UPROPERTY() FInstancedPropertyBag EmptyParameters;
 	UPROPERTY() TArray<FInstancedPropertyBag> ParameterBags;

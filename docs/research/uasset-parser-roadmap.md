@@ -148,6 +148,10 @@ binary flag comes from another element type. Numeric channels follow Sequencer-1
 framing. New optional recipes probe without advancing the old tagged/opaque fallback on rejection;
 unknown spline implementations and unsupported class fields remain reported gaps.
 
+UE5 `Vector3f` properties, container elements, and instanced structs retain three `float` components,
+independently of the large-world-coordinate width used by ordinary `Vector`. Qualified identities
+must name `/Script/CoreUObject`; project structs with the same short name keep their own layout.
+
 The coverage census now walks every decoded property value, including nested containers, struct
 defaults and DataTable rows. It distinguishes raw-value gaps, decode-filter exclusions and export
 failures, and records bounded examples outside the repository. Source-verified additions cover

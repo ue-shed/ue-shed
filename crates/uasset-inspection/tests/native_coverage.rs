@@ -629,6 +629,7 @@ fn math_and_tags_match_unreal_in_properties_containers_and_instances() {
         "rotation":components(&read("Rotation"), &["X","Y","Z","W"]),
         "transform":transform(&read("Transform")),
         "position2d":components(&read("Position2D"), &["X","Y"]),
+        "position3f":components(&read("Position3f"), &["X","Y","Z"]),
         "box_min":components(&read("Bounds")["Min"], &["X","Y","Z"]),
         "box_max":components(&read("Bounds")["Max"], &["X","Y","Z"]),
         "box_valid":read("Bounds")["IsValid"] == 1,
@@ -644,6 +645,7 @@ fn math_and_tags_match_unreal_in_properties_containers_and_instances() {
         ("Rotations", "Rotation"),
         ("Transforms", "Transform"),
         ("Positions2D", "Position2D"),
+        ("Positions3f", "Position3f"),
         ("Boxes", "Bounds"),
     ] {
         assert_eq!(read(array)[0], read(scalar), "{array}");
@@ -661,6 +663,13 @@ fn math_and_tags_match_unreal_in_properties_containers_and_instances() {
     let entries = &property(asset, "NamedTransforms")["entries"];
     assert_eq!(entries[0]["key"]["value"], "origin");
     assert_eq!(fields(&entries[0]["value"]), read("Transform"));
+    let positions = &property(asset, "NamedPositions3f")["entries"];
+    assert_eq!(positions[0]["key"]["value"], "origin");
+    assert_eq!(fields(&positions[0]["value"]), read("Position3f"));
+    let instance = property(asset, "Vector3fInstance");
+    assert_eq!(instance["struct_type"], "/Script/CoreUObject.Vector3f");
+    assert_eq!(fields(&instance["value"]), read("Position3f"));
+    assert_eq!(instance["size"], 12);
     let instances = &property(asset, "MathInstances")["values"];
     for (index, scalar) in [
         "Rotation",

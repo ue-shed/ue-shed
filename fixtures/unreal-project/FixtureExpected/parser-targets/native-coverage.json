@@ -469,7 +469,8 @@
 		"box_min": [-5.5, -4.25, -3.125],
 		"box_max": [7.75, 8.5, 9.25],
 		"box_valid": true,
-		"grid": [-2147483647, 0, 2147483647]
+		"grid": [-2147483647, 0, 2147483647],
+		"position3f": [0.3333333432674408, -2.5, 16777216]
 	},
 	"tags": ["Fixture.Action.Move", "Fixture.State.Ready"],
 	"property_bag": {
@@ -487,7 +488,7 @@
 		"descriptors": [
 			{
 				"name": "Enabled",
-				"id": "1ccd19354a2a07b64248ddaa5f788c25",
+				"id": "715f40854b47769841bf999ff907191e",
 				"type": "bool",
 				"type_object": "",
 				"containers": [],
@@ -498,7 +499,7 @@
 			},
 			{
 				"name": "Count",
-				"id": "4c5a333e42d332337456bcbdf4b04588",
+				"id": "2a17e02e4224447dcece8b82a7f1c67a",
 				"type": "int32",
 				"type_object": "",
 				"containers": [],
@@ -506,7 +507,7 @@
 			},
 			{
 				"name": "Unsigned",
-				"id": "23c630664c150283a77aa08706890eeb",
+				"id": "e5a5dc104804ec53e4f9bfa196e4a3af",
 				"type": "uint32",
 				"type_object": "",
 				"containers": [],
@@ -514,7 +515,7 @@
 			},
 			{
 				"name": "Weight",
-				"id": "cea61b5c4788866e8e027a86393f310f",
+				"id": "fc2ed3534f3bc5b654820eafaab90787",
 				"type": "double",
 				"type_object": "",
 				"containers": [],
@@ -522,7 +523,7 @@
 			},
 			{
 				"name": "Label",
-				"id": "ee469bef40044058c4fee29d1db3ebc1",
+				"id": "63b6f63341ef9c1f43c4eda6e041d7f8",
 				"type": "string",
 				"type_object": "",
 				"containers": [],
@@ -530,7 +531,7 @@
 			},
 			{
 				"name": "Offset",
-				"id": "fac8e25d4e3bf14a063390bd51e1c623",
+				"id": "de391c584acda7a1c44b7886bf6de4e3",
 				"type": "struct",
 				"type_object": "/Script/CoreUObject.Vector",
 				"containers": [],
@@ -538,7 +539,7 @@
 			},
 			{
 				"name": "Reference",
-				"id": "5e21c82e41594b628640879840fff60b",
+				"id": "3a7ce2d44f070db381fe82ae756570e7",
 				"type": "object",
 				"type_object": "/Script/CoreUObject.Object",
 				"containers": [],
@@ -546,7 +547,7 @@
 			},
 			{
 				"name": "Samples",
-				"id": "d17cf430415beb29b8546e8773ed00cf",
+				"id": "7c3e33334a6d461d505ecbab26525bfc",
 				"type": "float",
 				"type_object": "",
 				"containers": ["array"],
@@ -554,7 +555,7 @@
 			},
 			{
 				"name": "Nested",
-				"id": "b90dfbfe40e8cd739926709fc1e4f330",
+				"id": "7bba2f934ec0db1f00d08d969ab85d9d",
 				"type": "struct",
 				"type_object": "/Script/CoreUObject.InstancedPropertyBag",
 				"containers": [],
@@ -593,7 +594,7 @@
 		"root": {
 			"FixturePurpose": "Shared native layouts",
 			"EmptyRoot": "",
-			"PackageLocalizationNamespace": "865D067AFD702F5010F718F623BEBA24"
+			"PackageLocalizationNamespace": "83E6DAB284B7541CA52F96BDF1C8BC67"
 		},
 		"objects": {
 			"/Game/Fixture/ParserNative/DA_Native.DA_Native": {

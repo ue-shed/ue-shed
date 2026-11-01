@@ -158,36 +158,49 @@ fn render<'a>(
     lookup: impl Fn(&str) -> Option<&'a TextValue>,
     budget: &Cell<usize>,
 ) -> Option<String> {
-    // TextFormatter's default grammar. Modifiers/escapes require additional semantics.
-    if format.contains('`') || format.contains('|') {
-        return None;
-    }
+    // UE4.27/5.7/5.8 TextFormatter.cpp: a pipe only begins a modifier at a token
+    // boundary and before an identifier followed by '('. Pipes in category paths
+    // such as "{0}|{1}" are literal text. Never evaluate locale-dependent modifiers.
     let mut output = String::new();
     let mut tail = format;
-    while let Some(start) = tail.find('{') {
-        let literal = &tail[..start];
-        if literal.contains('}') {
-            return None;
+    while !tail.is_empty() {
+        if let Some(rest) = tail.strip_prefix('`') {
+            let escaped = rest.chars().next()?;
+            if !matches!(escaped, '`' | '{' | '}' | '|') {
+                return None;
+            }
+            append(&mut output, &rest[..escaped.len_utf8()], budget)?;
+            tail = &rest[escaped.len_utf8()..];
+        } else if let Some(argument) = tail.strip_prefix('{') {
+            let end = argument.find('}')?;
+            let name = &argument[..end];
+            if name.is_empty() || name.contains(['{', '`']) {
+                return None;
+            }
+            let text = lookup(name)?;
+            if matches!(text.history, TextHistory::StringTableEntry { .. }) {
+                return None;
+            }
+            // Braces and pipes in replacement text are never a new format program.
+            append(&mut output, &text.source, budget)?;
+            tail = &argument[end + 1..];
+        } else {
+            if let Some(modifier) = tail.strip_prefix('|')
+                && modifier
+                    .find(|c: char| c != '_' && !c.is_alphanumeric())
+                    .is_some_and(|end| end > 0 && modifier[end..].starts_with('('))
+            {
+                return None;
+            }
+            let end = tail.find(['{', '`']).unwrap_or(tail.len());
+            let literal = &tail[..end];
+            if literal.contains('}') {
+                return None;
+            }
+            append(&mut output, literal, budget)?;
+            tail = &tail[end..];
         }
-        append(&mut output, literal, budget)?;
-        let argument = &tail[start + 1..];
-        let end = argument.find('}')?;
-        let name = &argument[..end];
-        if name.is_empty() || name.contains('{') {
-            return None;
-        }
-        let text = lookup(name)?;
-        if matches!(text.history, TextHistory::StringTableEntry { .. }) {
-            return None;
-        }
-        // Append directly: braces in replacement text are not a new format program.
-        append(&mut output, &text.source, budget)?;
-        tail = &argument[end + 1..];
     }
-    if tail.contains('}') {
-        return None;
-    }
-    append(&mut output, tail, budget)?;
     Some(output)
 }
 
@@ -386,7 +399,8 @@ mod tests {
         let package = package(1018);
         for template in [
             "{0}|plural(one=a,other=b)",
-            "`{0}`",
+            "`x{0}",
+            "{0}`",
             "{missing}",
             "{0",
             "0}",
@@ -437,5 +451,49 @@ mod tests {
         let budget = Cell::new(8);
         assert_eq!(render("1234", |_| None, &budget), Some("1234".into()));
         assert!(render("12345", |_| None, &budget).is_none());
+    }
+
+    #[test]
+    fn literal_pipes_and_default_escapes_follow_unreal_token_boundaries() {
+        for version in [0, 1008, 1017, 1018] {
+            let package = package(version);
+            for (template, expected) in [
+                ("{0}|{1}", "Left|Right"),
+                ("{0}|Group|{1}", "Left|Group|Right"),
+                ("`{literal`} `{0`} {0} `| ``", "{literal} {0} Left | `"),
+                (
+                    "Plain |plural(one=a,other=b) {0}",
+                    "Plain |plural(one=a,other=b) Left",
+                ),
+                ("{0}|", "Left|"),
+            ] {
+                let bytes = format(2, template, &[("0", base("Left")), ("1", base("Right"))]);
+                let PropertyValue::Text(text) = decode(&bytes, 2, &[], &package) else {
+                    panic!("{template}")
+                };
+                assert_eq!(text.source, expected);
+                for end in 5..bytes.len() {
+                    assert!(matches!(
+                        decode(&bytes[..end], 2, &[], &package),
+                        PropertyValue::Raw { .. }
+                    ));
+                }
+            }
+            for template in [
+                "{0}|plural(one=a,other=b)",
+                "{0}|custom(x)",
+                "|gender(a,b,c)",
+            ] {
+                assert!(matches!(
+                    decode(
+                        &format(2, template, &[("0", base("Left"))]),
+                        2,
+                        &[],
+                        &package
+                    ),
+                    PropertyValue::Raw { .. }
+                ));
+            }
+        }
     }
 }

@@ -77,6 +77,32 @@ void FillCoverageBatchFixture(UUEShedCoverageBatchAsset* Asset, UObject* Referen
 	Asset->ExternalFunction.VariadicInputs = {Asset->BaseVariable};
 	Asset->ExternalFunction.VariadicOutputs = {FNiagaraVariableBase(Asset->DataVariable)};
 	Asset->ExternalFunctions = {Asset->ExternalFunction};
+	Asset->LandscapeLayers.Reset();
+	FLandscapeLayerComponentData Layer(TEXT("Fixture.Painted"));
+	Layer.WeightmapData.Textures.Add(nullptr);
+	FWeightmapLayerAllocationInfo Allocation;
+	Allocation.WeightmapTextureIndex = 3;
+	Allocation.WeightmapTextureChannel = 2;
+	Layer.WeightmapData.LayerAllocations.Add(Allocation);
+	Asset->LandscapeLayers.Add(FGuid(1, 2, 3, 4), Layer);
+	Asset->LandscapeLayers.Add(FGuid(5, 6, 7, 8), FLandscapeLayerComponentData(TEXT("Fixture.Empty")));
+	Asset->Constraint.JointName = TEXT("FixtureJoint");
+	Asset->Constraint.ConstraintBone1 = TEXT("Root");
+	Asset->Constraint.ConstraintBone2 = TEXT("Tip");
+	Asset->Constraint.Pos1 = FVector(-1.25, 2.5, 3.75);
+	Asset->Constraint.Pos2 = FVector(8, -16, 32);
+	auto& Profile = Asset->Constraint.ProfileInstance;
+	Profile.bDisableCollision = true;
+	Profile.bLinearBreakable = true;
+	Profile.LinearBreakThreshold = 5123.75f;
+	Profile.LinearLimit.XMotion = LCM_Limited;
+	Profile.LinearLimit.Limit = 27.5f;
+	Profile.LinearLimit.bSoftConstraint = true;
+	Profile.LinearLimit.Stiffness = 321.0f;
+	Profile.LinearLimit.Damping = 17.25f;
+	Profile.ConeLimit.Swing1Motion = ACM_Limited;
+	Profile.ConeLimit.Swing1LimitDegrees = 37.5f;
+	Asset->Constraints = {Asset->Constraint, FConstraintInstance()};
 }
 
 TSharedRef<FJsonObject> CoverageBatchFixtureEvidence(const UUEShedCoverageBatchAsset* Asset)
@@ -112,5 +138,59 @@ TSharedRef<FJsonObject> CoverageBatchFixtureEvidence(const UUEShedCoverageBatchA
 	Function->SetNumberField(TEXT("outputs"), Asset->ExternalFunction.NumOutputs);
 	Function->SetStringField(TEXT("specifier"), Asset->ExternalFunction.FunctionSpecifiers[0].Value.ToString());
 	Result->SetObjectField(TEXT("function"), Function);
+	return Result;
+}
+
+TSharedRef<FJsonObject> LandscapeConstraintFixtureEvidence(const UUEShedCoverageBatchAsset* Asset)
+{
+	auto Result = MakeShared<FJsonObject>();
+	// Check the real engine declaration independently of the fixture's own map.
+	const FMapProperty* Map = FindFProperty<FMapProperty>(ULandscapeComponent::StaticClass(), TEXT("LayersData"));
+	check(Map);
+	check(CastFieldChecked<FStructProperty>(Map->KeyProp)->Struct == TBaseStructure<FGuid>::Get());
+	check(CastFieldChecked<FStructProperty>(Map->ValueProp)->Struct == FLandscapeLayerComponentData::StaticStruct());
+	TArray<FGuid> Keys;
+	Asset->LandscapeLayers.GetKeys(Keys);
+	Keys.Sort([](const FGuid& A, const FGuid& B) { return A.ToString() < B.ToString(); });
+	TArray<TSharedPtr<FJsonValue>> Layers;
+	for (const FGuid& Key : Keys)
+	{
+		const auto& Layer = Asset->LandscapeLayers.FindChecked(Key);
+		auto Item = MakeShared<FJsonObject>();
+		Item->SetArrayField(TEXT("guid"), Numbers({double(Key.A), double(Key.B), double(Key.C), double(Key.D)}));
+		Item->SetStringField(TEXT("debug_name"), Layer.DebugName.ToString());
+		Item->SetNumberField(TEXT("weight_texture_count"), Layer.WeightmapData.Textures.Num());
+		TArray<TSharedPtr<FJsonValue>> Allocations;
+		for (const auto& Allocation : Layer.WeightmapData.LayerAllocations)
+		{
+			auto Value = MakeShared<FJsonObject>();
+			Value->SetNumberField(TEXT("texture_index"), Allocation.WeightmapTextureIndex);
+			Value->SetNumberField(TEXT("channel"), Allocation.WeightmapTextureChannel);
+			Allocations.Add(MakeShared<FJsonValueObject>(Value));
+		}
+		Item->SetArrayField(TEXT("allocations"), Allocations);
+		Layers.Add(MakeShared<FJsonValueObject>(Item));
+	}
+	Result->SetArrayField(TEXT("layers"), Layers);
+	const auto& Constraint = Asset->Constraint;
+	const auto& Profile = Constraint.ProfileInstance;
+	auto Joint = MakeShared<FJsonObject>();
+	Joint->SetStringField(TEXT("joint"), Constraint.JointName.ToString());
+	Joint->SetStringField(TEXT("bone1"), Constraint.ConstraintBone1.ToString());
+	Joint->SetStringField(TEXT("bone2"), Constraint.ConstraintBone2.ToString());
+	Joint->SetArrayField(TEXT("pos1"), Numbers({Constraint.Pos1.X, Constraint.Pos1.Y, Constraint.Pos1.Z}));
+	Joint->SetArrayField(TEXT("pos2"), Numbers({Constraint.Pos2.X, Constraint.Pos2.Y, Constraint.Pos2.Z}));
+	Joint->SetBoolField(TEXT("disable_collision"), Profile.bDisableCollision);
+	Joint->SetBoolField(TEXT("linear_breakable"), Profile.bLinearBreakable);
+	Joint->SetNumberField(TEXT("break_threshold"), Profile.LinearBreakThreshold);
+	Joint->SetStringField(TEXT("x_motion"), StaticEnum<ELinearConstraintMotion>()->GetNameStringByValue(Profile.LinearLimit.XMotion));
+	Joint->SetNumberField(TEXT("linear_limit"), Profile.LinearLimit.Limit);
+	Joint->SetBoolField(TEXT("soft_limit"), Profile.LinearLimit.bSoftConstraint);
+	Joint->SetNumberField(TEXT("stiffness"), Profile.LinearLimit.Stiffness);
+	Joint->SetNumberField(TEXT("damping"), Profile.LinearLimit.Damping);
+	Joint->SetStringField(TEXT("swing1_motion"), StaticEnum<EAngularConstraintMotion>()->GetNameStringByValue(Profile.ConeLimit.Swing1Motion));
+	Joint->SetNumberField(TEXT("swing1_limit"), Profile.ConeLimit.Swing1LimitDegrees);
+	Result->SetObjectField(TEXT("constraint"), Joint);
+	Result->SetNumberField(TEXT("constraint_array_count"), Asset->Constraints.Num());
 	return Result;
 }

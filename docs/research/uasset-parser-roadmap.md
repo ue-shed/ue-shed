@@ -157,6 +157,12 @@ decoded `Value`; unset, false and zero remain distinct. Older optional framing r
 Stock Universal Object Locator fragments preserve their type ID and tagged payload. Unknown
 registered fragment types remain raw because their payload serializer has no skip length.
 
+Landscape layer maps retain GUID keys and tagged layer data, including heightmap/weightmap references
+and layer allocations. Legacy `LayersData` maps recover identities only on the exact engine component
+class. `ConstraintInstance` retains saved tagged joint geometry and profile fields; its native
+serializer only registers versions and returns control to tagged serialization. Unreal's post-load
+physics conversions are not applied to saved evidence. Failed probes preserve the opaque property.
+
 The coverage census now walks every decoded property value, including nested containers, struct
 defaults and DataTable rows. It distinguishes raw-value gaps, decode-filter exclusions and export
 failures, and records bounded examples outside the repository. Source-verified additions cover

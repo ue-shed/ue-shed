@@ -10,6 +10,8 @@
 #include "NiagaraCommon.h"
 #include "NiagaraParameterStore.h"
 #include "UniversalObjectLocatorFragment.h"
+#include "LandscapeComponent.h"
+#include "PhysicsEngine/ConstraintInstance.h"
 #include "UEShedNativeParserTypes.generated.h"
 
 USTRUCT()
@@ -86,6 +88,9 @@ public:
 	UPROPERTY() TArray<FNiagaraVariable> VariableRecords;
 	UPROPERTY() FVMExternalFunctionBindingInfo ExternalFunction;
 	UPROPERTY() TArray<FVMExternalFunctionBindingInfo> ExternalFunctions;
+	UPROPERTY() TMap<FGuid, FLandscapeLayerComponentData> LandscapeLayers;
+	UPROPERTY() FConstraintInstance Constraint;
+	UPROPERTY() TArray<FConstraintInstance> Constraints;
 };
 
 USTRUCT()

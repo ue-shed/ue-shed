@@ -5,7 +5,8 @@
 `fixtures/unreal-project/Source/UEShedFixtureEditor/Private/UEShedCoverageBatchFixture.cpp`.
 
 It covers fixed-width math aliases, formatted text, optional states, stock object locator fragments,
-Niagara variables and VM bindings. The asset lives outside the saved Game Text fixture project so
+Niagara variables and VM bindings, Landscape GUID maps with nested weightmap allocations, and physics
+constraint profiles in scalar and array values. The asset lives outside the saved Game Text fixture project so
 its text does not change that corpus's authored inventory. `DA_Native` retains its intentional role
 as an opaque native asset without a `TextProperty` header name.
 

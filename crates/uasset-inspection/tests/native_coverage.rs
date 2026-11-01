@@ -320,6 +320,77 @@ fn coverage_batch_matches_fresh_unreal_values_and_nested_container_records() {
 fn variable_base(value: &Value) -> Value {
     json!({"Name":value["Name"],"TypeDefHandle":value["TypeDefHandle"]})
 }
+
+#[test]
+fn landscape_layers_and_physics_constraints_match_independent_loaded_apis() {
+    let output = fixture("DA_CoverageBatch");
+    let asset = &output["assets"][0];
+    let read = |name| fields(property(asset, name));
+    let mut layers: Vec<Value> = property(asset, "LandscapeLayers")["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| {
+            let guid: Vec<u32> = entry["key"]["value"]
+                .as_str()
+                .unwrap()
+                .split('-')
+                .map(|part| u32::from_str_radix(part, 16).unwrap())
+                .collect();
+            let value = fields(&entry["value"]);
+            let weight = &value["WeightmapData"];
+            let allocations: Vec<Value> = weight["LayerAllocations"]
+                .as_array()
+                .map(|values| {
+                    values
+                        .iter()
+                        .map(|allocation| {
+                            json!({
+                                "texture_index":allocation["WeightmapTextureIndex"],
+                                "channel":allocation["WeightmapTextureChannel"]
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            json!({"guid":guid,"debug_name":value["DebugName"],
+                "weight_texture_count":weight["Textures"].as_array().map_or(0, Vec::len),
+                "allocations":allocations})
+        })
+        .collect();
+    layers.sort_by_key(|layer| layer["guid"].to_string());
+    let joint = read("Constraint");
+    let constraint = |joint: &Value| {
+        let profile = &joint["ProfileInstance"];
+        let linear = &profile["LinearLimit"];
+        let cone = &profile["ConeLimit"];
+        json!({
+        "joint":joint["JointName"],"bone1":joint["ConstraintBone1"],"bone2":joint["ConstraintBone2"],
+        "pos1":joint["Pos1"],"pos2":joint["Pos2"],
+        "disable_collision":profile["bDisableCollision"],"linear_breakable":profile["bLinearBreakable"],
+        "break_threshold":profile["LinearBreakThreshold"],"x_motion":linear["XMotion"],
+        "linear_limit":linear["Limit"],"soft_limit":linear["bSoftConstraint"],
+        "stiffness":linear["Stiffness"],"damping":linear["Damping"],
+        "swing1_motion":cone["Swing1Motion"],"swing1_limit":cone["Swing1LimitDegrees"]
+        })
+    };
+    let actual = json!({"layers":layers,"constraint":constraint(&joint),
+        "constraint_array_count":read("Constraints").as_array().unwrap().len()});
+    equivalent(
+        &actual,
+        &evidence()["landscape_constraint"],
+        "landscape_constraint",
+    );
+    equivalent(
+        &constraint(&read("Constraints")[0]),
+        &constraint(&joint),
+        "constraint array",
+    );
+    // Scalar delta serialization omits defaults; array elements save them in full.
+    // Retain that distinction instead of inventing loaded defaults in the scalar.
+    assert!(joint.get("PriAxis1").is_none());
+    assert_eq!(read("Constraints")[1]["JointName"], "None");
+}
 fn property<'a>(asset: &'a Value, name: &str) -> &'a Value {
     asset["properties"]
         .as_array()

@@ -367,6 +367,7 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	const auto* CoverageBatch = LoadAsset<UUEShedCoverageBatchAsset>(TEXT("DA_CoverageBatch"));
 	if (!CoverageBatch) return false;
 	Result->SetObjectField(TEXT("coverage_batch"), CoverageBatchFixtureEvidence(CoverageBatch));
+	Result->SetObjectField(TEXT("landscape_constraint"), LandscapeConstraintFixtureEvidence(CoverageBatch));
 	TArray<FString> TagNames;
 	for (const FGameplayTag& Tag : Asset->Tags) TagNames.Add(Tag.ToString());
 	TagNames.Sort();

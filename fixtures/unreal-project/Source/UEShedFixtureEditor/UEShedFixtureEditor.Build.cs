@@ -17,6 +17,8 @@ public class UEShedFixtureEditor : ModuleRules
 				"CoreUObject",
 				"DataLayerEditor",
 				"Engine",
+				"Landscape",
+				"PhysicsCore",
 				"GameplayTags",
 				"EnhancedInput",
 				"InputCore",

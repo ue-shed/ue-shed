@@ -9,7 +9,8 @@ Decode additional source-verified saved property layouts, including legacy enum 
 values, skeletal mesh sampling tables, field paths, delegate bindings, gameplay tag containers,
 material input connections and constants, fixed-width math aliases (Vector3f, Vector4f, IntVector2,
 Box2f), optional property states, stock Universal Object Locator fragments, and Niagara maps,
-variable records, VM function bindings and shader parameter records. Named and ordered formatted
+variable records, VM function bindings and shader parameter records, Landscape layer maps and physics
+constraint instances. Named and ordered formatted
 text with text arguments, literal pipes and escaped punctuation also decodes in properties and
 containers. Generic inspection exposes the newly typed values and coverage diagnostics
 report fewer raw values.

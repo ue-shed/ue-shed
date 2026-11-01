@@ -1605,6 +1605,9 @@ const TAGGED_FALLBACK_NATIVE_STRUCTS: &[(&str, &str)] = &[
     ("/Script/Niagara", "NiagaraTypeDefinition"),
     // UE4.27/5.7/5.8 NiagaraCommon.cpp calls SerializeTaggedProperties explicitly.
     ("/Script/Niagara", "VMExternalFunctionBindingInfo"),
+    // UE4.27/5.7/5.8 LandscapeComponent.h: reflected fields, no native serializer.
+    // A LayersData map's binary flag comes from its FGuid key.
+    ("/Script/Landscape", "LandscapeLayerComponentData"),
 ];
 
 fn is_tagged_fallback_native_struct(package: &Package, type_tree: &PropertyTypeName) -> bool {
@@ -3976,6 +3979,64 @@ mod tests {
     }
 
     #[test]
+    fn landscape_guid_maps_decode_tagged_values_under_the_shared_binary_flag() {
+        use crate::test_support::TypeParam;
+        let map_type = || TypeParam {
+            type_index: 8,
+            parameters: vec![struct_param(10, 11), struct_param(4, 5)],
+        };
+        let mut payload = vec![];
+        push_i32(&mut payload, 0);
+        push_i32(&mut payload, 2);
+        for count in [5, 6] {
+            for word in [count, 20, 30, 40] {
+                push_i32(&mut payload, word);
+            }
+            payload.extend_from_slice(&tagged_int_struct(count));
+        }
+        let (mut package, bytes) = container_stream(map_type(), 0x08, &payload);
+        package.names[4] = "LandscapeLayerComponentData".into();
+        package.names[5] = "/Script/Landscape".into();
+        package.names[10] = "Guid".into();
+        let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+        let PropertyValue::Map(entries) = &stream.records[0].value else {
+            panic!("map stayed raw")
+        };
+        for (entry, count) in entries.iter().zip([5, 6]) {
+            assert_eq!(
+                entry.key,
+                PropertyValue::Guid(Guid {
+                    a: count,
+                    b: 20,
+                    c: 30,
+                    d: 40
+                })
+            );
+            let PropertyValue::Struct(value) = &entry.value else {
+                panic!("missing tagged value")
+            };
+            assert_eq!(value.records[0].value, PropertyValue::Int(count.into()));
+        }
+        assert_eq!(entries.len(), 2);
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+        // Once the formerly unknown first value is reached, failed probes retain
+        // the entire original map, including failure in a later key or value.
+        for end in 24..payload.len() {
+            let (_, bytes) = container_stream(map_type(), 0x08, &payload[..end]);
+            let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+            assert!(
+                matches!(stream.records[0].value, PropertyValue::Raw { .. }),
+                "{end}"
+            );
+            assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+        }
+        package.names[5] = "/Script/Fixture".into();
+        let stream = decode_unknown_struct_stream(&package, &bytes).unwrap();
+        assert!(matches!(stream.records[0].value, PropertyValue::Raw { .. }));
+        assert_eq!(stream.records[1].value, PropertyValue::Int(99));
+    }
+
+    #[test]
     fn source_declared_tagged_serializers_preserve_fallback_without_new_export_errors() {
         for (name, module) in [
             ("PostProcessSettings", "/Script/Engine"),
@@ -3984,6 +4045,7 @@ mod tests {
             ("NiagaraVariant", "/Script/Niagara"),
             ("NiagaraTypeDefinition", "/Script/Niagara"),
             ("VMExternalFunctionBindingInfo", "/Script/Niagara"),
+            ("LandscapeLayerComponentData", "/Script/Landscape"),
         ] {
             for version in [1016, 1017, 1018] {
                 let (mut package, bytes) = unknown_struct_set(0x08, &[&[0; 8]]);

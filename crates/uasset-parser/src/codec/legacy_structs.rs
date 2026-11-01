@@ -54,7 +54,8 @@ pub(crate) fn object_containers(
     if !package.summary.versions.uses_legacy_property_tags()
         || !matches!(
             class,
-            "/Script/Niagara.NiagaraComponent"
+            "/Script/Landscape.LandscapeComponent"
+                | "/Script/Niagara.NiagaraComponent"
                 | "/Script/NiagaraEditor.NiagaraNodeFunctionCall"
                 | "/Script/NiagaraEditor.NiagaraNodeAssignment"
                 | "/Script/NiagaraEditor.NiagaraGraph"
@@ -67,6 +68,11 @@ pub(crate) fn object_containers(
         // Exact declarations in Niagara{Component,Graph,NodeFunctionCall,
         // NodeParameterMapGet}.h. No class-name suffix or byte-shape inference.
         let layout = match (class, package.resolve_name_str(record.name)) {
+            // UE4.27/5.7/5.8 LandscapeComponent.h declares exactly
+            // TMap<FGuid, FLandscapeLayerComponentData>. The value is tagged.
+            ("/Script/Landscape.LandscapeComponent", Some("LayersData")) => {
+                Some((Element::Guid, Element::Tagged))
+            }
             ("/Script/Niagara.NiagaraComponent", Some("InstanceParameterOverrides")) => {
                 Some((Element::NiagaraVariableBase, Element::Tagged))
             }
@@ -328,6 +334,119 @@ mod tests {
                 reason: RawReason::LegacyContainerElementWithoutTypeInformation,
             },
         }
+    }
+
+    #[test]
+    fn landscape_layer_map_requires_the_exact_owner_and_retains_rejected_payloads() {
+        use crate::test_support::{write_legacy_property_tag, write_property_terminator};
+        let mut package = test_package(
+            [
+                "None",
+                "LayersData",
+                "MapProperty",
+                "StructProperty",
+                "Count",
+                "IntProperty",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
+        package.summary.versions.ue5 = 0;
+        let mut bytes = vec![];
+        // One removed Guid, then two Guid -> tagged-struct entries.
+        for word in [1, 1, 2, 3, 4, 2] {
+            push_i32(&mut bytes, word);
+        }
+        for count in [7_i32, 9] {
+            for word in [count, 20, 30, 40] {
+                push_i32(&mut bytes, word);
+            }
+            write_legacy_property_tag(&mut bytes, 4, 5, &[0], &count.to_le_bytes());
+            write_property_terminator(&mut bytes, 0);
+        }
+        let mut map = record(bytes.len(), 1, 2);
+        map.type_name.parameters = vec![
+            PropertyTypeName {
+                name: name_ref(3, 0),
+                parameters: vec![]
+            };
+            2
+        ];
+        let original = PropertyStream {
+            class_extensions: None,
+            records: vec![map],
+            terminator: Span::default(),
+        };
+        let decode = |bytes: &[u8], stream: &mut PropertyStream, class: &str| {
+            object_containers(bytes, stream, class, &package, DecodeScope::root(None));
+        };
+        let class = "/Script/Landscape.LandscapeComponent";
+        let mut stream = original.clone();
+        decode(&bytes, &mut stream, class);
+        let PropertyValue::Map(entries) = &stream.records[0].value else {
+            panic!("map stayed raw")
+        };
+        assert_eq!(entries.len(), 2);
+        for (entry, count) in entries.iter().zip([7, 9]) {
+            assert_eq!(
+                entry.key,
+                PropertyValue::Guid(Guid {
+                    a: count,
+                    b: 20,
+                    c: 30,
+                    d: 40
+                })
+            );
+            let PropertyValue::Struct(value) = &entry.value else {
+                panic!("missing tagged value")
+            };
+            assert_eq!(value.records[0].value, PropertyValue::Int(count.into()));
+        }
+        for class in [
+            "/Script/Fixture.LandscapeComponent",
+            "/Script/Landscape.LandscapeProxy",
+        ] {
+            let mut stream = original.clone();
+            decode(&bytes, &mut stream, class);
+            assert_eq!(stream, original);
+        }
+        for value in [
+            PropertyValue::Map(vec![]),
+            PropertyValue::Raw {
+                reason: RawReason::NotRequested,
+            },
+        ] {
+            let mut stream = original.clone();
+            stream.records[0].value = value;
+            let saved = stream.clone();
+            decode(&bytes, &mut stream, class);
+            assert_eq!(stream, saved);
+        }
+        for end in 0..bytes.len() {
+            let mut stream = original.clone();
+            stream.records[0].payload = Span::new(0, end as u64).unwrap();
+            let saved = stream.clone();
+            decode(&bytes, &mut stream, class);
+            assert_eq!(stream, saved, "{end}");
+        }
+        let mut extra = bytes.clone();
+        extra.push(0);
+        let mut stream = original.clone();
+        stream.records[0].payload = Span::new(0, extra.len() as u64).unwrap();
+        let saved = stream.clone();
+        decode(&extra, &mut stream, class);
+        assert_eq!(stream, saved);
+        let mut stream = original.clone();
+        stream.records[0].type_name.parameters[0].name = name_ref(5, 0);
+        let saved = stream.clone();
+        decode(&bytes, &mut stream, class);
+        assert_eq!(stream, saved);
+        let mut stream = original.clone();
+        stream.records[0].name = name_ref(4, 0);
+        let saved = stream.clone();
+        decode(&bytes, &mut stream, class);
+        assert_eq!(stream, saved);
     }
 
     #[test]

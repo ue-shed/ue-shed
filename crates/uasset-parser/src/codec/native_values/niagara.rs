@@ -1,5 +1,6 @@
 //! Custom-versioned Niagara native variable records.
 use super::*;
+pub(in crate::codec) mod legacy;
 
 /// VariablesUseTypeDefRegistry (64) writes a name and a tagged type definition in
 /// UE 4.27 and UE 5.6–5.8. Unsupported versions retain tagged fallback.

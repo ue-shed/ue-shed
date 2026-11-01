@@ -47,6 +47,7 @@ pub(crate) fn object_containers(
     package: &Package,
     scope: DecodeScope<'_>,
 ) {
+    native_values::niagara::legacy::object_records(source, stream, class, package, scope);
     // UE 4.27 / 5.7 / 5.8 Niagara/Public/NiagaraComponent.h:
     // InstanceParameterOverrides is TMap<FNiagaraVariableBase, FNiagaraVariant>.
     // NiagaraVariant.h declares tagged Object/DataInterface/Bytes/CurrentMode fields.
@@ -103,6 +104,7 @@ pub(super) fn declared_containers(
     package: &Package,
     scope: DecodeScope<'_>,
 ) {
+    native_values::niagara::legacy::struct_records(source, stream, owner, package, scope);
     if !package.summary.versions.uses_legacy_property_tags() {
         return;
     }

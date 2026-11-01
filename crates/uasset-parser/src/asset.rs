@@ -2584,7 +2584,7 @@ fn read_saved_text(
     read_saved_text_at_depth(reader, path, 0, text)
 }
 
-const MAX_TEXT_HISTORY_DEPTH: usize = 16;
+pub(crate) const MAX_TEXT_HISTORY_DEPTH: usize = 16;
 
 fn read_saved_text_at_depth(
     reader: &mut crate::archive::Reader<'_>,

@@ -3266,3 +3266,85 @@ A newer standard-library `Vec::push_mut` shortcut was considered but not benchma
 - Source hashes match before and after verification and timing. Original binaries and earlier evidence remain preserved.
 
 Readable data: [source-design.json](evidence/uasset-speed-2026-10-31/source-design.json), [source-core-2.json](evidence/uasset-speed-2026-10-31/source-core-2.json). Lossless trial patches, scripts, samples, temperatures and counters: [source-design-raw.json.gz](evidence/uasset-speed-2026-10-31/source-design-raw.json.gz). Checkpoint measurements: [source-core-2-raw.json.gz](evidence/uasset-speed-2026-10-31/source-core-2-raw.json.gz). Decompress with `gzip -dc FILE`; each index records its compressed SHA-256. Local binaries, profiles and logs remain under `out/uasset-speed-2026-10-31/architecture/`.
+
+## WASM follow-up: bounded inspection output
+
+The native source checkpoint above remains unchanged. A further WASM-only adapter change specializes `Write::write_all` for its private buffer, which always writes an entire slice or returns an error. It removes the generic partial-write retry loop while keeping the existing byte-limit check, all-or-error writes, sticky limit flag, error text and UTF-8 validation. No runtime API, wire schema, allocator or build setting changes.
+
+V8 profiles of the previous checkpoint attributed about 29.8% of sampled time to `CappedWriter::write_all`, after combining identical functions across call sites. The original-source profile was about 23.6%. These profiles include startup, compilation and warmups; their instrumented timings are not throughput results, and V8 supplies no native perf lost-sample count.
+
+The prototype compared an unchanged Core2 build and the writer change in the same isolated source path. Final totals below compare a fresh production module directly with a newly built, audited pre-session original source (`3d7e0ba2`). Stage gains are not added. All 140 valid and 267 malformed inspection JSON outputs match exactly.
+
+Preloaded JavaScript bytes. A new ParsedPackage copies input into WASM and parses it. Inspection additionally decodes and retains exports, serializes JSON and returns a JavaScript string. Explicit free is timed. Process startup, module compilation/loading, fixture reads and output hashing are excluded from timings. Normal V8 GC is included. Three interleaved/reversed blocks,15 samples after3 warmups,30ms calibration; CPU6 worker/CPU7 controller. WASM uses its standard allocator, not the held native mimalloc.
+
+### Node 26.13.0: full WASM inspection
+
+| Workload             | Original ms | Selected ms | Less time | Paired blocks               |
+| -------------------- | ----------: | ----------: | --------: | --------------------------- |
+| All 140 packages     |     439.358 |     239.251 |   +45.55% | +45.41% / +45.39% / +45.81% |
+| Large level          |     304.794 |     168.399 |   +44.75% | +44.30% / +45.76% / +44.59% |
+| 10,000-row table     |      88.462 |      34.138 |   +61.41% | +61.37% / +62.88% / +61.59% |
+| Five Blueprints      |      18.219 |      14.791 |   +18.81% | +17.80% / +11.18% / +25.80% |
+| 138 smaller packages |      55.571 |      47.207 |   +15.05% | +16.68% / +14.52% / +15.10% |
+
+Header construction and cleanup only:
+
+| Workload             | Original ms | Selected ms | Less time | Paired blocks               |
+| -------------------- | ----------: | ----------: | --------: | --------------------------- |
+| All 140 packages     |      33.123 |      26.537 |   +19.89% | +20.21% / +19.96% / +18.48% |
+| Large level          |      19.320 |      14.868 |   +23.04% | +25.61% / +23.04% / +22.80% |
+| 10,000-row table     |       4.219 |       3.121 |   +26.03% | +26.46% / +26.30% / +24.45% |
+| Five Blueprints      |       3.193 |       0.938 |   +70.61% | +59.56% / +71.99% / +69.69% |
+| 138 smaller packages |      10.308 |       9.182 |   +10.92% | +14.01% / +7.20% / +12.42%  |
+
+### Node 24.21.0: full WASM inspection
+
+| Workload             | Original ms | Selected ms | Less time | Paired blocks               |
+| -------------------- | ----------: | ----------: | --------: | --------------------------- |
+| All 140 packages     |     468.595 |     258.219 |   +44.90% | +43.78% / +45.15% / +46.27% |
+| Large level          |     315.684 |     182.563 |   +42.17% | +42.17% / +42.24% / +40.52% |
+| 10,000-row table     |      92.890 |      37.199 |   +59.95% | +60.06% / +59.95% / +58.07% |
+| Five Blueprints      |      19.866 |      15.360 |   +22.68% | +22.70% / +10.39% / +23.67% |
+| 138 smaller packages |      57.881 |      48.350 |   +16.47% | +15.99% / +16.88% / +16.47% |
+
+Header construction and cleanup only:
+
+| Workload             | Original ms | Selected ms | Less time | Paired blocks               |
+| -------------------- | ----------: | ----------: | --------: | --------------------------- |
+| All 140 packages     |      35.681 |      28.266 |   +20.78% | +21.87% / +20.60% / +20.77% |
+| Large level          |      21.128 |      15.576 |   +26.28% | +25.39% / +26.68% / +28.16% |
+| 10,000-row table     |       4.649 |       3.273 |   +29.60% | +29.38% / +29.60% / +29.28% |
+| Five Blueprints      |       2.965 |       1.209 |   +59.21% | +60.22% / +61.02% / +59.21% |
+| 138 smaller packages |      10.966 |       9.465 |   +13.69% | +10.44% / +16.76% / +13.69% |
+
+### Trial167: specialize whole-slice writes
+
+The controlled prototype results below are incremental versus Core2, not pre-session totals. Its baseline/selected columns refer to that prototype pair.
+
+Node 26.13.0:
+
+| Workload             | Original ms | Selected ms | Less time | Paired blocks               |
+| -------------------- | ----------: | ----------: | --------: | --------------------------- |
+| All 140 packages     |     344.466 |     239.830 |   +30.38% | +30.36% / +27.49% / +30.38% |
+| Large level          |     236.291 |     167.704 |   +29.03% | +30.04% / +27.68% / +29.46% |
+| 10,000-row table     |      62.638 |      33.945 |   +45.81% | +45.73% / +45.84% / +45.46% |
+| Five Blueprints      |      14.848 |      14.790 |    +0.39% | -8.43% / +0.39% / +10.72%   |
+| 138 smaller packages |      53.339 |      47.886 |   +10.22% | +10.99% / +10.57% / +9.07%  |
+
+Node 24.21.0:
+
+| Workload             | Original ms | Selected ms | Less time | Paired blocks               |
+| -------------------- | ----------: | ----------: | --------: | --------------------------- |
+| All 140 packages     |     358.921 |     261.363 |   +27.18% | +27.19% / +27.50% / +23.99% |
+| Large level          |     247.145 |     182.206 |   +26.28% | +30.41% / +26.53% / +25.46% |
+| 10,000-row table     |      64.743 |      37.347 |   +42.31% | +42.34% / +42.15% / +42.34% |
+| Five Blueprints      |      16.399 |      15.863 |    +3.27% | +14.77% / +9.04% / +0.86%   |
+| 138 smaller packages |      50.756 |      49.670 |    +2.14% | +2.14% / +4.12% / +3.51%    |
+
+The uncompressed WASM file is 1,942,619 → 1,976,537 bytes (1.75% larger). Generated JavaScript wrappers are byte-identical. This is file size, not executable code size or a startup/download benchmark. Both builds use the existing `wasm-pack --release --no-opt --locked` settings.
+
+Additional verification: test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.36s; strict WASM Clippy status 0. The writer reference exercises 3,380 operation sequences and 13,520 paired writes, including empty buffers, exact limits, rejected writes and subsequent operations. A pre-existing host test expected supported version1016 to be unsupported; the unchanged checkpoint reproduced that failure. The test now uses `i32::MAX` as an unsupported revision, without changing supported-version behavior. The first isolated Clippy attempt lacked the repository test policy; copying the unchanged `clippy.toml` restored the actual project settings. First failing logs are preserved.
+
+Fresh production verification: 719 UAsset Rust tests passed, 8 ignored; Node24/26 versus preserved original-native parity statuses 0/0. Full portable gate status **1**, with its actual failure recorded in the evidence. Fresh UE5.7 and UE5.8 remain individually unavailable; the engine matrix is not a conformance pass. Source hashes match after verification and measurement.
+
+[WASM evidence](evidence/uasset-speed-2026-10-31/source-wasm.json) and [lossless samples, profiles, source, logs and reproduction helpers](evidence/uasset-speed-2026-10-31/source-wasm-raw.json.gz).

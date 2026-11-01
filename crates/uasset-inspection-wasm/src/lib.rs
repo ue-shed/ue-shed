@@ -1162,12 +1162,16 @@ impl CappedWriter {
 
 impl Write for CappedWriter {
     fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.write_all(buffer).map(|()| buffer.len())
+    }
+
+    fn write_all(&mut self, buffer: &[u8]) -> io::Result<()> {
         if buffer.len() > self.limit.saturating_sub(self.bytes.len()) {
             self.exceeded = true;
             return Err(io::Error::other("serialized output exceeds the WASM limit"));
         }
         self.bytes.extend_from_slice(buffer);
-        Ok(buffer.len())
+        Ok(())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -1616,7 +1620,7 @@ mod tests {
     #[test]
     fn unsupported_blueprint_revision_keeps_text_available_with_named_pin_gaps() {
         let mut package = Package::parse(BLUEPRINT_FIXTURE).expect("parse Blueprint fixture");
-        package.summary.versions.ue5 = 1016;
+        package.summary.versions.ue5 = i32::MAX;
 
         let text =
             extract_text_from_package("BP_OlderRevision.uasset", BLUEPRINT_FIXTURE, &package);
@@ -1934,5 +1938,59 @@ mod tests {
         assert_eq!(value["max_output_bytes"], 64 * 1024 * 1024);
         assert_eq!(value["max_exports"], 100_000);
         assert_eq!(value["max_projection_items"], 1_000_000);
+    }
+}
+
+#[cfg(test)]
+mod capped_write_all_reference_tests {
+    use super::*;
+    struct Reference {
+        bytes: Vec<u8>,
+        limit: usize,
+        exceeded: bool,
+    }
+    impl Write for Reference {
+        fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+            if b.len() > self.limit.saturating_sub(self.bytes.len()) {
+                self.exceeded = true;
+                return Err(io::Error::other("serialized output exceeds the WASM limit"));
+            }
+            self.bytes.extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    fn failure<T>(r: io::Result<T>) -> Result<T, (io::ErrorKind, String)> {
+        r.map_err(|e| (e.kind(), e.to_string()))
+    }
+    #[test]
+    fn complete_writes_match_original_default_loop_at_limits_and_after_failures() {
+        for limit in [0, 1, 2, 3, 7, 8, 15, 16, 32, usize::MAX] {
+            for first in 0..=12 {
+                for second in 0..=12 {
+                    for all in [false, true] {
+                        let mut a = CappedWriter::new(limit);
+                        let mut b = Reference {
+                            bytes: Vec::new(),
+                            limit,
+                            exceeded: false,
+                        };
+                        for n in [first, second, 0, 1] {
+                            let buf = vec![b'x'; n];
+                            if all {
+                                assert_eq!(failure(a.write_all(&buf)), failure(b.write_all(&buf)));
+                            } else {
+                                assert_eq!(failure(a.write(&buf)), failure(b.write(&buf)));
+                            }
+                            assert_eq!(a.bytes, b.bytes);
+                            assert_eq!(a.exceeded, b.exceeded);
+                        }
+                        assert_eq!(failure(a.flush()), failure(b.flush()));
+                    }
+                }
+            }
+        }
     }
 }

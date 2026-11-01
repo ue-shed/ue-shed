@@ -1,0 +1,2453 @@
+{
+	"recordedAt": "2026-11-01T10:41:05.766Z",
+	"original": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+	"candidateBaseCommit": "8198fba256ab37380e0fcc4b76b3f70f792d57cc",
+	"sourceIdentity": "The native parser and inspection sources match the pushed Core2 manifest exactly. The additional WASM adapter source is identified by its SHA256, module hashes and verification before/after; benchmark checkout HEAD is not its sole identity.",
+	"wasmSource": {
+		"file": "crates/uasset-inspection-wasm/src/lib.rs",
+		"sha256": "5453cb6a7b7637eed6dde56c87a4ec492e0287e279011924421b286728e9021e"
+	},
+	"nativeSourceManifest": "f394f125ed8a96c27f2636054fe425fac468a59223860c26309ae4aabfb15845  Cargo.lock\na852b332be32fbff5d43d38dfe3b656815b5482955fc762a0ceec2f0445f29e7  Cargo.toml\n74b49c4c6ae74399895dbe5a38c9ed0c4cca418279e8c36ec304d37d1e865c7d  crates/uasset-inspection-wasm/Cargo.lock\n109eaa87432a14259bba33367cf04866711a8cd08451939e3d5b144f83affcab  crates/uasset-inspection-wasm/Cargo.toml\n4d69462b8748f09b12b13643b4da3d8526b10a24d8edb3df4468c4c095a5358f  crates/uasset-inspection/Cargo.toml\n97e98f83e9ddca6ea8e9c24c1f8e3e7bceb603d70a91e6a50297a0c2cbd9cada  crates/uasset-inspection/src/animation.rs\n6528d42a21100f2382042fbdb07c1b26450c95c08b59d9858119bf9f9734c9ae  crates/uasset-inspection/src/authoring.rs\n2f9cf078a0ce5db502ec7e97bb9470fa135164e2e4059ebca84952bd75351b8d  crates/uasset-inspection/src/blueprint.rs\n45e6643f22508550d9d6eb0cbe3da3f95c7e9ff1d1a9cefb1967d03256d35aaf  crates/uasset-inspection/src/blueprint/definition.rs\n46a35b447d28e14014271f43ed4e290d55fa841e1a887ebb2953d66d33cf4e1a  crates/uasset-inspection/src/blueprint_classes.rs\na88244442e42dd9f70efcad98adb837f5fafe7243b4f94cf5b84c26f47988b1a  crates/uasset-inspection/src/blueprint_diff.rs\n83dfc329491e0a3909d48e00160dca66ff7a0358bc34746b452e95c803e02a24  crates/uasset-inspection/src/blueprint_diff/tests.rs\n698598bf7c8a1bda3229aeded41c0d560ed2a5f3b83d213a2a6d30fb04ecffbb  crates/uasset-inspection/src/blueprint_text.rs\n03a7c8794f66411a03ccb9ecbab33a6042e89193d82e52f8626f8adbf5fa7084  crates/uasset-inspection/src/decoded_exports.rs\n94e4534dcb920c31762165aca6ac05f55856736ab8551f65fc3693d1050f9342  crates/uasset-inspection/src/gather_coverage.rs\n873d9deddaf58e4d36c20596ed974067753f8c20054c62f771552a29f87b25e5  crates/uasset-inspection/src/generic.rs\n242d7326813e03d22d16261d53b17ddd74dc8ff9cbba4e9a311ce008e702349a  crates/uasset-inspection/src/generic/json.rs\n03af0b386ef8de81003020d806fd48a123a8030d655b95ebbb277797a001f369  crates/uasset-inspection/src/level_sequence.rs\n5a2a341dc0167fff0e9199d6c62852941dd12d11ba2ee34444bdb17e18e77795  crates/uasset-inspection/src/level_sequence/discrete.rs\nc20a63d87e9cf4fa4ab5ebdb5f8dff8dbf4355fd5acde737d5d03d9520a5a113  crates/uasset-inspection/src/level_sequence/numeric.rs\n02afb3e958d0a134f7dc365fddf05e340588300e3e2213ea59669f2fca94241b  crates/uasset-inspection/src/level_sequence/saved.rs\nb60e0ee1dec1e341f545137924225e19205ac1c3937f88d608c83b1a37acc601  crates/uasset-inspection/src/lib.rs\nee5b2a97f2dbbed1a7262a7e88e0940632746da5ec5a85a308be5da1960d7fc7  crates/uasset-inspection/src/package_header.rs\n8d04dd6169c3a3e148194024945062565ec76b495f287cae03d546cef1bd17a1  crates/uasset-inspection/src/projection.rs\n1dcb3f3ee61e49c0a3c16a8db3503d60bd89049a10d876ba0e03557aba788abb  crates/uasset-inspection/src/saved_inspection.rs\n80bcf5724eb0a87f563d29e45f63882c02281b687f69187089ad755847f6504d  crates/uasset-inspection/src/saved_world.rs\n8df62913337af6532468d08019fb641a83d54113a51dd702c30b8549c4672b1d  crates/uasset-inspection/src/saved_world_wire.rs\n3b276c54c471da0e58ea57d50c91ef261caa22645c31a9cfd8a092fb4d924461  crates/uasset-inspection/src/text_wire.rs\na26c52a5e1f964e8115866cd9dc3929cf0fdcbea9f450c90e7869985f36546a9  crates/uasset-inspection/src/texture_wire.rs\n78291da67df79b3369d9be8a9aeecb32d85f7134393cf823ac534e722cbc22e4  crates/uasset-parser/Cargo.toml\n59737551d39a34e94d1f234ad1e3742d05a2d11615a0da49dc67284166b3fa83  crates/uasset-parser/source-models/ue57-data-assets.json\nec2df6a824193f2bd5487cc6efb50b26dc57935782c8411e943c5a8e16c823e3  crates/uasset-parser/source-models/ue58-property-bags.json\nb40e51ed09b0f5c322fd3f7319a0c05390c112efbd946b034db94e4a3202a4ee  crates/uasset-parser/src/archive.rs\n1e7c075ddc8e763cf9dec58928b888b792787193956b6a3808178b42cb6adb32  crates/uasset-parser/src/asset.rs\n17bdcda2d0cdc534af45edd6417686247d1e93fe1f0a8fa2493da80e5700b1d6  crates/uasset-parser/src/asset/native_data.rs\n7a077781db5c98d253e3ee91614cf73c2c30e19ac01f193bce233939fe0eb75a  crates/uasset-parser/src/asset/native_data/class.rs\na4a1df17bc341b2a8ed6ef668b733f29cbc5c573924f694c8d18e97571f5add3  crates/uasset-parser/src/asset/native_data/object.rs\n4faff04fd6a9270a37c07a2409431789e13112633507635c0e2d8d34f91c3abf  crates/uasset-parser/src/asset/script.rs\nc78e04b81f3c34f9686721bf1d74d58038702f126425aab2b436994249f77124  crates/uasset-parser/src/codec.rs\n4526a24146111adc194ce608addf925a374cb4e2981663ff6f26e7437152fd58  crates/uasset-parser/src/codec/legacy_structs.rs\n2e98a203c43e6eb3d604b34a4fa078711b5af7a567b27c64fbdebe4ca4ed8db4  crates/uasset-parser/src/codec/native_values.rs\na7b6619aca02799702978f62c323105b77faf4a32ba0bf16884a0da0bad1cb64  crates/uasset-parser/src/codec/native_values/niagara.rs\n36c698a8fd4d75643e2af375dd2f4ab38089212629edccf008d63e835de1fa5a  crates/uasset-parser/src/codec/native_values/pin_type.rs\nc25611496fea7b1557cd14438743fff88471a5958f8cc351a5f05e630227ee6e  crates/uasset-parser/src/codec/native_values/property_bag.rs\na601f39be5b4d9519ad5dee2f03b958d97e8e79eecf70bce48e69d24514b8a91  crates/uasset-parser/src/codec/native_values/saved_structs.rs\n9f457b78ff2146c1ffb48fd1cbdc2b3b2f46911778945818eba94e2e20320d3e  crates/uasset-parser/src/convert.rs\ne25e61d8dd08bb548f49052617ba3a3bf696c826b6bcea932cdbfd2e05736e9b  crates/uasset-parser/src/gatherable_text.rs\n14d83ee39ac50c8547851affd4e668a01b623e57b0ac183ef629e9fefd63a02d  crates/uasset-parser/src/lib.rs\n2656e1f6521cd5e791a67dd89db94c7282ce677030e63f7715752bbf74406623  crates/uasset-parser/src/metadata.rs\n92de9357330301b2047b7ebf58add9a8ccd030d88468e059dd7e5c475a48827b  crates/uasset-parser/src/native.rs\n47873963d15d01053515fd333e72296144c88e34b3bbf4ea802ff232405d2d9a  crates/uasset-parser/src/package.rs\n83c92dc11bb89efa10d421bb42bb3112ab5bd1115f7d469bf5041c45c6102df2  crates/uasset-parser/src/property.rs\n56a49787992de793c612ea015ea952c643b12ded88c1d2be5eaba84a0d46a709  crates/uasset-parser/src/property/replay.rs\na692026e10a7b89edc7caa73d320cf31e5cf483c5835f64e100f125d95f934fa  crates/uasset-parser/src/schema.rs\na192ed219522e1e5051c371d97f86dc5ac7d75b7d952d84483c9b16f7868d1cd  crates/uasset-parser/src/test_support.rs\n1dfdc73ed32b4ea1d3a5396eb91f2c9b2795729afe399154b502e7852f974c67  crates/uasset-parser/src/version.rs\n0a04d85f321176dcf8525e7d0b77fe191b4f1596a393bbd70aed95e111ec1af7  tools/benchmarks/uasset-decode/Cargo.lock\n527d1702572ae6367a12f1768a56b209faa0671686055bf933066b62a63c72e9  tools/benchmarks/uasset-decode/Cargo.toml\n",
+	"boundary": "Preloaded JavaScript bytes. A new ParsedPackage copies input into WASM and parses it. Inspection additionally decodes and retains exports, serializes JSON and returns a JavaScript string. Explicit free is timed. Process startup, module compilation/loading, fixture reads and output hashing are excluded from timings. Normal V8 GC is included. Three interleaved/reversed blocks,15 samples after3 warmups,30ms calibration; CPU6 worker/CPU7 controller. WASM uses its standard allocator, not the held native mimalloc.",
+	"modules": [
+		{
+			"variant": "original",
+			"file": "uasset_inspection_wasm_bg.wasm",
+			"bytes": 1942619,
+			"sha256": "f55874569564ad93c1c546e85513a40a0ad911c56bd25c2e0935198c8ebd6f6d"
+		},
+		{
+			"variant": "original",
+			"file": "uasset_inspection_wasm.js",
+			"bytes": 14182,
+			"sha256": "ec22438aa805cb202507e4a8c7397eaff8db6a057965add7ee2f21264971e6b9"
+		},
+		{
+			"variant": "final",
+			"file": "uasset_inspection_wasm_bg.wasm",
+			"bytes": 1976537,
+			"sha256": "12b3e0aabef1e8b2cbc38896d149b14c93d67d8e11b2358e71111217c4f40cc3"
+		},
+		{
+			"variant": "final",
+			"file": "uasset_inspection_wasm.js",
+			"bytes": 14182,
+			"sha256": "ec22438aa805cb202507e4a8c7397eaff8db6a057965add7ee2f21264971e6b9"
+		}
+	],
+	"comparisons": {
+		"26.13.0": {
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 33.12349000000006,
+					"candidateMs": 26.53669000000002,
+					"reductionPercent": 19.88558572783251,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 33.12349000000006,
+							"candidateMs": 26.429655999999966,
+							"reductionPercent": 20.208721967401633
+						},
+						{
+							"block": 1,
+							"baselineMs": 33.152919,
+							"candidateMs": 26.53669000000002,
+							"reductionPercent": 19.956701248538554
+						},
+						{
+							"block": 2,
+							"baselineMs": 32.92703300000005,
+							"candidateMs": 26.841013999999973,
+							"reductionPercent": 18.48335074709
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 439.35760800000025,
+					"candidateMs": 239.25114699999995,
+					"reductionPercent": 45.54523635334435,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 439.35760800000025,
+							"candidateMs": 239.8556189999997,
+							"reductionPercent": 45.407655487782165
+						},
+						{
+							"block": 1,
+							"baselineMs": 438.1242399999992,
+							"candidateMs": 239.25114699999995,
+							"reductionPercent": 45.39194019486336
+						},
+						{
+							"block": 2,
+							"baselineMs": 441.1399879999999,
+							"candidateMs": 239.05276700000013,
+							"reductionPercent": 45.810224984636804
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 19.319570999999996,
+					"candidateMs": 14.868092999999988,
+					"reductionPercent": 23.041288028600682,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 19.319570999999996,
+							"candidateMs": 14.372411999999997,
+							"reductionPercent": 25.60698164571046
+						},
+						{
+							"block": 1,
+							"baselineMs": 19.319208000000003,
+							"candidateMs": 14.868092999999988,
+							"reductionPercent": 23.039842005945665
+						},
+						{
+							"block": 2,
+							"baselineMs": 19.384416999999928,
+							"candidateMs": 14.964342999999985,
+							"reductionPercent": 22.8022024082538
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 304.7939700000002,
+					"candidateMs": 168.3990859999999,
+					"reductionPercent": 44.74986299761776,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 298.91975600000023,
+							"candidateMs": 166.51053300000012,
+							"reductionPercent": 44.29590896628458
+						},
+						{
+							"block": 1,
+							"baselineMs": 310.4864849999999,
+							"candidateMs": 168.3990859999999,
+							"reductionPercent": 45.76282893601634
+						},
+						{
+							"block": 2,
+							"baselineMs": 304.7939700000002,
+							"candidateMs": 168.89086799999995,
+							"reductionPercent": 44.58851400505074
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 4.21897899999999,
+					"candidateMs": 3.120587999999998,
+					"reductionPercent": 26.034521622411365,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 4.243249999999989,
+							"candidateMs": 3.120587999999998,
+							"reductionPercent": 26.457597360513617
+						},
+						{
+							"block": 1,
+							"baselineMs": 4.21897899999999,
+							"candidateMs": 3.1094939999999838,
+							"reductionPercent": 26.297476237734507
+						},
+						{
+							"block": 2,
+							"baselineMs": 4.1841870000000085,
+							"candidateMs": 3.161214000000001,
+							"reductionPercent": 24.44854878618009
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 88.46151499999996,
+					"candidateMs": 34.137924,
+					"reductionPercent": 61.40929306942119,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 88.46151499999996,
+							"candidateMs": 34.17662200000001,
+							"reductionPercent": 61.3655474926017
+						},
+						{
+							"block": 1,
+							"baselineMs": 91.97445100000004,
+							"candidateMs": 34.137924,
+							"reductionPercent": 62.88325330694284
+						},
+						{
+							"block": 2,
+							"baselineMs": 88.31698899999992,
+							"candidateMs": 33.92188299999998,
+							"reductionPercent": 61.59076143322775
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 3.192853999999997,
+					"candidateMs": 0.938337666666674,
+					"reductionPercent": 70.61131931912092,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.320271500000004,
+							"candidateMs": 0.938337666666674,
+							"reductionPercent": 59.55914354562937
+						},
+						{
+							"block": 1,
+							"baselineMs": 3.192853999999997,
+							"candidateMs": 0.8942923333333302,
+							"reductionPercent": 71.99081657559879
+						},
+						{
+							"block": 2,
+							"baselineMs": 3.5145219999999995,
+							"candidateMs": 1.0651093333333297,
+							"reductionPercent": 69.6940484841657
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 18.219358,
+					"candidateMs": 14.791476999999986,
+					"reductionPercent": 18.81449939125195,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 18.219358,
+							"candidateMs": 14.976842999999974,
+							"reductionPercent": 17.79708703237527
+						},
+						{
+							"block": 1,
+							"baselineMs": 16.652631000000042,
+							"candidateMs": 14.791476999999986,
+							"reductionPercent": 11.176336039632728
+						},
+						{
+							"block": 2,
+							"baselineMs": 18.44352600000002,
+							"candidateMs": 13.68563899999998,
+							"reductionPercent": 25.79705746070482
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 10.307549999999992,
+					"candidateMs": 9.181866999999954,
+					"reductionPercent": 10.920955998273485,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 10.307549999999992,
+							"candidateMs": 8.863896000000011,
+							"reductionPercent": 14.005791871007
+						},
+						{
+							"block": 1,
+							"baselineMs": 10.270674999999983,
+							"candidateMs": 9.531034999999974,
+							"reductionPercent": 7.2014740998036615
+						},
+						{
+							"block": 2,
+							"baselineMs": 10.483591999999987,
+							"candidateMs": 9.181866999999954,
+							"reductionPercent": 12.416784247231627
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 55.571100000000115,
+					"candidateMs": 47.20689299999992,
+					"reductionPercent": 15.051361229128402,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 56.65615600000001,
+							"candidateMs": 47.20689299999992,
+							"reductionPercent": 16.678263523561476
+						},
+						{
+							"block": 1,
+							"baselineMs": 55.571100000000115,
+							"candidateMs": 47.503664999999955,
+							"reductionPercent": 14.517321053569464
+						},
+						{
+							"block": 2,
+							"baselineMs": 55.24479599999995,
+							"candidateMs": 46.900589999999966,
+							"reductionPercent": 15.104057946019012
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 60
+		},
+		"24.21.0": {
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 35.681111999999985,
+					"candidateMs": 28.26602300000002,
+					"reductionPercent": 20.781552435921757,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 36.07595500000002,
+							"candidateMs": 28.18581400000005,
+							"reductionPercent": 21.870913742962493
+						},
+						{
+							"block": 1,
+							"baselineMs": 35.59965299999999,
+							"candidateMs": 28.26602300000002,
+							"reductionPercent": 20.60028506457625
+						},
+						{
+							"block": 2,
+							"baselineMs": 35.681111999999985,
+							"candidateMs": 28.271023000000014,
+							"reductionPercent": 20.767539419735503
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 468.59452699999974,
+					"candidateMs": 258.218609,
+					"reductionPercent": 44.89508645072158,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 459.500712,
+							"candidateMs": 258.35145999999986,
+							"reductionPercent": 43.7756126915425
+						},
+						{
+							"block": 1,
+							"baselineMs": 468.59452699999974,
+							"candidateMs": 257.0135970000001,
+							"reductionPercent": 45.15224096930175
+						},
+						{
+							"block": 2,
+							"baselineMs": 480.56485300000077,
+							"candidateMs": 258.218609,
+							"reductionPercent": 46.267687412420976
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 21.12760400000002,
+					"candidateMs": 15.57559599999999,
+					"reductionPercent": 26.278455427316906,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 20.876195000000052,
+							"candidateMs": 15.57559599999999,
+							"reductionPercent": 25.390637517996208
+						},
+						{
+							"block": 1,
+							"baselineMs": 21.12760400000002,
+							"candidateMs": 15.490179999999981,
+							"reductionPercent": 26.68274168713136
+						},
+						{
+							"block": 2,
+							"baselineMs": 21.800315000000012,
+							"candidateMs": 15.66122299999995,
+							"reductionPercent": 28.16056556980969
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 315.6838230000003,
+					"candidateMs": 182.5627089999998,
+					"reductionPercent": 42.16912755773373,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 315.6838230000003,
+							"candidateMs": 182.5627089999998,
+							"reductionPercent": 42.16912755773373
+						},
+						{
+							"block": 1,
+							"baselineMs": 312.2600090000001,
+							"candidateMs": 180.36941800000022,
+							"reductionPercent": 42.23742624691971
+						},
+						{
+							"block": 2,
+							"baselineMs": 315.7085790000001,
+							"candidateMs": 187.77529600000025,
+							"reductionPercent": 40.522586812567994
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 4.649190000000004,
+					"candidateMs": 3.2731410000000096,
+					"reductionPercent": 29.597607325146825,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 4.624761999999976,
+							"candidateMs": 3.265796999999992,
+							"reductionPercent": 29.384539139527412
+						},
+						{
+							"block": 1,
+							"baselineMs": 4.649190000000004,
+							"candidateMs": 3.2731410000000096,
+							"reductionPercent": 29.597607325146825
+						},
+						{
+							"block": 2,
+							"baselineMs": 4.656636999999989,
+							"candidateMs": 3.2931939999999997,
+							"reductionPercent": 29.27956377102172
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 92.88956699999994,
+					"candidateMs": 37.19867099999999,
+					"reductionPercent": 59.9538761979588,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 93.13727500000005,
+							"candidateMs": 37.202315999999996,
+							"reductionPercent": 60.05646933518296
+						},
+						{
+							"block": 1,
+							"baselineMs": 92.88956699999994,
+							"candidateMs": 37.19867099999999,
+							"reductionPercent": 59.9538761979588
+						},
+						{
+							"block": 2,
+							"baselineMs": 88.63788299999987,
+							"candidateMs": 37.161744,
+							"reductionPercent": 58.07464851117885
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 2.9649624999999986,
+					"candidateMs": 1.2094156666666624,
+					"reductionPercent": 59.2097482964232,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 3.7522835000000043,
+							"candidateMs": 1.4926979999999996,
+							"reductionPercent": 60.21894401102694
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.9387899999999973,
+							"candidateMs": 1.1454223333333384,
+							"reductionPercent": 61.02401555288607
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.9649624999999986,
+							"candidateMs": 1.2094156666666624,
+							"reductionPercent": 59.2097482964232
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 19.866190000000017,
+					"candidateMs": 15.35997100000003,
+					"reductionPercent": 22.682854638961892,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 19.52306299999998,
+							"candidateMs": 15.091635999999994,
+							"reductionPercent": 22.698420836935217
+						},
+						{
+							"block": 1,
+							"baselineMs": 19.866190000000017,
+							"candidateMs": 17.802795000000003,
+							"reductionPercent": 10.386465648420817
+						},
+						{
+							"block": 2,
+							"baselineMs": 20.123744000000045,
+							"candidateMs": 15.35997100000003,
+							"reductionPercent": 23.67239913208995
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 10.965938999999992,
+					"candidateMs": 9.46499399999999,
+					"reductionPercent": 13.687336761585145,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 11.082867000000022,
+							"candidateMs": 9.926297999999974,
+							"reductionPercent": 10.435648104412376
+						},
+						{
+							"block": 1,
+							"baselineMs": 10.937240000000031,
+							"candidateMs": 9.104367000000025,
+							"reductionPercent": 16.758094363843178
+						},
+						{
+							"block": 2,
+							"baselineMs": 10.965938999999992,
+							"candidateMs": 9.46499399999999,
+							"reductionPercent": 13.687336761585145
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 57.88059599999997,
+					"candidateMs": 48.350445000000036,
+					"reductionPercent": 16.465191547094538,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 57.20793400000002,
+							"candidateMs": 48.0603900000001,
+							"reductionPercent": 15.989991877699905
+						},
+						{
+							"block": 1,
+							"baselineMs": 58.572055999999975,
+							"candidateMs": 48.68674800000008,
+							"reductionPercent": 16.87717433036652
+						},
+						{
+							"block": 2,
+							"baselineMs": 57.88059599999997,
+							"candidateMs": 48.350445000000036,
+							"reductionPercent": 16.465191547094538
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 60
+		}
+	},
+	"prototype": {
+		"26.13.0": {
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 26.471698000000004,
+					"candidateMs": 26.419354,
+					"reductionPercent": 0.1977357100402255,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 26.674770000000024,
+							"candidateMs": 26.440759000000014,
+							"reductionPercent": 0.8772746681602439
+						},
+						{
+							"block": 1,
+							"baselineMs": 26.271280000000047,
+							"candidateMs": 26.419354,
+							"reductionPercent": -0.5636345088627204
+						},
+						{
+							"block": 2,
+							"baselineMs": 26.471698000000004,
+							"candidateMs": 26.416593999999975,
+							"reductionPercent": 0.20816193959309892
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 344.466187,
+					"candidateMs": 239.8304979999998,
+					"reductionPercent": 30.37618580543007,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 342.95319599999993,
+							"candidateMs": 238.83626300000014,
+							"reductionPercent": 30.35893358462821
+						},
+						{
+							"block": 1,
+							"baselineMs": 345.70895100000007,
+							"candidateMs": 250.66857000000027,
+							"reductionPercent": 27.49144351775832
+						},
+						{
+							"block": 2,
+							"baselineMs": 344.466187,
+							"candidateMs": 239.8304979999998,
+							"reductionPercent": 30.37618580543007
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 14.48304300000001,
+					"candidateMs": 14.724554000000012,
+					"reductionPercent": -1.66754320897895,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.490177999999986,
+							"candidateMs": 14.724554000000012,
+							"reductionPercent": -1.61748185564059
+						},
+						{
+							"block": 1,
+							"baselineMs": 14.380750000000006,
+							"candidateMs": 14.275905999999992,
+							"reductionPercent": 0.7290579420406784
+						},
+						{
+							"block": 2,
+							"baselineMs": 14.48304300000001,
+							"candidateMs": 15.308359999999993,
+							"reductionPercent": -5.698505486726679
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 236.2913550000003,
+					"candidateMs": 167.70440099999996,
+					"reductionPercent": 29.026433912489203,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 236.2913550000003,
+							"candidateMs": 165.30927599999995,
+							"reductionPercent": 30.0400660024148
+						},
+						{
+							"block": 1,
+							"baselineMs": 235.0441649999998,
+							"candidateMs": 169.99258299999974,
+							"reductionPercent": 27.676322873192838
+						},
+						{
+							"block": 2,
+							"baselineMs": 237.74580000000014,
+							"candidateMs": 167.70440099999996,
+							"reductionPercent": 29.46062517192739
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 3.1127759999999967,
+					"candidateMs": 3.1480370000000164,
+					"reductionPercent": -1.1327830849383158,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 3.1151199999999903,
+							"candidateMs": 3.1480370000000164,
+							"reductionPercent": -1.0566848147110175
+						},
+						{
+							"block": 1,
+							"baselineMs": 3.0820989999999995,
+							"candidateMs": 3.215172999999993,
+							"reductionPercent": -4.317641970617858
+						},
+						{
+							"block": 2,
+							"baselineMs": 3.1127759999999967,
+							"candidateMs": 3.1044430000000034,
+							"reductionPercent": 0.2677031691324161
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 62.638443999999936,
+					"candidateMs": 33.94517300000007,
+					"reductionPercent": 45.807764637320645,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 62.551984999999945,
+							"candidateMs": 33.94517300000007,
+							"reductionPercent": 45.7328604360036
+						},
+						{
+							"block": 1,
+							"baselineMs": 62.638443999999936,
+							"candidateMs": 33.92454800000007,
+							"reductionPercent": 45.840691700451394
+						},
+						{
+							"block": 2,
+							"baselineMs": 62.680217000000084,
+							"candidateMs": 34.184707,
+							"reductionPercent": 45.46172837914719
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 0.9642236666666596,
+					"candidateMs": 1.1142416666666672,
+					"reductionPercent": -15.558423339537274,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 0.888181666666668,
+							"candidateMs": 1.2047806666666645,
+							"reductionPercent": -35.645748148370096
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.0465503333333288,
+							"candidateMs": 0.9463936666666655,
+							"reductionPercent": 9.570171971343033
+						},
+						{
+							"block": 2,
+							"baselineMs": 0.9642236666666596,
+							"candidateMs": 1.1142416666666672,
+							"reductionPercent": -15.558423339537274
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 14.848252000000002,
+					"candidateMs": 14.790388000000007,
+					"reductionPercent": 0.38970243770105606,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.565908000000036,
+							"candidateMs": 15.794038999999998,
+							"reductionPercent": -8.43154439805578
+						},
+						{
+							"block": 1,
+							"baselineMs": 14.848252000000002,
+							"candidateMs": 14.790388000000007,
+							"reductionPercent": 0.38970243770105606
+						},
+						{
+							"block": 2,
+							"baselineMs": 16.059822000000054,
+							"candidateMs": 14.338094000000012,
+							"reductionPercent": 10.72071658079421
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 9.117806999999999,
+					"candidateMs": 8.828951999999958,
+					"reductionPercent": 3.168031523370052,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 8.977806000000015,
+							"candidateMs": 8.992180999999988,
+							"reductionPercent": -0.16011707091880822
+						},
+						{
+							"block": 1,
+							"baselineMs": 9.212650999999994,
+							"candidateMs": 8.428741000000002,
+							"reductionPercent": 8.50905998718493
+						},
+						{
+							"block": 2,
+							"baselineMs": 9.117806999999999,
+							"candidateMs": 8.828951999999958,
+							"reductionPercent": 3.168031523370052
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 53.33875999999998,
+					"candidateMs": 47.88618199999996,
+					"reductionPercent": 10.222543606188106,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 53.33875999999998,
+							"candidateMs": 47.47706500000004,
+							"reductionPercent": 10.989559937276272
+						},
+						{
+							"block": 1,
+							"baselineMs": 53.583970999999906,
+							"candidateMs": 47.92123400000003,
+							"reductionPercent": 10.56796817092912
+						},
+						{
+							"block": 2,
+							"baselineMs": 52.66099799999995,
+							"candidateMs": 47.88618199999996,
+							"reductionPercent": 9.067082245573832
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 60
+		},
+		"24.21.0": {
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 28.31795699999998,
+					"candidateMs": 27.938842000000022,
+					"reductionPercent": 1.3387794889297866,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 28.31795699999998,
+							"candidateMs": 27.771288000000027,
+							"reductionPercent": 1.9304676534396603
+						},
+						{
+							"block": 1,
+							"baselineMs": 28.454105000000027,
+							"candidateMs": 28.210875000000044,
+							"reductionPercent": 0.8548151488159017
+						},
+						{
+							"block": 2,
+							"baselineMs": 27.694154000000026,
+							"candidateMs": 27.938842000000022,
+							"reductionPercent": -0.8835366482037976
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 358.9209700000001,
+					"candidateMs": 261.363476,
+					"reductionPercent": 27.180772970718348,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 358.9862680000001,
+							"candidateMs": 261.363476,
+							"reductionPercent": 27.19401846312408
+						},
+						{
+							"block": 1,
+							"baselineMs": 358.5801829999996,
+							"candidateMs": 259.96467399999983,
+							"reductionPercent": 27.501661741301486
+						},
+						{
+							"block": 2,
+							"baselineMs": 358.9209700000001,
+							"candidateMs": 272.8040149999997,
+							"reductionPercent": 23.993291615143132
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 15.744403999999975,
+					"candidateMs": 15.549194,
+					"reductionPercent": 1.2398690988872918,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 15.516330000000039,
+							"candidateMs": 15.463047999999958,
+							"reductionPercent": 0.3433930575083233
+						},
+						{
+							"block": 1,
+							"baselineMs": 15.744403999999975,
+							"candidateMs": 15.549194,
+							"reductionPercent": 1.2398690988872918
+						},
+						{
+							"block": 2,
+							"baselineMs": 15.912322000000017,
+							"candidateMs": 16.09523999999999,
+							"reductionPercent": -1.149536818070751
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 247.14465800000016,
+					"candidateMs": 182.20589100000007,
+					"reductionPercent": 26.27561021367496,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 262.8161420000001,
+							"candidateMs": 182.90203399999973,
+							"reductionPercent": 30.406849210959173
+						},
+						{
+							"block": 1,
+							"baselineMs": 247.14465800000016,
+							"candidateMs": 181.5679130000001,
+							"reductionPercent": 26.53374971997171
+						},
+						{
+							"block": 2,
+							"baselineMs": 244.45480700000007,
+							"candidateMs": 182.20589100000007,
+							"reductionPercent": 25.46438614316142
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 3.309080000000023,
+					"candidateMs": 3.30314199999998,
+					"reductionPercent": 0.17944564652541128,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 3.284131000000002,
+							"candidateMs": 3.362049000000013,
+							"reductionPercent": -2.3725606560764723
+						},
+						{
+							"block": 1,
+							"baselineMs": 3.309080000000023,
+							"candidateMs": 3.29100600000001,
+							"reductionPercent": 0.5461941083326094
+						},
+						{
+							"block": 2,
+							"baselineMs": 3.3500170000000082,
+							"candidateMs": 3.30314199999998,
+							"reductionPercent": 1.3992466306895879
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 64.74273100000005,
+					"candidateMs": 37.347327000000064,
+					"reductionPercent": 42.31425455314815,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 64.77564600000005,
+							"candidateMs": 37.347327000000064,
+							"reductionPercent": 42.3435669016716
+						},
+						{
+							"block": 1,
+							"baselineMs": 64.61783300000002,
+							"candidateMs": 37.38081699999998,
+							"reductionPercent": 42.15092759300677
+						},
+						{
+							"block": 2,
+							"baselineMs": 64.74273100000005,
+							"candidateMs": 37.331339999999955,
+							"reductionPercent": 42.3389476727512
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 1.19616933333333,
+					"candidateMs": 1.1324193333333312,
+					"reductionPercent": 5.3295129897995785,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.0955960000000005,
+							"candidateMs": 1.2834093333333385,
+							"reductionPercent": -17.14257201863989
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.2164993333333314,
+							"candidateMs": 1.1324193333333312,
+							"reductionPercent": 6.911635518090453
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.19616933333333,
+							"candidateMs": 0.947226999999998,
+							"reductionPercent": 20.811629791545627
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 16.39914699999997,
+					"candidateMs": 15.862685999999997,
+					"reductionPercent": 3.2712738046678624,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 18.610877000000016,
+							"candidateMs": 15.862685999999997,
+							"reductionPercent": 14.76658515340259
+						},
+						{
+							"block": 1,
+							"baselineMs": 16.39914699999997,
+							"candidateMs": 14.916848000000016,
+							"reductionPercent": 9.0388786685061
+						},
+						{
+							"block": 2,
+							"baselineMs": 16.013416000000007,
+							"candidateMs": 15.876124000000004,
+							"reductionPercent": 0.8573561069043723
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 9.088953000000004,
+					"candidateMs": 9.018223999999975,
+					"reductionPercent": 0.7781864423771157,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 9.061140000000023,
+							"candidateMs": 9.018223999999975,
+							"reductionPercent": 0.4736269387742409
+						},
+						{
+							"block": 1,
+							"baselineMs": 9.522549000000026,
+							"candidateMs": 8.960463000000004,
+							"reductionPercent": 5.902684249774093
+						},
+						{
+							"block": 2,
+							"baselineMs": 9.088953000000004,
+							"candidateMs": 9.416507000000024,
+							"reductionPercent": -3.6038694445886144
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 50.755677000000105,
+					"candidateMs": 49.67035899999996,
+					"reductionPercent": 2.1383184387435916,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 50.755677000000105,
+							"candidateMs": 49.67035899999996,
+							"reductionPercent": 2.1383184387435916
+						},
+						{
+							"block": 1,
+							"baselineMs": 51.98563200000012,
+							"candidateMs": 49.84202800000003,
+							"reductionPercent": 4.123454726875475
+						},
+						{
+							"block": 2,
+							"baselineMs": 50.41395800000009,
+							"candidateMs": 48.642908000000034,
+							"reductionPercent": 3.5130151851994196
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 60
+		}
+	},
+	"core2Checkpoint": {
+		"recordedAt": "2026-11-01T10:00:51.584Z",
+		"original": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+		"candidateCommit": "8198fba256ab37380e0fcc4b76b3f70f792d57cc",
+		"boundary": "Preloaded JavaScript bytes. A new ParsedPackage copies input into WASM and parses it. Inspection additionally decodes and retains exports, serializes JSON and returns a JavaScript string. Explicit free is timed. Process startup, module compilation/loading, fixture reads and output hashing are excluded from timings. Normal V8 GC is included. Three interleaved/reversed blocks,15 samples after3 warmups,30ms calibration; CPU6 worker/CPU7 controller. WASM uses its standard allocator, not the held native mimalloc.",
+		"modules": [
+			{
+				"variant": "original",
+				"file": "uasset_inspection_wasm_bg.wasm",
+				"bytes": 1942619,
+				"sha256": "f55874569564ad93c1c546e85513a40a0ad911c56bd25c2e0935198c8ebd6f6d"
+			},
+			{
+				"variant": "original",
+				"file": "uasset_inspection_wasm.js",
+				"bytes": 14182,
+				"sha256": "ec22438aa805cb202507e4a8c7397eaff8db6a057965add7ee2f21264971e6b9"
+			},
+			{
+				"variant": "core-2",
+				"file": "uasset_inspection_wasm_bg.wasm",
+				"bytes": 1887990,
+				"sha256": "0f133148cde657801a9d605ec58b3fb67803bb8b1ca16ee799842ee7ff1a5b18"
+			},
+			{
+				"variant": "core-2",
+				"file": "uasset_inspection_wasm.js",
+				"bytes": 14182,
+				"sha256": "ec22438aa805cb202507e4a8c7397eaff8db6a057965add7ee2f21264971e6b9"
+			}
+		],
+		"comparisons": {
+			"26.13.0": {
+				"summary": [
+					{
+						"case": "corpus",
+						"operation": "parse",
+						"baselineMs": 33.21394299999997,
+						"candidateMs": 26.571713999999986,
+						"reductionPercent": 19.998315165411086,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 33.21394299999997,
+								"candidateMs": 26.31179999999995,
+								"reductionPercent": 20.780860014121274
+							},
+							{
+								"block": 1,
+								"baselineMs": 32.96083399999998,
+								"candidateMs": 26.800251000000003,
+								"reductionPercent": 18.690616262925808
+							},
+							{
+								"block": 2,
+								"baselineMs": 33.25198599999999,
+								"candidateMs": 26.571713999999986,
+								"reductionPercent": 20.089843656255614
+							}
+						]
+					},
+					{
+						"case": "corpus",
+						"operation": "inspect-json",
+						"baselineMs": 439.3353810000008,
+						"candidateMs": 345.61379399999987,
+						"reductionPercent": 21.33258350071303,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 435.5587429999996,
+								"candidateMs": 345.8350580000001,
+								"reductionPercent": 20.59967488702197
+							},
+							{
+								"block": 1,
+								"baselineMs": 439.3353810000008,
+								"candidateMs": 345.61379399999987,
+								"reductionPercent": 21.33258350071303
+							},
+							{
+								"block": 2,
+								"baselineMs": 439.67382199999975,
+								"candidateMs": 345.042367,
+								"reductionPercent": 21.52310423430208
+							}
+						]
+					},
+					{
+						"case": "level",
+						"operation": "parse",
+						"baselineMs": 19.37830600000001,
+						"candidateMs": 14.698102000000006,
+						"reductionPercent": 24.151770541759433,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 19.37830600000001,
+								"candidateMs": 14.73428899999999,
+								"reductionPercent": 23.965030792681354
+							},
+							{
+								"block": 1,
+								"baselineMs": 19.190293999999994,
+								"candidateMs": 14.307211999999993,
+								"reductionPercent": 25.44558202182834
+							},
+							{
+								"block": 2,
+								"baselineMs": 19.465765999999974,
+								"candidateMs": 14.698102000000006,
+								"reductionPercent": 24.492557857728148
+							}
+						]
+					},
+					{
+						"case": "level",
+						"operation": "inspect-json",
+						"baselineMs": 300.22372099999984,
+						"candidateMs": 236.1573940000003,
+						"reductionPercent": 21.3395286643588,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 300.22372099999984,
+								"candidateMs": 245.43928700000015,
+								"reductionPercent": 18.24786989433114
+							},
+							{
+								"block": 1,
+								"baselineMs": 302.46785,
+								"candidateMs": 235.07534299999998,
+								"reductionPercent": 22.280882745058694
+							},
+							{
+								"block": 2,
+								"baselineMs": 299.29708900000014,
+								"candidateMs": 236.1573940000003,
+								"reductionPercent": 21.09599368672771
+							}
+						]
+					},
+					{
+						"case": "table",
+						"operation": "parse",
+						"baselineMs": 4.2334430000000225,
+						"candidateMs": 3.160212999999999,
+						"reductionPercent": 25.35123302711334,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 4.2334430000000225,
+								"candidateMs": 3.1795879999999954,
+								"reductionPercent": 24.89356771781317
+							},
+							{
+								"block": 1,
+								"baselineMs": 4.292349999999999,
+								"candidateMs": 3.160212999999999,
+								"reductionPercent": 26.37569163744803
+							},
+							{
+								"block": 2,
+								"baselineMs": 4.209121999999979,
+								"candidateMs": 3.106256000000002,
+								"reductionPercent": 26.201806457498332
+							}
+						]
+					},
+					{
+						"case": "table",
+						"operation": "inspect-json",
+						"baselineMs": 88.635178,
+						"candidateMs": 62.65524299999993,
+						"reductionPercent": 29.31108797457379,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 89.93871799999988,
+								"candidateMs": 62.65524299999993,
+								"reductionPercent": 30.33562808845017
+							},
+							{
+								"block": 1,
+								"baselineMs": 88.29123099999993,
+								"candidateMs": 62.657284000000004,
+								"reductionPercent": 29.03340083682823
+							},
+							{
+								"block": 2,
+								"baselineMs": 88.635178,
+								"candidateMs": 62.59267799999998,
+								"reductionPercent": 29.38167507262186
+							}
+						]
+					},
+					{
+						"case": "blueprints",
+						"operation": "parse",
+						"baselineMs": 2.404456499999995,
+						"candidateMs": 1.0156436666666668,
+						"reductionPercent": 57.759948384731885,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 2.404456499999995,
+								"candidateMs": 1.0156436666666668,
+								"reductionPercent": 57.759948384731885
+							},
+							{
+								"block": 1,
+								"baselineMs": 2.3679204999999968,
+								"candidateMs": 0.9552270000000078,
+								"reductionPercent": 59.65966762819912
+							},
+							{
+								"block": 2,
+								"baselineMs": 2.9429480000000012,
+								"candidateMs": 1.1752103333333348,
+								"reductionPercent": 60.06690117075346
+							}
+						]
+					},
+					{
+						"case": "blueprints",
+						"operation": "inspect-json",
+						"baselineMs": 17.960861999999963,
+						"candidateMs": 14.829609000000005,
+						"reductionPercent": 17.433756798532073,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 17.06242000000003,
+								"candidateMs": 15.128199000000052,
+								"reductionPercent": 11.3361469240587
+							},
+							{
+								"block": 1,
+								"baselineMs": 17.960861999999963,
+								"candidateMs": 14.145021999999926,
+								"reductionPercent": 21.245305487008615
+							},
+							{
+								"block": 2,
+								"baselineMs": 19.156180000000006,
+								"candidateMs": 14.829609000000005,
+								"reductionPercent": 22.585771275901568
+							}
+						]
+					},
+					{
+						"case": "small",
+						"operation": "parse",
+						"baselineMs": 10.391057999999987,
+						"candidateMs": 9.040221000000003,
+						"reductionPercent": 12.999994803223947,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 10.248712000000012,
+								"candidateMs": 9.040221000000003,
+								"reductionPercent": 11.791637817513145
+							},
+							{
+								"block": 1,
+								"baselineMs": 10.391057999999987,
+								"candidateMs": 9.257409999999993,
+								"reductionPercent": 10.909841904452799
+							},
+							{
+								"block": 2,
+								"baselineMs": 10.913665000000037,
+								"candidateMs": 8.890485000000012,
+								"reductionPercent": 18.53804381937707
+							}
+						]
+					},
+					{
+						"case": "small",
+						"operation": "inspect-json",
+						"baselineMs": 56.902528000000075,
+						"candidateMs": 54.41718100000003,
+						"reductionPercent": 4.367726860922671,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 56.902528000000075,
+								"candidateMs": 54.77554699999996,
+								"reductionPercent": 3.737937618518661
+							},
+							{
+								"block": 1,
+								"baselineMs": 58.21352999999999,
+								"candidateMs": 52.80753200000004,
+								"reductionPercent": 9.286497486065448
+							},
+							{
+								"block": 2,
+								"baselineMs": 55.8210889999998,
+								"candidateMs": 54.41718100000003,
+								"reductionPercent": 2.5150136357959263
+							}
+						]
+					}
+				],
+				"rawMeasurementCount": 60
+			},
+			"24.21.0": {
+				"summary": [
+					{
+						"case": "corpus",
+						"operation": "parse",
+						"baselineMs": 35.43934300000001,
+						"candidateMs": 28.085577999999998,
+						"reductionPercent": 20.750285918110865,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 35.43934300000001,
+								"candidateMs": 28.085577999999998,
+								"reductionPercent": 20.750285918110865
+							},
+							{
+								"block": 1,
+								"baselineMs": 35.743888000000084,
+								"candidateMs": 28.006890999999996,
+								"reductionPercent": 21.645650299710173
+							},
+							{
+								"block": 2,
+								"baselineMs": 35.063319999999976,
+								"candidateMs": 28.42731299999997,
+								"reductionPercent": 18.925780559285343
+							}
+						]
+					},
+					{
+						"case": "corpus",
+						"operation": "inspect-json",
+						"baselineMs": 478.76275399999986,
+						"candidateMs": 358.5883650000005,
+						"reductionPercent": 25.101031355500847,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 478.76275399999986,
+								"candidateMs": 358.5883650000005,
+								"reductionPercent": 25.101031355500847
+							},
+							{
+								"block": 1,
+								"baselineMs": 480.1462000000006,
+								"candidateMs": 358.9659340000003,
+								"reductionPercent": 25.23820161442497
+							},
+							{
+								"block": 2,
+								"baselineMs": 472.0739450000001,
+								"candidateMs": 356.80907400000024,
+								"reductionPercent": 24.416698320429408
+							}
+						]
+					},
+					{
+						"case": "level",
+						"operation": "parse",
+						"baselineMs": 20.870930000000044,
+						"candidateMs": 15.606029999999976,
+						"reductionPercent": 25.225996158293174,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 20.870930000000044,
+								"candidateMs": 15.971283999999969,
+								"reductionPercent": 23.47593518832206
+							},
+							{
+								"block": 1,
+								"baselineMs": 20.874116000000015,
+								"candidateMs": 15.606029999999976,
+								"reductionPercent": 25.237408856020703
+							},
+							{
+								"block": 2,
+								"baselineMs": 20.793493000000012,
+								"candidateMs": 15.518115000000023,
+								"reductionPercent": 25.370330997297984
+							}
+						]
+					},
+					{
+						"case": "level",
+						"operation": "inspect-json",
+						"baselineMs": 315.7002190000003,
+						"candidateMs": 246.01983900000005,
+						"reductionPercent": 22.071692006016686,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 315.422458,
+								"candidateMs": 249.15789399999994,
+								"reductionPercent": 21.00819466697582
+							},
+							{
+								"block": 1,
+								"baselineMs": 315.7002190000003,
+								"candidateMs": 245.666972,
+								"reductionPercent": 22.183464814131227
+							},
+							{
+								"block": 2,
+								"baselineMs": 330.8493319999998,
+								"candidateMs": 246.01983900000005,
+								"reductionPercent": 25.639916661521255
+							}
+						]
+					},
+					{
+						"case": "table",
+						"operation": "parse",
+						"baselineMs": 4.660116000000016,
+						"candidateMs": 3.2783919999999966,
+						"reductionPercent": 29.649991545275157,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 4.990218999999996,
+								"candidateMs": 3.2783919999999966,
+								"reductionPercent": 34.30364478993809
+							},
+							{
+								"block": 1,
+								"baselineMs": 4.660116000000016,
+								"candidateMs": 3.303340999999989,
+								"reductionPercent": 29.114618606060937
+							},
+							{
+								"block": 2,
+								"baselineMs": 4.6475639999999885,
+								"candidateMs": 3.274487999999991,
+								"reductionPercent": 29.54399336942968
+							}
+						]
+					},
+					{
+						"case": "table",
+						"operation": "inspect-json",
+						"baselineMs": 92.89900699999976,
+						"candidateMs": 64.60233300000004,
+						"reductionPercent": 30.459608680208806,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 92.73353999999995,
+								"candidateMs": 64.60233300000004,
+								"reductionPercent": 30.33552585181146
+							},
+							{
+								"block": 1,
+								"baselineMs": 93.3363159999999,
+								"candidateMs": 64.62864300000001,
+								"reductionPercent": 30.757238157974776
+							},
+							{
+								"block": 2,
+								"baselineMs": 92.89900699999976,
+								"candidateMs": 64.48361599999998,
+								"reductionPercent": 30.587400143039034
+							}
+						]
+					},
+					{
+						"case": "blueprints",
+						"operation": "parse",
+						"baselineMs": 2.926256499999994,
+						"candidateMs": 1.1553153333333341,
+						"reductionPercent": 60.518999843884615,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 2.926256499999994,
+								"candidateMs": 1.2075203333333395,
+								"reductionPercent": 58.734979885278605
+							},
+							{
+								"block": 1,
+								"baselineMs": 3.0328455000000076,
+								"candidateMs": 1.0510270000000048,
+								"reductionPercent": 65.34518490968293
+							},
+							{
+								"block": 2,
+								"baselineMs": 2.9206845000000072,
+								"candidateMs": 1.1553153333333341,
+								"reductionPercent": 60.44367909874102
+							}
+						]
+					},
+					{
+						"case": "blueprints",
+						"operation": "inspect-json",
+						"baselineMs": 19.950777000000016,
+						"candidateMs": 16.07212199999998,
+						"reductionPercent": 19.441122518687038,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 19.818898999999988,
+								"candidateMs": 18.068374000000063,
+								"reductionPercent": 8.832604676979916
+							},
+							{
+								"block": 1,
+								"baselineMs": 19.950777000000016,
+								"candidateMs": 16.07212199999998,
+								"reductionPercent": 19.441122518687038
+							},
+							{
+								"block": 2,
+								"baselineMs": 22.268389999999954,
+								"candidateMs": 15.973270000000014,
+								"reductionPercent": 28.269309096885554
+							}
+						]
+					},
+					{
+						"case": "small",
+						"operation": "parse",
+						"baselineMs": 11.038882000000001,
+						"candidateMs": 9.599138000000039,
+						"reductionPercent": 13.042480207687356,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 12.294663000000014,
+								"candidateMs": 9.850751000000002,
+								"reductionPercent": 19.87782829021022
+							},
+							{
+								"block": 1,
+								"baselineMs": 10.927890999999988,
+								"candidateMs": 9.599138000000039,
+								"reductionPercent": 12.159281237339858
+							},
+							{
+								"block": 2,
+								"baselineMs": 11.038882000000001,
+								"candidateMs": 8.904919000000007,
+								"reductionPercent": 19.331332647635826
+							}
+						]
+					},
+					{
+						"case": "small",
+						"operation": "inspect-json",
+						"baselineMs": 58.16721499999994,
+						"candidateMs": 51.515072000000146,
+						"reductionPercent": 11.436241188442331,
+						"pairs": [
+							{
+								"block": 0,
+								"baselineMs": 58.16721499999994,
+								"candidateMs": 50.54527099999996,
+								"reductionPercent": 13.103505127415838
+							},
+							{
+								"block": 1,
+								"baselineMs": 55.68299900000011,
+								"candidateMs": 51.515072000000146,
+								"reductionPercent": 7.485097920102968
+							},
+							{
+								"block": 2,
+								"baselineMs": 58.47384799999986,
+								"candidateMs": 53.043574000000035,
+								"reductionPercent": 9.286671197010744
+							}
+						]
+					}
+				],
+				"rawMeasurementCount": 60
+			}
+		},
+		"oracle": "PASS: exact inspection JSON output hashes for140fixtures+267malformed packages against original-source WASM\n",
+		"originalSourceAudit": {
+			"commit": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+			"files": [
+				{
+					"file": "Cargo.lock",
+					"sha256": "0a1d3726eb6ce624de9f2ea2c17df1fae60b5f478c3805995d28612bcba447a9"
+				},
+				{
+					"file": "Cargo.toml",
+					"sha256": "a852b332be32fbff5d43d38dfe3b656815b5482955fc762a0ceec2f0445f29e7"
+				},
+				{
+					"file": "crates/uasset-inspection-wasm/Cargo.lock",
+					"sha256": "3883d64317c711fa3d5121afa7507fbda1bf90644fbd9befd9d642b757e39a1d"
+				},
+				{
+					"file": "crates/uasset-inspection-wasm/Cargo.toml",
+					"sha256": "109eaa87432a14259bba33367cf04866711a8cd08451939e3d5b144f83affcab"
+				},
+				{
+					"file": "crates/uasset-inspection-wasm/src/lib.rs",
+					"sha256": "647a2715925d48c5267cc443d0255335aaacaf0b960c206b0fe824535cd4ee0a"
+				},
+				{
+					"file": "crates/uasset-inspection/Cargo.toml",
+					"sha256": "4d69462b8748f09b12b13643b4da3d8526b10a24d8edb3df4468c4c095a5358f"
+				},
+				{
+					"file": "crates/uasset-inspection/examples/benchmark_inspection.rs",
+					"sha256": "355fe229c5515b397a56eccda5dc0a5460631b70f5e72fc21dfe1292360053b4"
+				},
+				{
+					"file": "crates/uasset-inspection/src/animation.rs",
+					"sha256": "753e39671c9fc1c3ad0f4ee872bbd0f752cbdaade4a818ed1f77de86af828f9b"
+				},
+				{
+					"file": "crates/uasset-inspection/src/authoring.rs",
+					"sha256": "6528d42a21100f2382042fbdb07c1b26450c95c08b59d9858119bf9f9734c9ae"
+				},
+				{
+					"file": "crates/uasset-inspection/src/blueprint.rs",
+					"sha256": "2f9cf078a0ce5db502ec7e97bb9470fa135164e2e4059ebca84952bd75351b8d"
+				},
+				{
+					"file": "crates/uasset-inspection/src/blueprint/definition.rs",
+					"sha256": "45e6643f22508550d9d6eb0cbe3da3f95c7e9ff1d1a9cefb1967d03256d35aaf"
+				},
+				{
+					"file": "crates/uasset-inspection/src/blueprint_classes.rs",
+					"sha256": "46a35b447d28e14014271f43ed4e290d55fa841e1a887ebb2953d66d33cf4e1a"
+				},
+				{
+					"file": "crates/uasset-inspection/src/blueprint_diff.rs",
+					"sha256": "a88244442e42dd9f70efcad98adb837f5fafe7243b4f94cf5b84c26f47988b1a"
+				},
+				{
+					"file": "crates/uasset-inspection/src/blueprint_diff/tests.rs",
+					"sha256": "83dfc329491e0a3909d48e00160dca66ff7a0358bc34746b452e95c803e02a24"
+				},
+				{
+					"file": "crates/uasset-inspection/src/blueprint_text.rs",
+					"sha256": "698598bf7c8a1bda3229aeded41c0d560ed2a5f3b83d213a2a6d30fb04ecffbb"
+				},
+				{
+					"file": "crates/uasset-inspection/src/decoded_exports.rs",
+					"sha256": "43c5a205f9f4c329899ee1a4b32ac0e68b0bab6d1d7e2c8e23559112cece4486"
+				},
+				{
+					"file": "crates/uasset-inspection/src/gather_coverage.rs",
+					"sha256": "94e4534dcb920c31762165aca6ac05f55856736ab8551f65fc3693d1050f9342"
+				},
+				{
+					"file": "crates/uasset-inspection/src/generic.rs",
+					"sha256": "ef8202afdee727c75d2da410b1c944b3a38ee95dd4ad1225487990abe3281797"
+				},
+				{
+					"file": "crates/uasset-inspection/src/generic/json.rs",
+					"sha256": "325321d34f5f081e8d70f15780e700e8f73b557252674c3d9fb812aa3aab12db"
+				},
+				{
+					"file": "crates/uasset-inspection/src/level_sequence.rs",
+					"sha256": "03af0b386ef8de81003020d806fd48a123a8030d655b95ebbb277797a001f369"
+				},
+				{
+					"file": "crates/uasset-inspection/src/level_sequence/discrete.rs",
+					"sha256": "5a2a341dc0167fff0e9199d6c62852941dd12d11ba2ee34444bdb17e18e77795"
+				},
+				{
+					"file": "crates/uasset-inspection/src/level_sequence/numeric.rs",
+					"sha256": "c20a63d87e9cf4fa4ab5ebdb5f8dff8dbf4355fd5acde737d5d03d9520a5a113"
+				},
+				{
+					"file": "crates/uasset-inspection/src/level_sequence/saved.rs",
+					"sha256": "02afb3e958d0a134f7dc365fddf05e340588300e3e2213ea59669f2fca94241b"
+				},
+				{
+					"file": "crates/uasset-inspection/src/lib.rs",
+					"sha256": "b60e0ee1dec1e341f545137924225e19205ac1c3937f88d608c83b1a37acc601"
+				},
+				{
+					"file": "crates/uasset-inspection/src/package_header.rs",
+					"sha256": "ee5b2a97f2dbbed1a7262a7e88e0940632746da5ec5a85a308be5da1960d7fc7"
+				},
+				{
+					"file": "crates/uasset-inspection/src/projection.rs",
+					"sha256": "8d04dd6169c3a3e148194024945062565ec76b495f287cae03d546cef1bd17a1"
+				},
+				{
+					"file": "crates/uasset-inspection/src/saved_inspection.rs",
+					"sha256": "d37a23dfc518d9410bfb647c7bf23448fed401a0a22b80cc9d842e04067730fe"
+				},
+				{
+					"file": "crates/uasset-inspection/src/saved_world.rs",
+					"sha256": "80bcf5724eb0a87f563d29e45f63882c02281b687f69187089ad755847f6504d"
+				},
+				{
+					"file": "crates/uasset-inspection/src/saved_world_wire.rs",
+					"sha256": "8df62913337af6532468d08019fb641a83d54113a51dd702c30b8549c4672b1d"
+				},
+				{
+					"file": "crates/uasset-inspection/src/text_wire.rs",
+					"sha256": "3b276c54c471da0e58ea57d50c91ef261caa22645c31a9cfd8a092fb4d924461"
+				},
+				{
+					"file": "crates/uasset-inspection/src/texture_wire.rs",
+					"sha256": "a26c52a5e1f964e8115866cd9dc3929cf0fdcbea9f450c90e7869985f36546a9"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/game_text_identity.rs",
+					"sha256": "2d5e69f95e4860807c200273dfbeed25811d7c3c2d19ceb046903fc4acc53f19"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/gather_coverage.rs",
+					"sha256": "d1a1c38f9dffdda1485c0e0f127ff999f1b344ef8476dead8122a2dffc639371"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/graph_pin_text.rs",
+					"sha256": "9fbc521c4935cac70e916e76f3fa7d8f6d7e83f49935c382d86101bf06e66992"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/inspection.rs",
+					"sha256": "dbd6d1bcf666d0f16d85ddcc7919b82d02fa22d1ac0625bed012e12f71037998"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/legacy_text_fixtures.rs",
+					"sha256": "17c1b5ec8382e283a6e6879e03e14558e8f00ab96e80122278d09820fbf5768c"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/malformed_packages.rs",
+					"sha256": "03294600b835b6af2e3272a30a12d3a224059918bcac26385149c8a3072670a8"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/native_coverage.rs",
+					"sha256": "25d6da54c258d8fe51a740c79fc62cecffaeb2117ab0a4ebe3536de366d981df"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/projections.rs",
+					"sha256": "7cfc335429ad7e51b6209a98af918cda8939a5a03afdd754783e6773e7a0ccea"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/support/custom_graph.rs",
+					"sha256": "a1895bad17db98433e4be5fbd9bf41ef01bc893215db5fa6b9d9de48ee7a6621"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/text_capability.rs",
+					"sha256": "72ea13a179c2584bd8a8632331dc5505d9a55a7947bf8d70b91b4e2d1e203f17"
+				},
+				{
+					"file": "crates/uasset-inspection/tests/text_decode_filter.rs",
+					"sha256": "1ef6a919ed2284b4048cfe7a47be5e7f0c7f2d19e2d9809537e24732f0b07385"
+				},
+				{
+					"file": "crates/uasset-parser/Cargo.toml",
+					"sha256": "7951db68d7db326dae7b56093c618f39f0240301aa39bb0b339e11ed48a13101"
+				},
+				{
+					"file": "crates/uasset-parser/examples/benchmark_headers.rs",
+					"sha256": "73651693cfd13f3495be86f070a9a923e67b010044620122be057e5dba3c4aa5"
+				},
+				{
+					"file": "crates/uasset-parser/examples/benchmark_parser.rs",
+					"sha256": "89b8fb469a34b9eabe54e1a2f5a407d147ba2eacca01cfd8ec18f7cd5f19e408"
+				},
+				{
+					"file": "crates/uasset-parser/source-models/ue57-data-assets.json",
+					"sha256": "59737551d39a34e94d1f234ad1e3742d05a2d11615a0da49dc67284166b3fa83"
+				},
+				{
+					"file": "crates/uasset-parser/source-models/ue58-property-bags.json",
+					"sha256": "ec2df6a824193f2bd5487cc6efb50b26dc57935782c8411e943c5a8e16c823e3"
+				},
+				{
+					"file": "crates/uasset-parser/src/archive.rs",
+					"sha256": "0bc0100ce2c8610d91fcaec1d5c313f486c96326322ece1cca0bfc64a458d293"
+				},
+				{
+					"file": "crates/uasset-parser/src/asset.rs",
+					"sha256": "f94acaddc110c2474043e4e761c714f1f101c0cc35fc5438a3a3d4bccf6eb326"
+				},
+				{
+					"file": "crates/uasset-parser/src/asset/native_data.rs",
+					"sha256": "17bdcda2d0cdc534af45edd6417686247d1e93fe1f0a8fa2493da80e5700b1d6"
+				},
+				{
+					"file": "crates/uasset-parser/src/asset/native_data/class.rs",
+					"sha256": "7a077781db5c98d253e3ee91614cf73c2c30e19ac01f193bce233939fe0eb75a"
+				},
+				{
+					"file": "crates/uasset-parser/src/asset/native_data/object.rs",
+					"sha256": "3b28485c4405017c10c17bd469b44930de853acb56e770b2b8f2cc77ab081f0f"
+				},
+				{
+					"file": "crates/uasset-parser/src/asset/script.rs",
+					"sha256": "4faff04fd6a9270a37c07a2409431789e13112633507635c0e2d8d34f91c3abf"
+				},
+				{
+					"file": "crates/uasset-parser/src/codec.rs",
+					"sha256": "2002b41ccb11eb8d7b7d7afb8860845bd8e1431508520a3842a9cb03c65404d7"
+				},
+				{
+					"file": "crates/uasset-parser/src/codec/legacy_structs.rs",
+					"sha256": "4526a24146111adc194ce608addf925a374cb4e2981663ff6f26e7437152fd58"
+				},
+				{
+					"file": "crates/uasset-parser/src/codec/native_values.rs",
+					"sha256": "81cb1f1878c88bfde1460079548d9c763eff0302212a6876164a0a4096f7cc68"
+				},
+				{
+					"file": "crates/uasset-parser/src/codec/native_values/niagara.rs",
+					"sha256": "a7b6619aca02799702978f62c323105b77faf4a32ba0bf16884a0da0bad1cb64"
+				},
+				{
+					"file": "crates/uasset-parser/src/codec/native_values/pin_type.rs",
+					"sha256": "36c698a8fd4d75643e2af375dd2f4ab38089212629edccf008d63e835de1fa5a"
+				},
+				{
+					"file": "crates/uasset-parser/src/codec/native_values/property_bag.rs",
+					"sha256": "c25611496fea7b1557cd14438743fff88471a5958f8cc351a5f05e630227ee6e"
+				},
+				{
+					"file": "crates/uasset-parser/src/codec/native_values/saved_structs.rs",
+					"sha256": "a601f39be5b4d9519ad5dee2f03b958d97e8e79eecf70bce48e69d24514b8a91"
+				},
+				{
+					"file": "crates/uasset-parser/src/convert.rs",
+					"sha256": "9f457b78ff2146c1ffb48fd1cbdc2b3b2f46911778945818eba94e2e20320d3e"
+				},
+				{
+					"file": "crates/uasset-parser/src/gatherable_text.rs",
+					"sha256": "e25e61d8dd08bb548f49052617ba3a3bf696c826b6bcea932cdbfd2e05736e9b"
+				},
+				{
+					"file": "crates/uasset-parser/src/lib.rs",
+					"sha256": "14d83ee39ac50c8547851affd4e668a01b623e57b0ac183ef629e9fefd63a02d"
+				},
+				{
+					"file": "crates/uasset-parser/src/metadata.rs",
+					"sha256": "2656e1f6521cd5e791a67dd89db94c7282ce677030e63f7715752bbf74406623"
+				},
+				{
+					"file": "crates/uasset-parser/src/native.rs",
+					"sha256": "92de9357330301b2047b7ebf58add9a8ccd030d88468e059dd7e5c475a48827b"
+				},
+				{
+					"file": "crates/uasset-parser/src/package.rs",
+					"sha256": "81736ed148fc73078a9ed4a35a7c401a564bc5a01c74d085b8e2c5a28fea4ec6"
+				},
+				{
+					"file": "crates/uasset-parser/src/property.rs",
+					"sha256": "63719fe444227102ff05ed3d4a9a8304dc41f586a57364dfd9d2575e92b13928"
+				},
+				{
+					"file": "crates/uasset-parser/src/schema.rs",
+					"sha256": "37d187e186aec493e95e6928b07feac8cf1b20fd01582ff29432d42cdbee1463"
+				},
+				{
+					"file": "crates/uasset-parser/src/test_support.rs",
+					"sha256": "a192ed219522e1e5051c371d97f86dc5ac7d75b7d952d84483c9b16f7868d1cd"
+				},
+				{
+					"file": "crates/uasset-parser/src/version.rs",
+					"sha256": "1dfdc73ed32b4ea1d3a5396eb91f2c9b2795729afe399154b502e7852f974c67"
+				}
+			]
+		},
+		"candidateBuild": {
+			"schemaVersion": 1,
+			"packageVersion": "0.25.0",
+			"crateVersion": "0.25.0",
+			"targets": ["nodejs", "web"],
+			"cargoLocked": true,
+			"tools": {
+				"rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+				"wasmPack": "wasm-pack 0.15.1",
+				"wasmBindgen": "0.2.126",
+				"wasmOpt": "disabled (--no-opt)"
+			},
+			"optimizer": {
+				"name": "wasm-opt",
+				"status": "disabled",
+				"reason": "wasm-pack --no-opt",
+				"command": null,
+				"version": null,
+				"enabled": false
+			},
+			"limits": {
+				"maxInputBytes": 67108864,
+				"maxOutputBytes": 67108864,
+				"maxExports": 100000,
+				"maxProjectionItems": 1000000
+			}
+		},
+		"candidateSourceManifest": "f394f125ed8a96c27f2636054fe425fac468a59223860c26309ae4aabfb15845  Cargo.lock\na852b332be32fbff5d43d38dfe3b656815b5482955fc762a0ceec2f0445f29e7  Cargo.toml\n74b49c4c6ae74399895dbe5a38c9ed0c4cca418279e8c36ec304d37d1e865c7d  crates/uasset-inspection-wasm/Cargo.lock\n109eaa87432a14259bba33367cf04866711a8cd08451939e3d5b144f83affcab  crates/uasset-inspection-wasm/Cargo.toml\n4d69462b8748f09b12b13643b4da3d8526b10a24d8edb3df4468c4c095a5358f  crates/uasset-inspection/Cargo.toml\n97e98f83e9ddca6ea8e9c24c1f8e3e7bceb603d70a91e6a50297a0c2cbd9cada  crates/uasset-inspection/src/animation.rs\n6528d42a21100f2382042fbdb07c1b26450c95c08b59d9858119bf9f9734c9ae  crates/uasset-inspection/src/authoring.rs\n2f9cf078a0ce5db502ec7e97bb9470fa135164e2e4059ebca84952bd75351b8d  crates/uasset-inspection/src/blueprint.rs\n45e6643f22508550d9d6eb0cbe3da3f95c7e9ff1d1a9cefb1967d03256d35aaf  crates/uasset-inspection/src/blueprint/definition.rs\n46a35b447d28e14014271f43ed4e290d55fa841e1a887ebb2953d66d33cf4e1a  crates/uasset-inspection/src/blueprint_classes.rs\na88244442e42dd9f70efcad98adb837f5fafe7243b4f94cf5b84c26f47988b1a  crates/uasset-inspection/src/blueprint_diff.rs\n83dfc329491e0a3909d48e00160dca66ff7a0358bc34746b452e95c803e02a24  crates/uasset-inspection/src/blueprint_diff/tests.rs\n698598bf7c8a1bda3229aeded41c0d560ed2a5f3b83d213a2a6d30fb04ecffbb  crates/uasset-inspection/src/blueprint_text.rs\n03a7c8794f66411a03ccb9ecbab33a6042e89193d82e52f8626f8adbf5fa7084  crates/uasset-inspection/src/decoded_exports.rs\n94e4534dcb920c31762165aca6ac05f55856736ab8551f65fc3693d1050f9342  crates/uasset-inspection/src/gather_coverage.rs\n873d9deddaf58e4d36c20596ed974067753f8c20054c62f771552a29f87b25e5  crates/uasset-inspection/src/generic.rs\n242d7326813e03d22d16261d53b17ddd74dc8ff9cbba4e9a311ce008e702349a  crates/uasset-inspection/src/generic/json.rs\n03af0b386ef8de81003020d806fd48a123a8030d655b95ebbb277797a001f369  crates/uasset-inspection/src/level_sequence.rs\n5a2a341dc0167fff0e9199d6c62852941dd12d11ba2ee34444bdb17e18e77795  crates/uasset-inspection/src/level_sequence/discrete.rs\nc20a63d87e9cf4fa4ab5ebdb5f8dff8dbf4355fd5acde737d5d03d9520a5a113  crates/uasset-inspection/src/level_sequence/numeric.rs\n02afb3e958d0a134f7dc365fddf05e340588300e3e2213ea59669f2fca94241b  crates/uasset-inspection/src/level_sequence/saved.rs\nb60e0ee1dec1e341f545137924225e19205ac1c3937f88d608c83b1a37acc601  crates/uasset-inspection/src/lib.rs\nee5b2a97f2dbbed1a7262a7e88e0940632746da5ec5a85a308be5da1960d7fc7  crates/uasset-inspection/src/package_header.rs\n8d04dd6169c3a3e148194024945062565ec76b495f287cae03d546cef1bd17a1  crates/uasset-inspection/src/projection.rs\n1dcb3f3ee61e49c0a3c16a8db3503d60bd89049a10d876ba0e03557aba788abb  crates/uasset-inspection/src/saved_inspection.rs\n80bcf5724eb0a87f563d29e45f63882c02281b687f69187089ad755847f6504d  crates/uasset-inspection/src/saved_world.rs\n8df62913337af6532468d08019fb641a83d54113a51dd702c30b8549c4672b1d  crates/uasset-inspection/src/saved_world_wire.rs\n3b276c54c471da0e58ea57d50c91ef261caa22645c31a9cfd8a092fb4d924461  crates/uasset-inspection/src/text_wire.rs\na26c52a5e1f964e8115866cd9dc3929cf0fdcbea9f450c90e7869985f36546a9  crates/uasset-inspection/src/texture_wire.rs\n78291da67df79b3369d9be8a9aeecb32d85f7134393cf823ac534e722cbc22e4  crates/uasset-parser/Cargo.toml\n59737551d39a34e94d1f234ad1e3742d05a2d11615a0da49dc67284166b3fa83  crates/uasset-parser/source-models/ue57-data-assets.json\nec2df6a824193f2bd5487cc6efb50b26dc57935782c8411e943c5a8e16c823e3  crates/uasset-parser/source-models/ue58-property-bags.json\nb40e51ed09b0f5c322fd3f7319a0c05390c112efbd946b034db94e4a3202a4ee  crates/uasset-parser/src/archive.rs\n1e7c075ddc8e763cf9dec58928b888b792787193956b6a3808178b42cb6adb32  crates/uasset-parser/src/asset.rs\n17bdcda2d0cdc534af45edd6417686247d1e93fe1f0a8fa2493da80e5700b1d6  crates/uasset-parser/src/asset/native_data.rs\n7a077781db5c98d253e3ee91614cf73c2c30e19ac01f193bce233939fe0eb75a  crates/uasset-parser/src/asset/native_data/class.rs\na4a1df17bc341b2a8ed6ef668b733f29cbc5c573924f694c8d18e97571f5add3  crates/uasset-parser/src/asset/native_data/object.rs\n4faff04fd6a9270a37c07a2409431789e13112633507635c0e2d8d34f91c3abf  crates/uasset-parser/src/asset/script.rs\nc78e04b81f3c34f9686721bf1d74d58038702f126425aab2b436994249f77124  crates/uasset-parser/src/codec.rs\n4526a24146111adc194ce608addf925a374cb4e2981663ff6f26e7437152fd58  crates/uasset-parser/src/codec/legacy_structs.rs\n2e98a203c43e6eb3d604b34a4fa078711b5af7a567b27c64fbdebe4ca4ed8db4  crates/uasset-parser/src/codec/native_values.rs\na7b6619aca02799702978f62c323105b77faf4a32ba0bf16884a0da0bad1cb64  crates/uasset-parser/src/codec/native_values/niagara.rs\n36c698a8fd4d75643e2af375dd2f4ab38089212629edccf008d63e835de1fa5a  crates/uasset-parser/src/codec/native_values/pin_type.rs\nc25611496fea7b1557cd14438743fff88471a5958f8cc351a5f05e630227ee6e  crates/uasset-parser/src/codec/native_values/property_bag.rs\na601f39be5b4d9519ad5dee2f03b958d97e8e79eecf70bce48e69d24514b8a91  crates/uasset-parser/src/codec/native_values/saved_structs.rs\n9f457b78ff2146c1ffb48fd1cbdc2b3b2f46911778945818eba94e2e20320d3e  crates/uasset-parser/src/convert.rs\ne25e61d8dd08bb548f49052617ba3a3bf696c826b6bcea932cdbfd2e05736e9b  crates/uasset-parser/src/gatherable_text.rs\n14d83ee39ac50c8547851affd4e668a01b623e57b0ac183ef629e9fefd63a02d  crates/uasset-parser/src/lib.rs\n2656e1f6521cd5e791a67dd89db94c7282ce677030e63f7715752bbf74406623  crates/uasset-parser/src/metadata.rs\n92de9357330301b2047b7ebf58add9a8ccd030d88468e059dd7e5c475a48827b  crates/uasset-parser/src/native.rs\n47873963d15d01053515fd333e72296144c88e34b3bbf4ea802ff232405d2d9a  crates/uasset-parser/src/package.rs\n83c92dc11bb89efa10d421bb42bb3112ab5bd1115f7d469bf5041c45c6102df2  crates/uasset-parser/src/property.rs\n56a49787992de793c612ea015ea952c643b12ded88c1d2be5eaba84a0d46a709  crates/uasset-parser/src/property/replay.rs\na692026e10a7b89edc7caa73d320cf31e5cf483c5835f64e100f125d95f934fa  crates/uasset-parser/src/schema.rs\na192ed219522e1e5051c371d97f86dc5ac7d75b7d952d84483c9b16f7868d1cd  crates/uasset-parser/src/test_support.rs\n1dfdc73ed32b4ea1d3a5396eb91f2c9b2795729afe399154b502e7852f974c67  crates/uasset-parser/src/version.rs\n0a04d85f321176dcf8525e7d0b77fe191b4f1596a393bbd70aed95e111ec1af7  tools/benchmarks/uasset-decode/Cargo.lock\n527d1702572ae6367a12f1768a56b209faa0671686055bf933066b62a63c72e9  tools/benchmarks/uasset-decode/Cargo.toml\n",
+		"sourceAfter": "Cargo.lock: OK\nCargo.toml: OK\ncrates/uasset-inspection-wasm/Cargo.lock: OK\ncrates/uasset-inspection-wasm/Cargo.toml: OK\ncrates/uasset-inspection/Cargo.toml: OK\ncrates/uasset-inspection/src/animation.rs: OK\ncrates/uasset-inspection/src/authoring.rs: OK\ncrates/uasset-inspection/src/blueprint.rs: OK\ncrates/uasset-inspection/src/blueprint/definition.rs: OK\ncrates/uasset-inspection/src/blueprint_classes.rs: OK\ncrates/uasset-inspection/src/blueprint_diff.rs: OK\ncrates/uasset-inspection/src/blueprint_diff/tests.rs: OK\ncrates/uasset-inspection/src/blueprint_text.rs: OK\ncrates/uasset-inspection/src/decoded_exports.rs: OK\ncrates/uasset-inspection/src/gather_coverage.rs: OK\ncrates/uasset-inspection/src/generic.rs: OK\ncrates/uasset-inspection/src/generic/json.rs: OK\ncrates/uasset-inspection/src/level_sequence.rs: OK\ncrates/uasset-inspection/src/level_sequence/discrete.rs: OK\ncrates/uasset-inspection/src/level_sequence/numeric.rs: OK\ncrates/uasset-inspection/src/level_sequence/saved.rs: OK\ncrates/uasset-inspection/src/lib.rs: OK\ncrates/uasset-inspection/src/package_header.rs: OK\ncrates/uasset-inspection/src/projection.rs: OK\ncrates/uasset-inspection/src/saved_inspection.rs: OK\ncrates/uasset-inspection/src/saved_world.rs: OK\ncrates/uasset-inspection/src/saved_world_wire.rs: OK\ncrates/uasset-inspection/src/text_wire.rs: OK\ncrates/uasset-inspection/src/texture_wire.rs: OK\ncrates/uasset-parser/Cargo.toml: OK\ncrates/uasset-parser/source-models/ue57-data-assets.json: OK\ncrates/uasset-parser/source-models/ue58-property-bags.json: OK\ncrates/uasset-parser/src/archive.rs: OK\ncrates/uasset-parser/src/asset.rs: OK\ncrates/uasset-parser/src/asset/native_data.rs: OK\ncrates/uasset-parser/src/asset/native_data/class.rs: OK\ncrates/uasset-parser/src/asset/native_data/object.rs: OK\ncrates/uasset-parser/src/asset/script.rs: OK\ncrates/uasset-parser/src/codec.rs: OK\ncrates/uasset-parser/src/codec/legacy_structs.rs: OK\ncrates/uasset-parser/src/codec/native_values.rs: OK\ncrates/uasset-parser/src/codec/native_values/niagara.rs: OK\ncrates/uasset-parser/src/codec/native_values/pin_type.rs: OK\ncrates/uasset-parser/src/codec/native_values/property_bag.rs: OK\ncrates/uasset-parser/src/codec/native_values/saved_structs.rs: OK\ncrates/uasset-parser/src/convert.rs: OK\ncrates/uasset-parser/src/gatherable_text.rs: OK\ncrates/uasset-parser/src/lib.rs: OK\ncrates/uasset-parser/src/metadata.rs: OK\ncrates/uasset-parser/src/native.rs: OK\ncrates/uasset-parser/src/package.rs: OK\ncrates/uasset-parser/src/property.rs: OK\ncrates/uasset-parser/src/property/replay.rs: OK\ncrates/uasset-parser/src/schema.rs: OK\ncrates/uasset-parser/src/test_support.rs: OK\ncrates/uasset-parser/src/version.rs: OK\ntools/benchmarks/uasset-decode/Cargo.lock: OK\ntools/benchmarks/uasset-decode/Cargo.toml: OK\n",
+		"referenceBuildNote": "The first attempt was blocked by nested workspace discovery. An exact audited source copy outside the repository, with no code or manifest edits, built successfully with the same wasm-pack release/no-opt/locked settings. The sealed original repository and shipping selected module were preserved.",
+		"oracles": {
+			"original-corpus": {
+				"sha256": "691f01d26d94c972f51c76d15a99634f4dec8c3177ff1235f0174cf74ed15e04",
+				"cases": 140
+			},
+			"original-mutations": {
+				"sha256": "eb217ee1013bc58028a92defad1657dc8b029331ce13d065b69851632faa2dcb",
+				"cases": 267
+			},
+			"core-2-corpus": {
+				"sha256": "691f01d26d94c972f51c76d15a99634f4dec8c3177ff1235f0174cf74ed15e04",
+				"cases": 140
+			},
+			"core-2-mutations": {
+				"sha256": "eb217ee1013bc58028a92defad1657dc8b029331ce13d065b69851632faa2dcb",
+				"cases": 267
+			}
+		},
+		"rawEvidence": {
+			"path": "source-wasm-raw.json.gz",
+			"bytes": 81362,
+			"sha256": "5594e6971bf90bfbcb94a7ed8d290f2d79720ae6099aeb6d3f59996fa1454e56",
+			"uncompressedBytes": 1133843
+		}
+	},
+	"verification": {
+		"hostTests": 0,
+		"hostTestResult": "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.36s",
+		"clippy": 0,
+		"fullCheck": 1,
+		"fullCheckTail": "ℹ tests 63\nℹ suites 0\nℹ pass 63\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 4904.907655\n$ node scripts/test-public-packages.ts\nfile:///home/user/git/ue-shed/scripts/test-public-packages.ts:51\n\t\tthrow new Error(\n\t\t      ^\n\nError: pnpm install --offline --ignore-scripts --frozen-lockfile failed:\n✓ Lockfile passes supply-chain policies (verified 1s ago)\nLockfile is up to date, resolution step is skipped\nProgress: resolved 1, reused 0, downloaded 0, added 0\nPackages: +108\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nProgress: resolved 108, reused 108, downloaded 0, added 108, done\n[ENOTDIR] ENOTDIR: not a directory, open '/tmp/ue-shed-public-packages-r6E65I/consumer/node_modules/.pnpm/@ue-shed+engine@file+..+packages+ue-shed-engine-0.25.0.tgz_effect@4.0.0/node_modules/@ue-shed/engine-win32-x64/package.json'\n\npnpm: ENOTDIR: not a directory, open '/tmp/ue-shed-public-packages-r6E65I/consumer/node_modules/.pnpm/@ue-shed+engine@file+..+packages+ue-shed-engine-0.25.0.tgz_effect@4.0.0/node_modules/@ue-shed/engine-win32-x64/package.json'\n\n\n    at run (file:///home/user/git/ue-shed/scripts/test-public-packages.ts:51:9)\n    at file:///home/user/git/ue-shed/scripts/test-public-packages.ts:361:2\n\nNode.js v26.13.0\n[ELIFECYCLE] Command failed with exit code 1.\n[ELIFECYCLE] Command failed with exit code 1.\n",
+		"uassetRust": {
+			"passed": 719,
+			"ignored": 8
+		},
+		"originalNativeNode26": 0,
+		"originalNativeNode24": 0,
+		"engineMatrix": 1,
+		"engineDiscovery": [
+			{
+				"version": "5.7",
+				"root": null
+			},
+			{
+				"version": "5.8",
+				"root": null
+			}
+		],
+		"finalOriginalWasmOracle": 0,
+		"sourceAfter": "crates/uasset-inspection-wasm/src/lib.rs: OK\n",
+		"nativeSourceAfter": "Cargo.lock: OK\nCargo.toml: OK\ncrates/uasset-inspection-wasm/Cargo.lock: OK\ncrates/uasset-inspection-wasm/Cargo.toml: OK\ncrates/uasset-inspection/Cargo.toml: OK\ncrates/uasset-inspection/src/animation.rs: OK\ncrates/uasset-inspection/src/authoring.rs: OK\ncrates/uasset-inspection/src/blueprint.rs: OK\ncrates/uasset-inspection/src/blueprint/definition.rs: OK\ncrates/uasset-inspection/src/blueprint_classes.rs: OK\ncrates/uasset-inspection/src/blueprint_diff.rs: OK\ncrates/uasset-inspection/src/blueprint_diff/tests.rs: OK\ncrates/uasset-inspection/src/blueprint_text.rs: OK\ncrates/uasset-inspection/src/decoded_exports.rs: OK\ncrates/uasset-inspection/src/gather_coverage.rs: OK\ncrates/uasset-inspection/src/generic.rs: OK\ncrates/uasset-inspection/src/generic/json.rs: OK\ncrates/uasset-inspection/src/level_sequence.rs: OK\ncrates/uasset-inspection/src/level_sequence/discrete.rs: OK\ncrates/uasset-inspection/src/level_sequence/numeric.rs: OK\ncrates/uasset-inspection/src/level_sequence/saved.rs: OK\ncrates/uasset-inspection/src/lib.rs: OK\ncrates/uasset-inspection/src/package_header.rs: OK\ncrates/uasset-inspection/src/projection.rs: OK\ncrates/uasset-inspection/src/saved_inspection.rs: OK\ncrates/uasset-inspection/src/saved_world.rs: OK\ncrates/uasset-inspection/src/saved_world_wire.rs: OK\ncrates/uasset-inspection/src/text_wire.rs: OK\ncrates/uasset-inspection/src/texture_wire.rs: OK\ncrates/uasset-parser/Cargo.toml: OK\ncrates/uasset-parser/source-models/ue57-data-assets.json: OK\ncrates/uasset-parser/source-models/ue58-property-bags.json: OK\ncrates/uasset-parser/src/archive.rs: OK\ncrates/uasset-parser/src/asset.rs: OK\ncrates/uasset-parser/src/asset/native_data.rs: OK\ncrates/uasset-parser/src/asset/native_data/class.rs: OK\ncrates/uasset-parser/src/asset/native_data/object.rs: OK\ncrates/uasset-parser/src/asset/script.rs: OK\ncrates/uasset-parser/src/codec.rs: OK\ncrates/uasset-parser/src/codec/legacy_structs.rs: OK\ncrates/uasset-parser/src/codec/native_values.rs: OK\ncrates/uasset-parser/src/codec/native_values/niagara.rs: OK\ncrates/uasset-parser/src/codec/native_values/pin_type.rs: OK\ncrates/uasset-parser/src/codec/native_values/property_bag.rs: OK\ncrates/uasset-parser/src/codec/native_values/saved_structs.rs: OK\ncrates/uasset-parser/src/convert.rs: OK\ncrates/uasset-parser/src/gatherable_text.rs: OK\ncrates/uasset-parser/src/lib.rs: OK\ncrates/uasset-parser/src/metadata.rs: OK\ncrates/uasset-parser/src/native.rs: OK\ncrates/uasset-parser/src/package.rs: OK\ncrates/uasset-parser/src/property.rs: OK\ncrates/uasset-parser/src/property/replay.rs: OK\ncrates/uasset-parser/src/schema.rs: OK\ncrates/uasset-parser/src/test_support.rs: OK\ncrates/uasset-parser/src/version.rs: OK\ntools/benchmarks/uasset-decode/Cargo.lock: OK\ntools/benchmarks/uasset-decode/Cargo.toml: OK\n"
+	},
+	"originalSourceAudit": {
+		"commit": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+		"files": [
+			{
+				"file": "Cargo.lock",
+				"sha256": "0a1d3726eb6ce624de9f2ea2c17df1fae60b5f478c3805995d28612bcba447a9"
+			},
+			{
+				"file": "Cargo.toml",
+				"sha256": "a852b332be32fbff5d43d38dfe3b656815b5482955fc762a0ceec2f0445f29e7"
+			},
+			{
+				"file": "crates/uasset-inspection-wasm/Cargo.lock",
+				"sha256": "3883d64317c711fa3d5121afa7507fbda1bf90644fbd9befd9d642b757e39a1d"
+			},
+			{
+				"file": "crates/uasset-inspection-wasm/Cargo.toml",
+				"sha256": "109eaa87432a14259bba33367cf04866711a8cd08451939e3d5b144f83affcab"
+			},
+			{
+				"file": "crates/uasset-inspection-wasm/src/lib.rs",
+				"sha256": "647a2715925d48c5267cc443d0255335aaacaf0b960c206b0fe824535cd4ee0a"
+			},
+			{
+				"file": "crates/uasset-inspection/Cargo.toml",
+				"sha256": "4d69462b8748f09b12b13643b4da3d8526b10a24d8edb3df4468c4c095a5358f"
+			},
+			{
+				"file": "crates/uasset-inspection/examples/benchmark_inspection.rs",
+				"sha256": "355fe229c5515b397a56eccda5dc0a5460631b70f5e72fc21dfe1292360053b4"
+			},
+			{
+				"file": "crates/uasset-inspection/src/animation.rs",
+				"sha256": "753e39671c9fc1c3ad0f4ee872bbd0f752cbdaade4a818ed1f77de86af828f9b"
+			},
+			{
+				"file": "crates/uasset-inspection/src/authoring.rs",
+				"sha256": "6528d42a21100f2382042fbdb07c1b26450c95c08b59d9858119bf9f9734c9ae"
+			},
+			{
+				"file": "crates/uasset-inspection/src/blueprint.rs",
+				"sha256": "2f9cf078a0ce5db502ec7e97bb9470fa135164e2e4059ebca84952bd75351b8d"
+			},
+			{
+				"file": "crates/uasset-inspection/src/blueprint/definition.rs",
+				"sha256": "45e6643f22508550d9d6eb0cbe3da3f95c7e9ff1d1a9cefb1967d03256d35aaf"
+			},
+			{
+				"file": "crates/uasset-inspection/src/blueprint_classes.rs",
+				"sha256": "46a35b447d28e14014271f43ed4e290d55fa841e1a887ebb2953d66d33cf4e1a"
+			},
+			{
+				"file": "crates/uasset-inspection/src/blueprint_diff.rs",
+				"sha256": "a88244442e42dd9f70efcad98adb837f5fafe7243b4f94cf5b84c26f47988b1a"
+			},
+			{
+				"file": "crates/uasset-inspection/src/blueprint_diff/tests.rs",
+				"sha256": "83dfc329491e0a3909d48e00160dca66ff7a0358bc34746b452e95c803e02a24"
+			},
+			{
+				"file": "crates/uasset-inspection/src/blueprint_text.rs",
+				"sha256": "698598bf7c8a1bda3229aeded41c0d560ed2a5f3b83d213a2a6d30fb04ecffbb"
+			},
+			{
+				"file": "crates/uasset-inspection/src/decoded_exports.rs",
+				"sha256": "43c5a205f9f4c329899ee1a4b32ac0e68b0bab6d1d7e2c8e23559112cece4486"
+			},
+			{
+				"file": "crates/uasset-inspection/src/gather_coverage.rs",
+				"sha256": "94e4534dcb920c31762165aca6ac05f55856736ab8551f65fc3693d1050f9342"
+			},
+			{
+				"file": "crates/uasset-inspection/src/generic.rs",
+				"sha256": "ef8202afdee727c75d2da410b1c944b3a38ee95dd4ad1225487990abe3281797"
+			},
+			{
+				"file": "crates/uasset-inspection/src/generic/json.rs",
+				"sha256": "325321d34f5f081e8d70f15780e700e8f73b557252674c3d9fb812aa3aab12db"
+			},
+			{
+				"file": "crates/uasset-inspection/src/level_sequence.rs",
+				"sha256": "03af0b386ef8de81003020d806fd48a123a8030d655b95ebbb277797a001f369"
+			},
+			{
+				"file": "crates/uasset-inspection/src/level_sequence/discrete.rs",
+				"sha256": "5a2a341dc0167fff0e9199d6c62852941dd12d11ba2ee34444bdb17e18e77795"
+			},
+			{
+				"file": "crates/uasset-inspection/src/level_sequence/numeric.rs",
+				"sha256": "c20a63d87e9cf4fa4ab5ebdb5f8dff8dbf4355fd5acde737d5d03d9520a5a113"
+			},
+			{
+				"file": "crates/uasset-inspection/src/level_sequence/saved.rs",
+				"sha256": "02afb3e958d0a134f7dc365fddf05e340588300e3e2213ea59669f2fca94241b"
+			},
+			{
+				"file": "crates/uasset-inspection/src/lib.rs",
+				"sha256": "b60e0ee1dec1e341f545137924225e19205ac1c3937f88d608c83b1a37acc601"
+			},
+			{
+				"file": "crates/uasset-inspection/src/package_header.rs",
+				"sha256": "ee5b2a97f2dbbed1a7262a7e88e0940632746da5ec5a85a308be5da1960d7fc7"
+			},
+			{
+				"file": "crates/uasset-inspection/src/projection.rs",
+				"sha256": "8d04dd6169c3a3e148194024945062565ec76b495f287cae03d546cef1bd17a1"
+			},
+			{
+				"file": "crates/uasset-inspection/src/saved_inspection.rs",
+				"sha256": "d37a23dfc518d9410bfb647c7bf23448fed401a0a22b80cc9d842e04067730fe"
+			},
+			{
+				"file": "crates/uasset-inspection/src/saved_world.rs",
+				"sha256": "80bcf5724eb0a87f563d29e45f63882c02281b687f69187089ad755847f6504d"
+			},
+			{
+				"file": "crates/uasset-inspection/src/saved_world_wire.rs",
+				"sha256": "8df62913337af6532468d08019fb641a83d54113a51dd702c30b8549c4672b1d"
+			},
+			{
+				"file": "crates/uasset-inspection/src/text_wire.rs",
+				"sha256": "3b276c54c471da0e58ea57d50c91ef261caa22645c31a9cfd8a092fb4d924461"
+			},
+			{
+				"file": "crates/uasset-inspection/src/texture_wire.rs",
+				"sha256": "a26c52a5e1f964e8115866cd9dc3929cf0fdcbea9f450c90e7869985f36546a9"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/game_text_identity.rs",
+				"sha256": "2d5e69f95e4860807c200273dfbeed25811d7c3c2d19ceb046903fc4acc53f19"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/gather_coverage.rs",
+				"sha256": "d1a1c38f9dffdda1485c0e0f127ff999f1b344ef8476dead8122a2dffc639371"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/graph_pin_text.rs",
+				"sha256": "9fbc521c4935cac70e916e76f3fa7d8f6d7e83f49935c382d86101bf06e66992"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/inspection.rs",
+				"sha256": "dbd6d1bcf666d0f16d85ddcc7919b82d02fa22d1ac0625bed012e12f71037998"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/legacy_text_fixtures.rs",
+				"sha256": "17c1b5ec8382e283a6e6879e03e14558e8f00ab96e80122278d09820fbf5768c"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/malformed_packages.rs",
+				"sha256": "03294600b835b6af2e3272a30a12d3a224059918bcac26385149c8a3072670a8"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/native_coverage.rs",
+				"sha256": "25d6da54c258d8fe51a740c79fc62cecffaeb2117ab0a4ebe3536de366d981df"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/projections.rs",
+				"sha256": "7cfc335429ad7e51b6209a98af918cda8939a5a03afdd754783e6773e7a0ccea"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/support/custom_graph.rs",
+				"sha256": "a1895bad17db98433e4be5fbd9bf41ef01bc893215db5fa6b9d9de48ee7a6621"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/text_capability.rs",
+				"sha256": "72ea13a179c2584bd8a8632331dc5505d9a55a7947bf8d70b91b4e2d1e203f17"
+			},
+			{
+				"file": "crates/uasset-inspection/tests/text_decode_filter.rs",
+				"sha256": "1ef6a919ed2284b4048cfe7a47be5e7f0c7f2d19e2d9809537e24732f0b07385"
+			},
+			{
+				"file": "crates/uasset-parser/Cargo.toml",
+				"sha256": "7951db68d7db326dae7b56093c618f39f0240301aa39bb0b339e11ed48a13101"
+			},
+			{
+				"file": "crates/uasset-parser/examples/benchmark_headers.rs",
+				"sha256": "73651693cfd13f3495be86f070a9a923e67b010044620122be057e5dba3c4aa5"
+			},
+			{
+				"file": "crates/uasset-parser/examples/benchmark_parser.rs",
+				"sha256": "89b8fb469a34b9eabe54e1a2f5a407d147ba2eacca01cfd8ec18f7cd5f19e408"
+			},
+			{
+				"file": "crates/uasset-parser/source-models/ue57-data-assets.json",
+				"sha256": "59737551d39a34e94d1f234ad1e3742d05a2d11615a0da49dc67284166b3fa83"
+			},
+			{
+				"file": "crates/uasset-parser/source-models/ue58-property-bags.json",
+				"sha256": "ec2df6a824193f2bd5487cc6efb50b26dc57935782c8411e943c5a8e16c823e3"
+			},
+			{
+				"file": "crates/uasset-parser/src/archive.rs",
+				"sha256": "0bc0100ce2c8610d91fcaec1d5c313f486c96326322ece1cca0bfc64a458d293"
+			},
+			{
+				"file": "crates/uasset-parser/src/asset.rs",
+				"sha256": "f94acaddc110c2474043e4e761c714f1f101c0cc35fc5438a3a3d4bccf6eb326"
+			},
+			{
+				"file": "crates/uasset-parser/src/asset/native_data.rs",
+				"sha256": "17bdcda2d0cdc534af45edd6417686247d1e93fe1f0a8fa2493da80e5700b1d6"
+			},
+			{
+				"file": "crates/uasset-parser/src/asset/native_data/class.rs",
+				"sha256": "7a077781db5c98d253e3ee91614cf73c2c30e19ac01f193bce233939fe0eb75a"
+			},
+			{
+				"file": "crates/uasset-parser/src/asset/native_data/object.rs",
+				"sha256": "3b28485c4405017c10c17bd469b44930de853acb56e770b2b8f2cc77ab081f0f"
+			},
+			{
+				"file": "crates/uasset-parser/src/asset/script.rs",
+				"sha256": "4faff04fd6a9270a37c07a2409431789e13112633507635c0e2d8d34f91c3abf"
+			},
+			{
+				"file": "crates/uasset-parser/src/codec.rs",
+				"sha256": "2002b41ccb11eb8d7b7d7afb8860845bd8e1431508520a3842a9cb03c65404d7"
+			},
+			{
+				"file": "crates/uasset-parser/src/codec/legacy_structs.rs",
+				"sha256": "4526a24146111adc194ce608addf925a374cb4e2981663ff6f26e7437152fd58"
+			},
+			{
+				"file": "crates/uasset-parser/src/codec/native_values.rs",
+				"sha256": "81cb1f1878c88bfde1460079548d9c763eff0302212a6876164a0a4096f7cc68"
+			},
+			{
+				"file": "crates/uasset-parser/src/codec/native_values/niagara.rs",
+				"sha256": "a7b6619aca02799702978f62c323105b77faf4a32ba0bf16884a0da0bad1cb64"
+			},
+			{
+				"file": "crates/uasset-parser/src/codec/native_values/pin_type.rs",
+				"sha256": "36c698a8fd4d75643e2af375dd2f4ab38089212629edccf008d63e835de1fa5a"
+			},
+			{
+				"file": "crates/uasset-parser/src/codec/native_values/property_bag.rs",
+				"sha256": "c25611496fea7b1557cd14438743fff88471a5958f8cc351a5f05e630227ee6e"
+			},
+			{
+				"file": "crates/uasset-parser/src/codec/native_values/saved_structs.rs",
+				"sha256": "a601f39be5b4d9519ad5dee2f03b958d97e8e79eecf70bce48e69d24514b8a91"
+			},
+			{
+				"file": "crates/uasset-parser/src/convert.rs",
+				"sha256": "9f457b78ff2146c1ffb48fd1cbdc2b3b2f46911778945818eba94e2e20320d3e"
+			},
+			{
+				"file": "crates/uasset-parser/src/gatherable_text.rs",
+				"sha256": "e25e61d8dd08bb548f49052617ba3a3bf696c826b6bcea932cdbfd2e05736e9b"
+			},
+			{
+				"file": "crates/uasset-parser/src/lib.rs",
+				"sha256": "14d83ee39ac50c8547851affd4e668a01b623e57b0ac183ef629e9fefd63a02d"
+			},
+			{
+				"file": "crates/uasset-parser/src/metadata.rs",
+				"sha256": "2656e1f6521cd5e791a67dd89db94c7282ce677030e63f7715752bbf74406623"
+			},
+			{
+				"file": "crates/uasset-parser/src/native.rs",
+				"sha256": "92de9357330301b2047b7ebf58add9a8ccd030d88468e059dd7e5c475a48827b"
+			},
+			{
+				"file": "crates/uasset-parser/src/package.rs",
+				"sha256": "81736ed148fc73078a9ed4a35a7c401a564bc5a01c74d085b8e2c5a28fea4ec6"
+			},
+			{
+				"file": "crates/uasset-parser/src/property.rs",
+				"sha256": "63719fe444227102ff05ed3d4a9a8304dc41f586a57364dfd9d2575e92b13928"
+			},
+			{
+				"file": "crates/uasset-parser/src/schema.rs",
+				"sha256": "37d187e186aec493e95e6928b07feac8cf1b20fd01582ff29432d42cdbee1463"
+			},
+			{
+				"file": "crates/uasset-parser/src/test_support.rs",
+				"sha256": "a192ed219522e1e5051c371d97f86dc5ac7d75b7d952d84483c9b16f7868d1cd"
+			},
+			{
+				"file": "crates/uasset-parser/src/version.rs",
+				"sha256": "1dfdc73ed32b4ea1d3a5396eb91f2c9b2795729afe399154b502e7852f974c67"
+			}
+		]
+	},
+	"build": {
+		"schemaVersion": 1,
+		"packageVersion": "0.25.0",
+		"crateVersion": "0.25.0",
+		"targets": ["nodejs", "web"],
+		"cargoLocked": true,
+		"tools": {
+			"rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+			"wasmPack": "wasm-pack 0.15.1",
+			"wasmBindgen": "0.2.126",
+			"wasmOpt": "disabled (--no-opt)"
+		},
+		"optimizer": {
+			"name": "wasm-opt",
+			"status": "disabled",
+			"reason": "wasm-pack --no-opt",
+			"command": null,
+			"version": null,
+			"enabled": false
+		},
+		"limits": {
+			"maxInputBytes": 67108864,
+			"maxOutputBytes": 67108864,
+			"maxExports": 100000,
+			"maxProjectionItems": 1000000
+		}
+	},
+	"oracles": {
+		"original-corpus": {
+			"sha256": "691f01d26d94c972f51c76d15a99634f4dec8c3177ff1235f0174cf74ed15e04",
+			"cases": 140
+		},
+		"original-mutations": {
+			"sha256": "eb217ee1013bc58028a92defad1657dc8b029331ce13d065b69851632faa2dcb",
+			"cases": 267
+		},
+		"core-2-corpus": {
+			"sha256": "691f01d26d94c972f51c76d15a99634f4dec8c3177ff1235f0174cf74ed15e04",
+			"cases": 140
+		},
+		"core-2-mutations": {
+			"sha256": "eb217ee1013bc58028a92defad1657dc8b029331ce13d065b69851632faa2dcb",
+			"cases": 267
+		},
+		"167-control-corpus": {
+			"sha256": "691f01d26d94c972f51c76d15a99634f4dec8c3177ff1235f0174cf74ed15e04",
+			"cases": 140
+		},
+		"167-control-mutations": {
+			"sha256": "eb217ee1013bc58028a92defad1657dc8b029331ce13d065b69851632faa2dcb",
+			"cases": 267
+		},
+		"167-full-write-corpus": {
+			"sha256": "691f01d26d94c972f51c76d15a99634f4dec8c3177ff1235f0174cf74ed15e04",
+			"cases": 140
+		},
+		"167-full-write-mutations": {
+			"sha256": "eb217ee1013bc58028a92defad1657dc8b029331ce13d065b69851632faa2dcb",
+			"cases": 267
+		},
+		"final-corpus": {
+			"sha256": "691f01d26d94c972f51c76d15a99634f4dec8c3177ff1235f0174cf74ed15e04",
+			"cases": 140
+		},
+		"final-mutations": {
+			"sha256": "eb217ee1013bc58028a92defad1657dc8b029331ce13d065b69851632faa2dcb",
+			"cases": 267
+		}
+	},
+	"rawEvidence": {
+		"path": "source-wasm-raw.json.gz",
+		"bytes": 524153,
+		"sha256": "98e9c6102419566bb91ae1c7bb9d0eaed42ff7bf1f462968561651951efd15ed",
+		"uncompressedBytes": 8169678
+	}
+}

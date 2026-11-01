@@ -1,5 +1,8 @@
 # UAsset parser follow-up: source ablations and scalar decoding (2026-10-31–2026-11-01)
 
+The subsequent [source and layout investigation](uasset-parser-speed-source-design-2026-11-01.md)
+continues from this checkpoint with fixed build settings and additional algorithm experiments.
+
 The completed overnight investigation was committed and pushed as `6254a1fc0ed1c5f90a1ad2ba121f0137dff5cb30` on `perf/uasset-parser-speed-arm64-2026-10-31` before this user-authorized continuation. The original parser at `3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5`, its binaries, and all earlier measurements remain preserved. The old scheduled continuation remains disabled. This new authorization began after the original cutoff; final measurements continued into 1 November UTC.
 
 This batch measured seven further source trials with mimalloc 0.1.52, including three final-configuration ablations. Only trial 30 is retained: 37 production lines plus regression coverage in `codec.rs`. No public model/API, allocator, compiler profile, or fixture changes were made.

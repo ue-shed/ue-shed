@@ -16,6 +16,7 @@ struct Tag<'a> {
     range: Range<usize>,
     expected: &'a [u8],
     flags_offset: usize,
+    plan: crate::codec::ReplayDecodePlan,
 }
 
 pub(crate) struct TaggedStreamReplay<'a> {
@@ -25,6 +26,8 @@ pub(crate) struct TaggedStreamReplay<'a> {
     terminator: Range<usize>,
     prefix_len: usize,
     stream: PropertyStream,
+    plan_package: Option<&'a crate::package::Package>,
+    plans_ready: bool,
 }
 
 impl<'a> TaggedStreamReplay<'a> {
@@ -73,6 +76,7 @@ impl<'a> TaggedStreamReplay<'a> {
                 range,
                 expected,
                 flags_offset,
+                plan: crate::codec::ReplayDecodePlan::Ordinary,
             });
             position = relative(record.payload.end())?;
         }
@@ -86,15 +90,49 @@ impl<'a> TaggedStreamReplay<'a> {
             terminator,
             prefix_len,
             stream: stream.clone(),
+            plan_package: None,
+            plans_ready: false,
         })
     }
 
+    pub(crate) fn with_decode_plans(mut self, package: &'a crate::package::Package) -> Self {
+        self.plan_package = Some(package);
+        self
+    }
+
+    // Cold, never-reused layouts do not need semantic plans.
+    fn prepare_plans(&mut self) {
+        if !self.plans_ready {
+            if let Some(package) = self.plan_package {
+                for (tag, record) in self.tags.iter_mut().zip(&self.stream.records) {
+                    tag.plan = crate::codec::ReplayDecodePlan::prepare(package, record);
+                }
+            }
+            self.plans_ready = true;
+        }
+    }
+
     /// A miss leaves the cursor untouched so the ordinary parser owns every diagnostic.
+    #[cfg(test)]
     pub(crate) fn try_read(
-        &self,
+        &mut self,
         reader: &mut Reader<'_>,
         path: &(impl fmt::Display + ?Sized),
     ) -> Option<PropertyStream> {
+        self.try_read_with(reader, path, |_, _| Ok::<(), super::PropertyError>(()))
+            .and_then(Result::ok)
+    }
+
+    /// Check every header before invoking the decoder on each record in its final slot.
+    pub(crate) fn try_read_with<E>(
+        &mut self,
+        reader: &mut Reader<'_>,
+        path: &(impl fmt::Display + ?Sized),
+        mut decode: impl FnMut(
+            &mut super::PropertyRecord,
+            crate::codec::ReplayDecodePlan,
+        ) -> Result<(), E>,
+    ) -> Option<Result<PropertyStream, E>> {
         if u64::try_from(self.bytes.len()).ok()? > reader.remaining() {
             return None;
         }
@@ -111,13 +149,28 @@ impl<'a> TaggedStreamReplay<'a> {
             let flags = tag.flags_offset;
             // Bool values live in this flag, not in the payload. Other flag changes may
             // alter header shape and must return to the ordinary parser.
-            if (*actual.get(flags)? ^ *tag.expected.get(flags)?) & !TAG_FLAG_BOOL_TRUE != 0
+            if flags == 24 && actual.len() == 25 {
+                let word = |bytes: &[u8], offset| {
+                    bytes
+                        .get(offset..offset + 8)?
+                        .try_into()
+                        .ok()
+                        .map(u64::from_ne_bytes)
+                };
+                let changed = (word(actual, 0)? ^ word(tag.expected, 0)?)
+                    | (word(actual, 8)? ^ word(tag.expected, 8)?)
+                    | (word(actual, 16)? ^ word(tag.expected, 16)?);
+                if changed != 0 || (actual[24] ^ tag.expected[24]) & !TAG_FLAG_BOOL_TRUE != 0 {
+                    return None;
+                }
+            } else if (*actual.get(flags)? ^ *tag.expected.get(flags)?) & !TAG_FLAG_BOOL_TRUE != 0
                 || actual.get(..flags)? != tag.expected.get(..flags)?
                 || actual.get(flags + 1..)? != tag.expected.get(flags + 1..)?
             {
                 return None;
             }
         }
+        self.prepare_plans();
         let relocate = |span: Span| {
             Span::new(
                 start.checked_add(span.offset().checked_sub(self.start)?)?,
@@ -127,7 +180,7 @@ impl<'a> TaggedStreamReplay<'a> {
         };
         let mut records = Vec::with_capacity(self.stream.records.len());
         for (record, tag) in self.stream.records.iter().zip(&self.tags) {
-            records.push(super::PropertyRecord {
+            let record = super::PropertyRecord {
                 name: record.name,
                 type_name: record.type_name.clone(),
                 array_index: record.array_index,
@@ -139,7 +192,14 @@ impl<'a> TaggedStreamReplay<'a> {
                 value: PropertyValue::Raw {
                     reason: RawReason::UnsupportedType,
                 },
-            });
+            };
+            records.push(record);
+            if let Some(record) = records.last_mut()
+                && let Err(error) = decode(record, tag.plan)
+            {
+                *reader = probe;
+                return Some(Err(error));
+            }
         }
         let stream = PropertyStream {
             class_extensions: self.stream.class_extensions.clone(),
@@ -147,7 +207,80 @@ impl<'a> TaggedStreamReplay<'a> {
             terminator: relocate(self.stream.terminator)?,
         };
         *reader = probe;
+        Some(Ok(stream))
+    }
+    /// Validates an entire stream before values are decoded, allowing only payload size and bool value to vary.
+    pub(crate) fn try_read_variable(
+        &self,
+        reader: &mut Reader<'_>,
+        path: &(impl fmt::Display + ?Sized),
+    ) -> Option<PropertyStream> {
+        let mut probe = reader.clone();
+        let prefix = probe.read_bytes(self.prefix_len, path).ok()?;
+        if prefix != self.bytes.get(..self.prefix_len)? {
+            return None;
+        }
+        let mut records = Vec::with_capacity(self.stream.records.len());
+        for (original, tag) in self.stream.records.iter().zip(&self.tags) {
+            let actual = probe.read_bytes(tag.expected.len(), path).ok()?;
+            let flags = tag.flags_offset;
+            let size_offset = flags.checked_sub(4)?;
+            if actual.get(..size_offset)? != tag.expected.get(..size_offset)?
+                || (*actual.get(flags)? ^ *tag.expected.get(flags)?) & !TAG_FLAG_BOOL_TRUE != 0
+                || actual.get(flags + 1..)? != tag.expected.get(flags + 1..)?
+            {
+                return None;
+            }
+            let size = i32::from_le_bytes(actual.get(size_offset..flags)?.try_into().ok()?);
+            let size = u64::try_from(size).ok()?;
+            let payload = Span::new(probe.tell(), size).ok()?;
+            probe.skip(size, path).ok()?;
+            records.push(super::PropertyRecord {
+                name: original.name,
+                type_name: original.type_name.clone(),
+                array_index: original.array_index,
+                flags: PropertyTagFlags(*actual.get(flags)?),
+                property_guid: original.property_guid,
+                struct_guid: original.struct_guid,
+                extensions: original.extensions.clone(),
+                payload,
+                value: PropertyValue::Raw {
+                    reason: RawReason::UnsupportedType,
+                },
+            });
+        }
+        let start = probe.tell();
+        let expected = self.bytes.get(self.terminator.clone())?;
+        if probe.read_bytes(expected.len(), path).ok()? != expected {
+            return None;
+        }
+        let terminator = Span::new(start, u64::try_from(expected.len()).ok()?).ok()?;
+        let stream = PropertyStream {
+            class_extensions: self.stream.class_extensions.clone(),
+            records,
+            terminator,
+        };
+        *reader = probe;
         Some(stream)
+    }
+
+    pub(crate) fn try_read_variable_with<E>(
+        &mut self,
+        reader: &mut Reader<'_>,
+        path: &(impl fmt::Display + ?Sized),
+        mut decode: impl FnMut(
+            &mut super::PropertyRecord,
+            crate::codec::ReplayDecodePlan,
+        ) -> Result<(), E>,
+    ) -> Option<Result<PropertyStream, E>> {
+        let mut stream = self.try_read_variable(reader, path)?;
+        self.prepare_plans();
+        for (record, tag) in stream.records.iter_mut().zip(&self.tags) {
+            if let Err(error) = decode(record, tag.plan) {
+                return Some(Err(error));
+            }
+        }
+        Some(Ok(stream))
     }
 }
 
@@ -169,7 +302,7 @@ mod tests {
         TypeParam, push_i32, ue5_versions, write_property_tag, write_property_terminator,
     };
 
-    fn names() -> Vec<String> {
+    pub(super) fn names() -> Vec<String> {
         [
             "None",
             "Count",
@@ -183,7 +316,7 @@ mod tests {
         .into()
     }
 
-    fn row(count: i32, enabled: bool, values: &[i32]) -> Vec<u8> {
+    pub(super) fn row(count: i32, enabled: bool, values: &[i32]) -> Vec<u8> {
         let mut bytes = Vec::new();
         write_property_tag(
             &mut bytes,
@@ -236,7 +369,7 @@ mod tests {
         let mut reader = Reader::new(&bytes);
         let first =
             read_tagged_property_stream(&mut reader, &ue5_versions(), &names(), "Row").unwrap();
-        let replay = TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &first).unwrap();
+        let mut replay = TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &first).unwrap();
         let mut normal = reader.clone();
         let mut expected =
             read_tagged_property_stream(&mut normal, &ue5_versions(), &names(), "Row").unwrap();
@@ -279,7 +412,7 @@ mod tests {
         let initial =
             read_uobject_tagged_property_stream(&mut reader, &ue5_versions(), &names(), "Object")
                 .unwrap();
-        let replay = TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &initial).unwrap();
+        let mut replay = TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &initial).unwrap();
         let mut normal = reader.clone();
         let expected =
             read_uobject_tagged_property_stream(&mut normal, &ue5_versions(), &names(), "Object")
@@ -317,7 +450,7 @@ mod tests {
             let mut reader = Reader::new(&bytes);
             let initial =
                 read_tagged_property_stream(&mut reader, &ue5_versions(), &names(), "Row").unwrap();
-            let replay = TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &initial).unwrap();
+            let mut replay = TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &initial).unwrap();
             let mut normal = reader.clone();
             let expected =
                 read_tagged_property_stream(&mut normal, &ue5_versions(), &names(), "Row");
@@ -359,5 +492,85 @@ mod tests {
                 .unwrap();
         assert_eq!(stream.records.len(), 700);
         assert!(TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &stream).is_none());
+    }
+}
+
+#[cfg(test)]
+mod variable_replay_tests {
+    use super::*;
+    use crate::codec::decode_property_stream_values;
+    use crate::package::test_package;
+    use crate::property::read_tagged_property_stream;
+    use crate::test_support::ue5_versions;
+
+    #[test]
+    fn variable_payloads_preserve_current_values_flags_metadata_spans_and_cursor() {
+        let first = super::tests::row(42, false, &[1, 2]);
+        let second = super::tests::row(7, true, &[-1, 99, 2, 3]);
+        let third = super::tests::row(9, false, &[]);
+        let bytes: Vec<_> = first.iter().chain(&second).chain(&third).copied().collect();
+        let package = test_package(super::tests::names());
+        let mut reader = Reader::new(&bytes);
+        let initial =
+            read_tagged_property_stream(&mut reader, &ue5_versions(), &package.names, "Row")
+                .unwrap();
+        let replay = TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &initial).unwrap();
+        for _ in 0..2 {
+            let mut normal = reader.clone();
+            let mut expected =
+                read_tagged_property_stream(&mut normal, &ue5_versions(), &package.names, "Row")
+                    .unwrap();
+            let mut actual = replay
+                .try_read_variable(&mut reader, "Row")
+                .expect("variable-width match");
+            assert_eq!(actual, expected);
+            assert_eq!(reader.tell(), normal.tell());
+            decode_property_stream_values(&bytes, &mut actual, &package).unwrap();
+            decode_property_stream_values(&bytes, &mut expected, &package).unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn variable_replay_mutations_match_full_parse_diagnostics_and_transactional_cursor() {
+        let first = super::tests::row(42, false, &[1, 2]);
+        let second = super::tests::row(7, true, &[-1, 99, 2, 3]);
+        let mut mutations: Vec<Vec<u8>> = (0..=second.len())
+            .map(|end| second[..end].to_vec())
+            .collect();
+        for offset in 0..second.len() {
+            for mask in [1, 2, 4, 8, 16, 32, 64, 128, 255] {
+                let mut bytes = second.clone();
+                bytes[offset] ^= mask;
+                mutations.push(bytes);
+            }
+        }
+        let package = test_package(super::tests::names());
+        for mutation in mutations {
+            let bytes: Vec<_> = first.iter().chain(&mutation).copied().collect();
+            let mut reader = Reader::new(&bytes);
+            let initial =
+                read_tagged_property_stream(&mut reader, &ue5_versions(), &package.names, "Row")
+                    .unwrap();
+            let replay = TaggedStreamReplay::new(&bytes, 0, &ue5_versions(), &initial).unwrap();
+            let position = reader.tell();
+            let mut normal = reader.clone();
+            let mut expected =
+                read_tagged_property_stream(&mut normal, &ue5_versions(), &package.names, "Row");
+            let mut actual = match replay.try_read_variable(&mut reader, "Row") {
+                Some(stream) => Ok(stream),
+                None => {
+                    assert_eq!(reader.tell(), position);
+                    read_tagged_property_stream(&mut reader, &ue5_versions(), &package.names, "Row")
+                }
+            };
+            assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
+            assert_eq!(reader.tell(), normal.tell());
+            if let (Ok(actual), Ok(expected)) = (&mut actual, &mut expected) {
+                let a = decode_property_stream_values(&bytes, actual, &package);
+                let b = decode_property_stream_values(&bytes, expected, &package);
+                assert_eq!(format!("{a:?}|{actual:?}"), format!("{b:?}|{expected:?}"));
+            }
+        }
     }
 }

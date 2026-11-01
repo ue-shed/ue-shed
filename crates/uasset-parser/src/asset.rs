@@ -884,13 +884,42 @@ fn decode_data_table_rows(
         &format_args!("{object_path}.Rows.Count"),
     )?;
     let mut rows = Vec::with_capacity(capacity);
-    let mut replay: Option<TaggedStreamReplay<'_>> = None;
+    // Default omissions and payload lengths can vary across otherwise similar rows.
+    // Bound optional learning; every miss retains the ordinary parser.
+    let mut replays: Vec<TaggedStreamReplay<'_>> = Vec::new();
+    let mut misses = 0u8;
+    let mut learning = true;
     for index in 0..row_count {
         let name = reader.read_name_ref(&format_args!("{object_path}.Rows[{index}].Name"))?;
-        let mut row_properties = if let Some(stream) = replay.as_ref().and_then(|replay| {
-            replay.try_read(reader, &format_args!("{object_path}.Rows[{index}].Value"))
-        }) {
-            stream
+        let matched = replays.iter_mut().enumerate().find_map(|(slot, replay)| {
+            let decode = |record: &mut crate::property::PropertyRecord, plan| {
+                crate::codec::decode_replayed_property_record(
+                    context.source,
+                    record,
+                    context.package,
+                    DecodeScope::root(context.property_filter),
+                    plan,
+                )
+            };
+            replay
+                .try_read_with(
+                    reader,
+                    &format_args!("{object_path}.Rows[{index}].Value"),
+                    decode,
+                )
+                .or_else(|| {
+                    replay.try_read_variable_with(
+                        reader,
+                        &format_args!("{object_path}.Rows[{index}].Value"),
+                        decode,
+                    )
+                })
+                .map(|stream| (slot, stream))
+        });
+        let (mut row_properties, decoded) = if let Some((slot, stream)) = matched {
+            replays[..=slot].rotate_right(1);
+            misses = 0;
+            (stream?, true)
         } else {
             let start = reader.tell();
             let stream = read_tagged_property_stream(
@@ -899,20 +928,35 @@ fn decode_data_table_rows(
                 &context.package.names,
                 &format_args!("{object_path}.Rows[{index}].Value"),
             )?;
-            replay = TaggedStreamReplay::new(
-                context.source,
-                start,
-                &context.package.summary.versions,
-                &stream,
-            );
-            stream
+            if learning {
+                misses += 1;
+                if misses >= 8 {
+                    learning = false;
+                    replays.clear();
+                } else if let Some(replay) = TaggedStreamReplay::new(
+                    context.source,
+                    start,
+                    &context.package.summary.versions,
+                    &stream,
+                )
+                .map(|replay| replay.with_decode_plans(context.package))
+                {
+                    if replays.len() == 4 {
+                        replays.pop();
+                    }
+                    replays.insert(0, replay);
+                }
+            }
+            (stream, false)
         };
-        decode_property_stream_values_at_depth(
-            context.source,
-            &mut row_properties,
-            context.package,
-            DecodeScope::root(context.property_filter),
-        )?;
+        if !decoded {
+            decode_property_stream_values_at_depth(
+                context.source,
+                &mut row_properties,
+                context.package,
+                DecodeScope::root(context.property_filter),
+            )?;
+        }
         rows.push(DataTableRow {
             name,
             properties: row_properties,
@@ -3416,7 +3460,7 @@ fn read_uobject_stream_with_replay<'a>(
     export: &Export,
     context: &AssetDecodeContext<'a>,
     streams: &mut StreamReplayCache<'a>,
-) -> Result<PropertyStream, PropertyError> {
+) -> Result<(PropertyStream, bool), PropertyError> {
     // Keep a small set of layouts for default-omission and variable-width properties.
     // Metadata, class count and repeated unsuccessful learning are all bounded.
     let has_capacity = streams.len() < 64;
@@ -3424,12 +3468,22 @@ fn read_uobject_stream_with_replay<'a>(
         Some(state) => match state {
             StreamReplayState::Active { replays, misses } => {
                 for index in 0..replays.len() {
-                    if let Some(stream) =
-                        replays[index].try_read(reader, export.object_path.as_str())
-                    {
+                    if let Some(stream) = replays[index].try_read_with(
+                        reader,
+                        export.object_path.as_str(),
+                        |record, plan| {
+                            crate::codec::decode_replayed_property_record(
+                                context.source,
+                                record,
+                                context.package,
+                                DecodeScope::root(context.property_filter),
+                                plan,
+                            )
+                        },
+                    ) {
                         replays[..=index].rotate_right(1);
                         *misses = 0;
-                        return Ok(stream);
+                        return Ok((stream?, true));
                     }
                 }
                 *misses += 1;
@@ -3458,7 +3512,8 @@ fn read_uobject_stream_with_replay<'a>(
             start,
             &context.package.summary.versions,
             &stream,
-        );
+        )
+        .map(|replay| replay.with_decode_plans(context.package));
         if let Some(replay) = replay {
             match streams.get_mut(&export.class_index) {
                 Some(StreamReplayState::Active { replays, .. }) => {
@@ -3481,7 +3536,7 @@ fn read_uobject_stream_with_replay<'a>(
             streams.insert(export.class_index, StreamReplayState::Disabled);
         }
     }
-    Ok(stream)
+    Ok((stream, false))
 }
 
 fn decode_uobject_properties<'a>(
@@ -3516,21 +3571,26 @@ fn decode_uobject_properties_with_replay<'a>(
             .map_err(AssetError::from)?;
     }
 
-    let mut properties = match streams {
+    let (mut properties, decoded) = match streams {
         Some(streams) => read_uobject_stream_with_replay(&mut reader, export, context, streams)?,
-        None => read_uobject_tagged_property_stream(
-            &mut reader,
-            &context.package.summary.versions,
-            &context.package.names,
-            export.object_path.as_str(),
-        )?,
+        None => (
+            read_uobject_tagged_property_stream(
+                &mut reader,
+                &context.package.summary.versions,
+                &context.package.names,
+                export.object_path.as_str(),
+            )?,
+            false,
+        ),
     };
-    decode_property_stream_values_at_depth(
-        context.source,
-        &mut properties,
-        context.package,
-        DecodeScope::root(context.property_filter),
-    )?;
+    if !decoded {
+        decode_property_stream_values_at_depth(
+            context.source,
+            &mut properties,
+            context.package,
+            DecodeScope::root(context.property_filter),
+        )?;
+    }
     native_data::property_guids(export, context, &mut properties);
     if let Some(class) = saved_native_class(context.package, export) {
         crate::codec::object_containers(

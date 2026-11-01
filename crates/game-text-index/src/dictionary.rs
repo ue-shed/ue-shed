@@ -219,6 +219,56 @@ pub fn a64(keys: &[Vec<u8>]) -> Result<Vec<u8>> {
     }
     Ok(out)
 }
+/// Compress independent frames together, keeping the streaming writer's section order.
+/// An oversized frame runs alone, as it did on the scalar path.
+struct FrameBatch {
+    frames: Vec<(String, Vec<u8>)>,
+    bytes: usize,
+    level: i32,
+}
+impl FrameBatch {
+    const MAX_BYTES: usize = 4 * 1024 * 1024;
+
+    fn new(level: i32) -> Self {
+        Self {
+            frames: Vec::new(),
+            bytes: 0,
+            level,
+        }
+    }
+    fn push(
+        &mut self,
+        writer: &mut Writer,
+        order: &mut Vec<usize>,
+        name: String,
+        bytes: Vec<u8>,
+    ) -> Result<()> {
+        if self.bytes + bytes.len() > Self::MAX_BYTES {
+            self.flush(writer, order)?;
+        }
+        if bytes.len() > Self::MAX_BYTES {
+            order.push(writer.add(&name, 0, "", &bytes, self.level)?);
+        } else {
+            self.bytes += bytes.len();
+            self.frames.push((name, bytes));
+        }
+        Ok(())
+    }
+    fn flush(&mut self, writer: &mut Writer, order: &mut Vec<usize>) -> Result<()> {
+        if self.frames.is_empty() {
+            return Ok(());
+        }
+        let sections = self
+            .frames
+            .iter()
+            .map(|(name, bytes)| (name.as_str(), 0, "", bytes.as_slice(), self.level))
+            .collect::<Vec<_>>();
+        order.extend(writer.add_all(&sections)?);
+        self.frames.clear();
+        self.bytes = 0;
+        Ok(())
+    }
+}
 pub(crate) fn segment(
     input: &Path,
     output: &Path,
@@ -243,6 +293,7 @@ pub(crate) fn segment(
         "identity" => 6,
         _ => 3,
     };
+    let mut batch = FrameBatch::new(level);
     loop {
         let next = get(&mut r)?;
         if let Some(n) = next {
@@ -254,8 +305,12 @@ pub(crate) fn segment(
         if block.len() == 64 || (next.is_none() && !block.is_empty()) {
             let encoded = a64(&block)?;
             if !frame.is_empty() && frame.len() + encoded.len() > 256 * 1024 {
-                order.push(w.add(&format!("front.b{frame_id}"), 0, "", &frame, level)?);
-                frame.clear();
+                batch.push(
+                    &mut w,
+                    &mut order,
+                    format!("front.b{frame_id}"),
+                    std::mem::take(&mut frame),
+                )?;
                 frame_id += 1;
             }
             offsets.push(frame.len() as u32);
@@ -271,8 +326,9 @@ pub(crate) fn segment(
     }
     require(seen == count, "dictionary count")?;
     if !frame.is_empty() {
-        order.push(w.add(&format!("front.b{frame_id}"), 0, "", &frame, level)?);
+        batch.push(&mut w, &mut order, format!("front.b{frame_id}"), frame)?;
     }
+    batch.flush(&mut w, &mut order)?;
     order.push(w.add(
         "front.fences",
         0,
@@ -441,7 +497,11 @@ fn build_inner(
     let mut rank_ids = Vec::new();
     let mut rank_owners = Vec::new();
     let mut previous = None::<Vec<u8>>;
-    while let Some(Reverse((item, i))) = heap.pop() {
+    // Each run is sorted: replacing its head needs one heap repair. A unique key becomes the
+    // comparison key for the next item without another allocation and byte copy.
+    while let Some(mut head) = heap.peek_mut() {
+        let i = head.0.1;
+        let item = &mut head.0.0;
         if previous.as_ref() != Some(&item.key) {
             let owner = item.owner as usize;
             let w = &mut writers[owner];
@@ -450,11 +510,13 @@ fn build_inner(
             rank_ids.push(counts[owner]);
             rank_owners.push(owner);
             counts[owner] += 1;
-            previous = Some(item.key.clone());
+            previous = Some(std::mem::take(&mut item.key));
         }
         mapping[item.occurrence as usize] = (rank_ids.len() - 1) as u32;
         if let Some(next) = self::item(&mut readers[i])? {
-            heap.push(Reverse((next, i)));
+            *head = Reverse((next, i));
+        } else {
+            std::collections::binary_heap::PeekMut::pop(head);
         }
     }
     for w in &mut writers {
@@ -613,6 +675,38 @@ fn build_inner(
 mod tests {
     use super::*;
     #[test]
+    fn frame_batches_keep_scalar_snapshot_bytes_and_bound_the_buffer() -> Result<()> {
+        let root = crate::test_directory("frame-batches");
+        fs::create_dir_all(&root)?;
+        let mut scalar = Writer::new(&root.join("scalar.payload"))?;
+        let mut parallel = Writer::new(&root.join("parallel.payload"))?;
+        let mut scalar_order = Vec::new();
+        let mut parallel_order = Vec::new();
+        let mut batch = FrameBatch::new(6);
+        for index in 0..24 {
+            let length = if index == 18 {
+                FrameBatch::MAX_BYTES + 1
+            } else {
+                256 * 1024
+            };
+            let bytes = (0..length)
+                .map(|offset| (offset.wrapping_mul(37) ^ (offset / 257) ^ index) as u8)
+                .collect::<Vec<_>>();
+            let name = format!("front.b{index}");
+            scalar_order.push(scalar.add(&name, 0, "", &bytes, 6)?);
+            batch.push(&mut parallel, &mut parallel_order, name, bytes)?;
+            assert!(batch.bytes <= FrameBatch::MAX_BYTES);
+        }
+        batch.flush(&mut parallel, &mut parallel_order)?;
+        let scalar_file = root.join("scalar.snapshot");
+        let parallel_file = root.join("parallel.snapshot");
+        scalar.finish(&scalar_file, &scalar_order)?;
+        parallel.finish(&parallel_file, &parallel_order)?;
+        assert_eq!(fs::read(scalar_file)?, fs::read(parallel_file)?);
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+    #[test]
     fn guid_tags_and_front_suffix() {
         let block = a64(&[
             b"0123456789abcdef0123456789abcdef".to_vec(),
@@ -635,9 +729,11 @@ mod tests {
         let raw = root.join("input.snapshot");
         let mut w = Writer::new(&root.join("payload")).unwrap();
         let mut order = Vec::new();
-        let strings: Vec<_> = (0..10000)
+        let mut strings: Vec<_> = (0..10000)
             .map(|i| format!("synthetic-{i:06}-{}", "text ".repeat(28)))
             .collect();
+        strings[0] = String::new();
+        strings[1] = "\u{4e16}\u{754c} \u{1f600}".into();
         for (domain, reverse) in [("source", false), ("identity", true)] {
             let values: Vec<_> = if reverse {
                 strings.iter().rev().cloned().collect()

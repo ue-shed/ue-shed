@@ -1608,6 +1608,9 @@ const TAGGED_FALLBACK_NATIVE_STRUCTS: &[(&str, &str)] = &[
     // UE4.27/5.7/5.8 LandscapeComponent.h: reflected fields, no native serializer.
     // A LayersData map's binary flag comes from its FGuid key.
     ("/Script/Landscape", "LandscapeLayerComponentData"),
+    // UE4.27/5.7/5.8 ConstraintInstance.cpp: records Framework/AnimPhys
+    // versions and returns false. PostSerialize changes loaded state only.
+    ("/Script/Engine", "ConstraintInstance"),
 ];
 
 fn is_tagged_fallback_native_struct(package: &Package, type_tree: &PropertyTypeName) -> bool {
@@ -4046,6 +4049,7 @@ mod tests {
             ("NiagaraTypeDefinition", "/Script/Niagara"),
             ("VMExternalFunctionBindingInfo", "/Script/Niagara"),
             ("LandscapeLayerComponentData", "/Script/Landscape"),
+            ("ConstraintInstance", "/Script/Engine"),
         ] {
             for version in [1016, 1017, 1018] {
                 let (mut package, bytes) = unknown_struct_set(0x08, &[&[0; 8]]);
@@ -4105,6 +4109,7 @@ mod tests {
             "NiagaraVariableBase",
             "NiagaraTypeDefinition",
             "VMExternalFunctionBindingInfo",
+            "ConstraintInstance",
             "NiagaraDataInterfaceGPUParamInfo",
             "PostProcessSettings",
             "Spline",

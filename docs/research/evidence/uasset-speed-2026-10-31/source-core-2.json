@@ -1,0 +1,2675 @@
+{
+	"recordedAt": "2026-11-01T09:03:41.418Z",
+	"original": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+	"roundCheckpoint": "97d555be8008f60bbc1a373467f9ea5241d22030",
+	"source": "Root selection is recorded under verification/core-2/selection.json and the complete source manifest. Checkout HEAD in benchmark metadata is not the uncommitted source identity.",
+	"comparisons": {
+		"previous": {
+			"folder": "out/uasset-speed-2026-10-31/architecture/core-2-vs-previous",
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 12.63791,
+					"candidateMs": 12.323724333333333,
+					"reductionPercent": 2.486057161877775,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 12.719073333333332,
+							"candidateMs": 12.144661000000001,
+							"reductionPercent": 4.516149237287193
+						},
+						{
+							"block": 1,
+							"baselineMs": 12.63791,
+							"candidateMs": 12.413238666666667,
+							"reductionPercent": 1.7777570289180145
+						},
+						{
+							"block": 2,
+							"baselineMs": 12.293359666666667,
+							"candidateMs": 12.323724333333333,
+							"reductionPercent": -0.2470005555031296
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "combined",
+					"baselineMs": 61.488482,
+					"candidateMs": 56.591998999999994,
+					"reductionPercent": 7.963252369769025,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 61.167126,
+							"candidateMs": 56.591998999999994,
+							"reductionPercent": 7.4797154929267196
+						},
+						{
+							"block": 1,
+							"baselineMs": 61.488482,
+							"candidateMs": 56.028142,
+							"reductionPercent": 8.880264762431434
+						},
+						{
+							"block": 2,
+							"baselineMs": 61.556554999999996,
+							"candidateMs": 56.765854999999995,
+							"reductionPercent": 7.782599269890921
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "decode",
+					"baselineMs": 47.955498999999996,
+					"candidateMs": 43.269486,
+					"reductionPercent": 9.771586361764262,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 47.878154,
+							"candidateMs": 43.195995,
+							"reductionPercent": 9.779322318901428
+						},
+						{
+							"block": 1,
+							"baselineMs": 47.955498999999996,
+							"candidateMs": 43.269486,
+							"reductionPercent": 9.771586361764262
+						},
+						{
+							"block": 2,
+							"baselineMs": 48.075707,
+							"candidateMs": 43.449017,
+							"reductionPercent": 9.62375862720023
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 118.46272300000001,
+					"candidateMs": 109.610231,
+					"reductionPercent": 7.472808133914,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 118.18532499999999,
+							"candidateMs": 109.585178,
+							"reductionPercent": 7.27683153555655
+						},
+						{
+							"block": 1,
+							"baselineMs": 118.46272300000001,
+							"candidateMs": 109.610231,
+							"reductionPercent": 7.472808133914
+						},
+						{
+							"block": 2,
+							"baselineMs": 119.25152899999999,
+							"candidateMs": 110.020546,
+							"reductionPercent": 7.740766996790449
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-owned",
+					"baselineMs": 104.931822,
+					"candidateMs": 99.273982,
+					"reductionPercent": 5.391920098366343,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 104.931822,
+							"candidateMs": 99.273982,
+							"reductionPercent": 5.391920098366343
+						},
+						{
+							"block": 1,
+							"baselineMs": 104.775832,
+							"candidateMs": 98.704656,
+							"reductionPercent": 5.7944431307403015
+						},
+						{
+							"block": 2,
+							"baselineMs": 106.55677800000001,
+							"candidateMs": 100.094819,
+							"reductionPercent": 6.0643340773686045
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 8.640198999999999,
+					"candidateMs": 8.74497825,
+					"reductionPercent": -1.212694869643638,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 8.8448355,
+							"candidateMs": 8.6703425,
+							"reductionPercent": 1.9728235759726709
+						},
+						{
+							"block": 1,
+							"baselineMs": 8.640198999999999,
+							"candidateMs": 9.0074535,
+							"reductionPercent": -4.250532887031899
+						},
+						{
+							"block": 2,
+							"baselineMs": 8.592777,
+							"candidateMs": 8.74497825,
+							"reductionPercent": -1.7712696372779169
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "combined",
+					"baselineMs": 43.042609000000006,
+					"candidateMs": 39.220037999999995,
+					"reductionPercent": 8.880899854374558,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 43.042609000000006,
+							"candidateMs": 39.248371999999996,
+							"reductionPercent": 8.815072060339112
+						},
+						{
+							"block": 1,
+							"baselineMs": 43.123183000000004,
+							"candidateMs": 39.077693,
+							"reductionPercent": 9.381241639792703
+						},
+						{
+							"block": 2,
+							"baselineMs": 43.005318,
+							"candidateMs": 39.220037999999995,
+							"reductionPercent": 8.8018881757833
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "decode",
+					"baselineMs": 33.907095,
+					"candidateMs": 29.1046235,
+					"reductionPercent": 14.163618263375255,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 33.907095,
+							"candidateMs": 29.1046235,
+							"reductionPercent": 14.163618263375255
+						},
+						{
+							"block": 1,
+							"baselineMs": 33.338603,
+							"candidateMs": 28.7653765,
+							"reductionPercent": 13.717510898702024
+						},
+						{
+							"block": 2,
+							"baselineMs": 34.010220000000004,
+							"candidateMs": 29.472125,
+							"reductionPercent": 13.3433273880616
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 85.788967,
+					"candidateMs": 77.997626,
+					"reductionPercent": 9.081984866422276,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 85.037192,
+							"candidateMs": 77.688354,
+							"reductionPercent": 8.641910471361758
+						},
+						{
+							"block": 1,
+							"baselineMs": 85.788967,
+							"candidateMs": 77.997626,
+							"reductionPercent": 9.081984866422276
+						},
+						{
+							"block": 2,
+							"baselineMs": 85.89037400000001,
+							"candidateMs": 78.538098,
+							"reductionPercent": 8.560069839723838
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-owned",
+					"baselineMs": 77.836949,
+					"candidateMs": 72.37004599999999,
+					"reductionPercent": 7.023531973227803,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 78.031636,
+							"candidateMs": 72.31077499999999,
+							"reductionPercent": 7.3314636130402455
+						},
+						{
+							"block": 1,
+							"baselineMs": 77.836949,
+							"candidateMs": 72.77926699999999,
+							"reductionPercent": 6.497790657236591
+						},
+						{
+							"block": 2,
+							"baselineMs": 77.596531,
+							"candidateMs": 72.37004599999999,
+							"reductionPercent": 6.735462181936991
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 1.178532176470588,
+					"candidateMs": 1.0149576818181818,
+					"reductionPercent": 13.879510285605557,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.178532176470588,
+							"candidateMs": 1.0149576818181818,
+							"reductionPercent": 13.879510285605557
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.1752908947368421,
+							"candidateMs": 1.0195149545454547,
+							"reductionPercent": 13.254245471395997
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.1798468947368421,
+							"candidateMs": 1.0128009545454546,
+							"reductionPercent": 14.158272648473268
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "combined",
+					"baselineMs": 6.9918575,
+					"candidateMs": 6.6135118,
+					"reductionPercent": 5.41123299495162,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 6.9637012,
+							"candidateMs": 6.680001800000001,
+							"reductionPercent": 4.073974339967357
+						},
+						{
+							"block": 1,
+							"baselineMs": 6.993836750000001,
+							"candidateMs": 6.5609492000000005,
+							"reductionPercent": 6.189557541502522
+						},
+						{
+							"block": 2,
+							"baselineMs": 6.9918575,
+							"candidateMs": 6.6135118,
+							"reductionPercent": 5.41123299495162
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "decode",
+					"baselineMs": 5.6884657999999995,
+					"candidateMs": 5.437475,
+					"reductionPercent": 4.41227580202731,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 5.6884657999999995,
+							"candidateMs": 5.444271666666666,
+							"reductionPercent": 4.292794259804344
+						},
+						{
+							"block": 1,
+							"baselineMs": 5.713372,
+							"candidateMs": 5.412283833333333,
+							"reductionPercent": 5.269885571369526
+						},
+						{
+							"block": 2,
+							"baselineMs": 5.678372,
+							"candidateMs": 5.437475,
+							"reductionPercent": 4.242360310314297
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 17.6704,
+					"candidateMs": 16.833521,
+					"reductionPercent": 4.7360501177109775,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 17.6704,
+							"candidateMs": 16.815134999999998,
+							"reductionPercent": 4.8400998279608975
+						},
+						{
+							"block": 1,
+							"baselineMs": 17.5997485,
+							"candidateMs": 16.833521,
+							"reductionPercent": 4.3536275532573665
+						},
+						{
+							"block": 2,
+							"baselineMs": 17.7429265,
+							"candidateMs": 16.880292,
+							"reductionPercent": 4.861850157582504
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-owned",
+					"baselineMs": 13.875086333333334,
+					"candidateMs": 13.795259333333332,
+					"reductionPercent": 0.5753261499225837,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.124254,
+							"candidateMs": 13.466542666666667,
+							"reductionPercent": 4.65660935673724
+						},
+						{
+							"block": 1,
+							"baselineMs": 13.875086333333334,
+							"candidateMs": 13.88243,
+							"reductionPercent": -0.0529269980037661
+						},
+						{
+							"block": 2,
+							"baselineMs": 13.809703666666666,
+							"candidateMs": 13.795259333333332,
+							"reductionPercent": 0.10459553428505686
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 0.1908234716981132,
+					"candidateMs": 0.17717660869565216,
+					"reductionPercent": 7.151564155614287,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 0.19132152336448596,
+							"candidateMs": 0.17678117272727273,
+							"reductionPercent": 7.599955499785804
+						},
+						{
+							"block": 1,
+							"baselineMs": 0.19031244230769231,
+							"candidateMs": 0.17759915652173913,
+							"reductionPercent": 6.680217873195415
+						},
+						{
+							"block": 2,
+							"baselineMs": 0.1908234716981132,
+							"candidateMs": 0.17717660869565216,
+							"reductionPercent": 7.151564155614287
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "combined",
+					"baselineMs": 2.051724181818182,
+					"candidateMs": 1.961633,
+					"reductionPercent": 4.3909986837677994,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.051724181818182,
+							"candidateMs": 1.9961209999999998,
+							"reductionPercent": 2.7100709886310415
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.0508624545454546,
+							"candidateMs": 1.961633,
+							"reductionPercent": 4.350825885358123
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.0600536666666667,
+							"candidateMs": 1.9599359166666668,
+							"reductionPercent": 4.859958340891113
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "decode",
+					"baselineMs": 1.775173076923077,
+					"candidateMs": 1.6974005,
+					"reductionPercent": 4.381126434042182,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.8847558666666666,
+							"candidateMs": 1.6974005,
+							"reductionPercent": 9.940564185536594
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.7647083076923076,
+							"candidateMs": 1.6974403076923077,
+							"reductionPercent": 3.8118480944856925
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.775173076923077,
+							"candidateMs": 1.695369,
+							"reductionPercent": 4.495565979481963
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 2.470075888888889,
+					"candidateMs": 2.3538189000000003,
+					"reductionPercent": 4.706616076528103,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.470075888888889,
+							"candidateMs": 2.3538189000000003,
+							"reductionPercent": 4.706616076528103
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.4591268,
+							"candidateMs": 2.356749363636364,
+							"reductionPercent": 4.163162158357836
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.4762934999999997,
+							"candidateMs": 2.3516367,
+							"reductionPercent": 5.034007479323432
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-owned",
+					"baselineMs": 2.2970166,
+					"candidateMs": 2.20083,
+					"reductionPercent": 4.1874577658690075,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.287464,
+							"candidateMs": 2.2066724,
+							"reductionPercent": 3.531928808497098
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.2970166,
+							"candidateMs": 2.20083,
+							"reductionPercent": 4.1874577658690075
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.302778375,
+							"candidateMs": 2.1983584545454544,
+							"reductionPercent": 4.53451889196873
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 2.1377840833333335,
+					"candidateMs": 1.9855958333333332,
+					"reductionPercent": 7.118971985360711,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.1394140000000004,
+							"candidateMs": 1.9858215,
+							"reductionPercent": 7.17918551528598
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.136043583333333,
+							"candidateMs": 1.9835875384615385,
+							"reductionPercent": 7.137309653292956
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.1377840833333335,
+							"candidateMs": 1.9855958333333332,
+							"reductionPercent": 7.118971985360711
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "combined",
+					"baselineMs": 9.27900425,
+					"candidateMs": 8.762921,
+					"reductionPercent": 5.561838706992717,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 9.26589225,
+							"candidateMs": 8.762921,
+							"reductionPercent": 5.428200937691674
+						},
+						{
+							"block": 1,
+							"baselineMs": 9.31433,
+							"candidateMs": 8.782817,
+							"reductionPercent": 5.706400782450272
+						},
+						{
+							"block": 2,
+							"baselineMs": 9.27900425,
+							"candidateMs": 8.75150175,
+							"reductionPercent": 5.6849041749280405
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "decode",
+					"baselineMs": 6.790169199999999,
+					"candidateMs": 6.393573399999999,
+					"reductionPercent": 5.840735161651056,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 6.7708044,
+							"candidateMs": 6.393573399999999,
+							"reductionPercent": 5.571435500337318
+						},
+						{
+							"block": 1,
+							"baselineMs": 6.797127399999999,
+							"candidateMs": 6.408646399999999,
+							"reductionPercent": 5.715370290102251
+						},
+						{
+							"block": 2,
+							"baselineMs": 6.790169199999999,
+							"candidateMs": 6.391344200000001,
+							"reductionPercent": 5.8735649768491545
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 12.874282333333333,
+					"candidateMs": 12.083497666666666,
+					"reductionPercent": 6.142359210339931,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 12.892424999999998,
+							"candidateMs": 12.147508333333334,
+							"reductionPercent": 5.777940664123804
+						},
+						{
+							"block": 1,
+							"baselineMs": 12.874282333333333,
+							"candidateMs": 12.076466000000002,
+							"reductionPercent": 6.196977141534887
+						},
+						{
+							"block": 2,
+							"baselineMs": 12.862199333333335,
+							"candidateMs": 12.083497666666666,
+							"reductionPercent": 6.054187518682019
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-owned",
+					"baselineMs": 11.180038000000001,
+					"candidateMs": 10.505017333333333,
+					"reductionPercent": 6.037731416178271,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 11.108926333333335,
+							"candidateMs": 10.468801999999998,
+							"reductionPercent": 5.762252031616999
+						},
+						{
+							"block": 1,
+							"baselineMs": 11.267642666666667,
+							"candidateMs": 10.695799666666668,
+							"reductionPercent": 5.075089944871047
+						},
+						{
+							"block": 2,
+							"baselineMs": 11.180038000000001,
+							"candidateMs": 10.505017333333333,
+							"reductionPercent": 6.037731416178271
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 150
+		},
+		"checkpoint": {
+			"folder": "out/uasset-speed-2026-10-31/architecture/core-2-vs-checkpoint",
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 12.575479000000001,
+					"candidateMs": 12.549628,
+					"reductionPercent": 0.20556672234911533,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 12.575479000000001,
+							"candidateMs": 12.118445333333334,
+							"reductionPercent": 3.634324121305177
+						},
+						{
+							"block": 1,
+							"baselineMs": 12.340964,
+							"candidateMs": 12.549628,
+							"reductionPercent": -1.6908241527971546
+						},
+						{
+							"block": 2,
+							"baselineMs": 12.703257333333333,
+							"candidateMs": 12.567007000000002,
+							"reductionPercent": 1.0725621764412385
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "combined",
+					"baselineMs": 66.79095699999999,
+					"candidateMs": 56.640073,
+					"reductionPercent": 15.19799154846665,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 66.79095699999999,
+							"candidateMs": 56.640073,
+							"reductionPercent": 15.19799154846665
+						},
+						{
+							"block": 1,
+							"baselineMs": 66.782571,
+							"candidateMs": 56.381895,
+							"reductionPercent": 15.57393769700781
+						},
+						{
+							"block": 2,
+							"baselineMs": 67.119656,
+							"candidateMs": 56.969449999999995,
+							"reductionPercent": 15.122553667438353
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "decode",
+					"baselineMs": 53.303806,
+					"candidateMs": 43.247298,
+					"reductionPercent": 18.866397645226307,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 53.46537,
+							"candidateMs": 43.381257,
+							"reductionPercent": 18.86101788877549
+						},
+						{
+							"block": 1,
+							"baselineMs": 53.303806,
+							"candidateMs": 43.247298,
+							"reductionPercent": 18.866397645226307
+						},
+						{
+							"block": 2,
+							"baselineMs": 53.181931,
+							"candidateMs": 43.065318,
+							"reductionPercent": 19.02265075707763
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 122.337794,
+					"candidateMs": 109.92934799999999,
+					"reductionPercent": 10.142774031057,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 122.337794,
+							"candidateMs": 109.911378,
+							"reductionPercent": 10.157462868751743
+						},
+						{
+							"block": 1,
+							"baselineMs": 122.761546,
+							"candidateMs": 111.299302,
+							"reductionPercent": 9.336998737373348
+						},
+						{
+							"block": 2,
+							"baselineMs": 122.286024,
+							"candidateMs": 109.92934799999999,
+							"reductionPercent": 10.104732818854266
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-owned",
+					"baselineMs": 110.204714,
+					"candidateMs": 98.580073,
+					"reductionPercent": 10.548224824575103,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 110.32711,
+							"candidateMs": 100.26330999999999,
+							"reductionPercent": 9.121783394851924
+						},
+						{
+							"block": 1,
+							"baselineMs": 110.204714,
+							"candidateMs": 98.21382100000001,
+							"reductionPercent": 10.880562695348939
+						},
+						{
+							"block": 2,
+							"baselineMs": 109.797056,
+							"candidateMs": 98.580073,
+							"reductionPercent": 10.21610543000352
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 8.78704875,
+					"candidateMs": 8.716202,
+					"reductionPercent": 0.8062633088271043,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 8.66362375,
+							"candidateMs": 8.716202,
+							"reductionPercent": -0.6068851962782951
+						},
+						{
+							"block": 1,
+							"baselineMs": 8.8815675,
+							"candidateMs": 8.91732275,
+							"reductionPercent": -0.4025781485081481
+						},
+						{
+							"block": 2,
+							"baselineMs": 8.78704875,
+							"candidateMs": 8.671162749999999,
+							"reductionPercent": 1.3188273252723426
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "combined",
+					"baselineMs": 45.565382,
+					"candidateMs": 39.269413,
+					"reductionPercent": 13.81743930073932,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 45.565382,
+							"candidateMs": 38.965349,
+							"reductionPercent": 14.484752920539535
+						},
+						{
+							"block": 1,
+							"baselineMs": 46.258615000000006,
+							"candidateMs": 39.269413,
+							"reductionPercent": 15.108973755483179
+						},
+						{
+							"block": 2,
+							"baselineMs": 45.283298,
+							"candidateMs": 39.422539,
+							"reductionPercent": 12.942429679039725
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "decode",
+					"baselineMs": 36.652161,
+					"candidateMs": 29.12491,
+					"reductionPercent": 20.536990983969538,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 36.98836,
+							"candidateMs": 28.6886315,
+							"reductionPercent": 22.43875776054953
+						},
+						{
+							"block": 1,
+							"baselineMs": 36.652161,
+							"candidateMs": 29.12491,
+							"reductionPercent": 20.536990983969538
+						},
+						{
+							"block": 2,
+							"baselineMs": 36.554765,
+							"candidateMs": 29.914237,
+							"reductionPercent": 18.16597097532976
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 87.150953,
+					"candidateMs": 78.180023,
+					"reductionPercent": 10.293553531193167,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 87.150953,
+							"candidateMs": 78.180023,
+							"reductionPercent": 10.293553531193167
+						},
+						{
+							"block": 1,
+							"baselineMs": 86.8809,
+							"candidateMs": 77.556219,
+							"reductionPercent": 10.732716857214875
+						},
+						{
+							"block": 2,
+							"baselineMs": 88.112208,
+							"candidateMs": 78.671172,
+							"reductionPercent": 10.714787671647041
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-owned",
+					"baselineMs": 81.51082099999999,
+					"candidateMs": 72.976508,
+					"reductionPercent": 10.470159538694867,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 81.51082099999999,
+							"candidateMs": 73.072602,
+							"reductionPercent": 10.35226844298377
+						},
+						{
+							"block": 1,
+							"baselineMs": 81.826656,
+							"candidateMs": 72.58681899999999,
+							"reductionPercent": 11.291964564701274
+						},
+						{
+							"block": 2,
+							"baselineMs": 80.858787,
+							"candidateMs": 72.976508,
+							"reductionPercent": 9.74820337089649
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 1.1830047894736844,
+					"candidateMs": 1.013859181818182,
+					"reductionPercent": 14.297964738651213,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.1860804210526315,
+							"candidateMs": 1.013859181818182,
+							"reductionPercent": 14.520199151555458
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.1770727368421052,
+							"candidateMs": 1.0117143181818182,
+							"reductionPercent": 14.048275309129732
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.1830047894736844,
+							"candidateMs": 1.0486581363636365,
+							"reductionPercent": 11.356391310116198
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "combined",
+					"baselineMs": 9.038782000000001,
+					"candidateMs": 6.623657800000001,
+					"reductionPercent": 26.719575712745367,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 9.035669749999999,
+							"candidateMs": 6.623657800000001,
+							"reductionPercent": 26.694334971682622
+						},
+						{
+							"block": 1,
+							"baselineMs": 9.038782000000001,
+							"candidateMs": 6.8705758,
+							"reductionPercent": 23.987813844829986
+						},
+						{
+							"block": 2,
+							"baselineMs": 9.146074,
+							"candidateMs": 6.601387,
+							"reductionPercent": 27.8227248106674
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "decode",
+					"baselineMs": 7.748020250000001,
+					"candidateMs": 5.3492348,
+					"reductionPercent": 30.959979099176994,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 7.67514225,
+							"candidateMs": 5.310694833333333,
+							"reductionPercent": 30.806561489680107
+						},
+						{
+							"block": 1,
+							"baselineMs": 7.78222625,
+							"candidateMs": 5.393108333333334,
+							"reductionPercent": 30.699671789504524
+						},
+						{
+							"block": 2,
+							"baselineMs": 7.748020250000001,
+							"candidateMs": 5.3492348,
+							"reductionPercent": 30.959979099176994
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 19.285304,
+					"candidateMs": 16.8780005,
+					"reductionPercent": 12.482579999776,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 19.1945485,
+							"candidateMs": 16.8780005,
+							"reductionPercent": 12.068780883280484
+						},
+						{
+							"block": 1,
+							"baselineMs": 19.313924,
+							"candidateMs": 16.929407,
+							"reductionPercent": 12.346103256904184
+						},
+						{
+							"block": 2,
+							"baselineMs": 19.285304,
+							"candidateMs": 16.8703705,
+							"reductionPercent": 12.52214380442227
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-owned",
+					"baselineMs": 15.639713,
+					"candidateMs": 13.406906999999999,
+					"reductionPercent": 14.276515176461368,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 15.648515000000002,
+							"candidateMs": 13.480327,
+							"reductionPercent": 13.855551149741686
+						},
+						{
+							"block": 1,
+							"baselineMs": 15.639713,
+							"candidateMs": 13.406906999999999,
+							"reductionPercent": 14.276515176461368
+						},
+						{
+							"block": 2,
+							"baselineMs": 15.599817,
+							"candidateMs": 13.351125333333334,
+							"reductionPercent": 14.41485926832774
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 0.1902803457943925,
+					"candidateMs": 0.17802948245614034,
+					"reductionPercent": 6.438323037046533,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 0.1903212336448598,
+							"candidateMs": 0.17802948245614034,
+							"reductionPercent": 6.458423452454043
+						},
+						{
+							"block": 1,
+							"baselineMs": 0.1902313076923077,
+							"candidateMs": 0.17677850434782608,
+							"reductionPercent": 7.0718135241130025
+						},
+						{
+							"block": 2,
+							"baselineMs": 0.1902803457943925,
+							"candidateMs": 0.17979163716814162,
+							"reductionPercent": 5.512239628565984
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "combined",
+					"baselineMs": 2.0479647272727273,
+					"candidateMs": 1.962448181818182,
+					"reductionPercent": 4.175684488884124,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.0479647272727273,
+							"candidateMs": 1.9602571666666666,
+							"reductionPercent": 4.282669493183155
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.0437932727272727,
+							"candidateMs": 2.0241375833333333,
+							"reductionPercent": 0.9617259072249751
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.0803512727272726,
+							"candidateMs": 1.962448181818182,
+							"reductionPercent": 5.667460705062732
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "decode",
+					"baselineMs": 1.7857342857142857,
+					"candidateMs": 1.6955589999999998,
+					"reductionPercent": 5.049759442694257,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.7873966923076923,
+							"candidateMs": 1.6955589999999998,
+							"reductionPercent": 5.1380699484858905
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.7857342857142857,
+							"candidateMs": 1.6916189999999998,
+							"reductionPercent": 5.270396971553937
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.7839151538461537,
+							"candidateMs": 1.6980404285714283,
+							"reductionPercent": 4.81383462041779
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 2.4452100999999997,
+					"candidateMs": 2.3481627000000005,
+					"reductionPercent": 3.9688777663726804,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.4452100999999997,
+							"candidateMs": 2.3481627000000005,
+							"reductionPercent": 3.9688777663726804
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.4408872,
+							"candidateMs": 2.3576315,
+							"reductionPercent": 3.4108786346210507
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.4453559,
+							"candidateMs": 2.3465898,
+							"reductionPercent": 4.038925376874591
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-owned",
+					"baselineMs": 2.2868342,
+					"candidateMs": 2.1956453636363635,
+					"reductionPercent": 3.987557837102329,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.2868342,
+							"candidateMs": 2.238836909090909,
+							"reductionPercent": 2.0988531179519265
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.2945529999999996,
+							"candidateMs": 2.1941396363636363,
+							"reductionPercent": 4.376162312936915
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.2784853000000003,
+							"candidateMs": 2.1956453636363635,
+							"reductionPercent": 3.635745921364375
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 2.131304,
+					"candidateMs": 1.9839551666666668,
+					"reductionPercent": 6.913553079867219,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.131304,
+							"candidateMs": 1.9839551666666668,
+							"reductionPercent": 6.913553079867219
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.1322935833333334,
+							"candidateMs": 1.9875055,
+							"reductionPercent": 6.790250857810665
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.13075275,
+							"candidateMs": 1.98097775,
+							"reductionPercent": 7.02920599304635
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "combined",
+					"baselineMs": 9.34209075,
+					"candidateMs": 8.74888475,
+					"reductionPercent": 6.3498205688057645,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 9.34209075,
+							"candidateMs": 8.76115025,
+							"reductionPercent": 6.21852768878316
+						},
+						{
+							"block": 1,
+							"baselineMs": 9.327416,
+							"candidateMs": 8.741814250000001,
+							"reductionPercent": 6.2782848969103355
+						},
+						{
+							"block": 2,
+							"baselineMs": 9.4036405,
+							"candidateMs": 8.74888475,
+							"reductionPercent": 6.962790102407679
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "decode",
+					"baselineMs": 6.887117399999999,
+					"candidateMs": 6.399584,
+					"reductionPercent": 7.078918097141762,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 6.887117399999999,
+							"candidateMs": 6.4857406000000015,
+							"reductionPercent": 5.827936082518326
+						},
+						{
+							"block": 1,
+							"baselineMs": 6.8927426,
+							"candidateMs": 6.399584,
+							"reductionPercent": 7.154751433776163
+						},
+						{
+							"block": 2,
+							"baselineMs": 6.8822008000000015,
+							"candidateMs": 6.3944171999999995,
+							"reductionPercent": 7.087610695694924
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 12.887789666666668,
+					"candidateMs": 12.092247333333333,
+					"reductionPercent": 6.172837654163055,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 12.887789666666668,
+							"candidateMs": 12.773570333333334,
+							"reductionPercent": 0.88626006699003
+						},
+						{
+							"block": 1,
+							"baselineMs": 12.907963333333333,
+							"candidateMs": 12.092247333333333,
+							"reductionPercent": 6.319478750714358
+						},
+						{
+							"block": 2,
+							"baselineMs": 12.884786333333333,
+							"candidateMs": 12.068549333333332,
+							"reductionPercent": 6.334889682170131
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-owned",
+					"baselineMs": 11.151270666666667,
+					"candidateMs": 10.481927,
+					"reductionPercent": 6.002398172142531,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 11.151270666666667,
+							"candidateMs": 10.497604333333333,
+							"reductionPercent": 5.861810307297722
+						},
+						{
+							"block": 1,
+							"baselineMs": 11.103405666666667,
+							"candidateMs": 10.481927,
+							"reductionPercent": 5.597189595012242
+						},
+						{
+							"block": 2,
+							"baselineMs": 11.446393666666667,
+							"candidateMs": 10.475382000000002,
+							"reductionPercent": 8.483123112342128
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 150
+		},
+		"original": {
+			"folder": "out/uasset-speed-2026-10-31/architecture/core-2-vs-original",
+			"summary": [
+				{
+					"case": "corpus",
+					"operation": "parse",
+					"baselineMs": 19.243559,
+					"candidateMs": 12.120754333333332,
+					"reductionPercent": 37.013967461355094,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 19.243559,
+							"candidateMs": 12.441016333333332,
+							"reductionPercent": 35.34971190446979
+						},
+						{
+							"block": 1,
+							"baselineMs": 19.1266575,
+							"candidateMs": 12.120754333333332,
+							"reductionPercent": 36.628998907240685
+						},
+						{
+							"block": 2,
+							"baselineMs": 19.4531955,
+							"candidateMs": 12.055841333333333,
+							"reductionPercent": 38.026421760202155
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "combined",
+					"baselineMs": 106.421518,
+					"candidateMs": 56.261737,
+					"reductionPercent": 47.13311926259124,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 106.421518,
+							"candidateMs": 56.261737,
+							"reductionPercent": 47.13311926259124
+						},
+						{
+							"block": 1,
+							"baselineMs": 105.787817,
+							"candidateMs": 56.047831,
+							"reductionPercent": 47.01863353508845
+						},
+						{
+							"block": 2,
+							"baselineMs": 106.617404,
+							"candidateMs": 56.708824,
+							"reductionPercent": 46.810912784933315
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "decode",
+					"baselineMs": 87.782832,
+					"candidateMs": 43.236569,
+					"reductionPercent": 50.74598527420486,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 88.768774,
+							"candidateMs": 43.159589999999994,
+							"reductionPercent": 51.37976108580704
+						},
+						{
+							"block": 1,
+							"baselineMs": 87.782832,
+							"candidateMs": 43.562196,
+							"reductionPercent": 50.3750391648335
+						},
+						{
+							"block": 2,
+							"baselineMs": 86.869078,
+							"candidateMs": 43.236569,
+							"reductionPercent": 50.22789467156541
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-json",
+					"baselineMs": 163.831386,
+					"candidateMs": 109.58564799999999,
+					"reductionPercent": 33.11071176557099,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 163.831386,
+							"candidateMs": 109.58564799999999,
+							"reductionPercent": 33.11071176557099
+						},
+						{
+							"block": 1,
+							"baselineMs": 163.232321,
+							"candidateMs": 110.280027,
+							"reductionPercent": 32.43983402037149
+						},
+						{
+							"block": 2,
+							"baselineMs": 165.87160500000002,
+							"candidateMs": 109.43721,
+							"reductionPercent": 34.022939007553475
+						}
+					]
+				},
+				{
+					"case": "corpus",
+					"operation": "inspect-owned",
+					"baselineMs": 152.053828,
+					"candidateMs": 99.59174399999999,
+					"reductionPercent": 34.50231058964199,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 152.094818,
+							"candidateMs": 99.016637,
+							"reductionPercent": 34.898086402917414
+						},
+						{
+							"block": 1,
+							"baselineMs": 152.053828,
+							"candidateMs": 99.59174399999999,
+							"reductionPercent": 34.50231058964199
+						},
+						{
+							"block": 2,
+							"baselineMs": 151.913463,
+							"candidateMs": 99.996955,
+							"reductionPercent": 34.17505399110019
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "parse",
+					"baselineMs": 14.321113000000002,
+					"candidateMs": 8.906294,
+					"reductionPercent": 37.81004311606229,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.371373666666665,
+							"candidateMs": 8.7488455,
+							"reductionPercent": 39.123108876555776
+						},
+						{
+							"block": 1,
+							"baselineMs": 14.321113000000002,
+							"candidateMs": 8.906294,
+							"reductionPercent": 37.81004311606229
+						},
+						{
+							"block": 2,
+							"baselineMs": 14.111059666666668,
+							"candidateMs": 8.90932825,
+							"reductionPercent": 36.862797972247726
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "combined",
+					"baselineMs": 70.366755,
+					"candidateMs": 39.153684,
+					"reductionPercent": 44.357695619188355,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 70.366755,
+							"candidateMs": 39.437227,
+							"reductionPercent": 43.95474539077438
+						},
+						{
+							"block": 1,
+							"baselineMs": 69.97441,
+							"candidateMs": 38.465503999999996,
+							"reductionPercent": 45.02918424035302
+						},
+						{
+							"block": 2,
+							"baselineMs": 70.975822,
+							"candidateMs": 39.153684,
+							"reductionPercent": 44.83518063376568
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "decode",
+					"baselineMs": 55.921423999999995,
+					"candidateMs": 28.917696,
+					"reductionPercent": 48.28869879994472,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 55.498869,
+							"candidateMs": 29.072176000000002,
+							"reductionPercent": 47.61663341283585
+						},
+						{
+							"block": 1,
+							"baselineMs": 56.147362,
+							"candidateMs": 28.917696,
+							"reductionPercent": 48.496786011068515
+						},
+						{
+							"block": 2,
+							"baselineMs": 55.921423999999995,
+							"candidateMs": 28.841159,
+							"reductionPercent": 48.42556405573648
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-json",
+					"baselineMs": 114.371089,
+					"candidateMs": 78.764454,
+					"reductionPercent": 31.132548716048337,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 114.688746,
+							"candidateMs": 78.764454,
+							"reductionPercent": 31.32329304568383
+						},
+						{
+							"block": 1,
+							"baselineMs": 114.371089,
+							"candidateMs": 78.645911,
+							"reductionPercent": 31.23619641323866
+						},
+						{
+							"block": 2,
+							"baselineMs": 113.878118,
+							"candidateMs": 79.08133000000001,
+							"reductionPercent": 30.556167076803987
+						}
+					]
+				},
+				{
+					"case": "level",
+					"operation": "inspect-owned",
+					"baselineMs": 108.233611,
+					"candidateMs": 72.15775400000001,
+					"reductionPercent": 33.331473159479074,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 107.72897300000001,
+							"candidateMs": 73.187186,
+							"reductionPercent": 32.06360001222699
+						},
+						{
+							"block": 1,
+							"baselineMs": 108.233611,
+							"candidateMs": 72.15775400000001,
+							"reductionPercent": 33.331473159479074
+						},
+						{
+							"block": 2,
+							"baselineMs": 109.40965800000001,
+							"candidateMs": 71.952597,
+							"reductionPercent": 34.23560742690559
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "parse",
+					"baselineMs": 1.6462990714285717,
+					"candidateMs": 1.0163047727272727,
+					"reductionPercent": 38.26730571831175,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.647497,
+							"candidateMs": 1.0139586363636364,
+							"reductionPercent": 38.45459892408688
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.6462990714285717,
+							"candidateMs": 1.065382238095238,
+							"reductionPercent": 35.28622735778163
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.6462804999999998,
+							"candidateMs": 1.0163047727272727,
+							"reductionPercent": 38.26660932160267
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "combined",
+					"baselineMs": 22.010630499999998,
+					"candidateMs": 6.5489492,
+					"reductionPercent": 70.24642615303546,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 22.010630499999998,
+							"candidateMs": 6.789367,
+							"reductionPercent": 69.15414576606518
+						},
+						{
+							"block": 1,
+							"baselineMs": 21.9553695,
+							"candidateMs": 6.458282199999999,
+							"reductionPercent": 70.58449779221434
+						},
+						{
+							"block": 2,
+							"baselineMs": 22.170214,
+							"candidateMs": 6.5489492,
+							"reductionPercent": 70.46059546380563
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "decode",
+					"baselineMs": 20.3503355,
+					"candidateMs": 5.408797600000001,
+					"reductionPercent": 73.4215801995009,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 20.3503355,
+							"candidateMs": 5.427665833333333,
+							"reductionPercent": 73.3288631367609
+						},
+						{
+							"block": 1,
+							"baselineMs": 20.2109595,
+							"candidateMs": 5.408797600000001,
+							"reductionPercent": 73.23829380787191
+						},
+						{
+							"block": 2,
+							"baselineMs": 20.4656485,
+							"candidateMs": 5.3863704,
+							"reductionPercent": 73.68092000602864
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-json",
+					"baselineMs": 32.828184,
+					"candidateMs": 16.847297,
+					"reductionPercent": 48.680386950432585,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 32.828184,
+							"candidateMs": 16.793391,
+							"reductionPercent": 48.844593414000606
+						},
+						{
+							"block": 1,
+							"baselineMs": 33.046675,
+							"candidateMs": 16.860891,
+							"reductionPercent": 48.97855533120957
+						},
+						{
+							"block": 2,
+							"baselineMs": 32.791934000000005,
+							"candidateMs": 16.847297,
+							"reductionPercent": 48.62365543916989
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-owned",
+					"baselineMs": 28.497875999999998,
+					"candidateMs": 13.536282666666667,
+					"reductionPercent": 52.50073139953775,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 28.4854275,
+							"candidateMs": 13.444389666666668,
+							"reductionPercent": 52.80257013286296
+						},
+						{
+							"block": 1,
+							"baselineMs": 28.497875999999998,
+							"candidateMs": 13.536282666666667,
+							"reductionPercent": 52.50073139953775
+						},
+						{
+							"block": 2,
+							"baselineMs": 28.588449500000003,
+							"candidateMs": 13.792551000000001,
+							"reductionPercent": 51.75481272602769
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "parse",
+					"baselineMs": 0.2670709605263158,
+					"candidateMs": 0.1773038695652174,
+					"reductionPercent": 33.611700345179685,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 0.2670709605263158,
+							"candidateMs": 0.1768006956521739,
+							"reductionPercent": 33.8001049220202
+						},
+						{
+							"block": 1,
+							"baselineMs": 0.26685332467532463,
+							"candidateMs": 0.17754112727272725,
+							"reductionPercent": 33.468647059676634
+						},
+						{
+							"block": 2,
+							"baselineMs": 0.2679836103896104,
+							"candidateMs": 0.1773038695652174,
+							"reductionPercent": 33.83779354735815
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "combined",
+					"baselineMs": 2.3496211,
+					"candidateMs": 1.9624273333333333,
+					"reductionPercent": 16.478987470220908,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.3409126999999996,
+							"candidateMs": 1.9624273333333333,
+							"reductionPercent": 16.168281998156807
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.3496211,
+							"candidateMs": 1.9592805833333333,
+							"reductionPercent": 16.612913318946042
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.3781264,
+							"candidateMs": 1.9721321666666665,
+							"reductionPercent": 17.072020786335564
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "decode",
+					"baselineMs": 1.97060875,
+					"candidateMs": 1.694095,
+					"reductionPercent": 14.031894966466584,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 1.97060875,
+							"candidateMs": 1.6938588571428572,
+							"reductionPercent": 14.04387821058558
+						},
+						{
+							"block": 1,
+							"baselineMs": 1.9656695,
+							"candidateMs": 1.694095,
+							"reductionPercent": 13.815877999836701
+						},
+						{
+							"block": 2,
+							"baselineMs": 1.9920498333333334,
+							"candidateMs": 1.704655923076923,
+							"reductionPercent": 14.42704421583214
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-json",
+					"baselineMs": 2.775609888888889,
+					"candidateMs": 2.3530949999999997,
+					"reductionPercent": 15.222416182485466,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.7735844444444444,
+							"candidateMs": 2.3501002,
+							"reductionPercent": 15.268482100579039
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.775609888888889,
+							"candidateMs": 2.3530949999999997,
+							"reductionPercent": 15.222416182485466
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.780494111111111,
+							"candidateMs": 2.3539491999999997,
+							"reductionPercent": 15.340615518896383
+						}
+					]
+				},
+				{
+					"case": "blueprints",
+					"operation": "inspect-owned",
+					"baselineMs": 2.6135431111111114,
+					"candidateMs": 2.201601818181818,
+					"reductionPercent": 15.761794445937504,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.6256553333333335,
+							"candidateMs": 2.201601818181818,
+							"reductionPercent": 16.150387667720622
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.6102676666666667,
+							"candidateMs": 2.190403909090909,
+							"reductionPercent": 16.08508441250881
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.6135431111111114,
+							"candidateMs": 2.2063083636363636,
+							"reductionPercent": 15.581711498978013
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "parse",
+					"baselineMs": 2.989320444444444,
+					"candidateMs": 1.984350166666667,
+					"reductionPercent": 33.61868680373434,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 2.9972717777777778,
+							"candidateMs": 1.9821412307692308,
+							"reductionPercent": 33.86848515155939
+						},
+						{
+							"block": 1,
+							"baselineMs": 2.984274111111111,
+							"candidateMs": 1.9870150833333333,
+							"reductionPercent": 33.41713899754591
+						},
+						{
+							"block": 2,
+							"baselineMs": 2.989320444444444,
+							"candidateMs": 1.984350166666667,
+							"reductionPercent": 33.61868680373434
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "combined",
+					"baselineMs": 11.111409333333334,
+					"candidateMs": 8.769145250000001,
+					"reductionPercent": 21.079810967873623,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 11.078440666666665,
+							"candidateMs": 8.78339,
+							"reductionPercent": 20.71636916892213
+						},
+						{
+							"block": 1,
+							"baselineMs": 11.111409333333334,
+							"candidateMs": 8.769145250000001,
+							"reductionPercent": 21.079810967873623
+						},
+						{
+							"block": 2,
+							"baselineMs": 11.156687333333332,
+							"candidateMs": 8.75277775,
+							"reductionPercent": 21.546804275414843
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "decode",
+					"baselineMs": 7.598006499999999,
+					"candidateMs": 6.416104799999999,
+					"reductionPercent": 15.55541838507245,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 7.598006499999999,
+							"candidateMs": 6.4840426,
+							"reductionPercent": 14.661265425345437
+						},
+						{
+							"block": 1,
+							"baselineMs": 7.623410249999999,
+							"candidateMs": 6.416104799999999,
+							"reductionPercent": 15.836815944675154
+						},
+						{
+							"block": 2,
+							"baselineMs": 7.58574075,
+							"candidateMs": 6.404927600000001,
+							"reductionPercent": 15.566220741197878
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-json",
+					"baselineMs": 14.657833333333334,
+					"candidateMs": 12.103028666666667,
+					"reductionPercent": 17.429620112112985,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.687729333333335,
+							"candidateMs": 12.254418333333334,
+							"reductionPercent": 16.56696515013849
+						},
+						{
+							"block": 1,
+							"baselineMs": 14.653545,
+							"candidateMs": 12.095858666666667,
+							"reductionPercent": 17.45438617981746
+						},
+						{
+							"block": 2,
+							"baselineMs": 14.657833333333334,
+							"candidateMs": 12.103028666666667,
+							"reductionPercent": 17.429620112112985
+						}
+					]
+				},
+				{
+					"case": "small",
+					"operation": "inspect-owned",
+					"baselineMs": 13.109804666666667,
+					"candidateMs": 10.484045333333333,
+					"reductionPercent": 20.028973734518406,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 13.059908666666665,
+							"candidateMs": 10.517656333333333,
+							"reductionPercent": 19.466080492752802
+						},
+						{
+							"block": 1,
+							"baselineMs": 13.375500333333335,
+							"candidateMs": 10.484045333333333,
+							"reductionPercent": 21.6175464688536
+						},
+						{
+							"block": 2,
+							"baselineMs": 13.109804666666667,
+							"candidateMs": 10.462169999999999,
+							"reductionPercent": 20.195836124077527
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 150
+		},
+		"nativeOriginal": {
+			"folder": "out/uasset-speed-2026-10-31/architecture/core-2-native",
+			"summary": [
+				{
+					"case": "level",
+					"operation": "inspect-process",
+					"baselineMs": 176.830202000001,
+					"candidateMs": 142.43997799999988,
+					"reductionPercent": 19.44816191523715,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 168.7116189999997,
+							"candidateMs": 142.43997799999988,
+							"reductionPercent": 15.571921575834002
+						},
+						{
+							"block": 1,
+							"baselineMs": 185.71378699999877,
+							"candidateMs": 143.6963909999995,
+							"reductionPercent": 22.624812448630728
+						},
+						{
+							"block": 2,
+							"baselineMs": 176.830202000001,
+							"candidateMs": 134.2077500000014,
+							"reductionPercent": 24.10360420218225
+						}
+					]
+				},
+				{
+					"case": "table",
+					"operation": "inspect-process",
+					"baselineMs": 70.31863000000158,
+					"candidateMs": 52.38281199999983,
+					"reductionPercent": 25.506495220400826,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 72.19775500000014,
+							"candidateMs": 53.482922000000144,
+							"reductionPercent": 25.92162734145953
+						},
+						{
+							"block": 1,
+							"baselineMs": 70.20451599999978,
+							"candidateMs": 51.68207900000016,
+							"reductionPercent": 26.383540625790637
+						},
+						{
+							"block": 2,
+							"baselineMs": 70.31863000000158,
+							"candidateMs": 52.38281199999983,
+							"reductionPercent": 25.506495220400826
+						}
+					]
+				},
+				{
+					"case": "blueprint",
+					"operation": "inspect-process",
+					"baselineMs": 14.062778000001344,
+					"candidateMs": 13.884235999999873,
+					"reductionPercent": 1.2696069012925748,
+					"pairs": [
+						{
+							"block": 0,
+							"baselineMs": 14.062778000001344,
+							"candidateMs": 13.884235999999873,
+							"reductionPercent": 1.2696069012925748
+						},
+						{
+							"block": 1,
+							"baselineMs": 13.481786000000284,
+							"candidateMs": 13.109283999998297,
+							"reductionPercent": 2.763001875285509
+						},
+						{
+							"block": 2,
+							"baselineMs": 14.447259000000486,
+							"candidateMs": 13.920382000000245,
+							"reductionPercent": 3.646899387629332
+						}
+					]
+				}
+			],
+			"rawMeasurementCount": 18
+		}
+	},
+	"memory": {
+		"boundary": "Counting System allocator; complete package parse, retain all decoded exports, text/Blueprint projection, drop. Sum requests across corpus; peak is maximum additional live requested bytes for a package. Inspection has a separate peak. Pass1 includes initialization/digest work and is excluded from warm comparisons. Instrumented times are not throughput.",
+		"original": {
+			"git_commit": "3d7e0ba2e686ba96e9e53973ab75cc34ce138fe5",
+			"list": "out/uasset-speed-2026-10-31/corpus.txt",
+			"runs": [
+				{
+					"alloc_bytes": 104393097,
+					"alloc_count": 902601,
+					"decode_ns": 135419681,
+					"drop_ns": 19099297,
+					"inspect_ns": 207191884,
+					"inspect_peak_live_bytes": 27347894,
+					"parse_ns": 24991095,
+					"pass": 1,
+					"peak_live_bytes": 34713044,
+					"project_ns": 14243852
+				},
+				{
+					"alloc_bytes": 99276777,
+					"alloc_count": 864957,
+					"decode_ns": 118750047,
+					"drop_ns": 18669136,
+					"inspect_ns": 202664100,
+					"inspect_peak_live_bytes": 27347894,
+					"parse_ns": 23601025,
+					"pass": 2,
+					"peak_live_bytes": 34713040,
+					"project_ns": 13451769
+				},
+				{
+					"alloc_bytes": 99276777,
+					"alloc_count": 864957,
+					"decode_ns": 118526375,
+					"drop_ns": 18505074,
+					"inspect_ns": 199850752,
+					"inspect_peak_live_bytes": 27347894,
+					"parse_ns": 23659157,
+					"pass": 3,
+					"peak_live_bytes": 34713040,
+					"project_ns": 13545377
+				}
+			],
+			"text_filter": false,
+			"type_sizes": {
+				"PropertyRecord": 144,
+				"PropertyValue": 32,
+				"TextValue": 96
+			}
+		},
+		"candidate": {
+			"git_commit": "8b8fbaa6fc97ae8360d84c005aad932796d1cf37",
+			"list": "/home/user/git/ue-shed/out/uasset-speed-2026-10-31/corpus.txt",
+			"runs": [
+				{
+					"alloc_bytes": 64409596,
+					"alloc_count": 665972,
+					"decode_ns": 130028563,
+					"drop_ns": 12049803,
+					"inspect_ns": 190769955,
+					"inspect_peak_live_bytes": 26209954,
+					"parse_ns": 44960955,
+					"pass": 1,
+					"peak_live_bytes": 28943237,
+					"project_ns": 14625874
+				},
+				{
+					"alloc_bytes": 59284532,
+					"alloc_count": 628286,
+					"decode_ns": 77063250,
+					"drop_ns": 18527697,
+					"inspect_ns": 152108252,
+					"inspect_peak_live_bytes": 26209954,
+					"parse_ns": 19100142,
+					"pass": 2,
+					"peak_live_bytes": 28943237,
+					"project_ns": 12534031
+				},
+				{
+					"alloc_bytes": 59284532,
+					"alloc_count": 628286,
+					"decode_ns": 59702710,
+					"drop_ns": 18147222,
+					"inspect_ns": 136491716,
+					"inspect_peak_live_bytes": 26209954,
+					"parse_ns": 15835439,
+					"pass": 3,
+					"peak_live_bytes": 28943237,
+					"project_ns": 11984756
+				}
+			],
+			"text_filter": false,
+			"type_sizes": {
+				"PropertyRecord": 144,
+				"PropertyValue": 32,
+				"TextValue": 96
+			}
+		},
+		"comparison": [
+			{
+				"metric": "alloc_count",
+				"original": 864957,
+				"candidate": 628286,
+				"reductionPercent": 27.362169448885897
+			},
+			{
+				"metric": "alloc_bytes",
+				"original": 99276777,
+				"candidate": 59284532,
+				"reductionPercent": 40.28358515305145
+			},
+			{
+				"metric": "peak_live_bytes",
+				"original": 34713040,
+				"candidate": 28943237,
+				"reductionPercent": 16.62142814342967
+			},
+			{
+				"metric": "inspect_peak_live_bytes",
+				"original": 27347894,
+				"candidate": 26209954,
+				"reductionPercent": 4.160978538237714
+			}
+		]
+	},
+	"verification": {
+		"clippy": 0,
+		"fullCheck": 1,
+		"fullCheckTail": "ℹ tests 63\nℹ suites 0\nℹ pass 63\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 5156.669049\n$ node scripts/test-public-packages.ts\nfile:///home/user/git/ue-shed/scripts/test-public-packages.ts:51\n\t\tthrow new Error(\n\t\t      ^\n\nError: pnpm install --offline --ignore-scripts --frozen-lockfile failed:\n✓ Lockfile passes supply-chain policies (verified 2s ago)\nLockfile is up to date, resolution step is skipped\nProgress: resolved 1, reused 0, downloaded 0, added 0\nPackages: +108\n++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\nProgress: resolved 108, reused 108, downloaded 0, added 108, done\n[ENOTDIR] ENOTDIR: not a directory, open '/tmp/ue-shed-public-packages-7MBY0A/consumer/node_modules/.pnpm/@ue-shed+engine@file+..+packages+ue-shed-engine-0.25.0.tgz_effect@4.0.0/node_modules/@ue-shed/engine-win32-x64/package.json'\n\npnpm: ENOTDIR: not a directory, open '/tmp/ue-shed-public-packages-7MBY0A/consumer/node_modules/.pnpm/@ue-shed+engine@file+..+packages+ue-shed-engine-0.25.0.tgz_effect@4.0.0/node_modules/@ue-shed/engine-win32-x64/package.json'\n\n\n    at run (file:///home/user/git/ue-shed/scripts/test-public-packages.ts:51:9)\n    at file:///home/user/git/ue-shed/scripts/test-public-packages.ts:361:2\n\nNode.js v26.13.0\n[ELIFECYCLE] Command failed with exit code 1.\n[ELIFECYCLE] Command failed with exit code 1.\n",
+		"uassetRust": {
+			"passed": 719,
+			"ignored": 8
+		},
+		"windowsLayout": 0,
+		"originalWasmNode24": 0,
+		"originalWasmNode26": 0,
+		"engineMatrix": 1,
+		"engineDiscovery": [
+			{
+				"version": "5.7",
+				"root": null
+			},
+			{
+				"version": "5.8",
+				"root": null
+			}
+		],
+		"sourceManifest": "f394f125ed8a96c27f2636054fe425fac468a59223860c26309ae4aabfb15845  Cargo.lock\na852b332be32fbff5d43d38dfe3b656815b5482955fc762a0ceec2f0445f29e7  Cargo.toml\n74b49c4c6ae74399895dbe5a38c9ed0c4cca418279e8c36ec304d37d1e865c7d  crates/uasset-inspection-wasm/Cargo.lock\n109eaa87432a14259bba33367cf04866711a8cd08451939e3d5b144f83affcab  crates/uasset-inspection-wasm/Cargo.toml\n4d69462b8748f09b12b13643b4da3d8526b10a24d8edb3df4468c4c095a5358f  crates/uasset-inspection/Cargo.toml\n97e98f83e9ddca6ea8e9c24c1f8e3e7bceb603d70a91e6a50297a0c2cbd9cada  crates/uasset-inspection/src/animation.rs\n6528d42a21100f2382042fbdb07c1b26450c95c08b59d9858119bf9f9734c9ae  crates/uasset-inspection/src/authoring.rs\n2f9cf078a0ce5db502ec7e97bb9470fa135164e2e4059ebca84952bd75351b8d  crates/uasset-inspection/src/blueprint.rs\n45e6643f22508550d9d6eb0cbe3da3f95c7e9ff1d1a9cefb1967d03256d35aaf  crates/uasset-inspection/src/blueprint/definition.rs\n46a35b447d28e14014271f43ed4e290d55fa841e1a887ebb2953d66d33cf4e1a  crates/uasset-inspection/src/blueprint_classes.rs\na88244442e42dd9f70efcad98adb837f5fafe7243b4f94cf5b84c26f47988b1a  crates/uasset-inspection/src/blueprint_diff.rs\n83dfc329491e0a3909d48e00160dca66ff7a0358bc34746b452e95c803e02a24  crates/uasset-inspection/src/blueprint_diff/tests.rs\n698598bf7c8a1bda3229aeded41c0d560ed2a5f3b83d213a2a6d30fb04ecffbb  crates/uasset-inspection/src/blueprint_text.rs\n03a7c8794f66411a03ccb9ecbab33a6042e89193d82e52f8626f8adbf5fa7084  crates/uasset-inspection/src/decoded_exports.rs\n94e4534dcb920c31762165aca6ac05f55856736ab8551f65fc3693d1050f9342  crates/uasset-inspection/src/gather_coverage.rs\n873d9deddaf58e4d36c20596ed974067753f8c20054c62f771552a29f87b25e5  crates/uasset-inspection/src/generic.rs\n242d7326813e03d22d16261d53b17ddd74dc8ff9cbba4e9a311ce008e702349a  crates/uasset-inspection/src/generic/json.rs\n03af0b386ef8de81003020d806fd48a123a8030d655b95ebbb277797a001f369  crates/uasset-inspection/src/level_sequence.rs\n5a2a341dc0167fff0e9199d6c62852941dd12d11ba2ee34444bdb17e18e77795  crates/uasset-inspection/src/level_sequence/discrete.rs\nc20a63d87e9cf4fa4ab5ebdb5f8dff8dbf4355fd5acde737d5d03d9520a5a113  crates/uasset-inspection/src/level_sequence/numeric.rs\n02afb3e958d0a134f7dc365fddf05e340588300e3e2213ea59669f2fca94241b  crates/uasset-inspection/src/level_sequence/saved.rs\nb60e0ee1dec1e341f545137924225e19205ac1c3937f88d608c83b1a37acc601  crates/uasset-inspection/src/lib.rs\nee5b2a97f2dbbed1a7262a7e88e0940632746da5ec5a85a308be5da1960d7fc7  crates/uasset-inspection/src/package_header.rs\n8d04dd6169c3a3e148194024945062565ec76b495f287cae03d546cef1bd17a1  crates/uasset-inspection/src/projection.rs\n1dcb3f3ee61e49c0a3c16a8db3503d60bd89049a10d876ba0e03557aba788abb  crates/uasset-inspection/src/saved_inspection.rs\n80bcf5724eb0a87f563d29e45f63882c02281b687f69187089ad755847f6504d  crates/uasset-inspection/src/saved_world.rs\n8df62913337af6532468d08019fb641a83d54113a51dd702c30b8549c4672b1d  crates/uasset-inspection/src/saved_world_wire.rs\n3b276c54c471da0e58ea57d50c91ef261caa22645c31a9cfd8a092fb4d924461  crates/uasset-inspection/src/text_wire.rs\na26c52a5e1f964e8115866cd9dc3929cf0fdcbea9f450c90e7869985f36546a9  crates/uasset-inspection/src/texture_wire.rs\n78291da67df79b3369d9be8a9aeecb32d85f7134393cf823ac534e722cbc22e4  crates/uasset-parser/Cargo.toml\n59737551d39a34e94d1f234ad1e3742d05a2d11615a0da49dc67284166b3fa83  crates/uasset-parser/source-models/ue57-data-assets.json\nec2df6a824193f2bd5487cc6efb50b26dc57935782c8411e943c5a8e16c823e3  crates/uasset-parser/source-models/ue58-property-bags.json\nb40e51ed09b0f5c322fd3f7319a0c05390c112efbd946b034db94e4a3202a4ee  crates/uasset-parser/src/archive.rs\n1e7c075ddc8e763cf9dec58928b888b792787193956b6a3808178b42cb6adb32  crates/uasset-parser/src/asset.rs\n17bdcda2d0cdc534af45edd6417686247d1e93fe1f0a8fa2493da80e5700b1d6  crates/uasset-parser/src/asset/native_data.rs\n7a077781db5c98d253e3ee91614cf73c2c30e19ac01f193bce233939fe0eb75a  crates/uasset-parser/src/asset/native_data/class.rs\na4a1df17bc341b2a8ed6ef668b733f29cbc5c573924f694c8d18e97571f5add3  crates/uasset-parser/src/asset/native_data/object.rs\n4faff04fd6a9270a37c07a2409431789e13112633507635c0e2d8d34f91c3abf  crates/uasset-parser/src/asset/script.rs\nc78e04b81f3c34f9686721bf1d74d58038702f126425aab2b436994249f77124  crates/uasset-parser/src/codec.rs\n4526a24146111adc194ce608addf925a374cb4e2981663ff6f26e7437152fd58  crates/uasset-parser/src/codec/legacy_structs.rs\n2e98a203c43e6eb3d604b34a4fa078711b5af7a567b27c64fbdebe4ca4ed8db4  crates/uasset-parser/src/codec/native_values.rs\na7b6619aca02799702978f62c323105b77faf4a32ba0bf16884a0da0bad1cb64  crates/uasset-parser/src/codec/native_values/niagara.rs\n36c698a8fd4d75643e2af375dd2f4ab38089212629edccf008d63e835de1fa5a  crates/uasset-parser/src/codec/native_values/pin_type.rs\nc25611496fea7b1557cd14438743fff88471a5958f8cc351a5f05e630227ee6e  crates/uasset-parser/src/codec/native_values/property_bag.rs\na601f39be5b4d9519ad5dee2f03b958d97e8e79eecf70bce48e69d24514b8a91  crates/uasset-parser/src/codec/native_values/saved_structs.rs\n9f457b78ff2146c1ffb48fd1cbdc2b3b2f46911778945818eba94e2e20320d3e  crates/uasset-parser/src/convert.rs\ne25e61d8dd08bb548f49052617ba3a3bf696c826b6bcea932cdbfd2e05736e9b  crates/uasset-parser/src/gatherable_text.rs\n14d83ee39ac50c8547851affd4e668a01b623e57b0ac183ef629e9fefd63a02d  crates/uasset-parser/src/lib.rs\n2656e1f6521cd5e791a67dd89db94c7282ce677030e63f7715752bbf74406623  crates/uasset-parser/src/metadata.rs\n92de9357330301b2047b7ebf58add9a8ccd030d88468e059dd7e5c475a48827b  crates/uasset-parser/src/native.rs\n47873963d15d01053515fd333e72296144c88e34b3bbf4ea802ff232405d2d9a  crates/uasset-parser/src/package.rs\n83c92dc11bb89efa10d421bb42bb3112ab5bd1115f7d469bf5041c45c6102df2  crates/uasset-parser/src/property.rs\n56a49787992de793c612ea015ea952c643b12ded88c1d2be5eaba84a0d46a709  crates/uasset-parser/src/property/replay.rs\na692026e10a7b89edc7caa73d320cf31e5cf483c5835f64e100f125d95f934fa  crates/uasset-parser/src/schema.rs\na192ed219522e1e5051c371d97f86dc5ac7d75b7d952d84483c9b16f7868d1cd  crates/uasset-parser/src/test_support.rs\n1dfdc73ed32b4ea1d3a5396eb91f2c9b2795729afe399154b502e7852f974c67  crates/uasset-parser/src/version.rs\n0a04d85f321176dcf8525e7d0b77fe191b4f1596a393bbd70aed95e111ec1af7  tools/benchmarks/uasset-decode/Cargo.lock\n527d1702572ae6367a12f1768a56b209faa0671686055bf933066b62a63c72e9  tools/benchmarks/uasset-decode/Cargo.toml\n",
+		"sourceAfter": "Cargo.lock: OK\nCargo.toml: OK\ncrates/uasset-inspection-wasm/Cargo.lock: OK\ncrates/uasset-inspection-wasm/Cargo.toml: OK\ncrates/uasset-inspection/Cargo.toml: OK\ncrates/uasset-inspection/src/animation.rs: OK\ncrates/uasset-inspection/src/authoring.rs: OK\ncrates/uasset-inspection/src/blueprint.rs: OK\ncrates/uasset-inspection/src/blueprint/definition.rs: OK\ncrates/uasset-inspection/src/blueprint_classes.rs: OK\ncrates/uasset-inspection/src/blueprint_diff.rs: OK\ncrates/uasset-inspection/src/blueprint_diff/tests.rs: OK\ncrates/uasset-inspection/src/blueprint_text.rs: OK\ncrates/uasset-inspection/src/decoded_exports.rs: OK\ncrates/uasset-inspection/src/gather_coverage.rs: OK\ncrates/uasset-inspection/src/generic.rs: OK\ncrates/uasset-inspection/src/generic/json.rs: OK\ncrates/uasset-inspection/src/level_sequence.rs: OK\ncrates/uasset-inspection/src/level_sequence/discrete.rs: OK\ncrates/uasset-inspection/src/level_sequence/numeric.rs: OK\ncrates/uasset-inspection/src/level_sequence/saved.rs: OK\ncrates/uasset-inspection/src/lib.rs: OK\ncrates/uasset-inspection/src/package_header.rs: OK\ncrates/uasset-inspection/src/projection.rs: OK\ncrates/uasset-inspection/src/saved_inspection.rs: OK\ncrates/uasset-inspection/src/saved_world.rs: OK\ncrates/uasset-inspection/src/saved_world_wire.rs: OK\ncrates/uasset-inspection/src/text_wire.rs: OK\ncrates/uasset-inspection/src/texture_wire.rs: OK\ncrates/uasset-parser/Cargo.toml: OK\ncrates/uasset-parser/source-models/ue57-data-assets.json: OK\ncrates/uasset-parser/source-models/ue58-property-bags.json: OK\ncrates/uasset-parser/src/archive.rs: OK\ncrates/uasset-parser/src/asset.rs: OK\ncrates/uasset-parser/src/asset/native_data.rs: OK\ncrates/uasset-parser/src/asset/native_data/class.rs: OK\ncrates/uasset-parser/src/asset/native_data/object.rs: OK\ncrates/uasset-parser/src/asset/script.rs: OK\ncrates/uasset-parser/src/codec.rs: OK\ncrates/uasset-parser/src/codec/legacy_structs.rs: OK\ncrates/uasset-parser/src/codec/native_values.rs: OK\ncrates/uasset-parser/src/codec/native_values/niagara.rs: OK\ncrates/uasset-parser/src/codec/native_values/pin_type.rs: OK\ncrates/uasset-parser/src/codec/native_values/property_bag.rs: OK\ncrates/uasset-parser/src/codec/native_values/saved_structs.rs: OK\ncrates/uasset-parser/src/convert.rs: OK\ncrates/uasset-parser/src/gatherable_text.rs: OK\ncrates/uasset-parser/src/lib.rs: OK\ncrates/uasset-parser/src/metadata.rs: OK\ncrates/uasset-parser/src/native.rs: OK\ncrates/uasset-parser/src/package.rs: OK\ncrates/uasset-parser/src/property.rs: OK\ncrates/uasset-parser/src/property/replay.rs: OK\ncrates/uasset-parser/src/schema.rs: OK\ncrates/uasset-parser/src/test_support.rs: OK\ncrates/uasset-parser/src/version.rs: OK\ntools/benchmarks/uasset-decode/Cargo.lock: OK\ntools/benchmarks/uasset-decode/Cargo.toml: OK\n",
+		"selection": {
+			"recordedAt": "2026-11-01T08:24:33.555Z",
+			"trial": 153,
+			"baseCheckpoint": "8b8fbaa6fc97ae8360d84c005aad932796d1cf37",
+			"retainedTrials": [112, 135, 139, 140, 153],
+			"description": "Core 2 retains the first source checkpoint’s validated layouts, lazy semantic recipes, final-slot decoding and general DataTable rows. It adds a bounded complete type-prefix read with the original diagnostic fallback, length-bucket lookups for the immutable embedded schema and qualified native identities, and safe one-pass Latin-1 conversion. The public owned model and API remain unchanged.",
+			"rejectedAdditions": {
+				"namePair126": "Direct comparisons 142/144 favored the type-prefix-only reader.",
+				"scalarArrays157": "Direct comparison 154 showed flat corpus time and slower tables/small packages.",
+				"explicitAlignment158": "No broad elapsed-time improvement over the simpler array prototype.",
+				"callbackApis": "Different ownership contract, mixed regressions, and uncovered modeled-versus-direct entrypoint diagnostic boundary.",
+				"sparseGuidStorage": "Rust field API break and broader regressions."
+			},
+			"dependency": "encoding_rs 0.8.42, alloc only/default features disabled; declared Rust 1.88 matches the existing crate floor. Six locked additions; no existing versions removed."
+		},
+		"dependencyAudit": {
+			"removed": [],
+			"added": [
+				"core_detect@1.0.0",
+				"encoding_rs@0.8.42",
+				"multiversion_no_op@1.0.0",
+				"rustversion@1.0.23",
+				"scopeguard@1.2.0",
+				"simdutf8@0.1.5"
+			]
+		},
+		"relatedLockAudit": [
+			{
+				"file": "crates/uasset-inspection-wasm/Cargo.lock",
+				"removed": [],
+				"added": [
+					"core_detect@1.0.0",
+					"encoding_rs@0.8.42",
+					"multiversion_no_op@1.0.0",
+					"scopeguard@1.2.0",
+					"simdutf8@0.1.5"
+				]
+			},
+			{
+				"file": "tools/benchmarks/uasset-decode/Cargo.lock",
+				"removed": [],
+				"added": [
+					"core_detect@1.0.0",
+					"encoding_rs@0.8.42",
+					"multiversion_no_op@1.0.0",
+					"rustversion@1.0.23",
+					"scopeguard@1.2.0",
+					"simdutf8@0.1.5"
+				]
+			}
+		]
+	},
+	"binaries": "24b1e8ff96bc0b0957a2f32c875e4c790e6c2849df276d071f4f750ba56e8a3c  /home/user/git/ue-shed/out/uasset-speed-2026-10-31/architecture/core-2/parser-speed\n655f1ce265fd8cf32643039dfd47116a50988fb76a11aef02fc1681bbc7e86bf  /home/user/git/ue-shed/out/uasset-speed-2026-10-31/architecture/core-2/uasset\n8f97d1344a51d9b34fe9ea6f93d6c54d637780afd6e45b1e4e7df3a0e0457526  /home/user/git/ue-shed/out/uasset-speed-2026-10-31/architecture/core-2/uasset-decode-counting\n",
+	"oracle": "PASS: 140 fixtures + 267 malformed inputs match initial parser\nPASS: all currently available synthetic stress oracles\n",
+	"wireOracle": "PASS: synthetic codec cases exactly match the pre-session original parser\n",
+	"verificationLogIndex": [
+		{
+			"folder": "core-2",
+			"file": "benchmark-lock-before.lock",
+			"sha256": "77ecfc3cbea52593391fc9d68b0b5d4a73d800242e26be0eb8fab5ac28285839",
+			"bytes": 5348
+		},
+		{
+			"folder": "core-2",
+			"file": "benchmark-lock-update.log",
+			"sha256": "3f787e3c6185845c45306c5722a68df21b0e1e1b89fe0e90497472d3e0848a9e",
+			"bytes": 264
+		},
+		{
+			"folder": "core-2",
+			"file": "clippy.log",
+			"sha256": "da617cec9cb409cc7d90040e129ad90b46ac0d3bfc0d87a5184fe72f43403805",
+			"bytes": 60
+		},
+		{
+			"folder": "core-2",
+			"file": "clippy.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2",
+			"file": "complete.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2",
+			"file": "dependency-audit.json",
+			"sha256": "bd0ce24bb2291a17825015583e09096d1fbc6317a2d071892220e8b09cab15e0",
+			"bytes": 192
+		},
+		{
+			"folder": "core-2",
+			"file": "diff-check.log",
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"bytes": 0
+		},
+		{
+			"folder": "core-2",
+			"file": "download-cache-clean.json",
+			"sha256": "8b1367ea52b325013d40d5572b57cfc7eaea3a858cee82f385697f8a53236622",
+			"bytes": 16245
+		},
+		{
+			"folder": "core-2",
+			"file": "engine-discovery.json",
+			"sha256": "a7c3153ed987b18b9b478c99ce33b86217ee6690fb4d000cfd7d3cab40bddfb4",
+			"bytes": 99
+		},
+		{
+			"folder": "core-2",
+			"file": "engine-matrix.log",
+			"sha256": "5d2898c60d21d0d4ccc8a04a317a68076f012d542aac9a399d239d9a8cf4d357",
+			"bytes": 379
+		},
+		{
+			"folder": "core-2",
+			"file": "engine-matrix.status",
+			"sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2",
+			"file": "full-check.log",
+			"sha256": "c364cde55e5682cd270aacc73abec506398f344f2f7c722f811af4904b5ad6e4",
+			"bytes": 110449
+		},
+		{
+			"folder": "core-2",
+			"file": "full-check.status",
+			"sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2",
+			"file": "related-lock-audit.json",
+			"sha256": "0cf96099bd73ce63e7ea018315e852e6fe04578bb33bfad3f978c7fc9f36c804",
+			"bytes": 518
+		},
+		{
+			"folder": "core-2",
+			"file": "retired-cache-clean.json",
+			"sha256": "2980d3ef185033764bad2d73c671548e70b28025f35d3da5b8e76968f7c7d0e5",
+			"bytes": 368
+		},
+		{
+			"folder": "core-2",
+			"file": "selection.json",
+			"sha256": "aa3d03e7872b471b803429cefef81ebaed5b9484ad4f3f85f38226b8d8b475a7",
+			"bytes": 1330
+		},
+		{
+			"folder": "core-2",
+			"file": "source-after-measure.log",
+			"sha256": "6605823fd7996fe97e13f176fc966d7ae330100a6e937e33092fc3dfdedab9cd",
+			"bytes": 2769
+		},
+		{
+			"folder": "core-2",
+			"file": "source-after.log",
+			"sha256": "6605823fd7996fe97e13f176fc966d7ae330100a6e937e33092fc3dfdedab9cd",
+			"bytes": 2769
+		},
+		{
+			"folder": "core-2",
+			"file": "source-before-measure.log",
+			"sha256": "6605823fd7996fe97e13f176fc966d7ae330100a6e937e33092fc3dfdedab9cd",
+			"bytes": 2769
+		},
+		{
+			"folder": "core-2",
+			"file": "source.sha256",
+			"sha256": "e9583ffbcb55427da82e2ccc600be86bdfe740cb667ca24b598661c8269f6851",
+			"bytes": 6365
+		},
+		{
+			"folder": "core-2",
+			"file": "wasm-lock-before.lock",
+			"sha256": "3883d64317c711fa3d5121afa7507fbda1bf90644fbd9befd9d642b757e39a1d",
+			"bytes": 5121
+		},
+		{
+			"folder": "core-2",
+			"file": "wasm-lock-update.log",
+			"sha256": "36beecd7f784e13d6dcf274e0f87b5669168ed8649da4b9570ccd711cadd8499",
+			"bytes": 229
+		},
+		{
+			"folder": "core-2",
+			"file": "wasm-original-node24.21.0.log",
+			"sha256": "31b1da7255034989f2bbf8b6120e3eb9e9de9101e26297415f9d6e56e8b7685b",
+			"bytes": 209
+		},
+		{
+			"folder": "core-2",
+			"file": "wasm-original-node24.21.0.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2",
+			"file": "wasm-original-node26.13.0.log",
+			"sha256": "31b1da7255034989f2bbf8b6120e3eb9e9de9101e26297415f9d6e56e8b7685b",
+			"bytes": 209
+		},
+		{
+			"folder": "core-2",
+			"file": "wasm-original-node26.13.0.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2",
+			"file": "windows-layout.log",
+			"sha256": "cc264e8a82c5f29444445b9dc5140abac876f0a81f2e182e9f581396bcce958d",
+			"bytes": 550
+		},
+		{
+			"folder": "core-2",
+			"file": "windows-layout.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2",
+			"file": "wire.log",
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"bytes": 0
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "clippy-first.log",
+			"sha256": "4633cca0d196defd1f19726b9c3e14e724c32819afd8d6fa91da0b680b627544",
+			"bytes": 1253
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "clippy-first.status",
+			"sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "clippy.log",
+			"sha256": "63ae49d77bdecf2f3b26abdd5f194eb94fe5708c223aa83909888dc16c998c47",
+			"bytes": 141
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "clippy.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "complete.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "dependency-audit.json",
+			"sha256": "bd0ce24bb2291a17825015583e09096d1fbc6317a2d071892220e8b09cab15e0",
+			"bytes": 192
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "diff-check.log",
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"bytes": 0
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "engine-discovery.json",
+			"sha256": "a7c3153ed987b18b9b478c99ce33b86217ee6690fb4d000cfd7d3cab40bddfb4",
+			"bytes": 99
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "engine-matrix.log",
+			"sha256": "5d2898c60d21d0d4ccc8a04a317a68076f012d542aac9a399d239d9a8cf4d357",
+			"bytes": 379
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "engine-matrix.status",
+			"sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "fetch.log",
+			"sha256": "8d40898e3c2af70af2680427a8c66a8087f631badf31606e0c29ea3b6274da85",
+			"bytes": 745
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "full-check.log",
+			"sha256": "dc8d1cc0baf25ff2b2a1c346a83096a50a371c96423f14d53da554ef0d04fd48",
+			"bytes": 42306
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "full-check.status",
+			"sha256": "39b8dc3fc8b44765c8e6f1adee04c5b465e555ab791cc42d0d9e810d5b64297c",
+			"bytes": 4
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "license-format.log",
+			"sha256": "f7385e546395a8c95fc42135fde14ab03d4332ec7a660b92dfedff38a9f82cfa",
+			"bytes": 45
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "license-tests.log",
+			"sha256": "ac3af3abd660c0822ef9369b797144f2817bf08c7a5d949a6caf4e999bf07300",
+			"bytes": 560
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "selection.json",
+			"sha256": "aa3d03e7872b471b803429cefef81ebaed5b9484ad4f3f85f38226b8d8b475a7",
+			"bytes": 1330
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "source-after.log",
+			"sha256": "fc81d1b37f10cbee06a3931131e38481003df6cd8ed81f8cb60c667306374ff8",
+			"bytes": 2587
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "source.sha256",
+			"sha256": "107cdb097e7a82cd6f99bc453e667b6480f1fe5c1181e7553f5e19346ab2cede",
+			"bytes": 5935
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "wasm-original-node24.21.0.log",
+			"sha256": "31b1da7255034989f2bbf8b6120e3eb9e9de9101e26297415f9d6e56e8b7685b",
+			"bytes": 209
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "wasm-original-node24.21.0.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "wasm-original-node26.13.0.log",
+			"sha256": "31b1da7255034989f2bbf8b6120e3eb9e9de9101e26297415f9d6e56e8b7685b",
+			"bytes": 209
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "wasm-original-node26.13.0.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "windows-layout.log",
+			"sha256": "bfe7d46038b425f3abfaed0745aa4a107009a15a3fde011c184799ac65e05a61",
+			"bytes": 919
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "windows-layout.status",
+			"sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+			"bytes": 2
+		},
+		{
+			"folder": "core-2-pre-wasm-lock",
+			"file": "wire.log",
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"bytes": 0
+		}
+	],
+	"integrationAttemptNotes": "The pre-wasm-lock folder contains the initial test-only Clippy initializer warning and stale standalone WASM lock failure. Its parity results can refer to the previous module and are excluded. Only final core-2 statuses and freshly built module parity count toward verification.",
+	"rawEvidence": {
+		"path": "source-core-2-raw.json.gz",
+		"sha256": "11706baa4bd1208352ff1bba226abdf8b851b096957f97169d1434ba8e2462f3",
+		"compressedBytes": 189518,
+		"uncompressedBytes": 4080984
+	}
+}

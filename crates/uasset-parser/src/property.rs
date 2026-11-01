@@ -720,6 +720,30 @@ fn read_property_type_name_at_depth(
             format!("property type-name nesting exceeds depth limit {MAX_PROPERTY_TYPE_DEPTH}"),
         ));
     }
+    // Zero children require no allocation; nonzero counts keep the ordinary budget checks.
+    if let Some((name, inner_count)) = reader.try_read_type_header(names.len()) {
+        if inner_count == 0 {
+            return Ok(PropertyTypeName {
+                name,
+                parameters: Vec::new(),
+            });
+        }
+        let capacity = reader.checked_vec_capacity::<PropertyTypeName>(
+            inner_count,
+            12,
+            &format_args!("{path}.InnerCount"),
+        )?;
+        let mut parameters = Vec::with_capacity(capacity);
+        for index in 0..inner_count {
+            parameters.push(read_property_type_name_at_depth(
+                reader,
+                names,
+                &format_args!("{path}.Parameters[{index}]"),
+                depth + 1,
+            )?);
+        }
+        return Ok(PropertyTypeName { name, parameters });
+    }
     let name = reader.read_name_ref(&format_args!("{path}.Name"))?;
     validate_name_ref(names, name, &format_args!("{path}.Name"))?;
     let inner_count_offset = reader.tell();
@@ -1393,5 +1417,127 @@ mod tests {
         names: &[String],
     ) -> Result<PropertyTypeName, PropertyError> {
         read_property_type_name(reader, names, "Test.Type")
+    }
+}
+
+#[cfg(test)]
+fn read_property_type_name_reference(
+    reader: &mut Reader<'_>,
+    names: &[String],
+    path: &(impl fmt::Display + ?Sized),
+    depth: usize,
+) -> Result<PropertyTypeName, PropertyError> {
+    if depth >= MAX_PROPERTY_TYPE_DEPTH {
+        return Err(PropertyError::new(
+            PropertyErrorKind::MalformedData,
+            Some(reader.tell()),
+            path.to_string(),
+            format!("property type-name nesting exceeds depth limit {MAX_PROPERTY_TYPE_DEPTH}"),
+        ));
+    }
+    let name = reader.read_name_ref(&format_args!("{path}.Name"))?;
+    validate_name_ref(names, name, &format_args!("{path}.Name"))?;
+    let inner_count_offset = reader.tell();
+    let inner_count = reader.read_i32(&format_args!("{path}.InnerCount"))?;
+    if inner_count < 0 {
+        return Err(PropertyError::new(
+            PropertyErrorKind::MalformedData,
+            Some(inner_count_offset),
+            format!("{path}.InnerCount"),
+            format!("type-name inner count must be non-negative, got {inner_count}"),
+        ));
+    }
+    let inner_count = crate::convert::usize_from_checked(inner_count);
+    let capacity = reader.checked_vec_capacity::<PropertyTypeName>(
+        inner_count,
+        12,
+        &format_args!("{path}.InnerCount"),
+    )?;
+    let mut parameters = Vec::with_capacity(capacity);
+    for index in 0..inner_count {
+        parameters.push(read_property_type_name_reference(
+            reader,
+            names,
+            &format_args!("{path}.Parameters[{index}]"),
+            depth + 1,
+        )?);
+    }
+    Ok(PropertyTypeName { name, parameters })
+}
+
+#[cfg(test)]
+mod type_prefix_tests {
+    use super::*;
+    use crate::archive::ArchiveLimits;
+
+    fn check(wire: &[u8], offset: usize, length: usize, depth: usize, limits: ArchiveLimits) {
+        let mut bytes = vec![0x55; offset];
+        bytes.extend(wire);
+        bytes.extend([0x33; 8]);
+        let mut actual = Reader::with_limits(&bytes, limits)
+            .bounded(Span::new(offset as u64, length as u64).unwrap(), "Bound")
+            .unwrap();
+        let mut expected = actual.clone();
+        let names = ["None", "IntProperty", "ArrayProperty"]
+            .map(str::to_owned)
+            .to_vec();
+        let a = read_property_type_name_at_depth(&mut actual, &names, "Type", depth);
+        let b = read_property_type_name_reference(&mut expected, &names, "Type", depth);
+        assert_eq!(
+            format!("{a:?}"),
+            format!("{b:?}"),
+            "wire={wire:02x?} offset={offset} length={length} depth={depth}"
+        );
+        assert_eq!(actual.tell(), expected.tell());
+    }
+
+    #[test]
+    fn grouped_type_prefix_keeps_names_counts_depths_bounds_and_failure_priority() {
+        let mut cases = Vec::new();
+        for index in [i32::MIN, -1, 0, 1, 2, 3, i32::MAX] {
+            for number in [-1i32, 0, 1, i32::MAX] {
+                for count in [i32::MIN, -1, 0, 1, 2, i32::MAX] {
+                    let mut bytes = Vec::new();
+                    bytes.extend(index.to_le_bytes());
+                    bytes.extend(number.to_le_bytes());
+                    bytes.extend(count.to_le_bytes());
+                    for _ in 0..2 {
+                        bytes.extend(1i32.to_le_bytes());
+                        bytes.extend(0i32.to_le_bytes());
+                        bytes.extend(0i32.to_le_bytes());
+                    }
+                    cases.push(bytes);
+                }
+            }
+        }
+        let nested: Vec<u8> = [(2i32, 1i32), (2, 1), (1, 0)]
+            .into_iter()
+            .flat_map(|(name, count)| {
+                [name.to_le_bytes(), 0i32.to_le_bytes(), count.to_le_bytes()].concat()
+            })
+            .collect();
+        for i in 0..nested.len() {
+            for mask in [1, 128, 255] {
+                let mut bytes = nested.clone();
+                bytes[i] ^= mask;
+                cases.push(bytes);
+            }
+        }
+        cases.push(nested);
+        for bytes in cases {
+            for offset in [0, 1, 7] {
+                for length in [0, 4, 7, 8, 11, 12, 15, 24, bytes.len()] {
+                    for depth in [0, 63, 64] {
+                        check(&bytes, offset, length, depth, ArchiveLimits::default());
+                    }
+                }
+            }
+            let limits = ArchiveLimits {
+                max_array_elements: 0,
+                max_allocation_bytes: 0,
+                ..ArchiveLimits::default()
+            };
+            check(&bytes, 1, bytes.len(), 0, limits);
+        }
     }
 }

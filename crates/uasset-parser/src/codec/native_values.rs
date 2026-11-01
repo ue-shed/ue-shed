@@ -229,18 +229,25 @@ pub(super) fn property_type_path(module: &str, name: &str) -> Option<&'static st
     }
     // Build the borrowed identity index once; do not allocate a joined path for every struct
     // in large tables or maps, including the many types without a native recipe.
-    type PropertyTypes = std::collections::BTreeMap<(&'static str, &'static str), &'static str>;
+    // Length selects candidates only; both module and complete name must still match.
+    type PropertyTypes = Vec<Vec<((&'static str, &'static str), &'static str)>>;
     static TYPES: once_cell::sync::Lazy<PropertyTypes> = once_cell::sync::Lazy::new(|| {
-        embedded_source_model()
-            .native_layouts
-            .keys()
-            .filter_map(|path| {
-                path.split_once('.')
-                    .map(|identity| (identity, path.as_str()))
-            })
-            .collect()
+        let mut types: PropertyTypes = Vec::new();
+        for path in embedded_source_model().native_layouts.keys() {
+            if let Some((module, name)) = path.split_once('.') {
+                if types.len() <= name.len() {
+                    types.resize_with(name.len() + 1, Vec::new);
+                }
+                types[name.len()].push(((module, name), path.as_str()));
+            }
+        }
+        types
     });
-    TYPES.get(&(module, name)).copied()
+    TYPES
+        .get(name.len())?
+        .iter()
+        .find(|((known_module, known_name), _)| *known_module == module && *known_name == name)
+        .map(|(_, path)| *path)
 }
 
 pub(super) fn generated_value(
@@ -1143,5 +1150,41 @@ mod tests {
                 .kind(),
             PropertyErrorKind::UnsupportedVersion
         );
+    }
+}
+
+#[cfg(test)]
+mod native_identity_index_tests {
+    use super::*;
+    #[test]
+    fn native_identity_index_matches_original_tuple_tree_and_overrides() {
+        let original: std::collections::BTreeMap<_, _> = embedded_source_model()
+            .native_layouts
+            .keys()
+            .filter_map(|path| {
+                path.split_once('.')
+                    .map(|identity| (identity, path.as_str()))
+            })
+            .collect();
+        for (&(module, name), &expected) in &original {
+            assert_eq!(property_type_path(module, name), Some(expected));
+        }
+        assert_eq!(
+            property_type_path("/Script/SlateCore", "DeprecateSlateVector2D"),
+            Some("/Script/SlateCore.DeprecateSlateVector2D")
+        );
+        assert_eq!(
+            property_type_path("/Script/Engine", "EdGraphPinType"),
+            Some("/Script/Engine.EdGraphPinType")
+        );
+        let huge = "x".repeat(1_000_000);
+        for module in ["", "/Script/CoreUObject", "/Game/Unknown", huge.as_str()] {
+            for name in ["", "Vector", "UnknownType", huge.as_str()] {
+                assert_eq!(
+                    property_type_path(module, name),
+                    original.get(&(module, name)).copied()
+                );
+            }
+        }
     }
 }

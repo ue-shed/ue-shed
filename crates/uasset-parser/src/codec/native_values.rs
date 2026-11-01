@@ -227,8 +227,14 @@ pub(super) fn known_struct(
 /// Source-generated property recipes use package-qualified identities, including when nested
 /// in containers or InstancedStruct. A project type sharing an engine short name cannot match.
 pub(super) fn property_type_path(module: &str, name: &str) -> Option<&'static str> {
-    if module == "/Script/CoreUObject" && name == "Vector3f" {
-        return Some("/Script/CoreUObject.Vector3f");
+    if module == "/Script/CoreUObject" {
+        match name {
+            "Vector3f" => return Some("/Script/CoreUObject.Vector3f"),
+            "Vector4f" => return Some("/Script/CoreUObject.Vector4f"),
+            "IntVector2" => return Some("/Script/CoreUObject.IntVector2"),
+            "Box2f" => return Some("/Script/CoreUObject.Box2f"),
+            _ => {}
+        }
     }
     if module == "/Script/SlateCore" && name == "DeprecateSlateVector2D" {
         return Some("/Script/SlateCore.DeprecateSlateVector2D");
@@ -306,7 +312,11 @@ pub(super) fn math_struct(
     // FBox2D and FMatrix are `immutable` in NoExportTypes.h, so UScriptStruct::SerializeItem
     // always writes them with SerializeBin: Box2D is Min, Max (FVector2D) and a one-byte
     // bIsValid; Matrix is XPlane..WPlane (FPlane).
-    let double = package.summary.versions.is_at_least_ue5(1004);
+    let float_alias = matches!(name, "Vector3f" | "Vector4f" | "Box2f");
+    if package.summary.versions.ue5 == 0 && (float_alias || name == "IntVector2") {
+        return Ok(None);
+    }
+    let double = !float_alias && package.summary.versions.is_at_least_ue5(1004);
     let component = |reader: &mut Reader<'_>, field: &str| -> Result<f64, PropertyError> {
         Ok(if double {
             reader.read_f64(&format_args!("{path}.{field}"))?
@@ -314,32 +324,40 @@ pub(super) fn math_struct(
             f64::from(reader.read_f32(&format_args!("{path}.{field}"))?)
         })
     };
-    let fields =
-        |reader: &mut Reader<'_>, names: &[&'static str]| -> Result<PropertyValue, PropertyError> {
-            Ok(PropertyValue::NativeStruct {
-                fields: names
-                    .iter()
-                    .map(|name| {
-                        Ok(NativeProperty {
-                            name: Cow::Borrowed(*name),
-                            value: PropertyValue::Double(component(reader, name)?),
-                        })
+    let fields = |reader: &mut Reader<'_>,
+                  names: &[&'static str]|
+     -> Result<PropertyValue, PropertyError> {
+        Ok(PropertyValue::NativeStruct {
+            fields: names
+                .iter()
+                .map(|name| {
+                    Ok(NativeProperty {
+                        name: Cow::Borrowed(*name),
+                        value: if float_alias {
+                            PropertyValue::Float(reader.read_f32(&format_args!("{path}.{name}"))?)
+                        } else {
+                            PropertyValue::Double(component(reader, name)?)
+                        },
                     })
-                    .collect::<Result<Vec<_>, PropertyError>>()?,
-            })
-        };
+                })
+                .collect::<Result<Vec<_>, PropertyError>>()?,
+        })
+    };
     let value = match name {
         // UE 5.7/5.8 Vector.h: TVector<float> saves X/Y/Z as float in both archive
         // serializers. Its width does not follow the double vector's LWC version gate.
-        "Vector3f" if package.summary.versions.ue5 != 0 => PropertyValue::NativeStruct {
-            fields: ["X", "Y", "Z"]
+        "Vector3f" => fields(reader, &["X", "Y", "Z"])?,
+        "Vector4f" => fields(reader, &["X", "Y", "Z", "W"])?,
+        // NoExportTypes.h (UE5.7/5.8): immutable int32 X/Y, independent of LWC.
+        "IntVector2" => PropertyValue::NativeStruct {
+            fields: ["X", "Y"]
                 .into_iter()
                 .map(|name| {
                     Ok(NativeProperty {
                         name: Cow::Borrowed(name),
-                        value: PropertyValue::Float(
-                            reader.read_f32(&format_args!("{path}.{name}"))?,
-                        ),
+                        value: PropertyValue::Int(i64::from(
+                            reader.read_i32(&format_args!("{path}.{name}"))?,
+                        )),
                     })
                 })
                 .collect::<Result<_, PropertyError>>()?,
@@ -356,7 +374,7 @@ pub(super) fn math_struct(
         }),
         "Vector2D" => fields(reader, &["X", "Y"])?,
         "Vector4" | "Quat" | "Plane" => fields(reader, &["X", "Y", "Z", "W"])?,
-        "Box" | "Box2D" => {
+        "Box" | "Box2D" | "Box2f" => {
             let (components, valid_name) = if name == "Box" {
                 (&["X", "Y", "Z"][..], "IsValid")
             } else {

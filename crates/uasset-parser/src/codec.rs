@@ -1509,7 +1509,7 @@ fn speculative_container_struct(
         .first()
         .and_then(|module| package.resolve_name_cow(module.name));
     match (module.as_deref(), name.as_ref()) {
-        (Some("/Script/CoreUObject"), "Vector3f") => true,
+        (Some("/Script/CoreUObject"), "Vector3f" | "Vector4f" | "IntVector2" | "Box2f") => true,
         (Some("/Script/Engine"), "KeyHandleMap" | "SkeletalMeshSamplingLODBuiltData") => {
             matches!(package.summary.versions.ue5, 1000..=1018)
         }
@@ -2770,6 +2770,9 @@ mod tests {
             for (name, components) in [
                 ("Vector", 3),
                 ("Vector3f", 3),
+                ("Vector4f", 4),
+                ("Box2f", 4),
+                ("IntVector2", 2),
                 ("Vector2D", 2),
                 ("Vector4", 4),
                 ("Rotator", 3),
@@ -2779,7 +2782,8 @@ mod tests {
                 ("Box2D", 4),
                 ("Matrix", 16),
             ] {
-                if ue5 == 0 && name == "Vector3f" {
+                let fixed_float = matches!(name, "Vector3f" | "Vector4f" | "Box2f");
+                if ue5 == 0 && (fixed_float || name == "IntVector2") {
                     continue;
                 }
                 let package = versioned_package(
@@ -2788,13 +2792,15 @@ mod tests {
                 );
                 let mut element = Vec::new();
                 for index in 0..components {
-                    if ue5 >= 1004 && name != "Vector3f" {
+                    if name == "IntVector2" {
+                        push_i32(&mut element, if index == 0 { i32::MIN } else { i32::MAX });
+                    } else if ue5 >= 1004 && !fixed_float {
                         push_f64(&mut element, f64::from(index) + 0.25);
                     } else {
                         push_f32(&mut element, index as f32 + 0.25);
                     }
                 }
-                if matches!(name, "Box" | "Box2D") {
+                if matches!(name, "Box" | "Box2D" | "Box2f") {
                     element.push(1);
                 }
                 let struct_type = PropertyTypeName {
@@ -3045,10 +3051,152 @@ mod tests {
     }
 
     #[test]
+    fn math_alias_native_widths_validity_and_map_failure_boundaries() {
+        for ue5 in [1003, 1004, 1012, 1017, 1018] {
+            for (name, mut bytes) in [
+                (
+                    "IntVector2",
+                    [i32::MIN, i32::MAX]
+                        .into_iter()
+                        .flat_map(i32::to_le_bytes)
+                        .collect::<Vec<_>>(),
+                ),
+                (
+                    "Vector4f",
+                    [-0.0_f32, f32::from_bits(1), f32::MAX, -7.25]
+                        .into_iter()
+                        .flat_map(f32::to_le_bytes)
+                        .collect(),
+                ),
+                (
+                    "Box2f",
+                    [-8.5_f32, -4.25, 2.5, 16.0]
+                        .into_iter()
+                        .flat_map(f32::to_le_bytes)
+                        .chain([1])
+                        .collect(),
+                ),
+            ] {
+                let package = versioned_package(
+                    &[
+                        "StructProperty",
+                        name,
+                        "/Script/CoreUObject",
+                        "MapProperty",
+                        "IntProperty",
+                    ],
+                    ue5,
+                );
+                let identity = PropertyTypeName {
+                    name: crate::test_support::name_ref(1, 0),
+                    parameters: vec![PropertyTypeName {
+                        name: crate::test_support::name_ref(2, 0),
+                        parameters: vec![],
+                    }],
+                };
+                let decode = |payload: &[u8]| {
+                    decode_record_with_package(
+                        package.clone(),
+                        0,
+                        vec![identity.clone()],
+                        PropertyTagFlags(8),
+                        payload,
+                    )
+                };
+                let scalar = decode(&bytes).unwrap();
+                assert!(!matches!(scalar, PropertyValue::Raw { .. }));
+                if let PropertyValue::NativeStruct { fields } = &scalar {
+                    if name == "IntVector2" {
+                        assert_eq!(fields[0].value, PropertyValue::Int(i64::from(i32::MIN)));
+                        assert_eq!(fields[1].value, PropertyValue::Int(i64::from(i32::MAX)));
+                    } else if name == "Vector4f" {
+                        let PropertyValue::Float(x) = fields[0].value else {
+                            panic!("float width lost")
+                        };
+                        assert_eq!(x.to_bits(), (-0.0_f32).to_bits());
+                        assert_eq!(fields[1].value, PropertyValue::Float(f32::from_bits(1)));
+                        assert_eq!(fields[2].value, PropertyValue::Float(f32::MAX));
+                    } else {
+                        assert_eq!(fields[2].value, PropertyValue::UInt(1));
+                    }
+                }
+                for end in 0..bytes.len() {
+                    assert!(matches!(
+                        decode(&bytes[..end]),
+                        Err(_) | Ok(PropertyValue::Raw { .. })
+                    ));
+                }
+                let mut map = vec![0; 4];
+                push_i32(&mut map, 2);
+                for value in [7, -13] {
+                    map.extend_from_slice(&bytes);
+                    push_i32(&mut map, value);
+                }
+                let decode_map = |payload: &[u8]| {
+                    decode_record_with_package(
+                        package.clone(),
+                        3,
+                        vec![
+                            PropertyTypeName {
+                                name: crate::test_support::name_ref(0, 0),
+                                parameters: vec![identity.clone()],
+                            },
+                            PropertyTypeName {
+                                name: crate::test_support::name_ref(4, 0),
+                                parameters: vec![],
+                            },
+                        ],
+                        PropertyTagFlags(8),
+                        payload,
+                    )
+                };
+                assert_eq!(
+                    decode_map(&map).unwrap(),
+                    PropertyValue::Map(vec![
+                        MapEntry {
+                            key: scalar.clone(),
+                            value: PropertyValue::Int(7)
+                        },
+                        MapEntry {
+                            key: scalar,
+                            value: PropertyValue::Int(-13)
+                        }
+                    ])
+                );
+                map.pop();
+                assert!(matches!(
+                    decode_map(&map).unwrap(),
+                    PropertyValue::Raw { .. }
+                ));
+                bytes.push(0);
+                assert!(matches!(decode(&bytes).unwrap(), PropertyValue::Raw { .. }));
+                if name == "Box2f" {
+                    bytes.pop();
+                    bytes[16] = 2;
+                    assert!(matches!(
+                        decode(&bytes),
+                        Err(_) | Ok(PropertyValue::Raw { .. })
+                    ));
+                }
+                let mut older = package.clone();
+                older.summary.versions.ue5 = 0;
+                assert!(
+                    native_values::math_struct(name, &mut Reader::new(&bytes), &older, "Fixture")
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn complete_math_identities_do_not_match_a_project_module() {
         for (name, size) in [
             ("Vector", 24),
             ("Vector3f", 12),
+            ("Vector4f", 16),
+            ("IntVector2", 8),
+            ("Box2f", 17),
             ("Quat", 32),
             ("Box", 49),
             ("Box2D", 33),

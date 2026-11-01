@@ -455,18 +455,22 @@ fn visit_text_stream<F>(
     }
 }
 
-/// Whether visiting `value` can record an occurrence or coverage gap. Scalar leaves cannot, so
-/// large numeric and byte arrays are skipped without building a path for every element.
+/// Whether visiting `value` can record an occurrence or coverage gap. Skip scalar leaves,
+/// omitted values and empty containers before constructing their property paths.
 fn may_hold_text_facts(value: &PropertyValue) -> bool {
     match value {
-        PropertyValue::Text(_)
-        | PropertyValue::Raw { .. }
-        | PropertyValue::Array(_)
-        | PropertyValue::Set(_)
-        | PropertyValue::Map(_)
-        | PropertyValue::Struct(_)
-        | PropertyValue::NativeStruct { .. } => true,
-        PropertyValue::InstancedStruct(instance) => instance.value.is_some(),
+        PropertyValue::Raw {
+            reason: RawReason::NotRequested,
+        } => false,
+        PropertyValue::Text(_) | PropertyValue::Raw { .. } => true,
+        PropertyValue::Array(values) | PropertyValue::Set(values) => !values.is_empty(),
+        PropertyValue::Map(entries) => !entries.is_empty(),
+        PropertyValue::Struct(stream) => !stream.records.is_empty(),
+        PropertyValue::NativeStruct { fields } => !fields.is_empty(),
+        PropertyValue::InstancedStruct(instance) => instance
+            .value
+            .as_ref()
+            .is_some_and(|value| may_hold_text_facts(value)),
         PropertyValue::Bool(_)
         | PropertyValue::Float(_)
         | PropertyValue::Double(_)
@@ -607,6 +611,9 @@ fn visit_text_value<F>(
         }
         PropertyValue::NativeStruct { fields } => {
             for field in fields {
+                if !may_hold_text_facts(&field.value) {
+                    continue;
+                }
                 visit_text_value(
                     package,
                     &field.value,

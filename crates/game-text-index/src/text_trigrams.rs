@@ -35,7 +35,6 @@ fn each_posting(
     last: &mut [u32],
     mut visit: impl FnMut(usize, u32) -> Result<()>,
 ) -> Result<()> {
-    last.fill(0);
     for position in 0..u32::try_from(starts.len().saturating_sub(1))? {
         let text = bytes
             .get(starts[position as usize] as usize..starts[position as usize + 1] as usize)
@@ -59,24 +58,28 @@ pub(crate) fn build(starts: &[u32], bytes: &[u8]) -> Result<(Vec<u32>, Vec<u32>,
     let mut last = vec![0u32; TRIGRAMS];
     // Each trigram's postings length, then its write cursor.
     let mut cursor = vec![0u32; TRIGRAMS];
+    let mut keys = Vec::new();
     each_posting(starts, bytes, &mut last, |trigram, delta| {
+        if cursor[trigram] == 0 {
+            keys.push(trigram as u32);
+        }
         cursor[trigram] = cursor[trigram]
             .checked_add(varint_len(delta))
             .ok_or("Trigram postings past 4 GiB.")?;
         Ok(())
     })?;
-    let mut keys = Vec::new();
-    let mut offsets = Vec::new();
+    // Visit only used entries; the other dense slots remain zero between passes.
+    keys.sort_unstable();
+    let mut offsets = Vec::with_capacity(keys.len() + 1);
     let mut total = 0u32;
-    for (trigram, length) in cursor.iter_mut().enumerate() {
-        if *length > 0 {
-            keys.push(trigram as u32);
-            offsets.push(total);
-            total = total
-                .checked_add(*length)
-                .ok_or("Trigram postings past 4 GiB.")?;
-            *length = offsets[offsets.len() - 1];
-        }
+    for trigram in &keys {
+        let length = &mut cursor[*trigram as usize];
+        offsets.push(total);
+        total = total
+            .checked_add(*length)
+            .ok_or("Trigram postings past 4 GiB.")?;
+        *length = offsets[offsets.len() - 1];
+        last[*trigram as usize] = 0;
     }
     offsets.push(total);
     let mut postings = vec![0u8; total as usize];

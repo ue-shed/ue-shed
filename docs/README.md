@@ -93,6 +93,10 @@ should follow [Website and illustrated guides](engineering/website.md).
 
 ## Research
 
+- [Game Text scan work (2026-11-02)](research/game-text-scan-work-2026-11-02.md) —
+  streaming controls, retained allocation/query preparation changes, unchanged-output evidence and
+  alternating Windows full-scan measurements.
+
 - [Game Text publication and query preparation (2026-11-01)](research/game-text-publication-2026-11-01.md) —
   alternating Windows full-scan measurements, unchanged full exports, bounded parallel preparation,
   and rejected dictionary/cache/WAL designs.

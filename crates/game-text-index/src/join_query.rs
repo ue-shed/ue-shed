@@ -301,7 +301,7 @@ fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>>
     }
     let names = raw_representatives
         .iter()
-        .map(|r| j.unit_ids[*r as usize].clone())
+        .map(|r| j.unit_ids[*r as usize].to_owned())
         .collect::<Vec<_>>();
     let mut line_starts = vec![0];
     let mut representatives = Vec::new();

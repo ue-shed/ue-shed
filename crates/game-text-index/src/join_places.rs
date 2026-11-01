@@ -47,7 +47,12 @@ fn pack(result: &mut Vec<Column>, name: &str, values: &[String]) -> Result<()> {
     push(result, &format!("{name}_offsets"), "", offsets);
     Ok(())
 }
-pub(crate) fn columns(j: &Joined, query: &[Column], files: &[u32]) -> Result<Vec<Column>> {
+pub(crate) fn columns(
+    j: &Joined,
+    query: &[Column],
+    files: &[u32],
+    paths: Vec<Column>,
+) -> Result<Vec<Column>> {
     let find = |name| {
         query
             .iter()
@@ -67,16 +72,36 @@ pub(crate) fn columns(j: &Joined, query: &[Column], files: &[u32]) -> Result<Vec
     let mut starts = Vec::new();
     let mut folders = Vec::new();
     let mut folder_keys = Vec::new();
+    let mut folder_cache = HashMap::<String, Vec<(u32, u32)>>::new();
+    let mut folder_key_ids = HashMap::<u32, u32>::new();
+    let mut asset_key_ids = HashMap::<u32, u32>::new();
     for id in &ids {
         let value = j.string(*id);
         file_labels.push(labels.intern(value));
-        assets.push(labels.intern(&file_key(value)));
+        let asset = labels.intern(&file_key(value));
+        assets.push(asset);
+        asset_key_ids.insert(*id, asset);
         starts.push(folders.len() as u32);
-        let parts = folder(value).split('/').collect::<Vec<_>>();
-        for depth in 1..=parts.len() {
-            let label = parts[..depth].join("/");
-            folders.push(labels.intern(&label));
-            folder_keys.push(labels.intern(&path(&label)));
+        let parent = folder(value);
+        if let Some(cached) = folder_cache.get(parent) {
+            for (label, key) in cached {
+                folders.push(*label);
+                folder_keys.push(*key);
+            }
+        } else {
+            let parts = parent.split('/').collect::<Vec<_>>();
+            let mut cached = Vec::with_capacity(parts.len());
+            for depth in 1..=parts.len() {
+                let label = parts[..depth].join("/");
+                let label_id = labels.intern(&label);
+                let key = *folder_key_ids
+                    .entry(label_id)
+                    .or_insert_with(|| labels.intern(&path(&label)));
+                folders.push(label_id);
+                folder_keys.push(key);
+                cached.push((label_id, key));
+            }
+            folder_cache.insert(parent.to_owned(), cached);
         }
     }
     starts.push(folders.len() as u32);
@@ -97,9 +122,16 @@ pub(crate) fn columns(j: &Joined, query: &[Column], files: &[u32]) -> Result<Vec
         .packages
         .paths
         .iter()
-        .map(|id| labels.intern(&file_key(j.string(*id))))
+        .map(|id| {
+            *asset_key_ids
+                .entry(*id)
+                .or_insert_with(|| labels.intern(&file_key(j.string(*id))))
+        })
         .collect();
     push(&mut result, "scanned_keys", "", scanned_keys);
+    drop(folder_cache);
+    drop(folder_key_ids);
+    drop(asset_key_ids);
     let mut order = (0..labels.values.len()).collect::<Vec<_>>();
     order.sort_by(|a, b| ordinal(&labels.values[*a], &labels.values[*b]));
     let mut rank = vec![0; order.len()];
@@ -109,6 +141,13 @@ pub(crate) fn columns(j: &Joined, query: &[Column], files: &[u32]) -> Result<Vec
     push(&mut result, "rank", "", rank);
     pack(&mut result, "label", &labels.values)?;
     drop(labels);
+    result.extend(paths);
+    Ok(result)
+}
+
+/// Path columns depend only on the completed join, so queries can prepare beside them.
+pub(crate) fn prepare_paths(j: &Joined) -> Result<Vec<Column>> {
+    let mut result = Vec::new();
     let path_ids = unique(j, &[&j.packages.paths, &j.packages.occurrence[O_OBJECT]]);
     let paths = path_ids
         .iter()

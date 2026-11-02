@@ -917,8 +917,9 @@ code, and `diagnosticsOmitted` counts entries not listed. When package evidence 
 counts the remaining non-complete packages. These bounds do not depend on `--limit`, which controls
 only the matching-line page. Localization progress and quality reports, quality investigations,
 and plain `text search` use the same diagnostic bounds and totals; progress reports also use the
-same package coverage summary. `text scan` intentionally returns the full corpus and can produce
-large JSON output. Localization-aware
+same package coverage summary. Plain `text search` prints at most `--limit` matching lines (50 by
+default), with `total` and `omitted` counting the rest. `text scan` intentionally returns the full
+corpus and can produce large JSON output. Localization-aware
 `ue-shed text search` accepts the same selection; translation search additionally requires
 `--search-translations` and a culture. `--kind` (`string_table`, `data_table`, `asset`, `cpp`,
 `other_source`, repeatable), `--path` and `--files <list-file>` filter both commands, including

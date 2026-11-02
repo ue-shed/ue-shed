@@ -123,6 +123,43 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 		})
 	);
 
+	it.effect("bounds a plain text search by --limit and reports what it left out", () =>
+		Effect.gen(function* () {
+			if (executable === undefined) throw new Error("The saved reader is not configured.");
+			const output = yield* Ref.make("");
+			const runtime = Layer.succeed(
+				CliRuntime,
+				CliRuntime.of({
+					print: (text) => Ref.update(output, (value) => value + text),
+					printError: () => Effect.void,
+					setExitCode: () => Effect.void
+				})
+			);
+			yield* runCli([
+				"text",
+				"search",
+				fixture.root,
+				"e",
+				"--limit",
+				"1",
+				"--reader",
+				executable
+			]).pipe(Effect.provide(runtime));
+			const search = yield* Schema.decodeUnknownEffect(
+				Schema.fromJsonString(
+					Schema.Struct({
+						total: Schema.Int,
+						omitted: Schema.Int,
+						matches: Schema.Array(Schema.Unknown)
+					})
+				)
+			)(yield* Ref.get(output));
+			expect(search.matches).toHaveLength(1);
+			expect(search.total).toBeGreaterThan(1);
+			expect(search.omitted).toBe(search.total - 1);
+		})
+	);
+
 	it.effect("filters by where text comes from, with counts that match each filter", () =>
 		Effect.gen(function* () {
 			if (executable === undefined) throw new Error("The saved reader is not configured.");

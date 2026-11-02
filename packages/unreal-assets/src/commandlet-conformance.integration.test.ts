@@ -81,6 +81,21 @@ async function json(path: string): Promise<Schema.Json> {
 	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
 }
 
+/**
+ * The saved oracle without the coverage batch's evidence. That asset lives outside this project's
+ * Content (fixtures/parser-coverage), so verifying the saved project writes none; the engine
+ * matrix generates and checks it, and the native coverage tests check the saved copy against
+ * the saved oracle.
+ */
+function withoutCoverageBatch(evidence: Schema.Json): Schema.Json {
+	const {
+		coverage_batch: _batch,
+		landscape_constraint: _landscape,
+		...rest
+	} = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(evidence);
+	return rest;
+}
+
 async function filesBelow(root: string, directory = root): Promise<readonly string[]> {
 	const entries = await readdir(directory, { withFileTypes: true });
 	const files = await Promise.all(
@@ -279,8 +294,9 @@ describe.skipIf(!executable || !evidenceDirectory)("Unreal commandlet UAsset con
 		const expectedFiles = await filesBelow(expectedTargets);
 		expect(await filesBelow(actualTargets)).toEqual(expectedFiles);
 		for (const file of expectedFiles) {
+			const expected = await json(join(expectedTargets, file));
 			expect(await json(join(actualTargets, file)), file).toEqual(
-				await json(join(expectedTargets, file))
+				file === "native-coverage.json" ? withoutCoverageBatch(expected) : expected
 			);
 		}
 	});

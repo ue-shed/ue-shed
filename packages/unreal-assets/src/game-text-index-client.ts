@@ -46,7 +46,7 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 			);
 			return NativeGameTextIndexClient.of({
 				execute: Effect.fn("NativeGameTextIndex.execute")(function* (input, onProgress) {
-					const decoded = yield* Schema.decodeUnknownEffect(GameTextIndexBuildRequest)(
+					const decoded = yield* Schema.decodeEffect(GameTextIndexBuildRequest)(
 						input
 					).pipe(
 						Effect.mapError(

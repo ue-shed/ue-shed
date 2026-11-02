@@ -95,7 +95,7 @@ function setup(dataTable = false, authoring = false) {
 		Effect.gen(function* () {
 			calls.push(call.functionName);
 			if (call.functionName === "GetCapabilityManifest")
-				return Schema.decodeUnknownSync(Schema.Json)({
+				return yield* Schema.decodeEffect(Schema.Json)({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
 					capabilities: [
@@ -116,10 +116,10 @@ function setup(dataTable = false, authoring = false) {
 						sessionId: session,
 						plugins: []
 					}
-				});
-			const input = Schema.decodeUnknownSync(Schema.fromJsonString(GameTextActionsRequest))(
-				call.parameters.RequestJson
-			);
+				}).pipe(Effect.orDie);
+			const input = yield* Schema.decodeUnknownEffect(
+				Schema.fromJsonString(GameTextActionsRequest)
+			)(call.parameters.RequestJson).pipe(Effect.orDie);
 			if (input.mode === "apply") mutations++;
 			if (input.mode === "apply" && lostReply)
 				return yield* new RemoteControlClientError({
@@ -167,7 +167,7 @@ function setup(dataTable = false, authoring = false) {
 							]
 						: []
 			};
-			return Schema.decodeUnknownSync(Schema.Json)(result);
+			return yield* Schema.decodeEffect(Schema.Json)(result).pipe(Effect.orDie);
 		})
 	);
 	const unused = () => Effect.die("Unexpected reader operation");

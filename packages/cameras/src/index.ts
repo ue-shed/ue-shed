@@ -7,7 +7,7 @@ import {
 	type CameraScheduleConfig
 } from "@ue-shed/protocol";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Context, Effect, Layer, PubSub, Schema, Scope, Stream } from "effect";
+import { type Brand, Context, Effect, Layer, PubSub, Schema, Scope, Stream } from "effect";
 import { createServer, type Server, type Socket } from "node:net";
 
 export {
@@ -184,6 +184,9 @@ export {
 	type MapCaptureRunOutcome,
 	type MapCaptureRunProgress,
 	MapTileCapturePort,
+	type MapTileCaptureError,
+	type MapTileCaptureReleaseError,
+	MapTileCaptureRestorationError,
 	type MapTileCapturePortApi,
 	mapTileCapturePortLayer,
 	mapTileCaptureRemotePortLayer,
@@ -485,7 +488,10 @@ export interface CameraFeedMetrics {
  * Local preview listener acquisition failure with pipe identity, guidance and original cause.
  * Correct pipe ownership/platform prerequisites before retrying.
  */
-export class CameraFeedError extends Schema.TaggedError<CameraFeedError>()("CameraFeedError", {
+export class CameraFeedError extends Schema.TaggedError<
+	CameraFeedError,
+	Brand.Brand<"packages/cameras/src/index/CameraFeedError">
+>()("CameraFeedError", {
 	...ErrorGuidanceFields,
 	...ErrorCauseFields,
 	operation: Schema.Literal("listen"),
@@ -886,18 +892,18 @@ export function makeCameraFeedTestLayer(
  * original cause. Unsupported options require a corrected request rather than an implicit
  * fallback.
  */
-export class CameraControlError extends Schema.TaggedError<CameraControlError>()(
-	"CameraControlError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		endpoint: Schema.String,
-		operation: Schema.Literals(["configure", "status"]),
-		/** Stable failure category reported by the optional native camera plugin. */
-		code: Schema.optionalKey(Schema.String),
-		status: Schema.optional(Schema.Number)
-	}
-) {}
+export class CameraControlError extends Schema.TaggedError<
+	CameraControlError,
+	Brand.Brand<"packages/cameras/src/index/CameraControlError">
+>()("CameraControlError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	endpoint: Schema.String,
+	operation: Schema.Literals(["configure", "status"]),
+	/** Stable failure category reported by the optional native camera plugin. */
+	code: Schema.optionalKey(Schema.String),
+	status: Schema.optional(Schema.Number)
+}) {}
 
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 const isCameraControlError = Schema.is(CameraControlError);
@@ -1015,17 +1021,15 @@ export function configureCameras(
 			config.editorBackgroundTicking === "while_streaming" &&
 			status.config.editorBackgroundTicking !== "while_streaming"
 		)
-			return yield* Effect.fail(
-				new CameraControlError({
-					endpoint,
-					operation: "configure",
-					retrySafe: false,
-					nextStep: "fix_input",
-					recovery: "Update UEShedCameras or configure without interactive previews.",
-					message:
-						"This UEShedCameras plugin does not support scoped editor background ticking. Update the plugin before enabling interactive previews."
-				})
-			);
+			return yield* new CameraControlError({
+				endpoint,
+				operation: "configure",
+				retrySafe: false,
+				nextStep: "fix_input",
+				recovery: "Update UEShedCameras or configure without interactive previews.",
+				message:
+					"This UEShedCameras plugin does not support scoped editor background ticking. Update the plugin before enabling interactive previews."
+			});
 		return status;
 	}).pipe(Effect.mapError((error) => cameraControlError(endpoint, "configure", error)));
 }

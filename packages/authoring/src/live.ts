@@ -7,7 +7,7 @@ import {
 	type AuthoringSaveRequest,
 	type AuthoringSaveResult
 } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { workingTable, type DraftSession, type SaveReceipt } from "./draft.js";
 import { fingerprintTable } from "./fingerprint.js";
 
@@ -17,15 +17,15 @@ export interface AuthoringLivePort<E> {
 	readonly save: (request: AuthoringSaveRequest) => Effect.Effect<AuthoringSaveResult, E>;
 }
 
-export class ApplyWorkflowError extends Schema.TaggedError<ApplyWorkflowError>()(
-	"ApplyWorkflowError",
-	{
-		code: Schema.String,
-		operationId: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class ApplyWorkflowError extends Schema.TaggedError<
+	ApplyWorkflowError,
+	Brand.Brand<"packages/authoring/src/live/ApplyWorkflowError">
+>()("ApplyWorkflowError", {
+	code: Schema.String,
+	operationId: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 const isApplyWorkflowError = Schema.is(ApplyWorkflowError);
 
 export interface AuthoringMutationLimits {
@@ -280,23 +280,19 @@ export function dispatchApply<E>(args: {
 									)
 					})
 				),
-				Effect.catch((cause) =>
-					isApplyWorkflowError(cause)
-						? Effect.fail(cause)
-						: // SAFETY: after excluding ApplyWorkflowError, the only remaining failure is port error E.
-							Effect.succeed({
-								// SAFETY: after excluding ApplyWorkflowError, the failure channel is the port error E.
-								// Verified by: packages/authoring/src/live.test.ts ("records an
-								// indeterminate receipt instead of replaying an uncertain mutation")
-								cause: cause as E,
-								kind: "indeterminate" as const,
-								session: markIndeterminate(
-									args.session,
-									args.operationId,
-									args.appliedAt,
-									request.tables.map((table) => table.objectPath)
-								)
-							})
+				Effect.catchIf(
+					(cause): cause is E => !isApplyWorkflowError(cause),
+					(cause) =>
+						Effect.succeed({
+							cause,
+							kind: "indeterminate" as const,
+							session: markIndeterminate(
+								args.session,
+								args.operationId,
+								args.appliedAt,
+								request.tables.map((table) => table.objectPath)
+							)
+						})
 				)
 			)
 		),

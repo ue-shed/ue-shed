@@ -1,6 +1,6 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { decodeTexturePreviewResult, type TexturePreviewResult } from "@ue-shed/asset-audits";
-import { Context, Effect, Layer, Option, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Option, Schema } from "effect";
 import { createHash } from "node:crypto";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { ElectronApp } from "../adapters/electron-app.js";
@@ -30,23 +30,23 @@ const PreviewRequest = Schema.Struct({
 type PreviewRequest = Schema.Schema.Type<typeof PreviewRequest>;
 const decodePreviewRequest = Schema.decodeUnknownEffect(PreviewRequest);
 
-export class OfflineTexturePreviewError extends Schema.TaggedError<OfflineTexturePreviewError>()(
-	"Workbench.OfflineTexturePreviewError",
-	{
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"cache_failure",
-			"commandlet_failed",
-			"contract_failure",
-			"engine_unavailable",
-			"project_unavailable"
-		]),
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean
-	}
-) {}
+export class OfflineTexturePreviewError extends Schema.TaggedError<
+	OfflineTexturePreviewError,
+	Brand.Brand<"apps/workbench/src/main/services/offline-texture-preview/OfflineTexturePreviewError">
+>()("Workbench.OfflineTexturePreviewError", {
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"cache_failure",
+		"commandlet_failed",
+		"contract_failure",
+		"engine_unavailable",
+		"project_unavailable"
+	]),
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean
+}) {}
 
 const isOfflineTexturePreviewError = Schema.is(OfflineTexturePreviewError);
 
@@ -168,7 +168,10 @@ function projectEngineAssociation(
 			)
 		),
 		Effect.map((descriptor) => descriptor.EngineAssociation),
-		Effect.orElseSucceed(() => undefined)
+		Effect.catchTag(
+			["SchemaError", "UnknownError", "Workbench.OfflineTexturePreviewHostError"],
+			() => Effect.undefined
+		)
 	);
 }
 
@@ -323,24 +326,20 @@ export const OfflineTexturePreviewLive = Layer.effect(
 			inputs: ReadonlyArray<OfflineTexturePreviewInput>
 		) {
 			if (inputs.length === 0 || inputs.length > 100) {
-				return yield* Effect.fail(
-					previewError(
-						"contract_failure",
-						"A saved preview batch must contain between 1 and 100 textures.",
-						"Select a bounded texture page and retry.",
-						false
-					)
+				return yield* previewError(
+					"contract_failure",
+					"A saved preview batch must contain between 1 and 100 textures.",
+					"Select a bounded texture page and retry.",
+					false
 				);
 			}
 			const roots = new Set(inputs.map((input) => resolve(input.projectRoot)));
 			if (roots.size !== 1) {
-				return yield* Effect.fail(
-					previewError(
-						"contract_failure",
-						"A saved preview batch cannot span multiple Unreal projects.",
-						"Generate previews from one active project at a time.",
-						false
-					)
+				return yield* previewError(
+					"contract_failure",
+					"A saved preview batch cannot span multiple Unreal projects.",
+					"Generate previews from one active project at a time.",
+					false
 				);
 			}
 

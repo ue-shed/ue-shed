@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
 import { ContentObservatoryState } from "@ue-shed/extension-content-observatory/client";
-import { Deferred, Effect, Exit, Schema } from "effect";
+import { Context, Deferred, Effect, Exit, Schema } from "effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +16,7 @@ import {
 	ElectronIpc,
 	electronIpcLayer,
 	ElectronIpcTest,
+	type ElectronIpcHost,
 	makeElectronIpcTestLayer
 } from "./electron-ipc.js";
 import { LocalFiles, LocalFilesLive } from "./local-files.js";
@@ -103,7 +104,7 @@ it.effect("ElectronIpc encodes transformed result fields before crossing the bou
 		Effect.gen(function* () {
 			const ipc = yield* ElectronIpc;
 			const probe = yield* ElectronIpcTest;
-			const state = Schema.decodeUnknownSync(ContentObservatoryState)({
+			const state = yield* Schema.decodeEffect(ContentObservatoryState)({
 				jobId: "map-history-1",
 				maps: [],
 				progress: {
@@ -128,7 +129,7 @@ it.effect("ElectronIpc encodes transformed result fields before crossing the bou
 					}
 				},
 				status: "running"
-			});
+			}).pipe(Effect.orDie);
 			yield* ipc.register(invokeContracts["content-observatory:start"], () =>
 				Effect.succeed(state)
 			);
@@ -181,6 +182,61 @@ it.effect("ElectronIpc removes each real host handler exactly once", () =>
 	})
 );
 
+class HandlerValue extends Context.Service<HandlerValue, { readonly value: string }>()(
+	"@ue-shed/workbench/test/HandlerValue"
+) {}
+
+it.effect("ElectronIpc captures handler requirements when registering", () =>
+	Effect.gen(function* () {
+		const ipc = yield* ElectronIpc;
+		const probe = yield* ElectronIpcTest;
+		const values: string[] = [];
+		yield* ipc
+			.register(invokeContracts["fixture:launch"], () =>
+				Effect.gen(function* () {
+					const dependency = yield* HandlerValue;
+					values.push(dependency.value);
+					return { status: "ready" as const };
+				})
+			)
+			.pipe(Effect.provideService(HandlerValue, { value: "registered" }));
+		yield* probe.invoke("fixture:launch");
+		expect(values).toEqual(["registered"]);
+	}).pipe(Effect.provide(makeElectronIpcTestLayer()), Effect.scoped)
+);
+
+it.effect("ElectronIpc real host invokes handlers with their registration context", () => {
+	const listeners = new Map<string, Parameters<ElectronIpcHost["handle"]>[1]>();
+	return Effect.gen(function* () {
+		const ipc = yield* ElectronIpc;
+		const values: string[] = [];
+		yield* ipc
+			.register(invokeContracts["fixture:launch"], () =>
+				Effect.gen(function* () {
+					values.push((yield* HandlerValue).value);
+					return { status: "ready" as const };
+				})
+			)
+			.pipe(Effect.provideService(HandlerValue, { value: "real host" }));
+		const listener = listeners.get("fixture:launch");
+		if (!listener) return yield* Effect.die("fixture handler was not registered");
+		expect(yield* Effect.promise(() => listener({}))).toEqual({ status: "ready" });
+		expect(values).toEqual(["real host"]);
+	}).pipe(
+		Effect.provide(
+			electronIpcLayer({
+				handle: (channel, listener) => {
+					listeners.set(channel, listener);
+				},
+				removeHandler: (channel) => {
+					listeners.delete(channel);
+				}
+			})
+		),
+		Effect.scoped
+	);
+});
+
 it.effect("ElectronIpc interrupts an in-flight handler when its owning scope closes", () =>
 	Effect.gen(function* () {
 		const started = yield* Deferred.make<void>();
@@ -199,13 +255,13 @@ it.effect("ElectronIpc interrupts an in-flight handler when its owning scope clo
 				if (!handler) return yield* Effect.die("fixture handler was not registered");
 				const promise = handler.invoke();
 				yield* Deferred.await(started);
-				return promise;
+				return { promise };
 			}).pipe(Effect.provide(makeElectronIpcTestLayer()))
 		);
 
 		yield* Deferred.await(interrupted);
 		const exit = yield* Effect.tryPromise({
-			try: () => invocation,
+			try: () => invocation.promise,
 			catch: (cause) => cause
 		}).pipe(Effect.exit);
 		expect(Exit.isFailure(exit)).toBe(true);

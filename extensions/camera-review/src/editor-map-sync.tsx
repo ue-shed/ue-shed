@@ -37,7 +37,7 @@ export function EditorMapSync(props: {
 		subscription.subscribe(
 			Stream.fromEffectSchedule(
 				read().pipe(
-					Effect.catch((cause) =>
+					Effect.catchTag("MapReviewClientError", (cause) =>
 						Effect.succeed({
 							status: "unavailable" as const,
 							message: Cause.pretty(Cause.fail(cause)),

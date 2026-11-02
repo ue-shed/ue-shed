@@ -340,7 +340,7 @@ export async function measureSharedIndex(
 					const po = yield* index.layer(
 						target.outputPaths.portableObjects[target.cultures[0]!]!
 					);
-					const metadata = Schema.decodeUnknownSync(
+					const metadata = Schema.decodeSync(
 						Schema.fromJsonString(Schema.Struct({ pathPrefix: Schema.String }))
 					)(new TextDecoder().decode(yield* po.section("file.meta")));
 					const prefix = metadata.pathPrefix;

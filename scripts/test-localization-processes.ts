@@ -101,9 +101,7 @@ async function cliThroughLane(...args: string[]) {
 				lines: text
 					.split("\n")
 					.filter((line) => line.trim().startsWith("{"))
-					.map((line) =>
-						Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(line)
-					)
+					.map((line) => Schema.decodeSync(Schema.fromJsonString(Schema.Json))(line))
 			};
 		})
 	);
@@ -144,9 +142,7 @@ async function applyThroughCli(
 				lines: text
 					.split("\n")
 					.filter((line) => line.trim() !== "")
-					.map((line) =>
-						Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(line)
-					)
+					.map((line) => Schema.decodeSync(Schema.fromJsonString(Schema.Json))(line))
 			};
 		})
 	);
@@ -201,7 +197,7 @@ async function capturePlan(
 				"--plan"
 			]).pipe(Effect.provide(runtime));
 			assert.equal(yield* Ref.get(code), 0);
-			return Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationOperationPlan))(
+			return Schema.decodeSync(Schema.fromJsonString(LocalizationOperationPlan))(
 				yield* Ref.get(output)
 			);
 		})
@@ -336,7 +332,7 @@ for (const engine of configured) {
 				)
 		);
 		const descriptorPath = join(project, "UEShedFixture.uproject");
-		const descriptor = Schema.decodeUnknownSync(
+		const descriptor = Schema.decodeSync(
 			Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json))
 		)(await readFile(descriptorPath, "utf8"));
 		await writeFile(
@@ -405,7 +401,7 @@ for (const engine of configured) {
 	const reviewBytes = legacy ? undefined : await readFile(reviewPath);
 	for (const operation of legacy
 		? operations
-		: Schema.decodeUnknownSync(Schema.Array(LocalizationOperation))([
+		: Schema.decodeSync(Schema.Array(LocalizationOperation))([
 				"export",
 				"import",
 				"compile",

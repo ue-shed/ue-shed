@@ -33,14 +33,14 @@ const Input = Schema.Struct({
 	document: Schema.optionalKey(GameTextRuleDocument),
 	options: Schema.optionalKey(LocalizationCheckOptions)
 });
-const input = Schema.decodeUnknownSync(Schema.fromJsonString(Input))(readFileSync(0, "utf8"));
+const input = Schema.decodeSync(Schema.fromJsonString(Input))(readFileSync(0, "utf8"));
 // Evidence is already schema-owned test input; its actual files are parsed again by the builder.
 const files = input.evidence;
 const projectRoot = resolve(input.directory, "project");
 mkdirSync(projectRoot, { recursive: true });
 const target =
 	files &&
-	Schema.decodeUnknownSync(LocalizationTarget)({
+	Schema.decodeSync(LocalizationTarget)({
 		...files.target,
 		poFormat:
 			files.cultures.flatMap((culture) =>

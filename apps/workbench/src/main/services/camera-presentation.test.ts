@@ -75,20 +75,20 @@ const makeGatedRecordingWindow = () =>
 			_channel: string,
 			payload: Payload
 		) {
-			const frame = Schema.decodeUnknownSync(RendererCameraFrame)(payload);
+			const frame = yield* Schema.decodeUnknownEffect(RendererCameraFrame)(payload).pipe(
+				Effect.orDie
+			);
 			yield* Queue.offer(started, undefined);
 			if (yield* Ref.get(destroyed)) {
-				return yield* Effect.fail(
-					new WorkbenchWindowError({
-						nextStep: "escalate",
-						code: "workbench_window_failed",
-						causeText: "Window is destroyed",
-						message: "Workbench window send failed.",
-						operation: "send",
-						recovery: "Ignore late renderer deliveries after shutdown.",
-						retrySafe: false
-					})
-				);
+				return yield* new WorkbenchWindowError({
+					nextStep: "escalate",
+					code: "workbench_window_failed",
+					causeText: "Window is destroyed",
+					message: "Workbench window send failed.",
+					operation: "send",
+					recovery: "Ignore late renderer deliveries after shutdown.",
+					retrySafe: false
+				});
 			}
 			yield* Queue.take(release);
 			yield* Ref.update(sentFrames, (frames) => [...frames, frame]);

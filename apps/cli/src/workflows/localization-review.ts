@@ -1,6 +1,6 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { invalidateCliGameTextIndex } from "./game-text-index.js";
-import { Effect, Metric, Result, Schema } from "effect";
+import { type Brand, Effect, Metric, Result, Schema } from "effect";
 import {
 	CultureCode,
 	LocalizationEvidence,
@@ -18,22 +18,22 @@ import type { CliCommand } from "../command-model.js";
 
 type LocalizationReviewCommand = Extract<CliCommand, { readonly _tag: "LocalizationReview" }>;
 
-class LocalizationReviewCommandError extends Schema.TaggedError<LocalizationReviewCommandError>()(
-	"LocalizationReviewCommandError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"invalid_line",
-			"invalid_selection",
-			"target_not_found",
-			"not_gathered"
-		]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+class LocalizationReviewCommandError extends Schema.TaggedError<
+	LocalizationReviewCommandError,
+	Brand.Brand<"apps/cli/src/workflows/localization-review/LocalizationReviewCommandError">
+>()("LocalizationReviewCommandError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"invalid_line",
+		"invalid_selection",
+		"target_not_found",
+		"not_gathered"
+	]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 const commandError = (
 	code: LocalizationReviewCommandError["code"],
@@ -53,7 +53,7 @@ const commandError = (
 /** `Namespace,Key`, splitting on the last unescaped comma so namespaces may contain dots. */
 function parseLine(value: string) {
 	const comma = value.lastIndexOf(",");
-	return Schema.decodeUnknownEffect(LocalizationIdentity)({
+	return Schema.decodeEffect(LocalizationIdentity)({
 		namespace: comma < 0 ? "" : value.slice(0, comma),
 		key: comma < 0 ? value : value.slice(comma + 1)
 	}).pipe(
@@ -80,17 +80,13 @@ export const runLocalizationReview = Effect.fn("Cli.workflow.localization_review
 					const discovery = yield* reader.discover({ projectRoot: command.projectRoot });
 					const target = discovery.targets.find((item) => item.name === command.target);
 					if (target === undefined)
-						return yield* Effect.fail(
-							commandError(
-								"target_not_found",
-								"The selected localization target was not found.",
-								"Run loc targets and choose a listed target."
-							)
+						return yield* commandError(
+							"target_not_found",
+							"The selected localization target was not found.",
+							"Run loc targets and choose a listed target."
 						);
 					// Every review flag and finding belongs to one culture's translation.
-					const culture = yield* Schema.decodeUnknownEffect(CultureCode)(
-						command.culture
-					).pipe(
+					const culture = yield* Schema.decodeEffect(CultureCode)(command.culture).pipe(
 						Effect.mapError((cause) =>
 							commandError(
 								"invalid_selection",
@@ -101,12 +97,10 @@ export const runLocalizationReview = Effect.fn("Cli.workflow.localization_review
 						)
 					);
 					if (!target.cultures.includes(culture))
-						return yield* Effect.fail(
-							commandError(
-								"invalid_selection",
-								"The target does not include that culture.",
-								"Choose a culture listed by loc targets."
-							)
+						return yield* commandError(
+							"invalid_selection",
+							"The target does not include that culture.",
+							"Choose a culture listed by loc targets."
 						);
 					const lines = yield* Effect.forEach(command.lines, parseLine);
 					const evidence = yield* reader.read({
@@ -181,11 +175,13 @@ export const runLocalizationReview = Effect.fn("Cli.workflow.localization_review
 						targetName: target.name,
 						changedFiles: [written.relativePath]
 					}).pipe(
-						Effect.catch((cause) =>
-							Effect.logWarning(
-								"Game Text write succeeded but cache invalidation failed",
-								{ message: cause.message, recovery: cause.recovery }
-							)
+						Effect.catchTag(
+							["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
+							(cause) =>
+								Effect.logWarning(
+									"Game Text write succeeded but cache invalidation failed",
+									{ message: cause.message, recovery: cause.recovery }
+								)
 						)
 					);
 					yield* Metric.update(

@@ -12,8 +12,8 @@ export interface CorpusKnownDefect {
 	withCheck?: string;
 	status: "defect" | "open";
 	why: string;
-	actual: typeof Schema.Json.Type;
-	rightAnswer: typeof Schema.Json.Type;
+	actual: Schema.Json;
+	rightAnswer: Schema.Json;
 }
 /** Today's engine agrees with every planted answer; a newly found defect is pinned here. */
 export const corpusKnownDefects: readonly CorpusKnownDefect[] = [];
@@ -21,7 +21,7 @@ export const corpusKnownDefects: readonly CorpusKnownDefect[] = [];
 const Dictionary = Schema.Record(Schema.String, Schema.Json);
 const isStringArray = Schema.is(Schema.Array(Schema.String));
 // These fields are sets in the portable diff; finding evidence and problem priority remain ordered.
-type CorpusDefectValue = typeof Schema.Json.Type | undefined;
+type CorpusDefectValue = Schema.Json | undefined;
 function sameDefectField(key: string, left: CorpusDefectValue, right: CorpusDefectValue) {
 	if (
 		["facts", "signals", "unknownReasons"].includes(key) &&
@@ -63,7 +63,7 @@ export function corpusDefectsFor(
 					continue;
 			} else if (template.culture !== subject.culture) continue;
 			const right = Schema.decodeUnknownSync(Dictionary)(template.rightAnswer),
-				value = Schema.decodeUnknownSync(Dictionary)(subject);
+				value = Schema.decodeSync(Dictionary)(subject);
 			if (!Object.keys(right).every((key) => sameDefectField(key, right[key], value[key])))
 				throw new Error(`Known defect no longer describes the recipe: ${subject.case}`);
 			Object.assign(predicted, Schema.decodeUnknownSync(Dictionary)(template.actual));
@@ -72,8 +72,8 @@ export function corpusDefectsFor(
 		}
 
 		if (explanations.length) {
-			const actual = Schema.decodeUnknownSync(Dictionary)(predicted),
-				wanted = Schema.decodeUnknownSync(Dictionary)(subject);
+			const actual = Schema.decodeSync(Dictionary)(predicted),
+				wanted = Schema.decodeSync(Dictionary)(subject);
 			const fields = Object.keys(actual).filter(
 				(key) => !sameDefectField(key, actual[key], wanted[key])
 			);
@@ -129,8 +129,8 @@ export function triageCorpusDifferences(
 			for (const defect of candidates) {
 				const right = Schema.decodeUnknownSync(Dictionary)(defect.rightAnswer),
 					today = Schema.decodeUnknownSync(Dictionary)(defect.actual);
-				const e = Schema.decodeUnknownSync(Dictionary)(expected),
-					a = Schema.decodeUnknownSync(Dictionary)(actual);
+				const e = Schema.decodeSync(Dictionary)(expected),
+					a = Schema.decodeSync(Dictionary)(actual);
 				if (
 					!Object.keys(right).every(
 						(key) =>

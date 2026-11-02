@@ -1,19 +1,19 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Context, Effect, Layer, Ref, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Ref, Schema } from "effect";
 
-export class ElectronAppError extends Schema.TaggedError<ElectronAppError>()(
-	"Workbench.ElectronAppError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("electron_app_failed"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		causeText: Schema.String,
-		message: Schema.String,
-		operation: Schema.Literals(["whenReady", "getAppMetrics", "getPath", "quit", "on"]),
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean
-	}
-) {}
+export class ElectronAppError extends Schema.TaggedError<
+	ElectronAppError,
+	Brand.Brand<"apps/workbench/src/main/adapters/electron-app/ElectronAppError">
+>()("Workbench.ElectronAppError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("electron_app_failed"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	causeText: Schema.String,
+	message: Schema.String,
+	operation: Schema.Literals(["whenReady", "getAppMetrics", "getPath", "quit", "on"]),
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean
+}) {}
 
 export interface ElectronProcessMetric {
 	readonly memory: {

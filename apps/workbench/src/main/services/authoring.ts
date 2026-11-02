@@ -45,7 +45,9 @@ const WorkbenchShedHostConfigurationLive = Layer.effect(
 								status: "configured" as const
 							};
 						}),
-						Effect.catch(() => Effect.succeed({ status: "not_configured" as const }))
+						Effect.catchTag("WorkbenchProjectUnavailable", () =>
+							Effect.succeed({ status: "not_configured" as const })
+						)
 					)
 			});
 		return ShedHostConfiguration.of({
@@ -123,7 +125,7 @@ const WorkbenchSavedTableIndexLive = Layer.effect(
 		return SavedTableIndex.of({
 			savedTables: Effect.fn("Workbench.SavedTableIndex.savedTables")(() =>
 				workspace.value.savedTables().pipe(
-					Effect.catch((error) =>
+					Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 						Effect.succeed({
 							diagnostics: [
 								{

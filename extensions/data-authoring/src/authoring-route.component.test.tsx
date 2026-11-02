@@ -1031,7 +1031,7 @@ describe("AuthoringRoute", () => {
 		await waitFor(() => expect(sheet.props().readOnly).toBe(false));
 		expect(sheet.props().columns[0]?.editable).toBe(false);
 		expect(sheet.props().columns[1]?.editable).toBe(true);
-		sheet.emit({
+		await sheet.emit({
 			type: "cell-edit",
 			mutation: {
 				address: { row: physicalRow(0), col: columnIdx(1) },

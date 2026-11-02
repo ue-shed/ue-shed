@@ -17,7 +17,7 @@ afterEach(() => {
 });
 afterAll(() => runtime.dispose());
 
-const manifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)({
+const manifest = Schema.decodeSync(NiagaraPreviewRunManifest)({
 	alphaPolicy: "scene_opacity_or_emissive_coverage_v1",
 	artifacts: [
 		{
@@ -82,7 +82,7 @@ const manifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)({
 	systemObjectPath: "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion"
 });
 
-const onDemandManifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)({
+const onDemandManifest = Schema.decodeSync(NiagaraPreviewRunManifest)({
 	...manifest,
 	artifacts: manifest.artifacts.map((artifact) => ({
 		...artifact,

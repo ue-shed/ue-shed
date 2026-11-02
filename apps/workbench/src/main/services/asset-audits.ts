@@ -139,7 +139,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const runScan = (projectRoot: string, ruleFile: string, index: SavedAssetScan) =>
 			scanAudit(projectRoot, ruleFile, index).pipe(
 				Effect.map((report) => ({ report, status: "completed" as const })),
-				Effect.catch((error) =>
+				Effect.catchTag("TextureAuditScanError", (error) =>
 					Effect.succeed({
 						error: {
 							code: error.code,
@@ -228,7 +228,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 							return { summary: next.summary(), status: "completed" as const };
 						})
 					),
-					Effect.catch((error) =>
+					Effect.catchTag("TextureAuditScanError", (error) =>
 						Effect.succeed({
 							error: {
 								code: error.code,
@@ -259,7 +259,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					Effect.flatMap((index) =>
 						runScan(current.project.projectRoot, ruleFile, index)
 					),
-					Effect.catch((error) =>
+					Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 						Effect.succeed(unavailableProject(error.message, error.recovery))
 					)
 				);
@@ -288,7 +288,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					if (result.status === "completed") yield* Ref.set(activeKey, key);
 					return result;
 				}).pipe(
-					Effect.catch((error) =>
+					Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 						Effect.succeed(unavailableQueryProject(error.message, error.recovery))
 					)
 				),
@@ -312,7 +312,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 						Effect.flatMap((index) =>
 							runRefresh(current.project.projectRoot, imported.rules, index)
 						),
-						Effect.catch((error) =>
+						Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 							Effect.succeed(unavailableQueryProject(error.message, error.recovery))
 						)
 					);
@@ -373,7 +373,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 				objectPath
 			}).pipe(
 				Effect.provideService(RemoteControlClient, remoteControl),
-				Effect.catch((error) =>
+				Effect.catchTag("LiveTexturePreviewError", (error) =>
 					Effect.succeed(
 						unavailablePreview(
 							objectPath,
@@ -451,7 +451,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					};
 				}
 				const batch = yield* offlinePreview.previewBatch(inputs).pipe(
-					Effect.catch((error) =>
+					Effect.catchTag("Workbench.OfflineTexturePreviewError", (error) =>
 						Effect.succeed({
 							cached: 0,
 							generated: 0,
@@ -486,9 +486,9 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 
 		const previewOffline = Effect.fn("Workbench.WorkbenchAssetAudits.previewOffline")(
 			function* (objectPath: string) {
-				const decodedPath = yield* Schema.decodeUnknownEffect(TextureObjectPath)(
-					objectPath
-				).pipe(Effect.orDie);
+				const decodedPath = yield* Schema.decodeEffect(TextureObjectPath)(objectPath).pipe(
+					Effect.orDie
+				);
 				const batch = yield* previewOfflineBatch({ objectPaths: [decodedPath] });
 				return (
 					batch.previews[0] ??
@@ -512,14 +512,12 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					current.project.projectRoot !== snapshot.source.projectRoot ||
 					(current.project.generation ?? 0) !== snapshot.source.generation
 				)
-					return yield* Effect.fail(
-						new InvestigationError({
-							message: "No current scan is available.",
-							recovery: "Refresh this workspace before saving or exporting.",
-							retrySafe: true,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new InvestigationError({
+						message: "No current scan is available.",
+						recovery: "Refresh this workspace before saving or exporting.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					});
 				const preset = yield* textureInvestigationPreset(snapshot.model, query);
 				return exportTextureInvestigation(snapshot.model, preset, snapshot.source);
 			}
@@ -537,7 +535,9 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 							rowCount: document.result.records.length
 						})
 					),
-					Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+					Effect.catchTag("InvestigationError", (error) =>
+						Effect.succeed(investigationFailure(error))
+					)
 				)
 		);
 		const investigationSave = Effect.fn("Workbench.AssetAudits.investigationSave")(
@@ -551,7 +551,9 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 							projectRoot: document.source.projectRoot
 						})
 					),
-					Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+					Effect.catchTag("InvestigationError", (error) =>
+						Effect.succeed(investigationFailure(error))
+					)
 				)
 		);
 		const investigationOpen = Effect.fn("Workbench.AssetAudits.investigationOpen")(() =>
@@ -580,7 +582,11 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 								}
 					);
 				return opened;
-			}).pipe(Effect.catch((error) => Effect.succeed(investigationFailure(error))))
+			}).pipe(
+				Effect.catchTag(["InvestigationError", "WorkbenchProjectUnavailable"], (error) =>
+					Effect.succeed(investigationFailure(error))
+				)
+			)
 		);
 
 		return WorkbenchAssetAudits.of({

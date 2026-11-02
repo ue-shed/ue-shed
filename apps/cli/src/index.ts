@@ -40,23 +40,25 @@ const CliLive = Layer.mergeAll(
 	runtimeObservabilityLayer({ serviceName: "ue-shed-cli", serviceVersion: "0.0.0" })
 );
 
-Effect.runPromiseExit(main(process.argv.slice(2)).pipe(Effect.provide(CliLive))).then((exit) => {
-	if (Exit.isSuccess(exit)) return;
-	const failure = Cause.findErrorOption(exit.cause);
-	if (failure._tag === "Some") {
-		const report = readCliFailure(failure.value);
-		const code = cliFailureCode(report);
-		process.stderr.write(
-			`ue-shed: ${failure.value.message}${code === undefined ? "" : ` (${code})`}\n`
-		);
-		const detail = inputIssueDetail(failure.value);
-		if (detail !== undefined) process.stderr.write(`${detail}\n`);
-		const recovery = cliFailureRecovery(report);
-		if (recovery !== undefined) process.stderr.write(`${recovery}\n`);
-		process.exitCode = cliFailureExit(report);
-		return;
+await Effect.runPromiseExit(main(process.argv.slice(2)).pipe(Effect.provide(CliLive))).then(
+	(exit) => {
+		if (Exit.isSuccess(exit)) return;
+		const failure = Cause.findErrorOption(exit.cause);
+		if (failure._tag === "Some") {
+			const report = readCliFailure(failure.value);
+			const code = cliFailureCode(report);
+			process.stderr.write(
+				`ue-shed: ${failure.value.message}${code === undefined ? "" : ` (${code})`}\n`
+			);
+			const detail = inputIssueDetail(failure.value);
+			if (detail !== undefined) process.stderr.write(`${detail}\n`);
+			const recovery = cliFailureRecovery(report);
+			if (recovery !== undefined) process.stderr.write(`${recovery}\n`);
+			process.exitCode = cliFailureExit(report);
+			return;
+		}
+		process.stderr.write(`${Cause.pretty(exit.cause)}\n`);
+		// A crash is never a check's verdict, so it never exits 1.
+		process.exitCode = cliExit("crashed");
 	}
-	process.stderr.write(`${Cause.pretty(exit.cause)}\n`);
-	// A crash is never a check's verdict, so it never exits 1.
-	process.exitCode = cliExit("crashed");
-});
+);

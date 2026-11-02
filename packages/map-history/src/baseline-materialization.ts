@@ -52,29 +52,26 @@ export function materializeBaseline(options: {
 		const byDepotPath = new Map<string, PerforceDepotFile>();
 		for (const depotPath of options.scope.fileSpecs) {
 			const remaining = options.maxFiles - byDepotPath.size;
-			if (remaining <= 0)
-				return yield* Effect.fail(resourceLimitError(options.change, options.maxFiles));
+			if (remaining <= 0) return yield* resourceLimitError(options.change, options.maxFiles);
 			const listed = yield* source.listDepotFilesAtChange({
 				change: options.change,
 				depotPath,
 				maxFiles: remaining
 			});
 			if (listed.hasMore) {
-				return yield* Effect.fail(resourceLimitError(options.change, options.maxFiles));
+				return yield* resourceLimitError(options.change, options.maxFiles);
 			}
 			for (const file of listed.files) {
 				const previous = byDepotPath.get(file.depotPath);
 				if (previous !== undefined && !isSameDepotRevision(previous, file)) {
-					return yield* Effect.fail(
-						baselineError(
-							`Perforce returned conflicting baseline revisions for ${file.depotPath}.`,
-							"Check the Perforce depot mapping and retry the historical reconstruction."
-						)
+					return yield* baselineError(
+						`Perforce returned conflicting baseline revisions for ${file.depotPath}.`,
+						"Check the Perforce depot mapping and retry the historical reconstruction."
 					);
 				}
 				byDepotPath.set(file.depotPath, file);
 				if (byDepotPath.size > options.maxFiles) {
-					return yield* Effect.fail(resourceLimitError(options.change, options.maxFiles));
+					return yield* resourceLimitError(options.change, options.maxFiles);
 				}
 			}
 		}
@@ -84,11 +81,9 @@ export function materializeBaseline(options: {
 			.map((file) => scopedPerforceFile(options.scope, file.depotPath))
 			.filter((file): file is NonNullable<typeof file> => file !== undefined);
 		if (!scoped.some((file) => file.depotPath === options.scope.mapDepotPath)) {
-			return yield* Effect.fail(
-				baselineError(
-					`The selected map does not exist at baseline changelist ${options.change}.`,
-					"Choose a range after the map was created or include its creation changelist."
-				)
+			return yield* baselineError(
+				`The selected map does not exist at baseline changelist ${options.change}.`,
+				"Choose a range after the map was created or include its creation changelist."
 			);
 		}
 		const plan = planScopedRevision({

@@ -105,7 +105,7 @@ export const ProjectLauncherLive = Layer.effect(
 									? { mode, status: "launched" }
 									: projectLaunchFailure(result.message)
 						),
-						Effect.catch((error) =>
+						Effect.catchTag("Workbench.FixtureProcessError", (error) =>
 							Effect.succeed({
 								status: "failed" as const,
 								message: error.message,

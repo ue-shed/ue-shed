@@ -58,7 +58,7 @@ function packageChange(
 		readonly packageName: string;
 	}> = {}
 ): SavedPackageChangeEvidenceType {
-	return Schema.decodeUnknownSync(SavedPackageChangeEvidence)({
+	return Schema.decodeSync(SavedPackageChangeEvidence)({
 		action: "edit",
 		afterRevision: 2,
 		beforeRevision: 1,

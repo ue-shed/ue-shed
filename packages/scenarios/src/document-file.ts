@@ -1,17 +1,21 @@
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Effect, Predicate, Schema } from "effect";
+import { type Brand, Effect, Predicate, Schema } from "effect";
 import { ScenarioDocument } from "./schema.js";
 
 /** Largest scenario document file, in bytes, that is read or written: 4 MiB. */
 export const MAX_SCENARIO_DOCUMENT_BYTES = 4 * 1024 * 1024;
 const documentJson = Schema.fromJsonString(ScenarioDocument);
 
-export class ScenarioDocumentFileError extends Schema.TaggedError<ScenarioDocumentFileError>()(
-	"ScenarioDocumentFileError",
-	{ path: Schema.String, ...ErrorGuidanceFields, ...ErrorCauseFields }
-) {}
+export class ScenarioDocumentFileError extends Schema.TaggedError<
+	ScenarioDocumentFileError,
+	Brand.Brand<"packages/scenarios/src/document-file/ScenarioDocumentFileError">
+>()("ScenarioDocumentFileError", {
+	path: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 const isScenarioDocumentFileError = Schema.is(ScenarioDocumentFileError);
 
 class DocumentTooLarge extends Error {
@@ -91,7 +95,7 @@ export const readScenarioDocumentFile = Effect.fn("ScenarioDocumentFile.read")((
 /** Write a validated document beside its destination, then atomically replace the file. */
 export const writeScenarioDocumentFile = Effect.fn("ScenarioDocumentFile.write")(
 	(path: string, document: ScenarioDocument) =>
-		Schema.decodeUnknownEffect(ScenarioDocument)(document).pipe(
+		Schema.decodeEffect(ScenarioDocument)(document).pipe(
 			Effect.flatMap((decoded) =>
 				Effect.tryPromise({
 					try: async () => {

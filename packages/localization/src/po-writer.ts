@@ -1,4 +1,4 @@
-import { Result, Schema } from "effect";
+import { type Brand, Result, Schema } from "effect";
 import { decodePOEscapes, parsePO, serializePO } from "./po.js";
 import {
 	LocalizationErrorGuidanceFields as ErrorGuidanceFields,
@@ -33,7 +33,10 @@ export type POEditFailureCode = typeof POEditFailureCode.Type;
  * recovery guidance; unverifiable round trips require escalation rather than blindly
  * rewriting the file.
  */
-export class POEditError extends Schema.TaggedError<POEditError>()("POEditError", {
+export class POEditError extends Schema.TaggedError<
+	POEditError,
+	Brand.Brand<"packages/localization/src/po-writer/POEditError">
+>()("POEditError", {
 	code: POEditFailureCode,
 	identity: Schema.NullOr(LocalizationIdentity),
 	...ErrorGuidanceFields

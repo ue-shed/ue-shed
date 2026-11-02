@@ -36,9 +36,7 @@ describe("Niagara preview wire contracts", () => {
 			await fixture("request.json")
 		);
 		const invalid = { ...request, settings: { width: 16_384 } };
-		expect(Schema.decodeUnknownResult(NiagaraPreviewProducerRequest)(invalid)._tag).toBe(
-			"Failure"
-		);
+		expect(Schema.decodeResult(NiagaraPreviewProducerRequest)(invalid)._tag).toBe("Failure");
 	});
 
 	it("accepts hyphenated Unreal object names in the system object path", async () => {
@@ -49,14 +47,14 @@ describe("Niagara preview wire contracts", () => {
 			...request,
 			systemObjectPath: "/Game/VFX/Combat/Blockout_Element.NS_GrassHit_Lv2-3"
 		};
-		expect(
-			Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(hyphenated).systemObjectPath
-		).toBe("/Game/VFX/Combat/Blockout_Element.NS_GrassHit_Lv2-3");
+		expect(Schema.decodeSync(NiagaraPreviewProducerRequest)(hyphenated).systemObjectPath).toBe(
+			"/Game/VFX/Combat/Blockout_Element.NS_GrassHit_Lv2-3"
+		);
 		const missingObject = {
 			...request,
 			systemObjectPath: "/Game/VFX/Combat/Blockout_Element"
 		};
-		expect(Schema.decodeUnknownResult(NiagaraPreviewProducerRequest)(missingObject)._tag).toBe(
+		expect(Schema.decodeResult(NiagaraPreviewProducerRequest)(missingObject)._tag).toBe(
 			"Failure"
 		);
 	});

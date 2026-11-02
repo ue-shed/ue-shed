@@ -395,7 +395,7 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 			operation: "mapReview.livePreviewAvailable"
 		}).pipe(
 			Effect.map((result) => result.status === "ready" && result.camera.stats.pipeConnected),
-			Effect.orElseSucceed(() => false)
+			Effect.catchTag("MapReviewClientError", () => Effect.succeed(false))
 		)
 	),
 	setLivePreviewFps: Effect.fn("MapReviewClient.setLivePreviewFps")((fps) =>

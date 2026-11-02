@@ -806,7 +806,7 @@ export function MapReviewAuthoring(props: {
 					<button
 						type="button"
 						disabled={state().status === "loading" || state().status === "saving"}
-						onClick={() => void generate()}
+						onClick={() => generate()}
 						{...stylex.attrs(styles.generateButton)}
 					>
 						{state().status === "loading"
@@ -908,7 +908,7 @@ export function MapReviewAuthoring(props: {
 									{(matching) => (
 										<button
 											type="button"
-											onClick={() => void openMatchingReviewSet(mismatch)}
+											onClick={() => openMatchingReviewSet(mismatch)}
 											{...stylex.attrs(styles.mapMismatchPrimaryButton)}
 										>
 											OPEN {matching().displayName.toUpperCase()}
@@ -931,7 +931,7 @@ export function MapReviewAuthoring(props: {
 								>
 									<button
 										type="button"
-										onClick={() => void generate("selection_map")}
+										onClick={() => generate("selection_map")}
 										{...stylex.attrs(styles.mapMismatchButton)}
 									>
 										START SET FOR SELECTED MAP
@@ -1202,7 +1202,7 @@ export function MapReviewAuthoring(props: {
 									<button
 										type="button"
 										disabled={state().status === "saving" || authoringBlocked()}
-										onClick={() => void approve()}
+										onClick={() => approve()}
 										{...stylex.attrs(styles.keepButton)}
 									>
 										{state().status === "saving" ? "SAVING…" : keepLabel()}

@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { Effect, Layer, Schema } from "effect";
+import { type Brand, Effect, Layer, Schema } from "effect";
 import { textProblems } from "@ue-shed/game-text/checks";
 import {
 	GameTextIndexBuilderLive,
@@ -33,10 +33,10 @@ import { decodeCorpusPlan, probeSubject } from "./plan.js";
 const signalCheckIds = ["shared", "long"] as const;
 
 /** The corpus folder lacks a readable plan, answers or collapse probe. */
-export class GameTextCorpusError extends Schema.TaggedError<GameTextCorpusError>()(
-	"GameTextCorpusError",
-	{ ...ErrorGuidanceFields, ...ErrorCauseFields }
-) {}
+export class GameTextCorpusError extends Schema.TaggedError<
+	GameTextCorpusError,
+	Brand.Brand<"packages/game-text-corpus/src/compare/GameTextCorpusError">
+>()("GameTextCorpusError", { ...ErrorGuidanceFields, ...ErrorCauseFields }) {}
 
 /** One expected subject or probe, and what the scan reported for it. */
 export interface GameTextCorpusDifference {

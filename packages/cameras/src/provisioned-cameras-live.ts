@@ -2,7 +2,7 @@ import { contractParseError, ContractParseError } from "@ue-shed/protocol";
 import { CameraVisibilityList } from "./camera-visibility.js";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Clock, Duration, Effect, Schema } from "effect";
+import { type Brand, Clock, Duration, Effect, Schema } from "effect";
 import {
 	FramingCandidateId,
 	ProvisionedCameraId,
@@ -21,16 +21,16 @@ const positiveHeight = Schema.Int.check(Schema.isBetween({ minimum: 64, maximum:
  * Temporary preview provisioning/configuration/frame-wait failure with original cause.
  * Unsupported requested options fail explicitly rather than silently changing preview policy.
  */
-export class ProvisionedCameraError extends Schema.TaggedError<ProvisionedCameraError>()(
-	"ProvisionedCameraError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		operation: Schema.Literals(["ensure_cameras", "clear_cameras", "await_frame", "configure"]),
-		/** Set when the connected plugin cannot honour a requested option. */
-		code: Schema.optionalKey(Schema.Literal("unsupported_capability"))
-	}
-) {}
+export class ProvisionedCameraError extends Schema.TaggedError<
+	ProvisionedCameraError,
+	Brand.Brand<"packages/cameras/src/provisioned-cameras-live/ProvisionedCameraError">
+>()("ProvisionedCameraError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	operation: Schema.Literals(["ensure_cameras", "clear_cameras", "await_frame", "configure"]),
+	/** Set when the connected plugin cannot honour a requested option. */
+	code: Schema.optionalKey(Schema.Literal("unsupported_capability"))
+}) {}
 
 /**
  * Links a temporary editor camera to a framing candidate, approved review view or map plan.
@@ -328,7 +328,7 @@ export function ensureProvisionedCameras(
 	RemoteControlClient
 > {
 	return Effect.gen(function* () {
-		const request = yield* Schema.decodeUnknownEffect(ProvisionedCameraRequest)(
+		const request = yield* Schema.decodeEffect(ProvisionedCameraRequest)(
 			provisionedCameraRequest(cameras, options)
 		).pipe(
 			Effect.mapError((cause) =>
@@ -370,29 +370,24 @@ export function ensureProvisionedCameras(
 		);
 		// Plugins that support version 5 echo it in every response, failures included.
 		if (request.schemaVersion === 5 && status.schemaVersion !== 5)
-			return yield* Effect.fail(
-				new ProvisionedCameraError({
-					code: "unsupported_capability",
-					operation: "ensure_cameras",
-					message: "The connected plugin cannot show editor previews in live previews.",
-					recovery:
-						"Omit editorPreviews or install a matching UE Shed Cameras plugin that supports provisioning version 5.",
-					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new ProvisionedCameraError({
+				code: "unsupported_capability",
+				operation: "ensure_cameras",
+				message: "The connected plugin cannot show editor previews in live previews.",
+				recovery:
+					"Omit editorPreviews or install a matching UE Shed Cameras plugin that supports provisioning version 5.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
 		if (request.schemaVersion === 4 && status.schemaVersion !== 4)
-			return yield* Effect.fail(
-				new ProvisionedCameraError({
-					code: "unsupported_capability",
-					operation: "ensure_cameras",
-					message: "The connected plugin cannot confirm authored preview visibility.",
-					recovery:
-						"Install a matching Cameras plugin before previewing authored output.",
-					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new ProvisionedCameraError({
+				code: "unsupported_capability",
+				operation: "ensure_cameras",
+				message: "The connected plugin cannot confirm authored preview visibility.",
+				recovery: "Install a matching Cameras plugin before previewing authored output.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
 		if (status.editorPreviews !== undefined)
 			yield* Effect.annotateCurrentSpan(
 				"camera.provisioned.editor_previews.revealed",
@@ -400,18 +395,16 @@ export function ensureProvisionedCameras(
 			);
 		const statusCameras = status.cameras ?? [];
 		if (status.error !== undefined || statusCameras.length === 0) {
-			return yield* Effect.fail(
-				new ProvisionedCameraError({
-					message:
-						status.message !== undefined && status.error !== undefined
-							? `${status.message} (${status.error})`
-							: (status.error ?? "No provisioned cameras were registered."),
-					operation: "ensure_cameras",
-					recovery: "Open the expected map with UEShedCameras enabled, then retry.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new ProvisionedCameraError({
+				message:
+					status.message !== undefined && status.error !== undefined
+						? `${status.message} (${status.error})`
+						: (status.error ?? "No provisioned cameras were registered."),
+				operation: "ensure_cameras",
+				recovery: "Open the expected map with UEShedCameras enabled, then retry.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		}
 		return yield* Effect.forEach(statusCameras, (camera) => {
 			const correlation =
@@ -501,15 +494,13 @@ export function awaitProvisionedCameraFrame(args: {
 			}
 			yield* Effect.sleep("50 millis");
 		}
-		return yield* Effect.fail(
-			new ProvisionedCameraError({
-				message: `Timed out waiting for provisioned camera frame ${args.cameraIndex}.`,
-				operation: "await_frame",
-				recovery:
-					"Confirm Workbench is listening on the camera pipe and the Unreal world is available.",
-				retrySafe: true,
-				nextStep: "retry"
-			})
-		);
+		return yield* new ProvisionedCameraError({
+			message: `Timed out waiting for provisioned camera frame ${args.cameraIndex}.`,
+			operation: "await_frame",
+			recovery:
+				"Confirm Workbench is listening on the camera pipe and the Unreal world is available.",
+			retrySafe: true,
+			nextStep: "retry"
+		});
 	}).pipe(Effect.withSpan("camera.provisioned.await_frame"));
 }

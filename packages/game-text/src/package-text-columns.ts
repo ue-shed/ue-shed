@@ -334,8 +334,7 @@ export const decodePackageTextColumns = Effect.fn("PackageText.decodeColumns")(f
 	const strings = new Map<string, Map<number, string>>();
 	for (const name of [...Object.keys(stringFields), ...numberFields]) {
 		const values = yield* reader.section(name);
-		if (!(values instanceof Uint32Array))
-			return yield* Effect.fail(snapshotFailure(name, "Expected u32"));
+		if (!(values instanceof Uint32Array)) return yield* snapshotFailure(name, "Expected u32");
 		columns.set(name, values);
 		const domain = fieldDomains.get(name);
 		if (domain !== undefined) {
@@ -369,7 +368,7 @@ export const decodePackageTextColumns = Effect.fn("PackageText.decodeColumns")(f
 					continue;
 				}
 				if (status === "error") {
-					const evidence = Schema.decodeUnknownSync(
+					const evidence = Schema.decodeSync(
 						Schema.fromJsonString(SavedAssetPackageTextEvent)
 					)(string("package.error", row));
 					snapshotCheck(evidence.event === "error", "package.error", "Invalid failure");

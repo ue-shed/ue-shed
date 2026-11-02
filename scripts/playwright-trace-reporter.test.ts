@@ -15,7 +15,7 @@ const playwright = require.resolve("@playwright/test/cli");
 const playwrightTest = require.resolve("@playwright/test").replace(/index\.js$/u, "index.mjs");
 const reporter = resolve(repositoryRoot, "apps/workbench/e2e/gate-trace-reporter.ts");
 
-test("normal Playwright runs keep only the list reporter", () => {
+void test("normal Playwright runs keep only the list reporter", () => {
 	const result = spawnSync(
 		process.execPath,
 		[
@@ -33,7 +33,7 @@ test("normal Playwright runs keep only the list reporter", () => {
 	assert.equal(result.stdout.trim(), '[["list"]]');
 });
 
-test("real Playwright runs join gate traces with retries, skips, parallel workers and nested steps", () => {
+void test("real Playwright runs join gate traces with retries, skips, parallel workers and nested steps", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-playwright-trace-"));
 	try {
 		const spansFile = join(root, "spans.jsonl");

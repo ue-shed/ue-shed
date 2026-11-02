@@ -295,7 +295,7 @@ describe("Map History playback", () => {
 			history({ end: [], revisions: [], start: [] })
 		);
 		const { rangeStartSnapshot: _rangeStartSnapshot, ...missingSnapshot } = encoded;
-		const malformed = Schema.decodeUnknownSync(PerforceMapHistory)(missingSnapshot);
+		const malformed = Schema.decodeSync(PerforceMapHistory)(missingSnapshot);
 
 		expect(() => createMapHistoryPlaybackState({ history: malformed })).toThrow(
 			"no rangeStartSnapshot"

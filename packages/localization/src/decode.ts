@@ -119,9 +119,7 @@ function checkJsonNesting(text: string, limits: LocalizationLimits): void {
 		else if (character === "{" || character === "[") {
 			if (++depth > limits.maxDepth + 1) {
 				// Preserve malformed-JSON precedence without traversing an unbounded value.
-				const syntax = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))(
-					text
-				);
+				const syntax = Schema.decodeResult(Schema.fromJsonString(Schema.Unknown))(text);
 				if (Result.isFailure(syntax)) throw localizationError("malformed_json");
 				throw localizationError("limit_exceeded");
 			}

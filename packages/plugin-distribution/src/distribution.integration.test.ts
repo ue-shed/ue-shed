@@ -196,7 +196,7 @@ async function compiledFixture(
 		target: "UnrealEditor",
 		unrealVersion: "5.7"
 	} as const;
-	const artifact = Schema.decodeUnknownSync(CompiledPluginVariantRequest)(
+	const artifact = Schema.decodeSync(CompiledPluginVariantRequest)(
 		options.engineSourceCommit === undefined
 			? artifactWithoutCommit
 			: { ...artifactWithoutCommit, engineSourceCommit: options.engineSourceCommit }

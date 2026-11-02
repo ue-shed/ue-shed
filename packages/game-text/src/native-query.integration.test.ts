@@ -81,7 +81,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						...Array.from({ length: 54 }, (_, index) => `x-${index}`),
 						"en"
 					];
-					const target = Schema.decodeUnknownSync(LocalizationTarget)({
+					const target = yield* Schema.decodeEffect(LocalizationTarget)({
 						...fixture.target,
 						cultures,
 						nativeCulture: "en",
@@ -94,7 +94,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 								cultures.map((culture) => [culture, `${culture}.po`])
 							)
 						}
-					});
+					}).pipe(Effect.orDie);
 					fixture.setTargets([target]);
 					yield* Effect.promise(async () => {
 						await writeFile(
@@ -158,11 +158,13 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 								{ cultureOffset: 50, locationOffset: 10000, poContextOffset: 50 },
 								{ cultureOffset: 99, locationOffset: 10100, poContextOffset: 150 }
 							]) {
-								const request = Schema.decodeUnknownSync(LocalizationFocusRequest)({
+								const request = yield* Schema.decodeEffect(
+									LocalizationFocusRequest
+								)({
 									target: target.name,
 									selection,
 									...offsets
-								});
+								}).pipe(Effect.orDie);
 								const actual = yield* model.query.localizationDetail(request);
 								const expected = localizationFocusPage(
 									{
@@ -598,7 +600,9 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							for (const selected of [page, scoped])
 								for (const [position, unit] of selected.units.entries()) {
 									const line = selected.localization?.lines[position];
-									const focus = Schema.decodeUnknownSync(TextCorpusFocusRequest)({
+									const focus = yield* Schema.decodeEffect(
+										TextCorpusFocusRequest
+									)({
 										id: unit.id,
 										pageSize: 1,
 										...(line
@@ -609,7 +613,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 													}
 												}
 											: undefined)
-									});
+									}).pipe(Effect.orDie);
 									const focused = yield* model.query.focus(focus);
 									expect([
 										focused?.unit.id,

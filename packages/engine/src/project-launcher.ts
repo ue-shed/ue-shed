@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { access, readFile, readdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import {
 	RemoteControlAllowedClass,
 	RemoteControlAllowedFunction,
@@ -90,32 +90,32 @@ export type UnrealProjectLaunchResult = typeof UnrealProjectLaunchResult.Type;
  * Launch validation, engine discovery, binary compatibility or spawn failure. Guidance
  * identifies repairable input and uncertain spawning; cause retains the originating failure.
  */
-export class UnrealProjectLaunchError extends Schema.TaggedError<UnrealProjectLaunchError>()(
-	"UnrealProjectLaunchError",
-	{
-		code: Schema.Literals([
-			"invalid_request",
-			"engine_discovery_failed",
-			"editor_missing",
-			"build_mismatch",
-			"invalid_module_manifest",
-			"plugin_unavailable",
-			"engine_plugins_stale",
-			"startup_map_missing",
-			"spawn_failed"
-		]),
-		details: Schema.optionalKey(Schema.String),
-		enginePlugins: Schema.optionalKey(
-			Schema.Struct({
-				engineRoot: Schema.NonEmptyString,
-				stalePlugins: Schema.Array(PluginId),
-				buildable: Schema.Boolean
-			})
-		),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class UnrealProjectLaunchError extends Schema.TaggedError<
+	UnrealProjectLaunchError,
+	Brand.Brand<"packages/engine/src/project-launcher/UnrealProjectLaunchError">
+>()("UnrealProjectLaunchError", {
+	code: Schema.Literals([
+		"invalid_request",
+		"engine_discovery_failed",
+		"editor_missing",
+		"build_mismatch",
+		"invalid_module_manifest",
+		"plugin_unavailable",
+		"engine_plugins_stale",
+		"startup_map_missing",
+		"spawn_failed"
+	]),
+	details: Schema.optionalKey(Schema.String),
+	enginePlugins: Schema.optionalKey(
+		Schema.Struct({
+			engineRoot: Schema.NonEmptyString,
+			stalePlugins: Schema.Array(PluginId),
+			buildable: Schema.Boolean
+		})
+	),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 const isUnrealProjectLaunchError = Schema.is(UnrealProjectLaunchError);
 
 /**
@@ -584,9 +584,7 @@ export const UnrealProjectLauncherLive = Layer.effect(
 		const launch = Effect.fn("UnrealProjectLauncher.launch")(function* (
 			input: UnrealProjectLaunchRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(UnrealProjectLaunchRequest)(
-				input
-			).pipe(
+			const request = yield* Schema.decodeEffect(UnrealProjectLaunchRequest)(input).pipe(
 				Effect.mapError((cause) =>
 					launchError(
 						"invalid_request",

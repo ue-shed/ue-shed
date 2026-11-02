@@ -342,12 +342,10 @@ describe("package text layer", () => {
 					);
 				const cold = await runIn(
 					cache,
-					Effect.gen(function* () {
-						return yield* importColdPackageTextLayer({
-							inventory,
-							recordDirectory: directory,
-							stagingRoot: join(cache, "staging")
-						});
+					importColdPackageTextLayer({
+						inventory,
+						recordDirectory: directory,
+						stagingRoot: join(cache, "staging")
 					})
 				);
 				expect(cold.profile.probePasses).toBe(0);

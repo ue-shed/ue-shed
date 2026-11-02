@@ -24,7 +24,7 @@ const fixture = {
 	text: corpus(),
 	files,
 	join: { target: files.target.name },
-	document: Schema.decodeUnknownSync(GameTextRuleDocument)({
+	document: Schema.decodeSync(GameTextRuleDocument)({
 		schemaVersion: 1,
 		roles: [
 			{
@@ -53,7 +53,7 @@ const fixture = {
 		]
 	})
 };
-const other = Schema.decodeUnknownSync(LocalizationTarget)({ ...files.target, name: "Other" });
+const other = Schema.decodeSync(LocalizationTarget)({ ...files.target, name: "Other" });
 /** The fixture's one line in each culture: unknown, as the target has no gather settings. */
 function tally(by: readonly string[]): TextAggregate | undefined {
 	switch (by.join()) {

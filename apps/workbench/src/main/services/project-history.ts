@@ -60,7 +60,11 @@ export const WorkbenchProjectHistoryLive = Layer.effect(
 			});
 			const json = yield* Effect.try(() => JSON.parse(new TextDecoder().decode(bytes)));
 			return yield* decodeDocument(json);
-		}).pipe(Effect.catch(() => Effect.succeed(emptyDocument())));
+		}).pipe(
+			Effect.catchTag(["SchemaError", "UnknownError", "Workbench.LocalFilesError"], () =>
+				Effect.succeed(emptyDocument())
+			)
+		);
 		const document = yield* Ref.make(initial);
 		const writeGate = yield* Semaphore.make(1);
 

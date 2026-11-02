@@ -51,14 +51,12 @@ const status = (handle: ScenarioRunHandle) =>
 			)
 		);
 		if (response._tag === "Rejected")
-			return yield* Effect.fail(
-				clientError({
-					cause: response,
-					message: response.message,
-					operation: "scenario.status",
-					recovery: response.recovery
-				})
-			);
+			return yield* clientError({
+				cause: response,
+				message: response.message,
+				operation: "scenario.status",
+				recovery: response.recovery
+			});
 		return response;
 	});
 

@@ -32,6 +32,7 @@ import {
 	type SavedTableCatalog as SavedTableCatalogValue
 } from "@ue-shed/unreal-assets";
 import {
+	type Brand,
 	Cache,
 	Context,
 	Duration,
@@ -96,17 +97,17 @@ function candidateFilters(kind: WorkbenchProjectCandidateKind): readonly Project
 	return byKind[kind];
 }
 
-export class WorkbenchProjectUnavailable extends Schema.TaggedError<WorkbenchProjectUnavailable>()(
-	"WorkbenchProjectUnavailable",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("workbench_project_unavailable"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class WorkbenchProjectUnavailable extends Schema.TaggedError<
+	WorkbenchProjectUnavailable,
+	Brand.Brand<"apps/workbench/src/main/services/project-workspace/WorkbenchProjectUnavailable">
+>()("WorkbenchProjectUnavailable", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("workbench_project_unavailable"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export type WorkbenchProjectCandidates = SavedAssetScan & { readonly generation: number };
 
@@ -557,7 +558,7 @@ export const WorkbenchProjectLive = Layer.effect(
 				});
 				yield* refreshSummary(projectRoot).pipe(
 					Effect.flatMap((summary) => recoverInventory(projectRoot, summary)),
-					Effect.catch(() => Effect.void),
+					Effect.catchTag("WorkbenchProjectUnavailable", () => Effect.void),
 					Effect.forkIn(layerScope)
 				);
 				return committed;
@@ -640,7 +641,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					project: inventory.project,
 					status: "ready" as const
 				})),
-				Effect.catch((error) =>
+				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 					Ref.set(selectedSummary, Option.none()).pipe(
 						Effect.as({
 							error: mapProjectFailure(error.message, error.recovery),
@@ -677,7 +678,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					status: "ready" as const,
 					project: inventory.project
 				})),
-				Effect.catch((error) =>
+				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 					Effect.succeed({
 						status: "failed" as const,
 						error: mapProjectFailure(error.message, error.recovery)
@@ -714,11 +715,13 @@ export const WorkbenchProjectLive = Layer.effect(
 				// revalidates against disk rather than answering from the reuse window.
 				return yield* open(choice.path, true);
 			}).pipe(
-				Effect.catch((error) =>
-					Effect.succeed({
-						error: mapProjectFailure(error.message),
-						status: "failed" as const
-					})
+				Effect.catchTag(
+					["Workbench.WorkbenchWindowError", "WorkbenchProjectUnavailable"],
+					(error) =>
+						Effect.succeed({
+							error: mapProjectFailure(error.message),
+							status: "failed" as const
+						})
 				)
 			);
 		const sample = Effect.fn("Workbench.WorkbenchProject.sample")(function* () {
@@ -734,7 +737,7 @@ export const WorkbenchProjectLive = Layer.effect(
 				join(configuration.sourceCheckout.path, "fixtures", "unreal-project"),
 				true
 			).pipe(
-				Effect.catch((error) =>
+				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 					Effect.succeed({
 						status: "failed" as const,
 						error: mapProjectFailure(error.message, error.recovery)
@@ -757,7 +760,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					};
 				}
 				return yield* open(projectRoot, false).pipe(
-					Effect.catch((error) =>
+					Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 						Effect.succeed({
 							error: mapProjectFailure(error.message, error.recovery),
 							status: "failed" as const
@@ -810,17 +813,19 @@ export const WorkbenchProjectLive = Layer.effect(
 				};
 			}
 			return yield* Cache.get(inputAtlasLoads, root.value).pipe(
-				Effect.catch((error) =>
-					Effect.succeed({
-						error: {
-							code: "invalid_project" as const,
-							message: error.message,
-							recovery: error.recovery,
-							retrySafe: error.retrySafe,
-							nextStep: error.nextStep
-						},
-						status: "failed" as const
-					})
+				Effect.catchTag(
+					["WorkbenchProjectUnavailable", "ProjectIndexStaleGeneration"],
+					(error) =>
+						Effect.succeed({
+							error: {
+								code: "invalid_project" as const,
+								message: error.message,
+								recovery: error.recovery,
+								retrySafe: error.retrySafe,
+								nextStep: error.nextStep
+							},
+							status: "failed" as const
+						})
 				)
 			);
 		});
@@ -866,16 +871,13 @@ export const WorkbenchProjectLive = Layer.effect(
 									: yield* refreshSummary(projectRoot);
 							const latest = yield* recoverInventory(projectRoot, indexSummary);
 							if (latest.indexSummary === undefined) {
-								return yield* Effect.fail(
-									new WorkbenchProjectUnavailable({
-										retrySafe: false,
-										nextStep: "escalate",
-										code: "workbench_project_unavailable",
-										message: "Project Index summary is unavailable.",
-										recovery:
-											"Refresh the Project Index, then retry the feature."
-									})
-								);
+								return yield* new WorkbenchProjectUnavailable({
+									retrySafe: false,
+									nextStep: "escalate",
+									code: "workbench_project_unavailable",
+									message: "Project Index summary is unavailable.",
+									recovery: "Refresh the Project Index, then retry the feature."
+								});
 							}
 							return yield* read(latest.project.projectRoot, latest.indexSummary);
 						})
@@ -1075,15 +1077,13 @@ export function makeWorkbenchProjectTestLayer(
 								projectName: state.project.projectName,
 								projectRoot: state.project.projectRoot
 							};
-						return yield* Effect.fail(
-							new WorkbenchProjectUnavailable({
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "workbench_project_unavailable",
-								message: "No Workbench project is selected.",
-								recovery: "Choose a project from the Workbench header, then retry."
-							})
-						);
+						return yield* new WorkbenchProjectUnavailable({
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "workbench_project_unavailable",
+							message: "No Workbench project is selected.",
+							recovery: "Choose a project from the Workbench header, then retry."
+						});
 					}))
 		})
 	);

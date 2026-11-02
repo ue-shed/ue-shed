@@ -66,7 +66,7 @@ it("steps past the last loaded line by loading the group's next page", async () 
 });
 it("does not reopen a line when the list is back before the next page arrives", async () => {
 	const input = listing(savedLines("late-line:", 62));
-	const later = Effect.runSync(Deferred.make<void>());
+	const later = Deferred.makeUnsafe<void>();
 	const user = userEvent.setup({ delay: null });
 	mount(
 		makeClient(input, {

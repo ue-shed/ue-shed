@@ -12,7 +12,7 @@ import {
 	type SavedProperty
 } from "@ue-shed/unreal-assets";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Predicate, Ref, Schema, Stream } from "effect";
+import { type Brand, Context, Effect, Layer, Predicate, Ref, Schema, Stream } from "effect";
 import { maximumDimensionKey } from "./report.js";
 import {
 	AuditRuleId,
@@ -38,10 +38,14 @@ export interface TextureAuditProgress {
 	readonly totalAssets: number;
 }
 
-export class TextureAuditScanError extends Schema.TaggedError<TextureAuditScanError>()(
-	"TextureAuditScanError",
-	{ code: TextureAuditPublicError.fields.code, ...ErrorGuidanceFields, ...ErrorCauseFields }
-) {}
+export class TextureAuditScanError extends Schema.TaggedError<
+	TextureAuditScanError,
+	Brand.Brand<"packages/asset-audits/src/texture/TextureAuditScanError">
+>()("TextureAuditScanError", {
+	code: TextureAuditPublicError.fields.code,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 const TextureAuditScanFields = {
 	concurrency: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),

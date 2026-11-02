@@ -24,7 +24,7 @@ const tree: readonly TreeEntry[] = [
 	{ path: "packages/game-text/CHANGELOG.md", object: "2".repeat(40) }
 ];
 
-test("plans to rerun only gates whose evidence no longer covers the release inputs", () => {
+void test("plans to rerun only gates whose evidence no longer covers the release inputs", () => {
 	const check = RELEASE_GATES.find((gate) => gate.id === "check")!;
 	const pack = RELEASE_GATES.find((gate) => gate.id === "pack")!;
 	const previous: readonly TreeEntry[] = [tree[0]!, { ...tree[1]!, object: "3".repeat(40) }];
@@ -60,7 +60,7 @@ test("plans to rerun only gates whose evidence no longer covers the release inpu
 	);
 });
 
-test("records validation in place of an existing section or at the end", () => {
+void test("records validation in place of an existing section or at the end", () => {
 	const validation = "## Validation\n\n- Full local check: passed.\n";
 	assert.equal(
 		recordValidation("# UE Shed 0.5.2\n\n## Fixes\n\n- A fix.\n", validation),
@@ -94,7 +94,7 @@ function span(
 	};
 }
 
-test("report categories and steps come from the recorded spans", () => {
+void test("report categories and steps come from the recorded spans", () => {
 	const spans = [
 		span("release:prepare", undefined, 0, 100_000),
 		span("gate check", "release:prepare", 0, 90_000, { "release.gate": "check" }),
@@ -137,7 +137,7 @@ test("report categories and steps come from the recorded spans", () => {
 	]);
 });
 
-test("refuses an Unreal lane checkout whose build paths would pass 260 characters", () => {
+void test("refuses an Unreal lane checkout whose build paths would pass 260 characters", () => {
 	assert.doesNotThrow(() => assertUnrealPathBudget("C:/Users/dev/git/ue-shed-unreal"));
 	assert.throws(
 		() => assertUnrealPathBudget(`C:/${"deep/".repeat(20)}ue-shed-unreal`),
@@ -145,7 +145,7 @@ test("refuses an Unreal lane checkout whose build paths would pass 260 character
 	);
 });
 
-test("validation never presents stale reused evidence as covering the release", () => {
+void test("validation never presents stale reused evidence as covering the release", () => {
 	const check = RELEASE_GATES.find((gate) => gate.id === "check")!;
 	const previous: readonly TreeEntry[] = [{ ...tree[0]!, object: "9".repeat(40) }, tree[1]!];
 	const evidenceFor = (entries: readonly TreeEntry[]): ReleaseEvidence => ({
@@ -181,7 +181,7 @@ test("validation never presents stale reused evidence as covering the release", 
 	);
 });
 
-test("a lane stops at its first failed gate unless it keeps going", async () => {
+void test("a lane stops at its first failed gate unless it keeps going", async () => {
 	const ran: string[] = [];
 	const run = async (gate: (typeof RELEASE_GATES)[number]): Promise<GateRun> => {
 		ran.push(gate.id);

@@ -8,7 +8,7 @@ import {
 	ErrorGuidanceFields,
 	type ErrorNextStep
 } from "@ue-shed/protocol";
-import { Context, Effect, Schema } from "effect";
+import { type Brand, Context, Effect, Schema } from "effect";
 
 export const AuthoringAuthority = Schema.Literals(["saved", "live"]);
 export type AuthoringAuthority = Schema.Schema.Type<typeof AuthoringAuthority>;
@@ -216,14 +216,14 @@ export const decodeAuthoringCatalogProgress = contractParser(
 	"AuthoringCatalogProgress"
 );
 
-export class AuthoringClientError extends Schema.TaggedError<AuthoringClientError>()(
-	"AuthoringClientError",
-	{
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		...ErrorGuidanceFields
-	}
-) {}
+export class AuthoringClientError extends Schema.TaggedError<
+	AuthoringClientError,
+	Brand.Brand<"packages/authoring-sdk/src/index/AuthoringClientError">
+>()("AuthoringClientError", {
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	...ErrorGuidanceFields
+}) {}
 
 export interface AuthoringClientApi {
 	readonly getCatalogProgress: () => Effect.Effect<

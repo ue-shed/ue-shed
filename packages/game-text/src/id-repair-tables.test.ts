@@ -123,7 +123,7 @@ function tableSnapshot(column: { name: string; propertyName?: string }, key = be
 
 /** A key fix for the saved reader's cell `Lamp.<propertyPath>` in DT_Items. */
 function tableRequest(propertyPath: string) {
-	return Schema.decodeUnknownSync(TextIdRepairRequest)({
+	return Schema.decodeSync(TextIdRepairRequest)({
 		projectKey: "C:/Fixture",
 		title: "Fix table key",
 		changes: [
@@ -157,7 +157,7 @@ function connection(snapshot?: ReturnType<typeof tableSnapshot>) {
 			Effect.gen(function* () {
 				calls.push(call.functionName);
 				if (call.functionName === "GetCapabilityManifest")
-					return Schema.decodeUnknownSync(Schema.Json)({
+					return yield* Schema.decodeEffect(Schema.Json)({
 						schemaVersion: 1,
 						producerKind: "unreal_editor",
 						authoringObjectPath:
@@ -174,17 +174,19 @@ function connection(snapshot?: ReturnType<typeof tableSnapshot>) {
 							"authoring.apply-result.v1",
 							"authoring.save.v1"
 						]
-					});
+					}).pipe(Effect.orDie);
 				if (call.functionName === "GetTableSnapshot" && snapshot)
-					return Schema.decodeUnknownSync(Schema.Json)(snapshot);
+					return yield* Schema.decodeUnknownEffect(Schema.Json)(snapshot).pipe(
+						Effect.orDie
+					);
 				if (call.functionName === "Apply")
-					return Schema.decodeUnknownSync(Schema.Json)({
+					return yield* Schema.decodeEffect(Schema.Json)({
 						contract,
 						operationId: "repair",
 						errors: [],
 						snapshots: [],
 						status: "committed"
-					});
+					}).pipe(Effect.orDie);
 				return yield* new RemoteControlClientError({
 					code: "request_timeout",
 					endpoint: call.endpoint,
@@ -219,7 +221,7 @@ it.effect("retains committed table edits before a save reply is lost", () =>
 it.effect("refuses copied table paths that still point at another physical package", () =>
 	Effect.gen(function* () {
 		const remote = connection();
-		const request = Schema.decodeUnknownSync(TextIdRepairRequest)({
+		const request = yield* Schema.decodeEffect(TextIdRepairRequest)({
 			projectKey: "C:/Fixture",
 			title: "Fix copied table",
 			changes: [
@@ -242,7 +244,7 @@ it.effect("refuses copied table paths that still point at another physical packa
 					edit: { kind: "change_key", namespace: "UI", key: "New" }
 				}
 			]
-		});
+		}).pipe(Effect.orDie);
 		const error = yield* prepareTextIdTableRepair(
 			"http://localhost:30010",
 			request,

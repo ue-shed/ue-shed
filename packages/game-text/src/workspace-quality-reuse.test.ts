@@ -7,7 +7,7 @@ import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { typeScriptIndexBuilderLayer } from "./index-builder-reference.test-support.js";
-import { GameTextIndexQuery, nativeIndexQueryLayer } from "./index-query-native.js";
+import { nativeIndexQueryLayer } from "./index-query-native.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { GameTextIndexSteps, gameTextIndexStepsLayer } from "./index-steps.js";
 import { LocalizationImportSource } from "./localization-import.js";

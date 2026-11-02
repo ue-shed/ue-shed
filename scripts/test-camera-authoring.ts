@@ -148,7 +148,7 @@ try {
 				parameters: { InWorld: `${mapPath}.Fixture` }
 			})
 			.pipe(
-				Effect.catch((error) =>
+				Effect.catchTag("RemoteControlClientError", (error) =>
 					error.message.startsWith(
 						"Invalid Remote Control envelope: SchemaError(Missing key"
 					)
@@ -166,7 +166,7 @@ try {
 	const subjectPath =
 		selectedMap.actors.find((actor) => actor.label === "Floor")?.path ??
 		selectedMap.actors[0]!.path;
-	const arrangement = Schema.decodeUnknownSync(Cameras.CameraArrangement)({
+	const arrangement = Schema.decodeSync(Cameras.CameraArrangement)({
 		version: 1,
 		id: "fixture-arrangement",
 		revision: 0,
@@ -508,7 +508,7 @@ try {
 				}
 			})
 			.pipe(
-				Effect.catch((error) => {
+				Effect.catchTag("RemoteControlClientError", (error) => {
 					// Unreal's built-in selection setter returns void, unlike UE Shed's ResultJson calls.
 					// The following bridge selection assertion confirms the actual editor-side effect.
 					return error.message.startsWith(

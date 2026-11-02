@@ -8,7 +8,7 @@ import {
 	CustodianReport,
 	CustodianTargetId
 } from "@ue-shed/project-custodian/browser";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 
 export const CustodianPublicError = Schema.Struct({
 	code: Schema.Literals(["scan_failed", "dialog_failed", "prepare_failed", "execution_failed"]),
@@ -30,17 +30,17 @@ export type CustodianRunResult = typeof CustodianRunResult.Type;
  * A value that does not match the Project Custodian client contract: the two sides disagree about the contract, so
  * repeating the same call returns the same mismatch.
  */
-export class CustodianClientContractError extends Schema.TaggedError<CustodianClientContractError>()(
-	"CustodianClientContractError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("invalid_contract"),
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class CustodianClientContractError extends Schema.TaggedError<
+	CustodianClientContractError,
+	Brand.Brand<"extensions/project-custodian/src/custodian-client/CustodianClientContractError">
+>()("CustodianClientContractError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("invalid_contract"),
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A unary parser for one Project Custodian client contract value: it decodes the encoded value and fails with
@@ -125,18 +125,18 @@ export const parseCustodianCancelRunResult = custodianClientContractParser(
 	"custodian cancel run result"
 );
 
-export class CustodianClientError extends Schema.TaggedError<CustodianClientError>()(
-	"ProjectCustodian.ClientError",
-	{
-		message: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("custodian_client_failed"),
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class CustodianClientError extends Schema.TaggedError<
+	CustodianClientError,
+	Brand.Brand<"extensions/project-custodian/src/custodian-client/CustodianClientError">
+>()("ProjectCustodian.ClientError", {
+	message: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("custodian_client_failed"),
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export interface CustodianClientApi {
 	readonly configuredScan: () => Effect.Effect<CustodianRunResult, CustodianClientError>;

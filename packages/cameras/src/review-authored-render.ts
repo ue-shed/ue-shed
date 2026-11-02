@@ -27,32 +27,27 @@ export const captureAuthoredReviewView = Effect.fn("ReviewRenderer.authored")(fu
 		request = args.request;
 	const authored = request.authoredVisibility;
 	if (!authored)
-		return yield* Effect.fail(
-			new CameraRenderError({
-				code: "invalid_policy",
-				operation: "capture",
-				sessionId: request.operationId,
-				message: "Authored output requires an explicit policy.",
-				recovery: "Provide the saved View visibility policy.",
-				retrySafe: true,
-				nextStep: "fix_input"
-			})
-		);
+		return yield* new CameraRenderError({
+			code: "invalid_policy",
+			operation: "capture",
+			sessionId: request.operationId,
+			message: "Authored output requires an explicit policy.",
+			recovery: "Provide the saved View visibility policy.",
+			retrySafe: true,
+			nextStep: "fix_input"
+		});
 	const renderer = makeCameraRenderer(client, args.endpoint),
 		capabilities = yield* renderer.capabilities();
 	if (!capabilities.authoredVisibility)
-		return yield* Effect.fail(
-			new CameraRenderError({
-				code: "unsupported_capability",
-				operation: "capture",
-				sessionId: request.operationId,
-				message: "The connected renderer does not support authored visibility.",
-				recovery:
-					"Enable a matching Cameras plugin; no renderer substitution was performed.",
-				retrySafe: true,
-				nextStep: "fix_input"
-			})
-		);
+		return yield* new CameraRenderError({
+			code: "unsupported_capability",
+			operation: "capture",
+			sessionId: request.operationId,
+			message: "The connected renderer does not support authored visibility.",
+			recovery: "Enable a matching Cameras plugin; no renderer substitution was performed.",
+			retrySafe: true,
+			nextStep: "fix_input"
+		});
 	const realization =
 		request.viewpoint.kind === "world_fixed"
 			? { status: "resolved" as const, pose: request.viewpoint.approvedPose }
@@ -94,16 +89,14 @@ export const captureAuthoredReviewView = Effect.fn("ReviewRenderer.authored")(fu
 						)
 					);
 	if (realization.status === "failed")
-		return yield* Effect.fail(
-			new CameraRenderError({
-				...realization,
-				code: "capture_failed",
-				nextStep: "reconcile",
-				operation: "capture",
-				retrySafe: true,
-				sessionId: request.operationId
-			})
-		);
+		return yield* new CameraRenderError({
+			...realization,
+			code: "capture_failed",
+			nextStep: "reconcile",
+			operation: "capture",
+			retrySafe: true,
+			sessionId: request.operationId
+		});
 	const pose = realization.pose;
 	const camera = {
 		location: pose.location,
@@ -114,18 +107,16 @@ export const captureAuthoredReviewView = Effect.fn("ReviewRenderer.authored")(fu
 	const paired = authored.output === "natural_and_authored";
 	if (paired && policy.exposure.mode === "project_auto") {
 		if (policy.renderer.kind !== "editor_viewport")
-			return yield* Effect.fail(
-				new CameraRenderError({
-					code: "exposure_unavailable",
-					operation: "capture",
-					sessionId: request.operationId,
-					message: "Paired SceneCapture output requires explicit fixed exposure.",
-					recovery:
-						"Set fixed_ev100, or explicitly choose the viewport renderer with meter_once.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new CameraRenderError({
+				code: "exposure_unavailable",
+				operation: "capture",
+				sessionId: request.operationId,
+				message: "Paired SceneCapture output requires explicit fixed exposure.",
+				recovery:
+					"Set fixed_ev100, or explicitly choose the viewport renderer with meter_once.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		policy = {
 			...policy,
 			exposure: {
@@ -194,17 +185,15 @@ export const captureAuthoredReviewView = Effect.fn("ReviewRenderer.authored")(fu
 							Effect.flatMap(Schema.decodeUnknownEffect(ReviewRenderInspectionResult))
 						);
 					if (assessed.status === "failed")
-						return yield* Effect.fail(
-							new CameraRenderError({
-								code: "capture_failed",
-								operation: "capture",
-								sessionId,
-								message: assessed.message,
-								recovery: assessed.recovery,
-								retrySafe: false,
-								nextStep: "reconcile"
-							})
-						);
+						return yield* new CameraRenderError({
+							code: "capture_failed",
+							operation: "capture",
+							sessionId,
+							message: assessed.message,
+							recovery: assessed.recovery,
+							retrySafe: false,
+							nextStep: "reconcile"
+						});
 					inspection = assessed;
 				}
 				return captured;
@@ -213,17 +202,15 @@ export const captureAuthoredReviewView = Effect.fn("ReviewRenderer.authored")(fu
 		frames.push({ variant, frame });
 		if (paired && variant === "pure" && policy.exposure.mode === "meter_once") {
 			if (frame.evidence.exposureEV100 === null)
-				return yield* Effect.fail(
-					new CameraRenderError({
-						code: "exposure_unavailable",
-						operation: "capture",
-						sessionId: request.operationId,
-						message: "Natural exposure was not recorded.",
-						recovery: "Inspect renderer metering before producing the pair.",
-						retrySafe: false,
-						nextStep: "escalate"
-					})
-				);
+				return yield* new CameraRenderError({
+					code: "exposure_unavailable",
+					operation: "capture",
+					sessionId: request.operationId,
+					message: "Natural exposure was not recorded.",
+					recovery: "Inspect renderer metering before producing the pair.",
+					retrySafe: false,
+					nextStep: "escalate"
+				});
 			policy = {
 				...policy,
 				exposure: {

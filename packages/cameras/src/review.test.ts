@@ -520,7 +520,7 @@ describe("Map Review contracts", () => {
 			})
 		).toThrow(/visibleFraction/);
 		expect(() =>
-			Schema.decodeUnknownSync(VisibilityResult)({
+			Schema.decodeSync(VisibilityResult)({
 				assessmentDurationMs: 1,
 				limitations: [],
 				method: { method: "ray_samples", version: 1 },
@@ -533,7 +533,7 @@ describe("Map Review contracts", () => {
 	});
 
 	it("classifies raw engine measurements only when a consumer asks", () => {
-		const measurement = Schema.decodeUnknownSync(VisibilityMeasurement)({
+		const measurement = Schema.decodeSync(VisibilityMeasurement)({
 			assessmentDurationMs: 1,
 			limitations: ["Collision rays are diagnostic."],
 			method: { method: "ray_samples", version: 1 },

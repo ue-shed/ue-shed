@@ -142,7 +142,7 @@ function harness(
 											restoration: "restored"
 										}
 									: captured;
-				return Schema.decodeUnknownSync(Schema.Json)(value);
+				return yield* Schema.decodeUnknownEffect(Schema.Json)(value).pipe(Effect.orDie);
 			})
 	};
 	const renderer = makeCameraRenderer(client, "http://fixture");
@@ -354,7 +354,7 @@ describe("shared renderer lifecycle", () => {
 					? Effect.succeed(failed("restoration_failed"))
 					: undefined
 		);
-		const exit = await Effect.runPromise(Effect.exit(h.run()));
+		const exit = await Effect.runPromiseExit(h.run());
 		if (Exit.isSuccess(exit)) throw new Error("Expected both failures");
 		const failure = Cause.squash(exit.cause);
 		expect(failure).toMatchObject({
@@ -526,7 +526,7 @@ describe("native screenshot warmup", () => {
 		const h = harness();
 		const response = await Effect.runPromise(h.renderer.capabilities());
 		expect(
-			Schema.decodeUnknownResult(CameraRenderCapabilitiesV1)(response, {
+			Schema.decodeResult(CameraRenderCapabilitiesV1)(response, {
 				onExcessProperty: "error"
 			})._tag
 		).toBe("Success");
@@ -706,7 +706,7 @@ describe("editor ownership rejections", () => {
 		restoration: "not_acquired"
 	});
 	const reviewRequest = (minor: 6 | 7) =>
-		Schema.decodeUnknownSync(ReviewCaptureRequestCurrent)({
+		Schema.decodeSync(ReviewCaptureRequestCurrent)({
 			contract: { name: "ue-shed-review-capture", version: { major: 1, minor } },
 			operationId: "0b6f1c1e-3c3a-4d7e-9a43-6f3f0e8d2a11",
 			viewId: "front",

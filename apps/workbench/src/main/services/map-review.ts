@@ -78,6 +78,7 @@ import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
 import type { SavedWorld, SavedWorldMap, SavedWorldProgress } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import {
+	type Brand,
 	Context,
 	Effect,
 	Fiber,
@@ -223,17 +224,17 @@ interface ReviewFailure {
 	readonly status: "failed";
 }
 
-export class SavedWorldUnavailable extends Schema.TaggedError<SavedWorldUnavailable>()(
-	"SavedWorldUnavailable",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("saved_world_unavailable"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class SavedWorldUnavailable extends Schema.TaggedError<
+	SavedWorldUnavailable,
+	Brand.Brand<"apps/workbench/src/main/services/map-review/SavedWorldUnavailable">
+>()("SavedWorldUnavailable", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("saved_world_unavailable"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export interface WorkbenchMapReviewApi {
 	readonly editorWorld?: () => Effect.Effect<MapReviewEditorState>;
@@ -680,19 +681,21 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						previous = state;
 					})
 				),
-				Effect.catch(() =>
-					Effect.gen(function* () {
-						const sample = yield* Ref.get(lastObservationSample);
-						yield* queueStatusEvent({
-							kind: "unavailable",
-							message: "World observation stopped unexpectedly.",
-							recovery:
-								"Unsubscribe and subscribe again, or use Connect world for a snapshot.",
-							...(Option.isSome(sample)
-								? { sample: sampleToWire(sample.value) }
-								: undefined)
-						});
-					})
+				Effect.catchTag(
+					["ActorObservationSessionError", "ActorObservationRecoveryExhaustedError"],
+					() =>
+						Effect.gen(function* () {
+							const sample = yield* Ref.get(lastObservationSample);
+							yield* queueStatusEvent({
+								kind: "unavailable",
+								message: "World observation stopped unexpectedly.",
+								recovery:
+									"Unsubscribe and subscribe again, or use Connect world for a snapshot.",
+								...(Option.isSome(sample)
+									? { sample: sampleToWire(sample.value) }
+									: undefined)
+							});
+						})
 				),
 				Effect.forkIn(layerScope)
 			);
@@ -797,7 +800,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			if (current.subscribers <= 0 || current.cadenceHz === undefined) return cadenceHz;
 			const updated = yield* coordinator
 				.poll(observatory.setObservationCadence(endpoint, cadenceHz))
-				.pipe(Effect.orElseSucceed(() => Option.none()));
+				.pipe(Effect.catchTag("ObservatoryConnectionError", () => Effect.succeedNone));
 			if (Option.isNone(updated)) return current.cadenceHz;
 			yield* Ref.update(observationSubscription, (subscription) => ({
 				...subscription,
@@ -855,7 +858,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						? bindings.value.bindings.length
 						: 0;
 				return yield* applyProvisionedCameraSchedule(cameraCount, fps).pipe(
-					Effect.catch((cause) =>
+					Effect.catchTag("CameraControlError", (cause) =>
 						Effect.gen(function* () {
 							const clamped = clampLivePreviewFps(fps);
 							yield* Ref.set(livePreviewFps, clamped);
@@ -906,7 +909,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const result = yield* coordinator.poll(
 				observatory.snapshot(endpoint).pipe(
 					Effect.map((snapshot) => ({ snapshot, status: "ready" as const })),
-					Effect.catch((cause) =>
+					Effect.catchTag("ObservatoryConnectionError", (cause) =>
 						Effect.succeed({
 							message: cause.message,
 							recovery: cause.recovery,
@@ -989,15 +992,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		) {
 			const resolved = yield* resolveSavedProject();
 			if (!resolved.maps.some((map) => map.mapPath === mapPath)) {
-				return yield* Effect.fail(
-					new SavedWorldUnavailable({
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "saved_world_unavailable",
-						message: `Saved map ${mapPath} is not configured for offline review.`,
-						recovery: "Choose one of the configured maps, then retry."
-					})
-				);
+				return yield* new SavedWorldUnavailable({
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "saved_world_unavailable",
+					message: `Saved map ${mapPath} is not configured for offline review.`,
+					recovery: "Choose one of the configured maps, then retry."
+				});
 			}
 			return yield* assetReader.readSavedWorld({
 				concurrency: 8,
@@ -1018,7 +1019,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 			const focused = yield* coordinator.poll(
 				observatory.focus(endpoint, actorId, bringToFront).pipe(
-					Effect.catch((cause) =>
+					Effect.catchTag("ObservatoryConnectionError", (cause) =>
 						Effect.succeed({
 							actorId,
 							message: cause.message,
@@ -1286,7 +1287,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						Option.some({ path: created.path, projectRoot: reviewProject.projectRoot })
 					);
 					return yield* load();
-				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
+				}).pipe(
+					Effect.catchTag("ReviewStorageError", (cause) =>
+						Effect.succeed(mapReviewFailure(cause))
+					)
+				);
 			}
 		);
 
@@ -1307,7 +1312,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				});
 				yield* repository.saveSet({ path: reviewSetPath, reviewSet: updated });
 				return yield* load();
-			}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
+			}).pipe(
+				Effect.catchTag(["ReviewStorageError", "ReviewVisibilityPolicyError"], (cause) =>
+					Effect.succeed(mapReviewFailure(cause))
+				)
+			);
 		});
 
 		const applyVisibilityPolicy = Effect.fn(
@@ -1324,7 +1333,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				});
 				yield* repository.saveSet({ path: reviewSetPath, reviewSet: updated });
 				return yield* load();
-			}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
+			}).pipe(
+				Effect.catchTag(["ReviewStorageError", "ReviewVisibilityPolicyError"], (cause) =>
+					Effect.succeed(mapReviewFailure(cause))
+				)
+			);
 		});
 
 		const captureAndReload = Effect.fn("Workbench.WorkbenchMapReview.capture")(function* (
@@ -1398,7 +1411,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								})
 							)
 						),
-						Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause)))
+						Effect.catchTag(["ReviewStorageError", "ReviewCaptureRunError"], (cause) =>
+							Effect.succeed(mapReviewFailure(cause))
+						)
 					)
 			);
 		});
@@ -1558,7 +1573,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								})
 							)
 					);
-				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause))));
+				}).pipe(
+					Effect.catchTag("ReviewAuthoringSessionError", (cause) =>
+						Effect.succeed(mapReviewAuthoringFailure(cause))
+					)
+				);
 			}
 		);
 
@@ -1570,16 +1589,18 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				return mapReviewAuthoringFailure({ message: "No review project is configured." });
 			}
 			const projectRoot = reviewProject.projectRoot;
-			return yield* Effect.gen(function* () {
-				return yield* authoringSessions.patch({
+			return yield* authoringSessions
+				.patch({
 					patch: intent.patch,
 					projectRoot,
 					sessionId: intent.sessionId
-				});
-			}).pipe(
-				Effect.map(authoringResult),
-				Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause)))
-			);
+				})
+				.pipe(
+					Effect.map(authoringResult),
+					Effect.catchTag("ReviewAuthoringSessionError", (cause) =>
+						Effect.succeed(mapReviewAuthoringFailure(cause))
+					)
+				);
 		});
 
 		const discardAuthoring = Effect.fn("Workbench.WorkbenchMapReview.discardAuthoring")(
@@ -1598,7 +1619,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						sessionId: intent.sessionId
 					});
 					return authoringResult(session);
-				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause))));
+				}).pipe(
+					Effect.catchTag("ReviewAuthoringSessionError", (cause) =>
+						Effect.succeed(mapReviewAuthoringFailure(cause))
+					)
+				);
 			}
 		);
 
@@ -1631,7 +1656,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						});
 						return authoringResult(session);
 					}).pipe(
-						Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause)))
+						Effect.catchTag(
+							["ReviewAuthoringConnectionError", "ReviewAuthoringSessionError"],
+							(cause) => Effect.succeed(mapReviewAuthoringFailure(cause))
+						)
 					)
 				);
 			}
@@ -1691,7 +1719,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 									Option.some({ active, checkedAtMs: nowMs, endpoint })
 								)
 							),
-							Effect.orElseSucceed(() => false)
+							Effect.catchTag("EditorPlaySessionError", () => Effect.succeed(false))
 						),
 					onSome: (cached) =>
 						cached.endpoint === endpoint && nowMs - cached.checkedAtMs < 2_000
@@ -1708,7 +1736,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 											Option.some({ active, checkedAtMs: nowMs, endpoint })
 										)
 									),
-									Effect.orElseSucceed(() => false)
+									Effect.catchTag("EditorPlaySessionError", () =>
+										Effect.succeed(false)
+									)
 								)
 				});
 
@@ -1787,16 +1817,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						);
 						const binding = bindings.find((item) => item.candidateId === candidate.id);
 						if (!binding) {
-							return yield* Effect.fail(
-								new ProvisionedCameraError({
-									message: `Provisioned camera for ${candidate.id} was not registered.`,
-									operation: "ensure_cameras",
-									recovery:
-										"Reconnect Unreal, then reframe the selected subject.",
-									retrySafe: true,
-									nextStep: "reconcile"
-								})
-							);
+							return yield* new ProvisionedCameraError({
+								message: `Provisioned camera for ${candidate.id} was not registered.`,
+								operation: "ensure_cameras",
+								recovery: "Reconnect Unreal, then reframe the selected subject.",
+								retrySafe: true,
+								nextStep: "reconcile"
+							});
 						}
 						const frame = yield* awaitProvisionedCameraFrame({
 							cameraIndex: binding.index,
@@ -1818,7 +1845,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					if (Result.isSuccess(liveAttempt)) return liveAttempt.success;
 					// A running play world is the requested authority, so surfacing its failure is
 					// more truthful than silently switching the preview to the editor world.
-					if (playActive) return yield* Effect.fail(liveAttempt.failure);
+					if (playActive) return yield* liveAttempt.failure;
 				}
 
 				yield* invalidateProvisionedCameras();
@@ -1894,7 +1921,17 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						};
 					})
 				);
-			}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause))));
+			}).pipe(
+				Effect.catchTag(
+					[
+						"ProvisionedCameraError",
+						"ReviewStorageError",
+						"ReviewAuthoringConnectionError",
+						"ReviewAuthoringSessionError"
+					],
+					(cause) => Effect.succeed(mapReviewAuthoringFailure(cause))
+				)
+			);
 		});
 
 		const approveAuthoring = Effect.fn("Workbench.WorkbenchMapReview.approveAuthoring")(
@@ -1949,7 +1986,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 									});
 								})
 							),
-							Effect.catch((cause) =>
+							Effect.catchTag("ReviewAuthoringSessionError", (cause) =>
 								Effect.succeed(mapReviewAuthoringFailure(cause))
 							)
 						)
@@ -2009,7 +2046,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						});
 						return { ...preview, status: "ready" as const };
 					}).pipe(
-						Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause)))
+						Effect.catchTag(
+							["ReviewStorageError", "ReviewAuthoringConnectionError"],
+							(cause) => Effect.succeed(mapReviewAuthoringFailure(cause))
+						)
 					)
 				);
 			}
@@ -2082,7 +2122,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						reviewSet: approved.reviewSet
 					});
 					return { candidateId: candidate.id, status: "approved" as const };
-				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause))));
+				}).pipe(
+					Effect.catchTag(
+						["ReviewStorageError", "ReviewAuthoringConnectionError"],
+						(cause) => Effect.succeed(mapReviewAuthoringFailure(cause))
+					)
+				);
 			}
 		);
 
@@ -2170,15 +2215,23 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						return response;
 					})
 				).pipe(
-					Effect.catch((cause) =>
-						Effect.succeed({
-							outcome: "failed" as const,
-							message: String(cause),
-							recovery:
-								"recovery" in cause
-									? String(cause.recovery)
-									: "Check the editor connection and enable UE Shed Core world control."
-						})
+					Effect.catchTag(
+						[
+							"CameraBridgeError",
+							"ProvisionedCameraError",
+							"CameraWorkspaceError",
+							"EditorWorldControlError",
+							"SavedWorldUnavailable"
+						],
+						(cause) =>
+							Effect.succeed({
+								outcome: "failed" as const,
+								message: String(cause),
+								recovery:
+									"recovery" in cause
+										? String(cause.recovery)
+										: "Check the editor connection and enable UE Shed Core world control."
+							})
 					),
 					Effect.ensuring(Ref.set(openingMap, undefined))
 				);
@@ -2237,8 +2290,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						intent
 					);
 				}).pipe(
-					Effect.catch((cause) =>
-						Effect.succeed({ panel: null, sets: [], error: String(cause) })
+					Effect.catchTag(
+						["ReviewStorageError", "ReviewAuthoringConnectionError"],
+						(cause) => Effect.succeed({ panel: null, sets: [], error: String(cause) })
 					)
 				)
 			),
@@ -2246,8 +2300,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				yield* cameraWorkspace
 					.close()
 					.pipe(
-						Effect.catch((cause) =>
-							Effect.logWarning("Camera workspace close failed", cause)
+						Effect.catchTag(
+							["CameraBridgeError", "ProvisionedCameraError", "CameraWorkspaceError"],
+							(cause) => Effect.logWarning("Camera workspace close failed", cause)
 						)
 					);
 				yield* stopObservationFiber();
@@ -2298,25 +2353,21 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					subject: { kind: "actor_path", actorPath: intent.actorPath }
 				});
 				if (subject.status !== "selected" || subject.mapPath !== intent.mapPath)
-					return yield* Effect.fail(
-						new CameraBridgeError({
-							code: "stale",
-							message: "The selected actor or map changed. Choose the subject again.",
-							recovery: "Retry from the current editor selection.",
-							retrySafe: true,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new CameraBridgeError({
+						code: "stale",
+						message: "The selected actor or map changed. Choose the subject again.",
+						recovery: "Retry from the current editor selection.",
+						retrySafe: true,
+						nextStep: "reconcile"
+					});
 				if (!service.cameraWorkspace)
-					return yield* Effect.fail(
-						new CameraBridgeError({
-							code: "unavailable",
-							message: "Camera authoring is unavailable.",
-							recovery: "Enable the camera workspace.",
-							retrySafe: true,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new CameraBridgeError({
+						code: "unavailable",
+						message: "Camera authoring is unavailable.",
+						recovery: "Enable the camera workspace.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					});
 				const result = yield* service.cameraWorkspace({
 					kind: "open",
 					actorPath: intent.actorPath,
@@ -2325,43 +2376,37 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					livePreview: false
 				});
 				if (result.error || !result.panel)
-					return yield* Effect.fail(
-						new CameraBridgeError({
-							code: "unavailable",
-							message: result.error ?? "The camera set could not be opened.",
-							recovery: "Correct the error and retry.",
-							retrySafe: false,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new CameraBridgeError({
+						code: "unavailable",
+						message: result.error ?? "The camera set could not be opened.",
+						recovery: "Correct the error and retry.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					});
 			}),
 			// The native panel offers the active collection's sets for its selected subject.
 			open: Effect.fn("Workbench.MapReview.openFromNativePanel")(function* (intent) {
 				if (!service.cameraWorkspace)
-					return yield* Effect.fail(
-						new CameraBridgeError({
-							code: "unavailable",
-							message: "Camera authoring is unavailable.",
-							recovery: "Enable the camera workspace.",
-							retrySafe: true,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new CameraBridgeError({
+						code: "unavailable",
+						message: "Camera authoring is unavailable.",
+						recovery: "Enable the camera workspace.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					});
 				const result = yield* service.cameraWorkspace({
 					kind: "open",
 					id: intent.arrangementId,
 					livePreview: false
 				});
 				if (result.error || !result.panel)
-					return yield* Effect.fail(
-						new CameraBridgeError({
-							code: "unavailable",
-							message: result.error ?? "The camera set could not be opened.",
-							recovery: "Choose the set again, or open it from Workbench.",
-							retrySafe: true,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new CameraBridgeError({
+						code: "unavailable",
+						message: result.error ?? "The camera set could not be opened.",
+						recovery: "Choose the set again, or open it from Workbench.",
+						retrySafe: true,
+						nextStep: "reconcile"
+					});
 			}),
 			sets: Effect.fn("Workbench.MapReview.savedCameraSets")(function* () {
 				const selected = yield* resolveReviewProject();
@@ -2377,7 +2422,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			setupHost
 				.close()
 				.pipe(
-					Effect.catch((cause) =>
+					Effect.catchTag("CameraBridgeError", (cause) =>
 						Effect.logDebug("Native camera setup release failed", cause)
 					)
 				)
@@ -2405,7 +2450,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				basename(descriptor, ".uproject")
 			);
 		})().pipe(
-			Effect.catch((cause) => Effect.logDebug("Native camera setup host unavailable", cause)),
+			Effect.catchTag("CameraBridgeError", (cause) =>
+				Effect.logDebug("Native camera setup host unavailable", cause)
+			),
 			Effect.repeat(Schedule.spaced("1 second")),
 			Effect.forkScoped
 		);

@@ -283,7 +283,7 @@ async function acquireLock(directory: string) {
 			const ownerPath = join(lock, names[0]!);
 			let owner;
 			try {
-				owner = Schema.decodeUnknownSync(Schema.fromJsonString(Owner))(
+				owner = Schema.decodeSync(Schema.fromJsonString(Owner))(
 					new TextDecoder().decode(await readBounded(ownerPath, 4096, "lock"))
 				);
 			} catch {
@@ -361,7 +361,7 @@ export function snapshotStoreNodeLayer(
 	options: SnapshotStoreOptions
 ): Layer.Layer<SnapshotStore, SnapshotStoreError> {
 	return Layer.unwrap(
-		Schema.decodeUnknownEffect(StoreConfiguration)(options).pipe(
+		Schema.decodeEffect(StoreConfiguration)(options).pipe(
 			Effect.mapError(
 				(cause) =>
 					new SnapshotStoreError({
@@ -413,7 +413,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 			throw cause;
 		}
 		try {
-			const value = Schema.decodeUnknownSync(Schema.fromJsonString(Manifest))(
+			const value = Schema.decodeSync(Schema.fromJsonString(Manifest))(
 				new TextDecoder("utf-8", { fatal: true }).decode(bytes)
 			);
 			if (value.identity !== identity)
@@ -601,7 +601,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 										});
 									let keys;
 									try {
-										keys = Schema.decodeUnknownSync(InputKeys)(inputKeys);
+										keys = Schema.decodeSync(InputKeys)(inputKeys);
 									} catch (cause) {
 										throw new SnapshotStoreError({
 											retrySafe:

@@ -21,7 +21,7 @@ import { storedGameTextPreferences } from "./game-text-preferences.js";
 describe("Game Text all-languages export", () => {
 	it("opens a preset on its saved target, cultures and translation filters", async () => {
 		const user = userEvent.setup({ delay: null });
-		const preset = Schema.decodeUnknownSync(GameTextInvestigationPreset)({
+		const preset = Schema.decodeSync(GameTextInvestigationPreset)({
 			schemaVersion: 1,
 			kind: "game_text",
 			sort: "domain_order",

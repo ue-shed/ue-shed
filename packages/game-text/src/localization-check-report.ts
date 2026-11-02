@@ -213,7 +213,7 @@ export const indexedLocalizationCheckReport = Effect.fn("GameText.localizationCh
 		const prepared = yield* prepareLocalizationCheck(...input);
 		const pieces: string[] = [];
 		yield* prepared.write((text) => Effect.sync(() => void pieces.push(text)));
-		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(LocalizationQualityReport))(
+		return yield* Schema.decodeEffect(Schema.fromJsonString(LocalizationQualityReport))(
 			pieces.join("")
 		).pipe(Effect.orDie);
 	}

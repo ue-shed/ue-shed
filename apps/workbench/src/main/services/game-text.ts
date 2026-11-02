@@ -83,9 +83,9 @@ export function makeWorkbenchGameTextTestLayer(
 	return Layer.succeed(
 		WorkbenchGameText,
 		WorkbenchGameText.of({
-			operationStateTarget: () => Effect.succeed(undefined),
-			operationTarget: () => Effect.succeed(undefined),
-			operationBusyReason: () => Effect.succeed(undefined),
+			operationStateTarget: () => Effect.undefined,
+			operationTarget: () => Effect.undefined,
+			operationBusyReason: () => Effect.undefined,
 			beginOperation: () => Effect.succeed(true),
 			endOperation: () => Effect.void,
 			refreshAfterOperation: () => Effect.succeed(true),

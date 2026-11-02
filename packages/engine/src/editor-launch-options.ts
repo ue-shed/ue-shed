@@ -212,9 +212,9 @@ export const pendingPackageRecovery = Effect.fn("UnrealEditor.pendingPackageReco
 	const file = join(dirname(projectDescriptor), "Saved", "Autosaves", "PackageRestoreData.json");
 	const text = yield* Effect.promise(() => readFile(file, "utf8").catch(() => undefined));
 	if (text === undefined) return false;
-	const data = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(PackageRestoreData))(
-		text
-	).pipe(Effect.option);
+	const data = yield* Schema.decodeEffect(Schema.fromJsonString(PackageRestoreData))(text).pipe(
+		Effect.option
+	);
 	// An unreadable file is treated as pending: losing recovery data is the worse mistake.
 	if (Option.isNone(data)) return true;
 	return data.value.RestoreEnabled && (data.value.Packages?.length ?? 0) > 0;

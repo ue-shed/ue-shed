@@ -92,7 +92,7 @@ describe("localization presentation", () => {
 			{ ...line, cultures: [...line.cultures].reverse() },
 			request
 		);
-		Schema.decodeUnknownSync(LocalizationFocus)(focus);
+		Schema.decodeSync(LocalizationFocus)(focus);
 		expect(focus.translations.map((mark) => mark.culture)).toEqual(["en", "de"]);
 		expect(focus.translations[1]).toMatchObject({
 			gameTranslation: "Source",
@@ -184,7 +184,7 @@ describe("localization presentation", () => {
 				target: target.name,
 				selection: { kind: "line", id: line.id }
 			});
-			Schema.decodeUnknownSync(LocalizationFocus)(focus);
+			Schema.decodeSync(LocalizationFocus)(focus);
 			expect(focus.translations[1]).toMatchObject({
 				state: example.state,
 				gameTranslation: example.game,
@@ -340,7 +340,7 @@ describe("localization presentation", () => {
 			selection: { kind: "line", id: line.id }
 		});
 		const first = localizationFocusPage(joined, expanded, request);
-		Schema.decodeUnknownSync(LocalizationFocus)(first);
+		Schema.decodeSync(LocalizationFocus)(first);
 		expect(first.translations).toHaveLength(50);
 		expect(first.translations[0]?.culture).toBe("en");
 		expect(first.nextCultureOffset).toBe(50);
@@ -372,7 +372,7 @@ describe("localization in the query", () => {
 			({ query }) =>
 				Effect.gen(function* () {
 					const page = yield* query.search(request);
-					Schema.decodeUnknownSync(TextCorpusSearchPage)(page);
+					yield* Schema.decodeEffect(TextCorpusSearchPage)(page).pipe(Effect.orDie);
 					expect(page.units[0]?.localization?.[0]?.state).toBe("not_synced");
 					const first = page.localization?.lines[0];
 					if (!first) throw new Error("Missing query line.");
@@ -387,7 +387,9 @@ describe("localization in the query", () => {
 					});
 					expect(focus?.manifest[0]?.path).toBe("/Game/Text/Table.Table");
 					const corpusFocus = yield* query.focus({ id: page.units[0]!.id, pageSize: 50 });
-					Schema.decodeUnknownSync(TextCorpusFocus)(corpusFocus);
+					yield* Schema.decodeUnknownEffect(TextCorpusFocus)(corpusFocus).pipe(
+						Effect.orDie
+					);
 					expect(corpusFocus?.localization?.cultures).toHaveLength(2);
 				})
 		)
@@ -454,9 +456,9 @@ describe("localization in the query", () => {
 							(count) => count.states.not_synced.lines === 0
 						)
 					).toBe(true);
-					Schema.decodeUnknownSync(LocalizationStatusReport)(
+					yield* Schema.decodeEffect(LocalizationStatusReport)(
 						localizationStatusReport(text, files, page)
-					);
+					).pipe(Effect.orDie);
 				})
 			);
 		}

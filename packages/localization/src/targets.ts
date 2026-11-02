@@ -19,7 +19,7 @@ import {
 	type LocalizationOutputPaths
 } from "./schema.js";
 
-type StructValue = typeof Schema.Json.Type;
+type StructValue = Schema.Json;
 
 /** Unreal property text is a separate grammar from INI; INI remains Config Explorer's boundary. */
 export function parseStructText(text: string, options?: LocalizationLimits) {

@@ -26,7 +26,7 @@ const externalActorDepotPath =
 const externalActorRoot = "C:/Project/Content/__ExternalActors__/Maps/L_Example";
 
 function query(maxMaterializedFiles = 10, maxDurationMs = 60_000) {
-	return Schema.decodeUnknownSync(PerforceMapHistoryQuery)({
+	return Schema.decodeSync(PerforceMapHistoryQuery)({
 		limits: {
 			maxChangelists: 10,
 			maxConcurrency: 2,
@@ -595,7 +595,7 @@ describe("readPerforceMapHistory", () => {
 });
 
 function fastQuery() {
-	return Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
+	return Schema.decodeSync(PerforceFastMapHistoryQuery)({
 		limits: {
 			maxChangelists: 10,
 			maxConcurrency: 2,
@@ -618,7 +618,7 @@ function fastQuery() {
 }
 
 function fastClassQuery() {
-	return Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
+	return Schema.decodeSync(PerforceFastMapHistoryQuery)({
 		...Schema.encodeSync(PerforceFastMapHistoryQuery)(fastQuery()),
 		target: { classPath: actor.classPath, kind: "actor_class" }
 	});
@@ -726,7 +726,7 @@ describe("readPerforceFastMapHistory", () => {
 			)
 		);
 		return Effect.gen(function* () {
-			const missing = Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
+			const missing = yield* Schema.decodeEffect(PerforceFastMapHistoryQuery)({
 				...Schema.encodeSync(PerforceFastMapHistoryQuery)(fastQuery()),
 				target: {
 					identity: {
@@ -735,7 +735,7 @@ describe("readPerforceFastMapHistory", () => {
 					},
 					kind: "actor"
 				}
-			});
+			}).pipe(Effect.orDie);
 			const error = yield* readPerforceFastMapHistory(missing).pipe(
 				Effect.provide(layer),
 				Effect.flip

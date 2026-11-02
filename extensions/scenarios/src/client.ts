@@ -6,20 +6,20 @@ import type {
 	ScenarioRunHandle,
 	ScenarioRunnerStatus
 } from "@ue-shed/scenarios/browser";
-import { Effect, Schema, Stream } from "effect";
+import { type Brand, Effect, Schema, Stream } from "effect";
 
-export class ScenarioStudioClientError extends Schema.TaggedError<ScenarioStudioClientError>()(
-	"ScenarioStudioClientError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("scenario_studio_client_failed"),
-		cause: Schema.Defect(),
-		message: Schema.String,
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class ScenarioStudioClientError extends Schema.TaggedError<
+	ScenarioStudioClientError,
+	Brand.Brand<"extensions/scenarios/src/client/ScenarioStudioClientError">
+>()("ScenarioStudioClientError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("scenario_studio_client_failed"),
+	cause: Schema.Defect(),
+	message: Schema.String,
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export interface ScenarioStudioClient {
 	readonly openDocument?: () => Effect.Effect<

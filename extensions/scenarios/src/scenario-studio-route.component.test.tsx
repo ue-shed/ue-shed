@@ -55,7 +55,7 @@ function clientWith(overrides: Partial<ScenarioStudioClient> = {}): ScenarioStud
 	};
 }
 
-const customScenario = Schema.decodeUnknownSync(ScenarioDocument)({
+const customScenario = Schema.decodeSync(ScenarioDocument)({
 	...movementGymScenario,
 	id: "scenario_custom",
 	title: "Custom patrol",

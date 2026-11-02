@@ -62,7 +62,7 @@ it.effect("refuses extended actions on older plugins before sending a mutation",
 					makeRemoteControlClientTestLayer((call) =>
 						Effect.sync(() => {
 							calls.push(call.functionName);
-							return Schema.decodeUnknownSync(Schema.Json)({
+							return Schema.decodeSync(Schema.Json)({
 								schemaVersion: 1,
 								producerKind: "unreal_editor",
 								gameTextObjectPath:
@@ -126,7 +126,7 @@ for (const capability of ["game-text.actions.key-repairs.v1", "game-text.actions
 								makeRemoteControlClientTestLayer((call) =>
 									Effect.sync(() => {
 										if (call.functionName === "GetCapabilityManifest")
-											return Schema.decodeUnknownSync(Schema.Json)({
+											return Schema.decodeSync(Schema.Json)({
 												schemaVersion: 1,
 												producerKind: "unreal_editor",
 												capabilities: ["game-text.actions.v1", capability],
@@ -134,7 +134,7 @@ for (const capability of ["game-text.actions.key-repairs.v1", "game-text.actions
 													"/Script/UEShedGameText.Default__UEShedGameTextLibrary"
 											});
 										mutations++;
-										return Schema.decodeUnknownSync(Schema.Json)({
+										return Schema.decodeSync(Schema.Json)({
 											...request,
 											status: "ok",
 											rolledBack: false,

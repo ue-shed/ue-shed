@@ -153,16 +153,14 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			Effect.fn("GameText.workspace.prepareTarget")(function* (request) {
 				const project = yield* currentProject().pipe(Effect.scoped);
 				if (!project)
-					return yield* Effect.fail(
-						new GameTextIndexError({
-							nextStep: "escalate",
-							retrySafe: false,
-							code: "index_failed",
-							operation: "project",
-							message: "The project index is no longer selected.",
-							recovery: "Scan the selected project again."
-						})
-					);
+					return yield* new GameTextIndexError({
+						nextStep: "escalate",
+						retrySafe: false,
+						code: "index_failed",
+						operation: "project",
+						message: "The project index is no longer selected.",
+						recovery: "Scan the selected project again."
+					});
 				const code = options.codeSource
 					? yield* options.codeSource(project.projectRoot)
 					: undefined;
@@ -171,9 +169,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					code === undefined ? request : { ...request, code }
 				);
 				const target = yield* index.buildTarget(project, imported, request);
-				const prepared = yield* (currentIndex?.() ?? Effect.succeed(undefined)).pipe(
-					Effect.scoped
-				);
+				const prepared = yield* (currentIndex?.() ?? Effect.undefined).pipe(Effect.scoped);
 				if (
 					prepared?.queryRevision !== undefined &&
 					prepared.queryRevision === target.queryRevision
@@ -186,7 +182,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				return yield* index.openTarget(target);
 			})
 		);
-		const rules = currentRules ?? (() => Effect.succeed(undefined));
+		const rules = currentRules ?? (() => Effect.undefined);
 		const baseline = yield* Ref.make<LocalizationBaseline | undefined>(undefined);
 		const qualityCache = yield* Ref.make<
 			| {
@@ -383,7 +379,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			const carried = yield* Ref.get(acrossGather);
 			const published =
 				!refresh && !(yield* Ref.get(gatherBaseline))
-					? yield* currentIndex?.() ?? Effect.succeed(undefined)
+					? yield* currentIndex?.() ?? Effect.undefined
 					: undefined;
 			let indexed =
 				published?.localization.target === name
@@ -683,12 +679,14 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			const model = checked.success;
 			if (!model) return { status: "not_ready" };
 			return yield* model.focus(request).pipe(
-				Effect.catch((cause) =>
-					Effect.succeed({
-						status: "failed" as const,
-						message: cause.message,
-						recovery: cause.recovery
-					})
+				Effect.catchTag(
+					["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
+					(cause) =>
+						Effect.succeed({
+							status: "failed" as const,
+							message: cause.message,
+							recovery: cause.recovery
+						})
 				)
 			);
 		});
@@ -756,7 +754,9 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 									})
 					})
 				),
-				Effect.catch((error) => Effect.succeed(reportFailure(error)))
+				Effect.catchTag(["GameTextIndexError", "LocalizationReportError"], (error) =>
+					Effect.succeed(reportFailure(error))
+				)
 			);
 		});
 		const reportFile = Effect.fn("GameText.workspace.localization.reportFile")(function* (
@@ -1138,7 +1138,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 										? cached?.targets.find((target) => target.name === name)
 										: undefined;
 								})
-							: Effect.succeed(undefined)
+							: Effect.undefined
 					)
 				),
 			reset,
@@ -1153,9 +1153,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			focus,
 			qualityExport: (request: WorkspaceQualityRequest) =>
 				quality(request).pipe(
-					Effect.flatMap((model) =>
-						model ? model.export(request) : Effect.succeed(undefined)
-					)
+					Effect.flatMap((model) => (model ? model.export(request) : Effect.undefined))
 				),
 			qualitySearch,
 			browseFindings,

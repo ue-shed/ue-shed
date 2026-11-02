@@ -215,9 +215,10 @@ it.effect("plans without running, streams safe progress and refreshes evidence a
 				"prepare"
 			]);
 			// The state crosses IPC, so it must fit its schema with every operation offered.
-			expect(Schema.decodeUnknownSync(GameTextOperationState)(state).operations).toHaveLength(
-				7
-			);
+			expect(
+				(yield* Schema.decodeEffect(GameTextOperationState)(state).pipe(Effect.orDie))
+					.operations
+			).toHaveLength(7);
 			const plan = yield* service.plan({ target: target.name, operation: "sync" });
 			if (plan.status !== "ready") throw new Error("Expected confirmation.");
 			expect(Schema.is(GameTextOperationPlanResult)(plan)).toBe(true);

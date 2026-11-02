@@ -16,7 +16,7 @@ const batches = Effect.gen(function* () {
 });
 
 /** Runs `effect` and returns the longest stretch in which no `setImmediate` callback ran. */
-const longestEventLoopGap = async (effect: Effect.Effect<void, unknown>) => {
+const longestEventLoopGap = async <E>(effect: Effect.Effect<void, E>) => {
 	let last = performance.now(),
 		longest = 0,
 		probing = true;

@@ -53,7 +53,7 @@ import type {
 	LocalizationFileComparisonResult
 } from "@ue-shed/game-text/schema";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
-import { Context, type Effect, Schema, type Stream } from "effect";
+import { type Brand, Context, type Effect, Schema, type Stream } from "effect";
 import type {
 	GameTextOperationRequest,
 	GameTextOperationPlanResult,
@@ -65,18 +65,18 @@ import type {
 	GameTextWorkspaceProgress
 } from "@ue-shed/game-text/schema";
 
-export class GameTextClientError extends Schema.TaggedError<GameTextClientError>()(
-	"GameTextClientError",
-	{
-		message: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("game_text_client_failed"),
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class GameTextClientError extends Schema.TaggedError<
+	GameTextClientError,
+	Brand.Brand<"extensions/game-text/src/game-text-client/GameTextClientError">
+>()("GameTextClientError", {
+	message: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("game_text_client_failed"),
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export interface GameTextClientApi {
 	readonly idRepairs?: {

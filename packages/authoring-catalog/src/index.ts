@@ -191,9 +191,9 @@ function discoverAuthoringProjectCatalogWith(
 						projectRoot: options.projectRoot
 					})
 					.pipe(Effect.result)
-			: Effect.succeed(undefined);
+			: Effect.undefined;
 	const live = Option.match(liveConnection, {
-		onNone: () => Effect.succeed(undefined),
+		onNone: () => Effect.undefined,
 		onSome: (connection) =>
 			connection.listTableObjectPaths().pipe(
 				Effect.flatMap((objectPaths) =>

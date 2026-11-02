@@ -141,7 +141,7 @@ export const acceptReview = (
 	review: { readonly acceptedFindings: ReadonlyArray<LocalizationAcceptedFinding> } | undefined
 ) =>
 	review === undefined || review.acceptedFindings.length === 0
-		? Effect.succeed(undefined)
+		? Effect.undefined
 		: native.findingsAccept(
 				key,
 				review.acceptedFindings.map(({ check, culture, namespace, key, fingerprint }) => ({

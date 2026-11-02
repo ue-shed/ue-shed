@@ -91,9 +91,9 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 				lookup: (key: string) =>
 					Effect.gen(function* () {
 						let invalidated = false;
-						const input = yield* Schema.decodeUnknownEffect(
-							Schema.fromJsonString(Request)
-						)(key).pipe(Effect.orDie);
+						const input = yield* Schema.decodeEffect(Schema.fromJsonString(Request))(
+							key
+						).pipe(Effect.orDie);
 						return yield* openNativeTextQuery({
 							...input,
 							onFailure: Effect.suspend(() => {
@@ -116,7 +116,7 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 						.pipe(Effect.mapError(compareFailed));
 					const comparison = answerJson<GameTextContract.PointComparison>(answer);
 					if (comparison === undefined)
-						return yield* Effect.fail(compareFailed("The engine sent no comparison."));
+						return yield* compareFailed("The engine sent no comparison.");
 					return comparison;
 				}),
 				compareTextFiles: Effect.fn("GameTextIndexQuery.compareTextFiles")(
@@ -126,9 +126,7 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 							.pipe(Effect.mapError(fileCompareFailed));
 						const comparison = answerJson<GameTextContract.TextFileComparison>(answer);
 						if (comparison === undefined)
-							return yield* Effect.fail(
-								fileCompareFailed("The engine sent no comparison.")
-							);
+							return yield* fileCompareFailed("The engine sent no comparison.");
 						yield* Effect.annotateCurrentSpan({
 							"textFiles.total": comparison.total,
 							"textFiles.kept": comparison.kept

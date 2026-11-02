@@ -211,7 +211,7 @@ if (values.worker) {
 				values["force-changed-join"],
 				Schema.decodeUnknownSync(Schema.Literals(["native", "typescript"]))(values.builder),
 				trace?.tracer,
-				Schema.decodeUnknownSync(
+				Schema.decodeSync(
 					Schema.String.check(
 						Schema.isPattern(/^phase6-refresh(?:-[a-z0-9]+)?$/u),
 						Schema.isMaxLength(64)

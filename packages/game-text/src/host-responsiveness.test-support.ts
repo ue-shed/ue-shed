@@ -57,7 +57,7 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 		(path) => Effect.promise(() => rm(path, { recursive: true, force: true }))
 	);
 	const projectRoot = yield* Effect.promise(() => realpath(directory));
-	const authored = Schema.decodeUnknownSync(LocalizationTarget)({
+	const authored = Schema.decodeSync(LocalizationTarget)({
 		...target,
 		name: "Synthetic",
 		outputPaths: {

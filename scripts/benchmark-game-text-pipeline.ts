@@ -226,7 +226,7 @@ if (values.worker) {
 				});
 				const page = Effect.isEffect(searched)
 					? yield* searched
-					: Schema.decodeUnknownSync(module.TextCorpusSearchPage)(searched);
+					: Schema.decodeSync(module.TextCorpusSearchPage)(searched);
 				const firstPageMs = performance.now() - queryStarted;
 				const readyMs = performance.now() - started;
 				globalThis.gc?.();

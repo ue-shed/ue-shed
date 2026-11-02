@@ -1,6 +1,6 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { invalidateCliGameTextIndex } from "./game-text-index.js";
-import { Effect, FileSystem, Metric, Result, Schema, Stream } from "effect";
+import { type Brand, Effect, FileSystem, Metric, Result, Schema, Stream } from "effect";
 import {
 	applyLocalizationChangeSet,
 	decodeLocalizationChangeSet,
@@ -25,17 +25,17 @@ type LocalizationApplyCommand = Extract<CliCommand, { readonly _tag: "Localizati
 
 const maxChangeSetBytes = 8 * 1024 * 1024;
 
-class LocalizationApplyInputError extends Schema.TaggedError<LocalizationApplyInputError>()(
-	"LocalizationApplyInputError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals(["change_set_unreadable", "change_set_too_large"]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+class LocalizationApplyInputError extends Schema.TaggedError<
+	LocalizationApplyInputError,
+	Brand.Brand<"apps/cli/src/workflows/localization-apply/LocalizationApplyInputError">
+>()("LocalizationApplyInputError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals(["change_set_unreadable", "change_set_too_large"]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 const LocalizationApplyFailure = Schema.Union([
 	LocalizationApplyInputError,
@@ -56,18 +56,16 @@ const readChangeSet = Effect.fn("Cli.localization.read_change_set")(function* (p
 		});
 	const stat = yield* fs.stat(path).pipe(Effect.mapError(unreadable));
 	if (stat.size > maxChangeSetBytes)
-		return yield* Effect.fail(
-			new LocalizationApplyInputError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "change_set_too_large",
-				message: "The change-set file is larger than 8 MB.",
-				recovery: "Split the change set into smaller files."
-			})
-		);
+		return yield* new LocalizationApplyInputError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "change_set_too_large",
+			message: "The change-set file is larger than 8 MB.",
+			recovery: "Split the change set into smaller files."
+		});
 	const text = yield* fs.readFileString(path).pipe(Effect.mapError(unreadable));
 	const decoded = decodeLocalizationChangeSet(text);
-	return Result.isFailure(decoded) ? yield* Effect.fail(decoded.failure) : decoded.success;
+	return Result.isFailure(decoded) ? yield* decoded.failure : decoded.success;
 });
 
 /** Reviews or writes a change set, then optionally asks Unreal to import and compile it. */
@@ -85,9 +83,7 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 					const target = discovery.targets.find((item) => item.name === targetName);
 					if (command.review) {
 						if (target === undefined)
-							return yield* Effect.fail(
-								localizationOperationError("target_not_found")
-							);
+							return yield* localizationOperationError("target_not_found");
 						const evidence = yield* reader.read({
 							projectRoot: command.projectRoot,
 							target
@@ -114,11 +110,13 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 								.filter((file) => file.error === null)
 								.map((file) => file.relativePath)
 						}).pipe(
-							Effect.catch((cause) =>
-								Effect.logWarning(
-									"Game Text write succeeded but cache invalidation failed",
-									{ message: cause.message, recovery: cause.recovery }
-								)
+							Effect.catchTag(
+								["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
+								(cause) =>
+									Effect.logWarning(
+										"Game Text write succeeded but cache invalidation failed",
+										{ message: cause.message, recovery: cause.recovery }
+									)
 							)
 						);
 					const output = {
@@ -142,22 +140,30 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 					Effect.catchTag("ConfigError", () =>
 						Effect.fail(localizationOperationError("invalid_request"))
 					),
-					Effect.catch((error) =>
-						Effect.gen(function* () {
-							yield* Metric.update(
-								Metric.counter("cli.localization.apply.failures"),
-								1
-							);
-							yield* Effect.annotateCurrentSpan({ code: error.code });
-							const output = {
-								schemaVersion: 1,
-								type: "failure",
-								error: Schema.encodeSync(LocalizationApplyFailure)(error)
-							};
-							if (command.json) yield* runtime.print(`${JSON.stringify(output)}\n`);
-							else yield* printJson(output);
-							yield* runtime.setExitCode(2);
-						})
+					Effect.catchTag(
+						[
+							"LocalizationError",
+							"LocalizationOperationError",
+							"LocalizationChangeSetError",
+							"LocalizationApplyInputError"
+						],
+						(error) =>
+							Effect.gen(function* () {
+								yield* Metric.update(
+									Metric.counter("cli.localization.apply.failures"),
+									1
+								);
+								yield* Effect.annotateCurrentSpan({ code: error.code });
+								const output = {
+									schemaVersion: 1,
+									type: "failure",
+									error: Schema.encodeSync(LocalizationApplyFailure)(error)
+								};
+								if (command.json)
+									yield* runtime.print(`${JSON.stringify(output)}\n`);
+								else yield* printJson(output);
+								yield* runtime.setExitCode(2);
+							})
 					)
 				);
 			})
@@ -177,7 +183,7 @@ const syncAfterWrite = Effect.fn("Cli.localization.sync_after_write")(function* 
 	};
 	if (command.engineRoot !== undefined)
 		Object.assign(input, { explicitEngineRoot: command.engineRoot });
-	const request = yield* Schema.decodeUnknownEffect(LocalizationRunRequest)(input).pipe(
+	const request = yield* Schema.decodeEffect(LocalizationRunRequest)(input).pipe(
 		Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
 	);
 	const operations = yield* LocalizationOperations;

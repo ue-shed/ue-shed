@@ -17,7 +17,7 @@ it.effect("reads native findings through both compact indexes and the CLI report
 					projectRoot: fixture.projectRoot,
 					targetName: fixture.target.name
 				});
-				const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
+				const document = yield* Schema.decodeEffect(GameTextRuleDocument)({
 					schemaVersion: 1,
 					roles: [
 						{
@@ -41,7 +41,7 @@ it.effect("reads native findings through both compact indexes and the CLI report
 							recovery: "Shorten the source."
 						}
 					]
-				});
+				}).pipe(Effect.orDie);
 				const source = yield* model.sourceQuality(document);
 				const report = yield* source.export("all");
 				expect(report.findings).toHaveLength(1);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { Clock, Context, Effect, Exit, Layer, Option, Schema, Semaphore } from "effect";
+import { type Brand, Clock, Context, Effect, Exit, Layer, Option, Schema, Semaphore } from "effect";
 import { recordAuthoringTransition } from "@ue-shed/observability";
 import {
 	DraftSessionSchema,
@@ -102,44 +102,48 @@ function decodeDocument<Input>(input: Input) {
 	});
 }
 
-export class InvalidSessionIdError extends Schema.TaggedError<InvalidSessionIdError>()(
-	"InvalidSessionIdError",
-	{ sessionId: Schema.String, ...ErrorGuidanceFields }
-) {}
+export class InvalidSessionIdError extends Schema.TaggedError<
+	InvalidSessionIdError,
+	Brand.Brand<"packages/authoring/src/session-service/InvalidSessionIdError">
+>()("InvalidSessionIdError", { sessionId: Schema.String, ...ErrorGuidanceFields }) {}
 
-export class SessionNotFoundError extends Schema.TaggedError<SessionNotFoundError>()(
-	"SessionNotFoundError",
-	{ sessionId: Schema.String, ...ErrorGuidanceFields, ...ErrorCauseFields }
-) {}
+export class SessionNotFoundError extends Schema.TaggedError<
+	SessionNotFoundError,
+	Brand.Brand<"packages/authoring/src/session-service/SessionNotFoundError">
+>()("SessionNotFoundError", {
+	sessionId: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
-export class SessionCorruptError extends Schema.TaggedError<SessionCorruptError>()(
-	"SessionCorruptError",
-	{
-		sessionId: Schema.String,
-		quarantinePath: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class SessionCorruptError extends Schema.TaggedError<
+	SessionCorruptError,
+	Brand.Brand<"packages/authoring/src/session-service/SessionCorruptError">
+>()("SessionCorruptError", {
+	sessionId: Schema.String,
+	quarantinePath: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
-export class AuthoringSessionStorageError extends Schema.TaggedError<AuthoringSessionStorageError>()(
-	"AuthoringSessionStorageError",
-	{
-		operation: Schema.String,
-		sessionId: Schema.optional(Schema.String),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class AuthoringSessionStorageError extends Schema.TaggedError<
+	AuthoringSessionStorageError,
+	Brand.Brand<"packages/authoring/src/session-service/AuthoringSessionStorageError">
+>()("AuthoringSessionStorageError", {
+	operation: Schema.String,
+	sessionId: Schema.optional(Schema.String),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
-export class AuthoringSessionTransitionError extends Schema.TaggedError<AuthoringSessionTransitionError>()(
-	"AuthoringSessionTransitionError",
-	{
-		sessionId: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class AuthoringSessionTransitionError extends Schema.TaggedError<
+	AuthoringSessionTransitionError,
+	Brand.Brand<"packages/authoring/src/session-service/AuthoringSessionTransitionError">
+>()("AuthoringSessionTransitionError", {
+	sessionId: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /** An authored refusal from a session transition; its message is classified, not a raw cause. */
 class SessionTransitionRejected extends Error {}
@@ -152,14 +156,14 @@ export type AuthoringSessionServiceError =
 	| AuthoringSessionTransitionError
 	| DraftIntentError;
 
-export class AuthoringSessionLiveError extends Schema.TaggedError<AuthoringSessionLiveError>()(
-	"AuthoringSessionLiveError",
-	{
-		operation: Schema.Literals(["apply", "lookup_apply", "save"]),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class AuthoringSessionLiveError extends Schema.TaggedError<
+	AuthoringSessionLiveError,
+	Brand.Brand<"packages/authoring/src/session-service/AuthoringSessionLiveError">
+>()("AuthoringSessionLiveError", {
+	operation: Schema.Literals(["apply", "lookup_apply", "save"]),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 export type AuthoringSessionLivePortApi = AuthoringLivePort<AuthoringSessionLiveError>;
 
@@ -763,16 +767,14 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					return yield* decodeDocument(value);
 				}).pipe(Effect.catch((cause) => repository.quarantine(validId, cause)));
 				if (document.project.id !== repository.project.id)
-					return yield* Effect.fail(
-						new AuthoringSessionStorageError({
-							message: `Session ${validId} belongs to project ${document.project.id}`,
-							operation: "verify_project",
-							recovery: "Open the session through its owning project.",
-							retrySafe: false,
-							nextStep: "fix_input",
-							sessionId: validId
-						})
-					);
+					return yield* new AuthoringSessionStorageError({
+						message: `Session ${validId} belongs to project ${document.project.id}`,
+						operation: "verify_project",
+						recovery: "Open the session through its owning project.",
+						retrySafe: false,
+						nextStep: "fix_input",
+						sessionId: validId
+					});
 				if (migrated) yield* repository.persist(document);
 				return document;
 			}).pipe(
@@ -1032,20 +1034,32 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 										document,
 										kind: "document" as const
 									})),
-									Effect.catch((error) =>
-										error._tag === "SessionCorruptError"
-											? Effect.succeed({ error, kind: "diagnostic" as const })
-											: Effect.fail(
-													new AuthoringSessionStorageError({
-														cause: error,
-														message: error.message,
-														operation: "list_entry",
-														recovery: error.recovery,
-														retrySafe: error.retrySafe,
-														nextStep: error.nextStep,
-														sessionId
+									Effect.catchTag(
+										[
+											"InvalidSessionIdError",
+											"SessionNotFoundError",
+											"AuthoringSessionStorageError",
+											"SessionCorruptError",
+											"AuthoringSessionTransitionError",
+											"DraftIntentError"
+										],
+										(error) =>
+											error._tag === "SessionCorruptError"
+												? Effect.succeed({
+														error,
+														kind: "diagnostic" as const
 													})
-												)
+												: Effect.fail(
+														new AuthoringSessionStorageError({
+															cause: error,
+															message: error.message,
+															operation: "list_entry",
+															recovery: error.recovery,
+															retrySafe: error.retrySafe,
+															nextStep: error.nextStep,
+															sessionId
+														})
+													)
 									)
 								),
 							{ concurrency: 4 }

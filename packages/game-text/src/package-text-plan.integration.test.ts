@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assetReaderLayer } from "@ue-shed/unreal-assets";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, type Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { GameTextIndexSource } from "./index-refresh.js";
@@ -40,7 +40,10 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 				const catalog = native ? yield* source.catalog!({ projectRoot }) : undefined;
 				const inventory = native ? [] : yield* source.inventory({ projectRoot });
 				const byPath = new Map(inventory.map((entry) => [entry.path, entry]));
-				const input: PackageTextRefreshInput<unknown, never> = {
+				const input: PackageTextRefreshInput<
+					Stream.Error<ReturnType<typeof source.read>>,
+					never
+				> = {
 					...(catalog ? { catalog } : { inventory }),
 					...(changedFiles ? { changedFiles } : undefined),
 					// Every changed shard is staged by the reader, as a cold build of a large project.

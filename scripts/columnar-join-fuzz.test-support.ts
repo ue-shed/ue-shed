@@ -547,7 +547,7 @@ export async function compareJoinFuzzInput(
 			await unlink(spill);
 		}
 	};
-	const authored = Schema.decodeUnknownSync(LocalizationTarget)({
+	const authored = Schema.decodeSync(LocalizationTarget)({
 		...target,
 		name: "Fuzz",
 		cultures: input.cultures,

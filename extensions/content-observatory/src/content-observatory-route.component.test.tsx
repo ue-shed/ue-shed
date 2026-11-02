@@ -50,7 +50,7 @@ Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
 
 function completeState(): CompletedContentObservatoryState {
 	// SAFETY: the decoded fixture's literal status is complete, fixing the union variant.
-	return Schema.decodeUnknownSync(ContentObservatoryState)({
+	return Schema.decodeSync(ContentObservatoryState)({
 		maps: [{ label: "Example map", mapPath: "Content/Maps/L_Example.umap" }],
 		projectRoot: "C:/Project",
 		request: {
@@ -238,7 +238,7 @@ function fastCompleteState(): CompletedContentObservatoryState {
 		{ readonly status: "complete" }
 	>;
 	// SAFETY: this fixture preserves the complete status while replacing its fast request/history.
-	return Schema.decodeUnknownSync(ContentObservatoryState)({
+	return Schema.decodeSync(ContentObservatoryState)({
 		...encoded,
 		request: {
 			...encoded.request,
@@ -298,12 +298,12 @@ describe("ContentObservatoryRoute", () => {
 				mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap"
 			}
 		];
-		const ready = Schema.decodeUnknownSync(ContentObservatoryState)({
+		const ready = Schema.decodeSync(ContentObservatoryState)({
 			maps,
 			projectRoot: "C:/Project",
 			status: "ready" as const
 		});
-		const running = Schema.decodeUnknownSync(ContentObservatoryState)({
+		const running = Schema.decodeSync(ContentObservatoryState)({
 			jobId: "map-history-1",
 			maps,
 			progress: {
@@ -356,12 +356,12 @@ describe("ContentObservatoryRoute", () => {
 		const complete = completeState();
 		const currentWorld = complete.history.rangeEndSnapshot!;
 		const maps = complete.maps;
-		const ready = Schema.decodeUnknownSync(ContentObservatoryState)({
+		const ready = Schema.decodeSync(ContentObservatoryState)({
 			maps,
 			projectRoot: "C:/Project",
 			status: "ready" as const
 		});
-		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
+		const catalog = Schema.decodeSync(ContentObservatoryTargetCatalog)({
 			authority: { kind: "project_files", mapPackage: currentWorld.mapPackage },
 			completeness: currentWorld.completeness,
 			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
@@ -422,12 +422,12 @@ describe("ContentObservatoryRoute", () => {
 			packageName: "/Game/Maps/L_MapHistoryWorld",
 			transform: resolvedTransform(10, 20, 0)
 		};
-		const ready = Schema.decodeUnknownSync(ContentObservatoryState)({
+		const ready = Schema.decodeSync(ContentObservatoryState)({
 			maps,
 			projectRoot: "C:/Project",
 			status: "ready" as const
 		});
-		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
+		const catalog = Schema.decodeSync(ContentObservatoryTargetCatalog)({
 			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
 			completeness: "complete",
 			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },
@@ -442,7 +442,7 @@ describe("ContentObservatoryRoute", () => {
 				scannedPackages: 1
 			}
 		});
-		const running = Schema.decodeUnknownSync(ContentObservatoryState)({
+		const running = Schema.decodeSync(ContentObservatoryState)({
 			jobId: "map-history-fast-1",
 			maps,
 			progress: {
@@ -508,12 +508,12 @@ describe("ContentObservatoryRoute", () => {
 			label: "Map History World",
 			mapPath: "Content/Fixture/History/L_MapHistoryWorld.umap"
 		};
-		const ready = Schema.decodeUnknownSync(ContentObservatoryState)({
+		const ready = Schema.decodeSync(ContentObservatoryState)({
 			maps: [selectedMap],
 			projectRoot: "C:/Project",
 			status: "ready" as const
 		});
-		const catalog = Schema.decodeUnknownSync(ContentObservatoryTargetCatalog)({
+		const catalog = Schema.decodeSync(ContentObservatoryTargetCatalog)({
 			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_MapHistoryWorld" },
 			completeness: "complete",
 			contract: { name: "unreal-saved-world", version: { major: 2, minor: 0 } },

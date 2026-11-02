@@ -156,9 +156,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			onProgress?: (completed: number, total: number) => void
 		) {
 			if (closed)
-				return yield* Effect.fail(
-					unavailable("native-index-session", "The build session is closed.")
-				);
+				return yield* unavailable("native-index-session", "The build session is closed.");
 			const result = yield* client
 				.execute(request, onProgress)
 				.pipe(
@@ -220,9 +218,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 					onProgress
 				);
 				if (!result.localization)
-					return yield* Effect.fail(
-						unavailable("native-localization", "Missing import outcome.")
-					);
+					return yield* unavailable("native-localization", "Missing import outcome.");
 				lookupStrings += result.localization.lookupStrings;
 				reusedStrings += result.localization.reusedStrings;
 				return result.localization;
@@ -236,27 +232,27 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				request: { ...request, stagingFile: join(stage, `${++sequence}.code`) }
 			});
 			if (!result.code)
-				return yield* Effect.fail(
-					unavailable(
-						"native-code-layer",
-						new Error("The reader returned no code layer.")
-					)
+				return yield* unavailable(
+					"native-code-layer",
+					new Error("The reader returned no code layer.")
 				);
 			return result.code;
 		}),
 		readPoint: Effect.fn("NativeIndexBuilder.readPoint")(function* (request) {
 			const result = yield* command({ action: "read_point", configuration, request });
 			if (!result.point)
-				return yield* Effect.fail(
-					unavailable("native-point", new Error("The reader returned no point."))
+				return yield* unavailable(
+					"native-point",
+					new Error("The reader returned no point.")
 				);
 			return { ...result.point, stageSeconds: result.stageSeconds };
 		}),
 		planPackages: Effect.fn("NativeIndexBuilder.planPackages")(function* (request) {
 			const result = yield* command({ action: "plan_packages", configuration, request });
 			if (!result.plan)
-				return yield* Effect.fail(
-					unavailable("native-package-plan", new Error("The reader returned no plan."))
+				return yield* unavailable(
+					"native-package-plan",
+					new Error("The reader returned no plan.")
 				);
 			return result.plan;
 		}),
@@ -472,8 +468,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		);
 		const response = yield* command({ action: "join", configuration, file });
 		const result = response.join;
-		if (!result)
-			return yield* Effect.fail(unavailable("native-index-join", "Missing join result"));
+		if (!result) return yield* unavailable("native-index-join", "Missing join result");
 		if (!result.rebuilt)
 			return {
 				rebuilt: false,
@@ -483,12 +478,10 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				keyChanges: null
 			};
 		if (result.count === null || result.keyChanges === null)
-			return yield* Effect.fail(unavailable("native-index-join", "Missing rebuilt counts"));
+			return yield* unavailable("native-index-join", "Missing rebuilt counts");
 		if (result.strategy === "incremental") {
 			if (result.affectedLines === null)
-				return yield* Effect.fail(
-					unavailable("native-index-join", "Missing affected row count")
-				);
+				return yield* unavailable("native-index-join", "Missing affected row count");
 			return {
 				rebuilt: true,
 				strategy: "incremental" as const,
@@ -637,11 +630,9 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 					function* (input) {
 						const session = yield* Effect.serviceOption(NativeBuildSession);
 						if (Option.isNone(session))
-							return yield* Effect.fail(
-								unavailable(
-									"native-index-session",
-									"Call withSession around native build operations."
-								)
+							return yield* unavailable(
+								"native-index-session",
+								"Call withSession around native build operations."
 							);
 						return yield* session.value.refreshJoinedTarget(input);
 					}

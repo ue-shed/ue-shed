@@ -11,29 +11,29 @@ import {
 	type GameTextActionsResult,
 	type GameTextActionOutcome
 } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import type { TextIdRepairRequest } from "./id-repair-schema.js";
 import { textIdNamespace } from "./id-repair.js";
 import { mountedPackageName } from "./package-object-path.js";
 
 /** A table's reviewed source/identity or live fingerprint no longer supports the proposal. */
-export class TextIdTableRepairError extends Schema.TaggedError<TextIdTableRepairError>()(
-	"TextIdTableRepairError",
-	{
-		...ErrorGuidanceFields
-	}
-) {}
+export class TextIdTableRepairError extends Schema.TaggedError<
+	TextIdTableRepairError,
+	Brand.Brand<"packages/game-text/src/id-repair-tables/TextIdTableRepairError">
+>()("TextIdTableRepairError", {
+	...ErrorGuidanceFields
+}) {}
 
 /** The live row struct has no column for a reviewed saved property, so no cell was compared. */
-export class TextIdTableColumnError extends Schema.TaggedError<TextIdTableColumnError>()(
-	"TextIdTableColumnError",
-	{
-		...ErrorGuidanceFields,
-		objectPath: Schema.String,
-		propertyName: Schema.String,
-		liveColumns: Schema.Array(Schema.String)
-	}
-) {}
+export class TextIdTableColumnError extends Schema.TaggedError<
+	TextIdTableColumnError,
+	Brand.Brand<"packages/game-text/src/id-repair-tables/TextIdTableColumnError">
+>()("TextIdTableColumnError", {
+	...ErrorGuidanceFields,
+	objectPath: Schema.String,
+	propertyName: Schema.String,
+	liveColumns: Schema.Array(Schema.String)
+}) {}
 
 const invalid = (message: string) =>
 	new TextIdTableRepairError({

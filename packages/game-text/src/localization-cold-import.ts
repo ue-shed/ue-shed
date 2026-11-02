@@ -46,12 +46,10 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 		);
 		for (const file of result.files) {
 			if (file.error)
-				return yield* Effect.fail(
-					Schema.decodeUnknownSync(LocalizationError)({
-						_tag: "LocalizationError",
-						...file.error
-					})
-				);
+				return yield* Schema.decodeUnknownSync(LocalizationError)({
+					_tag: "LocalizationError",
+					...file.error
+				});
 		}
 		for (const [row, file] of result.files.entries()) {
 			if (file.file)

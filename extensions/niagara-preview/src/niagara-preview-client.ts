@@ -6,7 +6,7 @@ import {
 	NiagaraPreviewSettings,
 	NiagaraSystemObjectPath
 } from "@ue-shed/niagara/browser";
-import { type Effect, Schema } from "effect";
+import { type Brand, type Effect, Schema } from "effect";
 
 export const NiagaraPreviewIntent = Schema.Struct({
 	settings: NiagaraPreviewSettings,
@@ -69,18 +69,18 @@ export const decodeNiagaraCatalogueResult = contractParser(
 	"NiagaraCatalogueResult"
 );
 
-export class NiagaraPreviewClientError extends Schema.TaggedError<NiagaraPreviewClientError>()(
-	"NiagaraPreview.ClientError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("niagara_preview_client_failed"),
-		cause: Schema.Defect(),
-		message: Schema.String,
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class NiagaraPreviewClientError extends Schema.TaggedError<
+	NiagaraPreviewClientError,
+	Brand.Brand<"extensions/niagara-preview/src/niagara-preview-client/NiagaraPreviewClientError">
+>()("NiagaraPreview.ClientError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("niagara_preview_client_failed"),
+	cause: Schema.Defect(),
+	message: Schema.String,
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export interface NiagaraPreviewClientApi {
 	readonly catalogue: () => Effect.Effect<NiagaraCatalogueResult, NiagaraPreviewClientError>;

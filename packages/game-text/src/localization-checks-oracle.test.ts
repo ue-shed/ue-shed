@@ -51,7 +51,7 @@ describe("built-ins against Unreal's recorded validators", () => {
 	for (const version of ["5.7", "5.8"]) {
 		it(`covers every validator failure from Unreal ${version} on the same shipped text`, async () => {
 			const projectRoot = resolve("fixtures/unreal-project");
-			const expected = Schema.decodeUnknownSync(Schema.fromJsonString(Oracle))(
+			const expected = Schema.decodeSync(Schema.fromJsonString(Oracle))(
 				readFileSync(
 					resolve(projectRoot, `FixtureExpected/localization/evidence.ue${version}.json`),
 					"utf8"
@@ -67,7 +67,7 @@ describe("built-ins against Unreal's recorded validators", () => {
 						version === "5.8"
 							? "FixtureExpected/localization/ue5.8-output"
 							: "Content/Localization/FixtureGame";
-					const target = Schema.decodeUnknownSync(LocalizationTarget)({
+					const target = yield* Schema.decodeEffect(LocalizationTarget)({
 						...original,
 						outputPaths: {
 							...original.outputPaths,
@@ -87,7 +87,7 @@ describe("built-ins against Unreal's recorded validators", () => {
 							locmeta: `${directory}/FixtureGame.locmeta`,
 							wordCount: `${directory}/FixtureGame.csv`
 						}
-					});
+					}).pipe(Effect.orDie);
 					return yield* service.read({ projectRoot, target });
 				}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 			);

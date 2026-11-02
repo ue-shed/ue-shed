@@ -103,7 +103,7 @@ describe("bulk actions", () => {
 	});
 
 	it("exports the ticked lines without the list's state, review or key-change filters", () => {
-		const selection = Schema.decodeUnknownSync(LocalizationSelection)({
+		const selection = Schema.decodeSync(LocalizationSelection)({
 			target: "Game",
 			cultures: ["de", "fr"],
 			state: "not_translated",

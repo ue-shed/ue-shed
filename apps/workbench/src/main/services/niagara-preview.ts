@@ -113,7 +113,7 @@ function engineAssociation(descriptor: string): Effect.Effect<string | undefined
 	}).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(ProjectEngineAssociation)),
 		Effect.map((metadata) => metadata.EngineAssociation),
-		Effect.catch(() => Effect.succeed(undefined))
+		Effect.catch(() => Effect.undefined)
 	);
 }
 
@@ -193,7 +193,7 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 						.flatMap((objectPath) => {
 							// One malformed header entry must not reject the whole catalogue.
 							const decoded =
-								Schema.decodeUnknownOption(NiagaraSystemObjectPath)(objectPath);
+								Schema.decodeOption(NiagaraSystemObjectPath)(objectPath);
 							return Option.isSome(decoded) ? [{ objectPath: decoded.value }] : [];
 						}),
 					status: "ready" as const
@@ -218,18 +218,18 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 				Effect.flatMap((candidates) =>
 					niagaraSystemCatalogue(current.project.projectRoot, candidates)
 				),
-				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
-					Effect.succeed({
-						error: { message: error.message, recovery: error.recovery },
-						status: "failed" as const
-					})
-				),
-				Effect.catchTag("AssetReaderError", (error) =>
-					Effect.succeed({
-						error: { message: error.message, recovery: readerFailure },
-						status: "failed" as const
-					})
-				)
+				Effect.catchTags({
+					WorkbenchProjectUnavailable: (error) =>
+						Effect.succeed({
+							error: { message: error.message, recovery: error.recovery },
+							status: "failed" as const
+						}),
+					AssetReaderError: (error) =>
+						Effect.succeed({
+							error: { message: error.message, recovery: readerFailure },
+							status: "failed" as const
+						})
+				})
 			);
 		});
 

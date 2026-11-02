@@ -420,7 +420,7 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		),
 		mutate: Effect.fn("CameraAuthoringStore.mutate")((input) =>
 			transact(async () => {
-				const command = Schema.decodeUnknownSync(CameraArrangementCommand)(input);
+				const command = Schema.decodeSync(CameraArrangementCommand)(input);
 				const document = await recoverProjection(await load());
 				const fingerprint = digest(canonical(command));
 				if (prior(document, command.operationId, fingerprint)) return document;
@@ -441,7 +441,7 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		),
 		approve: Effect.fn("CameraAuthoringStore.approve")((input) =>
 			transact(async () => {
-				const approval = Schema.decodeUnknownSync(CameraApproval)(input);
+				const approval = Schema.decodeSync(CameraApproval)(input);
 				const document = await recoverProjection(await load());
 				const fingerprint = digest(canonical(approval));
 				if (prior(document, approval.operationId, fingerprint)) return document;

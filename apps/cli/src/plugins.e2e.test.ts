@@ -65,7 +65,7 @@ describe("compiled plugin CLI boundary", () => {
 		const sourceRoot = join(root, "source");
 		await mkdir(sourceRoot);
 		const engineSourceCommit = "b".repeat(40);
-		const artifactRequest = Schema.decodeUnknownSync(CompiledPluginVariantRequest)({
+		const artifactRequest = Schema.decodeSync(CompiledPluginVariantRequest)({
 			architecture: "x64",
 			configuration: "Development",
 			engineBuildId: "47537391",

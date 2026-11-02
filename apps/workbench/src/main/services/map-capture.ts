@@ -150,7 +150,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 							: Effect.void
 					),
 					Effect.map((response) => ({ response, status: "completed" as const })),
-					Effect.catch((cause) =>
+					Effect.catchTag("EditorWorldControlError", (cause) =>
 						Effect.succeed(
 							failure(
 								cause,
@@ -264,7 +264,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				});
 				return { status: "ready" as const, world };
 			},
-			Effect.catch((cause) =>
+			Effect.catchTag(["AssetReaderError", "WorkbenchProjectUnavailable"], (cause) =>
 				Effect.succeed(
 					failure(
 						cause,
@@ -284,13 +284,20 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				const plan = yield* repository.loadPlan(choice.path);
 				return yield* readySelection({ plan, planPath: choice.path, source: "opened" });
 			},
-			Effect.catch((cause) =>
-				Effect.succeed(
-					failure(
-						cause,
-						"Choose a valid plan and a Workbench project containing one .uproject file."
+			Effect.catchTag(
+				[
+					"Workbench.WorkbenchWindowError",
+					"WorkbenchProjectUnavailable",
+					"MapCaptureRunError",
+					"MapCaptureStorageError"
+				],
+				(cause) =>
+					Effect.succeed(
+						failure(
+							cause,
+							"Choose a valid plan and a Workbench project containing one .uproject file."
+						)
 					)
-				)
 			)
 		);
 
@@ -309,7 +316,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				});
 				return yield* readySelection({ plan, source: "new" });
 			},
-			Effect.catch((cause) =>
+			Effect.catchTag(["WorkbenchProjectUnavailable", "MapCaptureRunError"], (cause) =>
 				Effect.succeed(
 					failure(
 						cause,
@@ -341,10 +348,16 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				yield* repository.savePlan(planPath, intent.plan);
 				return { plan: intent.plan, planPath, status: "saved" as const };
 			},
-			Effect.catch((cause) =>
-				Effect.succeed(
-					failure(cause, "Choose a writable plan location and retry Save or Save As.")
-				)
+			Effect.catchTag(
+				[
+					"Workbench.WorkbenchWindowError",
+					"WorkbenchProjectUnavailable",
+					"MapCaptureStorageError"
+				],
+				(cause) =>
+					Effect.succeed(
+						failure(cause, "Choose a writable plan location and retry Save or Save As.")
+					)
 			)
 		);
 
@@ -414,13 +427,15 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			// exactly like Review capture; a set that will not detach stops the capture here.
 			const closeFailure = yield* cameraWorkspace.close().pipe(
 				Effect.as(undefined),
-				Effect.catch((cause) =>
-					Effect.succeed(
-						failure(
-							`Workbench could not close the open camera set before capturing: ${messageOf(cause)}`,
-							"Close the camera set in the editor or Workbench, then retry the capture."
+				Effect.catchTag(
+					["CameraBridgeError", "ProvisionedCameraError", "CameraWorkspaceError"],
+					(cause) =>
+						Effect.succeed(
+							failure(
+								`Workbench could not close the open camera set before capturing: ${messageOf(cause)}`,
+								"Close the camera set in the editor or Workbench, then retry the capture."
+							)
 						)
-					)
 				)
 			);
 			if (closeFailure !== undefined) return closeFailure;
@@ -456,13 +471,15 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					status: "completed" as const
 				};
 			}).pipe(
-				Effect.catch((cause) =>
-					Effect.succeed(
-						failure(
-							cause,
-							"Inspect the selected plan, editor map, capture attempt, and Remote Control session."
+				Effect.catchTag(
+					["WorkbenchProjectUnavailable", "MapCaptureRunError", "MapCaptureStorageError"],
+					(cause) =>
+						Effect.succeed(
+							failure(
+								cause,
+								"Inspect the selected plan, editor map, capture attempt, and Remote Control session."
+							)
 						)
-					)
 				)
 			);
 		});

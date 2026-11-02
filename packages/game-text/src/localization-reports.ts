@@ -5,7 +5,7 @@ import {
 	textCorpusReportHeader,
 	type TextCorpusReportHeader
 } from "./corpus-summary.js";
-import { Effect, Result, Schema } from "effect";
+import { type Brand, Effect, Result, Schema } from "effect";
 import {
 	CultureCode,
 	FileProvenance,
@@ -76,25 +76,25 @@ export type LocalizationBaseline = typeof LocalizationBaseline.Type;
  * recovery explain required correction; cause retains original schema/manifest evidence when
  * available.
  */
-export class LocalizationReportError extends Schema.TaggedError<LocalizationReportError>()(
-	"LocalizationReportError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"invalid_baseline",
-			"baseline_target_mismatch",
-			"missing_manifest",
-			"unreadable_manifest",
-			"ambiguous_manifest",
-			"word_count_unavailable",
-			"invalid_report_context"
-		]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class LocalizationReportError extends Schema.TaggedError<
+	LocalizationReportError,
+	Brand.Brand<"packages/game-text/src/localization-reports/LocalizationReportError">
+>()("LocalizationReportError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"invalid_baseline",
+		"baseline_target_mismatch",
+		"missing_manifest",
+		"unreadable_manifest",
+		"ambiguous_manifest",
+		"word_count_unavailable",
+		"invalid_report_context"
+	]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 function reportError(
 	code: LocalizationReportError["code"],
 	cause?: unknown
@@ -135,7 +135,7 @@ function baselineValid(document: LocalizationBaseline): boolean {
 export function decodeLocalizationBaselineJson(
 	input: string
 ): Result.Result<LocalizationBaseline, LocalizationReportError> {
-	const result = Schema.decodeUnknownResult(Schema.fromJsonString(LocalizationBaseline))(input);
+	const result = Schema.decodeResult(Schema.fromJsonString(LocalizationBaseline))(input);
 	if (Result.isFailure(result))
 		return Result.fail(reportError("invalid_baseline", result.failure));
 	if (!baselineValid(result.success)) return Result.fail(reportError("invalid_baseline"));
@@ -176,7 +176,7 @@ function manifestEntries(
 /** The corpus fingerprint a baseline records, computed from the corpus itself. */
 function corpusGeneration(corpus: TextCorpus): string {
 	// Encode optional undefined values as JSON omissions before canonicalizing the corpus.
-	const corpusJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(
+	const corpusJson = Schema.decodeSync(Schema.fromJsonString(Schema.Json))(
 		Schema.encodeSync(Schema.fromJsonString(TextCorpus))(corpus)
 	);
 	return localizationFingerprint(canonicalLocalizationJson(corpusJson));
@@ -205,9 +205,7 @@ function baselineWith(
 ): (generation: string) => LocalizationBaseline {
 	if (
 		Result.isFailure(
-			Schema.decodeUnknownResult(LocalizationBaseline.fields.provenance.fields.createdAt)(
-				createdAt
-			)
+			Schema.decodeResult(LocalizationBaseline.fields.provenance.fields.createdAt)(createdAt)
 		)
 	)
 		throw reportError("invalid_baseline");
@@ -772,12 +770,10 @@ function progressReport(
 				: "not_tracked";
 		const result: LocalizationProgressCulture = {
 			culture,
-			states: Schema.decodeUnknownSync(LocalizationProgressCulture.fields.states)(
-				tally.states
+			states: Schema.decodeSync(LocalizationProgressCulture.fields.states)(tally.states),
+			unknownReasons: Schema.decodeSync(LocalizationProgressCulture.fields.unknownReasons)(
+				tally.unknownReasons
 			),
-			unknownReasons: Schema.decodeUnknownSync(
-				LocalizationProgressCulture.fields.unknownReasons
-			)(tally.unknownReasons),
 			notSynced: tally.notSynced,
 			reducedSourceChecking: tally.reducedSourceChecking,
 			total: { lines, sourceWords: totalWords },
@@ -891,7 +887,7 @@ const indexedEvidenceFacts = Effect.fn("GameText.localizationReport.evidence")(f
 export const indexedLocalizationProgressReport = Effect.fn("GameText.localizationReport")(
 	function* (model: LocalizationReportIndex, baseline?: LocalizationBaseline) {
 		if (model.localization.target !== model.evidence.target.name)
-			return yield* Effect.fail(reportError("invalid_report_context"));
+			return yield* reportError("invalid_report_context");
 		const cached = reportFacts.get(model.evidence);
 		yield* Effect.annotateCurrentSpan("game_text.report.evidence_cached", cached !== undefined);
 		// A manifest that cannot be read fails the report before any native read.

@@ -29,7 +29,7 @@ export const runConfigExplain = Effect.fn("Cli.workflow.config_explain")(
 		observeCliOperation(
 			command._tag,
 			Effect.gen(function* () {
-				const request = yield* Schema.decodeUnknownEffect(ConfigExplainRequest)({
+				const request = yield* Schema.decodeEffect(ConfigExplainRequest)({
 					project: command.project,
 					platform: command.platform,
 					section: command.section,
@@ -50,7 +50,7 @@ export const runConfigCompare = Effect.fn("Cli.workflow.config_compare")(
 		observeCliOperation(
 			command._tag,
 			Effect.gen(function* () {
-				const request = yield* Schema.decodeUnknownEffect(ConfigCompareRequest)({
+				const request = yield* Schema.decodeEffect(ConfigCompareRequest)({
 					project: command.project,
 					leftPlatform: command.leftPlatform,
 					rightPlatform: command.rightPlatform,

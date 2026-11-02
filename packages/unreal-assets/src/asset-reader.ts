@@ -24,6 +24,7 @@ import {
 	type AuthoringTableSnapshot
 } from "@ue-shed/protocol";
 import {
+	type Brand,
 	Config,
 	Context,
 	Duration,
@@ -149,7 +150,10 @@ export type { SavedProperty, SavedPropertyValue } from "@ue-shed/protocol";
  * large for the reader. Carries operation/path context and original cause; honor nextStep before
  * replaying a mutating index command.
  */
-export class AssetReaderError extends Schema.TaggedError<AssetReaderError>()("AssetReaderError", {
+export class AssetReaderError extends Schema.TaggedError<
+	AssetReaderError,
+	Brand.Brand<"packages/unreal-assets/src/asset-reader/AssetReaderError">
+>()("AssetReaderError", {
 	code: Schema.optional(Schema.String),
 	kind: Schema.Literals([
 		"timeout",

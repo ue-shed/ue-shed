@@ -76,11 +76,9 @@ describe("investigation format compatibility", () => {
 				preset: { schemaVersion: 2 },
 				result: { mode: "localization_quality" }
 			});
-			expect(Schema.decodeUnknownSync(GameTextInvestigationExport)(exported)).toEqual(
-				exported
-			);
+			expect(Schema.decodeSync(GameTextInvestigationExport)(exported)).toEqual(exported);
 			expect(
-				Schema.decodeUnknownResult(GameTextInvestigationExport)({
+				Schema.decodeResult(GameTextInvestigationExport)({
 					...exported,
 					schemaVersion: 1
 				})._tag
@@ -130,11 +128,9 @@ describe("investigation format compatibility", () => {
 			);
 			expect(exported.schemaVersion).toBe(1);
 			expect(exported.result.mode).toBe(mode);
-			expect(Schema.decodeUnknownSync(GameTextInvestigationExport)(exported)).toEqual(
-				exported
-			);
+			expect(Schema.decodeSync(GameTextInvestigationExport)(exported)).toEqual(exported);
 			expect(
-				Schema.decodeUnknownResult(GameTextInvestigationExport)({
+				Schema.decodeResult(GameTextInvestigationExport)({
 					...exported,
 					schemaVersion: 2
 				})._tag

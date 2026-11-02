@@ -80,9 +80,7 @@ describe("localization progress and manifest baselines", () => {
 				}
 			]
 		} satisfies ReturnType<typeof corpus>;
-		const encoded = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(
-			JSON.stringify(text)
-		);
+		const encoded = Schema.decodeSync(Schema.fromJsonString(Schema.Json))(JSON.stringify(text));
 		const baseline = createLocalizationBaseline(text, evidence(), "2026-10-07T00:00:00Z");
 		expect(baseline.provenance.corpusGeneration).toBe(
 			localizationFingerprint(canonicalLocalizationJson(encoded))
@@ -187,7 +185,7 @@ describe("localization progress and manifest baselines", () => {
 			omitted: 0
 		});
 		expect(
-			Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationProgressReport))(
+			Schema.decodeSync(Schema.fromJsonString(LocalizationProgressReport))(
 				JSON.stringify(report)
 			)
 		).toEqual(report);
@@ -314,7 +312,7 @@ describe("localization progress and manifest baselines", () => {
 		expect(() =>
 			diffLocalizationBaselines(before, {
 				...after,
-				target: Schema.decodeUnknownSync(LocalizationProgressReport.fields.target)("Other")
+				target: Schema.decodeSync(LocalizationProgressReport.fields.target)("Other")
 			})
 		).toThrowError(expect.objectContaining({ code: "baseline_target_mismatch" }));
 		expect(

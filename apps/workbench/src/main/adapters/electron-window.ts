@@ -1,27 +1,27 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Context, Effect, Layer, Ref, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Ref, Schema } from "effect";
 
-export class WorkbenchWindowError extends Schema.TaggedError<WorkbenchWindowError>()(
-	"Workbench.WorkbenchWindowError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("workbench_window_failed"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		causeText: Schema.String,
-		message: Schema.String,
-		operation: Schema.Literals([
-			"create",
-			"load",
-			"show",
-			"send",
-			"destroy",
-			"openDialog",
-			"saveDialog"
-		]),
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean
-	}
-) {}
+export class WorkbenchWindowError extends Schema.TaggedError<
+	WorkbenchWindowError,
+	Brand.Brand<"apps/workbench/src/main/adapters/electron-window/WorkbenchWindowError">
+>()("Workbench.WorkbenchWindowError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("workbench_window_failed"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	causeText: Schema.String,
+	message: Schema.String,
+	operation: Schema.Literals([
+		"create",
+		"load",
+		"show",
+		"send",
+		"destroy",
+		"openDialog",
+		"saveDialog"
+	]),
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean
+}) {}
 
 export interface WorkbenchWindowOptions {
 	readonly backgroundColor: string;
@@ -203,12 +203,10 @@ export const workbenchWindowLayer = (
 				),
 				send: Effect.fn("Workbench.WorkbenchWindow.send")(function* (channel, payload) {
 					if (window.isDestroyed()) {
-						return yield* Effect.fail(
-							windowError(
-								"send",
-								"Window is destroyed",
-								"Ignore late renderer deliveries after shutdown."
-							)
+						return yield* windowError(
+							"send",
+							"Window is destroyed",
+							"Ignore late renderer deliveries after shutdown."
 						);
 					}
 					yield* Effect.try({
@@ -222,12 +220,10 @@ export const workbenchWindowLayer = (
 				openDialog: Effect.fn("Workbench.WorkbenchWindow.openDialog")(
 					function* (dialogOptions) {
 						if (window.isDestroyed()) {
-							return yield* Effect.fail(
-								windowError(
-									"openDialog",
-									"Window is destroyed",
-									"Reopen Workbench and retry."
-								)
+							return yield* windowError(
+								"openDialog",
+								"Window is destroyed",
+								"Reopen Workbench and retry."
 							);
 						}
 						const choice = yield* Effect.tryPromise({
@@ -265,12 +261,10 @@ export const workbenchWindowLayer = (
 				saveDialog: Effect.fn("Workbench.WorkbenchWindow.saveDialog")(
 					function* (dialogOptions) {
 						if (window.isDestroyed()) {
-							return yield* Effect.fail(
-								windowError(
-									"saveDialog",
-									"Window is destroyed",
-									"Reopen Workbench and retry."
-								)
+							return yield* windowError(
+								"saveDialog",
+								"Window is destroyed",
+								"Reopen Workbench and retry."
 							);
 						}
 						const choice = yield* Effect.tryPromise({
@@ -348,12 +342,10 @@ export const makeWorkbenchWindowTestLayer = (
 					overrides.openDialog ??
 					Effect.fn("Workbench.WorkbenchWindow.Test.openDialog")(function* () {
 						if (yield* Ref.get(destroyed)) {
-							return yield* Effect.fail(
-								windowError(
-									"openDialog",
-									"Window is destroyed",
-									"Reopen Workbench and retry."
-								)
+							return yield* windowError(
+								"openDialog",
+								"Window is destroyed",
+								"Reopen Workbench and retry."
 							);
 						}
 						return yield* Ref.get(nextDialog);
@@ -362,12 +354,10 @@ export const makeWorkbenchWindowTestLayer = (
 					overrides.saveDialog ??
 					Effect.fn("Workbench.WorkbenchWindow.Test.saveDialog")(function* () {
 						if (yield* Ref.get(destroyed)) {
-							return yield* Effect.fail(
-								windowError(
-									"saveDialog",
-									"Window is destroyed",
-									"Reopen Workbench and retry."
-								)
+							return yield* windowError(
+								"saveDialog",
+								"Window is destroyed",
+								"Reopen Workbench and retry."
 							);
 						}
 						return yield* Ref.get(nextSaveDialog);
@@ -376,12 +366,10 @@ export const makeWorkbenchWindowTestLayer = (
 					overrides.send ??
 					Effect.fn("Workbench.WorkbenchWindow.Test.send")(function* (channel, payload) {
 						if (yield* Ref.get(destroyed)) {
-							return yield* Effect.fail(
-								windowError(
-									"send",
-									"Window is destroyed",
-									"Ignore late renderer deliveries after shutdown."
-								)
+							return yield* windowError(
+								"send",
+								"Window is destroyed",
+								"Ignore late renderer deliveries after shutdown."
 							);
 						}
 						yield* Ref.update(sent, (current) => [...current, { channel, payload }]);

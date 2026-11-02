@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 
 export type AuthoringFilePickerChoice =
 	| { readonly status: "cancelled" }
@@ -14,13 +14,13 @@ export interface AuthoringFilePickerOptions {
  * The host file picker failed. The original cause and recovery guidance distinguish a picker
  * failure from an ordinary user cancellation.
  */
-export class AuthoringFilePickerError extends Schema.TaggedError<AuthoringFilePickerError>()(
-	"AuthoringFilePickerError",
-	{
-		cause: Schema.Defect(),
-		...ErrorGuidanceFields
-	}
-) {}
+export class AuthoringFilePickerError extends Schema.TaggedError<
+	AuthoringFilePickerError,
+	Brand.Brand<"packages/host/src/file-picker/AuthoringFilePickerError">
+>()("AuthoringFilePickerError", {
+	cause: Schema.Defect(),
+	...ErrorGuidanceFields
+}) {}
 
 export interface AuthoringFilePickerApi {
 	readonly chooseFile: (

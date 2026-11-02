@@ -204,16 +204,14 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 					const authoring = yield* ReviewAuthoring;
 					const selection = yield* authoring.inspectSelection(command.endpoint);
 					if (selection.status === "failed") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `${selection.message} ${selection.recovery}`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `${selection.message} ${selection.recovery}`
+						});
 					}
 					const parameters =
 						command.parametersPath === undefined
@@ -238,16 +236,14 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 						(item) => item.id === FramingCandidateId.make(command.candidateId)
 					);
 					if (!candidate) {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `Unknown framing candidate: ${command.candidateId}`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `Unknown framing candidate: ${command.candidateId}`
+						});
 					}
 					const repository = yield* ReviewRepository;
 					const reviewSet = yield* repository.loadSet(command.reviewSetPath);
@@ -262,16 +258,14 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 						viewId: ReviewViewId.make(command.viewId)
 					});
 					if (approved.status === "view_not_found") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `Review View ${approved.viewId} was not found`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `Review View ${approved.viewId} was not found`
+						});
 					}
 					yield* repository.saveSet({
 						path: command.reviewSetPath,
@@ -367,16 +361,14 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 					const authoring = yield* ReviewAuthoring;
 					const selection = yield* authoring.inspectSelection(command.endpoint);
 					if (selection.status === "failed") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `${selection.message} ${selection.recovery}`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `${selection.message} ${selection.recovery}`
+						});
 					}
 					const candidates = generateFramingCandidates(selection);
 					const session =

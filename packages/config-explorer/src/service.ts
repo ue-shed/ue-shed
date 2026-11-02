@@ -4,7 +4,7 @@ import {
 	EngineInstallationDiscoveryLive,
 	type EngineInstallationError
 } from "@ue-shed/engine";
-import { Context, Effect, Layer, Result, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Result, Schema } from "effect";
 import {
 	ConfigErrorGuidanceFields as ErrorGuidanceFields,
 	ConfigFileAccess,
@@ -36,15 +36,15 @@ import {
 	type ConfigLayerCoverage
 } from "./schema.js";
 
-export class ConfigExplorerError extends Schema.TaggedError<ConfigExplorerError>()(
-	"ConfigExplorerError",
-	{
-		code: ConfigExplorerPublicError.fields.code,
-		...ErrorGuidanceFields,
-		candidates: ConfigExplorerPublicError.fields.candidates,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class ConfigExplorerError extends Schema.TaggedError<
+	ConfigExplorerError,
+	Brand.Brand<"packages/config-explorer/src/service/ConfigExplorerError">
+>()("ConfigExplorerError", {
+	code: ConfigExplorerPublicError.fields.code,
+	...ErrorGuidanceFields,
+	candidates: ConfigExplorerPublicError.fields.candidates,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * Request, project, engine, family and platform failures all need a changed selection; only a
@@ -181,7 +181,7 @@ function discoverFamilies(options: {
 				Effect.map((entries) =>
 					entries.filter((entry) => entry.kind === "file").map((entry) => entry.name)
 				),
-				Effect.catch(() => Effect.succeed([]))
+				Effect.catchTag("ConfigFileAccessError", () => Effect.succeed([]))
 			)
 		);
 		return [
@@ -371,7 +371,7 @@ export const ConfigExplorerLive = Layer.effect(
 		const explain = Effect.fn("ConfigExplorer.explain")(function* (
 			input: ConfigExplainRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(ConfigExplainRequest)(input).pipe(
+			const request = yield* Schema.decodeEffect(ConfigExplainRequest)(input).pipe(
 				Effect.mapError((cause) =>
 					error(
 						"invalid_request",
@@ -460,7 +460,7 @@ export const ConfigExplorerLive = Layer.effect(
 		const compare = Effect.fn("ConfigExplorer.compare")(function* (
 			input: ConfigCompareRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(ConfigCompareRequest)(input).pipe(
+			const request = yield* Schema.decodeEffect(ConfigCompareRequest)(input).pipe(
 				Effect.mapError((cause) =>
 					error(
 						"invalid_request",

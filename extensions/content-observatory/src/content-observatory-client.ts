@@ -8,7 +8,7 @@ import {
 	ProjectRelativeMapPath
 } from "@ue-shed/map-history/contract";
 import { ErrorNextStep, SavedWorld, SavedWorldProgress, decodeSavedWorld } from "@ue-shed/protocol";
-import { Context, Effect, Schema } from "effect";
+import { type Brand, Context, Effect, Schema } from "effect";
 
 const historyRequestFields = {
 	limits: MapHistoryLimits,
@@ -108,17 +108,17 @@ export type ContentObservatoryState = Schema.Schema.Type<typeof ContentObservato
  * A value that does not match the Content Observatory contract: the two sides disagree about the contract, so
  * repeating the same call returns the same mismatch.
  */
-export class ContentObservatoryContractError extends Schema.TaggedError<ContentObservatoryContractError>()(
-	"ContentObservatoryContractError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("invalid_contract"),
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class ContentObservatoryContractError extends Schema.TaggedError<
+	ContentObservatoryContractError,
+	Brand.Brand<"extensions/content-observatory/src/content-observatory-client/ContentObservatoryContractError">
+>()("ContentObservatoryContractError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("invalid_contract"),
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A unary parser for one Content Observatory contract value: it decodes the encoded value and fails with
@@ -154,18 +154,18 @@ export const parseContentObservatoryState = contentObservatoryContractParser(
 	"content observatory state"
 );
 
-export class ContentObservatoryClientError extends Schema.TaggedError<ContentObservatoryClientError>()(
-	"ContentObservatoryClientError",
-	{
-		message: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("content_observatory_client_failed"),
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class ContentObservatoryClientError extends Schema.TaggedError<
+	ContentObservatoryClientError,
+	Brand.Brand<"extensions/content-observatory/src/content-observatory-client/ContentObservatoryClientError">
+>()("ContentObservatoryClientError", {
+	message: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("content_observatory_client_failed"),
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export interface ContentObservatoryClientApi {
 	readonly cancel: () => Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;

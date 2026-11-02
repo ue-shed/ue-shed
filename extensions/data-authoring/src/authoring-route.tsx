@@ -1145,7 +1145,7 @@ export function AuthoringRoute(props: {
 							disabled={isReplacing()}
 							onClick={() => {
 								setAuthorityPreference("saved");
-								void load(true);
+								load(true);
 							}}
 						>
 							{isReplacing() ? "Opening…" : "Open table"}
@@ -1156,7 +1156,7 @@ export function AuthoringRoute(props: {
 							disabled={isReplacing()}
 							onClick={() => {
 								setAuthorityPreference("saved");
-								void load(false);
+								load(false);
 							}}
 						>
 							Reload table
@@ -1234,7 +1234,7 @@ export function AuthoringRoute(props: {
 								type="button"
 								onClick={() => {
 									setAuthorityPreference("saved");
-									void load(true);
+									load(true);
 								}}
 								{...stylex.attrs(styles.inlineButton)}
 							>
@@ -1263,7 +1263,7 @@ export function AuthoringRoute(props: {
 								<Show when={current.error.retrySafe}>
 									<button
 										type="button"
-										onClick={() => void load(false)}
+										onClick={() => load(false)}
 										{...stylex.attrs(styles.inlineButton)}
 									>
 										Retry
@@ -1550,10 +1550,10 @@ export function AuthoringRoute(props: {
 												activeObjectPath={snapshot().table.objectPath}
 												disabled={isReplacing()}
 												onOpen={(objectPath) =>
-													void openCatalogTable(objectPath)
+													openCatalogTable(objectPath)
 												}
 												onQueryChange={setCatalogQuery}
-												onRefresh={() => void loadCatalog()}
+												onRefresh={() => loadCatalog()}
 												query={catalogQuery()}
 												progress={catalogProgress()}
 												state={catalogState()}

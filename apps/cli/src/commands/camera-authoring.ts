@@ -167,17 +167,15 @@ const attach = Command.make(
 						store = cameras.makeCameraAuthoringStore(args.draftPath);
 					const capability = yield* port.call({ version: 1, operation: "discover" });
 					if (capability.status !== "available" || !capability.arrangementPanel)
-						return yield* Effect.fail(
-							new cameras.CameraBridgeError({
-								code: "unavailable",
-								message:
-									"The installed authoring bridge lacks arrangement panel support.",
-								recovery:
-									"Install a matching CameraAuthoringBridge plugin before attaching this arrangement.",
-								retrySafe: true,
-								nextStep: "fix_input"
-							})
-						);
+						return yield* new cameras.CameraBridgeError({
+							code: "unavailable",
+							message:
+								"The installed authoring bridge lacks arrangement panel support.",
+							recovery:
+								"Install a matching CameraAuthoringBridge plugin before attaching this arrangement.",
+							retrySafe: true,
+							nextStep: "fix_input"
+						});
 					const attachment = yield* cameras.attachArrangementCamera(
 						store,
 						port,
@@ -202,7 +200,7 @@ const attach = Command.make(
 								})
 								.pipe(
 									Effect.flatMap(cameras.readyCameraBridge),
-									Effect.catch(() => Ref.get(latest))
+									Effect.catchTag("CameraBridgeError", () => Ref.get(latest))
 								);
 							// Preserve the last native state before releasing the ephemeral proxy, including unresolved edits.
 							yield* Effect.tryPromise(() =>
@@ -211,7 +209,7 @@ const attach = Command.make(
 									`${JSON.stringify(snapshot, null, "\t")}\n`
 								)
 							).pipe(
-								Effect.catch((error) =>
+								Effect.catchTag("UnknownError", (error) =>
 									Effect.logError(
 										"Could not preserve native camera recovery",
 										error
@@ -225,7 +223,7 @@ const attach = Command.make(
 									sessionId: attachment.sessionId,
 									producerId: attachment.producerId
 								})
-								.pipe(Effect.catch(() => Effect.void));
+								.pipe(Effect.catchTag("CameraBridgeError", () => Effect.void));
 						})
 					);
 					yield* printJson(
@@ -240,7 +238,10 @@ const attach = Command.make(
 					yield* Effect.gen(function* () {
 						const result = yield* panel.tick().pipe(
 							Effect.tap((snapshot) => Ref.set(latest, snapshot)),
-							Effect.catch((error) => Effect.succeed({ status: "blocked", error }))
+							Effect.catchTag(
+								["CameraArrangementError", "CameraBridgeError"],
+								(error) => Effect.succeed({ status: "blocked", error })
+							)
 						);
 						const text = JSON.stringify(result);
 						if (text !== (yield* Ref.get(previousOutput))) {

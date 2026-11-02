@@ -506,7 +506,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 									Couldn't load review data
 								</strong>
 								<span>{current.error.recovery}</span>
-								<Button type="button" onClick={() => void load()} tone="quiet">
+								<Button type="button" onClick={() => load()} tone="quiet">
 									Retry
 								</Button>
 								<details {...stylex.attrs(styles.technical)}>
@@ -527,7 +527,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 									{current.policy.message}
 								</strong>
 								<span>{current.policy.recovery}</span>
-								<Button type="button" onClick={() => void load()} tone="quiet">
+								<Button type="button" onClick={() => load()} tone="quiet">
 									Return to review
 								</Button>
 							</div>

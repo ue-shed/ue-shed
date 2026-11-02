@@ -81,16 +81,14 @@ export function selectSubmittedChanges(
 ): Effect.Effect<SubmittedChangeSelection, MapHistoryError, PerforceHistorySource> {
 	return Effect.fn("MapHistory.selectSubmittedChanges")(function* () {
 		if (options.fileSpecs.length === 0) {
-			return yield* Effect.fail(
-				new MapHistoryError({
-					kind: "invalid_target",
-					message: "Map history needs at least one resolved Perforce file scope.",
-					recovery:
-						"Resolve the selected map to a Perforce depot path before listing history.",
-					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new MapHistoryError({
+				kind: "invalid_target",
+				message: "Map history needs at least one resolved Perforce file scope.",
+				recovery:
+					"Resolve the selected map to a Perforce depot path before listing history.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
 		}
 
 		const source = yield* PerforceHistorySource;
@@ -114,11 +112,9 @@ export function selectSubmittedChanges(
 			});
 			if (page.items.length === 0) {
 				if (page.hasMore) {
-					return yield* Effect.fail(
-						selectionError(
-							"Perforce reported more submitted changelists without a result page.",
-							"Check the Perforce server response and retry."
-						)
+					return yield* selectionError(
+						"Perforce reported more submitted changelists without a result page.",
+						"Check the Perforce server response and retry."
 					);
 				}
 				break;
@@ -139,7 +135,7 @@ export function selectSubmittedChanges(
 				if (candidate.submittedAtMillis > until) continue;
 				selected.set(candidate.change.change, candidate.change);
 				if (selected.size > options.maxChangelists) {
-					return yield* Effect.fail(resourceLimitError(options.maxChangelists));
+					return yield* resourceLimitError(options.maxChangelists);
 				}
 			}
 			if (encounteredBaseline || !page.hasMore) break;
@@ -147,11 +143,9 @@ export function selectSubmittedChanges(
 				page.nextBeforeChange === null ||
 				(beforeChange !== undefined && page.nextBeforeChange >= beforeChange)
 			) {
-				return yield* Effect.fail(
-					selectionError(
-						"Perforce submitted-changelist pagination did not provide a descending cursor.",
-						"Check the Perforce server response and retry."
-					)
+				return yield* selectionError(
+					"Perforce submitted-changelist pagination did not provide a descending cursor.",
+					"Check the Perforce server response and retry."
 				);
 			}
 			beforeChange = page.nextBeforeChange;

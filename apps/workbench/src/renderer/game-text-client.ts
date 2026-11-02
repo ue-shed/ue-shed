@@ -163,7 +163,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 			{ bufferSize: 1, strategy: "sliding" }
 		).pipe(
 			Stream.mapEffect((progress) =>
-				Schema.decodeUnknownEffect(GameTextOperationProgress)(progress)
+				Schema.decodeEffect(GameTextOperationProgress)(progress)
 			),
 			Stream.mapError(
 				(cause) =>

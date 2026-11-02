@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields as LocalizationErrorGuidanceFields } from "@ue-shed/protocol/errors";
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 
 const PathComponent = Schema.NonEmptyString.check(
 	Schema.makeFilter(
@@ -68,13 +68,13 @@ export {
  * decoder payloads and host filesystem details are intentionally excluded from this portable
  * evidence contract.
  */
-export class LocalizationError extends Schema.TaggedError<LocalizationError>()(
-	"LocalizationError",
-	{
-		code: LocalizationErrorCode,
-		...LocalizationErrorGuidanceFields
-	}
-) {}
+export class LocalizationError extends Schema.TaggedError<
+	LocalizationError,
+	Brand.Brand<"packages/localization/src/schema/LocalizationError">
+>()("LocalizationError", {
+	code: LocalizationErrorCode,
+	...LocalizationErrorGuidanceFields
+}) {}
 
 /**
  * Evidence reads repeat safely, and writes replace one file atomically behind a content-hash

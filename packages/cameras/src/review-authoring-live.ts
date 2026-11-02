@@ -8,7 +8,7 @@ import {
 } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { fileFailureReason } from "./file-failure.js";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
 import {
 	ReviewCaptureRequest,
@@ -42,15 +42,15 @@ function pureStagingPath(
  * original cause. Correct capability/connection state before treating a candidate as
  * realized.
  */
-export class ReviewAuthoringConnectionError extends Schema.TaggedError<ReviewAuthoringConnectionError>()(
-	"ReviewAuthoringConnectionError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		endpoint: Schema.String,
-		operation: Schema.Literals(["inspect_selection", "inspect_subject", "preview_candidate"])
-	}
-) {}
+export class ReviewAuthoringConnectionError extends Schema.TaggedError<
+	ReviewAuthoringConnectionError,
+	Brand.Brand<"packages/cameras/src/review-authoring-live/ReviewAuthoringConnectionError">
+>()("ReviewAuthoringConnectionError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	endpoint: Schema.String,
+	operation: Schema.Literals(["inspect_selection", "inspect_subject", "preview_candidate"])
+}) {}
 
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 
@@ -124,7 +124,7 @@ export interface PreviewReviewCandidateArgs {
 	readonly endpoint: string;
 	readonly mapPath: string;
 	readonly profile: CaptureProfile;
-	readonly subject: typeof SubjectLocator.Type;
+	readonly subject: SubjectLocator;
 }
 
 /**
@@ -137,7 +137,7 @@ export interface ReviewAuthoringApi {
 	) => Effect.Effect<ReviewSelectionResponse, ReviewAuthoringConnectionError>;
 	readonly inspectSubject: (args: {
 		readonly endpoint: string;
-		readonly subject: typeof SubjectLocator.Type;
+		readonly subject: SubjectLocator;
 	}) => Effect.Effect<ReviewSubjectInspectionResponse, ReviewAuthoringConnectionError>;
 	readonly previewCandidate: (
 		args: PreviewReviewCandidateArgs
@@ -192,9 +192,9 @@ export const ReviewAuthoringLive = Layer.effect(
 
 		const inspectSubject = Effect.fn("ReviewAuthoring.inspectSubject")(function* (args: {
 			readonly endpoint: string;
-			readonly subject: typeof SubjectLocator.Type;
+			readonly subject: SubjectLocator;
 		}) {
-			const subject = yield* Schema.decodeUnknownEffect(SubjectLocator)(args.subject).pipe(
+			const subject = yield* Schema.decodeEffect(SubjectLocator)(args.subject).pipe(
 				Effect.mapError(
 					(cause) =>
 						new ReviewAuthoringConnectionError({

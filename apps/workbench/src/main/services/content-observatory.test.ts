@@ -18,7 +18,7 @@ import {
 } from "./content-observatory.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
-const request = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
+const request = Schema.decodeSync(ContentObservatoryHistoryRequest)({
 	mode: "deep",
 	limits: {
 		maxChangelists: 250,
@@ -31,7 +31,7 @@ const request = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
 	range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-27T00:00:00.000Z" }
 });
 
-const history = Schema.decodeUnknownSync(PerforceMapHistory)({
+const history = Schema.decodeSync(PerforceMapHistory)({
 	baseline: { status: "map_not_yet_created" },
 	completeness: "complete",
 	diagnostics: [],
@@ -83,7 +83,7 @@ const defaultSavedProject: TestSavedProject = {
 };
 
 // SAFETY: the literal mode is fast, fixing the decoded request union variant.
-const fastRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
+const fastRequest = Schema.decodeSync(ContentObservatoryHistoryRequest)({
 	mode: "fast",
 	limits: request.limits,
 	mapPath: request.mapPath,
@@ -91,7 +91,7 @@ const fastRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest)({
 	target: { identity: { actorGuid: "actor-npc-1", kind: "actor_guid" }, kind: "actor" }
 }) as Extract<ContentObservatoryHistoryRequest, { mode: "fast" }>;
 
-const fastHistory = Schema.decodeUnknownSync(PerforceFastMapHistory)({
+const fastHistory = Schema.decodeSync(PerforceFastMapHistory)({
 	baseline: { status: "map_not_yet_created" },
 	completeness: "complete",
 	coverage: {
@@ -131,7 +131,7 @@ const fastHistory = Schema.decodeUnknownSync(PerforceFastMapHistory)({
 
 function stateLayer(
 	source: MapHistoryApi,
-	savedWorld: SavedWorld | undefined = undefined,
+	savedWorld?: SavedWorld,
 	savedProject: () => Effect.Effect<TestSavedProject> = () => Effect.succeed(defaultSavedProject)
 ) {
 	return WorkbenchContentObservatoryLive.pipe(

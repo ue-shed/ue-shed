@@ -19,7 +19,7 @@ import {
 } from "./unreal-connection.js";
 
 const local = "http://127.0.0.1:30001";
-const leaseId = Schema.decodeUnknownSync(EditorForegroundLeaseId)("0".repeat(32));
+const leaseId = Schema.decodeSync(EditorForegroundLeaseId)("0".repeat(32));
 
 /** Records the engine calls; `failWith` makes the next holds fail with that reason. */
 function fakeEngine() {

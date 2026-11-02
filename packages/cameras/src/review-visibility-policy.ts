@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { ReviewRepository, type ReviewStorageError } from "./review-repository.js";
 import {
 	ReviewViewId,
@@ -16,23 +16,23 @@ import {
  * Invalid view/policy assignment, missing identity or conflicting policy ID. Correct explicit
  * selection and policy ownership before retrying; original cause is retained when available.
  */
-export class ReviewVisibilityPolicyError extends Schema.TaggedError<ReviewVisibilityPolicyError>()(
-	"ReviewVisibilityPolicyError",
-	{
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"duplicate_view",
-			"empty_selection",
-			"invalid_assignment",
-			"policy_id_conflict",
-			"policy_not_found",
-			"view_not_found"
-		]),
-		...ErrorGuidanceFields,
-		policyId: Schema.optional(Schema.String),
-		viewIds: Schema.Array(Schema.String)
-	}
-) {}
+export class ReviewVisibilityPolicyError extends Schema.TaggedError<
+	ReviewVisibilityPolicyError,
+	Brand.Brand<"packages/cameras/src/review-visibility-policy/ReviewVisibilityPolicyError">
+>()("ReviewVisibilityPolicyError", {
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"duplicate_view",
+		"empty_selection",
+		"invalid_assignment",
+		"policy_id_conflict",
+		"policy_not_found",
+		"view_not_found"
+	]),
+	...ErrorGuidanceFields,
+	policyId: Schema.optional(Schema.String),
+	viewIds: Schema.Array(Schema.String)
+}) {}
 
 /**
  * Policies with assigned view IDs and per-view overrides. This pure inspection model makes

@@ -433,7 +433,7 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 		).toMatchObject({ _tag: "Failure" });
 		const { rules: _rules, ...withoutRules } = preset;
 		expect(
-			yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)(withoutRules).pipe(
+			yield* Schema.decodeEffect(GameTextInvestigationPreset)(withoutRules).pipe(
 				Effect.result
 			)
 		).toMatchObject({ _tag: "Failure" });

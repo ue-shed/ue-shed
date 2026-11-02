@@ -159,7 +159,7 @@ const emptySummary = (corpus: TextCorpus): TextCorpusQuerySummary => ({
 /** Answers over a corpus with no text: an empty page for every search, and no unit to focus. */
 const emptyCorpusAnswers: CannedQuery = ({ corpus: { units: _units, ...header } }) => ({
 	search: () => Effect.succeed(searchPage()),
-	focus: () => Effect.succeed(undefined),
+	focus: () => Effect.undefined,
 	readCorpusHeader: () => Effect.succeed(header),
 	// The corpus export the engine writes when no unit matches.
 	writeCorpusJson: (_request, file, envelope) =>
@@ -409,10 +409,9 @@ export const makeCannedGameTextLocalization = (
 			cannedGameTextIndexLayer(
 				() =>
 					currentCorpus().pipe(
-						Effect.flatMap((corpus) =>
-							corpus
-								? Effect.succeed(corpus)
-								: Effect.die("No corpus in this test request")
+						Effect.filterOrElse(
+							(corpus) => corpus !== undefined,
+							() => Effect.die("No corpus in this test request")
 						)
 					),
 				answers
@@ -439,7 +438,7 @@ const testIndexStepsLayer = Layer.effect(
 		const evidence = yield* LocalizationEvidence;
 		const requests = new WeakMap<GameTextTargetIndex, GameTextIndexRefreshRequest>();
 		const steps: Effect.Success<typeof GameTextIndexSteps> = GameTextIndexSteps.of({
-			openCommitted: () => Effect.succeed(Option.none()),
+			openCommitted: () => Effect.succeedNone,
 			prepareTarget: (request, options) =>
 				Effect.gen(function* () {
 					const project = yield* steps.openProject(request);
@@ -447,7 +446,7 @@ const testIndexStepsLayer = Layer.effect(
 						.importTarget(project, request)
 						.pipe(Effect.result);
 					if (Result.isFailure(imported) && !options?.fallbackToSource)
-						return yield* Effect.fail(imported.failure);
+						return yield* imported.failure;
 					const input = Result.isFailure(imported)
 						? yield* steps.importTarget(project)
 						: imported.success;
@@ -466,16 +465,14 @@ const testIndexStepsLayer = Layer.effect(
 									projectRoot: project.projectRoot
 								})).targets.find((target) => target.name === request.targetName);
 					if (!target && request.targetName !== undefined)
-						return yield* Effect.fail(
-							new GameTextIndexError({
-								nextStep: "escalate",
-								retrySafe: false,
-								code: "index_failed",
-								operation: "target_not_found",
-								message: "Target not found",
-								recovery: "Select an available target."
-							})
-						);
+						return yield* new GameTextIndexError({
+							nextStep: "escalate",
+							retrySafe: false,
+							code: "index_failed",
+							operation: "target_not_found",
+							message: "Target not found",
+							recovery: "Select an available target."
+						});
 					return {
 						project,
 						view:

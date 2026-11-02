@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { assemble } from "./assemble.mts";
 
-test("copies a validated supervisor PE artifact to the requested package path", () => {
+void test("copies a validated supervisor PE artifact to the requested package path", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-engine-supervisor-assemble-"));
 	try {
 		const source = join(root, "release", "ue-shed-process-supervisor.exe");
@@ -19,7 +19,7 @@ test("copies a validated supervisor PE artifact to the requested package path", 
 	}
 });
 
-test("rejects a non-PE supervisor input", () => {
+void test("rejects a non-PE supervisor input", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-engine-supervisor-assemble-"));
 	try {
 		const source = join(root, "ue-shed-process-supervisor.exe");

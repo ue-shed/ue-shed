@@ -166,7 +166,7 @@ describe("GameTextWorkspaceContract", () => {
 						workspace.progressChanges().pipe(Stream.take(1))
 					);
 					expect(
-						yield* Schema.decodeUnknownEffect(
+						yield* Schema.decodeEffect(
 							GameTextWorkspaceContract.progressChanges.events
 						)(
 							overJson(

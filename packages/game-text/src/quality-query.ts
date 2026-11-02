@@ -644,8 +644,8 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 		}
 		const header: Omit<TextQualityReport, "findings"> = {
 			...report,
-			roles: Schema.decodeUnknownSync(Schema.Array(TextQualityRoleSummary))(roles),
-			rules: Schema.decodeUnknownSync(Schema.Array(TextQualityRuleSummary))(rules)
+			roles: Schema.decodeSync(Schema.Array(TextQualityRoleSummary))(roles),
+			rules: Schema.decodeSync(Schema.Array(TextQualityRuleSummary))(rules)
 		};
 		const summary: TextQualityQuerySummary = {
 			characterBudgetCount,

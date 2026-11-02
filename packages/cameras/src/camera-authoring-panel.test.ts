@@ -50,15 +50,13 @@ describe("replaceable native menu coordinator", () => {
 							native = { ...native, cameraId: request.cameraId, pose: request.pose };
 							if (loseActivation) {
 								loseActivation = false;
-								return yield* Effect.fail(
-									new CameraBridgeError({
-										code: "disconnected",
-										message: "Lost activation reply",
-										recovery: "Retry",
-										retrySafe: false,
-										nextStep: "reconcile"
-									})
-								);
+								return yield* new CameraBridgeError({
+									code: "disconnected",
+									message: "Lost activation reply",
+									recovery: "Retry",
+									retrySafe: false,
+									nextStep: "reconcile"
+								});
 							}
 						}
 						if (request.operation === "panel") {
@@ -87,7 +85,7 @@ describe("replaceable native menu coordinator", () => {
 			const enqueue = (action: CameraPanelAction) => {
 				native = {
 					...native,
-					panelEvent: Schema.decodeUnknownSync(CameraPanelEvent)({
+					panelEvent: Schema.decodeSync(CameraPanelEvent)({
 						id: `menu-${serial++}`,
 						expectedRevision: native.revision,
 						action

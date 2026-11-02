@@ -766,7 +766,7 @@ export async function createMapReviewFlowHarness(args: {
 				},
 				catch: (cause) => flowError("cleanup", cause)
 			}).pipe(
-				Effect.catch((error) =>
+				Effect.catchTag("MapReviewFlowExecutionError", (error) =>
 					Effect.succeed({ message: error.message, status: "failed" as const })
 				)
 			)

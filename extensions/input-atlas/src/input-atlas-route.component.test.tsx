@@ -22,7 +22,7 @@ const mappingContext = (name: string, key: string, action: string) => ({
 	exports: []
 });
 
-const report = Schema.decodeUnknownSync(EnhancedInputReport)({
+const report = Schema.decodeSync(EnhancedInputReport)({
 	schemaVersion: 1,
 	status: "complete",
 	coverage: {

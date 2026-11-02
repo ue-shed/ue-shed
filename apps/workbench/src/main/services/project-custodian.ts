@@ -43,7 +43,7 @@ export const WorkbenchCustodianLive = Layer.effect(
 				const report = yield* custodian.scan({ root: scanRoot });
 				return { status: "completed" as const, report };
 			},
-			Effect.catch((error) =>
+			Effect.catchTag("ProjectCustodian.Error", (error) =>
 				Effect.succeed({
 					status: "failed" as const,
 					error: {
@@ -75,7 +75,7 @@ export const WorkbenchCustodianLive = Layer.effect(
 				});
 				return { status: "completed" as const, proposal };
 			},
-			Effect.catch((error) =>
+			Effect.catchTag(["Workbench.ElectronAppError", "ProjectCustodian.Error"], (error) =>
 				Effect.succeed({
 					status: "failed" as const,
 					error: {
@@ -93,7 +93,7 @@ export const WorkbenchCustodianLive = Layer.effect(
 				const receipt = yield* custodian.execute(intent);
 				return { status: "completed" as const, receipt };
 			},
-			Effect.catch((error) =>
+			Effect.catchTag("ProjectCustodian.Error", (error) =>
 				Effect.succeed({
 					status: "failed" as const,
 					error: {
@@ -111,7 +111,7 @@ export const WorkbenchCustodianLive = Layer.effect(
 				const result = yield* custodian.cancel(proposalId);
 				return { status: "completed" as const, result };
 			},
-			Effect.catch((error) =>
+			Effect.catchTag("ProjectCustodian.Error", (error) =>
 				Effect.succeed({
 					status: "failed" as const,
 					error: {

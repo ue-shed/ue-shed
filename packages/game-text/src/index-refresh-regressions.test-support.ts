@@ -25,7 +25,7 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 		(directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
 	);
 	const projectRoot = yield* Effect.promise(() => realpath(directory));
-	const authored = Schema.decodeUnknownSync(LocalizationTarget)({
+	const authored = Schema.decodeSync(LocalizationTarget)({
 		...target,
 		name: "Review",
 		outputPaths: {
@@ -163,7 +163,7 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 			targets = available;
 		},
 		addTarget: (name: string) => {
-			const next = Schema.decodeUnknownSync(LocalizationTarget)({ ...authored, name });
+			const next = Schema.decodeSync(LocalizationTarget)({ ...authored, name });
 			targets = [...targets, next];
 			return next;
 		},

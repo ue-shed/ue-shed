@@ -36,7 +36,7 @@ describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtu
 			async () => {
 				if (!fixture || !executable)
 					throw new Error("Explicit fixture and native executable required");
-				const expected = Schema.decodeUnknownSync(Schema.fromJsonString(ExpectedStates))(
+				const expected = Schema.decodeSync(Schema.fromJsonString(ExpectedStates))(
 					await readFile(
 						new URL(
 							"../fixtures/unreal-project/FixtureSource/Localization/expected-states.json",

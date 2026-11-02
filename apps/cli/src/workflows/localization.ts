@@ -5,7 +5,7 @@ import { readChangedFiles } from "./changed-files.js";
 import { textWhere } from "../commands/localization-flags.js";
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { resolve } from "node:path";
-import { Effect, Metric, Result, Schema } from "effect";
+import { type Brand, Effect, Metric, Result, Schema } from "effect";
 import { AssetReaderError } from "@ue-shed/unreal-assets";
 import { indexedLocalizationStatusReport } from "@ue-shed/game-text/index";
 import {
@@ -76,25 +76,21 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 	const discovery = yield* service.discover({ projectRoot: command.projectRoot });
 	const target = discovery.targets.find((item) => item.name === selection.target);
 	if (!target)
-		return yield* Effect.fail(
-			new GameTextLocalizationError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "target_not_found",
-				message: "The selected localization target was not found.",
-				recovery: "Run loc targets and choose a listed target."
-			})
-		);
+		return yield* new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "target_not_found",
+			message: "The selected localization target was not found.",
+			recovery: "Run loc targets and choose a listed target."
+		});
 	if (selection.culture !== undefined && !target.cultures.includes(selection.culture))
-		return yield* Effect.fail(
-			new GameTextLocalizationError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "invalid_selection",
-				message: "The selected culture is not supported by the target.",
-				recovery: "Choose a culture listed by loc targets."
-			})
-		);
+		return yield* new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "invalid_selection",
+			message: "The selected culture is not supported by the target.",
+			recovery: "Choose a culture listed by loc targets."
+		});
 	const indexed = yield* refreshCliGameTextIndex(
 		{ projectRoot: command.projectRoot, targetName: target.name, requireManifest: true },
 		command.reader
@@ -113,11 +109,9 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		)
 	);
 	if (indexed.evidence.manifest.status === "failed")
-		return yield* Effect.fail(
-			localizationManifestFailure(
-				indexed.evidence.manifest.error,
-				indexed.evidence.manifest.relativePath
-			)
+		return yield* localizationManifestFailure(
+			indexed.evidence.manifest.error,
+			indexed.evidence.manifest.relativePath
 		);
 	return {
 		joined: indexed.joined,
@@ -144,25 +138,21 @@ export const loadTargetQuery = Effect.fn("Cli.localization.target_query")(functi
 	const discovery = yield* service.discover({ projectRoot });
 	const target = discovery.targets.find((item) => item.name === targetName);
 	if (!target)
-		return yield* Effect.fail(
-			new GameTextLocalizationError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "target_not_found",
-				message: `The localization target ${targetName} was not found.`,
-				recovery: "Run loc targets and choose a listed target, or edit the preset."
-			})
-		);
+		return yield* new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "target_not_found",
+			message: `The localization target ${targetName} was not found.`,
+			recovery: "Run loc targets and choose a listed target, or edit the preset."
+		});
 	const indexed = yield* refreshCliGameTextIndex(
 		{ projectRoot, targetName: target.name, requireManifest: true },
 		undefined
 	);
 	if (indexed.evidence.manifest.status === "failed")
-		return yield* Effect.fail(
-			localizationManifestFailure(
-				indexed.evidence.manifest.error,
-				indexed.evidence.manifest.relativePath
-			)
+		return yield* localizationManifestFailure(
+			indexed.evidence.manifest.error,
+			indexed.evidence.manifest.relativePath
 		);
 	return indexed.query;
 }, Effect.provide(LocalizationEvidenceNodeLive));
@@ -222,17 +212,17 @@ export const runLocalizationStatus = Effect.fn("Cli.workflow.localization_status
 		)
 );
 
-class LocalizationExportError extends Schema.TaggedError<LocalizationExportError>()(
-	"LocalizationExportError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals(["invalid_destination", "destination_exists", "unwritable"]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+class LocalizationExportError extends Schema.TaggedError<
+	LocalizationExportError,
+	Brand.Brand<"apps/cli/src/workflows/localization/LocalizationExportError">
+>()("LocalizationExportError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals(["invalid_destination", "destination_exists", "unwritable"]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 /** Writes every matching line, with a column per culture, to a new CSV file. */
 export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export")(
@@ -242,15 +232,13 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 			Effect.gen(function* () {
 				const work = Effect.gen(function* () {
 					if (!command.output.toLowerCase().endsWith(".csv"))
-						return yield* Effect.fail(
-							new LocalizationExportError({
-								retrySafe: false,
-								nextStep: "fix_input",
-								code: "invalid_destination",
-								message: "The export destination must be a CSV file.",
-								recovery: "Choose a new .csv file."
-							})
-						);
+						return yield* new LocalizationExportError({
+							retrySafe: false,
+							nextStep: "fix_input",
+							code: "invalid_destination",
+							message: "The export destination must be a CSV file.",
+							recovery: "Choose a new .csv file."
+						});
 					const { query, selection } = yield* loadLocalizationContext(command);
 					const files =
 						command.changedFiles === undefined

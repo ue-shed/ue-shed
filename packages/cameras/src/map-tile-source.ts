@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Result, Schema } from "effect";
+import { type Brand, Result, Schema } from "effect";
 import { AbsoluteCamera, CameraOutputSize } from "./camera-render-schema.js";
 import {
 	createMapTileGrid,
@@ -116,14 +116,14 @@ export interface MapTileSourceLayout {
  * Invalid grid/source or exceeded source-image budget. Correct bounds, dimensions or resource
  * policy before attempting the capture again.
  */
-export class MapTileSourceError extends Schema.TaggedError<MapTileSourceError>()(
-	"MapTileSourceError",
-	{
-		code: Schema.Literals(["invalid_grid", "invalid_source", "source_limit_exceeded"]),
-		cause: Schema.optionalKey(Schema.Defect()),
-		...ErrorGuidanceFields
-	}
-) {}
+export class MapTileSourceError extends Schema.TaggedError<
+	MapTileSourceError,
+	Brand.Brand<"packages/cameras/src/map-tile-source/MapTileSourceError">
+>()("MapTileSourceError", {
+	code: Schema.Literals(["invalid_grid", "invalid_source", "source_limit_exceeded"]),
+	cause: Schema.optionalKey(Schema.Defect()),
+	...ErrorGuidanceFields
+}) {}
 
 const decodeGrid = Schema.decodeUnknownResult(Grid, { onExcessProperty: "error" });
 const decodeSettings = Schema.decodeUnknownResult(MapTileSourceSettings, {

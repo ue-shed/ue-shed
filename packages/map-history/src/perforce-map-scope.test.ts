@@ -7,7 +7,7 @@ import { PerforceMapHistoryQuery } from "./schema.js";
 import { resolvePerforceMapScope, scopedPerforceFile } from "./perforce-map-scope.js";
 
 function query() {
-	return Schema.decodeUnknownSync(PerforceMapHistoryQuery)({
+	return Schema.decodeSync(PerforceMapHistoryQuery)({
 		limits: {
 			maxChangelists: 100,
 			maxConcurrency: 4,

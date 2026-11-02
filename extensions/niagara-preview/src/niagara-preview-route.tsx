@@ -176,7 +176,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 	let cachedBytes = 0;
 
 	const candidateIntent = createMemo(() =>
-		Schema.decodeUnknownOption(NiagaraPreviewIntentSchema)({
+		Schema.decodeOption(NiagaraPreviewIntentSchema)({
 			settings: {
 				captureMode: captureMode(),
 				durationSeconds: Number(duration()),

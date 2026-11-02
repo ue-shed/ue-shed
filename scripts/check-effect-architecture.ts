@@ -960,7 +960,7 @@ function sourcesGuardedElsewhere(root: string) {
 
 /** The source behind a `.js` module path: its TypeScript form, else the JavaScript file itself. */
 async function moduleSource(path: string) {
-	for (const candidate of /\.js$/u.test(path) ? [path.replace(/\.js$/u, ".ts"), path] : [path]) {
+	for (const candidate of path.endsWith(".js") ? [path.replace(/\.js$/u, ".ts"), path] : [path]) {
 		try {
 			await readFile(candidate, "utf8");
 			return candidate;

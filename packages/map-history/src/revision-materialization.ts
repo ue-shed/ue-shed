@@ -40,22 +40,19 @@ export function materializePlannedRevision(options: {
 	readonly tree: HistoricalProjectTree;
 }): Effect.Effect<number, MapHistoryError, PerforceHistorySource> {
 	return Effect.fn("MapHistory.materializePlannedRevision")(function* () {
-		if (options.plan.kind === "invalid") return yield* Effect.fail(options.plan.error);
+		if (options.plan.kind === "invalid") return yield* options.plan.error;
 		const materializedFiles = options.plan.files.filter(
 			(file): file is Exclude<PlannedRevisionFile, { readonly action: "delete" }> =>
 				file.action !== "delete"
 		);
 		if (materializedFiles.length > options.maxFiles) {
-			return yield* Effect.fail(
-				new MapHistoryError({
-					kind: "resource_limit",
-					message: `Changelist ${options.change} needs ${materializedFiles.length} materialized files, exceeding the limit of ${options.maxFiles}.`,
-					recovery:
-						"Narrow the selected map scope or raise maxMaterializedFiles explicitly.",
-					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new MapHistoryError({
+				kind: "resource_limit",
+				message: `Changelist ${options.change} needs ${materializedFiles.length} materialized files, exceeding the limit of ${options.maxFiles}.`,
+				recovery: "Narrow the selected map scope or raise maxMaterializedFiles explicitly.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
 		}
 		const source = yield* PerforceHistorySource;
 		const materialized =
@@ -78,11 +75,9 @@ export function materializePlannedRevision(options: {
 			}
 			const localPath = localPaths.get(materializedKey(file));
 			if (localPath === undefined) {
-				return yield* Effect.fail(
-					materializationError(
-						`Perforce did not materialize ${file.depotPath}#${file.revision}.`,
-						"Check the exact depot revision and retry the historical reconstruction."
-					)
+				return yield* materializationError(
+					`Perforce did not materialize ${file.depotPath}#${file.revision}.`,
+					"Check the exact depot revision and retry the historical reconstruction."
 				);
 			}
 			mutations.push({

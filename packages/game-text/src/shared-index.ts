@@ -257,7 +257,7 @@ function readIndex(reader: SnapshotReader) {
 		.section("index.meta")
 		.pipe(
 			Effect.flatMap((bytes) =>
-				Schema.decodeUnknownEffect(Schema.fromJsonString(SharedIndexManifestSchema))(
+				Schema.decodeEffect(Schema.fromJsonString(SharedIndexManifestSchema))(
 					new TextDecoder().decode(bytes)
 				).pipe(
 					Effect.mapError((cause) =>
@@ -376,16 +376,14 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 							? manifest.layers[key]
 							: undefined;
 					if (!record)
-						return yield* Effect.fail(
-							new SnapshotStoreError({
-								retrySafe: snapshotStoreGuidance("missing").retrySafe,
-								nextStep: snapshotStoreGuidance("missing").nextStep,
-								operation: "layer",
-								code: "missing",
-								message: `Layer ${name} (${key}) is absent.`,
-								recovery: "Import this input."
-							})
-						);
+						return yield* new SnapshotStoreError({
+							retrySafe: snapshotStoreGuidance("missing").retrySafe,
+							nextStep: snapshotStoreGuidance("missing").nextStep,
+							operation: "layer",
+							code: "missing",
+							message: `Layer ${name} (${key}) is absent.`,
+							recovery: "Import this input."
+						});
 					const file = layers.get(key)!;
 					const end = manifest.segments[record.segmentCount - 1];
 					const maximumId = end ? end.start + end.count : 0;
@@ -502,7 +500,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 						!isSnapshotStoreError(result.failure) ||
 						result.failure.code !== "missing"
 					)
-						return yield* Effect.fail(result.failure);
+						return yield* result.failure;
 				}
 			});
 			const writer = Effect.fn("SharedIndex.writer")(function* () {
@@ -512,7 +510,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					Result.isFailure(opened) &&
 					(!isSnapshotStoreError(opened.failure) || opened.failure.code !== "missing")
 				)
-					return yield* Effect.fail(opened.failure);
+					return yield* opened.failure;
 				let manifest = Result.isSuccess(opened) ? opened.success : initial();
 				let files: SharedStringFiles = yield* Effect.acquireRelease(
 					boundary("segments", () =>
@@ -540,7 +538,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					next: SharedIndexManifest
 				) {
 					const started = performance.now();
-					yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(next).pipe(
+					yield* Schema.decodeEffect(SharedIndexManifestSchema)(next).pipe(
 						Effect.mapError((cause) =>
 							snapshotFailure(
 								"index.meta",
@@ -551,9 +549,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					);
 					const bytes = new TextEncoder().encode(JSON.stringify(next));
 					if (bytes.length > 16 * 1024 ** 2)
-						return yield* Effect.fail(
-							snapshotFailure("index.meta", "Shared root exceeds 16 MiB")
-						);
+						return yield* snapshotFailure("index.meta", "Shared root exceeds 16 MiB");
 					uncertain = true;
 					yield* rootWriter.publish(
 						{
@@ -913,11 +909,9 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 										files.segments.length + domains.size >
 										maximumSharedSegments
 									)
-										return yield* Effect.fail(
-											snapshotFailure(
-												"batch",
-												"Batch exceeds segment cap; use cold publication"
-											)
+										return yield* snapshotFailure(
+											"batch",
+											"Batch exceeds segment cap; use cold publication"
 										);
 									const old = layers[active[entry.name] ?? ""];
 									const record = yield* boundary("batch.layer", () =>
@@ -1227,7 +1221,7 @@ async function convertLayer(
 					"reuse",
 					"Reuse metadata exceeds cap"
 				);
-				const oldBlocks = Schema.decodeUnknownSync(Schema.fromJsonString(FileReuse))(
+				const oldBlocks = Schema.decodeSync(Schema.fromJsonString(FileReuse))(
 					new TextDecoder().decode(await reader.load("reuse.meta"))
 				);
 				let total = 0,
@@ -1663,7 +1657,7 @@ async function validateCachedLayer(
 			"Layer metadata or size differs"
 		);
 		const bytes = await reader.load("shared.meta");
-		const metadata = Schema.decodeUnknownSync(Schema.fromJsonString(LayerRecord))(
+		const metadata = Schema.decodeSync(Schema.fromJsonString(LayerRecord))(
 			new TextDecoder().decode(bytes)
 		);
 		snapshotCheck(

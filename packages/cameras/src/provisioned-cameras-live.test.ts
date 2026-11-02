@@ -12,7 +12,7 @@ import {
 	ProvisionedCameraSpec
 } from "./provisioned-cameras-live.js";
 
-const camera = Schema.decodeUnknownSync(ProvisionedCameraSpec)({
+const camera = Schema.decodeSync(ProvisionedCameraSpec)({
 	correlation: { reviewViewId: "overview", type: "review_view" },
 	height: 180,
 	location: { x: 0, y: 0, z: 500 },
@@ -20,7 +20,7 @@ const camera = Schema.decodeUnknownSync(ProvisionedCameraSpec)({
 	rotation: { pitch: -30, roll: 0, yaw: 0 },
 	width: 320
 });
-const visibleCamera = Schema.decodeUnknownSync(ProvisionedCameraSpec)({
+const visibleCamera = Schema.decodeSync(ProvisionedCameraSpec)({
 	...camera,
 	visibility: { hide: [], protect: [] }
 });

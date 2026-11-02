@@ -2,26 +2,26 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, rename, rm, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 
-export class CaptureFilesystemError extends Schema.TaggedError<CaptureFilesystemError>()(
-	"CaptureFilesystemError",
-	{
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect()),
-		operation: Schema.Literals(["discard", "prepare", "promote", "store", "write"]),
-		path: Schema.String
-	}
-) {}
+export class CaptureFilesystemError extends Schema.TaggedError<
+	CaptureFilesystemError,
+	Brand.Brand<"packages/cameras/src/capture-destination/CaptureFilesystemError">
+>()("CaptureFilesystemError", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect()),
+	operation: Schema.Literals(["discard", "prepare", "promote", "store", "write"]),
+	path: Schema.String
+}) {}
 
-export class CaptureArtifactSourceRejected extends Schema.TaggedError<CaptureArtifactSourceRejected>()(
-	"CaptureArtifactSourceRejected",
-	{
-		...ErrorGuidanceFields,
-		path: Schema.String,
-		root: Schema.String
-	}
-) {}
+export class CaptureArtifactSourceRejected extends Schema.TaggedError<
+	CaptureArtifactSourceRejected,
+	Brand.Brand<"packages/cameras/src/capture-destination/CaptureArtifactSourceRejected">
+>()("CaptureArtifactSourceRejected", {
+	...ErrorGuidanceFields,
+	path: Schema.String,
+	root: Schema.String
+}) {}
 
 export interface FilesystemCaptureAttempt {
 	readonly discard: () => Effect.Effect<void, CaptureFilesystemError>;
@@ -337,18 +337,15 @@ export function makeFilesystemCaptureDestination(
 						})
 				});
 				if (sourcePath === undefined) {
-					return yield* Effect.fail(
-						new CaptureArtifactSourceRejected({
-							message:
-								"Unreal returned an artifact outside its authorized staging root.",
-							nextStep: "escalate",
-							path: input.sourcePath,
-							recovery:
-								"Do not trust this capture; update the Core and Cameras plugins together and report the artifact path if it recurs.",
-							retrySafe: false,
-							root: input.sourceRoot
-						})
-					);
+					return yield* new CaptureArtifactSourceRejected({
+						message: "Unreal returned an artifact outside its authorized staging root.",
+						nextStep: "escalate",
+						path: input.sourcePath,
+						recovery:
+							"Do not trust this capture; update the Core and Cameras plugins together and report the artifact path if it recurs.",
+						retrySafe: false,
+						root: input.sourceRoot
+					});
 				}
 				return yield* Effect.tryPromise({
 					try: async () => {

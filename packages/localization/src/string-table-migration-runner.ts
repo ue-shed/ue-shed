@@ -7,7 +7,7 @@ import {
 	type GameTextAction,
 	type GameTextActionsRequest
 } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Schema, Semaphore } from "effect";
+import { type Brand, Context, Effect, Layer, Schema, Semaphore } from "effect";
 import {
 	localizationTextActionsRequest,
 	runLocalizationTextActions,
@@ -59,13 +59,13 @@ export const StringTableKeyMigrationApproval = Schema.Struct({
 export type StringTableKeyMigrationApproval = typeof StringTableKeyMigrationApproval.Type;
 
 /** Typed workflow failure. Native results remain in the durable journal when recovery is required. */
-export class StringTableKeyMigrationError extends Schema.TaggedError<StringTableKeyMigrationError>()(
-	"StringTableKeyMigrationError",
-	{
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class StringTableKeyMigrationError extends Schema.TaggedError<
+	StringTableKeyMigrationError,
+	Brand.Brand<"packages/localization/src/string-table-migration-runner/StringTableKeyMigrationError">
+>()("StringTableKeyMigrationError", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 type HostFailure = { readonly message: string; readonly recovery: string };
 
 /** Host-owned selection, durable atomic storage, config compare/replace and saved-reader authority. */
@@ -416,7 +416,7 @@ export const makeStringTableKeyMigrations = Effect.fn("Localization.stringTable.
 		const inspect = Effect.fn("Localization.stringTable.migrations.inspect")(function* (
 			id: StringTableKeyMigrationId
 		) {
-			const key = yield* Schema.decodeUnknownEffect(StringTableKeyMigrationId)(id);
+			const key = yield* Schema.decodeEffect(StringTableKeyMigrationId)(id);
 			return yield* Schema.decodeUnknownEffect(StringTableKeyMigrationRecord)(
 				yield* host.store.read(key)
 			);

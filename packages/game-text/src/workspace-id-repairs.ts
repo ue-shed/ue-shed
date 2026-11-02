@@ -1,7 +1,7 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
-import { Effect, Option, Schema, Semaphore } from "effect";
+import { type Brand, Effect, Option, Schema, Semaphore } from "effect";
 import { inspectUnrealProducer, RemoteControlClient } from "@ue-shed/unreal-connection";
 import { AssetReader, extractProjectTextPackages } from "@ue-shed/unreal-assets";
 import { Stream } from "effect";
@@ -40,7 +40,10 @@ export interface GameTextIdRepairsHost {
 }
 
 /** Domain failure returned as reviewable recovery information, including indeterminate writes. */
-class RepairError extends Schema.TaggedError<RepairError>()("TextIdRepairError", {
+class RepairError extends Schema.TaggedError<
+	RepairError,
+	Brand.Brand<"packages/game-text/src/workspace-id-repairs/RepairError">
+>()("TextIdRepairError", {
 	cause: Schema.optionalKey(Schema.Defect()),
 	message: Schema.String,
 	recovery: Schema.String,
@@ -189,7 +192,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			{ exclusive }
 		);
 	const prepare = Effect.fn("GameText.idRepairs.prepare")(function* (input: TextIdRepairRequest) {
-		const request = yield* Schema.decodeUnknownEffect(TextIdRepairRequest)(input).pipe(
+		const request = yield* Schema.decodeEffect(TextIdRepairRequest)(input).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -272,7 +275,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			nextStep: "reconcile"
 		});
 	const apply = Effect.fn("GameText.idRepairs.apply")(function* (input: TextIdRepairId) {
-		const id = yield* Schema.decodeUnknownEffect(TextIdRepairId)(input).pipe(
+		const id = yield* Schema.decodeEffect(TextIdRepairId)(input).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -288,7 +291,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 		const bytes = yield* host.files.readFileWithin(root, `${folder}/${id}.json`, {
 			maxBytes: 4 * 1024 * 1024
 		});
-		const artifact = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Artifact))(
+		const artifact = yield* Schema.decodeEffect(Schema.fromJsonString(Artifact))(
 			new TextDecoder().decode(bytes)
 		).pipe(
 			Effect.mapError(
@@ -437,10 +440,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			}).pipe(Effect.mapError(claimed));
 		}).pipe(Effect.ensuring(host.workspace.endOperation()));
 	});
-	const failure = (
-		error: Effect.Error<ReturnType<typeof apply>> | Effect.Error<ReturnType<typeof prepare>>,
-		mutation: boolean
-	) => {
+	const failure = (error: Effect.Error<ReturnType<typeof apply>>, mutation: boolean) => {
 		// Keep each failure's own guidance; only unguided failures fall back to the phase default.
 		const guidance = Schema.decodeUnknownOption(Guidance)(error);
 		return unavailable({

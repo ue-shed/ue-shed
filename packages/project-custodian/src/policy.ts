@@ -1,5 +1,5 @@
 import type { CustodianPolicy, ProjectTargetKey } from "./schema.js";
-import { Schema } from "effect";
+import { Schema, Predicate } from "effect";
 
 /** One reclaimable project location with its rebuild cost, risk and default selection. */
 export interface ProjectTargetDefinition {
@@ -154,7 +154,7 @@ function isRecord(value: Schema.Json): value is Schema.JsonObject {
 }
 
 function nonNegativeNumber(value: Schema.Json): value is number {
-	return Schema.is(Schema.Number)(value) && Number.isFinite(value) && value >= 0;
+	return Predicate.isNumber(value) && Number.isFinite(value) && value >= 0;
 }
 
 /**

@@ -23,7 +23,7 @@ export const savedFixtureCorpus = Effect.fn("Test.GameText.savedFixtureCorpus")(
 	if (file) {
 		const cached = yield* Effect.promise(async () => {
 			try {
-				return Schema.decodeUnknownSync(Schema.fromJsonString(TextCorpus))(
+				return Schema.decodeSync(Schema.fromJsonString(TextCorpus))(
 					await readFile(file, "utf8")
 				);
 			} catch (cause) {

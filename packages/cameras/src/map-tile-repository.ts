@@ -12,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import {
 	CaptureArtifactSourceRejected,
 	type CaptureFilesystemError,
@@ -39,42 +39,46 @@ export const DEFAULT_MAP_CAPTURE_ROOT = ".ue-shed/map-capture";
  * retained attempts before retrying publication; it is separate from an editor capture
  * failure.
  */
-export class MapCaptureStorageError extends Schema.TaggedError<MapCaptureStorageError>()(
-	"MapCaptureStorageError",
-	{
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect()),
-		operation: Schema.Literals([
-			"discard_staging",
-			"finalize",
-			"list_runs",
-			"load_plan",
-			"prepare",
-			"quarantine",
-			"save_plan",
-			"store_tile",
-			"validate_project",
-			"write_manifest"
-		]),
-		path: Schema.String
-	}
-) {}
+export class MapCaptureStorageError extends Schema.TaggedError<
+	MapCaptureStorageError,
+	Brand.Brand<"packages/cameras/src/map-tile-repository/MapCaptureStorageError">
+>()("MapCaptureStorageError", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect()),
+	operation: Schema.Literals([
+		"discard_staging",
+		"finalize",
+		"list_runs",
+		"load_plan",
+		"prepare",
+		"quarantine",
+		"save_plan",
+		"store_tile",
+		"validate_project",
+		"write_manifest"
+	]),
+	path: Schema.String
+}) {}
 
 /**
  * Artifact source lies outside the explicitly authorized capture root or fails source
  * validation. Do not copy arbitrary editor-supplied paths into trusted run history.
  */
-export class MapCaptureArtifactSourceRejected extends Schema.TaggedError<MapCaptureArtifactSourceRejected>()(
-	"MapCaptureArtifactSourceRejected",
-	{
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect()),
-		path: Schema.String,
-		root: Schema.String
-	}
-) {}
+export class MapCaptureArtifactSourceRejected extends Schema.TaggedError<
+	MapCaptureArtifactSourceRejected,
+	Brand.Brand<"packages/cameras/src/map-tile-repository/MapCaptureArtifactSourceRejected">
+>()("MapCaptureArtifactSourceRejected", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect()),
+	path: Schema.String,
+	root: Schema.String
+}) {}
 
-function writeJsonAtomically<Value>(path: string, value: Value): Effect.Effect<void, unknown> {
+function writeJsonAtomically<Value, E>(
+	path: string,
+	value: Value,
+	onError: (cause: unknown) => E
+): Effect.Effect<void, E> {
 	return Effect.tryPromise({
 		try: async () => {
 			await mkdir(dirname(path), { recursive: true });
@@ -93,7 +97,7 @@ function writeJsonAtomically<Value>(path: string, value: Value): Effect.Effect<v
 				throw cause;
 			}
 		},
-		catch: (cause) => cause
+		catch: onError
 	});
 }
 
@@ -473,28 +477,30 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 		});
 	}),
 	finalize: Effect.fn("MapCaptureRepository.finalize")(function* (args) {
+		const onError = (cause: unknown) =>
+			storageError({
+				cause,
+				operation: "finalize",
+				path: args.finalRoot,
+				recovery: "Inspect the staged run and retry atomic finalization.",
+				retrySafe: false,
+				nextStep: "reconcile"
+			});
 		yield* Effect.gen(function* () {
 			yield* Effect.tryPromise({
 				try: () => mkdir(dirname(args.finalRoot), { recursive: true }),
-				catch: (cause) => cause
+				catch: onError
 			});
-			yield* writeJsonAtomically(join(args.stagingRoot, "manifest.json"), args.manifest);
+			yield* writeJsonAtomically(
+				join(args.stagingRoot, "manifest.json"),
+				args.manifest,
+				onError
+			);
 			yield* Effect.tryPromise({
 				try: () => rename(args.stagingRoot, args.finalRoot),
-				catch: (cause) => cause
+				catch: onError
 			});
-		}).pipe(
-			Effect.mapError((cause) =>
-				storageError({
-					cause,
-					operation: "finalize",
-					path: args.finalRoot,
-					recovery: "Inspect the staged run and retry atomic finalization.",
-					retrySafe: false,
-					nextStep: "reconcile"
-				})
-			)
-		);
+		});
 	}),
 	listRuns: Effect.fn("MapCaptureRepository.listRuns")(function* (args) {
 		const root = mapCaptureRunsRoot(args.projectRoot, args.planId);
@@ -572,17 +578,15 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 		);
 	}),
 	savePlan: Effect.fn("MapCaptureRepository.savePlan")(function* (path, plan) {
-		yield* writeJsonAtomically(path, plan).pipe(
-			Effect.mapError((cause) =>
-				storageError({
-					cause,
-					operation: "save_plan",
-					path,
-					recovery: "Check the plan destination permissions and retry Save or Save As.",
-					retrySafe: true,
-					nextStep: "retry"
-				})
-			)
+		yield* writeJsonAtomically(path, plan, (cause) =>
+			storageError({
+				cause,
+				operation: "save_plan",
+				path,
+				recovery: "Check the plan destination permissions and retry Save or Save As.",
+				retrySafe: true,
+				nextStep: "retry"
+			})
 		);
 	}),
 	prepare: Effect.fn("MapCaptureRepository.prepare")(function* (args) {
@@ -603,28 +607,30 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 		});
 	}),
 	quarantine: Effect.fn("MapCaptureRepository.quarantine")(function* (args) {
+		const onError = (cause: unknown) =>
+			storageError({
+				cause,
+				operation: "quarantine",
+				path: args.attemptRoot,
+				recovery: "Inspect the .staging run and move it to the attempts tree manually.",
+				retrySafe: false,
+				nextStep: "reconcile"
+			});
 		yield* Effect.gen(function* () {
 			yield* Effect.tryPromise({
 				try: () => mkdir(dirname(args.attemptRoot), { recursive: true }),
-				catch: (cause) => cause
+				catch: onError
 			});
-			yield* writeJsonAtomically(join(args.stagingRoot, "manifest.json"), args.manifest);
+			yield* writeJsonAtomically(
+				join(args.stagingRoot, "manifest.json"),
+				args.manifest,
+				onError
+			);
 			yield* Effect.tryPromise({
 				try: () => rename(args.stagingRoot, args.attemptRoot),
-				catch: (cause) => cause
+				catch: onError
 			});
-		}).pipe(
-			Effect.mapError((cause) =>
-				storageError({
-					cause,
-					operation: "quarantine",
-					path: args.attemptRoot,
-					recovery: "Inspect the .staging run and move it to the attempts tree manually.",
-					retrySafe: false,
-					nextStep: "reconcile"
-				})
-			)
-		);
+		});
 	}),
 	storeTile: Effect.fn("MapCaptureRepository.storeTile")(function* (args) {
 		return yield* Effect.tryPromise({

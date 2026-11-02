@@ -153,7 +153,7 @@ describe("DataTable row relationships", () => {
 			snapshot(rightPath, [row("Right")])
 		]);
 
-		expect(Schema.decodeUnknownSync(RowReferenceReport)(report)).toEqual(report);
+		expect(Schema.decodeSync(RowReferenceReport)(report)).toEqual(report);
 		expect(report.summary).toEqual({
 			issueCount: 0,
 			referenceCount: 1,

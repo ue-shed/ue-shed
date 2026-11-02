@@ -1,4 +1,4 @@
-import { Result, Schema } from "effect";
+import { type Brand, Result, Schema } from "effect";
 import { currentLocalizationTranslation } from "./change-set-review.js";
 import {
 	CultureCode,
@@ -96,13 +96,13 @@ export type LocalizationReviewFile = typeof LocalizationReviewFile.Type;
  * Malformed, duplicate or wrong-target review metadata. Correct or reconcile the review
  * document before retrying; errors do not expose authored text payloads.
  */
-export class LocalizationReviewFileError extends Schema.TaggedError<LocalizationReviewFileError>()(
-	"LocalizationReviewFileError",
-	{
-		code: Schema.Literals(["invalid_review_file", "duplicate_review_record", "wrong_target"]),
-		...ErrorGuidanceFields
-	}
-) {}
+export class LocalizationReviewFileError extends Schema.TaggedError<
+	LocalizationReviewFileError,
+	Brand.Brand<"packages/localization/src/review-file/LocalizationReviewFileError">
+>()("LocalizationReviewFileError", {
+	code: Schema.Literals(["invalid_review_file", "duplicate_review_record", "wrong_target"]),
+	...ErrorGuidanceFields
+}) {}
 
 /** The project-relative default location, kept beside Unreal's own localization configs. */
 export function defaultLocalizationReviewPath(target: LocalizationTargetName): string {
@@ -149,7 +149,7 @@ export function decodeLocalizationReviewFile(
 	text: string,
 	target: LocalizationTargetName
 ): Result.Result<LocalizationReviewFile, LocalizationReviewFileError> {
-	const decoded = Schema.decodeUnknownResult(Schema.fromJsonString(LocalizationReviewFile))(text);
+	const decoded = Schema.decodeResult(Schema.fromJsonString(LocalizationReviewFile))(text);
 	if (Result.isFailure(decoded))
 		return Result.fail(
 			new LocalizationReviewFileError({

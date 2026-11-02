@@ -10,7 +10,7 @@ import {
 	type ErrorNextStep
 } from "@ue-shed/protocol";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Clock, Context, Duration, Effect, Layer, Schedule, Schema } from "effect";
+import { type Brand, Clock, Context, Duration, Effect, Layer, Schedule, Schema } from "effect";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const capability = "editor.world-control.v1";
@@ -20,22 +20,22 @@ const capability = "editor.world-control.v1";
  * operation identity and honor reconciliation guidance because an open may already have
  * reached Unreal.
  */
-export class EditorWorldControlError extends Schema.TaggedError<EditorWorldControlError>()(
-	"EditorWorldControlError",
-	{
-		code: Schema.Literals([
-			"capability_unavailable",
-			"contract_failure",
-			"request_invalid",
-			"operation_indeterminate",
-			"transport_failure"
-		]),
-		endpoint: Schema.String,
-		operation: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class EditorWorldControlError extends Schema.TaggedError<
+	EditorWorldControlError,
+	Brand.Brand<"packages/engine/src/editor-world-control/EditorWorldControlError">
+>()("EditorWorldControlError", {
+	code: Schema.Literals([
+		"capability_unavailable",
+		"contract_failure",
+		"request_invalid",
+		"operation_indeterminate",
+		"transport_failure"
+	]),
+	endpoint: Schema.String,
+	operation: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /**
  * Explicit endpoint, operation ID and map package path for opening an editor world. The ID
@@ -146,18 +146,16 @@ export const EditorWorldControlLive = Layer.effect(
 				)
 			);
 			if (!manifest.capabilities.includes(capability) || !manifest.worldControlObjectPath) {
-				return yield* Effect.fail(
-					failure({
-						code: "capability_unavailable",
-						endpoint,
-						message: `Connected producer does not advertise ${capability}.`,
-						operation,
-						recovery:
-							"Enable a compatible UEShedCoreEditor module in Unreal Editor, then reconnect.",
-						retrySafe: false,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* failure({
+					code: "capability_unavailable",
+					endpoint,
+					message: `Connected producer does not advertise ${capability}.`,
+					operation,
+					recovery:
+						"Enable a compatible UEShedCoreEditor module in Unreal Editor, then reconnect.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				});
 			}
 			return {
 				endpoint,
@@ -224,7 +222,7 @@ export const EditorWorldControlLive = Layer.effect(
 		) {
 			const endpoint = normalizedEndpoint(options.endpoint);
 			const operation = "editor.world_control.open";
-			const request = yield* Schema.decodeUnknownEffect(EditorWorldOpenRequest)({
+			const request = yield* Schema.decodeEffect(EditorWorldOpenRequest)({
 				contract: {
 					name: "unreal-editor-world-control",
 					version: { major: 1, minor: 0 }

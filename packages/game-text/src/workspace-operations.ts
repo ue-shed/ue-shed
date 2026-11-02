@@ -267,7 +267,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 						};
 						const prepared = yield* runner.plan(runRequest);
 						for (const file of prepared.files)
-							yield* Schema.decodeUnknownEffect(OperationRelativePath)(
+							yield* Schema.decodeEffect(OperationRelativePath)(
 								file.relativePath
 							).pipe(
 								Effect.mapError((cause) =>
@@ -293,7 +293,11 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 						if (!(yield* authorized(saved))) return stale();
 						yield* Ref.set(confirmation, saved);
 						return { status: "ready" as const, plan: view };
-					}).pipe(Effect.catch((error) => Effect.succeed(failure(error, appName))))
+					}).pipe(
+						Effect.catchTag("LocalizationOperationError", (error) =>
+							Effect.succeed(failure(error, appName))
+						)
+					)
 				).pipe(Effect.ensuring(gameText.endOperation()));
 			})
 		);
@@ -396,7 +400,11 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 						changedFileCount: result.changes.length
 					});
 					return completed;
-				}).pipe(Effect.catch((error) => Effect.succeed(failure(error, appName))));
+				}).pipe(
+					Effect.catchTag("LocalizationOperationError", (error) =>
+						Effect.succeed(failure(error, appName))
+					)
+				);
 				const complete = execute.pipe(
 					Effect.onExit((exit) =>
 						Effect.gen(function* () {
@@ -439,7 +447,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 					),
 					Effect.asVoid,
 					// The exit above has delivered the safe result and completed owned cleanup.
-					Effect.catchCause(() => Effect.void)
+					Effect.ignoreCause
 				);
 				yield* publish(initial);
 				const fiber = yield* complete.pipe(
@@ -497,7 +505,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 		const page = source.files;
 		if (
 			page.some((file) =>
-				Result.isFailure(Schema.decodeUnknownResult(OperationRelativePath)(file.path))
+				Result.isFailure(Schema.decodeResult(OperationRelativePath)(file.path))
 			)
 		)
 			return failed(

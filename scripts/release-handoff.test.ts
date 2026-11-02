@@ -33,7 +33,7 @@ const evidence: ReleaseEvidence = {
 	}
 };
 
-test("a handoff carries the evidence with the pack left to wherever it is unpacked", () => {
+void test("a handoff carries the evidence with the pack left to wherever it is unpacked", () => {
 	const travelling = handoffEvidence(evidence);
 	assert.deepEqual(travelling.gates, evidence.gates);
 	assert.deepEqual(travelling.pack, { directory: ".", commit: "1234567890" });
@@ -41,7 +41,7 @@ test("a handoff carries the evidence with the pack left to wherever it is unpack
 	assert.equal(handoffRelease("0.24.0"), "release-handoff-0.24.0");
 });
 
-test("received evidence points at the unpacked handoff and must be for this version", () => {
+void test("received evidence points at the unpacked handoff and must be for this version", () => {
 	const text = JSON.stringify(handoffEvidence(evidence));
 	assert.deepEqual(receivedEvidence(text, "0.24.0", "C:/here/npm").pack, {
 		directory: "C:/here/npm",
@@ -50,7 +50,7 @@ test("received evidence points at the unpacked handoff and must be for this vers
 	assert.throws(() => receivedEvidence(text, "0.25.0", "C:/here/npm"), /holds 0\.24\.0/u);
 });
 
-test("a checkout with its own evidence for the version fetches nothing", () => {
+void test("a checkout with its own evidence for the version fetches nothing", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-handoff-"));
 	try {
 		const path = releaseEvidencePath("0.24.0", root);
@@ -62,7 +62,7 @@ test("a checkout with its own evidence for the version fetches nothing", () => {
 	}
 });
 
-test("a handoff uploads the kept pack without the plans publication writes", () => {
+void test("a handoff uploads the kept pack without the plans publication writes", () => {
 	const pack = mkdtempSync(join(tmpdir(), "ue-shed-handoff-pack-"));
 	try {
 		for (const name of [

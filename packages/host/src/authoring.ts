@@ -302,7 +302,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 			);
 			return { snapshot, status: "ready" as const };
 		},
-		Effect.catch((error) =>
+		Effect.catchTag("AssetReaderError", (error) =>
 			Effect.succeed(
 				readerFailure(
 					`Could not read the saved DataTable: ${error.message}`,
@@ -326,7 +326,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 					Effect.as({ snapshot, status: "ready" as const })
 				)
 			),
-			Effect.catch((error) =>
+			Effect.catchTag("UnrealConnectionError", (error) =>
 				configurationService.remoteControlEndpoint().pipe(
 					Effect.flatMap((endpoint) => Cache.invalidate(connectionCache, endpoint)),
 					Effect.as(
@@ -542,7 +542,19 @@ const makeShedAuthoring = Effect.gen(function* () {
 			}
 			const document = yield* service.create([snapshot]);
 			return { status: "ready" as const, view: sessionView(document, objectPath) };
-		}).pipe(Effect.catch(toSessionFailure));
+		}).pipe(
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
+		);
 	});
 
 	const listSessions = Effect.fn("ShedAuthoring.listSessions")(function* () {
@@ -557,7 +569,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 				),
 				status: "ready" as const
 			})),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag("AuthoringSessionStorageError", toSessionFailure)
 		);
 	});
 
@@ -567,13 +579,22 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		const service = sessions.value;
 		return yield* service.open(sessionId).pipe(
-			Effect.flatMap((document) =>
-				document.lifecycle === "closed"
-					? service.resume(sessionId)
-					: Effect.succeed(document)
+			Effect.filterOrElse(
+				(document) => !(document.lifecycle === "closed"),
+				() => service.resume(sessionId)
 			),
 			Effect.map(documentView),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
 		);
 	});
 
@@ -583,7 +604,17 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		return yield* sessions.value.discard(sessionId).pipe(
 			Effect.flatMap(() => listSessions()),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
 		);
 	});
 
@@ -643,7 +674,17 @@ const makeShedAuthoring = Effect.gen(function* () {
 				status: "ready" as const,
 				view: sessionView(document, intent.tableObjectPath)
 			})),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
 		);
 	});
 
@@ -653,7 +694,17 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		return yield* sessions.value.review(sessionId).pipe(
 			Effect.map((review) => ({ review, status: "ready" as const })),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
 		);
 	});
 
@@ -663,7 +714,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		return yield* sessions.value
 			.undo(sessionId)
-			.pipe(Effect.map(documentView), Effect.catch(toSessionFailure));
+			.pipe(
+				Effect.map(documentView),
+				Effect.catchTag(
+					[
+						"InvalidSessionIdError",
+						"SessionNotFoundError",
+						"AuthoringSessionStorageError",
+						"SessionCorruptError",
+						"AuthoringSessionTransitionError",
+						"DraftIntentError"
+					],
+					toSessionFailure
+				)
+			);
 	});
 
 	const redoSession = Effect.fn("ShedAuthoring.redoSession")(function* (sessionId: string) {
@@ -672,7 +736,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		return yield* sessions.value
 			.redo(sessionId)
-			.pipe(Effect.map(documentView), Effect.catch(toSessionFailure));
+			.pipe(
+				Effect.map(documentView),
+				Effect.catchTag(
+					[
+						"InvalidSessionIdError",
+						"SessionNotFoundError",
+						"AuthoringSessionStorageError",
+						"SessionCorruptError",
+						"AuthoringSessionTransitionError",
+						"DraftIntentError"
+					],
+					toSessionFailure
+				)
+			);
 	});
 
 	const requireLiveConnection = (): Effect.Effect<
@@ -703,8 +780,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 					Effect.map(documentView)
 				);
 		}).pipe(
-			Effect.catch((cause: SessionFailureCause) =>
-				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			Effect.catchTag(
+				[
+					"UnrealConnectionError",
+					"UnrealCapabilityError",
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError",
+					"AuthoringSessionLiveError"
+				],
+				(cause: SessionFailureCause) =>
+					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
 			)
 		);
 	});
@@ -725,8 +814,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 					Effect.map(documentView)
 				);
 		}).pipe(
-			Effect.catch((cause: SessionFailureCause) =>
-				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			Effect.catchTag(
+				[
+					"UnrealConnectionError",
+					"UnrealCapabilityError",
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError",
+					"AuthoringSessionLiveError"
+				],
+				(cause: SessionFailureCause) =>
+					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
 			)
 		);
 	});
@@ -745,8 +846,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 					Effect.map(documentView)
 				);
 		}).pipe(
-			Effect.catch((cause: SessionFailureCause) =>
-				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			Effect.catchTag(
+				[
+					"UnrealConnectionError",
+					"UnrealCapabilityError",
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError",
+					"AuthoringSessionLiveError"
+				],
+				(cause: SessionFailureCause) =>
+					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
 			)
 		);
 	});
@@ -778,15 +891,13 @@ export const ShedAuthoringLive = Layer.effect(
 		const configuration = yield* ShedHostConfiguration;
 		const hosts = yield* Cache.makeWith(
 			({ project, endpoint }: AuthoringTarget) =>
-				Effect.gen(function* () {
-					return yield* makeShedAuthoring.pipe(
-						Effect.provideService(ShedHostConfiguration, {
-							...configuration,
-							project: () => Effect.succeed(project),
-							remoteControlEndpoint: () => Effect.succeed(endpoint)
-						})
-					);
-				}),
+				makeShedAuthoring.pipe(
+					Effect.provideService(ShedHostConfiguration, {
+						...configuration,
+						project: () => Effect.succeed(project),
+						remoteControlEndpoint: () => Effect.succeed(endpoint)
+					})
+				),
 			{ capacity: 16, timeToLive: () => Duration.infinity }
 		);
 		const selected = Effect.fn("ShedAuthoring.selected")(function* () {

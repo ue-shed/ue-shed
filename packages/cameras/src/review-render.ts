@@ -101,7 +101,7 @@ export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(fun
 	readonly request: typeof ReviewCaptureRequestCurrent.Type;
 }) {
 	const client = yield* RemoteControlClient;
-	const request = yield* Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent)(args.request, {
+	const request = yield* Schema.decodeEffect(ReviewCaptureRequestCurrent)(args.request, {
 		onExcessProperty: "error"
 	});
 	if (request.authoredVisibility)

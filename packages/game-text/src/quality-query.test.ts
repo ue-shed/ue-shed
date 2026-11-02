@@ -148,7 +148,7 @@ describe("text quality query", () => {
 		});
 		const page = query.search({ filter: "all", pageSize: 1 });
 		expect(page.findings).toHaveLength(1);
-		expect(Schema.decodeUnknownSync(TextQualitySearchPage)(page)).toEqual(page);
+		expect(Schema.decodeSync(TextQualitySearchPage)(page)).toEqual(page);
 		expect(page.findings[0]).not.toHaveProperty("affectedOccurrences");
 		expect(page.nextCursor).toBe(page.findings[0]?.id);
 		expect(page.findings[0]).toMatchObject({

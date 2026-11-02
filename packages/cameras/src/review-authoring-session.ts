@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Option, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Option, Schema } from "effect";
 import { bootstrapMapReviewSet } from "./review-bootstrap.js";
 import {
 	applyCandidateOverrides,
@@ -84,25 +84,25 @@ function candidatesForRevision(args: {
  * Persisted session create/load/patch/reframe/resume/approve/discard failure with operation
  * and path. Recovery distinguishes corrupt/stale inputs from resumable authoring work.
  */
-export class ReviewAuthoringSessionError extends Schema.TaggedError<ReviewAuthoringSessionError>()(
-	"ReviewAuthoringSessionError",
-	{
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect()),
-		operation: Schema.Literals([
-			"approve",
-			"create",
-			"discard",
-			"list",
-			"load",
-			"patch",
-			"reframe",
-			"resume",
-			"save"
-		]),
-		path: Schema.String
-	}
-) {}
+export class ReviewAuthoringSessionError extends Schema.TaggedError<
+	ReviewAuthoringSessionError,
+	Brand.Brand<"packages/cameras/src/review-authoring-session/ReviewAuthoringSessionError">
+>()("ReviewAuthoringSessionError", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect()),
+	operation: Schema.Literals([
+		"approve",
+		"create",
+		"discard",
+		"list",
+		"load",
+		"patch",
+		"reframe",
+		"resume",
+		"save"
+	]),
+	path: Schema.String
+}) {}
 
 function sessionRoot(projectRoot: string): string {
 	return join(projectRoot, ".ue-shed", "review", REVIEW_AUTHORING_SESSIONS_DIRECTORY);
@@ -123,7 +123,7 @@ export function reviewAuthoringSessionPath(args: {
 export function nextReviewViewId(args: {
 	readonly displayName: string;
 	readonly reviewSet: ReviewSet;
-}): typeof ReviewViewId.Type {
+}): ReviewViewId {
 	const stem =
 		args.displayName
 			.normalize("NFKD")
@@ -142,7 +142,11 @@ export function nextReviewViewId(args: {
 	}
 }
 
-function writeJsonAtomically<Value>(path: string, value: Value): Effect.Effect<void, unknown> {
+function writeJsonAtomically<Value, E>(
+	path: string,
+	value: Value,
+	onError: (cause: unknown) => E
+): Effect.Effect<void, E> {
 	return Effect.tryPromise({
 		try: async () => {
 			await mkdir(dirname(path), { recursive: true });
@@ -161,7 +165,7 @@ function writeJsonAtomically<Value>(path: string, value: Value): Effect.Effect<v
 				throw cause;
 			}
 		},
-		catch: (cause) => cause
+		catch: onError
 	});
 }
 
@@ -189,7 +193,7 @@ function decodeSessionId(
 	operation: ReviewAuthoringSessionError["operation"],
 	projectRoot: string
 ): Effect.Effect<ReviewAuthoringSessionId, ReviewAuthoringSessionError> {
-	return Schema.decodeUnknownEffect(ReviewAuthoringSessionId)(id).pipe(
+	return Schema.decodeEffect(ReviewAuthoringSessionId)(id).pipe(
 		Effect.mapError((cause) =>
 			sessionError({
 				cause,
@@ -243,17 +247,16 @@ function saveDocument(args: {
 	readonly session: ReviewAuthoringSessionDocument;
 }): Effect.Effect<ReviewAuthoringSessionDocument, ReviewAuthoringSessionError> {
 	const path = reviewAuthoringSessionPath({ id: args.session.id, projectRoot: args.projectRoot });
-	return writeJsonAtomically(path, args.session).pipe(
-		Effect.mapError((cause) =>
-			sessionError({
-				cause,
-				operation: "save",
-				path,
-				recovery: "Check that the project-local review directory is writable.",
-				retrySafe: true,
-				nextStep: "retry"
-			})
-		),
+	return writeJsonAtomically(path, args.session, (cause) =>
+		sessionError({
+			cause,
+			operation: "save",
+			path,
+			recovery: "Check that the project-local review directory is writable.",
+			retrySafe: true,
+			nextStep: "retry"
+		})
+	).pipe(
 		Effect.as(args.session),
 		Effect.withSpan("camera.review.authoring-session.save", {
 			attributes: { "camera.review.authoring-session.id": args.session.id }
@@ -504,17 +507,15 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					)
 				));
 			if (reviewSet.project.mapPath !== args.selection.mapPath) {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: `Review Set map ${reviewSet.project.mapPath} does not match selected subject map ${args.selection.mapPath}.`,
-						operation: "create",
-						path: args.reviewSetPath,
-						recovery:
-							"Open a Review Set for the selected map, or start a map-scoped set from that subject.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: `Review Set map ${reviewSet.project.mapPath} does not match selected subject map ${args.selection.mapPath}.`,
+					operation: "create",
+					path: args.reviewSetPath,
+					recovery:
+						"Open a Review Set for the selected map, or start a map-scoped set from that subject.",
+					retrySafe: true,
+					nextStep: "fix_input"
+				});
 			}
 			const now = new Date().toISOString();
 			const session = ReviewAuthoringSession.make({
@@ -549,7 +550,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					mapPath: args.selection.mapPath
 				},
 				updatedAt: now,
-				viewId: yield* Schema.decodeUnknownEffect(ReviewAuthoringSession.fields.viewId)(
+				viewId: yield* Schema.decodeEffect(ReviewAuthoringSession.fields.viewId)(
 					args.viewId
 				).pipe(
 					Effect.mapError((cause) =>
@@ -595,16 +596,14 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 						? reviewSet.views.find((candidate) => candidate.id === destination.viewId)
 						: undefined;
 				if (destination.kind === "revise_view" && view === undefined) {
-					return yield* Effect.fail(
-						new ReviewAuthoringSessionError({
-							message: `Review View ${destination.viewId} was not found.`,
-							operation: "create",
-							path: reviewSetPath,
-							recovery: "Reload the Review Set and choose an existing Review View.",
-							retrySafe: true,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new ReviewAuthoringSessionError({
+						message: `Review View ${destination.viewId} was not found.`,
+						operation: "create",
+						path: reviewSetPath,
+						recovery: "Reload the Review Set and choose an existing Review View.",
+						retrySafe: true,
+						nextStep: "reconcile"
+					});
 				}
 				return yield* create({
 					candidates: candidatesForRevision({ candidates: args.candidates, view }),
@@ -638,17 +637,15 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 			);
 			const reviewSet = existing ?? bootstrap.reviewSet;
 			if (reviewSet.project.mapPath !== args.selection.mapPath) {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: "The map-scoped Review Set does not match the selected subject.",
-						operation: "create",
-						path: bootstrap.reviewSetPath,
-						recovery:
-							"Select a subject in the intended map or configure a different Review Set.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: "The map-scoped Review Set does not match the selected subject.",
+					operation: "create",
+					path: bootstrap.reviewSetPath,
+					recovery:
+						"Select a subject in the intended map or configure a different Review Set.",
+					retrySafe: true,
+					nextStep: "fix_input"
+				});
 			}
 			const destination = args.destination;
 			const view =
@@ -656,16 +653,14 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					? reviewSet.views.find((candidate) => candidate.id === destination.viewId)
 					: undefined;
 			if (destination.kind === "revise_view" && view === undefined) {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: `Review View ${destination.viewId} was not found.`,
-						operation: "create",
-						path: bootstrap.reviewSetPath,
-						recovery: "Reload the Review Set and choose an existing Review View.",
-						retrySafe: true,
-						nextStep: "reconcile"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: `Review View ${destination.viewId} was not found.`,
+					operation: "create",
+					path: bootstrap.reviewSetPath,
+					recovery: "Reload the Review Set and choose an existing Review View.",
+					retrySafe: true,
+					nextStep: "reconcile"
+				});
 			}
 			return yield* create({
 				candidates: candidatesForRevision({ candidates: args.candidates, view }),
@@ -691,19 +686,17 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				id: args.sessionId
 			});
 			if (session.lifecycle !== "active") {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: `Cannot change a ${session.lifecycle} authoring session.`,
-						operation: "patch",
-						path: reviewAuthoringSessionPath({
-							id: session.id,
-							projectRoot: args.projectRoot
-						}),
-						recovery: "Reframe an active session or discard this one.",
-						retrySafe: true,
-						nextStep: "reconcile"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: `Cannot change a ${session.lifecycle} authoring session.`,
+					operation: "patch",
+					path: reviewAuthoringSessionPath({
+						id: session.id,
+						projectRoot: args.projectRoot
+					}),
+					recovery: "Reframe an active session or discard this one.",
+					retrySafe: true,
+					nextStep: "reconcile"
+				});
 			}
 			const parameters = args.patch.framingParameters ?? session.framingParameters;
 			const requestedOverrides =
@@ -733,19 +726,17 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 						parameters ?? defaultFramingParameters()
 					);
 			if (regenerated.length === 0) {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: "The framing definition generated no candidates.",
-						operation: "patch",
-						path: reviewAuthoringSessionPath({
-							id: session.id,
-							projectRoot: args.projectRoot
-						}),
-						recovery: "Enable at least one framing group before updating the session.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: "The framing definition generated no candidates.",
+					operation: "patch",
+					path: reviewAuthoringSessionPath({
+						id: session.id,
+						projectRoot: args.projectRoot
+					}),
+					recovery: "Enable at least one framing group before updating the session.",
+					retrySafe: true,
+					nextStep: "fix_input"
+				});
 			}
 			const candidateIds = new Set(regenerated.map((candidate) => candidate.id));
 			const retainedOverrides = requestedOverrides.filter((entry) =>
@@ -756,19 +747,17 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					(entry) => !candidateIds.has(entry.candidateId)
 				);
 				if (invalidOverride !== undefined) {
-					return yield* Effect.fail(
-						new ReviewAuthoringSessionError({
-							message: `Unknown framing candidate ${invalidOverride.candidateId}.`,
-							operation: "patch",
-							path: reviewAuthoringSessionPath({
-								id: session.id,
-								projectRoot: args.projectRoot
-							}),
-							recovery: "Reload the authoring session before applying overrides.",
-							retrySafe: true,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new ReviewAuthoringSessionError({
+						message: `Unknown framing candidate ${invalidOverride.candidateId}.`,
+						operation: "patch",
+						path: reviewAuthoringSessionPath({
+							id: session.id,
+							projectRoot: args.projectRoot
+						}),
+						recovery: "Reload the authoring session before applying overrides.",
+						retrySafe: true,
+						nextStep: "reconcile"
+					});
 				}
 			}
 			const invalid = [
@@ -783,19 +772,17 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					: [args.patch.selectedCandidateId])
 			].find((candidateId) => !candidateIds.has(candidateId));
 			if (invalid !== undefined) {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: `Unknown framing candidate ${invalid}.`,
-						operation: "patch",
-						path: reviewAuthoringSessionPath({
-							id: session.id,
-							projectRoot: args.projectRoot
-						}),
-						recovery: "Reload the authoring session and choose an available candidate.",
-						retrySafe: true,
-						nextStep: "reconcile"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: `Unknown framing candidate ${invalid}.`,
+					operation: "patch",
+					path: reviewAuthoringSessionPath({
+						id: session.id,
+						projectRoot: args.projectRoot
+					}),
+					recovery: "Reload the authoring session and choose an available candidate.",
+					retrySafe: true,
+					nextStep: "reconcile"
+				});
 			}
 			const candidates = applyOverrides({
 				candidates: regenerated,
@@ -844,20 +831,18 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				});
 				const candidate = session.candidates.find((item) => item.id === args.candidateId);
 				if (!candidate) {
-					return yield* Effect.fail(
-						new ReviewAuthoringSessionError({
-							message: `Unknown framing candidate ${args.candidateId}.`,
-							operation: "patch",
-							path: reviewAuthoringSessionPath({
-								id: session.id,
-								projectRoot: args.projectRoot
-							}),
-							recovery:
-								"Reload the authoring session and preview an available candidate.",
-							retrySafe: true,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new ReviewAuthoringSessionError({
+						message: `Unknown framing candidate ${args.candidateId}.`,
+						operation: "patch",
+						path: reviewAuthoringSessionPath({
+							id: session.id,
+							projectRoot: args.projectRoot
+						}),
+						recovery:
+							"Reload the authoring session and preview an available candidate.",
+						retrySafe: true,
+						nextStep: "reconcile"
+					});
 				}
 				const diagnostics = realizationFramingDiagnostics({
 					projection: args.projection,
@@ -899,7 +884,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				id: args.sessionId
 			}).pipe(
 				Effect.map((session) => ({ session, status: "loaded" as const })),
-				Effect.catch((error) => Effect.succeed({ error, status: "corrupt" as const }))
+				Effect.catchTag("ReviewAuthoringSessionError", (error) =>
+					Effect.succeed({ error, status: "corrupt" as const })
+				)
 			);
 			if (loaded.status === "corrupt") {
 				return {
@@ -998,35 +985,31 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				id: args.sessionId
 			});
 			if (session.lifecycle === "approved" || session.lifecycle === "discarded") {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: `Cannot reframe a ${session.lifecycle} authoring session.`,
-						operation: "reframe",
-						path: reviewAuthoringSessionPath({
-							id: session.id,
-							projectRoot: args.projectRoot
-						}),
-						recovery: "Start a new authoring session for this subject.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: `Cannot reframe a ${session.lifecycle} authoring session.`,
+					operation: "reframe",
+					path: reviewAuthoringSessionPath({
+						id: session.id,
+						projectRoot: args.projectRoot
+					}),
+					recovery: "Start a new authoring session for this subject.",
+					retrySafe: true,
+					nextStep: "fix_input"
+				});
 			}
 			if (args.selection.mapPath !== session.reviewSet.mapPath) {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message:
-							"The selected subject belongs to a different map than this authoring session.",
-						operation: "reframe",
-						path: reviewAuthoringSessionPath({
-							id: session.id,
-							projectRoot: args.projectRoot
-						}),
-						recovery: "Return to the Review Set map before reframing this subject.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message:
+						"The selected subject belongs to a different map than this authoring session.",
+					operation: "reframe",
+					path: reviewAuthoringSessionPath({
+						id: session.id,
+						projectRoot: args.projectRoot
+					}),
+					recovery: "Return to the Review Set map before reframing this subject.",
+					retrySafe: true,
+					nextStep: "fix_input"
+				});
 			}
 			const now = new Date().toISOString();
 			const next = ReviewAuthoringSession.make({
@@ -1064,19 +1047,17 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 			if (recovered.status !== "resumable") return recovered;
 			const session = recovered.session;
 			if (session.lifecycle !== "active") {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: `Cannot keep a ${session.lifecycle} authoring session.`,
-						operation: "approve",
-						path: reviewAuthoringSessionPath({
-							id: session.id,
-							projectRoot: args.projectRoot
-						}),
-						recovery: "Reframe an active session or start a new one.",
-						retrySafe: true,
-						nextStep: "reconcile"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: `Cannot keep a ${session.lifecycle} authoring session.`,
+					operation: "approve",
+					path: reviewAuthoringSessionPath({
+						id: session.id,
+						projectRoot: args.projectRoot
+					}),
+					recovery: "Reframe an active session or start a new one.",
+					retrySafe: true,
+					nextStep: "reconcile"
+				});
 			}
 			const keptCandidates = session.candidates.filter(
 				(item) => !session.discardedCandidateIds.includes(item.id)
@@ -1085,19 +1066,17 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				keptCandidates.find((item) => item.id === session.selectedCandidateId) ??
 				keptCandidates[0];
 			if (!selectedCandidate) {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: "All framing candidates were discarded.",
-						operation: "approve",
-						path: reviewAuthoringSessionPath({
-							id: session.id,
-							projectRoot: args.projectRoot
-						}),
-						recovery: "Reframe the subject and keep at least one candidate.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: "All framing candidates were discarded.",
+					operation: "approve",
+					path: reviewAuthoringSessionPath({
+						id: session.id,
+						projectRoot: args.projectRoot
+					}),
+					recovery: "Reframe the subject and keep at least one candidate.",
+					retrySafe: true,
+					nextStep: "fix_input"
+				});
 			}
 			const reviewSet =
 				session.pendingReviewSet ??
@@ -1138,16 +1117,14 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				const captureProfile = reviewSet.captureProfiles[0];
 				const visibilityPolicy = reviewSet.visibilityPolicies[0];
 				if (captureProfile === undefined || visibilityPolicy === undefined) {
-					return yield* Effect.fail(
-						new ReviewAuthoringSessionError({
-							message: "The Review Set has no capture profile or visibility policy.",
-							operation: "approve",
-							path: session.reviewSet.path,
-							recovery: "Repair the Review Set before keeping these Review Views.",
-							retrySafe: true,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new ReviewAuthoringSessionError({
+						message: "The Review Set has no capture profile or visibility policy.",
+						operation: "approve",
+						path: session.reviewSet.path,
+						recovery: "Repair the Review Set before keeping these Review Views.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					});
 				}
 				approvedReviewSet = appendKeptCandidateViews({
 					captureProfileId: captureProfile.id,
@@ -1158,16 +1135,14 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				});
 			}
 			if (approvedReviewSet === undefined) {
-				return yield* Effect.fail(
-					new ReviewAuthoringSessionError({
-						message: `Review View ${session.viewId} was not found.`,
-						operation: "approve",
-						path: session.reviewSet.path,
-						recovery: "Reload the Review Set and select an existing Review View.",
-						retrySafe: true,
-						nextStep: "reconcile"
-					})
-				);
+				return yield* new ReviewAuthoringSessionError({
+					message: `Review View ${session.viewId} was not found.`,
+					operation: "approve",
+					path: session.reviewSet.path,
+					recovery: "Reload the Review Set and select an existing Review View.",
+					retrySafe: true,
+					nextStep: "reconcile"
+				});
 			}
 			yield* repository
 				.saveSet({ path: session.reviewSet.path, reviewSet: approvedReviewSet })

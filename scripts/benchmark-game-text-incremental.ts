@@ -65,7 +65,7 @@ if (!Number.isSafeInteger(count) || count < 100 || count > 300000)
 const projectRoot = join(output, "project");
 await mkdir(projectRoot);
 const cultures = ["en", "de", "fr", "es", "it", "ja", "ko", "pl", "pt", "zh"];
-const target = Schema.decodeUnknownSync(LocalizationTarget)({
+const target = Schema.decodeSync(LocalizationTarget)({
 	...template,
 	name: "Generated",
 	cultures,

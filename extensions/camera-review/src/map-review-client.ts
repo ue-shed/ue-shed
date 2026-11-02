@@ -30,7 +30,7 @@ import type {
 } from "@ue-shed/observatory/browser";
 import { ErrorNextStep, EditorWorldOpenResponse, EditorWorldState } from "@ue-shed/protocol";
 import type { SavedWorld, SavedWorldMap, SavedWorldProgress } from "@ue-shed/protocol";
-import { Context, type Effect, Schema, type Stream } from "effect";
+import { type Brand, Context, type Effect, Schema, type Stream } from "effect";
 
 /** Renderer presentation state plus the sparse IPC batch that produced its latest transform tick. */
 export type MapReviewWorldObservation = WorldObservationState & {
@@ -63,18 +63,18 @@ export type {
 	MapReviewSetSummary
 } from "@ue-shed/cameras/review-contracts";
 
-export class MapReviewClientError extends Schema.TaggedError<MapReviewClientError>()(
-	"MapReviewClientError",
-	{
-		message: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("map_review_client_failed"),
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class MapReviewClientError extends Schema.TaggedError<
+	MapReviewClientError,
+	Brand.Brand<"extensions/camera-review/src/map-review-client/MapReviewClientError">
+>()("MapReviewClientError", {
+	message: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("map_review_client_failed"),
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export const MapReviewMapOpenResult = Schema.Union([
 	EditorWorldOpenResponse,

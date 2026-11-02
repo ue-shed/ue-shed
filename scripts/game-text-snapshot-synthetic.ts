@@ -24,7 +24,7 @@ export async function syntheticScaleSnapshot(
 	const recipe = await readScaleRecipe(project);
 	if (recipe.scale !== 10 || recipe.cultures.length !== 20)
 		throw new Error("Expected retained 10× recipe");
-	const descriptor = Schema.decodeUnknownSync(
+	const descriptor = Schema.decodeSync(
 		Schema.fromJsonString(
 			Schema.Struct({
 				recipe: Schema.Struct({

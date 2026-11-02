@@ -160,7 +160,7 @@ describe("Project Index public contract", () => {
 	);
 	it("rejects a query above the package-enforced page limit", async () => {
 		const result = await Effect.runPromiseExit(
-			Schema.decodeUnknownEffect(ProjectIndexQuery)({
+			Schema.decodeEffect(ProjectIndexQuery)({
 				_tag: "Maps",
 				expectedGeneration: ProjectIndexGeneration.make(1),
 				limit: PROJECT_INDEX_MAX_PAGE_SIZE + 1,

@@ -1,5 +1,5 @@
 import { ErrorNextStep, ErrorCauseFields } from "@ue-shed/protocol";
-import { Clock, Effect, Schema } from "effect";
+import { type Brand, Clock, Effect, Schema } from "effect";
 import type {
 	MapReviewFlowAttachment,
 	MapReviewFlowCheckpoint,
@@ -12,18 +12,18 @@ import type {
  * Workbench implementation authority and is not imported by the production composition root.
  */
 
-export class MapReviewFlowExecutionError extends Schema.TaggedError<MapReviewFlowExecutionError>()(
-	"MapReviewFlowExecutionError",
-	{
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("map_review_flow_execution_failed"),
-		message: Schema.NonEmptyString,
-		operation: Schema.NonEmptyString,
-		...ErrorCauseFields
-	}
-) {}
+export class MapReviewFlowExecutionError extends Schema.TaggedError<
+	MapReviewFlowExecutionError,
+	Brand.Brand<"apps/workbench/src/main/map-review-flow/MapReviewFlowExecutionError">
+>()("MapReviewFlowExecutionError", {
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("map_review_flow_execution_failed"),
+	message: Schema.NonEmptyString,
+	operation: Schema.NonEmptyString,
+	...ErrorCauseFields
+}) {}
 
 export interface MapReviewFlowStepEvidence {
 	readonly attachments?: ReadonlyArray<MapReviewFlowAttachment>;

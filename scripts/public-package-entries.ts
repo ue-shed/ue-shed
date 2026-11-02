@@ -26,7 +26,7 @@ const PackageJson = Schema.Struct({
 
 /** Each entry point's subpath and source file, from the package's `exports` map. */
 export function publicPackageEntries(directory: string) {
-	const manifest = Schema.decodeUnknownSync(Schema.fromJsonString(PackageJson))(
+	const manifest = Schema.decodeSync(Schema.fromJsonString(PackageJson))(
 		readFileSync(join(directory, "package.json"), "utf8")
 	);
 	const entries = new Map<string, string>();

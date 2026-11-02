@@ -70,7 +70,7 @@ export function makeDefaultMapCapturePlan(args: {
 	readonly mapPath?: string;
 	readonly projectId: string;
 }): MapCapturePlanValue {
-	return Schema.decodeUnknownSync(MapCapturePlan)({
+	return Schema.decodeSync(MapCapturePlan)({
 		capture: {
 			dataLayers: { mode: "unchanged" },
 			orientation: { pitch: -90, roll: 0, yaw: 0 },
@@ -110,7 +110,7 @@ export function fitMapCapturePlanToSelection(
 	const b = selection.bounds;
 	const padX = Math.max(1, (b.maxX - b.minX) * paddingFraction);
 	const padY = Math.max(1, (b.maxY - b.minY) * paddingFraction);
-	return Schema.decodeUnknownSync(MapCapturePlan)({
+	return Schema.decodeSync(MapCapturePlan)({
 		...plan,
 		project: { ...plan.project, mapPath: selection.mapPath },
 		requestedBounds: {

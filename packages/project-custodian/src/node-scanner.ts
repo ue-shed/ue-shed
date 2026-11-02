@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { access, lstat, readdir, readFile, realpath, stat, statfs } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Schema } from "effect";
+import { Schema, Predicate } from "effect";
 import {
 	defaultCustodianPolicy,
 	projectTargetDefinitions,
@@ -259,7 +259,7 @@ async function identifyEngines(
 			if (!isRecord(document)) continue;
 			const version = document;
 			const label = ["MajorVersion", "MinorVersion", "PatchVersion"]
-				.map((key) => (Schema.is(Schema.Number)(version[key]) ? String(version[key]) : "0"))
+				.map((key) => (Predicate.isNumber(version[key]) ? String(version[key]) : "0"))
 				.join(".");
 			const build = join(root, "Engine", "Build");
 			const installedMarker = await access(join(build, "InstalledBuild.txt")).then(

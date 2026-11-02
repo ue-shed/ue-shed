@@ -1,5 +1,5 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 import { LocalizationError } from "@ue-shed/localization/browser";
 
 /**
@@ -7,18 +7,18 @@ import { LocalizationError } from "@ue-shed/localization/browser";
  * boundary, recovery guides the host, and the retained cause/localizationError preserves
  * lower-level evidence.
  */
-export class GameTextIndexError extends Schema.TaggedError<GameTextIndexError>()(
-	"GameTextIndexError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("index_failed"),
-		operation: Schema.String,
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		localizationError: Schema.optionalKey(LocalizationError),
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class GameTextIndexError extends Schema.TaggedError<
+	GameTextIndexError,
+	Brand.Brand<"packages/game-text/src/index-error/GameTextIndexError">
+>()("GameTextIndexError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("index_failed"),
+	operation: Schema.String,
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	localizationError: Schema.optionalKey(LocalizationError),
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 /** Tag guard for Game Text index failures; match by tag, not `instanceof`. */
 export const isGameTextIndexError = Schema.is(GameTextIndexError);

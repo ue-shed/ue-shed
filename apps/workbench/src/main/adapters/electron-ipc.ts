@@ -1,21 +1,21 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Context, Effect, Fiber, Layer, Ref, Schema, type Scope } from "effect";
+import { type Brand, Context, Effect, Fiber, Layer, Ref, Schema, type Scope } from "effect";
 import { decodeInvokeArgs, encodeInvokeResult, type InvokeContract } from "../ipc-contracts.js";
 
-export class ElectronIpcError extends Schema.TaggedError<ElectronIpcError>()(
-	"Workbench.ElectronIpcError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("electron_ipc_failed"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		causeText: Schema.String,
-		channel: Schema.String,
-		message: Schema.String,
-		operation: Schema.Literals(["register", "duplicate", "decodeArgs", "encodeResult"]),
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean
-	}
-) {}
+export class ElectronIpcError extends Schema.TaggedError<
+	ElectronIpcError,
+	Brand.Brand<"apps/workbench/src/main/adapters/electron-ipc/ElectronIpcError">
+>()("Workbench.ElectronIpcError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("electron_ipc_failed"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	causeText: Schema.String,
+	channel: Schema.String,
+	message: Schema.String,
+	operation: Schema.Literals(["register", "duplicate", "decodeArgs", "encodeResult"]),
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean
+}) {}
 
 export interface ElectronIpcEvent {}
 
@@ -38,7 +38,7 @@ export interface ElectronIpcApi {
 		handler: (
 			...args: InvokeHandlerArguments<Contract>
 		) => Effect.Effect<Contract["result"]["Type"], HandlerError, Requirements>
-	) => Effect.Effect<void, ElectronIpcError, Scope.Scope>;
+	) => Effect.Effect<void, ElectronIpcError, Requirements | Scope.Scope>;
 }
 
 export class ElectronIpc extends Context.Service<ElectronIpc, ElectronIpcApi>()(
@@ -86,7 +86,7 @@ const adaptHandler = <Contract extends InvokeContract, HandlerError, Requirement
 	handler: (
 		...args: InvokeHandlerArguments<Contract>
 	) => Effect.Effect<Contract["result"]["Type"], HandlerError, Requirements>,
-	runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>
+	runPromise: <A, E>(effect: Effect.Effect<A, E, Requirements>) => Promise<A>
 ): ((...args: ReadonlyArray<unknown>) => Promise<Contract["result"]["Encoded"]>) => {
 	return (...args: ReadonlyArray<unknown>) => {
 		const program = Effect.gen(function* () {
@@ -118,15 +118,7 @@ const adaptHandler = <Contract extends InvokeContract, HandlerError, Requirement
 				)
 			);
 		});
-		// SAFETY: the Electron layer captures the complete Workbench runtime Context before
-		// registration, so all handler requirements are supplied when this program is executed.
-		// Verified by: apps/workbench/src/main/ipc/register.test.ts ("dispatches Project Custodian
-		// scans and guarded cleanup through the service");
-		// apps/workbench/src/main/adapters/adapters.test.ts
-		// ("ElectronIpc interrupts an in-flight handler when its owning scope closes")
-		return runPromise(
-			program as Effect.Effect<Contract["result"]["Encoded"], ElectronIpcError | HandlerError>
-		);
+		return runPromise(program);
 	};
 };
 
@@ -135,27 +127,27 @@ export const electronIpcLayer = (ipc: ElectronIpcHost): Layer.Layer<ElectronIpc>
 		ElectronIpc,
 		Effect.gen(function* () {
 			const registered = yield* Ref.make<ReadonlySet<string>>(new Set());
-			const context = yield* Effect.context();
 			const scope = yield* Effect.scope;
 			const { runPromiseWith } = Effect;
-			const runPromise = <A, E>(effect: Effect.Effect<A, E>) =>
-				runPromiseWith(context)(effect, { onFiberStart: Fiber.runIn(scope) });
 
 			return ElectronIpc.of({
 				register: Effect.fn("Workbench.ElectronIpc.register")(
 					function* (contract, handler) {
 						const channels = yield* Ref.get(registered);
 						if (channels.has(contract.channel)) {
-							return yield* Effect.fail(
-								ipcError(
-									"duplicate",
-									contract.channel,
-									"Channel already registered",
-									"Register each IPC channel exactly once per runtime."
-								)
+							return yield* ipcError(
+								"duplicate",
+								contract.channel,
+								"Channel already registered",
+								"Register each IPC channel exactly once per runtime."
 							);
 						}
 
+						const context =
+							yield* Effect.context<Effect.Services<ReturnType<typeof handler>>>();
+						const runPromise = <A, E>(
+							effect: Effect.Effect<A, E, Effect.Services<ReturnType<typeof handler>>>
+						) => runPromiseWith(context)(effect, { onFiberStart: Fiber.runIn(scope) });
 						const adapted = adaptHandler(contract, handler, runPromise);
 						yield* Effect.try({
 							try: () => {
@@ -188,26 +180,26 @@ export const makeElectronIpcTestLayer = (): Layer.Layer<ElectronIpc | ElectronIp
 	Layer.effectContext(
 		Effect.gen(function* () {
 			const handlers = yield* Ref.make<ReadonlyArray<RegisteredHandler>>([]);
-			const context = yield* Effect.context();
 			const scope = yield* Effect.scope;
 			const { runPromiseWith } = Effect;
-			const runPromise = <A, E>(effect: Effect.Effect<A, E>) =>
-				runPromiseWith(context)(effect, { onFiberStart: Fiber.runIn(scope) });
 
 			const register: ElectronIpcApi["register"] = Effect.fn(
 				"Workbench.ElectronIpc.Test.register"
 			)(function* (contract, handler) {
 				const current = yield* Ref.get(handlers);
 				if (current.some((entry) => entry.channel === contract.channel)) {
-					return yield* Effect.fail(
-						ipcError(
-							"duplicate",
-							contract.channel,
-							"Channel already registered",
-							"Register each IPC channel exactly once per runtime."
-						)
+					return yield* ipcError(
+						"duplicate",
+						contract.channel,
+						"Channel already registered",
+						"Register each IPC channel exactly once per runtime."
 					);
 				}
+				const context =
+					yield* Effect.context<Effect.Services<ReturnType<typeof handler>>>();
+				const runPromise = <A, E>(
+					effect: Effect.Effect<A, E, Effect.Services<ReturnType<typeof handler>>>
+				) => runPromiseWith(context)(effect, { onFiberStart: Fiber.runIn(scope) });
 				const adapted = adaptHandler(contract, handler, runPromise);
 				yield* Ref.update(handlers, (entries) => [
 					...entries,

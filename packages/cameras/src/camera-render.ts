@@ -4,6 +4,7 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { resolve, relative, isAbsolute } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import {
+	type Brand,
 	Cause,
 	Context,
 	Effect,
@@ -87,44 +88,44 @@ export function cameraRenderReuseIdentity(args: {
  * original cause and optional native failure evidence. Lost mutation replies require
  * reconciliation rather than automatic replay.
  */
-export class CameraRenderError extends Schema.TaggedError<CameraRenderError>()(
-	"CameraRenderError",
-	{
-		code: Schema.Union([
-			CameraRenderFailureCode,
-			Schema.Literals([
-				"render_connection_failed",
-				"render_response_invalid",
-				"unsupported_capability",
-				"policy_mismatch",
-				"session_mismatch",
-				"correlation_mismatch",
-				"frame_evidence_mismatch",
-				"frame_size_mismatch",
-				"artifact_identity_mismatch",
-				"artifact_outside_staging",
-				"artifact_missing",
-				"artifact_unreadable",
-				"artifact_size_mismatch",
-				"artifact_not_png",
-				"render_or_restoration_failed",
-				"review_render_or_restoration_failed"
-			])
-		]),
-		operation: Schema.Literals([
-			"capabilities",
-			"preflight",
-			"open",
-			"capture",
-			"close",
-			"artifact"
-		]),
-		sessionId: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		nativeFailure: Schema.optionalKey(CameraRenderFailure)
-	}
-) {}
+export class CameraRenderError extends Schema.TaggedError<
+	CameraRenderError,
+	Brand.Brand<"packages/cameras/src/camera-render/CameraRenderError">
+>()("CameraRenderError", {
+	code: Schema.Union([
+		CameraRenderFailureCode,
+		Schema.Literals([
+			"render_connection_failed",
+			"render_response_invalid",
+			"unsupported_capability",
+			"policy_mismatch",
+			"session_mismatch",
+			"correlation_mismatch",
+			"frame_evidence_mismatch",
+			"frame_size_mismatch",
+			"artifact_identity_mismatch",
+			"artifact_outside_staging",
+			"artifact_missing",
+			"artifact_unreadable",
+			"artifact_size_mismatch",
+			"artifact_not_png",
+			"render_or_restoration_failed",
+			"review_render_or_restoration_failed"
+		])
+	]),
+	operation: Schema.Literals([
+		"capabilities",
+		"preflight",
+		"open",
+		"capture",
+		"close",
+		"artifact"
+	]),
+	sessionId: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	nativeFailure: Schema.optionalKey(CameraRenderFailure)
+}) {}
 const isCameraRenderError = Schema.is(CameraRenderError);
 
 /**
@@ -457,7 +458,7 @@ export function makeCameraRenderer(
 						});
 						const result = yield* decode(CameraRenderEndResult, value);
 						if (result.status === "failed" && result.code !== "session_unknown")
-							return yield* Effect.fail(nativeError("close", result));
+							return yield* nativeError("close", result);
 					}).pipe(
 						Effect.mapError((cause) => renderError("close", request.sessionId, cause)),
 						Effect.catchCause((cleanup) =>
@@ -508,10 +509,10 @@ export function makeCameraRenderer(
 				RequestJson: JSON.stringify(request)
 			});
 			const result = yield* decode(CameraRenderBeginResult, value);
-			if (result.status === "failed") return yield* Effect.fail(nativeError("open", result));
+			if (result.status === "failed") return yield* nativeError("open", result);
 		}).pipe(
 			Effect.repeat(Schedule.forever),
-			Effect.catch((cause) =>
+			Effect.catchTag(["SchemaError", "CameraRenderError"], (cause) =>
 				Effect.sync(() => {
 					leaseFailure = renderError("open", request.sessionId, cause);
 				})
@@ -537,22 +538,21 @@ export function makeCameraRenderer(
 				});
 			const decodeStatus = (value: Schema.Json) =>
 				decode(CameraFrameStatus, value).pipe(
-					Effect.flatMap((status) =>
-						status.sessionId === request.sessionId &&
-						((status.status === "failed" && status.operationId === undefined) ||
-							status.operationId === frame.operationId)
-							? Effect.succeed(status)
-							: Effect.fail(
-									new CameraRenderError({
-										code: "correlation_mismatch",
-										operation: "capture",
-										sessionId: request.sessionId,
-										message: "The frame response belongs to another operation.",
-										recovery: "Inspect the native session before retrying.",
-										retrySafe: false,
-										nextStep: "reconcile"
-									})
-								)
+					Effect.filterOrFail(
+						(status) =>
+							status.sessionId === request.sessionId &&
+							((status.status === "failed" && status.operationId === undefined) ||
+								status.operationId === frame.operationId),
+						() =>
+							new CameraRenderError({
+								code: "correlation_mismatch",
+								operation: "capture",
+								sessionId: request.sessionId,
+								message: "The frame response belongs to another operation.",
+								recovery: "Inspect the native session before retrying.",
+								retrySafe: false,
+								nextStep: "reconcile"
+							})
 					),
 					Effect.mapError((cause) => renderError("capture", request.sessionId, cause)),
 					Effect.tap((status) =>
@@ -563,7 +563,7 @@ export function makeCameraRenderer(
 			const first = yield* call("capture", request.sessionId, "StartCameraFrame", {
 				RequestJson: JSON.stringify(frame)
 			}).pipe(
-				Effect.catch(() =>
+				Effect.catchTag("CameraRenderError", () =>
 					call("capture", request.sessionId, "PollCameraFrame", {
 						SessionId: request.sessionId,
 						OperationId: frame.operationId

@@ -91,13 +91,13 @@ function harness(
 						capabilities: ["world.preparation.v1"],
 						worldPreparationObjectPath: "/Script/Test"
 					};
-				const request = Schema.decodeUnknownSync(WorldRequest)(
+				const request = yield* Schema.decodeUnknownEffect(WorldRequest)(
 					JSON.parse(String(call.parameters.RequestJson))
-				);
+				).pipe(Effect.orDie);
 				calls.push(request);
 				if (request.action === "replace") revision = request.revision;
 				const custom = override(request);
-				return Schema.decodeUnknownSync(Schema.Json)(
+				return yield* Schema.decodeUnknownEffect(Schema.Json)(
 					custom
 						? yield* custom
 						: request.action === "describe"
@@ -113,7 +113,7 @@ function harness(
 									),
 									leaseId: request.action === "plan" ? "plan" : id
 								}
-				);
+				).pipe(Effect.orDie);
 			})
 	};
 	return { api: makeWorldPreparation(client, "http://fixture"), calls };

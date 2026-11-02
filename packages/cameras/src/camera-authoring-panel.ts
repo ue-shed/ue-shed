@@ -139,11 +139,9 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 				action = event.action;
 			const committed = document.outcomes.some((outcome) => outcome.operationId === event.id);
 			if (!committed && event.expectedRevision !== document.arrangement.revision)
-				return yield* Effect.fail(
-					arrangementFailure(
-						"stale",
-						"This action was authored against an older arrangement. Review the current state and retry."
-					)
+				return yield* arrangementFailure(
+					"stale",
+					"This action was authored against an older arrangement. Review the current state and retry."
 				);
 			const scope = {
 				arrangementId: document.arrangement.id,
@@ -171,11 +169,9 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 						(id) => !document.arrangement.cameras.some((camera) => camera.id === id)
 					)
 				)
-					return yield* Effect.fail(
-						arrangementFailure(
-							"invalid",
-							"Keep at least one camera and remove only cameras in this arrangement."
-						)
+					return yield* arrangementFailure(
+						"invalid",
+						"Keep at least one camera and remove only cameras in this arrangement."
 					);
 				proposal = {
 					cameras,
@@ -188,11 +184,9 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					action.command.arrangementId !== scope.arrangementId ||
 					action.command.expectedRevision !== event.expectedRevision
 				)
-					return yield* Effect.fail(
-						arrangementFailure(
-							"scope_mismatch",
-							"The menu command does not match its arrangement revision."
-						)
+					return yield* arrangementFailure(
+						"scope_mismatch",
+						"The menu command does not match its arrangement revision."
 					);
 				document = yield* args.store.mutate({ ...action.command, operationId: event.id });
 			} else if (action.kind === "activate") {
@@ -219,11 +213,9 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 							(entry) => entry.id === id
 						);
 						if (!camera)
-							return yield* Effect.fail(
-								arrangementFailure(
-									"scope_mismatch",
-									"Selected camera is outside this arrangement."
-								)
+							return yield* arrangementFailure(
+								"scope_mismatch",
+								"Selected camera is outside this arrangement."
 							);
 						const response = yield* args.bridge.call({
 							version: 1,
@@ -235,12 +227,9 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 							)
 						});
 						if (response.status !== "visibility" || !response.valid)
-							return yield* Effect.fail(
-								arrangementFailure(
-									"invalid",
-									response.message ||
-										"Resolve authored actors before saving views."
-								)
+							return yield* arrangementFailure(
+								"invalid",
+								response.message || "Resolve authored actors before saving views."
 							);
 					}
 				}
@@ -290,11 +279,9 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					preset.projectName !== document.arrangement.projectName ||
 					preset.mapPath !== document.arrangement.mapPath
 				)
-					return yield* Effect.fail(
-						arrangementFailure(
-							"scope_mismatch",
-							"The visibility preset belongs to another project or map."
-						)
+					return yield* arrangementFailure(
+						"scope_mismatch",
+						"The visibility preset belongs to another project or map."
 					);
 				document = yield* args.store.mutate({
 					...scope,
@@ -309,11 +296,9 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					cameraIdsInScope(document.arrangement, selectedScope)
 				);
 				if (selectedScope.kind === "cameras" && ids.length !== 1)
-					return yield* Effect.fail(
-						arrangementFailure(
-							"invalid",
-							"Export one camera's local list, a group, or the arrangement defaults."
-						)
+					return yield* arrangementFailure(
+						"invalid",
+						"Export one camera's local list, a group, or the arrangement defaults."
 					);
 				const actors =
 					selectedScope.kind === "arrangement"
@@ -362,11 +347,9 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 				notice = "Review the imported recipe before replacing this arrangement.";
 			} else if (action.kind === "accept_proposal") {
 				if (!proposal || proposal.expectedRevision !== document.arrangement.revision)
-					return yield* Effect.fail(
-						arrangementFailure(
-							"stale",
-							"Create a fresh layout proposal after changing the arrangement."
-						)
+					return yield* arrangementFailure(
+						"stale",
+						"Create a fresh layout proposal after changing the arrangement."
 					);
 				document = yield* args.store.mutate({
 					...scope,
@@ -418,7 +401,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 			if (event) {
 				acknowledgeEvent = event.id;
 				const result = yield* processEvent(event, document).pipe(
-					Effect.catch((error) =>
+					Effect.catchTag(["CameraArrangementError", "CameraBridgeError"], (error) =>
 						Effect.gen(function* () {
 							if (
 								error.code === "storage" ||

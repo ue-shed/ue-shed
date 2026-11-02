@@ -53,7 +53,7 @@ export const ShowcaseLive = Layer.effect(
 					status: "ready" as const,
 					texturePackages: textures
 				})),
-				Effect.catch((error) =>
+				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 					Effect.succeed({
 						message: error.message,
 						recovery: error.recovery,

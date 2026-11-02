@@ -1,5 +1,5 @@
 import { ContractParseError } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { recordReviewAssessment } from "@ue-shed/observability";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
@@ -23,10 +23,14 @@ const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraRevi
  * uncertain mutation may have applied; honor recovery guidance before issuing another
  * capture.
  */
-export class ReviewCaptureConnectionError extends Schema.TaggedError<ReviewCaptureConnectionError>()(
-	"ReviewCaptureConnectionError",
-	{ ...ErrorGuidanceFields, ...ErrorCauseFields, endpoint: Schema.String }
-) {}
+export class ReviewCaptureConnectionError extends Schema.TaggedError<
+	ReviewCaptureConnectionError,
+	Brand.Brand<"packages/cameras/src/review-live/ReviewCaptureConnectionError">
+>()("ReviewCaptureConnectionError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	endpoint: Schema.String
+}) {}
 
 function connectionError(
 	endpoint: string,

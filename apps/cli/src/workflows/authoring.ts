@@ -277,16 +277,14 @@ export const runAuthoringParity = Effect.fn("Cli.workflow.authoring_parity")(
 						status
 					});
 					if (status === "nonconformant") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: "Saved/live authoring parity did not pass"
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: "Saved/live authoring parity did not pass"
+						});
 					}
 				});
 				return yield* program.pipe(Effect.provide(RemoteControlClientLive));
@@ -467,16 +465,14 @@ function sessionProgram(command: SessionCommand) {
 						const connection = yield* connectUnrealAuthoring(command.endpoint);
 						const limits = connection.manifest.authoringLimits;
 						if (command._tag === "SessionsApply" && limits === undefined) {
-							return yield* Effect.fail(
-								new CliCommandError({
-									recovery:
-										"Inspect the command context and original cause before deciding whether to retry.",
-									retrySafe: false,
-									nextStep: "escalate",
-									code: "cli_command_failed",
-									message: "Editor did not negotiate authoring mutation limits"
-								})
-							);
+							return yield* new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
+								message: "Editor did not negotiate authoring mutation limits"
+							});
 						}
 						if (command._tag === "SessionsApply") {
 							if (limits === undefined)

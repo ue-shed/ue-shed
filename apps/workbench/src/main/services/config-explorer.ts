@@ -79,7 +79,7 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 			} else {
 				const selected = yield* project.selectedProject().pipe(
 					Effect.map((value) => ({ status: "ready" as const, value })),
-					Effect.catch((error) =>
+					Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 						Effect.succeed({
 							error: {
 								code: "project_unavailable" as const,
@@ -124,7 +124,9 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 							source: request.source,
 							status: "ready" as const
 						})),
-						Effect.catch((error) => Effect.succeed(publicFailure(error)))
+						Effect.catchTag("ConfigExplorerError", (error) =>
+							Effect.succeed(publicFailure(error))
+						)
 					);
 			}
 			return yield* explorer
@@ -141,7 +143,9 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 						source: request.source,
 						status: "ready" as const
 					})),
-					Effect.catch((error) => Effect.succeed(publicFailure(error)))
+					Effect.catchTag("ConfigExplorerError", (error) =>
+						Effect.succeed(publicFailure(error))
+					)
 				);
 		});
 

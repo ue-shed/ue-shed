@@ -92,7 +92,9 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 			function* () {
 				return readyState(yield* project.savedProject());
 			},
-			Effect.catch(() => Effect.succeed({ status: "not_configured" as const }))
+			Effect.catchTag("WorkbenchProjectUnavailable", () =>
+				Effect.succeed({ status: "not_configured" as const })
+			)
 		);
 		const readProgress = Effect.fn("Workbench.ContentObservatory.readProgress")(
 			(): Effect.Effect<ContentObservatoryProgress> =>
@@ -158,15 +160,13 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 				)
 			);
 			if (!selectedProject.maps.some((map) => map.mapPath === mapPath)) {
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "invalid_target",
-						message: `Saved map ${mapPath} is not configured for current actor discovery.`,
-						recovery: "Choose one of the configured maps, then retry.",
-						retrySafe: false,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new MapHistoryError({
+					kind: "invalid_target",
+					message: `Saved map ${mapPath} is not configured for current actor discovery.`,
+					recovery: "Choose one of the configured maps, then retry.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				});
 			}
 			return yield* assetReader
 				.readSavedWorld({

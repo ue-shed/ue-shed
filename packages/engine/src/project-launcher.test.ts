@@ -259,8 +259,7 @@ it("adds a host's own Remote Control classes beside the UE Shed plugin classes",
 		})
 	).toContain(rule("StudioToolsEditor.StudioToolsLibrary"));
 	expect(
-		Schema.decodeUnknownExit(RemoteControlAllowedClass)("Studio.Tools,bAllowChildClasses=True")
-			._tag
+		Schema.decodeExit(RemoteControlAllowedClass)("Studio.Tools,bAllowChildClasses=True")._tag
 	).toBe("Failure");
 });
 

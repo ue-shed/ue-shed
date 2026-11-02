@@ -338,7 +338,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 		if (!targetName) throw new Error("The project has no localization target.");
 		const target = LocalizationTargetName.make(targetName);
 		const { lens: _lens, ...list } = mix.list;
-		const base = Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+		const base = Schema.decodeSync(TextCorpusSearchRequest)({
 			...list,
 			localization: { target }
 		});
@@ -370,9 +370,10 @@ export async function runEngineStage(options: EngineStageOptions) {
 						`rows-${chunk}`
 					);
 					return Promise.all(
-						(reply.openGroups ?? []).map(
-							(group) =>
+						(reply.openGroups ?? []).map((group) =>
+							Promise.resolve(
 								group.page ?? read({ ...request, openGroup: group.key }, group.key)
+							)
 						)
 					);
 				})
@@ -577,7 +578,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				);
 				const header = (prefix: string) =>
 					search(
-						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+						Schema.decodeSync(TextCorpusSearchRequest)({
 							...base,
 							query: prefix
 						})
@@ -664,7 +665,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				}
 				await run(
 					query.selectLocalizationLines(
-						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+						Schema.decodeSync(TextCorpusSearchRequest)({
 							...plain,
 							lines: lines.slice(0, 5000)
 						}),
@@ -829,7 +830,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 									: undefined;
 								causePages.push(
 									await search(
-										Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+										Schema.decodeSync(TextCorpusSearchRequest)({
 											query: "",
 											capability: "all",
 											pageSize: selection.pageSize,
@@ -874,7 +875,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 									? gatheredIdentityKey(identity)
 									: JSON.stringify(["", ""]);
 								const page = await search(
-									Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+									Schema.decodeSync(TextCorpusSearchRequest)({
 										query: "",
 										capability: "all",
 										pageSize: selection.keySearchPageSize,

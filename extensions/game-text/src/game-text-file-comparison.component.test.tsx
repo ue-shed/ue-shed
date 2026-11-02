@@ -3,7 +3,6 @@ import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-libra
 import { userEvent } from "@testing-library/user-event";
 import type {
 	LocalizationFileChange,
-	LocalizationFileChoiceRequest,
 	LocalizationFileComparisonRequest
 } from "@ue-shed/game-text/schema";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
@@ -90,7 +89,7 @@ function client(
 		qualitySearch: notUsed,
 		previewQualityRules: notUsed,
 		saveQualityRules: notUsed,
-		chooseLocalizationFile: (_: LocalizationFileChoiceRequest) => {
+		chooseLocalizationFile: () => {
 			const path = choices.shift();
 			if (path === undefined) return Effect.succeed({ status: "cancelled" });
 			const format = path.endsWith(".po") ? "po" : "archive";

@@ -9,7 +9,7 @@ import { MapHistoryRange } from "./schema.js";
 import { selectSubmittedChanges } from "./submitted-change-selection.js";
 
 function range() {
-	return Schema.decodeUnknownSync(MapHistoryRange)({
+	return Schema.decodeSync(MapHistoryRange)({
 		since: "2026-07-21T00:00:00.000Z",
 		until: "2026-07-28T00:00:00.000Z"
 	});

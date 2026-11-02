@@ -151,7 +151,7 @@ function cli<S extends Schema.Decoder<unknown>>(
 	if (result.status !== 0) {
 		throw new Error(`ue-shed input ${args.join(" ")} failed:\n${result.stderr}`);
 	}
-	return Schema.decodeUnknownSync(Schema.fromJsonString(schema))(result.stdout);
+	return Schema.decodeSync(Schema.fromJsonString(schema))(result.stdout);
 }
 
 function writeProject(root: string, association: string) {

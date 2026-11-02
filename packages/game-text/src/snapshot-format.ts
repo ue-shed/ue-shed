@@ -1,5 +1,5 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 import { decodeWtf8, encodeWtf8, hasWtf8Surrogate, isWtf8 } from "./wtf8.js";
 
 /** Disposable v4 layout: every string domain stores canonical WTF-8. */
@@ -24,18 +24,18 @@ export type SnapshotKind = (typeof kinds)[number];
  * failed boundary; rebuild from authored inputs before trusting the cache, retaining any
  * original decoder cause for diagnosis.
  */
-export class SnapshotFormatError extends Schema.TaggedError<SnapshotFormatError>()(
-	"SnapshotFormatError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("invalid_snapshot"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		section: Schema.String,
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class SnapshotFormatError extends Schema.TaggedError<
+	SnapshotFormatError,
+	Brand.Brand<"packages/game-text/src/snapshot-format/SnapshotFormatError">
+>()("SnapshotFormatError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("invalid_snapshot"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	section: Schema.String,
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 /** Tag guard for snapshot format failures; match by tag, not `instanceof`. */
 export const isSnapshotFormatError = Schema.is(SnapshotFormatError);
 export function snapshotFailure(

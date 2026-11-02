@@ -450,14 +450,14 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										})
 									});
 									if (backend === "native" && step === states.length - 1) {
-										const invalid = Schema.decodeUnknownSync(
+										const invalid = yield* Schema.decodeEffect(
 											TextCorpusSearchRequest
 										)({
 											query: "",
 											capability: "all",
 											pageSize: 1,
 											localization: { target: "OtherTarget" }
-										});
+										}).pipe(Effect.orDie);
 										expect(
 											Result.isFailure(
 												yield* native.search(invalid).pipe(Effect.result)

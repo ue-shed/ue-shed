@@ -326,7 +326,7 @@ describe("complete camera arrangement editing", () => {
 			await Effect.runPromise(store.create(a, fixtureSet()));
 			await Effect.runPromise(
 				store.approve(
-					Schema.decodeUnknownSync(CameraApproval)({
+					Schema.decodeSync(CameraApproval)({
 						operationId: "save-1",
 						expectedRevision: 0,
 						cameraIds: ["camera-0", "camera-1"],
@@ -335,7 +335,7 @@ describe("complete camera arrangement editing", () => {
 					})
 				)
 			);
-			const remove = Schema.decodeUnknownSync(CameraArrangementCommand)({
+			const remove = Schema.decodeSync(CameraArrangementCommand)({
 				arrangementId: a.id,
 				expectedRevision: 0,
 				operationId: "remove",
@@ -346,7 +346,7 @@ describe("complete camera arrangement editing", () => {
 			a = (await Effect.runPromise(store.mutate(remove))).arrangement;
 			const approved = await Effect.runPromise(
 				store.approve(
-					Schema.decodeUnknownSync(CameraApproval)({
+					Schema.decodeSync(CameraApproval)({
 						operationId: "save-2",
 						expectedRevision: a.revision,
 						cameraIds: ["camera-0"],

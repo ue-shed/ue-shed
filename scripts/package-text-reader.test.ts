@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { expect, it } from "vitest";
 import {
 	AssetReader,
@@ -129,7 +129,7 @@ it("custom readers can keep their legacy API and report an absent capability", a
 			return yield* extractProjectTextPackages({ projectRoot: "unused" }).pipe(
 				Stream.runDrain,
 				Effect.flip,
-				Effect.provide(Layer.succeed(AssetReader, legacy))
+				Effect.provideService(AssetReader, legacy)
 			);
 		}).pipe(Effect.provide(assetReaderLayer({ executable })))
 	);

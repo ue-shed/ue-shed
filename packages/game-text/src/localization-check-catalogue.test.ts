@@ -47,9 +47,9 @@ describe("localization check catalogue", () => {
 	});
 
 	it("decodes partial parameters over the defaults and rejects invalid ones", () => {
-		const params = Schema.decodeUnknownSync(LengthOutlierParams)({ maximumRatio: 4 });
+		const params = Schema.decodeSync(LengthOutlierParams)({ maximumRatio: 4 });
 		expect(params).toEqual({ ...localizationCheckDefaults.length_outlier, maximumRatio: 4 });
-		expect(() => Schema.decodeUnknownSync(LengthOutlierParams)({ minimumRatio: -1 })).toThrow();
+		expect(() => Schema.decodeSync(LengthOutlierParams)({ minimumRatio: -1 })).toThrow();
 		expect(localizationCheckCatalogue.length_outlier.condition(params)).toContain("four times");
 	});
 

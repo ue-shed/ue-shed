@@ -59,7 +59,7 @@ export function handoffEvidence(evidence: ReleaseEvidence): ReleaseEvidence {
 
 /** Received evidence, pointed at the directory the handoff was unpacked into. */
 export function receivedEvidence(text: string, version: string, directory: string) {
-	const evidence = Schema.decodeUnknownSync(Schema.fromJsonString(ReleaseEvidence))(text);
+	const evidence = Schema.decodeSync(Schema.fromJsonString(ReleaseEvidence))(text);
 	if (evidence.version !== version) {
 		throw new Error(`The handoff holds ${evidence.version}, not ${version}.`);
 	}

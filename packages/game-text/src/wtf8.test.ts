@@ -24,7 +24,7 @@ const Golden = Schema.Struct({
 	)
 });
 const directory = new URL("../../../fixtures/game-text-wtf8/", import.meta.url);
-const golden = Schema.decodeUnknownSync(Schema.fromJsonString(Golden))(
+const golden = Schema.decodeSync(Schema.fromJsonString(Golden))(
 	await readFile(new URL("golden.json", directory), "utf8")
 );
 const values = golden.cases

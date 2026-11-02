@@ -76,7 +76,7 @@ const fixtureEngine = Schema.decodeUnknownSync(Schema.Literals(ENGINES))(
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
 const readCases = async () =>
-	Schema.decodeUnknownSync(Schema.fromJsonString(Cases))(
+	Schema.decodeSync(Schema.fromJsonString(Cases))(
 		await readFile(
 			join(fixture.root, "FixtureSource/GameTextActions/expected-cases.json"),
 			"utf8"
@@ -84,7 +84,7 @@ const readCases = async () =>
 	);
 
 const readEvidence = async (engine: (typeof ENGINES)[number]) =>
-	Schema.decodeUnknownSync(Schema.fromJsonString(Evidence))(
+	Schema.decodeSync(Schema.fromJsonString(Evidence))(
 		await readFile(
 			join(fixture.root, `FixtureExpected/game-text-actions/evidence.ue${engine}.json`),
 			"utf8"
@@ -330,7 +330,7 @@ describe("Game Text identity cases in the saved fixture", () => {
 				.filter((item) => {
 					const packageName = ROOT + item.site.slice(0, item.site.indexOf("."));
 					return [...fromReader].some((entry) => {
-						const [readPackage, readKey, readSource] = Schema.decodeUnknownSync(
+						const [readPackage, readKey, readSource] = Schema.decodeSync(
 							Schema.fromJsonString(
 								Schema.Tuple([Schema.String, Schema.String, Schema.String])
 							)

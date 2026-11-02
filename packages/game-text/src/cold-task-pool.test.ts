@@ -4,8 +4,8 @@ import { runColdTasks } from "./cold-task-pool.js";
 
 describe("cold task memory reservations", () => {
 	it("starts the largest file together with smaller work that fits", async () => {
-		const gates = Array.from({ length: 3 }, () => Effect.runSync(Deferred.make<number>()));
-		const firstWave = Effect.runSync(Deferred.make<void>());
+		const gates = Array.from({ length: 3 }, () => Deferred.makeUnsafe<number>());
+		const firstWave = Deferred.makeUnsafe<void>();
 		const started: number[] = [];
 		const pending = runColdTasks(
 			[

@@ -21,7 +21,7 @@ import {
 	type OwnedProcessExit,
 	type SupervisedEditorSessionError
 } from "@ue-shed/engine";
-import { Context, Duration, Effect, Exit, Layer, Option, Ref, Schema } from "effect";
+import { type Brand, Context, Duration, Effect, Exit, Layer, Option, Ref, Schema } from "effect";
 import { extractPluginArchive, verifyPluginArtifact } from "./archive.js";
 import {
 	PluginErrorGuidanceFields as ErrorGuidanceFields,
@@ -77,20 +77,23 @@ const BuildErrorFields = {
 	stage: Schema.String
 };
 
-export class InvalidCompiledPluginBuild extends Schema.TaggedError<InvalidCompiledPluginBuild>()(
-	"InvalidCompiledPluginBuild",
-	{ ...BuildErrorFields, cause: Schema.optionalKey(Schema.Defect()) }
-) {}
+export class InvalidCompiledPluginBuild extends Schema.TaggedError<
+	InvalidCompiledPluginBuild,
+	Brand.Brand<"packages/plugin-distribution/src/builder/InvalidCompiledPluginBuild">
+>()("InvalidCompiledPluginBuild", {
+	...BuildErrorFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
-export class CompiledPluginBuildFailed extends Schema.TaggedError<CompiledPluginBuildFailed>()(
-	"CompiledPluginBuildFailed",
-	{ ...BuildErrorFields, exitCode: Schema.NullOr(Schema.Int) }
-) {}
+export class CompiledPluginBuildFailed extends Schema.TaggedError<
+	CompiledPluginBuildFailed,
+	Brand.Brand<"packages/plugin-distribution/src/builder/CompiledPluginBuildFailed">
+>()("CompiledPluginBuildFailed", { ...BuildErrorFields, exitCode: Schema.NullOr(Schema.Int) }) {}
 
-export class CompiledPluginBuildCancelled extends Schema.TaggedError<CompiledPluginBuildCancelled>()(
-	"CompiledPluginBuildCancelled",
-	BuildErrorFields
-) {}
+export class CompiledPluginBuildCancelled extends Schema.TaggedError<
+	CompiledPluginBuildCancelled,
+	Brand.Brand<"packages/plugin-distribution/src/builder/CompiledPluginBuildCancelled">
+>()("CompiledPluginBuildCancelled", BuildErrorFields) {}
 
 const isCompiledPluginBuildCancelled = Schema.is(CompiledPluginBuildCancelled);
 const isPluginInstallCancelled = Schema.is(PluginInstallCancelled);
@@ -566,7 +569,7 @@ function abortBuild(signal: AbortSignal) {
 }
 
 function validateExit(exit: OwnedProcessExit) {
-	if (exit.kind === "exited" && exit.exitCode === 0) return Effect.succeed(undefined);
+	if (exit.kind === "exited" && exit.exitCode === 0) return Effect.undefined;
 	return Effect.fail(
 		new CompiledPluginBuildFailed({
 			exitCode: exit.exitCode,
@@ -882,8 +885,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										},
 										(owned) =>
 											owned.terminate("cancelled").pipe(
-												Effect.catch((cause) =>
-													Ref.set(cleanupFailure, Option.some(cause))
+												Effect.catchTag(
+													"SupervisedEditorSessionError",
+													(cause) =>
+														Ref.set(cleanupFailure, Option.some(cause))
 												),
 												Effect.asVoid
 											)
@@ -1005,7 +1010,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											"Build the source bundle from the matching release candidate."
 										);
 									}
-									const manifest = yield* Schema.decodeUnknownEffect(
+									const manifest = yield* Schema.decodeEffect(
 										CompiledPluginBundleManifestV3
 									)({
 										artifact: {

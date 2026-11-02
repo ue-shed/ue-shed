@@ -258,7 +258,7 @@ it.effect("returns a frame only while its bytes match the immutable manifest", (
 			const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 			const artifact = fixture.artifacts[0];
 			if (artifact === undefined) return yield* Effect.die("fixture has no artifact");
-			const manifest = yield* Schema.decodeUnknownEffect(NiagaraPreviewRunManifest)({
+			const manifest = yield* Schema.decodeEffect(NiagaraPreviewRunManifest)({
 				...fixture,
 				artifacts: [
 					{

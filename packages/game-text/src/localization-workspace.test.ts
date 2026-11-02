@@ -39,7 +39,7 @@ describe("bounded localization workspace", () => {
 			filter: "all"
 		} as const;
 		const page = workspace.search(request);
-		expect(Schema.decodeUnknownSync(WorkspaceQualityPage)(page)).toEqual(page);
+		expect(Schema.decodeSync(WorkspaceQualityPage)(page)).toEqual(page);
 		expect(page.counts.all).toBe(page.total);
 		expect(page.counts.character_budget).toBe(2);
 		expect(page.counts.terminology).toBe(1);
@@ -52,7 +52,7 @@ describe("bounded localization workspace", () => {
 		const id = filtered.findings[0]?.id;
 		if (!id) throw new Error("Expected a format argument finding");
 		const result = workspace.focus({ ...request, id });
-		expect(Schema.decodeUnknownSync(WorkspaceQualityFocusResult)(result)).toEqual(result);
+		expect(Schema.decodeSync(WorkspaceQualityFocusResult)(result)).toEqual(result);
 		if (result.status !== "found" || result.focus.kind !== "localization")
 			throw new Error("Expected localization detail");
 		const focus = result.focus;
@@ -81,7 +81,7 @@ describe("bounded localization workspace", () => {
 		expect(first.nextOffset).toBe(50);
 		expect(workspace.search({ ...request, offset: 100 }).findings).toHaveLength(5);
 		const changes = workspace.changes(request);
-		expect(Schema.decodeUnknownSync(WorkspaceChangesResult)(changes)).toEqual(changes);
+		expect(Schema.decodeSync(WorkspaceChangesResult)(changes)).toEqual(changes);
 		if (changes.status !== "ready") throw new Error("Expected proposals");
 		expect(changes.document.changes).toHaveLength(100);
 		expect(changes.remaining).toBe(5);
@@ -90,7 +90,7 @@ describe("bounded localization workspace", () => {
 
 	it("preserves the rules file in source investigation exports", async () => {
 		const { text, document } = qualityFixture();
-		const preset = Schema.decodeUnknownSync(GameTextInvestigationPreset)({
+		const preset = Schema.decodeSync(GameTextInvestigationPreset)({
 			schemaVersion: 1,
 			kind: "game_text",
 			sort: "domain_order",
@@ -110,7 +110,7 @@ describe("bounded localization workspace", () => {
 				authority: "project_files"
 			})
 		);
-		expect(Schema.decodeUnknownSync(GameTextInvestigationExport)(exported)).toEqual(exported);
+		expect(Schema.decodeSync(GameTextInvestigationExport)(exported)).toEqual(exported);
 		expect(exported.preset.rules).toEqual(document);
 		expect(exported.result).toMatchObject({
 			mode: "quality",
@@ -183,7 +183,7 @@ describe("bounded localization workspace", () => {
 
 	it("projects native-first report rows, zero baseline deltas and spreadsheet-safe CSV", () => {
 		const { page } = qualityFixture();
-		expect(Schema.decodeUnknownSync(WorkspaceReportPage)(page)).toEqual(page);
+		expect(Schema.decodeSync(WorkspaceReportPage)(page)).toEqual(page);
 		expect(page.rows.map((row) => row.culture)).toEqual(["en", "de"]);
 		expect(page.rows.every((row) => row.newWords === 0 && row.changedWords === 0)).toBe(true);
 		expect(JSON.stringify(page)).not.toContain("relativePath");
@@ -234,7 +234,7 @@ it("exports and replays the exact localization quality filter and culture with c
 	);
 	expect(exported.schemaVersion).toBe(2);
 	expect(exported.result).toEqual({ mode: "localization_quality", report });
-	expect(Schema.decodeUnknownSync(GameTextInvestigationExport)(exported)).toEqual(exported);
+	expect(Schema.decodeSync(GameTextInvestigationExport)(exported)).toEqual(exported);
 	expect(gameTextInvestigationCsv(exported)).toContain("finding_id");
 	expect(gameTextInvestigationCsv(exported)).toContain("format_arguments");
 	// The workspace filter belongs to a quality query over a target; other shapes are rejected.
@@ -253,7 +253,7 @@ it("exports and replays the exact localization quality filter and culture with c
 		{ ...report, culture: cultureCode("en") },
 		{
 			...report,
-			target: Schema.decodeUnknownSync(WorkspaceQualityRequest.fields.target)("Other")
+			target: Schema.decodeSync(WorkspaceQualityRequest.fields.target)("Other")
 		}
 	]) {
 		const failure = await Effect.runPromise(

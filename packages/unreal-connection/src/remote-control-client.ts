@@ -1,4 +1,4 @@
-import { Config, Context, Duration, Effect, Layer, Schema } from "effect";
+import { type Brand, Config, Context, Duration, Effect, Layer, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
 import { TransportRequestError, UnrealRC } from "unreal-rc";
 
@@ -10,26 +10,26 @@ const decodeRemoteCallEnvelope = Schema.decodeUnknownEffect(RemoteCallEnvelope);
  * the original cause. An interrupted or malformed mutation reply can follow an applied change:
  * honor nextStep before sending it again.
  */
-export class RemoteControlClientError extends Schema.TaggedError<RemoteControlClientError>()(
-	"RemoteControlClientError",
-	{
-		code: Schema.Literals([
-			"transport_failed",
-			"http_decode_failed",
-			"http_refused",
-			"connection_failed",
-			"request_timeout",
-			"invalid_envelope",
-			"invalid_result_json"
-		]),
-		endpoint: Schema.String,
-		functionName: Schema.String,
-		operation: Schema.String,
-		status: Schema.optional(Schema.Number),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class RemoteControlClientError extends Schema.TaggedError<
+	RemoteControlClientError,
+	Brand.Brand<"packages/unreal-connection/src/remote-control-client/RemoteControlClientError">
+>()("RemoteControlClientError", {
+	code: Schema.Literals([
+		"transport_failed",
+		"http_decode_failed",
+		"http_refused",
+		"connection_failed",
+		"request_timeout",
+		"invalid_envelope",
+		"invalid_result_json"
+	]),
+	endpoint: Schema.String,
+	functionName: Schema.String,
+	operation: Schema.String,
+	status: Schema.optional(Schema.Number),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /**
  * One UFUNCTION call at an explicit editor endpoint. Timeout overrides the client's default;

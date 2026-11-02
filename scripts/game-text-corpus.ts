@@ -132,7 +132,7 @@ export type CorpusManifest = typeof CorpusManifest.Type;
 
 /** Decodes manifest JSON text, failing on anything the commandlet would not write. */
 export function decodeCorpusManifest(contents: string): CorpusManifest {
-	return Schema.decodeUnknownSync(Schema.fromJsonString(CorpusManifest))(contents);
+	return Schema.decodeSync(Schema.fromJsonString(CorpusManifest))(contents);
 }
 
 /** Human summary of a manifest: totals, lines per text kind, packages per kind, duplicates. */

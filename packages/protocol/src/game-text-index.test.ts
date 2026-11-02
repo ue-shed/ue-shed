@@ -20,7 +20,7 @@ it("negotiates native builds without changing older operation versions", () => {
 		})
 	).toThrow();
 	expect(() =>
-		Schema.decodeUnknownSync(GameTextIndexBuildRequest)({
+		Schema.decodeSync(GameTextIndexBuildRequest)({
 			action: "strings",
 			configuration: {
 				cacheRoot: "cache",

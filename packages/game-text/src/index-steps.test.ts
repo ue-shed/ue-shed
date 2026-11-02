@@ -207,17 +207,17 @@ it.live(
 				const source = yield* steps.openTarget(
 					yield* steps.buildTarget(project, sourceImport)
 				);
-				const imports = yield* Effect.all(
-					[fixture.target, other].map((target) =>
-						steps.importTarget(project, { targetName: target.name })
-					),
+				const imports = yield* Effect.forEach(
+					[fixture.target, other],
+					(target) => steps.importTarget(project, { targetName: target.name }),
 					{ concurrency: 2 }
 				);
-				const targets = yield* Effect.all(
-					imports.map((imported) => steps.buildTarget(project, imported)),
+				const targets = yield* Effect.forEach(
+					imports,
+					(imported) => steps.buildTarget(project, imported),
 					{ concurrency: 2 }
 				);
-				const opened = yield* Effect.all(targets.map(steps.openTarget), { concurrency: 2 });
+				const opened = yield* Effect.forEach(targets, steps.openTarget, { concurrency: 2 });
 				expect(fixture.inventories()).toBe(1);
 				expect(fixture.packageReads()).toBe(1);
 				expect(opened.map((result) => result.localization.target)).toEqual([

@@ -198,7 +198,7 @@ export function makeWorkbenchEditorResponsivenessLayer(options: {
 				yield* store
 					.save(next)
 					.pipe(
-						Effect.catch((error) =>
+						Effect.catchTag("Workbench.LocalFilesError", (error) =>
 							Effect.logWarning(
 								"Could not save the Unreal responsiveness preference",
 								error
@@ -228,7 +228,11 @@ export const editorResponsivenessPreferenceFile = Effect.gen(function* () {
 			const json = yield* Effect.try(() => JSON.parse(new TextDecoder().decode(bytes)));
 			const document = yield* Schema.decodeUnknownEffect(PreferenceDocument)(json);
 			return document.keepUnrealResponsive;
-		}).pipe(Effect.catch(() => Effect.succeed(true))),
+		}).pipe(
+			Effect.catchTag(["SchemaError", "UnknownError", "Workbench.LocalFilesError"], () =>
+				Effect.succeed(true)
+			)
+		),
 		save: (keepUnrealResponsive: boolean) =>
 			files.writeFile(
 				path,
@@ -244,8 +248,8 @@ export const editorResponsivenessPreferenceFile = Effect.gen(function* () {
 export const WorkbenchEditorResponsivenessLive = Layer.unwrap(
 	editorResponsivenessPreferenceFile.pipe(
 		// Without a user data directory the preference still works for this run.
-		Effect.orElseSucceed(
-			(): EditorResponsivenessPreferenceStore => ({
+		Effect.catchTag("Workbench.ElectronAppError", () =>
+			Effect.succeed({
 				load: Effect.succeed(true),
 				save: () => Effect.void
 			})

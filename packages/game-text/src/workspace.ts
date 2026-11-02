@@ -339,7 +339,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const { chooseLocalizationFile, compareLocalizationFiles } =
 		yield* makeWorkspaceFileComparison(host);
 	const codeSource = (projectRoot: string) =>
-		host.codeSource ? host.codeSource(projectRoot) : Effect.succeed(undefined);
+		host.codeSource ? host.codeSource(projectRoot) : Effect.undefined;
 	const refreshIndex = yield* makeRetainedGameTextIndexWith(
 		Effect.fn("GameText.workspace.prepareWorkspace")(function* (request) {
 			const preferred = yield* localization
@@ -364,16 +364,14 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			if (Option.isNone(opened) && preferred?.targetName !== undefined)
 				opened = yield* steps.openCommitted({ projectRoot: request.projectRoot });
 			if (Option.isSome(opened)) return opened.value;
-			return yield* Effect.fail(
-				new GameTextIndexError({
-					code: "index_failed",
-					operation: "cache",
-					message: "No usable committed Game Text index exists.",
-					recovery: "Scan the project.",
-					nextStep: "reconcile",
-					retrySafe: true
-				})
-			);
+			return yield* new GameTextIndexError({
+				code: "index_failed",
+				operation: "cache",
+				message: "No usable committed Game Text index exists.",
+				recovery: "Scan the project.",
+				nextStep: "reconcile",
+				retrySafe: true
+			});
 		})
 	);
 	const dialog = host.files;
@@ -465,11 +463,13 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const runScan = (projectRoot: string) =>
 		scanCorpus(projectRoot).pipe(
 			Effect.map((corpus) => ({ corpus, status: "completed" as const })),
-			Effect.catch((error) =>
-				Effect.succeed({
-					error: indexPublicFailure(error),
-					status: "failed" as const
-				})
+			Effect.catchTag(
+				["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
+				(error) =>
+					Effect.succeed({
+						error: indexPublicFailure(error),
+						status: "failed" as const
+					})
 			)
 		);
 	const investigationSnapshot = yield* Ref.make<
@@ -503,9 +503,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const currentModel = <A>(read: (index: RetainedGameTextIndexResult) => A) =>
 		currentIndex().pipe(Effect.map((index) => (index ? read(index) : undefined)));
 	const currentValue = <A>(ref: Ref.Ref<A | undefined>) =>
-		currentIndex().pipe(
-			Effect.flatMap((index) => (index ? Ref.get(ref) : Effect.succeed(undefined)))
-		);
+		currentIndex().pipe(Effect.flatMap((index) => (index ? Ref.get(ref) : Effect.undefined)));
 	// Review records name who set them; the host's policy decides who that is.
 	const reviewer = host.reviewer ?? (() => "game-text");
 	const localization = yield* makeGameTextWorkspaceLocalization(
@@ -749,11 +747,13 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						}
 					})
 				),
-				Effect.catch((error) =>
-					Effect.succeed({
-						error: indexPublicFailure(error),
-						status: "failed" as const
-					})
+				Effect.catchTag(
+					["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
+					(error) =>
+						Effect.succeed({
+							error: indexPublicFailure(error),
+							status: "failed" as const
+						})
 				)
 			);
 		});
@@ -1350,14 +1350,12 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				current.project.projectRoot !== snapshot.source.projectRoot ||
 				(current.project.generation ?? 0) !== snapshot.source.generation
 			)
-				return yield* Effect.fail(
-					new InvestigationError({
-						retrySafe: true,
-						nextStep: "fix_input",
-						message: "No current scan is available.",
-						recovery: "Refresh this workspace before saving or exporting."
-					})
-				);
+				return yield* new InvestigationError({
+					retrySafe: true,
+					nextStep: "fix_input",
+					message: "No current scan is available.",
+					recovery: "Refresh this workspace before saving or exporting."
+				});
 			return snapshot;
 		}
 	);
@@ -1430,7 +1428,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		function* (query: GameTextInvestigationQuery) {
 			yield* currentInvestigationSnapshot();
 			const { localized, withFindings } = yield* investigationCorpus(query);
-			if (localized === undefined) return yield* Effect.fail(targetNotLoaded(query));
+			if (localized === undefined) return yield* targetNotLoaded(query);
 			return yield* saveInvestigation(dialog, {
 				extension: "csv",
 				write: (path) =>
@@ -1440,7 +1438,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					)
 			});
 		},
-		Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+		Effect.catchTag("InvestigationError", (error) =>
+			Effect.succeed(investigationFailure(error))
+		)
 	);
 	/**
 	 * A corpus query's investigation JSON. The host writes the document around its units, made
@@ -1450,7 +1450,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		function* (query: GameTextInvestigationQuery) {
 			const snapshot = yield* currentInvestigationSnapshot();
 			const { localized, request } = yield* investigationCorpus(query);
-			if (localized === undefined) return yield* Effect.fail(targetNotLoaded(query));
+			if (localized === undefined) return yield* targetNotLoaded(query);
 			const header = yield* localized
 				.readCorpusHeader()
 				.pipe(Effect.mapError(investigationIndexFailure));
@@ -1473,7 +1473,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					)
 			});
 		},
-		Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+		Effect.catchTag("InvestigationError", (error) =>
+			Effect.succeed(investigationFailure(error))
+		)
 	);
 	const investigationExport = Effect.fn("GameText.workspace.investigationExport")(
 		(query: GameTextInvestigationQuery, format: InvestigationFormat) =>
@@ -1505,7 +1507,15 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 										: result.report.findings.length
 							});
 						}),
-						Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+						Effect.catchTag(
+							[
+								"SnapshotStoreError",
+								"SnapshotFormatError",
+								"GameTextIndexError",
+								"InvestigationError"
+							],
+							(error) => Effect.succeed(investigationFailure(error))
+						)
 					)
 	);
 	/** Saves a query and the scan's rules as a preset; checking it reads nothing of the scan. */
@@ -1513,7 +1523,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		function* (query: GameTextInvestigationQuery) {
 			const snapshot = yield* currentInvestigationSnapshot();
 			const preset = investigationPreset(query, snapshot.rules);
-			yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)(preset).pipe(
+			yield* Schema.decodeEffect(GameTextInvestigationPreset)(preset).pipe(
 				Effect.mapError(
 					(cause) =>
 						new InvestigationError({
@@ -1533,7 +1543,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				projectRoot: snapshot.source.projectRoot
 			});
 		},
-		Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+		Effect.catchTag("InvestigationError", (error) =>
+			Effect.succeed(investigationFailure(error))
+		)
 	);
 	const investigationOpen = Effect.fn("GameText.workspace.investigationOpen")(() =>
 		Effect.gen(function* () {
@@ -1555,7 +1567,11 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			}
 			yield* Ref.set(qualityRulePath, undefined);
 			return opened;
-		}).pipe(Effect.catch((error) => Effect.succeed(investigationFailure(error))))
+		}).pipe(
+			Effect.catchTag("InvestigationError", (error) =>
+				Effect.succeed(investigationFailure(error))
+			)
+		)
 	);
 
 	// A scan owns both host refresh and text preparation. Admission and the generation handoff
@@ -1643,7 +1659,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		operationTarget: scoped((name) =>
 			consistentIndex().pipe(
 				Effect.flatMap((index) =>
-					index ? localization.operationTarget(name) : Effect.succeed(undefined)
+					index ? localization.operationTarget(name) : Effect.undefined
 				)
 			)
 		),

@@ -26,7 +26,7 @@ function isInsideAllowedPackage(path: string) {
 	return path === allowedPackage || path.startsWith(`${allowedPackage}${sep}`);
 }
 
-test("confines p4client-ts to @ue-shed/map-history", async () => {
+void test("confines p4client-ts to @ue-shed/map-history", async () => {
 	const files = (
 		await Promise.all(
 			workspaceRoots.map((root) =>

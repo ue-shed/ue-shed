@@ -211,7 +211,7 @@ export const withIndexedCorpus = <A, E>(
 			let targetName: string | undefined;
 			if (files === undefined) fixture.setTargets([]);
 			else {
-				const target = Schema.decodeUnknownSync(LocalizationTarget)({
+				const target = Schema.decodeSync(LocalizationTarget)({
 					...files.target,
 					poFormat:
 						files.cultures.flatMap((culture) =>

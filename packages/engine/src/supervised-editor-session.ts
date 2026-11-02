@@ -7,7 +7,17 @@ import {
 	type CompanionCapabilityManifest,
 	type ErrorNextStep
 } from "@ue-shed/protocol";
-import { Context, Duration, Effect, Exit, Layer, Option, Schema, type Scope } from "effect";
+import {
+	type Brand,
+	Context,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	type Scope
+} from "effect";
 import {
 	EngineInstallationDiscovery,
 	type EngineInstallationError
@@ -121,34 +131,34 @@ export type OwnedProcessTerminationReason = Extract<
  * explicit lifecycle stage. Cause preserves the underlying error; failed termination requires
  * operator reconciliation.
  */
-export class SupervisedEditorSessionError extends Schema.TaggedError<SupervisedEditorSessionError>()(
-	"SupervisedEditorSessionError",
-	{
-		code: Schema.Literals([
-			"invalid_request",
-			"engine_discovery_failed",
-			"editor_missing",
-			"project_missing",
-			"plugin_missing",
-			"build_mismatch",
-			"invalid_module_manifest",
-			"plugin_unavailable",
-			"engine_plugins_stale",
-			"startup_map_missing",
-			"recovery_pending",
-			"process_tree_supervision_unavailable",
-			"spawn_failed",
-			"supervisor_failed",
-			"process_exited",
-			"readiness_failed",
-			"capability_unavailable",
-			"termination_failed"
-		]),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		stage: Schema.Literals(["validation", "launch", "readiness", "operation", "termination"])
-	}
-) {}
+export class SupervisedEditorSessionError extends Schema.TaggedError<
+	SupervisedEditorSessionError,
+	Brand.Brand<"packages/engine/src/supervised-editor-session/SupervisedEditorSessionError">
+>()("SupervisedEditorSessionError", {
+	code: Schema.Literals([
+		"invalid_request",
+		"engine_discovery_failed",
+		"editor_missing",
+		"project_missing",
+		"plugin_missing",
+		"build_mismatch",
+		"invalid_module_manifest",
+		"plugin_unavailable",
+		"engine_plugins_stale",
+		"startup_map_missing",
+		"recovery_pending",
+		"process_tree_supervision_unavailable",
+		"spawn_failed",
+		"supervisor_failed",
+		"process_exited",
+		"readiness_failed",
+		"capability_unavailable",
+		"termination_failed"
+	]),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	stage: Schema.Literals(["validation", "launch", "readiness", "operation", "termination"])
+}) {}
 const isSupervisedEditorSessionError = Schema.is(SupervisedEditorSessionError);
 
 /**
@@ -772,9 +782,7 @@ export const SupervisedEditorSessionLive = Layer.effect(
 		const acquire = Effect.fn("SupervisedEditorSession.acquire")(function* (
 			input: SupervisedEditorSessionRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(SupervisedEditorSessionRequest)(
-				input
-			).pipe(
+			const request = yield* Schema.decodeEffect(SupervisedEditorSessionRequest)(input).pipe(
 				Effect.mapError((cause) =>
 					sessionError(
 						"invalid_request",

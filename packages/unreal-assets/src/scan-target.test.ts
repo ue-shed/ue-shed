@@ -10,7 +10,7 @@ const fixtureRoot = resolve(
 const repositoryRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
 const run = (path: string) => Effect.runPromise(resolveScanTarget(path));
-const runExit = (path: string) => Effect.runPromise(Effect.exit(resolveScanTarget(path)));
+const runExit = (path: string) => Effect.runPromiseExit(resolveScanTarget(path));
 
 describe("scan target resolution", () => {
 	it("scans all of Content for a project root", async () => {

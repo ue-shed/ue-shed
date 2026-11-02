@@ -96,7 +96,7 @@ describe("coded stream failures", () => {
 				const observatory = yield* Observatory;
 				return yield* observatory.setObservationCadence(
 					"http://127.0.0.1:30010",
-					Schema.decodeUnknownSync(WorldScoutRefreshRate)(10)
+					yield* Schema.decodeEffect(WorldScoutRefreshRate)(10).pipe(Effect.orDie)
 				);
 			}).pipe(
 				Effect.provide(ObservatoryLive),

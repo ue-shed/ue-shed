@@ -38,11 +38,10 @@ it.live(
 							.pipe(
 								Effect.ensuring(Effect.sync(() => events.push("session-released")))
 							),
-					importLocalizationTarget: (input) =>
+					importLocalizationTarget: () =>
 						Effect.gen(function* () {
 							yield* Deferred.succeed(importEntered, undefined);
 							return yield* Effect.never;
-							return yield* underlying.importLocalizationTarget(input);
 						}).pipe(Effect.ensuring(Effect.sync(() => events.push("import-finalized"))))
 				})
 			).pipe(Layer.merge(Layer.succeed(GameTextIndexQuery, queries)));

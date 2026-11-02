@@ -55,7 +55,7 @@ type FailedFileEvidence = Extract<typeof ManifestFileEvidence.Type, { status: "f
 
 function boundary<S extends Schema.ConstraintDecoder<unknown>>(schema: S, input: S["Encoded"]) {
 	const parsed = parseResult(() => validate(schema, input));
-	return Result.isFailure(parsed) ? Effect.fail(parsed.failure) : Effect.succeed(parsed.success);
+	return Effect.fromResult(parsed);
 }
 
 /**
@@ -76,7 +76,7 @@ export const LocalizationEvidenceLive = Layer.effect(
 				.read(request.projectRoot, "Config/DefaultEditor.ini", limits)
 				.pipe(Effect.result);
 			if (Result.isFailure(editor) && editor.failure.code !== "file_missing")
-				return yield* Effect.fail(editor.failure);
+				return yield* editor.failure;
 			const names = yield* files.listConfigs(request.projectRoot, limits);
 			const configs: { relativePath: string; text: string }[] = [];
 			const diagnostics: LocalizationTargetDiscovery["diagnostics"][number][] = [];
@@ -98,13 +98,13 @@ export const LocalizationEvidenceLive = Layer.effect(
 			const dashboard = Result.isSuccess(editor)
 				? parseResult(() => decodeText(editor.success.bytes, limits))
 				: Result.succeed("");
-			if (Result.isFailure(dashboard)) return yield* Effect.fail(dashboard.failure);
+			if (Result.isFailure(dashboard)) return yield* dashboard.failure;
 			const parsed = discoverLocalizationTargets({
 				dashboardText: dashboard.success,
 				configs,
 				limits
 			});
-			if (Result.isFailure(parsed)) return yield* Effect.fail(parsed.failure);
+			if (Result.isFailure(parsed)) return yield* parsed.failure;
 			yield* Effect.annotateCurrentSpan({
 				"localization.targets": parsed.success.targets.length,
 				"localization.configs": configs.length,
@@ -127,7 +127,7 @@ export const LocalizationEvidenceLive = Layer.effect(
 					0
 				) > limits.maxFiles
 			) {
-				return yield* Effect.fail(localizationError("limit_exceeded"));
+				return yield* localizationError("limit_exceeded");
 			}
 			const presence: LocalizationTargetsReport["presence"][number][] = [];
 			for (const target of discovery.targets) {
@@ -162,7 +162,7 @@ export const LocalizationEvidenceLive = Layer.effect(
 						: yield* files
 								.presence(request.projectRoot, target.outputPaths.manifest)
 								.pipe(Effect.result);
-				if (Result.isFailure(manifest)) return yield* Effect.fail(manifest.failure);
+				if (Result.isFailure(manifest)) return yield* manifest.failure;
 				presence.push({ target: target.name, manifest: manifest.success, cultures });
 			}
 			return immutable(validate(LocalizationTargetsReport, { ...discovery, presence }));
@@ -174,7 +174,7 @@ export const LocalizationEvidenceLive = Layer.effect(
 			const request = yield* boundary(LocalizationEvidenceRequest, input);
 			const limits = limitsFor(request.limits);
 			if (request.target.cultures.length * 2 + 3 > limits.maxFiles)
-				return yield* Effect.fail(localizationError("limit_exceeded"));
+				return yield* localizationError("limit_exceeded");
 			let readCount = 0;
 			let failedCount = 0;
 			let entryCount = 0;

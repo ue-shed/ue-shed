@@ -230,7 +230,7 @@ function readHistoricalWorld(options: {
 				Effect.mapError((error) => savedWorldError("Could not read historical map", error))
 			);
 		if (world.sourceKind !== options.scope.sourceKind) {
-			return yield* Effect.fail(historicalLayoutError(options.scope, world));
+			return yield* historicalLayoutError(options.scope, world);
 		}
 		return world;
 	})();
@@ -320,15 +320,13 @@ function reconstructScopedMapHistory(options: {
 			yield* reportProgress(progress("applying_revision", index, totalChangelists));
 			const described = yield* source.describeChangelist(selected.change);
 			if (described.status !== "submitted") {
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "perforce_command",
-						message: `Changelist ${selected.change} is not submitted.`,
-						recovery: "Select submitted Perforce history and retry.",
-						retrySafe: false,
-						nextStep: "escalate"
-					})
-				);
+				return yield* new MapHistoryError({
+					kind: "perforce_command",
+					message: `Changelist ${selected.change} is not submitted.`,
+					recovery: "Select submitted Perforce history and retry.",
+					retrySafe: false,
+					nextStep: "escalate"
+				});
 			}
 			const beforeScope = lineageScopeAtChange(lineage, selected.change - 1);
 			const afterScope = lineageScopeAtChange(lineage, selected.change);

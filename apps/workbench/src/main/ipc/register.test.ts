@@ -1055,11 +1055,7 @@ it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 it.effect("rejects malformed input instead of reaching the service", () =>
 	Effect.gen(function* () {
 		const { recorder, result } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				return yield* Effect.exit(
-					ipc.invoke("asset-audits:textures:preview", "not-a-game-path")
-				);
-			})
+			Effect.exit(ipc.invoke("asset-audits:textures:preview", "not-a-game-path"))
 		);
 		expect(result._tag).toBe("Failure");
 		expect(yield* recorder.calls()).toEqual([]);

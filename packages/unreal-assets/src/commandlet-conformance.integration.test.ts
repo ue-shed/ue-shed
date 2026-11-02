@@ -101,7 +101,9 @@ async function filesBelow(root: string, directory = root): Promise<readonly stri
 	const files = await Promise.all(
 		entries.map((entry) => {
 			const path = join(directory, entry.name);
-			return entry.isDirectory() ? filesBelow(root, path) : [relative(root, path)];
+			return entry.isDirectory()
+				? filesBelow(root, path)
+				: Promise.resolve([relative(root, path)]);
 		})
 	);
 	return files.flat().toSorted();

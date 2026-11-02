@@ -38,14 +38,12 @@ export const saveWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 						rowCount: options.rowCount
 					};
 		if (options.projectRoot && "bytes" in output && output.bytes.byteLength > PRESET_LIMIT)
-			return yield* Effect.fail(
-				new InvestigationError({
-					retrySafe: true,
-					nextStep: "fix_input",
-					message: "The preset exceeds 4 MiB.",
-					recovery: "Reduce the rule document before saving this preset."
-				})
-			);
+			return yield* new InvestigationError({
+				retrySafe: true,
+				nextStep: "fix_input",
+				message: "The preset exceeds 4 MiB.",
+				recovery: "Reduce the rule document before saving this preset."
+			});
 		const choice = yield* files.chooseSaveFile({
 			title: options.projectRoot ? "Save investigation preset" : "Export matching results",
 			defaultPath: options.projectRoot
@@ -107,7 +105,7 @@ export const openWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 					})
 			)
 		);
-		const preset = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(
+		const preset = yield* Schema.decodeEffect(Schema.fromJsonString(schema))(
 			new TextDecoder().decode(bytes)
 		).pipe(
 			Effect.mapError(

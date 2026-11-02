@@ -54,7 +54,7 @@ export const WorkbenchAssetNavigationLive = Layer.effect(
 				Effect.tap((result) =>
 					result.status === "located" ? editorHandoff.activate(endpoint) : Effect.void
 				),
-				Effect.catch((error) =>
+				Effect.catchTag(["UnrealConnectionError", "UnrealCapabilityError"], (error) =>
 					Effect.succeed(
 						unavailableAssetLocation({
 							message: error.message,

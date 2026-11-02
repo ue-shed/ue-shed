@@ -10,7 +10,7 @@ import {
 	type EditorPlaySessionStateResponse
 } from "@ue-shed/protocol";
 
-import { Effect, Exit, Option, Queue, Schedule, Schema, Stream } from "effect";
+import { type Brand, Effect, Exit, Option, Queue, Schedule, Schema, Stream } from "effect";
 import type {
 	BlueprintGraphReadResult,
 	BlueprintAssetSearchRequest,
@@ -43,18 +43,18 @@ import {
 	type WorkbenchTaskProgress as WorkbenchTaskProgressValue
 } from "../shared/project-workspace-contract.js";
 
-export class WorkbenchRendererError extends Schema.TaggedError<WorkbenchRendererError>()(
-	"WorkbenchRendererError",
-	{
-		message: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("workbench_renderer_failed"),
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class WorkbenchRendererError extends Schema.TaggedError<
+	WorkbenchRendererError,
+	Brand.Brand<"apps/workbench/src/renderer/workbench-client/WorkbenchRendererError">
+>()("WorkbenchRendererError", {
+	message: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("workbench_renderer_failed"),
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 import {
 	ShowcaseContext as ShowcaseContextSchema,
@@ -272,7 +272,7 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 		Effect.acquireRelease(
 			Effect.sync(() =>
 				window.ueShed.onEditorHandoff((notice) => {
-					const decoded = Schema.decodeUnknownOption(EditorHandoffNotice)(notice);
+					const decoded = Schema.decodeOption(EditorHandoffNotice)(notice);
 					if (Option.isSome(decoded)) Queue.offerUnsafe(queue, decoded.value);
 				})
 			),

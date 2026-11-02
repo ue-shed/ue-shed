@@ -141,13 +141,13 @@ if (values.worker) {
 				select === "quality"
 					? await measure("quality", () =>
 							scaleQuality(index.result, recorder?.tracer)
-						).then(({ quality: _, ...counts }) => counts)
+						).then(({ quality: _quality, ...counts }) => counts)
 					: await measure("source_quality", () =>
 							scaleSourceQuality(
 								index.result,
 								select === "source-quality" ? "indexed" : "memory"
 							)
-						).then(({ query: _, ...counts }) => counts);
+						).then(({ query: _query, ...counts }) => counts);
 			send("done", {
 				counts: {
 					heapLimitBytes: getHeapStatistics().heap_size_limit,

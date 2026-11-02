@@ -93,15 +93,13 @@ async function fixture(multiCamera = false) {
 					};
 					if (failApplyResponse) {
 						failApplyResponse = false;
-						return yield* Effect.fail(
-							new CameraBridgeError({
-								code: "disconnected",
-								message: "Lost acknowledgement",
-								recovery: "Reconnect",
-								retrySafe: false,
-								nextStep: "reconcile"
-							})
-						);
+						return yield* new CameraBridgeError({
+							code: "disconnected",
+							message: "Lost acknowledgement",
+							recovery: "Reconnect",
+							retrySafe: false,
+							nextStep: "reconcile"
+						});
 					}
 				}
 				return state;
@@ -169,7 +167,7 @@ describe("replaceable camera bridge coordinator", () => {
 			const proposal = await Effect.runPromise(prepareCameraRecovery(f.store, f.inspect()));
 			await Effect.runPromise(
 				f.store.mutate(
-					Schema.decodeUnknownSync(CameraArrangementCommand)({
+					Schema.decodeSync(CameraArrangementCommand)({
 						kind: "tune",
 						arrangementId: f.attachment.sessionId,
 						expectedRevision: 0,
@@ -195,7 +193,7 @@ describe("replaceable camera bridge coordinator", () => {
 				f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
 				await Effect.runPromise(
 					f.store.mutate(
-						Schema.decodeUnknownSync(CameraArrangementCommand)({
+						Schema.decodeSync(CameraArrangementCommand)({
 							kind: "tune",
 							arrangementId: f.attachment.sessionId,
 							expectedRevision: 0,
@@ -410,7 +408,7 @@ describe("replaceable camera bridge coordinator", () => {
 			f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
 			await Effect.runPromise(
 				f.store.mutate(
-					Schema.decodeUnknownSync(CameraArrangementCommand)({
+					Schema.decodeSync(CameraArrangementCommand)({
 						kind: "tune",
 						arrangementId: f.attachment.sessionId,
 						expectedRevision: 0,
@@ -434,7 +432,7 @@ describe("replaceable camera bridge coordinator", () => {
 		try {
 			await Effect.runPromise(
 				f.store.mutate(
-					Schema.decodeUnknownSync(CameraArrangementCommand)({
+					Schema.decodeSync(CameraArrangementCommand)({
 						kind: "tune",
 						arrangementId: f.attachment.sessionId,
 						expectedRevision: 0,

@@ -39,7 +39,7 @@ export function filterFlags() {
 export function optionalFilterFlags(
 	filters: readonly string[],
 	cultures: Option.Option<string>,
-	group: Option.Option<typeof TextGroupBy.Type> = Option.none()
+	group: Option.Option<TextGroupBy> = Option.none()
 ) {
 	return {
 		...(filters.length > 0 ? { filter: filters } : undefined),
@@ -50,7 +50,7 @@ export function optionalFilterFlags(
 
 /** Command fields for `--kind`, `--path` and `--files`; absent when none was given. */
 export function optionalWhereFlags(
-	kinds: readonly (typeof TextOriginKind.Type)[],
+	kinds: readonly TextOriginKind[],
 	path: Option.Option<string>,
 	files: Option.Option<string>
 ) {
@@ -64,7 +64,7 @@ export function optionalWhereFlags(
 /** The search request's location filter for those command fields and the read file list. */
 export function textWhere(
 	command: {
-		readonly kinds?: readonly (typeof TextOriginKind.Type)[];
+		readonly kinds?: readonly TextOriginKind[];
 		readonly pathPrefix?: string;
 	},
 	files?: readonly string[]
@@ -80,7 +80,7 @@ export function textWhere(
 
 export function optionalLocalizationFlags(
 	culture: Option.Option<string>,
-	state: Option.Option<typeof LocalizationState.Type>
+	state: Option.Option<LocalizationState>
 ) {
 	return {
 		...(Option.isSome(culture) ? { culture: culture.value } : undefined),

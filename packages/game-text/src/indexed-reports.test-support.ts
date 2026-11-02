@@ -61,10 +61,7 @@ export function indexedTestReports(corpus: TextCorpus, evidence?: LocalizationTa
 					cause: result.error
 				});
 			}
-			reports.set(
-				key,
-				Schema.decodeUnknownSync(Schema.fromJsonString(schema))(result.stdout)
-			);
+			reports.set(key, Schema.decodeSync(Schema.fromJsonString(schema))(result.stdout));
 		}
 		return Schema.decodeUnknownSync(schema)(reports.get(key));
 	}

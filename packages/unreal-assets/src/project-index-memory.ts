@@ -219,27 +219,22 @@ const makeMemoryService = (state: Ref.Ref<MemoryState>): ProjectIndexApi => {
 			(entry) => entry.summary.projectId === decoded.projectId
 		);
 		if (catalog === undefined) {
-			return yield* Effect.fail(
-				new ProjectIndexInvalidRequest({
-					message: "No committed Project Index generation matches that project identity.",
-					recovery:
-						"Refresh the Project Index for the project root, then retry the query.",
-					retrySafe: true,
-					nextStep: "reconcile"
-				})
-			);
+			return yield* new ProjectIndexInvalidRequest({
+				message: "No committed Project Index generation matches that project identity.",
+				recovery: "Refresh the Project Index for the project root, then retry the query.",
+				retrySafe: true,
+				nextStep: "reconcile"
+			});
 		}
 		if (catalog.summary.generation !== decoded.expectedGeneration) {
-			return yield* Effect.fail(
-				new ProjectIndexStaleGeneration({
-					actualGeneration: catalog.summary.generation,
-					expectedGeneration: decoded.expectedGeneration,
-					message: "The Project Index generation changed since this query started.",
-					recovery: "Read status for the current generation, then retry the query.",
-					retrySafe: true,
-					nextStep: "reconcile"
-				})
-			);
+			return yield* new ProjectIndexStaleGeneration({
+				actualGeneration: catalog.summary.generation,
+				expectedGeneration: decoded.expectedGeneration,
+				message: "The Project Index generation changed since this query started.",
+				recovery: "Read status for the current generation, then retry the query.",
+				retrySafe: true,
+				nextStep: "reconcile"
+			});
 		}
 		const items: readonly ProjectIndexItem[] =
 			decoded._tag === "Inventory"

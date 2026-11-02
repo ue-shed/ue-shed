@@ -7,7 +7,7 @@ import {
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Clock, Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Clock, Context, Effect, Layer, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
 import {
 	ReviewRepository,
@@ -41,15 +41,15 @@ const isReviewArtifactSourceRejected = Schema.is(ReviewArtifactSourceRejected);
  * Review preparation, capture or finalization failure with run identity and original cause.
  * Partial view outcomes and cleanup/publication failures must remain visible.
  */
-export class ReviewCaptureRunError extends Schema.TaggedError<ReviewCaptureRunError>()(
-	"ReviewCaptureRunError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		operation: Schema.Literals(["prepare", "capture", "finalize"]),
-		runId: Schema.String
-	}
-) {}
+export class ReviewCaptureRunError extends Schema.TaggedError<
+	ReviewCaptureRunError,
+	Brand.Brand<"packages/cameras/src/review-capture/ReviewCaptureRunError">
+>()("ReviewCaptureRunError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	operation: Schema.Literals(["prepare", "capture", "finalize"]),
+	runId: Schema.String
+}) {}
 
 /**
  * Positive concurrency policy for a review run. Hosts choose parallelism explicitly; this
@@ -365,7 +365,7 @@ function captureOneView(args: {
 	readonly ids: ReviewIdGeneratorApi;
 	readonly projectRoot: string;
 	readonly reviewSet: ReviewSet;
-	readonly runId: typeof CaptureRunId.Type;
+	readonly runId: CaptureRunId;
 	readonly unrealStagingRoot: string;
 	readonly view: ReviewSet["views"][number];
 }): Effect.Effect<ViewResult, ReviewStorageError> {
@@ -570,9 +570,7 @@ function captureReviewSetWith(args: {
 		const renderer =
 			args.options.renderer === undefined
 				? undefined
-				: yield* Schema.decodeUnknownEffect(CameraRendererPolicy)(
-						args.options.renderer
-					).pipe(
+				: yield* Schema.decodeEffect(CameraRendererPolicy)(args.options.renderer).pipe(
 						Effect.mapError(
 							(cause) =>
 								new ReviewCaptureRunError({
@@ -596,33 +594,29 @@ function captureReviewSetWith(args: {
 					: { viewIds: args.options.viewIds })
 			});
 		if (invocation.reviewSetId !== reviewSet.id) {
-			return yield* Effect.fail(
-				new ReviewCaptureRunError({
-					message: "The Capture Invocation belongs to a different Review Set.",
-					operation: "prepare",
-					recovery: "Create an invocation for the Review Set being captured.",
-					retrySafe: true,
-					nextStep: "fix_input",
-					runId
-				})
-			);
+			return yield* new ReviewCaptureRunError({
+				message: "The Capture Invocation belongs to a different Review Set.",
+				operation: "prepare",
+				recovery: "Create an invocation for the Review Set being captured.",
+				retrySafe: true,
+				nextStep: "fix_input",
+				runId
+			});
 		}
 		const requestedViewIds = invocation.viewIds ?? args.options.viewIds;
 		const views = requestedViewIds
 			? reviewSet.views.filter((view) => requestedViewIds.includes(view.id))
 			: reviewSet.views;
 		if (views.length === 0 || views.length !== (requestedViewIds?.length ?? views.length)) {
-			return yield* Effect.fail(
-				new ReviewCaptureRunError({
-					message:
-						"The requested capture plan contains missing or duplicate Review View IDs.",
-					operation: "prepare",
-					recovery: "Reload the Review Set, review the capture plan, and retry.",
-					retrySafe: true,
-					nextStep: "reconcile",
-					runId
-				})
-			);
+			return yield* new ReviewCaptureRunError({
+				message:
+					"The requested capture plan contains missing or duplicate Review View IDs.",
+				operation: "prepare",
+				recovery: "Reload the Review Set, review the capture plan, and retry.",
+				retrySafe: true,
+				nextStep: "reconcile",
+				runId
+			});
 		}
 		const destination =
 			args.options.destination ??

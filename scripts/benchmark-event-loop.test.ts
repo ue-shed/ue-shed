@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { trackBenchmarkEventLoop } from "./benchmark-event-loop.ts";
 
-test("a blocking operation is measured even when it prevents every scheduled timer", () => {
+void test("a blocking operation is measured even when it prevents every scheduled timer", () => {
 	const probe = trackBenchmarkEventLoop();
 	try {
 		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);

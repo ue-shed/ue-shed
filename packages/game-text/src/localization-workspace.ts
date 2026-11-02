@@ -308,7 +308,7 @@ interface SeverityBuckets<A> {
 	low: A[];
 }
 type SourceFinding = TextQualityReport["findings"][number];
-type RuleId = (typeof TextQualityRuleSummary.Type)["ruleId"];
+type RuleId = TextQualityRuleSummary["ruleId"];
 /** A shown finding: the finding, its line when known, and the summary the list displays. */
 export interface WorkspaceQualityItem {
 	readonly finding: Finding | SourceFinding;

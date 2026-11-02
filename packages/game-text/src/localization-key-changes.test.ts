@@ -22,7 +22,7 @@ import {
 import { TextUnit, type TextCorpus } from "./schema.js";
 
 function cell(key: string, source: string, row = "Start"): TextUnit {
-	return Schema.decodeUnknownSync(TextUnit)({
+	return Schema.decodeSync(TextUnit)({
 		id: `unit:${key}`,
 		source: { status: "consistent", value: source },
 		identity: { status: "resolved", namespace: "NS", key },

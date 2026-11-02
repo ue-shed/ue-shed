@@ -16,7 +16,7 @@ import {
 
 const png = readFileSync(new URL("../apps/site/public/media/authoring.png", import.meta.url));
 
-test("media promotion requires passed, complete, contained recording evidence", (t) => {
+void test("media promotion requires passed, complete, contained recording evidence", (t) => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-site-media-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const bundle = join(root, "bundle");
@@ -26,7 +26,7 @@ test("media promotion requires passed, complete, contained recording evidence", 
 		title: slug
 	}));
 	for (const chapter of chapters) writeFileSync(join(bundle, chapter.screenshot), png);
-	const manifest = Schema.decodeUnknownSync(RecordingManifest)({
+	const manifest = Schema.decodeSync(RecordingManifest)({
 		contract: { name: "ue-shed-showcase-recording", version: 1 },
 		status: "passed",
 		journey: "site-saved",
@@ -84,7 +84,7 @@ test("media promotion requires passed, complete, contained recording evidence", 
 	assert.throws(() => prepareCaptures(bundle, manifest, "site-saved"), /PNG/);
 });
 
-test("site check detects missing images and edits outside the promotion workflow", (t) => {
+void test("site check detects missing images and edits outside the promotion workflow", (t) => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-site-check-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const captures: Record<string, SiteMedia["captures"][string]> = {};

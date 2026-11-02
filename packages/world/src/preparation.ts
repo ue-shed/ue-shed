@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+	type Brand,
 	Cause,
 	Context,
 	Deferred,
@@ -106,16 +107,16 @@ const worldPreparationRecovery = {
 		"Inspect the actors and Data Layers changed during the lease and report the restoration conflict before preparing again."
 } satisfies Record<typeof WorldPreparationErrorCode.Type, string>;
 
-export class WorldPreparationError extends Schema.TaggedError<WorldPreparationError>()(
-	"WorldPreparationError",
-	{
-		code: WorldPreparationErrorCode,
-		operation: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		snapshot: Schema.optionalKey(WorldSnapshot)
-	}
-) {}
+export class WorldPreparationError extends Schema.TaggedError<
+	WorldPreparationError,
+	Brand.Brand<"packages/world/src/preparation/WorldPreparationError">
+>()("WorldPreparationError", {
+	code: WorldPreparationErrorCode,
+	operation: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	snapshot: Schema.optionalKey(WorldSnapshot)
+}) {}
 // Effect finalizers cannot fail in the typed channel. Only this private carrier is
 // translated by withPreparedWorld; unrelated defects must retain their original cause.
 class WorldRestorationFailure extends Error {
@@ -343,16 +344,14 @@ export function makeWorldPreparation(
 	});
 	const snapshot = (request: WorldRequest) =>
 		execute(request).pipe(
-			Effect.flatMap((response) =>
-				response.status === "described"
-					? Effect.fail(
-							failure(
-								"invalid_contract",
-								request.action,
-								"Expected world preparation evidence."
-							)
-						)
-					: Effect.succeed(response)
+			Effect.filterOrFail(
+				(response) => !(response.status === "described"),
+				() =>
+					failure(
+						"invalid_contract",
+						request.action,
+						"Expected world preparation evidence."
+					)
 			)
 		);
 	const describe = Effect.fn("WorldPreparation.describe")(function* () {
@@ -537,7 +536,7 @@ export function makeWorldPreparation(
 			Effect.raceFirst(work, Deferred.await(lost));
 		yield* checkReady().pipe(
 			Effect.repeat(Schedule.spaced(leaseMs / 3)),
-			Effect.catch((error) => Deferred.fail(lost, error)),
+			Effect.catchTag("WorldPreparationError", (error) => Deferred.fail(lost, error)),
 			Effect.forkScoped
 		);
 		return {

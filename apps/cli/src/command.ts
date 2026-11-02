@@ -115,7 +115,7 @@ export function runCli(args: readonly string[]): Effect.Effect<void, CliCommandE
 			return;
 		}
 		if (Option.isSome(error) && isCliCommandError(error.value)) {
-			return yield* Effect.fail<CliCommandError>(error.value);
+			return yield* error.value;
 		}
 		return yield* Effect.die(Cause.squash(result.cause));
 	});

@@ -28,11 +28,11 @@ it.effect("reads the real target and every culture with independent provenance",
 	Effect.gen(function* () {
 		const reader = yield* LocalizationEvidence;
 		const report = yield* reader.targets({ projectRoot });
-		yield* Schema.decodeUnknownEffect(LocalizationTargetsReport)(report);
+		yield* Schema.decodeEffect(LocalizationTargetsReport)(report);
 		const target = report.targets.find((item) => item.name === "FixtureGame");
 		if (target === undefined) throw new Error("Fixture target missing.");
 		const evidence = yield* reader.read({ projectRoot, target });
-		yield* Schema.decodeUnknownEffect(LocalizationTargetEvidence)(evidence);
+		yield* Schema.decodeEffect(LocalizationTargetEvidence)(evidence);
 		expect(evidence.manifest.status).toBe("read");
 		expect(
 			evidence.cultures.every(

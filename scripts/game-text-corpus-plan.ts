@@ -1709,7 +1709,7 @@ function instantiate(batch: CorpusPlan, instance: number, seed: number) {
 				: output;
 	};
 
-	const transform = (value: typeof Schema.Json.Type): typeof Schema.Json.Type =>
+	const transform = (value: Schema.Json): Schema.Json =>
 		Array.isArray(value)
 			? value.map(transform)
 			: Schema.is(Schema.Record(Schema.String, Schema.Json))(value)
@@ -2065,8 +2065,7 @@ export function planCorpus({
 		rules: Schema.Array(Schema.Json)
 	});
 	// Built-in checks are listed once; project rules and roles have IDs, renamed per batch.
-	const hasId = (item: typeof Schema.Json.Type) =>
-		Schema.is(Schema.Struct({ id: Schema.String }))(item);
+	const hasId = (item: Schema.Json) => Schema.is(Schema.Struct({ id: Schema.String }))(item);
 	const documents = batches.map((batch, i) => {
 		const data = Schema.decodeUnknownSync(Rules)(batch.rules);
 		const names = new Map<string, string>();
@@ -2077,7 +2076,7 @@ export function planCorpus({
 				);
 				if (Schema.is(Schema.String)(record.id)) names.set(record.id, `${record.id}.i${i}`);
 			}
-		const replace = (value: typeof Schema.Json.Type): typeof Schema.Json.Type =>
+		const replace = (value: Schema.Json): Schema.Json =>
 			Array.isArray(value)
 				? value.map(replace)
 				: Schema.is(Schema.Record(Schema.String, Schema.Json))(value)
@@ -2096,9 +2095,7 @@ export function planCorpus({
 					}));
 				text.absent = text.absent.map((id) => names.get(id) ?? id);
 			}
-		return Schema.decodeUnknownSync(Rules)(
-			replace(Schema.decodeUnknownSync(Schema.Json)(data))
-		);
+		return Schema.decodeUnknownSync(Rules)(replace(Schema.decodeSync(Schema.Json)(data)));
 	});
 	plan.rules = {
 		schemaVersion: 1,

@@ -11,9 +11,7 @@ import {
 } from "./engine-installation.js";
 
 /** Discovery that sees only the engines a test creates, not this machine's registry. */
-const discoveryWithoutRegistry = makeEngineInstallationDiscoveryLayer(() =>
-	Effect.succeed(undefined)
-);
+const discoveryWithoutRegistry = makeEngineInstallationDiscoveryLayer(() => Effect.undefined);
 
 it.effect("preserves JSON and filesystem causes during explicit discovery", () =>
 	Effect.gen(function* () {

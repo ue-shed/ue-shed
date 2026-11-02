@@ -57,7 +57,7 @@ describe("bounded corpus reports", () => {
 				}
 			]
 		};
-		const report = Schema.decodeUnknownSync(LocalizationStatusReport)(
+		const report = Schema.decodeSync(LocalizationStatusReport)(
 			localizationStatusReport(text, evidence(), page)
 		);
 		expect(report.packageCoverage?.counts.not_gatherable).toBe(1);
@@ -153,7 +153,7 @@ describe("bounded corpus reports", () => {
 		expect(exported.result.corpus.packageCoverage?.packages).toHaveLength(200);
 		expect(exported.result.corpus.packageCoverage?.omitted).toBe(600);
 		expect(exported.result.corpus.units).toEqual(text.units);
-		expect(Schema.decodeUnknownSync(GameTextInvestigationExport)(exported)).toEqual(exported);
+		expect(Schema.decodeSync(GameTextInvestigationExport)(exported)).toEqual(exported);
 	});
 	it("handles absent package evidence and rejects oversized diagnostic payloads", () => {
 		const files = evidence();
@@ -167,7 +167,7 @@ describe("bounded corpus reports", () => {
 			diagnosticsOmitted: 0
 		});
 		expect(() =>
-			Schema.decodeUnknownSync(TextCorpusDiagnosticSummary)({
+			Schema.decodeSync(TextCorpusDiagnosticSummary)({
 				...textCorpusDiagnosticSummary(diagnostics),
 				diagnostics: diagnostics.slice(0, 201)
 			})

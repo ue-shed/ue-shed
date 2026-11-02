@@ -31,7 +31,7 @@ const rules = GameTextRuleDocument.make({
 	]
 });
 const target = LocalizationSelection.fields.target.make("Game");
-const edit = Schema.decodeUnknownSync(LocalizationEdit)({
+const edit = Schema.decodeSync(LocalizationEdit)({
 	culture: "fr",
 	namespace: "UI",
 	key: "Continue",

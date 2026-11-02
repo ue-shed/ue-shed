@@ -6,7 +6,8 @@ import type {
 	ListChangelistsOptions,
 	P4ChangelistPage,
 	P4ChangelistDescription,
-	P4ClientOptions
+	P4ClientOptions,
+	P4Error
 } from "p4client-ts";
 import {
 	layerNode,
@@ -152,16 +153,16 @@ interface ListSubmittedChangelistsOptions {
 interface PerforceBackend {
 	readonly describeChangelist: (
 		change: number
-	) => Effect.Effect<P4ChangelistDescription, unknown>;
+	) => Effect.Effect<P4ChangelistDescription, P4Error>;
 	readonly listDepotFilesAtChange: (
 		options: P4ListDepotFilesAtChangeOptions
-	) => Effect.Effect<P4DepotFileRevisionList, unknown>;
+	) => Effect.Effect<P4DepotFileRevisionList, P4Error>;
 	readonly listSubmittedChangelists: (
 		options: ListChangelistsOptions & { readonly status: "submitted" }
-	) => Effect.Effect<P4ChangelistPage<"submitted">, unknown>;
+	) => Effect.Effect<P4ChangelistPage<"submitted">, P4Error>;
 	readonly materializeDepotFiles: (
 		options: MaterializeDepotFilesOptions<typeof P4MaterializationFile.Type>
-	) => Effect.Effect<P4MaterializeResult<typeof P4MaterializationFile.Type>, unknown>;
+	) => Effect.Effect<P4MaterializeResult<typeof P4MaterializationFile.Type>, P4Error>;
 }
 
 type PerforceBackendResolver = (projectRoot: string | undefined) => PerforceBackend;
@@ -647,9 +648,9 @@ export function perforceHistorySourceLayer(
 					timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero)
 				}
 			);
-			const withClient = <A>(
+			const withClient = <A, E>(
 				projectRoot: string | undefined,
-				run: (client: P4Service) => Effect.Effect<A, unknown>
+				run: (client: P4Service) => Effect.Effect<A, E>
 			) =>
 				Effect.gen(function* () {
 					const config = yield* Cache.get(contexts, projectRoot);
@@ -684,16 +685,14 @@ export function perforceHistorySourceLayer(
 					records[0].isExcluded ||
 					result.failures.length > 0
 				) {
-					return yield* Effect.fail(
-						new MapHistoryError({
-							kind: "ambiguous_depot_mapping",
-							message: `Perforce could not map ${path} to exactly one depot file.`,
-							recovery:
-								"Use a project path covered by one unambiguous Perforce client mapping.",
-							retrySafe: false,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new MapHistoryError({
+						kind: "ambiguous_depot_mapping",
+						message: `Perforce could not map ${path} to exactly one depot file.`,
+						recovery:
+							"Use a project path covered by one unambiguous Perforce client mapping.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					});
 				}
 				return records[0];
 			}, Effect.scoped);
@@ -702,15 +701,13 @@ export function perforceHistorySourceLayer(
 			) {
 				const mapping = yield* where(localPath);
 				if (mapping.depotFile === undefined) {
-					return yield* Effect.fail(
-						new MapHistoryError({
-							kind: "ambiguous_depot_mapping",
-							message: `Perforce did not return a depot path for ${localPath}.`,
-							recovery: "Check the Perforce client mapping and retry.",
-							retrySafe: false,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new MapHistoryError({
+						kind: "ambiguous_depot_mapping",
+						message: `Perforce did not return a depot path for ${localPath}.`,
+						recovery: "Check the Perforce client mapping and retry.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					});
 				}
 				return { depotPath: mapping.depotFile };
 			});
@@ -741,11 +738,9 @@ export function perforceHistorySourceLayer(
 							)
 						);
 						if (raw.failures.length > 0) {
-							return yield* Effect.fail(
-								mapLineageError(
-									"ambiguous_map_lineage",
-									`Perforce could not read complete filelog records for ${depotPath}.`
-								)
+							return yield* mapLineageError(
+								"ambiguous_map_lineage",
+								`Perforce could not read complete filelog records for ${depotPath}.`
 							);
 						}
 						for (const move of directMovesFromFilelog(raw.items)) {
@@ -757,11 +752,9 @@ export function perforceHistorySourceLayer(
 							if (!queried.has(move.toDepotPath)) pending.push(move.toDepotPath);
 						}
 						if (discovered.size > request.maxMoves) {
-							return yield* Effect.fail(
-								mapLineageError(
-									"map_lineage_limit",
-									`Map lineage exceeds the direct-move limit of ${request.maxMoves}.`
-								)
+							return yield* mapLineageError(
+								"map_lineage_limit",
+								`Map lineage exceeds the direct-move limit of ${request.maxMoves}.`
 							);
 						}
 					}
@@ -783,15 +776,13 @@ export function perforceHistorySourceLayer(
 					for (const depotPath of ordered.depotPaths) {
 						const mapping = yield* where(depotPath);
 						if (mapping.localFile === null) {
-							return yield* Effect.fail(
-								new MapHistoryError({
-									kind: "ambiguous_depot_mapping",
-									message: `Perforce did not return a workspace path for ${depotPath}.`,
-									recovery: "Check the Perforce client mapping and retry.",
-									retrySafe: false,
-									nextStep: "fix_input"
-								})
-							);
+							return yield* new MapHistoryError({
+								kind: "ambiguous_depot_mapping",
+								message: `Perforce did not return a workspace path for ${depotPath}.`,
+								recovery: "Check the Perforce client mapping and retry.",
+								retrySafe: false,
+								nextStep: "fix_input"
+							});
 						}
 						locations.push({ depotPath, localPath: mapping.localFile });
 					}

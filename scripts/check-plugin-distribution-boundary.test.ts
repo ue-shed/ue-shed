@@ -17,7 +17,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
 	return files;
 }
 
-test("plugin distribution stays independent of product hosts and studio repositories", async () => {
+void test("plugin distribution stays independent of product hosts and studio repositories", async () => {
 	const forbidden = [
 		/apps[\\/]workbench/iu,
 		/from\s+["']electron/iu,

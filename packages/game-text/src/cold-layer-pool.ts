@@ -97,7 +97,7 @@ export async function prepareColdLayers(
 					const message = (input: typeof Reply.Encoded) => {
 						clean();
 						try {
-							const reply = Schema.decodeUnknownSync(Reply)(input);
+							const reply = Schema.decodeSync(Reply)(input);
 							if (reply.ok) resolve(reply);
 							else reject(reply.error);
 						} catch (cause) {

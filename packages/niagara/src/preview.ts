@@ -25,7 +25,7 @@ import {
 	OwnedProcessTreeLive,
 	unrealEditorCommandletExecutable
 } from "@ue-shed/engine";
-import { Clock, Context, Duration, Effect, Layer, Schema } from "effect";
+import { type Brand, Clock, Context, Duration, Effect, Layer, Schema } from "effect";
 import {
 	NiagaraPreviewProducerReceipt,
 	NiagaraPreviewProducerRequest,
@@ -63,16 +63,16 @@ export interface NiagaraPreviewRunOutcome {
 	readonly manifestPath: string;
 }
 
-export class NiagaraPreviewError extends Schema.TaggedError<NiagaraPreviewError>()(
-	"NiagaraPreviewError",
-	{
-		code: NiagaraPreviewFailure.fields.code,
-		...ErrorGuidanceFields,
-		runId: NiagaraPreviewFailure.fields.runId,
-		stage: NiagaraPreviewFailure.fields.stage,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class NiagaraPreviewError extends Schema.TaggedError<
+	NiagaraPreviewError,
+	Brand.Brand<"packages/niagara/src/preview/NiagaraPreviewError">
+>()("NiagaraPreviewError", {
+	code: NiagaraPreviewFailure.fields.code,
+	...ErrorGuidanceFields,
+	runId: NiagaraPreviewFailure.fields.runId,
+	stage: NiagaraPreviewFailure.fields.stage,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * The next step for a preview failure. Setup and request problems need changed input, a producer
@@ -632,19 +632,18 @@ function validateArtifacts(options: {
 							options.receipt.runId
 						)
 					);
-					let dimensions: { readonly height: number; readonly width: number };
-					try {
-						dimensions = pngDimensions(bytes);
-					} catch {
-						return yield* previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} is not a valid PNG header.`,
-							"Update the producer and retry.",
-							false,
-							options.receipt.runId
-						);
-					}
+					const dimensions = yield* Effect.try({
+						try: () => pngDimensions(bytes),
+						catch: () =>
+							previewError(
+								"artifact_invalid",
+								"capture",
+								`Frame ${frame.index} is not a valid PNG header.`,
+								"Update the producer and retry.",
+								false,
+								options.receipt.runId
+							)
+					});
 					if (
 						dimensions.width !== options.receipt.effectiveSettings.width ||
 						dimensions.height !== options.receipt.effectiveSettings.height
@@ -696,7 +695,7 @@ export function publishRun(
 	options: PublishRunOptions
 ): Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
 	return Effect.gen(function* () {
-		const manifest = yield* Schema.decodeUnknownEffect(NiagaraPreviewRunManifest)({
+		const manifest = yield* Schema.decodeEffect(NiagaraPreviewRunManifest)({
 			alphaPolicy: options.receipt.alphaPolicy,
 			artifacts: options.artifacts,
 			camera: options.receipt.camera,
@@ -1024,7 +1023,7 @@ export const NiagaraPreviewLive = Layer.effect(
 					last = key;
 					yield* publish(progress);
 				}).pipe(
-					Effect.catch((error) =>
+					Effect.catchTag("NiagaraProgressError", (error) =>
 						Effect.logWarning("Niagara progress unavailable", error)
 					)
 				);

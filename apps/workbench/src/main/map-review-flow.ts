@@ -164,7 +164,7 @@ export const runMapReviewAuthoringRoundtrip = Effect.fn("MapReviewFlow.runAuthor
 						title: copy.title
 					});
 					if (cleanup.status === "failed") {
-						yield* new MapReviewFlowExecutionError({
+						return yield* new MapReviewFlowExecutionError({
 							recovery:
 								"Inspect the recording checkpoints and cleanup evidence before starting another editor run.",
 							retrySafe: false,

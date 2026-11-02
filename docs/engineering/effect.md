@@ -3,6 +3,22 @@
 Effect is the application core and the canonical public workflow type. It owns composition for
 stateful and effectful modules, not only code at external boundaries.
 
+## Compiler and lint tooling
+
+`pnpm run lint` and `pnpm run lint:fix` use the Effect-patched Oxlint through
+`@effect/tsgo`, with the recommended Effect preset alongside our custom rules.
+Use `pnpm run lint:fix --fix-suggestions` to apply suggested simplifications.
+The simplification diagnostics are warnings; correctness errors fail the existing
+static and repository gates. The lint commands build the TypeScript packages
+first so type-aware lint can resolve their declarations in a fresh checkout.
+
+`pnpm run tsrs --noEmit -p packages/protocol/tsconfig.json` runs the installed
+Rust compiler for a selected project. Builds and the existing typecheck commands
+retain their current compilers. Both wrappers use bundled binaries without
+rewriting the package store. Upgrade `@effect/tsgo`, `tsrs`, `oxlint`, and
+`oxlint-tsgolint` together against the
+[upstream compatibility table](https://github.com/Effect-TS/tsgo#supported-package-versions).
+
 ## Use it for
 
 - services and dependency wiring;

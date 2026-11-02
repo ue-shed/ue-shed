@@ -33,7 +33,7 @@ describe.skipIf(!executable)("native index lifecycle soak", () => {
 							},
 							Effect.gen(function* () {
 								yield* Deferred.succeed(entered, undefined);
-								yield* Effect.never;
+								return yield* Effect.never;
 							})
 						)
 						.pipe(Effect.forkChild);

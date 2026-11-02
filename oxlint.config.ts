@@ -1,8 +1,10 @@
+import { recommended } from "@effect/tsgo/oxlint-presets";
 import { defineConfig } from "oxlint";
 
 import { effectCatchAllBaseline } from "./tools/oxlint/effect-catch-all-baseline.ts";
 
 export default defineConfig({
+	extends: [recommended],
 	ignorePatterns: [
 		".agent/**",
 		".agents/**",

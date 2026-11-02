@@ -19,7 +19,7 @@ it.live(
 			fixture.pauseReads(
 				Effect.gen(function* () {
 					yield* Deferred.succeed(readEntered, undefined);
-					yield* Effect.never;
+					return yield* Effect.never;
 				}).pipe(Effect.ensuring(Effect.sync(() => events.push("read-finalized"))))
 			);
 			const underlying = yield* GameTextIndexBuilder.pipe(
@@ -41,7 +41,7 @@ it.live(
 					importLocalizationTarget: (input) =>
 						Effect.gen(function* () {
 							yield* Deferred.succeed(importEntered, undefined);
-							yield* Effect.never;
+							return yield* Effect.never;
 							return yield* underlying.importLocalizationTarget(input);
 						}).pipe(Effect.ensuring(Effect.sync(() => events.push("import-finalized"))))
 				})

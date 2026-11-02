@@ -526,7 +526,7 @@ export const validatePluginBundleManifestValue = (
 			const range = sourceUnrealRange(manifest);
 			const rangeOrder = compareVersions(range.minimum, range.maximum);
 			if (rangeOrder === undefined || rangeOrder > 0) {
-				yield* Effect.fail(
+				return yield* Effect.fail(
 					validationError(
 						"invalid_unreal_range",
 						`Unreal compatibility range ${range.minimum}..${range.maximum} is invalid.`,
@@ -540,7 +540,7 @@ export const validatePluginBundleManifestValue = (
 			isCompiledPluginBundleManifest(manifest) &&
 			manifest.build.sourceArtifactSha256 === manifest.artifact.sha256
 		) {
-			yield* Effect.fail(
+			return yield* Effect.fail(
 				validationError(
 					"compiled_identity_mismatch",
 					"Compiled artifact digest contradicts its source artifact digest.",
@@ -550,7 +550,7 @@ export const validatePluginBundleManifestValue = (
 		}
 
 		if (manifest.provenance.candidateManifest.version !== manifest.releaseVersion) {
-			yield* Effect.fail(
+			return yield* Effect.fail(
 				validationError(
 					"provenance_mismatch",
 					"The candidate manifest version does not match the plugin bundle release version.",
@@ -614,7 +614,7 @@ export const validatePluginBundleManifestValue = (
 			options.expectedCandidateVersion !== undefined &&
 			options.expectedCandidateVersion !== manifest.provenance.candidateManifest.version
 		) {
-			yield* Effect.fail(
+			return yield* Effect.fail(
 				validationError(
 					"provenance_mismatch",
 					`Expected candidate ${options.expectedCandidateVersion}, received ${manifest.provenance.candidateManifest.version}.`,
@@ -638,7 +638,7 @@ export const validatePluginBundleManifestValue = (
 				JSON.stringify(resolved.orderedPluginIds) !==
 				JSON.stringify(manifest.build.resolvedPluginIds)
 			) {
-				yield* Effect.fail(
+				return yield* Effect.fail(
 					validationError(
 						"compiled_graph_mismatch",
 						"Compiled artifact resolved plugin graph does not match its manifest graph.",
@@ -658,7 +658,7 @@ export const validatePluginBundleManifestValue = (
 						const range = sourceUnrealRange(manifest);
 						return `${range.minimum}..${range.maximum}`;
 					})();
-			yield* Effect.fail(
+			return yield* Effect.fail(
 				validationError(
 					"unsupported_unreal",
 					`Unreal ${options.unrealVersion} is incompatible with ${supported}.`,

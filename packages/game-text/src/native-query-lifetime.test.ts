@@ -134,7 +134,7 @@ it("interrupts a read at once, and keeps serving reads", async () => {
 					execute: (operation) =>
 						Effect.gen(function* () {
 							if (operation.action === "query" && searches++ === 0)
-								yield* Deferred.succeed(entered, undefined).pipe(
+								return yield* Deferred.succeed(entered, undefined).pipe(
 									Effect.andThen(Effect.never),
 									Effect.onInterrupt(() => Ref.set(interrupted, true))
 								);

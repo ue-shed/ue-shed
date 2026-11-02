@@ -316,7 +316,7 @@ describe("ActorFeed", () => {
 				Effect.gen(function* () {
 					const context = yield* Layer.build(actorFeedLayer({ pipeName: name }));
 					yield* Deferred.succeed(acquired, Context.get(context, ActorFeed));
-					yield* Effect.never;
+					return yield* Effect.never;
 				})
 			)
 		);

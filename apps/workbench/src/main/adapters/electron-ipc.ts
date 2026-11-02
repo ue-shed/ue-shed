@@ -194,31 +194,31 @@ export const makeElectronIpcTestLayer = (): Layer.Layer<ElectronIpc | ElectronIp
 			const runPromise = <A, E>(effect: Effect.Effect<A, E>) =>
 				runPromiseWith(context)(effect, { onFiberStart: Fiber.runIn(scope) });
 
-			const register = Effect.fn("Workbench.ElectronIpc.Test.register")(
-				function* (contract, handler) {
-					const current = yield* Ref.get(handlers);
-					if (current.some((entry) => entry.channel === contract.channel)) {
-						return yield* Effect.fail(
-							ipcError(
-								"duplicate",
-								contract.channel,
-								"Channel already registered",
-								"Register each IPC channel exactly once per runtime."
-							)
-						);
-					}
-					const adapted = adaptHandler(contract, handler, runPromise);
-					yield* Ref.update(handlers, (entries) => [
-						...entries,
-						{ channel: contract.channel, invoke: adapted }
-					]);
-					yield* Effect.addFinalizer(() =>
-						Ref.update(handlers, (entries) =>
-							entries.filter((entry) => entry.channel !== contract.channel)
+			const register: ElectronIpcApi["register"] = Effect.fn(
+				"Workbench.ElectronIpc.Test.register"
+			)(function* (contract, handler) {
+				const current = yield* Ref.get(handlers);
+				if (current.some((entry) => entry.channel === contract.channel)) {
+					return yield* Effect.fail(
+						ipcError(
+							"duplicate",
+							contract.channel,
+							"Channel already registered",
+							"Register each IPC channel exactly once per runtime."
 						)
 					);
 				}
-			);
+				const adapted = adaptHandler(contract, handler, runPromise);
+				yield* Ref.update(handlers, (entries) => [
+					...entries,
+					{ channel: contract.channel, invoke: adapted }
+				]);
+				yield* Effect.addFinalizer(() =>
+					Ref.update(handlers, (entries) =>
+						entries.filter((entry) => entry.channel !== contract.channel)
+					)
+				);
+			});
 
 			const service = ElectronIpcTest.of({
 				register,

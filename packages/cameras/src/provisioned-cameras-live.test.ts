@@ -39,9 +39,10 @@ function provisionWith(respond: () => Schema.Json) {
 			}).pipe(
 				Effect.provideService(RemoteControlClient, {
 					request: (request) => {
-						requests.push(
-							decodeWireRequest(JSON.parse(String(request.parameters.RequestJson)))
-						);
+						const raw = request.parameters.RequestJson;
+						if (!Schema.is(Schema.String)(raw))
+							throw new Error("RequestJson must be a JSON string");
+						requests.push(decodeWireRequest(JSON.parse(raw)));
 						return Effect.succeed(respond());
 					}
 				})

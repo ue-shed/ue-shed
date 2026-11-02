@@ -1657,7 +1657,7 @@ export function queriedLocalizationQualityWorkspace(options: {
 		const result: WorkspaceQualityPage = {
 			findings: page.findings.map(summaryOf),
 			total: page.total,
-			counts: Schema.decodeUnknownSync(WorkspaceQualityPage.fields.counts)(
+			counts: yield* Schema.decodeUnknownEffect(WorkspaceQualityPage.fields.counts)(
 				Object.fromEntries([
 					...BuiltInQualityFilter.literals.map((filter) => [
 						filter,
@@ -1665,7 +1665,7 @@ export function queriedLocalizationQualityWorkspace(options: {
 					]),
 					...customFilters.map(({ filter }) => [filter, typeCounts.get(filter) ?? 0])
 				])
-			),
+			).pipe(Effect.orDie),
 			customFilters,
 			severityCounts: counts.severities,
 			// SAFETY: diagnostic codes are the engine's DIAGNOSTIC_CODES, the host's code union.

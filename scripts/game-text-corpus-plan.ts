@@ -1891,15 +1891,19 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		plan.edits.operations.push({ kind, subject: `${owner.path}:${text.key}`, value });
 		if (!plan.edits.packages.includes(owner.path)) plan.edits.packages.push(owner.path);
 	};
-	const newSource = `Reef ${sourceEdit.text.parameters.token}`;
+	const tokenOf = (text: PlannedText) => {
+		const token = text.parameters.token;
+		if (!Schema.is(Schema.String)(token))
+			throw new Error("A background edit requires a string token.");
+		return token;
+	};
+	const sourceToken = tokenOf(sourceEdit.text);
+	const poToken = tokenOf(poEdit.text);
+	const archiveToken = tokenOf(archiveEdit.text);
+	const newSource = `Reef ${sourceToken}`;
 	register("source", sourceEdit.owner, sourceEdit.text, newSource);
-	register("po", poEdit.owner, poEdit.text, `Import ${poEdit.text.parameters.token}`);
-	register(
-		"archive",
-		archiveEdit.owner,
-		archiveEdit.text,
-		`Archiv ${archiveEdit.text.parameters.token}`
-	);
+	register("po", poEdit.owner, poEdit.text, `Import ${poToken}`);
+	register("archive", archiveEdit.owner, archiveEdit.text, `Archiv ${archiveToken}`);
 	if (plan.phase === "after") {
 		sourceEdit.text.case = "edit-source";
 		sourceEdit.text.source = newSource;
@@ -1910,7 +1914,7 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		}
 		poEdit.text.case = "edit-po";
 		const po = poEdit.text.cultures[culture]!;
-		po.po = `Import ${poEdit.text.parameters.token}`;
+		po.po = `Import ${poToken}`;
 		po.importPending = true;
 		po.state = "not_synced";
 		po.facts = ["translated", "not_synced"];
@@ -1918,7 +1922,7 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		archiveEdit.text.case = "edit-archive";
 		const archive = archiveEdit.text.cultures[culture]!;
 		archive.resourceTranslation = archive.translation;
-		archive.translation = `Archiv ${archiveEdit.text.parameters.token}`;
+		archive.translation = `Archiv ${archiveToken}`;
 		archive.importPending = true;
 		archive.compilePending = true;
 		archive.state = "not_synced";

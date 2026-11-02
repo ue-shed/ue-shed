@@ -418,7 +418,7 @@ const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 function controlError(
 	endpoint: string,
 	operation: "start" | "stop" | "status",
-	cause: RemoteControlClientError | unknown
+	cause: RemoteControlClientError | Schema.SchemaError
 ): ActorObservationControlError {
 	if (isRemoteControlClientError(cause)) {
 		return new ActorObservationControlError({

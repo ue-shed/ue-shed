@@ -574,9 +574,9 @@ export function textQualityQueryOf(
 	const reads = textQualityReads(report, list);
 	return {
 		summary: reads.summary,
-		search: (request) => materializeQualityRead(reads.search(request), list.items),
-		focus: (request) => materializeQualityRead(reads.focus(request), list.items),
-		export: (filter) => materializeQualityRead(reads.export(filter), list.items)
+		search: (request) => materializeQualityRead(reads.search(request), list.items.bind(list)),
+		focus: (request) => materializeQualityRead(reads.focus(request), list.items.bind(list)),
+		export: (filter) => materializeQualityRead(reads.export(filter), list.items.bind(list))
 	};
 }
 /** The presentation query over a report whose findings are all in memory. */
@@ -644,8 +644,12 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 		}
 		const header: Omit<TextQualityReport, "findings"> = {
 			...report,
-			roles: Schema.decodeSync(Schema.Array(TextQualityRoleSummary))(roles),
-			rules: Schema.decodeSync(Schema.Array(TextQualityRuleSummary))(rules)
+			roles: yield* Schema.decodeEffect(Schema.Array(TextQualityRoleSummary))(roles).pipe(
+				Effect.orDie
+			),
+			rules: yield* Schema.decodeEffect(Schema.Array(TextQualityRuleSummary))(rules).pipe(
+				Effect.orDie
+			)
 		};
 		const summary: TextQualityQuerySummary = {
 			characterBudgetCount,

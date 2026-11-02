@@ -175,3 +175,20 @@ describe("package text diff", () => {
 		);
 	});
 });
+
+it("accepts only non-negative integer cardinalities for package text diffs", () => {
+	const valid = { added: 0, removed: 1, rekeyed: 2, edited: 3, unchanged: 4 };
+	const accepts = Schema.is(PackageTextDiff.fields.counts);
+	expect(accepts(valid)).toBe(true);
+	for (const field of Object.keys(valid)) {
+		for (const value of [-1, 0.5, NaN, Infinity, -Infinity]) {
+			expect(accepts({ ...valid, [field]: value }), `${field}=${value}`).toBe(false);
+		}
+	}
+	const diff = diffPackageText(
+		packageText([property("Text", "Before", "key")]),
+		packageText([property("Text", "After", "key"), property("Added", "New", "new")])
+	);
+	expect(accepts(diff.counts)).toBe(true);
+	expect(diff.counts).toEqual({ added: 1, removed: 0, rekeyed: 0, edited: 1, unchanged: 0 });
+});

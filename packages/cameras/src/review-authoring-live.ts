@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
 import {
 	RemoteControlClient,
-	RemoteControlClientError,
+	type RemoteControlClientError,
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
@@ -52,31 +52,18 @@ export class ReviewAuthoringConnectionError extends Schema.TaggedError<
 	operation: Schema.Literals(["inspect_selection", "inspect_subject", "preview_candidate"])
 }) {}
 
-const isRemoteControlClientError = Schema.is(RemoteControlClientError);
-
 function reviewConnectionError(
 	endpoint: string,
 	operation: "inspect_selection" | "inspect_subject" | "preview_candidate",
-	cause: RemoteControlClientError | unknown
+	cause: RemoteControlClientError
 ): ReviewAuthoringConnectionError {
-	if (isRemoteControlClientError(cause)) {
-		return new ReviewAuthoringConnectionError({
-			endpoint,
-			message: cause.message,
-			nextStep: cause.nextStep,
-			operation,
-			recovery: cause.recovery,
-			retrySafe: cause.retrySafe,
-			cause
-		});
-	}
 	return new ReviewAuthoringConnectionError({
 		endpoint,
-		message: `Map Review ${operation} at ${endpoint} failed unexpectedly.`,
-		nextStep: "escalate",
+		message: cause.message,
+		nextStep: cause.nextStep,
 		operation,
-		recovery: "Verify the Map Review editor capability and retry the operation.",
-		retrySafe: false,
+		recovery: cause.recovery,
+		retrySafe: cause.retrySafe,
 		cause
 	});
 }

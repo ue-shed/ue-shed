@@ -146,8 +146,8 @@ const hasErrorGuidance = Schema.is(
 );
 
 /** @internal Keeps session recovery decisions when adapting failures to preview errors. */
-export function safeIo<A>(
-	operation: Effect.Effect<A, unknown>,
+export function safeIo<A, E>(
+	operation: Effect.Effect<A, E>,
 	error: NiagaraPreviewError
 ): Effect.Effect<A, NiagaraPreviewError> {
 	return operation.pipe(

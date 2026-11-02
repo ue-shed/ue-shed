@@ -84,3 +84,14 @@ void test("rejects a recorded Rust dependency that is no longer linked", () => {
 		["Cargo.lock: libsqlite3-sys is recorded but no longer a Rust dependency"]
 	);
 });
+
+void test("rejects object-valued package metadata without coercing it to strings", () => {
+	const failures = validateLicenseBoundary({
+		...validInput,
+		peculiarManifest: { version: { unexpected: true }, license: ["MIT"] }
+	});
+	assert.deepEqual(failures, [
+		"peculiar-sheets: expected exact version 0.15.0, received invalid non-string version",
+		"peculiar-sheets: expected MIT metadata, received missing or non-string license"
+	]);
+});

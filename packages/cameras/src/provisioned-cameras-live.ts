@@ -241,7 +241,7 @@ export type ProvisionedCameraFrame = Schema.Schema.Type<typeof ProvisionedCamera
 
 function provisionedCameraError(
 	operation: ProvisionedCameraError["operation"],
-	cause: RemoteControlClientError | unknown,
+	cause: RemoteControlClientError | Schema.SchemaError | ContractParseError,
 	recovery: string,
 	/** Which side of the exchange failed to decode: the caller's request or the editor's response. */
 	subject: "request" | "response" = "response"

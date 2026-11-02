@@ -1,5 +1,6 @@
 import {
 	decodeCameraScheduleConfig,
+	type ContractParseError,
 	CameraControlFailure,
 	CameraStatus,
 	ErrorCauseFields,
@@ -18,6 +19,7 @@ export {
 	manualCaptureInvocation,
 	ReviewCapture,
 	type ReviewCaptureApi,
+	type ReviewCaptureError,
 	ReviewCaptureConcurrency,
 	ReviewCaptureLive,
 	ReviewCapturePort,
@@ -941,7 +943,7 @@ function cameraStatusOrFailure(endpoint: string, operation: "configure" | "statu
 function cameraControlError(
 	endpoint: string,
 	operation: "configure" | "status",
-	cause: RemoteControlClientError | unknown
+	cause: RemoteControlClientError | CameraControlError | Schema.SchemaError | ContractParseError
 ): CameraControlError {
 	if (isCameraControlError(cause)) return cause;
 	if (isRemoteControlClientError(cause)) {

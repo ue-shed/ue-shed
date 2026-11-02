@@ -1307,7 +1307,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 
 	// Reads hydrate asynchronously; a model replaced meanwhile (project switch, rescan, new rules)
 	// answers not ready rather than publishing the retired model's result.
-	const qualityRead = <A>(read: (model: AsyncTextQualityQuery) => Effect.Effect<A, unknown>) =>
+	const qualityRead = <A, E>(read: (model: AsyncTextQualityQuery) => Effect.Effect<A, E>) =>
 		Effect.gen(function* () {
 			const model = yield* currentValue(qualityModel);
 			if (!model) return undefined;

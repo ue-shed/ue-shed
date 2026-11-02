@@ -91,9 +91,9 @@ function harness(
 						capabilities: ["world.preparation.v1"],
 						worldPreparationObjectPath: "/Script/Test"
 					};
-				const request = yield* Schema.decodeUnknownEffect(WorldRequest)(
-					JSON.parse(String(call.parameters.RequestJson))
-				).pipe(Effect.orDie);
+				const request = yield* Schema.decodeUnknownEffect(
+					Schema.fromJsonString(WorldRequest)
+				)(call.parameters.RequestJson).pipe(Effect.orDie);
 				calls.push(request);
 				if (request.action === "replace") revision = request.revision;
 				const custom = override(request);

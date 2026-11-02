@@ -37,9 +37,10 @@ it("negotiates world preparation and prints native evidence through the CLI comm
 						"/Script/UEShedWorldEditor.Default__UEShedWorldLibrary"
 				};
 			else {
-				const operation = Schema.decodeUnknownSync(WorldRequest)(
-					JSON.parse(String(call.parameters.RequestJson))
-				);
+				const raw = call.parameters.RequestJson;
+				if (!Schema.is(Schema.String)(raw))
+					throw new Error("RequestJson must be a JSON string");
+				const operation = Schema.decodeUnknownSync(WorldRequest)(JSON.parse(raw));
 				expect(operation.action).toBe("describe");
 				result = { status: "described", world };
 			}

@@ -213,7 +213,7 @@ export function resolvePolicyDocument(value: Schema.Json): PolicyResolution {
 	let targets = defaultCustodianPolicy.targets;
 	if (value.targets !== undefined) {
 		const targetNames = value.targets;
-		if (!Array.isArray(targetNames) || !targetNames.every(Schema.is(Schema.String))) {
+		if (!Schema.is(Schema.Array(Schema.String))(targetNames)) {
 			return {
 				policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
 				error: "targets must be an array of known target keys."

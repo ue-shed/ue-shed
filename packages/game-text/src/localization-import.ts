@@ -231,7 +231,7 @@ export const nativeLocalizationStat = Effect.fn("LocalizationImport.stat")(funct
 		realpath(resolve(actualRoot, request.relativePath))
 	);
 	const observed = stamp(yield* io(request.relativePath, () => stat(actual, { bigint: true })));
-	const options = Schema.decodeSync(Options)(request);
+	const options = yield* Schema.decodeEffect(Options)(request).pipe(Effect.orDie);
 	const path = join(
 		request.cacheRoot,
 		"localization-file-stats",

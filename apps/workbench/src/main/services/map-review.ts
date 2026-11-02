@@ -309,12 +309,12 @@ export class WorkbenchMapReview extends Context.Service<
 >()("@ue-shed/workbench/WorkbenchMapReview") {}
 
 function mapReviewFailure(cause: {
-	readonly message?: string;
+	readonly message: string;
 	readonly recovery?: string;
 }): ReviewFailure {
 	return {
 		error: {
-			message: cause.message ?? String(cause),
+			message: cause.message,
 			recovery:
 				cause.recovery ??
 				"Verify the Review Set, project directory, and local evidence store."
@@ -324,12 +324,12 @@ function mapReviewFailure(cause: {
 }
 
 function mapReviewAuthoringFailure(cause: {
-	readonly message?: string;
+	readonly message: string;
 	readonly recovery?: string;
 }): ReviewFailure {
 	return {
 		error: {
-			message: cause.message ?? String(cause),
+			message: cause.message,
 			recovery:
 				cause.recovery ??
 				"Verify the editor selection and Map Review authoring capability, then retry."

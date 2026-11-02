@@ -31,10 +31,10 @@ describe("scoped editor ticking compatibility", () => {
 			}).pipe(
 				Effect.provideService(RemoteControlClient, {
 					request: (request) => {
-						expect(
-							JSON.parse(String(request.parameters.ConfigJson))
-								.editorBackgroundTicking
-						).toBe("while_streaming");
+						const raw = request.parameters.ConfigJson;
+						if (!Schema.is(Schema.String)(raw))
+							throw new Error("ConfigJson must be a JSON string");
+						expect(JSON.parse(raw).editorBackgroundTicking).toBe("while_streaming");
 						return Effect.succeed({
 							cameras: [],
 							config: resultConfig,

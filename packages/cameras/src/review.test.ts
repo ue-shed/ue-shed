@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { ReviewCaptureConnectionError } from "./review-live.js";
 import { highResolutionReviewRenderer, type CameraRendererPolicy } from "./camera-render-schema.js";
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Deferred, Effect, Fiber, Schema } from "effect";
+import { Cause, Deferred, Effect, Fiber, Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	ReviewCapture,
@@ -845,7 +846,7 @@ describe("durable capture loop", () => {
 							width: request.resolution.width
 						};
 					},
-					catch: (cause) => cause
+					catch: (cause) => new Cause.UnknownError(cause)
 				})
 		};
 		const ids = ["run-001", "invocation-001", operationId(7)];
@@ -1036,74 +1037,87 @@ describe("durable capture loop", () => {
 		}
 	);
 
-	it.each(["target_relative", "map_mismatch", "unsafe", "connection", "fallback_failed"])(
-		"preserves capture failure for %s without an unbounded position retry",
-		async (mode) => {
-			const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-position-failure-"));
-			temporaryDirectories.push(projectRoot);
-			const reviewSetPath = join(projectRoot, "set.json");
-			const original = fixtureReviewSet();
-			const reviewSet = decodeReviewSet({
-				...original,
-				views: original.views.map((view) =>
-					mode === "target_relative"
-						? {
-								...view,
-								viewpoint: {
-									kind: "target_relative",
-									relativePose: reviewViewApprovedPose(view),
-									targetSnapshot: {
-										location: { x: 0, y: 0, z: 0 },
-										rotation: { pitch: 0, roll: 0, yaw: 0 }
-									}
+	it.each([
+		"target_relative",
+		"map_mismatch",
+		"unsafe",
+		"connection",
+		"classified_connection",
+		"fallback_failed"
+	])("preserves capture failure for %s without an unbounded position retry", async (mode) => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-position-failure-"));
+		temporaryDirectories.push(projectRoot);
+		const reviewSetPath = join(projectRoot, "set.json");
+		const original = fixtureReviewSet();
+		const reviewSet = decodeReviewSet({
+			...original,
+			views: original.views.map((view) =>
+				mode === "target_relative"
+					? {
+							...view,
+							viewpoint: {
+								kind: "target_relative",
+								relativePose: reviewViewApprovedPose(view),
+								targetSnapshot: {
+									location: { x: 0, y: 0, z: 0 },
+									rotation: { pitch: 0, roll: 0, yaw: 0 }
 								}
 							}
-						: view
-				)
-			});
-			await Effect.runPromise(
-				saveReviewSet({ path: reviewSetPath, reviewSet }).pipe(
-					Effect.provide(ReviewRepositoryLive)
-				)
-			);
-			let calls = 0;
-			const ids = ["failure-run", "failure-invocation", operationId(21)];
-			const run = await runCapture(
-				{ projectRoot, reviewSetPath },
-				{
-					capture: (request) => {
-						calls++;
-						return mode === "connection"
-							? Effect.fail(new Error("Disconnected"))
-							: Effect.succeed({
-									code:
-										mode === "map_mismatch"
-											? "map_mismatch"
-											: "subject_not_found",
-									contract: request.contract,
-									message: "Capture unavailable",
-									operationId: request.operationId,
-									recovery: "Check the editor",
-									retrySafe: mode !== "unsafe",
-									status: "failed" as const,
-									viewId: request.viewId
-								});
-					}
-				},
-				() => ids.shift()!
-			);
-			expect(calls).toBe(mode === "fallback_failed" ? 2 : 1);
-			expect(run.results[0]).toMatchObject({
-				status: "failed",
-				code:
-					mode === "connection"
-						? "capture_connection_failed"
-						: mode === "map_mismatch"
-							? "map_mismatch"
-							: "subject_not_found"
-			});
-		}
-	);
+						}
+					: view
+			)
+		});
+		await Effect.runPromise(
+			saveReviewSet({ path: reviewSetPath, reviewSet }).pipe(
+				Effect.provide(ReviewRepositoryLive)
+			)
+		);
+		let calls = 0;
+		const ids = ["failure-run", "failure-invocation", operationId(21)];
+		const run = await runCapture(
+			{ projectRoot, reviewSetPath },
+			{
+				capture: (request) => {
+					calls++;
+					if (mode === "classified_connection")
+						return Effect.fail(
+							new ReviewCaptureConnectionError({
+								endpoint: "http://fixture",
+								message: "Disconnected",
+								recovery: "Inspect the editor before retrying.",
+								retrySafe: false,
+								nextStep: "reconcile",
+								cause: new Error("Disconnected")
+							})
+						);
+					return mode === "connection"
+						? Effect.fail(new Cause.UnknownError(new Error("Disconnected")))
+						: Effect.succeed({
+								code:
+									mode === "map_mismatch" ? "map_mismatch" : "subject_not_found",
+								contract: request.contract,
+								message: "Capture unavailable",
+								operationId: request.operationId,
+								recovery: "Check the editor",
+								retrySafe: mode !== "unsafe",
+								status: "failed" as const,
+								viewId: request.viewId
+							});
+				}
+			},
+			() => ids.shift()!
+		);
+		expect(calls).toBe(mode === "fallback_failed" ? 2 : 1);
+		expect(run.results[0]).toMatchObject({
+			status: "failed",
+			code:
+				mode === "connection" || mode === "classified_connection"
+					? "capture_connection_failed"
+					: mode === "map_mismatch"
+						? "map_mismatch"
+						: "subject_not_found"
+		});
+	});
 
 	it("publishes beneath an existing caller-owned root without writing a project-local run", async () => {
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-caller-project-"));
@@ -1429,7 +1443,7 @@ describe("durable capture loop", () => {
 							width: request.resolution.width
 						};
 					},
-					catch: (cause) => cause
+					catch: (cause) => new Cause.UnknownError(cause)
 				})
 		};
 
@@ -1607,7 +1621,7 @@ describe("durable capture loop", () => {
 							width: 1
 						};
 					},
-					catch: (cause) => cause
+					catch: (cause) => new Cause.UnknownError(cause)
 				})
 		};
 		const promotionStarted = await Effect.runPromise(Deferred.make<void>());

@@ -93,7 +93,7 @@ const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 
 function connectionError(
 	operation: string,
-	cause: RemoteControlClientError | unknown
+	cause: RemoteControlClientError | Schema.SchemaError
 ): ObservatoryConnectionError {
 	return new ObservatoryConnectionError({
 		message: isRemoteControlClientError(cause)

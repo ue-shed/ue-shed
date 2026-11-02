@@ -55,8 +55,11 @@ for (const sharedRenderer of [false, true]) {
 					const client: RemoteControlClientApi = {
 						request: (call) => {
 							if (call.functionName === "BeginMapTileCapture") {
+								const raw = call.parameters.RequestJson;
+								if (!Schema.is(Schema.String)(raw))
+									throw new Error("RequestJson must be a JSON string");
 								const wire = Schema.decodeUnknownSync(MapTileCaptureRequest)(
-									JSON.parse(String(call.parameters?.RequestJson))
+									JSON.parse(raw)
 								);
 								expect(wire.contract.version.minor).toBe(sharedRenderer ? 1 : 0);
 							}

@@ -7,8 +7,8 @@ import {
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { type Brand, Clock, Context, Effect, Layer, Schema } from "effect";
-import { captureReviewView } from "./review-live.js";
+import { type Brand, type Cause, Clock, Context, Effect, Layer, Schema } from "effect";
+import { captureReviewView, type ReviewCaptureConnectionError } from "./review-live.js";
 import {
 	ReviewRepository,
 	projectLocalReviewCaptureDestination,
@@ -68,13 +68,19 @@ export const defaultReviewCaptureConcurrency = ReviewCaptureConcurrency.make(1);
 type SchemaReviewCaptureRequest = typeof ReviewCaptureRequestCurrent.Type;
 
 /**
+ * Classified review connection failures, or an unclassified throw/rejection at a host's
+ * foreign API boundary. Both retain the original failure in cause.
+ */
+export type ReviewCaptureError = ReviewCaptureConnectionError | Cause.UnknownError;
+
+/**
  * Editor-facing capture port for one correlated request. Implementations return validated
  * domain outcomes; orchestration owns repository publication and batch view accounting.
  */
 export interface ReviewCapturePortApi {
 	readonly capture: (
 		request: SchemaReviewCaptureRequest
-	) => Effect.Effect<ReviewCaptureResponse, unknown>;
+	) => Effect.Effect<ReviewCaptureResponse, ReviewCaptureError>;
 }
 
 /** @deprecated Use `ReviewCapturePortApi`. */
@@ -434,7 +440,7 @@ function captureOneView(args: {
 					viewId: args.view.id
 				})
 			),
-			Effect.catch(() =>
+			Effect.catchTag(["ReviewCaptureConnectionError", "UnknownError"], () =>
 				Effect.succeed({
 					code: "capture_connection_failed",
 					message: "The connected editor did not return a valid capture result.",

@@ -96,9 +96,12 @@ export const readLocalizationBaseline = Effect.fn("Cli.localization.read_baselin
 	const decoded = decodeLocalizationBaselineJson(text);
 	if (Result.isFailure(decoded))
 		return yield* new LocalizationReportError({
-			...decoded.failure,
+			code: decoded.failure.code,
 			message: decoded.failure.message,
-			recovery: `${decoded.failure.recovery} Run loc report --save-baseline with a new JSON destination.`
+			recovery: `${decoded.failure.recovery} Run loc report --save-baseline with a new JSON destination.`,
+			retrySafe: decoded.failure.retrySafe,
+			nextStep: decoded.failure.nextStep,
+			cause: decoded.failure
 		});
 	return decoded.success;
 });

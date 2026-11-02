@@ -759,13 +759,15 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 				const validId = yield* validateSessionId(sessionId);
 				const contents = yield* repository.read(validId);
 				const { document, migrated } = yield* Effect.gen(function* () {
-					const json = yield* Effect.try({
-						try: () => JSON.parse(contents),
-						catch: (cause) => cause
-					});
+					const json = yield* Effect.try(() => JSON.parse(contents));
 					const value = yield* Schema.decodeUnknownEffect(Schema.Json)(json);
 					return yield* decodeDocument(value);
-				}).pipe(Effect.catch((cause) => repository.quarantine(validId, cause)));
+				}).pipe(
+					Effect.catchTags({
+						UnknownError: (error) => repository.quarantine(validId, error.cause),
+						SchemaError: (error) => repository.quarantine(validId, error)
+					})
+				);
 				if (document.project.id !== repository.project.id)
 					return yield* new AuthoringSessionStorageError({
 						message: `Session ${validId} belongs to project ${document.project.id}`,

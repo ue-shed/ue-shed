@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	decodeAuthoringSessionReviewResult,
@@ -164,7 +164,12 @@ describe("authoring SDK contracts", () => {
 			endpoint: "https://host.example/api/authoring",
 			headers: { authorization: "Bearer studio" },
 			fetch: async (input, init) => {
-				seen.push({ url: String(input), headers: new Headers(init?.headers) });
+				const url = Schema.is(Schema.String)(input)
+					? input
+					: input instanceof URL
+						? input.href
+						: input.url;
+				seen.push({ url, headers: new Headers(init?.headers) });
 				return new Response(
 					JSON.stringify({
 						status: "success",

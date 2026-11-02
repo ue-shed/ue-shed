@@ -220,5 +220,6 @@ describe("cold package refresh", () => {
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}
-	}, 30000);
+		// About 10 s alone; a loaded CI runner has taken over 30 s.
+	}, 120_000);
 });

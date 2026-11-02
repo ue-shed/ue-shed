@@ -28,6 +28,11 @@ const cargoLocks = [
 	{
 		path: "crates/uasset-inspection-wasm/Cargo.lock",
 		crates: ["uasset-parser", "uasset-inspection", "uasset-inspection-wasm"]
+	},
+	// The standalone decode benchmark builds the crates by path, so `--locked` needs their version.
+	{
+		path: "tools/benchmarks/uasset-decode/Cargo.lock",
+		crates: ["uasset-parser", "uasset-inspection"]
 	}
 ];
 const pluginDescriptorPaths = [

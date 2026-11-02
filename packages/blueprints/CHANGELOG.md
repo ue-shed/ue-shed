@@ -1,5 +1,11 @@
 # @ue-shed/blueprints
 
+## 0.26.0
+
+### Patch Changes
+
+- @ue-shed/protocol@0.26.0
+
 ## 0.25.0
 
 ### Patch Changes

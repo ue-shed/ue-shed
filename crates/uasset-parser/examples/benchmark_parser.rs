@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use uasset_parser::Package;
-use uasset_parser::asset::{AssetDecodeContext, decode_export};
+use uasset_parser::asset::{AssetDecodeContext, AssetDecodeSession};
 use uasset_parser::schema::embedded_source_model;
 
 const DEFAULT_RUNS: usize = 50;
@@ -109,8 +109,9 @@ fn decode_package(source: &[u8], package: &Package) -> DecodeCounts {
         decoded: 0,
         errors: 0,
     };
+    let mut decoder = AssetDecodeSession::new(&context);
     for export in &package.exports {
-        match black_box(decode_export(export, &context)) {
+        match black_box(decoder.decode(export)) {
             Ok(Some(decoded)) => {
                 counts.decoded += 1;
                 black_box(decoded);

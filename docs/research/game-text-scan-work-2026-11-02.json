@@ -1,0 +1,4234 @@
+{
+	"schema": 1,
+	"baseline": "36a90bb7151970275e3cf79b75c9b7cc9175c522",
+	"final_variant": "query-work",
+	"release_build": {
+		"seconds": 402.56596159935,
+		"base": "36a90bb7151970275e3cf79b75c9b7cc9175c522",
+		"patch_sha256": "6b1e67f0d5628c8eea9caf0eabe93f91c8cc4f599928ec66bf98089662dde536",
+		"binary_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46"
+	},
+	"method": "Windows full headless Game Text refresh plus target selection and first workspace page. Fresh Game Text cache per sample; ready catalog prewarmed outside timing, first-ever catalog measured separately. OS file cache uncontrolled. Alternating immutable release readers; same host and 16 Rayon workers. No builds or tests during scans.",
+	"final": {
+		"ue427": {
+			"warm": {
+				"query-prep": {
+					"n": 5,
+					"median_ms": 29164.9563,
+					"min_ms": 28809.6973,
+					"max_ms": 29281.543700000002,
+					"median_rss_mib": 4443.9609375,
+					"runs": [
+						"ue427-query-prep-warm-21",
+						"ue427-query-prep-warm-22",
+						"ue427-query-prep-warm-23",
+						"ue427-query-prep-warm-24",
+						"ue427-query-prep-warm-25"
+					]
+				},
+				"query-work": {
+					"n": 5,
+					"median_ms": 27257.1517,
+					"min_ms": 26867.3249,
+					"max_ms": 27567.3212,
+					"median_rss_mib": 4286.9375,
+					"runs": [
+						"ue427-query-work-warm-21",
+						"ue427-query-work-warm-22",
+						"ue427-query-work-warm-23",
+						"ue427-query-work-warm-24",
+						"ue427-query-work-warm-25"
+					]
+				},
+				"saving_ms": 1907.8046000000031,
+				"saving_pct": 6.541427939667453
+			},
+			"cold": {
+				"query-prep": {
+					"n": 3,
+					"median_ms": 34046.624299999996,
+					"min_ms": 33931.3101,
+					"max_ms": 50892.6208,
+					"median_rss_mib": 4130.41796875,
+					"runs": [
+						"ue427-query-prep-cold-21",
+						"ue427-query-prep-cold-22",
+						"ue427-query-prep-cold-23"
+					]
+				},
+				"query-work": {
+					"n": 3,
+					"median_ms": 31803.978000000003,
+					"min_ms": 31759.126899999996,
+					"max_ms": 31938.061599999997,
+					"median_rss_mib": 4126.16796875,
+					"runs": [
+						"ue427-query-work-cold-21",
+						"ue427-query-work-cold-22",
+						"ue427-query-work-cold-23"
+					]
+				},
+				"saving_ms": 2242.646299999993,
+				"saving_pct": 6.586985776443021
+			}
+		},
+		"ue57": {
+			"warm": {
+				"query-prep": {
+					"n": 5,
+					"median_ms": 2899.7916999999998,
+					"min_ms": 2872.5262000000002,
+					"max_ms": 2916.1192,
+					"median_rss_mib": 670.18359375,
+					"runs": [
+						"ue57-query-prep-warm-21",
+						"ue57-query-prep-warm-22",
+						"ue57-query-prep-warm-23",
+						"ue57-query-prep-warm-24",
+						"ue57-query-prep-warm-25"
+					]
+				},
+				"query-work": {
+					"n": 5,
+					"median_ms": 2796.0852,
+					"min_ms": 2759.3550000000005,
+					"max_ms": 2808.2406,
+					"median_rss_mib": 661.16015625,
+					"runs": [
+						"ue57-query-work-warm-21",
+						"ue57-query-work-warm-22",
+						"ue57-query-work-warm-23",
+						"ue57-query-work-warm-24",
+						"ue57-query-work-warm-25"
+					]
+				},
+				"saving_ms": 103.70649999999978,
+				"saving_pct": 3.5763430869879302
+			},
+			"cold": {
+				"query-prep": {
+					"n": 3,
+					"median_ms": 3246.2886,
+					"min_ms": 3229.9247,
+					"max_ms": 3813.9317,
+					"median_rss_mib": 604.625,
+					"runs": [
+						"ue57-query-prep-cold-21",
+						"ue57-query-prep-cold-22",
+						"ue57-query-prep-cold-23"
+					]
+				},
+				"query-work": {
+					"n": 3,
+					"median_ms": 3133.9142,
+					"min_ms": 3132.2419000000004,
+					"max_ms": 3156.7940000000003,
+					"median_rss_mib": 605.45703125,
+					"runs": [
+						"ue57-query-work-cold-21",
+						"ue57-query-work-cold-22",
+						"ue57-query-work-cold-23"
+					]
+				},
+				"saving_ms": 112.3743999999997,
+				"saving_pct": 3.461626917582118
+			}
+		}
+	},
+	"trials": [
+		{
+			"cohort": "diagnostic",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": true,
+			"n": 1,
+			"median_ms": 30939.4903,
+			"samples_ms": [30939.4903],
+			"rss_mib": 4582.15234375,
+			"phase_medians_ms": {
+				"planPackages": 1074.0521,
+				"importLocalization": 11539.375,
+				"publishColdFiles": 2381.1007,
+				"join": 10070.6804,
+				"extract": 15278.9662
+			}
+		},
+		{
+			"cohort": "diagnostic",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": true,
+			"n": 1,
+			"median_ms": 28754.9659,
+			"samples_ms": [28754.9659],
+			"rss_mib": 4263.8515625,
+			"phase_medians_ms": {
+				"planPackages": 1080.4292,
+				"importLocalization": 11633.8979,
+				"publishColdFiles": 2386.2732,
+				"join": 9085.7706,
+				"extract": 14108.6693
+			}
+		},
+		{
+			"cohort": "diagnostic",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": true,
+			"n": 1,
+			"median_ms": 3384.3118000000004,
+			"samples_ms": [3384.3118000000004],
+			"rss_mib": 585.34765625,
+			"phase_medians_ms": {
+				"planPackages": 74.0736,
+				"publishColdFiles": 437.5575,
+				"join": 1069.2711,
+				"extract": 1233.4349
+			}
+		},
+		{
+			"cohort": "diagnostic",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": true,
+			"n": 1,
+			"median_ms": 3274.3118,
+			"samples_ms": [3274.3118],
+			"rss_mib": 512.59375,
+			"phase_medians_ms": {
+				"planPackages": 75.5229,
+				"publishColdFiles": 444.7707,
+				"join": 1007.9519,
+				"extract": 1184.8288
+			}
+		},
+		{
+			"cohort": "final",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "cold",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 34046.624299999996,
+			"samples_ms": [50892.6208, 33931.3101, 34046.624299999996],
+			"rss_mib": 4130.41796875,
+			"phase_medians_ms": {
+				"planPackages": 1197.4128,
+				"importLocalization": 11813.5889,
+				"publishColdFiles": 2180.3791,
+				"join": 9944.3772,
+				"extract": 14022.9959
+			}
+		},
+		{
+			"cohort": "final",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 5,
+			"median_ms": 29164.9563,
+			"samples_ms": [29125.1509, 28809.6973, 29281.543700000002, 29230.1621, 29164.9563],
+			"rss_mib": 4443.9609375,
+			"phase_medians_ms": {
+				"planPackages": 1075.8422,
+				"importLocalization": 11315.6805,
+				"publishColdFiles": 2142.2406,
+				"join": 9899.1053,
+				"extract": 13861.3867
+			}
+		},
+		{
+			"cohort": "final",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "cold",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 31803.978000000003,
+			"samples_ms": [31938.061599999997, 31803.978000000003, 31759.126899999996],
+			"rss_mib": 4126.16796875,
+			"phase_medians_ms": {
+				"planPackages": 1200.4984,
+				"importLocalization": 11758.8559,
+				"publishColdFiles": 2221.7746,
+				"join": 9151.4619,
+				"extract": 12735.2188
+			}
+		},
+		{
+			"cohort": "final",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 5,
+			"median_ms": 27257.1517,
+			"samples_ms": [27288.7524, 27567.3212, 26867.3249, 26914.4027, 27257.1517],
+			"rss_mib": 4286.9375,
+			"phase_medians_ms": {
+				"planPackages": 1082.9916,
+				"importLocalization": 11346.78,
+				"publishColdFiles": 2138.2881,
+				"join": 9050.7917,
+				"extract": 12648.8203
+			}
+		},
+		{
+			"cohort": "final",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "cold",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 3246.2886,
+			"samples_ms": [3813.9317, 3246.2886, 3229.9247],
+			"rss_mib": 604.625,
+			"phase_medians_ms": {
+				"planPackages": 74.7804,
+				"publishColdFiles": 279.1092,
+				"join": 942.0146,
+				"extract": 1063.6955
+			}
+		},
+		{
+			"cohort": "final",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 5,
+			"median_ms": 2899.7916999999998,
+			"samples_ms": [
+				2916.1192, 2899.7916999999998, 2872.5262000000002, 2914.5119, 2898.8747000000003
+			],
+			"rss_mib": 670.18359375,
+			"phase_medians_ms": {
+				"planPackages": 75.2771,
+				"publishColdFiles": 280.302,
+				"join": 932.975,
+				"extract": 1055.0663
+			}
+		},
+		{
+			"cohort": "final",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "cold",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 3133.9142,
+			"samples_ms": [3132.2419000000004, 3156.7940000000003, 3133.9142],
+			"rss_mib": 605.45703125,
+			"phase_medians_ms": {
+				"planPackages": 74.8162,
+				"publishColdFiles": 288.3161,
+				"join": 887.6863,
+				"extract": 1013.0022
+			}
+		},
+		{
+			"cohort": "final",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 5,
+			"median_ms": 2796.0852,
+			"samples_ms": [2759.3550000000005, 2803.5243, 2808.2406, 2788.9383000000003, 2796.0852],
+			"rss_mib": 661.16015625,
+			"phase_medians_ms": {
+				"planPackages": 75.09,
+				"publishColdFiles": 283.2896,
+				"join": 880.3398,
+				"extract": 1000.4043
+			}
+		},
+		{
+			"cohort": "initial",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 28937.805699999997,
+			"samples_ms": [29569.4261, 28872.8548, 28937.805699999997],
+			"rss_mib": 4411.609375,
+			"phase_medians_ms": {
+				"planPackages": 1073.7003,
+				"importLocalization": 11293.3101,
+				"publishColdFiles": 2156.0142,
+				"join": 9742.2176,
+				"extract": 14023.8228
+			}
+		},
+		{
+			"cohort": "initial",
+			"corpus": "ue427",
+			"variant": "stream-v1",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 28576.5593,
+			"samples_ms": [28732.4201, 28549.1713, 28576.5593],
+			"rss_mib": 4102.515625,
+			"phase_medians_ms": {
+				"planPackages": 1080.912,
+				"importLocalization": 11198.226,
+				"publishColdFiles": 2214.9441,
+				"join": 9811.7246,
+				"extract": 13358.6598
+			}
+		},
+		{
+			"cohort": "initial",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2909.6956999999998,
+			"samples_ms": [2909.6956999999998, 2902.5292, 2921.7197],
+			"rss_mib": 672.79296875,
+			"phase_medians_ms": {
+				"planPackages": 74.6891,
+				"publishColdFiles": 280.5886,
+				"join": 939.9921,
+				"extract": 1061.0789
+			}
+		},
+		{
+			"cohort": "initial",
+			"corpus": "ue57",
+			"variant": "stream-v1",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2856.8511,
+			"samples_ms": [2841.8563999999997, 2856.8511, 2883.8833],
+			"rss_mib": 674.54296875,
+			"phase_medians_ms": {
+				"planPackages": 74.1868,
+				"publishColdFiles": 276.4029,
+				"join": 935.1078,
+				"extract": 1027.5487
+			}
+		},
+		{
+			"cohort": "lazy-paths",
+			"corpus": "ue427",
+			"variant": "lazy-paths",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 27686.1201,
+			"samples_ms": [28093.1361, 27676.9332, 27686.1201],
+			"rss_mib": 4229.953125,
+			"phase_medians_ms": {
+				"planPackages": 1075.1014,
+				"importLocalization": 11198.9264,
+				"publishColdFiles": 2148.5892,
+				"join": 9777.7918,
+				"extract": 12596.0568
+			}
+		},
+		{
+			"cohort": "lazy-paths",
+			"corpus": "ue427",
+			"variant": "skip-only",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 28782.5282,
+			"samples_ms": [28981.8194, 28421.6475, 28782.5282],
+			"rss_mib": 4301.375,
+			"phase_medians_ms": {
+				"planPackages": 1096.2978,
+				"importLocalization": 11383.1629,
+				"publishColdFiles": 2151.752,
+				"join": 9810.8782,
+				"extract": 13476.943
+			}
+		},
+		{
+			"cohort": "lazy-paths",
+			"corpus": "ue57",
+			"variant": "lazy-paths",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2841.9363999999996,
+			"samples_ms": [2814.4886, 2867.1303000000003, 2841.9363999999996],
+			"rss_mib": 677.98828125,
+			"phase_medians_ms": {
+				"planPackages": 74.579,
+				"publishColdFiles": 282.1952,
+				"join": 936.8538,
+				"extract": 1004.4615
+			}
+		},
+		{
+			"cohort": "lazy-paths",
+			"corpus": "ue57",
+			"variant": "skip-only",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2883.3253,
+			"samples_ms": [2866.1417, 2884.4911, 2883.3253],
+			"rss_mib": 681.80859375,
+			"phase_medians_ms": {
+				"planPackages": 76.5119,
+				"publishColdFiles": 281.5138,
+				"join": 934.0561,
+				"extract": 1025.9731
+			}
+		},
+		{
+			"cohort": "pin-stream",
+			"corpus": "ue427",
+			"variant": "pin-stream",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 28966.1962,
+			"samples_ms": [29183.8064, 28966.1962, 28461.4778],
+			"rss_mib": 4298.21484375,
+			"phase_medians_ms": {
+				"planPackages": 1096.7698,
+				"importLocalization": 11414.6256,
+				"publishColdFiles": 2210.6712,
+				"join": 9646.9872,
+				"extract": 13845.5198
+			}
+		},
+		{
+			"cohort": "pin-stream",
+			"corpus": "ue427",
+			"variant": "skip-only",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 28844.3378,
+			"samples_ms": [29093.987800000003, 28844.3378, 28792.0888],
+			"rss_mib": 4362.4921875,
+			"phase_medians_ms": {
+				"planPackages": 1093.7574,
+				"importLocalization": 11335.7929,
+				"publishColdFiles": 2201.6411,
+				"join": 10010.8828,
+				"extract": 13500.9705
+			}
+		},
+		{
+			"cohort": "pin-stream",
+			"corpus": "ue57",
+			"variant": "pin-stream",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2876.0746,
+			"samples_ms": [2906.6335, 2876.0746, 2854.6129],
+			"rss_mib": 671.02734375,
+			"phase_medians_ms": {
+				"planPackages": 76.2574,
+				"publishColdFiles": 277.8786,
+				"join": 939.9598,
+				"extract": 1019.7958
+			}
+		},
+		{
+			"cohort": "pin-stream",
+			"corpus": "ue57",
+			"variant": "skip-only",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2879.3289,
+			"samples_ms": [2878.0696000000003, 2899.8598, 2879.3289],
+			"rss_mib": 668.3125,
+			"phase_medians_ms": {
+				"planPackages": 76.2255,
+				"publishColdFiles": 284.4591,
+				"join": 944.688,
+				"extract": 1023.6245
+			}
+		},
+		{
+			"cohort": "property-stream",
+			"corpus": "ue427",
+			"variant": "skip-only",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 28369.203700000002,
+			"samples_ms": [28369.203700000002, 29163.449099999998, 28252.0364],
+			"rss_mib": 4374.52734375,
+			"phase_medians_ms": {
+				"planPackages": 1094.342,
+				"importLocalization": 11124.5104,
+				"publishColdFiles": 2164.7397,
+				"join": 9742.3152,
+				"extract": 13244.1382
+			}
+		},
+		{
+			"cohort": "property-stream",
+			"corpus": "ue427",
+			"variant": "stream-v1",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 28282.1179,
+			"samples_ms": [28146.172, 28625.3649, 28282.1179],
+			"rss_mib": 3870.5390625,
+			"phase_medians_ms": {
+				"planPackages": 1075.2931,
+				"importLocalization": 11155.7677,
+				"publishColdFiles": 2146.1726,
+				"join": 9587.4788,
+				"extract": 13359.1382
+			}
+		},
+		{
+			"cohort": "property-stream",
+			"corpus": "ue57",
+			"variant": "skip-only",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2874.3170999999998,
+			"samples_ms": [2892.2694, 2861.2693, 2874.3170999999998],
+			"rss_mib": 674.875,
+			"phase_medians_ms": {
+				"planPackages": 77.4773,
+				"publishColdFiles": 282.9453,
+				"join": 940.8728,
+				"extract": 1020.84
+			}
+		},
+		{
+			"cohort": "property-stream",
+			"corpus": "ue57",
+			"variant": "stream-v1",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2852.1464,
+			"samples_ms": [2858.6575, 2844.7445, 2852.1464],
+			"rss_mib": 683.16015625,
+			"phase_medians_ms": {
+				"planPackages": 75.7875,
+				"publishColdFiles": 280.7778,
+				"join": 923.0283,
+				"extract": 1010.6827
+			}
+		},
+		{
+			"cohort": "query-work",
+			"corpus": "ue427",
+			"variant": "lazy-paths",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 28069.4238,
+			"samples_ms": [28096.569099999997, 27475.031499999997, 28069.4238],
+			"rss_mib": 4279.3984375,
+			"phase_medians_ms": {
+				"planPackages": 1080.8089,
+				"importLocalization": 11314.205,
+				"publishColdFiles": 2121.8976,
+				"join": 9714.9199,
+				"extract": 12747.5791
+			}
+		},
+		{
+			"cohort": "query-work",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 27099.5206,
+			"samples_ms": [27099.5206, 27061.265799999997, 27398.4385],
+			"rss_mib": 4300.77734375,
+			"phase_medians_ms": {
+				"planPackages": 1086.1862,
+				"importLocalization": 11270.0047,
+				"publishColdFiles": 2172.2713,
+				"join": 9159.7771,
+				"extract": 12585.0128
+			}
+		},
+		{
+			"cohort": "query-work",
+			"corpus": "ue57",
+			"variant": "lazy-paths",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2854.1644,
+			"samples_ms": [2880.583, 2795.8632, 2854.1644],
+			"rss_mib": 669.2265625,
+			"phase_medians_ms": {
+				"planPackages": 74.1231,
+				"publishColdFiles": 280.0287,
+				"join": 939.8368,
+				"extract": 1002.0357
+			}
+		},
+		{
+			"cohort": "query-work",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 3,
+			"median_ms": 2813.6695,
+			"samples_ms": [2813.6695, 2814.9161, 2807.7821],
+			"rss_mib": 666.11328125,
+			"phase_medians_ms": {
+				"planPackages": 75.4835,
+				"publishColdFiles": 281.9894,
+				"join": 898.0414,
+				"extract": 1008.2446
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 29008.154300000002,
+			"samples_ms": [29008.154300000002],
+			"rss_mib": 4455.80859375,
+			"phase_medians_ms": {
+				"planPackages": 1080.3393,
+				"importLocalization": 11236.1787,
+				"publishColdFiles": 2186.6991,
+				"join": 9571.5689,
+				"extract": 13943.5921
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "cached-reopen",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 3235.3406999999997,
+			"samples_ms": [3235.3406999999997],
+			"rss_mib": 1337.4140625,
+			"phase_medians_ms": {
+				"planPackages": 1010.2458,
+				"join": 8.0222
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "lines-export",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 40366.2914,
+			"samples_ms": [40366.2914],
+			"rss_mib": 1910.953125,
+			"phase_medians_ms": {
+				"planPackages": 1006.117,
+				"join": 7.8883
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "loc-check",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 40416.4891,
+			"samples_ms": [40416.4891],
+			"rss_mib": 4935.9921875,
+			"phase_medians_ms": {
+				"planPackages": 1007.3139,
+				"join": 7.8481
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "open",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 1788.9064999999998,
+			"samples_ms": [1788.9064999999998],
+			"rss_mib": 1078.12109375,
+			"phase_medians_ms": {}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 27106.5516,
+			"samples_ms": [27106.5516],
+			"rss_mib": 4297.96484375,
+			"phase_medians_ms": {
+				"planPackages": 1082.5623,
+				"importLocalization": 11212.4534,
+				"publishColdFiles": 2258.0566,
+				"join": 9056.3882,
+				"extract": 12586.9591
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "cached-reopen",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 3219.1038,
+			"samples_ms": [3219.1038],
+			"rss_mib": 1344.921875,
+			"phase_medians_ms": {
+				"planPackages": 1017.2507,
+				"join": 7.9849
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "lines-export",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 41424.1904,
+			"samples_ms": [41424.1904],
+			"rss_mib": 1896.59765625,
+			"phase_medians_ms": {
+				"planPackages": 1017.6865,
+				"join": 7.9344
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "loc-check",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 40105.325300000004,
+			"samples_ms": [40105.325300000004],
+			"rss_mib": 4884.41796875,
+			"phase_medians_ms": {
+				"planPackages": 1015.4819,
+				"join": 8.0062
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue427",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "open",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 1770.3192000000001,
+			"samples_ms": [1770.3192000000001],
+			"rss_mib": 1084.37109375,
+			"phase_medians_ms": {}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 2921.4797,
+			"samples_ms": [2921.4797],
+			"rss_mib": 551.26171875,
+			"phase_medians_ms": {
+				"planPackages": 75.3075,
+				"publishColdFiles": 293.2834,
+				"join": 933.9586,
+				"extract": 1069.1141
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "cached-reopen",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 638.7051,
+			"samples_ms": [638.7051],
+			"rss_mib": 232.33984375,
+			"phase_medians_ms": {
+				"planPackages": 67.1753,
+				"join": 7.2823
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "lines-export",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 1320.7849999999999,
+			"samples_ms": [1320.7849999999999],
+			"rss_mib": 440.62890625,
+			"phase_medians_ms": {
+				"planPackages": 67.5686,
+				"join": 7.6141
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "loc-check",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 758.9778000000001,
+			"samples_ms": [758.9778000000001],
+			"rss_mib": 549.91015625,
+			"phase_medians_ms": {
+				"planPackages": 68.1922,
+				"join": 7.2464
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-prep",
+			"catalog": "warm",
+			"stage": "open",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 487.1744,
+			"samples_ms": [487.1744],
+			"rss_mib": 341.09765625,
+			"phase_medians_ms": {}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "build",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 2808.7468,
+			"samples_ms": [2808.7468],
+			"rss_mib": 674.203125,
+			"phase_medians_ms": {
+				"planPackages": 75.5513,
+				"publishColdFiles": 283.4857,
+				"join": 892.3099,
+				"extract": 999.3893
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "cached-reopen",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 641.512,
+			"samples_ms": [641.512],
+			"rss_mib": 231.64453125,
+			"phase_medians_ms": {
+				"planPackages": 68.3422,
+				"join": 8.0406
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "lines-export",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 1352.0352000000003,
+			"samples_ms": [1352.0352000000003],
+			"rss_mib": 419.90625,
+			"phase_medians_ms": {
+				"planPackages": 68.0595,
+				"join": 7.1545
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "loc-check",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 767.7795999999998,
+			"samples_ms": [767.7795999999998],
+			"rss_mib": 479.875,
+			"phase_medians_ms": {
+				"planPackages": 68.7615,
+				"join": 7.1698
+			}
+		},
+		{
+			"cohort": "semantic",
+			"corpus": "ue57",
+			"variant": "query-work",
+			"catalog": "warm",
+			"stage": "open",
+			"instrumented": false,
+			"n": 1,
+			"median_ms": 483.53639999999996,
+			"samples_ms": [483.53639999999996],
+			"rss_mib": 335.1953125,
+			"phase_medians_ms": {}
+		}
+	],
+	"samples": [
+		{
+			"run": "ue427-lazy-paths-warm-17",
+			"variant": "lazy-paths",
+			"corpus": "ue427",
+			"repeat": 17,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28093.1361,
+			"rss_mib": 4357.1640625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.9288,
+				"NativeIndexBuilder.planPackages": 1071.0538,
+				"NativeIndexBuilder.importLocalization": 11208.5746,
+				"unreal_assets.protocol_extract_text_packages": 12639.1146,
+				"NativeIndexBuilder.publishColdFiles": 2148.5892,
+				"NativeIndexBuilder.join": 10040.3906,
+				"NativeIndexBuilder.publish": 63.35
+			}
+		},
+		{
+			"run": "ue427-lazy-paths-warm-18",
+			"variant": "lazy-paths",
+			"corpus": "ue427",
+			"repeat": 18,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27676.9332,
+			"rss_mib": 4133.80859375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 245.2676,
+				"NativeIndexBuilder.planPackages": 1080.6894,
+				"NativeIndexBuilder.importLocalization": 11198.9264,
+				"unreal_assets.protocol_extract_text_packages": 12596.0568,
+				"NativeIndexBuilder.publishColdFiles": 2136.5443,
+				"NativeIndexBuilder.join": 9708.253,
+				"NativeIndexBuilder.publish": 63.1381
+			}
+		},
+		{
+			"run": "ue427-lazy-paths-warm-19",
+			"variant": "lazy-paths",
+			"corpus": "ue427",
+			"repeat": 19,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27686.1201,
+			"rss_mib": 4229.953125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.5934,
+				"NativeIndexBuilder.planPackages": 1075.1014,
+				"NativeIndexBuilder.importLocalization": 11141.8098,
+				"unreal_assets.protocol_extract_text_packages": 12428.9053,
+				"NativeIndexBuilder.publishColdFiles": 2256.6497,
+				"NativeIndexBuilder.join": 9777.7918,
+				"NativeIndexBuilder.publish": 63.2204
+			}
+		},
+		{
+			"run": "ue427-lazy-paths-warm-31",
+			"variant": "lazy-paths",
+			"corpus": "ue427",
+			"repeat": 31,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28096.569099999997,
+			"rss_mib": 4279.3984375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 250.6725,
+				"NativeIndexBuilder.planPackages": 1080.9634,
+				"NativeIndexBuilder.importLocalization": 11587.7773,
+				"unreal_assets.protocol_extract_text_packages": 13014.1669,
+				"NativeIndexBuilder.publishColdFiles": 2103.6816,
+				"NativeIndexBuilder.join": 9714.9199,
+				"NativeIndexBuilder.publish": 68.4556
+			}
+		},
+		{
+			"run": "ue427-lazy-paths-warm-32",
+			"variant": "lazy-paths",
+			"corpus": "ue427",
+			"repeat": 32,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27475.031499999997,
+			"rss_mib": 4333.8046875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 250.723,
+				"NativeIndexBuilder.planPackages": 1080.8089,
+				"NativeIndexBuilder.importLocalization": 11048.0915,
+				"unreal_assets.protocol_extract_text_packages": 12463.8292,
+				"NativeIndexBuilder.publishColdFiles": 2121.8976,
+				"NativeIndexBuilder.join": 9711.4918,
+				"NativeIndexBuilder.publish": 65.2383
+			}
+		},
+		{
+			"run": "ue427-lazy-paths-warm-33",
+			"variant": "lazy-paths",
+			"corpus": "ue427",
+			"repeat": 33,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28069.4238,
+			"rss_mib": 4068.2578125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 250.3333,
+				"NativeIndexBuilder.planPackages": 1075.0427,
+				"NativeIndexBuilder.importLocalization": 11314.205,
+				"unreal_assets.protocol_extract_text_packages": 12747.5791,
+				"NativeIndexBuilder.publishColdFiles": 2155.0448,
+				"NativeIndexBuilder.join": 9946.2287,
+				"NativeIndexBuilder.publish": 64.2672
+			}
+		},
+		{
+			"run": "ue427-pin-stream-warm-14",
+			"variant": "pin-stream",
+			"corpus": "ue427",
+			"repeat": 14,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29183.8064,
+			"rss_mib": 4187.8984375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3ddac57154736fbcde7893b511e24824ee6a3e8d4261b9e54ab910101ee3cbe0",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.7142,
+				"NativeIndexBuilder.planPackages": 1109.3597,
+				"NativeIndexBuilder.importLocalization": 11414.6256,
+				"unreal_assets.protocol_extract_text_packages": 14019.4932,
+				"NativeIndexBuilder.publishColdFiles": 2252.6537,
+				"NativeIndexBuilder.join": 9659.7979,
+				"NativeIndexBuilder.publish": 68.986
+			}
+		},
+		{
+			"run": "ue427-pin-stream-warm-15",
+			"variant": "pin-stream",
+			"corpus": "ue427",
+			"repeat": 15,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28966.1962,
+			"rss_mib": 4375.50390625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3ddac57154736fbcde7893b511e24824ee6a3e8d4261b9e54ab910101ee3cbe0",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 250.3924,
+				"NativeIndexBuilder.planPackages": 1096.7698,
+				"NativeIndexBuilder.importLocalization": 11440.4387,
+				"unreal_assets.protocol_extract_text_packages": 13845.5198,
+				"NativeIndexBuilder.publishColdFiles": 2210.6712,
+				"NativeIndexBuilder.join": 9646.9872,
+				"NativeIndexBuilder.publish": 71.9899
+			}
+		},
+		{
+			"run": "ue427-pin-stream-warm-16",
+			"variant": "pin-stream",
+			"corpus": "ue427",
+			"repeat": 16,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28461.4778,
+			"rss_mib": 4298.21484375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3ddac57154736fbcde7893b511e24824ee6a3e8d4261b9e54ab910101ee3cbe0",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 251.475,
+				"NativeIndexBuilder.planPackages": 1093.3665,
+				"NativeIndexBuilder.importLocalization": 11203.3684,
+				"unreal_assets.protocol_extract_text_packages": 13455.3052,
+				"NativeIndexBuilder.publishColdFiles": 2165.8145,
+				"NativeIndexBuilder.join": 9573.5644,
+				"NativeIndexBuilder.publish": 65.7237
+			}
+		},
+		{
+			"run": "ue427-query-prep-cold-21",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 21,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 50892.6208,
+			"rss_mib": 4325.71875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 20828.7606,
+				"GameTextIndexSource.catalog": 21074.4027,
+				"NativeIndexBuilder.planPackages": 1336.8002,
+				"NativeIndexBuilder.importLocalization": 11934.9647,
+				"unreal_assets.protocol_extract_text_packages": 14413.7464,
+				"NativeIndexBuilder.publishColdFiles": 2214.9412,
+				"NativeIndexBuilder.join": 9937.5352,
+				"NativeIndexBuilder.publish": 65.7845
+			}
+		},
+		{
+			"run": "ue427-query-prep-cold-22",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 22,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 33931.3101,
+			"rss_mib": 4129.31640625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 4560.6552,
+				"GameTextIndexSource.catalog": 4806.1803,
+				"NativeIndexBuilder.planPackages": 1189.4156,
+				"NativeIndexBuilder.importLocalization": 11564.5036,
+				"unreal_assets.protocol_extract_text_packages": 13899.2216,
+				"NativeIndexBuilder.publishColdFiles": 2180.3791,
+				"NativeIndexBuilder.join": 9944.3772,
+				"NativeIndexBuilder.publish": 62.8071
+			}
+		},
+		{
+			"run": "ue427-query-prep-cold-23",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 23,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 34046.624299999996,
+			"rss_mib": 4130.41796875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 4450.8168,
+				"GameTextIndexSource.catalog": 4696.9136,
+				"NativeIndexBuilder.planPackages": 1197.4128,
+				"NativeIndexBuilder.importLocalization": 11813.5889,
+				"unreal_assets.protocol_extract_text_packages": 14022.9959,
+				"NativeIndexBuilder.publishColdFiles": 2121.3303,
+				"NativeIndexBuilder.join": 10073.6679,
+				"NativeIndexBuilder.publish": 68.4467
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-1",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 1,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29569.4261,
+			"rss_mib": 4556.89453125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 248.6979,
+				"NativeIndexBuilder.planPackages": 1083.88,
+				"NativeIndexBuilder.importLocalization": 11293.3101,
+				"unreal_assets.protocol_extract_text_packages": 14264.4895,
+				"NativeIndexBuilder.publishColdFiles": 2156.0142,
+				"NativeIndexBuilder.join": 9953.5903,
+				"NativeIndexBuilder.publish": 70.1908
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-2",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 2,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28872.8548,
+			"rss_mib": 4234.80078125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 249.2716,
+				"NativeIndexBuilder.planPackages": 1073.7003,
+				"NativeIndexBuilder.importLocalization": 11091.4083,
+				"unreal_assets.protocol_extract_text_packages": 13801.6212,
+				"NativeIndexBuilder.publishColdFiles": 2098.4406,
+				"NativeIndexBuilder.join": 9742.2176,
+				"NativeIndexBuilder.publish": 64.8652
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-21",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 21,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29125.1509,
+			"rss_mib": 4451.0078125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.4533,
+				"NativeIndexBuilder.planPackages": 1075.3553,
+				"NativeIndexBuilder.importLocalization": 11313.8875,
+				"unreal_assets.protocol_extract_text_packages": 13828.508,
+				"NativeIndexBuilder.publishColdFiles": 2142.2406,
+				"NativeIndexBuilder.join": 9899.1053,
+				"NativeIndexBuilder.publish": 63.8713
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-22",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 22,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28809.6973,
+			"rss_mib": 4443.9609375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.964,
+				"NativeIndexBuilder.planPackages": 1072.5078,
+				"NativeIndexBuilder.importLocalization": 11371.0762,
+				"unreal_assets.protocol_extract_text_packages": 13985.7339,
+				"NativeIndexBuilder.publishColdFiles": 2142.161,
+				"NativeIndexBuilder.join": 9512.1424,
+				"NativeIndexBuilder.publish": 63.2115
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-23",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 23,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29281.543700000002,
+			"rss_mib": 4320.9140625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.3594,
+				"NativeIndexBuilder.planPackages": 1079.1127,
+				"NativeIndexBuilder.importLocalization": 11277.6614,
+				"unreal_assets.protocol_extract_text_packages": 13861.3867,
+				"NativeIndexBuilder.publishColdFiles": 2176.8248,
+				"NativeIndexBuilder.join": 9986.9864,
+				"NativeIndexBuilder.publish": 63.7332
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-24",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 24,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29230.1621,
+			"rss_mib": 4393.30078125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 249.0249,
+				"NativeIndexBuilder.planPackages": 1078.6867,
+				"NativeIndexBuilder.importLocalization": 11360.1345,
+				"unreal_assets.protocol_extract_text_packages": 13766.3925,
+				"NativeIndexBuilder.publishColdFiles": 2225.1522,
+				"NativeIndexBuilder.join": 9990.0364,
+				"NativeIndexBuilder.publish": 67.8335
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-25",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 25,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29164.9563,
+			"rss_mib": 4473.75390625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 249.27,
+				"NativeIndexBuilder.planPackages": 1075.8422,
+				"NativeIndexBuilder.importLocalization": 11315.6805,
+				"unreal_assets.protocol_extract_text_packages": 14334.9947,
+				"NativeIndexBuilder.publishColdFiles": 2105.0148,
+				"NativeIndexBuilder.join": 9513.7298,
+				"NativeIndexBuilder.publish": 67.4265
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-3",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 3,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28937.805699999997,
+			"rss_mib": 4411.609375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 249.36,
+				"NativeIndexBuilder.planPackages": 1070.8782,
+				"NativeIndexBuilder.importLocalization": 11314.4066,
+				"unreal_assets.protocol_extract_text_packages": 14023.8228,
+				"NativeIndexBuilder.publishColdFiles": 2159.8796,
+				"NativeIndexBuilder.join": 9527.5623,
+				"NativeIndexBuilder.publish": 61.9827
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29008.154300000002,
+			"rss_mib": 4455.80859375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 245.9709,
+				"NativeIndexBuilder.planPackages": 1080.3393,
+				"NativeIndexBuilder.importLocalization": 11236.1787,
+				"unreal_assets.protocol_extract_text_packages": 13943.5921,
+				"NativeIndexBuilder.publishColdFiles": 2186.6991,
+				"NativeIndexBuilder.join": 9571.5689,
+				"NativeIndexBuilder.publish": 61.7855
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "cached-reopen",
+			"ms": 3235.3406999999997,
+			"rss_mib": 1337.4140625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 245.9925,
+				"NativeIndexBuilder.planPackages": 1010.2458,
+				"NativeIndexBuilder.join": 8.0222
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "open",
+			"ms": 1788.9064999999998,
+			"rss_mib": 1078.12109375,
+			"sha256": "6cacf2224bc86541df5017639a43f30ec8442b32a8196556b7292caf93f282df",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {}
+		},
+		{
+			"run": "ue427-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "lines-export",
+			"ms": 40366.2914,
+			"rss_mib": 1910.953125,
+			"sha256": "0e2a2ded813fbb6fca0633690b5481c90281821de6956fc088509be88cff224b",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 249.2606,
+				"NativeIndexBuilder.planPackages": 1006.117,
+				"NativeIndexBuilder.join": 7.8883
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "loc-check",
+			"ms": 40416.4891,
+			"rss_mib": 4935.9921875,
+			"sha256": "3a79cb1374b30b416bb9f48eaa157b1b1c1d640b31c871ad49642778d1fd67a4",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.5873,
+				"NativeIndexBuilder.planPackages": 1007.3139,
+				"NativeIndexBuilder.join": 7.8481
+			}
+		},
+		{
+			"run": "ue427-query-prep-warm-50-instrumented",
+			"variant": "query-prep",
+			"corpus": "ue427",
+			"repeat": 50,
+			"catalog": "warm",
+			"instrumented": true,
+			"stage": "build",
+			"ms": 30939.4903,
+			"rss_mib": 4582.15234375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 248.656,
+				"NativeIndexBuilder.planPackages": 1074.0521,
+				"NativeIndexBuilder.importLocalization": 11539.375,
+				"unreal_assets.protocol_extract_text_packages": 15278.9662,
+				"NativeIndexBuilder.publishColdFiles": 2381.1007,
+				"NativeIndexBuilder.join": 10070.6804,
+				"NativeIndexBuilder.publish": 309.3913
+			}
+		},
+		{
+			"run": "ue427-query-work-cold-21",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 21,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 31938.061599999997,
+			"rss_mib": 4126.16796875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 4465.531,
+				"GameTextIndexSource.catalog": 4721.5622,
+				"NativeIndexBuilder.planPackages": 1193.0065,
+				"NativeIndexBuilder.importLocalization": 11723.6822,
+				"unreal_assets.protocol_extract_text_packages": 12735.2188,
+				"NativeIndexBuilder.publishColdFiles": 2203.1444,
+				"NativeIndexBuilder.join": 9193.9287,
+				"NativeIndexBuilder.publish": 72.2101
+			}
+		},
+		{
+			"run": "ue427-query-work-cold-22",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 22,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 31803.978000000003,
+			"rss_mib": 4077.3203125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 4515.435,
+				"GameTextIndexSource.catalog": 4759.5955,
+				"NativeIndexBuilder.planPackages": 1200.4984,
+				"NativeIndexBuilder.importLocalization": 11758.8559,
+				"unreal_assets.protocol_extract_text_packages": 12612.1454,
+				"NativeIndexBuilder.publishColdFiles": 2224.4148,
+				"NativeIndexBuilder.join": 9151.4619,
+				"NativeIndexBuilder.publish": 61.9352
+			}
+		},
+		{
+			"run": "ue427-query-work-cold-23",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 23,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 31759.126899999996,
+			"rss_mib": 4213.0078125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 4403.0198,
+				"GameTextIndexSource.catalog": 4648.2011,
+				"NativeIndexBuilder.planPackages": 1226.6623,
+				"NativeIndexBuilder.importLocalization": 11982.5405,
+				"unreal_assets.protocol_extract_text_packages": 12785.4962,
+				"NativeIndexBuilder.publishColdFiles": 2221.7746,
+				"NativeIndexBuilder.join": 8958.1245,
+				"NativeIndexBuilder.publish": 61.2697
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-21",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 21,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27288.7524,
+			"rss_mib": 4248.9921875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.5717,
+				"NativeIndexBuilder.planPackages": 1078.9754,
+				"NativeIndexBuilder.importLocalization": 11409.4744,
+				"unreal_assets.protocol_extract_text_packages": 12819.9762,
+				"NativeIndexBuilder.publishColdFiles": 2215.3415,
+				"NativeIndexBuilder.join": 9010.9953,
+				"NativeIndexBuilder.publish": 61.903
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-22",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 22,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27567.3212,
+			"rss_mib": 4325.87890625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 249.8891,
+				"NativeIndexBuilder.planPackages": 1081.2229,
+				"NativeIndexBuilder.importLocalization": 11346.78,
+				"unreal_assets.protocol_extract_text_packages": 12677.2467,
+				"NativeIndexBuilder.publishColdFiles": 2292.8139,
+				"NativeIndexBuilder.join": 9367.7918,
+				"NativeIndexBuilder.publish": 63.0096
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-23",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 23,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 26867.3249,
+			"rss_mib": 4035.59375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.2375,
+				"NativeIndexBuilder.planPackages": 1086.3011,
+				"NativeIndexBuilder.importLocalization": 11077.2383,
+				"unreal_assets.protocol_extract_text_packages": 12507.3456,
+				"NativeIndexBuilder.publishColdFiles": 2130.154,
+				"NativeIndexBuilder.join": 9050.7917,
+				"NativeIndexBuilder.publish": 64.1431
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-24",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 24,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 26914.4027,
+			"rss_mib": 4286.9375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 245.5036,
+				"NativeIndexBuilder.planPackages": 1082.9916,
+				"NativeIndexBuilder.importLocalization": 11178.3511,
+				"unreal_assets.protocol_extract_text_packages": 12648.8203,
+				"NativeIndexBuilder.publishColdFiles": 2103.3849,
+				"NativeIndexBuilder.join": 8942.6751,
+				"NativeIndexBuilder.publish": 67.4469
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-25",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 25,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27257.1517,
+			"rss_mib": 4335.10546875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.0208,
+				"NativeIndexBuilder.planPackages": 1087.3849,
+				"NativeIndexBuilder.importLocalization": 11364.0687,
+				"unreal_assets.protocol_extract_text_packages": 12554.2756,
+				"NativeIndexBuilder.publishColdFiles": 2138.2881,
+				"NativeIndexBuilder.join": 9325.5266,
+				"NativeIndexBuilder.publish": 64.4105
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-31",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 31,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27099.5206,
+			"rss_mib": 4234.65234375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.678,
+				"NativeIndexBuilder.planPackages": 1086.1862,
+				"NativeIndexBuilder.importLocalization": 11152.4245,
+				"unreal_assets.protocol_extract_text_packages": 12569.5124,
+				"NativeIndexBuilder.publishColdFiles": 2168.741,
+				"NativeIndexBuilder.join": 9159.7771,
+				"NativeIndexBuilder.publish": 64.2334
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-32",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 32,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27061.265799999997,
+			"rss_mib": 4300.77734375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 248.7743,
+				"NativeIndexBuilder.planPackages": 1081.6721,
+				"NativeIndexBuilder.importLocalization": 11270.0047,
+				"unreal_assets.protocol_extract_text_packages": 12585.0128,
+				"NativeIndexBuilder.publishColdFiles": 2172.2713,
+				"NativeIndexBuilder.join": 9109.1932,
+				"NativeIndexBuilder.publish": 62.7958
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-33",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 33,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27398.4385,
+			"rss_mib": 4385.734375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.1417,
+				"NativeIndexBuilder.planPackages": 1096.3407,
+				"NativeIndexBuilder.importLocalization": 11278.4626,
+				"unreal_assets.protocol_extract_text_packages": 12637.6587,
+				"NativeIndexBuilder.publishColdFiles": 2183.7691,
+				"NativeIndexBuilder.join": 9275.3347,
+				"NativeIndexBuilder.publish": 62.3429
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 27106.5516,
+			"rss_mib": 4297.96484375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.5698,
+				"NativeIndexBuilder.planPackages": 1082.5623,
+				"NativeIndexBuilder.importLocalization": 11212.4534,
+				"unreal_assets.protocol_extract_text_packages": 12586.9591,
+				"NativeIndexBuilder.publishColdFiles": 2258.0566,
+				"NativeIndexBuilder.join": 9056.3882,
+				"NativeIndexBuilder.publish": 63.5574
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "cached-reopen",
+			"ms": 3219.1038,
+			"rss_mib": 1344.921875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.9613,
+				"NativeIndexBuilder.planPackages": 1017.2507,
+				"NativeIndexBuilder.join": 7.9849
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "open",
+			"ms": 1770.3192000000001,
+			"rss_mib": 1084.37109375,
+			"sha256": "6cacf2224bc86541df5017639a43f30ec8442b32a8196556b7292caf93f282df",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {}
+		},
+		{
+			"run": "ue427-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "lines-export",
+			"ms": 41424.1904,
+			"rss_mib": 1896.59765625,
+			"sha256": "0e2a2ded813fbb6fca0633690b5481c90281821de6956fc088509be88cff224b",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.1912,
+				"NativeIndexBuilder.planPackages": 1017.6865,
+				"NativeIndexBuilder.join": 7.9344
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "loc-check",
+			"ms": 40105.325300000004,
+			"rss_mib": 4884.41796875,
+			"sha256": "3a79cb1374b30b416bb9f48eaa157b1b1c1d640b31c871ad49642778d1fd67a4",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.659,
+				"NativeIndexBuilder.planPackages": 1015.4819,
+				"NativeIndexBuilder.join": 8.0062
+			}
+		},
+		{
+			"run": "ue427-query-work-warm-50-instrumented",
+			"variant": "query-work",
+			"corpus": "ue427",
+			"repeat": 50,
+			"catalog": "warm",
+			"instrumented": true,
+			"stage": "build",
+			"ms": 28754.9659,
+			"rss_mib": 4263.8515625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.4863,
+				"NativeIndexBuilder.planPackages": 1080.4292,
+				"NativeIndexBuilder.importLocalization": 11633.8979,
+				"unreal_assets.protocol_extract_text_packages": 14108.6693,
+				"NativeIndexBuilder.publishColdFiles": 2386.2732,
+				"NativeIndexBuilder.join": 9085.7706,
+				"NativeIndexBuilder.publish": 245.9447
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-11",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 11,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28369.203700000002,
+			"rss_mib": 4374.52734375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 245.9707,
+				"NativeIndexBuilder.planPackages": 1092.6707,
+				"NativeIndexBuilder.importLocalization": 11124.4283,
+				"unreal_assets.protocol_extract_text_packages": 13228.8934,
+				"NativeIndexBuilder.publishColdFiles": 2164.7397,
+				"NativeIndexBuilder.join": 9742.3152,
+				"NativeIndexBuilder.publish": 61.6433
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-12",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 12,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29163.449099999998,
+			"rss_mib": 4405.18359375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 244.4653,
+				"NativeIndexBuilder.planPackages": 1094.342,
+				"NativeIndexBuilder.importLocalization": 11354.8189,
+				"unreal_assets.protocol_extract_text_packages": 13411.9607,
+				"NativeIndexBuilder.publishColdFiles": 2235.9018,
+				"NativeIndexBuilder.join": 10201.6309,
+				"NativeIndexBuilder.publish": 64.1363
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-13",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 13,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28252.0364,
+			"rss_mib": 4071.52734375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 248.0725,
+				"NativeIndexBuilder.planPackages": 1098.9867,
+				"NativeIndexBuilder.importLocalization": 11124.5104,
+				"unreal_assets.protocol_extract_text_packages": 13244.1382,
+				"NativeIndexBuilder.publishColdFiles": 2130.5506,
+				"NativeIndexBuilder.join": 9607.7765,
+				"NativeIndexBuilder.publish": 62.1068
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-14",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 14,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 29093.987800000003,
+			"rss_mib": 4373.97265625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 245.0016,
+				"NativeIndexBuilder.planPackages": 1093.7574,
+				"NativeIndexBuilder.importLocalization": 11411.2827,
+				"unreal_assets.protocol_extract_text_packages": 13551.8522,
+				"NativeIndexBuilder.publishColdFiles": 2201.6411,
+				"NativeIndexBuilder.join": 10076.8487,
+				"NativeIndexBuilder.publish": 64.8968
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-15",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 15,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28844.3378,
+			"rss_mib": 4276.48046875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 245.1216,
+				"NativeIndexBuilder.planPackages": 1110.6537,
+				"NativeIndexBuilder.importLocalization": 11335.7929,
+				"unreal_assets.protocol_extract_text_packages": 13377.0534,
+				"NativeIndexBuilder.publishColdFiles": 2176.9475,
+				"NativeIndexBuilder.join": 10010.8828,
+				"NativeIndexBuilder.publish": 64.319
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-16",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 16,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28792.0888,
+			"rss_mib": 4362.4921875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 249.5751,
+				"NativeIndexBuilder.planPackages": 1093.2729,
+				"NativeIndexBuilder.importLocalization": 11318.6974,
+				"unreal_assets.protocol_extract_text_packages": 13500.9705,
+				"NativeIndexBuilder.publishColdFiles": 2207.2709,
+				"NativeIndexBuilder.join": 9787.7067,
+				"NativeIndexBuilder.publish": 61.2749
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-17",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 17,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28981.8194,
+			"rss_mib": 4301.375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.35,
+				"NativeIndexBuilder.planPackages": 1101.6485,
+				"NativeIndexBuilder.importLocalization": 11456.9139,
+				"unreal_assets.protocol_extract_text_packages": 13476.943,
+				"NativeIndexBuilder.publishColdFiles": 2274.3494,
+				"NativeIndexBuilder.join": 9925.1209,
+				"NativeIndexBuilder.publish": 64.968
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-18",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 18,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28421.6475,
+			"rss_mib": 4245.921875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 249.9175,
+				"NativeIndexBuilder.planPackages": 1090.4136,
+				"NativeIndexBuilder.importLocalization": 11331.9318,
+				"unreal_assets.protocol_extract_text_packages": 13225.1226,
+				"NativeIndexBuilder.publishColdFiles": 2151.752,
+				"NativeIndexBuilder.join": 9810.8782,
+				"NativeIndexBuilder.publish": 62.8368
+			}
+		},
+		{
+			"run": "ue427-skip-only-warm-19",
+			"variant": "skip-only",
+			"corpus": "ue427",
+			"repeat": 19,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28782.5282,
+			"rss_mib": 4427.45703125,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 252.4423,
+				"NativeIndexBuilder.planPackages": 1096.2978,
+				"NativeIndexBuilder.importLocalization": 11383.1629,
+				"unreal_assets.protocol_extract_text_packages": 13745.9004,
+				"NativeIndexBuilder.publishColdFiles": 2148.9636,
+				"NativeIndexBuilder.join": 9662.172,
+				"NativeIndexBuilder.publish": 66.8659
+			}
+		},
+		{
+			"run": "ue427-stream-v1-warm-1",
+			"variant": "stream-v1",
+			"corpus": "ue427",
+			"repeat": 1,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28732.4201,
+			"rss_mib": 4184.15234375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 248.3539,
+				"NativeIndexBuilder.planPackages": 1080.912,
+				"NativeIndexBuilder.importLocalization": 11013.866,
+				"unreal_assets.protocol_extract_text_packages": 13410.9378,
+				"NativeIndexBuilder.publishColdFiles": 2214.9441,
+				"NativeIndexBuilder.join": 9897.2371,
+				"NativeIndexBuilder.publish": 64.9802
+			}
+		},
+		{
+			"run": "ue427-stream-v1-warm-11",
+			"variant": "stream-v1",
+			"corpus": "ue427",
+			"repeat": 11,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28146.172,
+			"rss_mib": 4315.921875,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.7303,
+				"NativeIndexBuilder.planPackages": 1075.2931,
+				"NativeIndexBuilder.importLocalization": 11226.8032,
+				"unreal_assets.protocol_extract_text_packages": 13359.1382,
+				"NativeIndexBuilder.publishColdFiles": 2125.9641,
+				"NativeIndexBuilder.join": 9558.1239,
+				"NativeIndexBuilder.publish": 60.8093
+			}
+		},
+		{
+			"run": "ue427-stream-v1-warm-12",
+			"variant": "stream-v1",
+			"corpus": "ue427",
+			"repeat": 12,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28625.3649,
+			"rss_mib": 3870.5390625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.3203,
+				"NativeIndexBuilder.planPackages": 1074.1277,
+				"NativeIndexBuilder.importLocalization": 11155.7677,
+				"unreal_assets.protocol_extract_text_packages": 13459.0168,
+				"NativeIndexBuilder.publishColdFiles": 2146.1726,
+				"NativeIndexBuilder.join": 9807.6751,
+				"NativeIndexBuilder.publish": 63.5576
+			}
+		},
+		{
+			"run": "ue427-stream-v1-warm-13",
+			"variant": "stream-v1",
+			"corpus": "ue427",
+			"repeat": 13,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28282.1179,
+			"rss_mib": 3855.09375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 246.1484,
+				"NativeIndexBuilder.planPackages": 1077.2017,
+				"NativeIndexBuilder.importLocalization": 11110.2362,
+				"unreal_assets.protocol_extract_text_packages": 13259.625,
+				"NativeIndexBuilder.publishColdFiles": 2232.353,
+				"NativeIndexBuilder.join": 9587.4788,
+				"NativeIndexBuilder.publish": 61.4564
+			}
+		},
+		{
+			"run": "ue427-stream-v1-warm-2",
+			"variant": "stream-v1",
+			"corpus": "ue427",
+			"repeat": 2,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28549.1713,
+			"rss_mib": 4102.515625,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.7438,
+				"NativeIndexBuilder.planPackages": 1085.3756,
+				"NativeIndexBuilder.importLocalization": 11236.877,
+				"unreal_assets.protocol_extract_text_packages": 13338.4237,
+				"NativeIndexBuilder.publishColdFiles": 2141.1151,
+				"NativeIndexBuilder.join": 9811.7246,
+				"NativeIndexBuilder.publish": 63.5757
+			}
+		},
+		{
+			"run": "ue427-stream-v1-warm-3",
+			"variant": "stream-v1",
+			"corpus": "ue427",
+			"repeat": 3,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 28576.5593,
+			"rss_mib": 4075.8984375,
+			"sha256": "abb2d5bb8f761c0df102074baeb5e8937a5703e655b05e67fba9312c88ea21de",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 247.5748,
+				"NativeIndexBuilder.planPackages": 1079.8648,
+				"NativeIndexBuilder.importLocalization": 11198.226,
+				"unreal_assets.protocol_extract_text_packages": 13358.6598,
+				"NativeIndexBuilder.publishColdFiles": 2240.6389,
+				"NativeIndexBuilder.join": 9779.4327,
+				"NativeIndexBuilder.publish": 63.5164
+			}
+		},
+		{
+			"run": "ue57-lazy-paths-warm-17",
+			"variant": "lazy-paths",
+			"corpus": "ue57",
+			"repeat": 17,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2814.4886,
+			"rss_mib": 662.875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.7653,
+				"NativeIndexBuilder.planPackages": 74.9057,
+				"unreal_assets.protocol_extract_text_packages": 1004.4544,
+				"NativeIndexBuilder.publishColdFiles": 281.6518,
+				"NativeIndexBuilder.join": 936.8538,
+				"NativeIndexBuilder.publish": 8.0127
+			}
+		},
+		{
+			"run": "ue57-lazy-paths-warm-18",
+			"variant": "lazy-paths",
+			"corpus": "ue57",
+			"repeat": 18,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2867.1303000000003,
+			"rss_mib": 677.98828125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 38.1546,
+				"NativeIndexBuilder.planPackages": 74.579,
+				"unreal_assets.protocol_extract_text_packages": 1014.8373,
+				"NativeIndexBuilder.publishColdFiles": 286.2311,
+				"NativeIndexBuilder.join": 931.473,
+				"NativeIndexBuilder.publish": 10.2605
+			}
+		},
+		{
+			"run": "ue57-lazy-paths-warm-19",
+			"variant": "lazy-paths",
+			"corpus": "ue57",
+			"repeat": 19,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2841.9363999999996,
+			"rss_mib": 682.49609375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 36.8819,
+				"NativeIndexBuilder.planPackages": 74.1078,
+				"unreal_assets.protocol_extract_text_packages": 1004.4615,
+				"NativeIndexBuilder.publishColdFiles": 282.1952,
+				"NativeIndexBuilder.join": 946.8748,
+				"NativeIndexBuilder.publish": 8.043
+			}
+		},
+		{
+			"run": "ue57-lazy-paths-warm-31",
+			"variant": "lazy-paths",
+			"corpus": "ue57",
+			"repeat": 31,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2880.583,
+			"rss_mib": 669.2265625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.2928,
+				"NativeIndexBuilder.planPackages": 74.1231,
+				"unreal_assets.protocol_extract_text_packages": 1012.0041,
+				"NativeIndexBuilder.publishColdFiles": 290.0928,
+				"NativeIndexBuilder.join": 939.9563,
+				"NativeIndexBuilder.publish": 9.6311
+			}
+		},
+		{
+			"run": "ue57-lazy-paths-warm-32",
+			"variant": "lazy-paths",
+			"corpus": "ue57",
+			"repeat": 32,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2795.8632,
+			"rss_mib": 662.30859375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.4317,
+				"NativeIndexBuilder.planPackages": 74.3363,
+				"unreal_assets.protocol_extract_text_packages": 1002.0357,
+				"NativeIndexBuilder.publishColdFiles": 280.0287,
+				"NativeIndexBuilder.join": 924.441,
+				"NativeIndexBuilder.publish": 7.5462
+			}
+		},
+		{
+			"run": "ue57-lazy-paths-warm-33",
+			"variant": "lazy-paths",
+			"corpus": "ue57",
+			"repeat": 33,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2854.1644,
+			"rss_mib": 682.75,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "591d03dbc157fe50647b912f801d847c935da040b91053b4ae0001009c3611eb",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.9029,
+				"NativeIndexBuilder.planPackages": 74.0938,
+				"unreal_assets.protocol_extract_text_packages": 997.8411,
+				"NativeIndexBuilder.publishColdFiles": 276.6725,
+				"NativeIndexBuilder.join": 939.8368,
+				"NativeIndexBuilder.publish": 8.9752
+			}
+		},
+		{
+			"run": "ue57-pin-stream-warm-14",
+			"variant": "pin-stream",
+			"corpus": "ue57",
+			"repeat": 14,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2906.6335,
+			"rss_mib": 670.734375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3ddac57154736fbcde7893b511e24824ee6a3e8d4261b9e54ab910101ee3cbe0",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.993,
+				"NativeIndexBuilder.planPackages": 76.2574,
+				"unreal_assets.protocol_extract_text_packages": 1030.4381,
+				"NativeIndexBuilder.publishColdFiles": 277.8786,
+				"NativeIndexBuilder.join": 956.0387,
+				"NativeIndexBuilder.publish": 9.0807
+			}
+		},
+		{
+			"run": "ue57-pin-stream-warm-15",
+			"variant": "pin-stream",
+			"corpus": "ue57",
+			"repeat": 15,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2876.0746,
+			"rss_mib": 677.05078125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3ddac57154736fbcde7893b511e24824ee6a3e8d4261b9e54ab910101ee3cbe0",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.6356,
+				"NativeIndexBuilder.planPackages": 76.2842,
+				"unreal_assets.protocol_extract_text_packages": 1016.0208,
+				"NativeIndexBuilder.publishColdFiles": 288.6113,
+				"NativeIndexBuilder.join": 939.9598,
+				"NativeIndexBuilder.publish": 9.1439
+			}
+		},
+		{
+			"run": "ue57-pin-stream-warm-16",
+			"variant": "pin-stream",
+			"corpus": "ue57",
+			"repeat": 16,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2854.6129,
+			"rss_mib": 671.02734375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3ddac57154736fbcde7893b511e24824ee6a3e8d4261b9e54ab910101ee3cbe0",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 38.1693,
+				"NativeIndexBuilder.planPackages": 75.1259,
+				"unreal_assets.protocol_extract_text_packages": 1019.7958,
+				"NativeIndexBuilder.publishColdFiles": 273.6453,
+				"NativeIndexBuilder.join": 930.9626,
+				"NativeIndexBuilder.publish": 9.1865
+			}
+		},
+		{
+			"run": "ue57-query-prep-cold-21",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 21,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 3813.9317,
+			"rss_mib": 686.51171875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 806.4932,
+				"GameTextIndexSource.catalog": 842.5746,
+				"NativeIndexBuilder.planPackages": 72.3916,
+				"unreal_assets.protocol_extract_text_packages": 1063.6955,
+				"NativeIndexBuilder.publishColdFiles": 287.7696,
+				"NativeIndexBuilder.join": 1006.0089,
+				"NativeIndexBuilder.publish": 8.4267
+			}
+		},
+		{
+			"run": "ue57-query-prep-cold-22",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 22,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 3246.2886,
+			"rss_mib": 599.12109375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 349.2929,
+				"GameTextIndexSource.catalog": 387.8273,
+				"NativeIndexBuilder.planPackages": 74.8083,
+				"unreal_assets.protocol_extract_text_packages": 1067.7072,
+				"NativeIndexBuilder.publishColdFiles": 278.5222,
+				"NativeIndexBuilder.join": 914.6027,
+				"NativeIndexBuilder.publish": 9.0528
+			}
+		},
+		{
+			"run": "ue57-query-prep-cold-23",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 23,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 3229.9247,
+			"rss_mib": 604.625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 317.3425,
+				"GameTextIndexSource.catalog": 355.1898,
+				"NativeIndexBuilder.planPackages": 74.7804,
+				"unreal_assets.protocol_extract_text_packages": 1054.5048,
+				"NativeIndexBuilder.publishColdFiles": 279.1092,
+				"NativeIndexBuilder.join": 942.0146,
+				"NativeIndexBuilder.publish": 8.3746
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-1",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 1,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2909.6956999999998,
+			"rss_mib": 672.79296875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.6948,
+				"NativeIndexBuilder.planPackages": 75.2008,
+				"unreal_assets.protocol_extract_text_packages": 1067.7046,
+				"NativeIndexBuilder.publishColdFiles": 286.7733,
+				"NativeIndexBuilder.join": 935.4414,
+				"NativeIndexBuilder.publish": 8.6361
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-2",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 2,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2902.5292,
+			"rss_mib": 681.9609375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.7115,
+				"NativeIndexBuilder.planPackages": 74.623,
+				"unreal_assets.protocol_extract_text_packages": 1049.9339,
+				"NativeIndexBuilder.publishColdFiles": 280.1176,
+				"NativeIndexBuilder.join": 939.9921,
+				"NativeIndexBuilder.publish": 9.5594
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-21",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 21,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2916.1192,
+			"rss_mib": 670.18359375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.294,
+				"NativeIndexBuilder.planPackages": 75.617,
+				"unreal_assets.protocol_extract_text_packages": 1072.5878,
+				"NativeIndexBuilder.publishColdFiles": 280.0671,
+				"NativeIndexBuilder.join": 932.975,
+				"NativeIndexBuilder.publish": 8.1612
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-22",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 22,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2899.7916999999998,
+			"rss_mib": 678.96484375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.2453,
+				"NativeIndexBuilder.planPackages": 75.6332,
+				"unreal_assets.protocol_extract_text_packages": 1045.6103,
+				"NativeIndexBuilder.publishColdFiles": 291.7782,
+				"NativeIndexBuilder.join": 932.8959,
+				"NativeIndexBuilder.publish": 8.235
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-23",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 23,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2872.5262000000002,
+			"rss_mib": 668.36328125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.4873,
+				"NativeIndexBuilder.planPackages": 73.827,
+				"unreal_assets.protocol_extract_text_packages": 1045.3859,
+				"NativeIndexBuilder.publishColdFiles": 280.302,
+				"NativeIndexBuilder.join": 916.2448,
+				"NativeIndexBuilder.publish": 8.8878
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-24",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 24,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2914.5119,
+			"rss_mib": 666.41796875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.8111,
+				"NativeIndexBuilder.planPackages": 75.2771,
+				"unreal_assets.protocol_extract_text_packages": 1056.035,
+				"NativeIndexBuilder.publishColdFiles": 289.3092,
+				"NativeIndexBuilder.join": 937.9482,
+				"NativeIndexBuilder.publish": 7.7855
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-25",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 25,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2898.8747000000003,
+			"rss_mib": 674.8125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.7164,
+				"NativeIndexBuilder.planPackages": 74.6578,
+				"unreal_assets.protocol_extract_text_packages": 1055.0663,
+				"NativeIndexBuilder.publishColdFiles": 275.1364,
+				"NativeIndexBuilder.join": 938.2826,
+				"NativeIndexBuilder.publish": 7.9532
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-3",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 3,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2921.7197,
+			"rss_mib": 559.55078125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.1617,
+				"NativeIndexBuilder.planPackages": 74.6891,
+				"unreal_assets.protocol_extract_text_packages": 1061.0789,
+				"NativeIndexBuilder.publishColdFiles": 280.5886,
+				"NativeIndexBuilder.join": 941.9197,
+				"NativeIndexBuilder.publish": 8.2916
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2921.4797,
+			"rss_mib": 551.26171875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.2505,
+				"NativeIndexBuilder.planPackages": 75.3075,
+				"unreal_assets.protocol_extract_text_packages": 1069.1141,
+				"NativeIndexBuilder.publishColdFiles": 293.2834,
+				"NativeIndexBuilder.join": 933.9586,
+				"NativeIndexBuilder.publish": 8.4862
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "cached-reopen",
+			"ms": 638.7051,
+			"rss_mib": 232.33984375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.2256,
+				"NativeIndexBuilder.planPackages": 67.1753,
+				"NativeIndexBuilder.join": 7.2823
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "open",
+			"ms": 487.1744,
+			"rss_mib": 341.09765625,
+			"sha256": "ddb7213ab3c01e6aa0bd8ba4753451095f546fa8e9d7e85d6bd2c87542d0b39d",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {}
+		},
+		{
+			"run": "ue57-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "lines-export",
+			"ms": 1320.7849999999999,
+			"rss_mib": 440.62890625,
+			"sha256": "7e2847010ac9761358ca584668f749203f5f7d3a3b7615a6137bd028141f979a",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.7158,
+				"NativeIndexBuilder.planPackages": 67.5686,
+				"NativeIndexBuilder.join": 7.6141
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-40",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "loc-check",
+			"ms": 758.9778000000001,
+			"rss_mib": 549.91015625,
+			"sha256": "4ae98d034b7af53eb2c713d5f079d9675976a27211ec6df8cf64d9098abbd0cf",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 38.2016,
+				"NativeIndexBuilder.planPackages": 68.1922,
+				"NativeIndexBuilder.join": 7.2464
+			}
+		},
+		{
+			"run": "ue57-query-prep-warm-50-instrumented",
+			"variant": "query-prep",
+			"corpus": "ue57",
+			"repeat": 50,
+			"catalog": "warm",
+			"instrumented": true,
+			"stage": "build",
+			"ms": 3384.3118000000004,
+			"rss_mib": 585.34765625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "cc3e5d917f6733d81deca2185085137c7ac37d4f2e1114d9ee6c48df2e36c8c7",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.7186,
+				"NativeIndexBuilder.planPackages": 74.0736,
+				"unreal_assets.protocol_extract_text_packages": 1233.4349,
+				"NativeIndexBuilder.publishColdFiles": 437.5575,
+				"NativeIndexBuilder.join": 1069.2711,
+				"NativeIndexBuilder.publish": 131.9058
+			}
+		},
+		{
+			"run": "ue57-query-work-cold-21",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 21,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 3132.2419000000004,
+			"rss_mib": 631.20703125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 327.757,
+				"GameTextIndexSource.catalog": 366.2933,
+				"NativeIndexBuilder.planPackages": 75.5841,
+				"unreal_assets.protocol_extract_text_packages": 1016.6551,
+				"NativeIndexBuilder.publishColdFiles": 281.3496,
+				"NativeIndexBuilder.join": 877.0907,
+				"NativeIndexBuilder.publish": 8.9606
+			}
+		},
+		{
+			"run": "ue57-query-work-cold-22",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 22,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 3156.7940000000003,
+			"rss_mib": 605.45703125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 329.3874,
+				"GameTextIndexSource.catalog": 366.212,
+				"NativeIndexBuilder.planPackages": 74.8162,
+				"unreal_assets.protocol_extract_text_packages": 1013.0022,
+				"NativeIndexBuilder.publishColdFiles": 288.3161,
+				"NativeIndexBuilder.join": 887.6863,
+				"NativeIndexBuilder.publish": 8.4806
+			}
+		},
+		{
+			"run": "ue57-query-work-cold-23",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 23,
+			"catalog": "cold",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 3133.9142,
+			"rss_mib": 604.36328125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"unreal_assets.project_index_refresh": 324.0176,
+				"GameTextIndexSource.catalog": 361.1036,
+				"NativeIndexBuilder.planPackages": 74.3787,
+				"unreal_assets.protocol_extract_text_packages": 1006.1051,
+				"NativeIndexBuilder.publishColdFiles": 289.0819,
+				"NativeIndexBuilder.join": 889.8258,
+				"NativeIndexBuilder.publish": 7.8064
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-21",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 21,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2759.3550000000005,
+			"rss_mib": 686.625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.4483,
+				"NativeIndexBuilder.planPackages": 74.7713,
+				"unreal_assets.protocol_extract_text_packages": 1004.7503,
+				"NativeIndexBuilder.publishColdFiles": 292.8547,
+				"NativeIndexBuilder.join": 873.3753,
+				"NativeIndexBuilder.publish": 9.608
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-22",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 22,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2803.5243,
+			"rss_mib": 657.34765625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 36.9872,
+				"NativeIndexBuilder.planPackages": 77.0152,
+				"unreal_assets.protocol_extract_text_packages": 995.8524,
+				"NativeIndexBuilder.publishColdFiles": 283.2896,
+				"NativeIndexBuilder.join": 887.3538,
+				"NativeIndexBuilder.publish": 8.1186
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-23",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 23,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2808.2406,
+			"rss_mib": 656.16796875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.0362,
+				"NativeIndexBuilder.planPackages": 75.0348,
+				"unreal_assets.protocol_extract_text_packages": 997.9908,
+				"NativeIndexBuilder.publishColdFiles": 281.4726,
+				"NativeIndexBuilder.join": 887.1476,
+				"NativeIndexBuilder.publish": 8.6193
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-24",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 24,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2788.9383000000003,
+			"rss_mib": 671.109375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.7312,
+				"NativeIndexBuilder.planPackages": 75.09,
+				"unreal_assets.protocol_extract_text_packages": 1000.4043,
+				"NativeIndexBuilder.publishColdFiles": 283.3293,
+				"NativeIndexBuilder.join": 879.2333,
+				"NativeIndexBuilder.publish": 9.6467
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-25",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 25,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2796.0852,
+			"rss_mib": 661.16015625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.2296,
+				"NativeIndexBuilder.planPackages": 75.3577,
+				"unreal_assets.protocol_extract_text_packages": 1002.9528,
+				"NativeIndexBuilder.publishColdFiles": 273.4682,
+				"NativeIndexBuilder.join": 880.3398,
+				"NativeIndexBuilder.publish": 7.9725
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-31",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 31,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2813.6695,
+			"rss_mib": 666.11328125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.1423,
+				"NativeIndexBuilder.planPackages": 75.4835,
+				"unreal_assets.protocol_extract_text_packages": 1009.6173,
+				"NativeIndexBuilder.publishColdFiles": 286.0097,
+				"NativeIndexBuilder.join": 881.0731,
+				"NativeIndexBuilder.publish": 8.2591
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-32",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 32,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2814.9161,
+			"rss_mib": 670.22265625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.6504,
+				"NativeIndexBuilder.planPackages": 75.1244,
+				"unreal_assets.protocol_extract_text_packages": 1008.2446,
+				"NativeIndexBuilder.publishColdFiles": 281.7357,
+				"NativeIndexBuilder.join": 898.0414,
+				"NativeIndexBuilder.publish": 7.9488
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-33",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 33,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2807.7821,
+			"rss_mib": 664.8203125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.5038,
+				"NativeIndexBuilder.planPackages": 77.0523,
+				"unreal_assets.protocol_extract_text_packages": 988.8286,
+				"NativeIndexBuilder.publishColdFiles": 281.9894,
+				"NativeIndexBuilder.join": 900.5337,
+				"NativeIndexBuilder.publish": 18.3467
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2808.7468,
+			"rss_mib": 674.203125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 36.8992,
+				"NativeIndexBuilder.planPackages": 75.5513,
+				"unreal_assets.protocol_extract_text_packages": 999.3893,
+				"NativeIndexBuilder.publishColdFiles": 283.4857,
+				"NativeIndexBuilder.join": 892.3099,
+				"NativeIndexBuilder.publish": 7.8647
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "cached-reopen",
+			"ms": 641.512,
+			"rss_mib": 231.64453125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.1091,
+				"NativeIndexBuilder.planPackages": 68.3422,
+				"NativeIndexBuilder.join": 8.0406
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "open",
+			"ms": 483.53639999999996,
+			"rss_mib": 335.1953125,
+			"sha256": "ddb7213ab3c01e6aa0bd8ba4753451095f546fa8e9d7e85d6bd2c87542d0b39d",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {}
+		},
+		{
+			"run": "ue57-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "lines-export",
+			"ms": 1352.0352000000003,
+			"rss_mib": 419.90625,
+			"sha256": "7e2847010ac9761358ca584668f749203f5f7d3a3b7615a6137bd028141f979a",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.5916,
+				"NativeIndexBuilder.planPackages": 68.0595,
+				"NativeIndexBuilder.join": 7.1545
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-40",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 40,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "loc-check",
+			"ms": 767.7795999999998,
+			"rss_mib": 479.875,
+			"sha256": "4ae98d034b7af53eb2c713d5f079d9675976a27211ec6df8cf64d9098abbd0cf",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.8456,
+				"NativeIndexBuilder.planPackages": 68.7615,
+				"NativeIndexBuilder.join": 7.1698
+			}
+		},
+		{
+			"run": "ue57-query-work-warm-50-instrumented",
+			"variant": "query-work",
+			"corpus": "ue57",
+			"repeat": 50,
+			"catalog": "warm",
+			"instrumented": true,
+			"stage": "build",
+			"ms": 3274.3118,
+			"rss_mib": 512.59375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "7ca74c76b9ebc2e2e22028331054f769f45f44502d414c8c2f152a831d4bce46",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.3319,
+				"NativeIndexBuilder.planPackages": 75.5229,
+				"unreal_assets.protocol_extract_text_packages": 1184.8288,
+				"NativeIndexBuilder.publishColdFiles": 444.7707,
+				"NativeIndexBuilder.join": 1007.9519,
+				"NativeIndexBuilder.publish": 131.267
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-11",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 11,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2892.2694,
+			"rss_mib": 671.2734375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.7604,
+				"NativeIndexBuilder.planPackages": 76.2862,
+				"unreal_assets.protocol_extract_text_packages": 1020.84,
+				"NativeIndexBuilder.publishColdFiles": 286.5425,
+				"NativeIndexBuilder.join": 948.2138,
+				"NativeIndexBuilder.publish": 8.5555
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-12",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 12,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2861.2693,
+			"rss_mib": 674.875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.5591,
+				"NativeIndexBuilder.planPackages": 77.8919,
+				"unreal_assets.protocol_extract_text_packages": 1010.7421,
+				"NativeIndexBuilder.publishColdFiles": 281.9341,
+				"NativeIndexBuilder.join": 940.8728,
+				"NativeIndexBuilder.publish": 9.2128
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-13",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 13,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2874.3170999999998,
+			"rss_mib": 687.31640625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.3361,
+				"NativeIndexBuilder.planPackages": 77.4773,
+				"unreal_assets.protocol_extract_text_packages": 1026.3897,
+				"NativeIndexBuilder.publishColdFiles": 282.9453,
+				"NativeIndexBuilder.join": 938.8354,
+				"NativeIndexBuilder.publish": 8.1
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-14",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 14,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2878.0696000000003,
+			"rss_mib": 549.3671875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.5857,
+				"NativeIndexBuilder.planPackages": 76.2255,
+				"unreal_assets.protocol_extract_text_packages": 1056.6096,
+				"NativeIndexBuilder.publishColdFiles": 281.8324,
+				"NativeIndexBuilder.join": 944.688,
+				"NativeIndexBuilder.publish": 9.5345
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-15",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 15,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2899.8598,
+			"rss_mib": 693.60546875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.6114,
+				"NativeIndexBuilder.planPackages": 77.4653,
+				"unreal_assets.protocol_extract_text_packages": 1023.6245,
+				"NativeIndexBuilder.publishColdFiles": 288.1231,
+				"NativeIndexBuilder.join": 952.3363,
+				"NativeIndexBuilder.publish": 10.4013
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-16",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 16,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2879.3289,
+			"rss_mib": 668.3125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 36.7849,
+				"NativeIndexBuilder.planPackages": 75.2648,
+				"unreal_assets.protocol_extract_text_packages": 1020.7889,
+				"NativeIndexBuilder.publishColdFiles": 284.4591,
+				"NativeIndexBuilder.join": 942.9962,
+				"NativeIndexBuilder.publish": 9.1592
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-17",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 17,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2866.1417,
+			"rss_mib": 681.80859375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.8863,
+				"NativeIndexBuilder.planPackages": 76.5269,
+				"unreal_assets.protocol_extract_text_packages": 1014.3936,
+				"NativeIndexBuilder.publishColdFiles": 284.1164,
+				"NativeIndexBuilder.join": 938.8058,
+				"NativeIndexBuilder.publish": 7.9017
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-18",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 18,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2884.4911,
+			"rss_mib": 685.5859375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.0535,
+				"NativeIndexBuilder.planPackages": 76.5119,
+				"unreal_assets.protocol_extract_text_packages": 1025.9731,
+				"NativeIndexBuilder.publishColdFiles": 281.5138,
+				"NativeIndexBuilder.join": 932.6446,
+				"NativeIndexBuilder.publish": 8.1565
+			}
+		},
+		{
+			"run": "ue57-skip-only-warm-19",
+			"variant": "skip-only",
+			"corpus": "ue57",
+			"repeat": 19,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2883.3253,
+			"rss_mib": 665.58203125,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "3233cff65b845bad793b9e24381c9dd7aa47df6811b748ca16da025bc5752af6",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 38.0499,
+				"NativeIndexBuilder.planPackages": 75.8127,
+				"unreal_assets.protocol_extract_text_packages": 1042.5447,
+				"NativeIndexBuilder.publishColdFiles": 276.613,
+				"NativeIndexBuilder.join": 934.0561,
+				"NativeIndexBuilder.publish": 9.2422
+			}
+		},
+		{
+			"run": "ue57-stream-v1-warm-1",
+			"variant": "stream-v1",
+			"corpus": "ue57",
+			"repeat": 1,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2841.8563999999997,
+			"rss_mib": 681.109375,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.5492,
+				"NativeIndexBuilder.planPackages": 74.1868,
+				"unreal_assets.protocol_extract_text_packages": 1033.7977,
+				"NativeIndexBuilder.publishColdFiles": 276.6752,
+				"NativeIndexBuilder.join": 935.1078,
+				"NativeIndexBuilder.publish": 9.2209
+			}
+		},
+		{
+			"run": "ue57-stream-v1-warm-11",
+			"variant": "stream-v1",
+			"corpus": "ue57",
+			"repeat": 11,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2858.6575,
+			"rss_mib": 683.16015625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 39.2282,
+				"NativeIndexBuilder.planPackages": 75.7875,
+				"unreal_assets.protocol_extract_text_packages": 1010.6827,
+				"NativeIndexBuilder.publishColdFiles": 280.4472,
+				"NativeIndexBuilder.join": 938.819,
+				"NativeIndexBuilder.publish": 9.4194
+			}
+		},
+		{
+			"run": "ue57-stream-v1-warm-12",
+			"variant": "stream-v1",
+			"corpus": "ue57",
+			"repeat": 12,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2844.7445,
+			"rss_mib": 688.9296875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.1523,
+				"NativeIndexBuilder.planPackages": 76.0127,
+				"unreal_assets.protocol_extract_text_packages": 1019.271,
+				"NativeIndexBuilder.publishColdFiles": 281.3608,
+				"NativeIndexBuilder.join": 915.1413,
+				"NativeIndexBuilder.publish": 8.4424
+			}
+		},
+		{
+			"run": "ue57-stream-v1-warm-13",
+			"variant": "stream-v1",
+			"corpus": "ue57",
+			"repeat": 13,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2852.1464,
+			"rss_mib": 676.15625,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 39.5062,
+				"NativeIndexBuilder.planPackages": 74.9851,
+				"unreal_assets.protocol_extract_text_packages": 1009.4232,
+				"NativeIndexBuilder.publishColdFiles": 280.7778,
+				"NativeIndexBuilder.join": 923.0283,
+				"NativeIndexBuilder.publish": 8.4339
+			}
+		},
+		{
+			"run": "ue57-stream-v1-warm-2",
+			"variant": "stream-v1",
+			"corpus": "ue57",
+			"repeat": 2,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2856.8511,
+			"rss_mib": 674.54296875,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.9058,
+				"NativeIndexBuilder.planPackages": 73.9759,
+				"unreal_assets.protocol_extract_text_packages": 1013.2824,
+				"NativeIndexBuilder.publishColdFiles": 272.597,
+				"NativeIndexBuilder.join": 930.8526,
+				"NativeIndexBuilder.publish": 8.1214
+			}
+		},
+		{
+			"run": "ue57-stream-v1-warm-3",
+			"variant": "stream-v1",
+			"corpus": "ue57",
+			"repeat": 3,
+			"catalog": "warm",
+			"instrumented": false,
+			"stage": "build",
+			"ms": 2883.8833,
+			"rss_mib": 672.25,
+			"sha256": "e14a553edd3acfe203468685def65906ed984afd4e822b84882f0bbb13e3f331",
+			"reader_sha256": "86121e5879f4153acdffeb087edfd3ad9eca61f1b4bc7d3827c10b4b77685121",
+			"host_phase_ms": {
+				"GameTextIndexSource.catalog": 37.6787,
+				"NativeIndexBuilder.planPackages": 75.0889,
+				"unreal_assets.protocol_extract_text_packages": 1027.5487,
+				"NativeIndexBuilder.publishColdFiles": 276.4029,
+				"NativeIndexBuilder.join": 943.8075,
+				"NativeIndexBuilder.publish": 9.1716
+			}
+		}
+	],
+	"outputs": {
+		"ue427": {
+			"lines-export": {
+				"sha256": [
+					"dc8e47684e3495ddd1107b096ababe28cb731e67eadb1e3866feb4229c18ed6d",
+					"dc8e47684e3495ddd1107b096ababe28cb731e67eadb1e3866feb4229c18ed6d"
+				],
+				"bytes": [202639619, 202639619],
+				"exact_equal": true
+			},
+			"loc-check": {
+				"sha256": [
+					"3f5e174b6d9fabf931a7e842f5626db2d05ec91a2dd0b72a61b10c11f0e4aff2",
+					"3f5e174b6d9fabf931a7e842f5626db2d05ec91a2dd0b72a61b10c11f0e4aff2"
+				],
+				"bytes": [563723760, 563723760],
+				"exact_equal": true
+			}
+		},
+		"ue57": {
+			"lines-export": {
+				"sha256": [
+					"9102dea4ddb1aa54ea13afb2adc8978c5e558a6b4d0eb00ee8799d67f20b371b",
+					"9102dea4ddb1aa54ea13afb2adc8978c5e558a6b4d0eb00ee8799d67f20b371b"
+				],
+				"bytes": [10172916, 10172916],
+				"exact_equal": true
+			},
+			"loc-check": {
+				"sha256": [
+					"0c39dda8cfb5ddb1364ea2ac6867d90d95446baa8dc1293c44c8cf381c3f7735",
+					"0c39dda8cfb5ddb1364ea2ac6867d90d95446baa8dc1293c44c8cf381c3f7735"
+				],
+				"bytes": [292945, 292945],
+				"exact_equal": true
+			}
+		}
+	},
+	"snapshots": {
+		"ue427": {
+			"dictionary_segments": 22,
+			"dictionary_snapshot_bytes": 36366692,
+			"dictionary_full_file_bytes_equal": true,
+			"active_layers": 300,
+			"unchanged_sections": 12068,
+			"unchanged_raw_bytes": 989043436,
+			"normalized_metadata_sections": 301,
+			"normalization": "Shared metadata excludes physical file name, storeGeneration nonce, physical byte size and the joined key derived from that generation. join.meta excludes only its generation. All remaining metadata and encoded section bytes/order match. Non-joined active keys match exactly."
+		},
+		"ue57": {
+			"dictionary_segments": 6,
+			"dictionary_snapshot_bytes": 1402500,
+			"dictionary_full_file_bytes_equal": true,
+			"active_layers": 258,
+			"unchanged_sections": 11624,
+			"unchanged_raw_bytes": 127695909,
+			"normalized_metadata_sections": 259,
+			"normalization": "Shared metadata excludes physical file name, storeGeneration nonce, physical byte size and the joined key derived from that generation. join.meta excludes only its generation. All remaining metadata and encoded section bytes/order match. Non-joined active keys match exactly."
+		}
+	},
+	"input_metadata": {
+		"ue427": {
+			"tracked_input_files": 180156,
+			"metadata_sha256": "60125bef6c27e46ea05ccc1396063823ffd56433bd4dda928e4ea03a019a023b"
+		},
+		"ue57": {
+			"tracked_input_files": 16167,
+			"metadata_sha256": "ef6fa12ce51c5f091f4005e12a1eb4e6e33d29582e90bf07c3aae855c8aaf44e"
+		}
+	},
+	"hash_microbenchmark": [
+		{
+			"u32s": 0,
+			"method": "borrowed-crc",
+			"median_ns": 5.67
+		},
+		{
+			"u32s": 0,
+			"method": "encoded-crc",
+			"median_ns": 6.23
+		},
+		{
+			"u32s": 0,
+			"method": "fx",
+			"median_ns": 2.667
+		},
+		{
+			"u32s": 32,
+			"method": "borrowed-crc",
+			"median_ns": 15.459
+		},
+		{
+			"u32s": 32,
+			"method": "encoded-crc",
+			"median_ns": 54.854
+		},
+		{
+			"u32s": 32,
+			"method": "fx",
+			"median_ns": 7.34
+		},
+		{
+			"u32s": 1024,
+			"method": "borrowed-crc",
+			"median_ns": 328.53302611367127
+		},
+		{
+			"u32s": 1024,
+			"method": "encoded-crc",
+			"median_ns": 401.99692780337944
+		},
+		{
+			"u32s": 1024,
+			"method": "fx",
+			"median_ns": 228.68663594470047
+		},
+		{
+			"u32s": 100000,
+			"method": "borrowed-crc",
+			"median_ns": 31738.75
+		},
+		{
+			"u32s": 100000,
+			"method": "encoded-crc",
+			"median_ns": 41868.75
+		},
+		{
+			"u32s": 100000,
+			"method": "fx",
+			"median_ns": 22285.0
+		},
+		{
+			"u32s": 1000000,
+			"method": "borrowed-crc",
+			"median_ns": 316675.0
+		},
+		{
+			"u32s": 1000000,
+			"method": "encoded-crc",
+			"median_ns": 1023625.0
+		},
+		{
+			"u32s": 1000000,
+			"method": "fx",
+			"median_ns": 225131.25
+		}
+	],
+	"parser_harness": {
+		"baseline": "#196/#197 parser, unchanged between these PRs",
+		"reader_sha256": {
+			"baseline": "43402fb945ffa315d1a9e97de372c6e21115457bd7c7aaebce5300ae6e1fe058",
+			"final": "58d5b86719ee326259efddc5a3219811d0f8d58dfc25472617cb526778300854"
+		},
+		"runs": [
+			{
+				"corpus": "ue427",
+				"variant": "baseline",
+				"repeat": 1,
+				"sample": {
+					"alloc_bytes": 1790255149,
+					"alloc_count": 14613170,
+					"decode_ns": 1321183800,
+					"drop_ns": 206579300,
+					"inspect_ns": 2336460100,
+					"inspect_peak_live_bytes": 414742894,
+					"parse_ns": 104241900,
+					"pass": 2,
+					"peak_live_bytes": 280570986,
+					"project_ns": 341423300
+				},
+				"wall_seconds": 10.970783472061157
+			},
+			{
+				"corpus": "ue427",
+				"variant": "final",
+				"repeat": 1,
+				"sample": {
+					"alloc_bytes": 1317783805,
+					"alloc_count": 10467585,
+					"decode_ns": 1095847100,
+					"drop_ns": 200250200,
+					"inspect_ns": 2042954500,
+					"inspect_peak_live_bytes": 414742894,
+					"parse_ns": 112234100,
+					"pass": 2,
+					"peak_live_bytes": 280570750,
+					"project_ns": 274598800
+				},
+				"wall_seconds": 8.921402931213379
+			},
+			{
+				"corpus": "ue427",
+				"variant": "final",
+				"repeat": 2,
+				"sample": {
+					"alloc_bytes": 1317783805,
+					"alloc_count": 10467585,
+					"decode_ns": 1013465600,
+					"drop_ns": 203421700,
+					"inspect_ns": 2015587000,
+					"inspect_peak_live_bytes": 414742894,
+					"parse_ns": 105677900,
+					"pass": 2,
+					"peak_live_bytes": 280570750,
+					"project_ns": 272826700
+				},
+				"wall_seconds": 8.830391645431519
+			},
+			{
+				"corpus": "ue427",
+				"variant": "baseline",
+				"repeat": 2,
+				"sample": {
+					"alloc_bytes": 1790255149,
+					"alloc_count": 14613170,
+					"decode_ns": 1351635700,
+					"drop_ns": 196877300,
+					"inspect_ns": 2299774800,
+					"inspect_peak_live_bytes": 414742894,
+					"parse_ns": 106269400,
+					"pass": 2,
+					"peak_live_bytes": 280570986,
+					"project_ns": 349465000
+				},
+				"wall_seconds": 10.092473268508911
+			},
+			{
+				"corpus": "ue427",
+				"variant": "baseline",
+				"repeat": 3,
+				"sample": {
+					"alloc_bytes": 1790255149,
+					"alloc_count": 14613170,
+					"decode_ns": 1339104600,
+					"drop_ns": 194923100,
+					"inspect_ns": 2300149700,
+					"inspect_peak_live_bytes": 414742894,
+					"parse_ns": 110064700,
+					"pass": 2,
+					"peak_live_bytes": 280570986,
+					"project_ns": 346214100
+				},
+				"wall_seconds": 10.126712083816528
+			},
+			{
+				"corpus": "ue427",
+				"variant": "final",
+				"repeat": 3,
+				"sample": {
+					"alloc_bytes": 1317783805,
+					"alloc_count": 10467585,
+					"decode_ns": 1118142500,
+					"drop_ns": 211157700,
+					"inspect_ns": 2030692900,
+					"inspect_peak_live_bytes": 414742894,
+					"parse_ns": 111884900,
+					"pass": 2,
+					"peak_live_bytes": 280570750,
+					"project_ns": 266940700
+				},
+				"wall_seconds": 9.03762698173523
+			},
+			{
+				"corpus": "ue57",
+				"variant": "baseline",
+				"repeat": 1,
+				"sample": {
+					"alloc_bytes": 13285896483,
+					"alloc_count": 163765525,
+					"decode_ns": 6394064500,
+					"drop_ns": 1886348100,
+					"inspect_ns": 15888119000,
+					"inspect_peak_live_bytes": 909165002,
+					"parse_ns": 98956000,
+					"pass": 2,
+					"peak_live_bytes": 372333515,
+					"project_ns": 8615578300
+				},
+				"wall_seconds": 70.52139115333557
+			},
+			{
+				"corpus": "ue57",
+				"variant": "final",
+				"repeat": 1,
+				"sample": {
+					"alloc_bytes": 5712903634,
+					"alloc_count": 77068845,
+					"decode_ns": 6446894500,
+					"drop_ns": 1788579700,
+					"inspect_ns": 14995166800,
+					"inspect_peak_live_bytes": 909165002,
+					"parse_ns": 98781400,
+					"pass": 2,
+					"peak_live_bytes": 372333393,
+					"project_ns": 1355370000
+				},
+				"wall_seconds": 53.9345281124115
+			},
+			{
+				"corpus": "ue57",
+				"variant": "final",
+				"repeat": 2,
+				"sample": {
+					"alloc_bytes": 5712903634,
+					"alloc_count": 77068845,
+					"decode_ns": 6293581800,
+					"drop_ns": 1832463200,
+					"inspect_ns": 15359506300,
+					"inspect_peak_live_bytes": 909165002,
+					"parse_ns": 104227700,
+					"pass": 2,
+					"peak_live_bytes": 372333393,
+					"project_ns": 1396408700
+				},
+				"wall_seconds": 54.23043966293335
+			},
+			{
+				"corpus": "ue57",
+				"variant": "baseline",
+				"repeat": 2,
+				"sample": {
+					"alloc_bytes": 13285896483,
+					"alloc_count": 163765525,
+					"decode_ns": 6415829100,
+					"drop_ns": 1887614300,
+					"inspect_ns": 15421712900,
+					"inspect_peak_live_bytes": 909165002,
+					"parse_ns": 97692000,
+					"pass": 2,
+					"peak_live_bytes": 372333515,
+					"project_ns": 8528495300
+				},
+				"wall_seconds": 69.53419542312622
+			},
+			{
+				"corpus": "ue57",
+				"variant": "baseline",
+				"repeat": 3,
+				"sample": {
+					"alloc_bytes": 13285896483,
+					"alloc_count": 163765525,
+					"decode_ns": 6482072300,
+					"drop_ns": 1825820700,
+					"inspect_ns": 15406689700,
+					"inspect_peak_live_bytes": 909165002,
+					"parse_ns": 101608100,
+					"pass": 2,
+					"peak_live_bytes": 372333515,
+					"project_ns": 8504055100
+				},
+				"wall_seconds": 68.75085854530334
+			},
+			{
+				"corpus": "ue57",
+				"variant": "final",
+				"repeat": 3,
+				"sample": {
+					"alloc_bytes": 5712903634,
+					"alloc_count": 77068845,
+					"decode_ns": 6462861300,
+					"drop_ns": 1873400400,
+					"inspect_ns": 15232152200,
+					"inspect_peak_live_bytes": 909165002,
+					"parse_ns": 97416600,
+					"pass": 2,
+					"peak_live_bytes": 372333393,
+					"project_ns": 1403852000
+				},
+				"wall_seconds": 54.17591571807861
+			},
+			{
+				"corpus": "ue58",
+				"variant": "baseline",
+				"repeat": 1,
+				"sample": {
+					"alloc_bytes": 6901617,
+					"alloc_count": 53414,
+					"decode_ns": 4144800,
+					"drop_ns": 208100,
+					"inspect_ns": 6259400,
+					"inspect_peak_live_bytes": 127602,
+					"parse_ns": 1370600,
+					"pass": 2,
+					"peak_live_bytes": 89679,
+					"project_ns": 244100
+				},
+				"wall_seconds": 0.12965774536132812
+			},
+			{
+				"corpus": "ue58",
+				"variant": "final",
+				"repeat": 1,
+				"sample": {
+					"alloc_bytes": 2277870,
+					"alloc_count": 24983,
+					"decode_ns": 1933200,
+					"drop_ns": 156900,
+					"inspect_ns": 3916100,
+					"inspect_peak_live_bytes": 126724,
+					"parse_ns": 1273800,
+					"pass": 2,
+					"peak_live_bytes": 89679,
+					"project_ns": 210300
+				},
+				"wall_seconds": 0.10467338562011719
+			},
+			{
+				"corpus": "ue58",
+				"variant": "final",
+				"repeat": 2,
+				"sample": {
+					"alloc_bytes": 2277870,
+					"alloc_count": 24983,
+					"decode_ns": 1869900,
+					"drop_ns": 186800,
+					"inspect_ns": 3977300,
+					"inspect_peak_live_bytes": 126724,
+					"parse_ns": 1228000,
+					"pass": 2,
+					"peak_live_bytes": 89679,
+					"project_ns": 210800
+				},
+				"wall_seconds": 0.09637308120727539
+			},
+			{
+				"corpus": "ue58",
+				"variant": "baseline",
+				"repeat": 2,
+				"sample": {
+					"alloc_bytes": 6901617,
+					"alloc_count": 53414,
+					"decode_ns": 3981300,
+					"drop_ns": 169400,
+					"inspect_ns": 6175800,
+					"inspect_peak_live_bytes": 127602,
+					"parse_ns": 1272400,
+					"pass": 2,
+					"peak_live_bytes": 89679,
+					"project_ns": 244000
+				},
+				"wall_seconds": 0.10120964050292969
+			},
+			{
+				"corpus": "ue58",
+				"variant": "baseline",
+				"repeat": 3,
+				"sample": {
+					"alloc_bytes": 6901617,
+					"alloc_count": 53414,
+					"decode_ns": 3943600,
+					"drop_ns": 198700,
+					"inspect_ns": 6031900,
+					"inspect_peak_live_bytes": 127602,
+					"parse_ns": 1292200,
+					"pass": 2,
+					"peak_live_bytes": 89679,
+					"project_ns": 239500
+				},
+				"wall_seconds": 0.10215210914611816
+			},
+			{
+				"corpus": "ue58",
+				"variant": "final",
+				"repeat": 3,
+				"sample": {
+					"alloc_bytes": 2277870,
+					"alloc_count": 24983,
+					"decode_ns": 1754100,
+					"drop_ns": 134900,
+					"inspect_ns": 3754100,
+					"inspect_peak_live_bytes": 126724,
+					"parse_ns": 1219300,
+					"pass": 2,
+					"peak_live_bytes": 89679,
+					"project_ns": 200500
+				},
+				"wall_seconds": 0.09436535835266113
+			}
+		]
+	},
+	"diagnostic_preparation": {
+		"ue427": {
+			"rows": [
+				{
+					"label": "dictionary.collect_sort",
+					"baseline": 3023.0573,
+					"final": 3163.6198000000004
+				},
+				{
+					"label": "dictionary.merge",
+					"baseline": 3151.8838,
+					"final": 3276.6647
+				},
+				{
+					"label": "dictionary.dictionary",
+					"baseline": 764.5953,
+					"final": 722.9638
+				},
+				{
+					"label": "dictionary.layers",
+					"baseline": 249.3115,
+					"final": 224.6022
+				},
+				{
+					"label": "join.dictionary",
+					"baseline": 856.0556,
+					"final": 857.5884
+				},
+				{
+					"label": "join.load",
+					"baseline": 702.2905000000001,
+					"final": 673.7586
+				},
+				{
+					"label": "join.order",
+					"baseline": 1073.496,
+					"final": 845.7044000000001
+				},
+				{
+					"label": "join.line_values",
+					"baseline": 1103.3701,
+					"final": 1077.9286
+				},
+				{
+					"label": "join.query_columns",
+					"baseline": 2238.2083000000002,
+					"final": 2329.9255
+				},
+				{
+					"label": "query.entries",
+					"baseline": 594.9241,
+					"final": 668.1719
+				},
+				{
+					"label": "query.raw_ids",
+					"baseline": 392.875,
+					"final": 435.4141
+				},
+				{
+					"label": "query.line_ids",
+					"baseline": 821.6776,
+					"final": 848.1409
+				},
+				{
+					"label": "query.translation_cache",
+					"baseline": 1995.7622000000001,
+					"final": 1929.2671
+				},
+				{
+					"label": "query.source_cache",
+					"baseline": 153.12390000000002,
+					"final": 153.73899999999998
+				},
+				{
+					"label": "join.query_paths_prepare",
+					"baseline": null,
+					"final": 509.3946
+				},
+				{
+					"label": "join.query_places",
+					"baseline": 1625.8282,
+					"final": 1103.3134
+				},
+				{
+					"label": "join.query_parallel",
+					"baseline": 1625.9192,
+					"final": 1103.3755999999998
+				},
+				{
+					"label": "join.encode",
+					"baseline": 212.8746,
+					"final": 122.5398
+				},
+				{
+					"label": "join.publish",
+					"baseline": 1776.4884,
+					"final": 1631.7579
+				}
+			],
+			"reuse": "Final capture: 768,844 repeated resolved identities reused across 1,335,210 occurrences."
+		},
+		"ue57": {
+			"rows": [
+				{
+					"label": "join.dictionary",
+					"baseline": 22.0439,
+					"final": 21.9294
+				},
+				{
+					"label": "join.load",
+					"baseline": 90.0347,
+					"final": 89.7567
+				},
+				{
+					"label": "join.order",
+					"baseline": 122.6155,
+					"final": 108.682
+				},
+				{
+					"label": "join.line_values",
+					"baseline": 75.6462,
+					"final": 76.17999999999999
+				},
+				{
+					"label": "join.query_columns",
+					"baseline": 345.0968,
+					"final": 332.068
+				},
+				{
+					"label": "query.entries",
+					"baseline": 79.29029999999999,
+					"final": 79.8961
+				},
+				{
+					"label": "query.raw_ids",
+					"baseline": 84.2399,
+					"final": 85.654
+				},
+				{
+					"label": "query.line_ids",
+					"baseline": 118.2027,
+					"final": 130.74630000000002
+				},
+				{
+					"label": "query.translation_cache",
+					"baseline": 29.0197,
+					"final": 0.1955
+				},
+				{
+					"label": "query.source_cache",
+					"baseline": 50.5162,
+					"final": 22.744899999999998
+				},
+				{
+					"label": "join.query_paths_prepare",
+					"baseline": null,
+					"final": 28.468500000000002
+				},
+				{
+					"label": "join.query_places",
+					"baseline": 65.72540000000001,
+					"final": 44.55
+				},
+				{
+					"label": "join.query_parallel",
+					"baseline": 76.8335,
+					"final": 76.9366
+				},
+				{
+					"label": "join.encode",
+					"baseline": 22.8988,
+					"final": 14.0859
+				},
+				{
+					"label": "join.publish",
+					"baseline": 118.2231,
+					"final": 123.7552
+				}
+			],
+			"reuse": "Final capture: 57,607 repeated resolved identities reused across 203,687 occurrences."
+		}
+	},
+	"summed_package_work": {
+		"ue427": {
+			"baselineTotal": 103111.9332,
+			"finalTotal": 85232.4141,
+			"rows": [
+				{
+					"label": "Read package bytes",
+					"baseline": 4348.9199,
+					"final": 4482.7736,
+					"baselineShare": 4.217668862404763,
+					"finalShare": 5.2594704107999695
+				},
+				{
+					"label": "Parse headers/tables",
+					"baseline": 4114.930700000001,
+					"final": 4429.568300000001,
+					"baselineShare": 3.9907414906270042,
+					"finalShare": 5.197046624542342
+				},
+				{
+					"label": "Decode exports/properties",
+					"baseline": 66472.17450002761,
+					"final": 55725.87600003688,
+					"baselineShare": 64.46603456759514,
+					"finalShare": 65.38108369740155
+				},
+				{
+					"label": "Projection, coverage + records",
+					"baseline": 27701.339100000147,
+					"final": 20085.66430000015,
+					"baselineShare": 26.865308641114826,
+					"finalShare": 23.565757830623447
+				},
+				{
+					"label": "Other package handling",
+					"baseline": 474.5689999722381,
+					"final": 508.53189996296715,
+					"baselineShare": 0.4602464382582617,
+					"finalShare": 0.5966414366326944
+				}
+			]
+		},
+		"ue57": {
+			"baselineTotal": 5416.1201,
+			"finalTotal": 4064.0175,
+			"rows": [
+				{
+					"label": "Read package bytes",
+					"baseline": 434.9816999999999,
+					"final": 449.92269999999996,
+					"baselineShare": 8.031241773977646,
+					"finalShare": 11.07088490637651
+				},
+				{
+					"label": "Parse headers/tables",
+					"baseline": 224.74190000000002,
+					"final": 233.77170000000004,
+					"baselineShare": 4.149499934464156,
+					"finalShare": 5.7522316279395955
+				},
+				{
+					"label": "Decode exports/properties",
+					"baseline": 3116.143399999973,
+					"final": 2408.699500000047,
+					"baselineShare": 57.53460673813294,
+					"finalShare": 59.26892539217774
+				},
+				{
+					"label": "Projection, coverage + records",
+					"baseline": 1613.1996999999983,
+					"final": 943.6359999999947,
+					"baselineShare": 29.785153767177324,
+					"finalShare": 23.21928977914083
+				},
+				{
+					"label": "Other package handling",
+					"baseline": 27.053400000028887,
+					"final": 27.987599999958093,
+					"baselineShare": 0.49949778624792474,
+					"finalShare": 0.6886682943653194
+				}
+			]
+		}
+	}
+}

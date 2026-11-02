@@ -117,21 +117,93 @@ impl SourceModel {
     }
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "the model is compiled in and every parser test loads it, so a bad model fails CI"
+)]
+static DEFAULT_SOURCE_MODEL: Lazy<SourceModel> = Lazy::new(|| {
+    serde_json::from_str(include_str!("../source-models/ue57-data-assets.json"))
+        .expect("embedded UE 5.7 source model must be valid")
+});
+
 /// Returns the source-derived UE 5.7 model compiled into the portable parser.
 ///
 /// The committed model contains engine declarations only. Project and fixture models remain
 /// explicit inputs to conformance or host code and are never silently baked into the parser.
 #[must_use]
-#[expect(
-    clippy::expect_used,
-    reason = "the model is compiled in and every parser test loads it, so a bad model fails CI"
-)]
 pub fn embedded_source_model() -> &'static SourceModel {
-    static MODEL: Lazy<SourceModel> = Lazy::new(|| {
-        serde_json::from_str(include_str!("../source-models/ue57-data-assets.json"))
-            .expect("embedded UE 5.7 source model must be valid")
-    });
-    &MODEL
+    &DEFAULT_SOURCE_MODEL
+}
+
+// Only the immutable embedded model can retain this index. Public custom models keep scans.
+struct BuiltinSchemaIndex {
+    classes: Vec<Vec<(&'static str, usize)>>,
+    structs: Vec<Vec<(&'static str, usize)>>,
+    longest_class: usize,
+    longest_struct: usize,
+}
+static BUILTIN_SCHEMA_INDEX: Lazy<BuiltinSchemaIndex> = Lazy::new(|| {
+    let model = &*DEFAULT_SOURCE_MODEL;
+    let mut classes: Vec<Vec<(&'static str, usize)>> = Vec::new();
+    let mut structs: Vec<Vec<(&'static str, usize)>> = Vec::new();
+    for (i, value) in model.classes.iter().enumerate() {
+        let path = value.path.as_str();
+        if classes.len() <= path.len() {
+            classes.resize_with(path.len() + 1, Vec::new);
+        }
+        classes[path.len()].push((path, i));
+    }
+    for (i, value) in model.structs.iter().enumerate() {
+        let path = value.path.as_str();
+        if structs.len() <= path.len() {
+            structs.resize_with(path.len() + 1, Vec::new);
+        }
+        structs[path.len()].push((path, i));
+    }
+    BuiltinSchemaIndex {
+        classes,
+        structs,
+        longest_class: model
+            .classes
+            .iter()
+            .map(|value| value.path.as_str().len())
+            .max()
+            .unwrap_or(0),
+        longest_struct: model
+            .structs
+            .iter()
+            .map(|value| value.path.as_str().len())
+            .max()
+            .unwrap_or(0),
+    }
+});
+impl BuiltinSchemaIndex {
+    fn lookup(entries: &[Vec<(&str, usize)>], path: &str) -> Option<usize> {
+        entries
+            .get(path.len())?
+            .iter()
+            .find(|(key, _)| *key == path)
+            .map(|(_, index)| *index)
+    }
+    fn class(&self, path: &str) -> Option<usize> {
+        if path.len() > self.longest_class {
+            None
+        } else {
+            Self::lookup(&self.classes, path)
+        }
+    }
+    fn structure(&self, path: &str) -> Option<usize> {
+        if path.len() > self.longest_struct {
+            None
+        } else {
+            Self::lookup(&self.structs, path)
+        }
+    }
+}
+fn builtin_schema_index(model: &SourceModel) -> Option<&'static BuiltinSchemaIndex> {
+    Lazy::get(&DEFAULT_SOURCE_MODEL)
+        .filter(|builtin| std::ptr::eq(*builtin, model))
+        .map(|_| &*BUILTIN_SCHEMA_INDEX)
 }
 
 /// Source-derived UE 5.8 property-bag fragments whose framing differs from the baseline.
@@ -157,7 +229,7 @@ pub trait SchemaProvider {
     }
 
     fn class_is_a(&self, path: &ObjectPath, base_path: &str) -> bool {
-        let mut current = Some(path.clone());
+        let mut current = Some(path);
         for _ in 0..64 {
             let Some(path) = current else {
                 return false;
@@ -166,8 +238,8 @@ pub trait SchemaProvider {
                 return true;
             }
             current = self
-                .find_class(&path)
-                .and_then(|schema| schema.super_path.clone());
+                .find_class(path)
+                .and_then(|schema| schema.super_path.as_ref());
         }
         false
     }
@@ -178,10 +250,18 @@ impl SchemaProvider for SourceModel {
         self.native_layouts.get(cpp_name)
     }
     fn find_struct(&self, path: &ObjectPath) -> Option<&StructSchema> {
+        if let Some(index) = builtin_schema_index(self) {
+            return index
+                .structure(path.as_str())
+                .and_then(|i| self.structs.get(i));
+        }
         self.structs.iter().find(|schema| schema.path == *path)
     }
 
     fn find_class(&self, path: &ObjectPath) -> Option<&ClassSchema> {
+        if let Some(index) = builtin_schema_index(self) {
+            return index.class(path.as_str()).and_then(|i| self.classes.get(i));
+        }
         self.classes.iter().find(|schema| schema.path == *path)
     }
 }
@@ -359,5 +439,80 @@ mod tests {
                 "{class_path} retained an unknown reflected field type"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod schema_index_tests {
+    use super::*;
+
+    #[test]
+    fn indexed_builtin_lookups_return_the_original_first_schema() {
+        let model = embedded_source_model();
+        for class in &model.classes {
+            let expected = model
+                .classes
+                .iter()
+                .find(|value| value.path == class.path)
+                .unwrap();
+            assert!(std::ptr::eq(
+                model.find_class(&class.path).unwrap(),
+                expected
+            ));
+        }
+        for structure in &model.structs {
+            let expected = model
+                .structs
+                .iter()
+                .find(|value| value.path == structure.path)
+                .unwrap();
+            assert!(std::ptr::eq(
+                model.find_struct(&structure.path).unwrap(),
+                expected
+            ));
+        }
+        for path in [
+            String::new(),
+            "/".into(),
+            "/Script/Fixture.Unknown".into(),
+            "x".repeat(1_000_000),
+        ] {
+            let path = ObjectPath::new(path);
+            assert!(model.find_class(&path).is_none());
+            assert!(model.find_struct(&path).is_none());
+        }
+    }
+
+    #[test]
+    fn custom_models_keep_vector_order_duplicates_and_mutation_behavior() {
+        let mut model = embedded_source_model().clone();
+        assert!(builtin_schema_index(&model).is_none());
+        let mut class = model.classes[0].clone();
+        class.cpp_name = "FirstShadow".into();
+        model.classes.insert(0, class.clone());
+        model.classes.reverse();
+        model.classes.insert(0, class);
+        let path = model.classes[0].path.clone();
+        assert_eq!(model.find_class(&path).unwrap().cpp_name, "FirstShadow");
+        model.classes[0].cpp_name = "ChangedAfterLookup".into();
+        assert_eq!(
+            model.find_class(&path).unwrap().cpp_name,
+            "ChangedAfterLookup"
+        );
+        let mut structure = model.structs[0].clone();
+        structure.cpp_name = "FirstStructShadow".into();
+        model.structs.insert(0, structure.clone());
+        model.structs.reverse();
+        model.structs.insert(0, structure);
+        let path = model.structs[0].path.clone();
+        assert_eq!(
+            model.find_struct(&path).unwrap().cpp_name,
+            "FirstStructShadow"
+        );
+        model.structs[0].cpp_name = "ChangedStructAfterLookup".into();
+        assert_eq!(
+            model.find_struct(&path).unwrap().cpp_name,
+            "ChangedStructAfterLookup"
+        );
     }
 }

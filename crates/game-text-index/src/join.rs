@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 pub(crate) const LINE_FIELDS: [&str; 21] = [
     "namespace",
@@ -105,6 +106,18 @@ pub(crate) struct Group {
     pub ns: u32,
     pub key: u32,
 }
+/// Unit strings are formatted once per resolved identity, then referenced by occurrence.
+pub(crate) struct UnitIds {
+    values: Vec<String>,
+    rows: Vec<usize>,
+}
+impl std::ops::Index<usize> for UnitIds {
+    type Output = str;
+    fn index(&self, row: usize) -> &str {
+        &self.values[self.rows[row]]
+    }
+}
+
 pub(crate) struct Joined {
     pub line: Vec<Vec<u32>>,
     pub cultures: Vec<Vec<Vec<u32>>>,
@@ -120,7 +133,7 @@ pub(crate) struct Joined {
     pub archives: Vec<FileColumns>,
     pub pos: Vec<FileColumns>,
     pub strings: Vec<String>,
-    pub unit_ids: Vec<String>,
+    pub unit_ids: UnitIds,
 }
 impl Joined {
     pub fn string(&self, id: u32) -> &str {
@@ -639,10 +652,37 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             }
         })
         .collect::<Vec<_>>();
-    let mut unit_ids = Vec::with_capacity(count);
+    let mut unit_ids = UnitIds {
+        values: Vec::new(),
+        rows: Vec::with_capacity(count),
+    };
+    let mut resolved = rustc_hash::FxHashMap::default();
     for row in 0..count {
-        unit_ids.push(packages.unit_id(row, &strings, empty)?);
+        let identity = (c[O_IDENTITY][row] < 2 && c[O_KEY][row] != empty).then_some((
+            c[O_IDENTITY][row],
+            unit_ns[row],
+            c[O_KEY][row],
+        ));
+        let existing = identity.and_then(|key| resolved.get(&key).copied());
+        let index = if let Some(index) = existing {
+            index
+        } else {
+            let index = unit_ids.values.len();
+            unit_ids
+                .values
+                .push(packages.unit_id(row, &strings, empty)?);
+            if let Some(key) = identity {
+                resolved.insert(key, index);
+            }
+            index
+        };
+        unit_ids.rows.push(index);
     }
+    crate::scan_timings::count(
+        "join.unit_identity_reuse",
+        (count - unit_ids.values.len()) as u64,
+    );
+    drop(resolved);
     let mut tables = HashMap::<(u32, u32), usize>::new();
     let mut known_tables = HashSet::new();
     for row in 0..count {
@@ -1276,16 +1316,26 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     store.release_dictionary();
     crate::join_incremental::note_stage("marks", &mut stage);
     measure.mark("join.marks");
-    let mut query_columns =
-        crate::join_query::columns(&joined, target["name"].as_str().ok_or("target name")?)?;
+    let (query_columns, path_columns) = rayon::join(
+        || crate::join_query::columns(&joined, target["name"].as_str().ok_or("target name")?),
+        || {
+            let mut measure = crate::scan_timings::Cursor::new();
+            let result = crate::join_places::prepare_paths(&joined);
+            measure.mark("join.query_paths_prepare");
+            result
+        },
+    );
+    let mut query_columns = query_columns?;
+    let path_columns = path_columns?;
     measure.mark("join.query_columns");
-    // Dependency graph: finished marks -> query columns (including independent translation arena).
-    // Query columns + joined values -> places, summary and graph, each writing disjoint outputs.
+    // Finished marks feed independent query and path preparation. Query columns then feed
+    // places, summary and graph, each writing disjoint outputs.
     // All three finish before columns are moved and the graph and joined snapshot are committed.
     let (places, (summary, (graph, graph_seconds))) = rayon::join(
         || {
             let mut measure = crate::scan_timings::Cursor::new();
-            let result = crate::join_places::columns(&joined, &query_columns, &file_rows);
+            let result =
+                crate::join_places::columns(&joined, &query_columns, &file_rows, path_columns);
             measure.mark("join.query_places");
             result
         },
@@ -1368,7 +1418,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     let mut aliases = serde_json::Map::new();
     let mut chunks = serde_json::Map::new();
     let mut unique_columns: Vec<(String, String, Vec<u32>)> = Vec::new();
-    let mut identical = HashMap::<(String, usize, u32), Vec<usize>>::new();
+    let mut identical = HashMap::<(String, usize, u64), Vec<usize>>::new();
     for column in columns {
         if column.2.len() > crate::snapshot::MAX_SECTION / 4 {
             let mut names = Vec::new();
@@ -1384,11 +1434,13 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             chunks.insert(column.0, json!(names));
             continue;
         }
-        let signature = (
-            column.1.clone(),
-            column.2.len(),
-            crc32fast::hash(&crate::snapshot::u32_bytes(&column.2)),
-        );
+        let signature = (column.1.clone(), column.2.len(), {
+            // This is only an equality bucket; aliases still require full column equality.
+            // Hash the slice directly instead of allocating its encoded bytes.
+            let mut hash = rustc_hash::FxHasher::default();
+            column.2.hash(&mut hash);
+            hash.finish()
+        });
         let indices = identical.entry(signature).or_default();
         if let Some(index) = indices.iter().find(|i| unique_columns[**i].2 == column.2) {
             aliases.insert(column.0, json!(unique_columns[*index].0));

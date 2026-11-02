@@ -23,7 +23,7 @@ use uasset_inspection::text_wire::{
     gather_coverage as gather_coverage_record, text_coverage_gap, text_occurrence,
 };
 use uasset_inspection::texture_wire::texture_record;
-use uasset_parser::asset::{AssetDecodeContext, AssetErrorKind, decode_export};
+use uasset_parser::asset::{AssetDecodeContext, AssetDecodeSession, AssetErrorKind};
 use uasset_parser::package::{
     Export, ObjectPath, Package, PackageError, PackageErrorKind, PackageIndex,
 };
@@ -1672,6 +1672,7 @@ fn project_parsed_package(
         occurrences: Vec::new(),
         coverage_gaps: Vec::new(),
     };
+    let mut decoder = AssetDecodeSession::new(&context);
     for export in &package.exports {
         checkpoint(cancellation, "parsing")?;
         if matches!(kind, ProjectionKind::Texture)
@@ -1684,7 +1685,7 @@ fn project_parsed_package(
         checkpoint(cancellation, "inspection")?;
         let decoded = {
             let _span = game_text_index::scan_timings::Span::new("extract.decode");
-            decode_export(export, &context)
+            decoder.decode(export)
         };
         reader_memory::checkpoint(MemoryStage::Project);
         match decoded {
@@ -2980,9 +2981,10 @@ fn read_saved_world_package(
     let mut decoded = Vec::new();
     let mut errors = Vec::new();
     let mut failed_exports = Vec::new();
+    let mut decoder = AssetDecodeSession::new(&context);
     for export in &package.exports {
         checkpoint(cancellation, "parsing")?;
-        match decode_export(export, &context) {
+        match decoder.decode(export) {
             Ok(Some(asset)) => decoded.push(asset),
             Ok(None) => {}
             Err(error) => {

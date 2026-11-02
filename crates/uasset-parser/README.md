@@ -16,6 +16,12 @@ Explicit `SchemaProvider` inputs can extend project-native class coverage. Class
 model retain compatibility decoding and explicit opaque evidence. See
 [`uasset-source-gen`](../uasset-source-gen/README.md) for regeneration and conformance.
 
+When decoding several exports from one `AssetDecodeContext`, reuse an `asset::AssetDecodeSession`
+and call its `decode` method for each export. It reuses bounded, validated property-header layouts
+within that borrowed context while decoding every current value and native record. A layout mismatch
+falls back to ordinary parsing. The session retains metadata rather than decoded assets; existing
+`decode_export` calls remain available for independent decodes.
+
 ## What it decodes
 
 Every classic saved package, including levels. `.umap` and `.uasset` use the same package

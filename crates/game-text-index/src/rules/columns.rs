@@ -1,12 +1,13 @@
 //! Nullable typed columns and evaluation-local dictionaries/structured values.
 use super::value::{Number, Object, Value};
+use crate::engine_match::checkpoint;
 use crate::engine_reader::EngineReader;
 use crate::wtf8::Wtf8Buf;
 use crate::{Result, require};
 use rustc_hash::{FxHashMap, FxHasher};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hasher;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StrId(pub u32);
@@ -899,7 +900,13 @@ impl Arena {
             paths_mask: Arc::default(),
         })
     }
-    pub fn load_strings(&mut self, reader: &EngineReader, ids: &[u32]) -> Result<()> {
+    pub fn load_strings(
+        &mut self,
+        reader: &EngineReader,
+        ids: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<()> {
+        checkpoint(cancelled)?;
         let dedup = super::stages::Measure::start();
         // Each wanted id once, in id order. Most calls ask for a few strings, often loaded
         // already, so the work follows the request; only a request for a sizable share of the
@@ -924,14 +931,30 @@ impl Arena {
         }
         self.recorder
             .sub_stage("strings.dedup".into(), &dedup, ids.len());
+        self.strings.reserve(wanted.len());
+        // Keep global ID ordering/deduplication, but yield between bounded dictionary reads.
+        // One whole column can otherwise spend seconds decoding before observing cancellation.
+        for wanted in wanted.chunks(4096) {
+            checkpoint(cancelled)?;
+            self.load_string_batch(reader, wanted, cancelled)?;
+        }
+        Ok(())
+    }
+    fn load_string_batch(
+        &mut self,
+        reader: &EngineReader,
+        wanted: &[u32],
+        cancelled: &AtomicBool,
+    ) -> Result<()> {
         let mut measure = super::stages::Measure::start();
         let batch_read = super::stages::Measure::start();
-        let texts = reader.strings_batch(&wanted)?;
+        let texts = reader.strings_batch(wanted)?;
+        checkpoint(cancelled)?;
         self.recorder
             .sub_stage("strings.batch".into(), &batch_read, wanted.len());
         let mut hashing = super::stages::Measure::start();
         // Hash in parallel; the batch's text is one buffer and the maps are filled in ID order.
-        let hashes = hashing.parallel_chunks(&texts, 1024, |text| {
+        let hashes = hashing.parallel_chunks(&texts, 256, |text| {
             let mut hash = FxHasher::default();
             hash.write(Wtf8Buf::from_view(text).as_bytes());
             hash.finish()
@@ -939,6 +962,7 @@ impl Arena {
         measure.include(&hashing);
         self.recorder
             .sub_stage("strings.hash".into(), &hashing, wanted.len());
+        checkpoint(cancelled)?;
         let inserting = super::stages::Measure::start();
         // Spans hold 32-bit offsets, so a batch past that size continues in another buffer.
         // Tests use tiny buffers, so every string they load takes the same path.
@@ -949,7 +973,10 @@ impl Arena {
         let mut pending = texts.iter().map(String::len).sum::<usize>();
         let mut buffer = String::new();
         let mut spans = Vec::with_capacity(texts.len());
-        for text in &texts {
+        for (index, text) in texts.iter().enumerate() {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
             if !buffer.is_empty() && buffer.len() + text.len() > BUFFER {
                 self.stored_text
                     .push(std::mem::take(&mut buffer).into_boxed_str());
@@ -968,8 +995,11 @@ impl Arena {
         }
         drop(texts);
         self.stored_text.push(buffer.into_boxed_str());
-        self.strings.reserve(wanted.len());
-        for ((id, hash), span) in wanted.iter().copied().zip(hashes).zip(spans) {
+        for (index, ((id, hash), span)) in wanted.iter().copied().zip(hashes).zip(spans).enumerate()
+        {
+            if index & 255 == 0 {
+                checkpoint(cancelled)?;
+            }
             self.stored.set(id as usize, span);
             if let Some(first) = self.strings.get(&hash).copied() {
                 if self.text(first) != self.text(StrId(id)) {

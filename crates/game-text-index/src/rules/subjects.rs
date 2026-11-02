@@ -546,7 +546,7 @@ impl<'a> NativeSubjects<'a> {
                         Some(arena) => arena,
                         None => super::columns::Arena::new(self.query.reader.dictionary_count()?)?,
                     };
-                    let loaded = arena.load_strings(&self.query.reader, &strings);
+                    let loaded = arena.load_strings(&self.query.reader, &strings, self.cancelled);
                     if loaded.is_ok() {
                         sites.extend(
                             members
@@ -604,8 +604,12 @@ impl NativeSubjects<'_> {
         }
         members.sort_unstable();
         members.dedup();
-        let loaded =
-            arena.occurrence_ids(self.query, &members, &mut super::stages::Measure::start());
+        let loaded = arena.occurrence_ids(
+            self.query,
+            &members,
+            &mut super::stages::Measure::start(),
+            self.cancelled,
+        );
         self.read_arena = Some(arena);
         loaded?;
         let data = Arc::clone(&self.occurrences);
@@ -617,7 +621,7 @@ impl NativeSubjects<'_> {
             Some(arena) => arena,
             None => super::columns::Arena::new(self.query.reader.dictionary_count()?)?,
         };
-        let loaded = arena.load_strings(&self.query.reader, &strings);
+        let loaded = arena.load_strings(&self.query.reader, &strings, self.cancelled);
         self.place_arena = Some(arena);
         loaded
     }
@@ -634,7 +638,7 @@ impl NativeSubjects<'_> {
             Some(arena) => arena,
             None => Arena::new(self.query.reader.dictionary_count()?)?,
         };
-        arena.load_strings(&self.query.reader, &string_ids)?;
+        arena.load_strings(&self.query.reader, &string_ids, self.cancelled)?;
         let places = rows
             .iter()
             .zip(ids)
@@ -676,7 +680,7 @@ impl SubjectRows for NativeSubjects<'_> {
         }
         rows.sort_unstable();
         rows.dedup();
-        arena.occurrence_ids(self.query, &rows, measure)?;
+        arena.occurrence_ids(self.query, &rows, measure, self.cancelled)?;
         let names = &arena.occurrences.ids;
         let built = measure.parallel(&lists, |members| {
             Arc::new(super::Affected {

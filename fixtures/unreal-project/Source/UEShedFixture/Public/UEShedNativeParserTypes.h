@@ -7,6 +7,11 @@
 #include "StructUtils/InstancedStruct.h"
 #include "GameplayTagContainer.h"
 #include "StructUtils/PropertyBag.h"
+#include "NiagaraCommon.h"
+#include "NiagaraParameterStore.h"
+#include "UniversalObjectLocatorFragment.h"
+#include "LandscapeComponent.h"
+#include "PhysicsEngine/ConstraintInstance.h"
 #include "UEShedNativeParserTypes.generated.h"
 
 USTRUCT()
@@ -38,6 +43,9 @@ public:
 	UPROPERTY() FQuat Rotation = FQuat::Identity;
 	UPROPERTY() FTransform Transform;
 	UPROPERTY() FVector2D Position2D = FVector2D::ZeroVector;
+	UPROPERTY() FVector3f Position3f = FVector3f::ZeroVector;
+	UPROPERTY() TArray<FVector3f> Positions3f;
+	UPROPERTY() TMap<FName, FVector3f> NamedPositions3f;
 	UPROPERTY() FBox Bounds;
 	UPROPERTY() FIntVector Grid = FIntVector::ZeroValue;
 	UPROPERTY() TArray<FQuat> Rotations;
@@ -47,10 +55,42 @@ public:
 	UPROPERTY() TSet<FIntVector> Grids;
 	UPROPERTY() TMap<FName, FTransform> NamedTransforms;
 	UPROPERTY() TArray<FInstancedStruct> MathInstances;
+	UPROPERTY() FInstancedStruct Vector3fInstance;
 	UPROPERTY() FInstancedPropertyBag Parameters;
 	UPROPERTY() FInstancedPropertyBag EmptyParameters;
 	UPROPERTY() TArray<FInstancedPropertyBag> ParameterBags;
 	UPROPERTY() FInstancedStruct BagInstance;
+};
+
+UCLASS()
+class UUEShedCoverageBatchAsset : public UDataAsset
+{
+	GENERATED_BODY()
+public:
+	UPROPERTY() FIntVector2 Cell2D = FIntVector2::ZeroValue;
+	UPROPERTY() FVector4f Direction4f = FVector4f(0, 0, 0, 0);
+	UPROPERTY() FBox2f Bounds2f;
+	UPROPERTY() TArray<FIntVector2> Cells2D;
+	UPROPERTY() TArray<FVector4f> Directions4f;
+	UPROPERTY() TArray<FBox2f> Rectangles2f;
+	UPROPERTY() TArray<FInstancedStruct> AliasInstances;
+	UPROPERTY() FText CategoryText;
+	UPROPERTY() FText NamedCategoryText;
+	UPROPERTY() FText EscapedFormatText;
+	UPROPERTY() TOptional<bool> OptionalUnset = TOptional<bool>(true);
+	UPROPERTY() TOptional<bool> OptionalFalse;
+	UPROPERTY() TOptional<bool> OptionalTrue;
+	UPROPERTY() TOptional<FText> OptionalText;
+	UPROPERTY() TArray<FUniversalObjectLocatorFragment> LocatorFragments;
+	UPROPERTY() FNiagaraVariableBase BaseVariable;
+	UPROPERTY() FNiagaraVariable DataVariable;
+	UPROPERTY() FNiagaraVariableWithOffset OffsetVariable;
+	UPROPERTY() TArray<FNiagaraVariable> VariableRecords;
+	UPROPERTY() FVMExternalFunctionBindingInfo ExternalFunction;
+	UPROPERTY() TArray<FVMExternalFunctionBindingInfo> ExternalFunctions;
+	UPROPERTY() TMap<FGuid, FLandscapeLayerComponentData> LandscapeLayers;
+	UPROPERTY() FConstraintInstance Constraint;
+	UPROPERTY() TArray<FConstraintInstance> Constraints;
 };
 
 USTRUCT()

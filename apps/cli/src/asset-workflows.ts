@@ -203,12 +203,17 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 				capability: "all",
 				...(where ? { where } : undefined)
 			});
+			// `--limit` bounds the printed lines here as it does with `--target`; a broad word
+			// would otherwise print every match in the project.
+			const limit = command.limit ?? 50;
 			return yield* printJson({
 				schemaVersion: 1,
 				status: summary.status,
 				query: command.query,
 				coverage: summary.coverage,
-				matches: exported.units,
+				total: exported.units.length,
+				omitted: Math.max(0, exported.units.length - limit),
+				matches: exported.units.slice(0, limit),
 				...textCorpusDiagnosticSummary(exported.diagnostics)
 			});
 		})

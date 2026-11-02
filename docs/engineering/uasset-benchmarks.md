@@ -40,6 +40,23 @@ prebuilt typed result to both a string and a sink. Both examples read the packag
 retain every timed sample, so they expose parser, projection, and output-buffer changes that a
 fresh-process CLI lane can hide.
 
+For corpus sweeps with retained samples and differential fingerprints, use the standalone probe:
+
+```text
+cargo build --locked --release --manifest-path tools/benchmarks/uasset-decode/Cargo.toml --bin parser-speed
+tools/benchmarks/uasset-decode/target/release/parser-speed --list packages.txt --operation combined --runs 21 --warmups 3 --batch-ms 30
+tools/benchmarks/uasset-decode/target/release/parser-speed --list packages.txt --evidence evidence.jsonl
+```
+
+`packages.txt` contains one package path per line. Operations are `parse`, `decode`, `combined`,
+`inspect-json`, and `inspect-owned`; each sample is one whole corpus sweep. The probe preloads bytes,
+initializes the source model, and parses reference headers before timing. A fresh `AssetDecodeSession`
+per package sweep keeps layout reuse within the operation. The evidence lane fingerprints the full
+package and decoded model, owned inspection JSON, streaming inspection JSON, and result counts.
+Preserve a starting executable and run both versions against the same list, including malformed
+inputs. Compare these system-allocator measurements separately from the native reader's mimalloc
+and process boundary. The standalone lockfile is independent of the workspace lockfile.
+
 Measure Workbench's shared project-index path against a specific project:
 
 ```powershell
@@ -184,6 +201,10 @@ record the Git revision and dirty state, operating system, CPU, memory, Node and
 fixture size, exact run counts, and whether builds were excluded.
 
 ## Interpretation and optimization
+
+The [ARM64 speed investigation (2026-10-31)](../research/uasset-parser-speed-arm64-2026-10-31.md)
+records a separate local baseline and raw samples. Keep it separate from the desktop measurements
+below, and distinguish the system-allocator library replay from the mimalloc native reader.
 
 Compare results from the same machine, power policy, checkout, fixture, and cache condition. Warmups
 reduce one-time loader noise but do not make measurements portable across machines. Reference

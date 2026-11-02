@@ -5,8 +5,8 @@ use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Serialize, Serializer};
 use uasset_parser::archive::{Guid, NameRef};
 use uasset_parser::asset::{
-    ANIM_SEQUENCE_CLASS, AssetDecodeContext, DecodedAsset, SKELETON_CLASS, USERDEFINEDENUM_CLASS,
-    USERDEFINEDSTRUCT_CLASS,
+    ANIM_SEQUENCE_CLASS, AssetDecodeContext, AssetDecodeSession, DecodedAsset, SKELETON_CLASS,
+    USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
 };
 use uasset_parser::package::{ObjectPath, Package, PackageIndex, TableLocation};
 use uasset_parser::property::{
@@ -337,9 +337,10 @@ impl Serialize for StreamingAssetsView<'_> {
             package: self.package,
             schemas: self.schemas,
         };
+        let mut decoder = AssetDecodeSession::new(&context);
         let mut sequence = serializer.serialize_seq(None)?;
         for (index, export) in self.package.exports.iter().enumerate() {
-            match &*DecodedExports::decode(self.decoded, index, export, &context) {
+            match &*DecodedExports::decode_with_session(self.decoded, index, export, &mut decoder) {
                 Ok(Some(asset)) => sequence.serialize_element(&AssetView {
                     package: self.package,
                     asset,
@@ -1240,7 +1241,8 @@ impl<'a> PropertyValueView<'a> {
                     table_id: Some(table_id),
                     key: Some(key),
                 },
-                TextHistory::NamedFormat { format, .. } => {
+                TextHistory::NamedFormat { format, .. }
+                | TextHistory::OrderedFormat { format, .. } => {
                     let (history, namespace, table_id, key) = text_identity_parts(format);
                     Self::Text {
                         value: &text.source,
@@ -1348,7 +1350,9 @@ fn text_identity_parts(
             ("string_table", None, Some(table_id), Some(key))
         }
         TextHistory::Base { namespace, key, .. } => ("base", Some(namespace), None, Some(key)),
-        TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
+        TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
+            text_identity_parts(format)
+        }
     }
 }
 

@@ -53,16 +53,20 @@ pub enum PackageErrorKind {
     UnsupportedCapability,
 }
 
-#[derive(Debug)]
 pub struct PackageError {
+    inner: Box<PackageErrorData>,
+}
+
+struct PackageErrorData {
     kind: PackageErrorKind,
     offset: Option<u64>,
     path: String,
     detail: String,
-    source: Option<Box<ArchiveError>>,
+    source: Option<ArchiveError>,
 }
 
 impl PackageError {
+    #[cold]
     pub(crate) fn new(
         kind: PackageErrorKind,
         offset: Option<u64>,
@@ -70,47 +74,49 @@ impl PackageError {
         detail: impl Into<String>,
     ) -> Self {
         Self {
-            kind,
-            offset,
-            path: path.to_string(),
-            detail: detail.into(),
-            source: None,
+            inner: Box::new(PackageErrorData {
+                kind,
+                offset,
+                path: path.to_string(),
+                detail: detail.into(),
+                source: None,
+            }),
         }
     }
 
     #[must_use]
     pub const fn kind(&self) -> PackageErrorKind {
-        self.kind
+        self.inner.kind
     }
 
     #[must_use]
     pub const fn offset(&self) -> Option<u64> {
-        self.offset
+        self.inner.offset
     }
 
     #[must_use]
     pub fn path(&self) -> &str {
-        &self.path
+        &self.inner.path
     }
 
     #[must_use]
     pub fn detail(&self) -> &str {
-        &self.detail
+        &self.inner.detail
     }
 }
 
 impl fmt::Display for PackageError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.offset {
+        match self.inner.offset {
             Some(offset) => write!(
                 formatter,
                 "{:?} at byte {offset} while reading {}: {}",
-                self.kind, self.path, self.detail
+                self.inner.kind, self.inner.path, self.inner.detail
             ),
             None => write!(
                 formatter,
                 "{:?} while reading {}: {}",
-                self.kind, self.path, self.detail
+                self.inner.kind, self.inner.path, self.inner.detail
             ),
         }
     }
@@ -118,9 +124,10 @@ impl fmt::Display for PackageError {
 
 impl std::error::Error for PackageError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source
+        self.inner
+            .source
             .as_ref()
-            .map(|source| source.as_ref() as &(dyn std::error::Error + 'static))
+            .map(|source| source as &(dyn std::error::Error + 'static))
     }
 }
 
@@ -138,12 +145,27 @@ impl From<ArchiveError> for PackageError {
             ArchiveErrorKind::AllocationLimit => PackageErrorKind::ResourceLimit,
         };
         Self {
-            kind,
-            offset: Some(source.offset()),
-            path: source.path().to_owned(),
-            detail: source.detail().to_owned(),
-            source: Some(Box::new(source)),
+            inner: Box::new(PackageErrorData {
+                kind,
+                offset: Some(source.offset()),
+                path: source.path().to_owned(),
+                detail: source.detail().to_owned(),
+                source: Some(source),
+            }),
         }
+    }
+}
+
+impl fmt::Debug for PackageError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PackageError")
+            .field("kind", &self.inner.kind)
+            .field("offset", &self.inner.offset)
+            .field("path", &self.inner.path)
+            .field("detail", &self.inner.detail)
+            .field("source", &self.inner.source)
+            .finish()
     }
 }
 
@@ -1449,6 +1471,7 @@ fn read_export_serial_location(
     }
 }
 
+#[inline]
 fn read_archive_bool(
     reader: &mut Reader<'_>,
     path: &(impl fmt::Display + ?Sized),
@@ -1525,6 +1548,14 @@ fn normalize_object_path(path: ObjectPath) -> ObjectPath {
     } else {
         path
     }
+}
+
+fn join_object_path(outer: &str, name: &str) -> ObjectPath {
+    let mut path = String::with_capacity(outer.len() + 1 + name.len());
+    path.push_str(outer);
+    path.push('.');
+    path.push_str(name);
+    ObjectPath(path)
 }
 
 enum PathResolution {
@@ -1637,7 +1668,7 @@ impl<'a> IndexPathResolver<'a> {
                 if outer.as_str().is_empty() || outer.as_str() == "/None" {
                     (ObjectPath(object_name.into_owned()), depth)
                 } else {
-                    (ObjectPath(format!("{outer}.{object_name}")), depth)
+                    (join_object_path(outer.as_str(), &object_name), depth)
                 }
             }
         };
@@ -1684,10 +1715,7 @@ impl<'a> IndexPathResolver<'a> {
         };
         let object_name = resolve_name_ref_cow(self.names, object_name_ref)?;
         let (resolved, outer_depth) = match outer_index {
-            PackageIndex::Null => (
-                ObjectPath(format!("{}.{object_name}", self.package_name)),
-                0,
-            ),
+            PackageIndex::Null => (join_object_path(self.package_name, &object_name), 0),
             outer => {
                 self.ensure_resolved(outer, path)?;
                 let (outer, outer_depth) = self.resolved(outer).ok_or_else(|| {
@@ -1700,7 +1728,7 @@ impl<'a> IndexPathResolver<'a> {
                 })?;
                 let depth = outer_depth + 1;
                 self.validate_outer_depth(depth, path)?;
-                (ObjectPath(format!("{outer}.{object_name}")), depth)
+                (join_object_path(outer.as_str(), &object_name), depth)
             }
         };
         self.export_paths[slot] = PathResolution::Resolved {
@@ -1866,6 +1894,7 @@ fn checked_non_negative_i32(value: i32, path: &str) -> Result<u32, PackageError>
     })
 }
 
+#[inline]
 fn read_non_negative_u64(
     reader: &mut Reader<'_>,
     path: &(impl fmt::Display + ?Sized),

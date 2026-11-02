@@ -16,6 +16,30 @@ struct Fixture {
     target: Value,
 }
 
+/// A persisted reader for column cancellation tests, with additional dictionary entries.
+pub(crate) fn query_with_dictionary(strings: &[String]) -> Result<(EngineQuery, Vec<u32>)> {
+    let mut fixture = Fixture::new()?;
+    for (name, format) in [
+        ("Game.manifest", "manifest"),
+        ("en.archive", "archive"),
+        ("de.archive", "archive"),
+        ("en.po", "po"),
+        ("de.po", "po"),
+    ] {
+        fixture.file(name, format, &[])?;
+    }
+    fixture.packages(&[json!({"namespace":"UI","key":"K","source":"Hello","object":"/Game/Text/Example.Example","property":"Label"})])?;
+    let ids = fixture
+        .store
+        .as_mut()
+        .ok_or("Missing fixture writer.")?
+        .intern("column-cancellation", strings)?;
+    fixture.lines()?;
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    Ok((EngineQuery::open(&configuration, None)?, ids))
+}
+
 impl Fixture {
     fn new() -> Result<Self> {
         let configuration = Configuration {

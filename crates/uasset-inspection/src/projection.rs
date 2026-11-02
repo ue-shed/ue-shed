@@ -306,7 +306,9 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
                     ("PinFriendlyName", &pin.friendly_name),
                 ] {
                     // Every pin stores an empty FText, even when its type is not text.
-                    if matches!(text.history, TextHistory::None) && text.source.is_empty() {
+                    if (matches!(text.history, TextHistory::None) && text.source.is_empty())
+                        || is_formatted(text)
+                    {
                         continue;
                     }
                     output.occurrences.push(TextOccurrence {
@@ -455,18 +457,22 @@ fn visit_text_stream<F>(
     }
 }
 
-/// Whether visiting `value` can record an occurrence or coverage gap. Scalar leaves cannot, so
-/// large numeric and byte arrays are skipped without building a path for every element.
+/// Whether visiting `value` can record an occurrence or coverage gap. Skip scalar leaves,
+/// omitted values and empty containers before constructing their property paths.
 fn may_hold_text_facts(value: &PropertyValue) -> bool {
     match value {
-        PropertyValue::Text(_)
-        | PropertyValue::Raw { .. }
-        | PropertyValue::Array(_)
-        | PropertyValue::Set(_)
-        | PropertyValue::Map(_)
-        | PropertyValue::Struct(_)
-        | PropertyValue::NativeStruct { .. } => true,
-        PropertyValue::InstancedStruct(instance) => instance.value.is_some(),
+        PropertyValue::Raw {
+            reason: RawReason::NotRequested,
+        } => false,
+        PropertyValue::Text(_) | PropertyValue::Raw { .. } => true,
+        PropertyValue::Array(values) | PropertyValue::Set(values) => !values.is_empty(),
+        PropertyValue::Map(entries) => !entries.is_empty(),
+        PropertyValue::Struct(stream) => !stream.records.is_empty(),
+        PropertyValue::NativeStruct { fields } => !fields.is_empty(),
+        PropertyValue::InstancedStruct(instance) => instance
+            .value
+            .as_ref()
+            .is_some_and(|value| may_hold_text_facts(value)),
         PropertyValue::Bool(_)
         | PropertyValue::Float(_)
         | PropertyValue::Double(_)
@@ -520,6 +526,7 @@ fn visit_text_value<F>(
         user_defined,
     } = type_info;
     match value {
+        PropertyValue::Text(text) if is_formatted(text) => {}
         PropertyValue::Text(text) => output.occurrences.push(TextOccurrence {
             source: text.source.clone(),
             dev_notes: text.dev_notes().unwrap_or_default().to_owned(),
@@ -607,6 +614,9 @@ fn visit_text_value<F>(
         }
         PropertyValue::NativeStruct { fields } => {
             for field in fields {
+                if !may_hold_text_facts(&field.value) {
+                    continue;
+                }
                 visit_text_value(
                     package,
                     &field.value,
@@ -848,6 +858,17 @@ pub fn text_feature_version_gap(
         })
 }
 
+/// Whether `text` is the saved result of `FText::Format`. Unreal doesn't gather it: a format
+/// history has no text ID (`FTextHistory_Generated::GetTextId`), so `GatherTextInstance` skips it,
+/// and its pattern is gathered where it is defined. Reporting it under the pattern's key would show
+/// every filled-in result as a different text for one key.
+fn is_formatted(text: &TextValue) -> bool {
+    matches!(
+        text.history,
+        TextHistory::NamedFormat { .. } | TextHistory::OrderedFormat { .. }
+    )
+}
+
 fn identity_for_text(text: &TextValue) -> TextIdentity {
     match &text.history {
         TextHistory::None => TextIdentity::Unresolved {
@@ -860,7 +881,9 @@ fn identity_for_text(text: &TextValue) -> TextIdentity {
             namespace: namespace.clone(),
             key: key.clone(),
         },
-        TextHistory::NamedFormat { format, .. } => identity_for_text(format),
+        TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
+            identity_for_text(format)
+        }
         TextHistory::StringTableEntry { table_id, key } => TextIdentity::StringTable {
             table_id: table_id.clone(),
             key: key.clone(),

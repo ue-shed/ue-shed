@@ -1012,6 +1012,7 @@ describe("columnar join", () => {
 				}
 			});
 		},
-		60000
+		// It takes about 50 s on a CI runner.
+		180_000
 	);
 });

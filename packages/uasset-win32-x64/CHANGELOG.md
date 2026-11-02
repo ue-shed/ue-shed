@@ -1,5 +1,44 @@
 # @ue-shed/uasset-win32-x64
 
+## 0.26.0
+
+### Minor Changes
+
+- 0dff7b5: The asset reader decodes far more of a saved package's properties instead of keeping them as raw
+  bytes. On a large UE 4.27 project the values left raw fell from 654,042 to 1,019, and on a UE 5.7
+  project from 82,023 to 261. Newly decoded:
+    - enum arrays in UE 4.27-era packages, and per-platform values (`PerPlatformFloat`, `Int`, `Bool`,
+      `FrameRate`);
+    - skeletal mesh sampling tables, field paths, delegate bindings and gameplay tag containers;
+    - material input connections and constants, and the `Vector3f`, `Vector4f`, `IntVector2` and
+      `Box2f` math types;
+    - optional properties and Universal Object Locators;
+    - Niagara maps, variable records, VM function bindings and shader parameters;
+    - Landscape layer maps and physics constraint instances;
+    - formatted text (`FText::Format` with named or ordered text arguments).
+
+    Each layout follows the engine's own serializer for the versions it accepts. Anything else, such as
+    text formatted with numbers, which depends on the locale, keeps its raw bytes as before, so coverage
+    diagnostics report only what is still raw.
+
+### Patch Changes
+
+- 0eae338: Game Text no longer lists text saved as the result of `FText::Format`, such as a graph node's
+  title, a split pin's label or a Sequencer track's name. Unreal doesn't gather a formatted result,
+  because it has no text ID; its pattern is gathered where it is defined. Each filled-in result used
+  to be listed under the pattern's key, so a pattern used with different arguments showed as **Same
+  key, different text**. Inspection still shows the decoded result.
+- 279d7eb: Cancelling a Game Text quality check now stops it promptly, while it prepares its columns, and the
+  reader stays usable for the next request. Before, a check cancelled during that step could run past
+  the cancellation deadline, and the reader was restarted. Results of checks that finish are
+  unchanged.
+- 0dff7b5: Faster reading and Game Text scans, with identical results. The reader reuses a property layout it
+  has already checked when the next export of the same class has the same bytes, and does less lookup
+  work per property; the WASM inspector is about 45% faster. Game Text builds its shared strings and
+  query indexes with less copying and in parallel, and skips work that can't produce text. A first
+  scan of a large UE 4.27 project went from about 36 s to 32 s, and of a UE 5.7 project from 3.4 s to
+  3.1 s.
+
 ## 0.25.0
 
 ### Patch Changes

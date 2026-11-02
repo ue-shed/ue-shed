@@ -125,6 +125,65 @@ impl Measure {
         }
         results
     }
+    /// A projection that stops scheduling chunks once cancellation or a row fails.
+    pub fn try_parallel<T: Send + Sync, U: Send>(
+        &mut self,
+        values: &[T],
+        cancelled: &std::sync::atomic::AtomicBool,
+        run: impl Fn(&T) -> crate::Result<U> + Sync + Send,
+    ) -> crate::Result<Vec<U>> {
+        use rayon::prelude::*;
+        let started = Instant::now();
+        let chunks = values
+            .par_chunks(256)
+            .map(|chunk| {
+                let started = Instant::now();
+                let result = chunk
+                    .iter()
+                    .map(|value| {
+                        crate::engine_match::checkpoint(cancelled)?;
+                        run(value)
+                    })
+                    .collect::<crate::Result<Vec<_>>>()?;
+                Ok((result, started.elapsed()))
+            })
+            .collect::<crate::Result<Vec<_>>>()?;
+        self.parallel += started.elapsed();
+        let mut results = Vec::with_capacity(values.len());
+        for (chunk, busy) in chunks {
+            self.workers += busy;
+            results.extend(chunk);
+        }
+        crate::engine_match::checkpoint(cancelled)?;
+        Ok(results)
+    }
+    /// Fallible parallel fill; each bounded chunk owns its output and observes cancellation.
+    pub fn try_fill<U: Copy + Default + Send>(
+        &mut self,
+        len: usize,
+        chunk: usize,
+        cancelled: &std::sync::atomic::AtomicBool,
+        run: impl Fn(usize, &mut [U]) -> crate::Result<()> + Sync + Send,
+    ) -> crate::Result<Vec<U>> {
+        use rayon::prelude::*;
+        crate::engine_match::checkpoint(cancelled)?;
+        let started = Instant::now();
+        let mut output = vec![U::default(); len];
+        let busy = output
+            .par_chunks_mut(chunk)
+            .enumerate()
+            .map(|(index, slots)| -> crate::Result<Duration> {
+                crate::engine_match::checkpoint(cancelled)?;
+                let started = Instant::now();
+                run(index * chunk, slots)?;
+                Ok(started.elapsed())
+            })
+            .try_reduce(|| Duration::ZERO, |a, b| Ok(a + b))?;
+        self.parallel += started.elapsed();
+        self.workers += busy;
+        crate::engine_match::checkpoint(cancelled)?;
+        Ok(output)
+    }
     /// `run(index)` for every index below `len`, written in parallel straight into the output:
     /// no per-chunk vectors and no merged copy.
     pub fn parallel_range<U: Copy + Default + Send>(
@@ -556,4 +615,79 @@ pub(crate) struct TestNode {
 #[cfg(test)]
 pub(crate) struct TestStats {
     pub nodes: Vec<TestNode>,
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use crate::{ErrorCode, Result};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    #[test]
+    fn parallel_projection_stops_mid_work_and_can_retry_in_the_same_pool() -> Result<()> {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .map_err(|error| error.to_string())?;
+        let cancelled = AtomicBool::new(false);
+        let visited = AtomicUsize::new(0);
+        let rows = (0..8192).collect::<Vec<_>>();
+        let result = pool.install(|| {
+            Measure::start().try_parallel(&rows, &cancelled, |row| {
+                if visited.fetch_add(1, Ordering::Relaxed) == 512 {
+                    cancelled.store(true, Ordering::Relaxed);
+                }
+                Ok(*row)
+            })
+        });
+        assert_eq!(
+            result.err().map(|error| error.code),
+            Some(ErrorCode::Cancelled)
+        );
+        assert!(visited.load(Ordering::Relaxed) < rows.len());
+        cancelled.store(false, Ordering::Relaxed);
+        assert_eq!(
+            pool.install(|| Measure::start().try_parallel(&rows, &cancelled, |row| Ok(*row)))?,
+            rows
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parallel_fill_discards_cancelled_output_and_can_retry() -> Result<()> {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .map_err(|error| error.to_string())?;
+        let cancelled = AtomicBool::new(false);
+        let visited = AtomicUsize::new(0);
+        let result = pool.install(|| {
+            Measure::start().try_fill(8192, 256, &cancelled, |start, slots: &mut [u32]| {
+                for (index, slot) in slots.iter_mut().enumerate() {
+                    if visited.fetch_add(1, Ordering::Relaxed) == 512 {
+                        cancelled.store(true, Ordering::Relaxed);
+                    }
+                    crate::engine_match::checkpoint(&cancelled)?;
+                    *slot = (start + index) as u32;
+                }
+                Ok(())
+            })
+        });
+        assert_eq!(
+            result.err().map(|error| error.code),
+            Some(ErrorCode::Cancelled)
+        );
+        assert!(visited.load(Ordering::Relaxed) < 8192);
+        cancelled.store(false, Ordering::Relaxed);
+        let actual = pool.install(|| {
+            Measure::start().try_fill(8192, 256, &cancelled, |start, slots: &mut [u32]| {
+                for (index, slot) in slots.iter_mut().enumerate() {
+                    *slot = (start + index) as u32;
+                }
+                Ok(())
+            })
+        })?;
+        assert_eq!(actual, (0..8192).collect::<Vec<_>>());
+        Ok(())
+    }
 }

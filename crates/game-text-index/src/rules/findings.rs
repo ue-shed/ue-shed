@@ -1169,7 +1169,7 @@ fn role_totals(
         let mut ids = occurrences.columns[field].to_vec();
         ids.sort_unstable();
         ids.dedup();
-        arena.load_strings(&query.reader, &ids)?;
+        arena.load_strings(&query.reader, &ids, cancelled)?;
     }
     let arena = &*arena;
     let projection = crate::engine_match::Projection::open(query, cancelled)?;

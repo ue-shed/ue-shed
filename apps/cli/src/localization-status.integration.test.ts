@@ -36,6 +36,7 @@ function makeIndexRuntime(root: string) {
 		Layer.merge(cliGameTextIndexLayer(executable).pipe(Layer.provide(config)), config)
 	);
 }
+// A cold index build of the fixture; a loaded CI runner takes well past the 10 s hook default.
 beforeAll(async () => {
 	cacheRoot = await mkdtemp(join(tmpdir(), "ue-shed-cli-index-"));
 	indexed = makeIndexRuntime(cacheRoot);
@@ -47,7 +48,7 @@ beforeAll(async () => {
 			).pipe(Effect.scoped)
 		);
 	}
-});
+}, 120_000);
 afterAll(async () => {
 	await indexed.dispose();
 	await rm(cacheRoot, { recursive: true, force: true });

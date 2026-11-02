@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "engine-process-supervisor"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "windows-sys 0.61.2",
 ]
@@ -243,7 +243,7 @@ dependencies = [
 
 [[package]]
 name = "game-text-index"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "crc32fast",
  "fancy-regex",
@@ -917,7 +917,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "uasset-inspection"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -926,7 +926,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-io"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "atomic-write-file",
  "crc32fast",
@@ -944,7 +944,7 @@ dependencies = [
 
 [[package]]
 name = "uasset-parser"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "encoding_rs",
  "once_cell",

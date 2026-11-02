@@ -1,5 +1,11 @@
 # @ue-shed/plugin-distribution
 
+## 0.26.0
+
+### Patch Changes
+
+- @ue-shed/engine@0.26.0
+
 ## 0.25.0
 
 ### Patch Changes

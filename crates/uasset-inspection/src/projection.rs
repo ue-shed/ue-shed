@@ -306,7 +306,9 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
                     ("PinFriendlyName", &pin.friendly_name),
                 ] {
                     // Every pin stores an empty FText, even when its type is not text.
-                    if matches!(text.history, TextHistory::None) && text.source.is_empty() {
+                    if (matches!(text.history, TextHistory::None) && text.source.is_empty())
+                        || is_formatted(text)
+                    {
                         continue;
                     }
                     output.occurrences.push(TextOccurrence {
@@ -524,6 +526,7 @@ fn visit_text_value<F>(
         user_defined,
     } = type_info;
     match value {
+        PropertyValue::Text(text) if is_formatted(text) => {}
         PropertyValue::Text(text) => output.occurrences.push(TextOccurrence {
             source: text.source.clone(),
             dev_notes: text.dev_notes().unwrap_or_default().to_owned(),
@@ -853,6 +856,17 @@ pub fn text_feature_version_gap(
             property_path: String::new(),
             reason: TextCoverageGapReason::FeatureUnavailableForEngineVersion,
         })
+}
+
+/// Whether `text` is the saved result of `FText::Format`. Unreal doesn't gather it: a format
+/// history has no text ID (`FTextHistory_Generated::GetTextId`), so `GatherTextInstance` skips it,
+/// and its pattern is gathered where it is defined. Reporting it under the pattern's key would show
+/// every filled-in result as a different text for one key.
+fn is_formatted(text: &TextValue) -> bool {
+    matches!(
+        text.history,
+        TextHistory::NamedFormat { .. } | TextHistory::OrderedFormat { .. }
+    )
 }
 
 fn identity_for_text(text: &TextValue) -> TextIdentity {

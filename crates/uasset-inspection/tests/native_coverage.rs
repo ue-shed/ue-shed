@@ -299,21 +299,37 @@ fn coverage_batch_matches_fresh_unreal_values_and_nested_container_records() {
                 .map(|asset| project_text_asset(&package, &asset))
         })
         .collect();
-    for (path, source) in [
-        ("CategoryText", "Fixture|Category"),
-        ("NamedCategoryText", "Fixture|Named"),
-        ("EscapedFormatText", "{literal} Fixture | `"),
-        ("OptionalText.Value", "Fixture|Category"),
+    let at = |path: &str| {
+        projections
+            .iter()
+            .flat_map(|p| &p.occurrences)
+            .filter(|text| matches!(&text.location, TextLocation::AssetProperty { property_path, .. } if property_path == path))
+            .collect::<Vec<_>>()
+    };
+    // Every one of these is an `FText::Format` result. They decode, so there is no coverage gap,
+    // but Unreal doesn't gather a formatted result, so they are not text to localize.
+    for path in [
+        "CategoryText",
+        "OptionalText.Value",
+        "NamedCategoryText",
+        "EscapedFormatText",
     ] {
-        assert!(projections.iter().flat_map(|p| &p.occurrences).any(|text| {
-            matches!(&text.location, TextLocation::AssetProperty { property_path, .. } if property_path == path) && text.source == source
-        }), "missing filtered text: {path}");
+        assert!(at(path).is_empty(), "formatted text listed: {path}");
     }
     assert!(
         !projections
             .iter()
             .flat_map(|p| &p.coverage_gaps)
-            .any(|gap| gap.property_path.starts_with("OptionalText"))
+            .any(|gap| {
+                [
+                    "CategoryText",
+                    "OptionalText",
+                    "NamedCategoryText",
+                    "EscapedFormatText",
+                ]
+                .iter()
+                .any(|path| gap.property_path.starts_with(path))
+            })
     );
 }
 

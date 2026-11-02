@@ -364,10 +364,16 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	Math->SetBoolField(TEXT("box_valid"), Asset->Bounds.IsValid != 0);
 	Math->SetArrayField(TEXT("grid"), Numbers({double(Asset->Grid.X), double(Asset->Grid.Y), double(Asset->Grid.Z)}));
 	Result->SetObjectField(TEXT("math"), Math);
-	const auto* CoverageBatch = LoadAsset<UUEShedCoverageBatchAsset>(TEXT("DA_CoverageBatch"));
-	if (!CoverageBatch) return false;
-	Result->SetObjectField(TEXT("coverage_batch"), CoverageBatchFixtureEvidence(CoverageBatch));
-	Result->SetObjectField(TEXT("landscape_constraint"), LandscapeConstraintFixtureEvidence(CoverageBatch));
+	// DA_CoverageBatch is in the project only when this run generated it, as the engine matrix
+	// does. The saved project keeps it outside Content (fixtures/parser-coverage), so verifying
+	// that project writes no coverage-batch evidence and its tests use the saved oracle.
+	if (FPackageName::DoesPackageExist(Root + TEXT("DA_CoverageBatch")))
+	{
+		const auto* CoverageBatch = LoadAsset<UUEShedCoverageBatchAsset>(TEXT("DA_CoverageBatch"));
+		if (!CoverageBatch) return false;
+		Result->SetObjectField(TEXT("coverage_batch"), CoverageBatchFixtureEvidence(CoverageBatch));
+		Result->SetObjectField(TEXT("landscape_constraint"), LandscapeConstraintFixtureEvidence(CoverageBatch));
+	}
 	TArray<FString> TagNames;
 	for (const FGameplayTag& Tag : Asset->Tags) TagNames.Add(Tag.ToString());
 	TagNames.Sort();

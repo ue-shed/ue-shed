@@ -16,8 +16,13 @@ fn fixture_root() -> PathBuf {
         })
 }
 
+/// Whether `DA_CoverageBatch` is the saved UE 5.7 copy rather than one a generated project holds.
+fn saved_coverage_batch() -> bool {
+    std::env::var_os("UE_SHED_UASSET_FIXTURE_ROOT").is_none()
+}
+
 fn fixture_bytes(name: &str) -> Vec<u8> {
-    if name == "DA_CoverageBatch" && std::env::var_os("UE_SHED_UASSET_FIXTURE_ROOT").is_none() {
+    if name == "DA_CoverageBatch" && saved_coverage_batch() {
         return fs::read(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../fixtures/parser-coverage/5.7/DA_CoverageBatch.uasset"),
@@ -42,6 +47,17 @@ fn evidence() -> Value {
         .map(PathBuf::from)
         .unwrap_or_else(|| fixture_root().join("FixtureExpected/parser-targets"));
     serde_json::from_slice(&fs::read(path.join("native-coverage.json")).unwrap()).unwrap()
+}
+
+/// The oracle for `DA_CoverageBatch`. The saved copy is checked against the saved oracle, because
+/// verifying the saved project in Unreal doesn't load an asset kept outside its Content.
+fn coverage_batch_evidence(key: &str) -> Value {
+    if saved_coverage_batch() {
+        let path = fixture_root().join("FixtureExpected/parser-targets/native-coverage.json");
+        let saved: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        return saved[key].clone();
+    }
+    evidence()[key].clone()
 }
 
 #[test]
@@ -209,7 +225,7 @@ fn properties(values: &Value) -> Value {
 fn coverage_batch_matches_fresh_unreal_values_and_nested_container_records() {
     let output = fixture("DA_CoverageBatch");
     let asset = &output["assets"][0];
-    let oracle = &evidence()["coverage_batch"];
+    let oracle = &coverage_batch_evidence("coverage_batch");
     let read = |name| fields(property(asset, name));
     let function = read("ExternalFunction");
     let fragments = read("LocatorFragments");
@@ -394,7 +410,7 @@ fn landscape_layers_and_physics_constraints_match_independent_loaded_apis() {
         "constraint_array_count":read("Constraints").as_array().unwrap().len()});
     equivalent(
         &actual,
-        &evidence()["landscape_constraint"],
+        &coverage_batch_evidence("landscape_constraint"),
         "landscape_constraint",
     );
     equivalent(

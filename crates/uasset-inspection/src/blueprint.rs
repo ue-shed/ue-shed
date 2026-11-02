@@ -722,7 +722,9 @@ fn project_text(text: &TextValue) -> Option<BlueprintText> {
             Some(namespace.clone()),
             (!key.is_empty()).then(|| key.clone()),
         ),
-        TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
+        TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
+            text_identity_parts(format)
+        }
     };
     Some(BlueprintText {
         source: text.source.clone(),
@@ -738,7 +740,9 @@ fn text_identity_parts(text: &TextValue) -> (Option<String>, Option<String>) {
             Some(namespace.clone()),
             (!key.is_empty()).then(|| key.clone()),
         ),
-        TextHistory::NamedFormat { format, .. } => text_identity_parts(format),
+        TextHistory::NamedFormat { format, .. } | TextHistory::OrderedFormat { format, .. } => {
+            text_identity_parts(format)
+        }
     }
 }
 

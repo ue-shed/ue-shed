@@ -27,6 +27,7 @@
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
+#include "UEShedCoverageBatchFixture.h"
 
 namespace
 {
@@ -230,6 +231,12 @@ bool GenerateNativeParserFixtures()
 	Asset->Rotation = FQuat(0.0, 0.0, 0.5, 0.8660254037844386);
 	Asset->Transform = FTransform(Asset->Rotation, FVector(123456789.12345679, -2.5, 3.75), FVector(0.5, 1.5, 2.0));
 	Asset->Position2D = FVector2D(123456789.12345679, -0.125);
+	Asset->Position3f = FVector3f(1.0f / 3.0f, -2.5f, 16777216.0f);
+	Asset->Positions3f = {Asset->Position3f, FVector3f(-0.125f, 4.25f, -8.5f)};
+	Asset->NamedPositions3f.Add(TEXT("origin"), Asset->Position3f);
+	Asset->Vector3fInstance.InitializeAs(
+		FindObjectChecked<UScriptStruct>(nullptr, TEXT("/Script/CoreUObject.Vector3f")),
+		reinterpret_cast<const uint8*>(&Asset->Position3f));
 	Asset->Bounds = FBox(FVector(-5.5, -4.25, -3.125), FVector(7.75, 8.5, 9.25));
 	Asset->Grid = FIntVector(-2147483647, 0, 2147483647);
 	Asset->Rotations = {Asset->Rotation, FQuat::Identity};
@@ -260,6 +267,9 @@ bool GenerateNativeParserFixtures()
 	Metadata.SetValue(Asset, TEXT("Comment"), TEXT("caf\u00e9 / \u4fdd\u5b58"));
 	Metadata.SetValue(Asset, TEXT("Empty"), TEXT(""));
 	if (!Save(Asset)) return false;
+	UUEShedCoverageBatchAsset* CoverageBatch = CreateAsset<UUEShedCoverageBatchAsset>(TEXT("DA_CoverageBatch"));
+	FillCoverageBatchFixture(CoverageBatch, Float);
+	if (!Save(CoverageBatch)) return false;
 
 	ULevelSequence* Sequence = CreateAsset<ULevelSequence>(TEXT("LS_Numeric"));
 	Sequence->Initialize();
@@ -348,11 +358,16 @@ bool WriteNativeParserEvidence(const FString& OutputDirectory)
 	Math->SetArrayField(TEXT("rotation"), Numbers({Asset->Rotation.X, Asset->Rotation.Y, Asset->Rotation.Z, Asset->Rotation.W}));
 	Math->SetObjectField(TEXT("transform"), TransformEvidence(Asset->Transform));
 	Math->SetArrayField(TEXT("position2d"), Numbers({Asset->Position2D.X, Asset->Position2D.Y}));
+	Math->SetArrayField(TEXT("position3f"), Numbers({Asset->Position3f.X, Asset->Position3f.Y, Asset->Position3f.Z}));
 	Math->SetArrayField(TEXT("box_min"), Numbers({Asset->Bounds.Min.X, Asset->Bounds.Min.Y, Asset->Bounds.Min.Z}));
 	Math->SetArrayField(TEXT("box_max"), Numbers({Asset->Bounds.Max.X, Asset->Bounds.Max.Y, Asset->Bounds.Max.Z}));
 	Math->SetBoolField(TEXT("box_valid"), Asset->Bounds.IsValid != 0);
 	Math->SetArrayField(TEXT("grid"), Numbers({double(Asset->Grid.X), double(Asset->Grid.Y), double(Asset->Grid.Z)}));
 	Result->SetObjectField(TEXT("math"), Math);
+	const auto* CoverageBatch = LoadAsset<UUEShedCoverageBatchAsset>(TEXT("DA_CoverageBatch"));
+	if (!CoverageBatch) return false;
+	Result->SetObjectField(TEXT("coverage_batch"), CoverageBatchFixtureEvidence(CoverageBatch));
+	Result->SetObjectField(TEXT("landscape_constraint"), LandscapeConstraintFixtureEvidence(CoverageBatch));
 	TArray<FString> TagNames;
 	for (const FGameplayTag& Tag : Asset->Tags) TagNames.Add(Tag.ToString());
 	TagNames.Sort();

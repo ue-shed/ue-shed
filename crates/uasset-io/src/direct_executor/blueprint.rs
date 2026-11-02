@@ -9,7 +9,7 @@ use uasset_inspection::{
 };
 use uasset_parser::Package;
 use uasset_parser::asset::{
-    AssetDecodeContext, DecodedAsset, decode_export, decode_saved_blueprint_graph_node,
+    AssetDecodeContext, AssetDecodeSession, DecodedAsset, decode_saved_blueprint_graph_node,
     supports_blueprint_graph_package_version,
 };
 
@@ -171,9 +171,10 @@ fn blueprint_bytes_with_cancellation(
     };
     let mut assets = Vec::new();
     let mut pending_errors = Vec::new();
+    let mut decoder = AssetDecodeSession::new(&context);
     for export in &package.exports {
         checkpoint(cancellation, "inspection")?;
-        match decode_export(export, &context) {
+        match decoder.decode(export) {
             Ok(Some(asset)) => assets.push(asset),
             Ok(None) => {}
             Err(error) => pending_errors.push((

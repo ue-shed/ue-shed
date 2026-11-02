@@ -15,9 +15,11 @@ use uasset_inspection::blueprint_classes::blueprint_classes;
 use uasset_inspection::generic::inspect_bytes_json;
 use uasset_inspection::projection::{TextDecodeFilter, project_text_asset};
 use uasset_parser::Package;
-use uasset_parser::asset::{AssetDecodeContext, decode_export};
+use uasset_parser::asset::{AssetDecodeContext, AssetDecodeSession};
 use uasset_parser::property::{PropertyRecord, PropertyValue, TextValue};
 use uasset_parser::schema::embedded_source_model;
+
+mod coverage;
 
 type Fallible<T> = Result<T, Box<dyn Error>>;
 const STAGES: [&str; 5] = ["parse", "decode", "project", "drop", "inspect"];
@@ -122,6 +124,8 @@ struct Args {
     runs: usize,
     digest_only: bool,
     text_filter: bool,
+    coverage_root: Option<PathBuf>,
+    evidence: bool,
 }
 
 impl Args {
@@ -132,6 +136,8 @@ impl Args {
         let mut runs = 3;
         let mut digest_only = false;
         let mut text_filter = false;
+        let mut coverage_root = None;
+        let mut evidence = false;
         while let Some(argument) = arguments.next() {
             match argument.as_str() {
                 "--list" => list = Some(PathBuf::from(next_argument(&mut arguments, "--list")?)),
@@ -144,9 +150,16 @@ impl Args {
                 }
                 "--digest-only" => digest_only = true,
                 "--text-filter" => text_filter = true,
+                "--coverage-root" => {
+                    coverage_root = Some(PathBuf::from(next_argument(
+                        &mut arguments,
+                        "--coverage-root",
+                    )?))
+                }
+                "--evidence" => evidence = true,
                 "--help" | "-h" => {
                     println!(
-                        "uasset-decode --list <file> --out <dir> [--runs N] [--digest-only] [--text-filter]"
+                        "uasset-decode --list <file> --out <dir> [--runs N] [--digest-only] [--text-filter] [--coverage-root <Content directory>] [--evidence]"
                     );
                     std::process::exit(0);
                 }
@@ -159,6 +172,8 @@ impl Args {
             runs: if digest_only { 1 } else { runs },
             digest_only,
             text_filter,
+            coverage_root,
+            evidence,
         })
     }
 }
@@ -323,9 +338,10 @@ fn inspect_package(
         schemas: embedded_source_model(),
     };
     let mut decoded = Vec::with_capacity(package.exports.len());
+    let mut decoder = AssetDecodeSession::new(&context);
     for export in &package.exports {
         let asset = measure(timed, &mut result.metrics.stage_ns[1], || {
-            decode_export(export, &context)
+            decoder.decode(export)
         });
         decoded.push(asset);
     }
@@ -420,6 +436,17 @@ fn run() -> Fallible<()> {
     );
     let paths = read_list(&args.list)?;
     fs::create_dir_all(&args.out)?;
+    if let Some(root) = &args.coverage_root {
+        if args.text_filter || args.digest_only {
+            return Err(
+                "coverage requires unfiltered decoding and cannot use --digest-only".into(),
+            );
+        }
+        return coverage::run(&paths, root, &args.out, args.evidence);
+    }
+    if args.evidence {
+        return Err("--evidence requires --coverage-root".into());
+    }
     let mut digests = BufWriter::new(File::create(args.out.join("digests.tsv"))?);
     let mut runs = Vec::with_capacity(args.runs);
     for pass in 0..args.runs {

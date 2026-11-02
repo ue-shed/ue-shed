@@ -7,13 +7,37 @@ enum Element {
     Tagged,
     NiagaraVariable,
     NiagaraVariableBase,
+    Name,
+    Object,
+    Text,
 }
 
-fn has_legacy_struct_elements(record: &PropertyRecord, package: &Package, count: usize) -> bool {
-    record.type_name.parameters.len() == count
-        && record.type_name.parameters.iter().all(|ty| {
-            package.resolve_name_str(ty.name) == Some("StructProperty") && ty.parameters.is_empty()
-        })
+fn has_legacy_elements(
+    record: &PropertyRecord,
+    package: &Package,
+    key: Element,
+    value: Option<Element>,
+) -> bool {
+    let expected = std::iter::once(key).chain(value);
+    record.type_name.parameters.len() == if value.is_some() { 2 } else { 1 }
+        && record
+            .type_name
+            .parameters
+            .iter()
+            .zip(expected)
+            .all(|(ty, kind)| {
+                let name = match kind {
+                    Element::Name => "NameProperty",
+                    Element::Object => "ObjectProperty",
+                    Element::Text => "TextProperty",
+                    _ => "StructProperty",
+                };
+                package.resolve_name_str(ty.name) == Some(name) && ty.parameters.is_empty()
+            })
+}
+
+fn is_gap(record: &PropertyRecord) -> bool {
+    matches!(record.value, PropertyValue::Raw { ref reason } if *reason != RawReason::NotRequested)
 }
 
 pub(crate) fn object_containers(
@@ -23,27 +47,56 @@ pub(crate) fn object_containers(
     package: &Package,
     scope: DecodeScope<'_>,
 ) {
-    // UE 4.27 / 5.7 Niagara/Public/NiagaraComponent.h:
+    native_values::niagara::legacy::object_records(source, stream, class, package, scope);
+    // UE 4.27 / 5.7 / 5.8 Niagara/Public/NiagaraComponent.h:
     // InstanceParameterOverrides is TMap<FNiagaraVariableBase, FNiagaraVariant>.
     // NiagaraVariant.h declares tagged Object/DataInterface/Bytes/CurrentMode fields.
     if !package.summary.versions.uses_legacy_property_tags()
-        || class != "/Script/Niagara.NiagaraComponent"
+        || !matches!(
+            class,
+            "/Script/Landscape.LandscapeComponent"
+                | "/Script/Niagara.NiagaraComponent"
+                | "/Script/NiagaraEditor.NiagaraNodeFunctionCall"
+                | "/Script/NiagaraEditor.NiagaraNodeAssignment"
+                | "/Script/NiagaraEditor.NiagaraGraph"
+                | "/Script/NiagaraEditor.NiagaraNodeParameterMapGet"
+        )
     {
         return;
     }
     for record in &mut stream.records {
-        if package.resolve_name_str(record.name) == Some("InstanceParameterOverrides")
+        // Exact declarations in Niagara{Component,Graph,NodeFunctionCall,
+        // NodeParameterMapGet}.h. No class-name suffix or byte-shape inference.
+        let layout = match (class, package.resolve_name_str(record.name)) {
+            // UE4.27/5.7/5.8 LandscapeComponent.h declares exactly
+            // TMap<FGuid, FLandscapeLayerComponentData>. The value is tagged.
+            ("/Script/Landscape.LandscapeComponent", Some("LayersData")) => {
+                Some((Element::Guid, Element::Tagged))
+            }
+            ("/Script/Niagara.NiagaraComponent", Some("InstanceParameterOverrides")) => {
+                Some((Element::NiagaraVariableBase, Element::Tagged))
+            }
+            // NiagaraNodeAssignment.h inherits this reflected field from
+            // UNiagaraNodeFunctionCall in UE 4.27 / 5.7 / 5.8.
+            (
+                "/Script/NiagaraEditor.NiagaraNodeFunctionCall"
+                | "/Script/NiagaraEditor.NiagaraNodeAssignment",
+                Some("BoundPinNames"),
+            ) => Some((Element::Guid, Element::Name)),
+            ("/Script/NiagaraEditor.NiagaraGraph", Some("VariableToScriptVariable")) => {
+                Some((Element::NiagaraVariable, Element::Object))
+            }
+            (
+                "/Script/NiagaraEditor.NiagaraNodeParameterMapGet",
+                Some("PinOutputToPinDefaultPersistentId"),
+            ) => Some((Element::Guid, Element::Guid)),
+            _ => None,
+        };
+        if let Some((key, value)) = layout
             && package.resolve_name_str(record.type_name.name) == Some("MapProperty")
-            && has_legacy_struct_elements(record, package, 2)
-            && matches!(record.value, PropertyValue::Raw { .. })
-            && let Ok(decoded) = container(
-                source,
-                record,
-                package,
-                scope,
-                Element::NiagaraVariableBase,
-                Some(Element::Tagged),
-            )
+            && has_legacy_elements(record, package, key, Some(value))
+            && is_gap(record)
+            && let Ok(decoded) = container(source, record, package, scope, key, Some(value))
         {
             record.value = decoded;
         }
@@ -57,6 +110,7 @@ pub(super) fn declared_containers(
     package: &Package,
     scope: DecodeScope<'_>,
 ) {
+    native_values::niagara::legacy::struct_records(source, stream, owner, package, scope);
     if !package.summary.versions.uses_legacy_property_tags() {
         return;
     }
@@ -93,10 +147,25 @@ pub(super) fn declared_containers(
                 Some("UserParameterRedirects"),
                 Some("MapProperty"),
             ) => Some((Element::NiagaraVariable, Some(Element::NiagaraVariable))),
+            // NiagaraParameterStore.h (including reflected inherited fields) and
+            // NiagaraCommon.h, verified in UE 4.27 / 5.7 / 5.8.
+            (
+                Some("NiagaraParameterStore" | "NiagaraUserRedirectionParameterStore"),
+                None | Some("/Script/Niagara"),
+                Some("ParameterGuidMapping"),
+                Some("MapProperty"),
+            ) => Some((Element::NiagaraVariable, Some(Element::Guid))),
+            (
+                Some("NiagaraFunctionSignature"),
+                None | Some("/Script/Niagara"),
+                Some("InputDescriptions" | "OutputDescriptions"),
+                Some("MapProperty"),
+            ) => Some((Element::NiagaraVariableBase, Some(Element::Text))),
             _ => None,
         };
         if let Some((key, value)) = layout
-            && has_legacy_struct_elements(record, package, if value.is_some() { 2 } else { 1 })
+            && has_legacy_elements(record, package, key, value)
+            && is_gap(record)
             && let Ok(decoded) = container(source, record, package, scope, key, value)
         {
             record.value = decoded;
@@ -140,6 +209,25 @@ fn element(
             reader.read_guid("DeclaredContainer.Guid")?,
         )),
         Element::Tagged => tagged(source, reader, package, scope),
+        Element::Name => {
+            let name = reader.read_name_ref("DeclaredContainer.Name")?;
+            if package.resolve_name_cow(name).is_some() {
+                Ok(PropertyValue::Name(name))
+            } else {
+                Err(invalid_element(reader))
+            }
+        }
+        Element::Object => {
+            let index = PackageIndex::from_raw(reader.read_i32("DeclaredContainer.Object")?);
+            if index == PackageIndex::Null || package.resolve_index(index).is_some() {
+                Ok(PropertyValue::ObjectRef(index))
+            } else {
+                Err(invalid_element(reader))
+            }
+        }
+        Element::Text => decode_text_value(reader, package, "DeclaredContainer.Text")?
+            .map(|value| PropertyValue::Text(Box::new(value)))
+            .ok_or_else(|| invalid_element(reader)),
         Element::NiagaraVariable | Element::NiagaraVariableBase => {
             super::native_values::niagara::decode(
                 source,
@@ -156,6 +244,15 @@ fn element(
             .map_or_else(|| tagged(source, reader, package, scope), Ok)
         }
     }
+}
+
+fn invalid_element(reader: &Reader<'_>) -> PropertyError {
+    PropertyError::new(
+        crate::property::PropertyErrorKind::MalformedData,
+        Some(reader.tell()),
+        "DeclaredContainer",
+        "unresolved declared container element",
+    )
 }
 
 fn container(
@@ -237,6 +334,119 @@ mod tests {
                 reason: RawReason::LegacyContainerElementWithoutTypeInformation,
             },
         }
+    }
+
+    #[test]
+    fn landscape_layer_map_requires_the_exact_owner_and_retains_rejected_payloads() {
+        use crate::test_support::{write_legacy_property_tag, write_property_terminator};
+        let mut package = test_package(
+            [
+                "None",
+                "LayersData",
+                "MapProperty",
+                "StructProperty",
+                "Count",
+                "IntProperty",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
+        package.summary.versions.ue5 = 0;
+        let mut bytes = vec![];
+        // One removed Guid, then two Guid -> tagged-struct entries.
+        for word in [1, 1, 2, 3, 4, 2] {
+            push_i32(&mut bytes, word);
+        }
+        for count in [7_i32, 9] {
+            for word in [count, 20, 30, 40] {
+                push_i32(&mut bytes, word);
+            }
+            write_legacy_property_tag(&mut bytes, 4, 5, &[0], &count.to_le_bytes());
+            write_property_terminator(&mut bytes, 0);
+        }
+        let mut map = record(bytes.len(), 1, 2);
+        map.type_name.parameters = vec![
+            PropertyTypeName {
+                name: name_ref(3, 0),
+                parameters: vec![]
+            };
+            2
+        ];
+        let original = PropertyStream {
+            class_extensions: None,
+            records: vec![map],
+            terminator: Span::default(),
+        };
+        let decode = |bytes: &[u8], stream: &mut PropertyStream, class: &str| {
+            object_containers(bytes, stream, class, &package, DecodeScope::root(None));
+        };
+        let class = "/Script/Landscape.LandscapeComponent";
+        let mut stream = original.clone();
+        decode(&bytes, &mut stream, class);
+        let PropertyValue::Map(entries) = &stream.records[0].value else {
+            panic!("map stayed raw")
+        };
+        assert_eq!(entries.len(), 2);
+        for (entry, count) in entries.iter().zip([7, 9]) {
+            assert_eq!(
+                entry.key,
+                PropertyValue::Guid(Guid {
+                    a: count,
+                    b: 20,
+                    c: 30,
+                    d: 40
+                })
+            );
+            let PropertyValue::Struct(value) = &entry.value else {
+                panic!("missing tagged value")
+            };
+            assert_eq!(value.records[0].value, PropertyValue::Int(count.into()));
+        }
+        for class in [
+            "/Script/Fixture.LandscapeComponent",
+            "/Script/Landscape.LandscapeProxy",
+        ] {
+            let mut stream = original.clone();
+            decode(&bytes, &mut stream, class);
+            assert_eq!(stream, original);
+        }
+        for value in [
+            PropertyValue::Map(vec![]),
+            PropertyValue::Raw {
+                reason: RawReason::NotRequested,
+            },
+        ] {
+            let mut stream = original.clone();
+            stream.records[0].value = value;
+            let saved = stream.clone();
+            decode(&bytes, &mut stream, class);
+            assert_eq!(stream, saved);
+        }
+        for end in 0..bytes.len() {
+            let mut stream = original.clone();
+            stream.records[0].payload = Span::new(0, end as u64).unwrap();
+            let saved = stream.clone();
+            decode(&bytes, &mut stream, class);
+            assert_eq!(stream, saved, "{end}");
+        }
+        let mut extra = bytes.clone();
+        extra.push(0);
+        let mut stream = original.clone();
+        stream.records[0].payload = Span::new(0, extra.len() as u64).unwrap();
+        let saved = stream.clone();
+        decode(&extra, &mut stream, class);
+        assert_eq!(stream, saved);
+        let mut stream = original.clone();
+        stream.records[0].type_name.parameters[0].name = name_ref(5, 0);
+        let saved = stream.clone();
+        decode(&bytes, &mut stream, class);
+        assert_eq!(stream, saved);
+        let mut stream = original.clone();
+        stream.records[0].name = name_ref(4, 0);
+        let saved = stream.clone();
+        decode(&bytes, &mut stream, class);
+        assert_eq!(stream, saved);
     }
 
     #[test]
@@ -432,6 +642,211 @@ mod tests {
                     "{redirects}, {end}"
                 );
             }
+        }
+    }
+
+    fn niagara_package() -> Package {
+        let mut package = test_package(
+            [
+                "None",
+                "StructProperty",
+                "MapProperty",
+                "NameProperty",
+                "ObjectProperty",
+                "TextProperty",
+                "BoundPinNames",
+                "VariableToScriptVariable",
+                "PinOutputToPinDefaultPersistentId",
+                "FixtureValue",
+                "NiagaraParameterStore",
+                "ParameterGuidMapping",
+                "NiagaraFunctionSignature",
+                "InputDescriptions",
+                "/Script/Niagara",
+                "/Script/Other",
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        );
+        package.summary.versions.ue5 = 0;
+        package
+            .summary
+            .custom_versions
+            .push(crate::package::CustomVersion {
+                key: Guid {
+                    a: 0xFCF57AFA,
+                    b: 0x50764283,
+                    c: 0xB9A9E658,
+                    d: 0xFFA02D32,
+                },
+                version: 64,
+                friendly_name: None,
+            });
+        package
+    }
+
+    fn map_stream(bytes: &[u8], field: i32, value_kind: i32) -> PropertyStream {
+        let mut map = record(bytes.len(), field, 2);
+        map.type_name.parameters = [1, value_kind]
+            .into_iter()
+            .map(|index| PropertyTypeName {
+                name: name_ref(index, 0),
+                parameters: vec![],
+            })
+            .collect();
+        PropertyStream {
+            class_extensions: None,
+            records: vec![map],
+            terminator: Span::default(),
+        }
+    }
+
+    fn variable(bytes: &mut Vec<u8>, base: bool) {
+        for word in [9, 0, 0, 0] {
+            push_i32(bytes, word);
+        }
+        if !base {
+            push_i32(bytes, 0);
+        }
+    }
+
+    #[test]
+    fn niagara_object_maps_require_exact_declarations_and_preserve_filters_and_failed_probes() {
+        let package = niagara_package();
+        for (class, field, value_kind) in [
+            ("/Script/NiagaraEditor.NiagaraNodeFunctionCall", 6, 3),
+            ("/Script/NiagaraEditor.NiagaraNodeAssignment", 6, 3),
+            ("/Script/NiagaraEditor.NiagaraGraph", 7, 4),
+            ("/Script/NiagaraEditor.NiagaraNodeParameterMapGet", 8, 1),
+        ] {
+            let mut bytes = vec![];
+            // One removed key, then one saved entry.
+            push_i32(&mut bytes, 1);
+            if field == 7 {
+                variable(&mut bytes, false);
+            } else {
+                bytes.extend_from_slice(&[1; 16]);
+            }
+            push_i32(&mut bytes, 1);
+            if field == 7 {
+                variable(&mut bytes, false);
+            } else {
+                bytes.extend_from_slice(&[2; 16]);
+            }
+            match field {
+                6 => {
+                    push_i32(&mut bytes, 9);
+                    push_i32(&mut bytes, 0);
+                }
+                7 => push_i32(&mut bytes, 0),
+                _ => bytes.extend_from_slice(&[3; 16]),
+            }
+            let original = map_stream(&bytes, field, value_kind);
+            let mut stream = original.clone();
+            object_containers(
+                &bytes,
+                &mut stream,
+                class,
+                &package,
+                DecodeScope::root(None),
+            );
+            assert!(
+                matches!(stream.records[0].value, PropertyValue::Map(ref values) if values.len() == 1)
+            );
+            let mut wrong_owner = original.clone();
+            object_containers(
+                &bytes,
+                &mut wrong_owner,
+                "/Script/Fixture.NiagaraGraph",
+                &package,
+                DecodeScope::root(None),
+            );
+            assert_eq!(wrong_owner, original);
+            for value in [
+                PropertyValue::Raw {
+                    reason: RawReason::NotRequested,
+                },
+                PropertyValue::Map(vec![]),
+            ] {
+                let mut stream = original.clone();
+                stream.records[0].value = value;
+                let saved = stream.clone();
+                object_containers(
+                    &bytes,
+                    &mut stream,
+                    class,
+                    &package,
+                    DecodeScope::root(None),
+                );
+                assert_eq!(stream, saved);
+            }
+            for end in 0..bytes.len() {
+                let mut stream = original.clone();
+                stream.records[0].payload = Span::new(0, end as u64).unwrap();
+                let saved = stream.clone();
+                object_containers(
+                    &bytes,
+                    &mut stream,
+                    class,
+                    &package,
+                    DecodeScope::root(None),
+                );
+                assert_eq!(stream, saved, "{class}: {end}");
+            }
+            if field != 8 {
+                let offset = bytes.len() - if field == 6 { 8 } else { 4 };
+                bytes[offset..offset + 4].copy_from_slice(&i32::MAX.to_le_bytes());
+                let mut stream = original.clone();
+                object_containers(
+                    &bytes,
+                    &mut stream,
+                    class,
+                    &package,
+                    DecodeScope::root(None),
+                );
+                assert_eq!(stream, original);
+            }
+        }
+    }
+
+    #[test]
+    fn niagara_struct_maps_recover_guid_and_text_values_only_in_the_declaring_module() {
+        let package = niagara_package();
+        for (owner, field, kind) in [(10, 11, 1), (12, 13, 5)] {
+            let mut bytes = vec![];
+            push_i32(&mut bytes, 0);
+            push_i32(&mut bytes, 1);
+            variable(&mut bytes, owner == 12);
+            if owner == 10 {
+                bytes.extend_from_slice(&[4; 16]);
+            } else {
+                push_i32(&mut bytes, 0); // FText flags and Base history.
+                bytes.push(0);
+                for value in ["Fixture", "Description", "Synthetic text"] {
+                    crate::test_support::push_fstring(&mut bytes, value);
+                }
+            }
+            let original = map_stream(&bytes, field, kind);
+            let mut ty = PropertyTypeName {
+                name: name_ref(1, 0),
+                parameters: vec![PropertyTypeName {
+                    name: name_ref(owner, 0),
+                    parameters: vec![PropertyTypeName {
+                        name: name_ref(14, 0),
+                        parameters: vec![],
+                    }],
+                }],
+            };
+            let mut stream = original.clone();
+            declared_containers(&bytes, &mut stream, &ty, &package, DecodeScope::root(None));
+            assert!(
+                matches!(stream.records[0].value, PropertyValue::Map(ref entries) if entries.len() == 1)
+            );
+            ty.parameters[0].parameters[0].name = name_ref(15, 0);
+            let mut stream = original.clone();
+            declared_containers(&bytes, &mut stream, &ty, &package, DecodeScope::root(None));
+            assert_eq!(stream, original);
         }
     }
 

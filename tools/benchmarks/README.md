@@ -39,6 +39,48 @@ the window and its peak is measured separately. Peaks are live
 heap bytes above the window's starting live heap, not process RSS. File reads are excluded from
 all stage timers. No warmup passes are hidden; medians include every requested pass.
 
+## Recursive property coverage
+
+The same harness has an unfiltered coverage mode. `--coverage-root` is the project's `Content`
+directory; every list entry must be beneath it. Enumerate both `.uasset` and `.umap` files, then run:
+
+```powershell
+uasset-decode --list <all-packages.list> --out <outside-repository-output> --coverage-root <Content>
+```
+
+It decodes every export and recursively visits tagged structs, arrays, sets, maps, native fields,
+DataTable rows, struct defaults and decoded InstancedStruct contents. `NotRequested` is excluded.
+`census.json` includes totals, raw reasons and normalized details (digit runs become `#`), type,
+struct and export-class dimensions, distinct affected-package counts, and three example locations.
+`census.md` ranks the top 25 combined buckets by value count and affected packages. Parse/export
+failures are separate from raw properties, with details in `errors.jsonl`. Parse/decode/walk timers
+and wall time are recorded. Raw byte totals include only exact known spans; unknown element sizes
+are counted separately. Native tails and intentionally skipped exports do not count as properties;
+the raw-free package count does not assert complete native-byte coverage.
+
+Add `--evidence` on a fixed smaller list to write `values.jsonl`: deterministic hashes of every
+existing tag, scalar value and container shape. Fully typed scalar arrays and sets use one streaming
+hash of all their contents; nested and partly raw containers retain individual evidence. This bounds
+evidence for large byte arrays. Compare before/after evidence with:
+
+```powershell
+python tools/benchmarks/uasset-decode/compare-values.py <before-output> <after-output>
+```
+
+This accepts only raw-to-typed replacements and their new descendants, and rejects changes to
+already decoded values, tag metadata, container lengths, still-raw values, or unrelated additions.
+Use it alongside `compare.py`: changed inspection/text digests require structural explanation,
+while interleaved ordinary harness runs supply decode-time and peak-heap measurements. Coverage
+and evidence runs include census overhead and are not performance measurements. Studio package
+lists, reports and examples must stay outside the repository.
+
+For a whole project, `census.py --executable <harness> --list <list> --coverage-root <Content>
+--out <new-directory> --jobs 4` runs one census with bounded worker processes. It distributes
+distinct packages across disjoint shards, sums counts and affected packages, preserves bounded
+examples and worker logs, and records wall time including path validation and worker setup. Stage
+times sum worker time. Performance measurements and ordered `--evidence` runs continue to use the
+single-process harness directly.
+
 ## Header pipeline profiling
 
 Compare complete query outputs across both page encodings with:

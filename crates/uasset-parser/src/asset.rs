@@ -11,6 +11,7 @@
 //! decoded as separate native evidence; remaining bytes are preserved as `tail_bytes`. A non-zero
 //! count means "undecoded native payload", not "failed parse".
 
+use std::collections::HashMap;
 use std::fmt;
 
 mod native_data;
@@ -22,8 +23,8 @@ use crate::codec::{DecodeScope, decode_property_stream_values_at_depth};
 use crate::package::{Export, ObjectPath, Package, PackageError, PackageErrorKind, PackageIndex};
 use crate::property::{
     NamedTextFormatArgument, PropertyError, PropertyErrorKind, PropertyRecord, PropertyStream,
-    PropertyValue, TextFormatArgumentValue, TextHistory, TextValue, read_tagged_property_stream,
-    read_uobject_tagged_property_stream,
+    PropertyValue, TaggedStreamReplay, TextFormatArgumentValue, TextHistory, TextValue,
+    read_tagged_property_stream, read_uobject_tagged_property_stream,
 };
 use crate::schema::{SchemaProvider, SerializationOperation};
 
@@ -56,6 +57,37 @@ pub struct AssetDecodeContext<'a> {
     pub package: &'a Package,
     pub schemas: &'a dyn SchemaProvider,
     pub property_filter: Option<&'a dyn PropertyDecodeFilter>,
+}
+
+/// Reuses validated property headers while decoding exports from one borrowed context.
+/// Values, native records, filters and failures are still evaluated for every export.
+pub struct AssetDecodeSession<'a> {
+    context: &'a AssetDecodeContext<'a>,
+    streams: StreamReplayCache<'a>,
+}
+
+impl<'a> AssetDecodeSession<'a> {
+    #[must_use]
+    pub fn new(context: &'a AssetDecodeContext<'a>) -> Self {
+        Self {
+            context,
+            streams: HashMap::new(),
+        }
+    }
+
+    pub fn decode(&mut self, export: &Export) -> Result<Option<DecodedAsset>, AssetError> {
+        decode_export_with_replay(export, self.context, Some(&mut self.streams))
+    }
+}
+
+type StreamReplayCache<'a> = HashMap<PackageIndex, StreamReplayState<'a>>;
+
+enum StreamReplayState<'a> {
+    Active {
+        replays: Vec<TaggedStreamReplay<'a>>,
+        misses: u8,
+    },
+    Disabled,
 }
 
 pub const DATATABLE_CLASS: &str = "/Script/Engine.DataTable";
@@ -100,11 +132,7 @@ pub fn is_binary_only_export_class(class_path: &str) -> bool {
 /// Matches engine base classes and native subclasses whose UClass name ends in
 /// `DataAsset` (for example `/Script/E2EFixtures.E2EFixtureScalarsDataAsset`).
 pub fn is_data_asset_class(class_path: &str) -> bool {
-    matches!(class_path, DATA_ASSET_CLASS | PRIMARY_DATA_ASSET_CLASS)
-        || class_path
-            .rsplit('.')
-            .next()
-            .is_some_and(|class_name| class_name.ends_with("DataAsset"))
+    class_path.ends_with("DataAsset")
 }
 
 /// Returns whether `class_path` should use the generic UObject property decoder.
@@ -204,13 +232,11 @@ pub fn is_blueprint_owned_export(package: &Package, export: &Export) -> bool {
     let mut owner = Some(export);
     for _ in 0..MAX_FIELD_DEPTH {
         let Some(object) = owner else { break };
-        if object.class_path.as_ref().is_some_and(|class_path| {
-            class_path
-                .as_str()
-                .rsplit('.')
-                .next()
-                .is_some_and(|name| name.ends_with("Blueprint"))
-        }) {
+        if object
+            .class_path
+            .as_ref()
+            .is_some_and(|class_path| class_path.as_str().ends_with("Blueprint"))
+        {
             return true;
         }
         owner = match object.outer_index {
@@ -608,8 +634,11 @@ pub enum AssetErrorKind {
     UnsupportedCapability,
 }
 
-#[derive(Debug)]
 pub struct AssetError {
+    inner: Box<AssetErrorData>,
+}
+
+struct AssetErrorData {
     kind: AssetErrorKind,
     message: String,
     offset: Option<u64>,
@@ -620,34 +649,36 @@ pub struct AssetError {
 impl AssetError {
     fn new(kind: AssetErrorKind, message: impl Into<String>) -> Self {
         Self {
-            kind,
-            message: message.into(),
-            offset: None,
-            field: None,
-            source: None,
+            inner: Box::new(AssetErrorData {
+                kind,
+                message: message.into(),
+                offset: None,
+                field: None,
+                source: None,
+            }),
         }
     }
 
     #[must_use]
     pub const fn kind(&self) -> AssetErrorKind {
-        self.kind
+        self.inner.kind
     }
 
     #[must_use]
     pub fn message(&self) -> &str {
-        &self.message
+        &self.inner.message
     }
 
     /// The absolute byte offset in the package where decoding failed, when the failure has one.
     #[must_use]
     pub const fn offset(&self) -> Option<u64> {
-        self.offset
+        self.inner.offset
     }
 
     /// The logical field path being read when decoding failed, when the failure has one.
     #[must_use]
     pub fn field(&self) -> Option<&str> {
-        self.field.as_deref()
+        self.inner.field.as_deref()
     }
 }
 
@@ -665,13 +696,14 @@ impl From<PackageErrorKind> for AssetErrorKind {
 
 impl fmt::Display for AssetError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{:?}: {}", self.kind, self.message)
+        write!(formatter, "{:?}: {}", self.inner.kind, self.inner.message)
     }
 }
 
 impl std::error::Error for AssetError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source
+        self.inner
+            .source
             .as_ref()
             .map(|source| source.as_ref() as &(dyn std::error::Error + 'static))
     }
@@ -680,11 +712,13 @@ impl std::error::Error for AssetError {
 impl From<PackageError> for AssetError {
     fn from(source: PackageError) -> Self {
         Self {
-            kind: source.kind().into(),
-            message: source.to_string(),
-            offset: source.offset(),
-            field: Some(source.path().to_owned()),
-            source: Some(Box::new(source)),
+            inner: Box::new(AssetErrorData {
+                kind: source.kind().into(),
+                message: source.to_string(),
+                offset: source.offset(),
+                field: Some(source.path().to_owned()),
+                source: Some(Box::new(source)),
+            }),
         }
     }
 }
@@ -698,11 +732,13 @@ impl From<PropertyError> for AssetError {
             PropertyErrorKind::UnsupportedCapability => AssetErrorKind::UnsupportedCapability,
         };
         Self {
-            kind,
-            message: source.to_string(),
-            offset: source.offset(),
-            field: Some(source.path().to_owned()),
-            source: Some(Box::new(source)),
+            inner: Box::new(AssetErrorData {
+                kind,
+                message: source.to_string(),
+                offset: source.offset(),
+                field: Some(source.path().to_owned()),
+                source: Some(Box::new(source)),
+            }),
         }
     }
 }
@@ -721,12 +757,27 @@ impl From<ArchiveError> for AssetError {
             ArchiveErrorKind::AllocationLimit => AssetErrorKind::ResourceLimit,
         };
         Self {
-            kind,
-            message: source.to_string(),
-            offset: Some(source.offset()),
-            field: Some(source.path().to_owned()),
-            source: Some(Box::new(source)),
+            inner: Box::new(AssetErrorData {
+                kind,
+                message: source.to_string(),
+                offset: Some(source.offset()),
+                field: Some(source.path().to_owned()),
+                source: Some(Box::new(source)),
+            }),
         }
+    }
+}
+
+impl fmt::Debug for AssetError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AssetError")
+            .field("kind", &self.inner.kind)
+            .field("message", &self.inner.message)
+            .field("offset", &self.inner.offset)
+            .field("field", &self.inner.field)
+            .field("source", &self.inner.source)
+            .finish()
     }
 }
 
@@ -820,7 +871,7 @@ fn decode_data_table_rows(
     object_path: &ObjectPath,
 ) -> Result<Vec<DataTableRow>, AssetError> {
     let row_count_offset = reader.tell();
-    let row_count = reader.read_i32(&format!("{object_path}.Rows.Count"))?;
+    let row_count = reader.read_i32(&format_args!("{object_path}.Rows.Count"))?;
     if row_count < 0 {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
@@ -830,24 +881,82 @@ fn decode_data_table_rows(
     let capacity = reader.checked_vec_capacity::<DataTableRow>(
         crate::convert::usize_from_checked(row_count),
         8,
-        &format!("{object_path}.Rows.Count"),
+        &format_args!("{object_path}.Rows.Count"),
     )?;
     let mut rows = Vec::with_capacity(capacity);
+    // Default omissions and payload lengths can vary across otherwise similar rows.
+    // Bound optional learning; every miss retains the ordinary parser.
+    let mut replays: Vec<TaggedStreamReplay<'_>> = Vec::new();
+    let mut misses = 0u8;
+    let mut learning = true;
     for index in 0..row_count {
-        let row_path = format!("{object_path}.Rows[{index}]");
-        let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
-        let mut row_properties = read_tagged_property_stream(
-            reader,
-            &context.package.summary.versions,
-            &context.package.names,
-            &format!("{row_path}.Value"),
-        )?;
-        decode_property_stream_values_at_depth(
-            context.source,
-            &mut row_properties,
-            context.package,
-            DecodeScope::root(context.property_filter),
-        )?;
+        let name = reader.read_name_ref(&format_args!("{object_path}.Rows[{index}].Name"))?;
+        let matched = replays.iter_mut().enumerate().find_map(|(slot, replay)| {
+            let decode = |record: &mut crate::property::PropertyRecord, plan| {
+                crate::codec::decode_replayed_property_record(
+                    context.source,
+                    record,
+                    context.package,
+                    DecodeScope::root(context.property_filter),
+                    plan,
+                )
+            };
+            replay
+                .try_read_with(
+                    reader,
+                    &format_args!("{object_path}.Rows[{index}].Value"),
+                    decode,
+                )
+                .or_else(|| {
+                    replay.try_read_variable_with(
+                        reader,
+                        &format_args!("{object_path}.Rows[{index}].Value"),
+                        decode,
+                    )
+                })
+                .map(|stream| (slot, stream))
+        });
+        let (mut row_properties, decoded) = if let Some((slot, stream)) = matched {
+            replays[..=slot].rotate_right(1);
+            misses = 0;
+            (stream?, true)
+        } else {
+            let start = reader.tell();
+            let stream = read_tagged_property_stream(
+                reader,
+                &context.package.summary.versions,
+                &context.package.names,
+                &format_args!("{object_path}.Rows[{index}].Value"),
+            )?;
+            if learning {
+                misses += 1;
+                if misses >= 8 {
+                    learning = false;
+                    replays.clear();
+                } else if let Some(replay) = TaggedStreamReplay::new(
+                    context.source,
+                    start,
+                    &context.package.summary.versions,
+                    &stream,
+                )
+                .map(|replay| replay.with_decode_plans(context.package))
+                {
+                    if replays.len() == 4 {
+                        replays.pop();
+                    }
+                    replays.insert(0, replay);
+                }
+            }
+            (stream, false)
+        };
+        if !decoded {
+            decode_property_stream_values_at_depth(
+                context.source,
+                &mut row_properties,
+                context.package,
+                DecodeScope::root(context.property_filter),
+            )?;
+        }
         rows.push(DataTableRow {
             name,
             properties: row_properties,
@@ -2218,14 +2327,17 @@ fn read_ed_graph_pin_array(
     text: SavedText<'_>,
 ) -> Result<Vec<Option<EdGraphPin>>, AssetError> {
     let path = format!("{object_path}.Pins");
-    let count = reader.read_count(&format!("{path}.Count"))?;
-    let capacity =
-        reader.checked_vec_capacity::<Option<EdGraphPin>>(count, 4, &format!("{path}.Count"))?;
+    let count = reader.read_count(&format_args!("{path}.Count"))?;
+    let capacity = reader.checked_vec_capacity::<Option<EdGraphPin>>(
+        count,
+        4,
+        &format_args!("{path}.Count"),
+    )?;
     let mut pins = Vec::with_capacity(capacity);
     for index in 0..count {
         pins.push(read_ed_graph_pin(
             reader,
-            &format!("{path}[{index}]"),
+            &format_args!("{path}[{index}]"),
             text,
         )?);
     }
@@ -2234,15 +2346,16 @@ fn read_ed_graph_pin_array(
 
 fn read_ed_graph_pin(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
     text: SavedText<'_>,
 ) -> Result<Option<EdGraphPin>, AssetError> {
-    let Some(reference) = read_ed_graph_pin_reference(reader, &format!("{path}.Reference"))? else {
+    let Some(reference) = read_ed_graph_pin_reference(reader, &format_args!("{path}.Reference"))?
+    else {
         return Ok(None);
     };
 
-    let owning_node = read_package_index(reader, &format!("{path}.OwningNode"))?;
-    let id = reader.read_guid(&format!("{path}.PinId"))?;
+    let owning_node = read_package_index(reader, &format_args!("{path}.OwningNode"))?;
+    let id = reader.read_guid(&format_args!("{path}.PinId"))?;
     if reference.owning_node != owning_node || reference.pin_id != id {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
@@ -2250,8 +2363,8 @@ fn read_ed_graph_pin(
         ));
     }
 
-    let name = reader.read_name_ref(&format!("{path}.PinName"))?;
-    let friendly_name = read_saved_text(reader, &format!("{path}.PinFriendlyName"), text)?;
+    let name = reader.read_name_ref(&format_args!("{path}.PinName"))?;
+    let friendly_name = read_saved_text(reader, &format_args!("{path}.PinFriendlyName"), text)?;
     // UE 5.6–5.8 EdGraphPin.cpp gates SourceIndex at UE5Main=50 and the
     // precision flag at UE5Release=36 independently of the saved package revision.
     let omit_precision = text.package.is_some_and(graph_omits_precision_flag);
@@ -2266,10 +2379,10 @@ fn read_ed_graph_pin(
     let source_index = if !has_source_index {
         -1
     } else {
-        reader.read_i32(&format!("{path}.SourceIndex"))?
+        reader.read_i32(&format_args!("{path}.SourceIndex"))?
     };
-    let tooltip = read_blueprint_pin_string(reader, &format!("{path}.PinToolTip"))?;
-    let direction = match reader.read_u8(&format!("{path}.Direction"))? {
+    let tooltip = read_blueprint_pin_string(reader, &format_args!("{path}.PinToolTip"))?;
+    let direction = match reader.read_u8(&format_args!("{path}.Direction"))? {
         0 => EdGraphPinDirection::Input,
         1 => EdGraphPinDirection::Output,
         value => {
@@ -2279,19 +2392,22 @@ fn read_ed_graph_pin(
             ));
         }
     };
-    let pin_type = read_ed_graph_pin_type(reader, &format!("{path}.PinType"), omit_precision)?;
-    let default_value = read_blueprint_pin_string(reader, &format!("{path}.DefaultValue"))?;
+    let pin_type = read_ed_graph_pin_type(reader, &format_args!("{path}.PinType"), omit_precision)?;
+    let default_value = read_blueprint_pin_string(reader, &format_args!("{path}.DefaultValue"))?;
     let autogenerated_default_value =
-        read_blueprint_pin_string(reader, &format!("{path}.AutogeneratedDefaultValue"))?;
-    let default_object = read_package_index(reader, &format!("{path}.DefaultObject"))?;
-    let default_text_value = read_saved_text(reader, &format!("{path}.DefaultTextValue"), text)?;
-    let linked_to = read_ed_graph_pin_references(reader, &format!("{path}.LinkedTo"))?;
-    let sub_pins = read_ed_graph_pin_references(reader, &format!("{path}.SubPins"))?;
-    let parent_pin = read_ed_graph_pin_reference(reader, &format!("{path}.ParentPin"))?;
-    let reference_pass_through_connection =
-        read_ed_graph_pin_reference(reader, &format!("{path}.ReferencePassThroughConnection"))?;
-    let persistent_guid = reader.read_guid(&format!("{path}.PersistentGuid"))?;
-    let flags = reader.read_u32(&format!("{path}.Flags"))?;
+        read_blueprint_pin_string(reader, &format_args!("{path}.AutogeneratedDefaultValue"))?;
+    let default_object = read_package_index(reader, &format_args!("{path}.DefaultObject"))?;
+    let default_text_value =
+        read_saved_text(reader, &format_args!("{path}.DefaultTextValue"), text)?;
+    let linked_to = read_ed_graph_pin_references(reader, &format_args!("{path}.LinkedTo"))?;
+    let sub_pins = read_ed_graph_pin_references(reader, &format_args!("{path}.SubPins"))?;
+    let parent_pin = read_ed_graph_pin_reference(reader, &format_args!("{path}.ParentPin"))?;
+    let reference_pass_through_connection = read_ed_graph_pin_reference(
+        reader,
+        &format_args!("{path}.ReferencePassThroughConnection"),
+    )?;
+    let persistent_guid = reader.read_guid(&format_args!("{path}.PersistentGuid"))?;
+    let flags = reader.read_u32(&format_args!("{path}.Flags"))?;
 
     Ok(Some(EdGraphPin {
         owning_node,
@@ -2317,13 +2433,13 @@ fn read_ed_graph_pin(
 
 fn read_blueprint_pin_string(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<String, AssetError> {
     // Current editor packages may prefix a native pin FString with an i32 -1 encoding marker.
     // A direct FString also occurs, including negative UTF-16 lengths. The otherwise-empty direct
     // UTF-16 length -1 is not emitted for a useful string, so it is unambiguous as the envelope.
     let mut probe = reader.clone();
-    if probe.read_i32(&format!("{path}.Encoding"))? == -1 {
+    if probe.read_i32(&format_args!("{path}.Encoding"))? == -1 {
         *reader = probe;
     }
     Ok(reader.read_fstring(path)?)
@@ -2331,13 +2447,14 @@ fn read_blueprint_pin_string(
 
 fn read_ed_graph_pin_type(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
     omit_precision: bool,
 ) -> Result<EdGraphPinType, AssetError> {
-    let category = reader.read_name_ref(&format!("{path}.PinCategory"))?;
-    let subcategory = reader.read_name_ref(&format!("{path}.PinSubCategory"))?;
-    let subcategory_object = read_package_index(reader, &format!("{path}.PinSubCategoryObject"))?;
-    let container_type = match reader.read_u8(&format!("{path}.ContainerType"))? {
+    let category = reader.read_name_ref(&format_args!("{path}.PinCategory"))?;
+    let subcategory = reader.read_name_ref(&format_args!("{path}.PinSubCategory"))?;
+    let subcategory_object =
+        read_package_index(reader, &format_args!("{path}.PinSubCategoryObject"))?;
+    let container_type = match reader.read_u8(&format_args!("{path}.ContainerType"))? {
         0 => EdGraphPinContainerType::None,
         1 => EdGraphPinContainerType::Array,
         2 => EdGraphPinContainerType::Set,
@@ -2352,25 +2469,32 @@ fn read_ed_graph_pin_type(
     let value_type = if container_type == EdGraphPinContainerType::Map {
         Some(read_ed_graph_terminal_type(
             reader,
-            &format!("{path}.PinValueType"),
+            &format_args!("{path}.PinValueType"),
         )?)
     } else {
         None
     };
-    let is_reference = read_archive_bool(reader, &format!("{path}.IsReference"))?;
-    let is_weak_pointer = read_archive_bool(reader, &format!("{path}.IsWeakPointer"))?;
+    let is_reference = read_archive_bool(reader, &format_args!("{path}.IsReference"))?;
+    let is_weak_pointer = read_archive_bool(reader, &format_args!("{path}.IsWeakPointer"))?;
     let member_reference = EdGraphMemberReference {
         parent: read_package_index(
             reader,
-            &format!("{path}.PinSubCategoryMemberReference.MemberParent"),
+            &format_args!("{path}.PinSubCategoryMemberReference.MemberParent"),
         )?,
-        name: reader.read_name_ref(&format!("{path}.PinSubCategoryMemberReference.MemberName"))?,
-        guid: reader.read_guid(&format!("{path}.PinSubCategoryMemberReference.MemberGuid"))?,
+        name: reader.read_name_ref(&format_args!(
+            "{path}.PinSubCategoryMemberReference.MemberName"
+        ))?,
+        guid: reader.read_guid(&format_args!(
+            "{path}.PinSubCategoryMemberReference.MemberGuid"
+        ))?,
     };
-    let is_const = read_archive_bool(reader, &format!("{path}.IsConst"))?;
-    let is_uobject_wrapper = read_archive_bool(reader, &format!("{path}.IsUObjectWrapper"))?;
+    let is_const = read_archive_bool(reader, &format_args!("{path}.IsConst"))?;
+    let is_uobject_wrapper = read_archive_bool(reader, &format_args!("{path}.IsUObjectWrapper"))?;
     let serialize_as_single_precision_float = !omit_precision
-        && read_archive_bool(reader, &format!("{path}.SerializeAsSinglePrecisionFloat"))?;
+        && read_archive_bool(
+            reader,
+            &format_args!("{path}.SerializeAsSinglePrecisionFloat"),
+        )?;
 
     Ok(EdGraphPinType {
         category,
@@ -2389,36 +2513,36 @@ fn read_ed_graph_pin_type(
 
 fn read_ed_graph_terminal_type(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<EdGraphTerminalType, AssetError> {
     Ok(EdGraphTerminalType {
-        category: reader.read_name_ref(&format!("{path}.TerminalCategory"))?,
-        subcategory: reader.read_name_ref(&format!("{path}.TerminalSubCategory"))?,
+        category: reader.read_name_ref(&format_args!("{path}.TerminalCategory"))?,
+        subcategory: reader.read_name_ref(&format_args!("{path}.TerminalSubCategory"))?,
         subcategory_object: read_package_index(
             reader,
-            &format!("{path}.TerminalSubCategoryObject"),
+            &format_args!("{path}.TerminalSubCategoryObject"),
         )?,
-        is_const: read_archive_bool(reader, &format!("{path}.IsConst"))?,
-        is_weak_pointer: read_archive_bool(reader, &format!("{path}.IsWeakPointer"))?,
-        is_uobject_wrapper: read_archive_bool(reader, &format!("{path}.IsUObjectWrapper"))?,
+        is_const: read_archive_bool(reader, &format_args!("{path}.IsConst"))?,
+        is_weak_pointer: read_archive_bool(reader, &format_args!("{path}.IsWeakPointer"))?,
+        is_uobject_wrapper: read_archive_bool(reader, &format_args!("{path}.IsUObjectWrapper"))?,
     })
 }
 
 fn read_ed_graph_pin_references(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<Vec<Option<EdGraphPinReference>>, AssetError> {
-    let count = reader.read_count(&format!("{path}.Count"))?;
+    let count = reader.read_count(&format_args!("{path}.Count"))?;
     let capacity = reader.checked_vec_capacity::<Option<EdGraphPinReference>>(
         count,
         4,
-        &format!("{path}.Count"),
+        &format_args!("{path}.Count"),
     )?;
     let mut references = Vec::with_capacity(capacity);
     for index in 0..count {
         references.push(read_ed_graph_pin_reference(
             reader,
-            &format!("{path}[{index}]"),
+            &format_args!("{path}[{index}]"),
         )?);
     }
     Ok(references)
@@ -2426,27 +2550,27 @@ fn read_ed_graph_pin_references(
 
 fn read_ed_graph_pin_reference(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<Option<EdGraphPinReference>, AssetError> {
-    if read_archive_bool(reader, &format!("{path}.IsNull"))? {
+    if read_archive_bool(reader, &format_args!("{path}.IsNull"))? {
         return Ok(None);
     }
     Ok(Some(EdGraphPinReference {
-        owning_node: read_package_index(reader, &format!("{path}.OwningNode"))?,
-        pin_id: reader.read_guid(&format!("{path}.PinId"))?,
+        owning_node: read_package_index(reader, &format_args!("{path}.OwningNode"))?,
+        pin_id: reader.read_guid(&format_args!("{path}.PinId"))?,
     }))
 }
 
 fn read_package_index(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<PackageIndex, AssetError> {
     Ok(PackageIndex::from_raw(reader.read_i32(path)?))
 }
 
 fn read_archive_bool(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<bool, AssetError> {
     let offset = reader.tell();
     match reader.read_u32(path)? {
@@ -2469,17 +2593,17 @@ struct SavedText<'a> {
 
 fn read_saved_text(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
     text: SavedText<'_>,
 ) -> Result<TextValue, AssetError> {
-    read_saved_text_at_depth(reader, path, 0, text)
+    read_saved_text_at_depth(reader, &path, 0, text)
 }
 
-const MAX_TEXT_HISTORY_DEPTH: usize = 16;
+pub(crate) const MAX_TEXT_HISTORY_DEPTH: usize = 16;
 
 fn read_saved_text_at_depth(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &dyn fmt::Display,
     depth: usize,
     text: SavedText<'_>,
 ) -> Result<TextValue, AssetError> {
@@ -2490,12 +2614,13 @@ fn read_saved_text_at_depth(
         ));
     }
 
-    let _flags = reader.read_i32(&format!("{path}.Flags"))?;
-    match reader.read_i8(&format!("{path}.HistoryType"))? {
+    let _flags = reader.read_i32(&format_args!("{path}.Flags"))?;
+    match reader.read_i8(&format_args!("{path}.HistoryType"))? {
         -1 => {
-            let culture_invariant = read_archive_bool(reader, &format!("{path}.CultureInvariant"))?;
+            let culture_invariant =
+                read_archive_bool(reader, &format_args!("{path}.CultureInvariant"))?;
             let source = if culture_invariant {
-                reader.read_fstring(&format!("{path}.CultureInvariantString"))?
+                reader.read_fstring(&format_args!("{path}.CultureInvariantString"))?
             } else {
                 String::new()
             };
@@ -2505,11 +2630,11 @@ fn read_saved_text_at_depth(
             })
         }
         0 => {
-            let namespace = reader.read_fstring(&format!("{path}.Namespace"))?;
-            let key = reader.read_fstring(&format!("{path}.Key"))?;
-            let source = reader.read_fstring(&format!("{path}.SourceString"))?;
+            let namespace = reader.read_fstring(&format_args!("{path}.Namespace"))?;
+            let key = reader.read_fstring(&format_args!("{path}.Key"))?;
+            let source = reader.read_fstring(&format_args!("{path}.SourceString"))?;
             let dev_notes = if text.has_dev_notes {
-                reader.read_fstring(&format!("{path}.DevNotes"))?
+                reader.read_fstring(&format_args!("{path}.DevNotes"))?
             } else {
                 String::new()
             };
@@ -2525,12 +2650,12 @@ fn read_saved_text_at_depth(
         1 => {
             let format = Box::new(read_saved_text_at_depth(
                 reader,
-                &format!("{path}.FormatText"),
+                &format_args!("{path}.FormatText"),
                 depth + 1,
                 text,
             )?);
             let arguments_path = format!("{path}.Arguments");
-            let mut count = reader.read_count(&format!("{arguments_path}.Count"))?;
+            let mut count = reader.read_count(&format_args!("{arguments_path}.Count"))?;
             if count == 0 {
                 // Some saved editor text uses the same delta-map framing as a tagged map: an
                 // empty keys-to-remove array followed by the actual named-argument count. Older
@@ -2538,7 +2663,7 @@ fn read_saved_text_at_depth(
                 // disturbing a genuinely empty argument map.
                 let mut probe = reader.clone();
                 if let Ok(entry_count) =
-                    probe.read_count(&format!("{arguments_path}.Entries.Count"))
+                    probe.read_count(&format_args!("{arguments_path}.Entries.Count"))
                     && entry_count > 0
                 {
                     *reader = probe;
@@ -2548,15 +2673,15 @@ fn read_saved_text_at_depth(
             let capacity = reader.checked_vec_capacity::<NamedTextFormatArgument>(
                 count,
                 5,
-                &format!("{arguments_path}.Count"),
+                &format_args!("{arguments_path}.Count"),
             )?;
             let mut arguments = Vec::with_capacity(capacity);
             for index in 0..count {
                 let argument_path = format!("{arguments_path}[{index}]");
-                let name = reader.read_fstring(&format!("{argument_path}.Name"))?;
+                let name = reader.read_fstring(&format_args!("{argument_path}.Name"))?;
                 let value = read_text_format_argument(
                     reader,
-                    &format!("{argument_path}.Value"),
+                    &format_args!("{argument_path}.Value"),
                     depth + 1,
                     text,
                 )?;
@@ -2571,8 +2696,8 @@ fn read_saved_text_at_depth(
         // `ETextHistoryType::StringTableEntry`: an FName table ID and an FString key. The source
         // belongs to the table and is not saved here, as in tagged text properties.
         11 => {
-            let table_id_ref = reader.read_name_ref(&format!("{path}.TableId"))?;
-            let key = reader.read_fstring(&format!("{path}.Key"))?;
+            let table_id_ref = reader.read_name_ref(&format_args!("{path}.TableId"))?;
+            let key = reader.read_fstring(&format_args!("{path}.Key"))?;
             let table_id = text
                 .package
                 .and_then(|package| package.resolve_name(table_id_ref))
@@ -2596,28 +2721,28 @@ fn read_saved_text_at_depth(
 
 fn read_text_format_argument(
     reader: &mut crate::archive::Reader<'_>,
-    path: &str,
+    path: &dyn fmt::Display,
     depth: usize,
     text: SavedText<'_>,
 ) -> Result<TextFormatArgumentValue, AssetError> {
-    match reader.read_i8(&format!("{path}.Type"))? {
+    match reader.read_i8(&format_args!("{path}.Type"))? {
         0 => Ok(TextFormatArgumentValue::Int(
-            reader.read_i64(&format!("{path}.Int"))?,
+            reader.read_i64(&format_args!("{path}.Int"))?,
         )),
         1 => Ok(TextFormatArgumentValue::UInt(
-            reader.read_u64(&format!("{path}.UInt"))?,
+            reader.read_u64(&format_args!("{path}.UInt"))?,
         )),
         2 => Ok(TextFormatArgumentValue::Float(
-            reader.read_f32(&format!("{path}.Float"))?,
+            reader.read_f32(&format_args!("{path}.Float"))?,
         )),
         3 => Ok(TextFormatArgumentValue::Double(
-            reader.read_f64(&format!("{path}.Double"))?,
+            reader.read_f64(&format_args!("{path}.Double"))?,
         )),
         4 => Ok(TextFormatArgumentValue::Text(Box::new(
-            read_saved_text_at_depth(reader, &format!("{path}.Text"), depth, text)?,
+            read_saved_text_at_depth(reader, &format_args!("{path}.Text"), depth, text)?,
         ))),
         5 => Ok(TextFormatArgumentValue::Gender(
-            reader.read_u64(&format!("{path}.Gender"))?,
+            reader.read_u64(&format_args!("{path}.Gender"))?,
         )),
         argument_type => Err(AssetError::new(
             AssetErrorKind::UnsupportedCapability,
@@ -2662,32 +2787,40 @@ impl AssetDecoder for UObjectDecoder {
         export: &Export,
         context: &AssetDecodeContext<'_>,
     ) -> Result<DecodedAsset, AssetError> {
-        let Some(class_path) = export.class_path.as_ref() else {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedFormat,
-                format!("export {} has no resolved class", export.object_path),
-            ));
-        };
-        if !is_generic_uobject_class(class_path.as_str()) {
-            return Err(AssetError::new(
-                AssetErrorKind::UnsupportedFormat,
-                format!("unsupported asset class {class_path}"),
-            ));
-        }
-
-        let (properties, mut reader) = decode_uobject_properties(export, context)?;
-        let (object_guid, native_data, tail) =
-            native_data::object_tail(export, context, &properties, &mut reader)?;
-
-        Ok(DecodedAsset::UObject(DecodedUObject {
-            native_data,
-            object_path: export.object_path.clone(),
-            class_path: class_path.clone(),
-            object_guid,
-            properties,
-            tail,
-        }))
+        decode_uobject_with_replay(export, context, None)
     }
+}
+
+fn decode_uobject_with_replay<'a>(
+    export: &Export,
+    context: &AssetDecodeContext<'a>,
+    streams: Option<&mut StreamReplayCache<'a>>,
+) -> Result<DecodedAsset, AssetError> {
+    let Some(class_path) = export.class_path.as_ref() else {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedFormat,
+            format!("export {} has no resolved class", export.object_path),
+        ));
+    };
+    if !is_generic_uobject_class(class_path.as_str()) {
+        return Err(AssetError::new(
+            AssetErrorKind::UnsupportedFormat,
+            format!("unsupported asset class {class_path}"),
+        ));
+    }
+
+    let (properties, mut reader) = decode_uobject_properties_with_replay(export, context, streams)?;
+    let (object_guid, native_data, tail) =
+        native_data::object_tail(export, context, &properties, &mut reader)?;
+
+    Ok(DecodedAsset::UObject(DecodedUObject {
+        native_data,
+        object_path: export.object_path.clone(),
+        class_path: class_path.clone(),
+        object_guid,
+        properties,
+        tail,
+    }))
 }
 
 /// Attempts to decode one export with the first matching asset adapter.
@@ -2698,6 +2831,14 @@ impl AssetDecoder for UObjectDecoder {
 pub fn decode_export(
     export: &Export,
     context: &AssetDecodeContext<'_>,
+) -> Result<Option<DecodedAsset>, AssetError> {
+    decode_export_with_replay(export, context, None)
+}
+
+fn decode_export_with_replay<'a>(
+    export: &Export,
+    context: &AssetDecodeContext<'a>,
+    mut streams: Option<&mut StreamReplayCache<'a>>,
 ) -> Result<Option<DecodedAsset>, AssetError> {
     if export.serial_size == 0 {
         return Ok(None);
@@ -2723,7 +2864,9 @@ pub fn decode_export(
             .map(Some);
     }
 
-    if let Some(decoded) = decode_modeled_export(export, context)? {
+    if let Some(decoded) =
+        decode_modeled_export_with_replay(export, context, streams.as_deref_mut())?
+    {
         return Ok(Some(decoded));
     }
 
@@ -2752,7 +2895,7 @@ pub fn decode_export(
         return AnimSequenceDecoder.decode(export, context).map(Some);
     }
     if UObjectDecoder.supports(class_path) {
-        return UObjectDecoder.decode(export, context).map(Some);
+        return decode_uobject_with_replay(export, context, streams).map(Some);
     }
     Ok(None)
 }
@@ -2766,6 +2909,14 @@ pub fn decode_export(
 pub fn decode_modeled_export(
     export: &Export,
     context: &AssetDecodeContext<'_>,
+) -> Result<Option<DecodedAsset>, AssetError> {
+    decode_modeled_export_with_replay(export, context, None)
+}
+
+fn decode_modeled_export_with_replay<'a>(
+    export: &Export,
+    context: &AssetDecodeContext<'a>,
+    streams: Option<&mut StreamReplayCache<'a>>,
 ) -> Result<Option<DecodedAsset>, AssetError> {
     if export.serial_size == 0 {
         return Ok(None);
@@ -2966,7 +3117,8 @@ pub fn decode_modeled_export(
     }
     if is_generic_uobject_class(class_path.as_str()) {
         validate_source_serialization(context.schemas, class_path, SourcePlanKind::UObject)?;
-        let (properties, mut reader) = decode_uobject_properties(export, context)?;
+        let (properties, mut reader) =
+            decode_uobject_properties_with_replay(export, context, streams)?;
         let (object_guid, native_data, tail) =
             native_data::object_tail(export, context, &properties, &mut reader)?;
         return Ok(Some(DecodedAsset::UObject(DecodedUObject {
@@ -3319,9 +3471,101 @@ fn is_asset_import_data_class(class_path: &str) -> bool {
         .is_some_and(|leaf| leaf.ends_with("ImportData"))
 }
 
+fn read_uobject_stream_with_replay<'a>(
+    reader: &mut crate::archive::Reader<'a>,
+    export: &Export,
+    context: &AssetDecodeContext<'a>,
+    streams: &mut StreamReplayCache<'a>,
+) -> Result<(PropertyStream, bool), PropertyError> {
+    // Keep a small set of layouts for default-omission and variable-width properties.
+    // Metadata, class count and repeated unsuccessful learning are all bounded.
+    let has_capacity = streams.len() < 64;
+    let learning = match streams.get_mut(&export.class_index) {
+        Some(state) => match state {
+            StreamReplayState::Active { replays, misses } => {
+                for index in 0..replays.len() {
+                    if let Some(stream) = replays[index].try_read_with(
+                        reader,
+                        export.object_path.as_str(),
+                        |record, plan| {
+                            crate::codec::decode_replayed_property_record(
+                                context.source,
+                                record,
+                                context.package,
+                                DecodeScope::root(context.property_filter),
+                                plan,
+                            )
+                        },
+                    ) {
+                        replays[..=index].rotate_right(1);
+                        *misses = 0;
+                        return Ok((stream?, true));
+                    }
+                }
+                *misses += 1;
+                if *misses >= 8 {
+                    *state = StreamReplayState::Disabled;
+                    None
+                } else {
+                    Some(*misses)
+                }
+            }
+            StreamReplayState::Disabled => None,
+        },
+        None if has_capacity => Some(0),
+        None => None,
+    };
+    let start = reader.tell();
+    let stream = read_uobject_tagged_property_stream(
+        reader,
+        &context.package.summary.versions,
+        &context.package.names,
+        export.object_path.as_str(),
+    )?;
+    if let Some(misses) = learning {
+        let replay = TaggedStreamReplay::new(
+            context.source,
+            start,
+            &context.package.summary.versions,
+            &stream,
+        )
+        .map(|replay| replay.with_decode_plans(context.package));
+        if let Some(replay) = replay {
+            match streams.get_mut(&export.class_index) {
+                Some(StreamReplayState::Active { replays, .. }) => {
+                    if replays.len() == 4 {
+                        replays.pop();
+                    }
+                    replays.insert(0, replay);
+                }
+                _ => {
+                    streams.insert(
+                        export.class_index,
+                        StreamReplayState::Active {
+                            replays: vec![replay],
+                            misses,
+                        },
+                    );
+                }
+            }
+        } else {
+            streams.insert(export.class_index, StreamReplayState::Disabled);
+        }
+    }
+    Ok((stream, false))
+}
+
 fn decode_uobject_properties<'a>(
-    export: &'a Export,
-    context: &'a AssetDecodeContext<'a>,
+    export: &Export,
+    context: &AssetDecodeContext<'a>,
+) -> Result<(PropertyStream, crate::archive::Reader<'a>), AssetError> {
+    decode_uobject_properties_with_replay(export, context, None)
+}
+
+fn decode_uobject_properties_with_replay<'a>(
+    export: &Export,
+    context: &AssetDecodeContext<'a>,
+    streams: Option<&mut StreamReplayCache<'a>>,
 ) -> Result<(PropertyStream, crate::archive::Reader<'a>), AssetError> {
     let mut reader = context.package.export_reader(context.source, export)?;
 
@@ -3343,18 +3587,26 @@ fn decode_uobject_properties<'a>(
             .map_err(AssetError::from)?;
     }
 
-    let mut properties = read_uobject_tagged_property_stream(
-        &mut reader,
-        &context.package.summary.versions,
-        &context.package.names,
-        export.object_path.as_str(),
-    )?;
-    decode_property_stream_values_at_depth(
-        context.source,
-        &mut properties,
-        context.package,
-        DecodeScope::root(context.property_filter),
-    )?;
+    let (mut properties, decoded) = match streams {
+        Some(streams) => read_uobject_stream_with_replay(&mut reader, export, context, streams)?,
+        None => (
+            read_uobject_tagged_property_stream(
+                &mut reader,
+                &context.package.summary.versions,
+                &context.package.names,
+                export.object_path.as_str(),
+            )?,
+            false,
+        ),
+    };
+    if !decoded {
+        decode_property_stream_values_at_depth(
+            context.source,
+            &mut properties,
+            context.package,
+            DecodeScope::root(context.property_filter),
+        )?;
+    }
     native_data::property_guids(export, context, &mut properties);
     if let Some(class) = saved_native_class(context.package, export) {
         crate::codec::object_containers(
@@ -3882,8 +4134,8 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert_eq!(error.kind, AssetErrorKind::MalformedData);
-        assert!(error.message.contains("unresolved table ID"));
+        assert_eq!(error.kind(), AssetErrorKind::MalformedData);
+        assert!(error.message().contains("unresolved table ID"));
         // The whole history was read before the table ID was resolved.
         assert_eq!(reader.remaining(), 0);
     }

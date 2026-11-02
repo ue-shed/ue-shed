@@ -3,7 +3,9 @@
 use std::cell::OnceCell;
 use std::ops::Deref;
 
-use uasset_parser::asset::{AssetDecodeContext, AssetError, DecodedAsset, decode_export};
+use uasset_parser::asset::{
+    AssetDecodeContext, AssetDecodeSession, AssetError, DecodedAsset, decode_export,
+};
 use uasset_parser::package::Export;
 
 /// One export's decode result.
@@ -48,11 +50,27 @@ impl DecodedExports {
         export: &Export,
         context: &AssetDecodeContext<'_>,
     ) -> Decoded<'a> {
+        Self::decode_with(cache, index, || decode_export(export, context))
+    }
+
+    /// Uses a package-scoped decoder for newly requested exports, keeping existing cells lazy.
+    pub fn decode_with_session<'a>(
+        cache: Option<&'a Self>,
+        index: usize,
+        export: &Export,
+        session: &mut AssetDecodeSession<'_>,
+    ) -> Decoded<'a> {
+        Self::decode_with(cache, index, || session.decode(export))
+    }
+
+    fn decode_with<'a>(
+        cache: Option<&'a Self>,
+        index: usize,
+        decode: impl FnOnce() -> ExportDecode,
+    ) -> Decoded<'a> {
         match cache.and_then(|cache| cache.cells.get(index)) {
-            Some(cell) => {
-                Decoded::Kept(cell.get_or_init(|| Box::new(decode_export(export, context))))
-            }
-            None => Decoded::Once(decode_export(export, context)),
+            Some(cell) => Decoded::Kept(cell.get_or_init(|| Box::new(decode()))),
+            None => Decoded::Once(decode()),
         }
     }
 }

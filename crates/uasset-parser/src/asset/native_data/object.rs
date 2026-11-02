@@ -22,7 +22,7 @@ fn class_is_a(context: &AssetDecodeContext<'_>, export: &Export, base: &str) -> 
     let Some(class) = export.class_path.as_ref() else {
         return false;
     };
-    let mut current = class.clone();
+    let mut current = Cow::Borrowed(class);
     let mut index = export.class_index;
     for _ in 0..64 {
         if context.schemas.class_is_a(&current, base) {
@@ -35,7 +35,7 @@ fn class_is_a(context: &AssetDecodeContext<'_>, export: &Export, base: &str) -> 
         let Some(class_export) = context.package.exports.get(class_index as usize) else {
             return false;
         };
-        if class_export.object_path != current
+        if class_export.object_path != *current
             || class_export.class_path.as_ref().map(ObjectPath::as_str)
                 != Some("/Script/Engine.BlueprintGeneratedClass")
         {
@@ -44,7 +44,7 @@ fn class_is_a(context: &AssetDecodeContext<'_>, export: &Export, base: &str) -> 
         let Some(parent) = context.package.resolve_index(class_export.super_index) else {
             return false;
         };
-        current = parent;
+        current = Cow::Owned(parent);
         index = class_export.super_index;
     }
     false

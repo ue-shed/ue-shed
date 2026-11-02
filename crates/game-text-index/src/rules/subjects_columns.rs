@@ -108,13 +108,17 @@ impl<'a, 'q> Projector<'a, 'q> {
         })
     }
     fn strings(&mut self, ids: &[u32]) -> Result<()> {
-        self.arena.load_strings(&self.subjects.query.reader, ids)
+        self.arena
+            .load_strings(&self.subjects.query.reader, ids, self.subjects.cancelled)
     }
     fn string(&mut self, value: &str) -> Result<Atom> {
         self.arena.string(value).map(Atom::Str)
     }
     fn column(&mut self, values: &[Atom]) -> Result<Arc<Column>> {
-        Column::from_atoms(values, self.arena).map(Arc::new)
+        checkpoint(self.subjects.cancelled)?;
+        let column = Column::from_atoms(values, self.arena)?;
+        checkpoint(self.subjects.cancelled)?;
+        Ok(Arc::new(column))
     }
     fn text(&self, value: Atom) -> &str {
         if let Atom::Str(id) = value {
@@ -236,6 +240,7 @@ impl<'a, 'q> Projector<'a, 'q> {
         Ok(())
     }
     fn line(&mut self, name: &str) -> Result<Arc<Column>> {
+        checkpoint(self.subjects.cancelled)?;
         if let Some(column) = self.fields.get(name) {
             return Ok(Arc::clone(column));
         }
@@ -271,6 +276,9 @@ impl<'a, 'q> Projector<'a, 'q> {
                 self.strings(&keys)?;
                 self.strings(&namespaces)?;
                 for row in 0..len {
+                    if row & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
+                    }
                     values.push(
                         if !self.subjects.slices(row).is_empty()
                             && self.arena.text(StrId(keys[row])).is_empty()
@@ -299,6 +307,9 @@ impl<'a, 'q> Projector<'a, 'q> {
             }
             "sourceLatestOrigin" => {
                 for row in 0..len {
+                    if row & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
+                    }
                     values.push(if let Some(ci) = self.choices[row] {
                         self.origin(row, ci)?
                     } else {
@@ -309,6 +320,9 @@ impl<'a, 'q> Projector<'a, 'q> {
             "manifestSource" => {
                 self.manifest()?;
                 for row in 0..len {
+                    if row & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
+                    }
                     values.push(self.subjects.manifest_rows(row).first().map_or(
                         Atom::Null,
                         |entry| {
@@ -325,6 +339,9 @@ impl<'a, 'q> Projector<'a, 'q> {
                 let manifest = self.line("manifestSource")?;
                 let source = self.line("source")?;
                 for row in 0..len {
+                    if row & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
+                    }
                     let value = manifest.get(row, self.arena);
                     values.push(if value == Atom::Null {
                         source.get(row, self.arena)
@@ -338,29 +355,39 @@ impl<'a, 'q> Projector<'a, 'q> {
                 self.strings(&data.columns["source"])?;
                 let p = &self.subjects.projection;
                 let arena = &self.arena;
-                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
-                    let row = *row;
-                    if !p
-                        .cultures
-                        .iter()
-                        .any(|culture| culture.reasons[row] & (1 << 11) != 0)
-                    {
-                        return None;
+                let lists = self.work.try_parallel(
+                    &(0..len).collect::<Vec<_>>(),
+                    self.subjects.cancelled,
+                    |row| {
+                        let row = *row;
+                        if !p
+                            .cultures
+                            .iter()
+                            .any(|culture| culture.reasons[row] & (1 << 11) != 0)
+                        {
+                            return Ok(None);
+                        }
+                        let slices = p.starts[row] as usize..p.starts[row + 1] as usize;
+                        let authored = slices.clone().any(|slice| p.slice.identity[slice] != 1);
+                        let mut sources = slices
+                            .filter(|slice| !authored || p.slice.identity[*slice] != 1)
+                            .flat_map(|slice| p.slice.members(slice).iter())
+                            .map(|member| data.value(*member as usize, "source"))
+                            .collect::<Vec<_>>();
+                        sources.sort_by(|a, b| {
+                            super::text::code_unit_compare(
+                                arena.text(StrId(*a)),
+                                arena.text(StrId(*b)),
+                            )
+                        });
+                        sources.dedup_by(|a, b| arena.text(StrId(*a)) == arena.text(StrId(*b)));
+                        Ok((sources.len() > 1).then_some(sources))
+                    },
+                )?;
+                for (index, list) in lists.into_iter().enumerate() {
+                    if index & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
                     }
-                    let slices = p.starts[row] as usize..p.starts[row + 1] as usize;
-                    let authored = slices.clone().any(|slice| p.slice.identity[slice] != 1);
-                    let mut sources = slices
-                        .filter(|slice| !authored || p.slice.identity[*slice] != 1)
-                        .flat_map(|slice| p.slice.members(slice).iter())
-                        .map(|member| data.value(*member as usize, "source"))
-                        .collect::<Vec<_>>();
-                    sources.sort_by(|a, b| {
-                        super::text::code_unit_compare(arena.text(StrId(*a)), arena.text(StrId(*b)))
-                    });
-                    sources.dedup_by(|a, b| arena.text(StrId(*a)) == arena.text(StrId(*b)));
-                    (sources.len() > 1).then_some(sources)
-                });
-                for list in lists {
                     values.push(if let Some(list) = list {
                         self.arena
                             .list(list.into_iter().map(|id| Atom::Str(StrId(id))).collect())?
@@ -438,36 +465,43 @@ impl<'a, 'q> Projector<'a, 'q> {
                 let file = &self.manifest;
                 let arena = &self.arena;
                 // Saved places first; a line with none falls back to its manifest paths.
-                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
-                    let saved = (p.starts[*row] as usize..p.starts[*row + 1] as usize)
-                        .flat_map(|slice| p.slice.members(slice).iter())
-                        .map(|member| data.duplicate_place(*member as usize, arena))
-                        .collect::<Vec<_>>();
-                    if !saved.is_empty() {
-                        return saved;
+                let lists = self.work.try_parallel(
+                    &(0..len).collect::<Vec<_>>(),
+                    self.subjects.cancelled,
+                    |row| {
+                        let saved = (p.starts[*row] as usize..p.starts[*row + 1] as usize)
+                            .flat_map(|slice| p.slice.members(slice).iter())
+                            .map(|member| data.duplicate_place(*member as usize, arena))
+                            .collect::<Vec<_>>();
+                        if !saved.is_empty() {
+                            return Ok(saved);
+                        }
+                        let Some(file) = file else {
+                            return Ok(saved);
+                        };
+                        Ok(subjects
+                            .manifest_rows(*row)
+                            .iter()
+                            .filter_map(|entry| {
+                                let entry = *entry as usize;
+                                let path = format!(
+                                    "{}{}",
+                                    if file.options[entry] & 1024 != 0 {
+                                        &file.prefix
+                                    } else {
+                                        ""
+                                    },
+                                    arena.text(StrId(file.path[entry]))
+                                );
+                                super::occurrences::manifest_duplicate_place(&path)
+                            })
+                            .collect())
+                    },
+                )?;
+                for (index, list) in lists.into_iter().enumerate() {
+                    if index & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
                     }
-                    let Some(file) = file else {
-                        return saved;
-                    };
-                    subjects
-                        .manifest_rows(*row)
-                        .iter()
-                        .filter_map(|entry| {
-                            let entry = *entry as usize;
-                            let path = format!(
-                                "{}{}",
-                                if file.options[entry] & 1024 != 0 {
-                                    &file.prefix
-                                } else {
-                                    ""
-                                },
-                                arena.text(StrId(file.path[entry]))
-                            );
-                            super::occurrences::manifest_duplicate_place(&path)
-                        })
-                        .collect()
-                });
-                for list in lists {
                     let list = list
                         .iter()
                         .map(|site| Ok(Atom::Str(self.arena.string(site)?)))
@@ -490,7 +524,10 @@ impl<'a, 'q> Projector<'a, 'q> {
                 self.manifest()?;
                 let mut paths = HashMap::<(u32, bool), Atom>::new();
                 if let Some(file) = &self.manifest {
-                    for entry in self.subjects.projection.manifest.iter() {
+                    for (index, entry) in self.subjects.projection.manifest.iter().enumerate() {
+                        if index & 255 == 0 {
+                            checkpoint(self.subjects.cancelled)?;
+                        }
                         let entry = *entry as usize;
                         let key = (file.path[entry], file.options[entry] & 1024 != 0);
                         if let std::collections::hash_map::Entry::Vacant(entry) = paths.entry(key) {
@@ -506,34 +543,43 @@ impl<'a, 'q> Projector<'a, 'q> {
                 let subjects = &self.subjects;
                 let file = &self.manifest;
                 let arena = &self.arena;
-                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
-                    let mut list = Vec::new();
-                    if let Some(file) = file {
-                        for entry in subjects.manifest_rows(*row) {
-                            let entry = *entry as usize;
-                            list.push(paths[&(file.path[entry], file.options[entry] & 1024 != 0)]);
+                let lists = self.work.try_parallel(
+                    &(0..len).collect::<Vec<_>>(),
+                    self.subjects.cancelled,
+                    |row| {
+                        let mut list = Vec::new();
+                        if let Some(file) = file {
+                            for entry in subjects.manifest_rows(*row) {
+                                let entry = *entry as usize;
+                                list.push(
+                                    paths[&(file.path[entry], file.options[entry] & 1024 != 0)],
+                                );
+                            }
                         }
+                        if name != "bytecodeOnly" {
+                            list.sort_by(|a, b| {
+                                super::text::code_unit_compare(
+                                    if let Atom::Str(id) = a {
+                                        arena.text(*id)
+                                    } else {
+                                        ""
+                                    },
+                                    if let Atom::Str(id) = b {
+                                        arena.text(*id)
+                                    } else {
+                                        ""
+                                    },
+                                )
+                            });
+                            list.dedup();
+                        }
+                        Ok(list)
+                    },
+                )?;
+                for (index, list) in lists.into_iter().enumerate() {
+                    if index & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
                     }
-                    if name != "bytecodeOnly" {
-                        list.sort_by(|a, b| {
-                            super::text::code_unit_compare(
-                                if let Atom::Str(id) = a {
-                                    arena.text(*id)
-                                } else {
-                                    ""
-                                },
-                                if let Atom::Str(id) = b {
-                                    arena.text(*id)
-                                } else {
-                                    ""
-                                },
-                            )
-                        });
-                        list.dedup();
-                    }
-                    list
-                });
-                for list in lists {
                     values.push(if name == "bytecodeOnly" {
                         Atom::Bool(
                             !list.is_empty()
@@ -559,6 +605,7 @@ impl<'a, 'q> Projector<'a, 'q> {
                         .map(|entry| file.metadata[*entry as usize])
                         .collect::<std::collections::HashSet<_>>();
                     for id in ids {
+                        checkpoint(self.subjects.cancelled)?;
                         let parsed = self.parsed(id)?;
                         let comment = parsed["Info"]["Comment"].as_str().map(str::to_owned);
                         comments.insert(
@@ -570,46 +617,53 @@ impl<'a, 'q> Projector<'a, 'q> {
                 let subjects = &self.subjects;
                 let file = &self.manifest;
                 let arena = &self.arena;
-                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
-                    let mut notes = Vec::new();
-                    if let Some(file) = file {
-                        for entry in subjects.manifest_rows(*row) {
-                            let entry = *entry as usize;
-                            let flags = file.options[entry];
-                            let note = if flags & 4 != 0 {
-                                Atom::Str(StrId(file.notes[entry]))
-                            } else {
-                                Atom::Null
-                            };
-                            let comment = if flags & 8 != 0 {
-                                comments
-                                    .get(&file.metadata[entry])
-                                    .copied()
-                                    .unwrap_or_default()
-                            } else {
-                                Atom::Null
-                            };
-                            let text = |atom| {
-                                if let Atom::Str(id) = atom {
-                                    arena.text(id)
+                let lists = self.work.try_parallel(
+                    &(0..len).collect::<Vec<_>>(),
+                    self.subjects.cancelled,
+                    |row| {
+                        let mut notes = Vec::new();
+                        if let Some(file) = file {
+                            for entry in subjects.manifest_rows(*row) {
+                                let entry = *entry as usize;
+                                let flags = file.options[entry];
+                                let note = if flags & 4 != 0 {
+                                    Atom::Str(StrId(file.notes[entry]))
                                 } else {
-                                    ""
+                                    Atom::Null
+                                };
+                                let comment = if flags & 8 != 0 {
+                                    comments
+                                        .get(&file.metadata[entry])
+                                        .copied()
+                                        .unwrap_or_default()
+                                } else {
+                                    Atom::Null
+                                };
+                                let text = |atom| {
+                                    if let Atom::Str(id) = atom {
+                                        arena.text(id)
+                                    } else {
+                                        ""
+                                    }
+                                };
+                                if note != Atom::Null && !trim(text(note)).is_empty() {
+                                    notes.push(note);
                                 }
-                            };
-                            if note != Atom::Null && !trim(text(note)).is_empty() {
-                                notes.push(note);
-                            }
-                            if comment != Atom::Null
-                                && !trim(text(comment)).is_empty()
-                                && (note == Atom::Null || text(note) != text(comment))
-                            {
-                                notes.push(comment);
+                                if comment != Atom::Null
+                                    && !trim(text(comment)).is_empty()
+                                    && (note == Atom::Null || text(note) != text(comment))
+                                {
+                                    notes.push(comment);
+                                }
                             }
                         }
+                        Ok(notes)
+                    },
+                )?;
+                for (index, list) in lists.into_iter().enumerate() {
+                    if index & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
                     }
-                    notes
-                });
-                for list in lists {
                     values.push(self.arena.list(list)?);
                 }
             }
@@ -618,22 +672,32 @@ impl<'a, 'q> Projector<'a, 'q> {
                 self.strings(&data.columns["object"])?;
                 let p = &self.subjects.projection;
                 let arena = &self.arena;
-                let lists = self.work.parallel(&(0..len).collect::<Vec<_>>(), |row| {
-                    let mut tables = (p.starts[*row] as usize..p.starts[*row + 1] as usize)
-                        .flat_map(|slice| p.slice.members(slice).iter())
-                        .filter(|member| data.value(**member as usize, "location") == 2)
-                        .map(|member| data.value(*member as usize, "object"))
-                        .collect::<Vec<_>>();
-                    tables.sort_by(|a, b| {
-                        super::text::code_unit_compare(arena.text(StrId(*a)), arena.text(StrId(*b)))
-                    });
-                    tables.dedup_by(|a, b| arena.text(StrId(*a)) == arena.text(StrId(*b)));
-                    tables
-                        .into_iter()
-                        .map(|id| Atom::Str(StrId(id)))
-                        .collect::<Vec<_>>()
-                });
-                for list in lists {
+                let lists = self.work.try_parallel(
+                    &(0..len).collect::<Vec<_>>(),
+                    self.subjects.cancelled,
+                    |row| {
+                        let mut tables = (p.starts[*row] as usize..p.starts[*row + 1] as usize)
+                            .flat_map(|slice| p.slice.members(slice).iter())
+                            .filter(|member| data.value(**member as usize, "location") == 2)
+                            .map(|member| data.value(*member as usize, "object"))
+                            .collect::<Vec<_>>();
+                        tables.sort_by(|a, b| {
+                            super::text::code_unit_compare(
+                                arena.text(StrId(*a)),
+                                arena.text(StrId(*b)),
+                            )
+                        });
+                        tables.dedup_by(|a, b| arena.text(StrId(*a)) == arena.text(StrId(*b)));
+                        Ok(tables
+                            .into_iter()
+                            .map(|id| Atom::Str(StrId(id)))
+                            .collect::<Vec<_>>())
+                    },
+                )?;
+                for (index, list) in lists.into_iter().enumerate() {
+                    if index & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
+                    }
                     values.push(self.arena.list(list)?);
                 }
             }
@@ -656,6 +720,9 @@ impl<'a, 'q> Projector<'a, 'q> {
                     self.strings(&file.translation_extra)?;
                 }
                 for row in 0..len {
+                    if row & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
+                    }
                     let mut source = manifest.get(row, self.arena);
                     if let Some(file) = &native
                         && file.references[row] != 0
@@ -845,13 +912,20 @@ impl<'a, 'q> Projector<'a, 'q> {
             }
         };
         checkpoint(self.subjects.cancelled)?;
-        let values = self
-            .work
-            .fill(rows.len(), 1 << 14, |start, slots: &mut [Atom]| {
+        let values = self.work.try_fill(
+            rows.len(),
+            1 << 14,
+            self.subjects.cancelled,
+            |start, slots: &mut [Atom]| {
                 for (offset, slot) in slots.iter_mut().enumerate() {
+                    if offset & 255 == 0 {
+                        checkpoint(self.subjects.cancelled)?;
+                    }
                     *slot = value(start + offset);
                 }
-            });
+                Ok(())
+            },
+        )?;
         self.column(&values)
     }
     fn unit(&mut self, name: &str) -> Result<Arc<Column>> {
@@ -868,6 +942,9 @@ impl<'a, 'q> Projector<'a, 'q> {
         } else if name == "textUnitId" {
             let mut unit_ids = HashMap::new();
             for row in 0..self.subjects.units.len() {
+                if row & 255 == 0 {
+                    checkpoint(self.subjects.cancelled)?;
+                }
                 let unit = self.subjects.units[row].unit;
                 let id = if let Some(id) = unit_ids.get(&unit) {
                     *id
@@ -961,8 +1038,12 @@ impl<'a, 'q> Projector<'a, 'q> {
                 }
                 "id" => {
                     let rows = (0..data.len() as u32).collect::<Vec<_>>();
-                    self.arena
-                        .occurrence_ids(self.subjects.query, &rows, &mut self.work)?;
+                    self.arena.occurrence_ids(
+                        self.subjects.query,
+                        &rows,
+                        &mut self.work,
+                        self.subjects.cancelled,
+                    )?;
                     self.arena
                         .occurrences
                         .ids
@@ -1042,22 +1123,28 @@ impl<'a, 'q> Projector<'a, 'q> {
                 .flatten()
                 .copied()
                 .collect::<Vec<_>>();
-            self.arena
-                .occurrence_ids(self.subjects.query, &rows, &mut self.work)?;
+            self.arena.occurrence_ids(
+                self.subjects.query,
+                &rows,
+                &mut self.work,
+                self.subjects.cancelled,
+            )?;
             let arena = &self.arena;
             let collator = self.subjects.collator;
-            groups = self.work.parallel(&groups, |group| {
-                let mut group = group.clone();
-                if group.len() > 1 {
-                    group.sort_by(|a, b| {
-                        collator.compare(
-                            arena.text(arena.occurrences.ids[*a as usize].unwrap_or(StrId(0))),
-                            arena.text(arena.occurrences.ids[*b as usize].unwrap_or(StrId(0))),
-                        )
-                    });
-                }
-                group
-            });
+            groups = self
+                .work
+                .try_parallel(&groups, self.subjects.cancelled, |group| {
+                    let mut group = group.clone();
+                    if group.len() > 1 {
+                        group.sort_by(|a, b| {
+                            collator.compare(
+                                arena.text(arena.occurrences.ids[*a as usize].unwrap_or(StrId(0))),
+                                arena.text(arena.occurrences.ids[*b as usize].unwrap_or(StrId(0))),
+                            )
+                        });
+                    }
+                    Ok(group)
+                })?;
         }
         let mut children = Children {
             offsets: Arc::new(vec![0]),
@@ -1167,5 +1254,63 @@ impl NativeSubjects<'_> {
         // The subject's columns are built: its raw index columns are no longer needed.
         self.query.reader.release_evaluation_columns();
         Ok(Prepared { fields, children })
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use crate::ErrorCode;
+    use crate::rules::HostCollator;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn a_column_observes_cancellation_after_its_projector_was_opened() -> Result<()> {
+        let (query, _) = crate::join_fact_tests::query_with_dictionary(&[])?;
+        let cancelled = AtomicBool::new(false);
+        let collator = HostCollator::new("en")?;
+        let mut subjects = NativeSubjects::new(&query, Subject::Line, &collator, &cancelled)?;
+        let mut arena = Arena::new(query.reader.dictionary_count()?)?;
+        let mut projector = Projector::new(&mut subjects, &mut arena)?;
+        cancelled.store(true, Ordering::Relaxed);
+        assert_eq!(
+            projector.line("source").err().map(|error| error.code),
+            Some(ErrorCode::Cancelled)
+        );
+        assert!(!projector.fields.contains_key("source"));
+        cancelled.store(false, Ordering::Relaxed);
+        let column = projector.line("source")?;
+        assert_eq!(projector.text(column.get(0, projector.arena)), "Hello");
+        assert_eq!(query.summary(&cancelled)?["coverage"]["textUnits"], 1);
+        Ok(())
+    }
+
+    #[test]
+    fn dictionary_batches_preserve_text_and_the_arena_can_retry_after_cancellation() -> Result<()> {
+        let strings = (0..8200)
+            .map(|index| format!("Column text {index} \u{4e2d}\u{6587}"))
+            .collect::<Vec<_>>();
+        let (query, ids) = crate::join_fact_tests::query_with_dictionary(&strings)?;
+        let cancelled = AtomicBool::new(false);
+        let mut arena = Arena::new(query.reader.dictionary_count()?)?;
+        arena.load_strings(&query.reader, &ids[..17], &cancelled)?;
+        cancelled.store(true, Ordering::Relaxed);
+        assert_eq!(
+            arena
+                .load_strings(&query.reader, &ids, &cancelled)
+                .err()
+                .map(|error| error.code),
+            Some(ErrorCode::Cancelled)
+        );
+        for (id, text) in ids.iter().zip(&strings).take(17) {
+            assert_eq!(arena.text(StrId(*id)), text);
+        }
+        cancelled.store(false, Ordering::Relaxed);
+        arena.load_strings(&query.reader, &ids, &cancelled)?;
+        for (id, text) in ids.iter().zip(&strings) {
+            assert_eq!(arena.text(StrId(*id)), text);
+        }
+        arena.load_strings(&query.reader, &ids, &cancelled)?;
+        Ok(())
     }
 }

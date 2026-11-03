@@ -17,14 +17,22 @@ import { TextCorpus } from "./schema.js";
 
 // One persistent index per immutable suite fixture, shared by every rule document and test.
 // The synchronous bridge keeps presentation fixtures usable at module initialization. A reusable
-// worker retains compiled modules; every request rebuilds its input and runs the scoped index path.
+// worker retains loaded modules; every request rebuilds its input and runs the scoped index path.
 const directory = mkdtempSync(join(tmpdir(), "ue-shed-report-suite-"));
 const reports = new Map<string, unknown>();
-const timings: Array<{ kind: string; started: number; durationMs?: number }> = [];
+interface ReportTiming {
+	kind: string;
+	started: number;
+	durationMs?: number;
+	workerStage?: string;
+	moduleLoadMs?: number;
+}
+const timings: ReportTiming[] = [];
 export const indexedReportDiagnostics = () => timings.slice();
 // Collection has no current test. Use the same finite budget as native-backed route fixtures.
 export const INDEXED_REPORT_FIXTURE_TIMEOUT_MS = 20_000;
 let worker: Worker | undefined;
+let generation = 0;
 const terminations: Array<Promise<number>> = [];
 const Reply = Schema.Struct({
 	stdout: Schema.optionalKey(Schema.String),
@@ -36,7 +44,7 @@ afterAll(async () => {
 	rmSync(directory, { recursive: true, force: true });
 });
 
-function reportInWorker(input: string): string {
+function reportInWorker(input: string, timing: ReportTiming): string {
 	worker ??= new Worker(
 		resolve("packages/game-text/src/indexed-report-worker.test-support.mjs"),
 		{
@@ -45,7 +53,7 @@ function reportInWorker(input: string): string {
 		}
 	);
 	const { port1, port2 } = new MessageChannel();
-	const state = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+	const state = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 3);
 	const completion = new Int32Array(state);
 	try {
 		worker.postMessage({ input, reply: port2, state }, [port2]);
@@ -59,8 +67,11 @@ function reportInWorker(input: string): string {
 		if (Atomics.wait(completion, 0, 0, waitMs) === "timed-out") {
 			terminations.push(worker.terminate());
 			worker = undefined;
+			// Abrupt worker termination cannot run snapshot finalizers. Never reuse its locks.
+			generation++;
 			throw new Error(
-				`The indexed report worker did not respond within ${waitMs} ms; it may have exited.`
+				`The indexed report worker did not respond within ${waitMs} ms; it may have exited. ` +
+					`Stage ${Atomics.load(completion, 1)}, module loading ${Atomics.load(completion, 2)} ms.`
 			);
 		}
 		const reply = receiveMessageOnPort(port1);
@@ -72,6 +83,10 @@ function reportInWorker(input: string): string {
 			throw new Error("The indexed report worker omitted its output.");
 		return result.stdout;
 	} finally {
+		const stage = Atomics.load(completion, 1);
+		timing.workerStage = stage === 1 ? "loading modules" : stage === 2 ? "report" : "starting";
+		timing.moduleLoadMs = Atomics.load(completion, 2);
+		timing.durationMs = performance.now() - timing.started;
 		port1.close();
 	}
 }
@@ -95,15 +110,15 @@ export function indexedTestReports(corpus: TextCorpus, evidence?: LocalizationTa
 			timings.push(timing);
 			const result = reportInWorker(
 				JSON.stringify({
-					directory: join(directory, fixture),
+					directory: join(directory, `worker-${generation}`, fixture),
 					corpus,
 					evidence,
 					kind,
 					document,
 					options
-				})
+				}),
+				timing
 			);
-			timing.durationMs = performance.now() - timing.started;
 			reports.set(key, Schema.decodeSync(Schema.fromJsonString(schema))(result));
 		}
 		return Schema.decodeUnknownSync(schema)(reports.get(key));

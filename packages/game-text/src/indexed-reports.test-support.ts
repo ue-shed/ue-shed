@@ -1,11 +1,11 @@
 /// <reference types="node" />
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { MessageChannel, receiveMessageOnPort, Worker } from "node:worker_threads";
 import { Schema } from "effect";
-import { afterAll } from "vitest";
+import { afterAll, TestRunner } from "vitest";
 import type { LocalizationTargetEvidence } from "@ue-shed/localization";
 import {
 	LocalizationQualityReport,
@@ -16,11 +16,59 @@ import type { GameTextRuleDocument } from "./game-text-rules.js";
 import { TextCorpus } from "./schema.js";
 
 // One persistent index per immutable suite fixture, shared by every rule document and test.
-// The synchronous bridge keeps presentation fixtures usable at module initialization. All
-// ingestion, subject derivation and report assembly run through the shipped scoped Effect path.
+// The synchronous bridge keeps presentation fixtures usable at module initialization. A reusable
+// worker retains compiled modules; every request rebuilds its input and runs the scoped index path.
 const directory = mkdtempSync(join(tmpdir(), "ue-shed-report-suite-"));
 const reports = new Map<string, unknown>();
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
+const timings: Array<{ kind: string; started: number; durationMs?: number }> = [];
+export const indexedReportDiagnostics = () => timings.slice();
+let worker: Worker | undefined;
+const terminations: Array<Promise<number>> = [];
+const Reply = Schema.Struct({
+	stdout: Schema.optionalKey(Schema.String),
+	stderr: Schema.optionalKey(Schema.String)
+});
+afterAll(async () => {
+	if (worker) terminations.push(worker.terminate());
+	await Promise.all(terminations);
+	rmSync(directory, { recursive: true, force: true });
+});
+
+function reportInWorker(input: string): string {
+	worker ??= new Worker(
+		resolve("packages/game-text/src/indexed-report-worker.test-support.mjs"),
+		{
+			execArgv: [],
+			env: { ...process.env, UE_SHED_TELEMETRY_MODE: "disabled" }
+		}
+	);
+	const { port1, port2 } = new MessageChannel();
+	const state = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+	const completion = new Int32Array(state);
+	try {
+		worker.postMessage({ input, reply: port2, state }, [port2]);
+		// Reuse the caller's configured test budget; do not extend any component deadline.
+		const timeout = TestRunner.getCurrentTest()?.timeout;
+		if (
+			Atomics.wait(completion, 0, 0, timeout && timeout > 0 ? timeout : undefined) ===
+			"timed-out"
+		) {
+			terminations.push(worker.terminate());
+			worker = undefined;
+			throw new Error("The indexed report worker exceeded the test's existing timeout.");
+		}
+		const reply = receiveMessageOnPort(port1);
+		if (!reply) throw new Error("The indexed report worker completed without a response.");
+		const result = Schema.decodeUnknownSync(Reply)(reply.message);
+		if (result.stderr !== undefined)
+			throw new Error(`Indexed report fixture failed: ${result.stderr}`);
+		if (result.stdout === undefined)
+			throw new Error("The indexed report worker omitted its output.");
+		return result.stdout;
+	} finally {
+		port1.close();
+	}
+}
 
 export function indexedTestReports(corpus: TextCorpus, evidence?: LocalizationTargetEvidence) {
 	const fixture = createHash("sha256")
@@ -34,34 +82,23 @@ export function indexedTestReports(corpus: TextCorpus, evidence?: LocalizationTa
 	): S["Type"] {
 		const key = JSON.stringify([fixture, kind, document, options]);
 		if (!reports.has(key)) {
-			const result = spawnSync(
-				process.execPath,
-				[
-					"--import",
-					"tsx",
-					resolve("packages/game-text/src/indexed-report-driver.test-support.ts")
-				],
-				{
-					input: JSON.stringify({
-						directory: join(directory, fixture),
-						corpus,
-						evidence,
-						kind,
-						document,
-						options
-					}),
-					encoding: "utf8",
-					maxBuffer: 64 * 1024 * 1024,
-					windowsHide: true,
-					env: { ...process.env, UE_SHED_TELEMETRY_MODE: "disabled" }
-				}
+			const timing: (typeof timings)[number] = {
+				kind,
+				started: performance.now()
+			};
+			timings.push(timing);
+			const result = reportInWorker(
+				JSON.stringify({
+					directory: join(directory, fixture),
+					corpus,
+					evidence,
+					kind,
+					document,
+					options
+				})
 			);
-			if (result.error || result.status !== 0) {
-				throw new Error(`Indexed report fixture failed: ${result.stderr}`, {
-					cause: result.error
-				});
-			}
-			reports.set(key, Schema.decodeSync(Schema.fromJsonString(schema))(result.stdout));
+			timing.durationMs = performance.now() - timing.started;
+			reports.set(key, Schema.decodeSync(Schema.fromJsonString(schema))(result));
 		}
 		return Schema.decodeUnknownSync(schema)(reports.get(key));
 	}

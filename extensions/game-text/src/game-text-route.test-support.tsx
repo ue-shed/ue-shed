@@ -29,9 +29,12 @@ import {
 } from "./game-text-canned-search.test-support.js";
 import { type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
+import { installGameTextRouteDiagnostics } from "./game-text-route-diagnostics.test-support.js";
 
-// Quality reports come from the native engine, in one driver process per distinct rule
-// document, which can outlast the component suite's 5 s default under CI load.
+installGameTextRouteDiagnostics();
+
+// Quality reports run through the native index in an owned fixture worker. Keep the existing
+// budget for native fixture preparation and the complete browser interaction under CI load.
 vi.setConfig({ testTimeout: 20_000 });
 export const corpus: TextCorpus = {
 	coverage: {
@@ -314,7 +317,11 @@ export function makeClient(
 	text: PlantedText = planted,
 	overrides: Partial<GameTextClientApi> = {}
 ): GameTextClientApi {
-	let quality = textQualityQuery(indexedTestReports(text.corpus).source(rulesDocument));
+	let quality: ReturnType<typeof textQualityQuery> | undefined;
+	// Text browsing needs no quality report. Materialize the native fixture only when a quality
+	// operation asks for it, rather than starting a competing driver in every route test.
+	const currentQuality = () =>
+		(quality ??= textQualityQuery(indexedTestReports(text.corpus).source(rulesDocument)));
 	return {
 		loadConfiguredProject: () => Effect.succeed({ status: "completed", summary: text.summary }),
 		progress: Stream.make({ completed: 0, total: 0, phase: "idle" }),
@@ -332,12 +339,12 @@ export function makeClient(
 		chooseQualityRules: Effect.sync(() => ({
 			status: "completed",
 			document: rulesDocument,
-			summary: quality.summary()
+			summary: currentQuality().summary()
 		})),
 		qualitySearch: (request) =>
-			Effect.succeed({ status: "ready", page: quality.search(request) }),
+			Effect.succeed({ status: "ready", page: currentQuality().search(request) }),
 		qualityFocus: (request) => {
-			const focus = quality.focus(request);
+			const focus = currentQuality().focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
 		previewQualityRules: (draft) => {

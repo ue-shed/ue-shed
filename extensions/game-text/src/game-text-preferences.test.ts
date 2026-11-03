@@ -6,6 +6,7 @@ import { Effect, Schema } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	decodeGameTextPreferences,
+	readGameTextPreferences,
 	saveGameTextPreferences,
 	storedGameTextPreferences,
 	writeGameTextPreferences,
@@ -58,6 +59,19 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Game Text preferences", () => {
+	it("reads current storage on every execution and recovers a foreign storage refusal", async () => {
+		const read = readGameTextPreferences("fresh-read");
+		writeGameTextPreferences("fresh-read", base);
+		expect((await Effect.runPromise(read)).query).toBe("Continue");
+		writeGameTextPreferences("fresh-read", { ...base, query: "Quit" });
+		expect((await Effect.runPromise(read)).query).toBe("Quit");
+		vi.stubGlobal("localStorage", {
+			getItem: () => {
+				throw new DOMException("Storage is unavailable.", "SecurityError");
+			}
+		});
+		expect((await Effect.runPromise(read)).query).toBe("");
+	});
 	it("stores an unedited rules document once and restores the editor from it", () => {
 		expect(
 			writeGameTextPreferences("p", {

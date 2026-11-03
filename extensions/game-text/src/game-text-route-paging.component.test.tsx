@@ -3,6 +3,7 @@ import { userEvent } from "@testing-library/user-event";
 import { makeTextUnitId, type TextUnitSearchResult } from "@ue-shed/game-text/schema";
 import { Deferred, Effect } from "effect";
 import { expect, it } from "vitest";
+import { indexedReportDiagnostics } from "../../../packages/game-text/src/indexed-reports.test-support.js";
 import { cannedPage } from "./game-text-canned-search.test-support.js";
 import {
 	answer,
@@ -29,6 +30,7 @@ const listing = (units: readonly TextUnitSearchResult[]): PlantedText => ({
 	focus: units.map((unit) => ({ ...focusOf(corpus, continueRow), unit }))
 });
 it("appends bounded pages while keeping the full query count", async () => {
+	const reportsBefore = indexedReportDiagnostics().length;
 	const user = userEvent.setup({ delay: null });
 	mount(makeClient(listing(savedLines("page-line:", 62))));
 	await screen.findByText("62 matches");
@@ -46,6 +48,8 @@ it("appends bounded pages while keeping the full query count", async () => {
 	await user.click(within(results).getByRole("button", { name: "Show more (12 left)" }));
 	await waitFor(() => expect(rows()).toHaveLength(62));
 	expect(screen.getByText("62 matches")).toBeDefined();
+	// Paging text must not launch the native quality fixture, which this route never asks for.
+	expect(indexedReportDiagnostics()).toHaveLength(reportsBefore);
 });
 it("steps past the last loaded line by loading the group's next page", async () => {
 	const user = userEvent.setup({ delay: null });

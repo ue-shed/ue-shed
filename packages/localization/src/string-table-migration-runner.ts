@@ -73,7 +73,7 @@ export interface StringTableKeyMigrationHostApi {
 	/** Optional project identity adapter for older Core manifests. Read the connected editor,
 	 * never echo the host's selected project. New Core runtime manifests supply projectRoot. */
 	readonly editorProject?: (endpoint: string) => Effect.Effect<string | undefined, HostFailure>;
-	readonly current: () => Effect.Effect<
+	readonly current: Effect.Effect<
 		{ readonly projectRoot: string; readonly endpoint: string } | undefined,
 		HostFailure
 	>;
@@ -132,7 +132,7 @@ export const makeStringTableKeyMigrations = Effect.fn("Localization.stringTable.
 			endpoint?: string,
 			sessionId?: string
 		) {
-			const current = yield* host.current();
+			const current = yield* host.current;
 			if (
 				!current ||
 				relative(resolve(root), resolve(current.projectRoot)) !== "" ||

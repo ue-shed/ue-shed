@@ -215,8 +215,7 @@ function loadDocument(args: {
 		const id = yield* decodeSessionId(args.id, "load", args.projectRoot);
 		const path = reviewAuthoringSessionPath({ id, projectRoot: args.projectRoot });
 		const input = yield* Effect.tryPromise({
-			try: async () =>
-				Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
+			try: async () => JSON.parse(await readFile(path, "utf8")),
 			catch: (cause) =>
 				sessionError({
 					cause,
@@ -226,7 +225,22 @@ function loadDocument(args: {
 					retrySafe: true,
 					nextStep: "fix_input"
 				})
-		});
+		}).pipe(
+			Effect.flatMap((input) =>
+				Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+					Effect.mapError((cause) =>
+						sessionError({
+							cause,
+							operation: "load",
+							path,
+							recovery: "Repair the authoring-session document or discard it.",
+							retrySafe: true,
+							nextStep: "fix_input"
+						})
+					)
+				)
+			)
+		);
 		return yield* Schema.decodeUnknownEffect(ReviewAuthoringSession)(input).pipe(
 			Effect.mapError((cause) =>
 				sessionError({

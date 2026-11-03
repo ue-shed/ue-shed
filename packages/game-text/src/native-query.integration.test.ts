@@ -546,7 +546,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							if (a !== source || b !== source)
 								expect(model.join.strategy).toBe("incremental");
 							const conflicts = held.status === "conflicting";
-							const fullLines = yield* model.query.readLocalizationLines();
+							const fullLines = yield* model.query.readLocalizationLines;
 							expect(fullLines.map((line) => [line.id, line.source])).toEqual([
 								['Review:["UI","Blank"]', "  "],
 								[keyLine, conflicts ? `${a} ${b}` : a],

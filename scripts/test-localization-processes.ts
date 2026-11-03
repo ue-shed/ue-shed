@@ -197,9 +197,9 @@ async function capturePlan(
 				"--plan"
 			]).pipe(Effect.provide(runtime));
 			assert.equal(yield* Ref.get(code), 0);
-			return Schema.decodeSync(Schema.fromJsonString(LocalizationOperationPlan))(
+			return yield* Schema.decodeEffect(Schema.fromJsonString(LocalizationOperationPlan))(
 				yield* Ref.get(output)
-			);
+			).pipe(Effect.orDie);
 		})
 	);
 	assert.equal(result.engine, engine.label);
@@ -433,9 +433,13 @@ for (const engine of configured) {
 			Effect.flatMap(TextCorpusService, (service) =>
 				service.scan({ projectRoot: project })
 			).pipe(
-				Effect.provide(TextCorpusServiceLive),
 				Effect.provide(
-					readerLayer(process.env.UE_SHED_UASSET_EXECUTABLE ?? ensureUassetExecutable())
+					Layer.provideMerge(
+						TextCorpusServiceLive,
+						readerLayer(
+							process.env.UE_SHED_UASSET_EXECUTABLE ?? ensureUassetExecutable()
+						)
+					)
 				)
 			)
 		);

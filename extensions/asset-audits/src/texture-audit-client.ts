@@ -50,10 +50,7 @@ export interface TextureAuditClientApi {
 		readonly save: (
 			query: TextureInvestigationQuery
 		) => Effect.Effect<InvestigationFileResult, TextureAuditClientError>;
-		readonly open: () => Effect.Effect<
-			TextureInvestigationPresetResult,
-			TextureAuditClientError
-		>;
+		readonly open: Effect.Effect<TextureInvestigationPresetResult, TextureAuditClientError>;
 	};
 	readonly locateAsset: (
 		objectPath: string
@@ -61,7 +58,7 @@ export interface TextureAuditClientApi {
 	readonly loadConfiguredProject: (
 		refresh?: boolean
 	) => Effect.Effect<TextureAuditQueryRunResult, TextureAuditClientError>;
-	readonly progress: () => Effect.Effect<TaskProgress, TextureAuditClientError>;
+	readonly progress: Effect.Effect<TaskProgress, TextureAuditClientError>;
 	readonly search: (
 		request: TextureAuditSearchRequest
 	) => Effect.Effect<TextureAuditSearchResult, TextureAuditClientError>;
@@ -77,7 +74,7 @@ export interface TextureAuditClientApi {
 	readonly loadOfflinePreviews: (
 		request: TexturePreviewBatchRequest
 	) => Effect.Effect<TexturePreviewBatchResult, TextureAuditClientError>;
-	readonly launchUnreal: () => Effect.Effect<TextureAuditLaunchResult, TextureAuditClientError>;
+	readonly launchUnreal: Effect.Effect<TextureAuditLaunchResult, TextureAuditClientError>;
 }
 
 export class TextureAuditClient extends Context.Service<

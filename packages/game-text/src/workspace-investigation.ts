@@ -69,7 +69,9 @@ export const saveWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 				: undefined)
 		};
 	},
-	Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+	Effect.catchTag(["GameTextWorkspaceHostFailure", "InvestigationError"], (error) =>
+		Effect.succeed(investigationFailure(error))
+	)
 );
 
 /** Asks the host for a preset file, then reads and decodes it. */

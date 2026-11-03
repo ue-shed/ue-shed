@@ -10,7 +10,7 @@ const busy = (ms: number) => {
 /** Mirrors an index build: synchronous batches behind promises that settle without I/O. */
 const batches = Effect.gen(function* () {
 	for (let batch = 0; batch < 12; batch++) {
-		yield* Effect.tryPromise({ try: async () => batch, catch: (cause) => cause });
+		yield* Effect.tryPromise(async () => batch);
 		busy(10);
 	}
 });

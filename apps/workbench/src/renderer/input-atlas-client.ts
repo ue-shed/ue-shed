@@ -45,9 +45,9 @@ function request<HostValue>(
 }
 
 export const inputAtlasClient: InputAtlasClientApi = InputAtlasClient.of({
-	loadConfiguredProject: Effect.fn("InputAtlasClient.loadConfiguredProject")(() =>
+	loadConfiguredProject: Effect.suspend(() =>
 		request("inputAtlas.loadConfiguredProject", () =>
 			window.ueShed.inputAtlas.loadConfiguredProject()
 		)
-	)
+	).pipe(Effect.withSpan("InputAtlasClient.loadConfiguredProject"))
 });

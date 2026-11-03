@@ -20,9 +20,9 @@ import {
 import { styles } from "./styles.js";
 import { countLabel } from "./count-label.js";
 
-export type AssetInspectionReadEffect = Effect.Effect<AssetInspectionReadResult, unknown>;
+export type AssetInspectionReadEffect<E = never> = Effect.Effect<AssetInspectionReadResult, E>;
 export interface AssetInspectorControls {
-	readonly open: (read: AssetInspectionReadEffect) => void;
+	readonly open: <E>(read: AssetInspectionReadEffect<E>) => void;
 	readonly loading: boolean;
 	readonly hasInspection: boolean;
 }
@@ -36,9 +36,9 @@ export type AssetRelatedView =
 	  }
 	| { readonly kind: "note"; readonly message: string };
 
-export interface AssetInspectorProps {
+export interface AssetInspectorProps<E = never> {
 	readonly opener: (controls: AssetInspectorControls) => JSX.Element;
-	readonly initialRead?: AssetInspectionReadEffect | undefined;
+	readonly initialRead?: AssetInspectionReadEffect<E> | undefined;
 	/** The host owns navigation and selection of specialized viewers. */
 	readonly relatedViews?: (read: ReadyAssetInspection) => readonly AssetRelatedView[];
 }
@@ -112,7 +112,7 @@ function ExportNavigator(props: {
 	);
 }
 
-export function AssetInspector(props: AssetInspectorProps) {
+export function AssetInspector<E = never>(props: AssetInspectorProps<E>) {
 	const initialRead = props.initialRead;
 	const action = createEffectAction();
 	const [result, setResult] = createSignal<AssetInspectionReadResult>();
@@ -181,7 +181,7 @@ export function AssetInspector(props: AssetInspectorProps) {
 			countLabel(header.total_header_size, "header byte")
 		].join(" · ");
 	});
-	const open = (read: AssetInspectionReadEffect) => {
+	const open = <ReadError,>(read: AssetInspectionReadEffect<ReadError>) => {
 		setLoading(true);
 		setTransportFailure(false);
 		action.run(read, {

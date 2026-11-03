@@ -16,11 +16,11 @@ import { Context, Effect, Fiber, Layer, Option, Ref } from "effect";
 import { WorkbenchProject, type WorkbenchProjectApi } from "./project-workspace.js";
 
 export interface WorkbenchContentObservatoryApi {
-	readonly cancel: () => Effect.Effect<ContentObservatoryState>;
+	readonly cancel: Effect.Effect<ContentObservatoryState>;
 	readonly start: (
 		request: ContentObservatoryHistoryRequest
 	) => Effect.Effect<ContentObservatoryState>;
-	readonly status: () => Effect.Effect<ContentObservatoryState>;
+	readonly status: Effect.Effect<ContentObservatoryState>;
 	readonly targets: (
 		mapPath: string
 	) => Effect.Effect<
@@ -36,7 +36,7 @@ export class WorkbenchContentObservatory extends Context.Service<
 
 type ActiveJob = Fiber.Fiber<unknown, unknown>;
 
-type SavedProject = Effect.Success<ReturnType<WorkbenchProjectApi["savedProject"]>>;
+type SavedProject = Effect.Success<WorkbenchProjectApi["savedProject"]>;
 
 function readyState(project: SavedProject): Extract<ContentObservatoryState, { status: "ready" }> {
 	return {
@@ -90,7 +90,7 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 
 		const resolveProjectState = Effect.fn("Workbench.ContentObservatory.resolveProjectState")(
 			function* () {
-				return readyState(yield* project.savedProject());
+				return readyState(yield* project.savedProject);
 			},
 			Effect.catchTag("WorkbenchProjectUnavailable", () =>
 				Effect.succeed({ status: "not_configured" as const })
@@ -99,12 +99,12 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 		const readProgress = Effect.fn("Workbench.ContentObservatory.readProgress")(
 			(): Effect.Effect<ContentObservatoryProgress> =>
 				Effect.all({
-					history: mapHistory.progress(),
-					savedWorld: assetReader.savedWorldProgress()
+					history: mapHistory.progress,
+					savedWorld: assetReader.savedWorldProgress
 				}).pipe(Effect.map(({ history, savedWorld }) => ({ ...history, savedWorld })))
 		);
 
-		const status = Effect.fn("Workbench.ContentObservatory.status")(function* () {
+		const status = Effect.gen(function* () {
 			const current = yield* Ref.get(state);
 			const latestProject = yield* resolveProjectState();
 			if (latestProject.status === "not_configured") {
@@ -140,12 +140,12 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 				const refreshed = { ...latest, maps: latestProject.maps, progress } as const;
 				return [refreshed, refreshed];
 			});
-		});
+		}).pipe(Effect.withSpan("Workbench.ContentObservatory.status"));
 
 		const targets = Effect.fn("Workbench.ContentObservatory.targets")(function* (
 			mapPath: string
 		) {
-			const selectedProject = yield* project.savedProject().pipe(
+			const selectedProject = yield* project.savedProject.pipe(
 				Effect.mapError(
 					(cause) =>
 						new MapHistoryError({
@@ -179,14 +179,14 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 				);
 		});
 
-		const cancel = Effect.fn("Workbench.ContentObservatory.cancel")(function* () {
+		const cancel = Effect.gen(function* () {
 			const current = yield* Ref.get(state);
 			if (current.status !== "running") return current;
 			yield* interruptActive();
 			const cancelled: ContentObservatoryState = { ...current, status: "cancelled" };
 			yield* Ref.set(state, cancelled);
 			return cancelled;
-		});
+		}).pipe(Effect.withSpan("Workbench.ContentObservatory.cancel"));
 
 		const start = Effect.fn("Workbench.ContentObservatory.start")(function* (
 			request: ContentObservatoryHistoryRequest

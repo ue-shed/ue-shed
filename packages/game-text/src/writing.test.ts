@@ -87,7 +87,7 @@ describe("writer counts", () => {
 					).toEqual(page.counts);
 					expect(page.total).toBe(2);
 					expect(page.counts.all).toBe(page.total);
-					const summary = yield* query.summary();
+					const summary = yield* query.summary;
 					expect(summary.counts).toEqual(page.counts);
 					expect(summary.review).toEqual({ all: 2, unresolved: 0, conflicting: 0 });
 					expect(summary.sources.dataTable).toBe(2);

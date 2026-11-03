@@ -69,7 +69,7 @@ export const ProjectLauncherLive = Layer.effect(
 		const launch = Effect.fn("Workbench.ProjectLauncher.launch")(function* (
 			mode: ProjectLaunchMode
 		) {
-			const selected = yield* project.current();
+			const selected = yield* project.current;
 			if (selected.status !== "ready") return noSelectedProject;
 			if (configuration.sourceCheckout.status !== "configured") return noLauncher;
 

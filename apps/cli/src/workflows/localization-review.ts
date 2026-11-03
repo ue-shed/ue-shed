@@ -1,6 +1,6 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { invalidateCliGameTextIndex } from "./game-text-index.js";
-import { type Brand, Effect, Metric, Result, Schema } from "effect";
+import { Layer, type Brand, Effect, Metric, Result, Schema } from "effect";
 import {
 	CultureCode,
 	LocalizationEvidence,
@@ -197,8 +197,9 @@ export const runLocalizationReview = Effect.fn("Cli.workflow.localization_review
 					});
 				});
 				const result = yield* work.pipe(
-					Effect.provide(LocalizationEvidenceNodeLive),
-					Effect.provide(LocalizationFileAccessLive),
+					Effect.provide(
+						Layer.provideMerge(LocalizationEvidenceNodeLive, LocalizationFileAccessLive)
+					),
 					Effect.result
 				);
 				if (Result.isFailure(result)) {

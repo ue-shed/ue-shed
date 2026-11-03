@@ -373,7 +373,21 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 				"Palette",
 				"Plain"
 			] as const;
-			expect(exported.map((line) => line.identity?.key).sort()).toEqual(exportedKeys);
+			expect(
+				exported
+					.map((line) => line.identity?.key)
+					.sort((left, right) =>
+						left === right
+							? 0
+							: left === undefined
+								? 1
+								: right === undefined
+									? -1
+									: left < right
+										? -1
+										: 1
+					)
+			).toEqual(exportedKeys);
 			expect(audienceByLine({ ...memoryJoin, lines: exported })).toEqual(
 				Object.fromEntries(exportedKeys.map((key) => [key, lines[key]]))
 			);

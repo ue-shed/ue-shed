@@ -120,9 +120,9 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 		return yield* Effect.forEach(
 			names.filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.json$/u.test(name)),
 			(name) =>
-				makeCameraAuthoringStore(join(root, name))
-					.load()
-					.pipe(Effect.map((document) => document.arrangement))
+				makeCameraAuthoringStore(join(root, name)).load.pipe(
+					Effect.map((document) => document.arrangement)
+				)
 		);
 	});
 	const close = Effect.fn("Workbench.CameraWorkspace.close")(function* () {
@@ -282,7 +282,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 						set
 					);
 				}
-				const doc = yield* store.load();
+				const doc = yield* store.load;
 				if (doc.reviewSet.id !== set.id || doc.arrangement.mapPath !== set.project.mapPath)
 					return yield* failure("This camera set belongs to another Review Set.");
 				yield* close();
@@ -384,7 +384,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 							})
 					)
 				);
-			const document = active ? yield* active.store.load() : undefined;
+			const document = active ? yield* active.store.load : undefined;
 			const savedViews =
 				document?.reviewSet.views
 					.filter((view) => view.authoring?.arrangementId === document.arrangement.id)
@@ -449,7 +449,11 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			.filter((arrangement) => arrangement.mapPath === set.project.mapPath)
 			.map(cameraSetupSavedSet);
 	}, gate.withPermits(1));
-	return { request, setupSets, close: () => close().pipe(Effect.asVoid, gate.withPermits(1)) };
+	return {
+		request,
+		setupSets,
+		close: Effect.suspend(close).pipe(Effect.asVoid, gate.withPermits(1))
+	};
 });
 
 export type WorkbenchCameraWorkspaceApi = Effect.Success<ReturnType<typeof makeCameraWorkspace>>;
@@ -480,7 +484,7 @@ export function makeWorkbenchCameraWorkspaceTestLayer(
 	return Layer.succeed(
 		WorkbenchCameraWorkspace,
 		WorkbenchCameraWorkspace.of({
-			close: () => Effect.void,
+			close: Effect.void,
 			request: () =>
 				Effect.succeed({
 					preview: null,

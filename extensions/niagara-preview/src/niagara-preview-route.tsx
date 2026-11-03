@@ -218,7 +218,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 
 	const refreshCatalogue = () => {
 		setCatalogue({ status: "loading" });
-		catalogueAction.run(props.client.catalogue(), {
+		catalogueAction.run(props.client.catalogue, {
 			onFailure: (cause) => {
 				const failure = clientFailure(cause, "validation");
 				const parts = failureParts(failure.error.message);

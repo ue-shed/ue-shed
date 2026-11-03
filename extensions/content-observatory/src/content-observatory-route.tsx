@@ -269,7 +269,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 		}
 	};
 	const refresh = () =>
-		action.run(props.client.status(), { onSuccess: (next) => apply(next, "poll") });
+		action.run(props.client.status, { onSuccess: (next) => apply(next, "poll") });
 	const dispatchWorldLogEvent = (event: WorldLogEvent) => {
 		if (event.type === "frame_selected") setFrameRevision(event.revisionIndex);
 		if (event.type === "actor_event_selected" || event.type === "changelist_selected") {
@@ -595,7 +595,7 @@ export function ContentObservatoryRoute(props: { readonly client: ContentObserva
 										<button
 											type="button"
 											onClick={() =>
-												action.run(props.client.cancel(), {
+												action.run(props.client.cancel, {
 													onSuccess: apply
 												})
 											}

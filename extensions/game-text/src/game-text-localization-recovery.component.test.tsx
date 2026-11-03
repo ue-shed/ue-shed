@@ -43,7 +43,7 @@ describe("Game Text all-languages export", () => {
 					return Effect.succeed({ status: "cancelled" });
 				},
 				save: () => Effect.succeed({ status: "cancelled" }),
-				open: () => Effect.succeed({ status: "opened", preset, path: "C:/out/preset.json" })
+				open: Effect.sync(() => ({ status: "opened", preset, path: "C:/out/preset.json" }))
 			}
 		});
 		await screen.findByRole("button", { name: `Localization target: ${target.name}` });
@@ -181,8 +181,9 @@ it.each([
 		const files: GameTextInvestigationQuery[] = [];
 		mount({
 			...base,
-			localizationTargets: () =>
-				empty ? Effect.succeed({ status: "ready", targets: [] }) : inventory(),
+			localizationTargets: Effect.suspend(() =>
+				empty ? Effect.succeed({ status: "ready", targets: [] }) : inventory
+			),
 			search: (request) => {
 				requests.push(request);
 				const { localization: _localization, ...sourceRequest } = request;
@@ -200,7 +201,7 @@ it.each([
 					files.push(selection);
 					return Effect.succeed({ status: "cancelled" });
 				},
-				open: () => Effect.succeed({ status: "cancelled" })
+				open: Effect.sync(() => ({ status: "cancelled" }))
 			}
 		});
 		const user = userEvent.setup({ delay: null });

@@ -48,20 +48,36 @@ const runAuthoringTables = lazyWorkflow(
 
 /** Decode an inline JSON flag value, classifying JSON syntax and schema failures separately. */
 function parseJsonFlag<A>(label: string, value: string, schema: Schema.Decoder<A>) {
-	return Effect.try({
-		try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(value)),
-		catch: (cause) =>
-			new CliCommandError({
-				recovery:
-					"Inspect the command context and original cause before deciding whether to retry.",
-				retrySafe: false,
-				nextStep: "escalate",
-				code: "cli_command_failed",
-				message: `${label} is not valid JSON.`,
-				cause
-			})
+	return Effect.gen(function* () {
+		const sourceValue = yield* Effect.try({
+			try: () => JSON.parse(value),
+			catch: (cause) =>
+				new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: `${label} is not valid JSON.`,
+					cause
+				})
+		});
+		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
+			Effect.mapError(
+				(cause) =>
+					new CliCommandError({
+						recovery:
+							"Inspect the command context and original cause before deciding whether to retry.",
+						retrySafe: false,
+						nextStep: "escalate",
+						code: "cli_command_failed",
+						message: `${label} is not valid JSON.`,
+						cause
+					})
+			)
+		);
+		return yield* Schema.decodeEffect(schema)(decodedValue0);
 	}).pipe(
-		Effect.flatMap(Schema.decodeUnknownEffect(schema)),
 		Effect.mapError((cause) =>
 			isCliCommandError(cause)
 				? cause

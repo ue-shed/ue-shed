@@ -14,9 +14,9 @@ export type ConfiguredProject =
 	| { readonly status: "not_configured" };
 
 export interface ShedHostConfigurationApi {
-	readonly authoringAsset: () => Effect.Effect<ConfiguredAsset>;
-	readonly project: () => Effect.Effect<ConfiguredProject>;
-	readonly remoteControlEndpoint: () => Effect.Effect<string>;
+	readonly authoringAsset: Effect.Effect<ConfiguredAsset>;
+	readonly project: Effect.Effect<ConfiguredProject>;
+	readonly remoteControlEndpoint: Effect.Effect<string>;
 }
 
 export interface ShedHostConfigurationValues {
@@ -38,12 +38,14 @@ export function makeShedHostConfiguration(
 	values: ShedHostConfigurationValues
 ): ShedHostConfigurationApi {
 	return ShedHostConfiguration.of({
-		authoringAsset: Effect.fn("ShedHostConfiguration.authoringAsset")(() =>
-			Effect.succeed(values.authoringAsset)
+		authoringAsset: Effect.sync(() => values.authoringAsset).pipe(
+			Effect.withSpan("ShedHostConfiguration.authoringAsset")
 		),
-		project: Effect.fn("ShedHostConfiguration.project")(() => Effect.succeed(values.project)),
-		remoteControlEndpoint: Effect.fn("ShedHostConfiguration.remoteControlEndpoint")(() =>
-			Effect.succeed(values.remoteControlEndpoint)
+		project: Effect.sync(() => values.project).pipe(
+			Effect.withSpan("ShedHostConfiguration.project")
+		),
+		remoteControlEndpoint: Effect.sync(() => values.remoteControlEndpoint).pipe(
+			Effect.withSpan("ShedHostConfiguration.remoteControlEndpoint")
 		)
 	});
 }

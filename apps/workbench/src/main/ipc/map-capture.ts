@@ -11,8 +11,8 @@ export const register = Effect.gen(function* () {
 		const [mapPath] = args;
 		return mapCapture.actors(mapPath);
 	});
-	yield* ipc.register(invokeContracts["map-capture:choose-plan"], () => mapCapture.choosePlan());
-	yield* ipc.register(invokeContracts["map-capture:new-plan"], () => mapCapture.newPlan());
+	yield* ipc.register(invokeContracts["map-capture:choose-plan"], () => mapCapture.choosePlan);
+	yield* ipc.register(invokeContracts["map-capture:new-plan"], () => mapCapture.newPlan);
 	yield* ipc.register(invokeContracts["map-capture:save-plan"], (...args) => {
 		const [intent] = args;
 		return mapCapture.savePlan(intent);

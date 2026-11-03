@@ -272,7 +272,7 @@ export const indexedLocalizationBaseline = Effect.fn("GameText.localizationBasel
 		try: () => baselineWith(model.evidence, createdAt),
 		catch: reportFailure("invalid_baseline")
 	});
-	const generation = yield* model.query.corpusFingerprint();
+	const generation = yield* model.query.corpusFingerprint;
 	return yield* Effect.try({
 		try: () => complete(generation),
 		catch: reportFailure("invalid_baseline")
@@ -431,7 +431,7 @@ function pairBaselineKeys(
 /** "not_tracked" until the project has a review file for the target. */
 const ReviewProgress = Schema.Union([
 	Schema.Literal("not_tracked"),
-	Schema.Struct({ lines: Count, percent: Schema.NullOr(Schema.Number) })
+	Schema.Struct({ lines: Count, percent: Schema.NullOr(Schema.Finite) })
 ]);
 /**
  * Per-culture state, translation and review progress with explicit unknown totals. Null
@@ -447,8 +447,8 @@ export const LocalizationProgressCulture = Schema.Struct({
 	total: Counts,
 	upToDateArchive: Schema.Struct({ lines: Schema.NullOr(Count), sourceWords: Words }),
 	translatedPercent: Schema.Struct({
-		lines: Schema.NullOr(Schema.Number),
-		words: Schema.NullOr(Schema.Number)
+		lines: Schema.NullOr(Schema.Finite),
+		words: Schema.NullOr(Schema.Finite)
 	}),
 	reviewed: ReviewProgress,
 	proofread: ReviewProgress,
@@ -912,7 +912,7 @@ export const indexedLocalizationProgressReport = Effect.fn("GameText.localizatio
 		const failure = baseline ? "invalid_baseline" : "invalid_report_context";
 		const [[header, tallies], facts] = yield* Effect.all(
 			[
-				Effect.all([model.query.readCorpusReportHeader(), indexTallies(model)]),
+				Effect.all([model.query.readCorpusReportHeader, indexTallies(model)]),
 				entries
 					? indexedEvidenceFacts(model.evidence, entries, failure)
 					: Effect.succeed(cached!)

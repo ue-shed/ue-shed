@@ -234,8 +234,8 @@ function makeRemote(options: {
 	};
 }
 
-async function takeStates(
-	stream: Stream.Stream<WorldObservationState, unknown>,
+async function takeStates<E>(
+	stream: Stream.Stream<WorldObservationState, E>,
 	count: number
 ): Promise<ReadonlyArray<WorldObservationState>> {
 	return Effect.runPromise(stream.pipe(Stream.take(count), Stream.runCollect));

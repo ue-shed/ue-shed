@@ -14,7 +14,7 @@ const ProjectHistoryDocument = Schema.Struct({
 interface ProjectHistoryDocument extends Schema.Schema.Type<typeof ProjectHistoryDocument> {}
 
 export interface WorkbenchProjectHistoryApi {
-	readonly recent: () => Effect.Effect<readonly WorkbenchRecentProject[]>;
+	readonly recent: Effect.Effect<readonly WorkbenchRecentProject[]>;
 	readonly record: (projectRoot: string) => Effect.Effect<void, LocalFilesError>;
 }
 
@@ -68,9 +68,9 @@ export const WorkbenchProjectHistoryLive = Layer.effect(
 		const document = yield* Ref.make(initial);
 		const writeGate = yield* Semaphore.make(1);
 
-		const recent = Effect.fn("Workbench.ProjectHistory.recent")(function* () {
+		const recent = Effect.gen(function* () {
 			return recentProjects(yield* Ref.get(document));
-		});
+		}).pipe(Effect.withSpan("Workbench.ProjectHistory.recent"));
 		const record = Effect.fn("Workbench.ProjectHistory.record")(function* (
 			projectRoot: string
 		) {
@@ -113,12 +113,12 @@ export function makeWorkbenchProjectHistoryTestLayer(
 		Effect.gen(function* () {
 			const roots = yield* Ref.make([...initialProjectRoots]);
 			return WorkbenchProjectHistory.of({
-				recent: Effect.fn("Workbench.ProjectHistory.Test.recent")(function* () {
+				recent: Effect.gen(function* () {
 					return recentProjects({
 						projectRoots: yield* Ref.get(roots),
 						schemaVersion: 1
 					});
-				}),
+				}).pipe(Effect.withSpan("Workbench.ProjectHistory.Test.recent")),
 				record: Effect.fn("Workbench.ProjectHistory.Test.record")(function* (projectRoot) {
 					const current = yield* Ref.get(roots);
 					const root = cleanProjectRoot(projectRoot);

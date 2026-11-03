@@ -38,7 +38,7 @@ it.live.skipIf(!enabled)(
 							yield* result.search({ query: "", capability: "all", pageSize: 50 });
 							// Summary reads stay asynchronous through the native engine.
 							expect(
-								(yield* result.query.summary()).searchable.textUnits
+								(yield* result.query.summary).searchable.textUnits
 							).toBeGreaterThan(0);
 						})
 					)

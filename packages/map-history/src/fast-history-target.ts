@@ -275,14 +275,14 @@ export function fastHistoryActorClassTargetedCoverage(options: {
  * Resolves Fast History acquisition to the selected map plus proven Investigation Target packages.
  * Unrelated external-actor packages never enter the Perforce file specs or allowlist.
  */
-export function resolvePerforceFastMapScope(
-	query: PerforceFastMapHistoryQuery
-): Effect.Effect<
-	ResolvedPerforceFastMapScope,
-	MapHistoryError,
-	AssetReader | PerforceHistorySource
-> {
-	return Effect.fn("MapHistory.resolvePerforceFastMapScope")(function* () {
+export const resolvePerforceFastMapScope = Effect.fn("MapHistory.resolvePerforceFastMapScope")(
+	function* (
+		query: PerforceFastMapHistoryQuery
+	): Effect.fn.Return<
+		ResolvedPerforceFastMapScope,
+		MapHistoryError,
+		AssetReader | PerforceHistorySource
+	> {
 		const perforce = yield* PerforceHistorySource;
 		const { scope: mapScope, world } = yield* resolvePresentDayMapScope(query);
 		const provenTargets =
@@ -366,5 +366,5 @@ export function resolvePerforceFastMapScope(
 				fileSpecs
 			}
 		};
-	})();
-}
+	}
+);

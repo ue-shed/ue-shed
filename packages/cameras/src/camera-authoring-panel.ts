@@ -380,7 +380,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					producerId: current.attachment.producerId
 				})
 				.pipe(Effect.flatMap(readyCameraBridge));
-			let document = yield* args.store.load();
+			let document = yield* args.store.load;
 			// A pending panel event may already be durable when its reply was lost. Reconcile it
 			// before resolving a camera that a committed regeneration has retired.
 			const recovered =
@@ -393,7 +393,7 @@ export const makeCameraAuthoringPanelSession = Effect.fn("CameraAuthoringPanel.m
 					attachment: { ...current.attachment, cameraId: native.cameraId },
 					approvalDestination: args.approvalPath
 				});
-			document = yield* args.store.load();
+			document = yield* args.store.load;
 			let active = native.cameraId;
 			const event = native.panelEvent;
 			yield* Ref.update(state, (value) => ({ ...value, attachment: native }));

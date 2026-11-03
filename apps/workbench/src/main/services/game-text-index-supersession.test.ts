@@ -78,8 +78,7 @@ it.live(
 				).toBe("ready");
 			}).pipe(
 				Effect.ensuring(Deferred.succeed(allowSearch, undefined)),
-				Effect.provide(indexed),
-				Effect.provide(fixture.evidence)
+				Effect.provide(Layer.provideMerge(indexed, fixture.evidence))
 			);
 		}),
 	15000

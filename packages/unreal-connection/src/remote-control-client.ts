@@ -252,7 +252,7 @@ export function makeRemoteControlClient(options: {
 				)
 			);
 			return yield* Effect.try({
-				try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(envelope.ResultJson)),
+				try: () => JSON.parse(envelope.ResultJson),
 				catch: (cause) =>
 					clientError(request, {
 						code: "invalid_result_json",
@@ -265,7 +265,25 @@ export function makeRemoteControlClient(options: {
 						retrySafe: request.idempotent === true,
 						nextStep: request.idempotent === true ? "escalate" : "reconcile"
 					})
-			});
+			}).pipe(
+				Effect.flatMap((input) =>
+					Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+						Effect.mapError((cause) =>
+							clientError(request, {
+								code: "invalid_result_json",
+								cause,
+								message: `The ResultJson returned by ${request.functionName} is not valid JSON.`,
+								recovery:
+									request.idempotent === true
+										? malformedResponseRecovery
+										: `The editor may have applied this request. Reconcile its state before sending it again. ${malformedResponseRecovery}`,
+								retrySafe: request.idempotent === true,
+								nextStep: request.idempotent === true ? "escalate" : "reconcile"
+							})
+						)
+					)
+				)
+			);
 		},
 		(effect, request) =>
 			effect.pipe(

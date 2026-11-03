@@ -15,8 +15,8 @@ const ProjectDescriptor = Schema.Struct({
 	EngineAssociation: Schema.optional(Schema.String)
 });
 const EngineBuildVersion = Schema.Struct({
-	MajorVersion: Schema.Number,
-	MinorVersion: Schema.Number
+	MajorVersion: Schema.Finite,
+	MinorVersion: Schema.Finite
 });
 
 const PreviewRequest = Schema.Struct({
@@ -24,8 +24,8 @@ const PreviewRequest = Schema.Struct({
 	objectPath: Schema.String,
 	packageFile: Schema.String,
 	projectRoot: Schema.String,
-	sourceBytes: Schema.Number,
-	sourceModifiedMs: Schema.Number
+	sourceBytes: Schema.Finite,
+	sourceModifiedMs: Schema.Finite
 });
 type PreviewRequest = Schema.Schema.Type<typeof PreviewRequest>;
 const decodePreviewRequest = Schema.decodeUnknownEffect(PreviewRequest);
@@ -107,18 +107,29 @@ function commandletExecutable(engineRoot: string): string {
 function projectFile(
 	host: OfflineTexturePreviewHostApi,
 	projectRoot: string
-): Effect.Effect<string, Error> {
+): Effect.Effect<string, OfflineTexturePreviewError> {
 	return host.listProjectFiles(projectRoot).pipe(
-		Effect.mapError((cause) => new Error(cause.message)),
+		Effect.mapError((cause) =>
+			previewError(
+				"project_unavailable",
+				cause.message,
+				"Choose a project directory containing exactly one .uproject file.",
+				false,
+				cause
+			)
+		),
 		Effect.flatMap((projects) => {
 			const selected = projects[0];
 			return projects.length === 1 && selected
 				? Effect.succeed(selected)
 				: Effect.fail(
-						new Error(
+						previewError(
+							"project_unavailable",
 							projects.length === 0
 								? `No .uproject file exists in ${projectRoot}.`
-								: `More than one .uproject file exists in ${projectRoot}.`
+								: `More than one .uproject file exists in ${projectRoot}.`,
+							"Choose a project directory containing exactly one .uproject file.",
+							false
 						)
 					);
 		})
@@ -181,18 +192,24 @@ function discoverEngineRoot(
 		readonly configuredRoot?: string;
 		readonly projectFile: string;
 	}
-): Effect.Effect<string, Error> {
+): Effect.Effect<string, OfflineTexturePreviewError> {
 	return Effect.gen(function* () {
 		if (options.configuredRoot) {
 			const root = resolve(options.configuredRoot);
 			if (yield* host.exists(commandletExecutable(root))) return root;
-			return yield* Effect.fail(
-				new Error(`No UnrealEditor-Cmd executable exists under ${root}.`)
+			return yield* previewError(
+				"engine_unavailable",
+				`No UnrealEditor-Cmd executable exists under ${root}.`,
+				"Install the project's Unreal version or set UE_SHED_UNREAL_ENGINE_ROOT.",
+				false
 			);
 		}
 		if (process.platform !== "win32") {
-			return yield* Effect.fail(
-				new Error("Set UE_SHED_UNREAL_ENGINE_ROOT for offline previews on this platform.")
+			return yield* previewError(
+				"engine_unavailable",
+				"Set UE_SHED_UNREAL_ENGINE_ROOT for offline previews on this platform.",
+				"Install the project's Unreal version or set UE_SHED_UNREAL_ENGINE_ROOT.",
+				false
 			);
 		}
 
@@ -213,12 +230,13 @@ function discoverEngineRoot(
 		)[0];
 		return selected
 			? selected.root
-			: yield* Effect.fail(
-					new Error(
-						association
-							? `No installed Unreal ${association} commandlet was discovered.`
-							: "No installed Unreal commandlet was discovered."
-					)
+			: yield* previewError(
+					"engine_unavailable",
+					association
+						? `No installed Unreal ${association} commandlet was discovered.`
+						: "No installed Unreal commandlet was discovered.",
+					"Install the project's Unreal version or set UE_SHED_UNREAL_ENGINE_ROOT.",
+					false
 				);
 	});
 }
@@ -236,7 +254,8 @@ function readPreview(
 						"cache_failure",
 						`Could not read the saved texture preview: ${cause.message}`,
 						"Regenerate the saved preview.",
-						true
+						true,
+						cause
 					)
 				)
 			);
@@ -289,7 +308,8 @@ export const OfflineTexturePreviewLive = Layer.effect(
 							"project_unavailable",
 							`Could not inspect ${basename(packageFile)}: ${cause.message}`,
 							"Rescan the project and retry the saved preview.",
-							true
+							true,
+							cause
 						)
 					)
 				);
@@ -361,31 +381,13 @@ export const OfflineTexturePreviewLive = Layer.effect(
 				const projectRoot = misses[0]?.request.projectRoot;
 				if (!projectRoot)
 					return yield* Effect.die("A non-empty preview miss set lost its root");
-				const descriptor = yield* projectFile(host, projectRoot).pipe(
-					Effect.mapError((cause) =>
-						previewError(
-							"project_unavailable",
-							cause.message,
-							"Choose a project directory containing exactly one .uproject file.",
-							false
-						)
-					)
-				);
+				const descriptor = yield* projectFile(host, projectRoot);
 				const engineRoot = yield* discoverEngineRoot(host, {
 					...(configuration.unrealEngineRoot?.status === "configured"
 						? { configuredRoot: configuration.unrealEngineRoot.path }
 						: undefined),
 					projectFile: descriptor
-				}).pipe(
-					Effect.mapError((cause) =>
-						previewError(
-							"engine_unavailable",
-							cause.message,
-							"Install the project's Unreal version or set UE_SHED_UNREAL_ENGINE_ROOT.",
-							false
-						)
-					)
-				);
+				});
 				yield* host
 					.makeDirectory(cacheRoot)
 					.pipe(
@@ -394,7 +396,8 @@ export const OfflineTexturePreviewLive = Layer.effect(
 								"cache_failure",
 								`Could not create the texture preview cache: ${cause.message}`,
 								"Verify Workbench can write to its user-data directory.",
-								true
+								true,
+								cause
 							)
 						)
 					);
@@ -417,7 +420,8 @@ export const OfflineTexturePreviewLive = Layer.effect(
 								"cache_failure",
 								`Could not write the texture preview batch: ${cause.message}`,
 								"Verify Workbench can write to its user-data directory.",
-								true
+								true,
+								cause
 							)
 						)
 					);
@@ -441,7 +445,8 @@ export const OfflineTexturePreviewLive = Layer.effect(
 								"commandlet_failed",
 								cause.message,
 								"Build or enable UEShedAssetAudits for this project, then retry.",
-								true
+								true,
+								cause
 							)
 						),
 						Effect.timeoutOrElse({
@@ -467,7 +472,8 @@ export const OfflineTexturePreviewLive = Layer.effect(
 									"project_unavailable",
 									`Could not recheck ${basename(entry.request.packageFile)}: ${cause.message}`,
 									"Rescan the project and retry the saved preview.",
-									true
+									true,
+									cause
 								)
 							),
 							Effect.flatMap((currentSource) =>
@@ -481,7 +487,8 @@ export const OfflineTexturePreviewLive = Layer.effect(
 															"commandlet_failed",
 															`Unreal exited with code ${commandlet.exitCode ?? "unknown"} before producing a valid saved preview${commandlet.stderr ? `: ${commandlet.stderr}` : "."}`,
 															"Check the project's Unreal log and retry.",
-															true
+															true,
+															cause
 														)
 											)
 										)

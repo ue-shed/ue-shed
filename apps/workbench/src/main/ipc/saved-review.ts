@@ -57,7 +57,7 @@ export const register = Effect.gen(function* () {
 			SavedReviewInventory,
 			WorkbenchProjectUnavailable
 		> {
-			const state = yield* project.current();
+			const state = yield* project.current;
 			if (state.status !== "ready")
 				return {
 					status: "not_configured",

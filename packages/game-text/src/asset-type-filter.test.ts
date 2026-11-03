@@ -361,13 +361,21 @@ describe("asset_type filter", () => {
 							const lines = yield* result.query.localizationLines(
 								request([typeClause("is_not", [types.blueprint])], true)
 							);
-							expect(lines.map((line) => line.identity?.key).sort()).toEqual([
-								"Hud",
-								"K",
-								"Legacy",
-								"Start",
-								"Welcome"
-							]);
+							expect(
+								lines
+									.map((line) => line.identity?.key)
+									.sort((left, right) =>
+										left === right
+											? 0
+											: left === undefined
+												? 1
+												: right === undefined
+													? -1
+													: left < right
+														? -1
+														: 1
+									)
+							).toEqual(["Hud", "K", "Legacy", "Start", "Welcome"]);
 
 							// A package read again with another main asset moves to that type.
 							fixture.patchRecord({ assetClass: types.blueprint });

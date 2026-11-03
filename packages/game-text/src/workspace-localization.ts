@@ -868,16 +868,22 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 							: "Report CSV exported."
 				};
 			}).pipe(
-				Effect.catch((error) =>
-					Effect.succeed({
-						status: "failed" as const,
-						message: Schema.is(LocalizationReportError)(error)
-							? error.message
-							: "The file operation failed.",
-						recovery: Schema.is(LocalizationReportError)(error)
-							? error.recovery
-							: "Choose a new destination for a baseline; existing files are never overwritten. Check permissions and try again."
-					})
+				Effect.catchTag(
+					[
+						"GameTextIndexError",
+						"GameTextWorkspaceHostFailure",
+						"LocalizationReportError"
+					],
+					(error) =>
+						Effect.succeed({
+							status: "failed" as const,
+							message: Schema.is(LocalizationReportError)(error)
+								? error.message
+								: "The file operation failed.",
+							recovery: Schema.is(LocalizationReportError)(error)
+								? error.recovery
+								: "Choose a new destination for a baseline; existing files are never overwritten. Check permissions and try again."
+						})
 				)
 			);
 			return result;
@@ -907,7 +913,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				yield* Effect.annotateCurrentSpan({ rowCount: rows });
 				return { status: "saved" as const, path: choice.path, rowCount: rows };
 			}).pipe(
-				Effect.catch(() =>
+				Effect.catchTag(["GameTextIndexError", "GameTextWorkspaceHostFailure"], () =>
 					Effect.succeed({
 						status: "failed" as const,
 						message: "The all-languages CSV could not be written.",
@@ -990,14 +996,16 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						.map((file) => file.relativePath)
 				})
 				.pipe(
-					Effect.catch((cause) =>
-						Effect.logWarning(
-							"Game Text write succeeded but cache invalidation failed",
-							{
-								message: cause.message,
-								recovery: cause.recovery
-							}
-						)
+					Effect.catchTag(
+						["SnapshotFormatError", "SnapshotStoreError", "GameTextIndexError"],
+						(cause) =>
+							Effect.logWarning(
+								"Game Text write succeeded but cache invalidation failed",
+								{
+									message: cause.message,
+									recovery: cause.recovery
+								}
+							)
 					)
 				);
 			// Reload so states, counts and the not-synced indicator describe the written files.
@@ -1096,14 +1104,16 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					changedFiles: [written.success.relativePath]
 				})
 				.pipe(
-					Effect.catch((cause) =>
-						Effect.logWarning(
-							"Game Text write succeeded but cache invalidation failed",
-							{
-								message: cause.message,
-								recovery: cause.recovery
-							}
-						)
+					Effect.catchTag(
+						["SnapshotFormatError", "SnapshotStoreError", "GameTextIndexError"],
+						(cause) =>
+							Effect.logWarning(
+								"Game Text write succeeded but cache invalidation failed",
+								{
+									message: cause.message,
+									recovery: cause.recovery
+								}
+							)
 					)
 				);
 			yield* Ref.set(selected, undefined);

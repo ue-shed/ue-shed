@@ -16,10 +16,10 @@ import { withCorpusUnrealLock } from "./game-text-corpus-lock.ts";
  * The lease covers the complete native scan, including the collapse probe. Without a `layer`,
  * the scan uses UE Shed's own index over a temporary cache and the in-repo reader.
  */
-export async function compareGameTextCorpus(
+export async function compareGameTextCorpus<LayerError = never>(
 	corpusRoot: string,
 	options: {
-		readonly layer?: Layer.Layer<GameTextIndexRefresh, unknown>;
+		readonly layer?: Layer.Layer<GameTextIndexRefresh, LayerError>;
 		readonly changedFiles?: readonly string[];
 	} = {}
 ) {

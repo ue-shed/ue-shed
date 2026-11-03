@@ -38,17 +38,14 @@ export interface ElectronAppHost {
 }
 
 export interface ElectronAppApi {
-	readonly getAppMetrics: () => Effect.Effect<
-		ReadonlyArray<ElectronProcessMetric>,
-		ElectronAppError
-	>;
+	readonly getAppMetrics: Effect.Effect<ReadonlyArray<ElectronProcessMetric>, ElectronAppError>;
 	readonly getPath: (name: "userData") => Effect.Effect<string, ElectronAppError>;
 	readonly on: (
 		event: ElectronAppEvent,
 		listener: (event: { readonly preventDefault: () => void }) => void
 	) => Effect.Effect<void, ElectronAppError>;
-	readonly quit: () => Effect.Effect<void, ElectronAppError>;
-	readonly whenReady: () => Effect.Effect<void, ElectronAppError>;
+	readonly quit: Effect.Effect<void, ElectronAppError>;
+	readonly whenReady: Effect.Effect<void, ElectronAppError>;
 }
 
 export class ElectronApp extends Context.Service<ElectronApp, ElectronAppApi>()(
@@ -56,7 +53,7 @@ export class ElectronApp extends Context.Service<ElectronApp, ElectronAppApi>()(
 ) {}
 
 export interface ElectronAppTestApi extends ElectronAppApi {
-	readonly quitCount: () => Effect.Effect<number>;
+	readonly quitCount: Effect.Effect<number>;
 }
 
 export class ElectronAppTest extends Context.Service<ElectronAppTest, ElectronAppTestApi>()(
@@ -108,7 +105,7 @@ export const electronAppLayer = (app: ElectronAppHost): Layer.Layer<ElectronApp>
 			);
 
 			return ElectronApp.of({
-				whenReady: Effect.fn("Workbench.ElectronApp.whenReady")(() =>
+				whenReady: Effect.suspend(() =>
 					Effect.tryPromise({
 						try: () => app.whenReady(),
 						catch: (cause) =>
@@ -118,18 +115,12 @@ export const electronAppLayer = (app: ElectronAppHost): Layer.Layer<ElectronApp>
 								"Restart Workbench and check Electron logs."
 							)
 					}).pipe(Effect.asVoid)
-				),
-				getAppMetrics: Effect.fn("Workbench.ElectronApp.getAppMetrics")(() =>
-					Effect.try({
-						try: () => app.getAppMetrics(),
-						catch: (cause) =>
-							appError(
-								"getAppMetrics",
-								cause,
-								"Retry after Electron finishes starting."
-							)
-					})
-				),
+				).pipe(Effect.withSpan("Workbench.ElectronApp.whenReady")),
+				getAppMetrics: Effect.try({
+					try: () => app.getAppMetrics(),
+					catch: (cause) =>
+						appError("getAppMetrics", cause, "Retry after Electron finishes starting.")
+				}).pipe(Effect.withSpan("Workbench.ElectronApp.getAppMetrics")),
 				getPath: Effect.fn("Workbench.ElectronApp.getPath")(function* (name) {
 					return yield* Effect.try({
 						try: () => app.getPath(name),
@@ -141,12 +132,10 @@ export const electronAppLayer = (app: ElectronAppHost): Layer.Layer<ElectronApp>
 							)
 					});
 				}),
-				quit: Effect.fn("Workbench.ElectronApp.quit")(() =>
-					Effect.try({
-						try: () => app.quit(),
-						catch: (cause) => appError("quit", cause, "Close Workbench again.")
-					})
-				),
+				quit: Effect.try({
+					try: () => app.quit(),
+					catch: (cause) => appError("quit", cause, "Close Workbench again.")
+				}).pipe(Effect.withSpan("Workbench.ElectronApp.quit")),
 				on: Effect.fn("Workbench.ElectronApp.on")(function* (event, listener) {
 					// SAFETY: Electron passes variadic event arguments, while this adapter ignores their values.
 					// Verified by: apps/workbench/src/main/adapters/adapters.test.ts
@@ -175,14 +164,12 @@ export const makeElectronAppTestLayer = (
 			const service = ElectronAppTest.of({
 				getAppMetrics:
 					overrides.getAppMetrics ??
-					Effect.fn("Workbench.ElectronApp.Test.getAppMetrics")(() =>
-						Effect.succeed([
-							{
-								memory: { privateBytes: 1_024, workingSetSize: 2_048 },
-								type: "Browser"
-							}
-						])
-					),
+					Effect.sync(() => [
+						{
+							memory: { privateBytes: 1_024, workingSetSize: 2_048 },
+							type: "Browser"
+						}
+					]).pipe(Effect.withSpan("Workbench.ElectronApp.Test.getAppMetrics")),
 				getPath:
 					overrides.getPath ??
 					Effect.fn("Workbench.ElectronApp.Test.getPath")(() =>
@@ -191,13 +178,13 @@ export const makeElectronAppTestLayer = (
 				on: overrides.on ?? Effect.fn("Workbench.ElectronApp.Test.on")(() => Effect.void),
 				quit:
 					overrides.quit ??
-					Effect.fn("Workbench.ElectronApp.Test.quit")(() =>
+					Effect.suspend(() =>
 						Ref.update(quitCount, (count) => count + 1).pipe(Effect.asVoid)
-					),
+					).pipe(Effect.withSpan("Workbench.ElectronApp.Test.quit")),
 				whenReady:
 					overrides.whenReady ??
-					Effect.fn("Workbench.ElectronApp.Test.whenReady")(() => Effect.void),
-				quitCount: () => Ref.get(quitCount)
+					Effect.void.pipe(Effect.withSpan("Workbench.ElectronApp.Test.whenReady")),
+				quitCount: Ref.get(quitCount)
 			});
 			return Context.empty().pipe(
 				Context.add(ElectronApp, service),

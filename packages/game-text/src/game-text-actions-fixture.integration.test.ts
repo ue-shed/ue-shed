@@ -391,7 +391,17 @@ describe("Game Text identity cases in the saved fixture", () => {
 					.map((unit) =>
 						unit.identity.status === "resolved" ? unit.identity.namespace : undefined
 					)
-					.sort()
+					.sort((left, right) =>
+						left === right
+							? 0
+							: left === undefined
+								? 1
+								: right === undefined
+									? -1
+									: left < right
+										? -1
+										: 1
+					)
 			).toEqual([`[${packageNamespace}]`, `[${packageNamespace}]`]);
 			for (const match of matches) {
 				expect(match.occurrences).toHaveLength(1);

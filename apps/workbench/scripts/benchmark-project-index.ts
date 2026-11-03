@@ -1,3 +1,4 @@
+import { BenchmarkMeasurementError } from "../../../scripts/benchmark-errors.js";
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cpus, platform, release, tmpdir, totalmem } from "node:os";
@@ -615,9 +616,14 @@ async function runProjectIndex(
 				inputDecodeMs = performance.now() - inputStarted;
 			}
 			if (nativeTiming === undefined) {
-				return yield* Effect.fail(
-					new Error("The worker did not emit Project Index phase timing diagnostics.")
-				);
+				return yield* new BenchmarkMeasurementError({
+					code: "phase_timing_missing",
+					message: "The worker did not emit Project Index phase timing diagnostics.",
+					recovery:
+						"Use the matching native worker build and retain its phase timing diagnostics.",
+					retrySafe: true,
+					nextStep: "retry"
+				});
 			}
 			return {
 				index,

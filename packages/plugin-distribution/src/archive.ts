@@ -232,8 +232,8 @@ export const verifyPluginArtifact = (options: {
 	VerifiedPluginArtifact,
 	PluginInstallCancelled | ArtifactDigestMismatch | PluginStorageFailure
 > =>
-	Effect.tryPromise({
-		try: async (runtimeSignal) => {
+	awaitCancelableOperation(
+		async (runtimeSignal) => {
 			const signal =
 				options.signal === undefined
 					? runtimeSignal
@@ -285,7 +285,7 @@ export const verifyPluginArtifact = (options: {
 			}
 			return { bytes: details.size, digest, path: resolve(options.artifactPath) };
 		},
-		catch: (cause) => {
+		(cause) => {
 			if (isPluginInstallCancelled(cause) || isArtifactDigestMismatch(cause)) {
 				return cause;
 			}
@@ -296,7 +296,7 @@ export const verifyPluginArtifact = (options: {
 				storageFailure(options.releaseVersion, "Verify plugin artifact", cause)
 			);
 		}
-	});
+	);
 
 export interface ExtractPluginArchiveOptions {
 	readonly archivePath: string;
@@ -573,9 +573,13 @@ export async function extractPluginArchiveToDirectory(
 export const extractPluginArchive = (
 	options: ExtractPluginArchiveOptions
 ): Effect.Effect<ArchiveExtractionReport, PluginInstallCancelled | MalformedOrUnsafeArchive> =>
-	Effect.tryPromise({
-		try: () => extractPluginArchiveToDirectory(options),
-		catch: (cause) =>
+	awaitCancelableOperation(
+		(runtimeSignal) =>
+			extractPluginArchiveToDirectory({
+				...options,
+				signal: AbortSignal.any([runtimeSignal, options.signal])
+			}),
+		(cause) =>
 			isPluginInstallCancelled(cause) || isMalformedOrUnsafeArchive(cause)
 				? cause
 				: archiveFailure(
@@ -586,4 +590,33 @@ export const extractPluginArchive = (
 						undefined,
 						cause
 					)
+	);
+
+/**
+ * Cancels foreign IO and waits for its Promise to settle before releasing surrounding resources.
+ * Effect.tryPromise alone interrupts without waiting for a stream's asynchronous close handlers.
+ */
+export function awaitCancelableOperation<A, E>(
+	operation: (signal: AbortSignal) => Promise<A>,
+	onError: (cause: unknown) => E
+): Effect.Effect<A, E> {
+	return Effect.callback((resume, signal) => {
+		let pending: Promise<A>;
+		try {
+			pending = operation(signal);
+		} catch (cause) {
+			resume(Effect.sync(() => onError(cause)).pipe(Effect.flatMap(Effect.fail)));
+			return;
+		}
+		void pending.then(
+			(value) => resume(Effect.succeed(value)),
+			(cause) => resume(Effect.sync(() => onError(cause)).pipe(Effect.flatMap(Effect.fail)))
+		);
+		return Effect.promise(() =>
+			pending.then(
+				() => undefined,
+				() => undefined
+			)
+		);
 	});
+}

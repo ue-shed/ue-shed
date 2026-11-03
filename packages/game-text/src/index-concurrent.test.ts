@@ -147,7 +147,7 @@ it.live(
 				Effect.provide(typeScriptIndexBuilderLayer)
 			);
 			const queryLayer = Layer.unwrap(
-				Effect.flatMap(AssetReader, (reader) => reader.configuration()).pipe(
+				Effect.flatMap(AssetReader, (reader) => reader.configuration).pipe(
 					Effect.map(nativeIndexQueryLayer),
 					Effect.provide(AssetReaderLive),
 					Effect.orDie

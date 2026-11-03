@@ -131,9 +131,9 @@ describe("Game Text audit recovery", () => {
 	it("guards rule replacement and recovers an invalid draft after restarting", async () => {
 		const user = userEvent.setup({ delay: null });
 		const base = makeClient();
-		const loadRules = vi.fn(base.chooseQualityRules);
+		const loadRules = vi.fn(() => base.chooseQualityRules);
 		const first = mount(
-			{ ...base, chooseQualityRules: loadRules },
+			{ ...base, chooseQualityRules: Effect.suspend(loadRules) },
 			undefined,
 			"audit-rule-draft"
 		);

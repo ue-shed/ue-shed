@@ -558,11 +558,11 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 				plansPackages: true,
 				intern: Effect.fn("NativeIndexBuilder.intern")(function* (domain, values) {
 					const index = yield* SharedIndex;
-					return yield* (yield* index.writer()).intern(domain, values);
+					return yield* (yield* index.writer).intern(domain, values);
 				}),
 				compact: Effect.fn("NativeIndexBuilder.compact")(function* (force) {
 					const index = yield* SharedIndex;
-					return yield* (yield* index.writer()).compact(force);
+					return yield* (yield* index.writer).compact(force);
 				}),
 				withSession: (request, effect) =>
 					Effect.scoped(
@@ -598,7 +598,7 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 												endedCleanly = native.ended();
 											})
 										),
-										Effect.catch((cause) =>
+										Effect.catchTag("SnapshotStoreError", (cause) =>
 											Effect.logWarning(
 												"Native index session cleanup failed",
 												cause
@@ -609,8 +609,8 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 							);
 							const leased = SharedIndex.of({
 								...backing,
-								inspect: () => Effect.succeed(native.writer.manifest()),
-								writer: () => Effect.succeed(native.writer)
+								inspect: Effect.sync(() => native.writer.manifest()),
+								writer: Effect.sync(() => native.writer)
 							});
 							return yield* effect.pipe(
 								Effect.provide(packageTextReaderConfigurationLayer(configuration)),
@@ -649,7 +649,7 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 export const GameTextIndexBuilderLive = Layer.unwrap(
 	Effect.gen(function* () {
 		const reader = yield* AssetReader;
-		const configuration = yield* reader.configuration();
+		const configuration = yield* reader.configuration;
 		return nativeIndexBuilderLayer(configuration);
 	})
 );

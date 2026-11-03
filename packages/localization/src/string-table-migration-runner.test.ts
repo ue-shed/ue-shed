@@ -56,7 +56,7 @@ function setup(useCallback = false) {
 	const fail = (message: string) => ({ message, recovery: "Inspect the journal." });
 	const host: StringTableKeyMigrationHostApi = {
 		...(useCallback ? { editorProject: () => Effect.succeed(callbackRoot) } : undefined),
-		current: () => Effect.succeed({ projectRoot: selected, endpoint: "http://fixture" }),
+		current: Effect.sync(() => ({ projectRoot: selected, endpoint: "http://fixture" })),
 		store: {
 			create: (value) =>
 				Effect.sync(() => {

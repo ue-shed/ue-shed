@@ -40,7 +40,7 @@ export async function expectLocalizationImportMatchesParser(
 		Effect.scoped(
 			Effect.gen(function* () {
 				const store = yield* SharedIndex;
-				const index = yield* store.open();
+				const index = yield* store.open;
 				const reader = yield* index.layer(imported.key);
 				const entries: unknown[] = [];
 				const ordinals: number[] = [];

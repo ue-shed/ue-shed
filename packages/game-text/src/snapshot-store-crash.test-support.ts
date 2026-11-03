@@ -12,7 +12,7 @@ await Effect.runPromise(
 	Effect.scoped(
 		Effect.gen(function* () {
 			const store = yield* SnapshotStore;
-			const writer = yield* store.writer();
+			const writer = yield* store.writer;
 			yield* writer.publish(snapshotColumnsSource([...table.finish()]), {
 				source: "changed"
 			});

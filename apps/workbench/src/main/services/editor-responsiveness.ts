@@ -41,7 +41,7 @@ export interface EditorResponsivenessPreferenceStore {
 }
 
 export interface WorkbenchEditorResponsivenessApi {
-	readonly settings: () => Effect.Effect<EditorResponsivenessSettings>;
+	readonly settings: Effect.Effect<EditorResponsivenessSettings>;
 	/** Applies at once; a failed save is logged and the choice still holds for this run. */
 	readonly setEnabled: (enabled: boolean) => Effect.Effect<EditorResponsivenessSettings>;
 }
@@ -114,7 +114,7 @@ export function makeWorkbenchEditorResponsivenessLayer(options: {
 				.withPermits(1)(
 					Effect.gen(function* () {
 						const endpoint = (yield* Ref.get(enabled))
-							? yield* connection.endpoint()
+							? yield* connection.endpoint
 							: undefined;
 						const current = yield* Ref.get(holding);
 						const now = yield* Clock.currentTimeMillis;
@@ -176,7 +176,7 @@ export function makeWorkbenchEditorResponsivenessLayer(options: {
 					)
 				);
 
-			const settings = Effect.fn("Workbench.EditorResponsiveness.settings")(function* () {
+			const settings = Effect.gen(function* () {
 				if (!(yield* Ref.get(enabled)))
 					return { enabled: false, state: "off", detail: details.off } as const;
 				const current = yield* Ref.get(holding);
@@ -188,7 +188,7 @@ export function makeWorkbenchEditorResponsivenessLayer(options: {
 				if (lease?._tag === "Lapsed")
 					return { enabled: true, state: "lapsed", detail: details.lapsed } as const;
 				return { enabled: true, state: "connecting", detail: details.connecting } as const;
-			});
+			}).pipe(Effect.withSpan("Workbench.EditorResponsiveness.settings"));
 
 			const setEnabled = Effect.fn("Workbench.EditorResponsiveness.setEnabled")(function* (
 				next: boolean
@@ -205,7 +205,7 @@ export function makeWorkbenchEditorResponsivenessLayer(options: {
 							)
 						)
 					);
-				return yield* settings();
+				return yield* settings;
 			});
 
 			yield* Effect.addFinalizer(() => gate.withPermits(1)(releaseHeld));
@@ -286,7 +286,7 @@ export const makeWorkbenchEditorResponsivenessTestLayer = (
 		WorkbenchEditorResponsiveness,
 		Effect.map(Ref.make(initial), (current) =>
 			WorkbenchEditorResponsiveness.of({
-				settings: () => Ref.get(current),
+				settings: Ref.get(current),
 				setEnabled: (enabled) =>
 					Ref.updateAndGet(current, (value) =>
 						enabled

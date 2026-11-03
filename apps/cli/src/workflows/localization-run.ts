@@ -5,7 +5,7 @@ import {
 	SnapshotFormatError
 } from "@ue-shed/game-text/index";
 import { refreshCliGameTextIndex, invalidateCliGameTextIndex } from "./game-text-index.js";
-import { type Brand, Effect, Metric, Schema, Stream } from "effect";
+import { Layer, type Brand, Effect, Metric, Schema, Stream } from "effect";
 import {
 	LocalizationEvidence,
 	LocalizationEvidenceNodeLive,
@@ -115,7 +115,11 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 										(cause) =>
 											new LocalizationOperationError({
 												cause: cause,
-												...localizationOperationError("io_failed"),
+												code: "io_failed",
+												nextStep:
+													localizationOperationError("io_failed")
+														.nextStep,
+												logExcerpt: [],
 												message: cause.message,
 												recovery: cause.recovery,
 												// No Unreal process has started yet.
@@ -180,7 +184,10 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 							(cause) =>
 								new LocalizationOperationError({
 									cause: cause,
-									...localizationOperationError("io_failed"),
+									code: "io_failed",
+									nextStep: localizationOperationError("io_failed").nextStep,
+									logExcerpt: [],
+									retrySafe: false,
 									message: cause.message,
 									recovery: cause.recovery
 								})
@@ -213,8 +220,12 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 					else yield* printJson(summary);
 				});
 				yield* work.pipe(
-					Effect.provide(LocalizationEvidenceNodeLive),
-					Effect.provide(LocalizationOperationsNodeLive),
+					Effect.provide(
+						Layer.provideMerge(
+							LocalizationEvidenceNodeLive,
+							LocalizationOperationsNodeLive
+						)
+					),
 					Effect.catchTag("ConfigError", () =>
 						Effect.fail(
 							new LocalizationRunConfigurationError({
@@ -246,15 +257,25 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 								const output = {
 									schemaVersion: 1,
 									type: "failure",
-									error: Schema.encodeSync(LocalizationRunFailure)(
+									error: yield* Schema.encodeEffect(LocalizationRunFailure)(
 										error.code === "target_not_found"
 											? new LocalizationOperationError({
-													...error,
+													cause: error,
+													code: error.code,
+													retrySafe: error.retrySafe,
+													nextStep: error.nextStep,
+													logExcerpt: error.logExcerpt,
+													...(error.logPath === undefined
+														? undefined
+														: { logPath: error.logPath }),
+													...(error.exitCode === undefined
+														? undefined
+														: { exitCode: error.exitCode }),
 													message: error.message,
 													recovery: `${error.recovery} Run loc targets and choose a listed target.`
 												})
 											: error
-									)
+									).pipe(Effect.orDie)
 								};
 								if (command.json)
 									yield* runtime.print(`${JSON.stringify(output)}\n`);

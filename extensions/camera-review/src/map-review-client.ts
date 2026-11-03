@@ -98,7 +98,7 @@ export const MapReviewEditorState = Schema.Union([
 export type MapReviewEditorState = typeof MapReviewEditorState.Type;
 
 export interface MapReviewClientApi {
-	readonly editorWorld?: () => Effect.Effect<MapReviewEditorState, MapReviewClientError>;
+	readonly editorWorld?: Effect.Effect<MapReviewEditorState, MapReviewClientError>;
 	readonly openMapInUnreal?: (
 		mapPath: string
 	) => Effect.Effect<MapReviewMapOpenResult, MapReviewClientError>;
@@ -107,9 +107,9 @@ export interface MapReviewClientApi {
 	) => Effect.Effect<CameraWorkspaceResult, MapReviewClientError>;
 	/** Optional while older hosts adopt saved-map support. This source is never an editor session. */
 	readonly readSavedWorld?: (mapPath: string) => Effect.Effect<SavedWorld, MapReviewClientError>;
-	readonly savedWorldMaps?: () => Effect.Effect<readonly SavedWorldMap[], MapReviewClientError>;
-	readonly savedWorldProgress?: () => Effect.Effect<SavedWorldProgress, MapReviewClientError>;
-	readonly connectWorld: () => Effect.Effect<WorldScoutResult, MapReviewClientError>;
+	readonly savedWorldMaps?: Effect.Effect<readonly SavedWorldMap[], MapReviewClientError>;
+	readonly savedWorldProgress?: Effect.Effect<SavedWorldProgress, MapReviewClientError>;
+	readonly connectWorld: Effect.Effect<WorldScoutResult, MapReviewClientError>;
 	readonly focusActor: (
 		actorId: ActorId,
 		bringToFront: boolean
@@ -126,7 +126,7 @@ export interface MapReviewClientApi {
 	readonly authorFromSelection: (
 		intent: MapReviewAuthorFromSelectionIntent
 	) => Effect.Effect<MapReviewAuthoringResult, MapReviewClientError>;
-	readonly authoringResume: () => Effect.Effect<MapReviewAuthoringResult, MapReviewClientError>;
+	readonly authoringResume: Effect.Effect<MapReviewAuthoringResult, MapReviewClientError>;
 	readonly authoringPatch: (
 		intent: MapReviewAuthoringPatchIntent
 	) => Effect.Effect<MapReviewAuthoringResult, MapReviewClientError>;
@@ -151,20 +151,20 @@ export interface MapReviewClientApi {
 	readonly replaceVisibilityPolicy?: (
 		intent: MapReviewReplaceVisibilityPolicyIntent
 	) => Effect.Effect<MapReviewResult, MapReviewClientError>;
-	readonly reviewSetLibrary: () => Effect.Effect<MapReviewSetLibraryResult, MapReviewClientError>;
+	readonly reviewSetLibrary: Effect.Effect<MapReviewSetLibraryResult, MapReviewClientError>;
 	readonly createReviewSet: (
 		intent: MapReviewSetCreateIntent
 	) => Effect.Effect<MapReviewResult, MapReviewClientError>;
 	readonly selectReviewSet: (
 		intent: MapReviewSetSelectIntent
 	) => Effect.Effect<MapReviewResult, MapReviewClientError>;
-	readonly load: () => Effect.Effect<MapReviewResult, MapReviewClientError>;
+	readonly load: Effect.Effect<MapReviewResult, MapReviewClientError>;
 	readonly previewCandidate: (
 		candidateId: string
 	) => Effect.Effect<MapReviewCandidatePreviewResult, MapReviewClientError>;
 	readonly liveFrames: Stream.Stream<MapReviewLiveFrame>;
 	/** Cheap capability probe used to promote cached PNG previews after Unreal reconnects. */
-	readonly livePreviewAvailable?: () => Effect.Effect<boolean, MapReviewClientError>;
+	readonly livePreviewAvailable?: Effect.Effect<boolean, MapReviewClientError>;
 	readonly setLivePreviewFps: (fps: number) => Effect.Effect<number, MapReviewClientError>;
 }
 

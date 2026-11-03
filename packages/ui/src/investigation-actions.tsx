@@ -30,7 +30,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 			format: "json" | "csv"
 		) => Effect.Effect<FileFeedback, Error>;
 		readonly save: (query: Query) => Effect.Effect<FileFeedback, Error>;
-		readonly open: () => Effect.Effect<OpenFeedback<Preset>, Error>;
+		readonly open: Effect.Effect<OpenFeedback<Preset>, Error>;
 	};
 	readonly query: Query;
 	readonly revision: unknown;
@@ -80,7 +80,7 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 		setNotice(undefined);
 		const task: Effect.Effect<FileFeedback | OpenFeedback<Preset>, Error> =
 			operation === "open"
-				? props.client.open()
+				? props.client.open
 				: operation === "save"
 					? props.client.save(props.query)
 					: operation === "extra"

@@ -550,7 +550,7 @@ describe("columnar join", () => {
 				// Restore the captured overlay after the proof so the next edit tests flattening.
 				await run(
 					Effect.gen(function* () {
-						const writer = yield* (yield* SharedIndex).writer();
+						const writer = yield* (yield* SharedIndex).writer;
 						yield* writer.publishIds(
 							"joined",
 							incremental.key,
@@ -791,7 +791,7 @@ describe("columnar join", () => {
 			const beforeCompaction = await run(collect);
 			await run(
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					expect((yield* writer.compact(true)).compacted).toBe(true);
 				})
 			);

@@ -114,14 +114,13 @@ const fixtureRunPath = "C:/Project/.ue-shed/niagara-preview/runs/run/manifest.js
 
 function makeClient(overrides?: Partial<NiagaraPreviewClientApi>): NiagaraPreviewClientApi {
 	return {
-		catalogue: () =>
-			Effect.succeed({
-				entries: [
-					{ objectPath: fixtureSystem },
-					{ objectPath: NiagaraSystemObjectPath.make("/Game/FX/NS_Second.NS_Second") }
-				],
-				status: "ready" as const
-			}),
+		catalogue: Effect.sync(() => ({
+			entries: [
+				{ objectPath: fixtureSystem },
+				{ objectPath: NiagaraSystemObjectPath.make("/Game/FX/NS_Second.NS_Second") }
+			],
+			status: "ready" as const
+		})),
 		frame: () =>
 			Effect.succeed({
 				bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
@@ -203,14 +202,13 @@ describe("NiagaraPreviewRoute", () => {
 	it("surfaces catalogue failures with recovery guidance", async () => {
 		renderRoute(
 			makeClient({
-				catalogue: () =>
-					Effect.succeed({
-						error: {
-							message: "Project Index returned a page from a different generation.",
-							recovery: "Refresh the Project Index, then retry."
-						},
-						status: "failed" as const
-					})
+				catalogue: Effect.sync(() => ({
+					error: {
+						message: "Project Index returned a page from a different generation.",
+						recovery: "Refresh the Project Index, then retry."
+					},
+					status: "failed" as const
+				}))
 			})
 		);
 		await screen.findByRole("alert");
@@ -224,8 +222,8 @@ describe("NiagaraPreviewRoute", () => {
 	it("renders catalogue transport failures as one readable sentence", async () => {
 		renderRoute(
 			makeClient({
-				catalogue: () =>
-					Effect.fail(
+				catalogue: Effect.failSync(
+					() =>
 						new NiagaraPreviewClientError({
 							retrySafe: false,
 							nextStep: "reconcile",
@@ -237,7 +235,7 @@ describe("NiagaraPreviewRoute", () => {
 							operation: "niagaraPreview.catalogue",
 							recovery: "Restart Workbench and verify the selected project."
 						})
-					)
+				)
 			})
 		);
 		await screen.findByRole("alert");

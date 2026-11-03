@@ -36,7 +36,7 @@ export function EditorMapSync(props: {
 		if (!read) return;
 		subscription.subscribe(
 			Stream.fromEffectSchedule(
-				read().pipe(
+				read.pipe(
 					Effect.catchTag("MapReviewClientError", (cause) =>
 						Effect.succeed({
 							status: "unavailable" as const,
@@ -69,7 +69,7 @@ export function EditorMapSync(props: {
 				else {
 					setSwitchMap(undefined);
 					if (props.client.editorWorld)
-						action.run(props.client.editorWorld(), { onSuccess: receive });
+						action.run(props.client.editorWorld, { onSuccess: receive });
 				}
 			}
 		});

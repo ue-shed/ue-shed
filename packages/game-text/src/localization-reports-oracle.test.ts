@@ -71,7 +71,11 @@ describe("word-count reports against Unreal's committed CSVs", () => {
 			expect(
 				report.cultures
 					.map((culture) => [culture.culture, culture.upToDateArchive.sourceWords])
-					.sort()
+					.sort((left, right) => {
+						const leftText = left.join(",");
+						const rightText = right.join(",");
+						return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+					})
 			).toEqual([
 				["de", 59],
 				["en", 62],

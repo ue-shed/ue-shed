@@ -737,7 +737,8 @@ interface LocalizationFindingList {
 	reportedBySource(position: number): boolean;
 	/** The first position with this ID within the culture selection. */
 	find(id: TextQualityFindingId, culture: CultureCode | undefined): number | undefined;
-	items(positions: readonly number[]): readonly WorkspaceQualityItem[];
+	/** Materializes positions as a detached callback; the implementation captures its report. */
+	readonly items: (this: void, positions: readonly number[]) => readonly WorkspaceQualityItem[];
 	/** Check diagnostic counts in first-seen order. */
 	limits(
 		culture: CultureCode | undefined
@@ -1305,8 +1306,8 @@ export const WorkspaceReportRow = Schema.Struct({
 	culture: CultureCode,
 	translatedLines: Words,
 	totalLines: Count,
-	linesPercent: Schema.NullOr(Schema.Number),
-	wordsPercent: Schema.NullOr(Schema.Number),
+	linesPercent: Schema.NullOr(Schema.Finite),
+	wordsPercent: Schema.NullOr(Schema.Finite),
 	wordsNeedingWork: Words,
 	notSynced: Count,
 	/** Present once the project has a review file for the target. */

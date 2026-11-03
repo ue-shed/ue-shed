@@ -16,7 +16,7 @@ import { WorldPreparation, withPreparedWorld, worldPreparationLayer } from "@ue-
 // endpoint and actor identity are explicit host inputs. Coordinates and extents are centimeters.
 const program = Effect.gen(function* () {
 	const service = yield* WorldPreparation;
-	const world = yield* service.describe();
+	const world = yield* service.describe;
 	const requirements = {
 		world,
 		targets: [
@@ -33,9 +33,9 @@ const program = Effect.gen(function* () {
 	// Inspect plan.actors and plan.issues before choosing to acquire.
 	return yield* withPreparedWorld(requirements, (lease) =>
 		Effect.gen(function* () {
-			const before = yield* lease.checkReady();
+			const before = yield* lease.checkReady;
 			const result = yield* performWork(before);
-			return { result, after: yield* lease.checkReady() };
+			return { result, after: yield* lease.checkReady };
 		})
 	);
 });
@@ -53,7 +53,7 @@ restoration before returning. `WorldPreparation.acquire` is the lower-level scop
 revision and releases the previous selection. Both old and new areas count against the actor budget
 during replacement. Replace with `[]` first when a disjoint move cannot fit that overlap.
 
-`lease.checkReady()` performs one poll and fails with evidence if requirements are blocked; it does
+`lease.checkReady` performs one poll and fails with evidence if requirements are blocked; it does
 not wait for a future state. Expected release failures become typed `restoration_failed` errors at
 the scoped boundary. Programming defects and interruption retain their original causes, including
 when restoration also fails.

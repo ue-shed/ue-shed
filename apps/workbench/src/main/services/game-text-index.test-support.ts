@@ -64,9 +64,9 @@ function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>):
 		findingsQuery: unplanted("findingsQuery"),
 		findingsWrite: unplanted("findingsWrite"),
 		rulesCheck: unplanted("rulesCheck"),
-		readCorpus: unplanted("readCorpus"),
-		readLocalizationLines: unplanted("readLocalizationLines"),
-		summary: () => Effect.succeed(emptySummary(corpus)),
+		readCorpus: Effect.die("This test planted no answer for readCorpus."),
+		readLocalizationLines: Effect.die("This test planted no answer for readLocalizationLines."),
+		summary: Effect.sync(() => emptySummary(corpus)),
 		search: unplanted("search"),
 		searchRows: unplanted("searchRows"),
 		focus: unplanted("focus"),
@@ -81,10 +81,12 @@ function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>):
 		writeCorpusCsv: unplanted("writeCorpusCsv"),
 		writeCorpusJson: unplanted("writeCorpusJson"),
 		readUnits: unplanted("readUnits"),
-		readCorpusHeader: unplanted("readCorpusHeader"),
+		readCorpusHeader: Effect.die("This test planted no answer for readCorpusHeader."),
 		readFileCoverage: unplanted("readFileCoverage"),
-		readCorpusReportHeader: unplanted("readCorpusReportHeader"),
-		corpusFingerprint: unplanted("corpusFingerprint"),
+		readCorpusReportHeader: Effect.die(
+			"This test planted no answer for readCorpusReportHeader."
+		),
+		corpusFingerprint: Effect.die("This test planted no answer for corpusFingerprint."),
 		export: unplanted("export"),
 		...answers
 	};
@@ -160,7 +162,7 @@ const emptySummary = (corpus: TextCorpus): TextCorpusQuerySummary => ({
 const emptyCorpusAnswers: CannedQuery = ({ corpus: { units: _units, ...header } }) => ({
 	search: () => Effect.succeed(searchPage()),
 	focus: () => Effect.undefined,
-	readCorpusHeader: () => Effect.succeed(header),
+	readCorpusHeader: Effect.sync(() => header),
 	// The corpus export the engine writes when no unit matches.
 	writeCorpusJson: (_request, file, envelope) =>
 		Effect.sync(() => {
@@ -281,7 +283,7 @@ export function cannedGameTextIndexLayer<E>(
 					return {
 						project: testProjectIndex(request.projectRoot),
 						corpus: Effect.succeed(corpus),
-						summary: yield* query.summary(),
+						summary: yield* query.summary,
 						query,
 						search: query.search,
 						searchRows: query.searchRows,

@@ -25,7 +25,7 @@ export const WorkbenchGameTextOperationsLive = Layer.effect(
 		const window = yield* WorkbenchWindow;
 		// The window follows Game Text's progress as it changes, at most ten times a second; the
 		// last change always goes.
-		yield* gameText.progressChanges().pipe(
+		yield* gameText.progressChanges.pipe(
 			Stream.buffer({ capacity: 1, strategy: "sliding" }),
 			Stream.throttle({ cost: () => 1, units: 1, duration: "100 millis", strategy: "shape" }),
 			Stream.runForEach((progress) =>
@@ -50,7 +50,9 @@ export const WorkbenchGameTextOperationsLive = Layer.effect(
 				) {
 					yield* window.send(
 						"game-text:localization:operation-progress",
-						Schema.encodeSync(GameTextOperationProgress)(progress)
+						yield* Schema.encodeEffect(GameTextOperationProgress)(progress).pipe(
+							Effect.orDie
+						)
 					);
 				})
 			})

@@ -16,10 +16,7 @@ export class InputAtlasClientError extends Schema.TaggedError<
 }) {}
 
 export interface InputAtlasClientApi {
-	readonly loadConfiguredProject: () => Effect.Effect<
-		EnhancedInputRunResult,
-		InputAtlasClientError
-	>;
+	readonly loadConfiguredProject: Effect.Effect<EnhancedInputRunResult, InputAtlasClientError>;
 }
 
 export class InputAtlasClient extends Context.Service<InputAtlasClient, InputAtlasClientApi>()(

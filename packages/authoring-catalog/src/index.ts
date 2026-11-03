@@ -195,7 +195,7 @@ function discoverAuthoringProjectCatalogWith(
 	const live = Option.match(liveConnection, {
 		onNone: () => Effect.undefined,
 		onSome: (connection) =>
-			connection.listTableObjectPaths().pipe(
+			connection.listTableObjectPaths.pipe(
 				Effect.flatMap((objectPaths) =>
 					Effect.forEach(
 						objectPaths,

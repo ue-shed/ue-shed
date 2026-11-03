@@ -239,7 +239,7 @@ describe("shared renderer lifecycle", () => {
 			renderReadiness: "not_assessed"
 		};
 		const service = WorldPreparation.of({
-			describe: () => Effect.succeed(preparation.world),
+			describe: Effect.sync(() => preparation.world),
 			plan: () => Effect.succeed(snapshot),
 			execute: () => Effect.succeed(snapshot),
 			acquire: (requirements) =>
@@ -254,8 +254,8 @@ describe("shared renderer lifecycle", () => {
 					return {
 						id: snapshot.leaseId,
 						progress: Stream.empty,
-						inspect: () => Effect.succeed(snapshot),
-						checkReady: () => Effect.succeed(snapshot),
+						inspect: Effect.succeed(snapshot),
+						checkReady: Effect.succeed(snapshot),
 						replace: () => Effect.succeed(snapshot),
 						guard: (work) => work
 					};
@@ -524,7 +524,7 @@ describe("native screenshot warmup", () => {
 	});
 	it("uses unchanged v1 discovery and rendering when extended discovery is absent", async () => {
 		const h = harness();
-		const response = await Effect.runPromise(h.renderer.capabilities());
+		const response = await Effect.runPromise(h.renderer.capabilities);
 		expect(
 			Schema.decodeResult(CameraRenderCapabilitiesV1)(response, {
 				onExcessProperty: "error"
@@ -546,7 +546,7 @@ describe("native screenshot warmup", () => {
 					: undefined,
 			true
 		);
-		const response = await Effect.runPromise(h.renderer.capabilities());
+		const response = await Effect.runPromise(h.renderer.capabilities);
 		expect(response.highResolutionScreenshot?.maximumWarmupFrames).toBe(256);
 		expect(h.calls).toContain("GetCameraRenderCapabilitiesV2");
 		expect(h.calls).not.toContain("GetCameraRenderCapabilities");
@@ -831,7 +831,7 @@ for (const functionName of [
 			Effect.flip(
 				functionName === "PreflightCameraRender"
 					? renderer.preflight(request).pipe(Effect.as(undefined))
-					: renderer.capabilities().pipe(Effect.as(undefined))
+					: renderer.capabilities.pipe(Effect.as(undefined))
 			)
 		);
 		expect(error.nextStep).toBe("escalate");
@@ -855,7 +855,7 @@ for (const nextStep of ["escalate", "fix_input", "retry"] as const) {
 		const { renderer } = harness((name) =>
 			name === "GetCapabilityManifest" ? Effect.fail(cause) : undefined
 		);
-		const error = await Effect.runPromise(Effect.flip(renderer.capabilities()));
+		const error = await Effect.runPromise(Effect.flip(renderer.capabilities));
 		expect(error.nextStep).toBe(nextStep);
 		expect(error.retrySafe).toBe(true);
 		expect(error.recovery).toBe(cause.recovery);

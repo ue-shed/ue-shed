@@ -34,7 +34,9 @@ Keep pure calculations as plain functions. Effect is not part of the wire protoc
 
 - Give each external library one adapter service.
 - Expose every stateful or effectful module through `Context.Service` and layers.
-- Name public and non-trivial internal operations with `Effect.fn("Domain.operation")`.
+- Name callable public and non-trivial internal operations with `Effect.fn("Domain.operation")`.
+  Parameterless service operation properties attach the same per-execution name with
+  `Effect.withSpan("Domain.operation")`; see [the source migration](effect-operation-properties.md).
 - Use Effect Schema for TypeScript-owned domain values and boundary validation.
 - Expose domain actions, not raw library clients.
 - Use Layers for setup and tests, not hidden global access.

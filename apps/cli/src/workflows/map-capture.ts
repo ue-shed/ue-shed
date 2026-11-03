@@ -29,14 +29,16 @@ const ExplicitTiles = Schema.Array(
 ).check(Schema.isMinLength(1));
 
 function readExplicitTiles(path: string) {
-	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
-		catch: commandError
-	}).pipe(
-		Effect.flatMap(Schema.decodeUnknownEffect(ExplicitTiles)),
-		Effect.mapError(commandError)
-	);
+	return Effect.gen(function* () {
+		const sourceValue = yield* Effect.tryPromise({
+			try: async () => JSON.parse(await readFile(path, "utf8")),
+			catch: commandError
+		});
+		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
+			Effect.mapError(commandError)
+		);
+		return yield* Schema.decodeUnknownEffect(ExplicitTiles)(decodedValue0);
+	}).pipe(Effect.mapError(commandError));
 }
 
 export const runMapCapturePlanValidate = Effect.fn("Cli.workflow.map_capture.plan_validate")(

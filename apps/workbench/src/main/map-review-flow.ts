@@ -30,12 +30,12 @@ export interface MapReviewFlowStepEvidence {
 	readonly identity?: MapReviewFlowIdentity;
 }
 
-type FlowStep = () => Effect.Effect<MapReviewFlowStepEvidence, MapReviewFlowExecutionError>;
+type FlowStep = Effect.Effect<MapReviewFlowStepEvidence, MapReviewFlowExecutionError>;
 
 export interface MapReviewAuthoringRoundtripDriver {
 	readonly approveView: FlowStep;
 	readonly captureView: FlowStep;
-	readonly cleanup: () => Effect.Effect<MapReviewFlowCleanup>;
+	readonly cleanup: Effect.Effect<MapReviewFlowCleanup>;
 	readonly generateRig: FlowStep;
 	readonly inspectEvidence: FlowStep;
 	readonly loadView: FlowStep;
@@ -122,7 +122,7 @@ export const runMapReviewAuthoringRoundtrip = Effect.fn("MapReviewFlow.runAuthor
 			id: Exclude<keyof typeof checkpointDescriptions, "cleanup-verified">,
 			action: FlowStep
 		) {
-			const evidence = yield* action();
+			const evidence = yield* action;
 			identity = mergeIdentity(identity, evidence.identity);
 			const completedAt = new Date(yield* Clock.currentTimeMillis).toISOString();
 			const copy = checkpointDescriptions[id];
@@ -153,7 +153,7 @@ export const runMapReviewAuthoringRoundtrip = Effect.fn("MapReviewFlow.runAuthor
 		return yield* flow.pipe(
 			Effect.onExit(() =>
 				Effect.gen(function* () {
-					const cleanup = yield* args.driver.cleanup();
+					const cleanup = yield* args.driver.cleanup;
 					const copy = checkpointDescriptions["cleanup-verified"];
 					yield* args.sink.checkpoint({
 						attachments: [],

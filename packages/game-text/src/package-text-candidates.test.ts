@@ -58,7 +58,7 @@ it.live("keeps old corpus decoding and makes exclusions visible in loc status co
 		{ units: [] },
 		{ notGatherable: ["Content/Native.uasset"] },
 		({ query }) =>
-			Effect.map(query.summary(), (summary) =>
+			Effect.map(query.summary, (summary) =>
 				expect(
 					Schema.decodeSync(TextCorpusQuerySummary)(summary).notGatherablePackages
 				).toBe(1)

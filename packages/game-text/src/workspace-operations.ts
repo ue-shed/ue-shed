@@ -27,7 +27,7 @@ import type { GameTextWorkspaceApi } from "./workspace.js";
 import type { GameTextWorkspaceProject } from "./workspace-host.js";
 
 /** What the Unreal localization steps need from their host. */
-export interface GameTextOperationsHost {
+export interface GameTextOperationsHost<ProgressError = never> {
 	/** The workspace the steps refresh and that admits one scan or step at a time. */
 	readonly workspace: Pick<
 		GameTextWorkspaceApi,
@@ -44,7 +44,9 @@ export interface GameTextOperationsHost {
 	/** Policy: an explicit Unreal Engine root, or undefined to discover the project's engine. */
 	readonly engineRoot: () => string | undefined;
 	/** Pushes step progress to whoever shows it; a failure is ignored. */
-	readonly notifyProgress: (progress: GameTextOperationProgress) => Effect.Effect<void, unknown>;
+	readonly notifyProgress: (
+		progress: GameTextOperationProgress
+	) => Effect.Effect<void, ProgressError>;
 	/** The application recoveries tell the person to start or restart. Defaults to "the host". */
 	readonly appName?: string;
 }
@@ -155,9 +157,9 @@ function planInputs(plan: LocalizationOperationPlan): string {
  * Unreal localization steps (gather, export, import, compile) for the workspace's selected
  * project: a reviewed plan, one step at a time, cancellation, and a refresh afterwards.
  */
-export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.make")(function* (
-	host: GameTextOperationsHost
-) {
+export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.make")(function* <
+	ProgressError
+>(host: GameTextOperationsHost<ProgressError>) {
 	const runner = yield* LocalizationOperations;
 	const gameText = host.workspace;
 	const project = host.project;
@@ -192,7 +194,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 	const publish = (value: GameTextOperationProgress) =>
 		Effect.gen(function* () {
 			yield* Ref.set(progress, value);
-			const current = yield* project.current();
+			const current = yield* project.current;
 			const saved = yield* Ref.get(confirmation);
 			if (
 				current.status !== "ready" ||
@@ -203,7 +205,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 		});
 	const authorized = (saved: RetainedPlan) =>
 		Effect.gen(function* () {
-			const current = yield* project.current();
+			const current = yield* project.current;
 			return (
 				current.status === "ready" &&
 				current.project.projectRoot === saved.request.projectRoot &&
@@ -216,10 +218,10 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 	): Effect.fn.Return<GameTextOperationState> {
 		// A poll reads the published scan only, so it answers while a scan holds the index.
 		const selected = yield* gameText.operationStateTarget(target);
-		const current = yield* project.current();
+		const current = yield* project.current;
 		const pending = yield* Ref.get(progress);
 		const last = yield* Ref.get(lastResult);
-		const reason = yield* gameText.operationBusyReason();
+		const reason = yield* gameText.operationBusyReason;
 		let available = yield* Ref.get(capabilities);
 		if (selected && available?.target !== selected) {
 			available = {
@@ -250,10 +252,10 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 	): Effect.fn.Return<GameTextOperationPlanResult> {
 		return yield* Effect.uninterruptibleMask((restore) =>
 			Effect.gen(function* () {
-				if (!(yield* gameText.beginOperation())) return busy();
+				if (!(yield* gameText.beginOperation)) return busy();
 				return yield* restore(
 					Effect.gen(function* () {
-						const current = yield* project.current();
+						const current = yield* project.current;
 						const target = yield* gameText.operationTarget(request.target);
 						if (current.status !== "ready" || !target) return stale();
 						const engineRoot = host.engineRoot();
@@ -298,7 +300,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 							Effect.succeed(failure(error, appName))
 						)
 					)
-				).pipe(Effect.ensuring(gameText.endOperation()));
+				).pipe(Effect.ensuring(gameText.endOperation));
 			})
 		);
 	});
@@ -311,7 +313,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 				const saved = yield* Ref.get(confirmation);
 				if (!saved || saved.used || saved.view.id !== id || !(yield* authorized(saved)))
 					return stale();
-				if (!(yield* gameText.beginOperation())) return busy();
+				if (!(yield* gameText.beginOperation)) return busy();
 				yield* Ref.set(confirmation, { ...saved, used: true });
 				const done = yield* Deferred.make<GameTextOperationResult>();
 				const initial: GameTextOperationProgress = {
@@ -437,7 +439,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 							yield* Ref.set(active, undefined);
 							// Failed termination cannot honestly admit another process or a scan.
 							if (result.status !== "failed" || result.code !== "termination_failed")
-								yield* gameText.endOperation();
+								yield* gameText.endOperation;
 							yield* Effect.annotateCurrentSpan({
 								outcomeCode:
 									result.status === "failed" ? result.code : result.status
@@ -475,7 +477,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 	): Effect.fn.Return<GameTextOperationFilesResult> {
 		const saved = yield* Ref.get(confirmation);
 		const completed = yield* Ref.get(receipt);
-		const current = yield* project.current();
+		const current = yield* project.current;
 		if (current.status !== "ready") return stale();
 		const offset = request.offset ?? 0;
 		const source =

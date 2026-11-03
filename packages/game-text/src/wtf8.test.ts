@@ -17,7 +17,9 @@ const Golden = Schema.Struct({
 	cases: Schema.Array(
 		Schema.Struct({
 			name: Schema.String,
-			units: Schema.Array(Schema.Number),
+			units: Schema.Array(
+				Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffff }))
+			),
 			hex: Schema.String,
 			valid: Schema.Boolean
 		})

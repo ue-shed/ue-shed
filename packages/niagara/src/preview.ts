@@ -681,9 +681,9 @@ function validateArtifacts(options: {
 	});
 }
 
-interface PublishRunOptions {
+interface PublishRunOptions<CleanupError> {
 	readonly artifacts: NiagaraPreviewRunManifestValue["artifacts"];
-	readonly cleanupStaging?: ((path: string) => Effect.Effect<void, unknown>) | undefined;
+	readonly cleanupStaging?: ((path: string) => Effect.Effect<void, CleanupError>) | undefined;
 	readonly generatedAtUtc: string;
 	readonly outputRoot: string;
 	readonly receipt: NiagaraPreviewProducerReceipt;
@@ -691,8 +691,8 @@ interface PublishRunOptions {
 }
 
 /** @internal Exported from this module only for deterministic publication tests. */
-export function publishRun(
-	options: PublishRunOptions
+export function publishRun<CleanupError = never>(
+	options: PublishRunOptions<CleanupError>
 ): Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
 	return Effect.gen(function* () {
 		const manifest = yield* Schema.decodeEffect(NiagaraPreviewRunManifest)({
@@ -1205,8 +1205,7 @@ export function runNiagaraPreview(
 	options: RunNiagaraPreviewOptions
 ): Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
 	return Effect.flatMap(NiagaraPreview, (preview) => preview.run(options)).pipe(
-		Effect.provide(NiagaraPreviewLive),
-		Effect.provide(NiagaraPreviewDependenciesLive)
+		Effect.provide(Layer.provideMerge(NiagaraPreviewLive, NiagaraPreviewDependenciesLive))
 	);
 }
 

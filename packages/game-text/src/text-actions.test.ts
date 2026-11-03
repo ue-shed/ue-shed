@@ -89,7 +89,10 @@ function run(handle: (request: RemoteControlRequest) => object, input = request(
 			Effect.provide(
 				makeRemoteControlClientTestLayer((call) => {
 					calls.push(call);
-					return Effect.sync(() => Schema.decodeUnknownSync(Schema.Json)(handle(call)));
+					return Effect.sync(() => handle(call)).pipe(
+						Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
+						Effect.orDie
+					);
 				})
 			)
 		)

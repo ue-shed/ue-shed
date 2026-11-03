@@ -694,9 +694,9 @@ function runMapCaptureWith(args: {
 			const unrealStagingRoot = resolve(projectRoot, "Saved", "UEShed", "MapTileStaging");
 			const attempt = yield* destination.prepare({ planId: plan.id, runId });
 			yield* Effect.addFinalizer(() =>
-				attempt
-					.discard()
-					.pipe(Effect.catchTag("MapCaptureStorageError", () => Effect.undefined))
+				attempt.discard.pipe(
+					Effect.catchTag("MapCaptureStorageError", () => Effect.undefined)
+				)
 			);
 			const startedAt = isoNow(yield* Clock.currentTimeMillis);
 
@@ -1092,10 +1092,15 @@ export function runMapCapture(
 		makeRemoteControlClient({ defaultTimeout: "5 minutes" })
 	);
 	return Effect.flatMap(MapCapture, (service) => service.run(options)).pipe(
-		Effect.provide(MapCaptureLive),
-		Effect.provide(MapCaptureRepositoryLive),
-		Effect.provide(mapTileCaptureRemotePortLayer(options.endpoint)),
-		Effect.provide(remoteClient)
+		Effect.provide(
+			Layer.provideMerge(
+				Layer.provideMerge(
+					Layer.provideMerge(MapCaptureLive, MapCaptureRepositoryLive),
+					mapTileCaptureRemotePortLayer(options.endpoint)
+				),
+				remoteClient
+			)
+		)
 	);
 }
 
@@ -1110,9 +1115,14 @@ export function runMapCapturePlan(
 		makeRemoteControlClient({ defaultTimeout: "5 minutes" })
 	);
 	return Effect.flatMap(MapCapture, (service) => service.run(options)).pipe(
-		Effect.provide(MapCaptureLive),
-		Effect.provide(MapCaptureRepositoryLive),
-		Effect.provide(mapTileCaptureRemotePortLayer(options.endpoint)),
-		Effect.provide(remoteClient)
+		Effect.provide(
+			Layer.provideMerge(
+				Layer.provideMerge(
+					Layer.provideMerge(MapCaptureLive, MapCaptureRepositoryLive),
+					mapTileCaptureRemotePortLayer(options.endpoint)
+				),
+				remoteClient
+			)
+		)
 	);
 }

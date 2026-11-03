@@ -53,7 +53,7 @@ export const FixtureHealthLive = Layer.effect(
 		const remoteControl = yield* RemoteControlClient;
 
 		const probe = (functionName: string, objectPath: string, parameters: Schema.JsonObject) =>
-			connection.endpoint().pipe(
+			connection.endpoint.pipe(
 				Effect.flatMap((endpoint) =>
 					remoteControl.request({
 						endpoint: endpoint,

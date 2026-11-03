@@ -38,7 +38,7 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 					).pipe(Layer.provide(fixture.source));
 					yield* Effect.gen(function* () {
 						const model = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-						const corpus = yield* model.query.readCorpus();
+						const corpus = yield* model.query.readCorpus;
 						expect(corpus.diagnostics).toContainEqual(
 							expect.objectContaining({
 								code: "package_inspection_failed",
@@ -172,7 +172,7 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 						];
 						const lines = yield* model.query.localizationLines(request);
 						expect(lines).toEqual(expected);
-						expect(yield* model.query.readLocalizationLines()).toEqual(expected);
+						expect(yield* model.query.readLocalizationLines).toEqual(expected);
 						expect(yield* model.query.localizationFocus(lines[0]!.id)).toEqual(
 							lines[0]
 						);

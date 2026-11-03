@@ -317,7 +317,7 @@ export interface CameraRenderSession {
  * kept inside its Scope so success, failure and interruption all trigger restoration.
  */
 export interface CameraRendererApi {
-	readonly capabilities: () => Effect.Effect<CameraRenderCapabilities, CameraRenderError>;
+	readonly capabilities: Effect.Effect<CameraRenderCapabilities, CameraRenderError>;
 	readonly preflight: (
 		request: CameraRenderSessionRequest
 	) => Effect.Effect<CameraRenderPreflight, CameraRenderError>;
@@ -385,7 +385,7 @@ export function makeCameraRenderer(
 		(effect, operation, sessionId) =>
 			effect.pipe(Effect.mapError((cause) => renderError(operation, sessionId, cause)))
 	);
-	const capabilities = Effect.fn("CameraRenderer.capabilities")(function* () {
+	const capabilities = Effect.gen(function* () {
 		const manifest = yield* client
 			.request({
 				endpoint,
@@ -422,14 +422,14 @@ export function makeCameraRenderer(
 			),
 			Effect.mapError((cause) => renderError("capabilities", "none", cause))
 		);
-	});
+	}).pipe(Effect.withSpan("CameraRenderer.capabilities"));
 	const preflight = Effect.fn("CameraRenderer.preflight")(function* (
 		input: CameraRenderSessionRequest
 	) {
 		const request = yield* decode(CameraRenderSessionRequest, input).pipe(
 			Effect.mapError((cause) => inputError("preflight", input.sessionId, cause))
 		);
-		const unsupported = unsupportedRendererPolicy(request, yield* capabilities(), "preflight");
+		const unsupported = unsupportedRendererPolicy(request, yield* capabilities, "preflight");
 		if (unsupported) return yield* unsupported;
 		return yield* call("preflight", request.sessionId, "PreflightCameraRender", {
 			RequestJson: JSON.stringify(request)
@@ -442,7 +442,7 @@ export function makeCameraRenderer(
 		const request = yield* decode(CameraRenderSessionRequest, input).pipe(
 			Effect.mapError((cause) => inputError("open", input.sessionId, cause))
 		);
-		const unsupported = unsupportedRendererPolicy(request, yield* capabilities(), "open");
+		const unsupported = unsupportedRendererPolicy(request, yield* capabilities, "open");
 		if (unsupported) return yield* unsupported;
 		const events = yield* PubSub.sliding<CameraRenderProgress>(32);
 		let ownsOrUncertain = true;

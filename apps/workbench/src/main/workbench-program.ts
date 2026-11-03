@@ -11,8 +11,8 @@ import { WorkbenchWindow } from "./adapters/electron-window.js";
  */
 const start = Effect.gen(function* () {
 	const window = yield* WorkbenchWindow;
-	yield* window.load();
-	yield* window.show();
+	yield* window.load;
+	yield* window.show;
 }).pipe(Effect.withSpan("Workbench.WorkbenchProgram.start"));
 
 export const WorkbenchProgram = { start };

@@ -179,9 +179,9 @@ describe("replaceable camera bridge coordinator", () => {
 			await expect(
 				Effect.runPromise(restoreCameraRecovery(f.store, proposal, "native"))
 			).rejects.toThrow("changed");
-			expect(
-				(await Effect.runPromise(f.store.load())).arrangement.settings.heightOffset
-			).toBe(200);
+			expect((await Effect.runPromise(f.store.load)).arrangement.settings.heightOffset).toBe(
+				200
+			);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
 		}
@@ -211,7 +211,7 @@ describe("replaceable camera bridge coordinator", () => {
 				await Effect.runPromise(resolveCameraRecovery(f.store, f.bridge, proposal, choice));
 				expect(f.inspect().pending).toBe(false);
 				expect(f.inspect().pose.fieldOfViewDegrees).toBe(choice === "saved" ? 40 : 55);
-				expect((await Effect.runPromise(f.store.load())).reviewSet.views).toHaveLength(0);
+				expect((await Effect.runPromise(f.store.load)).reviewSet.views).toHaveLength(0);
 				await f.sync();
 			} finally {
 				await rm(f.root, { recursive: true, force: true });
@@ -229,7 +229,7 @@ describe("replaceable camera bridge coordinator", () => {
 			await expect(
 				Effect.runPromise(resolveCameraRecovery(f.store, f.bridge, proposal, "saved"))
 			).rejects.toThrow("changed");
-			expect((await Effect.runPromise(f.store.load())).arrangement.revision).toBe(0);
+			expect((await Effect.runPromise(f.store.load)).arrangement.revision).toBe(0);
 			expect(f.inspect().pose.fieldOfViewDegrees).toBe(65);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
@@ -238,22 +238,22 @@ describe("replaceable camera bridge coordinator", () => {
 	it("persists native delete and undo without losing original View identity", async () => {
 		const f = await fixture(true);
 		try {
-			const original = (await Effect.runPromise(f.store.load())).arrangement.cameras[1]!;
+			const original = (await Effect.runPromise(f.store.load)).arrangement.cameras[1]!;
 			f.edit({ edits: [], removed: [original.id] });
 			await f.sync();
-			let saved = await Effect.runPromise(f.store.load());
+			let saved = await Effect.runPromise(f.store.load);
 			expect(saved.arrangement.cameras).toHaveLength(5);
 			expect(saved.arrangement.retiredCameraIds).toContain(original.id);
 			f.edit({ edits: [], removed: [], added: [original] });
 			await f.sync();
-			saved = await Effect.runPromise(f.store.load());
+			saved = await Effect.runPromise(f.store.load);
 			expect(
 				saved.arrangement.cameras.find((camera) => camera.id === original.id)?.viewId
 			).toBe(original.viewId);
 			expect(saved.arrangement.retiredCameraIds).not.toContain(original.id);
 			f.edit({ edits: [], removed: [original.id], added: [] });
 			await f.sync();
-			expect((await Effect.runPromise(f.store.load())).arrangement.cameras).toHaveLength(5);
+			expect((await Effect.runPromise(f.store.load)).arrangement.cameras).toHaveLength(5);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
 		}
@@ -267,7 +267,7 @@ describe("replaceable camera bridge coordinator", () => {
 			f.edit({ cameras: remaining, edits: [], removed: [original.id] });
 			f.raceAcknowledgement({ cameras: originalSet, removed: [], added: [], edits: [] });
 			await expect(f.sync()).rejects.toThrow("Native edit raced apply");
-			expect((await Effect.runPromise(f.store.load())).arrangement.cameras).toHaveLength(5);
+			expect((await Effect.runPromise(f.store.load)).arrangement.cameras).toHaveLength(5);
 			// The deletion was committed, but Unreal undid it before seeing the host ack.
 			f.raceAcknowledgement({
 				cameras: remaining,
@@ -276,12 +276,12 @@ describe("replaceable camera bridge coordinator", () => {
 				edits: []
 			});
 			await expect(f.sync()).rejects.toThrow("Native edit raced apply");
-			const restored = await Effect.runPromise(f.store.load());
+			const restored = await Effect.runPromise(f.store.load);
 			expect(
 				restored.arrangement.cameras.find((camera) => camera.id === original.id)?.viewId
 			).toBe(original.definition!.viewId);
 			await f.sync();
-			expect((await Effect.runPromise(f.store.load())).arrangement.cameras).toHaveLength(5);
+			expect((await Effect.runPromise(f.store.load)).arrangement.cameras).toHaveLength(5);
 			expect(f.inspect().pending).toBe(false);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
@@ -290,7 +290,7 @@ describe("replaceable camera bridge coordinator", () => {
 	it("autosaves edits to several cameras atomically, even when neither is the active camera", async () => {
 		const f = await fixture(true);
 		try {
-			const document = await Effect.runPromise(f.store.load());
+			const document = await Effect.runPromise(f.store.load);
 			const first = resolveArrangementCamera(document.arrangement, "camera-1");
 			const second = resolveArrangementCamera(document.arrangement, "camera-4");
 			f.edit({
@@ -309,7 +309,7 @@ describe("replaceable camera bridge coordinator", () => {
 			await expect(f.sync()).rejects.toThrow("Lost acknowledgement");
 			await f.sync();
 			const saved = await Effect.runPromise(
-				makeCameraAuthoringStore(join(f.root, "draft.json")).load()
+				makeCameraAuthoringStore(join(f.root, "draft.json")).load
 			);
 			expect(saved.arrangement.revision).toBe(1);
 			expect(resolveArrangementCamera(saved.arrangement, "camera-1").location).toEqual({
@@ -334,7 +334,7 @@ describe("replaceable camera bridge coordinator", () => {
 		try {
 			f.edit({ cameraId: ArrangementCameraId.make("camera-4"), edits: [] });
 			await f.sync();
-			expect((await Effect.runPromise(f.store.load())).arrangement.revision).toBe(0);
+			expect((await Effect.runPromise(f.store.load)).arrangement.revision).toBe(0);
 			expect(f.inspect().cameraId).toBe("camera-4");
 			expect(f.inspect().pending).toBe(false);
 		} finally {
@@ -351,7 +351,7 @@ describe("replaceable camera bridge coordinator", () => {
 				]
 			});
 			await expect(f.sync()).rejects.toThrow();
-			expect((await Effect.runPromise(f.store.load())).arrangement.revision).toBe(0);
+			expect((await Effect.runPromise(f.store.load)).arrangement.revision).toBe(0);
 			expect(f.inspect().pending).toBe(true);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
@@ -363,14 +363,14 @@ describe("replaceable camera bridge coordinator", () => {
 			f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
 			f.raceAcknowledgement();
 			await expect(f.sync()).rejects.toThrow("Native edit raced apply");
-			expect((await Effect.runPromise(f.store.load())).arrangement.revision).toBe(1);
+			expect((await Effect.runPromise(f.store.load)).arrangement.revision).toBe(1);
 			await f.sync();
 			expect(f.inspect()).toMatchObject({
 				revision: 2,
 				pending: false,
 				pose: { fieldOfViewDegrees: 45 }
 			});
-			expect((await Effect.runPromise(f.store.load())).arrangement.revision).toBe(2);
+			expect((await Effect.runPromise(f.store.load)).arrangement.revision).toBe(2);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
 		}
@@ -389,14 +389,14 @@ describe("replaceable camera bridge coordinator", () => {
 			f.loseAcknowledgement();
 			await expect(f.sync()).rejects.toThrow("Lost acknowledgement");
 			const saved = await Effect.runPromise(
-				makeCameraAuthoringStore(join(f.root, "draft.json")).load()
+				makeCameraAuthoringStore(join(f.root, "draft.json")).load
 			);
 			expect(saved.arrangement.revision).toBe(1);
 			expect(saved.reviewSet.views[0]?.viewpoint).toMatchObject({
 				approvedPose: { fieldOfViewDegrees: 40, location: { x: 15, y: 20, z: 25 } }
 			});
 			await f.sync();
-			expect((await Effect.runPromise(f.store.load())).arrangement.revision).toBe(1);
+			expect((await Effect.runPromise(f.store.load)).arrangement.revision).toBe(1);
 			expect(f.inspect().pending).toBe(false);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
@@ -421,7 +421,7 @@ describe("replaceable camera bridge coordinator", () => {
 			expect(f.inspect().pose.fieldOfViewDegrees).toBe(55);
 			expect(f.inspect().pending).toBe(true);
 			expect(
-				(await Effect.runPromise(f.store.load())).arrangement.settings.fieldOfViewDegrees
+				(await Effect.runPromise(f.store.load)).arrangement.settings.fieldOfViewDegrees
 			).toBe(40);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
@@ -448,7 +448,7 @@ describe("replaceable camera bridge coordinator", () => {
 				pending: false,
 				pose: { fieldOfViewDegrees: 40 }
 			});
-			expect((await Effect.runPromise(f.store.load())).arrangement.revision).toBe(1);
+			expect((await Effect.runPromise(f.store.load)).arrangement.revision).toBe(1);
 		} finally {
 			await rm(f.root, { recursive: true, force: true });
 		}

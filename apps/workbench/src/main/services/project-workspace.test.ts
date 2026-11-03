@@ -39,27 +39,25 @@ it.effect(
 			};
 			const b = { ...a, projectRoot: "C:/Projects/B", projectName: "B" };
 			const selected = yield* Ref.make(a);
-			const current = () =>
-				Ref.get(selected).pipe(
-					Effect.map((project) => ({ status: "ready" as const, project }))
-				);
+			const current = Ref.get(selected).pipe(
+				Effect.map((project) => ({ status: "ready" as const, project }))
+			);
 			const service = {
 				choose: current,
 				current,
-				recent: () => Effect.succeed([b]),
-				savedProject: () =>
-					Ref.get(selected).pipe(
-						Effect.map(({ projectRoot }) => ({ projectRoot, maps: [] }))
-					),
-				inputAtlas: () => Effect.die("Selection-only tests must not scan input assets."),
-				savedTables: () => Effect.die("Selection-only tests must not scan tables.")
+				recent: Effect.sync(() => [b]),
+				savedProject: Ref.get(selected).pipe(
+					Effect.map(({ projectRoot }) => ({ projectRoot, maps: [] }))
+				),
+				inputAtlas: Effect.die("Selection-only tests must not scan input assets."),
+				savedTables: Effect.die("Selection-only tests must not scan tables.")
 			};
 			// @ts-expect-error A recent list requires its own openRecent transition.
 			const missingTransition = makeWorkbenchProjectTestLayer(service);
 			yield* Effect.gen(function* () {
 				const project = yield* WorkbenchProject;
 				expect((yield* project.openRecent(b.projectRoot)).status).toBe("failed");
-				expect((yield* project.selectedProject()).projectRoot).toBe(a.projectRoot);
+				expect((yield* project.selectedProject).projectRoot).toBe(a.projectRoot);
 			}).pipe(Effect.provide(missingTransition));
 			const complete = makeWorkbenchProjectTestLayer({
 				...service,
@@ -67,7 +65,7 @@ it.effect(
 					Effect.gen(function* () {
 						expect(root).toBe(b.projectRoot);
 						yield* Ref.set(selected, b);
-						return yield* current();
+						return yield* current;
 					})
 			});
 			yield* Effect.gen(function* () {
@@ -76,8 +74,8 @@ it.effect(
 					status: "ready",
 					project: b
 				});
-				expect((yield* project.selectedProject()).projectRoot).toBe(b.projectRoot);
-				expect(yield* project.current()).toEqual({ status: "ready", project: b });
+				expect((yield* project.selectedProject).projectRoot).toBe(b.projectRoot);
+				expect(yield* project.current).toEqual({ status: "ready", project: b });
 			}).pipe(Effect.provide(complete));
 		})
 );
@@ -213,35 +211,31 @@ it.effect(
 					})
 			});
 			const reader = makeAssetReaderTestLayer({
-				configuration: () =>
-					Effect.succeed({
-						executable: "uasset",
-						timeoutMs: 30_000,
-						catalogTimeoutMs: 50 * 60_000
-					}),
-				catalogProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						cacheHits: 0,
-						processedAssets: 0,
-						tablesFound: 0,
-						totalAssets: 0
-					}),
-				scanProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						cacheHits: 0,
-						emittedAssets: 0,
-						processedAssets: 0,
-						totalAssets: 0
-					}),
-				savedWorldProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						actorsFound: 0,
-						processedPackages: 0,
-						totalPackages: 0
-					}),
+				configuration: Effect.sync(() => ({
+					executable: "uasset",
+					timeoutMs: 30_000,
+					catalogTimeoutMs: 50 * 60_000
+				})),
+				catalogProgress: Effect.sync(() => ({
+					phase: "idle",
+					cacheHits: 0,
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				})),
+				scanProgress: Effect.sync(() => ({
+					phase: "idle",
+					cacheHits: 0,
+					emittedAssets: 0,
+					processedAssets: 0,
+					totalAssets: 0
+				})),
+				savedWorldProgress: Effect.sync(() => ({
+					phase: "idle",
+					actorsFound: 0,
+					processedPackages: 0,
+					totalPackages: 0
+				})),
 				readBlueprint: () =>
 					Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 				readLevelSequence: () =>
@@ -264,7 +258,7 @@ it.effect(
 				discoverTables: () => Effect.die("unused"),
 				readAsset: () => Effect.die("unused"),
 				readTable: () => Effect.die("unused"),
-				source: () => Effect.succeed("configured")
+				source: Effect.succeed("configured")
 			});
 			const picker = Layer.succeed(ElectronDialog, {
 				chooseDirectory: () =>
@@ -275,7 +269,7 @@ it.effect(
 			});
 			yield* Effect.gen(function* () {
 				const service = yield* WorkbenchProject;
-				expect(yield* service.current()).toMatchObject({
+				expect(yield* service.current).toMatchObject({
 					status: "ready",
 					project: { packageCount: 1 }
 				});
@@ -291,7 +285,7 @@ it.effect(
 				});
 				fail = true;
 				expect((yield* service.refresh()).status).toBe("failed");
-				expect(yield* service.current()).toMatchObject({
+				expect(yield* service.current).toMatchObject({
 					status: "ready",
 					project: { packageCount: 0 }
 				});
@@ -307,20 +301,24 @@ it.effect(
 				yield* Deferred.await(started);
 				picked = "C:/Projects/Other";
 				packages = 7;
-				expect((yield* service.choose()).status).toBe("ready");
+				expect((yield* service.choose).status).toBe("ready");
 				yield* Deferred.succeed(release, undefined);
 				yield* Fiber.join(oldRefresh);
-				expect(yield* service.current()).toMatchObject({
+				expect(yield* service.current).toMatchObject({
 					status: "ready",
 					project: {
 						projectRoot: picked,
 						packageCount: 7
 					}
 				});
-				expect((yield* service.savedProject()).projectRoot).toBe(picked);
+				expect((yield* service.savedProject).projectRoot).toBe(picked);
 			}).pipe(
-				Effect.provide(WorkbenchProjectLive),
-				Effect.provide(Layer.mergeAll(configuredProject, picker, history, reader, index))
+				Effect.provide(
+					Layer.provideMerge(
+						WorkbenchProjectLive,
+						Layer.mergeAll(configuredProject, picker, history, reader, index)
+					)
+				)
 			);
 		})
 );
@@ -346,35 +344,31 @@ it.effect("restores recent selection only when no explicit project is configured
 		textureAuditRules: { status: "not_configured" }
 	});
 	const unusedReader = makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -392,7 +386,7 @@ it.effect("restores recent selection only when no explicit project is configured
 		discoverTables: () => Effect.die("not used"),
 		readAsset: () => Effect.die("not used"),
 		readTable: () => Effect.die("not used"),
-		source: () => Effect.succeed("configured" as const)
+		source: Effect.sync(() => "configured" as const)
 	});
 	const unusedIndex = makeProjectIndexTestLayer({
 		query: () => Effect.die("not used"),
@@ -407,10 +401,11 @@ it.effect("restores recent selection only when no explicit project is configured
 	return Effect.gen(function* () {
 		const restored = yield* Effect.gen(function* () {
 			const service = yield* WorkbenchProject;
-			return yield* service.selectedProject();
+			return yield* service.selectedProject;
 		}).pipe(
-			Effect.provide(WorkbenchProjectLive),
-			Effect.provide(dependencies(unconfiguredProject))
+			Effect.provide(
+				Layer.provideMerge(WorkbenchProjectLive, dependencies(unconfiguredProject))
+			)
 		);
 		expect(restored).toEqual({
 			projectName: "Remembered",
@@ -419,10 +414,9 @@ it.effect("restores recent selection only when no explicit project is configured
 
 		const disabled = yield* Effect.gen(function* () {
 			const service = yield* WorkbenchProject;
-			return yield* service.selectedProject().pipe(Effect.flip);
+			return yield* service.selectedProject.pipe(Effect.flip);
 		}).pipe(
-			Effect.provide(WorkbenchProjectLive),
-			Effect.provide(dependencies(disabledProject))
+			Effect.provide(Layer.provideMerge(WorkbenchProjectLive, dependencies(disabledProject)))
 		);
 		expect(disabled.message).toBe("No Workbench project is selected.");
 	});
@@ -502,35 +496,31 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 			ProjectIndexRefreshEvent.cases.Completed.make({ summary })
 		]);
 		const assetReader = makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 50 * 60_000
-				}),
-			catalogProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
-			scanProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					emittedAssets: 0,
-					processedAssets: 0,
-					totalAssets: 0
-				}),
-			savedWorldProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					actorsFound: 0,
-					processedPackages: 0,
-					totalPackages: 0
-				}),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			})),
+			catalogProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
+			scanProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			})),
+			savedWorldProgress: Effect.sync(() => ({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			})),
 			readBlueprint: () =>
 				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 			readLevelSequence: () =>
@@ -558,7 +548,7 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 				);
 				return Effect.succeed(legacyProjectIndex());
 			},
-			source: () => Effect.succeed("configured" as const)
+			source: Effect.sync(() => "configured" as const)
 		});
 		const projectIndex = makeProjectIndexTestLayer({
 			rebuild: () => refresh,
@@ -582,11 +572,11 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 
 		yield* Effect.gen(function* () {
 			const service = yield* WorkbenchProject;
-			expect(yield* service.current()).toMatchObject({
+			expect(yield* service.current).toMatchObject({
 				project: { inputAtlas: "deferred", mapCount: 1, packageCount: 2, projectRoot },
 				status: "ready"
 			});
-			expect(yield* service.savedProject()).toEqual({
+			expect(yield* service.savedProject).toEqual({
 				maps: [{ label: "Playground", mapPath: "Content/Maps/L_Playground.umap" }],
 				projectRoot
 			});
@@ -606,19 +596,21 @@ it.effect("uses bounded Project Index pages without loading a legacy inventory",
 					})
 				})
 			]);
-			expect((yield* service.inputAtlas()).status).toBe("completed");
-			expect((yield* service.savedTables()).tables).toEqual([
+			expect((yield* service.inputAtlas).status).toBe("completed");
+			expect((yield* service.savedTables).tables).toEqual([
 				expect.objectContaining({ objectPath: "/Game/Tables/DT_Test.DT_Test" })
 			]);
-			expect((yield* service.progress()).phase).toBe("ready");
-			expect(yield* service.recent()).toEqual([
+			expect((yield* service.progress).phase).toBe("ready");
+			expect(yield* service.recent).toEqual([
 				{ projectName: "Selected", projectRoot },
 				{ projectName: "Previous", projectRoot: "D:/Projects/Previous" }
 			]);
 		}).pipe(
-			Effect.provide(WorkbenchProjectLive),
 			Effect.provide(
-				Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+				Layer.provideMerge(
+					WorkbenchProjectLive,
+					Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+				)
 			)
 		);
 	})
@@ -700,35 +692,31 @@ it.effect("recovers a candidate query when the committed generation changes", ()
 				}))
 		});
 		const assetReader = makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 50 * 60_000
-				}),
-			catalogProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
-			scanProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					emittedAssets: 0,
-					processedAssets: 0,
-					totalAssets: 0
-				}),
-			savedWorldProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					actorsFound: 0,
-					processedPackages: 0,
-					totalPackages: 0
-				}),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			})),
+			catalogProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
+			scanProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			})),
+			savedWorldProgress: Effect.sync(() => ({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			})),
 			readBlueprint: () =>
 				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 			readLevelSequence: () =>
@@ -748,20 +736,22 @@ it.effect("recovers a candidate query when the committed generation changes", ()
 			readAsset: () => Effect.die("not used"),
 			readTable: () => Effect.die("not used"),
 			scanProject: () => Effect.die("not used"),
-			source: () => Effect.succeed("configured" as const)
+			source: Effect.sync(() => "configured" as const)
 		});
 
 		yield* Effect.gen(function* () {
 			const service = yield* WorkbenchProject;
-			expect((yield* service.current()).status).toBe("ready");
+			expect((yield* service.current).status).toBe("ready");
 			const candidates = yield* service.candidates("saved_tables");
 			expect(candidates.assets).toHaveLength(1);
 			expect(candidates.generation).toBe(latestGeneration);
 			expect(generations).toEqual([1, 1, 2, 2]);
 		}).pipe(
-			Effect.provide(WorkbenchProjectLive),
 			Effect.provide(
-				Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+				Layer.provideMerge(
+					WorkbenchProjectLive,
+					Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+				)
 			)
 		);
 	})
@@ -823,15 +813,14 @@ it.effect("a refresh during a warm open's background refresh waits for it instea
 			status: () => Effect.succeed({ status: "ready" as const, summary: summary(1) })
 		});
 		const assetReader = makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 50 * 60_000
-				}),
-			catalogProgress: () => Effect.die("not used"),
-			scanProgress: () => Effect.die("not used"),
-			savedWorldProgress: () => Effect.die("not used"),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			})),
+			catalogProgress: Effect.suspend(() => Effect.die("not used")),
+			scanProgress: Effect.suspend(() => Effect.die("not used")),
+			savedWorldProgress: Effect.suspend(() => Effect.die("not used")),
 			readBlueprint: () => Effect.die("not used"),
 			readLevelSequence: () => Effect.die("not used"),
 			readSavedWorld: () => Effect.die("not used"),
@@ -843,13 +832,13 @@ it.effect("a refresh during a warm open's background refresh waits for it instea
 			readAsset: () => Effect.die("not used"),
 			readTable: () => Effect.die("not used"),
 			scanProject: () => Effect.die("not used"),
-			source: () => Effect.succeed("configured" as const)
+			source: Effect.sync(() => "configured" as const)
 		});
 
 		yield* Effect.gen(function* () {
 			const service = yield* WorkbenchProject;
 			// A committed index opens at once and refreshes in the background.
-			expect((yield* service.current()).status).toBe("ready");
+			expect((yield* service.current).status).toBe("ready");
 			yield* Deferred.await(backgroundStarted);
 			const scan = yield* service.refresh().pipe(Effect.forkChild);
 			for (let index = 0; index < 25; index += 1) yield* Effect.yieldNow;
@@ -860,9 +849,11 @@ it.effect("a refresh during a warm open's background refresh waits for it instea
 			});
 			expect(calls).toBe(2);
 		}).pipe(
-			Effect.provide(WorkbenchProjectLive),
 			Effect.provide(
-				Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+				Layer.provideMerge(
+					WorkbenchProjectLive,
+					Layer.mergeAll(configuredProject, dialog, history, assetReader, projectIndex)
+				)
 			)
 		);
 	})

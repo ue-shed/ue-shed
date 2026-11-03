@@ -9,26 +9,31 @@ import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 import { Showcase, ShowcaseLive } from "./showcase.js";
 
 const stubReader = (source: "configured" | "path"): AssetReaderTestApi => ({
-	configuration: () =>
-		Effect.succeed({ executable: "uasset", timeoutMs: 30_000, catalogTimeoutMs: 50 * 60_000 }),
-	catalogProgress: () =>
-		Effect.succeed({
-			phase: "idle",
-			cacheHits: 0,
-			processedAssets: 0,
-			tablesFound: 0,
-			totalAssets: 0
-		}),
-	scanProgress: () =>
-		Effect.succeed({
-			phase: "idle",
-			cacheHits: 0,
-			emittedAssets: 0,
-			processedAssets: 0,
-			totalAssets: 0
-		}),
-	savedWorldProgress: () =>
-		Effect.succeed({ phase: "idle", actorsFound: 0, processedPackages: 0, totalPackages: 0 }),
+	configuration: Effect.sync(() => ({
+		executable: "uasset",
+		timeoutMs: 30_000,
+		catalogTimeoutMs: 50 * 60_000
+	})),
+	catalogProgress: Effect.sync(() => ({
+		phase: "idle",
+		cacheHits: 0,
+		processedAssets: 0,
+		tablesFound: 0,
+		totalAssets: 0
+	})),
+	scanProgress: Effect.sync(() => ({
+		phase: "idle",
+		cacheHits: 0,
+		emittedAssets: 0,
+		processedAssets: 0,
+		totalAssets: 0
+	})),
+	savedWorldProgress: Effect.sync(() => ({
+		phase: "idle",
+		actorsFound: 0,
+		processedPackages: 0,
+		totalPackages: 0
+	})),
 	readBlueprint: () => Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 	readLevelSequence: () =>
 		Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
@@ -45,41 +50,40 @@ const stubReader = (source: "configured" | "path"): AssetReaderTestApi => ({
 		Effect.succeed({ diagnostics: [], projectRoot: "", scannedAssets: 0, tables: [] }),
 	readAsset: () => Effect.die("not used"),
 	readTable: () => Effect.die("not used"),
-	source: () => Effect.succeed(source)
+	source: Effect.sync(() => source)
 });
 
 const readyProject = makeWorkbenchProjectTestLayer({
-	choose: () => Effect.die("not used"),
-	current: () =>
-		Effect.succeed({
-			project: {
-				inputAtlas: "deferred" as const,
-				mapCount: 3,
-				packageCount: 12,
-				projectName: "FixtureProject",
-				projectRoot: "C:/FixtureProject"
-			},
-			status: "ready" as const
-		}),
-	inputAtlas: () => Effect.die("not used"),
-	savedProject: () => Effect.die("not used"),
-	savedTables: () => Effect.die("not used"),
+	choose: Effect.suspend(() => Effect.die("not used")),
+	current: Effect.sync(() => ({
+		project: {
+			inputAtlas: "deferred" as const,
+			mapCount: 3,
+			packageCount: 12,
+			projectName: "FixtureProject",
+			projectRoot: "C:/FixtureProject"
+		},
+		status: "ready" as const
+	})),
+	inputAtlas: Effect.suspend(() => Effect.die("not used")),
+	savedProject: Effect.suspend(() => Effect.die("not used")),
+	savedTables: Effect.suspend(() => Effect.die("not used")),
 	candidates: () => Effect.die("Home must not hydrate candidates"),
 	count: () => Effect.succeed(0)
 });
 
 const unconfiguredProject = makeWorkbenchProjectTestLayer({
-	choose: () => Effect.die("not used"),
-	current: () => Effect.succeed({ status: "not_configured" as const }),
-	inputAtlas: () => Effect.die("not used"),
-	savedProject: () => Effect.die("not used"),
-	savedTables: () => Effect.die("not used")
+	choose: Effect.suspend(() => Effect.die("not used")),
+	current: Effect.sync(() => ({ status: "not_configured" as const })),
+	inputAtlas: Effect.suspend(() => Effect.die("not used")),
+	savedProject: Effect.suspend(() => Effect.die("not used")),
+	savedTables: Effect.suspend(() => Effect.die("not used"))
 });
 
 it.effect("reports fixture configured when project and rules exist", () =>
 	Effect.gen(function* () {
 		const showcase = yield* Showcase;
-		const context = yield* showcase.context();
+		const context = yield* showcase.context;
 		expect(context).toEqual({
 			configSampleAvailable: false,
 			fixtureConfigured: true,
@@ -135,7 +139,7 @@ it.effect("reports fixture configured when project and rules exist", () =>
 it.effect("reports fixture not configured when nothing is set", () =>
 	Effect.gen(function* () {
 		const showcase = yield* Showcase;
-		const context = yield* showcase.context();
+		const context = yield* showcase.context;
 		expect(context).toEqual({
 			configSampleAvailable: false,
 			fixtureConfigured: false,
@@ -171,7 +175,7 @@ it.effect("reports fixture not configured when nothing is set", () =>
 it.effect("reports fixture not configured when configured paths are missing on disk", () =>
 	Effect.gen(function* () {
 		const showcase = yield* Showcase;
-		const context = yield* showcase.context();
+		const context = yield* showcase.context;
 		expect(context.fixtureConfigured).toBe(false);
 	}).pipe(
 		Effect.provide(

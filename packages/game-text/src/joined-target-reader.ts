@@ -168,7 +168,7 @@ export const readJoinedTarget = Effect.fn("JoinedTarget.read")(function* (
 	return { reader, layer, rawLayer, baseLayer, meta };
 });
 export const openJoinedTarget = Effect.fn("JoinedTarget.open")(function* () {
-	return yield* readJoinedTarget(yield* (yield* SharedIndex).open());
+	return yield* readJoinedTarget(yield* (yield* SharedIndex).open);
 });
 export type JoinedTargetReader = Effect.Success<ReturnType<typeof openJoinedTarget>>;
 

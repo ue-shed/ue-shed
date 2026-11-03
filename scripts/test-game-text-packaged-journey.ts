@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { Duration, Effect, Layer, Schema, Stream } from "effect";
+import { type Brand, Duration, Effect, Layer, Schema, Stream } from "effect";
+import { ErrorGuidanceFields } from "../packages/protocol/src/errors.ts";
 import { OwnedProcessTree, OwnedProcessTreeLive } from "../packages/engine/dist/index.js";
 import {
 	CompiledPluginBuildResult,
@@ -23,6 +24,7 @@ import {
 	extractProjectTextPackages
 } from "../packages/unreal-assets/dist/index.js";
 import { makeGameTextIdRepairs } from "../packages/game-text/src/workspace-id-repairs.ts";
+import { GameTextWorkspaceHostFailure } from "../packages/game-text/src/workspace-host.ts";
 import { textOccurrenceFromExtraction } from "../packages/game-text/src/corpus.ts";
 import { makeTextUnitId } from "../packages/game-text/src/identifiers.ts";
 import { TextIdRepairRequest } from "../packages/game-text/src/id-repair-schema.ts";
@@ -48,6 +50,14 @@ const repository = resolve(import.meta.dirname, "..");
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 const record = <A>(name: string, value: A) =>
 	writeFileSync(join(output, name), JSON.stringify(value, null, 2) + "\n");
+class PackagedJourneyReadinessError extends Schema.TaggedError<
+	PackagedJourneyReadinessError,
+	Brand.Brand<"scripts/test-game-text-packaged-journey/PackagedJourneyReadinessError">
+>()("PackagedJourneyReadinessError", {
+	...ErrorGuidanceFields,
+	code: Schema.Literals(["editor_exited", "remote_control_timeout"]),
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 const built = Schema.decodeUnknownSync(CompiledPluginBuildResult)(
 	readJson(join(output, "build-result.json"))
 );
@@ -203,10 +213,14 @@ const port = Number(new URL(endpoint).port);
 const io = <A>(operation: () => A) =>
 	Effect.try({
 		try: operation,
-		catch: (cause) => ({
-			message: String(cause),
-			recovery: "Inspect the disposable acceptance project."
-		})
+		catch: (cause) =>
+			new GameTextWorkspaceHostFailure({
+				cause,
+				message: "Could not read or write acceptance evidence.",
+				recovery: "Inspect the disposable acceptance project.",
+				nextStep: "reconcile",
+				retrySafe: false
+			})
 	});
 const readOffline = () =>
 	Stream.runCollect(extractProjectTextPackages({ projectRoot: project, paths: files }));
@@ -278,15 +292,30 @@ const program = Effect.scoped(
 				}
 				throw new Error("Remote Control did not become ready in ten minutes");
 			},
-			catch: (cause) => cause
+			catch: (cause) =>
+				new PackagedJourneyReadinessError({
+					code: "remote_control_timeout",
+					cause,
+					message: "Remote Control did not become ready in ten minutes.",
+					recovery:
+						"Inspect the disposable editor launch log and Remote Control configuration.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				})
 		}).pipe(
 			Effect.raceFirst(
 				editor.awaitExit.pipe(
 					Effect.flatMap((exit) =>
 						Effect.fail(
-							new Error(
-								`Editor exited before HTTP readiness: ${JSON.stringify(exit)}`
-							)
+							new PackagedJourneyReadinessError({
+								code: "editor_exited",
+								cause: exit,
+								message: "Editor exited before HTTP readiness.",
+								recovery:
+									"Inspect the disposable editor exit and launch log before retrying.",
+								retrySafe: false,
+								nextStep: "fix_input"
+							})
 						)
 					)
 				)
@@ -386,9 +415,11 @@ const program = Effect.scoped(
 			});
 			const make = () =>
 				makeGameTextIdRepairs({
-					current: () =>
-						Effect.succeed({ status: "ready", project: { projectRoot: project } }),
-					endpoint: () => Effect.succeed(endpoint),
+					current: Effect.sync(() => ({
+						status: "ready",
+						project: { projectRoot: project }
+					})),
+					endpoint: Effect.succeed(endpoint),
 					editorProject,
 					workspace: {
 						focus: ({ id }) => {
@@ -415,16 +446,14 @@ const program = Effect.scoped(
 							};
 							return Effect.succeed({ status: "found", focus });
 						},
-						beginOperation: () =>
-							Effect.sync(() => {
-								if (occupied) return false;
-								occupied = true;
-								return true;
-							}),
-						endOperation: () =>
-							Effect.sync(() => {
-								occupied = false;
-							})
+						beginOperation: Effect.sync(() => {
+							if (occupied) return false;
+							occupied = true;
+							return true;
+						}),
+						endOperation: Effect.sync(() => {
+							occupied = false;
+						})
 					},
 					files: {
 						readFileWithin: (root, file) => io(() => readFileSync(resolve(root, file))),

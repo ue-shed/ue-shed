@@ -11,7 +11,7 @@ import {
 import type { GameTextChange } from "@ue-shed/game-text/schema";
 import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { perforceChangeRevisions } from "@ue-shed/map-history";
-import { type Brand, Effect, Schema } from "effect";
+import { Layer, type Brand, Effect, Schema } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 import { readChangedFiles } from "./changed-files.js";
@@ -184,8 +184,9 @@ export const readChange = Effect.fn("Cli.localization.read_change")(function* (i
 		...(code === undefined ? undefined : { code }),
 		...(input.changes === undefined ? undefined : { changes: input.changes })
 	}).pipe(
-		Effect.provide(cliGameTextIndexLayer(input.reader)),
-		Effect.provide(LocalizationEvidenceNodeLive),
+		Effect.provide(
+			Layer.provideMerge(cliGameTextIndexLayer(input.reader), LocalizationEvidenceNodeLive)
+		),
 		Effect.catchTag("ConfigError", (cause) => Effect.fail(configurationFailure(cause)))
 	);
 	return { targets: result.targets, change: result.change };

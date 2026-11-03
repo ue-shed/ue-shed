@@ -95,7 +95,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 ) {
 	const stages = new StageClock();
 	const store = yield* SharedIndex,
-		writer = yield* store.writer(),
+		writer = yield* store.writer,
 		root = writer.manifest();
 	const paths = [
 		input.target.outputPaths.manifest ?? "<manifest>",
@@ -139,7 +139,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			keyChanges: null
 		};
 	}
-	const reader = yield* store.open();
+	const reader = yield* store.open;
 	let incrementalFallback: string | undefined;
 	if (
 		!input.force &&

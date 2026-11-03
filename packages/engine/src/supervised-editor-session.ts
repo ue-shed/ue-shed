@@ -430,20 +430,20 @@ async function waitForProcessGroupExit(pid: number): Promise<void> {
 }
 
 function windowsSupervisorExecutable(): Effect.Effect<string, SupervisedEditorSessionError> {
+	const unavailable = (cause: unknown) =>
+		sessionError(
+			"process_tree_supervision_unavailable",
+			"launch",
+			"The Windows Job Object supervisor is unavailable.",
+			`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`,
+			undefined,
+			undefined,
+			cause
+		);
 	return processSupervisorExecutable.pipe(
+		Effect.mapError(unavailable),
 		Effect.tap((executable) =>
-			Effect.tryPromise({ try: () => access(executable), catch: (cause) => cause })
-		),
-		Effect.mapError((cause) =>
-			sessionError(
-				"process_tree_supervision_unavailable",
-				"launch",
-				`The Windows Job Object supervisor is unavailable.`,
-				`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`,
-				undefined,
-				undefined,
-				cause
-			)
+			Effect.tryPromise({ try: () => access(executable), catch: unavailable })
 		)
 	);
 }

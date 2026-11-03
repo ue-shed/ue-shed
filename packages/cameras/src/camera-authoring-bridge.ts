@@ -436,7 +436,7 @@ export const attachArrangementCamera = Effect.fn("CameraAuthoring.attach")(funct
 	bridge: CameraAuthoringBridge,
 	cameraId: ArrangementCameraId
 ) {
-	const { arrangement } = yield* store.load();
+	const { arrangement } = yield* store.load;
 	return yield* bridge
 		.call({
 			version: 1,
@@ -469,7 +469,7 @@ export const synchronizeArrangementCamera = Effect.fn("CameraAuthoring.synchroni
 				producerId: attachment.producerId
 			})
 			.pipe(Effect.flatMap(readyCameraBridge));
-		let document = yield* store.load();
+		let document = yield* store.load;
 		if (
 			native.sessionId !== document.arrangement.id ||
 			(native.cameras === undefined && native.cameraId !== attachment.cameraId) ||

@@ -17,7 +17,7 @@ import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 export interface WorkbenchCustodianApi {
-	readonly configuredScan: () => Effect.Effect<CustodianRunResult>;
+	readonly configuredScan: Effect.Effect<CustodianRunResult>;
 	readonly prepare: (intent: CustodianPrepareIntent) => Effect.Effect<CustodianPrepareRunResult>;
 	readonly execute: (
 		intent: CustodianExecuteRequest
@@ -57,14 +57,14 @@ export const WorkbenchCustodianLive = Layer.effect(
 		);
 
 		// An explicit custodian root may span several projects; otherwise the shell's project is scanned.
-		const configuredScan = Effect.fn("Workbench.ProjectCustodian.configuredScan")(function* () {
+		const configuredScan = Effect.gen(function* () {
 			if (configuration.custodianRoot?.status === "configured")
 				return yield* scan(configuration.custodianRoot.path);
-			const current = yield* project.current();
+			const current = yield* project.current;
 			return current.status === "ready"
 				? yield* scan(current.project.projectRoot)
 				: ({ status: "not_configured" } as const);
-		});
+		}).pipe(Effect.withSpan("Workbench.ProjectCustodian.configuredScan"));
 
 		const prepare = Effect.fn("Workbench.ProjectCustodian.prepare")(
 			function* (intent: CustodianPrepareIntent) {

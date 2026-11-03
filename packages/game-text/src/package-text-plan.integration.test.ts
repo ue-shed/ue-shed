@@ -72,7 +72,7 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 					Effect.scoped(builder.refreshPackageTextLayer(input))
 				);
 				const layers = yield* Effect.gen(function* () {
-					const reader = yield* (yield* SharedIndex).open();
+					const reader = yield* (yield* SharedIndex).open;
 					const layers: Record<
 						string,
 						{

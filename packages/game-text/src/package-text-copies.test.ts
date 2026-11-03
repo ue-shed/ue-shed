@@ -78,7 +78,7 @@ describe("package text copies", () => {
 		const read = (paths: readonly string[]) =>
 			Stream.fromIterable(paths.map((path) => record(path, rowOf(path), version)));
 		const stored = Effect.gen(function* () {
-			const reader = yield* (yield* SharedIndex).open();
+			const reader = yield* (yield* SharedIndex).open;
 			const records = [];
 			for (const name of Object.keys(reader.manifest.active))
 				if (name.startsWith("package-text."))

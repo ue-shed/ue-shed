@@ -28,7 +28,10 @@ function sameDefectField(key: string, left: CorpusDefectValue, right: CorpusDefe
 		isStringArray(left) &&
 		isStringArray(right)
 	)
-		return isDeepStrictEqual([...left].sort(), [...right].sort());
+		return isDeepStrictEqual(
+			[...left].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+			[...right].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+		);
 	return isDeepStrictEqual(left, right);
 }
 

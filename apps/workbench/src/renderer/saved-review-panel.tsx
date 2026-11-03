@@ -52,7 +52,7 @@ export function SavedReviewPanel(props: {
 		comparison()?.source.read === props.review.read ? comparison()?.value : undefined
 	);
 	const loadInventory = () =>
-		inventoryAction.run(props.client.inventory(), {
+		inventoryAction.run(props.client.inventory, {
 			onSuccess: (result) => {
 				setAssets(result.status === "ready" ? result.assets : []);
 				setInventoryMessage(

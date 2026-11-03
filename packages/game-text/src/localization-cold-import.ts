@@ -15,7 +15,7 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 	function* (requests: readonly LocalizationFileImportRequest[], budgetOverride?: number) {
 		const report = yield* GameTextIndexProgressReporter;
 		const store = yield* SharedIndex;
-		const writer = yield* store.writer();
+		const writer = yield* store.writer;
 		if (!writer.importLocalization) return undefined;
 		const states = yield* Effect.forEach(requests, nativeLocalizationStat, {
 			concurrency: "unbounded"
@@ -46,10 +46,10 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 		);
 		for (const file of result.files) {
 			if (file.error)
-				return yield* Schema.decodeUnknownSync(LocalizationError)({
+				return yield* Schema.decodeUnknownEffect(LocalizationError)({
 					_tag: "LocalizationError",
 					...file.error
-				});
+				}).pipe(Effect.orDie, Effect.flatMap(Effect.fail));
 		}
 		for (const [row, file] of result.files.entries()) {
 			if (file.file)

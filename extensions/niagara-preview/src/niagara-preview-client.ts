@@ -83,7 +83,7 @@ export class NiagaraPreviewClientError extends Schema.TaggedError<
 }) {}
 
 export interface NiagaraPreviewClientApi {
-	readonly catalogue: () => Effect.Effect<NiagaraCatalogueResult, NiagaraPreviewClientError>;
+	readonly catalogue: Effect.Effect<NiagaraCatalogueResult, NiagaraPreviewClientError>;
 	readonly frame: (
 		intent: NiagaraPreviewFrameIntent
 	) => Effect.Effect<NiagaraPreviewFrameResult, NiagaraPreviewClientError>;

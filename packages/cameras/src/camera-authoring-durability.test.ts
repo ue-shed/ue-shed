@@ -40,7 +40,7 @@ it("does not commit approval intent when the destination is locked", async () =>
 	await expect(Effect.runPromise(store.approve(approval))).rejects.toMatchObject({
 		code: "busy"
 	});
-	const untouched = await Effect.runPromise(store.load());
+	const untouched = await Effect.runPromise(store.load);
 	expect(untouched.projection).toBeUndefined();
 	expect(untouched.outcomes).toEqual([]);
 	await rm(`${approval.destination}.lock`);

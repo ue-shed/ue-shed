@@ -138,35 +138,31 @@ function stateLayer(
 		Layer.provide(
 			Layer.mergeAll(
 				makeAssetReaderTestLayer({
-					configuration: () =>
-						Effect.succeed({
-							executable: "uasset",
-							timeoutMs: 30_000,
-							catalogTimeoutMs: 50 * 60_000
-						}),
-					catalogProgress: () =>
-						Effect.succeed({
-							phase: "idle",
-							cacheHits: 0,
-							processedAssets: 0,
-							tablesFound: 0,
-							totalAssets: 0
-						}),
-					scanProgress: () =>
-						Effect.succeed({
-							phase: "idle",
-							cacheHits: 0,
-							emittedAssets: 0,
-							processedAssets: 0,
-							totalAssets: 0
-						}),
-					savedWorldProgress: () =>
-						Effect.succeed({
-							phase: "idle",
-							actorsFound: 0,
-							processedPackages: 0,
-							totalPackages: 0
-						}),
+					configuration: Effect.sync(() => ({
+						executable: "uasset",
+						timeoutMs: 30_000,
+						catalogTimeoutMs: 50 * 60_000
+					})),
+					catalogProgress: Effect.sync(() => ({
+						phase: "idle",
+						cacheHits: 0,
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					})),
+					scanProgress: Effect.sync(() => ({
+						phase: "idle",
+						cacheHits: 0,
+						emittedAssets: 0,
+						processedAssets: 0,
+						totalAssets: 0
+					})),
+					savedWorldProgress: Effect.sync(() => ({
+						phase: "idle",
+						actorsFound: 0,
+						processedPackages: 0,
+						totalPackages: 0
+					})),
 					readBlueprint: () =>
 						Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 					readLevelSequence: () =>
@@ -203,25 +199,24 @@ function stateLayer(
 						savedWorld === undefined
 							? Effect.die("saved-world target discovery is not used")
 							: Effect.succeed(savedWorld),
-					source: () => Effect.succeed("path" as const)
+					source: Effect.sync(() => "path" as const)
 				} satisfies AssetReaderTestApi),
 				makeMapHistoryTestLayer(source),
 				makeWorkbenchProjectTestLayer({
-					choose: () => Effect.succeed({ status: "cancelled" as const }),
-					current: () =>
-						Effect.succeed({
-							project: {
-								inputAtlas: "ready" as const,
-								mapCount: defaultSavedProject.maps.length,
-								packageCount: defaultSavedProject.maps.length,
-								projectName: "Project",
-								projectRoot: defaultSavedProject.projectRoot
-							},
-							status: "ready" as const
-						}),
-					inputAtlas: () => Effect.die("not used"),
-					savedProject,
-					savedTables: () => Effect.die("not used")
+					choose: Effect.sync(() => ({ status: "cancelled" as const })),
+					current: Effect.sync(() => ({
+						project: {
+							inputAtlas: "ready" as const,
+							mapCount: defaultSavedProject.maps.length,
+							packageCount: defaultSavedProject.maps.length,
+							projectName: "Project",
+							projectRoot: defaultSavedProject.projectRoot
+						},
+						status: "ready" as const
+					})),
+					inputAtlas: Effect.suspend(() => Effect.die("not used")),
+					savedProject: Effect.suspend(savedProject),
+					savedTables: Effect.suspend(() => Effect.die("not used"))
 				})
 			)
 		)
@@ -237,7 +232,7 @@ describe("WorkbenchContentObservatory", () => {
 		let calls = 0;
 		return Effect.gen(function* () {
 			const service = yield* WorkbenchContentObservatory;
-			const initial = yield* service.status();
+			const initial = yield* service.status;
 			expect(initial).toMatchObject({
 				maps: [{ label: "Map History World" }],
 				projectRoot: "C:/Project",
@@ -247,11 +242,11 @@ describe("WorkbenchContentObservatory", () => {
 			yield* service.start(request);
 			yield* Effect.yieldNow;
 			expect(calls).toBe(1);
-			expect((yield* service.status()).status).toBe("complete");
+			expect((yield* service.status).status).toBe("complete");
 		}).pipe(
 			Effect.provide(
 				stateLayer({
-					progress: () => Effect.succeed(idleProgress()),
+					progress: Effect.sync(() => idleProgress()),
 					readPerforceFastMapHistory: () =>
 						Effect.die("Deep History Workbench route must not call Fast History."),
 					readPerforceMapHistory: () =>
@@ -274,14 +269,14 @@ describe("WorkbenchContentObservatory", () => {
 		let selectedProject = firstProject;
 		return Effect.gen(function* () {
 			const service = yield* WorkbenchContentObservatory;
-			expect(yield* service.status()).toMatchObject({
+			expect(yield* service.status).toMatchObject({
 				maps: firstProject.maps,
 				projectRoot: firstProject.projectRoot,
 				status: "ready"
 			});
 
 			selectedProject = secondProject;
-			expect(yield* service.status()).toMatchObject({
+			expect(yield* service.status).toMatchObject({
 				maps: secondProject.maps,
 				projectRoot: secondProject.projectRoot,
 				status: "ready"
@@ -290,7 +285,7 @@ describe("WorkbenchContentObservatory", () => {
 			Effect.provide(
 				stateLayer(
 					{
-						progress: () => Effect.succeed(idleProgress()),
+						progress: Effect.sync(() => idleProgress()),
 						readPerforceFastMapHistory: () => Effect.die("not used"),
 						readPerforceMapHistory: () => Effect.die("not used")
 					},
@@ -315,7 +310,7 @@ describe("WorkbenchContentObservatory", () => {
 				const started = yield* service.start(fastRequest);
 				expect(started.status).toBe("running");
 				yield* Effect.yieldNow;
-				const complete = yield* service.status();
+				const complete = yield* service.status;
 				expect(complete.status).toBe("complete");
 				if (complete.status === "complete") {
 					expect("mode" in complete.history ? complete.history.mode : undefined).toBe(
@@ -328,7 +323,7 @@ describe("WorkbenchContentObservatory", () => {
 				Effect.provide(
 					stateLayer(
 						{
-							progress: () => Effect.succeed(idleProgress()),
+							progress: Effect.sync(() => idleProgress()),
 							readPerforceFastMapHistory: () =>
 								Effect.sync(() => {
 									fastCalls += 1;
@@ -357,15 +352,15 @@ describe("WorkbenchContentObservatory", () => {
 				const started = yield* service.start(request);
 				expect(started.status).toBe("running");
 				yield* Deferred.await(startedReading);
-				const cancelled = yield* service.cancel();
+				const cancelled = yield* service.cancel;
 				expect(cancelled.status).toBe("cancelled");
 				yield* Deferred.await(interrupted);
-				const afterCancel: ContentObservatoryState = yield* service.status();
+				const afterCancel: ContentObservatoryState = yield* service.status;
 				expect(afterCancel.status).toBe("cancelled");
 			}).pipe(
 				Effect.provide(
 					stateLayer({
-						progress: () => Effect.succeed(idleProgress()),
+						progress: Effect.sync(() => idleProgress()),
 						readPerforceFastMapHistory: () =>
 							Effect.die("Deep History Workbench route must not call Fast History."),
 						readPerforceMapHistory: () =>

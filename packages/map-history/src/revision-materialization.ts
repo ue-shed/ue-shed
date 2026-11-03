@@ -32,14 +32,14 @@ function perforceFile(
 }
 
 /** Materializes exact Perforce revisions and applies their scoped mutations atomically to one tree. */
-export function materializePlannedRevision(options: {
-	readonly change: number;
-	readonly concurrency: number;
-	readonly maxFiles: number;
-	readonly plan: ScopedRevisionPlan;
-	readonly tree: HistoricalProjectTree;
-}): Effect.Effect<number, MapHistoryError, PerforceHistorySource> {
-	return Effect.fn("MapHistory.materializePlannedRevision")(function* () {
+export const materializePlannedRevision = Effect.fn("MapHistory.materializePlannedRevision")(
+	function* (options: {
+		readonly change: number;
+		readonly concurrency: number;
+		readonly maxFiles: number;
+		readonly plan: ScopedRevisionPlan;
+		readonly tree: HistoricalProjectTree;
+	}): Effect.fn.Return<number, MapHistoryError, PerforceHistorySource> {
 		if (options.plan.kind === "invalid") return yield* options.plan.error;
 		const materializedFiles = options.plan.files.filter(
 			(file): file is Exclude<PlannedRevisionFile, { readonly action: "delete" }> =>
@@ -88,5 +88,5 @@ export function materializePlannedRevision(options: {
 		}
 		yield* options.tree.applyRevision(mutations);
 		return materializedFiles.length;
-	})();
-}
+	}
+);

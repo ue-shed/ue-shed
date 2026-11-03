@@ -106,23 +106,23 @@ describe("replaceable native menu coordinator", () => {
 			});
 			await Effect.runPromise(session.tick());
 			expect(native.panel?.proposal?.removed).toHaveLength(arrangement.cameras.length);
-			expect((await Effect.runPromise(store.load())).arrangement.revision).toBe(0);
+			expect((await Effect.runPromise(store.load)).arrangement.revision).toBe(0);
 			enqueue({ kind: "accept_proposal" });
 			loseActivation = true;
 			await expect(Effect.runPromise(session.tick())).rejects.toThrow(
 				"Lost activation reply"
 			);
-			expect((await Effect.runPromise(store.load())).arrangement.cameras).toHaveLength(1);
+			expect((await Effect.runPromise(store.load)).arrangement.cameras).toHaveLength(1);
 			await Effect.runPromise(session.tick());
 			expect(native.panelEvent).toBeUndefined();
 			expect(native.panel?.proposal).toBeUndefined();
-			const saved = await Effect.runPromise(store.load());
+			const saved = await Effect.runPromise(store.load);
 			expect(saved.arrangement.revision).toBe(1);
 			expect(native.cameraId).toBe(saved.arrangement.cameras[0]!.id);
 			enqueue({ kind: "approve", cameraIds: [native.cameraId], removeRetiredViewIds: [] });
 			await Effect.runPromise(session.tick());
 			const reopened = makeCameraAuthoringStore(join(root, "draft.json"));
-			expect((await Effect.runPromise(reopened.load())).reviewSet.views).toHaveLength(1);
+			expect((await Effect.runPromise(reopened.load)).reviewSet.views).toHaveLength(1);
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}

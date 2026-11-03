@@ -44,7 +44,7 @@ it("variable source patches span chunks and keep unpatched aliases pinned to the
 		await Effect.runPromise(
 			Effect.scoped(
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					const generation = writer.manifest().generation;
 					const ids = yield* writer.intern("source", ["A", "B", "C", "D"]);
 					const metadata: JoinedTargetMeta = {
@@ -165,7 +165,7 @@ it("reads and patches a logical ID arena across bounded physical sections", asyn
 			Effect.scoped(
 				Effect.gen(function* () {
 					const index = yield* SharedIndex,
-						writer = yield* index.writer();
+						writer = yield* index.writer;
 					const generation = writer.manifest().generation;
 					const metadata = {
 						version: 3,
@@ -287,7 +287,7 @@ it("reads and patches a logical ID arena across bounded physical sections", asyn
 						{ projectRoot: cache, target },
 						"after-compaction",
 						{},
-						yield* index.open(),
+						yield* index.open,
 						writer,
 						(reason) => {
 							fallback = reason;

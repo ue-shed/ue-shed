@@ -78,7 +78,7 @@ const readCorpus = (folder: string) =>
 export function gameTextCorpusIndexLayer(options: {
 	readonly executable: string;
 	readonly cacheRoot: string;
-}): Layer.Layer<GameTextIndexRefresh, unknown> {
+}) {
 	const { executable, cacheRoot } = options;
 	return gameTextIndexRefreshLayer(cacheRoot).pipe(
 		Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
@@ -109,7 +109,7 @@ const compareFolder = Effect.fnUntraced(function* (
 			const corpus = yield* model.corpus;
 			const joined = {
 				...model.localization,
-				lines: yield* model.query.readLocalizationLines()
+				lines: yield* model.query.readLocalizationLines
 			};
 			const rules = yield* decodeGameTextRuleDocumentJson(JSON.stringify(plan.rules));
 			const quality = yield* model.localizationCheck(rules);

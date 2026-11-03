@@ -171,8 +171,8 @@ export interface MapCaptureClientApi {
 	readonly capture: (
 		intent: MapCaptureExecuteIntent
 	) => Effect.Effect<MapCaptureExecuteResult, MapCaptureClientError>;
-	readonly choosePlan: () => Effect.Effect<MapCaptureSelectionResult, MapCaptureClientError>;
-	readonly newPlan: () => Effect.Effect<MapCaptureSelectionResult, MapCaptureClientError>;
+	readonly choosePlan: Effect.Effect<MapCaptureSelectionResult, MapCaptureClientError>;
+	readonly newPlan: Effect.Effect<MapCaptureSelectionResult, MapCaptureClientError>;
 	readonly openMap: (
 		plan: MapCapturePlanValue
 	) => Effect.Effect<MapCaptureOpenResult, MapCaptureClientError>;

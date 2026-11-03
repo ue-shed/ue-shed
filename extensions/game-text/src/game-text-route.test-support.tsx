@@ -329,12 +329,11 @@ export function makeClient(
 				objectPath,
 				status: "located"
 			}),
-		chooseQualityRules: () =>
-			Effect.succeed({
-				status: "completed",
-				document: rulesDocument,
-				summary: quality.summary()
-			}),
+		chooseQualityRules: Effect.sync(() => ({
+			status: "completed",
+			document: rulesDocument,
+			summary: quality.summary()
+		})),
 		qualitySearch: (request) =>
 			Effect.succeed({ status: "ready", page: quality.search(request) }),
 		qualityFocus: (request) => {

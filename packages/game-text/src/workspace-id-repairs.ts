@@ -30,8 +30,8 @@ import type {
 /** Host authority for ID repairs. Storage, project selection and endpoint selection stay explicit. */
 export interface GameTextIdRepairsHost {
 	readonly workspace: Pick<GameTextWorkspaceApi, "focus" | "beginOperation" | "endOperation">;
-	readonly current: () => Effect.Effect<GameTextWorkspaceProjectState>;
-	readonly endpoint: () => Effect.Effect<string>;
+	readonly current: Effect.Effect<GameTextWorkspaceProjectState>;
+	readonly endpoint: Effect.Effect<string>;
 	/** Resolve the endpoint's actual project directory through the host's editor connection. */
 	readonly editorProject: (
 		endpoint: string
@@ -90,9 +90,25 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 	const reader = yield* AssetReader;
 	const editorProject = Effect.fn("GameText.idRepairs.editorProject")(function* (
 		endpoint: string,
-		root: string
+		root: string,
+		mutation = false
 	) {
-		const actual = yield* host.editorProject(endpoint);
+		const actual = yield* host.editorProject(endpoint).pipe(
+			Effect.mapError((cause) => {
+				const guidance = Schema.decodeUnknownOption(Guidance)(cause);
+				return new RepairError({
+					cause,
+					message: cause.message,
+					recovery: cause.recovery,
+					retrySafe: Option.isSome(guidance) ? guidance.value.retrySafe : false,
+					nextStep: Option.isSome(guidance)
+						? guidance.value.nextStep
+						: mutation
+							? "reconcile"
+							: "fix_input"
+				});
+			})
+		);
 		if (!actual || relative(resolve(actual), resolve(root)) !== "")
 			return yield* new RepairError({
 				message: "The connected editor is running a different project.",
@@ -102,7 +118,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			});
 	});
 	const selected = Effect.fn("GameText.idRepairs.selected")(function* (expected?: string) {
-		const state = yield* host.current();
+		const state = yield* host.current;
 		if (
 			state.status !== "ready" ||
 			(expected !== undefined && state.project.projectRoot !== expected)
@@ -205,7 +221,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			)
 		);
 		const root = yield* selected(request.projectKey);
-		const endpoint = yield* host.endpoint();
+		const endpoint = yield* host.endpoint;
 		yield* editorProject(endpoint, root);
 		const producer = yield* inspectUnrealProducer(endpoint);
 		if (producer.producerKind !== "unreal_editor" || !producer.identity)
@@ -318,8 +334,8 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 				message: "This proposal is not ready to apply.",
 				recovery: "Resolve the preview errors and prepare a new fix."
 			});
-		const endpoint = yield* host.endpoint();
-		yield* editorProject(endpoint, root);
+		const endpoint = yield* host.endpoint;
+		yield* editorProject(endpoint, root, true);
 		const producer = yield* inspectUnrealProducer(endpoint);
 		if (endpoint !== plan.endpoint || producer.identity?.sessionId !== plan.sessionId)
 			return unavailable({
@@ -327,7 +343,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 				recovery: "Review the fix against the current editor again."
 			});
 		const resolved = yield* actions(plan.request);
-		const admitted = yield* host.workspace.beginOperation();
+		const admitted = yield* host.workspace.beginOperation;
 		if (!admitted)
 			return unavailable({
 				message: "Another Game Text operation is running.",
@@ -336,7 +352,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			});
 		return yield* Effect.gen(function* () {
 			yield* selected(root);
-			yield* editorProject(endpoint, root);
+			yield* editorProject(endpoint, root, true);
 			// An exclusive claim also prevents two host processes from applying the same proposal.
 			yield* host.files.writeFile(
 				resolve(root, folder, `${id}.started.json`),
@@ -438,36 +454,41 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 				yield* write(root, id, { state: "finished", plan, result: receipt });
 				return receipt;
 			}).pipe(Effect.mapError(claimed));
-		}).pipe(Effect.ensuring(host.workspace.endOperation()));
+		}).pipe(Effect.ensuring(host.workspace.endOperation));
 	});
-	const failure = (error: Effect.Error<ReturnType<typeof apply>>, mutation: boolean) => {
-		// Keep each failure's own guidance; only unguided failures fall back to the phase default.
-		const guidance = Schema.decodeUnknownOption(Guidance)(error);
-		return unavailable({
-			message: error.message,
-			recovery:
-				"recovery" in error
-					? error.recovery
-					: "Inspect the editor and saved repair receipt before retrying.",
-			retrySafe: Option.isSome(guidance) ? guidance.value.retrySafe : false,
-			nextStep: Option.isSome(guidance)
-				? guidance.value.nextStep
-				: mutation
-					? "reconcile"
-					: "fix_input"
-		});
-	};
+
 	return {
 		prepare: (request: TextIdRepairRequest) =>
 			gate.withPermit(prepare(request)).pipe(
 				Effect.provideService(RemoteControlClient, remote),
-				Effect.catch((error) => Effect.succeed(failure(error, false)))
+				Effect.catchTag(
+					[
+						"TextIdRepairError",
+						"ContractParseError",
+						"RemoteControlClientError",
+						"TextIdTableRepairError",
+						"TextIdTableColumnError",
+						"UnrealConnectionError",
+						"UnrealCapabilityError",
+						"GameTextActionsError",
+						"GameTextWorkspaceHostFailure"
+					],
+					(error) => Effect.succeed(unavailable(error))
+				)
 			),
 		apply: (id: TextIdRepairId) =>
 			gate.withPermit(apply(id)).pipe(
 				Effect.provideService(RemoteControlClient, remote),
 				Effect.provideService(AssetReader, reader),
-				Effect.catch((error) => Effect.succeed(failure(error, true)))
+				Effect.catchTag(
+					[
+						"TextIdRepairError",
+						"ContractParseError",
+						"RemoteControlClientError",
+						"GameTextWorkspaceHostFailure"
+					],
+					(error) => Effect.succeed(unavailable(error))
+				)
 			)
 	};
 });

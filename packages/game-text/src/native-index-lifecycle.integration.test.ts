@@ -87,7 +87,7 @@ describe.skipIf(!executable)("native index lifecycle soak", () => {
 										{ configuration },
 										Effect.gen(function* () {
 											entered = true;
-											const writer = yield* (yield* SharedIndex).writer();
+											const writer = yield* (yield* SharedIndex).writer;
 											yield* writer.publish("committed", `stable-${round}`, {
 												columns: [
 													{
@@ -170,13 +170,13 @@ describe.skipIf(!executable)("native index lifecycle soak", () => {
 									Effect.gen(function* () {
 										const index = yield* SharedIndex;
 										if (phase !== "startup") {
-											const reader = yield* index.open();
+											const reader = yield* index.open;
 											const committed = yield* reader.layer("committed");
 											expect([
 												...(yield* committed.section("probe"))
 											]).toEqual([round]);
 										}
-										const writer = yield* index.writer();
+										const writer = yield* index.writer;
 										if (phase === "staging")
 											expect(
 												writer.manifest().active.candidate

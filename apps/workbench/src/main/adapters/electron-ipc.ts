@@ -1,5 +1,5 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { type Brand, Context, Effect, Fiber, Layer, Ref, Schema, type Scope } from "effect";
+import { type Brand, Cause, Context, Effect, Fiber, Layer, Ref, Schema, type Scope } from "effect";
 import { decodeInvokeArgs, encodeInvokeResult, type InvokeContract } from "../ipc-contracts.js";
 
 export class ElectronIpcError extends Schema.TaggedError<
@@ -12,7 +12,7 @@ export class ElectronIpcError extends Schema.TaggedError<
 	causeText: Schema.String,
 	channel: Schema.String,
 	message: Schema.String,
-	operation: Schema.Literals(["register", "duplicate", "decodeArgs", "encodeResult"]),
+	operation: Schema.Literals(["register", "duplicate", "decodeArgs", "encodeResult", "invoke"]),
 	recovery: Schema.String,
 	retrySafe: Schema.Boolean
 }) {}
@@ -51,11 +51,11 @@ export interface RegisteredHandler<Result = unknown> {
 }
 
 export interface ElectronIpcTestApi extends ElectronIpcApi {
-	readonly handlers: () => Effect.Effect<ReadonlyArray<RegisteredHandler>>;
+	readonly handlers: Effect.Effect<ReadonlyArray<RegisteredHandler>>;
 	readonly invoke: (
 		channel: string,
 		...args: ReadonlyArray<unknown>
-	) => Effect.Effect<unknown, unknown>;
+	) => Effect.Effect<unknown, ElectronIpcError | Cause.UnknownError>;
 }
 
 export class ElectronIpcTest extends Context.Service<ElectronIpcTest, ElectronIpcTestApi>()(
@@ -214,7 +214,7 @@ export const makeElectronIpcTestLayer = (): Layer.Layer<ElectronIpc | ElectronIp
 
 			const service = ElectronIpcTest.of({
 				register,
-				handlers: () => Ref.get(handlers),
+				handlers: Ref.get(handlers),
 				invoke: Effect.fn("Workbench.ElectronIpc.Test.invoke")(function* (
 					channel,
 					...args
@@ -223,13 +223,23 @@ export const makeElectronIpcTestLayer = (): Layer.Layer<ElectronIpc | ElectronIp
 						(candidate) => candidate.channel === channel
 					);
 					if (!entry) {
-						return yield* Effect.fail(
-							new Error(`Channel ${channel} is not registered`)
-						);
+						return yield* new ElectronIpcError({
+							code: "electron_ipc_failed",
+							channel,
+							operation: "invoke",
+							message: `Channel ${channel} is not registered`,
+							causeText: "",
+							recovery: "Register the channel before invoking its test handler.",
+							retrySafe: true,
+							nextStep: "fix_input"
+						});
 					}
 					return yield* Effect.tryPromise({
 						try: () => entry.invoke(...args),
-						catch: (cause) => cause
+						catch: (cause) =>
+							Schema.is(ElectronIpcError)(cause)
+								? cause
+								: new Cause.UnknownError(cause)
 					});
 				})
 			});

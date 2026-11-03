@@ -216,7 +216,7 @@ const WHOLE = { offset: 0, limit: 1000 } as const;
  * target at a time because a point's id names the change, not the target; a host must not read
  * two changes with the same id at once.
  */
-export function readGameTextChangePoints<E>(input: {
+export const readGameTextChangePoints = Effect.fn("GameText.change_points")(function* <E>(input: {
 	readonly projectRoot: string;
 	readonly change: GameTextChange;
 	readonly revisions: GameTextChangeRevisions<E>;
@@ -225,70 +225,68 @@ export function readGameTextChangePoints<E>(input: {
 	readonly changes?: GameTextChangePage;
 	readonly findings?: GameTextChangePage;
 }) {
-	return Effect.gen(function* () {
-		const targetNames = input.targetNames ?? [];
-		const outputs = yield* targetOutputs(input.projectRoot, targetNames);
-		const before = outputs.size === 0 ? undefined : outputPaths(outputs.values());
-		const sides = yield* readSides(input, before);
-		const { point, base } = gameTextChangePoints(input.change);
-		const steps = yield* GameTextIndexSteps;
-		const names: readonly (string | undefined)[] =
-			targetNames.length === 0 ? [undefined] : targetNames;
-		const targets = yield* Effect.forEach(names, (targetName) =>
-			Effect.gen(function* () {
-				const target = {
-					...(targetName === undefined ? undefined : { targetName }),
-					...(input.code === undefined ? undefined : { code: input.code })
-				};
-				const beforePoint = yield* steps.readPoint({
-					projectRoot: input.projectRoot,
-					point: base,
-					files: sides.before,
-					...target
-				});
-				const afterPoint = yield* steps.readPoint({
-					projectRoot: input.projectRoot,
-					point,
-					base,
-					files: sides.after,
-					...target
-				});
-				const localization =
-					targetName === undefined
-						? undefined
-						: baseLocalization(outputs.get(targetName), sides.localization);
-				const comparison = yield* steps.comparePoints({
-					projectRoot: input.projectRoot,
-					point,
-					base,
-					changes: input.changes ?? WHOLE,
-					findings: input.findings ?? WHOLE,
-					...(targetName === undefined ? undefined : { targetName }),
-					...(localization === undefined ? undefined : { localization })
-				});
-				return {
-					...(targetName === undefined ? undefined : { target: targetName }),
-					before: beforePoint,
-					after: afterPoint,
-					comparison,
-					localized: localization !== undefined
-				} satisfies GameTextTargetPoints;
-			})
-		);
-		return {
-			targets,
-			change: {
+	const targetNames = input.targetNames ?? [];
+	const outputs = yield* targetOutputs(input.projectRoot, targetNames);
+	const before = outputs.size === 0 ? undefined : outputPaths(outputs.values());
+	const sides = yield* readSides(input, before);
+	const { point, base } = gameTextChangePoints(input.change);
+	const steps = yield* GameTextIndexSteps;
+	const names: readonly (string | undefined)[] =
+		targetNames.length === 0 ? [undefined] : targetNames;
+	const targets = yield* Effect.forEach(names, (targetName) =>
+		Effect.gen(function* () {
+			const target = {
+				...(targetName === undefined ? undefined : { targetName }),
+				...(input.code === undefined ? undefined : { code: input.code })
+			};
+			const beforePoint = yield* steps.readPoint({
+				projectRoot: input.projectRoot,
+				point: base,
+				files: sides.before,
+				...target
+			});
+			const afterPoint = yield* steps.readPoint({
+				projectRoot: input.projectRoot,
 				point,
 				base,
-				files: sides.files,
-				read: sides.read,
-				outside: sides.outside,
-				code: input.code !== undefined
-			},
-			skipped: sides.skipped
-		} satisfies GameTextChangePoints;
-	}).pipe(Effect.withSpan("GameText.change_points"));
-}
+				files: sides.after,
+				...target
+			});
+			const localization =
+				targetName === undefined
+					? undefined
+					: baseLocalization(outputs.get(targetName), sides.localization);
+			const comparison = yield* steps.comparePoints({
+				projectRoot: input.projectRoot,
+				point,
+				base,
+				changes: input.changes ?? WHOLE,
+				findings: input.findings ?? WHOLE,
+				...(targetName === undefined ? undefined : { targetName }),
+				...(localization === undefined ? undefined : { localization })
+			});
+			return {
+				...(targetName === undefined ? undefined : { target: targetName }),
+				before: beforePoint,
+				after: afterPoint,
+				comparison,
+				localized: localization !== undefined
+			} satisfies GameTextTargetPoints;
+		})
+	);
+	return {
+		targets,
+		change: {
+			point,
+			base,
+			files: sides.files,
+			read: sides.read,
+			outside: sides.outside,
+			code: input.code !== undefined
+		},
+		skipped: sides.skipped
+	} satisfies GameTextChangePoints;
+});
 
 /** The change's files at both sides, and the targets' localization as the change found it. */
 function readSides<E>(

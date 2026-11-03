@@ -271,11 +271,17 @@ describe("checking a change's text", () => {
 	it.live("names the listed file when a line lives in several", () =>
 		Effect.gen(function* () {
 			const shared = yield* Schema.decodeUnknownEffect(TextUnit)({
-				...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")),
+				...(yield* Schema.encodeEffect(TextUnit)(cell("Hello", "Hello there")).pipe(
+					Effect.orDie
+				)),
 				occurrences: [
-					...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")).occurrences,
+					...(yield* Schema.encodeEffect(TextUnit)(cell("Hello", "Hello there")).pipe(
+						Effect.orDie
+					)).occurrences,
 					{
-						...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")).occurrences[0],
+						...(yield* Schema.encodeEffect(TextUnit)(cell("Hello", "Hello there")).pipe(
+							Effect.orDie
+						)).occurrences[0],
 						id: "occurrence:other",
 						packageFile: "Content/Text/Other.uasset"
 					}

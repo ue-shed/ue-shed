@@ -2,7 +2,7 @@ import { packageTextFixtureEvidence } from "./package-text-fixture.test-support.
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, normalize } from "node:path";
-import { Effect, Stream, type Scope } from "effect";
+import { Effect, Result, Stream, type Scope } from "effect";
 import { describe, expect, it } from "vitest";
 import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 import {
@@ -21,7 +21,10 @@ import { comparePackageTextLayerWithEvents } from "./package-text-layer-oracle.t
 import { gameTextScaleRecipe, gameTextScaleEvents } from "./localization-scale-data.ts";
 import { packageTextFixtureProjects } from "./package-text-reader.test-support.ts";
 import { ensureUassetExecutable } from "./native-tools.ts";
-import { packageTextColumns } from "../packages/game-text/src/package-text-columns.ts";
+import {
+	packageTextColumns,
+	decodePackageTextColumns
+} from "../packages/game-text/src/package-text-columns.ts";
 import {
 	convertGeneratedPackageText,
 	readGeneratedPackageInventory
@@ -30,6 +33,122 @@ import {
 const executable = ensureUassetExecutable();
 // Generated-scale oracle cases take 2-5 s on hosted runners; main has timed out at the 5 s default.
 const generatedScaleTimeoutMs = 20_000;
+
+it.each([
+	{ encoded: "{", causeTag: "SchemaError" },
+	{ encoded: "{}", causeTag: "SchemaError" },
+	{ encoded: JSON.stringify(emptyPackageTextRecord("fixture")), causeTag: "SnapshotFormatError" }
+])(
+	"retains a corrupted package error row's $causeTag as a typed snapshot failure",
+	async ({ encoded, causeTag }) => {
+		await withStore(async (root) => {
+			await runIn(
+				root,
+				Effect.gen(function* () {
+					const store = yield* SharedIndex;
+					const evidence = {
+						event: "error" as const,
+						code: "fixture_failure",
+						message: "The fixture package could not be read.",
+						path: "fixture",
+						retrySafe: false
+					};
+					yield* (yield* store.writer).publish(
+						"errors",
+						"error-key",
+						packageTextColumns([{ path: "fixture", signature: "fixture", evidence }])
+					);
+					const reader = yield* (yield* store.open).layer("errors");
+					const result = yield* decodePackageTextColumns({
+						section: reader.section,
+						strings: (domain, ids) =>
+							reader
+								.strings(domain, ids)
+								.pipe(
+									Effect.map((values) =>
+										values.map((value) =>
+											value === JSON.stringify(evidence) ? encoded : value
+										)
+									)
+								)
+					}).pipe(Effect.result);
+					expect(Result.isFailure(result)).toBe(true);
+					if (Result.isFailure(result))
+						expect(result.failure).toMatchObject({
+							_tag: "SnapshotFormatError",
+							section: "package-text",
+							cause: { _tag: causeTag }
+						});
+				})
+			);
+		});
+	}
+);
+
+it.each([-1, 0.5])(
+	"reports an invalid native plan group (%s) before reading package evidence",
+	async (group) => {
+		await withStore(async (root) => {
+			await runIn(
+				root,
+				Effect.gen(function* () {
+					const store = yield* SharedIndex;
+					const writer = store.writer.pipe(
+						Effect.map((underlying) => ({
+							...underlying,
+							planPackages: (
+								request: Parameters<NonNullable<typeof underlying.planPackages>>[0]
+							) =>
+								Effect.promise(async () => {
+									await writeFile(
+										request.planFile,
+										JSON.stringify({
+											group,
+											expected: [
+												{
+													path: "Content/Fixture.uasset",
+													signature: "fixture",
+													selected: false
+												}
+											]
+										})
+									);
+									return {
+										packages: 1,
+										firstKey: "fixture-first",
+										changed: [
+											{
+												group: 0,
+												key: "fixture-shard",
+												packages: 1,
+												selected: 0
+											}
+										],
+										removed: []
+									};
+								})
+						}))
+					);
+					const result = yield* refreshPackageTextLayer({
+						catalog: { cacheRoot: root, projectId: "fixture", generation: 1 },
+						read: () => Stream.die("An invalid plan must not read package evidence.")
+					}).pipe(
+						Effect.provideService(SharedIndex, { ...store, writer }),
+						Effect.result
+					);
+					expect(Result.isFailure(result)).toBe(true);
+					if (Result.isFailure(result))
+						expect(result.failure).toMatchObject({
+							_tag: "SnapshotFormatError",
+							section: "package-text.plan",
+							message: "Invalid package text plan.",
+							cause: { _tag: "SchemaError" }
+						});
+				})
+			);
+		});
+	}
+);
 const header = (selected: boolean) => ({
 	packageFlags: selected ? 0x00040000 : 0,
 	gatherableTextDataCount: 0,
@@ -137,7 +256,7 @@ describe("package text layer", () => {
 			await runIn(
 				cache,
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					yield* writer.publish("unrelated", "unrelated", packageTextColumns([]));
 				})
 			);
@@ -158,7 +277,7 @@ describe("package text layer", () => {
 			const root = await runIn(
 				cache,
 				Effect.gen(function* () {
-					return yield* (yield* SharedIndex).inspect();
+					return yield* (yield* SharedIndex).inspect;
 				})
 			);
 			expect(
@@ -225,7 +344,7 @@ describe("package text layer", () => {
 			await runIn(
 				cache,
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					yield* writer.publishCold([
 						{
 							name: "old",
@@ -403,7 +522,7 @@ describe("package text layer", () => {
 			const before = await runIn(
 				cache,
 				Effect.gen(function* () {
-					return yield* (yield* SharedIndex).inspect();
+					return yield* (yield* SharedIndex).inspect;
 				})
 			);
 			expect(
@@ -413,7 +532,7 @@ describe("package text layer", () => {
 			const after = await runIn(
 				cache,
 				Effect.gen(function* () {
-					return yield* (yield* SharedIndex).inspect();
+					return yield* (yield* SharedIndex).inspect;
 				})
 			);
 			expect(after).toEqual(before);
@@ -461,7 +580,7 @@ describe("package text layer", () => {
 			const prior = await runIn(
 				cache,
 				Effect.gen(function* () {
-					return yield* (yield* SharedIndex).inspect();
+					return yield* (yield* SharedIndex).inspect;
 				})
 			);
 			await expect(
@@ -477,7 +596,7 @@ describe("package text layer", () => {
 				await runIn(
 					cache,
 					Effect.gen(function* () {
-						return yield* (yield* SharedIndex).inspect();
+						return yield* (yield* SharedIndex).inspect;
 					})
 				)
 			).toEqual(prior);

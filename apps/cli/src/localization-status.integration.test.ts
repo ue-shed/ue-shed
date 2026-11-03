@@ -498,7 +498,11 @@ describe.skipIf(!executable)("loc report with the real reader", () => {
 							culture.total.sourceWords,
 							culture.upToDateArchive.sourceWords
 						])
-						.sort()
+						.sort((left, right) => {
+							const leftText = left.join(",");
+							const rightText = right.join(",");
+							return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+						})
 				).toEqual([
 					["de", 62, 59],
 					["en", 62, 62],

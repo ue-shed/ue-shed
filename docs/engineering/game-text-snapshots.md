@@ -104,7 +104,7 @@ lowercase substring scan. The caller owns that buffer; page reads still load onl
 ## Store lifecycle
 
 The configured cache root contains `game-text-v2/<hash-of-project-and-target-keys>`, beside
-`catalogs-v6`. Both `SnapshotStore.open()` and `writer()` require an Effect scope. The reader
+`catalogs-v6`. Both `SnapshotStore.open` and `writer` are effect properties requiring a scope. The reader
 holds its physical file open until scope release, preserving that generation through publication
 and retirement. Windows tests retire the old filename before reading its previously unloaded
 strings through the retained handle.
@@ -236,7 +236,7 @@ matching; `metadata.Info.Comment`, developer notes and paths matter to origins a
 Plural translations and every comment array round-trip; empty arrays and canonical context/key
 comments are derived, and translation zero lives only in its text domain. Duplicate diagnostics are derivable from adjacent identities rather than another object tree.
 `decodeLocalizationSnapshot` hydrates an explicit bounded page (default 50, maximum 10,000),
-using the layer returned by `SharedIndex.open().layer(contentKey)`.
+using the layer returned by `(yield* index.open).layer(contentKey)`.
 `importLocalizationTarget` uses `LocalizationEvidence.discover`, imports manifest/archive/PO files
 sequentially, and returns independent snapshot keys plus typed per-file diagnostics. Locmeta and
 reports remain outside this layer. Missing evidence does not suppress successfully imported files.

@@ -363,16 +363,18 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 					})
 				).pipe(
 					Effect.provide(
-						Layer.mergeAll(
-							gameTextIndexRefreshLayer(cacheRoot).pipe(
-								Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
-								Layer.provide(typeScriptIndexBuilderLayer),
-								Layer.provide(LocalizationEvidenceNodeLive)
+						Layer.provideMerge(
+							Layer.mergeAll(
+								gameTextIndexRefreshLayer(cacheRoot).pipe(
+									Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
+									Layer.provide(typeScriptIndexBuilderLayer),
+									Layer.provide(LocalizationEvidenceNodeLive)
+								),
+								LocalizationEvidenceNodeLive
 							),
-							LocalizationEvidenceNodeLive
+							assetReaderLayer({ executable: executable! })
 						)
-					),
-					Effect.provide(assetReaderLayer({ executable: executable! }))
+					)
 				)
 			);
 		} finally {

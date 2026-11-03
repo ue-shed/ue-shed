@@ -286,7 +286,11 @@ describe.skipIf(!executable || !evidenceDirectory)("Unreal commandlet UAsset con
 			Object.fromEntries(
 				[...undecoded]
 					.map(([classPath, names]) => [classPath, [...names].toSorted()])
-					.toSorted()
+					.toSorted((left, right) => {
+						const leftText = left.join(",");
+						const rightText = right.join(",");
+						return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+					})
 			)
 		).toEqual(expected.undecodedByClass);
 	});

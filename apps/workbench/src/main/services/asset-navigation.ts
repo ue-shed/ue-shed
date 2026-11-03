@@ -43,7 +43,7 @@ export const WorkbenchAssetNavigationLive = Layer.effect(
 		const locate = Effect.fn("Workbench.WorkbenchAssetNavigation.locate")(function* (
 			objectPath: string
 		) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			return yield* locateUnrealAsset({
 				bringToFront: false,

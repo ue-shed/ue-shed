@@ -50,7 +50,7 @@ export async function acceptLocalizationMigration(options: {
 		});
 	const reader = assetReaderLayer({ executable: options.executable });
 	const host: StringTableKeyMigrationHostApi = {
-		current: () => Effect.succeed({ projectRoot, endpoint }),
+		current: Effect.sync(() => ({ projectRoot, endpoint })),
 		store: {
 			create: (record) =>
 				io(() =>

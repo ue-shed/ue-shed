@@ -22,7 +22,7 @@ export const runDoctor = Effect.fn("Cli.workflow.doctor")(() =>
 			const health = yield* Effect.serviceOption(RuntimeHealthService);
 			return yield* printJson(
 				health._tag === "Some"
-					? yield* health.value.snapshot()
+					? yield* health.value.snapshot
 					: aggregateHealth(defaultHealthInput)
 			);
 		})

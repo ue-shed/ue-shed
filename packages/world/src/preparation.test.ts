@@ -47,7 +47,7 @@ it.effect("reports an unknown producer failure as an invalid contract", () =>
 					})
 				: undefined
 		);
-		const error = yield* Effect.flip(h.api.describe());
+		const error = yield* Effect.flip(h.api.describe);
 		expect(error.code).toBe("invalid_contract");
 		expect(error.nextStep).toBe("escalate");
 	})
@@ -269,7 +269,7 @@ it.effect("retries a lost replacement response with exactly the same revision an
 			Effect.gen(function* () {
 				const lease = yield* h.api.acquire(requirements, { leaseId: id });
 				expect((yield* lease.replace([])).revision).toBe(1);
-				expect((yield* lease.inspect()).revision).toBe(1);
+				expect((yield* lease.inspect).revision).toBe(1);
 				expect((yield* lease.replace(requirements.targets)).revision).toBe(2);
 			})
 		);
@@ -328,7 +328,7 @@ it.effect("reports work and restoration failures through the scoped public bound
 it.effect("describes and plans without acquiring ownership", () =>
 	Effect.gen(function* () {
 		const h = harness();
-		expect(yield* h.api.describe()).toEqual(world);
+		expect(yield* h.api.describe).toEqual(world);
 		expect((yield* h.api.plan(requirements)).status).toBe("planned");
 		expect(h.calls.map((r) => r.action)).toEqual(["describe", "plan"]);
 	})
@@ -340,7 +340,7 @@ it.effect("replaces with the next revision and releases after scoped work", () =
 			Effect.gen(function* () {
 				const lease = yield* h.api.acquire(requirements, { leaseId: id });
 				expect((yield* lease.replace([])).revision).toBe(1);
-				expect((yield* lease.inspect()).revision).toBe(1);
+				expect((yield* lease.inspect).revision).toBe(1);
 			})
 		);
 		expect(h.calls.at(-1)?.action).toBe("release");

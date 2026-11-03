@@ -279,7 +279,7 @@ describe("durable camera coordination", () => {
 			)
 		);
 		expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-		expect((await Effect.runPromise(store.load())).arrangement.revision).toBe(1);
+		expect((await Effect.runPromise(store.load)).arrangement.revision).toBe(1);
 	});
 	it("restarts with exact state, rejects stale writers, and deduplicates committed operations", async () => {
 		const p = await paths(),

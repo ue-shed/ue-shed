@@ -215,7 +215,7 @@ export function MapReviewRoute(props: { readonly client: MapReviewClientApi }) {
 		status: "failed"
 	});
 	const load = () =>
-		action.run(props.client.load(), {
+		action.run(props.client.load, {
 			onFailure: (cause) => apply(clientFailure(cause)),
 			onSuccess: apply
 		});

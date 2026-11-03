@@ -106,7 +106,7 @@ export async function measureGameTextHosts(
 					collapseMode: target.collapseMode
 				})
 			);
-		}).pipe(Effect.provide(selectedBuilder), Effect.provide(LocalizationEvidenceNodeLive));
+		}).pipe(Effect.provide(Layer.provideMerge(selectedBuilder, LocalizationEvidenceNodeLive)));
 		await measure(
 			`${host}:${task}`,
 			() => Effect.runPromise(preparation),
@@ -225,7 +225,7 @@ export async function measureGameTextHosts(
 						)
 				})
 			);
-		}).pipe(Effect.provide(source), Effect.provide(selectedBuilder));
+		}).pipe(Effect.provide(Layer.provideMerge(source, selectedBuilder)));
 		await measure(
 			`${host}:${task}`,
 			() => Effect.runPromise(preparation),
@@ -309,8 +309,8 @@ export async function measureGameTextHosts(
 			generation: 0
 		};
 		const projects = makeWorkbenchProjectTestLayer({
-			choose: () => Effect.succeed({ status: "ready", project: projectSummary }),
-			current: () => Effect.succeed({ status: "ready", project: projectSummary }),
+			choose: Effect.sync(() => ({ status: "ready", project: projectSummary })),
+			current: Effect.sync(() => ({ status: "ready", project: projectSummary })),
 			candidates: () =>
 				Effect.succeed({
 					generation: 0,
@@ -330,9 +330,9 @@ export async function measureGameTextHosts(
 						skippedAssets: 0
 					}
 				}),
-			inputAtlas: () => Effect.die("Not used"),
-			savedProject: () => Effect.succeed({ maps: [], projectRoot: project }),
-			savedTables: () => Effect.die("Not used")
+			inputAtlas: Effect.suspend(() => Effect.die("Not used")),
+			savedProject: Effect.sync(() => ({ maps: [], projectRoot: project })),
+			savedTables: Effect.suspend(() => Effect.die("Not used"))
 		});
 		const dialogs = Layer.succeed(
 			ElectronDialog,
@@ -705,17 +705,19 @@ export async function measureGameTextHosts(
 										return yield* Effect.promise(() => columnProof(joined));
 									})
 								).pipe(
-									Effect.provide(selectedBuilder),
 									Effect.provide(
-										sharedIndexNodeLayer({
-											cacheRoot: cache,
-											projectKey: project,
-											targetKey: "Generated",
-											projectView: {
-												kind: "localization",
-												target: "Generated"
-											}
-										})
+										Layer.provideMerge(
+											selectedBuilder,
+											sharedIndexNodeLayer({
+												cacheRoot: cache,
+												projectKey: project,
+												targetKey: "Generated",
+												projectView: {
+													kind: "localization",
+													target: "Generated"
+												}
+											})
+										)
 									)
 								)
 							);

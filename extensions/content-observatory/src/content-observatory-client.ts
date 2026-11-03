@@ -168,11 +168,11 @@ export class ContentObservatoryClientError extends Schema.TaggedError<
 }) {}
 
 export interface ContentObservatoryClientApi {
-	readonly cancel: () => Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;
+	readonly cancel: Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;
 	readonly start: (
 		request: ContentObservatoryHistoryRequest
 	) => Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;
-	readonly status: () => Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;
+	readonly status: Effect.Effect<ContentObservatoryState, ContentObservatoryClientError>;
 	readonly targets?: (
 		mapPath: string
 	) => Effect.Effect<ContentObservatoryTargetCatalog, ContentObservatoryClientError>;

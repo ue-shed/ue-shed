@@ -1,3 +1,4 @@
+import { GameTextWorkspaceHostFailure } from "@ue-shed/game-text/workspace";
 import { it } from "@effect/vitest";
 import {
 	LocalizationError,
@@ -339,7 +340,12 @@ it.live("prepares every PO file an edit replaces, and writes nothing when that f
 				Effect.suspend(() => {
 					prepared.push(paths);
 					return refuse
-						? Effect.fail({ message: "Checked out elsewhere.", recovery: "Ask them." })
+						? new GameTextWorkspaceHostFailure({
+								message: "Checked out elsewhere.",
+								recovery: "Ask them.",
+								retrySafe: false,
+								nextStep: "fix_input"
+							})
 						: Effect.void;
 				})
 		);
@@ -475,7 +481,12 @@ it.live("prepares the review file before creating or replacing it", () =>
 				Effect.suspend(() => {
 					prepared.push(paths);
 					return refuse
-						? Effect.fail({ message: "Checked out elsewhere.", recovery: "Ask them." })
+						? new GameTextWorkspaceHostFailure({
+								message: "Checked out elsewhere.",
+								recovery: "Ask them.",
+								retrySafe: false,
+								nextStep: "fix_input"
+							})
 						: Effect.void;
 				})
 		);

@@ -212,7 +212,7 @@ it.effect("publishes a run with high-range binary32 timing through a supervised 
 				},
 				systemObjectPath
 			})
-		).pipe(Effect.provide(NiagaraPreviewLive), Effect.provide(dependencies));
+		).pipe(Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)));
 		expect(outcome.manifest.artifacts).toHaveLength(2);
 		expect(outcome.manifest.effectiveSettings.startSeconds).toBe(Math.fround(3000.00012));
 		expect(outcome.manifest.artifacts[0]?.sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
@@ -300,7 +300,7 @@ it.effect("rejects a truncated PNG before publishing the run", () =>
 					},
 					systemObjectPath
 				})
-			).pipe(Effect.provide(NiagaraPreviewLive), Effect.provide(dependencies))
+			).pipe(Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)))
 		);
 		expect(error.code).toBe("artifact_invalid");
 		expect(error.message).toContain("valid PNG");
@@ -369,7 +369,7 @@ it.effect("rejects a producer that ignores a requested override", () =>
 					settings: { width: 64 },
 					systemObjectPath
 				})
-			).pipe(Effect.provide(NiagaraPreviewLive), Effect.provide(dependencies))
+			).pipe(Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)))
 		);
 		expect(error.code).toBe("receipt_invalid");
 		expect(error.message).toContain("ignored");
@@ -423,7 +423,7 @@ it.effect("preserves stable commandlet failure identities", () =>
 						runId,
 						systemObjectPath
 					})
-				).pipe(Effect.provide(NiagaraPreviewLive), Effect.provide(dependencies))
+				).pipe(Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)))
 			).pipe(Effect.tap((error) => Effect.sync(() => expect(error.code).toBe(expectedCode))));
 		});
 	}).pipe(Effect.scoped)
@@ -508,7 +508,7 @@ it.effect("rejects an over-budget request before launching Unreal", () =>
 					settings: { frameCount: 512, height: 4096, width: 4096 },
 					systemObjectPath
 				})
-			).pipe(Effect.provide(NiagaraPreviewLive), Effect.provide(dependencies))
+			).pipe(Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)))
 		);
 		expect(error).toBeInstanceOf(NiagaraPreviewError);
 		expect(error.code).toBe("invalid_request");

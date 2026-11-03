@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { access, readFile, readdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
-import { type Brand, Context, Effect, Layer, Schema } from "effect";
+import { Cause, type Brand, Context, Effect, Layer, Schema } from "effect";
 import {
 	RemoteControlAllowedClass,
 	RemoteControlAllowedFunction,
@@ -221,9 +221,7 @@ export const validateUnrealProjectBuildId = Effect.fn("UnrealProjectLauncher.val
 			Effect.tryPromise({
 				try: async () => {
 					try {
-						return Schema.decodeUnknownSync(ModuleBuild)(
-							JSON.parse(await readFile(path, "utf8"))
-						);
+						return JSON.parse(await readFile(path, "utf8"));
 					} catch (cause) {
 						if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
 							return undefined;
@@ -239,7 +237,24 @@ export const validateUnrealProjectBuildId = Effect.fn("UnrealProjectLauncher.val
 						"fix_input",
 						cause
 					)
-			})
+			}).pipe(
+				Effect.flatMap((input) =>
+					input === undefined
+						? Effect.undefined
+						: Schema.decodeUnknownEffect(ModuleBuild)(input).pipe(
+								Effect.mapError((cause) =>
+									launchError(
+										"invalid_module_manifest",
+										`Cannot read module identity: ${path}`,
+										"Repair the engine or project build before launching.",
+										false,
+										"fix_input",
+										cause
+									)
+								)
+							)
+				)
+			)
 		);
 		const [engine, project] = builds;
 		if (engine && project && engine.BuildId !== project.BuildId)
@@ -276,94 +291,103 @@ const PluginModuleBuild = Schema.Struct({
 export const validateUnrealRemoteControlBuild = Effect.fn(
 	"UnrealProjectLauncher.validateRemoteControl"
 )((engineRoot: string, platform = process.platform, version?: EngineVersion) =>
-	Effect.tryPromise({
-		try: async () => {
-			const binaryPlatform =
-				platform === "win32" ? "Win64" : platform === "darwin" ? "Mac" : "Linux";
-			const manifestName = `${unrealEditorBinaryName(version)}.modules`;
-			const engine = Schema.decodeUnknownSync(ModuleBuild)(
+	Effect.gen(function* () {
+		const binaryPlatform =
+			platform === "win32" ? "Win64" : platform === "darwin" ? "Mac" : "Linux";
+		const manifestName = `${unrealEditorBinaryName(version)}.modules`;
+		const engine = yield* Schema.decodeUnknownEffect(ModuleBuild)(
+			yield* Effect.tryPromise(async () =>
 				JSON.parse(
 					await readFile(
 						join(engineRoot, "Engine", "Binaries", binaryPlatform, manifestName),
 						"utf8"
 					)
 				)
+			)
+		);
+		const descriptors = new Map<string, string>();
+		const directories = [join(engineRoot, "Engine", "Plugins")];
+		for (const directory of directories) {
+			const entries = yield* Effect.tryPromise(() =>
+				readdir(directory, { withFileTypes: true })
 			);
-			const descriptors = new Map<string, string>();
-			const directories = [join(engineRoot, "Engine", "Plugins")];
-			for (const directory of directories) {
-				const entries = await readdir(directory, { withFileTypes: true });
-				const plugins = entries.filter(
-					(entry) => entry.isFile() && entry.name.endsWith(".uplugin")
-				);
-				for (const plugin of plugins)
-					descriptors.set(
-						basename(plugin.name, ".uplugin"),
-						join(directory, plugin.name)
-					);
-				if (plugins.length) continue;
-				for (const entry of entries) {
-					if (
-						entry.isDirectory() &&
-						!entry.name.startsWith(".") &&
-						!["Binaries", "Intermediate"].includes(entry.name)
-					)
-						directories.push(join(directory, entry.name));
-				}
+			const plugins = entries.filter(
+				(entry) => entry.isFile() && entry.name.endsWith(".uplugin")
+			);
+			for (const plugin of plugins)
+				descriptors.set(basename(plugin.name, ".uplugin"), join(directory, plugin.name));
+			if (plugins.length) continue;
+			for (const entry of entries) {
+				if (
+					entry.isDirectory() &&
+					!entry.name.startsWith(".") &&
+					!["Binaries", "Intermediate"].includes(entry.name)
+				)
+					directories.push(join(directory, entry.name));
 			}
-			const pending = ["RemoteControl"],
-				seen = new Set<string>(),
-				issues: string[] = [],
-				stalePlugins: string[] = [];
-			for (const id of pending) {
-				if (seen.has(id)) continue;
-				seen.add(id);
-				const descriptor = descriptors.get(id);
-				if (!descriptor) {
-					issues.push(`${id}: plugin is missing`);
-					continue;
-				}
-				const plugin = Schema.decodeUnknownSync(EnginePluginDescriptor)(
-					JSON.parse(await readFile(descriptor, "utf8"))
-				);
-				for (const dependency of plugin.Plugins ?? []) {
-					if (dependency.Enabled && !dependency.Optional) pending.push(dependency.Name);
-				}
-				if (!plugin.Modules?.length) continue;
-				const binaries = join(dirname(descriptor), "Binaries", binaryPlatform);
-				try {
-					const manifest = Schema.decodeUnknownSync(PluginModuleBuild)(
+		}
+		const pending = ["RemoteControl"],
+			seen = new Set<string>(),
+			issues: string[] = [],
+			stalePlugins: string[] = [];
+		for (const id of pending) {
+			if (seen.has(id)) continue;
+			seen.add(id);
+			const descriptor = descriptors.get(id);
+			if (!descriptor) {
+				issues.push(`${id}: plugin is missing`);
+				continue;
+			}
+			const plugin = yield* Schema.decodeUnknownEffect(EnginePluginDescriptor)(
+				yield* Effect.tryPromise(async () => JSON.parse(await readFile(descriptor, "utf8")))
+			);
+			for (const dependency of plugin.Plugins ?? []) {
+				if (dependency.Enabled && !dependency.Optional) pending.push(dependency.Name);
+			}
+			if (!plugin.Modules?.length) continue;
+			const binaries = join(dirname(descriptor), "Binaries", binaryPlatform);
+			yield* Effect.gen(function* () {
+				const manifest = yield* Schema.decodeUnknownEffect(PluginModuleBuild)(
+					yield* Effect.tryPromise(async () =>
 						JSON.parse(await readFile(join(binaries, manifestName), "utf8"))
+					)
+				);
+				if (manifest.BuildId !== engine.BuildId) {
+					stalePlugins.push(id);
+					issues.push(
+						`${id}: plugin build ${manifest.BuildId}; engine build ${engine.BuildId}`
 					);
-					if (manifest.BuildId !== engine.BuildId) {
-						stalePlugins.push(id);
-						issues.push(
-							`${id}: plugin build ${manifest.BuildId}; engine build ${engine.BuildId}`
-						);
-					}
-					for (const file of Object.values(manifest.Modules)) {
-						try {
-							await access(join(binaries, file));
-						} catch {
-							issues.push(`${id}: missing binary ${file}`);
-						}
-					}
-				} catch {
-					issues.push(`${id}: missing or invalid module manifest at ${binaries}`);
 				}
-			}
-			if (issues.length) {
-				const exists = (path: string) =>
-					access(path).then(
-						() => true,
-						() => false
+				for (const file of Object.values(manifest.Modules)) {
+					yield* Effect.tryPromise(() => access(join(binaries, file))).pipe(
+						Effect.catchTag("UnknownError", () =>
+							Effect.sync(() => {
+								issues.push(`${id}: missing binary ${file}`);
+							})
+						)
 					);
-				const buildable =
-					platform === "win32" &&
-					(await exists(
-						join(engineRoot, "Engine", "Build", "BatchFiles", "Build.bat")
-					)) &&
-					(await exists(
+				}
+			}).pipe(
+				Effect.catchTag(["UnknownError", "SchemaError"], () =>
+					Effect.sync(() => {
+						issues.push(`${id}: missing or invalid module manifest at ${binaries}`);
+					})
+				)
+			);
+		}
+		if (issues.length) {
+			const exists = (path: string) =>
+				access(path).then(
+					() => true,
+					() => false
+				);
+			const buildable =
+				platform === "win32" &&
+				(yield* Effect.tryPromise(() =>
+					exists(join(engineRoot, "Engine", "Build", "BatchFiles", "Build.bat"))
+				)) &&
+				(yield* Effect.tryPromise(() =>
+					exists(
 						join(
 							engineRoot,
 							"Engine",
@@ -372,46 +396,52 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 							"UnrealBuildTool",
 							"UnrealBuildTool.csproj"
 						)
-					)) &&
-					!(await exists(join(engineRoot, "Engine", "Build", "InstalledBuild.txt")));
-				if (buildable && stalePlugins.length === issues.length)
-					throw new UnrealProjectLaunchError({
-						code: "engine_plugins_stale",
-						message:
-							"A project build updated this engine, but Remote Control's plugins were left behind.",
-						recovery:
-							"Close editors and builds using this engine, then rebuild the stale plugins with this project's Editor target.",
-						details: `Engine: ${engineRoot}\n${issues.join("\n")}`,
-						enginePlugins: { engineRoot, stalePlugins, buildable },
-						retrySafe: true,
-						nextStep: "fix_input"
-					});
-				throw new UnrealProjectLaunchError({
-					code: "plugin_unavailable",
+					)
+				)) &&
+				!(yield* Effect.tryPromise(() =>
+					exists(join(engineRoot, "Engine", "Build", "InstalledBuild.txt"))
+				));
+			if (buildable && stalePlugins.length === issues.length)
+				return yield* new UnrealProjectLaunchError({
+					code: "engine_plugins_stale",
 					message:
-						"Remote Control or its engine dependencies are missing or built for a different engine.",
+						"A project build updated this engine, but Remote Control's plugins were left behind.",
 					recovery:
-						"Build this project's Editor target with Remote Control enabled (-EnablePlugin=RemoteControl), then launch again.",
+						"Close editors and builds using this engine, then rebuild the stale plugins with this project's Editor target.",
 					details: `Engine: ${engineRoot}\n${issues.join("\n")}`,
-					retrySafe: false,
+					enginePlugins: { engineRoot, stalePlugins, buildable },
+					retrySafe: true,
 					nextStep: "fix_input"
 				});
-			}
-		},
-		catch: (cause) =>
-			isUnrealProjectLaunchError(cause)
-				? cause
-				: new UnrealProjectLaunchError({
-						cause: cause,
-						code: "plugin_unavailable",
-						message: "Could not verify this engine's Remote Control installation.",
-						recovery:
-							"Repair the selected engine's Remote Control plugin and its dependencies before launching.",
-						details: String(cause),
-						retrySafe: false,
-						nextStep: "fix_input"
-					})
-	})
+			return yield* new UnrealProjectLaunchError({
+				code: "plugin_unavailable",
+				message:
+					"Remote Control or its engine dependencies are missing or built for a different engine.",
+				recovery:
+					"Build this project's Editor target with Remote Control enabled (-EnablePlugin=RemoteControl), then launch again.",
+				details: `Engine: ${engineRoot}\n${issues.join("\n")}`,
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
+		}
+	}).pipe(
+		Effect.mapError((failure) => {
+			const cause = Cause.isUnknownError(failure) ? failure.cause : failure;
+			return ((cause: unknown) =>
+				isUnrealProjectLaunchError(cause)
+					? cause
+					: new UnrealProjectLaunchError({
+							cause: cause,
+							code: "plugin_unavailable",
+							message: "Could not verify this engine's Remote Control installation.",
+							recovery:
+								"Repair the selected engine's Remote Control plugin and its dependencies before launching.",
+							details: String(cause),
+							retrySafe: false,
+							nextStep: "fix_input"
+						}))(cause);
+		})
+	)
 );
 
 /**

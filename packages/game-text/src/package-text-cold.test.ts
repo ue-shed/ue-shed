@@ -63,7 +63,7 @@ describe("cold package refresh", () => {
 						expect(progress.at(-1)?.phase).toBe("package_publish");
 						expect(requests).toHaveLength(1);
 						expect(requests[0]).toHaveLength(20);
-						const reader = yield* (yield* SharedIndex).open();
+						const reader = yield* (yield* SharedIndex).open;
 						const records = [];
 						for (const name of Object.keys(reader.manifest.active)) {
 							if (!name.startsWith("package-text.")) continue;
@@ -194,7 +194,7 @@ describe("cold package refresh", () => {
 				Effect.scoped(
 					Effect.gen(function* () {
 						const result = yield* Effect.scoped(refreshPackageTextLayer(input));
-						const reader = yield* (yield* SharedIndex).open();
+						const reader = yield* (yield* SharedIndex).open;
 						const records: Record<string, readonly PackageTextStored[]> = {};
 						for (const name of Object.keys(reader.manifest.active).sort())
 							records[name] = yield* decodePackageTextColumns(

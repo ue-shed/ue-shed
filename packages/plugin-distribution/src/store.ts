@@ -135,7 +135,7 @@ export interface PluginStoreApi {
 	readonly lease: (
 		release: StoredPluginRelease
 	) => Effect.Effect<PluginLease, PluginStorageFailure, Scope.Scope>;
-	readonly list: () => Effect.Effect<
+	readonly list: Effect.Effect<
 		ReadonlyArray<CachedPluginRelease>,
 		CorruptCacheEntry | PluginStorageFailure
 	>;
@@ -1263,7 +1263,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 					)
 			);
 
-			const list = Effect.fn("PluginStore.list")(() =>
+			const list = Effect.suspend(() =>
 				Effect.tryPromise({
 					try: async () => {
 						const versions = new Set<string>();
@@ -1298,7 +1298,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 						)
 					)
 				)
-			);
+			).pipe(Effect.withSpan("PluginStore.list"));
 
 			return PluginStore.of({
 				cacheRoot,

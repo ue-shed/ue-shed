@@ -104,7 +104,7 @@ describe("WorkbenchEditorResponsiveness", () => {
 				const { engine, preference, service } = yield* exercise();
 				const responsiveness = yield* service;
 				expect(yield* engine.log).toEqual([`hold:${local}:7`]);
-				expect(yield* responsiveness.settings()).toMatchObject({
+				expect(yield* responsiveness.settings).toMatchObject({
 					enabled: true,
 					state: "active"
 				});
@@ -130,7 +130,7 @@ describe("WorkbenchEditorResponsiveness", () => {
 			const { engine, service } = yield* exercise({ initial: false });
 			yield* TestClock.adjust(10_000);
 			expect(yield* engine.log).toEqual([]);
-			expect(yield* (yield* service).settings()).toMatchObject({ state: "off" });
+			expect(yield* (yield* service).settings).toMatchObject({ state: "off" });
 		})
 	);
 
@@ -153,7 +153,7 @@ describe("WorkbenchEditorResponsiveness", () => {
 			const preference = yield* makeEditorResponsivenessPreferenceTestStore();
 			const settings = yield* Effect.gen(function* () {
 				yield* TestClock.adjust(5_000);
-				return yield* (yield* WorkbenchEditorResponsiveness).settings();
+				return yield* (yield* WorkbenchEditorResponsiveness).settings;
 			}).pipe(
 				Effect.provide(
 					makeWorkbenchEditorResponsivenessLayer({
@@ -178,7 +178,7 @@ describe("WorkbenchEditorResponsiveness", () => {
 	it.effect("is unsupported off Windows without contacting the editor", () =>
 		Effect.gen(function* () {
 			const { engine, service } = yield* exercise({ platform: "darwin" });
-			expect(yield* (yield* service).settings()).toMatchObject({ state: "unsupported" });
+			expect(yield* (yield* service).settings).toMatchObject({ state: "unsupported" });
 			expect(yield* engine.log).toEqual([]);
 		})
 	);
@@ -191,13 +191,13 @@ describe("WorkbenchEditorResponsiveness", () => {
 			yield* Effect.gen(function* () {
 				const responsiveness = yield* WorkbenchEditorResponsiveness;
 				yield* TestClock.adjust(0);
-				expect(yield* responsiveness.settings()).toMatchObject({ state: "connecting" });
+				expect(yield* responsiveness.settings).toMatchObject({ state: "connecting" });
 				// Backoff 1 s, 2 s, 4 s: four attempts in the first seven seconds.
 				yield* TestClock.adjust(7_000);
 				expect((yield* engine.log).length).toBe(4);
 				yield* engine.failWith();
 				yield* TestClock.adjust(8_000);
-				expect(yield* responsiveness.settings()).toMatchObject({ state: "active" });
+				expect(yield* responsiveness.settings).toMatchObject({ state: "active" });
 			}).pipe(
 				Effect.provide(
 					makeWorkbenchEditorResponsivenessLayer({
@@ -222,7 +222,7 @@ describe("WorkbenchEditorResponsiveness", () => {
 			yield* Effect.gen(function* () {
 				const responsiveness = yield* WorkbenchEditorResponsiveness;
 				yield* TestClock.adjust(0);
-				expect(yield* responsiveness.settings()).toMatchObject({
+				expect(yield* responsiveness.settings).toMatchObject({
 					state: "unsupported",
 					detail: "The editor said no. Update UE Shed Core."
 				});

@@ -378,7 +378,10 @@ function liveLayer(
 }
 
 function listeningPort(server: ReturnType<typeof createServer>): number {
-	return Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address()).port;
+	const address = server.address();
+	if (!(address instanceof Object))
+		throw new Error("The fixture TCP server did not expose its address.");
+	return address.port;
 }
 
 it.effect("stores source and multiple exact compiled variants for one release", () =>
@@ -432,8 +435,9 @@ it.effect("stores source and multiple exact compiled variants for one release", 
 		).toBe(3);
 		expect(first.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
 		expect(first.artifactKind).toBe("compiled");
-		const cached = yield* Effect.flatMap(PluginDistribution, (distribution) =>
-			distribution.listCached()
+		const cached = yield* Effect.flatMap(
+			PluginDistribution,
+			(distribution) => distribution.listCached
 		).pipe(Effect.provide(layer));
 		expect(cached).toHaveLength(3);
 		expect(cached.map(({ artifactKind }) => artifactKind).sort()).toEqual([
@@ -484,20 +488,25 @@ it.effect("prunes only the matching legacy reference after recoverable content c
 		yield* Effect.promise(async () => {
 			await mkdir(join(cacheRoot, "releases"), { recursive: true });
 			await rename(acquired.cachePath, legacyRoot);
-			const metadataPath = join(legacyRoot, ".ue-shed-distribution.json");
-			const metadata = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
-				JSON.parse(await readFile(metadataPath, "utf8"))
-			);
-			const {
-				artifactKind: _artifactKind,
-				variantIdentity: _variantIdentity,
-				...legacy
-			} = metadata;
-			await writeFile(
+		});
+		const metadataPath = join(legacyRoot, ".ue-shed-distribution.json");
+		const input = yield* Effect.promise(async () =>
+			JSON.parse(await readFile(metadataPath, "utf8"))
+		);
+		const metadata = yield* Schema.decodeUnknownEffect(
+			Schema.Record(Schema.String, Schema.Json)
+		)(input).pipe(Effect.orDie);
+		const {
+			artifactKind: _artifactKind,
+			variantIdentity: _variantIdentity,
+			...legacy
+		} = metadata;
+		yield* Effect.promise(() =>
+			writeFile(
 				metadataPath,
 				`${JSON.stringify({ ...legacy, schemaVersion: 1 }, null, "\t")}\n`
-			);
-		});
+			)
+		);
 
 		const exactReference: PluginVariantReference = {
 			releaseVersion: acquired.releaseVersion,
@@ -1771,8 +1780,9 @@ it.effect("keeps different releases side by side and deterministically replays a
 				distribution.install(request(secondSource.releaseVersion))
 			)
 		).pipe(Effect.provide(layer));
-		const releases = yield* Effect.flatMap(PluginDistribution, (distribution) =>
-			distribution.listCached()
+		const releases = yield* Effect.flatMap(
+			PluginDistribution,
+			(distribution) => distribution.listCached
 		).pipe(Effect.provide(layer));
 		expect(releases.map(({ releaseVersion }) => releaseVersion)).toEqual(["0.3.1", "0.3.2"]);
 		yield* Effect.flatMap(PluginDistribution, (distribution) =>

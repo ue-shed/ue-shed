@@ -1,4 +1,4 @@
-import { ErrorNextStep } from "@ue-shed/protocol/errors";
+import { ErrorGuidanceFields, ErrorNextStep } from "@ue-shed/protocol/errors";
 import { savedMapPathToGameMapPath } from "@ue-shed/cameras/map-tiles";
 import { randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
@@ -237,27 +237,27 @@ export class SavedWorldUnavailable extends Schema.TaggedError<
 }) {}
 
 export interface WorkbenchMapReviewApi {
-	readonly editorWorld?: () => Effect.Effect<MapReviewEditorState>;
+	readonly editorWorld?: Effect.Effect<MapReviewEditorState>;
 	readonly openMapInUnreal?: (mapPath: string) => Effect.Effect<MapReviewMapOpenResult>;
 	readonly cameraWorkspace?: (
 		request: CameraWorkspaceRequest
 	) => Effect.Effect<CameraWorkspaceResult>;
-	readonly resetLiveTarget?: () => Effect.Effect<void>;
+	readonly resetLiveTarget?: Effect.Effect<void>;
 	/** Lists configured saved maps; this deliberately never connects to Unreal. */
-	readonly savedWorldMaps: () => Effect.Effect<readonly SavedWorldMap[], SavedWorldUnavailable>;
+	readonly savedWorldMaps: Effect.Effect<readonly SavedWorldMap[], SavedWorldUnavailable>;
 	/** Reads one configured saved map; this deliberately never connects to Unreal. */
 	readonly savedWorld: (
 		mapPath: string
 	) => Effect.Effect<SavedWorld, AssetReaderError | SavedWorldUnavailable>;
 	/** Latest native saved-world package progress; poll while `savedWorld` is in flight. */
-	readonly savedWorldProgress: () => Effect.Effect<SavedWorldProgress>;
-	readonly worldSnapshot: () => Effect.Effect<WorldScoutResult>;
+	readonly savedWorldProgress: Effect.Effect<SavedWorldProgress>;
+	readonly worldSnapshot: Effect.Effect<WorldScoutResult>;
 	readonly subscribeWorldObservations: (cadenceHz: WorldScoutRefreshRate) => Effect.Effect<void>;
 	readonly setWorldObservationRate: (
 		cadenceHz: WorldScoutRefreshRate
 	) => Effect.Effect<WorldScoutRefreshRate>;
-	readonly unsubscribeWorldObservations: () => Effect.Effect<void>;
-	readonly worldObservationPresentationReplacements: () => Effect.Effect<number>;
+	readonly unsubscribeWorldObservations: Effect.Effect<void>;
+	readonly worldObservationPresentationReplacements: Effect.Effect<number>;
 	readonly focusActor: (
 		actorId: ActorId,
 		bringToFront: boolean
@@ -290,10 +290,10 @@ export interface WorkbenchMapReviewApi {
 	readonly replaceVisibilityPolicy: (
 		intent: MapReviewReplaceVisibilityPolicyIntent
 	) => Effect.Effect<MapReviewResult>;
-	readonly reviewSetLibrary: () => Effect.Effect<MapReviewSetLibraryResult>;
+	readonly reviewSetLibrary: Effect.Effect<MapReviewSetLibraryResult>;
 	readonly createReviewSet: (intent: MapReviewSetCreateIntent) => Effect.Effect<MapReviewResult>;
 	readonly selectReviewSet: (intent: MapReviewSetSelectIntent) => Effect.Effect<MapReviewResult>;
-	readonly load: () => Effect.Effect<MapReviewResult>;
+	readonly load: Effect.Effect<MapReviewResult>;
 	readonly previewCandidate: (
 		candidateId: string
 	) => Effect.Effect<MapReviewCandidatePreviewResult>;
@@ -322,6 +322,11 @@ function mapReviewFailure(cause: {
 		status: "failed"
 	};
 }
+
+class ReviewSelectionError extends Schema.TaggedError<
+	ReviewSelectionError,
+	Brand.Brand<"apps/workbench/src/main/services/map-review/ReviewSelectionError">
+>()("Workbench.ReviewSelectionError", ErrorGuidanceFields) {}
 
 function mapReviewAuthoringFailure(cause: {
 	readonly message: string;
@@ -670,7 +675,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const startObservationFiber = Effect.fn(
 			"Workbench.WorkbenchMapReview.startObservationFiber"
 		)(function* (cadenceHz: WorldScoutRefreshRate, selectedEndpoint?: string) {
-			const endpoint = selectedEndpoint ?? (yield* connection.endpoint());
+			const endpoint = selectedEndpoint ?? (yield* connection.endpoint);
 
 			yield* stopObservationFiber();
 			let previous: WorldObservationState | undefined;
@@ -756,7 +761,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const subscribeWorldObservations = Effect.fn(
 			"Workbench.WorkbenchMapReview.subscribeWorldObservations"
 		)(function* (cadenceHz: WorldScoutRefreshRate) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 			const current = yield* Ref.get(observationSubscription);
 			const subscribers = current.subscribers + 1;
 			yield* Ref.set(observationSubscription, {
@@ -775,9 +780,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			}
 		});
 
-		const unsubscribeWorldObservations = Effect.fn(
-			"Workbench.WorkbenchMapReview.unsubscribeWorldObservations"
-		)(function* () {
+		const unsubscribeWorldObservations = Effect.gen(function* () {
 			const current = yield* Ref.get(observationSubscription);
 			const subscribers = Math.max(0, current.subscribers - 1);
 			yield* Ref.set(observationSubscription, {
@@ -789,12 +792,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				yield* Ref.set(pendingObservation, emptyPendingObservationSlots());
 				yield* Ref.set(lastPresentedCatalogKey, undefined);
 			}
-		});
+		}).pipe(Effect.withSpan("Workbench.WorkbenchMapReview.unsubscribeWorldObservations"));
 
 		const setWorldObservationRate = Effect.fn(
 			"Workbench.WorkbenchMapReview.setWorldObservationRate"
 		)(function* (cadenceHz: WorldScoutRefreshRate) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			const current = yield* Ref.get(observationSubscription);
 			if (current.subscribers <= 0 || current.cadenceHz === undefined) return cadenceHz;
@@ -809,16 +812,18 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			return updated.value;
 		});
 
-		const worldObservationPresentationReplacements = Effect.fn(
-			"Workbench.WorkbenchMapReview.worldObservationPresentationReplacements"
-		)(() => Ref.get(observationPresentationReplacements));
+		const worldObservationPresentationReplacements = Ref.get(
+			observationPresentationReplacements
+		).pipe(
+			Effect.withSpan("Workbench.WorkbenchMapReview.worldObservationPresentationReplacements")
+		);
 
 		const invalidateProvisionedCameras = Effect.fn(
 			"Workbench.WorkbenchMapReview.invalidateProvisionedCameras"
 		)(function* () {
 			const bindings = yield* Ref.getAndSet(provisionedCameraBindings, Option.none());
 			if (Option.isNone(bindings)) return;
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			yield* clearProvisionedCameras(endpoint).pipe(
 				Effect.provideService(RemoteControlClient, remoteControl),
@@ -829,7 +834,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const applyProvisionedCameraSchedule = Effect.fn(
 			"Workbench.WorkbenchMapReview.applyProvisionedCameraSchedule"
 		)(function* (cameraCount: number, fps: number) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			const clamped = clampLivePreviewFps(fps);
 			yield* Ref.set(livePreviewFps, clamped);
@@ -851,7 +856,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const setLivePreviewFps = Effect.fn("Workbench.WorkbenchMapReview.setLivePreviewFps")(
 			function* (fps: number) {
-				const endpoint = yield* connection.endpoint();
+				const endpoint = yield* connection.endpoint;
 				const bindings = yield* Ref.get(provisionedCameraBindings);
 				const cameraCount =
 					Option.isSome(bindings) && bindings.value.endpoint === endpoint
@@ -874,7 +879,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const resolveReviewProject = Effect.fn("Workbench.WorkbenchMapReview.resolveReviewProject")(
 			function* () {
-				const selected = yield* project.current();
+				const selected = yield* project.current;
 				if (selected.status === "ready") {
 					return { projectRoot: selected.project.projectRoot };
 				}
@@ -903,8 +908,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			return undefined;
 		});
 
-		const worldSnapshot = Effect.fn("Workbench.WorkbenchMapReview.worldSnapshot")(function* () {
-			const endpoint = yield* connection.endpoint();
+		const worldSnapshot = Effect.gen(function* () {
+			const endpoint = yield* connection.endpoint;
 
 			const result = yield* coordinator.poll(
 				observatory.snapshot(endpoint).pipe(
@@ -938,11 +943,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					status: "unavailable" as const
 				})
 			);
-		});
+		}).pipe(Effect.withSpan("Workbench.WorkbenchMapReview.worldSnapshot"));
 
 		const resolveSavedProject = Effect.fn("Workbench.WorkbenchMapReview.resolveSavedProject")(
 			function* () {
-				return yield* project.savedProject();
+				return yield* project.savedProject;
 			},
 			Effect.mapError(
 				(error) =>
@@ -980,12 +985,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			return world;
 		});
 
-		const savedWorldMaps = Effect.fn("Workbench.WorkbenchMapReview.savedWorldMaps")(
-			function* () {
-				const resolved = yield* resolveSavedProject();
-				return resolved.maps;
-			}
-		);
+		const savedWorldMaps = Effect.gen(function* () {
+			const resolved = yield* resolveSavedProject();
+			return resolved.maps;
+		}).pipe(Effect.withSpan("Workbench.WorkbenchMapReview.savedWorldMaps"));
 
 		const savedWorld = Effect.fn("Workbench.WorkbenchMapReview.savedWorld")(function* (
 			mapPath: string
@@ -1007,15 +1010,15 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			});
 		});
 
-		const savedWorldProgress = Effect.fn("Workbench.WorkbenchMapReview.savedWorldProgress")(
-			() => assetReader.savedWorldProgress()
+		const savedWorldProgress = Effect.suspend(() => assetReader.savedWorldProgress).pipe(
+			Effect.withSpan("Workbench.WorkbenchMapReview.savedWorldProgress")
 		);
 
 		const focusActor = Effect.fn("Workbench.WorkbenchMapReview.focusActor")(function* (
 			actorId: ActorId,
 			bringToFront: boolean
 		) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			const focused = yield* coordinator.poll(
 				observatory.focus(endpoint, actorId, bringToFront).pipe(
@@ -1138,9 +1141,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					return false;
 				});
 				if (duplicate !== undefined) {
-					return yield* Effect.fail({
+					return yield* new ReviewSelectionError({
 						message: `Review Set ID ${duplicate.id} is used by more than one document.`,
-						recovery: "Give every Review Set a unique ID, then reopen the set library."
+						recovery: "Give every Review Set a unique ID, then reopen the set library.",
+						retrySafe: true,
+						nextStep: "fix_input"
 					});
 				}
 				return discovered.toSorted(
@@ -1151,26 +1156,28 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			}
 		);
 
-		const reviewSetLibrary = Effect.fn("Workbench.WorkbenchMapReview.reviewSetLibrary")(
-			function* () {
-				const reviewProject = yield* resolveReviewProject();
-				if (reviewProject === undefined) return { status: "not_configured" as const };
-				return yield* Effect.gen(function* () {
-					const sets = yield* availableReviewSets(reviewProject.projectRoot);
-					const selectedPath = yield* selectedReviewSetPath();
-					const activeReviewSetId = sets.find(
-						(reviewSet) => reviewSet.path === selectedPath
-					)?.id;
-					return {
-						...(activeReviewSetId === undefined ? undefined : { activeReviewSetId }),
-						sets: sets.map(({ path: _path, ...reviewSet }) => reviewSet),
-						status: "ready" as const
-					};
-				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
-			}
-		);
+		const reviewSetLibrary = Effect.gen(function* () {
+			const reviewProject = yield* resolveReviewProject();
+			if (reviewProject === undefined) return { status: "not_configured" as const };
+			return yield* Effect.gen(function* () {
+				const sets = yield* availableReviewSets(reviewProject.projectRoot);
+				const selectedPath = yield* selectedReviewSetPath();
+				const activeReviewSetId = sets.find(
+					(reviewSet) => reviewSet.path === selectedPath
+				)?.id;
+				return {
+					...(activeReviewSetId === undefined ? undefined : { activeReviewSetId }),
+					sets: sets.map(({ path: _path, ...reviewSet }) => reviewSet),
+					status: "ready" as const
+				};
+			}).pipe(
+				Effect.catchTag(["Workbench.ReviewSelectionError", "ReviewStorageError"], (cause) =>
+					Effect.succeed(mapReviewFailure(cause))
+				)
+			);
+		}).pipe(Effect.withSpan("Workbench.WorkbenchMapReview.reviewSetLibrary"));
 
-		const load = Effect.fn("Workbench.WorkbenchMapReview.load")(function* () {
+		const load = Effect.gen(function* () {
 			const reviewProject = yield* resolveReviewProject();
 			if (reviewProject === undefined) return { status: "not_configured" as const };
 			const { projectRoot } = reviewProject;
@@ -1214,9 +1221,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 									: { visibilityPolicy })
 							})
 						: Effect.fail(
-								new Error(
-									`Review View ${view.id} references missing profile ${view.captureProfileId}.`
-								)
+								new ReviewSelectionError({
+									message: `Review View ${view.id} references missing profile ${view.captureProfileId}.`,
+									recovery:
+										"Verify the Review Set, project directory, and local evidence store.",
+									retrySafe: true,
+									nextStep: "fix_input"
+								})
 							);
 				});
 				const summaries = (yield* repository.listRuns(projectRoot)).filter(
@@ -1238,8 +1249,17 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					runs,
 					status: "ready" as const
 				};
-			}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
-		});
+			}).pipe(
+				Effect.catchTag(
+					[
+						"Workbench.ReviewSelectionError",
+						"ReviewStorageError",
+						"Workbench.LocalFilesError"
+					],
+					(cause) => Effect.succeed(mapReviewFailure(cause))
+				)
+			);
+		}).pipe(Effect.withSpan("Workbench.WorkbenchMapReview.load"));
 
 		const selectReviewSet = Effect.fn("Workbench.WorkbenchMapReview.selectReviewSet")(
 			function* (intent: MapReviewSetSelectIntent) {
@@ -1259,8 +1279,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						activeReviewSetPath,
 						Option.some({ path: selected.path, projectRoot: reviewProject.projectRoot })
 					);
-					return yield* load();
-				}).pipe(Effect.catch((cause) => Effect.succeed(mapReviewFailure(cause))));
+					return yield* load;
+				}).pipe(
+					Effect.catchTag(
+						["Workbench.ReviewSelectionError", "ReviewStorageError"],
+						(cause) => Effect.succeed(mapReviewFailure(cause))
+					)
+				);
 			}
 		);
 
@@ -1286,7 +1311,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						activeReviewSetPath,
 						Option.some({ path: created.path, projectRoot: reviewProject.projectRoot })
 					);
-					return yield* load();
+					return yield* load;
 				}).pipe(
 					Effect.catchTag("ReviewStorageError", (cause) =>
 						Effect.succeed(mapReviewFailure(cause))
@@ -1311,7 +1336,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						: { visibilityOverrides: intent.visibilityOverrides })
 				});
 				yield* repository.saveSet({ path: reviewSetPath, reviewSet: updated });
-				return yield* load();
+				return yield* load;
 			}).pipe(
 				Effect.catchTag(["ReviewStorageError", "ReviewVisibilityPolicyError"], (cause) =>
 					Effect.succeed(mapReviewFailure(cause))
@@ -1332,7 +1357,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					viewIds: intent.viewIds.map((viewId) => ReviewViewId.make(viewId))
 				});
 				yield* repository.saveSet({ path: reviewSetPath, reviewSet: updated });
-				return yield* load();
+				return yield* load;
 			}).pipe(
 				Effect.catchTag(["ReviewStorageError", "ReviewVisibilityPolicyError"], (cause) =>
 					Effect.succeed(mapReviewFailure(cause))
@@ -1343,7 +1368,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const captureAndReload = Effect.fn("Workbench.WorkbenchMapReview.capture")(function* (
 			intent: MapReviewCaptureIntent
 		) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			const reviewProject = yield* resolveReviewProject();
 			if (reviewProject === undefined) return { status: "not_configured" as const };
@@ -1367,7 +1392,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				return { policy: block, status: "blocked" as const };
 			}
 			const { projectRoot } = reviewProject;
-			yield* cameraWorkspace.close().pipe(Effect.orDie);
+			yield* cameraWorkspace.close.pipe(Effect.orDie);
 			return yield* runExclusive(
 				capture
 					.captureSet({
@@ -1381,7 +1406,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					})
 					.pipe(
 						Effect.flatMap((run) =>
-							load().pipe(
+							load.pipe(
 								Effect.map((review): MapReviewCaptureResult => {
 									if (review.status === "setup_required") {
 										return { status: "not_configured" as const };
@@ -1420,7 +1445,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const authorFromSelection = Effect.fn("Workbench.WorkbenchMapReview.authorFromSelection")(
 			function* (intent: MapReviewAuthorFromSelectionIntent) {
-				const endpoint = yield* connection.endpoint();
+				const endpoint = yield* connection.endpoint;
 
 				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
@@ -1507,7 +1532,15 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						});
 						return authoringResult(session);
 					}).pipe(
-						Effect.catch((cause) => Effect.succeed(mapReviewAuthoringFailure(cause)))
+						Effect.catchTag(
+							[
+								"Workbench.ReviewSelectionError",
+								"ReviewStorageError",
+								"ReviewAuthoringConnectionError",
+								"ReviewAuthoringSessionError"
+							],
+							(cause) => Effect.succeed(mapReviewAuthoringFailure(cause))
+						)
 					)
 				);
 			}
@@ -1515,7 +1548,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const authoringResume = Effect.fn("Workbench.WorkbenchMapReview.authoringResume")(
 			function* (intent: MapReviewAuthoringSessionIntent | undefined) {
-				const endpoint = yield* connection.endpoint();
+				const endpoint = yield* connection.endpoint;
 
 				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
@@ -1629,7 +1662,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const authoringReframe = Effect.fn("Workbench.WorkbenchMapReview.authoringReframe")(
 			function* (intent: MapReviewAuthoringSessionIntent) {
-				const endpoint = yield* connection.endpoint();
+				const endpoint = yield* connection.endpoint;
 
 				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
@@ -1668,7 +1701,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const previewAuthoringCandidate = Effect.fn(
 			"Workbench.WorkbenchMapReview.previewAuthoringCandidate"
 		)(function* (intent: MapReviewAuthoringPreviewIntent) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			return yield* Effect.gen(function* () {
 				const reviewProject = yield* resolveReviewProject();
@@ -1936,7 +1969,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const approveAuthoring = Effect.fn("Workbench.WorkbenchMapReview.approveAuthoring")(
 			function* (intent: MapReviewAuthoringSessionIntent) {
-				const endpoint = yield* connection.endpoint();
+				const endpoint = yield* connection.endpoint;
 
 				const reviewProject = yield* resolveReviewProject();
 				if (reviewProject === undefined) {
@@ -1996,7 +2029,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const previewCandidate = Effect.fn("Workbench.WorkbenchMapReview.previewCandidate")(
 			function* (candidateId: string) {
-				const endpoint = yield* connection.endpoint();
+				const endpoint = yield* connection.endpoint;
 
 				const reviewSetPath = yield* selectedReviewSetPath();
 				if (reviewSetPath === undefined) {
@@ -2057,7 +2090,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 		const approveCandidate = Effect.fn("Workbench.WorkbenchMapReview.approveCandidate")(
 			function* (intent: MapReviewApproveCandidateIntent) {
-				const endpoint = yield* connection.endpoint();
+				const endpoint = yield* connection.endpoint;
 
 				const reviewSetPath = yield* selectedReviewSetPath();
 				if (reviewSetPath === undefined) {
@@ -2132,11 +2165,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		);
 
 		const service = WorkbenchMapReview.of({
-			editorWorld: Effect.fn("Workbench.MapReview.editorWorld")(function* () {
+			editorWorld: Effect.gen(function* () {
 				const pending = yield* Ref.get(openingMap);
 				if (pending) return { status: "opening" as const, targetMapPath: pending };
-				const endpoint = yield* connection.endpoint();
-				const result = yield* project.selectedProject().pipe(
+				const endpoint = yield* connection.endpoint;
+				const result = yield* project.selectedProject.pipe(
 					Effect.flatMap((selected) =>
 						matchingEditorWorld(endpoint, selected.projectRoot)
 					),
@@ -2152,14 +2185,14 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				const startedWhileReading = yield* Ref.get(openingMap);
 				if (startedWhileReading)
 					return { status: "opening" as const, targetMapPath: startedWhileReading };
-				if ((yield* connection.endpoint()) !== endpoint)
+				if ((yield* connection.endpoint) !== endpoint)
 					return {
 						status: "unavailable" as const,
 						message: "The editor connection changed while reading its map.",
 						recovery: "Waiting for the selected editor's next state update."
 					};
 				return result;
-			}),
+			}).pipe(Effect.withSpan("Workbench.MapReview.editorWorld")),
 			openMapInUnreal: Effect.fn("Workbench.MapReview.openMapInUnreal")(function* (
 				mapPath: string
 			) {
@@ -2191,16 +2224,16 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								recovery: "Refresh the map inventory and select a project map."
 							};
 						}
-						const endpoint = yield* connection.endpoint();
+						const endpoint = yield* connection.endpoint;
 						yield* matchingEditorWorld(endpoint, savedProject.projectRoot);
-						if ((yield* connection.endpoint()) !== endpoint)
+						if ((yield* connection.endpoint) !== endpoint)
 							return {
 								outcome: "failed" as const,
 								message: "The editor connection changed.",
 								recovery: "Check the selected editor and retry."
 							};
 						yield* Ref.set(openingMap, targetMapPath);
-						yield* cameraWorkspace.close();
+						yield* cameraWorkspace.close;
 						const response = yield* worldControl.open({
 							endpoint,
 							operationId: randomUUID(),
@@ -2247,7 +2280,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						};
 					let reviewSetPath = yield* selectedReviewSetPath();
 					if (!reviewSetPath && intent.kind === "open" && !intent.id) {
-						const endpoint = yield* connection.endpoint();
+						const endpoint = yield* connection.endpoint;
 						const selection = intent.actorPath
 							? yield* authoring.inspectSubject({
 									endpoint,
@@ -2285,7 +2318,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						{
 							projectRoot: selected.projectRoot,
 							reviewSetPath,
-							endpoint: yield* connection.endpoint()
+							endpoint: yield* connection.endpoint
 						},
 						intent
 					);
@@ -2296,15 +2329,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					)
 				)
 			),
-			resetLiveTarget: Effect.fn("Workbench.MapReview.resetLiveTarget")(function* () {
-				yield* cameraWorkspace
-					.close()
-					.pipe(
-						Effect.catchTag(
-							["CameraBridgeError", "ProvisionedCameraError", "CameraWorkspaceError"],
-							(cause) => Effect.logWarning("Camera workspace close failed", cause)
-						)
-					);
+			resetLiveTarget: Effect.gen(function* () {
+				yield* cameraWorkspace.close.pipe(
+					Effect.catchTag(
+						["CameraBridgeError", "ProvisionedCameraError", "CameraWorkspaceError"],
+						(cause) => Effect.logWarning("Camera workspace close failed", cause)
+					)
+				);
 				yield* stopObservationFiber();
 				yield* Ref.update(observationSubscription, (current) => ({
 					...current,
@@ -2317,7 +2348,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				yield* Ref.set(lastObservationSample, Option.none());
 				yield* Ref.set(lastPresentedCatalogKey, undefined);
 				yield* Ref.set(pendingObservation, emptyPendingObservationSlots());
-			}),
+			}).pipe(Effect.withSpan("Workbench.MapReview.resetLiveTarget")),
 			applyVisibilityPolicy,
 			approveAuthoring,
 			approveCandidate,
@@ -2347,7 +2378,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		});
 		const setupHost = yield* makeCameraSetupHost({
 			create: Effect.fn("Workbench.MapReview.createFromNativePreset")(function* (intent) {
-				const endpoint = yield* connection.endpoint();
+				const endpoint = yield* connection.endpoint;
 				const subject = yield* authoring.inspectSubject({
 					endpoint,
 					subject: { kind: "actor_path", actorPath: intent.actorPath }
@@ -2427,7 +2458,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					)
 				)
 		);
-		yield* Effect.fn("Workbench.MapReview.nativeSetupPoll")(function* () {
+		yield* Effect.gen(function* () {
 			const selected = yield* resolveReviewProject();
 			if (!selected) return;
 			const files = yield* Effect.tryPromise({
@@ -2444,12 +2475,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			});
 			const descriptor = files.find((name) => name.endsWith(".uproject"));
 			if (!descriptor) return;
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 			yield* setupHost.poll(
 				makeCameraAuthoringBridge(remoteControl, endpoint),
 				basename(descriptor, ".uproject")
 			);
-		})().pipe(
+		}).pipe(
+			Effect.withSpan("Workbench.MapReview.nativeSetupPoll"),
 			Effect.catchTag("CameraBridgeError", (cause) =>
 				Effect.logDebug("Native camera setup host unavailable", cause)
 			),

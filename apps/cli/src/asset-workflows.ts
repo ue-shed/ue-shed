@@ -8,7 +8,7 @@ import {
 	scanSavedProject,
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
-import { Effect, Result } from "effect";
+import { Layer, Effect, Result } from "effect";
 import {
 	CliCommandError,
 	CliRuntime,
@@ -296,8 +296,9 @@ export const runInputInspect = Effect.fn("Cli.workflow.input_inspect")(
 					}
 					return yield* service.inspectPath(command.path);
 				}).pipe(
-					Effect.provide(EnhancedInputServiceLive),
-					Effect.provide(readerLayer(command.reader)),
+					Effect.provide(
+						Layer.provideMerge(EnhancedInputServiceLive, readerLayer(command.reader))
+					),
 					Effect.mapError((error) =>
 						isCliCommandError(error)
 							? error

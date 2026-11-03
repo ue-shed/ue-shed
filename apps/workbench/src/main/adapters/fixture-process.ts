@@ -42,7 +42,7 @@ export class FixtureProcess extends Context.Service<FixtureProcess, FixtureProce
 ) {}
 
 export interface FixtureProcessTestApi extends FixtureProcessApi {
-	readonly launches: () => Effect.Effect<ReadonlyArray<FixtureProcessLaunchOptions>>;
+	readonly launches: Effect.Effect<ReadonlyArray<FixtureProcessLaunchOptions>>;
 }
 
 export class FixtureProcessTest extends Context.Service<
@@ -177,7 +177,7 @@ export const makeFixtureProcessTestLayer = (
 					yield* Ref.update(launches, (current) => [...current, options]);
 					return yield* behavior(options);
 				}),
-				launches: () => Ref.get(launches)
+				launches: Ref.get(launches)
 			});
 			return Context.empty().pipe(
 				Context.add(FixtureProcess, service),

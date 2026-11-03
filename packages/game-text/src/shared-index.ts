@@ -243,10 +243,10 @@ export interface SharedIndexWriter {
 export class SharedIndex extends Context.Service<
 	SharedIndex,
 	{
-		readonly inspect: () => Effect.Effect<SharedIndexManifest, Failure, Scope.Scope>;
+		readonly inspect: Effect.Effect<SharedIndexManifest, Failure, Scope.Scope>;
 		readonly cached: (key: string) => Effect.Effect<SharedLayerRecord, Failure, Scope.Scope>;
-		readonly open: () => Effect.Effect<SharedIndexReader, Failure, Scope.Scope>;
-		readonly writer: () => Effect.Effect<SharedIndexWriter, Failure, Scope.Scope>;
+		readonly open: Effect.Effect<SharedIndexReader, Failure, Scope.Scope>;
+		readonly writer: Effect.Effect<SharedIndexWriter, Failure, Scope.Scope>;
 	}
 >()("@ue-shed/game-text/SharedIndex") {}
 
@@ -334,18 +334,18 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 		SharedIndex,
 		Effect.gen(function* () {
 			const store = yield* SnapshotStore;
-			const read = Effect.fn("SharedIndex.read")(function* () {
-				const root = yield* store.open();
+			const read = Effect.gen(function* () {
+				const root = yield* store.open;
 				return yield* readIndex(root);
-			});
+			}).pipe(Effect.withSpan("SharedIndex.read"));
 			const cached = Effect.fn("SharedIndex.cached")(function* (key: string) {
-				const manifest = yield* read();
+				const manifest = yield* read;
 				return yield* boundary("cached", () =>
 					validateCachedLayer(directory, manifest, key, options.onRead)
 				);
 			});
 			const openOnce = Effect.fn("SharedIndex.open")(function* () {
-				const manifest = yield* read();
+				const manifest = yield* read;
 				const files = yield* Effect.acquireRelease(
 					boundary("segments", () =>
 						new SharedStringFiles(directory, manifest.segments).open()
@@ -490,7 +490,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					)
 				};
 			});
-			const open = Effect.fn("SharedIndex.openRetained")(function* () {
+			const open = Effect.gen(function* () {
 				for (let attempt = 0; ; attempt++) {
 					const result = yield* openOnce().pipe(Effect.result);
 					if (Result.isSuccess(result)) return result.success;
@@ -502,10 +502,10 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					)
 						return yield* result.failure;
 				}
-			});
-			const writer = Effect.fn("SharedIndex.writer")(function* () {
-				const rootWriter = yield* store.writer();
-				const opened = yield* read().pipe(Effect.result);
+			}).pipe(Effect.withSpan("SharedIndex.openRetained"));
+			const writer = Effect.gen(function* () {
+				const rootWriter = yield* store.writer;
+				const opened = yield* read.pipe(Effect.result);
 				if (
 					Result.isFailure(opened) &&
 					(!isSnapshotStoreError(opened.failure) || opened.failure.code !== "missing")
@@ -1056,7 +1056,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 						timings: { ...files.timings }
 					})
 				};
-			});
+			}).pipe(Effect.withSpan("SharedIndex.writer"));
 
 			async function obsoleteBytes(
 				directory: string,

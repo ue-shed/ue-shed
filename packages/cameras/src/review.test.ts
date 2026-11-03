@@ -4,15 +4,18 @@ import { highResolutionReviewRenderer, type CameraRendererPolicy } from "./camer
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Cause, Deferred, Effect, Fiber, Schema } from "effect";
+import { Layer, Cause, Deferred, Effect, Fiber, Schema, Tracer } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	ReviewCapture,
 	ReviewCaptureLive,
+	ReviewIdGenerator,
+	ReviewIdGeneratorLive,
 	reviewCapturePortLayer,
 	reviewIdGeneratorLayer,
 	type ReviewCapturePortApi
 } from "./review-capture.js";
+
 import {
 	captureRunPath,
 	captureRunsRoot,
@@ -139,10 +142,15 @@ function runCapture(
 				...(options.viewIds ? { viewIds: options.viewIds } : undefined)
 			})
 		).pipe(
-			Effect.provide(ReviewCaptureLive),
-			Effect.provide(reviewCapturePortLayer(port)),
-			Effect.provide(reviewIdGeneratorLayer(makeId)),
-			Effect.provide(ReviewRepositoryLive)
+			Effect.provide(
+				Layer.provideMerge(
+					Layer.provideMerge(
+						Layer.provideMerge(ReviewCaptureLive, reviewCapturePortLayer(port)),
+						reviewIdGeneratorLayer(makeId)
+					),
+					ReviewRepositoryLive
+				)
+			)
 		)
 	);
 }
@@ -1226,7 +1234,7 @@ describe("durable capture loop", () => {
 				traversalAttempt.writeDocument({ relativePath: "../escape.json", value: {} })
 			)
 		).rejects.toMatchObject({ operation: "write_run" });
-		await Effect.runPromise(traversalAttempt.discard());
+		await Effect.runPromise(traversalAttempt.discard);
 
 		const reparseAttempt = await Effect.runPromise(
 			destination.prepare(CaptureRunId.make("run-reparse"))
@@ -1239,7 +1247,7 @@ describe("durable capture loop", () => {
 			)
 		).rejects.toMatchObject({ operation: "write_run" });
 		await expect(access(join(outsideRoot, "new"))).rejects.toThrow();
-		await Effect.runPromise(reparseAttempt.discard());
+		await Effect.runPromise(reparseAttempt.discard);
 
 		const projectRoot = await mkdtemp(join(tmpdir(), "ue-shed-review-source-project-"));
 		temporaryDirectories.push(projectRoot);
@@ -1261,7 +1269,7 @@ describe("durable capture loop", () => {
 				})
 			)
 		).rejects.toMatchObject({ _tag: "ReviewArtifactSourceRejected" });
-		await Effect.runPromise(sourceAttempt.discard());
+		await Effect.runPromise(sourceAttempt.discard);
 	});
 
 	it("cleans a caller-owned attempt when capture is cancelled", async () => {
@@ -1295,10 +1303,15 @@ describe("durable capture loop", () => {
 				reviewSetPath
 			})
 		).pipe(
-			Effect.provide(ReviewCaptureLive),
-			Effect.provide(reviewCapturePortLayer(port)),
-			Effect.provide(reviewIdGeneratorLayer(() => ids.shift()!)),
-			Effect.provide(ReviewRepositoryLive)
+			Effect.provide(
+				Layer.provideMerge(
+					Layer.provideMerge(
+						Layer.provideMerge(ReviewCaptureLive, reviewCapturePortLayer(port)),
+						reviewIdGeneratorLayer(() => ids.shift()!)
+					),
+					ReviewRepositoryLive
+				)
+			)
 		);
 		const fiber = Effect.runFork(capture);
 		await Effect.runPromise(Deferred.await(captureStarted));
@@ -1656,10 +1669,15 @@ describe("durable capture loop", () => {
 				reviewSetPath
 			})
 		).pipe(
-			Effect.provide(ReviewCaptureLive),
-			Effect.provide(reviewCapturePortLayer(port)),
-			Effect.provide(reviewIdGeneratorLayer(makeId)),
-			Effect.provide(ReviewRepositoryLive)
+			Effect.provide(
+				Layer.provideMerge(
+					Layer.provideMerge(
+						Layer.provideMerge(ReviewCaptureLive, reviewCapturePortLayer(port)),
+						reviewIdGeneratorLayer(makeId)
+					),
+					ReviewRepositoryLive
+				)
+			)
 		);
 		const captureFiber = Effect.runFork(capture);
 		await Effect.runPromise(Deferred.await(promotionStarted));
@@ -1681,4 +1699,37 @@ describe("review staging path validation", () => {
 		expect(isPathWithin(root, join(root, "Saved", "UEShed", "a.png"))).toBe(true);
 		expect(isPathWithin(root, join(root, "..", "elsewhere.png"))).toBe(false);
 	});
+});
+
+it("repeats ID work and creates a distinct named span for every operation execution", async () => {
+	const spans: Tracer.Span[] = [];
+	const tracer = Tracer.make({
+		span: (options) => {
+			const span = new Tracer.NativeSpan(options);
+			spans.push(span);
+			return span;
+		}
+	});
+	let generated = 0;
+	const supplied = reviewIdGeneratorLayer(() => `id-${++generated}`);
+	const values = await Effect.runPromise(
+		Effect.gen(function* () {
+			const ids = yield* ReviewIdGenerator;
+			expect(generated).toBe(0);
+			const operation = ids.generate;
+			return [yield* operation, yield* operation];
+		}).pipe(Effect.provide(supplied), Effect.withTracer(tracer))
+	);
+	expect(values).toEqual(["id-1", "id-2"]);
+	const operations = spans.filter((span) => span.name === "ReviewIdGenerator.Test.generate");
+	expect(operations).toHaveLength(2);
+	expect(new Set(operations.map((span) => span.spanId)).size).toBe(2);
+	expect(operations.every((span) => span.status._tag === "Ended")).toBe(true);
+	const live = await Effect.runPromise(
+		Effect.gen(function* () {
+			const ids = yield* ReviewIdGenerator;
+			return [yield* ids.generate, yield* ids.generate];
+		}).pipe(Effect.provide(ReviewIdGeneratorLive))
+	);
+	expect(live[0]).not.toBe(live[1]);
 });

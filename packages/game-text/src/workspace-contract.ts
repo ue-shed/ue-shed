@@ -99,13 +99,17 @@ type EntryError<Entry extends GameTextWorkspaceContractEntry> = Entry extends {
  */
 export type GameTextWorkspaceContractMethod<Entry extends GameTextWorkspaceContractEntry> =
 	Entry extends { readonly success: Schema.Top }
-		? (
-				...params: EntryParameters<Entry>
-			) => Effect.Effect<Entry["success"]["Type"], EntryError<Entry>>
-		: Entry extends { readonly events: Schema.Top }
-			? (
+		? EntryParameters<Entry> extends []
+			? Effect.Effect<Entry["success"]["Type"], EntryError<Entry>>
+			: (
 					...params: EntryParameters<Entry>
-				) => Stream.Stream<Entry["events"]["Type"], EntryError<Entry>>
+				) => Effect.Effect<Entry["success"]["Type"], EntryError<Entry>>
+		: Entry extends { readonly events: Schema.Top }
+			? EntryParameters<Entry> extends []
+				? Stream.Stream<Entry["events"]["Type"], EntryError<Entry>>
+				: (
+						...params: EntryParameters<Entry>
+					) => Stream.Stream<Entry["events"]["Type"], EntryError<Entry>>
 			: never;
 
 /**

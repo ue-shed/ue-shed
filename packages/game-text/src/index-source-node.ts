@@ -24,7 +24,7 @@ import { StageClock } from "./stage-clock.js";
 
 import { packageTextSnapshotBatches } from "./package-text-native.js";
 
-const FileStamp = Schema.Struct({ size: Schema.Number, modifiedMs: Schema.Number });
+const FileStamp = Schema.Struct({ size: Schema.Finite, modifiedMs: Schema.Finite });
 const Signature = Schema.Array(Schema.NullOr(FileStamp));
 const bundlePaths = (path: string) => [
 	path,
@@ -502,7 +502,7 @@ export function gameTextIndexSourceNodeLayer(
 				).pipe(Layer.provide(Layer.succeed(ProjectIndex, supplied.value)));
 			}
 			const reader = yield* AssetReader;
-			const configuration = yield* reader.configuration();
+			const configuration = yield* reader.configuration;
 			return source(cacheRoot).pipe(
 				Layer.provide(projectIndexProcessLayerFromReader({ ...configuration, cacheRoot }))
 			);

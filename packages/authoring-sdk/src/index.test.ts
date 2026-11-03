@@ -28,7 +28,7 @@ describe("authoring SDK contracts", () => {
 						endpoint: `http://127.0.0.1:${address.port}`
 					});
 					const call = read
-						? client.listSessions().pipe(Effect.asVoid)
+						? client.listSessions.pipe(Effect.asVoid)
 						: client.applySession("draft").pipe(Effect.asVoid);
 					const error = await Effect.runPromise(Effect.flip(call));
 					expect(error.retrySafe).toBe(read);
@@ -140,12 +140,12 @@ describe("authoring SDK contracts", () => {
 			const client = makeAuthoringHttpClient({
 				endpoint: `http://127.0.0.1:${address.port}/api/authoring`
 			});
-			expect(await Effect.runPromise(client.loadConfiguredCatalog())).toEqual({
+			expect(await Effect.runPromise(client.loadConfiguredCatalog)).toEqual({
 				diagnostics: [],
 				status: "ready",
 				tables: []
 			});
-			expect(await Effect.runPromise(client.getCatalogProgress())).toMatchObject({
+			expect(await Effect.runPromise(client.getCatalogProgress)).toMatchObject({
 				cacheHits: 170000,
 				phase: "scanning",
 				processedAssets: 171000
@@ -179,7 +179,7 @@ describe("authoring SDK contracts", () => {
 				);
 			}
 		});
-		expect(await Effect.runPromise(client.loadConfiguredCatalog())).toEqual({
+		expect(await Effect.runPromise(client.loadConfiguredCatalog)).toEqual({
 			diagnostics: [],
 			status: "ready",
 			tables: []

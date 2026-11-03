@@ -60,21 +60,20 @@ const report: EnhancedInputReport = {
 
 function layer(result: () => EnhancedInputRunResult) {
 	const project = makeWorkbenchProjectTestLayer({
-		choose: () => Effect.die("not used"),
-		current: () =>
-			Effect.succeed({
-				status: "ready",
-				project: {
-					inputAtlas: "ready",
-					mapCount: 0,
-					packageCount: 1,
-					projectName: "Demo",
-					projectRoot
-				}
-			}),
-		inputAtlas: () => Effect.succeed(result()),
-		savedProject: () => Effect.die("not used"),
-		savedTables: () => Effect.die("not used")
+		choose: Effect.suspend(() => Effect.die("not used")),
+		current: Effect.sync(() => ({
+			status: "ready",
+			project: {
+				inputAtlas: "ready",
+				mapCount: 0,
+				packageCount: 1,
+				projectName: "Demo",
+				projectRoot
+			}
+		})),
+		inputAtlas: Effect.sync(() => result()),
+		savedProject: Effect.suspend(() => Effect.die("not used")),
+		savedTables: Effect.suspend(() => Effect.die("not used"))
 	});
 	const requests: ConfigExplainRequest[] = [];
 	const explorer = Layer.succeed(
@@ -134,7 +133,7 @@ it.effect("adds config asset and project default co-activation sets to a complet
 	const { layer: live, requests } = layer(() => ({ status: "completed", report, projectRoot }));
 	return Effect.gen(function* () {
 		const atlas = yield* WorkbenchInputAtlas;
-		const result = yield* atlas.configuredScan();
+		const result = yield* atlas.configuredScan;
 		expect(result.status).toBe("completed");
 		if (result.status !== "completed") return;
 		expect(result.analysis?.coActivation.sets.map((set) => set.source)).toEqual([
@@ -154,7 +153,7 @@ it.effect("adds config asset and project default co-activation sets to a complet
 it.effect("passes failed scans through without resolving analysis", () =>
 	Effect.gen(function* () {
 		const atlas = yield* WorkbenchInputAtlas;
-		const result = yield* atlas.configuredScan();
+		const result = yield* atlas.configuredScan;
 		expect(result).toEqual({
 			status: "failed",
 			error: {

@@ -1,10 +1,15 @@
 import { userInfo } from "node:os";
-import { makeGameTextWorkspace, type GameTextWorkspaceApi } from "@ue-shed/game-text/workspace";
+import {
+	GameTextWorkspaceHostFailure,
+	makeGameTextWorkspace,
+	type GameTextWorkspaceApi
+} from "@ue-shed/game-text/workspace";
 import { EngineInstallationDiscoveryLive } from "@ue-shed/engine";
 import { LocalizationFileAccessLive, projectSourceGatherEngine } from "@ue-shed/localization";
 import { Context, Effect, Layer, Option, Stream } from "effect";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
-import { LocalFiles } from "../adapters/local-files.js";
+import { LocalFiles, type LocalFilesApi } from "../adapters/local-files.js";
+import type { GameTextWorkspaceFileHooks } from "@ue-shed/game-text/workspace";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
@@ -27,6 +32,40 @@ function reviewer() {
 	}
 }
 
+/** Adapts a host-owned failure while retaining its identity and recovery guidance. */
+export function gameTextHostFailure(cause: {
+	readonly code?: string;
+	readonly message: string;
+	readonly recovery: string;
+	readonly retrySafe: boolean;
+	readonly nextStep: GameTextWorkspaceHostFailure["nextStep"];
+}): GameTextWorkspaceHostFailure {
+	return new GameTextWorkspaceHostFailure({
+		cause,
+		...(cause.code === undefined ? undefined : { code: cause.code }),
+		message: cause.message,
+		recovery: cause.recovery,
+		retrySafe: cause.retrySafe,
+		nextStep: cause.nextStep
+	});
+}
+
+/** Local file capabilities adapted to the shared workspace's typed host boundary. */
+export function gameTextFileHooks(
+	files: LocalFilesApi
+): Pick<GameTextWorkspaceFileHooks, "readFile" | "readFileWithin" | "writeFile"> {
+	return {
+		readFile: (path, options) =>
+			files.readFile(path, options).pipe(Effect.mapError(gameTextHostFailure)),
+		readFileWithin: (directory, path, options) =>
+			files
+				.readFileWithin(directory, path, options)
+				.pipe(Effect.mapError(gameTextHostFailure)),
+		writeFile: (path, bytes, options) =>
+			files.writeFile(path, bytes, options).pipe(Effect.mapError(gameTextHostFailure))
+	};
+}
+
 export const WorkbenchGameTextLive = Layer.effect(
 	WorkbenchGameText,
 	Effect.gen(function* () {
@@ -45,17 +84,19 @@ export const WorkbenchGameTextLive = Layer.effect(
 		const workspace = yield* makeGameTextWorkspace({
 			project: {
 				current: project.current,
-				refresh: () => project.refresh(),
-				candidates: () => project.candidates("game_text"),
+				refresh: Effect.suspend(() => project.refresh()),
+				candidates: Effect.suspend(() => project.candidates("game_text")).pipe(
+					Effect.mapError(gameTextHostFailure)
+				),
 				progress: project.progress,
 				progressChanges: project.progressChanges
 			},
 			files: {
-				chooseFile: dialog.chooseFile,
-				chooseSaveFile: dialog.chooseSaveFile,
-				readFile: files.readFile,
-				readFileWithin: files.readFileWithin,
-				writeFile: files.writeFile
+				...gameTextFileHooks(files),
+				chooseFile: (options) =>
+					dialog.chooseFile(options).pipe(Effect.mapError(gameTextHostFailure)),
+				chooseSaveFile: (options) =>
+					dialog.chooseSaveFile(options).pipe(Effect.mapError(gameTextHostFailure))
 			},
 			reviewer,
 			changeAuthor: "workbench",
@@ -85,9 +126,9 @@ export function makeWorkbenchGameTextTestLayer(
 		WorkbenchGameText.of({
 			operationStateTarget: () => Effect.undefined,
 			operationTarget: () => Effect.undefined,
-			operationBusyReason: () => Effect.undefined,
-			beginOperation: () => Effect.succeed(true),
-			endOperation: () => Effect.void,
+			operationBusyReason: Effect.undefined,
+			beginOperation: Effect.succeed(true),
+			endOperation: Effect.void,
 			refreshAfterOperation: () => Effect.succeed(true),
 			localizationBeforeGather: () => Effect.void,
 			localizationQualitySearch: () => Effect.succeed({ status: "not_ready" }),
@@ -107,20 +148,20 @@ export function makeWorkbenchGameTextTestLayer(
 					message: "No files were chosen.",
 					recovery: "Choose two files."
 				}),
-			localizationTargets: () => Effect.succeed({ status: "ready", targets: [] }),
+			localizationTargets: Effect.sync(() => ({ status: "ready", targets: [] })),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),
 			related: () => Effect.succeed({ status: "not_ready" }),
 			investigationExport: () => Effect.succeed({ status: "cancelled" }),
 			investigationSave: () => Effect.succeed({ status: "cancelled" }),
-			investigationOpen: () => Effect.succeed({ status: "cancelled" }),
+			investigationOpen: Effect.sync(() => ({ status: "cancelled" })),
 			configuredRefresh: () => Effect.succeed({ status: "not_configured" }),
 			focus: () => Effect.succeed({ status: "not_ready" }),
-			chooseQualityRules: () => Effect.succeed({ status: "not_ready" }),
-			reloadQualityRules: () => Effect.succeed({ status: "not_ready" }),
+			chooseQualityRules: Effect.sync(() => ({ status: "not_ready" })),
+			reloadQualityRules: Effect.sync(() => ({ status: "not_ready" })),
 			createStarterRules: () => Effect.succeed({ status: "not_ready" }),
-			progress: () => Effect.succeed({ completed: 0, phase: "idle", total: 0 }),
-			progressChanges: () => Stream.empty,
+			progress: Effect.sync(() => ({ completed: 0, phase: "idle", total: 0 })),
+			progressChanges: Stream.empty,
 			search: () => Effect.succeed({ status: "not_ready" }),
 			searchRows: () => Effect.succeed({ status: "not_ready" }),
 			qualityFocus: () => Effect.succeed({ status: "not_ready" }),

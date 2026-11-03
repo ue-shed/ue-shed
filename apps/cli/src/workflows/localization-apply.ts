@@ -1,6 +1,6 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { invalidateCliGameTextIndex } from "./game-text-index.js";
-import { type Brand, Effect, FileSystem, Metric, Result, Schema, Stream } from "effect";
+import { Layer, type Brand, Effect, FileSystem, Metric, Result, Schema, Stream } from "effect";
 import {
 	applyLocalizationChangeSet,
 	decodeLocalizationChangeSet,
@@ -122,7 +122,9 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 					const output = {
 						schemaVersion: 1,
 						type: "receipt",
-						receipt: Schema.encodeSync(LocalizationChangeSetReceipt)(receipt)
+						receipt: yield* Schema.encodeEffect(LocalizationChangeSetReceipt)(
+							receipt
+						).pipe(Effect.orDie)
 					};
 					if (command.json) yield* runtime.print(`${JSON.stringify(output)}\n`);
 					else yield* printJson(output);
@@ -134,9 +136,15 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 					yield* syncAfterWrite(command, target);
 				});
 				yield* work.pipe(
-					Effect.provide(LocalizationEvidenceNodeLive),
-					Effect.provide(LocalizationFileAccessLive),
-					Effect.provide(LocalizationOperationsNodeLive),
+					Effect.provide(
+						Layer.provideMerge(
+							Layer.provideMerge(
+								LocalizationEvidenceNodeLive,
+								LocalizationFileAccessLive
+							),
+							LocalizationOperationsNodeLive
+						)
+					),
 					Effect.catchTag("ConfigError", () =>
 						Effect.fail(localizationOperationError("invalid_request"))
 					),
@@ -157,7 +165,9 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 								const output = {
 									schemaVersion: 1,
 									type: "failure",
-									error: Schema.encodeSync(LocalizationApplyFailure)(error)
+									error: yield* Schema.encodeEffect(LocalizationApplyFailure)(
+										error
+									).pipe(Effect.orDie)
 								};
 								if (command.json)
 									yield* runtime.print(`${JSON.stringify(output)}\n`);

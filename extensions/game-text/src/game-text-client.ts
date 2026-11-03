@@ -136,10 +136,7 @@ export interface GameTextClientApi {
 	readonly compareLocalizationFiles?: (
 		request: LocalizationFileComparisonRequest
 	) => Effect.Effect<LocalizationFileComparisonResult, GameTextClientError>;
-	readonly localizationTargets?: () => Effect.Effect<
-		LocalizationTargetsResult,
-		GameTextClientError
-	>;
+	readonly localizationTargets?: Effect.Effect<LocalizationTargetsResult, GameTextClientError>;
 	readonly localizationTarget?: (
 		target: LocalizationSelection["target"]
 	) => Effect.Effect<LocalizationTargetResult, GameTextClientError>;
@@ -150,11 +147,8 @@ export interface GameTextClientApi {
 	readonly related?: (
 		request: RelatedLinesRequest
 	) => Effect.Effect<RelatedLinesResult, GameTextClientError>;
-	readonly projectKey?: () => Effect.Effect<string | undefined, GameTextClientError>;
-	readonly reloadQualityRules?: () => Effect.Effect<
-		TextQualityQueryRunResult,
-		GameTextClientError
-	>;
+	readonly projectKey?: Effect.Effect<string | undefined, GameTextClientError>;
+	readonly reloadQualityRules?: Effect.Effect<TextQualityQueryRunResult, GameTextClientError>;
 	readonly createStarterRules?: (
 		loadExisting: boolean
 	) => Effect.Effect<TextQualityQueryRunResult, GameTextClientError>;
@@ -166,7 +160,7 @@ export interface GameTextClientApi {
 		readonly save: (
 			query: GameTextInvestigationQuery
 		) => Effect.Effect<InvestigationFileResult, GameTextClientError>;
-		readonly open: () => Effect.Effect<GameTextInvestigationPresetResult, GameTextClientError>;
+		readonly open: Effect.Effect<GameTextInvestigationPresetResult, GameTextClientError>;
 	};
 	readonly focus: (
 		request: TextCorpusFocusRequest
@@ -189,10 +183,7 @@ export interface GameTextClientApi {
 	readonly searchRows: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusRowsResult, GameTextClientError>;
-	readonly chooseQualityRules: () => Effect.Effect<
-		TextQualityQueryRunResult,
-		GameTextClientError
-	>;
+	readonly chooseQualityRules: Effect.Effect<TextQualityQueryRunResult, GameTextClientError>;
 	readonly qualityFocus: (
 		request: TextQualityFocusRequest
 	) => Effect.Effect<TextQualityFocusResult, GameTextClientError>;

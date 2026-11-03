@@ -115,7 +115,7 @@ export function createGameTextLocalizationState(props: {
 	};
 	const load = () => {
 		if (!supported) return;
-		const operation = props.client.localizationTargets?.();
+		const operation = props.client.localizationTargets;
 		if (!operation) return;
 		const version = ++generation;
 		props.onPending();

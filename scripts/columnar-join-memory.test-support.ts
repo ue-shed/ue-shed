@@ -242,9 +242,9 @@ export function joinMemoryLayer() {
 	return Layer.succeed(
 		SharedIndex,
 		SharedIndex.of({
-			open: () => Effect.succeed(reader),
-			writer: () => Effect.succeed(writer),
-			inspect: () => Effect.succeed(root),
+			open: Effect.succeed(reader),
+			writer: Effect.succeed(writer),
+			inspect: Effect.succeed(root),
 			cached: (key) => Effect.sync(() => root.layers[key]!)
 		})
 	);

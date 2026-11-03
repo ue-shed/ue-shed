@@ -226,24 +226,18 @@ export class AuthoringClientError extends Schema.TaggedError<
 }) {}
 
 export interface AuthoringClientApi {
-	readonly getCatalogProgress: () => Effect.Effect<
-		AuthoringCatalogProgress,
-		AuthoringClientError
-	>;
-	readonly loadConfiguredCatalog: () => Effect.Effect<
-		AuthoringCatalogResult,
-		AuthoringClientError
-	>;
-	readonly loadConfiguredTable: () => Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
+	readonly getCatalogProgress: Effect.Effect<AuthoringCatalogProgress, AuthoringClientError>;
+	readonly loadConfiguredCatalog: Effect.Effect<AuthoringCatalogResult, AuthoringClientError>;
+	readonly loadConfiguredTable: Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
 	readonly openCatalogTable: (
 		objectPath: string,
 		authority: AuthoringAuthority
 	) => Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
-	readonly chooseTable: () => Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
+	readonly chooseTable: Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
 	readonly beginSession: (
 		objectPath: string
 	) => Effect.Effect<AuthoringSessionResult, AuthoringClientError>;
-	readonly listSessions: () => Effect.Effect<AuthoringSessionListResult, AuthoringClientError>;
+	readonly listSessions: Effect.Effect<AuthoringSessionListResult, AuthoringClientError>;
 	readonly openSession: (
 		sessionId: string
 	) => Effect.Effect<AuthoringSessionResult, AuthoringClientError>;
@@ -326,19 +320,19 @@ export function dispatchAuthoringTransportRequest(
 	const operation = (() => {
 		switch (request.operation) {
 			case "get_catalog_progress":
-				return client.getCatalogProgress();
+				return client.getCatalogProgress;
 			case "load_configured_catalog":
-				return client.loadConfiguredCatalog();
+				return client.loadConfiguredCatalog;
 			case "load_configured_table":
-				return client.loadConfiguredTable();
+				return client.loadConfiguredTable;
 			case "open_catalog_table":
 				return client.openCatalogTable(request.objectPath, request.authority);
 			case "choose_table":
-				return client.chooseTable();
+				return client.chooseTable;
 			case "begin_session":
 				return client.beginSession(request.objectPath);
 			case "list_sessions":
-				return client.listSessions();
+				return client.listSessions;
 			case "open_session":
 				return client.openSession(request.sessionId);
 			case "discard_session":
@@ -500,12 +494,13 @@ export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): Au
 		}).pipe(Effect.withSpan(args.operation));
 
 	return AuthoringClient.of({
-		getCatalogProgress: () =>
+		getCatalogProgress: Effect.suspend(() =>
 			request({
 				decode: decodeAuthoringCatalogProgress,
 				operation: "authoring.http.get_catalog_progress",
 				payload: { operation: "get_catalog_progress" }
-			}),
+			})
+		),
 		applySession: (sessionId) =>
 			request({
 				decode: decodeAuthoringSessionResult,
@@ -518,12 +513,13 @@ export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): Au
 				operation: "authoring.http.begin_session",
 				payload: { objectPath, operation: "begin_session" }
 			}),
-		chooseTable: () =>
+		chooseTable: Effect.suspend(() =>
 			request({
 				decode: decodeAuthoringLoadResult,
 				operation: "authoring.http.choose_table",
 				payload: { operation: "choose_table" }
-			}),
+			})
+		),
 		discardSession: (sessionId) =>
 			request({
 				decode: decodeAuthoringSessionListResult,
@@ -536,24 +532,27 @@ export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): Au
 				operation: "authoring.http.edit_session",
 				payload: { intent, operation: "edit_session" }
 			}),
-		listSessions: () =>
+		listSessions: Effect.suspend(() =>
 			request({
 				decode: decodeAuthoringSessionListResult,
 				operation: "authoring.http.list_sessions",
 				payload: { operation: "list_sessions" }
-			}),
-		loadConfiguredCatalog: () =>
+			})
+		),
+		loadConfiguredCatalog: Effect.suspend(() =>
 			request({
 				decode: decodeAuthoringCatalogResult,
 				operation: "authoring.http.load_configured_catalog",
 				payload: { operation: "load_configured_catalog" }
-			}),
-		loadConfiguredTable: () =>
+			})
+		),
+		loadConfiguredTable: Effect.suspend(() =>
 			request({
 				decode: decodeAuthoringLoadResult,
 				operation: "authoring.http.load_configured_table",
 				payload: { operation: "load_configured_table" }
-			}),
+			})
+		),
 		openCatalogTable: (objectPath, authority) =>
 			request({
 				decode: decodeAuthoringLoadResult,

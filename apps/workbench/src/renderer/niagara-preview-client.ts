@@ -65,13 +65,14 @@ function request<A, HostValue, DecodeError>(args: {
 }
 
 export const niagaraPreviewClient: NiagaraPreviewClientApi = {
-	catalogue: () =>
+	catalogue: Effect.suspend(() =>
 		request({
 			decode: decodeNiagaraCatalogueResult,
 			invoke: () => window.ueShed.niagaraPreview.catalogue(),
 			label: "The Niagara system catalogue request",
 			operation: "niagaraPreview.catalogue"
-		}),
+		})
+	),
 	frame: (intent) =>
 		request({
 			decode: decodeNiagaraPreviewFrameResult,

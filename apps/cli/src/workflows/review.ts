@@ -53,8 +53,7 @@ export const runReviewSetValidate = Effect.fn("Cli.workflow.review_set_validate"
 
 function readJsonDocument(path: string): Effect.Effect<unknown, CliCommandError> {
 	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
+		try: async () => JSON.parse(await readFile(path, "utf8")),
 		catch: (cause) =>
 			new CliCommandError({
 				recovery:
@@ -65,7 +64,24 @@ function readJsonDocument(path: string): Effect.Effect<unknown, CliCommandError>
 				message: jsonInputFileMessage("JSON document", path, cause),
 				cause
 			})
-	});
+	}).pipe(
+		Effect.flatMap((input) =>
+			Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+				Effect.mapError(
+					(cause) =>
+						new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: jsonInputFileMessage("JSON document", path, cause),
+							cause
+						})
+				)
+			)
+		)
+	);
 }
 
 /** Classify a schema rejection of a JSON input document without copying the issue into prose. */
@@ -278,8 +294,12 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 					});
 				});
 				return yield* program.pipe(
-					Effect.provide(ReviewRepositoryLive),
-					Effect.provide(ReviewAuthoringLive.pipe(Layer.provide(RemoteControlClientLive)))
+					Effect.provide(
+						Layer.provideMerge(
+							ReviewRepositoryLive,
+							ReviewAuthoringLive.pipe(Layer.provide(RemoteControlClientLive))
+						)
+					)
 				);
 			})
 		)
@@ -404,10 +424,12 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 					return yield* printJson(session);
 				});
 				return yield* program.pipe(
-					Effect.provide(reviewAuthoring),
 					Effect.provide(
-						ReviewAuthoringSessionsLive.pipe(
-							Layer.provide(Layer.mergeAll(ReviewRepositoryLive, reviewAuthoring))
+						Layer.provideMerge(
+							reviewAuthoring,
+							ReviewAuthoringSessionsLive.pipe(
+								Layer.provide(Layer.mergeAll(ReviewRepositoryLive, reviewAuthoring))
+							)
 						)
 					)
 				);
@@ -457,7 +479,7 @@ export const runReviewCapture = Effect.fn("Cli.workflow.review_capture")(
 											? undefined
 											: { correlationId: command.correlationId })
 									},
-									id: CaptureInvocationId.make(yield* ids.generate()),
+									id: CaptureInvocationId.make(yield* ids.generate),
 									reviewSetId: reviewSet.id
 								});
 					const run = yield* capture.captureSet({
@@ -468,8 +490,12 @@ export const runReviewCapture = Effect.fn("Cli.workflow.review_capture")(
 					if (run.status !== "completed") yield* runtime.setExitCode(1);
 				});
 				return yield* program.pipe(
-					Effect.provide(ReviewCaptureLive.pipe(Layer.provide(captureDependencies))),
-					Effect.provide(captureDependencies)
+					Effect.provide(
+						Layer.provideMerge(
+							ReviewCaptureLive.pipe(Layer.provide(captureDependencies)),
+							captureDependencies
+						)
+					)
 				);
 			})
 		)

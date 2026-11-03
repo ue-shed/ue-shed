@@ -77,7 +77,7 @@ export const WorkbenchConfigExplorerLive = Layer.effect(
 					projectRoot: fixtureRoot
 				};
 			} else {
-				const selected = yield* project.selectedProject().pipe(
+				const selected = yield* project.selectedProject.pipe(
 					Effect.map((value) => ({ status: "ready" as const, value })),
 					Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 						Effect.succeed({

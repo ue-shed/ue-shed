@@ -104,7 +104,11 @@ const makeGatedRecordingWindow = () =>
 		return {
 			awaitStarted: () => Queue.take(started),
 			destroyWindow: destroy,
-			layer: makeWorkbenchWindowTestLayer({ destroy, isDestroyed, send }),
+			layer: makeWorkbenchWindowTestLayer({
+				destroy: Effect.suspend(destroy),
+				isDestroyed: Effect.suspend(isDestroyed),
+				send
+			}),
 			pollStarted: () => Queue.poll(started),
 			releaseNext: () => Queue.offer(release, undefined).pipe(Effect.asVoid),
 			sentFrames: () => Ref.get(sentFrames)
@@ -160,7 +164,7 @@ it.effect("sends the latest frame and reports frames-sent metrics", () =>
 				expect(sent).toHaveLength(1);
 				expect(sent[0]).toMatchObject({ cameraIndex: 3, sequence: "7" });
 
-				const metrics = yield* presentation.metrics();
+				const metrics = yield* presentation.metrics;
 				expect(metrics.presentationFramesSent).toBe(1);
 				expect(metrics.presentationReplacements).toBe(0);
 				expect(metrics.presentationBudgetMbPerSecond).toBe(80);
@@ -217,7 +221,7 @@ it.effect("rejects camera indices outside the supported 0-31 range", () =>
 				expect(sent).toHaveLength(1);
 				expect(sent[0]).toMatchObject({ cameraIndex: 0, sequence: "3" });
 
-				const metrics = yield* presentation.metrics();
+				const metrics = yield* presentation.metrics;
 				expect(metrics.presentationReplacements).toBe(0);
 			})
 		);
@@ -247,7 +251,7 @@ it.effect("remains bounded when the window is slow to accept frames", () =>
 				const sent = yield* recordingWindow.sentFrames();
 				expect(sent.map((frame) => frame.sequence)).toEqual(["1", "5"]);
 
-				const metrics = yield* presentation.metrics();
+				const metrics = yield* presentation.metrics;
 				expect(metrics.presentationReplacements).toBe(3);
 				expect(metrics.presentationFramesSent).toBe(2);
 			})
@@ -351,7 +355,7 @@ it.effect("stops delivering frames once the window is destroyed", () =>
 				const sent = yield* recordingWindow.sentFrames();
 				expect(sent).toHaveLength(1);
 
-				const metrics = yield* presentation.metrics();
+				const metrics = yield* presentation.metrics;
 				expect(metrics.presentationFramesSent).toBe(1);
 			})
 		);

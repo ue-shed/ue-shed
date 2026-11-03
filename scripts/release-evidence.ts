@@ -79,7 +79,7 @@ export const GateResult = Schema.Struct({
 	fingerprint: Schema.String,
 	commit: Schema.String,
 	finishedAt: Schema.String,
-	durationMs: Schema.Number,
+	durationMs: Schema.Finite,
 	trace: Schema.String,
 	detail: Schema.optional(Schema.String)
 });

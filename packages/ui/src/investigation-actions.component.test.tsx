@@ -29,8 +29,9 @@ it("blocks compact export and preset actions while a project operation is runnin
 				client={{
 					export: () => Effect.succeed({ status: "cancelled" }),
 					save: () => Effect.succeed({ status: "cancelled" }),
-					open: () =>
+					open: Effect.suspend(() =>
 						Effect.succeed({ status: "opened", path: "preset.json", preset: "text" })
+					)
 				}}
 			/>
 		</EffectRuntimeProvider>
@@ -80,8 +81,9 @@ it("groups compact exports and presets, closes menus and keeps host actions avai
 						saved(query);
 						return Effect.succeed({ status: "saved", path: "/preset", rowCount: 0 });
 					},
-					open: () =>
+					open: Effect.suspend(() =>
 						Effect.succeed({ status: "opened", path: "/preset", preset: "restored" })
+					)
 				}}
 			/>
 		</EffectRuntimeProvider>
@@ -136,12 +138,13 @@ it("restores presets, reports file failures and cancellation, and hides stale re
 							replayCommand:
 								"pnpm ue-shed investigations run '/project' --preset '/preset.json'"
 						}),
-					open: () =>
+					open: Effect.suspend(() =>
 						Effect.succeed({
 							status: "opened",
 							path: "/preset.json",
 							preset: "restored"
-						}),
+						})
+					),
 					export: (_, format) =>
 						Effect.succeed(
 							format === "json"
@@ -209,7 +212,7 @@ it("keeps compact results and disabled reasons out of the toolbar flow", async (
 							rowCount: 0,
 							replayCommand: "pnpm ue-shed investigations run"
 						}),
-					open: () => Effect.succeed({ status: "cancelled" })
+					open: Effect.suspend(() => Effect.succeed({ status: "cancelled" }))
 				}}
 			/>
 		</EffectRuntimeProvider>

@@ -64,9 +64,9 @@ export interface SaveDialogOptions {
 }
 
 export interface WorkbenchWindowApi {
-	readonly destroy: () => Effect.Effect<void, WorkbenchWindowError>;
-	readonly isDestroyed: () => Effect.Effect<boolean>;
-	readonly load: () => Effect.Effect<void, WorkbenchWindowError>;
+	readonly destroy: Effect.Effect<void, WorkbenchWindowError>;
+	readonly isDestroyed: Effect.Effect<boolean>;
+	readonly load: Effect.Effect<void, WorkbenchWindowError>;
 	readonly openDialog: (
 		options: OpenDialogOptions
 	) => Effect.Effect<OpenDialogChoice, WorkbenchWindowError>;
@@ -77,7 +77,7 @@ export interface WorkbenchWindowApi {
 		channel: string,
 		payload: Payload
 	) => Effect.Effect<void, WorkbenchWindowError>;
-	readonly show: () => Effect.Effect<void, WorkbenchWindowError>;
+	readonly show: Effect.Effect<void, WorkbenchWindowError>;
 }
 
 export class WorkbenchWindow extends Context.Service<WorkbenchWindow, WorkbenchWindowApi>()(
@@ -85,10 +85,10 @@ export class WorkbenchWindow extends Context.Service<WorkbenchWindow, WorkbenchW
 ) {}
 
 export interface WorkbenchWindowTestApi extends WorkbenchWindowApi {
-	readonly sent: () => Effect.Effect<
+	readonly sent: Effect.Effect<
 		ReadonlyArray<{ readonly channel: string; readonly payload: unknown }>
 	>;
-	readonly shown: () => Effect.Effect<boolean>;
+	readonly shown: Effect.Effect<boolean>;
 }
 
 export class WorkbenchWindowTest extends Context.Service<
@@ -169,7 +169,7 @@ export const workbenchWindowLayer = (
 			);
 
 			return WorkbenchWindow.of({
-				load: Effect.fn("Workbench.WorkbenchWindow.load")(() =>
+				load: Effect.suspend(() =>
 					Effect.callback<void, WorkbenchWindowError>((resume) => {
 						const onReadyToShow = () => resume(Effect.void);
 						window.once("ready-to-show", onReadyToShow);
@@ -192,15 +192,13 @@ export const workbenchWindowLayer = (
 							window.removeListener("ready-to-show", onReadyToShow);
 						});
 					})
-				),
-				show: Effect.fn("Workbench.WorkbenchWindow.show")(() =>
-					Effect.try({
-						try: () => {
-							if (!window.isDestroyed()) window.show();
-						},
-						catch: (cause) => windowError("show", cause, "Restart Workbench and retry.")
-					})
-				),
+				).pipe(Effect.withSpan("Workbench.WorkbenchWindow.load")),
+				show: Effect.try({
+					try: () => {
+						if (!window.isDestroyed()) window.show();
+					},
+					catch: (cause) => windowError("show", cause, "Restart Workbench and retry.")
+				}).pipe(Effect.withSpan("Workbench.WorkbenchWindow.show")),
 				send: Effect.fn("Workbench.WorkbenchWindow.send")(function* (channel, payload) {
 					if (window.isDestroyed()) {
 						return yield* windowError(
@@ -295,18 +293,16 @@ export const workbenchWindowLayer = (
 							: ({ status: "selected", path: choice.filePath } as const);
 					}
 				),
-				isDestroyed: Effect.fn("Workbench.WorkbenchWindow.isDestroyed")(() =>
-					Effect.sync(() => window.isDestroyed())
+				isDestroyed: Effect.sync(() => window.isDestroyed()).pipe(
+					Effect.withSpan("Workbench.WorkbenchWindow.isDestroyed")
 				),
-				destroy: Effect.fn("Workbench.WorkbenchWindow.destroy")(() =>
-					Effect.try({
-						try: () => {
-							if (!window.isDestroyed()) window.destroy();
-						},
-						catch: (cause) =>
-							windowError("destroy", cause, "Close the Electron process manually.")
-					})
-				)
+				destroy: Effect.try({
+					try: () => {
+						if (!window.isDestroyed()) window.destroy();
+					},
+					catch: (cause) =>
+						windowError("destroy", cause, "Close the Electron process manually.")
+				}).pipe(Effect.withSpan("Workbench.WorkbenchWindow.destroy"))
 			});
 		})
 	);
@@ -327,17 +323,17 @@ export const makeWorkbenchWindowTestLayer = (
 			const service = WorkbenchWindowTest.of({
 				destroy:
 					overrides.destroy ??
-					Effect.fn("Workbench.WorkbenchWindow.Test.destroy")(() =>
-						Ref.set(destroyed, true)
+					Effect.suspend(() => Ref.set(destroyed, true)).pipe(
+						Effect.withSpan("Workbench.WorkbenchWindow.Test.destroy")
 					),
 				isDestroyed:
 					overrides.isDestroyed ??
-					Effect.fn("Workbench.WorkbenchWindow.Test.isDestroyed")(() =>
-						Ref.get(destroyed)
+					Ref.get(destroyed).pipe(
+						Effect.withSpan("Workbench.WorkbenchWindow.Test.isDestroyed")
 					),
 				load:
 					overrides.load ??
-					Effect.fn("Workbench.WorkbenchWindow.Test.load")(() => Effect.void),
+					Effect.void.pipe(Effect.withSpan("Workbench.WorkbenchWindow.Test.load")),
 				openDialog:
 					overrides.openDialog ??
 					Effect.fn("Workbench.WorkbenchWindow.Test.openDialog")(function* () {
@@ -376,9 +372,11 @@ export const makeWorkbenchWindowTestLayer = (
 					}),
 				show:
 					overrides.show ??
-					Effect.fn("Workbench.WorkbenchWindow.Test.show")(() => Ref.set(shown, true)),
-				sent: () => Ref.get(sent),
-				shown: () => Ref.get(shown)
+					Effect.suspend(() => Ref.set(shown, true)).pipe(
+						Effect.withSpan("Workbench.WorkbenchWindow.Test.show")
+					),
+				sent: Ref.get(sent),
+				shown: Ref.get(shown)
 			});
 
 			return Context.empty().pipe(

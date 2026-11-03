@@ -155,7 +155,7 @@ const projectIndexLive = Layer.unwrap(
 	Effect.gen(function* () {
 		const app = yield* ElectronApp;
 		const reader = yield* AssetReader;
-		const configuration = yield* reader.configuration();
+		const configuration = yield* reader.configuration;
 		const cacheRoot = join(yield* app.getPath("userData"), "project-catalogs-v1");
 		return projectIndexProcessLayerFromReader({ ...configuration, cacheRoot });
 	})
@@ -212,7 +212,7 @@ function domainCatalogLayer(hosts: WorkbenchHosts) {
 function reviewAndFixtureLayer(hosts: WorkbenchHosts) {
 	const reviewCapturePort = Layer.unwrap(
 		Effect.map(WorkbenchUnrealConnection, (connection) =>
-			reviewCaptureRemotePortLayer(connection.endpoint())
+			reviewCaptureRemotePortLayer(connection.endpoint)
 		)
 	);
 	return Layer.mergeAll(

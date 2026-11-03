@@ -178,41 +178,39 @@ export const LocalizationEvidenceLive = Layer.effect(
 			let readCount = 0;
 			let failedCount = 0;
 			let entryCount = 0;
-			function readEvidence<A>(
+			const readEvidence = Effect.fn("LocalizationEvidence.readFile")(function* <A>(
 				relativePath: string | null | undefined,
 				parse: (bytes: Uint8Array) => Result.Result<A, LocalizationError>,
 				count: (value: A) => number = () => 0
 			) {
-				return Effect.gen(function* () {
-					const failed = (error: LocalizationError, provenance?: FileProvenance) => {
-						failedCount++;
-						const evidence: FailedFileEvidence = {
-							status: "failed",
-							relativePath: relativePath ?? null,
-							error
-						};
-						if (provenance !== undefined) Object.assign(evidence, { provenance });
-						return evidence;
+				const failed = (error: LocalizationError, provenance?: FileProvenance) => {
+					failedCount++;
+					const evidence: FailedFileEvidence = {
+						status: "failed",
+						relativePath: relativePath ?? null,
+						error
 					};
-					if (relativePath === undefined || relativePath === null)
-						return failed(localizationError("file_missing"));
-					const file = yield* files
-						.read(request.projectRoot, relativePath, limits)
-						.pipe(Effect.result);
-					if (Result.isFailure(file)) return failed(file.failure);
-					readCount++;
-					const parsed = parse(file.success.bytes);
-					if (Result.isFailure(parsed))
-						return failed(parsed.failure, file.success.provenance);
-					const entries = count(parsed.success);
-					entryCount += entries;
-					return {
-						status: "read" as const,
-						provenance: file.success.provenance,
-						value: parsed.success
-					};
-				}).pipe(Effect.withSpan("LocalizationEvidence.readFile"));
-			}
+					if (provenance !== undefined) Object.assign(evidence, { provenance });
+					return evidence;
+				};
+				if (relativePath === undefined || relativePath === null)
+					return failed(localizationError("file_missing"));
+				const file = yield* files
+					.read(request.projectRoot, relativePath, limits)
+					.pipe(Effect.result);
+				if (Result.isFailure(file)) return failed(file.failure);
+				readCount++;
+				const parsed = parse(file.success.bytes);
+				if (Result.isFailure(parsed))
+					return failed(parsed.failure, file.success.provenance);
+				const entries = count(parsed.success);
+				entryCount += entries;
+				return {
+					status: "read" as const,
+					provenance: file.success.provenance,
+					value: parsed.success
+				};
+			});
 			const target = request.target;
 			const projection = makeEvidenceProjection();
 			const manifest = yield* readEvidence(

@@ -3,7 +3,7 @@ import { Console, Effect } from "effect";
 
 export const application = Effect.gen(function* () {
 	const authoring = yield* AuthoringClient;
-	const loaded = yield* authoring.loadConfiguredTable();
+	const loaded = yield* authoring.loadConfiguredTable;
 	if (loaded.status !== "ready") {
 		yield* Console.log(JSON.stringify(loaded, null, 2));
 		return loaded;

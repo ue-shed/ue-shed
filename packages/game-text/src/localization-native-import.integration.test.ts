@@ -33,7 +33,7 @@ describe.skipIf(!executable)("native localization import", () => {
 								}
 							},
 							Effect.gen(function* () {
-								const writer = yield* (yield* SharedIndex).writer();
+								const writer = yield* (yield* SharedIndex).writer;
 								if (!writer.importLocalization)
 									throw new Error("The native import is required.");
 								const files = ["valid.po", "bad.po"].map((relativePath) => ({

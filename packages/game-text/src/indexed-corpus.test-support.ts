@@ -211,7 +211,7 @@ export const withIndexedCorpus = <A, E>(
 			let targetName: string | undefined;
 			if (files === undefined) fixture.setTargets([]);
 			else {
-				const target = Schema.decodeSync(LocalizationTarget)({
+				const target = yield* Schema.decodeEffect(LocalizationTarget)({
 					...files.target,
 					poFormat:
 						files.cultures.flatMap((culture) =>
@@ -220,7 +220,7 @@ export const withIndexedCorpus = <A, E>(
 								: []
 						)[0] ?? files.target.poFormat,
 					outputPaths: fixture.target.outputPaths
-				});
+				}).pipe(Effect.orDie);
 				fixture.setTargets([target]);
 				targetName = target.name;
 				const write = (path: string, contents: string | undefined) =>

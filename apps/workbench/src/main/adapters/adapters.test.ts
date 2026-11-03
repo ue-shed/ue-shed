@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
 import { ContentObservatoryState } from "@ue-shed/extension-content-observatory/client";
-import { Context, Deferred, Effect, Exit, Schema } from "effect";
+import { Cause, Context, Deferred, Effect, Exit, Result, Schema } from "effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,7 @@ import {
 } from "./electron-app.js";
 import {
 	ElectronIpc,
+	ElectronIpcError,
 	electronIpcLayer,
 	ElectronIpcTest,
 	type ElectronIpcHost,
@@ -83,20 +84,59 @@ it.effect("ElectronIpc registers handlers, rejects duplicates, and cleans up", (
 			const ready = yield* probe.invoke("fixture:launch");
 			expect(ready).toEqual({ status: "ready" });
 
-			const handlers = yield* probe.handlers();
+			const handlers = yield* probe.handlers;
 			const handler = handlers[0];
 			expect(handler).toBeDefined();
-			const malformed = yield* Effect.tryPromise({
-				try: () => handler!.invoke("unexpected"),
-				catch: (cause) => cause
-			}).pipe(Effect.exit);
+			if (!handler) return yield* Effect.die("The fixture handler was not registered.");
+			const malformed = yield* Effect.tryPromise(() => handler.invoke("unexpected")).pipe(
+				Effect.exit
+			);
 			expect(Exit.isFailure(malformed)).toBe(true);
 
-			expect((yield* probe.handlers()).map((entry) => entry.channel)).toEqual([
+			expect((yield* probe.handlers).map((entry) => entry.channel)).toEqual([
 				"fixture:launch"
 			]);
 		}).pipe(Effect.provide(makeElectronIpcTestLayer()))
 	)
+);
+
+it.effect("ElectronIpc test invocation retains known and foreign handler failures", () =>
+	Effect.gen(function* () {
+		const ipc = yield* ElectronIpc;
+		const probe = yield* ElectronIpcTest;
+		const known = new ElectronIpcError({
+			code: "electron_ipc_failed",
+			channel: "fixture:launch",
+			operation: "invoke",
+			message: "The host refused this invocation.",
+			causeText: "host refusal",
+			recovery: "Reconnect the host before retrying.",
+			retrySafe: true,
+			nextStep: "retry"
+		});
+		yield* ipc.register(invokeContracts["fixture:launch"], () => Effect.fail(known));
+		const knownResult = yield* probe.invoke("fixture:launch").pipe(Effect.result);
+		expect(Result.isFailure(knownResult)).toBe(true);
+		if (Result.isFailure(knownResult)) expect(knownResult.failure).toBe(known);
+
+		const foreign = { _tag: "ForeignHandlerFailure", detail: "host transport" } as const;
+		yield* ipc.register(invokeContracts["camera:status"], () => Effect.fail(foreign));
+		const failure = yield* probe.invoke("camera:status").pipe(Effect.result);
+		expect(Result.isFailure(failure)).toBe(true);
+		if (Result.isFailure(failure)) {
+			expect(Cause.isUnknownError(failure.failure)).toBe(true);
+			if (Cause.isUnknownError(failure.failure)) expect(failure.failure.cause).toBe(foreign);
+		}
+		const missing = yield* probe.invoke("not-registered").pipe(Effect.result);
+		expect(Result.isFailure(missing)).toBe(true);
+		if (Result.isFailure(missing))
+			expect(missing.failure).toMatchObject({
+				_tag: "Workbench.ElectronIpcError",
+				channel: "not-registered",
+				operation: "invoke",
+				nextStep: "fix_input"
+			});
+	}).pipe(Effect.provide(makeElectronIpcTestLayer()), Effect.scoped)
 );
 
 it.effect("ElectronIpc encodes transformed result fields before crossing the boundary", () =>
@@ -251,7 +291,7 @@ it.effect("ElectronIpc interrupts an in-flight handler when its owning scope clo
 						Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))
 					)
 				);
-				const handler = (yield* probe.handlers())[0];
+				const handler = (yield* probe.handlers)[0];
 				if (!handler) return yield* Effect.die("fixture handler was not registered");
 				const promise = handler.invoke();
 				yield* Deferred.await(started);
@@ -260,10 +300,7 @@ it.effect("ElectronIpc interrupts an in-flight handler when its owning scope clo
 		);
 
 		yield* Deferred.await(interrupted);
-		const exit = yield* Effect.tryPromise({
-			try: () => invocation.promise,
-			catch: (cause) => cause
-		}).pipe(Effect.exit);
+		const exit = yield* Effect.tryPromise(() => invocation.promise).pipe(Effect.exit);
 		expect(Exit.isFailure(exit)).toBe(true);
 	})
 );

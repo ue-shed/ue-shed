@@ -43,7 +43,7 @@ function makeClient(overrides: Partial<TextureAuditClientApi> = {}): TextureAudi
 					status: "located" as const
 				};
 			}),
-		launchUnreal: () => Effect.die("unused"),
+		launchUnreal: Effect.suspend(() => Effect.die("unused")),
 		loadConfiguredProject: () =>
 			Effect.succeed({
 				status: "completed" as const,
@@ -101,8 +101,12 @@ function makeClient(overrides: Partial<TextureAuditClientApi> = {}): TextureAudi
 				retrySafe: true,
 				status: "unavailable" as const
 			}),
-		progress: () =>
-			Effect.succeed({ completed: 0, phase: "idle", stage: "texture_audit", total: 0 }),
+		progress: Effect.sync(() => ({
+			completed: 0,
+			phase: "idle",
+			stage: "texture_audit",
+			total: 0
+		})),
 		record: () =>
 			Effect.succeed({
 				record: {
@@ -181,7 +185,7 @@ describe("TextureAuditRoute", () => {
 			locateAsset: () => Effect.die("unused"),
 			record: () => Effect.die("unused"),
 			search: () => Effect.die("unused"),
-			launchUnreal: () => Effect.die("unused"),
+			launchUnreal: Effect.suspend(() => Effect.die("unused")),
 			loadConfiguredProject: () =>
 				Effect.sync(() => {
 					rescans += 1;
@@ -190,13 +194,12 @@ describe("TextureAuditRoute", () => {
 			loadPreview: () => Effect.die("unused"),
 			loadOfflinePreview: () => Effect.die("unused"),
 			loadOfflinePreviews: () => Effect.die("unused"),
-			progress: () =>
-				Effect.succeed({
-					completed: 0,
-					phase: "idle",
-					stage: "texture_audit",
-					total: 0
-				})
+			progress: Effect.sync(() => ({
+				completed: 0,
+				phase: "idle",
+				stage: "texture_audit",
+				total: 0
+			}))
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>

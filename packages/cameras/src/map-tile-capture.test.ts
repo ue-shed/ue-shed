@@ -99,9 +99,12 @@ function runWithPort(
 			runId: "test-run"
 		})
 	).pipe(
-		Effect.provide(MapCaptureLive),
-		Effect.provide(repositoryLayer),
-		Effect.provide(mapTileCapturePortLayer(port))
+		Effect.provide(
+			Layer.provideMerge(
+				Layer.provideMerge(MapCaptureLive, repositoryLayer),
+				mapTileCapturePortLayer(port)
+			)
+		)
 	);
 }
 
@@ -539,7 +542,7 @@ describe("map capture orchestration", () => {
 			)
 		).rejects.toMatchObject({ operation: "store_tile" });
 		await expect(access(join(outsideRoot, "new"))).rejects.toThrow();
-		await Effect.runPromise(attempt.discard());
+		await Effect.runPromise(attempt.discard);
 	});
 
 	it("cleans a caller-owned attempt when host capture is interrupted", async () => {

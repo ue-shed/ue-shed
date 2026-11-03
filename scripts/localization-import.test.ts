@@ -15,6 +15,7 @@ import { Effect, Result } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	LocalizationEvidenceNodeLive,
+	makeLocalizationEvidenceTestLayer,
 	parseManifest,
 	parseArchive,
 	parsePO
@@ -32,6 +33,33 @@ import { GameTextIndexProgressReporter } from "../packages/game-text/src/index-p
 
 let temporary: string;
 let generated: string;
+
+it.each([NaN, Infinity, -Infinity])(
+	"refuses a non-finite explicit parser budget (%s) before discovery",
+	async (budget) => {
+		const result = await Effect.runPromise(
+			importLocalizationTarget({
+				projectRoot: "fixture-project",
+				cacheRoot: "fixture-cache",
+				targetName: "Generated",
+				memoryBudgetBytes: budget
+			}).pipe(
+				Effect.provide(
+					makeLocalizationEvidenceTestLayer({
+						discover: () =>
+							Effect.die("An invalid budget must not discover project inputs."),
+						read: () => Effect.die("An invalid budget must not read project inputs."),
+						targets: () => Effect.die("An invalid budget must not read project inputs.")
+					})
+				),
+				Effect.result
+			)
+		);
+		expect(Result.isFailure(result)).toBe(true);
+		if (Result.isFailure(result))
+			expect(result.failure).toMatchObject({ code: "invalid_schema" });
+	}
+);
 beforeAll(async () => {
 	await mkdir(resolve("test-results/localization-import"), { recursive: true });
 	temporary = await mkdtemp(resolve("test-results/localization-import/test-"));
@@ -109,7 +137,7 @@ describe("localization snapshot parser oracle", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const index = yield* SharedIndex;
-					const writer = yield* index.writer();
+					const writer = yield* index.writer;
 					yield* writer.compact(true);
 				})
 			).pipe(

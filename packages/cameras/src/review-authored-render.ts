@@ -37,7 +37,7 @@ export const captureAuthoredReviewView = Effect.fn("ReviewRenderer.authored")(fu
 			nextStep: "fix_input"
 		});
 	const renderer = makeCameraRenderer(client, args.endpoint),
-		capabilities = yield* renderer.capabilities();
+		capabilities = yield* renderer.capabilities;
 	if (!capabilities.authoredVisibility)
 		return yield* new CameraRenderError({
 			code: "unsupported_capability",

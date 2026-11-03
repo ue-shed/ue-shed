@@ -170,9 +170,9 @@ describe("AuthoringSessionService", () => {
 			expect((await Effect.runPromise(restarted.redo("draft-1"))).draft.undoPointer).toBe(2);
 			expect((await Effect.runPromise(restarted.close("draft-1"))).lifecycle).toBe("closed");
 			expect((await Effect.runPromise(restarted.resume("draft-1"))).lifecycle).toBe("open");
-			expect((await Effect.runPromise(restarted.list())).sessions).toHaveLength(1);
+			expect((await Effect.runPromise(restarted.list)).sessions).toHaveLength(1);
 			await Effect.runPromise(restarted.discard("draft-1"));
-			expect((await Effect.runPromise(restarted.list())).sessions).toEqual([]);
+			expect((await Effect.runPromise(restarted.list)).sessions).toEqual([]);
 		} finally {
 			await rm(root, { force: true, recursive: true });
 		}
@@ -241,9 +241,9 @@ describe("AuthoringSessionService", () => {
 					storageRoot
 				})
 			);
-			await Effect.runPromise(service.list());
+			await Effect.runPromise(service.list);
 			await writeFile(join(storageRoot, "broken.json"), "{ truncated", "utf8");
-			const listed = await Effect.runPromise(service.list());
+			const listed = await Effect.runPromise(service.list);
 			expect(listed.sessions).toEqual([]);
 			expect(listed.diagnostics).toHaveLength(1);
 			expect(

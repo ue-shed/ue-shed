@@ -29,11 +29,11 @@ const WorkbenchShedHostConfigurationLive = Layer.effect(
 		const workspace = yield* Effect.serviceOption(WorkbenchProject);
 		// The table catalog is served by `WorkbenchSavedTableIndexLive` from the workspace
 		// inventory, which owns the reader cache, so no catalog cache path is threaded here.
-		const project = () =>
+		const project = Effect.suspend(() =>
 			Option.match(workspace, {
 				onNone: () => Effect.succeed(configuration.project),
 				onSome: (service) =>
-					service.selectedProject().pipe(
+					service.selectedProject.pipe(
 						Effect.map((selected) => {
 							if (
 								configuration.project.status === "configured" &&
@@ -49,12 +49,13 @@ const WorkbenchShedHostConfigurationLive = Layer.effect(
 							Effect.succeed({ status: "not_configured" as const })
 						)
 					)
-			});
+			})
+		);
 		return ShedHostConfiguration.of({
-			authoringAsset: () =>
+			authoringAsset: Effect.suspend(() =>
 				Option.isNone(workspace)
 					? Effect.succeed(configuration.authoringAsset)
-					: project().pipe(
+					: project.pipe(
 							Effect.map((selected) =>
 								selected.status === "configured" &&
 								configuration.project.status === "configured" &&
@@ -62,7 +63,8 @@ const WorkbenchShedHostConfigurationLive = Layer.effect(
 									? configuration.authoringAsset
 									: { status: "not_configured" as const }
 							)
-						),
+						)
+			),
 			project,
 			remoteControlEndpoint: connection.endpoint
 		});
@@ -112,19 +114,19 @@ const WorkbenchSavedTableIndexLive = Layer.effect(
 		// inventory to read, so it falls back to indexing through the reader on demand.
 		if (Option.isNone(workspace)) {
 			return SavedTableIndex.of({
-				savedTables: Effect.fn("Workbench.SavedTableIndex.savedTables")(function* () {
+				savedTables: Effect.gen(function* () {
 					if (configuration.project.status !== "configured") {
 						return { diagnostics: [], projectRoot: "", scannedAssets: 0, tables: [] };
 					}
 					return yield* assetReader.discoverTables({
 						projectRoot: configuration.project.projectRoot
 					});
-				})
+				}).pipe(Effect.withSpan("Workbench.SavedTableIndex.savedTables"))
 			});
 		}
 		return SavedTableIndex.of({
-			savedTables: Effect.fn("Workbench.SavedTableIndex.savedTables")(() =>
-				workspace.value.savedTables().pipe(
+			savedTables: Effect.suspend(() =>
+				workspace.value.savedTables.pipe(
 					Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 						Effect.succeed({
 							diagnostics: [
@@ -141,7 +143,7 @@ const WorkbenchSavedTableIndexLive = Layer.effect(
 						})
 					)
 				)
-			)
+			).pipe(Effect.withSpan("Workbench.SavedTableIndex.savedTables"))
 		});
 	})
 );

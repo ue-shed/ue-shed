@@ -22,20 +22,14 @@ export class ScenarioStudioClientError extends Schema.TaggedError<
 }) {}
 
 export interface ScenarioStudioClient {
-	readonly openDocument?: () => Effect.Effect<
-		ScenarioDocumentFileResult,
-		ScenarioStudioClientError
-	>;
+	readonly openDocument?: Effect.Effect<ScenarioDocumentFileResult, ScenarioStudioClientError>;
 	readonly saveDocument?: (
 		document: ScenarioDocument
 	) => Effect.Effect<ScenarioDocumentFileResult, ScenarioStudioClientError>;
 	readonly cancel: (
 		handle: ScenarioRunHandle
 	) => Effect.Effect<ScenarioRun, ScenarioStudioClientError>;
-	readonly settings: () => Effect.Effect<
-		{ readonly endpoint: string },
-		ScenarioStudioClientError
-	>;
+	readonly settings: Effect.Effect<{ readonly endpoint: string }, ScenarioStudioClientError>;
 	readonly start: (options: {
 		readonly document: ScenarioDocument;
 		readonly endpoint: string;

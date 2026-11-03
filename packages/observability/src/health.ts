@@ -12,9 +12,9 @@ export const RuntimeHealthInput = Schema.Struct({
 	connection: Schema.Literals(["not_configured", "connected", "reconnecting", "failed"]),
 	reader: Schema.Literals(["not_configured", "ready", "failed"]),
 	stream: Schema.Struct({
-		drops: Schema.Number,
-		gaps: Schema.Number,
-		queueDepth: Schema.Number
+		drops: Schema.Finite,
+		gaps: Schema.Finite,
+		queueDepth: Schema.Finite
 	}),
 	telemetry: Schema.Literals(["disabled", "ready", "degraded"])
 });
@@ -61,7 +61,7 @@ export function aggregateHealth(input: RuntimeHealthInput): RuntimeHealth {
 
 export interface RuntimeHealthServiceApi {
 	readonly report: (input: RuntimeHealthInput) => Effect.Effect<RuntimeHealth>;
-	readonly snapshot: () => Effect.Effect<RuntimeHealth>;
+	readonly snapshot: Effect.Effect<RuntimeHealth>;
 }
 
 /** @deprecated Use `RuntimeHealthServiceApi`. */
@@ -83,8 +83,8 @@ export function runtimeHealthLayer(
 				(input: RuntimeHealthInput) =>
 					Ref.set(state, aggregateHealth(input)).pipe(Effect.as(aggregateHealth(input)))
 			);
-			const snapshot = Effect.fn("Observability.RuntimeHealth.snapshot")(() =>
-				Ref.get(state)
+			const snapshot = Ref.get(state).pipe(
+				Effect.withSpan("Observability.RuntimeHealth.snapshot")
 			);
 			return RuntimeHealthService.of({ report, snapshot });
 		})

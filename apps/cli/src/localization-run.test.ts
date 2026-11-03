@@ -124,17 +124,19 @@ it.effect("loc run reports configuration provider failures without echoing priva
 			"--plan",
 			"--json"
 		]).pipe(
-			Effect.provide(runtime),
 			Effect.provide(
-				ConfigProvider.layer(
-					ConfigProvider.make((path) =>
-						path.length === 1 && path[0] === "ProgramFiles"
-							? Effect.fail(
-									new ConfigProvider.SourceError({
-										message: "private-environment-value"
-									})
-								)
-							: Effect.undefined
+				Layer.provideMerge(
+					runtime,
+					ConfigProvider.layer(
+						ConfigProvider.make((path) =>
+							path.length === 1 && path[0] === "ProgramFiles"
+								? Effect.fail(
+										new ConfigProvider.SourceError({
+											message: "private-environment-value"
+										})
+									)
+								: Effect.undefined
+						)
 					)
 				)
 			)

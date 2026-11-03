@@ -1,7 +1,7 @@
 import { it as effectIt } from "@effect/vitest";
 import { WorldScoutContractError, parseWorldScoutResult } from "./spatial.js";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
-import { Effect, Schema } from "effect";
+import { Layer, Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	ActorId,
@@ -99,8 +99,12 @@ describe("coded stream failures", () => {
 					yield* Schema.decodeEffect(WorldScoutRefreshRate)(10).pipe(Effect.orDie)
 				);
 			}).pipe(
-				Effect.provide(ObservatoryLive),
-				Effect.provide(makeRemoteControlClientTestLayer(() => Effect.succeed(value)))
+				Effect.provide(
+					Layer.provideMerge(
+						ObservatoryLive,
+						makeRemoteControlClientTestLayer(() => Effect.succeed(value))
+					)
+				)
 			)
 		);
 

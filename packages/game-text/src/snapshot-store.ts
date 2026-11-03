@@ -332,8 +332,8 @@ export interface SnapshotWriter {
 	) => Effect.Effect<SnapshotManifest, StoreFailure>;
 }
 export interface SnapshotStoreApi {
-	readonly open: () => Effect.Effect<SnapshotReader, StoreFailure, Scope.Scope>;
-	readonly writer: () => Effect.Effect<SnapshotWriter, StoreFailure, Scope.Scope>;
+	readonly open: Effect.Effect<SnapshotReader, StoreFailure, Scope.Scope>;
+	readonly writer: Effect.Effect<SnapshotWriter, StoreFailure, Scope.Scope>;
 }
 export class SnapshotStore extends Context.Service<SnapshotStore, SnapshotStoreApi>()(
 	"@ue-shed/game-text/SnapshotStore"
@@ -465,7 +465,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 	return Layer.effect(
 		SnapshotStore,
 		Effect.sync(() => {
-			const openReaderEffect = Effect.fn("GameTextSnapshot.open")(function* () {
+			const openReaderEffect = Effect.gen(function* () {
 				const mutex = yield* Semaphore.make(1);
 				let active = true;
 				const columns = new Map<string, Uint8Array | Uint32Array>();
@@ -530,8 +530,8 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 					section,
 					strings
 				};
-			});
-			const writer = Effect.fn("GameTextSnapshot.writer")(function* () {
+			}).pipe(Effect.withSpan("GameTextSnapshot.open"));
+			const writer = Effect.gen(function* () {
 				let active = true;
 				const release = yield* Effect.acquireRelease(
 					boundary("lock", async () => {
@@ -686,7 +686,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 							)
 				);
 				return { publish };
-			});
+			}).pipe(Effect.withSpan("GameTextSnapshot.writer"));
 			return SnapshotStore.of({ open: openReaderEffect, writer });
 		})
 	);

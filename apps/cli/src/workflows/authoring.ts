@@ -68,8 +68,7 @@ function catalogWithLive(args: {
 			);
 		});
 		return yield* program.pipe(
-			Effect.provide(RemoteControlClientLive),
-			Effect.provide(readerLayer(args.reader))
+			Effect.provide(Layer.provideMerge(RemoteControlClientLive, readerLayer(args.reader)))
 		);
 	});
 }
@@ -232,7 +231,7 @@ export const runAuthoringParity = Effect.fn("Cli.workflow.authoring_parity")(
 						(table) => reader.readTable(table.assetPath),
 						{ concurrency: 4 }
 					);
-					const liveSnapshots = yield* connection.listTableObjectPaths().pipe(
+					const liveSnapshots = yield* connection.listTableObjectPaths.pipe(
 						Effect.flatMap((paths) =>
 							Effect.forEach(paths, connection.getTableSnapshot, {
 								concurrency: 4
@@ -352,7 +351,7 @@ function sessionProgram(command: SessionCommand) {
 				const sessions = yield* AuthoringSessions;
 				switch (command._tag) {
 					case "SessionsList":
-						return yield* sessions.list().pipe(Effect.flatMap(printJson));
+						return yield* sessions.list.pipe(Effect.flatMap(printJson));
 					case "SessionsCreate": {
 						const reader = yield* AssetReader;
 						const snapshot = yield* reader.readTable(command.assetPath);
@@ -503,12 +502,16 @@ function sessionProgram(command: SessionCommand) {
 				}
 			}).pipe(
 				Effect.provide(
-					authoringSessionServiceLayer({ projectRoot: command.projectRoot }).pipe(
-						Layer.provide(AuthoringIdGeneratorLive)
+					Layer.provideMerge(
+						Layer.provideMerge(
+							authoringSessionServiceLayer({ projectRoot: command.projectRoot }).pipe(
+								Layer.provide(AuthoringIdGeneratorLive)
+							),
+							readerLayer("reader" in command ? command.reader : undefined)
+						),
+						RemoteControlClientLive
 					)
-				),
-				Effect.provide(readerLayer("reader" in command ? command.reader : undefined)),
-				Effect.provide(RemoteControlClientLive)
+				)
 			);
 		}
 	);

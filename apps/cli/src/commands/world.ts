@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { Effect, Layer, Schema } from "effect";
+import { Cause, Effect, Layer, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
@@ -21,10 +21,14 @@ const request = Command.make(
 				const input = yield* Effect.tryPromise(async () => {
 					if ((await stat(args.requestPath)).size > 1024 * 1024)
 						throw new Error("World request exceeds 1 MiB.");
-					return Schema.decodeUnknownSync(Schema.Json)(
-						JSON.parse(await readFile(args.requestPath, "utf8"))
-					);
-				});
+					return JSON.parse(await readFile(args.requestPath, "utf8"));
+				}).pipe(
+					Effect.flatMap((input) =>
+						Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+							Effect.mapError((cause) => new Cause.UnknownError(cause))
+						)
+					)
+				);
 				const decoded = yield* Schema.decodeUnknownEffect(world.WorldRequest)(input, {
 					onExcessProperty: "error"
 				});

@@ -24,7 +24,7 @@ export class CaptureArtifactSourceRejected extends Schema.TaggedError<
 }) {}
 
 export interface FilesystemCaptureAttempt {
-	readonly discard: () => Effect.Effect<void, CaptureFilesystemError>;
+	readonly discard: Effect.Effect<void, CaptureFilesystemError>;
 	readonly promote: (args: {
 		readonly documentName: string;
 		readonly documentValue: unknown;
@@ -279,20 +279,18 @@ export function makeFilesystemCaptureDestination(
 				})
 		});
 
-		const discard = Effect.fn("CaptureFilesystemAttempt.discard")(function* () {
-			yield* Effect.tryPromise({
-				try: () => rm(stagingRoot, { force: true, recursive: true }),
-				catch: (cause) =>
-					filesystemError({
-						cause,
-						operation: "discard",
-						path: stagingRoot,
-						recovery: "Remove the owned staging attempt manually if it remains.",
-						retrySafe: true,
-						nextStep: "retry"
-					})
-			});
-		});
+		const discard = Effect.tryPromise({
+			try: () => rm(stagingRoot, { force: true, recursive: true }),
+			catch: (cause) =>
+				filesystemError({
+					cause,
+					operation: "discard",
+					path: stagingRoot,
+					recovery: "Remove the owned staging attempt manually if it remains.",
+					retrySafe: true,
+					nextStep: "retry"
+				})
+		}).pipe(Effect.asVoid, Effect.withSpan("CaptureFilesystemAttempt.discard"));
 		const writeDocument = Effect.fn("CaptureFilesystemAttempt.writeDocument")(
 			function* (input: { readonly relativePath: string; readonly value: unknown }) {
 				yield* Effect.tryPromise({

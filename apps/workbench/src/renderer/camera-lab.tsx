@@ -237,9 +237,9 @@ export function CameraLab() {
 		setFixtureLaunch({ status: "launching" });
 		launchAction.run(
 			Effect.gen(function* () {
-				const launch = yield* workbenchRendererClient.launchFixture();
+				const launch = yield* workbenchRendererClient.launchFixture;
 				if (launch.status === "failed") return { launch, status: "launch_failed" as const };
-				const camera = yield* workbenchRendererClient.getStatus();
+				const camera = yield* workbenchRendererClient.getStatus;
 				return { camera, status: "ready" as const };
 			}),
 			{

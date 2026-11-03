@@ -32,21 +32,21 @@ const GRAPH_SEARCH_LIMIT = 20;
 type FailedResult = Extract<BlueprintGraphReadResult, { readonly status: "failed" }>;
 type InspectorView = "blueprint" | "node";
 
-export type BlueprintGraphReadEffect = Effect.Effect<BlueprintGraphReadResult, unknown>;
+export type BlueprintGraphReadEffect<E = never> = Effect.Effect<BlueprintGraphReadResult, E>;
 export type ReadyBlueprintGraphRead = Extract<
 	BlueprintGraphReadResult,
 	{ readonly status: "ready" }
 >;
 
 export interface BlueprintGraphOpenerControls {
-	readonly open: (read: BlueprintGraphReadEffect) => void;
+	readonly open: <E>(read: BlueprintGraphReadEffect<E>) => void;
 	readonly loading: boolean;
 	readonly hasBlueprint: boolean;
 	readonly observeSourceBusy: (read: () => boolean) => void;
 }
 
 export interface BlueprintGraphFooterControls {
-	readonly open: (read: BlueprintGraphReadEffect) => void;
+	readonly open: <E>(read: BlueprintGraphReadEffect<E>) => void;
 	readonly reveal: (objectPath: string) => void;
 }
 
@@ -56,9 +56,9 @@ export interface BlueprintGraphTransportFailureCopy {
 	readonly recovery: string;
 }
 
-export interface BlueprintGraphViewerProps {
+export interface BlueprintGraphViewerProps<E = never> {
 	readonly opener: (controls: BlueprintGraphOpenerControls) => JSX.Element;
-	readonly initialRead?: BlueprintGraphReadEffect | undefined;
+	readonly initialRead?: BlueprintGraphReadEffect<E> | undefined;
 	readonly failureActions?: (failure: FailedResult) => JSX.Element;
 	readonly footer?: (
 		read: ReadyBlueprintGraphRead,
@@ -92,7 +92,7 @@ function failureTitle(reason: BlueprintGraphFailureReason): string {
 	}
 }
 
-export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
+export function BlueprintGraphViewer<E = never>(props: BlueprintGraphViewerProps<E>) {
 	// Materialize the one-shot JSX prop during setup, before entering the effect scope.
 	const initialRead = props.initialRead;
 	const openAction = createEffectAction();
@@ -169,7 +169,7 @@ export function BlueprintGraphViewer(props: BlueprintGraphViewerProps) {
 			setInspectorView(firstNode === undefined ? "blueprint" : "node");
 		}
 	};
-	const run = (effect: BlueprintGraphReadEffect) => {
+	const run = <ReadError,>(effect: BlueprintGraphReadEffect<ReadError>) => {
 		setLoading(true);
 		setTransportFailure(false);
 		openAction.run(effect, {

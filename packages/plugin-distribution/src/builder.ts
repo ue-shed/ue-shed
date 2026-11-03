@@ -22,7 +22,7 @@ import {
 	type SupervisedEditorSessionError
 } from "@ue-shed/engine";
 import { type Brand, Context, Duration, Effect, Exit, Layer, Option, Ref, Schema } from "effect";
-import { extractPluginArchive, verifyPluginArtifact } from "./archive.js";
+import { awaitCancelableOperation, extractPluginArchive, verifyPluginArtifact } from "./archive.js";
 import {
 	PluginErrorGuidanceFields as ErrorGuidanceFields,
 	PluginInstallCancelled,
@@ -614,10 +614,14 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 					)
 				);
 				const limits = { ...defaultPluginDistributionLimits, ...options.limits };
-				const buildSignal = options.signal ?? new AbortController().signal;
-				if (buildSignal.aborted) return yield* cancelled("validation");
+				if (options.signal?.aborted) return yield* cancelled("validation");
 				return yield* Effect.scoped(
 					Effect.gen(function* () {
+						const scopeSignal = yield* Effect.abortSignal;
+						const buildSignal =
+							options.signal === undefined
+								? scopeSignal
+								: AbortSignal.any([scopeSignal, options.signal]);
 						const outputRoot = resolve(request.outputDirectory);
 						const engineRoot = resolve(request.engineRoot);
 						if (dirname(outputRoot) === outputRoot || within(engineRoot, outputRoot)) {
@@ -655,60 +659,91 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 						);
 						const sourceManifestPath = resolve(request.sourceManifestPath);
 						const sourceArtifactPath = resolve(request.sourceArtifactPath);
-						const validatedFiles = yield* Effect.tryPromise({
-							try: async () => {
-								await mkdir(outputRoot, { recursive: true });
-								const outputDetails = await lstat(outputRoot);
-								if (!outputDetails.isDirectory() || outputDetails.isSymbolicLink())
-									throw new Error(
-										"Output root must be a real directory, not a link."
-									);
-								const canonicalOutput = await realpath(outputRoot);
-								const canonicalEngine = await realpath(engineRoot);
-								if (within(canonicalEngine, canonicalOutput))
-									throw new Error(
-										"Output root resolves beneath the engine root."
-									);
-								await regularFile(runUat, "RunUAT");
-								await regularFile(buildVersionPath, "Engine Build.version");
-								await regularFile(
-									editorModulesPath,
-									`${request.artifact.target}.modules`
-								);
-								await regularFile(sourceManifestPath, "Source manifest");
-								await regularFile(sourceArtifactPath, "Source artifact");
-								const manifestBytes = await readFile(sourceManifestPath);
-								if (sha256(manifestBytes) !== request.expectedSourceManifestSha256)
-									throw new Error(
-										"Source manifest digest does not match the pinned digest."
-									);
-								const buildVersion = Schema.decodeUnknownSync(UnrealBuildVersion)(
-									JSON.parse(await readFile(buildVersionPath, "utf8"))
-								);
-								const engineModules = Schema.decodeUnknownSync(UnrealModules)(
-									JSON.parse(await readFile(editorModulesPath, "utf8"))
-								);
-								const unrealVersion = `${buildVersion.MajorVersion}.${buildVersion.MinorVersion}.${buildVersion.PatchVersion}`;
-								if (
-									unrealVersion !== request.artifact.unrealVersion ||
-									(buildVersion.MajorVersion === 4
-										? "UE4Editor"
-										: "UnrealEditor") !== request.artifact.target ||
-									engineModules.BuildId !== request.artifact.engineBuildId
-								)
-									throw new Error(
-										"Requested Unreal version or BuildId does not match the explicit engine root."
-									);
-								return { manifestInput: decodeJson(manifestBytes) };
-							},
-							catch: (cause) =>
+						const validatedFiles = yield* Effect.gen(function* () {
+							const onValidationError = (cause: unknown) =>
 								invalid(
 									"validation",
 									"Compiled plugin build validation failed.",
 									"Correct the engine root, exact source pins, graph, or output directory before invoking UAT.",
 									"fix_input",
 									cause
+								);
+							const manifestBytes = yield* Effect.tryPromise({
+								try: async () => {
+									await mkdir(outputRoot, { recursive: true });
+									const outputDetails = await lstat(outputRoot);
+									if (
+										!outputDetails.isDirectory() ||
+										outputDetails.isSymbolicLink()
+									)
+										throw new Error(
+											"Output root must be a real directory, not a link."
+										);
+									const canonicalOutput = await realpath(outputRoot);
+									const canonicalEngine = await realpath(engineRoot);
+									if (within(canonicalEngine, canonicalOutput))
+										throw new Error(
+											"Output root resolves beneath the engine root."
+										);
+									await regularFile(runUat, "RunUAT");
+									await regularFile(buildVersionPath, "Engine Build.version");
+									await regularFile(
+										editorModulesPath,
+										`${request.artifact.target}.modules`
+									);
+									await regularFile(sourceManifestPath, "Source manifest");
+									await regularFile(sourceArtifactPath, "Source artifact");
+									const manifestBytes = await readFile(sourceManifestPath);
+									if (
+										sha256(manifestBytes) !==
+										request.expectedSourceManifestSha256
+									)
+										throw new Error(
+											"Source manifest digest does not match the pinned digest."
+										);
+									return manifestBytes;
+								},
+								catch: onValidationError
+							});
+							const buildVersion = yield* Effect.tryPromise({
+								try: async () =>
+									JSON.parse(await readFile(buildVersionPath, "utf8")),
+								catch: onValidationError
+							}).pipe(
+								Effect.flatMap((input) =>
+									Schema.decodeUnknownEffect(UnrealBuildVersion)(input).pipe(
+										Effect.mapError(onValidationError)
+									)
 								)
+							);
+							const engineModules = yield* Effect.tryPromise({
+								try: async () =>
+									JSON.parse(await readFile(editorModulesPath, "utf8")),
+								catch: onValidationError
+							}).pipe(
+								Effect.flatMap((input) =>
+									Schema.decodeUnknownEffect(UnrealModules)(input).pipe(
+										Effect.mapError(onValidationError)
+									)
+								)
+							);
+							return yield* Effect.try({
+								try: () => {
+									const unrealVersion = `${buildVersion.MajorVersion}.${buildVersion.MinorVersion}.${buildVersion.PatchVersion}`;
+									if (
+										unrealVersion !== request.artifact.unrealVersion ||
+										(buildVersion.MajorVersion === 4
+											? "UE4Editor"
+											: "UnrealEditor") !== request.artifact.target ||
+										engineModules.BuildId !== request.artifact.engineBuildId
+									)
+										throw new Error(
+											"Requested Unreal version or BuildId does not match the explicit engine root."
+										);
+									return { manifestInput: decodeJson(manifestBytes) };
+								},
+								catch: onValidationError
+							});
 						});
 						const sourceManifest = yield* validatePluginBundleManifest(
 							validatedFiles.manifestInput
@@ -754,20 +789,20 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 							)
 						);
 						const stage = join(outputRoot, `.compiled-plugin-${randomUUID()}`);
-						yield* Effect.tryPromise({
-							try: () => mkdir(stage),
-							catch: (cause) =>
-								invalid(
-									"validation",
-									"Could not create the private build stage.",
-									"Choose a writable caller-owned output directory.",
-									"fix_input",
-									cause
-								)
-						});
+
 						const prepared = { graph, sourceManifest, stage };
 						return yield* Effect.acquireUseRelease(
-							Effect.succeed(prepared),
+							Effect.tryPromise({
+								try: () => mkdir(stage),
+								catch: (cause) =>
+									invalid(
+										"validation",
+										"Could not create the private build stage.",
+										"Choose a writable caller-owned output directory.",
+										"fix_input",
+										cause
+									)
+							}).pipe(Effect.as(prepared)),
 							(state) =>
 								Effect.gen(function* () {
 									const extracted = join(state.stage, "source");
@@ -962,15 +997,18 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											)
 									});
 									const artifactPath = join(publishStage, names.artifact);
-									const artifact = yield* Effect.tryPromise({
-										try: () =>
+									const artifact = yield* awaitCancelableOperation(
+										(runtimeSignal) =>
 											writeDeterministicArchive({
 												destination: artifactPath,
 												limits,
 												root: graphRoot,
-												signal: buildSignal
+												signal: AbortSignal.any([
+													runtimeSignal,
+													buildSignal
+												])
 											}),
-										catch: (cause) =>
+										(cause) =>
 											isCompiledPluginBuildCancelled(cause) ||
 											buildSignal.aborted
 												? cancelled("archive")
@@ -981,7 +1019,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 														"fix_input",
 														cause
 													)
-									});
+									);
 									const nativeFiles = artifact.files.filter((file) =>
 										/\.(?:dll|dylib|modules|pdb|so|uplugin)$/iu.test(file.path)
 									);

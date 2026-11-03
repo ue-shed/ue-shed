@@ -85,7 +85,7 @@ Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
 function renderScout() {
 	const client = {
 		readSavedWorld: (mapPath: string) => Effect.succeed(savedWorld(mapPath)),
-		savedWorldMaps: () => Effect.succeed(maps)
+		savedWorldMaps: Effect.succeed(maps)
 	} satisfies Pick<MapReviewClientApi, "readSavedWorld" | "savedWorldMaps">;
 	return render(() => (
 		<EffectRuntimeProvider runtime={runtime}>
@@ -98,14 +98,13 @@ describe("SavedWorldScout", () => {
 	it("shows package progress while the saved map is still reading", async () => {
 		const client = {
 			readSavedWorld: () => Effect.never,
-			savedWorldMaps: () => Effect.succeed(maps),
-			savedWorldProgress: () =>
-				Effect.succeed({
-					actorsFound: 0,
-					phase: "scanning" as const,
-					processedPackages: 12,
-					totalPackages: 40
-				})
+			savedWorldMaps: Effect.succeed(maps),
+			savedWorldProgress: Effect.sync(() => ({
+				actorsFound: 0,
+				phase: "scanning" as const,
+				processedPackages: 12,
+				totalPackages: 40
+			}))
 		} satisfies Pick<
 			MapReviewClientApi,
 			"readSavedWorld" | "savedWorldMaps" | "savedWorldProgress"

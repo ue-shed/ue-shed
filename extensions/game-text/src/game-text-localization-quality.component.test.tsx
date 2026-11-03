@@ -39,14 +39,14 @@ function client(): GameTextClientApi {
 		} as const);
 	};
 	return {
-		projectKey: () => Effect.succeed("quality-project"),
+		projectKey: Effect.succeed("quality-project"),
 		loadConfiguredProject: () => Effect.succeed({ status: "completed", summary: text.summary }),
 		search: text.search,
 		searchRows: text.searchRows,
 		focus: text.focus,
 		progress: Stream.make({ completed: 0, total: 0, phase: "idle" }),
 		locateAsset: () => Effect.die("Not used"),
-		chooseQualityRules: () => reviewed(document),
+		chooseQualityRules: Effect.suspend(() => reviewed(document)),
 		previewQualityRules: reviewed,
 		saveQualityRules: reviewed,
 		qualitySearch: (request) =>
@@ -55,17 +55,16 @@ function client(): GameTextClientApi {
 			const focus = source().focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
-		localizationTargets: () =>
-			Effect.succeed({
-				status: "ready",
-				targets: [
-					{
-						name: fixture.join.target,
-						cultures: fixture.join.cultures,
-						nativeCulture: fixture.join.nativeCulture
-					}
-				]
-			}),
+		localizationTargets: Effect.sync(() => ({
+			status: "ready",
+			targets: [
+				{
+					name: fixture.join.target,
+					cultures: fixture.join.cultures,
+					nativeCulture: fixture.join.nativeCulture
+				}
+			]
+		})),
 		localizationTarget: () =>
 			Effect.succeed({
 				status: "ready",

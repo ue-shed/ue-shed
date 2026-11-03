@@ -76,7 +76,7 @@ export const workspaceScaleFixture = Effect.fn("Test.GameText.workspaceScale")(f
 		"nl",
 		"sv"
 	].slice(0, cultureCount);
-	const target = Schema.decodeSync(LocalizationTarget)({
+	const target = yield* Schema.decodeEffect(LocalizationTarget)({
 		...fixture.target,
 		cultures,
 		outputPaths: {
@@ -88,7 +88,7 @@ export const workspaceScaleFixture = Effect.fn("Test.GameText.workspaceScale")(f
 				cultures.map((culture) => [culture, `${culture}.po`])
 			)
 		}
-	});
+	}).pipe(Effect.orDie);
 	fixture.setTargets([target]);
 	// Some placeholders are fully covered by source rules, some partly, and some not at all.
 	const entries = Array.from({ length: count }, (_, index) => ({

@@ -143,7 +143,7 @@ export function mapCaptureAttemptsRoot(projectRoot: string, planId?: string): st
  * mark it published.
  */
 export interface MapCaptureAttempt {
-	readonly discard: () => Effect.Effect<void, MapCaptureStorageError>;
+	readonly discard: Effect.Effect<void, MapCaptureStorageError>;
 	readonly publish: (
 		manifest: MapTilePyramidManifestValue
 	) => Effect.Effect<string, MapCaptureStorageError>;
@@ -236,8 +236,8 @@ function mapCaptureDestination(filesystem: FilesystemCaptureDestination): MapCap
 						)
 					);
 			return {
-				discard: () =>
-					attempt.discard().pipe(
+				discard: Effect.suspend(() =>
+					attempt.discard.pipe(
 						Effect.mapError((cause) =>
 							mapDestinationStorageError({
 								cause,
@@ -245,7 +245,8 @@ function mapCaptureDestination(filesystem: FilesystemCaptureDestination): MapCap
 								recovery: "Remove the owned staging attempt manually if it remains."
 							})
 						)
-					),
+					)
+				),
 				publish: (manifest) =>
 					manifest.state === "complete"
 						? promote(
@@ -504,42 +505,8 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 	}),
 	listRuns: Effect.fn("MapCaptureRepository.listRuns")(function* (args) {
 		const root = mapCaptureRunsRoot(args.projectRoot, args.planId);
-		return yield* Effect.tryPromise({
-			try: async () => {
-				await mkdir(root, { recursive: true });
-				const planDirectories = args.planId
-					? [{ name: args.planId, path: root }]
-					: (await readdir(root, { withFileTypes: true }))
-							.filter((entry) => entry.isDirectory())
-							.map((entry) => ({ name: entry.name, path: join(root, entry.name) }));
-				const summaries: MapCaptureRunSummary[] = [];
-				for (const plan of planDirectories) {
-					const runs = (await readdir(plan.path, { withFileTypes: true })).filter(
-						(entry) => entry.isDirectory()
-					);
-					for (const run of runs) {
-						const manifestPath = join(plan.path, run.name, "manifest.json");
-						const input = Schema.decodeUnknownSync(Schema.Json)(
-							JSON.parse(await readFile(manifestPath, "utf8"))
-						);
-						const manifest = Schema.decodeUnknownSync(MapTilePyramidManifest)(input);
-						if (manifest.state !== "complete") {
-							throw new Error(`Published manifest ${manifestPath} is not complete.`);
-						}
-						summaries.push({
-							completedAt: manifest.completedAt,
-							manifestPath,
-							planId: manifest.planId,
-							runId: manifest.runId,
-							tileCount: manifest.tiles.length
-						});
-					}
-				}
-				return summaries.toSorted((left, right) =>
-					right.completedAt.localeCompare(left.completedAt)
-				);
-			},
-			catch: (cause) =>
+		return yield* Effect.gen(function* () {
+			const onError = (cause: unknown) =>
 				storageError({
 					cause,
 					operation: "list_runs",
@@ -547,13 +514,57 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 					recovery: "Repair or quarantine the malformed completed map-capture bundle.",
 					retrySafe: true,
 					nextStep: "fix_input"
-				})
+				});
+			yield* Effect.tryPromise({
+				try: () => mkdir(root, { recursive: true }),
+				catch: onError
+			});
+			const planDirectories = args.planId
+				? [{ name: args.planId, path: root }]
+				: (yield* Effect.tryPromise({
+						try: () => readdir(root, { withFileTypes: true }),
+						catch: onError
+					}))
+						.filter((entry) => entry.isDirectory())
+						.map((entry) => ({ name: entry.name, path: join(root, entry.name) }));
+			const summaries: MapCaptureRunSummary[] = [];
+			for (const plan of planDirectories) {
+				const runs = (yield* Effect.tryPromise({
+					try: () => readdir(plan.path, { withFileTypes: true }),
+					catch: onError
+				})).filter((entry) => entry.isDirectory());
+				for (const run of runs) {
+					const manifestPath = join(plan.path, run.name, "manifest.json");
+					const input = yield* Effect.tryPromise({
+						try: async () => JSON.parse(await readFile(manifestPath, "utf8")),
+						catch: onError
+					});
+					const manifest = yield* Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+						Effect.flatMap(Schema.decodeUnknownEffect(MapTilePyramidManifest)),
+						Effect.mapError(onError)
+					);
+					if (manifest.state !== "complete") {
+						return yield* onError(
+							new Error(`Published manifest ${manifestPath} is not complete.`)
+						);
+					}
+					summaries.push({
+						completedAt: manifest.completedAt,
+						manifestPath,
+						planId: manifest.planId,
+						runId: manifest.runId,
+						tileCount: manifest.tiles.length
+					});
+				}
+			}
+			return summaries.toSorted((left, right) =>
+				right.completedAt.localeCompare(left.completedAt)
+			);
 		});
 	}),
 	loadPlan: Effect.fn("MapCaptureRepository.loadPlan")(function* (path) {
 		const input = yield* Effect.tryPromise({
-			try: async () =>
-				Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
+			try: async () => JSON.parse(await readFile(path, "utf8")),
 			catch: (cause) =>
 				storageError({
 					cause,
@@ -563,7 +574,22 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 					retrySafe: true,
 					nextStep: "fix_input"
 				})
-		});
+		}).pipe(
+			Effect.flatMap((input) =>
+				Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+					Effect.mapError((cause) =>
+						storageError({
+							cause,
+							operation: "load_plan",
+							path,
+							recovery: "Check the Map Capture Plan path and JSON, then retry.",
+							retrySafe: true,
+							nextStep: "fix_input"
+						})
+					)
+				)
+			)
+		);
 		return yield* decodeMapCapturePlan(input).pipe(
 			Effect.mapError((cause) =>
 				storageError({

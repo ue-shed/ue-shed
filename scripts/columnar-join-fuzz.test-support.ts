@@ -55,6 +55,8 @@ import { defaultLocalizationImportLimits } from "../packages/game-text/src/local
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";
 import { snapshotColumnsSource } from "../packages/game-text/src/snapshot-file.ts";
 
+const isStringArray = Schema.is(Schema.Array(Schema.String));
+
 /** Main asset classes the fuzz's packages take in turn; the last package of each six has none. */
 const FUZZ_ASSET_CLASSES = [
 	"/Script/Engine.DataTable",
@@ -506,7 +508,7 @@ export async function compareJoinFuzzInput(
 	if (seedDictionary)
 		await run(
 			Effect.gen(function* () {
-				const writer = yield* (yield* SharedIndex).writer();
+				const writer = yield* (yield* SharedIndex).writer;
 				const key = yield* writer.intern("identity", ["K0"]);
 				const empty = yield* writer.intern("identity", [""]);
 				if (key[0] !== 0 || empty[0] !== 1)
@@ -535,11 +537,7 @@ export async function compareJoinFuzzInput(
 			const source = await builder.finish();
 			await run(
 				Effect.gen(function* () {
-					return yield* (yield* (yield* SharedIndex).writer()).publish(
-						name,
-						name,
-						source
-					);
+					return yield* (yield* (yield* SharedIndex).writer).publish(name, name, source);
 				})
 			);
 		} finally {
@@ -700,7 +698,7 @@ export async function compareJoinFuzzInput(
 	if (seedDictionary)
 		await run(
 			Effect.gen(function* () {
-				const reader = yield* (yield* SharedIndex).open();
+				const reader = yield* (yield* SharedIndex).open;
 				const values = yield* reader.strings([0, 1]);
 				if (values[0] !== "K0" || values[1] !== "")
 					throw new Error("Shifted dictionary IDs changed during join preparation");
@@ -721,11 +719,11 @@ export async function compareJoinFuzzInput(
 	const compare = (field: string, left: OracleValue, right: OracleValue, line: string) => {
 		if (
 			/\.(facts|unknownReasons|flags)$/u.test(field) &&
-			Array.isArray(left) &&
-			Array.isArray(right)
+			isStringArray(left) &&
+			isStringArray(right)
 		) {
-			left = [...left].sort();
-			right = [...right].sort();
+			left = [...left].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+			right = [...right].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 		}
 		if (isDeepStrictEqual(left, right)) return;
 		if (Array.isArray(left) && Array.isArray(right)) {

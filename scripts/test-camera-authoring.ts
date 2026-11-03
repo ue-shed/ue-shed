@@ -112,13 +112,11 @@ async function startEditor(ids: readonly string[], label: string) {
 		{ windowsHide: true, stdio: "ignore" }
 	);
 	await Effect.runPromise(
-		renderer
-			.capabilities()
-			.pipe(
-				Effect.retry(
-					Schedule.spaced("1 second").pipe(Schedule.upTo({ duration: "120 seconds" }))
-				)
+		renderer.capabilities.pipe(
+			Effect.retry(
+				Schedule.spaced("1 second").pipe(Schedule.upTo({ duration: "120 seconds" }))
 			)
+		)
 	);
 }
 try {
@@ -126,7 +124,7 @@ try {
 		["UEShedCore", "UEShedCameras", "UEShedCameraAuthoringBridge", "CameraMenuExample"],
 		"authoring-editor"
 	);
-	const capabilities = await Effect.runPromise(renderer.capabilities());
+	const capabilities = await Effect.runPromise(renderer.capabilities);
 	const readiness = await Effect.runPromise(
 		client.request({
 			endpoint,
@@ -389,7 +387,7 @@ try {
 	);
 	assert.equal(conflict.saved[0]?.pose.fieldOfViewDegrees, 45);
 	await Effect.runPromise(Cameras.resolveCameraRecovery(store, bridge, conflict, "native"));
-	assert.equal((await Effect.runPromise(store.load())).reviewSet.views.length, 0);
+	assert.equal((await Effect.runPromise(store.load)).reviewSet.views.length, 0);
 	await Effect.runPromise(bridge.call({ ...scope, operation: "save" }));
 	const synced = await Effect.runPromise(
 		Cameras.synchronizeArrangementCamera({
@@ -461,10 +459,10 @@ try {
 		layout: { kind: "arc", count: 3, startDegrees: 0, spanDegrees: 160, orientation: "world" },
 		retainExisting: true
 	});
-	assert.equal((await Effect.runPromise(store.load())).arrangement.cameras.length, 1);
+	assert.equal((await Effect.runPromise(store.load)).arrangement.cameras.length, 1);
 	await action({ kind: "accept_proposal" });
 	const command = async (fields: Schema.JsonObject) => {
-		const doc = await Effect.runPromise(store.load());
+		const doc = await Effect.runPromise(store.load);
 		return action({
 			kind: "command",
 			command: Schema.decodeUnknownSync(Cameras.CameraArrangementCommand)({
@@ -481,7 +479,7 @@ try {
 		settings: { fieldOfViewDegrees: 50, distanceScale: 1.4, heightOffset: 160 },
 		resetFields: []
 	});
-	const editedDraft = await Effect.runPromise(store.load());
+	const editedDraft = await Effect.runPromise(store.load);
 	assert.deepEqual(
 		Cameras.resolveArrangementCamera(editedDraft.arrangement, "camera-a"),
 		edited.pose
@@ -557,7 +555,7 @@ try {
 		cameraIds: editedDraft.arrangement.cameras.map((camera) => camera.id),
 		removeRetiredViewIds: []
 	});
-	const saved = await Effect.runPromise(Cameras.makeCameraAuthoringStore(draftPath).load());
+	const saved = await Effect.runPromise(Cameras.makeCameraAuthoringStore(draftPath).load);
 	const view = saved.reviewSet.views[0];
 	assert.ok(view && view.viewpoint.kind === "world_fixed");
 	assert.deepEqual(view.viewpoint.approvedPose, edited.pose);
@@ -574,11 +572,12 @@ try {
 	);
 	assert.deepEqual(persisted, saved.reviewSet);
 	assert.ok(view.authoredVisibility);
-	const profile = persisted.captureProfiles.find((entry) => entry.id === view.captureProfileId)!;
+	const profile = persisted.captureProfiles.find((entry) => entry.id === view.captureProfileId);
+	assert.ok(profile);
 	const authoredCapture = await Effect.runPromise(
 		Cameras.captureReviewView({
 			endpoint,
-			request: Schema.decodeUnknownSync(Cameras.ReviewCaptureRequestCurrent)({
+			request: Schema.decodeSync(Cameras.ReviewCaptureRequestCurrent)({
 				contract: { name: "ue-shed-review-capture", version: { major: 1, minor: 7 } },
 				operationId: randomUUID(),
 				viewId: view.id,
@@ -588,7 +587,9 @@ try {
 				resolution: { width: 640, height: 360 },
 				assessment: { method: "automatic" },
 				clearCompanion: { status: "not_requested" },
-				renderPolicy: profile.renderPolicy,
+				...(profile.renderPolicy === undefined
+					? undefined
+					: { renderPolicy: profile.renderPolicy }),
 				authoredVisibility: view.authoredVisibility
 			})
 		}).pipe(Effect.provideService(RemoteControlClient, client))

@@ -200,22 +200,24 @@ export function scopedPerforceFile(
 }
 
 /** Resolves the selected saved map and its present-day World Partition actor subtree to P4 scopes. */
-export function resolvePerforceMapScope(
+export const resolvePerforceMapScope = Effect.fn("MapHistory.resolvePerforceMapScope")(function* (
 	query: PerforceMapHistoryQuery
-): Effect.Effect<ResolvedPerforceMapScope, MapHistoryError, AssetReader | PerforceHistorySource> {
-	return Effect.fn("MapHistory.resolvePerforceMapScope")(function* () {
-		const { scope } = yield* resolvePresentDayMapScope(query);
-		return scope;
-	})();
-}
+): Effect.fn.Return<
+	ResolvedPerforceMapScope,
+	MapHistoryError,
+	AssetReader | PerforceHistorySource
+> {
+	const { scope } = yield* resolvePresentDayMapScope(query);
+	return scope;
+});
 
 /** Resolves only direct map moves and keeps every resulting location inside the selected project. */
-export function resolvePerforceMapLineage(options: {
-	readonly limits: PerforceMapHistoryQuery["limits"];
-	readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
-	readonly scope: ResolvedPerforceMapScope;
-}): Effect.Effect<ResolvedPerforceMapLineage, MapHistoryError, PerforceHistorySource> {
-	return Effect.fn("MapHistory.resolvePerforceMapLineage")(function* () {
+export const resolvePerforceMapLineage = Effect.fn("MapHistory.resolvePerforceMapLineage")(
+	function* (options: {
+		readonly limits: PerforceMapHistoryQuery["limits"];
+		readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
+		readonly scope: ResolvedPerforceMapScope;
+	}): Effect.fn.Return<ResolvedPerforceMapLineage, MapHistoryError, PerforceHistorySource> {
 		const source = yield* PerforceHistorySource;
 		if (source.resolveMapLineage === undefined) {
 			return { locations: [options.scope], moves: [] };
@@ -311,19 +313,19 @@ export function resolvePerforceMapLineage(options: {
 			}
 		}
 		return { locations, moves: lineage.moves };
-	})();
-}
+	}
+);
 
-export function resolvePresentDayMapScope(query: {
-	readonly limits: PerforceMapHistoryQuery["limits"];
-	readonly mapPath: PerforceMapHistoryQuery["mapPath"];
-	readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
-}): Effect.Effect<
-	{ readonly scope: ResolvedPerforceMapScope; readonly world: SavedWorld },
-	MapHistoryError,
-	AssetReader | PerforceHistorySource
-> {
-	return Effect.fn("MapHistory.resolvePresentDayMapScope")(function* () {
+export const resolvePresentDayMapScope = Effect.fn("MapHistory.resolvePresentDayMapScope")(
+	function* (query: {
+		readonly limits: PerforceMapHistoryQuery["limits"];
+		readonly mapPath: PerforceMapHistoryQuery["mapPath"];
+		readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
+	}): Effect.fn.Return<
+		{ readonly scope: ResolvedPerforceMapScope; readonly world: SavedWorld },
+		MapHistoryError,
+		AssetReader | PerforceHistorySource
+	> {
 		const reader = yield* AssetReader;
 		const perforce = yield* PerforceHistorySource;
 		const world = yield* reader
@@ -392,7 +394,7 @@ export function resolvePresentDayMapScope(query: {
 			},
 			world
 		};
-	})();
-}
+	}
+);
 
 export { depotPackageFileSpec };

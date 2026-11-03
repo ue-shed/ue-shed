@@ -31,15 +31,12 @@ import type { TextCorpusSearchPage } from "./schema.js";
  */
 export const indexedLocalizationStatusReport = Effect.fn("GameTextIndex.statusReport")(function* (
 	query: {
-		readonly readCorpusReportHeader: () => Effect.Effect<
-			TextCorpusReportHeader,
-			GameTextIndexError
-		>;
+		readonly readCorpusReportHeader: Effect.Effect<TextCorpusReportHeader, GameTextIndexError>;
 	},
 	evidence: LocalizationTargetEvidence,
 	page: TextCorpusSearchPage
 ) {
-	const header = yield* query.readCorpusReportHeader();
+	const header = yield* query.readCorpusReportHeader;
 	// The members in the order the report has always listed them.
 	const report: LocalizationStatusReport = {
 		schemaVersion: 1,

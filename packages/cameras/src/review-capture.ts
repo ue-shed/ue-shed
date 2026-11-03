@@ -99,7 +99,7 @@ export class ReviewCapturePort extends Context.Service<ReviewCapturePort, Review
  * without replacing capture logic.
  */
 export interface ReviewIdGeneratorApi {
-	readonly generate: () => Effect.Effect<string>;
+	readonly generate: Effect.Effect<string>;
 }
 
 /** @deprecated Use `ReviewIdGeneratorApi`. */
@@ -120,7 +120,7 @@ export class ReviewIdGenerator extends Context.Service<ReviewIdGenerator, Review
 export const ReviewIdGeneratorLive = Layer.succeed(
 	ReviewIdGenerator,
 	ReviewIdGenerator.of({
-		generate: Effect.fn("ReviewIdGenerator.generate")(() => Effect.sync(randomUUID))
+		generate: Effect.sync(randomUUID).pipe(Effect.withSpan("ReviewIdGenerator.generate"))
 	})
 );
 
@@ -132,7 +132,7 @@ export function reviewIdGeneratorLayer(makeId: () => string): Layer.Layer<Review
 	return Layer.succeed(
 		ReviewIdGenerator,
 		ReviewIdGenerator.of({
-			generate: Effect.fn("ReviewIdGenerator.Test.generate")(() => Effect.sync(makeId))
+			generate: Effect.sync(makeId).pipe(Effect.withSpan("ReviewIdGenerator.Test.generate"))
 		})
 	);
 }
@@ -404,7 +404,7 @@ function captureOneView(args: {
 				viewRevision: args.view.revision
 			};
 		}
-		const operationId = yield* args.ids.generate();
+		const operationId = yield* args.ids.generate;
 		const request = ReviewCaptureRequestCurrent.make({
 			...(args.view.authoredVisibility
 				? { authoredVisibility: args.view.authoredVisibility }
@@ -572,7 +572,7 @@ function captureReviewSetWith(args: {
 	const concurrency = args.options.concurrency ?? defaultReviewCaptureConcurrency;
 	return Effect.gen(function* () {
 		const reviewSet = yield* args.repository.loadSet(args.options.reviewSetPath);
-		const runId = CaptureRunId.make(yield* args.ids.generate());
+		const runId = CaptureRunId.make(yield* args.ids.generate);
 		const renderer =
 			args.options.renderer === undefined
 				? undefined
@@ -593,7 +593,7 @@ function captureReviewSetWith(args: {
 		const invocation =
 			args.options.invocation ??
 			manualCaptureInvocation({
-				id: CaptureInvocationId.make(yield* args.ids.generate()),
+				id: CaptureInvocationId.make(yield* args.ids.generate),
 				reviewSetId: reviewSet.id,
 				...(args.options.viewIds === undefined
 					? undefined
@@ -700,7 +700,7 @@ function captureReviewSetWith(args: {
 					const finalized = attempt.finalize(run).pipe(Effect.uninterruptible);
 					return yield* finalized.pipe(Effect.as(run));
 				}),
-			(attempt) => attempt.discard().pipe(Effect.ignore)
+			(attempt) => attempt.discard.pipe(Effect.ignore)
 		);
 	}).pipe(
 		Effect.withSpan("camera.review.run.capture", {
@@ -774,9 +774,17 @@ export function captureReviewSet(
 		makeRemoteControlClient({ defaultTimeout: "10 seconds" })
 	);
 	return Effect.flatMap(ReviewCapture, (service) => service.captureSet(options)).pipe(
-		Effect.provide(ReviewCaptureLive),
-		Effect.provide(reviewCaptureRemotePortLayer(options.endpoint)),
-		Effect.provide(ReviewIdGeneratorLive),
-		Effect.provide(remoteClient)
+		Effect.provide(
+			Layer.provideMerge(
+				Layer.provideMerge(
+					Layer.provideMerge(
+						ReviewCaptureLive,
+						reviewCaptureRemotePortLayer(options.endpoint)
+					),
+					ReviewIdGeneratorLive
+				),
+				remoteClient
+			)
+		)
 	);
 }

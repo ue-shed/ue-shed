@@ -33,13 +33,10 @@ export type SinkFileWritten =
 /** Native queries are asynchronous process calls; this interface owns no query or column data. */
 export interface NativeTextQuery extends NativeFindings {
 	/** Full saved corpus, including blank units retained as provenance. */
-	readonly readCorpus: () => Effect.Effect<TextCorpus, GameTextIndexError>;
+	readonly readCorpus: Effect.Effect<TextCorpus, GameTextIndexError>;
 	/** Complete joined provenance, including blank-source lines. */
-	readonly readLocalizationLines: () => Effect.Effect<
-		readonly LocalizationLine[],
-		GameTextIndexError
-	>;
-	readonly summary: () => Effect.Effect<TextCorpusQuerySummary, GameTextIndexError>;
+	readonly readLocalizationLines: Effect.Effect<readonly LocalizationLine[], GameTextIndexError>;
+	readonly summary: Effect.Effect<TextCorpusQuerySummary, GameTextIndexError>;
 	readonly search: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<TextCorpusSearchPage, GameTextIndexError>;
@@ -117,7 +114,7 @@ export interface NativeTextQuery extends NativeFindings {
 		ids: readonly TextUnit["id"][]
 	) => Effect.Effect<readonly TextUnit[], GameTextIndexError>;
 	/** The corpus without its units: status, coverage, package coverage and diagnostics. */
-	readonly readCorpusHeader: () => Effect.Effect<TextCorpusHeader, GameTextIndexError>;
+	readonly readCorpusHeader: Effect.Effect<TextCorpusHeader, GameTextIndexError>;
 	/**
 	 * The package coverage and diagnostics of the listed files only, matched as `where.files`
 	 * matches them, selected in Rust: a check of a few files receives their rows, not every
@@ -133,15 +130,12 @@ export interface NativeTextQuery extends NativeFindings {
 	 * The corpus header as a report shows it, computed in Rust: coverage, every diagnostic and
 	 * package count, and the first `MAX_CORPUS_REPORT_ITEMS` diagnostics and incomplete packages.
 	 */
-	readonly readCorpusReportHeader: () => Effect.Effect<
-		TextCorpusReportHeader,
-		GameTextIndexError
-	>;
+	readonly readCorpusReportHeader: Effect.Effect<TextCorpusReportHeader, GameTextIndexError>;
 	/**
 	 * SHA-256 of the whole corpus in canonical JSON (`sha256-canonical-json-utf8-v1`), computed in
 	 * Rust: equal corpora have equal fingerprints on every machine.
 	 */
-	readonly corpusFingerprint: () => Effect.Effect<string, GameTextIndexError>;
+	readonly corpusFingerprint: Effect.Effect<string, GameTextIndexError>;
 	/** Explicit bulk export, assembled and serialized by Rust before the host decodes it. */
 	readonly export: (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">

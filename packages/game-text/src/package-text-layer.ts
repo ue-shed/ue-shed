@@ -200,7 +200,7 @@ interface PackageTextRefreshPlan {
 
 const PlanLine = Schema.fromJsonString(
 	Schema.Struct({
-		group: Schema.Number,
+		group: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 		expected: Schema.Array(
 			Schema.Struct({
 				path: Schema.String,
@@ -331,7 +331,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 	input: PackageTextRefreshInput<E, R>
 ) {
 	const store = yield* SharedIndex;
-	const leased = yield* store.writer();
+	const leased = yield* store.writer;
 	const initial = leased.metrics();
 	const writer = {
 		...leased,
@@ -419,7 +419,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			profile: writer.metrics()
 		};
 	const reader = Object.keys(manifest.active).some((name) => name.startsWith("package-text."))
-		? yield* store.open()
+		? yield* store.open
 		: undefined;
 	if (
 		reader &&
@@ -485,7 +485,7 @@ const planHere = Effect.fn("PackageText.planHere")(function* (
 			})
 		);
 		const retained = new Map<string, PackageTextInventoryEntry>();
-		const reader = yield* store.open();
+		const reader = yield* store.open;
 		for (const name of Object.keys(manifest.active).filter((name) =>
 			name.startsWith("package-text.")
 		)) {
@@ -752,8 +752,8 @@ const refreshChangedShards = Effect.fn("PackageText.refreshShards")(function* <E
 				SharedIndex,
 				SharedIndex.of({
 					...store,
-					writer: () => Effect.succeed(writer),
-					inspect: () => Effect.succeed(writer.manifest())
+					writer: Effect.sync(() => writer),
+					inspect: Effect.sync(() => writer.manifest())
 				})
 			)
 		);
@@ -910,7 +910,7 @@ const refreshChangedShards = Effect.fn("PackageText.refreshShards")(function* <E
 export const textCorpusFromPackageTextLayer = Effect.fn("PackageText.oracleCorpus")(function* (
 	projectRoot: string
 ) {
-	const reader = yield* (yield* SharedIndex).open();
+	const reader = yield* (yield* SharedIndex).open;
 	const records: PackageTextStored[] = [];
 	for (const name of Object.keys(reader.manifest.active).filter((name) =>
 		name.startsWith("package-text.")

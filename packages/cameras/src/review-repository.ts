@@ -93,38 +93,49 @@ async function writeJsonAtomically<Value>(path: string, value: Value): Promise<v
 }
 
 function loadReviewSetWithNode(path: string): Effect.Effect<ReviewSet, ReviewStorageError> {
-	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
-		catch: (cause) =>
-			new ReviewStorageError({
-				message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
-				operation: "load_set",
-				path,
-				recovery: "Validate or repair the Review Set document, then retry.",
-				retrySafe: true,
-				nextStep: "fix_input",
-				cause
-			})
-	}).pipe(
-		Effect.flatMap((input) =>
-			decodeReviewSet(input).pipe(
-				Effect.mapError(
-					(cause) =>
-						new ReviewStorageError({
-							message: `Review Set ${path} does not match the Review Set contract.`,
-							operation: "load_set",
-							path,
-							recovery: "Validate or repair the Review Set document, then retry.",
-							retrySafe: true,
-							nextStep: "fix_input",
-							cause
-						})
-				)
+	return Effect.gen(function* () {
+		const sourceValue = yield* Effect.tryPromise({
+			try: async () => JSON.parse(await readFile(path, "utf8")),
+			catch: (cause) =>
+				new ReviewStorageError({
+					message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
+					operation: "load_set",
+					path,
+					recovery: "Validate or repair the Review Set document, then retry.",
+					retrySafe: true,
+					nextStep: "fix_input",
+					cause
+				})
+		});
+		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ReviewStorageError({
+						message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
+						operation: "load_set",
+						path,
+						recovery: "Validate or repair the Review Set document, then retry.",
+						retrySafe: true,
+						nextStep: "fix_input",
+						cause
+					})
 			)
-		),
-		Effect.withSpan("camera.review.set.load", { attributes: { path } })
-	);
+		);
+		return yield* decodeReviewSet(decodedValue0).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ReviewStorageError({
+						message: `Review Set ${path} does not match the Review Set contract.`,
+						operation: "load_set",
+						path,
+						recovery: "Validate or repair the Review Set document, then retry.",
+						retrySafe: true,
+						nextStep: "fix_input",
+						cause
+					})
+			)
+		);
+	}).pipe(Effect.withSpan("camera.review.set.load", { attributes: { path } }));
 }
 
 function findReviewSetWithNode(
@@ -348,7 +359,7 @@ export function captureRunsRoot(projectRoot: string): string {
  * discard. A run is trusted history only after verified artifacts and finalization succeed.
  */
 export interface ReviewCaptureAttempt {
-	readonly discard: () => Effect.Effect<void, ReviewStorageError>;
+	readonly discard: Effect.Effect<void, ReviewStorageError>;
 	readonly finalize: (run: CaptureRun) => Effect.Effect<void, ReviewStorageError>;
 	readonly storeArtifact: (args: {
 		readonly relativePath: string;
@@ -556,20 +567,18 @@ function filesystemReviewCaptureDestination(
 				})
 		});
 
-		const discard = Effect.fn("ReviewCaptureAttempt.discard")(function* () {
-			yield* Effect.tryPromise({
-				try: () => rm(stagingRoot, { force: true, recursive: true }),
-				catch: (cause) =>
-					destinationStorageError({
-						cause,
-						operation: "discard_staging",
-						path: stagingRoot,
-						recovery: "Remove the owned .staging-* attempt manually if it remains.",
-						retrySafe: true,
-						nextStep: "retry"
-					})
-			});
-		});
+		const discard = Effect.tryPromise({
+			try: () => rm(stagingRoot, { force: true, recursive: true }),
+			catch: (cause) =>
+				destinationStorageError({
+					cause,
+					operation: "discard_staging",
+					path: stagingRoot,
+					recovery: "Remove the owned .staging-* attempt manually if it remains.",
+					retrySafe: true,
+					nextStep: "retry"
+				})
+		}).pipe(Effect.asVoid, Effect.withSpan("ReviewCaptureAttempt.discard"));
 		const writeDocument = Effect.fn("ReviewCaptureAttempt.writeDocument")(function* (args: {
 			readonly relativePath: string;
 			readonly value: unknown;
@@ -705,39 +714,52 @@ export function callerOwnedReviewCaptureDestination(root: string): ReviewCapture
 }
 
 function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewStorageError> {
-	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
-		catch: (cause) =>
-			new ReviewStorageError({
-				message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
-				operation: "load_run",
-				path,
-				recovery:
-					"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
-				retrySafe: true,
-				nextStep: "fix_input",
-				cause
-			})
-	}).pipe(
-		Effect.flatMap((input) =>
-			decodeCaptureRun(input).pipe(
-				Effect.mapError(
-					(cause) =>
-						new ReviewStorageError({
-							message: `Capture Run ${path} does not match the Capture Run contract.`,
-							operation: "load_run",
-							path,
-							recovery:
-								"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
-							retrySafe: true,
-							nextStep: "escalate",
-							cause
-						})
-				)
+	return Effect.gen(function* () {
+		const sourceValue = yield* Effect.tryPromise({
+			try: async () => JSON.parse(await readFile(path, "utf8")),
+			catch: (cause) =>
+				new ReviewStorageError({
+					message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
+					operation: "load_run",
+					path,
+					recovery:
+						"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
+					retrySafe: true,
+					nextStep: "fix_input",
+					cause
+				})
+		});
+		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ReviewStorageError({
+						message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
+						operation: "load_run",
+						path,
+						recovery:
+							"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
+						retrySafe: true,
+						nextStep: "fix_input",
+						cause
+					})
 			)
-		)
-	);
+		);
+		return yield* decodeCaptureRun(decodedValue0).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ReviewStorageError({
+						message: `Capture Run ${path} does not match the Capture Run contract.`,
+						operation: "load_run",
+						path,
+						recovery:
+							"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
+						retrySafe: true,
+						nextStep: "escalate",
+						cause
+					})
+			)
+		);
+	});
 }
 
 /**

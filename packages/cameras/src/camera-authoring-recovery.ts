@@ -45,7 +45,7 @@ export const prepareCameraRecovery = Effect.fn("CameraAuthoring.prepareRecovery"
 	input: CameraBridgeSnapshot
 ) {
 	const native = yield* Schema.decodeEffect(CameraBridgeSnapshot)(input);
-	const document = yield* store.load();
+	const document = yield* store.load;
 	if (document.arrangement.id !== native.sessionId)
 		return yield* arrangementFailure(
 			"scope_mismatch",
@@ -136,7 +136,7 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 			"invalid",
 			"Recovery requires pending native camera edits without a queued panel action."
 		);
-	let document = yield* store.load();
+	let document = yield* store.load;
 	if (document.arrangement.id !== native.sessionId)
 		return yield* arrangementFailure(
 			"scope_mismatch",

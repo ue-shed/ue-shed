@@ -462,7 +462,7 @@ export const makeGameTextIndexSteps = (
 					const byPath = new Map(inventory.map((entry) => [entry.path, entry]));
 					const retainedPackages =
 						request.savedPackages === false &&
-						Object.keys((yield* index.inspect()).active).some((name) =>
+						Object.keys((yield* index.inspect).active).some((name) =>
 							name.startsWith("package-text.")
 						);
 					const packageRequest = {
@@ -519,10 +519,10 @@ export const makeGameTextIndexSteps = (
 								changedShards: 0,
 								removedShards: 0,
 								published: false,
-								profile: (yield* index.writer()).metrics()
+								profile: (yield* index.writer).metrics()
 							}
 						: yield* Effect.scoped(builder.refreshPackageTextLayer(packageRequest));
-					const manifest = yield* index.inspect();
+					const manifest = yield* index.inspect;
 					const result: GameTextProjectIndex = {
 						projectRoot,
 						cacheRoot,
@@ -593,11 +593,11 @@ export const makeGameTextIndexSteps = (
 					let fileDiagnostics: MutableFileDiagnostics = {};
 					if (
 						request.changedFiles !== undefined &&
-						(yield* index.inspect()).active.joined
+						(yield* index.inspect).active.joined
 					) {
 						const previous = yield* Effect.scoped(
 							Effect.gen(function* () {
-								return yield* readJoinedTarget(yield* index.open(), true);
+								return yield* readJoinedTarget(yield* index.open, true);
 							})
 						);
 						yield* checkRetainedImportObservations(previous.meta, request.changedFiles);
@@ -711,7 +711,7 @@ export const makeGameTextIndexSteps = (
 			return yield* withSession(
 				configurationFor(cacheRoot, projectRoot),
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					if (!writer.readPoint)
 						return yield* failure(
 							"point",
@@ -838,7 +838,7 @@ export const makeGameTextIndexSteps = (
 			source: GameTextCodeSource | undefined
 		) {
 			const index = yield* SharedIndex;
-			const writer = yield* index.writer();
+			const writer = yield* index.writer;
 			if (!writer.publishCode) return undefined;
 			const steps = sourceGatherSteps(target);
 			const scan =
@@ -852,7 +852,7 @@ export const makeGameTextIndexSteps = (
 							cacheRoot,
 							refreshEngineWrappers: source.refreshEngineWrappers === true
 						};
-			if (scan === undefined && !(yield* index.inspect()).active[codeLayerName(target.name)])
+			if (scan === undefined && !(yield* index.inspect).active[codeLayerName(target.name)])
 				return undefined;
 			const outcome = yield* writer.publishCode({
 				target: target.name,
@@ -909,7 +909,7 @@ export const makeGameTextIndexSteps = (
 				Effect.gen(function* () {
 					const reportProgress = yield* GameTextIndexProgressReporter;
 					const index = yield* SharedIndex;
-					const manifest = yield* index.inspect();
+					const manifest = yield* index.inspect;
 					yield* checkProject(project, manifest);
 					if (
 						Object.entries(target.fileKeys).some(
@@ -950,9 +950,9 @@ export const makeGameTextIndexSteps = (
 						Object.assign(joinInput, { review: review.file });
 					reportProgress({ phase: "joining", completed: 0, total: 0 });
 					const join = yield* Effect.scoped(builder.refreshJoinedTarget(joinInput));
-					if ((yield* index.inspect()).active["joined.invalidated"])
-						yield* (yield* index.writer()).publishBatch([], ["joined.invalidated"]);
-					const generation = (yield* index.inspect()).generation;
+					if ((yield* index.inspect).active["joined.invalidated"])
+						yield* (yield* index.writer).publishBatch([], ["joined.invalidated"]);
+					const generation = (yield* index.inspect).generation;
 					return {
 						project,
 						view: target.view,
@@ -1098,11 +1098,11 @@ export const makeGameTextIndexSteps = (
 				joinedKey: target.join.key
 			});
 			const query = native;
-			const summary = yield* query.summary();
+			const summary = yield* query.summary;
 			const search = query.search;
 			const searchRows = query.searchRows;
 			reportProgress({ phase: "ready", completed: 0, total: 0 });
-			const corpus = query.readCorpus();
+			const corpus = query.readCorpus;
 			const localization = {
 				schemaVersion: 1 as const,
 				target: joined.meta.input.target.name,
@@ -1270,7 +1270,7 @@ export const makeGameTextIndexSteps = (
 							effectiveRuleDocument(ruleDocument),
 							(rule) => rule.subject === "unit_source"
 						);
-						const header = yield* query.readCorpusReportHeader();
+						const header = yield* query.readCorpusReportHeader;
 						return yield* queriedTextQualityQuery({
 							findings: query,
 							evaluation,
@@ -1288,11 +1288,11 @@ export const makeGameTextIndexSteps = (
 					}),
 				// The engine writes the report's findings; the host never reads the corpus or join.
 				prepareLocalizationCheck: (document, options) =>
-					Effect.flatMap(query.readCorpusReportHeader(), (header) =>
+					Effect.flatMap(query.readCorpusReportHeader, (header) =>
 						prepareLocalizationCheck(...checkInput(header), options, document)
 					),
 				localizationCheck: (document, options) =>
-					Effect.flatMap(query.readCorpusReportHeader(), (header) =>
+					Effect.flatMap(query.readCorpusReportHeader, (header) =>
 						indexedLocalizationCheckReport(...checkInput(header), options, document)
 					)
 			};
@@ -1316,11 +1316,11 @@ export const makeGameTextIndexSteps = (
 				const target = yield* Effect.scoped(
 					Effect.gen(function* () {
 						const index = yield* SharedIndex;
-						const manifest = yield* index.inspect();
+						const manifest = yield* index.inspect;
 						const key = manifest.active.joined;
 						if (!key || manifest.active["joined.invalidated"])
 							return yield* stale("committed_join");
-						const joined = yield* readJoinedTarget(yield* index.open());
+						const joined = yield* readJoinedTarget(yield* index.open);
 						const meta = joined.meta;
 						if (
 							meta.input.projectRoot !== project.projectRoot ||
@@ -1434,7 +1434,7 @@ export const makeGameTextIndexSteps = (
 				configurationFor(cacheRoot, projectRoot, request.targetName),
 				Effect.gen(function* () {
 					const index = yield* SharedIndex,
-						writer = yield* index.writer();
+						writer = yield* index.writer;
 					const active = writer.manifest().active;
 					const removed = [...(request.changedFiles ?? [])].filter(
 						(name) => active[name] !== undefined

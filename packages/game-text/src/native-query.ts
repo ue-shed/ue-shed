@@ -465,9 +465,9 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			const findings = answerRows(answer, "findings").map(({ finding }) => finding);
 			return { page, sets, findings };
 		});
-	const summary = Effect.fn("GameTextIndex.nativeSummary")(() =>
+	const summary = Effect.suspend(() =>
 		response(pinned, { action: "summary", reader }, TextCorpusQuerySummary)
-	);
+	).pipe(Effect.withSpan("GameTextIndex.nativeSummary"));
 	const search = Effect.fn("GameTextIndex.nativeSearch")(function* (
 		request: TextCorpusSearchRequest
 	) {
@@ -697,8 +697,10 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		localizationFocus,
 		localizationDetail,
 		related,
-		readCorpus: () => exported(undefined).pipe(Effect.map((result) => result.corpus)),
-		readLocalizationLines: () => readLocalizationLines(pinned),
+		readCorpus: Effect.suspend(() =>
+			exported(undefined).pipe(Effect.map((result) => result.corpus))
+		),
+		readLocalizationLines: Effect.suspend(() => readLocalizationLines(pinned)),
 		localizationLines: (request) => localizationLines(pinned, request),
 		exportWithSignals: exported,
 		export: (request) => exported(request).pipe(Effect.map((result) => result.corpus)),
@@ -711,11 +713,11 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			writeSinkFile(pinned, "export", "corpusCsv", request, file),
 		writeCorpusJson: (request, file, envelope) =>
 			writeSinkFile(pinned, "export", "corpusJson", request, file, envelope),
-		readCorpusHeader: () => readCorpusHeader(pinned),
+		readCorpusHeader: Effect.suspend(() => readCorpusHeader(pinned)),
 		readFileCoverage: (files) => readFileCoverage(pinned, files),
-		readCorpusReportHeader: () => readCorpusReportHeader(pinned),
+		readCorpusReportHeader: Effect.suspend(() => readCorpusReportHeader(pinned)),
 		readUnits: (ids) => (ids.length === 0 ? Effect.succeed([]) : readUnits(pinned, ids)),
-		corpusFingerprint: () => corpusFingerprint(pinned)
+		corpusFingerprint: Effect.suspend(() => corpusFingerprint(pinned))
 	};
 	return model;
 });

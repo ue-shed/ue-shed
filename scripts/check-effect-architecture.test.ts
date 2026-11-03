@@ -466,7 +466,32 @@ void test("requires every Context service to name operations and provide a layer
 	);
 	assert.deepEqual(await checkServiceStrategies(root), [
 		"apps/example/src/index.ts: service declaration has no live or test layer strategy",
-		"apps/example/src/index.ts: service operations must use Effect.fn"
+		"apps/example/src/index.ts: service operations must use named Effect.fn or Effect.withSpan"
+	]);
+});
+
+void test("requires a real named span for an effect-valued service operation", async () => {
+	const file = join(root, "apps/example/src/index.ts");
+	const declaration =
+		"export class Example extends Context.Service<Example, {}>()('Example') {}\n";
+	await writeFile(
+		file,
+		`${declaration}const live = Layer.succeed(Example, { snapshot: Effect.void });\n`
+	);
+	assert.deepEqual(await checkServiceStrategies(root), [
+		"apps/example/src/index.ts: service operations must use named Effect.fn or Effect.withSpan"
+	]);
+	await writeFile(
+		file,
+		`${declaration}const live = Layer.succeed(Example, { snapshot: Effect.void.pipe(Effect.withSpan("Example.snapshot")) });\n`
+	);
+	assert.deepEqual(await checkServiceStrategies(root), []);
+	await writeFile(
+		file,
+		`${declaration}const live = Layer.succeed(Example, {}); const unattached = Effect.withSpan("unused");\n`
+	);
+	assert.deepEqual(await checkServiceStrategies(root), [
+		"apps/example/src/index.ts: service operations must use named Effect.fn or Effect.withSpan"
 	]);
 });
 

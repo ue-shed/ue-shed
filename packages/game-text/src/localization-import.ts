@@ -193,7 +193,7 @@ const io = <A>(file: string, run: () => Promise<A>) =>
 	);
 
 const Stamp = Schema.Struct({
-	size: Schema.Number,
+	size: Schema.Finite,
 	mtimeNs: Schema.String,
 	ctimeNs: Schema.String,
 	ino: Schema.String,
@@ -360,10 +360,10 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		Effect.scoped(
 			Effect.gen(function* () {
 				const store = yield* SharedIndex;
-				const manifest = yield* store.inspect();
+				const manifest = yield* store.inspect;
 				const record = yield* store.cached(contentKey(hash));
 				if (manifest.active[file] !== record.key) {
-					const writer = yield* store.writer();
+					const writer = yield* store.writer;
 					yield* writer.publish(file, record.key, { columns: [] });
 				}
 				return record.bytes;
@@ -415,7 +415,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 					!stagedFile && sourceAccess === nodeSource
 						? yield* Effect.scoped(
 								Effect.gen(function* () {
-									const writer = yield* (yield* SharedIndex).writer();
+									const writer = yield* (yield* SharedIndex).writer;
 									if (!writer.importLocalization) return undefined;
 									const reply = yield* writer.importLocalization({
 										files: [
@@ -433,10 +433,12 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 									});
 									const entry = reply.files[0]!;
 									if (entry.error)
-										return yield* Schema.decodeUnknownSync(LocalizationError)({
-											_tag: "LocalizationError",
-											...entry.error
-										});
+										return yield* Schema.decodeUnknownEffect(LocalizationError)(
+											{
+												_tag: "LocalizationError",
+												...entry.error
+											}
+										).pipe(Effect.orDie, Effect.flatMap(Effect.fail));
 									const prepared = entry.file!;
 									stages.parseMs = reply.parseMs;
 									stages.writeMs = reply.publishMs;
@@ -591,7 +593,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 				}
 				const bytes = yield* Effect.gen(function* () {
 					const store = yield* SharedIndex;
-					const writer = yield* store.writer();
+					const writer = yield* store.writer;
 					const layer = yield* writer.publish(
 						file,
 						contentKey(content.hash),
@@ -712,7 +714,7 @@ const TargetRequest = LocalizationProjectRequest.pipe(
 		projectScoped: Schema.optionalKey(Schema.Boolean),
 		importLimits: Schema.optionalKey(LocalizationImportLimits),
 		/** Explicit parser-pool budget when another cold pool runs beside this import. */
-		memoryBudgetBytes: Schema.optionalKey(Schema.Number)
+		memoryBudgetBytes: Schema.optionalKey(Schema.Finite)
 	})
 );
 /**
@@ -794,7 +796,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 	reportProgress({ phase: "localization", completed, total });
 	const empty = yield* Effect.scoped(
 		Effect.gen(function* () {
-			const index = yield* (yield* SharedIndex).inspect();
+			const index = yield* (yield* SharedIndex).inspect;
 			return coldRequests.every(
 				(file) => !file.relativePath || !index.active[file.relativePath]
 			);

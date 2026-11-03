@@ -259,13 +259,13 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				Schema.decodeUnknownEffect(LocalizationFileComparisonResult)
 			)
 	),
-	localizationTargets: Effect.fn("GameTextClient.localizationTargets")(() =>
+	localizationTargets: Effect.suspend(() =>
 		invokeRequest(
 			"gameText.localizationTargets",
 			() => window.ueShed.gameText.localizationTargets(),
 			Schema.decodeUnknownEffect(LocalizationTargetsResult)
 		)
-	),
+	).pipe(Effect.withSpan("GameTextClient.localizationTargets")),
 	localizationTarget: Effect.fn("GameTextClient.localizationTarget")(
 		(target: LocalizationSelection["target"]) =>
 			invokeRequest(
@@ -289,14 +289,14 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 			Schema.decodeUnknownEffect(RelatedLinesResult)
 		)
 	),
-	reloadQualityRules: Effect.fn("GameTextClient.reloadQualityRules")(() =>
+	reloadQualityRules: Effect.suspend(() =>
 		invokeRequest(
 			"gameText.reloadQualityRules",
 			() => window.ueShed.gameText.reloadQualityRules(),
 			parseTextQualityQueryRunResult
 		)
-	),
-	projectKey: Effect.fn("GameTextClient.projectKey")(() =>
+	).pipe(Effect.withSpan("GameTextClient.reloadQualityRules")),
+	projectKey: Effect.suspend(() =>
 		invokeRequest(
 			"gameText.projectKey",
 			() => window.ueShed.project.current(),
@@ -306,7 +306,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				result.status === "ready" ? result.project.projectRoot : undefined
 			)
 		)
-	),
+	).pipe(Effect.withSpan("GameTextClient.projectKey")),
 	createStarterRules: Effect.fn("GameTextClient.createStarterRules")((loadExisting: boolean) =>
 		invokeRequest(
 			"gameText.createStarterRules",
@@ -327,12 +327,13 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				() => window.ueShed.gameText.investigationSave(query),
 				Schema.decodeUnknownEffect(InvestigationFileResult)
 			),
-		open: () =>
+		open: Effect.suspend(() =>
 			invokeRequest(
 				"gameText.investigationOpen",
 				() => window.ueShed.gameText.investigationOpen(),
 				Schema.decodeUnknownEffect(GameTextInvestigationPresetResult)
 			)
+		)
 	},
 	loadConfiguredProject: Effect.fn("GameTextClient.loadConfiguredProject")((refresh = true) =>
 		invokeRequest(
@@ -418,13 +419,13 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				parseTextCorpusFocusResult
 			)
 	),
-	chooseQualityRules: Effect.fn("GameTextClient.chooseQualityRules")(() =>
+	chooseQualityRules: Effect.suspend(() =>
 		invokeRequest(
 			"gameText.chooseQualityRules",
 			() => window.ueShed.gameText.chooseQualityRules(),
 			parseTextQualityQueryRunResult
 		)
-	),
+	).pipe(Effect.withSpan("GameTextClient.chooseQualityRules")),
 	previewQualityRules: Effect.fn("GameTextClient.previewQualityRules")(
 		(
 			document: GameTextRuleDocument

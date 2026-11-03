@@ -39,7 +39,7 @@ export const makeWorkspaceChangeComparison = Effect.fn("GameText.workspace.chang
 		return Effect.fn("GameText.workspace.compareChange")(function* (
 			request: ChangeComparisonRequest
 		) {
-			const current = yield* host.project.current();
+			const current = yield* host.project.current;
 			if (current.status !== "ready") return { status: "not_ready" } as const;
 			const revisions = host.changeRevisions;
 			if (revisions === undefined)

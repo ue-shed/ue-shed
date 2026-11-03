@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
-import { Effect, Schema, Stream } from "effect";
+import { Layer, Effect, Schema, Stream } from "effect";
 import {
 	AssetReaderError,
 	SavedAssetTextExtractionEvent,
@@ -70,35 +70,31 @@ export function readScaleCorpus(root: string) {
 	const unexpected = () =>
 		Effect.die(new Error("Scale replay only supports extractProjectText."));
 	const reader = makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -114,7 +110,7 @@ export function readScaleCorpus(root: string) {
 		discoverTables: unexpected,
 		readAsset: unexpected,
 		readTable: unexpected,
-		source: () => Effect.succeed("configured"),
+		source: Effect.succeed("configured"),
 		extractProjectText: () =>
 			Stream.fromAsyncIterable(
 				replayGameTextEvents(root),
@@ -134,8 +130,7 @@ export function readScaleCorpus(root: string) {
 	});
 	return Effect.runPromise(
 		Effect.flatMap(TextCorpusService, (service) => service.scan({ projectRoot: root })).pipe(
-			Effect.provide(TextCorpusServiceLive),
-			Effect.provide(reader)
+			Effect.provide(Layer.provideMerge(TextCorpusServiceLive, reader))
 		)
 	);
 }

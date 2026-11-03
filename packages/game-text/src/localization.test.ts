@@ -295,7 +295,7 @@ describe("localization identity join and precedence", () => {
 			return withIndexedCorpus(text, { files }, ({ query }) =>
 				Effect.gen(function* () {
 					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 0 });
-					const lines = yield* query.readLocalizationLines();
+					const lines = yield* query.readLocalizationLines;
 					expect(lines.map((line) => line.identity)).toEqual(
 						joined.lines.map((line) => line.identity)
 					);
@@ -402,14 +402,25 @@ describe("localization identity join and precedence", () => {
 					// Saved, the package variant gathers as UI/K beside the asset text: one unit
 					// with both sources.
 					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 1 });
-					const lines = (yield* query.readLocalizationLines()).filter(
+					const lines = (yield* query.readLocalizationLines).filter(
 						(line) => line.origin.kind === "corpus"
 					);
 					// The String Table line and the asset line both have saved text.
-					expect(lines.map((line) => line.identity?.namespace).sort()).toEqual([
-						"UI",
-						"UI [Beta]"
-					]);
+					expect(
+						lines
+							.map((line) => line.identity?.namespace)
+							.sort((left, right) =>
+								left === right
+									? 0
+									: left === undefined
+										? 1
+										: right === undefined
+											? -1
+											: left < right
+												? -1
+												: 1
+							)
+					).toEqual(["UI", "UI [Beta]"]);
 					for (const line of lines) {
 						const page = yield* query.search({
 							...request,

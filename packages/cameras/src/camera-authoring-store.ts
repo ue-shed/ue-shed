@@ -309,13 +309,16 @@ export const readCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.readR
 			try: async () => {
 				if ((await stat(path)).size > 4 * 1024 * 1024)
 					throw arrangementFailure("invalid", "Recipe exceeds the 4 MiB input limit.");
-				return Schema.decodeUnknownSync(CameraArrangementRecipe)(
-					JSON.parse(await readFile(path, "utf8")),
-					{ onExcessProperty: "error" }
-				);
+				return JSON.parse(await readFile(path, "utf8"));
 			},
 			catch: storageError(`camera arrangement recipe ${path}`)
-		})
+		}).pipe(
+			Effect.flatMap((input) =>
+				Schema.decodeUnknownEffect(CameraArrangementRecipe)(input, {
+					onExcessProperty: "error"
+				}).pipe(Effect.mapError(storageError(`camera arrangement recipe ${path}`)))
+			)
+		)
 );
 /**
  * Validates and atomically writes a reusable arrangement recipe to an explicit path. This
@@ -331,7 +334,7 @@ export const writeCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.writ
 
 /** File-backed coordinator state. A studio can implement this port over another durable store. */
 export interface CameraAuthoringStore {
-	readonly load: () => Effect.Effect<CameraAuthoringDocument, CameraArrangementError>;
+	readonly load: Effect.Effect<CameraAuthoringDocument, CameraArrangementError>;
 	readonly create: (
 		arrangement: CameraArrangement,
 		reviewSet: ReviewSet
@@ -393,12 +396,10 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		return outcome;
 	};
 	return {
-		load: Effect.fn("CameraAuthoringStore.load")(() =>
-			Effect.tryPromise({
-				try: load,
-				catch: storageError(`camera authoring document ${path}`)
-			})
-		),
+		load: Effect.tryPromise({
+			try: load,
+			catch: storageError(`camera authoring document ${path}`)
+		}).pipe(Effect.withSpan("CameraAuthoringStore.load")),
 		create: Effect.fn("CameraAuthoringStore.create")((arrangement, reviewSet) =>
 			transact(async () => {
 				if ((await optionalRead(path)) !== null)
@@ -538,13 +539,16 @@ export const readCameraVisibilityPreset = Effect.fn("CameraAuthoringStore.readVi
 						"invalid",
 						"Visibility preset exceeds the 4 MiB input limit."
 					);
-				return Schema.decodeUnknownSync(CameraVisibilityPreset)(
-					JSON.parse(await readFile(path, "utf8")),
-					{ onExcessProperty: "error" }
-				);
+				return JSON.parse(await readFile(path, "utf8"));
 			},
 			catch: storageError(`camera visibility preset ${path}`)
-		})
+		}).pipe(
+			Effect.flatMap((input) =>
+				Schema.decodeUnknownEffect(CameraVisibilityPreset)(input, {
+					onExcessProperty: "error"
+				}).pipe(Effect.mapError(storageError(`camera visibility preset ${path}`)))
+			)
+		)
 );
 /**
  * Exports an immutable visibility preset under an explicit path. Repeating identical bytes

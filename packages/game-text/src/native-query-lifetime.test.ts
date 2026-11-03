@@ -101,7 +101,7 @@ it("reads concurrently through one reader, and closes it with the model", async 
 				),
 				Effect.provideService(Scope.Scope, scope)
 			);
-			const dump = yield* query.readLocalizationLines().pipe(Effect.forkChild);
+			const dump = yield* query.readLocalizationLines.pipe(Effect.forkChild);
 			yield* Deferred.await(entered);
 			// The dump is still running; the search answers anyway.
 			expect(yield* query.search(request)).toEqual(page);

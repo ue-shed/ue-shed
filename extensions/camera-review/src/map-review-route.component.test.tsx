@@ -72,26 +72,24 @@ afterAll(() => runtime.dispose());
 
 const offlineScout = {
 	createReviewSet: () => Effect.die("not used"),
-	connectWorld: () =>
-		Effect.succeed({
-			message: "Offline",
-			recovery: "Open Unreal",
-			status: "unavailable" as const
-		}),
+	connectWorld: Effect.sync(() => ({
+		message: "Offline",
+		recovery: "Open Unreal",
+		status: "unavailable" as const
+	})),
 	focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
-	reviewSetLibrary: () =>
-		Effect.succeed({
-			activeReviewSetId: "fixture-review-set",
-			sets: [
-				{
-					displayName: "Fixture Structure",
-					id: "fixture-review-set",
-					mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
-					viewCount: 1
-				}
-			],
-			status: "ready" as const
-		}),
+	reviewSetLibrary: Effect.sync(() => ({
+		activeReviewSetId: "fixture-review-set",
+		sets: [
+			{
+				displayName: "Fixture Structure",
+				id: "fixture-review-set",
+				mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+				viewCount: 1
+			}
+		],
+		status: "ready" as const
+	})),
 	selectReviewSet: () => Effect.die("not used"),
 	worldObservations: () =>
 		Stream.make({
@@ -110,11 +108,10 @@ const offlineScout = {
 >;
 
 const unavailableDurableAuthoring = {
-	authoringResume: () =>
-		Effect.succeed({
-			error: { message: "No saved session", recovery: "Select an actor" },
-			status: "failed" as const
-		}),
+	authoringResume: Effect.sync(() => ({
+		error: { message: "No saved session", recovery: "Select an actor" },
+		status: "failed" as const
+	})),
 	authoringPatch: () =>
 		Effect.succeed({
 			error: { message: "No saved session", recovery: "Select an actor" },
@@ -205,7 +202,7 @@ describe("MapReviewRoute", () => {
 				approveCandidate: () => Effect.die("not used"),
 				capture: () => Effect.die("not used"),
 				previewCandidate: () => Effect.die("not used"),
-				load: () => Effect.succeed({ status: "setup_required" })
+				load: Effect.sync(() => ({ status: "setup_required" }))
 			});
 			await screen.findByRole("button", { name: "New camera set" });
 			const canvas = await screen.findByRole("application", { name: "Top-down actor map" });
@@ -292,14 +289,14 @@ describe("MapReviewRoute", () => {
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
 			authorFromSelection: () => Effect.die("not used"),
-			authoringResume: () => Effect.succeed(ready),
+			authoringResume: Effect.succeed(ready),
 			authoringPatch: (intent) =>
 				Effect.sync(() => {
 					patches.push(intent);
 					return ready;
 				}),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(empty),
+			load: Effect.succeed(empty),
 			previewAuthoringCandidate: () =>
 				Effect.succeed({
 					error: { message: "No preview", recovery: "Continue" },
@@ -349,20 +346,19 @@ describe("MapReviewRoute", () => {
 			approveCandidate: () => Effect.die("not used"),
 			authorFromSelection: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed({ status: "setup_required" }),
+			load: Effect.sync(() => ({ status: "setup_required" })),
 			previewCandidate: () => Effect.die("not used"),
-			reviewSetLibrary: () =>
-				Effect.succeed({
-					sets: [
-						{
-							displayName: "Fixture Structure",
-							id: "fixture-review-set",
-							mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
-							viewCount: 1
-						}
-					],
-					status: "ready"
-				}),
+			reviewSetLibrary: Effect.sync(() => ({
+				sets: [
+					{
+						displayName: "Fixture Structure",
+						id: "fixture-review-set",
+						mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+						viewCount: 1
+					}
+				],
+				status: "ready"
+			})),
 			selectReviewSet: ({ reviewSetId }) =>
 				Effect.sync(() => {
 					selectedReviewSetId = reviewSetId;
@@ -420,27 +416,26 @@ describe("MapReviewRoute", () => {
 			approveCandidate: () => Effect.die("not used"),
 			authorFromSelection: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(empty),
+			load: Effect.succeed(empty),
 			previewCandidate: () => Effect.die("not used"),
-			reviewSetLibrary: () =>
-				Effect.succeed({
-					activeReviewSetId: "fixture-review-set",
-					sets: [
-						{
-							displayName: "Fixture Structure",
-							id: "fixture-review-set",
-							mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
-							viewCount: 1
-						},
-						{
-							displayName: "Lighting review",
-							id: "lighting-review",
-							mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
-							viewCount: 0
-						}
-					],
-					status: "ready"
-				}),
+			reviewSetLibrary: Effect.sync(() => ({
+				activeReviewSetId: "fixture-review-set",
+				sets: [
+					{
+						displayName: "Fixture Structure",
+						id: "fixture-review-set",
+						mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+						viewCount: 1
+					},
+					{
+						displayName: "Lighting review",
+						id: "lighting-review",
+						mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+						viewCount: 0
+					}
+				],
+				status: "ready"
+			})),
 			selectReviewSet: ({ reviewSetId }) =>
 				Effect.sync(() => {
 					selectedReviewSetId = reviewSetId;
@@ -487,7 +482,7 @@ describe("MapReviewRoute", () => {
 					createdName = displayName;
 					return created;
 				}),
-			load: () => Effect.succeed(empty),
+			load: Effect.succeed(empty),
 			previewCandidate: () => Effect.die("not used")
 		};
 
@@ -547,7 +542,7 @@ describe("MapReviewRoute", () => {
 						captureRenderer = intent.renderer;
 						return completedCapture(captured);
 					}),
-				load: () => Effect.succeed(empty),
+				load: Effect.succeed(empty),
 				previewCandidate: () =>
 					Effect.succeed({
 						error: { message: "not used", recovery: "not used" },
@@ -675,7 +670,7 @@ describe("MapReviewRoute", () => {
 			approveCandidate: () => Effect.die("not used"),
 			authorFromSelection: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(paired),
+			load: Effect.succeed(paired),
 			previewCandidate: () => Effect.die("not used")
 		};
 		const user = userEvent.setup();
@@ -788,7 +783,7 @@ describe("MapReviewRoute", () => {
 					};
 				}),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(history),
+			load: Effect.succeed(history),
 			previewCandidate: () => Effect.die("not used")
 		};
 		const user = userEvent.setup();
@@ -853,7 +848,7 @@ describe("MapReviewRoute", () => {
 					};
 				}),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(empty),
+			load: Effect.succeed(empty),
 			previewCandidate: () => Effect.die("not used")
 		};
 		const user = userEvent.setup();
@@ -929,7 +924,7 @@ describe("MapReviewRoute", () => {
 					};
 				}),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(empty),
+			load: Effect.succeed(empty),
 			previewCandidate: () =>
 				Effect.succeed({
 					error: { message: "Preview omitted", recovery: "Not required" },
@@ -1049,7 +1044,7 @@ describe("MapReviewRoute", () => {
 				}),
 			approveCandidate: () => Effect.die("not used"),
 			authorFromSelection: () => Effect.die("not used"),
-			authoringResume: () => Effect.succeed(ready),
+			authoringResume: Effect.succeed(ready),
 			authoringPatch: (intent) =>
 				Effect.sync(() => {
 					discardedCandidateIds = intent.patch.discardedCandidateIds;
@@ -1059,7 +1054,7 @@ describe("MapReviewRoute", () => {
 					} satisfies MapReviewAuthoringResult;
 				}),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(empty),
+			load: Effect.succeed(empty),
 			previewAuthoringCandidate: () =>
 				Effect.succeed({
 					error: { message: "Preview omitted", recovery: "Not required" },
@@ -1168,14 +1163,14 @@ describe("MapReviewRoute", () => {
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
 			authorFromSelection: () => Effect.die("not used"),
-			authoringResume: () => Effect.succeed(recovered),
+			authoringResume: Effect.succeed(recovered),
 			authoringReframe: () =>
 				Effect.sync(() => {
 					reframeCount += 1;
 					return recovered;
 				}),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(empty),
+			load: Effect.succeed(empty),
 			previewAuthoringCandidate: (intent) =>
 				Effect.sync(() => {
 					regeneratedPreviews.push(intent);
@@ -1319,7 +1314,7 @@ describe("MapReviewRoute", () => {
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
 			authorFromSelection: () => Effect.die("not used"),
-			authoringResume: () => Effect.succeed(ready),
+			authoringResume: Effect.succeed(ready),
 			authoringPatch: (intent) =>
 				Effect.sync(() => {
 					patchCount += 1;
@@ -1335,7 +1330,7 @@ describe("MapReviewRoute", () => {
 					} satisfies MapReviewAuthoringResult;
 				}),
 			capture: () => Effect.die("not used"),
-			load: () => Effect.succeed(empty),
+			load: Effect.succeed(empty),
 			previewAuthoringCandidate: (intent) =>
 				Effect.sync(() => {
 					previewCalls.push(intent);
@@ -1420,10 +1415,10 @@ describe("MapReviewRoute", () => {
 			...unavailableDurableAuthoring,
 			approveCandidate: () => Effect.die("not used"),
 			authorFromSelection: () => Effect.die("not used"),
-			authoringResume: () => Effect.succeed(ready),
+			authoringResume: Effect.succeed(ready),
 			capture: () => Effect.die("not used"),
-			livePreviewAvailable: () => Effect.succeed(true),
-			load: () => Effect.succeed(empty),
+			livePreviewAvailable: Effect.succeed(true),
+			load: Effect.succeed(empty),
 			previewAuthoringCandidate: () =>
 				Effect.sync(() => {
 					previewCalls += 1;

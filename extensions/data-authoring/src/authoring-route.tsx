@@ -674,7 +674,7 @@ export function AuthoringRoute(props: {
 	};
 
 	const refreshSessions = () => {
-		sessionListAction.run(props.client.listSessions(), {
+		sessionListAction.run(props.client.listSessions, {
 			onFailure: (cause) => setSessionNotice(Cause.pretty(cause)),
 			onSuccess: setSessions
 		});
@@ -736,7 +736,7 @@ export function AuthoringRoute(props: {
 		const preserveCurrent = state().status === "ready";
 		if (preserveCurrent) setIsReplacing(true);
 		else setState({ status: "loading" });
-		loadAction.run(choose ? props.client.chooseTable() : props.client.loadConfiguredTable(), {
+		loadAction.run(choose ? props.client.chooseTable : props.client.loadConfiguredTable, {
 			onFailure: (cause) => {
 				applyResult(
 					{
@@ -771,12 +771,12 @@ export function AuthoringRoute(props: {
 		});
 		catalogProgressSubscription.subscribe(
 			Stream.fromEffectSchedule(
-				props.client.getCatalogProgress(),
+				props.client.getCatalogProgress,
 				Schedule.spaced("250 millis")
 			),
 			{ onValue: setCatalogProgress }
 		);
-		catalogAction.run(props.client.loadConfiguredCatalog(), {
+		catalogAction.run(props.client.loadConfiguredCatalog, {
 			onFailure: (cause) => {
 				catalogProgressSubscription.cancel();
 				setCatalogState({
@@ -889,7 +889,7 @@ export function AuthoringRoute(props: {
 		}
 	);
 
-	const runSessionOperation = (effect: Effect.Effect<AuthoringSessionResult, unknown>): void => {
+	const runSessionOperation = <E,>(effect: Effect.Effect<AuthoringSessionResult, E>): void => {
 		if (isPersisting()) return;
 		const ownsView = captureSessionOwner();
 		setIsPersisting(true);

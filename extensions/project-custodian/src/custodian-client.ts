@@ -139,7 +139,7 @@ export class CustodianClientError extends Schema.TaggedError<
 }) {}
 
 export interface CustodianClientApi {
-	readonly configuredScan: () => Effect.Effect<CustodianRunResult, CustodianClientError>;
+	readonly configuredScan: Effect.Effect<CustodianRunResult, CustodianClientError>;
 	readonly prepare: (
 		intent: CustodianPrepareIntent
 	) => Effect.Effect<CustodianPrepareRunResult, CustodianClientError>;

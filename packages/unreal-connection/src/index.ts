@@ -98,7 +98,7 @@ export class UnrealCapabilityError extends Schema.TaggedError<
 export interface UnrealAuthoringConnection {
 	readonly endpoint: string;
 	readonly manifest: CompanionCapabilityManifest;
-	readonly listTableObjectPaths: () => Effect.Effect<readonly string[], UnrealConnectionError>;
+	readonly listTableObjectPaths: Effect.Effect<readonly string[], UnrealConnectionError>;
 	readonly getTableSnapshot: (
 		objectPath: string
 	) => Effect.Effect<AuthoringTableSnapshot, UnrealConnectionError>;
@@ -462,33 +462,30 @@ function decodeAuthoringResult<A, DecodeError>(
 	operation: string,
 	decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>
 ): Effect.Effect<A, UnrealConnectionError> {
-	const refusalChecked = effect.pipe(
-		Effect.flatMap((input) =>
-			isAuthoringEndpointError(input)
-				? Effect.fail(
-						new UnrealConnectionError({
-							code: input.code,
-							endpoint,
-							message: `${operation} refused (${input.code}): ${input.message}`,
-							operation,
-							// The producer refused before acting. Only a missing table may appear later.
-							retrySafe: input.code === "table_not_found",
-							...(input.code === "table_not_found"
-								? {
-										recovery:
-											"Refresh the table list; retry once the table exists in the editor.",
-										nextStep: "reconcile" as const
-									}
-								: {
-										recovery:
-											"The editor refused the request before changing anything. Correct it using the refusal code, then send it again.",
-										nextStep: "fix_input" as const
-									})
+	const refusalChecked = Effect.gen(function* () {
+		const input = yield* effect;
+		if (isAuthoringEndpointError(input))
+			return yield* new UnrealConnectionError({
+				code: input.code,
+				endpoint,
+				message: `${operation} refused (${input.code}): ${input.message}`,
+				operation,
+				// The producer refused before acting. Only a missing table may appear later.
+				retrySafe: input.code === "table_not_found",
+				...(input.code === "table_not_found"
+					? {
+							recovery:
+								"Refresh the table list; retry once the table exists in the editor.",
+							nextStep: "reconcile" as const
+						}
+					: {
+							recovery:
+								"The editor refused the request before changing anything. Correct it using the refusal code, then send it again.",
+							nextStep: "fix_input" as const
 						})
-					)
-				: Effect.succeed(input)
-		)
-	);
+			});
+		return input;
+	});
 	return decodeResult(refusalChecked, endpoint, operation, decode);
 }
 
@@ -658,13 +655,14 @@ export function connectUnrealAuthoring(
 		return {
 			endpoint,
 			manifest,
-			listTableObjectPaths: () =>
+			listTableObjectPaths: Effect.suspend(() =>
 				decodeAuthoringResult(
 					call("ListTableObjectPaths", {}, true),
 					endpoint,
 					"table list",
 					decodeAuthoringTableList
-				).pipe(Effect.map((result) => result.objectPaths)),
+				).pipe(Effect.map((result) => result.objectPaths))
+			),
 			getTableSnapshot: (objectPath) =>
 				decodeAuthoringResult(
 					call("GetTableSnapshot", { TableObjectPath: objectPath }, true),

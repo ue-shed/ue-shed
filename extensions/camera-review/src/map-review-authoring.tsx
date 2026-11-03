@@ -552,7 +552,7 @@ export function MapReviewAuthoring(props: {
 			liveCapabilitySubscription.cancel();
 			if (probe === undefined || active === undefined || !shouldPromote) return;
 			liveCapabilitySubscription.subscribe(
-				Stream.fromEffectSchedule(probe(), Schedule.spaced("2 seconds")).pipe(
+				Stream.fromEffectSchedule(probe, Schedule.spaced("2 seconds")).pipe(
 					Stream.filter((available) => available),
 					Stream.take(1)
 				),
@@ -662,7 +662,7 @@ export function MapReviewAuthoring(props: {
 		});
 	};
 	onSettled(() => {
-		resumeAction.run(props.client.authoringResume(), {
+		resumeAction.run(props.client.authoringResume, {
 			onFailure: () => undefined,
 			onSuccess: (result) => {
 				if (result.status === "ready") activate(result);

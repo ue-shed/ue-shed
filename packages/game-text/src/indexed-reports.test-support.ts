@@ -26,6 +26,7 @@ interface ReportTiming {
 	durationMs?: number;
 	workerStage?: string;
 	moduleLoadMs?: number;
+	reportTrace?: string;
 }
 const timings: ReportTiming[] = [];
 export const indexedReportDiagnostics = () => timings.slice();
@@ -53,7 +54,7 @@ function reportInWorker(input: string, timing: ReportTiming): string {
 		}
 	);
 	const { port1, port2 } = new MessageChannel();
-	const state = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 3);
+	const state = new SharedArrayBuffer(16 + 8192);
 	const completion = new Int32Array(state);
 	try {
 		worker.postMessage({ input, reply: port2, state }, [port2]);
@@ -86,6 +87,9 @@ function reportInWorker(input: string, timing: ReportTiming): string {
 		const stage = Atomics.load(completion, 1);
 		timing.workerStage = stage === 1 ? "loading modules" : stage === 2 ? "report" : "starting";
 		timing.moduleLoadMs = Atomics.load(completion, 2);
+		timing.reportTrace = new TextDecoder().decode(
+			new Uint8Array(state, 16, Atomics.load(completion, 3))
+		);
 		timing.durationMs = performance.now() - timing.started;
 		port1.close();
 	}

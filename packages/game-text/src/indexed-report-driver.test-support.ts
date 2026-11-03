@@ -23,6 +23,7 @@ import {
 } from "./index-refresh.js";
 import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { GameTextIndexBuilder } from "./index-builder.js";
+import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { LocalizationImportSource } from "./localization-import.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 
@@ -34,7 +35,11 @@ const Input = Schema.Struct({
 	document: Schema.optionalKey(GameTextRuleDocument),
 	options: Schema.optionalKey(LocalizationCheckOptions)
 });
-export async function indexedReport(contents: string): Promise<string> {
+export async function indexedReport(
+	contents: string,
+	trace: (stage: string) => void = () => {}
+): Promise<string> {
+	trace("decode input");
 	const input = Schema.decodeSync(Schema.fromJsonString(Input))(contents);
 	// Evidence is already schema-owned test input; its actual files are parsed again by the builder.
 	const files = input.evidence;
@@ -303,18 +308,29 @@ export async function indexedReport(contents: string): Promise<string> {
 	const report = await Effect.runPromise(
 		Effect.scoped(
 			Effect.gen(function* () {
+				trace("refresh start");
 				const model = yield* (yield* GameTextIndexRefresh).refresh({
 					projectRoot,
 					...(target ? { targetName: target.name } : undefined)
 				});
+				trace("refresh complete");
 				if (input.kind === "corpus") return yield* model.corpus;
 				if (input.kind === "localization")
 					return yield* model.localizationCheck(input.document, input.options);
 				if (!input.document) throw new Error("A source report needs its rule document.");
-				return yield* (yield* model.sourceQuality(input.document)).export("all");
-			})
-		).pipe(Effect.provide(layer))
+				trace("source quality start");
+				const quality = yield* model.sourceQuality(input.document);
+				trace("source quality export");
+				return yield* quality.export("all");
+			}).pipe(Effect.ensuring(Effect.sync(() => trace("body finished; releasing scope"))))
+		).pipe(
+			Effect.provide(layer),
+			Effect.provideService(GameTextIndexProgressReporter, (progress) =>
+				trace(progress.phase)
+			)
+		)
 	);
+	trace("scope released");
 	return JSON.stringify(report);
 }
 

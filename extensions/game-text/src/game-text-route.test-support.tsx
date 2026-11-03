@@ -1,4 +1,7 @@
-import { indexedTestReports } from "../../../packages/game-text/src/indexed-reports.test-support.js";
+import {
+	INDEXED_REPORT_FIXTURE_TIMEOUT_MS,
+	indexedTestReports
+} from "../../../packages/game-text/src/indexed-reports.test-support.js";
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { textQualityQuery } from "@ue-shed/game-text/corpus";
@@ -35,7 +38,7 @@ installGameTextRouteDiagnostics();
 
 // Quality reports run through the native index in an owned fixture worker. Keep the existing
 // budget for native fixture preparation and the complete browser interaction under CI load.
-vi.setConfig({ testTimeout: 20_000 });
+vi.setConfig({ testTimeout: INDEXED_REPORT_FIXTURE_TIMEOUT_MS });
 export const corpus: TextCorpus = {
 	coverage: {
 		discoveredPackages: 2,

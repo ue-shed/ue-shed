@@ -22,6 +22,8 @@ const directory = mkdtempSync(join(tmpdir(), "ue-shed-report-suite-"));
 const reports = new Map<string, unknown>();
 const timings: Array<{ kind: string; started: number; durationMs?: number }> = [];
 export const indexedReportDiagnostics = () => timings.slice();
+// Collection has no current test. Use the same finite budget as native-backed route fixtures.
+export const INDEXED_REPORT_FIXTURE_TIMEOUT_MS = 20_000;
 let worker: Worker | undefined;
 const terminations: Array<Promise<number>> = [];
 const Reply = Schema.Struct({
@@ -47,15 +49,19 @@ function reportInWorker(input: string): string {
 	const completion = new Int32Array(state);
 	try {
 		worker.postMessage({ input, reply: port2, state }, [port2]);
-		// Reuse the caller's configured test budget; do not extend any component deadline.
+		// Caller-thread error/exit listeners cannot run while Atomics.wait blocks this thread.
+		// Bound collection and disabled/invalid test deadlines as well as active test requests.
 		const timeout = TestRunner.getCurrentTest()?.timeout;
-		if (
-			Atomics.wait(completion, 0, 0, timeout && timeout > 0 ? timeout : undefined) ===
-			"timed-out"
-		) {
+		const waitMs =
+			timeout !== undefined && Number.isFinite(timeout) && timeout > 0
+				? timeout
+				: INDEXED_REPORT_FIXTURE_TIMEOUT_MS;
+		if (Atomics.wait(completion, 0, 0, waitMs) === "timed-out") {
 			terminations.push(worker.terminate());
 			worker = undefined;
-			throw new Error("The indexed report worker exceeded the test's existing timeout.");
+			throw new Error(
+				`The indexed report worker did not respond within ${waitMs} ms; it may have exited.`
+			);
 		}
 		const reply = receiveMessageOnPort(port1);
 		if (!reply) throw new Error("The indexed report worker completed without a response.");

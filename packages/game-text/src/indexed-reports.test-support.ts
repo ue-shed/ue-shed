@@ -1,7 +1,6 @@
 /// <reference types="node" />
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { MessageChannel, receiveMessageOnPort, Worker } from "node:worker_threads";
 import { Schema } from "effect";
@@ -14,11 +13,12 @@ import {
 import { TextQualityReport } from "./quality-schema.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import { TextCorpus } from "./schema.js";
+import { createIndexedReportDirectory } from "./indexed-report-directory.test-support.js";
 
 // One persistent index per immutable suite fixture, shared by every rule document and test.
 // The synchronous bridge keeps presentation fixtures usable at module initialization. A reusable
 // worker retains loaded modules; every request rebuilds its input and runs the scoped index path.
-const directory = mkdtempSync(join(tmpdir(), "ue-shed-report-suite-"));
+const directory = createIndexedReportDirectory();
 const reports = new Map<string, unknown>();
 interface ReportTiming {
 	kind: string;
@@ -27,6 +27,7 @@ interface ReportTiming {
 	workerStage?: string;
 	moduleLoadMs?: number;
 	reportTrace?: string;
+	temporaryDirectory?: string;
 }
 const timings: ReportTiming[] = [];
 export const indexedReportDiagnostics = () => timings.slice();
@@ -46,13 +47,20 @@ afterAll(async () => {
 });
 
 function reportInWorker(input: string, timing: ReportTiming): string {
-	worker ??= new Worker(
-		resolve("packages/game-text/src/indexed-report-worker.test-support.mjs"),
-		{
-			execArgv: [],
-			env: { ...process.env, UE_SHED_TELEMETRY_MODE: "disabled" }
-		}
-	);
+	if (!worker) {
+		const environment: NodeJS.ProcessEnv = {
+			...process.env,
+			UE_SHED_TELEMETRY_MODE: "disabled"
+		};
+		if (process.platform === "linux") environment.TMPDIR = directory;
+		worker = new Worker(
+			resolve("packages/game-text/src/indexed-report-worker.test-support.mjs"),
+			{
+				execArgv: [],
+				env: environment
+			}
+		);
+	}
 	const { port1, port2 } = new MessageChannel();
 	const state = new SharedArrayBuffer(16 + 8192);
 	const completion = new Int32Array(state);
@@ -109,7 +117,8 @@ export function indexedTestReports(corpus: TextCorpus, evidence?: LocalizationTa
 		if (!reports.has(key)) {
 			const timing: (typeof timings)[number] = {
 				kind,
-				started: performance.now()
+				started: performance.now(),
+				temporaryDirectory: directory
 			};
 			timings.push(timing);
 			const result = reportInWorker(

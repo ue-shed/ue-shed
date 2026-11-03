@@ -13,6 +13,7 @@ import type {
 	SavedAssetPackageTextRecord,
 	SavedAssetPackageTextEvent
 } from "@ue-shed/unreal-assets";
+import { AssetReaderLive } from "@ue-shed/unreal-assets";
 import { TextCorpus } from "./schema.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
 import { LocalizationCheckOptions } from "./localization-quality-schema.js";
@@ -21,7 +22,7 @@ import {
 	GameTextIndexSource,
 	gameTextIndexRefreshLayer
 } from "./index-refresh.js";
-import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+import { GameTextIndexBuilderLive } from "./native-index-builder.js";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { LocalizationImportSource } from "./localization-import.js";
@@ -285,6 +286,9 @@ export async function indexedReport(
 			})
 		)
 	).pipe(Layer.provide(LocalizationEvidenceNodeLive));
+	// Use the host's production builder for report fixtures. The reference writer's durable
+	// per-snapshot publications belong in explicit parity tests, not browser-interaction setup.
+	const nativeBuilder = GameTextIndexBuilderLive.pipe(Layer.provide(AssetReaderLive));
 	const builder = Layer.effect(
 		GameTextIndexBuilder,
 		Effect.map(GameTextIndexBuilder, (builder) =>
@@ -298,11 +302,11 @@ export async function indexedReport(
 					)
 			})
 		)
-	).pipe(Layer.provide(typeScriptIndexBuilderLayer));
+	).pipe(Layer.provide(nativeBuilder));
 	const layer = gameTextIndexRefreshLayer(join(input.directory, "cache")).pipe(
 		Layer.provide(source),
 		Layer.provide(builder),
-		Layer.provide(typeScriptIndexBuilderLayer),
+		Layer.provide(nativeBuilder),
 		Layer.provide(evidence)
 	);
 	const report = await Effect.runPromise(

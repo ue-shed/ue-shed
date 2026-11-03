@@ -25,7 +25,8 @@ registerHooks({
 let driver;
 let traceNative;
 channel("ue-shed.game-text-benchmark").subscribe((event) => {
-	if (event.stage === "tsFrameEncode") traceNative?.(`engine request ${event.action}`);
+	if (event.stage === "tsFrameEncode" && event.action !== undefined)
+		traceNative?.(`engine request ${event.action}`);
 });
 parentPort.on("message", async ({ input, reply, state }) => {
 	const completion = new Int32Array(state);

@@ -47,6 +47,7 @@ export const LocalizationErrorCode = Schema.Literals([
 	"malformed_ini",
 	"malformed_po",
 	"malformed_locmeta",
+	"malformed_locres",
 	"malformed_csv",
 	"limit_exceeded",
 	"file_missing",
@@ -426,6 +427,14 @@ export const LocalizationEvidenceRequest = LocalizationProjectRequest.pipe(
 );
 export type LocalizationEvidenceRequest = typeof LocalizationEvidenceRequest.Type;
 /**
+ * One culture's compiled resource for a discovered target. The path comes from the target's
+ * resolved outputs; a culture without a configured resource is reported as missing.
+ */
+export const LocalizationResourceRequest = LocalizationEvidenceRequest.pipe(
+	Schema.fieldsAssign({ culture: CultureCode })
+);
+export type LocalizationResourceRequest = typeof LocalizationResourceRequest.Type;
+/**
  * Target/config discovery failure with optional source indices. Discovery can return valid
  * targets alongside these diagnostics rather than discarding the whole project.
  */
@@ -537,6 +546,29 @@ export const LocalizationMeta = Schema.Struct({
 });
 export type LocalizationMeta = typeof LocalizationMeta.Type;
 /**
+ * One compiled translation: its text and the hash of the source string it was translated
+ * from. Unreal compares `sourceHash` with the current source to spot a stale translation.
+ */
+export const LocalizationResourceEntry = Schema.Struct({
+	namespace: TextNamespace,
+	key: TextKey,
+	sourceHash: Schema.Int.check(
+		Schema.isGreaterThanOrEqualTo(0),
+		Schema.isLessThanOrEqualTo(0xffff_ffff)
+	),
+	text: Schema.String
+});
+export type LocalizationResourceEntry = typeof LocalizationResourceEntry.Type;
+/**
+ * Decoded `.locres` versions 0 through 3 (legacy, compact, CRC32 and CityHash64 keyed). This
+ * is compiled output: what the game shows, which can lag the archives it was compiled from.
+ */
+export const LocalizationResource = Schema.Struct({
+	version: Schema.Literals([0, 1, 2, 3]),
+	entries: Schema.Array(LocalizationResourceEntry)
+});
+export type LocalizationResource = typeof LocalizationResource.Type;
+/**
  * Unreal word-count CSV projection with dated totals and per-culture counts. Counts are
  * non-negative; report history is retained rather than selecting only the newest row.
  */
@@ -595,6 +627,12 @@ export const ArchiveFileEvidence = fileEvidence(LocalizationArchive);
  * formatting; obtain a full PODocument before preparing edits.
  */
 export const POFileEvidence = fileEvidence(POEvidence);
+/**
+ * Compiled `.locres` read outcome with provenance or a sanitized failure. A missing resource
+ * is a failure, not an empty set of translations.
+ */
+export const ResourceFileEvidence = fileEvidence(LocalizationResource);
+export type ResourceFileEvidence = typeof ResourceFileEvidence.Type;
 /**
  * Versioned saved evidence for one target: manifest, per-culture archive/PO and optional
  * compiled reports. Each file has its own read outcome, so partial evidence remains

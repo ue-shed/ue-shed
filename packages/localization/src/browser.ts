@@ -24,6 +24,9 @@ export {
 	LocalizationLimits,
 	LocalizationManifest,
 	LocalizationMeta,
+	LocalizationResource,
+	LocalizationResourceEntry,
+	LocalizationResourceRequest,
 	LocalizationOutputPaths,
 	LocalizationProjectRequest,
 	LocalizationRecipe,
@@ -42,6 +45,7 @@ export {
 	POEntry,
 	POEvidence,
 	POFileEvidence,
+	ResourceFileEvidence,
 	POFormat,
 	POLine,
 	POParseOptions,
@@ -70,6 +74,7 @@ export {
 	projectPOEvidence,
 	serializePO
 } from "./po.js";
+export { parseLocres } from "./locres.js";
 export { parseLocmeta, parseWordCountCSV } from "./reports.js";
 export {
 	decodeLocalizationChangeSet,

@@ -11,8 +11,8 @@ has no Game Text dependency. It supports the committed Unreal 4.27, 5.7 and 5.8 
 
 The readers cover Dashboard target settings in `Config/DefaultEditor.ini`, authored and generated
 `Config/Localization/*.ini` recipes, version-1 manifests, version-2 archives, UTF-8 PO files in
-Unreal and Crowdin formats, `.locmeta` versions 0–2, and word-count CSV reports. They do not decode
-`.locres` or interpret conflict report text.
+Unreal and Crowdin formats, `.locmeta` versions 0–2, compiled `.locres` versions 0–3 and word-count
+CSV reports. They do not interpret conflict report text.
 
 ```ts
 import { Effect } from "effect";

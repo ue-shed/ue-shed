@@ -102,7 +102,8 @@ it("retains readers across refresh steps updating selected inputs and review", a
 				Effect.succeed({ schemaVersion: 1, targets: [authored], diagnostics: [] }),
 			read: () =>
 				Effect.die("Index refresh must not read whole localization files as objects."),
-			targets: () => Effect.die("Index refresh discovers target configuration directly.")
+			targets: () => Effect.die("Index refresh discovers target configuration directly."),
+			readResource: () => Effect.die("Index refresh does not read compiled resources.")
 		});
 		const builds = { localization: 0, packages: 0, joined: 0 };
 		const builder = Layer.effect(

@@ -11,16 +11,19 @@ import { LocalizationFileAccess, LocalizationFileAccessLive } from "./file-acces
 import { makeEvidenceProjection } from "./evidence-projection.js";
 import { parseArchive, parseManifest } from "./json-formats.js";
 import { parsePO, projectPOEvidence } from "./po.js";
+import { parseLocres } from "./locres.js";
 import { parseLocmeta, parseWordCountCSV } from "./reports.js";
 import {
 	LocalizationError,
 	LocalizationProjectRequest,
 	LocalizationEvidenceRequest,
+	LocalizationResourceRequest,
 	LocalizationTargetDiscovery,
 	LocalizationTargetEvidence,
 	LocalizationTargetsReport,
 	type FileProvenance,
-	type ManifestFileEvidence
+	type ManifestFileEvidence,
+	type ResourceFileEvidence
 } from "./schema.js";
 import { discoverLocalizationTargets } from "./targets.js";
 
@@ -39,6 +42,13 @@ export interface LocalizationEvidenceApi {
 	readonly read: (
 		request: LocalizationEvidenceRequest
 	) => Effect.Effect<LocalizationTargetEvidence, LocalizationError>;
+	/**
+	 * One culture's compiled `.locres` for a discovered target. File and decode failures are
+	 * returned as failed evidence; only an invalid request fails the Effect.
+	 */
+	readonly readResource: (
+		request: LocalizationResourceRequest
+	) => Effect.Effect<ResourceFileEvidence, LocalizationError>;
 }
 /**
  * Saved localization evidence service independent of Workbench and editor connectivity. Hosts
@@ -275,7 +285,37 @@ export const LocalizationEvidenceLive = Layer.effect(
 			};
 			return immutable(evidence);
 		});
-		return LocalizationEvidence.of({ discover, targets, read });
+		const readResource = Effect.fn("LocalizationEvidence.readResource")(function* (
+			input: LocalizationResourceRequest
+		) {
+			const request = yield* boundary(LocalizationResourceRequest, input);
+			const limits = limitsFor(request.limits);
+			const relativePath = request.target.outputPaths.resources[request.culture] ?? null;
+			const failed = (error: LocalizationError, provenance?: FileProvenance) => {
+				const evidence: FailedFileEvidence = { status: "failed", relativePath, error };
+				if (provenance !== undefined) Object.assign(evidence, { provenance });
+				return evidence;
+			};
+			if (relativePath === null) return failed(localizationError("file_missing"));
+			const file = yield* files
+				.read(request.projectRoot, relativePath, limits)
+				.pipe(Effect.result);
+			if (Result.isFailure(file)) return failed(file.failure);
+			const parsed = parseLocres(file.success.bytes, limits);
+			yield* Effect.annotateCurrentSpan({
+				"localization.culture": request.culture,
+				"localization.bytes": file.success.bytes.byteLength,
+				"localization.entries": Result.isSuccess(parsed) ? parsed.success.entries.length : 0
+			});
+			if (Result.isFailure(parsed)) return failed(parsed.failure, file.success.provenance);
+			const evidence: ResourceFileEvidence = {
+				status: "read",
+				provenance: file.success.provenance,
+				value: parsed.success
+			};
+			return immutable(evidence);
+		});
+		return LocalizationEvidence.of({ discover, targets, read, readResource });
 	})
 );
 

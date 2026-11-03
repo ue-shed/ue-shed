@@ -25,6 +25,7 @@ export function localizationError(code: LocalizationError["code"]): Localization
 		malformed_struct: regenerate,
 		malformed_ini: regenerate,
 		malformed_locmeta: regenerate,
+		malformed_locres: regenerate,
 		malformed_csv: regenerate,
 		target_not_found: regenerate,
 		limit_exceeded: "Reduce the input or explicitly increase the localization reader limits.",

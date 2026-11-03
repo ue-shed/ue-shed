@@ -11,9 +11,11 @@ import {
 	makeLocalizationFileAccessTestLayer
 } from "./file-access.js";
 import {
+	CultureCode,
 	defaultLocalizationLimits,
 	LocalizationTargetEvidence,
-	LocalizationTargetsReport
+	LocalizationTargetsReport,
+	ResourceFileEvidence
 } from "./schema.js";
 import {
 	LocalizationEvidence,
@@ -211,4 +213,40 @@ it.effect("preserves cancellation while reading through the file port", () =>
 		yield* Fiber.interrupt(fiber);
 		expect(yield* Deferred.isDone(released)).toBe(true);
 	})
+);
+
+it.effect("reads one culture's compiled resource, and reports a culture without one", () =>
+	Effect.gen(function* () {
+		const reader = yield* LocalizationEvidence;
+		const report = yield* reader.targets({ projectRoot });
+		const target = report.targets.find((item) => item.name === "FixtureGame");
+		if (target === undefined) throw new Error("Fixture target missing.");
+		const resource = yield* reader.readResource({
+			projectRoot,
+			target,
+			culture: CultureCode.make("de")
+		});
+		yield* Schema.decodeUnknownEffect(ResourceFileEvidence)(resource);
+		expect(resource.status).toBe("read");
+		if (resource.status === "read") {
+			expect(resource.provenance.relativePath).toBe(
+				"Content/Localization/FixtureGame/de/FixtureGame.locres"
+			);
+			expect(resource.value.version).toBe(3);
+			expect(resource.value.entries.length).toBeGreaterThan(0);
+		}
+		const missing = yield* reader.readResource({
+			projectRoot,
+			target: {
+				...target,
+				outputPaths: { ...target.outputPaths, resources: {} }
+			},
+			culture: CultureCode.make("de")
+		});
+		expect(missing).toMatchObject({
+			status: "failed",
+			relativePath: null,
+			error: { code: "file_missing" }
+		});
+	}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 );

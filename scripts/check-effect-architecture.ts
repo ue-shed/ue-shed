@@ -175,6 +175,9 @@ const approvedResourceAdapters = new Set([
 	// Bounded snapshot producer cancellation removes its abort listener in finally; the owning
 	// native build scope closes staging handles. Verified by native-index-lifecycle.integration.test.ts.
 	"packages/game-text/src/snapshot-file.ts",
+	// The fs.watch handle and its error listener are acquired and released together in
+	// Effect.acquireRelease, so they close with the watching scope; disk-watcher.test.ts pins it.
+	"packages/game-text/src/disk-watcher.ts",
 	// Ctrl+K, page-hide and the preference save timer belong to the Solid owner; onSettled cleanup
 	// removes them and flushes the pending save.
 	"extensions/game-text/src/game-text-query-route.tsx",

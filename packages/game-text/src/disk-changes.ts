@@ -1,8 +1,8 @@
-import { watch } from "node:fs";
 import { join, posix } from "node:path";
 import { LocalizationTargetName } from "@ue-shed/localization/browser";
 import type { GameTextContract } from "@ue-shed/protocol";
-import { Context, Duration, Effect, Layer, Queue, Ref, Schema, Stream, type Scope } from "effect";
+import { Duration, Effect, Queue, Ref, Schema, Stream } from "effect";
+import { DiskWatcher } from "./disk-watcher.js";
 import { TextCorpusPublicError } from "./schema.js";
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -98,46 +98,7 @@ export const DiskChangesState = Schema.Union([
 ]);
 export type DiskChangesState = typeof DiskChangesState.Type;
 
-/** One folder's change notification: the changed path relative to it, when the OS names one. */
-export interface DiskWatchListener {
-	readonly change: (relativePath: string | undefined) => void;
-	readonly error: (cause: unknown) => void;
-}
-
-/**
- * Recursive folder watching. Node's `fs.watch` in production; tests inject their own so they
- * can raise events and errors deterministically.
- */
-export class DiskWatcher extends Context.Service<
-	DiskWatcher,
-	{
-		/** Watches `folder` recursively until the scope closes; failures go to `listener.error`. */
-		readonly watch: (
-			folder: string,
-			listener: DiskWatchListener
-		) => Effect.Effect<void, never, Scope.Scope>;
-	}
->()("@ue-shed/game-text/DiskWatcher") {}
-
-/** `fs.watch(folder, { recursive: true })`. */
-export const DiskWatcherNodeLive = Layer.succeed(DiskWatcher, {
-	watch: (folder, listener) =>
-		Effect.acquireRelease(
-			Effect.sync(() => {
-				try {
-					const watcher = watch(folder, { recursive: true }, (_event, name) =>
-						listener.change(name === null ? undefined : String(name))
-					);
-					watcher.on("error", listener.error);
-					return watcher;
-				} catch (cause) {
-					listener.error(cause);
-					return undefined;
-				}
-			}),
-			(watcher) => Effect.sync(() => watcher?.close())
-		).pipe(Effect.asVoid)
-});
+export { DiskWatcher, DiskWatcherNodeLive, type DiskWatchListener } from "./disk-watcher.js";
 
 const PACKAGE_EXTENSIONS = new Set(["uasset", "umap"]);
 const SIDECAR_EXTENSIONS = new Set(["uexp", "ubulk", "uptnl"]);
@@ -199,6 +160,11 @@ export const watchedFolders = (files: Iterable<string>) => {
 	return folders;
 };
 
+/**
+ * What `watchDiskChanges` needs from its caller: how to check one page, which folders to watch,
+ * and when a published scan resets the answer. Hosts normally use the workspace's
+ * `watchDiskChanges`, which fills these in for the selected project.
+ */
 export interface DiskChangesWatchOptions<E> {
 	/** One `diskChanges` page for the watched project and target. */
 	readonly check: (request: {

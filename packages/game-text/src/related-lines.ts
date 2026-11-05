@@ -8,6 +8,7 @@ import {
 } from "./localization-schema.js";
 import { LocalizationTranslation } from "./localization-view.js";
 import {
+	MAX_TEXT_SECTION_ROWS,
 	TextCorpusPublicError,
 	TextOccurrence,
 	TextSectionRows,
@@ -31,13 +32,14 @@ export const RelatedLinesRequest = Schema.Struct({
 export type RelatedLinesRequest = typeof RelatedLinesRequest.Type;
 
 /**
- * A unit, as a search lists it, with its first places, and with a target its line's translations
- * as localization focus lists them. `complete` says every place is listed.
+ * A unit, as a search lists it, with its first places, up to the request's `pageSize`, and with a
+ * target its line's translations as localization focus lists them. `complete` says every place is
+ * listed.
  */
 export const RelatedUnit = Schema.Struct({
 	kind: Schema.Literal("unit"),
 	unit: TextUnitSearchResult,
-	occurrences: Schema.Array(TextOccurrence).check(Schema.isMaxLength(50)),
+	occurrences: Schema.Array(TextOccurrence).check(Schema.isMaxLength(MAX_TEXT_SECTION_ROWS)),
 	totalOccurrences: Count,
 	complete: Schema.Boolean,
 	/** With a target, the unit's line, when it has one. */

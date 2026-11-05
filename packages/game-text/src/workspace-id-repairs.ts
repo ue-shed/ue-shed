@@ -20,7 +20,7 @@ import {
 } from "./text-actions.js";
 import { prepareTextIdTableRepair, applyTextIdTableRepair } from "./id-repair-tables.js";
 import { stripPackageNamespace } from "@ue-shed/localization";
-import { MAX_TEXT_SECTION_ROWS } from "./schema.js";
+import { MAX_TEXT_SECTION_ROWS, type TextOccurrence } from "./schema.js";
 import type { GameTextWorkspaceApi } from "./workspace.js";
 import type {
 	GameTextWorkspaceFileHooks,
@@ -112,11 +112,68 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			});
 		return state.project.projectRoot;
 	});
+	const stale = () =>
+		new RepairError({
+			message: "A reviewed place is no longer in the current scan.",
+			recovery: "Rescan and review the fix again.",
+			retrySafe: true,
+			nextStep: "fix_input"
+		});
+	/**
+	 * Every place of a unit, a page at a time. The engine answers an unknown cursor with the first
+	 * page again, so a unit that changes between pages, or a page that adds nothing, is stale
+	 * rather than read forever; the pages are capped at what the first page's total needs.
+	 */
+	const unitPlaces = Effect.fn("GameText.idRepairs.unitPlaces")(function* (
+		unitId: TextIdRepairRequest["changes"][number]["unitId"]
+	) {
+		const places: TextOccurrence[] = [];
+		const ids = new Set<string>();
+		let cursor: TextOccurrence["id"] | undefined;
+		let total: number | undefined;
+		let pages = 0;
+		do {
+			const found = yield* host.workspace.focus({
+				id: unitId,
+				pageSize: MAX_TEXT_SECTION_ROWS,
+				...(cursor === undefined ? undefined : { occurrenceCursor: cursor })
+			});
+			if (found.status !== "found") return yield* stale();
+			const { focus } = found;
+			total ??= focus.totalOccurrences;
+			pages += 1;
+			// A page that repeats a place, or adds none while promising more, did not move on.
+			const repeated = focus.occurrences.some((item) => ids.has(item.id));
+			const stalled =
+				focus.occurrences.length === 0 && focus.nextOccurrenceCursor !== undefined;
+			if (
+				focus.totalOccurrences !== total ||
+				repeated ||
+				stalled ||
+				places.length + focus.occurrences.length > total ||
+				pages > Math.ceil(total / MAX_TEXT_SECTION_ROWS) + 1
+			)
+				return yield* stale();
+			for (const item of focus.occurrences) {
+				ids.add(item.id);
+				places.push(item);
+			}
+			cursor = focus.nextOccurrenceCursor;
+		} while (cursor !== undefined);
+		if (places.length !== total) return yield* stale();
+		yield* Effect.annotateCurrentSpan({
+			"idRepair.places": places.length,
+			"idRepair.pages": pages
+		});
+		return places;
+	});
 	const actions = Effect.fn("GameText.idRepairs.resolve")(function* (
 		request: TextIdRepairRequest
 	) {
 		const root = yield* selected(request.projectKey);
 		const seen = new Set<string>();
+		// Each unit is read once, however many of its places the proposal edits.
+		const units = new Map<string, readonly TextOccurrence[]>();
 		const output = [];
 		for (const change of request.changes) {
 			const expected = change.occurrence;
@@ -129,21 +186,9 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 					nextStep: "fix_input"
 				});
 			seen.add(key);
-			// The unit's first 500 places, in one read.
-			const found = yield* host.workspace.focus({
-				id: change.unitId,
-				pageSize: MAX_TEXT_SECTION_ROWS
-			});
-			if (
-				found.status !== "found" ||
-				!found.focus.occurrences.some((item) => sameRepairOccurrence(item, expected))
-			)
-				return yield* new RepairError({
-					message: "A reviewed place is no longer in the current scan.",
-					recovery: "Rescan and review the fix again.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				});
+			const places = units.get(change.unitId) ?? (yield* unitPlaces(change.unitId));
+			units.set(change.unitId, places);
+			if (!places.some((item) => sameRepairOccurrence(item, expected))) return yield* stale();
 			const unsupported = textIdRepairSupport(expected, change.edit);
 			if (unsupported !== undefined || expected.identity.status !== "resolved")
 				return yield* new RepairError({

@@ -83,23 +83,58 @@ impl Records {
             packages,
         })
     }
-    fn range(&self, name: &str, row: usize) -> Result<Range<usize>> {
-        require(row < self.packages, "package row bounds")?;
-        let offset = if name.starts_with("occurrence.") || name.starts_with("copy.") {
-            "package.occurrence_start"
-        } else if name.starts_with("gap.") {
-            "package.gap_start"
-        } else if name.starts_with("missing.") {
-            "package.missing_start"
-        } else {
-            return Ok(row..row + 1);
+    /// The package offsets an extent's values are ranged by; a package column has none.
+    fn starts(&self, extent: Extent) -> Result<Option<&[u32]>> {
+        let offset = match extent {
+            Extent::Package => return Ok(None),
+            Extent::Occurrence | Extent::Copy => "package.occurrence_start",
+            Extent::Gap => "package.gap_start",
+            Extent::Missing => "package.missing_start",
         };
-        let starts = &self.columns.get(offset).ok_or("package offsets")?.1;
-        let mut range = starts[row] as usize..starts[row + 1] as usize;
-        if name.starts_with("copy.") {
-            range = self.copies[range.start]..self.copies[range.end];
+        Ok(Some(
+            self.columns
+                .get(offset)
+                .ok_or("package offsets")?
+                .1
+                .as_slice(),
+        ))
+    }
+    /// A package row's values in a column of `extent`, given that extent's `starts`.
+    fn span(&self, extent: Extent, starts: Option<&[u32]>, row: usize) -> Range<usize> {
+        let Some(starts) = starts else {
+            return row..row + 1;
+        };
+        let range = starts[row] as usize..starts[row + 1] as usize;
+        if matches!(extent, Extent::Copy) {
+            self.copies[range.start]..self.copies[range.end]
+        } else {
+            range
         }
-        Ok(range)
+    }
+}
+
+/// What a package column's values are counted per: package, occurrence, copy, gap or missing key.
+#[derive(Clone, Copy)]
+enum Extent {
+    Package,
+    Occurrence,
+    Copy,
+    Gap,
+    Missing,
+}
+impl Extent {
+    fn of(name: &str) -> Self {
+        if name.starts_with("occurrence.") {
+            Self::Occurrence
+        } else if name.starts_with("copy.") {
+            Self::Copy
+        } else if name.starts_with("gap.") {
+            Self::Gap
+        } else if name.starts_with("missing.") {
+            Self::Missing
+        } else {
+            Self::Package
+        }
     }
 }
 
@@ -219,12 +254,30 @@ fn add_garbage(store: &mut Store, old: &Value, next: &Value) -> Result<()> {
 /// record of the next shard: a retained row of the previous shard, or a record of the input
 /// file. A shard with no retained row (one the store doesn't hold, or one in an older column
 /// format) is written from its file alone.
+#[cfg(test)]
 pub(crate) fn publish(
     store: &mut Store,
     inputs: &[PackageInput],
     removed: &[String],
 ) -> Result<Vec<Value>> {
+    publish_timed(store, inputs, removed, &mut Vec::new())
+}
+
+/// `publish`, adding each stage's seconds to `stages`.
+pub(crate) fn publish_timed(
+    store: &mut Store,
+    inputs: &[PackageInput],
+    removed: &[String],
+    stages: &mut Vec<(&'static str, f64)>,
+) -> Result<Vec<Value>> {
     let _span = crate::scan_timings::Span::new("package_delta.publish");
+    let mut clock = std::time::Instant::now();
+    let mut charge = |stage: &'static str, totals: &mut BTreeMap<&'static str, f64>| {
+        let now = std::time::Instant::now();
+        *totals.entry(stage).or_default() += (now - clock).as_secs_f64();
+        clock = now;
+    };
+    let mut totals = BTreeMap::new();
     for input in inputs {
         require(
             store.root["active"][&input.name].as_str() == input.previous_key.as_deref(),
@@ -261,6 +314,7 @@ pub(crate) fn publish(
         .into_iter()
         .zip(intern_across(store, files, bounded)?)
         .collect::<BTreeMap<_, _>>();
+    charge("publish.strings", &mut totals);
     let mut records = Vec::new();
     for (index, input) in inputs.iter().enumerate() {
         if let Some(record) = store.root["layers"].get(&input.key).cloned() {
@@ -318,6 +372,7 @@ pub(crate) fn publish(
             }
             _ => None,
         };
+        charge("publish.previous", &mut totals);
         let new = authored(
             &input.file,
             &maps.remove(&index).ok_or("uninterned package input")?,
@@ -344,60 +399,81 @@ pub(crate) fn publish(
                 }
             })
             .collect::<Result<Vec<_>>>()?;
-        let mut paths = BTreeSet::new();
-        let mut replacements = BTreeSet::new();
+        let mut paths = Vec::with_capacity(selected.len());
+        let mut replacements = vec![false; new.packages];
+        let mut replaced = 0;
         for (records, row) in &selected {
             require(*row < records.packages, "replacement package row bounds")?;
-            require(
-                paths.insert(records.columns["package.path"].1[*row]),
-                "duplicate replacement package path",
-            )?;
-            if std::ptr::eq(*records, &new) {
-                replacements.insert(*row);
+            paths.push(records.columns["package.path"].1[*row]);
+            if std::ptr::eq(*records, &new) && !std::mem::replace(&mut replacements[*row], true) {
+                replaced += 1;
             }
         }
+        paths.sort_unstable();
         require(
-            replacements.len() == new.packages,
+            paths.windows(2).all(|pair| pair[0] != pair[1]),
+            "duplicate replacement package path",
+        )?;
+        require(
+            replaced == new.packages,
             "unused replacement package records",
         )?;
+        // Each column resolves its offsets once, not once per row.
         let mut output = Vec::new();
         for (name, (domain, _)) in &new.columns {
-            let offset = match name.as_str() {
-                "package.occurrence_start" => Some("occurrence.source"),
-                "package.gap_start" => Some("gap.reason"),
-                "package.missing_start" => Some("missing.key"),
+            let counted = match name.as_str() {
+                "package.occurrence_start" => Some(Extent::Occurrence),
+                "package.gap_start" => Some(Extent::Gap),
+                "package.missing_start" => Some(Extent::Missing),
                 _ => None,
             };
-            let mut values = Vec::<u32>::new();
-            if let Some(field) = offset {
+            let extent = counted.unwrap_or(Extent::of(name));
+            let new_starts = new.starts(extent)?;
+            let old_starts = match &old {
+                Some(old) => old.starts(extent)?,
+                None => None,
+            };
+            let mut values = Vec::<u32>::with_capacity(selected.len() + 1);
+            if counted.is_some() {
                 values.push(0);
+                let mut end = 0u32;
                 for (records, row) in &selected {
-                    let end = values
-                        .last()
-                        .copied()
-                        .ok_or("replacement offset")?
-                        .checked_add(u32::try_from(records.range(field, *row)?.len())?)
+                    let row_starts = if std::ptr::eq(*records, &new) {
+                        new_starts
+                    } else {
+                        old_starts
+                    };
+                    end = end
+                        .checked_add(u32::try_from(records.span(extent, row_starts, *row).len())?)
                         .ok_or("replacement offset overflow")?;
                     values.push(end);
                 }
             } else {
+                let new_values = &new.columns[name].1;
+                let old_values = old.as_ref().map(|old| &old.columns[name].1);
                 for (records, row) in &selected {
-                    let range = records.range(name, *row)?;
+                    let (row_starts, source) = if std::ptr::eq(*records, &new) {
+                        (new_starts, new_values)
+                    } else {
+                        (old_starts, old_values.ok_or("previous package column")?)
+                    };
                     values.extend_from_slice(
-                        records.columns[name]
-                            .1
-                            .get(range)
+                        source
+                            .get(records.span(extent, row_starts, *row))
                             .ok_or("package value range")?,
                     );
                 }
             }
             output.push((name.clone(), domain.clone(), values));
         }
+        charge("publish.splice", &mut totals);
         let next =
             store.prepare_global(&input.name, &input.key, &output, &[], &BTreeMap::new(), &[])?;
+        charge("publish.encode", &mut totals);
         if let Some(record) = &previous {
             add_garbage(store, record, &next)?;
         }
+        charge("publish.garbage", &mut totals);
         records.push(next);
     }
     for name in removed {
@@ -407,11 +483,13 @@ pub(crate) fn publish(
             .remove(name);
     }
     store.publish_root()?;
+    charge("publish.root", &mut totals);
+    stages.extend(totals);
     Ok(records)
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::snapshot::{Writer, string_block, u32_bytes};
     use crate::store::{Configuration, dictionary_bytes, token};
@@ -570,7 +648,11 @@ mod tests {
     }
 
     /// A shard snapshot of `packages` (path, signature, sources), in the given (path) order.
-    fn shard(directory: &Path, key: &str, packages: &[(String, String, Vec<String>)]) -> PathBuf {
+    pub(crate) fn shard(
+        directory: &Path,
+        key: &str,
+        packages: &[(String, String, Vec<String>)],
+    ) -> PathBuf {
         let file = directory.join(format!("{key}.snapshot"));
         let mut writer = Writer::new(&directory.join(format!("{}.payload", token()))).unwrap();
         let mut order = Vec::new();
@@ -629,7 +711,7 @@ mod tests {
         file
     }
 
-    fn package(shard: usize, name: &str, source: &str) -> (String, String, Vec<String>) {
+    pub(crate) fn package(shard: usize, name: &str, source: &str) -> (String, String, Vec<String>) {
         (
             format!("Content/S{shard:03}/{name}.uasset"),
             format!("{name}-signature"),

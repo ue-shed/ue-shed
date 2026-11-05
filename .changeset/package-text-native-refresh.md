@@ -16,7 +16,8 @@ Progress reports reads apart from reuse. `package_read` ("Reading changed packag
 from the index without reading them. `package_update` ("Updating package text") covers the
 in-place update; `package_publish` stays for a shard set written again.
 
-`publish_packages` (uasset-io 1.22) accepts `rowsFile`, the rows as a file of little-endian
-32-bit integers, and an input without `previousKey` for a shard the index doesn't hold yet. The
-native writer interns each string domain once across a request, so a change to every shard fits
-the dictionary's 256 segments.
+uasset-io 1.22 adds `compare_packages`, which compares a refresh's changed shards with the index
+in the native writer, so unchanged entries no longer cross into JavaScript. `publish_packages`
+accepts `rowsFile`, the rows as a file of little-endian 32-bit integers, and an input without
+`previousKey` for a shard the index doesn't hold yet. The native writer interns each string
+domain once across a request, so a change to every shard fits the dictionary's 256 segments.

@@ -252,6 +252,17 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				);
 			return { ...result.point, stageSeconds: result.stageSeconds };
 		}),
+		comparePackages: Effect.fn("NativeIndexBuilder.comparePackages")(function* (request) {
+			const result = yield* command({ action: "compare_packages", configuration, request });
+			if (!result.comparison)
+				return yield* Effect.fail(
+					unavailable(
+						"native-package-comparison",
+						new Error("The writer returned no comparison.")
+					)
+				);
+			return result.comparison;
+		}),
 		planPackages: Effect.fn("NativeIndexBuilder.planPackages")(function* (request) {
 			const result = yield* command({ action: "plan_packages", configuration, request });
 			if (!result.plan)
@@ -262,33 +273,17 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		}),
 		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
 			function* (entries, removedNames) {
-				const inputs = [];
-				for (const entry of entries) {
-					// Rows cross as a file of little-endian 32-bit integers, not in the request.
-					const rowsFile = join(stage, `${++sequence}.rows`);
-					const bytes = Buffer.allocUnsafe(entry.rows.length * 4);
-					for (let row = 0; row < entry.rows.length; row++)
-						bytes.writeInt32LE(entry.rows[row]!, row * 4);
-					yield* io("native-index-stage", (signal) =>
-						writeFile(rowsFile, bytes, { signal })
-					);
-					inputs.push({
-						name: entry.name,
-						key: entry.key,
-						...(entry.previousKey === undefined
-							? undefined
-							: { previousKey: entry.previousKey }),
-						file: entry.stagedFile,
-						rowsFile
-					});
-				}
-				yield* Effect.annotateCurrentSpan({
-					"package-text.publish.shards": inputs.length,
-					"package-text.publish.rows": entries.reduce(
-						(sum, entry) => sum + entry.rows.length,
-						0
-					)
-				});
+				// Rows cross as files, not in the request, so every shard fits one request.
+				const inputs = entries.map((entry) => ({
+					name: entry.name,
+					key: entry.key,
+					...(entry.previousKey === undefined
+						? undefined
+						: { previousKey: entry.previousKey }),
+					file: entry.stagedFile,
+					rowsFile: entry.rowsFile
+				}));
+				yield* Effect.annotateCurrentSpan({ "package-text.publish.shards": inputs.length });
 				const result = yield* command({
 					action: "publish_packages",
 					configuration,

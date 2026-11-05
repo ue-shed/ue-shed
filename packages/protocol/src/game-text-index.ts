@@ -129,6 +129,21 @@ export const GameTextIndexPackageReplacement = Schema.Struct({
 	removedNames: Schema.optionalKey(Schema.Array(PackageLayerName).check(Schema.isMaxLength(256)))
 });
 /**
+ * Added in uasset-io 1.22: compares a package-text refresh's changed shards with the index and
+ * writes each shard's rows and the changed entries to `outputDirectory`.
+ */
+export const GameTextIndexPackageComparison = Schema.Struct({
+	action: Schema.Literal("compare_packages"),
+	...Configuration,
+	request: Schema.Struct({
+		format: Text,
+		policyJson: Schema.String,
+		planFile: Text,
+		groups: Schema.Array(Natural).check(Schema.isMaxLength(256)),
+		outputDirectory: Text
+	})
+});
+/**
  * The reader plans a package-text refresh from a Project Index Catalog generation and writes the
  * changed shards' entries to `planFile`; the request names no packages.
  */
@@ -233,6 +248,7 @@ export const GameTextIndexReadPoint = Schema.Struct({
 export const GameTextIndexBuildRequest = Schema.Union([
 	...GameTextIndexPreviousBuildRequest.members,
 	GameTextIndexPackageReplacement,
+	GameTextIndexPackageComparison,
 	GameTextIndexPackagePlan,
 	GameTextIndexCodeLayer,
 	GameTextIndexReadPoint
@@ -346,6 +362,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		"status",
 		"publish",
 		"publish_packages",
+		"compare_packages",
 		"plan_packages",
 		"publish_code",
 		"read_point",
@@ -387,6 +404,20 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 			removed: Schema.Array(Name),
 			packages: Natural,
 			firstKey: Name
+		})
+	),
+	comparison: Schema.optionalKey(
+		Schema.Struct({
+			shards: Schema.Array(
+				Schema.Struct({
+					group: Natural,
+					previousKey: Schema.optionalKey(Name),
+					current: Schema.Boolean,
+					retained: Natural,
+					changed: Natural,
+					selected: Natural
+				})
+			)
 		})
 	),
 	localization: Schema.optionalKey(

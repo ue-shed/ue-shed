@@ -647,6 +647,15 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
                     "publish_packages requires uasset-io v1.16".into(),
                 ));
             }
+            if matches!(
+                build,
+                game_text_index::builder::BuildRequest::ComparePackages { .. }
+            ) && request.contract.version.minor < 22
+            {
+                return Err(ProtocolError(
+                    "compare_packages requires uasset-io v1.22".into(),
+                ));
+            }
             if let game_text_index::builder::BuildRequest::PublishPackages { inputs, .. } = build
                 && inputs
                     .iter()

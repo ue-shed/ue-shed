@@ -207,12 +207,17 @@ comparing. Graphs, nodes, pins, variables and components pair by saved identity,
 renumbered nodes are counted rather than listed. Older workers reject the operation before
 acceptance.
 
-Minor version 1.22 lets a `publish_packages` input name its rows in `rowsFile`, a file of
-little-endian 32-bit integers, in place of `rows`, and omit `previousKey` for a shard the index
-doesn't hold yet (all its rows then select records of its `file`). A refresh that changes every
-package shard then sends one bounded request and still publishes all shards in one root
+Minor version 1.22 adds `compare_packages` and extends `publish_packages`. `compare_packages`
+compares a refresh's changed shards, given as a plan file (one `{group, expected}` line per shard),
+with the shards the index holds. It writes each shard's rows (`{group}.rows`, little-endian 32-bit
+integers: a held row, or -1 minus the index of a changed entry) and the changed entries
+(`changed.ndjson`, plan-file lines) to `outputDirectory`. It reports per shard whether the held
+records are `current` (same format and audience policy), and how many entries it retained,
+changed and must read. A `publish_packages` input may name its rows in `rowsFile` in place of
+`rows`, and may omit `previousKey` for a shard the index doesn't hold yet. A refresh that changes
+every package shard then sends one bounded request and still publishes all shards in one root
 publication. Rust interns each string domain once across a request's input files. Older workers
-reject either form before acceptance.
+reject these forms before acceptance.
 
 ### Active package input budget
 

@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, open, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Stream } from "effect";
+import type { GameTextContract } from "@ue-shed/protocol";
+import { Effect, Schema, Stream } from "effect";
 import type { PackageTextRefreshInput, PackageTextShardEntries } from "./package-text-layer.js";
 import type { PackageTextStored } from "./package-text-columns.js";
-import type { SharedIndexReader, SharedIndexWriter } from "./shared-index.js";
+import type { SharedIndexWriter } from "./shared-index.js";
 import { snapshotFailure } from "./snapshot-format.js";
 import {
 	packageTextAudienceRules,
@@ -12,175 +12,111 @@ import {
 	preparePackageTextSnapshots,
 	type PackageTextSnapshots
 } from "./package-text-native.js";
-import { encodeWtf8 } from "./wtf8.js";
-import { HostSliceClock } from "./host-slices.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import type { StageClock } from "./stage-clock.js";
 
-/** A package entry of a shard: its path, inventory signature and whether it is read. */
-interface ShardEntry {
-	readonly path: string;
-	readonly signature: string;
-	readonly selected: boolean;
-}
+/** One shard's entries in a plan file, as the writer's planner and comparison write them. */
+export const PackageTextPlanLine = Schema.fromJsonString(
+	Schema.Struct({
+		group: Schema.Number,
+		expected: Schema.Array(
+			Schema.Struct({
+				path: Schema.String,
+				signature: Schema.String,
+				selected: Schema.Boolean
+			})
+		)
+	})
+);
+type PlanEntry = (typeof PackageTextPlanLine.Type)["expected"][number];
 
-/** A shard's identity columns as the index holds them, in path order. */
-interface HeldShard {
-	readonly paths: readonly string[];
-	readonly signatures: readonly string[];
-	/** `package.status` per row; 2 is a package stored without reading it. */
-	readonly statuses: Uint32Array;
-}
-
-const heldShard = (reader: SharedIndexReader, name: string) =>
-	Effect.scoped(
-		Effect.gen(function* () {
-			const layer = yield* reader.layer(name);
-			const paths = yield* layer.section("package.path");
-			const signatures = yield* layer.section("package.signature");
-			const statuses = yield* layer.section("package.status");
-			if (
-				!(paths instanceof Uint32Array) ||
-				!(signatures instanceof Uint32Array) ||
-				!(statuses instanceof Uint32Array) ||
-				paths.length !== signatures.length ||
-				paths.length !== statuses.length
-			)
-				return yield* Effect.fail(
-					snapshotFailure(name, "Invalid package identity columns")
-				);
-			return {
-				paths: yield* layer.strings("paths", [...paths]),
-				signatures: yield* layer.strings("identity", [...signatures]),
-				statuses: Uint32Array.from(statuses)
-			} satisfies HeldShard;
-		})
-	);
-
-/**
- * The key a shard's entries give, as `PackageTextSelectionBuilder` and the writer's planner
- * compute it: the format and audience policy, then each entry in path order.
- */
-const shardKey = (format: string, policy: string, group: number, entries: Iterable<ShardEntry>) => {
-	const hash = createHash("sha256").update(format).update(policy);
-	for (const { path, signature, selected } of entries)
-		hash.update(JSON.stringify([path, signature, selected]));
-	return `${format}:${group}:${hash.digest("hex")}`;
-};
-function* heldEntries(held: HeldShard): Generator<ShardEntry> {
-	for (let row = 0; row < held.paths.length; row++)
-		yield {
-			path: held.paths[row]!,
-			signature: held.signatures[row]!,
-			selected: held.statuses[row] !== 2
-		};
-}
+const stagingFailure = (cause: unknown) =>
+	snapshotFailure("package-text.stage", "The package text staging operation failed.", cause);
 const group = (name: string) => Number(name.slice("package-text.".length));
 
-/**
- * Whether the index's package shards hold records encoded under this format and audience policy.
- * Every shard key includes both, and a refresh publishes all changed shards at once, so a policy
- * change changes every shard's key in one refresh: all held shards share one policy, and one
- * shard's key, recomputed from its own stored entries, tells it.
- */
-export const packageTextEncodingCurrent = Effect.fn("PackageText.encodingCurrent")(function* (
-	reader: SharedIndexReader,
-	name: string,
-	format: string,
-	policy: string
-) {
-	const previousKey = reader.manifest.active[name];
-	if (!previousKey?.startsWith(`${format}:`)) return false;
-	const held = yield* heldShard(reader, name);
-	return shardKey(format, policy, group(name), heldEntries(held)) === previousKey;
-});
-
-/** One changed shard: rows over its previous records and its changed entries' records. */
-interface ShardChange {
-	readonly name: string;
-	readonly key: string;
-	readonly previousKey: string | undefined;
-	/** Per next record: a previous row, or -1 - its index in `changed`. */
-	readonly rows: Int32Array;
-	/** The changed entries in path order: the order of the converted snapshot's records. */
-	readonly changed: readonly ShardEntry[];
-	readonly retained: number;
+/** A refresh's changed shards compared with the index, and the directory holding their rows. */
+export interface PackageTextComparison {
+	readonly shards: GameTextContract.PackageTextComparison["shards"];
+	readonly directory: string;
 }
 
 /**
- * Compares a changed shard's planned entries with the records the index holds. Only a held shard
- * in the current encoding is retained from; any other shard has no retained row, so each of its
- * entries is converted again.
+ * Compares the changed shards with the index in the native writer, which writes each shard's
+ * rows and changed entries to a scoped directory. The writer's plan file is compared as it is;
+ * a plan made here is written out first.
  */
-const compareShard = Effect.fn("PackageText.compareShard")(function* (
-	shard: PackageTextShardEntries,
-	reader: SharedIndexReader,
-	format: string,
-	clock: HostSliceClock
-) {
-	const previousKey = reader.manifest.active[shard.name];
-	const held = previousKey?.startsWith(`${format}:`)
-		? yield* heldShard(reader, shard.name)
-		: undefined;
-	const byPath = new Map<string, number>();
-	if (held) for (let row = 0; row < held.paths.length; row++) byPath.set(held.paths[row]!, row);
-	const rows = new Int32Array(shard.entries.length);
-	const changed: ShardEntry[] = [];
-	let retained = 0;
-	let previous: Uint8Array | undefined;
-	for (let index = 0; index < shard.entries.length; index++) {
-		const { entry, selected } = shard.entries[index]!;
-		const row = byPath.get(entry.path);
-		if (
-			held &&
-			row !== undefined &&
-			held.signatures[row] === entry.signature &&
-			selected === (held.statuses[row] !== 2)
-		) {
-			rows[index] = row;
-			retained++;
-		} else {
-			// The reader writes a shard's records in path byte order; these rows assume it.
-			const bytes = encodeWtf8(entry.path);
-			if (previous !== undefined && Buffer.compare(previous, bytes) >= 0)
-				return yield* Effect.fail(
-					snapshotFailure("package-text.plan", "Shard entries are out of path order")
-				);
-			previous = bytes;
-			rows[index] = -1 - changed.length;
-			changed.push({ path: entry.path, signature: entry.signature, selected });
-		}
-		if (clock.step()) yield* Effect.yieldNow;
+export const comparePackageText = Effect.fn("PackageText.compare")(function* <E>(
+	plan: {
+		readonly changed: readonly { readonly name: string }[];
+		/** The writer's plan file, when the writer planned. */
+		readonly file: string | undefined;
+		readonly entries: Effect.Effect<readonly PackageTextShardEntries[], E>;
+	},
+	context: {
+		readonly compare: NonNullable<SharedIndexWriter["comparePackages"]>;
+		readonly stagingRoot: string;
+		readonly format: string;
+		readonly policyJson: string;
 	}
-	return {
-		name: shard.name,
-		key: shard.key,
-		previousKey,
-		rows,
-		changed,
-		retained
-	} satisfies ShardChange;
+) {
+	const directory = yield* Effect.acquireRelease(
+		Effect.tryPromise({
+			try: async () => {
+				await mkdir(context.stagingRoot, { recursive: true });
+				return mkdtemp(join(context.stagingRoot, "package-delta-"));
+			},
+			catch: stagingFailure
+		}),
+		(path) => Effect.promise(() => rm(path, { recursive: true, force: true }))
+	);
+	let planFile = plan.file;
+	if (planFile === undefined) {
+		const shards = yield* plan.entries;
+		const file = join(directory, "plan.ndjson");
+		yield* Effect.tryPromise({
+			try: async () => {
+				const handle = await open(file, "wx");
+				try {
+					for (const shard of shards)
+						await handle.write(
+							`${JSON.stringify({
+								group: group(shard.name),
+								expected: shard.entries.map(({ entry, selected }) => ({
+									path: entry.path,
+									signature: entry.signature,
+									selected
+								}))
+							})}\n`
+						);
+				} finally {
+					await handle.close();
+				}
+			},
+			catch: stagingFailure
+		});
+		planFile = file;
+	}
+	const comparison = yield* context.compare({
+		format: context.format,
+		policyJson: context.policyJson,
+		planFile,
+		groups: plan.changed.map((shard) => group(shard.name)),
+		outputDirectory: join(directory, "compared")
+	});
+	return { shards: comparison.shards, directory } satisfies PackageTextComparison;
 });
 
 /**
  * Converts the changed records into one snapshot per shard with the paired reader, in batches
  * that bound each request. Records go through files; entries that weren't read are written from
- * the inventory alone.
+ * the inventory alone. A shard without changed entries gets an empty snapshot.
  */
 const convertChanges = Effect.fn("PackageText.convertChanges")(function* (
-	changes: readonly ShardChange[],
+	shards: PackageTextSnapshots["shards"],
 	records: ReadonlyMap<string, PackageTextStored>,
 	directory: string
 ) {
-	const snapshots = new Map<string, string>();
-	const shards: PackageTextSnapshots["shards"] = changes.map((change) => ({
-		group: group(change.name),
-		expected: change.changed.map(({ path, signature, selected }) => ({
-			path,
-			signature,
-			selected
-		}))
-	}));
+	const snapshots = new Map<number, string>();
 	const batches = packageTextSnapshotBatches(shards);
 	yield* Effect.annotateCurrentSpan({ "package-text.convert.batches": batches.length });
 	for (const [index, batch] of batches.entries()) {
@@ -206,12 +142,7 @@ const convertChanges = Effect.fn("PackageText.convertChanges")(function* (
 					await file.close();
 				}
 			},
-			catch: (cause) =>
-				snapshotFailure(
-					"package-text.stage",
-					"The package text staging operation failed.",
-					cause
-				)
+			catch: stagingFailure
 		});
 		yield* preparePackageTextSnapshots({
 			projectRoot: batchDirectory,
@@ -228,10 +159,7 @@ const convertChanges = Effect.fn("PackageText.convertChanges")(function* (
 			}
 		});
 		for (const shard of batch)
-			snapshots.set(
-				`package-text.${shard.group}`,
-				join(batchDirectory, `${shard.group}.snapshot`)
-			);
+			snapshots.set(shard.group, join(batchDirectory, `${shard.group}.snapshot`));
 	}
 	return snapshots;
 });
@@ -245,36 +173,44 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 	input: PackageTextRefreshInput<E, R>,
 	plan: {
 		readonly packages: number;
-		readonly shards: readonly PackageTextShardEntries[];
+		readonly changed: readonly { readonly name: string; readonly key: string }[];
 		readonly removed: readonly string[];
-		readonly format: string;
 	},
+	comparison: PackageTextComparison,
 	context: {
-		readonly reader: SharedIndexReader;
 		readonly writer: SharedIndexWriter;
 		readonly replace: NonNullable<SharedIndexWriter["replacePackages"]>;
-		readonly stagingRoot: string;
 		readonly stages: StageClock;
 	}
 ) {
-	const { reader, writer, replace, stages } = context;
+	const { writer, replace, stages } = context;
 	const report = yield* GameTextIndexProgressReporter;
-	const clock = new HostSliceClock();
-	const changes: ShardChange[] = [];
-	for (const shard of plan.shards)
-		changes.push(yield* compareShard(shard, reader, plan.format, clock));
-	const requests = new Map<string, string>();
-	let retained =
-		plan.packages - plan.shards.reduce((sum, shard) => sum + shard.entries.length, 0);
-	for (const change of changes) {
-		retained += change.retained;
-		for (const entry of change.changed)
-			if (entry.selected) requests.set(entry.path, entry.signature);
+	const compared = join(comparison.directory, "compared");
+	const changedByGroup = new Map<number, readonly PlanEntry[]>();
+	const text = yield* Effect.tryPromise({
+		try: () => readFile(join(compared, "changed.ndjson"), "utf8"),
+		catch: stagingFailure
+	});
+	for (const line of text.split("\n")) {
+		if (!line) continue;
+		const { group: shard, expected } = yield* Schema.decodeUnknownEffect(PackageTextPlanLine)(
+			line
+		).pipe(
+			Effect.mapError((cause) =>
+				snapshotFailure("package-text.compare", "Invalid package comparison.", cause)
+			)
+		);
+		changedByGroup.set(shard, expected);
 	}
+	const requests = new Map<string, string>();
+	for (const entries of changedByGroup.values())
+		for (const entry of entries) if (entry.selected) requests.set(entry.path, entry.signature);
+	const unchanged =
+		plan.packages - comparison.shards.reduce((sum, shard) => sum + shard.changed, 0);
 	stages.mark("compare");
 	const total = requests.size;
 	let completed = 0;
-	report({ phase: "package_read", completed, total, unchanged: retained });
+	report({ phase: "package_read", completed, total, unchanged });
 	const records = new Map<string, PackageTextStored>();
 	if (total)
 		yield* input.read([...requests.keys()], requests).pipe(
@@ -288,7 +224,7 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 						);
 					records.set(event.path, { path: event.path, signature, evidence: event });
 					completed++;
-					report({ phase: "package_read", completed, total, unchanged: retained });
+					report({ phase: "package_read", completed, total, unchanged });
 				})
 			)
 		);
@@ -298,47 +234,43 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 		);
 	stages.mark("read");
 	report({ phase: "package_update", completed: 0, total: 0 });
-	const directory = yield* Effect.acquireRelease(
-		Effect.tryPromise({
-			try: async () => {
-				await mkdir(context.stagingRoot, { recursive: true });
-				return mkdtemp(join(context.stagingRoot, "package-delta-"));
-			},
-			catch: (cause) =>
-				snapshotFailure(
-					"package-text.stage",
-					"The package text staging operation failed.",
-					cause
-				)
-		}),
-		(path) => Effect.promise(() => rm(path, { recursive: true, force: true }))
+	const snapshots = yield* convertChanges(
+		comparison.shards.map((shard) => ({
+			group: shard.group,
+			expected: changedByGroup.get(shard.group) ?? []
+		})),
+		records,
+		comparison.directory
 	);
-	const snapshots = yield* convertChanges(changes, records, directory);
 	records.clear();
 	stages.mark("convert");
 	if (input.publishGate) {
 		yield* input.publishGate;
 		stages.restart();
 	}
+	const keys = new Map(plan.changed.map((shard) => [group(shard.name), shard.key]));
 	yield* replace(
-		changes.map((change) => ({
-			name: change.name,
-			key: change.key,
-			...(change.previousKey === undefined ? undefined : { previousKey: change.previousKey }),
-			stagedFile: snapshots.get(change.name)!,
-			rows: change.rows
+		comparison.shards.map((shard) => ({
+			name: `package-text.${shard.group}`,
+			key: keys.get(shard.group)!,
+			...(shard.previousKey === undefined ? undefined : { previousKey: shard.previousKey }),
+			stagedFile: snapshots.get(shard.group)!,
+			rowsFile: join(compared, `${shard.group}.rows`)
 		})),
 		plan.removed
 	);
 	stages.mark("publish");
 	yield* Effect.annotateCurrentSpan({
-		"package-text.unchangedPackages": retained,
-		"package-text.convertedPackages": changes.reduce((sum, c) => sum + c.changed.length, 0)
+		"package-text.unchangedPackages": unchanged,
+		"package-text.convertedPackages": comparison.shards.reduce(
+			(sum, shard) => sum + shard.changed,
+			0
+		)
 	});
 	return {
 		readPackages: total,
 		reusedPackages: plan.packages - total,
-		changedShards: changes.length,
+		changedShards: comparison.shards.length,
 		removedShards: plan.removed.length,
 		published: true,
 		profile: writer.metrics()

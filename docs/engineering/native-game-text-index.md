@@ -214,9 +214,10 @@ snapshots and do not depend on the mutable writer graph.
 Text-value updates use indexed membership and source dependencies. Reference and identity changes
 remain a separate structural path that rebuilds the projection and rewires the graph. Every
 refresh of an index in the current package format and audience policy is a package delta, however
-many of the 256 shards changed: the producer reads package identity columns, reads and converts
-only changed packages, and sends one `publish_packages` request for all changed shards, so the
-publication stays atomic. Rows cross as a little-endian `i32` file per shard, not in the request,
+many of the 256 shards changed. The writer compares the changed shards' planned entries with the
+shards it holds (`compare_packages`) and writes each shard's rows, so no unchanged entry crosses
+into the host. The producer reads and converts only changed packages and sends one
+`publish_packages` request for all changed shards, so the publication stays atomic. Rows cross as a little-endian `i32` file per shard, not in the request,
 and a shard the index doesn't hold yet joins the same publication without a previous key. Rust
 interns each string domain once across all input files, so a change to every shard adds a few
 dictionary segments rather than one per shard and domain, preserves unchanged global string IDs

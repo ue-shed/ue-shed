@@ -12,10 +12,8 @@ import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { SharedIndex, sharedIndexNodeLayer, type SharedIndexWriter } from "./shared-index.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { decodePackageTextColumns } from "./package-text-columns.js";
-import { PACKAGE_TEXT_FORMAT, packageTextShard } from "./package-text-layer.js";
-import { packageTextEncodingCurrent } from "./package-text-delta.js";
+import { packageTextShard } from "./package-text-layer.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
-import { SAVED_TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
 import { target } from "./localization.test-support.js";
 import { TextCorpusSearchRequest } from "./schema.js";
@@ -624,63 +622,4 @@ describe.skipIf(!executable)("native package record deltas", () => {
 			await rm(root, { recursive: true, force: true });
 		}
 	}, 300_000);
-
-	it("tells an index encoded under another audience policy from a current one", async () => {
-		if (!executable) throw new Error("Native reader required");
-		const root = await mkdtemp(join(tmpdir(), "ue-shed-package-policy-"));
-		try {
-			const configuration = { cacheRoot: root, projectKey: "policy", targetKey: "text" };
-			const path = "Content/Text/Policy.uasset";
-			const current = await Effect.runPromise(
-				Effect.scoped(
-					Effect.gen(function* () {
-						const builder = yield* GameTextIndexBuilder;
-						yield* builder.withSession(
-							{ configuration },
-							Effect.scoped(
-								builder.refreshPackageTextLayer({
-									inventory: [{ path, signature: "1", headerData: header }],
-									read: () => Stream.succeed(record(path, "Policy", "P"))
-								})
-							)
-						);
-						const reader = yield* (yield* SharedIndex).open();
-						const name = `package-text.${packageTextShard(path)}`;
-						return [
-							yield* packageTextEncodingCurrent(
-								reader,
-								name,
-								PACKAGE_TEXT_FORMAT,
-								SAVED_TEXT_AUDIENCE_POLICY_KEY
-							),
-							yield* packageTextEncodingCurrent(
-								reader,
-								name,
-								PACKAGE_TEXT_FORMAT,
-								`${SAVED_TEXT_AUDIENCE_POLICY_KEY} `
-							),
-							yield* packageTextEncodingCurrent(
-								reader,
-								name,
-								"package-text-v0",
-								SAVED_TEXT_AUDIENCE_POLICY_KEY
-							)
-						];
-					})
-				).pipe(
-					Effect.provide(sharedIndexNodeLayer(configuration)),
-					Effect.provide(
-						nativeIndexBuilderLayer({
-							executable,
-							timeoutMs: 30000,
-							catalogTimeoutMs: 120000
-						})
-					)
-				)
-			);
-			expect(current).toEqual([true, false, false]);
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	}, 120_000);
 });

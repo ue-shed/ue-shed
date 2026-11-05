@@ -29,7 +29,11 @@ import {
 import { SAVED_TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
 import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
 import { StageClock } from "./stage-clock.js";
-import { packageTextEncodingCurrent, replacePackageTextRecords } from "./package-text-delta.js";
+import {
+	comparePackageText,
+	PackageTextPlanLine,
+	replacePackageTextRecords
+} from "./package-text-delta.js";
 
 /** The caller supplies the Project Index's opaque package-and-sidecar signature, never a layer hash.
  * Header evidence and signatures must come from the same complete inventory generation.
@@ -198,19 +202,6 @@ interface PackageTextRefreshPlan {
 	readonly file?: string;
 }
 
-const PlanLine = Schema.fromJsonString(
-	Schema.Struct({
-		group: Schema.Number,
-		expected: Schema.Array(
-			Schema.Struct({
-				path: Schema.String,
-				signature: Schema.String,
-				selected: Schema.Boolean
-			})
-		)
-	})
-);
-
 /** The changed shards with their entries: planned here, or read from the writer's plan file. */
 const shardEntries = Effect.fn("PackageText.planEntries")(function* (plan: PackageTextRefreshPlan) {
 	const byGroup = new Map<string, PackageTextShardEntries["entries"]>();
@@ -226,7 +217,9 @@ const shardEntries = Effect.fn("PackageText.planEntries")(function* (plan: Packa
 		});
 		for (const line of text.split("\n")) {
 			if (!line) continue;
-			const { group, expected } = yield* Schema.decodeUnknownEffect(PlanLine)(line).pipe(
+			const { group, expected } = yield* Schema.decodeUnknownEffect(PackageTextPlanLine)(
+				line
+			).pipe(
 				Effect.mapError((cause) =>
 					snapshotFailure("package-text.plan", "Invalid package text plan.", cause)
 				)
@@ -367,7 +360,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 	const onWriter = input.catalog && writer.planPackages;
 	// Planning here sends the writer nothing, so its other commands needn't wait for it.
 	if (!onWriter && input.planned) yield* input.planned;
-	const planned = onWriter
+	const planned: PackageTextRefreshPlan = onWriter
 		? yield* planOnWriter(input.catalog!, input.changedFiles, writer.planPackages!, stagingRoot)
 		: yield* planHere(input.inventory ?? [], input.changedFiles, manifest);
 	stages.mark("selection");
@@ -413,38 +406,39 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 			published: false,
 			profile: writer.metrics()
 		};
-	const reader = Object.keys(manifest.active).some((name) => name.startsWith("package-text."))
-		? yield* store.open()
-		: undefined;
 	// An existing index in this encoding is refreshed in place, however many shards changed.
 	// Without one (no index, or one in an older format or audience policy), the changed shards
-	// are read and written again once.
-	const held = changed.find((shard) =>
-		manifest.active[shard.name]?.startsWith(`${PACKAGE_TEXT_FORMAT}:`)
-	);
-	const inPlace =
-		reader !== undefined &&
+	// are read and written again once. The writer compares the shards, and tells their encoding.
+	const comparable =
 		writer.replacePackages !== undefined &&
-		held !== undefined &&
-		(yield* packageTextEncodingCurrent(
-			reader,
-			held.name,
-			PACKAGE_TEXT_FORMAT,
-			SAVED_TEXT_AUDIENCE_POLICY_KEY
-		));
+		writer.comparePackages !== undefined &&
+		changed.some((shard) => manifest.active[shard.name]?.startsWith(`${PACKAGE_TEXT_FORMAT}:`));
 	stages.mark("selection");
-	const result = inPlace
-		? yield* replacePackageTextRecords(
-				input,
+	const comparison = comparable
+		? yield* comparePackageText(
 				{
-					packages: planned.packages,
-					shards: yield* shardEntries(planned),
-					removed,
-					format: PACKAGE_TEXT_FORMAT
+					changed,
+					entries: shardEntries(planned),
+					file: planned.file
 				},
-				{ reader, writer, replace: writer.replacePackages!, stagingRoot, stages }
+				{
+					compare: writer.comparePackages!,
+					stagingRoot,
+					format: PACKAGE_TEXT_FORMAT,
+					policyJson: SAVED_TEXT_AUDIENCE_POLICY_KEY
+				}
 			)
-		: yield* rebuildChangedShards(input, planned, { writer, stages, stagingRoot });
+		: undefined;
+	const inPlace = comparison?.shards.some((shard) => shard.current) ?? false;
+	const result =
+		comparison && inPlace
+			? yield* replacePackageTextRecords(
+					input,
+					{ packages: planned.packages, changed, removed },
+					comparison,
+					{ writer, replace: writer.replacePackages!, stages }
+				)
+			: yield* rebuildChangedShards(input, planned, { writer, stages, stagingRoot });
 	// The refresh span holds the whole refresh's counts and stage times.
 	yield* Effect.annotateCurrentSpan({
 		"package-text.mode": inPlace ? "in_place" : "rebuild",

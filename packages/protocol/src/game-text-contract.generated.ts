@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "4b5c265ee344fdbd3581a2f208392761475320f82aaa21ddc6e345a9f4e126f3"
+	contractHash: "49c7ea9d410f1c60f0ae35fc76ad218fd43632423ce48abf22821bee678a55f4"
 } as const;
 
 /**
@@ -510,6 +510,28 @@ removed: ReadonlyArray<string>, packages: number,
  */
 firstKey: string, };
 
+export type PackageTextCompareRequest = { 
+/**
+ * The shard key prefix, as `PackageTextPlanRequest`.
+ */
+format: string, policyJson: string, 
+/**
+ * A plan file: one `{group, expected}` JSON line per shard, its entries in path order.
+ */
+planFile: string, 
+/**
+ * The shards of `plan_file` to compare.
+ */
+groups: ReadonlyArray<number>, 
+/**
+ * A new directory the writer fills: `{group}.rows` per shard, the rows of its next records
+ * as little-endian `i32`s (a previous row, or -1 - the index of a changed entry), and
+ * `changed.ndjson`, each shard's changed entries in path order as plan-file lines.
+ */
+outputDirectory: string, };
+
+export type PackageTextComparison = { shards: ReadonlyArray<PackageTextCompareShard>, };
+
 export type CodeLayerRequest = { target: string, 
 /**
  * The layer key prefix: the package-text format, then the audience policy's JSON.
@@ -750,6 +772,25 @@ assets: ReadonlyArray<TextFileAsset>, changes: ReadonlyArray<TextFileChange>,
 kept: boolean, stageSeconds: { [key in string]: number }, };
 
 export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
+
+export type PackageTextCompareShard = { group: number, 
+/**
+ * The key the index holds for the shard, if any.
+ */
+previousKey?: string, 
+/**
+ * Whether the held shard's records are in this format and audience policy: its key is the
+ * one its own stored entries give. Only a current shard's records are retained.
+ */
+current: boolean, 
+/**
+ * Entries whose stored record is kept.
+ */
+retained: number, 
+/**
+ * Entries converted again, and of those the ones to read.
+ */
+changed: number, selected: number, };
 
 export type PackageTextShard = { group: number, expected: ReadonlyArray<PackageTextExpected>, };
 

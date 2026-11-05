@@ -50,8 +50,10 @@ impl PackageInput {
             crate::Error::new(crate::ErrorCode::InvalidInput, "package rows file length"),
         )?;
         let rows = bytes
-            .chunks_exact(4)
-            .map(|value| i64::from(i32::from_le_bytes([value[0], value[1], value[2], value[3]])))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|value| i64::from(i32::from_le_bytes(*value)))
             .collect::<Vec<_>>();
         require(
             rows.iter().all(|row| valid_row(*row)),
@@ -118,6 +120,11 @@ pub enum BuildRequest {
         configuration: Configuration,
         request: crate::package_text_contract::PointRequest,
     },
+    /// Compares a refresh's changed shards with the index (uasset-io 1.22).
+    ComparePackages {
+        configuration: Configuration,
+        request: crate::package_text_contract::PackageTextCompareRequest,
+    },
     PublishPackages {
         configuration: Configuration,
         inputs: Vec<PackageInput>,
@@ -161,7 +168,9 @@ pub struct BuildOutcome {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub localization: Option<crate::localization::import::Outcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<crate::package_text_contract::PackageTextPlan>,
+    pub plan: Option<Box<crate::package_text_contract::PackageTextPlan>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comparison: Option<Box<crate::package_text_contract::PackageTextComparison>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<Box<crate::package_text_contract::CodeLayerOutcome>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -183,6 +192,7 @@ impl BuildOutcome {
             stage_seconds: BTreeMap::new(),
             localization: None,
             plan: None,
+            comparison: None,
             code: None,
             point: None,
         }
@@ -200,6 +210,7 @@ impl BuildRequest {
             | Self::Publish { configuration, .. }
             | Self::PublishIds { configuration, .. }
             | Self::PublishPackages { configuration, .. }
+            | Self::ComparePackages { configuration, .. }
             | Self::PlanPackages { configuration, .. }
             | Self::PublishCode { configuration, .. }
             | Self::ReadPoint { configuration, .. }
@@ -217,6 +228,9 @@ impl BuildRequest {
         }
         match self {
             Self::ImportLocalization { request, .. } => request.validate()?,
+            Self::ComparePackages { request, .. } => {
+                crate::package_text_compare::validate(request)?
+            }
             Self::PublishPackages {
                 inputs,
                 removed_names,
@@ -438,7 +452,9 @@ impl BuildSession {
         )?;
         let started = std::time::Instant::now();
         let mut outcome = BuildOutcome::new("plan_packages");
-        outcome.plan = Some(crate::package_text_plan::plan(store, request, inventory)?);
+        outcome.plan = Some(Box::new(crate::package_text_plan::plan(
+            store, request, inventory,
+        )?));
         outcome
             .stage_seconds
             .insert("plan.keys".into(), started.elapsed().as_secs_f64());
@@ -497,7 +513,24 @@ fn execute(
             ..
         } => {
             outcome.action = "publish_packages".into();
-            outcome.records = crate::package_delta::publish(store, inputs, removed_names)?;
+            let mut stages = Vec::new();
+            outcome.records =
+                crate::package_delta::publish_timed(store, inputs, removed_names, &mut stages)?;
+            for (stage, seconds) in stages {
+                outcome.stage_seconds.insert(stage.into(), seconds);
+            }
+        }
+        BuildRequest::ComparePackages { request, .. } => {
+            outcome.action = "compare_packages".into();
+            let mut stages = Vec::new();
+            outcome.comparison = Some(Box::new(crate::package_text_compare::compare(
+                store,
+                request,
+                &mut stages,
+            )?));
+            for (stage, seconds) in stages {
+                outcome.stage_seconds.insert(stage.into(), seconds);
+            }
         }
         BuildRequest::Status { .. } => {}
         BuildRequest::PlanPackages { .. } => {

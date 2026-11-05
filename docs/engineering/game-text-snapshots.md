@@ -183,12 +183,15 @@ content key. Matching stats reuse the hinted layer without opening authored byte
 engine. Every other file goes to the native engine's `import_localization` in one request (or one
 per 2560 files). The engine reads, hashes and parses each file in one bounded read, discards the
 parse when the hash is already stored, and decides per file: a name that is not active takes the
-cold route (a store with nothing active is built in one merge), an active name the warm route,
-which keeps the previous layer's IDs. It publishes every file that imported in one root and
-returns a typed failure (code, message, recovery) for each file that did not; those files keep
-their previous layer and become the target's diagnostics. Interrupting a request publishes
-nothing. Before/after handle and path stats detect in-place writes and replacement, returning
-typed `file_changed` retry guidance.
+cold route (a store with nothing active is built in one merge), an active name the warm route, which
+keeps the previous layer's IDs. Warm files look up their changed strings by probing the dictionary's
+segment files until a writer session has probed 64 Ki strings; after that it loads the dictionary
+once and looks the rest up in memory, so a refresh after a gather rewrote every file does not open
+every segment for every changed block. It publishes every file that imported in one root and returns
+a typed failure (code, message, recovery) for each file that did not; those files keep their
+previous layer and become the target's diagnostics. Interrupting a request publishes nothing.
+Before/after handle and path stats detect in-place writes and replacement, returning typed
+`file_changed` retry guidance.
 
 The engine owns the content key: SHA-256 over the importer version, format/PO options and the
 authored content hash. It returns the key for each file, and the host keeps that key in the stat

@@ -6,8 +6,10 @@
 Game Text imports localization files through one native path, cold or warm:
 
 - A refresh reads every changed file of a target in one native engine request, instead of one
-  request and one publication per file. A warm refresh after every file changed now costs about
-  what a cold import does. Files whose stat matches their hint still need no read.
+  request and one publication per file. Files whose stat matches their hint still need no read.
+- A warm import that changes many strings loads the dictionary once instead of probing every
+  dictionary segment for each changed block. On a generated 130k-line, 10-culture target (21 files,
+  712 MiB), a refresh after every file was rewritten took 8.5 s instead of 35.4 s.
 - One file that fails to read or parse no longer stops the others: the engine publishes every file
   that imported and returns a typed failure for each other file, which becomes that file's
   diagnostic as before.

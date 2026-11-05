@@ -66,6 +66,8 @@ pub struct EngineQuery {
     unit_lines: Once<Arc<[u32]>>,
     /// Units and lines by exact source, for related lines, built on the first request.
     pub(crate) related_index: Once<Arc<crate::engine_related::RelatedIndex>>,
+    /// Similar-key pairs and candidates under one policy, built on the first request for them.
+    pub(crate) similar_keys: crate::engine_similar::SimilarKeysCache,
     /// Unreal word counts by source text ID, filled by aggregates.
     pub(crate) line_break_words: Lock<HashMap<u32, u32>>,
     /// The corpus fingerprint, computed once per reader.
@@ -251,6 +253,7 @@ impl EngineQuery {
             id_indexes: Memo::default(),
             unit_lines: Once::default(),
             related_index: Once::default(),
+            similar_keys: Lock::default(),
             line_break_words: Lock::default(),
             fingerprint: Once::default(),
             package_lists: Once::default(),
@@ -643,7 +646,7 @@ impl EngineQuery {
 
     /// The translation of a line the next sync ships in a culture, as the join chose it: the
     /// PO's pending edit when the line is not synced, else the archive's; none without an entry.
-    fn shipped_translation(
+    pub(crate) fn shipped_translation(
         &self,
         ci: usize,
         row: usize,

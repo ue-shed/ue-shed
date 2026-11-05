@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "ec7cf572842bc85c377504ad1a4cdbc51383c4cf14a6cd3389c879da7f87b24e"
+	contractHash: "ca93419701f61f5b45b556ce9dca614f9ddbfa72d72b7ab6b8d91c4470308698"
 } as const;
 
 /**
@@ -872,7 +872,91 @@ export type RelatedSection = {
 /**
  * Places each unit member lists.
  */
-limit: number, };
+limit: number, 
+/**
+ * With a target, the line's similar-key pair and candidates.
+ */
+similarKeys?: SimilarKeysSection, };
+
+export type SimilarKeysSection = { 
+/**
+ * Candidates listed, from 0 to 500.
+ */
+limit: number, 
+/**
+ * The most edits two texts may differ by, as a share of the longer one's UTF-16 length,
+ * rounded down and at least 1: above 0, at most 1. Default 0.2.
+ */
+distanceRatio?: number, 
+/**
+ * The length difference the cross-package pass reaches, as a share of the new line's UTF-16
+ * length, rounded up and at least 1: above 0, at most 1. Default 0.25.
+ */
+reachRatio?: number, 
+/**
+ * The cap on both the edit distance and the reach, from 1 to 64. Default 12.
+ */
+maxDistance?: number, 
+/**
+ * Comparisons after which no further new line runs the cross-package pass; the answer is
+ * then `truncated`. The same-package pass always runs. Default 2,000,000.
+ */
+comparisonBudget?: number, 
+/**
+ * Letters (`\p{L}`) a text needs outside `{...}` and `<...>` spans to be compared, from 0
+ * (compare every non-blank text) to 64. Default 2.
+ */
+minLetters?: number, };
+
+export type SimilarKeysAnswer = { 
+/**
+ * The selected line's side, absent when it is neither an earlier nor a new line the matcher
+ * compares.
+ */
+state?: SimilarKeyState, 
+/**
+ * The selected line's pair, when the one-to-one rule gives it one.
+ */
+pair?: SimilarKeyPair, 
+/**
+ * The lines near the selected one, the pair's line among them, nearest first, then
+ * same-package before cross-package, then by line ID; up to the request's `limit`. A new
+ * line lists the earlier lines its deciding pass found within the distance limit; an earlier
+ * line, the new lines that found it.
+ */
+candidates: ReadonlyArray<SimilarKeyCandidate>, candidatesComplete: boolean, 
+/**
+ * Pairs in the whole target.
+ */
+pairs: number, 
+/**
+ * The comparison budget ran out: some new lines skipped the cross-package pass.
+ */
+truncated: boolean, 
+/**
+ * Milliseconds this request spent building the reader's index; 0 when it reused it.
+ */
+buildMs: number, };
+
+export type SimilarKeyState = "not_found" | "not_gathered";
+
+export type SimilarKeyScope = "same_package" | "cross_package";
+
+export type SimilarKeyLine = { id: string, namespace: string, key: string, source: string, state: SimilarKeyState, };
+
+export type SimilarKeyPair = { line: SimilarKeyLine, 
+/**
+ * Edits between the two lines' comparable texts, in UTF-16 code units.
+ */
+distance: number, scope: SimilarKeyScope, 
+/**
+ * The earlier line's translations, which a repair carries to the new key.
+ */
+translations: ReadonlyArray<SimilarKeyTranslation>, };
+
+export type SimilarKeyCandidate = { line: SimilarKeyLine, distance: number, scope: SimilarKeyScope, };
+
+export type SimilarKeyTranslation = { culture: string, translation: string, };
 
 export type LineAnswer = { places?: JsonValue, detail?: JsonValue, related?: JsonValue, };
 

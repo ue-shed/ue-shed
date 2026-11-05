@@ -16,6 +16,15 @@
  * JSON: the first page's time, every page's, and the engine process's working set before,
  * during and after the read, sampled every 25 ms.
  *
+ * `--case similar`, after `localization`, adds 5,000 keys only the manifest has (`not_found`) and
+ * 5,000 keys only packages save (`not_gathered`), about 60% of them small edits of an earlier key's
+ * text, for `related`'s similar keys. Measure them in a fresh process and reader:
+ *   node --import tsx scripts/benchmark-game-text-changed-since.ts --mode similar
+ *     --executable <uasset> --root test-results/changed-since
+ * which times a plain `related` read, then the first one asking for similar keys (the index
+ * build and the answer) and one for another line, with the engine's working set. `--mode
+ * reference` times the test-only JavaScript reference matcher on the same keys instead.
+ *
  * Packages are generated, never written as `.uasset` files: the refresh reads them through its
  * `read` stream. Localization files are written under `<root>/project`. Everything stays under
  * this worktree's `test-results`.
@@ -45,6 +54,12 @@ import {
 } from "../packages/game-text/src/index-query-native.ts";
 import { nativeIndexBuilderLayer } from "../packages/game-text/src/native-index-builder.ts";
 import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
+import { LocalizationLineId } from "../packages/game-text/src/localization-schema.ts";
+import {
+	referenceSimilarKeyChanges,
+	similarKeysCorpus,
+	similarKeysReferenceLines
+} from "../packages/game-text/src/similar-keys-reference.test-support.ts";
 
 const { values } = parseArgs({
 	options: {
@@ -59,7 +74,8 @@ const { values } = parseArgs({
 	}
 });
 const mode = values.mode;
-if (mode !== "refresh" && mode !== "measure") throw new Error("--mode must be refresh or measure.");
+if (mode !== "refresh" && mode !== "measure" && mode !== "similar" && mode !== "reference")
+	throw new Error("--mode must be refresh, measure, similar or reference.");
 if (!values.executable) throw new Error("Provide --executable, the paired uasset reader.");
 const executable = resolve(values.executable);
 const root = resolve(values.root);
@@ -79,7 +95,7 @@ const ADDED = 55_000;
 const ADDED_WITH_TEXT = 218;
 const CHANGED_LINES = 1000;
 const NAMESPACE = "Generated";
-const CASES = ["initial", "packages", "localization"] as const;
+const CASES = ["initial", "packages", "localization", "similar"] as const;
 type Case = (typeof CASES)[number];
 const isCase = (value: string | undefined): value is Case => CASES.some((step) => step === value);
 
@@ -111,9 +127,28 @@ const project = (step: Case) => {
 	return packages;
 };
 const slots = (id: number) => 1 + (id % 3);
+/**
+ * The `similar` case's keys, over 600 of the base's text packages: earlier keys gathered from
+ * them that they no longer save, and new keys they save that nothing gathered.
+ */
+const SIMILAR_PACKAGES = Array.from(
+	{ length: 600 },
+	(_, n) => n * TEXT_EVERY * Math.floor(count / TEXT_EVERY / 600)
+);
+const similar = similarKeysCorpus({
+	seed: 707,
+	earlier: 5000,
+	fresh: 5000,
+	packages: SIMILAR_PACKAGES.map(packagePath),
+	namespace: NAMESPACE
+});
+const similarOccurrences = new Map(
+	SIMILAR_PACKAGES.map((id, index) => [id, similar.packages[index]?.occurrences ?? []])
+);
 const source = (id: number, slot: number) => `Generated text ${id % 5000} slot ${slot} of ${id}`;
-const record = (entry: Generated): SavedAssetPackageTextRecord => {
+const record = (entry: Generated, step: Case): SavedAssetPackageTextRecord => {
 	const name = `P${entry.id}`;
+	const added = step === "similar" ? (similarOccurrences.get(entry.id) ?? []) : [];
 	const object = `/Game/Generated/${name}.${name}`;
 	return {
 		event: "text_package_record",
@@ -122,18 +157,21 @@ const record = (entry: Generated): SavedAssetPackageTextRecord => {
 		schema_version: 1,
 		status: "complete",
 		decodeErrors: 0,
-		occurrences: Array.from({ length: slots(entry.id) }, (_, slot) => ({
-			source: source(entry.id, slot),
-			dev_notes: "",
-			identity: { status: "resolved", namespace: NAMESPACE, key: `K${entry.id}-${slot}` },
-			location: {
-				kind: "asset_property",
-				object_path: `${object}.Widget${slot}`,
-				class_path: "/Script/UMG.TextBlock",
-				property_path: "Text"
-			},
-			edit_capability: "read_only"
-		})),
+		occurrences: Array.from(
+			{ length: slots(entry.id) },
+			(_, slot): SavedAssetPackageTextRecord["occurrences"][number] => ({
+				source: source(entry.id, slot),
+				dev_notes: "",
+				identity: { status: "resolved", namespace: NAMESPACE, key: `K${entry.id}-${slot}` },
+				location: {
+					kind: "asset_property",
+					object_path: `${object}.Widget${slot}`,
+					class_path: "/Script/UMG.TextBlock",
+					property_path: "Text"
+				},
+				edit_capability: "read_only"
+			})
+		).concat(added),
 		gapCounts: {
 			unsupported_text_history: 0,
 			legacy_container_element_without_type_information: 0,
@@ -193,7 +231,7 @@ const writeLocalization = async (step: Case) => {
 				path: `/Game/Generated/P${id}.P${id}.Widget${slot}`,
 				revised: false
 			});
-	if (step === "localization") {
+	if (step === "localization" || step === "similar") {
 		const stride = Math.floor(lines.length / CHANGED_LINES);
 		for (let n = 0; n < CHANGED_LINES; n++) lines[n * stride]!.revised = true;
 	}
@@ -208,10 +246,13 @@ const writeLocalization = async (step: Case) => {
 		JSON.stringify({
 			FormatVersion: 1,
 			Namespace: NAMESPACE,
-			Children: lines.map((line) => ({
-				Source: { Text: line.text },
-				Keys: [{ Key: line.key, Path: line.path }]
-			}))
+			Children: [
+				...lines.map((line) => ({
+					Source: { Text: line.text },
+					Keys: [{ Key: line.key, Path: line.path }]
+				})),
+				...(step === "similar" ? similar.children : [])
+			]
 		})
 	);
 	for (const culture of target.cultures) {
@@ -224,11 +265,14 @@ const writeLocalization = async (step: Case) => {
 			JSON.stringify({
 				FormatVersion: 2,
 				Namespace: NAMESPACE,
-				Children: lines.map((line) => ({
-					Key: line.key,
-					Source: { Text: line.text },
-					Translation: { Text: translation(line) }
-				}))
+				Children: [
+					...lines.map((line) => ({
+						Key: line.key,
+						Source: { Text: line.text },
+						Translation: { Text: translation(line) }
+					})),
+					...(step === "similar" ? similar.archiveChildren(culture) : [])
+				]
 			})
 		);
 		await write(
@@ -265,8 +309,11 @@ const refresh = async (step: Case) => {
 		.sort((a, b) => Buffer.compare(a.key, b.key))
 		.map(({ path, entry }) => ({
 			path,
-			// A package's signature never changes here: only the sync's additions are new.
-			signature: `s0-${entry.id}`,
+			// A package's signature changes only when `similar` adds keys to it.
+			signature:
+				step === "similar" && similarOccurrences.has(entry.id)
+					? `s1-${entry.id}`
+					: `s0-${entry.id}`,
 			headerData: {
 				packageFlags: entry.selected ? 0x40000 : 0,
 				gatherableTextDataCount: entry.selected ? 1 : 0,
@@ -280,7 +327,7 @@ const refresh = async (step: Case) => {
 		read: (_root, entries) => {
 			reads += entries.length;
 			return Stream.fromIterable(entries).pipe(
-				Stream.map((entry) => record(byPath.get(entry.path)!))
+				Stream.map((entry) => record(byPath.get(entry.path)!, step))
 			);
 		}
 	});
@@ -482,7 +529,138 @@ const measure = async (kind: "lines" | "packages", since: string | undefined) =>
 	);
 };
 
-if (mode === "refresh") {
+/** The line ID of a generated key in the target. */
+const lineId = (key: string) => `${target.name}:${JSON.stringify([NAMESPACE, key])}`;
+
+/**
+ * `related` with similar keys in a fresh reader: a plain read of one new key first, so the
+ * reader's projection and related index are warm, then the first similar-keys read (the index
+ * build and its answer), then one for another key.
+ */
+const measureSimilar = async () => {
+	const listChildren = () =>
+		output("powershell.exe", [
+			"-NoProfile",
+			"-NonInteractive",
+			"-Command",
+			`Get-CimInstance Win32_Process -Filter "ParentProcessId=${process.pid}" | ForEach-Object { "$($_.ProcessId) $($_.Name)" }`
+		]);
+	const before = new Set((await listChildren()).trim().split(/\r?\n/u));
+	const engine = async () => {
+		const engines = (await listChildren())
+			.trim()
+			.split(/\r?\n/u)
+			.filter((line) => !before.has(line) && line.toLowerCase().includes("uasset"));
+		if (engines.length !== 1)
+			throw new Error(`Expected one engine process, found ${engines.length}.`);
+		return Number(engines[0]!.trim().split(" ")[0]);
+	};
+	const mib = (bytes: number) => Math.round((bytes / 2 ** 20) * 10) / 10;
+	const ms = (started: number) => Math.round((performance.now() - started) * 10) / 10;
+	return Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				const manifest = yield* (yield* SharedIndex).inspect();
+				const joinedKey = manifest.active.joined;
+				if (joinedKey === undefined) throw new Error("No joined target is published.");
+				const query = yield* (yield* GameTextIndexQuery).open({
+					configuration: indexConfiguration,
+					storeEpoch: manifest.generation,
+					joinedKey
+				});
+				const watcher = watch(yield* Effect.promise(engine));
+				const start = yield* Effect.promise(watcher.next);
+				const firstSample = watcher.samples.length;
+				const read = (key: string, withSimilar: boolean) =>
+					query.related({
+						target: target.name,
+						selection: {
+							kind: "line",
+							id: Schema.decodeUnknownSync(LocalizationLineId)(lineId(key))
+						},
+						pageSize: 10,
+						...(withSimilar ? { similarKeys: { limit: 20 } } : undefined)
+					});
+				let started = performance.now();
+				const plain = yield* read("New1", false);
+				const plainMs = ms(started);
+				if (plain === undefined) throw new Error("The generated key New1 has no line.");
+				started = performance.now();
+				const first = (yield* read("New1", true))?.similarKeys;
+				const firstMs = ms(started);
+				started = performance.now();
+				const later = (yield* read("New2", true))?.similarKeys;
+				const laterMs = ms(started);
+				const end = yield* Effect.promise(watcher.next);
+				watcher.stop();
+				const during = watcher.samples.slice(firstSample);
+				return {
+					mode,
+					node: process.version,
+					executable,
+					joinedKey,
+					plainRelatedMs: plainMs,
+					firstSimilarMs: firstMs,
+					firstBuildMs: Math.round((first?.buildMs ?? 0) * 10) / 10,
+					laterSimilarMs: laterMs,
+					laterBuildMs: later?.buildMs,
+					pairs: first?.pairs,
+					truncated: first?.truncated,
+					firstState: first?.state,
+					firstPaired: first?.pair !== undefined,
+					laterCandidates: later?.candidates.length,
+					engineMemoryMiB: {
+						workingSetBefore: mib(start.workingSet),
+						workingSetPeakDuring: mib(
+							Math.max(start.workingSet, ...during.map((sample) => sample.workingSet))
+						),
+						workingSetAfter: mib(end.workingSet),
+						processPeakAfter: mib(end.peak),
+						samples: during.length
+					}
+				};
+			})
+		).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					nativeIndexQueryLayer(readerConfiguration),
+					sharedIndexNodeLayer(indexConfiguration)
+				)
+			)
+		)
+	);
+};
+
+/** The JavaScript reference matcher over the `similar` case's keys, three times. */
+const measureReference = () => {
+	const { olds, news } = similarKeysReferenceLines(similar);
+	const runs = [0, 1, 2].map(() => {
+		const started = performance.now();
+		const result = referenceSimilarKeyChanges(olds, news);
+		return {
+			ms: performance.now() - started,
+			pairs: result.pairs.length,
+			truncated: result.truncated
+		};
+	});
+	const sorted = runs.map((run) => run.ms).toSorted((a, b) => a - b);
+	return {
+		mode,
+		node: process.version,
+		earlier: olds.length,
+		fresh: news.length,
+		pairs: runs[0]?.pairs,
+		truncated: runs[0]?.truncated,
+		runsMs: runs.map((run) => Math.round(run.ms * 10) / 10),
+		medianMs: Math.round((sorted[1] ?? 0) * 10) / 10
+	};
+};
+
+if (mode === "similar") {
+	console.log(JSON.stringify(await measureSimilar()));
+} else if (mode === "reference") {
+	console.log(JSON.stringify(measureReference()));
+} else if (mode === "refresh") {
 	if (!isCase(values.case)) throw new Error(`--case must be one of ${CASES.join(", ")}.`);
 	console.log(JSON.stringify(await refresh(values.case)));
 } else {

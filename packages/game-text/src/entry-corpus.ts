@@ -115,7 +115,9 @@ export {
 	RelatedLinesResult,
 	RelatedMember,
 	RelatedSection,
-	RelatedUnit
+	RelatedUnit,
+	SimilarKeys,
+	SimilarKeysRequest
 } from "./related-lines.js";
 
 export {

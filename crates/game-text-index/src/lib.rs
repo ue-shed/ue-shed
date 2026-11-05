@@ -34,6 +34,7 @@ mod engine_related;
 mod engine_rollup;
 mod engine_rows;
 mod engine_search;
+mod engine_similar;
 mod engine_summary;
 mod engine_text;
 mod engine_types;

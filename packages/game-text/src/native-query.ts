@@ -606,7 +606,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				request: {
 					selection: decoded.selection,
 					...(decoded.target !== undefined && { target: decoded.target }),
-					related: { limit: decoded.pageSize }
+					related: {
+						limit: decoded.pageSize,
+						...(decoded.similarKeys !== undefined && {
+							similarKeys: decoded.similarKeys
+						})
+					}
 				}
 			},
 			Schema.Struct({ related: Schema.NullOr(RelatedLines) })
@@ -616,7 +621,15 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				"game_text.related.same_key": result.sameKey.members.length,
 				"game_text.related.same_text": result.sameText.members.length,
 				"game_text.related.conflict": result.conflict?.members.length ?? 0,
-				"game_text.related.key_change": result.keyChange?.members.length ?? 0
+				"game_text.related.key_change": result.keyChange?.members.length ?? 0,
+				...(result.similarKeys !== undefined && {
+					"game_text.related.similar_keys.pairs": result.similarKeys.pairs,
+					"game_text.related.similar_keys.candidates":
+						result.similarKeys.candidates.length,
+					"game_text.related.similar_keys.paired": result.similarKeys.pair !== undefined,
+					"game_text.related.similar_keys.truncated": result.similarKeys.truncated,
+					"game_text.related.similar_keys.build_ms": result.similarKeys.buildMs
+				})
 			});
 		return result ?? undefined;
 	});

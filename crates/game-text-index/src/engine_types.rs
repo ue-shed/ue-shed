@@ -352,13 +352,16 @@ pub struct DetailSection {
     pub po_context_offset: Option<u32>,
 }
 
-/// The rows related to the selection: same key, same text, conflict and key change.
+/// The rows related to the selection: same key, same text, conflict, key change and similar keys.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RelatedSection {
     /// Places each unit member lists.
     pub limit: u32,
+    /// With a target, the line's similar-key pair and candidates.
+    #[cfg_attr(test, ts(optional))]
+    pub similar_keys: Option<crate::engine_similar::SimilarKeysSection>,
 }
 
 /// A `line` request (Phase 4 §6): a selected row and the sections of it a host shows, in one
@@ -458,6 +461,13 @@ impl LineRequest {
                 rows(related.limit) && (!line || self.target.is_some()),
                 invalid("Related rows of a line need a target, with 1 to 500 places."),
             )?;
+            if let Some(similar) = &related.similar_keys {
+                require(
+                    self.target.is_some(),
+                    invalid("Similar keys need a target."),
+                )?;
+                similar.validate()?;
+            }
         }
         require(
             self.line != Some(true) || line,

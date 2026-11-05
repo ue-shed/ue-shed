@@ -136,8 +136,26 @@ travel as `browseUnit` and `browseLine` batches, open groups' rows with their gr
 
 A `line` request reads one selected row, a line or a unit, with the sections a host shows:
 `places` (the unit's places after a cursor), `detail` (translations, locations and problems),
-`related` (same key, same text, conflict and key change) and `line` (the whole line as a `lines`
-batch). Selecting a row is one request whatever it shows.
+`related` (same key, same text, conflict, key change and, when asked, similar keys) and `line`
+(the whole line as a `lines` batch). Selecting a row is one request whatever it shows.
+
+`related`'s `similarKeys` section (`engine_similar.rs`) is a fourth key-change tier after the
+join's exact ones, answered only by `related`: it never changes the join, its `key_changed` marks
+or their counts. Earlier lines are visible `not_found` lines without saved places; new lines are
+visible `not_gathered` lines with saved places and an identity; lines the exact tiers paired and
+lines with blank or trivial text (fewer than two letters outside `{...}` and `<...>` spans) are
+left out. Texts are compared with whitespace collapsed, trimmed and lowercased, by Levenshtein
+distance over UTF-16 code units within `min(12, max(1, floor(longer length × 0.2)))`. Each new
+line, in line ID order, compares the earlier lines sharing one of its package files (the join's
+`facet.files`: a saved line's packages, an earlier line's manifest files) and, only when none is
+near enough, the earlier lines whose length is within `min(12, max(1, ceil(length × 0.25)))`; once
+more than 2,000,000 comparisons were made, no further new line runs that cross-package pass and the
+answer is `truncated`. A new line proposes its single nearest earlier line, and an earlier line
+accepts its single nearest proposal, so a tie pairs neither. The answer names the selected line's
+side, its pair with the earlier line's carried translations, and its near lines ranked by
+distance, same-package first, then line ID. The ratios, the cap, the budget and the letter minimum
+are optional request fields. A reader builds the index for the whole target on the first request
+that asks for it and keeps one parameter set; other parameters build it again.
 
 A `review_lines` request reads, for one culture, up to 2,560 lines by identity in request order:
 each line's manifest source, the translation the next sync ships, its PO entry with the line's own

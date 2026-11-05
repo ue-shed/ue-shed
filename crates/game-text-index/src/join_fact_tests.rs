@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-struct Fixture {
+pub(crate) struct Fixture {
     /// The writer, released while an evaluation takes its own.
     store: Option<Store>,
-    configuration: Configuration,
-    target: Value,
+    pub(crate) configuration: Configuration,
+    pub(crate) target: Value,
 }
 
 /// A persisted reader for column cancellation tests, with additional dictionary entries.
@@ -41,7 +41,7 @@ pub(crate) fn query_with_dictionary(strings: &[String]) -> Result<(EngineQuery, 
 }
 
 impl Fixture {
-    fn new() -> Result<Self> {
+    pub(crate) fn new() -> Result<Self> {
         let configuration = Configuration {
             cache_root: crate::test_directory("join-facts"),
             project_key: "fixture".into(),
@@ -69,7 +69,7 @@ impl Fixture {
         })
     }
 
-    fn store(&mut self) -> Result<&mut Store> {
+    pub(crate) fn store(&mut self) -> Result<&mut Store> {
         if self.store.is_none() {
             self.store = Some(Store::writer(self.configuration.clone())?);
         }
@@ -86,7 +86,7 @@ impl Fixture {
         )
     }
 
-    fn file(&mut self, name: &str, format: &str, rows: &[Value]) -> Result<()> {
+    pub(crate) fn file(&mut self, name: &str, format: &str, rows: &[Value]) -> Result<()> {
         self.ids(&[""])?;
         let fields = [
             "namespace",
@@ -166,7 +166,7 @@ impl Fixture {
         Ok(())
     }
 
-    fn packages(&mut self, rows: &[Value]) -> Result<()> {
+    pub(crate) fn packages(&mut self, rows: &[Value]) -> Result<()> {
         self.packages_with_status(rows, 0)
     }
 
@@ -266,7 +266,82 @@ impl Fixture {
         Ok(())
     }
 
-    fn join(&mut self) -> Result<crate::join::JoinOutcome> {
+    /// A package-text shard of several packages, each with a signature and its occurrences; a
+    /// package without text has none.
+    pub(crate) fn shard(
+        &mut self,
+        name: &str,
+        packages: &[(&str, &str, Vec<Value>)],
+    ) -> Result<()> {
+        const TEXT: [&str; 8] = [
+            "source",
+            "notes",
+            "namespace",
+            "key",
+            "object",
+            "property",
+            "class",
+            "row",
+        ];
+        let rows = packages
+            .iter()
+            .flat_map(|(_, _, rows)| rows.iter().cloned())
+            .collect::<Vec<_>>();
+        let mut columns = Vec::new();
+        for field in OCCURRENCE_FIELDS {
+            let values = if TEXT.contains(&field) {
+                self.ids(
+                    &rows
+                        .iter()
+                        .map(|row| row[field].as_str().unwrap_or(""))
+                        .collect::<Vec<_>>(),
+                )?
+            } else {
+                rows.iter()
+                    .map(|row| row[field].as_u64().unwrap_or(0) as u32)
+                    .collect()
+            };
+            let domain = if TEXT.contains(&field) { "source" } else { "" };
+            columns.push((format!("occurrence.{field}"), domain.into(), values));
+        }
+        let paths = packages.iter().map(|package| package.0).collect::<Vec<_>>();
+        let signatures = packages.iter().map(|package| package.1).collect::<Vec<_>>();
+        columns.push(("package.path".into(), "source".into(), self.ids(&paths)?));
+        columns.push((
+            "package.signature".into(),
+            "source".into(),
+            self.ids(&signatures)?,
+        ));
+        let count = packages.len();
+        columns.push(("package.status".into(), String::new(), vec![0; count]));
+        let mut starts = vec![0];
+        for (_, _, rows) in packages {
+            starts.push(starts[starts.len() - 1] + rows.len() as u32);
+        }
+        columns.push(("package.occurrence_start".into(), String::new(), starts));
+        for field in ["gap0", "gather_missing"] {
+            columns.push((format!("package.{field}"), String::new(), vec![0; count]));
+        }
+        for field in ["gap_start", "missing_start"] {
+            columns.push((
+                format!("package.{field}"),
+                String::new(),
+                vec![0; count + 1],
+            ));
+        }
+        columns.push(("gap.reason".into(), String::new(), vec![]));
+        self.store()?.publish_global(
+            name,
+            &format!("test:packages:{}", crate::store::token()),
+            &columns,
+            b"",
+            &BTreeMap::new(),
+            &[],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn join(&mut self) -> Result<crate::join::JoinOutcome> {
         let input: JoinInput =
             serde_json::from_value(json!({"projectRoot":"/project","target":self.target}))?;
         refresh(self.store()?, &input)

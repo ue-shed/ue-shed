@@ -12,7 +12,8 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 20] = [
+const SOURCES: [&str; 21] = [
+    include_str!("engine_changes.rs"),
     include_str!("package_text_contract.rs"),
     include_str!("text_file_compare.rs"),
     include_str!("localization/import.rs"),
@@ -227,6 +228,13 @@ mod tests {
             ReviewLine::decl(&config),
             ReviewPoEntry::decl(&config),
             ReviewLinesAnswer::decl(&config),
+            crate::engine_changes::ChangedSinceRequest::decl(&config),
+            crate::engine_changes::ChangeKind::decl(&config),
+            crate::engine_changes::ChangedSinceAnswer::decl(&config),
+            crate::engine_changes::TooOldReason::decl(&config),
+            crate::engine_changes::ChangeCounts::decl(&config),
+            crate::engine_changes::ChangeItem::decl(&config),
+            crate::engine_changes::Change::decl(&config),
             RowSelection::decl(&config),
             RowKind::decl(&config),
             PlacesSection::decl(&config),

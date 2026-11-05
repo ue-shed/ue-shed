@@ -146,6 +146,38 @@ key, and the review fingerprint the join compares stored reviews with (`review_f
 lacks answers `not_gathered`. Hosts stamp reviews and check staged edits with it, so neither decodes
 a localization file; `reviewLines` sends larger batches in parts.
 
+### Generations and what changed since one
+
+A target's `generation` is its joined key: a digest of the store's dictionary epoch, the project
+root, every input layer's key (package-text shards, localization files by content key, the code
+layer), the target and its policy, the review file, key-change pairs and file evidence
+(`join.rs`). It changes whenever something the target shows changes, stays equal across refreshes
+that change nothing, and is safe to persist and compare across processes. The store's own
+`generation` is not a change counter: it is the dictionary epoch, renewed only when the store is
+created again or compacted (`store.rs`), so a package publish or localization import keeps it.
+Host types call that epoch `storeEpoch`; a refresh result, a target index, the workspace's
+completed refresh and a selected target report the target's `generation`.
+
+A `changed_since` request (`engine_changes.rs`) answers what changed in the open reader's target
+since an earlier generation: its `lines`, by line ID, or its `packages`, by path. Earlier joined
+layers and their inputs stay in the store until compaction, and layers of one dictionary epoch
+share string IDs, so the engine opens the earlier joined layer read-only by key (its inputs need
+only be listed, not active) and compares columns without materialising strings:
+
+- Lines are matched by line ID. A line changed when its namespace, key, source, facts, flags,
+  files, units (by unit ID), key-change pair, or a culture's state, review or translation (archive
+  and PO text) differs. A change of the target's cultures changes every line.
+- Packages come from the package-text shards whose keys differ between the two joins' dependencies:
+  their `package.path` and `package.signature` columns, so packages without text count too.
+
+The answer is `same` when `since` is the current generation, `too_old` with a reason when it can't
+be diffed (`compacted`: the layer or an input is gone, or a compaction renumbered its strings;
+`format`: another joined format; `unknown`: not a generation of this target), or `changes`: every
+change's counts and a page of items in ID order (WTF-8 bytes), whose last ID is the next page's
+cursor. The engine never answers "everything is new"; that is the host's choice on `too_old`. A
+reader keeps one diff per kind, only the changed items, so later pages are cheap. It runs as a bulk
+request.
+
 Each immutable native reader caches page-independent search metadata: counts, problems, groups,
 facets, file scope and localization totals. Counts are also shared across requests that differ
 only in grouping or requested facets. This reader-owned cache retains at most 64 entries and

@@ -94,6 +94,7 @@ function cannedTextQuery(
 		reviewLines: evidence
 			? (request) => Effect.sync(() => evidenceReviewLines(evidence, request))
 			: unplanted("reviewLines"),
+		changedSince: unplanted("changedSince"),
 		export: unplanted("export"),
 		...answers
 	};
@@ -435,7 +436,7 @@ export function testProjectIndex(projectRoot: string): GameTextProjectIndex {
 	return {
 		projectRoot,
 		cacheRoot: "test",
-		generation: "test",
+		storeEpoch: "test",
 		packageKey: "test",
 		get packages(): GameTextProjectIndex["packages"] {
 			throw new Error("Unused compact-store evidence in test index");
@@ -529,6 +530,7 @@ const testIndexStepsLayer = Layer.effect(
 						project,
 						view: imported.view,
 						imported: imported.imported,
+						storeEpoch: "test",
 						generation: "test",
 						fileKeys: {},
 						get join(): GameTextTargetIndex["join"] {

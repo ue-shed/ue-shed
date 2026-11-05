@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "45d396fd4c90b1ab7d5ed0f9cb7e2f3d6c7bbace8ff77a16bf5220d46d39de27"
+	contractHash: "45600ae3baf5000862d10151bc04b630e21f52698e7718a982896c6856269513"
 } as const;
 
 /**
@@ -69,7 +69,7 @@ lookupStrings: number,
  */
 reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
 
-export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "review_lines", reader: string, request: ReviewLinesRequest, } | { "action": "findings_evaluate", reader: string, 
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "review_lines", reader: string, request: ReviewLinesRequest, } | { "action": "changed_since", reader: string, request: ChangedSinceRequest, } | { "action": "findings_evaluate", reader: string, 
 /**
  * The v4 rule document.
  */
@@ -487,6 +487,46 @@ export type ReviewLine = { "status": "found", source: string, translation: strin
 export type ReviewPoEntry = { msgid: string, };
 
 export type ReviewLinesAnswer = { lines: ReadonlyArray<ReviewLine>, };
+
+export type ChangedSinceRequest = { 
+/**
+ * A generation an earlier refresh or open reported for this target.
+ */
+since: string, kind: ChangeKind, 
+/**
+ * The last ID of the previous page; absent for the first.
+ */
+after?: string, 
+/**
+ * Changes one page lists, from 1 to 1000.
+ */
+limit: number, };
+
+export type ChangeKind = "lines" | "packages";
+
+export type ChangedSinceAnswer = { "status": "same" } | { "status": "too_old", reason: TooOldReason, } | { "status": "changes", counts: ChangeCounts, items: ReadonlyArray<ChangeItem>, 
+/**
+ * The cursor of the next page; absent on the last.
+ */
+nextCursor?: string, };
+
+export type TooOldReason = "compacted" | "format" | "unknown";
+
+export type ChangeCounts = { added: number, changed: number, removed: number, };
+
+export type ChangeItem = { change: Change, 
+/**
+ * A line's ID (`<target>:["namespace","key"]` or `<target>:unresolved:<unit ID>`), or a
+ * package's path as the package-text shards store it.
+ */
+id: string, 
+/**
+ * A line's namespace and key, when it has that identity: as the current generation has it,
+ * or for a removed line, as the earlier one had it.
+ */
+namespace?: string, key?: string, };
+
+export type Change = "added" | "changed" | "removed";
 
 export type RowSelection = { kind: RowKind, id: string, };
 

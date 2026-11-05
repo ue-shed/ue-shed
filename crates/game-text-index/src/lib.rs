@@ -18,6 +18,7 @@ mod dictionary_image;
 pub mod engine;
 mod engine_aggregate;
 mod engine_asset_types;
+mod engine_changes;
 mod engine_detail;
 mod engine_evidence;
 mod engine_export;

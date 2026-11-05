@@ -151,6 +151,17 @@ export interface NativeTextQuery extends NativeFindings {
 	readonly reviewLines: (
 		request: GameTextContract.ReviewLinesRequest
 	) => Effect.Effect<readonly GameTextContract.ReviewLine[], GameTextIndexError>;
+	/**
+	 * A page of what changed in this target since an earlier `generation` of it: its lines by
+	 * line ID, or its packages by path, in ID order, with every change's counts. The engine diffs
+	 * the two generations once and pages the cached result; `same` when `since` is this model's
+	 * generation, and `too_old` when the store no longer holds it (`compacted`), wrote it in
+	 * another format (`format`) or never produced it for this target (`unknown`). It never
+	 * answers "everything is new"; that choice is the host's.
+	 */
+	readonly changedSince: (
+		request: GameTextContract.ChangedSinceRequest
+	) => Effect.Effect<GameTextContract.ChangedSinceAnswer, GameTextIndexError>;
 	/** Explicit bulk export, assembled and serialized by Rust before the host decodes it. */
 	readonly export: (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">

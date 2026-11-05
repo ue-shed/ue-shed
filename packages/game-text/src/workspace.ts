@@ -1,4 +1,5 @@
 import type { RelatedLinesRequest, RelatedLinesResult } from "./related-lines.js";
+import type { ChangedSinceRequest, ChangedSinceResult } from "./changed-since.js";
 import { indexPublicFailure } from "./index-public-error.js";
 import type { ChangeComparisonRequest, ChangeComparisonResult } from "./change-comparison.js";
 import { makeWorkspaceChangeComparison } from "./workspace-change.js";
@@ -223,6 +224,12 @@ export interface GameTextWorkspaceApi {
 	) => Effect.Effect<LocalizationFocusResult>;
 	/** A selection's related units and lines, with their places and translations. */
 	readonly related: (request: RelatedLinesRequest) => Effect.Effect<RelatedLinesResult>;
+	/**
+	 * A page of what changed in the scanned target, or with `target` the selected localization
+	 * target, since an earlier `generation` a refresh or the target's selection reported; see
+	 * `ChangedSinceResult`.
+	 */
+	readonly changedSince: (request: ChangedSinceRequest) => Effect.Effect<ChangedSinceResult>;
 	/** A change's text compared with what it changed from; see `ChangeComparisonResult`. */
 	readonly compareChange: (
 		request: ChangeComparisonRequest
@@ -418,10 +425,13 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const queryModel = (index: RetainedGameTextIndexResult) => index.query;
 	const querySearch = (index: RetainedGameTextIndexResult) => index.search;
 	const querySearchRows = (index: RetainedGameTextIndexResult) => index.searchRows;
-	const completedQuery = (index: RetainedGameTextIndexResult, cached?: true) =>
-		cached
-			? { status: "completed" as const, summary: index.summary, cached }
-			: { status: "completed" as const, summary: index.summary };
+	/** A refresh's answer for a published model: its summary and its target's generation. */
+	const completedQuery = (index: RetainedGameTextIndexResult, cached?: true) => ({
+		status: "completed" as const,
+		summary: index.summary,
+		...(index.generation === undefined ? undefined : { generation: index.generation }),
+		...(cached ? { cached } : undefined)
+	});
 	const qualityModel = yield* Ref.make<AsyncTextQualityQuery | undefined>(undefined);
 	const qualityDocument = yield* Ref.make<GameTextRuleDocument | undefined>(undefined);
 	const qualityRulePath = yield* Ref.make<
@@ -595,11 +605,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					// The cache was never checked against the current Project Index, so it records no
 					// investigation source: exports and rules wait for the rescan's verified model.
 					yield* Ref.set(investigationSnapshot, undefined);
-					return {
-						status: "completed" as const,
-						summary: indexed.summary,
-						cached: true as const
-					};
+					return completedQuery(indexed, true);
 				}).pipe(publication.withPermit, Effect.uninterruptible)
 			),
 			// oxlint-disable-next-line anti-slop/no-effect-catch-all -- Cache open always falls back to Scan project.
@@ -676,10 +682,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 										source: { ...snapshot.source, generation: index.generation }
 									}
 							);
-							return {
-								summary: previous.indexed.summary,
-								status: "completed" as const
-							};
+							return completedQuery(previous.indexed);
 						}).pipe(publication.withPermit, Effect.uninterruptible);
 						if (kept) return kept;
 						while (true) {
@@ -706,8 +709,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 									indexed.project !== undefined &&
 									previous.indexed.project?.packageKey ===
 										indexed.project.packageKey &&
-									previous.indexed.project.generation ===
-										indexed.project.generation;
+									previous.indexed.project.storeEpoch ===
+										indexed.project.storeEpoch;
 								yield* localization.reset(unchangedPackages);
 								return yield* Effect.gen(function* () {
 									if (!(yield* owned)) return superseded();
@@ -739,10 +742,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 									});
 									yield* indexed.retain;
 									yield* cachedIndex.release({ background: true });
-									return {
-										summary: indexed.summary,
-										status: "completed" as const
-									};
+									return completedQuery(indexed);
 								}).pipe(publication.withPermit);
 							}).pipe(Effect.uninterruptible);
 							if (published) return published;
@@ -949,6 +949,20 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		return result.success === undefined
 			? { status: "not_found" as const }
 			: { status: "found" as const, related: result.success };
+	});
+
+	const changedSince = Effect.fn("GameText.workspace.changedSince")(function* (
+		request: ChangedSinceRequest
+	) {
+		const model = yield* request.target
+			? localization.targetQuery(request.target)
+			: currentModel(queryModel);
+		if (!model) return { status: "not_ready" as const };
+		const { target: _target, ...engine } = request;
+		const result = yield* model.changedSince(engine).pipe(Effect.result);
+		if (Result.isFailure(result))
+			return { status: "failed" as const, error: indexPublicFailure(result.failure) };
+		return result.success;
 	});
 
 	const prepareQualityRules = Effect.fn("GameText.workspace.prepareQualityRules")(function* (
@@ -1694,6 +1708,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				)
 		),
 		related: scoped(related),
+		changedSince: scoped(changedSince),
 		compareChange,
 		chooseLocalizationFile,
 		compareLocalizationFiles,

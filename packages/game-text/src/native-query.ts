@@ -649,6 +649,32 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		});
 		return lines;
 	});
+	const changedSince = Effect.fn("GameText.native.changedSince")(function* (
+		request: GameTextContract.ChangedSinceRequest
+	) {
+		const answer = yield* execute({ action: "changed_since", reader, request });
+		const reply = answerJson<GameTextContract.ChangedSinceAnswer>(answer);
+		if (reply === undefined)
+			return yield* Effect.fail(failed("changed_since", "The engine sent no reply."));
+		yield* Effect.annotateCurrentSpan({
+			"game_text.changed_since.kind": request.kind,
+			"game_text.changed_since.page_size": request.limit,
+			"game_text.changed_since.status": reply.status,
+			"game_text.changed_since.engine_seconds":
+				answer.profile.stageSeconds["changed_since"] ?? 0,
+			...(reply.status === "changes"
+				? {
+						"game_text.changed_since.added": reply.counts.added,
+						"game_text.changed_since.changed": reply.counts.changed,
+						"game_text.changed_since.removed": reply.counts.removed,
+						"game_text.changed_since.items": reply.items.length
+					}
+				: reply.status === "too_old"
+					? { "game_text.changed_since.reason": reply.reason }
+					: undefined)
+		});
+		return reply;
+	});
 	const model: NativeTextQuery = {
 		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")(
 			function* (document, progress) {
@@ -749,6 +775,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		readCorpusReportHeader: () => readCorpusReportHeader(pinned),
 		readUnits: (ids) => (ids.length === 0 ? Effect.succeed([]) : readUnits(pinned, ids)),
 		reviewLines,
+		changedSince,
 		corpusFingerprint: () => corpusFingerprint(pinned)
 	};
 	return model;

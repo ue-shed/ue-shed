@@ -1,6 +1,7 @@
 import { Schema, type Effect, type Stream } from "effect";
 import { InvestigationFileResult, InvestigationFormat } from "@ue-shed/unreal-assets/investigation";
 import { ChangeComparisonRequest, ChangeComparisonResult } from "./change-comparison.js";
+import { ChangedSinceRequest, ChangedSinceResult } from "./changed-since.js";
 import {
 	LocalizationFileChoiceRequest,
 	LocalizationFileChoiceResult,
@@ -159,6 +160,8 @@ export const GameTextWorkspaceContract = {
 		success: LocalizationFileComparisonResult
 	},
 	related: { params: RelatedLinesRequest, success: RelatedLinesResult },
+	/** What changed in the scanned or selected target since an earlier generation of it. */
+	changedSince: { params: ChangedSinceRequest, success: ChangedSinceResult },
 	investigationExport: {
 		params: GameTextInvestigationExportRequest,
 		success: InvestigationFileResult

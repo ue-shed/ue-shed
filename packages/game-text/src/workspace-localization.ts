@@ -520,7 +520,10 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				},
 				lines: textCounts.total,
 				notSynced: textCounts.localization?.notSynced ?? 0,
-				...localizationTargetFiles(localizationEvidenceFileStatuses(evidence))
+				...localizationTargetFiles(localizationEvidenceFileStatuses(evidence)),
+				...(indexed.success.generation === undefined
+					? undefined
+					: { generation: indexed.success.generation })
 			};
 			return yield* Effect.uninterruptible(
 				Effect.gen(function* () {

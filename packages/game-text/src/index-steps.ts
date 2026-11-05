@@ -156,11 +156,15 @@ export interface GameTextProject {
 	readonly cacheRoot: string;
 }
 /**
- * Verified package revision reusable across localization targets. Its generation and package
+ * Verified package revision reusable across localization targets. Its store epoch and package
  * key establish dependency identity; the value itself holds no reader pin or writer lease.
  */
 export interface GameTextProjectIndex extends GameTextProject {
-	readonly generation: string;
+	/**
+	 * The store's dictionary epoch: renewed only when the store is created again or compacted,
+	 * not when inputs change. Compare a target's `generation` to tell whether it changed.
+	 */
+	readonly storeEpoch: string;
 	readonly packageKey: string;
 	readonly packages: Packages;
 	readonly changedFiles?: readonly string[];
@@ -191,6 +195,11 @@ export interface GameTextTargetIndex {
 	readonly view: GameTextProjectView;
 	readonly join: Join;
 	readonly review: LocalizationReviewSnapshot;
+	/** The store's dictionary epoch the target was built in; see `GameTextProjectIndex`. */
+	readonly storeEpoch: string;
+	/**
+	 * The target's generation, its joined key; see `GameTextIndexRefreshResult["generation"]`.
+	 */
 	readonly generation: string;
 	/** Opaque identity for comparing this validated target with an already opened model. */
 	readonly queryRevision?: string | undefined;
@@ -223,8 +232,8 @@ const runningEvaluations = new WeakMap<
 
 /** Models opened by this process, numbering each model's revision. */
 let openedModels = 0;
-const queryRevisionFor = (project: GameTextProject, generation: string, joinedKey: string) =>
-	JSON.stringify([project.cacheRoot, project.projectRoot, generation, joinedKey]);
+const queryRevisionFor = (project: GameTextProject, storeEpoch: string, joinedKey: string) =>
+	JSON.stringify([project.cacheRoot, project.projectRoot, storeEpoch, joinedKey]);
 
 const failure = (
 	operation: string,
@@ -287,7 +296,7 @@ const configurationFor = (
 		targetName === undefined ? { kind: "source" } : { kind: "localization", target: targetName }
 });
 const checkProject = (project: GameTextProjectIndex, manifest: SharedIndexManifest) =>
-	project.generation === manifest.generation && project.packageKey === packageKey(manifest)
+	project.storeEpoch === manifest.generation && project.packageKey === packageKey(manifest)
 		? Effect.void
 		: Effect.fail(stale("project"));
 const normalizeFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -529,7 +538,7 @@ export const makeGameTextIndexSteps = (
 						projectRoot,
 						cacheRoot,
 						packages,
-						generation: manifest.generation,
+						storeEpoch: manifest.generation,
 						packageKey: packageKey(manifest)
 					};
 					if (request.changedFiles !== undefined)
@@ -966,7 +975,7 @@ export const makeGameTextIndexSteps = (
 					const join = yield* Effect.scoped(builder.refreshJoinedTarget(joinInput));
 					if ((yield* index.inspect()).active["joined.invalidated"])
 						yield* (yield* index.writer()).publishBatch([], ["joined.invalidated"]);
-					const generation = (yield* index.inspect()).generation;
+					const storeEpoch = (yield* index.inspect()).generation;
 					return {
 						project,
 						view: target.view,
@@ -974,8 +983,9 @@ export const makeGameTextIndexSteps = (
 						fileKeys: target.fileKeys,
 						join,
 						review,
-						generation,
-						queryRevision: queryRevisionFor(project, generation, join.key)
+						storeEpoch,
+						generation: join.key,
+						queryRevision: queryRevisionFor(project, storeEpoch, join.key)
 					} satisfies GameTextTargetIndex;
 				})
 			);
@@ -1084,7 +1094,7 @@ export const makeGameTextIndexSteps = (
 			)
 				return yield* Effect.fail(stale("localization"));
 			if (
-				joined.reader.manifest.generation !== target.generation ||
+				joined.reader.manifest.generation !== target.storeEpoch ||
 				joined.reader.manifest.active.joined !== target.join.key ||
 				joined.reader.manifest.active["joined.invalidated"]
 			)
@@ -1108,7 +1118,7 @@ export const makeGameTextIndexSteps = (
 			);
 			const native = yield* queries.open({
 				configuration,
-				generation: target.generation,
+				storeEpoch: target.storeEpoch,
 				joinedKey: target.join.key
 			});
 			const query = native;
@@ -1202,6 +1212,7 @@ export const makeGameTextIndexSteps = (
 					target.join.key
 				),
 				revision: `${joined.reader.manifest.generation}#${++openedModels}`,
+				generation: target.join.key,
 				joined,
 				query,
 				summary,
@@ -1343,7 +1354,7 @@ export const makeGameTextIndexSteps = (
 							return yield* Effect.fail(stale("committed_identity"));
 						const indexed: GameTextProjectIndex = {
 							...project,
-							generation: manifest.generation,
+							storeEpoch: manifest.generation,
 							packageKey: packageKey(manifest),
 							packages: {
 								readPackages: 0,
@@ -1399,7 +1410,8 @@ export const makeGameTextIndexSteps = (
 								relativePath: defaultLocalizationReviewPath(meta.input.target.name),
 								contentHash: null
 							},
-							generation: manifest.generation,
+							storeEpoch: manifest.generation,
+							generation: key,
 							fileKeys: {}
 						} satisfies GameTextTargetIndex;
 					}).pipe(

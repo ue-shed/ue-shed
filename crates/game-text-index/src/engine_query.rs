@@ -74,6 +74,9 @@ pub struct EngineQuery {
     pub(crate) package_lists: Once<Arc<(Vec<Value>, Vec<Value>)>>,
     /// Each evidence input's file metadata, read once per reader.
     pub(crate) evidence_meta: Memo<String, Arc<Value>>,
+    /// Each kind's changes since the generation a host last asked about, so its pages are cheap.
+    pub(crate) changes:
+        Lock<HashMap<crate::engine_changes::ChangeKind, Arc<crate::engine_changes::ChangeSet>>>,
 }
 
 /// An open-addressed hash of one packed-ID arena: each slot holds a row plus one, zero when
@@ -252,6 +255,7 @@ impl EngineQuery {
             fingerprint: Once::default(),
             package_lists: Once::default(),
             evidence_meta: Memo::default(),
+            changes: Lock::default(),
         })
     }
 

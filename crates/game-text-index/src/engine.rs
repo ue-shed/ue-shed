@@ -126,6 +126,11 @@ pub enum EngineRequest {
         reader: String,
         request: crate::engine_types::ReviewLinesRequest,
     },
+    /// What changed in the reader's target since an earlier generation of it, a page at a time.
+    ChangedSince {
+        reader: String,
+        request: crate::engine_changes::ChangedSinceRequest,
+    },
     FindingsEvaluate {
         reader: String,
         /// The v4 rule document.
@@ -220,6 +225,13 @@ impl EngineRequest {
                 )?;
             }
             Self::ReviewLines { reader, request } => {
+                require(
+                    !reader.is_empty() && reader.len() <= 128,
+                    invalid("Invalid native reader handle."),
+                )?;
+                request.validate()?;
+            }
+            Self::ChangedSince { reader, request } => {
                 require(
                     !reader.is_empty() && reader.len() <= 128,
                     invalid("Invalid native reader handle."),
@@ -529,7 +541,8 @@ impl EngineSession {
             | EngineRequest::FindingsEvaluate { reader, .. }
             | EngineRequest::FindingsAccept { reader, .. }
             | EngineRequest::FindingsQuery { reader, .. }
-            | EngineRequest::ReviewLines { reader, .. } => {
+            | EngineRequest::ReviewLines { reader, .. }
+            | EngineRequest::ChangedSince { reader, .. } => {
                 let query=self.readers.lock().get(reader).cloned().ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 // Every corpus line, whether or not it is visible.
                 let everything = || Ok::<_, Error>(Selection::default());
@@ -656,6 +669,12 @@ impl EngineSession {
                         "review_lines",
                         Some(crate::wtf8::view_json(&serde_json::to_value(
                             query.review_lines(request, cancelled)?,
+                        )?)?),
+                    ),
+                    EngineRequest::ChangedSince { request, .. } => (
+                        "changed_since",
+                        Some(crate::wtf8::view_json(&serde_json::to_value(
+                            query.changed_since(request, cancelled)?,
                         )?)?),
                     ),
                     EngineRequest::LocalizationCorpus { .. } => {

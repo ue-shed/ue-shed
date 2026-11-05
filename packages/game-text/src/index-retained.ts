@@ -114,6 +114,7 @@ export const makeRetainedGameTextIndexWith = Effect.fn("GameTextIndex.retain")(f
 					return {
 						project: result.project,
 						queryRevision: result.queryRevision,
+						generation: result.generation,
 						revision: result.revision ?? `retained:${++retainedModels}`,
 						get joined() {
 							return result.joined;

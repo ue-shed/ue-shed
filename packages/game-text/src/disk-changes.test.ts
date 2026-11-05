@@ -1,9 +1,13 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { it } from "@effect/vitest";
 import { Effect, Layer, Queue, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import {
 	DiskWatcher,
+	DiskWatcherNodeLive,
 	watchDiskChanges,
 	watchedFolders,
 	type DiskChangeItem,
@@ -15,10 +19,10 @@ import {
 const fakeWatcher = () => {
 	const listeners = new Map<string, DiskWatchListener>();
 	const layer = Layer.succeed(DiskWatcher, {
-		watch: (folder, listener) =>
+		watch: (projectRoot, folder, listener) =>
 			Effect.acquireRelease(
-				Effect.sync(() => void listeners.set(folder.replaceAll("\\", "/"), listener)),
-				() => Effect.sync(() => void listeners.delete(folder.replaceAll("\\", "/")))
+				Effect.sync(() => void listeners.set(`${projectRoot}/${folder}`, listener)),
+				() => Effect.sync(() => void listeners.delete(`${projectRoot}/${folder}`))
 			)
 	});
 	const listener = (folder: string) => {
@@ -175,6 +179,57 @@ describe("watchDiskChanges", () => {
 			expect(yield* Queue.take(states)).toEqual({ status: "not_indexed", checking: true });
 		})
 	);
+
+	for (const [title, present] of [
+		["Config", ["Content", "Config"]],
+		["only the project root", ["Content"]]
+	] as const)
+		it.live(`checks a review file saved in a folder created later, from ${title}`, () =>
+			Effect.gen(function* () {
+				const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "disk-changes-")));
+				yield* Effect.addFinalizer(() =>
+					Effect.promise(() => rm(root, { recursive: true, force: true }))
+				);
+				for (const folder of present)
+					yield* Effect.promise(() => mkdir(join(root, folder), { recursive: true }));
+				const review = "Config/UEShed/Localization/Game.review.json";
+				const checks: (readonly string[] | "walk")[] = [];
+				yield* watchDiskChanges({
+					projectRoot: root,
+					folders: watchedFolders([review]),
+					localizationFiles: new Set([review]),
+					published: Stream.never,
+					settle: "20 millis",
+					check: ({ paths }) =>
+						Effect.sync(() => {
+							checks.push(paths ?? "walk");
+							return {
+								status: "ready" as const,
+								counts: {
+									packages: { added: 0, changed: 0, removed: 0 },
+									localization: { added: 0, changed: 0, removed: 0 }
+								},
+								items: []
+							};
+						})
+				}).pipe(Stream.runDrain, Effect.provide(DiskWatcherNodeLive), Effect.forkScoped);
+				// Node's recursive watch reports at its own pace: wait for it, within a bound.
+				const until = (done: () => boolean) =>
+					Effect.gen(function* () {
+						const deadline = Date.now() + 5000;
+						while (!done() && Date.now() < deadline) yield* Effect.sleep("25 millis");
+						expect(done()).toBe(true);
+					});
+				yield* until(() => checks.length === 1);
+				yield* Effect.sleep("100 millis");
+				expect(checks).toEqual(["walk"]);
+				yield* Effect.promise(() =>
+					mkdir(join(root, "Config/UEShed/Localization"), { recursive: true })
+				);
+				yield* Effect.promise(() => writeFile(join(root, review), "{}"));
+				yield* until(() => checks.length > 1);
+			}).pipe(Effect.scoped)
+		);
 
 	it("watches Content and each target folder outside it once", () => {
 		expect(

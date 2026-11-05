@@ -1,4 +1,4 @@
-import { join, posix } from "node:path";
+import { posix } from "node:path";
 import { LocalizationTargetName } from "@ue-shed/localization/browser";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { Duration, Effect, Queue, Ref, Schema, Stream } from "effect";
@@ -252,7 +252,7 @@ export const watchDiskChanges = <E>(
 				| { readonly error: unknown }
 			>();
 			for (const folder of options.folders)
-				yield* watcher.watch(join(options.projectRoot, folder), {
+				yield* watcher.watch(options.projectRoot, folder, {
 					change: (path) => Queue.offerUnsafe(events, { folder, path }),
 					error: (error) => Queue.offerUnsafe(events, { error })
 				});

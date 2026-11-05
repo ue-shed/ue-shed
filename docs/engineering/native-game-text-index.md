@@ -183,8 +183,12 @@ share string IDs, so the engine opens the earlier joined layer read-only by key 
 only be listed, not active) and compares columns without materialising strings:
 
 - Lines are matched by line ID. A line changed when its namespace, key, source, facts, flags,
-  files, units (by unit ID), key-change pair, or a culture's state, review or translation (archive
-  and PO text) differs. A change of the target's cultures changes every line.
+  files, units (by unit ID), saved places, key-change pair, or a culture's state, review or
+  translation (archive and PO text) differs. A place is identified as the focus query identifies an
+  occurrence (package path, object, location kind, and the row and property that kind names), by
+  string ID, so an occurrence moved to another object of the same package, or one added to or
+  removed from an existing unit, changes the line. A change of the target's cultures changes every
+  line.
 - Packages come from the package-text shards whose keys differ between the two joins' dependencies:
   their `package.path` and `package.signature` columns, so packages without text count too.
 
@@ -258,9 +262,16 @@ since the last scan" from it instead of keeping its own snapshot of the tree.
   listing and signed with the Catalog's `bundle_signature`, so its signature is the one the
   package-text shards hold. With `paths` (project-relative, at most 4,096), only those are stated
   with `fs::metadata`; a sidecar checks its package. A test proves both give the same signature.
-- Packages are compared by path with the view's active `package-text.*` shards, a batch of shards'
-  strings at a time: `added` on disk only, `removed` in the index only, `changed` when the
-  signature differs.
+- Packages are compared by path with the `package-text.*` shards the view's joined layer read (its
+  `join.meta` dependencies, as `changed_since` takes them), a batch of shards' strings at a time:
+  `added` on disk only, `removed` in the index only, `changed` when the signature differs. Shards a
+  project-only refresh or another target's scan publishes are not the view's until it is joined
+  again, so a difference stays reported until then.
+- Each observed path is converted once to the dictionary's scalar view, as a scan interns it, and
+  compared, ordered and paged as that view; the raw name is used only to stat the file and to pick
+  its shard, which a scan picks from the raw name too. On the wire an item's path and the cursor are
+  the file's own name, the same text `changed_since` sends for that package, so a name with a
+  literal reserved scalar (U+F0000 to U+F0800) matches its indexed package.
 - With `target`, the view must be that target's. Its manifest, archives and POs (the paths the join
   reads, `join::input_paths`) and its review file are stated and compared by size and modification
   time with what the join recorded (`fileProvenances`, and `reviewFile`, which the join records and
@@ -270,13 +281,19 @@ since the last scan" from it instead of keeping its own snapshot of the tree.
   changes that alter which files a target has are out of scope: the check reads the target as the
   join recorded it.
 - The answer is `not_indexed` while the view has no joined layer, otherwise every count and a page
-  of items in path order (UTF-8 bytes), whose last path is the next page's cursor. A first page
+  of items in path order (WTF-8 bytes, as `changed_since` orders IDs), whose last path is the next
+  page's cursor. A first page
   checks again; the session keeps that check's differences (only the changed paths), so its later
   pages read them.
 
 `watchDiskChanges` (`packages/game-text/src/disk-changes.ts`) keeps a badge current: one full
 check, then `Content` and the target's folders are watched recursively through the `DiskWatcher`
-service (`fs.watch` in production). A burst of events settles for 300 ms (a host option); named
+service (`fs.watch` in production). A folder that doesn't exist yet, such as the default review
+folder `Config/UEShed/Localization` before the first review is saved, is watched from its nearest
+existing ancestor below the project root, recursively, and an event under it counts as one for the
+folder; when only the project root exists, the root is watched for its own entries and the watch
+moves one level deeper as each folder appears. The root is never watched recursively, since it
+holds `Content`. Every handle closes with the watching scope. A burst of events settles for 300 ms (a host option); named
 packages, sidecars and localization files are then rechecked by path, and a folder-level or unnamed
 event, a watcher error or a published scan runs one full walk. It holds only the set of differing
 paths.

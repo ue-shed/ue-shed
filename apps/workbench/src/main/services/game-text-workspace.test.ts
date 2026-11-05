@@ -326,7 +326,7 @@ it.effect("counts the host's project scan as the first of a scan's steps", () =>
 			total: 5,
 			phase: "project_scanning",
 			step: 1,
-			steps: 9
+			steps: 10
 		});
 	}).pipe(provideWorkspace)
 );

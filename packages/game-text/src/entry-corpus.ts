@@ -80,6 +80,7 @@ export {
 	LocalizationReviewResult,
 	acceptedFindingFilter,
 	applyLocalizationReview,
+	evidenceReviewLines,
 	localizationLineFingerprint,
 	matchesLocalizationReview,
 	withoutAcceptedFindings

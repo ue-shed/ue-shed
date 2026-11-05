@@ -142,6 +142,15 @@ export interface NativeTextQuery extends NativeFindings {
 	 * Rust: equal corpora have equal fingerprints on every machine.
 	 */
 	readonly corpusFingerprint: () => Effect.Effect<string, GameTextIndexError>;
+	/**
+	 * For one culture of the open target, each identity's line as a review fingerprints it, in
+	 * request order: its manifest source, the translation the next sync ships and the fingerprint
+	 * the join compares stored reviews with, or `not_gathered`. Any number of identities, read in
+	 * engine-sized batches; none reads no file in the host.
+	 */
+	readonly reviewLines: (
+		request: GameTextContract.ReviewLinesRequest
+	) => Effect.Effect<readonly GameTextContract.ReviewLine[], GameTextIndexError>;
 	/** Explicit bulk export, assembled and serialized by Rust before the host decodes it. */
 	readonly export: (
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">

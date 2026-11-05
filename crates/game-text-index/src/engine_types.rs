@@ -467,6 +467,86 @@ impl LineRequest {
     }
 }
 
+/// The most identities one `review_lines` request reads.
+pub const MAX_REVIEW_LINES: usize = 2560;
+
+/// A `review_lines` request: for one culture of the open target, each identity's line as a review
+/// fingerprints it.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReviewLinesRequest {
+    pub target: String,
+    pub culture: String,
+    pub identities: Vec<ReviewIdentity>,
+}
+
+/// A line's gathered identity.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReviewIdentity {
+    pub namespace: String,
+    pub key: String,
+}
+
+impl ReviewLinesRequest {
+    pub fn validate(&self) -> Result<()> {
+        require(
+            !self.target.is_empty() && characters(&self.target) <= 1024,
+            invalid("A localization target is required."),
+        )?;
+        require(
+            !self.culture.is_empty() && characters(&self.culture) <= 128,
+            invalid("A culture is required."),
+        )?;
+        require(
+            !self.identities.is_empty() && self.identities.len() <= MAX_REVIEW_LINES,
+            invalid("A review reads between 1 and 2560 lines at once."),
+        )?;
+        for identity in &self.identities {
+            bounded(&identity.namespace, 32767, "A namespace exceeds its bound.")?;
+            bounded(&identity.key, 32767, "A key exceeds its bound.")?;
+        }
+        Ok(())
+    }
+}
+
+/// One identity's line in a `review_lines` answer.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ReviewLine {
+    /// The line's manifest source, the translation the next sync ships (a pending PO edit, else
+    /// the archive's; null without one), the fingerprint the join compares a review with, and the
+    /// culture's PO entry with the line's identity.
+    Found {
+        source: String,
+        translation: Option<String>,
+        fingerprint: String,
+        po: Option<ReviewPoEntry>,
+    },
+    /// The target has no line with the identity, the line has no manifest entry, or the culture
+    /// is not one of the target's.
+    NotGathered,
+}
+
+/// A PO entry with a line's own identity: not one a collapsed PO shares by source.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewPoEntry {
+    pub msgid: String,
+}
+
+/// A `review_lines` request's part: a line for each identity, in request order.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewLinesAnswer {
+    pub lines: Vec<ReviewLine>,
+}
+
 /// A `query` request: the rows, and the parts of the answer about them.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(test, derive(TS))]

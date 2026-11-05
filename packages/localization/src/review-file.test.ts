@@ -15,7 +15,15 @@ import {
 	type LocalizationReviewUpdate
 } from "./review-file.js";
 import { readLocalizationReview, updateLocalizationReview } from "./review-store.js";
-import { CultureCode, LocalizationTargetName, TextKey, TextNamespace } from "./schema.js";
+import {
+	CultureCode,
+	LocalizationTargetName,
+	TextKey,
+	TextNamespace,
+	type ArchiveEntry,
+	type POEntry
+} from "./schema.js";
+import { shippedEvidenceTranslation } from "./change-set-review.js";
 import type { LocalizationReviewFlag } from "./review-file.js";
 
 const target = LocalizationTargetName.make("Game");
@@ -40,6 +48,38 @@ describe("localization review file", () => {
 			localizationReviewFingerprint("a", "")
 		);
 		expect(localizationReviewFingerprint("a", "b")).toMatch(/^[0-9a-f]{64}$/u);
+	});
+
+	it("ships a pending PO edit only where the index's join would", () => {
+		const identity = { namespace: TextNamespace.make("UI"), key: TextKey.make("K") };
+		const archived = (text: string): ArchiveEntry => ({
+			...identity,
+			source: { Text: "Source" },
+			translation: { Text: text }
+		});
+		const pending = (text: string): POEntry => ({
+			msgctxt: "UI,K",
+			msgid: "Source",
+			msgstr: { 0: text },
+			translatorComments: [],
+			extractedComments: [],
+			referenceComments: [],
+			flags: [],
+			previousMsgidLines: [],
+			identity
+		});
+		expect(shippedEvidenceTranslation([archived("Alt")], [pending("Neu")])).toBe("Neu");
+		// A missing archive translates nothing, so the pending edit ships.
+		expect(shippedEvidenceTranslation([], [pending("Neu")])).toBe("Neu");
+		expect(shippedEvidenceTranslation([archived("Alt")], [pending("")])).toBe("Alt");
+		// Duplicate entries, or an archive that exists but could not be read, leave the archive's.
+		expect(
+			shippedEvidenceTranslation([archived("Alt")], [pending("Neu"), pending("Neuer")])
+		).toBe("Alt");
+		expect(
+			shippedEvidenceTranslation([archived("Alt"), archived("Andere")], [pending("Neu")])
+		).toBe("Alt");
+		expect(shippedEvidenceTranslation(undefined, [pending("Neu")])).toBeNull();
 	});
 
 	it("merges flags for the same text and starts over when the text changed", () => {

@@ -120,6 +120,12 @@ pub enum EngineRequest {
         #[cfg_attr(test, ts(type = "unknown"))]
         request: Value,
     },
+    /// For one culture, each identity's line as a review fingerprints it: its manifest source,
+    /// the translation the next sync ships and the fingerprint the join compares reviews with.
+    ReviewLines {
+        reader: String,
+        request: crate::engine_types::ReviewLinesRequest,
+    },
     FindingsEvaluate {
         reader: String,
         /// The v4 rule document.
@@ -212,6 +218,13 @@ impl EngineRequest {
                     !reader.is_empty() && reader.len() <= 128,
                     invalid("Invalid native reader handle."),
                 )?;
+            }
+            Self::ReviewLines { reader, request } => {
+                require(
+                    !reader.is_empty() && reader.len() <= 128,
+                    invalid("Invalid native reader handle."),
+                )?;
+                request.validate()?;
             }
         }
         if let Self::FindingsEvaluate {
@@ -515,7 +528,8 @@ impl EngineSession {
             | EngineRequest::LocalizationExport { reader, .. }
             | EngineRequest::FindingsEvaluate { reader, .. }
             | EngineRequest::FindingsAccept { reader, .. }
-            | EngineRequest::FindingsQuery { reader, .. } => {
+            | EngineRequest::FindingsQuery { reader, .. }
+            | EngineRequest::ReviewLines { reader, .. } => {
                 let query=self.readers.lock().get(reader).cloned().ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
                 // Every corpus line, whether or not it is visible.
                 let everything = || Ok::<_, Error>(Selection::default());
@@ -638,6 +652,12 @@ impl EngineSession {
                         }
                         ("localization_export", None)
                     }
+                    EngineRequest::ReviewLines { request, .. } => (
+                        "review_lines",
+                        Some(crate::wtf8::view_json(&serde_json::to_value(
+                            query.review_lines(request, cancelled)?,
+                        )?)?),
+                    ),
                     EngineRequest::LocalizationCorpus { .. } => {
                         query.send_localization_lines(
                             &everything()?,
@@ -736,6 +756,30 @@ mod tests {
             "request": {"selection": {"kind": "line", "id": "line"}, "line": true}
         }))?;
         line.validate()?;
+        Ok(())
+    }
+
+    #[test]
+    fn a_review_reads_a_bounded_batch_of_one_cultures_lines() -> Result<()> {
+        let review = |identities: usize| {
+            serde_json::from_value::<EngineRequest>(json!({
+                "action": "review_lines", "reader": "reader",
+                "request": {"target": "Game", "culture": "de", "identities":
+                    vec![json!({"namespace": "UI", "key": "Play"}); identities]}
+            }))
+        };
+        review(1)?.validate()?;
+        review(crate::engine_types::MAX_REVIEW_LINES)?.validate()?;
+        for identities in [0, crate::engine_types::MAX_REVIEW_LINES + 1] {
+            assert_eq!(
+                review(identities)?.validate().err().ok_or("bounded")?.code,
+                ErrorCode::InvalidInput
+            );
+        }
+        assert_eq!(
+            crate::session::Class::of(&review(1)?),
+            crate::session::Class::Interactive
+        );
         Ok(())
     }
 

@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "4b5c265ee344fdbd3581a2f208392761475320f82aaa21ddc6e345a9f4e126f3"
+	contractHash: "961355da52328b60cf89b0d0ed40400f9cae25ee4798a0bfbdbeed946932254a"
 } as const;
 
 /**
@@ -48,7 +48,7 @@ export type LocalizationFileResult = { file: LocalizationPreparedFile | null, er
 
 export type LocalizationImportOutcome = { lookupStrings: number, reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
 
-export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "review_lines", reader: string, request: ReviewLinesRequest, } | { "action": "findings_evaluate", reader: string, 
 /**
  * The v4 rule document.
  */
@@ -457,6 +457,16 @@ findings?: FindingsSelection, places?: PlacesSection, detail?: DetailSection, re
  */
 line?: boolean, };
 
+export type ReviewLinesRequest = { target: string, culture: string, identities: ReadonlyArray<ReviewIdentity>, };
+
+export type ReviewIdentity = { namespace: string, key: string, };
+
+export type ReviewLine = { "status": "found", source: string, translation: string | null, fingerprint: string, po: ReviewPoEntry | null, } | { "status": "not_gathered" };
+
+export type ReviewPoEntry = { msgid: string, };
+
+export type ReviewLinesAnswer = { lines: ReadonlyArray<ReviewLine>, };
+
 export type RowSelection = { kind: RowKind, id: string, };
 
 export type RowKind = "line" | "unit";
@@ -611,7 +621,13 @@ gatherEditorOnly: boolean,
 /**
  * The target's manifest and archives at the base; without them there are no findings.
  */
-localization?: BaseLocalization, changes: PageRequest, findings: PageRequest, };
+localization?: BaseLocalization, changes: PageRequest, findings: PageRequest, 
+/**
+ * The checks that fail the change, which the findings list first so that every page before
+ * the first warning holds only failures. The order within each group is the checks' order,
+ * then the path.
+ */
+failOn?: ReadonlyArray<GateCheck>, };
 
 export type PageRequest = { offset: number, limit: number, };
 

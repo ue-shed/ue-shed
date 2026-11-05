@@ -16,6 +16,7 @@ import {
 	joinLocalizationTarget,
 	applyLocalizationReview,
 	applyLocalizationKeyChanges,
+	evidenceReviewLines,
 	localizationKeyChanges,
 	mergeLocalizationKeyChanges,
 	localizationQuality,
@@ -53,9 +54,14 @@ export type CannedQuery = (inputs: CannedQueryInputs) => Partial<NativeTextQuery
 
 /**
  * The query a host test reads: its planted answers, and every other member dies naming itself.
- * Hosts read a refresh's summary at once, so an unplanted summary is `emptySummary`.
+ * Hosts read a refresh's summary at once, so an unplanted summary is `emptySummary`, and an
+ * unplanted `reviewLines` reads the target's files as a host without an index would.
  */
-function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>): NativeTextQuery {
+function cannedTextQuery(
+	corpus: TextCorpus,
+	answers: Partial<NativeTextQuery>,
+	evidence?: LocalizationTargetEvidence
+): NativeTextQuery {
 	const unplanted = (member: string) => () =>
 		Effect.die(`This test planted no answer for ${member}.`);
 	return {
@@ -85,6 +91,9 @@ function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>):
 		readFileCoverage: unplanted("readFileCoverage"),
 		readCorpusReportHeader: unplanted("readCorpusReportHeader"),
 		corpusFingerprint: unplanted("corpusFingerprint"),
+		reviewLines: evidence
+			? (request) => Effect.sync(() => evidenceReviewLines(evidence, request))
+			: unplanted("reviewLines"),
 		export: unplanted("export"),
 		...answers
 	};
@@ -276,7 +285,8 @@ export function cannedGameTextIndexLayer<E>(
 							corpus,
 							evidence: files,
 							review: review?.contentHash ? review.file : undefined
-						})
+						}),
+						files
 					);
 					return {
 						project: testProjectIndex(request.projectRoot),

@@ -47,6 +47,9 @@ export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.
 
 const benchmark = channel("ue-shed.game-text-benchmark");
 
+/** The identities one `review_lines` request reads: the engine's `MAX_REVIEW_LINES`. */
+const MAX_REVIEW_LINES = 2560;
+
 const NativeExportFile = Schema.Struct({
 	...TextCorpus.fields,
 	findingRules: Schema.optionalKey(
@@ -619,6 +622,33 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	});
 	const exported = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined) =>
 		exportWithSignals(pinned, request);
+	const reviewLines = Effect.fn("GameText.native.reviewLines")(function* (
+		request: GameTextContract.ReviewLinesRequest
+	) {
+		const lines: GameTextContract.ReviewLine[] = [];
+		let engineSeconds = 0;
+		for (let start = 0; start < request.identities.length; start += MAX_REVIEW_LINES) {
+			const answer = yield* execute({
+				action: "review_lines",
+				reader,
+				request: {
+					...request,
+					identities: request.identities.slice(start, start + MAX_REVIEW_LINES)
+				}
+			});
+			const reply = answerJson<GameTextContract.ReviewLinesAnswer>(answer);
+			if (reply === undefined)
+				return yield* Effect.fail(failed("review_lines", "The engine sent no reply."));
+			lines.push(...reply.lines);
+			engineSeconds += answer.profile.stageSeconds["review_lines"] ?? 0;
+		}
+		yield* Effect.annotateCurrentSpan({
+			"game_text.review_lines.identities": request.identities.length,
+			"game_text.review_lines.found": lines.filter((line) => line.status === "found").length,
+			"game_text.review_lines.engine_seconds": engineSeconds
+		});
+		return lines;
+	});
 	const model: NativeTextQuery = {
 		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")(
 			function* (document, progress) {
@@ -718,6 +748,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		readFileCoverage: (files) => readFileCoverage(pinned, files),
 		readCorpusReportHeader: () => readCorpusReportHeader(pinned),
 		readUnits: (ids) => (ids.length === 0 ? Effect.succeed([]) : readUnits(pinned, ids)),
+		reviewLines,
 		corpusFingerprint: () => corpusFingerprint(pinned)
 	};
 	return model;

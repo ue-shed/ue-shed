@@ -770,6 +770,8 @@ export const makeGameTextIndexSteps = (
 			readonly localization?: GameTextContract.BaseLocalization;
 			readonly changes?: GameTextContract.PageRequest;
 			readonly findings?: GameTextContract.PageRequest;
+			/** The checks that fail; the engine lists their findings first, before paging. */
+			readonly failOn?: readonly GameTextContract.GateCheck[];
 		}) {
 			const { projectRoot } = yield* openProject(request);
 			if (!queries.comparePoints)
@@ -796,7 +798,8 @@ export const makeGameTextIndexSteps = (
 						? undefined
 						: { localization: request.localization }),
 					changes: request.changes ?? page,
-					findings: request.findings ?? page
+					findings: request.findings ?? page,
+					...(request.failOn === undefined ? undefined : { failOn: [...request.failOn] })
 				}
 			});
 			yield* Effect.annotateCurrentSpan({

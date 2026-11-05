@@ -72,7 +72,8 @@ mod tests {
     use crate::engine_types::{
         DetailSection, Facets, FindingsSelection, GroupBy, GroupKey, GroupsPart, LineAnswer,
         LineRequest, OpenGroupAnswer, OpenGroupsPart, PlacesSection, Query, QueryAnswer,
-        QueryParts, RelatedSection, RowKind, RowSelection, RowsPart, Selection, TextSearch,
+        QueryParts, RelatedSection, ReviewIdentity, ReviewLine, ReviewLinesAnswer,
+        ReviewLinesRequest, ReviewPoEntry, RowKind, RowSelection, RowsPart, Selection, TextSearch,
     };
     use crate::engine_where::Facet;
     use crate::package_text_contract::{
@@ -214,6 +215,11 @@ mod tests {
             QueryAnswer::decl(&config),
             OpenGroupAnswer::decl(&config),
             LineRequest::decl(&config),
+            ReviewLinesRequest::decl(&config),
+            ReviewIdentity::decl(&config),
+            ReviewLine::decl(&config),
+            ReviewPoEntry::decl(&config),
+            ReviewLinesAnswer::decl(&config),
             RowSelection::decl(&config),
             RowKind::decl(&config),
             PlacesSection::decl(&config),

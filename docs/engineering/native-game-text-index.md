@@ -139,6 +139,13 @@ A `line` request reads one selected row, a line or a unit, with the sections a h
 `related` (same key, same text, conflict and key change) and `line` (the whole line as a `lines`
 batch). Selecting a row is one request whatever it shows.
 
+A `review_lines` request reads, for one culture, up to 2,560 lines by identity in request order:
+each line's manifest source, the translation the next sync ships, its PO entry with the line's own
+key, and the review fingerprint the join compares stored reviews with (`review_fingerprint` in
+`join_marks.rs`). A line the target lacks, one without a manifest entry, or a culture the target
+lacks answers `not_gathered`. Hosts stamp reviews and check staged edits with it, so neither decodes
+a localization file; `reviewLines` sends larger batches in parts.
+
 Each immutable native reader caches page-independent search metadata: counts, problems, groups,
 facets, file scope and localization totals. Counts are also shared across requests that differ
 only in grouping or requested facets. This reader-owned cache retains at most 64 entries and

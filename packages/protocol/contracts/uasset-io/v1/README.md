@@ -207,6 +207,13 @@ comparing. Graphs, nodes, pins, variables and components pair by saved identity,
 renumbered nodes are counted rather than listed. Older workers reject the operation before
 acceptance.
 
+Minor version 1.22 lets a `publish_packages` input name its rows in `rowsFile`, a file of
+little-endian 32-bit integers, in place of `rows`, and omit `previousKey` for a shard the index
+doesn't hold yet (all its rows then select records of its `file`). A refresh that changes every
+package shard then sends one bounded request and still publishes all shards in one root
+publication. Rust interns each string domain once across a request's input files. Older workers
+reject either form before acceptance.
+
 ### Active package input budget
 
 `limits.maximumInFlightPackageBytes` is an optional positive integer byte limit for text and

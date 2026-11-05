@@ -287,9 +287,10 @@ const scanSteps: readonly GameTextIndexProgress["phase"][] = [
 	"localization",
 	"localization_publish",
 	"inventory",
-	"packages",
+	"package_read",
 	"package_text",
 	"package_publish",
+	"package_update",
 	"joining",
 	"opening"
 ];
@@ -449,6 +450,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					...(current.findings === undefined
 						? undefined
 						: { findings: current.findings }),
+					...(current.unchanged === undefined
+						? undefined
+						: { unchanged: current.unchanged }),
 					...(step >= 0 ? { step: step + 2, steps: scanSteps.length + 1 } : undefined)
 				};
 			}

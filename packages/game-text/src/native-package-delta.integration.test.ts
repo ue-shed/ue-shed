@@ -12,7 +12,10 @@ import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { SharedIndex, sharedIndexNodeLayer, type SharedIndexWriter } from "./shared-index.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { decodePackageTextColumns } from "./package-text-columns.js";
-import { packageTextShard } from "./package-text-layer.js";
+import { PACKAGE_TEXT_FORMAT, packageTextShard } from "./package-text-layer.js";
+import { packageTextEncodingCurrent } from "./package-text-delta.js";
+import { GameTextIndexProgressReporter } from "./index-progress.js";
+import { SAVED_TEXT_AUDIENCE_POLICY_KEY } from "./text-audience.js";
 import { openJoinedTarget } from "./joined-target-reader.js";
 import { target } from "./localization.test-support.js";
 import { TextCorpusSearchRequest } from "./schema.js";
@@ -409,7 +412,9 @@ describe.skipIf(!executable)("native package record deltas", () => {
 											return refresh;
 										})
 									);
-									if (step === 1) expect(result.readPackages).toBe(1);
+									// The reference writer replaces no records, so it reads the shard again.
+									if (step === 1 && backend === "native")
+										expect(result.readPackages).toBe(1);
 									const joined = yield* openJoinedTarget().pipe(
 										Effect.provide(sharedIndexNodeLayer(configuration))
 									);
@@ -497,4 +502,185 @@ describe.skipIf(!executable)("native package record deltas", () => {
 			await rm(root, { recursive: true, force: true });
 		}
 	}, 300_000);
+
+	it("refreshes a change to every shard in place, as a fresh build of the same inventory", async () => {
+		if (!executable) throw new Error("Native reader required");
+		const root = await mkdtemp(join(tmpdir(), "ue-shed-package-delta-all-"));
+		try {
+			const builderLayer = nativeIndexBuilderLayer({
+				executable,
+				timeoutMs: 60_000,
+				catalogTimeoutMs: 120_000
+			});
+			// One package in three has text; revision 0 is the indexed project.
+			interface Package {
+				readonly path: string;
+				readonly text: boolean;
+				readonly revision: number;
+			}
+			const before = new Map<string, Package>();
+			for (let id = 0; id < 1200; id++) {
+				const path = `Content/Folder${id % 13}/Item${id}.uasset`;
+				before.set(path, { path, text: id % 3 === 0, revision: 0 });
+			}
+			// The change adds 600 packages, 20 with text, edits 40 with text and deletes 30, so
+			// nearly every shard changes.
+			const after = new Map(before);
+			for (let id = 1200; id < 1800; id++) {
+				const path = `Content/External/Actor${id}.uasset`;
+				after.set(path, { path, text: id % 30 === 0, revision: 0 });
+			}
+			for (let id = 0; id < 120; id += 3) {
+				const path = `Content/Folder${id % 13}/Item${id}.uasset`;
+				after.set(path, { ...before.get(path)!, revision: 1 });
+			}
+			for (let id = 1; id < 90; id += 3)
+				after.delete(`Content/Folder${id % 13}/Item${id}.uasset`);
+			const inventory = (packages: ReadonlyMap<string, Package>) =>
+				[...packages.values()]
+					.sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)))
+					.map((entry) => ({
+						path: entry.path,
+						signature: `${entry.revision}`,
+						headerData: { ...header, packageFlags: entry.text ? 0x40000 : 0 }
+					}));
+			const refresh = (cacheRoot: string, packages: ReadonlyMap<string, Package>) => {
+				const configuration = { cacheRoot, projectKey: "all-shards", targetKey: "text" };
+				const progress: { phase: string; unchanged?: number }[] = [];
+				return Effect.gen(function* () {
+					const builder = yield* GameTextIndexBuilder;
+					const result = yield* builder.withSession(
+						{ configuration },
+						Effect.scoped(
+							builder.refreshPackageTextLayer({
+								inventory: inventory(packages),
+								read: (paths) =>
+									Stream.fromIterable(paths).pipe(
+										Stream.map((path) => {
+											const entry = packages.get(path)!;
+											return record(path, `${path} r${entry.revision}`, path);
+										})
+									)
+							})
+						)
+					);
+					const layers = yield* Effect.gen(function* () {
+						const reader = yield* (yield* SharedIndex).open();
+						const layers: Record<
+							string,
+							{
+								readonly key: string | undefined;
+								readonly records: Effect.Success<
+									ReturnType<typeof decodePackageTextColumns>
+								>;
+							}
+						> = {};
+						for (const name of Object.keys(reader.manifest.active).sort())
+							if (name.startsWith("package-text."))
+								layers[name] = {
+									key: reader.manifest.active[name],
+									records: yield* decodePackageTextColumns(
+										yield* reader.layer(name)
+									)
+								};
+						return layers;
+					}).pipe(Effect.scoped, Effect.provide(sharedIndexNodeLayer(configuration)));
+					return { result, layers, progress };
+				}).pipe(
+					Effect.provideService(GameTextIndexProgressReporter, (event) => {
+						progress.push(event);
+					})
+				);
+			};
+			const outcome = await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						yield* refresh(join(root, "refreshed"), before);
+						return {
+							refreshed: yield* refresh(join(root, "refreshed"), after),
+							fresh: yield* refresh(join(root, "fresh"), after)
+						};
+					})
+				).pipe(Effect.provide(builderLayer))
+			);
+			const { refreshed, fresh } = outcome;
+			expect(refreshed.layers).toEqual(fresh.layers);
+			expect(Object.keys(refreshed.layers)).toHaveLength(256);
+			expect(refreshed.result.changedShards).toBeGreaterThan(200);
+			// Only the added and edited packages with text are read.
+			expect(refreshed.result.readPackages).toBe(20 + 40);
+			const phases = refreshed.progress.map((event) => event.phase);
+			expect(phases).toContain("package_update");
+			expect(phases).not.toContain("package_publish");
+			expect(refreshed.progress.find((event) => event.phase === "package_read")).toEqual({
+				phase: "package_read",
+				completed: 0,
+				total: 60,
+				// The held packages neither edited nor deleted.
+				unchanged: 1200 - 40 - 30
+			});
+			expect(fresh.progress.map((event) => event.phase)).toContain("package_publish");
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	}, 300_000);
+
+	it("tells an index encoded under another audience policy from a current one", async () => {
+		if (!executable) throw new Error("Native reader required");
+		const root = await mkdtemp(join(tmpdir(), "ue-shed-package-policy-"));
+		try {
+			const configuration = { cacheRoot: root, projectKey: "policy", targetKey: "text" };
+			const path = "Content/Text/Policy.uasset";
+			const current = await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const builder = yield* GameTextIndexBuilder;
+						yield* builder.withSession(
+							{ configuration },
+							Effect.scoped(
+								builder.refreshPackageTextLayer({
+									inventory: [{ path, signature: "1", headerData: header }],
+									read: () => Stream.succeed(record(path, "Policy", "P"))
+								})
+							)
+						);
+						const reader = yield* (yield* SharedIndex).open();
+						const name = `package-text.${packageTextShard(path)}`;
+						return [
+							yield* packageTextEncodingCurrent(
+								reader,
+								name,
+								PACKAGE_TEXT_FORMAT,
+								SAVED_TEXT_AUDIENCE_POLICY_KEY
+							),
+							yield* packageTextEncodingCurrent(
+								reader,
+								name,
+								PACKAGE_TEXT_FORMAT,
+								`${SAVED_TEXT_AUDIENCE_POLICY_KEY} `
+							),
+							yield* packageTextEncodingCurrent(
+								reader,
+								name,
+								"package-text-v0",
+								SAVED_TEXT_AUDIENCE_POLICY_KEY
+							)
+						];
+					})
+				).pipe(
+					Effect.provide(sharedIndexNodeLayer(configuration)),
+					Effect.provide(
+						nativeIndexBuilderLayer({
+							executable,
+							timeoutMs: 30000,
+							catalogTimeoutMs: 120000
+						})
+					)
+				)
+			);
+			expect(current).toEqual([true, false, false]);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	}, 120_000);
 });

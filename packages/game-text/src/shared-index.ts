@@ -163,14 +163,19 @@ export interface SharedIndexWriter {
 		GameTextContract.PointOutcome & { readonly stageSeconds: Readonly<Record<string, number>> },
 		Failure
 	>;
-	/** Native record replacement: nonnegative rows retain old records; -1-row selects a changed record. */
+	/**
+	 * Native record replacement, all entries and removals in one root publication. Each entry's
+	 * staged snapshot holds its changed records in path order; `rows` give the next shard's
+	 * records: a nonnegative row retains a record of the previous shard, -1-row selects a staged
+	 * record. An entry without `previousKey` is a shard the index doesn't hold yet.
+	 */
 	readonly replacePackages?: (
 		entries: readonly {
 			readonly name: string;
 			readonly key: string;
-			readonly previousKey: string;
-			readonly source: SnapshotSource;
-			readonly rows: readonly number[];
+			readonly previousKey?: string;
+			readonly stagedFile: string;
+			readonly rows: Int32Array;
 		}[],
 		removedNames?: readonly string[]
 	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;

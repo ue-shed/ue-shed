@@ -2491,15 +2491,20 @@
 																		"maxItems": 64000000
 																	}
 																]
+															},
+															"rowsFile": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	},
+																	{
+																		"maxLength": 32767
+																	}
+																]
 															}
 														},
-														"required": [
-															"name",
-															"key",
-															"previousKey",
-															"file",
-															"rows"
-														],
+														"required": ["name", "key", "file"],
 														"additionalProperties": false
 													},
 													"allOf": [

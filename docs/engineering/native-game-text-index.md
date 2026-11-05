@@ -8,7 +8,7 @@ localization input producers, configurable quality policy, typed process calls a
 CLI, Workbench and library hosts compose `GameTextIndexBuilderLive` from
 `@ue-shed/game-text/index` with their existing `AssetReader`, source and localization evidence
 layers. `nativeIndexBuilderLayer(configuration)` supplies the same builder and query capability
-with explicit reader configuration. Package delta publication needs uasset-io protocol 1.16 and
+with explicit reader configuration. Package delta publication needs uasset-io protocol 1.22 and
 `game_text_index`. Queries run in the engine's own binary session, `uasset game-text-engine`, whose
 handshake checks the engine's contract once per process. One engine process per host holds every
 open snapshot's reader. Its requests run concurrently: keystroke reads on two threads of their own,
@@ -212,11 +212,18 @@ target view owns its graph under the existing writer lease. Query readers contin
 snapshots and do not depend on the mutable writer graph.
 
 Text-value updates use indexed membership and source dependencies. Reference and identity changes
-remain a separate structural path that rebuilds the projection and rewires the graph. The current
-package delta producer reads package identity columns and sends only changed authored records.
-Rust preserves unchanged global string IDs and splices numeric ranges into an immutable replacement
-for the affected shard. This still reads and writes that shard's numeric columns; it is not a paged
-column overlay. Localization publication reuses checked dictionary blocks and interns only changed
+remain a separate structural path that rebuilds the projection and rewires the graph. Every
+refresh of an index in the current package format and audience policy is a package delta, however
+many of the 256 shards changed: the producer reads package identity columns, reads and converts
+only changed packages, and sends one `publish_packages` request for all changed shards, so the
+publication stays atomic. Rows cross as a little-endian `i32` file per shard, not in the request,
+and a shard the index doesn't hold yet joins the same publication without a previous key. Rust
+interns each string domain once across all input files, so a change to every shard adds a few
+dictionary segments rather than one per shard and domain, preserves unchanged global string IDs
+and splices numeric ranges into an immutable replacement for each affected shard. This still reads
+and writes those shards' numeric columns; it is not a paged column overlay. Only a first build, or
+an index in an older package format or audience policy, reads and writes the changed shards again.
+Localization publication reuses checked dictionary blocks and interns only changed
 blocks. Joined revisions persist summary counters: full joins calculate them once, while eligible
 incremental joins subtract and add the affected rows, including duplicate-source dependents.
 

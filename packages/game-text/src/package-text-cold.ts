@@ -63,6 +63,8 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 	input: {
 		readonly snapshots: ReadonlyMap<string, string>;
 		readonly additionalSources?: readonly ColdLayerSource[];
+		/** Package shards the publication removes: an existing index's emptied shards. */
+		readonly removed?: readonly string[];
 	},
 	shards: readonly ColdPackageTextShard[],
 	packages: number
@@ -92,8 +94,9 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 	});
 	report({ phase: "package_publish", completed: 0, total: 0 });
 	const started = performance.now();
+	const removed = input.removed?.length ? input.removed : undefined;
 	const published = yield* writer.publishColdFiles && !input.additionalSources?.length
-		? writer.publishColdFiles(entries)
+		? writer.publishColdFiles(entries, removed)
 		: Effect.gen(function* () {
 				const sources: ColdLayerSource[] = [...(input.additionalSources ?? [])];
 				for (const entry of entries) {
@@ -119,7 +122,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 						}
 					});
 				}
-				return yield* writer.publishCold(sources);
+				return yield* writer.publishCold(sources, removed);
 			});
 	yield* Effect.annotateCurrentSpan({
 		"package-text.cold.stage_ms.publish": performance.now() - started

@@ -708,17 +708,6 @@ impl Store {
     }
     /// Reserve the worst-case append count before callers retain any global IDs.
     /// False selects ordinary per-domain interning instead of per-block bounded interning.
-    pub(crate) fn reserve_local_segments(
-        &mut self,
-        files: &[&Path],
-        reuse: Option<&Value>,
-    ) -> Result<bool> {
-        let readers = files
-            .iter()
-            .map(|file| Reader::open(file))
-            .collect::<Result<Vec<_>>>()?;
-        self.reserve_local_readers(&readers.iter().collect::<Vec<_>>(), reuse)
-    }
     fn reserve_local_readers(
         &mut self,
         readers: &[&Reader],
@@ -783,6 +772,11 @@ impl Store {
                 .checked_add(file_domains.len())
                 .ok_or("local domain count overflow")?;
         }
+        self.reserve_segments(chunks, domains)
+    }
+    /// Makes room for a publication that interns `chunks` 8192-string chunks, or one batch per
+    /// each of its `domains`, compacting when neither fits. Returns whether chunks fit.
+    pub(crate) fn reserve_segments(&mut self, chunks: usize, domains: usize) -> Result<bool> {
         let count = self.root["segments"].as_array().ok_or("segments")?.len();
         if count + chunks <= 256 {
             return Ok(true);

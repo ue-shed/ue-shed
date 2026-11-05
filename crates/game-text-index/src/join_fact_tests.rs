@@ -342,8 +342,16 @@ impl Fixture {
     }
 
     pub(crate) fn join(&mut self) -> Result<crate::join::JoinOutcome> {
-        let input: JoinInput =
-            serde_json::from_value(json!({"projectRoot":"/project","target":self.target}))?;
+        self.join_with(json!({}))
+    }
+
+    /// A join whose input also has `fields`, such as file provenances or a review file.
+    pub(crate) fn join_with(&mut self, fields: Value) -> Result<crate::join::JoinOutcome> {
+        let mut input = json!({"projectRoot":"/project","target":self.target});
+        for (name, value) in fields.as_object().ok_or("Join input fields.")? {
+            input[name] = value.clone();
+        }
+        let input: JoinInput = serde_json::from_value(input)?;
         refresh(self.store()?, &input)
     }
 

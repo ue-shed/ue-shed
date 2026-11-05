@@ -26,6 +26,24 @@ export {
 export { type GameTextIndexBuildSessionRequest, GameTextIndexBuilder } from "./index-builder.js";
 
 export {
+	DiskChangeCounts,
+	DiskChangeItem,
+	DiskChangesAnswer,
+	DiskChangesRequest,
+	DiskChangesResult,
+	DiskChangesState,
+	type DiskChangesWatchOptions,
+	type DiskChangesWatchRequest,
+	DiskWatcher,
+	DiskWatcherNodeLive,
+	type DiskWatchListener,
+	MAX_DISK_CHANGE_PATHS,
+	MAX_DISK_CHANGES_PAGE,
+	watchDiskChanges,
+	watchedFolders
+} from "./disk-changes.js";
+
+export {
 	indexedLocalizationLinesRequest,
 	indexedLocalizationStatusReport,
 	readIndexedLocalizationEvidence

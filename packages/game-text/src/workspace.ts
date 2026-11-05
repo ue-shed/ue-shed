@@ -1,5 +1,12 @@
 import type { RelatedLinesRequest, RelatedLinesResult } from "./related-lines.js";
 import type { ChangedSinceRequest, ChangedSinceResult } from "./changed-since.js";
+import {
+	DiskWatcherNodeLive,
+	type DiskChangesRequest,
+	type DiskChangesResult,
+	type DiskChangesState,
+	type DiskChangesWatchRequest
+} from "./disk-changes.js";
 import { indexPublicFailure } from "./index-public-error.js";
 import type { ChangeComparisonRequest, ChangeComparisonResult } from "./change-comparison.js";
 import { makeWorkspaceChangeComparison } from "./workspace-change.js";
@@ -230,6 +237,19 @@ export interface GameTextWorkspaceApi {
 	 * `ChangedSinceResult`.
 	 */
 	readonly changedSince: (request: ChangedSinceRequest) => Effect.Effect<ChangedSinceResult>;
+	/**
+	 * A page of what on disk differs from the project's index, read-only; see
+	 * `DiskChangesRequest`. It never refreshes or writes the index.
+	 */
+	readonly diskChanges: (request: DiskChangesRequest) => Effect.Effect<DiskChangesResult>;
+	/**
+	 * The paths that differ from the index as they change, for a "changed since the last scan"
+	 * hint: one full check, then the project's `Content` and the target's folders are watched.
+	 * A published scan, or a newly selected target generation, checks everything again.
+	 */
+	readonly watchDiskChanges: (
+		request: DiskChangesWatchRequest
+	) => Stream.Stream<DiskChangesState, IndexFailure>;
 	/** A change's text compared with what it changed from; see `ChangeComparisonResult`. */
 	readonly compareChange: (
 		request: ChangeComparisonRequest
@@ -964,6 +984,32 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			return { status: "failed" as const, error: indexPublicFailure(result.failure) };
 		return result.success;
 	});
+
+	const diskChanges = Effect.fn("GameText.workspace.diskChanges")(function* (
+		request: DiskChangesRequest
+	) {
+		const result = yield* steps.diskChanges(request).pipe(Effect.result);
+		if (Result.isFailure(result))
+			return { status: "failed" as const, error: indexPublicFailure(result.failure) };
+		return result.success;
+	});
+	/** The published scan's and selected target's generations: a change means a refresh published. */
+	const publishedGenerations = Effect.gen(function* () {
+		const owner = yield* Ref.get(modelSelection);
+		return `${owner?.indexed.generation ?? ""}\0${(yield* localization.selectedGeneration()) ?? ""}`;
+	});
+	const published = Stream.unwrap(
+		Effect.gen(function* () {
+			// Subscribed before the first read, so no publication between them is missed.
+			const changes = yield* PubSub.subscribe(progressChanged);
+			return Stream.concat(
+				Stream.fromEffect(publishedGenerations),
+				Stream.fromSubscription(changes).pipe(Stream.mapEffect(() => publishedGenerations))
+			).pipe(Stream.changes, Stream.drop(1));
+		})
+	);
+	const watchProjectDiskChanges = (request: DiskChangesWatchRequest) =>
+		steps.watchDiskChanges(request, published).pipe(Stream.provide(DiskWatcherNodeLive));
 
 	const prepareQualityRules = Effect.fn("GameText.workspace.prepareQualityRules")(function* (
 		input: GameTextRuleDocument
@@ -1709,6 +1755,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		),
 		related: scoped(related),
 		changedSince: scoped(changedSince),
+		diskChanges,
+		watchDiskChanges: watchProjectDiskChanges,
 		compareChange,
 		chooseLocalizationFile,
 		compareLocalizationFiles,

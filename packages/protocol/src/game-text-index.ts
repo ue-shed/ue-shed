@@ -260,13 +260,34 @@ export const GameTextIndexReadPoint = Schema.Struct({
 		)
 	})
 });
+const DiskChangesRequest: Schema.Codec<GameTextContract.DiskChangesRequest> = Schema.Struct({
+	projectRoot: Text,
+	target: Schema.optionalKey(Name),
+	paths: Schema.optionalKey(
+		Schema.Array(Schema.NonEmptyString.check(Schema.isMaxLength(1024))).check(
+			Schema.isMaxLength(4096)
+		)
+	),
+	after: Schema.optionalKey(Text),
+	limit: Positive.check(Schema.isLessThanOrEqualTo(1000))
+});
+/**
+ * The reader compares the disk with the view's index, read-only: without `paths` it walks the
+ * project's `Content` as the Project Index does; with `paths` it checks only those.
+ */
+export const GameTextIndexDiskChanges = Schema.Struct({
+	action: Schema.Literal("disk_changes"),
+	...Configuration,
+	request: DiskChangesRequest
+});
 /** Validated builder commands; package replacements require protocol minor 16 or later. */
 export const GameTextIndexBuildRequest = Schema.Union([
 	...GameTextIndexPreviousBuildRequest.members,
 	GameTextIndexPackageReplacement,
 	GameTextIndexPackagePlan,
 	GameTextIndexCodeLayer,
-	GameTextIndexReadPoint
+	GameTextIndexReadPoint,
+	GameTextIndexDiskChanges
 ]).annotate({ identifier: "GameTextIndexBuildRequest" });
 export type GameTextIndexBuildRequest = typeof GameTextIndexBuildRequest.Type;
 
@@ -367,6 +388,24 @@ export const CodeLayerOutcome = Schema.Struct({
 	)
 });
 
+const ChangeCounts = Schema.Struct({ added: Natural, changed: Natural, removed: Natural });
+/** What a `disk_changes` request found: a page of paths that differ, with every count. */
+export const DiskChangesAnswer: Schema.Codec<GameTextContract.DiskChangesAnswer> = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("not_indexed") }),
+	Schema.Struct({
+		status: Schema.Literal("ready"),
+		counts: Schema.Struct({ packages: ChangeCounts, localization: ChangeCounts }),
+		items: Schema.Array(
+			Schema.Struct({
+				kind: Schema.Literals(["package", "localization"]),
+				change: Schema.Literals(["added", "changed", "removed"]),
+				path: Schema.String
+			})
+		).check(Schema.isMaxLength(1000)),
+		nextCursor: Schema.optionalKey(Schema.String)
+	})
+]);
+
 /** Snapshot contents stay private to the paired builder/reader; their domain decoder verifies them. */
 export const GameTextIndexBuildOutcome = Schema.Struct({
 	action: Schema.Literals([
@@ -380,6 +419,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		"plan_packages",
 		"publish_code",
 		"read_point",
+		"disk_changes",
 		"publish_ids",
 		"intern",
 		"strings",
@@ -410,6 +450,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 	),
 	code: Schema.optionalKey(CodeLayerOutcome),
 	point: Schema.optionalKey(PointOutcome),
+	diskChanges: Schema.optionalKey(DiskChangesAnswer),
 	plan: Schema.optionalKey(
 		Schema.Struct({
 			changed: Schema.Array(

@@ -168,7 +168,7 @@ fn changed(a: &Metadata, b: &Metadata) -> bool {
             || a.ctime_nsec() != b.ctime_nsec()
     }
 }
-fn timestamp(metadata: &Metadata) -> String {
+pub(crate) fn timestamp(metadata: &Metadata) -> String {
     let ms = metadata
         .modified()
         .ok()

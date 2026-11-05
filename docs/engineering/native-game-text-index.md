@@ -225,6 +225,51 @@ responsibility.
 one writer session. Individual steps still acquire their own session when called separately.
 Source-only recovery releases the failed target session before acquiring its source session.
 
+### What on disk differs from the index
+
+A `disk_changes` builder request (`disk_changes.rs` in both crates) answers which saved packages,
+and with a `target` which of its localization inputs, differ on disk from what the view's index
+holds, without refreshing anything: the reader opens the store's committed root read-only, takes no
+writer lease, and writes no Catalog, index or cache file. A host can show "N saved packages changed
+since the last scan" from it instead of keeping its own snapshot of the tree.
+
+- Without `paths`, the reader walks the project's `Content` with the Project Index's own walk
+  (`scanner::enumerate_content`: the same root, package and sidecar rules and directory-listing
+  metadata, so a Windows walk states no file), on at most 8 threads, checking cancellation per
+  entry. Each package is grouped with its `.uexp`, `.ubulk` and `.uptnl` sidecars from the same
+  listing and signed with the Catalog's `bundle_signature`, so its signature is the one the
+  package-text shards hold. With `paths` (project-relative, at most 4,096), only those are stated
+  with `fs::metadata`; a sidecar checks its package. A test proves both give the same signature.
+- Packages are compared by path with the view's active `package-text.*` shards, a batch of shards'
+  strings at a time: `added` on disk only, `removed` in the index only, `changed` when the
+  signature differs.
+- With `target`, the view must be that target's. Its manifest, archives and POs (the paths the join
+  reads, `join::input_paths`) and its review file are stated and compared by size and modification
+  time with what the join recorded (`fileProvenances`, and `reviewFile`, which the join records and
+  keys like a provenance). A recorded file now missing is `removed`; a file on disk the join did not
+  record is `added`, unless its import failed for another reason than its absence, when its size
+  and time are unknown. Contents are never hashed, as the refresh's own stat check doesn't. Config
+  changes that alter which files a target has are out of scope: the check reads the target as the
+  join recorded it.
+- The answer is `not_indexed` while the view has no joined layer, otherwise every count and a page
+  of items in path order (UTF-8 bytes), whose last path is the next page's cursor. A first page
+  checks again; the session keeps that check's differences (only the changed paths), so its later
+  pages read them.
+
+`watchDiskChanges` (`packages/game-text/src/disk-changes.ts`) keeps a badge current: one full
+check, then `Content` and the target's folders are watched recursively through the `DiskWatcher`
+service (`fs.watch` in production). A burst of events settles for 300 ms (a host option); named
+packages, sidecars and localization files are then rechecked by path, and a folder-level or unnamed
+event, a watcher error or a published scan runs one full walk. It holds only the set of differing
+paths.
+
+`scripts/benchmark-game-text-disk-changes.ts` generates a project of real files, indexes it with
+their stated signatures and times the checks. On 707k packages (796k files, 8,633 folders, warm OS
+cache, release reader, median of 3 fresh readers): a full walk takes 2.3 s (1.2 s walking, the rest
+reading and comparing the shards) with a 224 MiB peak working set, whether nothing or 2,000
+packages differ; 100 named paths take 0.29 s and 25 MiB. A host's own `readdir` plus `stat` in
+batches of 64 took 13.6 s on the same tree.
+
 ## Incremental publication
 
 Source-only updates preserve row membership, identities, structure and visibility. Authored text

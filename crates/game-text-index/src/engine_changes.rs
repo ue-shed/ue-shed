@@ -71,8 +71,8 @@ impl ChangedSinceRequest {
     }
 }
 
-/// How an item differs between the two generations.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+/// How an item differs between the two generations, or between the disk and the index.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Change {
@@ -96,7 +96,7 @@ pub enum TooOldReason {
 }
 
 /// Every change between the two generations, not only the page's.
-#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeCounts {

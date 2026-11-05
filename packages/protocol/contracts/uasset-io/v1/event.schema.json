@@ -60,6 +60,7 @@
 						"plan_packages",
 						"publish_code",
 						"read_point",
+						"disk_changes",
 						"publish_ids",
 						"intern",
 						"strings",
@@ -634,6 +635,130 @@
 					},
 					"required": ["point", "read", "reused", "bytes", "entries"],
 					"additionalProperties": false
+				},
+				"diskChanges": {
+					"anyOf": [
+						{
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": ["not_indexed"]
+								}
+							},
+							"required": ["status"],
+							"additionalProperties": false
+						},
+						{
+							"type": "object",
+							"properties": {
+								"status": {
+									"type": "string",
+									"enum": ["ready"]
+								},
+								"counts": {
+									"type": "object",
+									"properties": {
+										"packages": {
+											"type": "object",
+											"properties": {
+												"added": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 0
+														}
+													]
+												},
+												"changed": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 0
+														}
+													]
+												},
+												"removed": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 0
+														}
+													]
+												}
+											},
+											"required": ["added", "changed", "removed"],
+											"additionalProperties": false
+										},
+										"localization": {
+											"type": "object",
+											"properties": {
+												"added": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 0
+														}
+													]
+												},
+												"changed": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 0
+														}
+													]
+												},
+												"removed": {
+													"type": "integer",
+													"allOf": [
+														{
+															"minimum": 0
+														}
+													]
+												}
+											},
+											"required": ["added", "changed", "removed"],
+											"additionalProperties": false
+										}
+									},
+									"required": ["packages", "localization"],
+									"additionalProperties": false
+								},
+								"items": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"kind": {
+												"type": "string",
+												"enum": ["package", "localization"]
+											},
+											"change": {
+												"type": "string",
+												"enum": ["added", "changed", "removed"]
+											},
+											"path": {
+												"type": "string"
+											}
+										},
+										"required": ["kind", "change", "path"],
+										"additionalProperties": false
+									},
+									"allOf": [
+										{
+											"maxItems": 1000
+										}
+									]
+								},
+								"nextCursor": {
+									"type": "string"
+								}
+							},
+							"required": ["status", "counts", "items"],
+							"additionalProperties": false
+						}
+					]
 				},
 				"plan": {
 					"type": "object",

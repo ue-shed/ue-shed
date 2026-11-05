@@ -10,7 +10,7 @@ import {
 	type LocalizationReviewFile,
 	type LocalizationReviewUpdate
 } from "./review-file.js";
-import type { LocalizationLimits, LocalizationTargetName } from "./schema.js";
+import type { FileProvenance, LocalizationLimits, LocalizationTargetName } from "./schema.js";
 
 /**
  * Project/target and optional project-relative review path with evidence limits. The default
@@ -34,6 +34,8 @@ export interface LocalizationReviewSnapshot {
 	readonly relativePath: string;
 	/** Null when the file does not exist yet; a write then creates it. */
 	readonly contentHash: string | null;
+	/** The file's size and modification time as read; absent when it does not exist. */
+	readonly provenance?: FileProvenance;
 }
 
 const reviewUpdates = Metric.counter("localization.review.updates");
@@ -61,7 +63,8 @@ export const readLocalizationReview = Effect.fn("Localization.readReview")(funct
 	return {
 		file: file.success,
 		relativePath,
-		contentHash: read.success.provenance.contentHash
+		contentHash: read.success.provenance.contentHash,
+		provenance: read.success.provenance
 	} satisfies LocalizationReviewSnapshot;
 });
 

@@ -602,7 +602,7 @@ enum ProjectionKind {
 
 /// A package's bundle signature as the Catalog records it (`bundle_signature`), from its files as
 /// they are now: the package, then its `.uexp`, `.ubulk` and `.uptnl` sidecars.
-fn bundle_signature(path: &Path) -> Result<String, Failure> {
+pub(super) fn bundle_signature(path: &Path) -> Result<String, Failure> {
     let mut parts = [None; 4];
     for (part, extension) in
         parts

@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "45600ae3baf5000862d10151bc04b630e21f52698e7718a982896c6856269513"
+	contractHash: "ec7cf572842bc85c377504ad1a4cdbc51383c4cf14a6cd3389c879da7f87b24e"
 } as const;
 
 /**
@@ -527,6 +527,34 @@ id: string,
 namespace?: string, key?: string, };
 
 export type Change = "added" | "changed" | "removed";
+
+export type DiskChangesRequest = { projectRoot: string, target?: string, paths?: ReadonlyArray<string>, 
+/**
+ * The last path of the previous page; absent for the first.
+ */
+after?: string, 
+/**
+ * Items one page lists, from 1 to 1000.
+ */
+limit: number, };
+
+export type DiskChangeKind = "package" | "localization";
+
+export type DiskChangeItem = { kind: DiskChangeKind, change: Change, 
+/**
+ * The project-relative path, `/`-separated: a package's as the Project Index lists it.
+ */
+path: string, };
+
+export type DiskChangeCounts = { packages: ChangeCounts, localization: ChangeCounts, };
+
+export type DiskChangesAnswer = { "status": "not_indexed" } | { "status": "ready", counts: DiskChangeCounts, items: ReadonlyArray<DiskChangeItem>, 
+/**
+ * The cursor of the next page; absent on the last.
+ */
+nextCursor?: string, };
+
+export type JoinedReviewFile = { relativePath: string, size?: number, modifiedTime?: string, };
 
 export type RowSelection = { kind: RowKind, id: string, };
 

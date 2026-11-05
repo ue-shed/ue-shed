@@ -609,7 +609,8 @@ export function makeProtocolRequest(
 			request.action === "publish_packages" ||
 			request.action === "plan_packages" ||
 			request.action === "publish_code" ||
-			request.action === "read_point"
+			request.action === "read_point" ||
+			request.action === "disk_changes"
 		)
 			return { ...fields, operation: { kind: "game_text_index", request } };
 		return { ...fields, operation: { kind: "game_text_index", request } };

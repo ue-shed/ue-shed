@@ -122,6 +122,8 @@ export type GameTextWorkspaceContractMethod<Entry extends GameTextWorkspaceContr
  *   localization operations, and `localizationBeforeGather` runs before its gather; the first two
  *   also return a `LocalizationTarget` with its file paths.
  * - `configuredScan` returns the whole corpus; serve `configuredRefresh` instead.
+ * - `diskChanges` and `watchDiskChanges` name a project root, which only the host's own project
+ *   selection may choose; a host serves their results for its selected project.
  */
 export const GameTextWorkspaceContract = {
 	localizationQualitySearch: { params: WorkspaceQualityRequest, success: WorkspaceQualityResult },
@@ -203,7 +205,9 @@ export type GameTextWorkspaceHostOnlyMethod =
 	| "endOperation"
 	| "refreshAfterOperation"
 	| "localizationBeforeGather"
-	| "configuredScan";
+	| "configuredScan"
+	| "diskChanges"
+	| "watchDiskChanges";
 
 /** A workspace method the contract describes. */
 export type GameTextWorkspaceContractName = keyof GameTextWorkspaceContract;

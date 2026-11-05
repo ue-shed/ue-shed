@@ -1228,6 +1228,15 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			select,
 			search,
 			searchRows,
+			/** The selected target and its generation, read without borrowing its model. */
+			selectedGeneration: () =>
+				Ref.get(selected).pipe(
+					Effect.map((cached) =>
+						cached?.result.status === "ready"
+							? `${cached.join.target}\0${cached.result.generation ?? ""}`
+							: undefined
+					)
+				),
 			/** The selected target's query; absent when not loaded. */
 			targetQuery: (target: LocalizationJoin["target"]) =>
 				current(target).pipe(Effect.map((cached) => cached?.model)),

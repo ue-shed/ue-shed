@@ -18,11 +18,13 @@ mod catalog_memory;
 #[allow(dead_code)]
 #[cfg(all(test, feature = "catalog-oracle"))]
 mod catalog_sqlite;
+mod disk_changes;
 mod inspection;
 mod project_index;
 mod project_index_io;
 mod project_io;
 mod scanner;
+pub(crate) use disk_changes::{DiskChecks, check_disk};
 
 use std::fs;
 

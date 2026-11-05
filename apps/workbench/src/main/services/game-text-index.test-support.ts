@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { indexedTestReports } from "../../../../../packages/game-text/src/indexed-reports.test-support.js";
-import { Effect, Layer, Option, Result, type Scope } from "effect";
+import { Effect, Layer, Option, Result, Stream, type Scope } from "effect";
 import {
 	GameTextIndexRefresh,
 	GameTextIndexSteps,
@@ -564,6 +564,8 @@ const testIndexStepsLayer = Layer.effect(
 			readPoint: () => Effect.die("This test reads no points."),
 			comparePoints: () => Effect.die("This test compares no points."),
 			compareTextFiles: () => Effect.die("This test compares no files."),
+			diskChanges: () => Effect.die("This test checks no disk."),
+			watchDiskChanges: () => Stream.die("This test watches no disk."),
 			invalidate: legacy.invalidate
 		});
 		return steps;

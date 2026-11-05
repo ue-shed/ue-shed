@@ -347,3 +347,141 @@ fn requests_are_bounded_and_paths_project_relative() {
     paged.limit = 0;
     assert!(paged.validate().is_err());
 }
+
+/// A walk of the given packages, against the configuration's view.
+fn walked(configuration: &Configuration, packages: &[DiskPackage]) -> Result<Vec<DiskChangeItem>> {
+    Ok(compare(
+        configuration,
+        &request(None, None, Path::new("/project")),
+        Observed::Walk(packages),
+        &never,
+    )?
+    .ok_or("Expected an index.")?
+    .1)
+}
+
+/// A check of the named packages, each as it is on disk.
+fn named(
+    configuration: &Configuration,
+    packages: &[(&str, Option<&str>)],
+) -> Result<Vec<DiskChangeItem>> {
+    let paths = packages.iter().map(|(path, _)| *path).collect::<Vec<_>>();
+    let packages = packages
+        .iter()
+        .map(|(path, signature)| ((*path).to_owned(), signature.map(str::to_owned)))
+        .collect::<Vec<_>>();
+    Ok(compare(
+        configuration,
+        &request(None, Some(&paths), Path::new("/project")),
+        Observed::Paths {
+            packages: &packages,
+            files: &BTreeSet::new(),
+        },
+        &never,
+    )?
+    .ok_or("Expected an index.")?
+    .1)
+}
+
+#[test]
+fn a_view_differs_from_the_disk_until_it_is_joined_again_after_a_project_refresh() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    index(&mut fixture, &[(KEEP, "keep"), (TOUCH, "touch")])?;
+    fixture.join()?;
+    let disk_now = [disk(KEEP, "keep"), disk(TOUCH, "touched")];
+    let touched = [item(DiskChangeKind::Package, Change::Changed, TOUCH)];
+    assert_eq!(walked(&fixture.configuration, &disk_now)?, touched);
+    // A project-only refresh publishes Touch's new shard; the target isn't joined again yet.
+    index(&mut fixture, &[(KEEP, "keep"), (TOUCH, "touched")])?;
+    assert_eq!(walked(&fixture.configuration, &disk_now)?, touched);
+    assert_eq!(
+        named(&fixture.configuration, &[(TOUCH, Some("touched"))])?,
+        touched
+    );
+    // Joined again, the view shows what is on disk.
+    fixture.join()?;
+    assert_eq!(walked(&fixture.configuration, &disk_now)?, []);
+    assert_eq!(
+        named(&fixture.configuration, &[(TOUCH, Some("touched"))])?,
+        []
+    );
+    Ok(())
+}
+
+#[test]
+fn a_view_differs_from_the_disk_while_only_another_targets_view_is_joined_again() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    fixture.view('a');
+    index(&mut fixture, &[(KEEP, "keep"), (TOUCH, "touch")])?;
+    fixture.join()?;
+    let game = fixture.configuration.clone();
+    // Another target's scan publishes the project's shards and joins its own view.
+    index(
+        &mut fixture,
+        &[(KEEP, "keep"), (TOUCH, "touched"), (NEW, "new")],
+    )?;
+    fixture.view('b');
+    fixture.target["name"] = json!("Other");
+    fixture.join()?;
+    let disk_now = [disk(KEEP, "keep"), disk(NEW, "new"), disk(TOUCH, "touched")];
+    assert_eq!(walked(&fixture.configuration, &disk_now)?, []);
+    assert_eq!(
+        walked(&game, &disk_now)?,
+        [
+            item(DiskChangeKind::Package, Change::Added, NEW),
+            item(DiskChangeKind::Package, Change::Changed, TOUCH),
+        ]
+    );
+    Ok(())
+}
+
+/// A package whose file name has a literal reserved scalar, which the dictionary's views escape.
+const RESERVED: &str = "Content/Text/\u{f0000}Odd\u{f0800}.uasset";
+
+#[test]
+fn a_file_name_with_a_reserved_scalar_matches_its_indexed_package() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    // Indexed as a scan stores it: the shard its raw path selects, its raw bytes interned.
+    index(&mut fixture, &[(KEEP, "keep"), (RESERVED, "odd")])?;
+    fixture.join()?;
+    let configuration = &fixture.configuration;
+    assert_eq!(
+        walked(configuration, &[disk(KEEP, "keep"), disk(RESERVED, "odd")])?,
+        []
+    );
+    assert_eq!(named(configuration, &[(RESERVED, Some("odd"))])?, []);
+    // A changed one is listed once, as changed, in the dictionary's view.
+    let view = Wtf8Buf::from_utf8(RESERVED).into_view();
+    assert_ne!(view, RESERVED);
+    let changed = [item(DiskChangeKind::Package, Change::Changed, &view)];
+    assert_eq!(
+        walked(
+            configuration,
+            &[disk(KEEP, "keep"), disk(RESERVED, "saved")]
+        )?,
+        changed
+    );
+    assert_eq!(named(configuration, &[(RESERVED, Some("saved"))])?, changed);
+    // On the wire, the path is the file's own name, as `changedSince` sends a package's ID.
+    let answer = page(DiskChangeCounts::default(), &changed, None, 10);
+    let wire = serde_json::to_value(&answer)?;
+    assert_eq!(wire["items"][0]["path"], RESERVED);
+    let read: DiskChangesAnswer = serde_json::from_value(wire.clone())?;
+    assert_eq!(read, answer);
+    // Once the package is indexed as changed, `changedSince` names it the same way.
+    let first = fixture.join()?.key;
+    index(&mut fixture, &[(KEEP, "keep"), (RESERVED, "saved")])?;
+    let second = fixture.join()?.key;
+    let query = crate::engine_query::EngineQuery::open(&fixture.configuration, Some(&second))?;
+    let since = crate::engine_changes::ChangedSinceRequest {
+        since: first,
+        kind: crate::engine_changes::ChangeKind::Packages,
+        after: None,
+        limit: 10,
+    };
+    let changes = query.changed_since(&since, &std::sync::atomic::AtomicBool::new(false))?;
+    let changes: Value =
+        serde_json::from_str(&crate::wtf8::view_json(&serde_json::to_value(changes)?)?)?;
+    assert_eq!(changes["items"][0]["id"], wire["items"][0]["path"]);
+    Ok(())
+}

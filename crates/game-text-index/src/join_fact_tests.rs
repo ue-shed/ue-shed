@@ -79,6 +79,15 @@ impl Fixture {
         self.store = None;
     }
 
+    /// Joins into the shared project store's view `view` (a digit) from now on: every view shares
+    /// the project's package shards and has its own joined layer.
+    pub(crate) fn view(&mut self, view: char) {
+        self.release();
+        self.configuration.shared_project = true;
+        self.configuration.view_prefix =
+            Some(format!("target-join.{}.", view.to_string().repeat(64)));
+    }
+
     fn ids(&mut self, values: &[&str]) -> Result<Vec<u32>> {
         self.store()?.intern(
             "source",

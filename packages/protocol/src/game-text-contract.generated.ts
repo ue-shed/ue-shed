@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "ca93419701f61f5b45b556ce9dca614f9ddbfa72d72b7ab6b8d91c4470308698"
+	contractHash: "d2951781c58c5805def48838446b0a1bb581e1f3850852df8e1eba0cecc75a2f"
 } as const;
 
 /**
@@ -542,7 +542,8 @@ export type DiskChangeKind = "package" | "localization";
 
 export type DiskChangeItem = { kind: DiskChangeKind, change: Change, 
 /**
- * The project-relative path, `/`-separated: a package's as the Project Index lists it.
+ * The project-relative path, `/`-separated: a package's as the Project Index lists it. It is
+ * the file's own name, as `changedSince` names a changed package.
  */
 path: string, };
 

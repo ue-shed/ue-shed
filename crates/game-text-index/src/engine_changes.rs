@@ -189,6 +189,24 @@ fn dependencies(meta: &Value) -> Result<&serde_json::Map<String, Value>> {
         .ok_or("Invalid joined dependencies.")?)
 }
 
+/// The package-text shards a joined layer read, as (name, key), from its `join.meta`
+/// `dependencies`: the saved packages that generation shows, whatever the store has published
+/// since.
+pub(crate) fn package_shards(dependencies: &Value) -> Result<Vec<(String, String)>> {
+    dependencies
+        .as_object()
+        .ok_or("Invalid joined dependencies.")?
+        .iter()
+        .filter(|(name, _)| name.starts_with("package-text."))
+        .map(|(name, key)| {
+            Ok((
+                name.clone(),
+                key.as_str().ok_or("Invalid dependency key.")?.to_owned(),
+            ))
+        })
+        .collect()
+}
+
 impl EngineQuery {
     /// A page of what changed in this reader's target since generation `request.since`.
     pub fn changed_since(
@@ -403,20 +421,8 @@ impl EngineQuery {
         earlier: &EngineReader,
         cancelled: &AtomicBool,
     ) -> Result<Vec<Changed>> {
-        let shards = |meta: &Value| -> Result<Vec<(String, String)>> {
-            dependencies(meta)?
-                .iter()
-                .filter(|(name, _)| name.starts_with("package-text."))
-                .map(|(name, key)| {
-                    Ok((
-                        name.clone(),
-                        key.as_str().ok_or("Invalid dependency key.")?.to_owned(),
-                    ))
-                })
-                .collect()
-        };
-        let before = shards(&earlier.meta)?;
-        let after = shards(&self.reader.meta)?;
+        let before = package_shards(&earlier.meta["dependencies"])?;
+        let after = package_shards(&self.reader.meta["dependencies"])?;
         // Each side's (path, signature) string IDs from the shards that differ.
         let packages = |reader: &EngineReader,
                         own: &[(String, String)],
@@ -616,7 +622,8 @@ struct CultureComparison {
 }
 
 /// What a host shows for a line, in both generations: its identity, source, facts and flags, its
-/// files, its units, its key-change pair and, per culture, its state, review and translations.
+/// files, its units and their saved places, its key-change pair and, per culture, its state,
+/// review and translations.
 struct LineComparison<'a> {
     earlier: &'a EngineReader,
     current: &'a EngineReader,
@@ -627,6 +634,8 @@ struct LineComparison<'a> {
     line_starts: Pair,
     slice_raw: Pair,
     raw_ids: [UnitIds; 2],
+    slice_members: (SliceMembers, SliceMembers),
+    places: [Places<'a>; 2],
     cultures: Vec<CultureComparison>,
     /// The cultures differ, so every line shows a different set of cultures.
     every_line: bool,
@@ -740,6 +749,8 @@ impl<'a> LineComparison<'a> {
             line_starts: pair(earlier, current, "query.line.starts")?,
             slice_raw: pair(earlier, current, "query.slice.raw")?,
             raw_ids,
+            slice_members: (SliceMembers::open(earlier)?, SliceMembers::open(current)?),
+            places: [Places::open(earlier)?, Places::open(current)?],
             cultures: compared,
             every_line,
         };
@@ -811,7 +822,7 @@ impl<'a> LineComparison<'a> {
                 }
             }
         }
-        self.units_differ(old, new)
+        Ok(self.units_differ(old, new)? || self.places_differ(old, new)?)
     }
 
     /// Whether the key-change pairs differ: which side of a pair the line is, and the pair.
@@ -871,6 +882,169 @@ impl<'a> LineComparison<'a> {
             Ok(units)
         };
         Ok(units(0, old)? != units(1, new)?)
+    }
+
+    /// Whether the line's set of saved places differs: each occurrence of its slices, as the
+    /// focus query identifies it, compared as string IDs.
+    fn places_differ(&self, old: usize, new: usize) -> Result<bool> {
+        let places = |side: usize, row: usize| -> Result<Vec<Place>> {
+            let (starts, members) = if side == 0 {
+                (&self.line_starts.0, &self.slice_members.0)
+            } else {
+                (&self.line_starts.1, &self.slice_members.1)
+            };
+            let begin = *starts.get(row).ok_or("Invalid line slices.")? as usize;
+            let end = *starts.get(row + 1).ok_or("Invalid line slices.")? as usize;
+            let mut places = Vec::new();
+            for slice in begin..end {
+                for occurrence in members.of(slice)? {
+                    places.push(self.places[side].place(*occurrence as usize)?);
+                }
+            }
+            places.sort_unstable();
+            places.dedup();
+            Ok(places)
+        };
+        Ok(places(0, old)? != places(1, new)?)
+    }
+}
+
+/// A saved place's identity as string IDs: package path, object (a code place's file), location
+/// kind, and the row and property the kind names (`EngineQuery::occurrence_id`'s parts).
+type Place = [u32; 5];
+
+/// A generation's slice occurrences: each slice's range of occurrence rows.
+struct SliceMembers {
+    start: Arc<[u32]>,
+    end: Arc<[u32]>,
+    members: Arc<[u32]>,
+}
+
+impl SliceMembers {
+    fn open(reader: &EngineReader) -> Result<Self> {
+        Ok(Self {
+            start: reader.column("query.slice.member_start")?,
+            end: reader.column("query.slice.member_end")?,
+            members: reader.column("query.slice.members")?,
+        })
+    }
+
+    fn of(&self, slice: usize) -> Result<&[u32]> {
+        let start = *self.start.get(slice).ok_or("Invalid slice members.")? as usize;
+        let end = *self.end.get(slice).ok_or("Invalid slice members.")? as usize;
+        Ok(self
+            .members
+            .get(start..end)
+            .ok_or("Invalid slice members.")?)
+    }
+}
+
+/// One package shard's columns a place reads.
+struct ShardPlaces {
+    occurrence_start: Arc<[u32]>,
+    path: Arc<[u32]>,
+    object: Arc<[u32]>,
+    location: Arc<[u32]>,
+    row: Arc<[u32]>,
+    property: Arc<[u32]>,
+}
+
+/// A generation's occurrences by global row, through its package shards, opened on first use.
+struct Places<'a> {
+    reader: &'a EngineReader,
+    names: Vec<String>,
+    starts: Vec<u32>,
+    shards: Vec<std::cell::OnceCell<ShardPlaces>>,
+}
+
+impl<'a> Places<'a> {
+    fn open(reader: &'a EngineReader) -> Result<Self> {
+        let names = reader.meta["packageNames"]
+            .as_array()
+            .ok_or("Package names are absent.")?
+            .iter()
+            .map(|name| Ok(name.as_str().ok_or("Invalid package name.")?.to_owned()))
+            .collect::<Result<Vec<_>>>()?;
+        let starts = reader.meta["packageStarts"]
+            .as_array()
+            .ok_or("Package offsets are absent.")?
+            .iter()
+            .map(|start| {
+                Ok(u32::try_from(
+                    start.as_u64().ok_or("Invalid package offset.")?,
+                )?)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        require(
+            starts.len() >= names.len() && starts.windows(2).all(|pair| pair[0] <= pair[1]),
+            "Invalid package offset order.",
+        )?;
+        Ok(Self {
+            reader,
+            shards: names.iter().map(|_| std::cell::OnceCell::new()).collect(),
+            names,
+            starts,
+        })
+    }
+
+    fn shard(&self, shard: usize) -> Result<&ShardPlaces> {
+        let cell = self.shards.get(shard).ok_or("Unknown package shard.")?;
+        if let Some(columns) = cell.get() {
+            return Ok(columns);
+        }
+        let name = &self.names[shard];
+        let column = |field: &str| self.reader.input_column(name, field);
+        let columns = ShardPlaces {
+            occurrence_start: column("package.occurrence_start")?,
+            path: column("package.path")?,
+            object: column("occurrence.object")?,
+            location: column("occurrence.location")?,
+            row: column("occurrence.row")?,
+            property: column("occurrence.property")?,
+        };
+        Ok(cell.get_or_init(|| columns))
+    }
+
+    fn place(&self, occurrence: usize) -> Result<Place> {
+        let shard = self
+            .starts
+            .partition_point(|start| *start as usize <= occurrence)
+            .checked_sub(1)
+            .filter(|shard| *shard < self.names.len())
+            .ok_or("Occurrence outside package shards.")?;
+        let row = occurrence - self.starts[shard] as usize;
+        let columns = self.shard(shard)?;
+        let package = columns
+            .occurrence_start
+            .partition_point(|start| *start as usize <= row)
+            .checked_sub(1)
+            .ok_or("Occurrence precedes package.")?;
+        let value = |column: &[u32], row: usize| {
+            column.get(row).copied().ok_or("Occurrence outside shard.")
+        };
+        let location = value(&columns.location, row)?;
+        // Each kind's parts of the focus query's ID: a property's class is not one of them.
+        let (row_part, property_part) = match location {
+            0 => (false, true),
+            1 | 3 => (true, true),
+            2 => (true, false),
+            _ => return Err("Invalid stored occurrence location.".into()),
+        };
+        Ok([
+            value(&columns.path, package)?,
+            value(&columns.object, row)?,
+            location,
+            if row_part {
+                value(&columns.row, row)?
+            } else {
+                0
+            },
+            if property_part {
+                value(&columns.property, row)?
+            } else {
+                0
+            },
+        ])
     }
 }
 
@@ -1076,6 +1250,65 @@ mod tests {
         // The line's text and translations didn't change.
         let (counts, _, _) = changes(read(ChangeKind::Lines)?)?;
         assert_eq!(counts, ChangeCounts::default());
+        Ok(())
+    }
+
+    /// An occurrence of line A at `object`'s `property`, in the one package.
+    fn place(object: &str, property: &str) -> Value {
+        json!({"namespace":"UI","key":"A","source":"Alpha",
+            "object":format!("/Game/Text/Example.{object}"),"property":property})
+    }
+
+    /// Line A's changes after its package is saved with `before` and then `after` occurrences,
+    /// and its localization unchanged.
+    fn place_changes(before: Vec<Value>, after: Vec<Value>) -> Result<Vec<ChangeItem>> {
+        let mut fixture = Fixture::new()?;
+        localization(&mut fixture, &[("A", "Alpha", "Alfa")])?;
+        fixture.shard("package-text.0", &[(PACKAGE, "first", before)])?;
+        let first = fixture.join()?.key;
+        fixture.shard("package-text.0", &[(PACKAGE, "second", after)])?;
+        let second = fixture.join()?.key;
+        assert_ne!(first, second);
+        let query = EngineQuery::open(&fixture.configuration, Some(&second))?;
+        let cancelled = AtomicBool::new(false);
+        let answer =
+            query.changed_since(&request(&first, ChangeKind::Lines, None, 10), &cancelled)?;
+        Ok(changes(answer)?.1)
+    }
+
+    fn changed_a() -> Vec<ChangeItem> {
+        vec![item(Change::Changed, r#"Game:["UI","A"]"#, Some("A"))]
+    }
+
+    #[test]
+    fn a_line_whose_occurrence_moves_to_another_object_of_its_package_is_changed() -> Result<()> {
+        let before = vec![place("Example", "Label")];
+        let after = vec![place("Moved", "Label")];
+        assert_eq!(place_changes(before, after)?, changed_a());
+        Ok(())
+    }
+
+    #[test]
+    fn a_line_with_an_occurrence_added_to_its_unit_is_changed() -> Result<()> {
+        let before = vec![place("Example", "Label")];
+        let after = vec![place("Example", "Label"), place("Example", "Tooltip")];
+        assert_eq!(place_changes(before, after)?, changed_a());
+        Ok(())
+    }
+
+    #[test]
+    fn a_line_with_an_occurrence_removed_from_its_unit_is_changed() -> Result<()> {
+        let before = vec![place("Example", "Label"), place("Example", "Tooltip")];
+        let after = vec![place("Example", "Tooltip")];
+        assert_eq!(place_changes(before, after)?, changed_a());
+        Ok(())
+    }
+
+    #[test]
+    fn a_package_saved_again_with_the_same_places_changes_no_line() -> Result<()> {
+        let before = vec![place("Example", "Label"), place("Example", "Tooltip")];
+        let after = vec![place("Example", "Tooltip"), place("Example", "Label")];
+        assert_eq!(place_changes(before, after)?, []);
         Ok(())
     }
 

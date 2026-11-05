@@ -58,14 +58,14 @@ impl Project {
         for (group, packages) in shards {
             let mut columns = Columns::new().unwrap();
             for package in packages {
+                // The encoder reads scalar views, as a scan stores a package it didn't read.
+                let path = view(&package.path);
                 columns
                     .feed(
                         Stored {
-                            evidence: Evidence::NotGatherable {
-                                path: package.path.clone(),
-                            },
-                            signature: package.signature,
-                            path: package.path,
+                            evidence: Evidence::NotGatherable { path: path.clone() },
+                            signature: view(&package.signature),
+                            path,
                         },
                         &[],
                     )
@@ -147,6 +147,10 @@ impl Drop for Project {
     fn drop(&mut self) {
         fs::remove_dir_all(&self.root).ok();
     }
+}
+
+fn view(text: &str) -> String {
+    game_text_index::wtf8::Wtf8Buf::from_utf8(text).into_view()
 }
 
 fn write(root: &Path, file: &str, bytes: &[u8]) {
@@ -318,4 +322,23 @@ fn listing_metadata_signs_a_bundle_as_file_metadata_does() {
         );
     }
     assert_eq!(stated(&project.root, NEW).unwrap(), None);
+}
+
+#[test]
+fn a_file_name_with_a_reserved_scalar_is_checked_by_its_own_name() {
+    const ODD: &str = "Content/Text/\u{f0000}Odd.uasset";
+    let project = Project::new(&[KEEP, ODD]);
+    project.index();
+    let mut checks = DiskChecks::default();
+    for paths in [None, Some(&[ODD][..])] {
+        let (_, items, _) = ready(project.check(&mut checks, paths, None, 10));
+        assert_eq!(items, [], "{paths:?}");
+    }
+    touch(&project.root, ODD);
+    for paths in [None, Some(&[ODD][..])] {
+        let (_, items, _) = ready(project.check(&mut checks, paths, None, 10));
+        assert_eq!(items, [package(Change::Changed, &view(ODD))], "{paths:?}");
+        let wire = serde_json::to_value(&items[0]).unwrap();
+        assert_eq!(wire["path"], ODD);
+    }
 }

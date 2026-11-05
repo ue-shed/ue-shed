@@ -47,8 +47,12 @@ pub struct DiskChangesRequest {
     #[cfg_attr(test, ts(optional))]
     pub paths: Option<Vec<String>>,
     /// The last path of the previous page; absent for the first.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "exact_option"
+    )]
+    #[cfg_attr(test, ts(optional, type = "string"))]
     pub after: Option<String>,
     /// Items one page lists, from 1 to 1000.
     pub limit: u32,
@@ -124,8 +128,56 @@ pub enum DiskChangeKind {
 pub struct DiskChangeItem {
     pub kind: DiskChangeKind,
     pub change: Change,
-    /// The project-relative path, `/`-separated: a package's as the Project Index lists it.
+    /// The project-relative path, `/`-separated: a package's as the Project Index lists it. It is
+    /// the file's own name, as `changedSince` names a changed package.
+    // In Rust, the dictionary's scalar view; `exact` writes the name it stands for.
+    #[serde(with = "exact")]
+    #[cfg_attr(test, ts(type = "string"))]
     pub path: String,
+}
+
+/// A path's scalar view in Rust and its exact text on the wire, the text `view_json` writes for
+/// the engine's answers. Paths are filesystem names, so their text is UTF-8; a view that is not
+/// (a lone surrogate) is sent as the view.
+mod exact {
+    use crate::wtf8::Wtf8Buf;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(view: &str, serializer: S) -> Result<S::Ok, S::Error> {
+        let text = Wtf8Buf::from_view(view);
+        serializer.serialize_str(text.to_utf8().unwrap_or(view))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+        Ok(Wtf8Buf::from_utf8(&String::deserialize(deserializer)?).into_view())
+    }
+}
+
+/// `exact` for an optional path.
+mod exact_option {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        view: &Option<String>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match view {
+            Some(view) => super::exact::serialize(view, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<String>, D::Error> {
+        Ok(Option::<String>::deserialize(deserializer)?
+            .map(|text| crate::wtf8::Wtf8Buf::from_utf8(&text).into_view()))
+    }
+}
+
+/// A view's WTF-8 bytes: the engine's path order, which `changed_since` lists IDs in too.
+fn wtf8(view: &str) -> Vec<u8> {
+    Wtf8Buf::from_view(view).into_bytes()
 }
 
 /// Every difference the request covers, not only the page's.
@@ -137,8 +189,8 @@ pub struct DiskChangeCounts {
     pub localization: ChangeCounts,
 }
 
-/// A `disk_changes` answer. `items` lists differences in path order (UTF-8 bytes), so the
-/// cursor of the next page is the last path listed.
+/// A `disk_changes` answer. `items` lists differences in path order (the paths' WTF-8 bytes), so
+/// the cursor of the next page is the last path listed.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(TS))]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -152,9 +204,10 @@ pub enum DiskChangesAnswer {
         #[serde(
             rename = "nextCursor",
             default,
-            skip_serializing_if = "Option::is_none"
+            skip_serializing_if = "Option::is_none",
+            with = "exact_option"
         )]
-        #[cfg_attr(test, ts(optional, rename = "nextCursor"))]
+        #[cfg_attr(test, ts(optional, rename = "nextCursor", type = "string"))]
         next_cursor: Option<String>,
     },
 }
@@ -175,8 +228,8 @@ pub struct ReviewFile {
     pub modified_time: Option<String>,
 }
 
-/// One saved package on disk: its project-relative path and bundle signature, as the Catalog
-/// signs it.
+/// One saved package on disk: its project-relative path (the file's own name, not a view) and
+/// bundle signature, as the Catalog signs it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiskPackage {
     pub path: String,
@@ -272,19 +325,24 @@ fn compare_once(
     let Some(joined) = joined.as_str() else {
         return Ok(None);
     };
+    let (input, shards) = joined_input(&directory, &root, joined)?;
     let mut found = Vec::new();
-    packages(&directory, &root, observed, cancelled, &mut found)?;
+    packages(&directory, &root, &shards, observed, cancelled, &mut found)?;
     if let Some(target) = &request.target {
-        let input = joined_input(&directory, &root, joined)?;
         require(
             input.target == *target,
             invalid("The configuration's view is another target's; use the target's view."),
         )?;
         let files = match observed {
             Observed::Walk(_) => None,
-            Observed::Paths { files, .. } => Some(*files),
+            Observed::Paths { files, .. } => Some(
+                files
+                    .iter()
+                    .map(|file| Wtf8Buf::from_utf8(file).into_view())
+                    .collect::<BTreeSet<_>>(),
+            ),
         };
-        localization(&request.project_root, &input, files, &mut found)?;
+        localization(&request.project_root, &input, files.as_ref(), &mut found)?;
     }
     if cancelled() {
         return Err(Error::new(
@@ -292,7 +350,7 @@ fn compare_once(
             "The disk check was cancelled.",
         ));
     }
-    found.sort_unstable_by(|a, b| a.2.cmp(&b.2));
+    found.sort_by_cached_key(|item| wtf8(&item.2));
     let mut counts = DiskChangeCounts::default();
     let items = found
         .into_iter()
@@ -312,7 +370,7 @@ fn compare_once(
     Ok(Some((counts, items)))
 }
 
-/// One page of a comparison's items, after `after`.
+/// One page of a comparison's items, after the path `after` (a view, as items hold them).
 pub fn page(
     counts: DiskChangeCounts,
     items: &[DiskChangeItem],
@@ -320,7 +378,8 @@ pub fn page(
     limit: u32,
 ) -> DiskChangesAnswer {
     let start = after.map_or(0, |after| {
-        items.partition_point(|item| item.path.as_str() <= after)
+        let after = wtf8(after);
+        items.partition_point(|item| wtf8(&item.path) <= after)
     });
     let end = (start + limit as usize).min(items.len());
     let page = items[start..end].to_vec();
@@ -334,31 +393,38 @@ pub fn page(
     }
 }
 
-/// The active package-text shards' packages compared with the observed ones, shard by shard so
-/// only a batch of shards' strings is held at once.
+/// The packages of the shards the view's joined layer read compared with the observed ones, shard
+/// by shard so only a batch of shards' strings is held at once. Shards published since, by a
+/// project refresh or another target's scan, are not this view's until it is joined again.
+///
+/// Observed paths are the files' own names: each is converted once to the dictionary's scalar
+/// view, as a scan interns it, then compared and listed as that view. Its shard is the one a scan
+/// stores it in, which the file's own name selects.
 fn packages(
     directory: &Path,
     root: &Value,
+    shards: &BTreeMap<String, String>,
     observed: &Observed<'_>,
     cancelled: &dyn Fn() -> bool,
     found: &mut Vec<Found>,
 ) -> Result<()> {
-    let active = root["active"].as_object().ok_or("Invalid active layers.")?;
+    let view = |path: &str| Wtf8Buf::from_utf8(path).into_view();
     // The observed packages of each shard, by path, with their signatures.
-    let mut disk: Vec<Vec<(&str, Option<&str>)>> = vec![Vec::new(); SHARDS];
-    let mut wanted: Option<Vec<BTreeSet<&str>>> = None;
+    let mut disk: Vec<Vec<(String, Option<String>)>> = vec![Vec::new(); SHARDS];
+    let mut wanted: Option<Vec<BTreeSet<String>>> = None;
     match observed {
         Observed::Walk(packages) => {
             for package in *packages {
-                disk[shard(&package.path)].push((&package.path, Some(&package.signature)));
+                disk[shard(&package.path)]
+                    .push((view(&package.path), Some(view(&package.signature))));
             }
         }
         Observed::Paths { packages, .. } => {
             let mut named = vec![BTreeSet::new(); SHARDS];
             for (path, signature) in *packages {
                 let group = shard(path);
-                named[group].insert(path.as_str());
-                disk[group].push((path, signature.as_deref()));
+                named[group].insert(view(path));
+                disk[group].push((view(path), signature.as_deref().map(view)));
             }
             wanted = Some(named);
         }
@@ -366,7 +432,7 @@ fn packages(
     let groups = (0..SHARDS)
         .filter(|group| {
             wanted.as_ref().map_or(
-                !disk[*group].is_empty() || active.contains_key(&shard_name(*group)),
+                !disk[*group].is_empty() || shards.contains_key(&shard_name(*group)),
                 |named| !named[*group].is_empty(),
             )
         })
@@ -383,7 +449,7 @@ fn packages(
         let mut rows = Vec::with_capacity(batch.len());
         let mut ids = BTreeSet::new();
         for group in batch {
-            let shard_rows = match active.get(&shard_name(*group)).and_then(Value::as_str) {
+            let shard_rows = match shards.get(&shard_name(*group)) {
                 Some(key) => shard_columns(directory, root, key)?,
                 None => Vec::new(),
             };
@@ -434,7 +500,11 @@ fn packages(
             let on_disk = &mut disk[*group];
             on_disk.sort_unstable();
             on_disk.dedup_by(|a, b| a.0 == b.0);
-            merge(&indexed, on_disk, found);
+            let on_disk = on_disk
+                .iter()
+                .map(|(path, signature)| (path.as_str(), signature.as_deref()))
+                .collect::<Vec<_>>();
+            merge(&indexed, &on_disk, found);
         }
     }
     Ok(())
@@ -447,6 +517,14 @@ fn shard_name(group: usize) -> String {
 /// One shard layer's package path and signature string IDs, row by row.
 fn shard_columns(directory: &Path, root: &Value, key: &str) -> Result<Vec<(u32, u32)>> {
     let record = &root["layers"][key];
+    // The store keeps a joined layer's inputs; a root without one was replaced meanwhile.
+    require(
+        record.is_object(),
+        Error::new(
+            ErrorCode::NotFound,
+            "A package shard of the joined view is no longer in the store.",
+        ),
+    )?;
     let mut reader = Reader::open(&directory.join(record["file"].as_str().ok_or("Layer file.")?))?;
     let paths = crate::join_columns::column(&mut reader, record, "package.path")?;
     let signatures = crate::join_columns::column(&mut reader, record, "package.signature")?;
@@ -491,10 +569,11 @@ fn merge(indexed: &[(&str, &str)], on_disk: &[(&str, Option<&str>)], found: &mut
     }
 }
 
-/// What a joined target recorded of its localization inputs.
+/// What a joined target recorded of its localization inputs, and the inputs it read.
 #[derive(Deserialize)]
 struct JoinedMeta {
     input: JoinedInput,
+    dependencies: Value,
 }
 
 #[derive(Deserialize)]
@@ -526,7 +605,12 @@ struct Inputs {
     review: Option<ReviewFile>,
 }
 
-fn joined_input(directory: &Path, root: &Value, key: &str) -> Result<Inputs> {
+/// The joined layer's recorded inputs, and its package-text shards by name: the packages it shows.
+fn joined_input(
+    directory: &Path,
+    root: &Value,
+    key: &str,
+) -> Result<(Inputs, BTreeMap<String, String>)> {
     let record = &root["layers"][key];
     let reader = Reader::open(&directory.join(record["file"].as_str().ok_or("Joined file.")?))?;
     require(
@@ -544,13 +628,17 @@ fn joined_input(directory: &Path, root: &Value, key: &str) -> Result<Inputs> {
         .as_str()
         .ok_or("Joined target name.")?
         .to_owned();
-    Ok(Inputs {
+    let shards = crate::engine_changes::package_shards(&meta.dependencies)?
+        .into_iter()
+        .collect();
+    let inputs = Inputs {
         target,
         paths,
         provenances: meta.input.file_provenances,
         errors: meta.input.file_errors,
         review: meta.input.review_file,
-    })
+    };
+    Ok((inputs, shards))
 }
 
 /// The target's localization inputs and review file compared with the files on disk by size

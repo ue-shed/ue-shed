@@ -5,6 +5,8 @@ import { LocalizationCheckScope } from "../localization-check-scope.js";
 import { nativeEvaluateRows } from "../native-rule-reports.test-support.js";
 import { effectiveRuleDocument } from "./effective.js";
 
+const decodeRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
+
 type Rows = Parameters<typeof nativeEvaluateRows>[1];
 type Scope = typeof LocalizationCheckScope.Encoded;
 const place = (objectPath: string) => ({
@@ -30,7 +32,7 @@ const affected =
 	(places: readonly Place[]) =>
 		nativeEvaluateRows(
 			effectiveRuleDocument(
-				Schema.decodeUnknownSync(GameTextRuleDocument)({
+				decodeRuleDocument({
 					schemaVersion: 1,
 					roles: [
 						{

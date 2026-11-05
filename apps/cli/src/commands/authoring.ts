@@ -5,6 +5,8 @@ import { CliCommandError, isCliCommandError } from "../cli-runtime.js";
 import { nonNegativeIntegerFlag, optionalFlag, optionalValue, readerFields } from "./options.js";
 import { lazyWorkflow } from "../lazy-workflows.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 const runAuthoringAnalyze = lazyWorkflow(
 	() => import("../workflows/authoring.js"),
 	(module) => module.runAuthoringAnalyze
@@ -49,7 +51,7 @@ const runAuthoringTables = lazyWorkflow(
 /** Decode an inline JSON flag value, classifying JSON syntax and schema failures separately. */
 function parseJsonFlag<A>(label: string, value: string, schema: Schema.Decoder<A>) {
 	return Effect.try({
-		try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(value)),
+		try: () => decodeJson(JSON.parse(value)),
 		catch: (cause) =>
 			new CliCommandError({
 				recovery:

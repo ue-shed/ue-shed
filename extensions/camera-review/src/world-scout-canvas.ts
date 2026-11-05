@@ -74,13 +74,9 @@ function growArray<T>(source: Array<T | undefined>, capacity: number): Array<T |
 }
 
 /**
- * Retained World Scout presentation store. Catalog metadata and transforms live in dense
- * parallel arrays keyed by stream index so transform batches update without allocating
- * ObservedActor / projected point objects per sample.
- *
- * Hot-path scratch buffers (`xs`, `ys`, `visibleIndices`) are reused across paints. Callers must
- * treat them as owned by this store for the duration of a paint/hit-test and not retain aliases
- * across frames.
+ * Retained World Scout presentation store: dense parallel arrays keyed by stream index, so
+ * transform batches update without allocating per sample. The scratch buffers (`xs`, `ys`,
+ * `visibleIndices`) are reused across paints; don't retain them beyond one paint or hit test.
  */
 export class WorldScoutRetainedStore {
 	actorGuids: Array<string | undefined> = [];

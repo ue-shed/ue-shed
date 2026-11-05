@@ -11,25 +11,28 @@ import type { CliCommand } from "../command-model.js";
 
 type Command<Tag extends CliCommand["_tag"]> = Extract<CliCommand, { readonly _tag: Tag }>;
 
-function printConfigOutcome<A>(effect: Effect.Effect<A, { readonly code: string }>) {
-	return Effect.gen(function* () {
-		const runtime = yield* CliRuntime;
-		const result = yield* Effect.result(effect);
-		if (Result.isFailure(result)) {
-			yield* printJson({ schemaVersion: 1, status: "failed", error: result.failure });
-			yield* runtime.setExitCode(2);
-			return;
-		}
-		return yield* printJson(result.success);
-	});
-}
+const decodeExplainRequest = Schema.decodeUnknownEffect(ConfigExplainRequest);
+const decodeCompareRequest = Schema.decodeUnknownEffect(ConfigCompareRequest);
+
+const printConfigOutcome = Effect.fn("Cli.config.print_outcome")(function* <A>(
+	effect: Effect.Effect<A, { readonly code: string }>
+) {
+	const runtime = yield* CliRuntime;
+	const result = yield* Effect.result(effect);
+	if (Result.isFailure(result)) {
+		yield* printJson({ schemaVersion: 1, status: "failed", error: result.failure });
+		yield* runtime.setExitCode(2);
+		return;
+	}
+	return yield* printJson(result.success);
+});
 
 export const runConfigExplain = Effect.fn("Cli.workflow.config_explain")(
 	(command: Command<"ConfigExplain">) =>
 		observeCliOperation(
 			command._tag,
 			Effect.gen(function* () {
-				const request = yield* Schema.decodeUnknownEffect(ConfigExplainRequest)({
+				const request = yield* decodeExplainRequest({
 					project: command.project,
 					platform: command.platform,
 					section: command.section,
@@ -50,7 +53,7 @@ export const runConfigCompare = Effect.fn("Cli.workflow.config_compare")(
 		observeCliOperation(
 			command._tag,
 			Effect.gen(function* () {
-				const request = yield* Schema.decodeUnknownEffect(ConfigCompareRequest)({
+				const request = yield* decodeCompareRequest({
 					project: command.project,
 					leftPlatform: command.leftPlatform,
 					rightPlatform: command.rightPlatform,

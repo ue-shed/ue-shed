@@ -277,8 +277,8 @@ const canonical = (value: Schema.Json): string => {
 			.join(",")}}`;
 	return JSON.stringify(value) ?? "null";
 };
-const json = <A>(value: A): Schema.Json =>
-	Schema.decodeUnknownSync(Schema.Json)(JSON.parse(JSON.stringify(value)));
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const json = <A>(value: A): Schema.Json => decodeJson(JSON.parse(JSON.stringify(value)));
 const relative = (path: string, root: string) =>
 	path === root
 		? "$asset"

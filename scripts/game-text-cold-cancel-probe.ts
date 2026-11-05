@@ -1,10 +1,6 @@
 /**
- * Interrupts a cold Game Text refresh during one named progress phase and measures:
- * how long the interrupt takes to return, how long until every native child has
- * exited, and whether an immediate second refresh on the same cache
- * succeeds. Each repetition uses a fresh cache so the interrupted stage is cold.
- * Host inventory is prepared and its query session closed before the timed refresh.
- *
+ * Interrupts a cold Game Text refresh (fresh cache, inventory prepared) in one progress phase and
+ * measures the interrupt's return, every native child's exit and whether a second refresh works.
  * node scripts/game-text-cold-cancel-probe.ts --project <dir> \
  *   --cache-root <dir> --phase localization|packages|joining --reps 3 --out <json>
  */

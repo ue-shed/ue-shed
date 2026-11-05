@@ -23,12 +23,12 @@ const PackageJson = Schema.Struct({
 		)
 	)
 });
+const PackageJsonText = Schema.fromJsonString(PackageJson);
+const decodePackageJsonText = Schema.decodeUnknownSync(PackageJsonText);
 
 /** Each entry point's subpath and source file, from the package's `exports` map. */
 export function publicPackageEntries(directory: string) {
-	const manifest = Schema.decodeUnknownSync(Schema.fromJsonString(PackageJson))(
-		readFileSync(join(directory, "package.json"), "utf8")
-	);
+	const manifest = decodePackageJsonText(readFileSync(join(directory, "package.json"), "utf8"));
 	const entries = new Map<string, string>();
 	for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
 		const file = target.import ?? ("default" in target ? target.default : undefined);

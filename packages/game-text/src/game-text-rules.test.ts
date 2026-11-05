@@ -27,6 +27,11 @@ import {
 } from "./localization.test-support.js";
 import { LocalizationQualityReport } from "./localization-quality-schema.js";
 
+const LocalizationQualityReportJson = Schema.fromJsonString(LocalizationQualityReport);
+const decodeLocalizationQualityReportJson = Schema.decodeUnknownSync(LocalizationQualityReportJson);
+const GameTextRuleDocumentJson = Schema.fromJsonString(GameTextRuleDocument);
+const decodeGameTextRuleDocumentJsonSync = Schema.decodeUnknownSync(GameTextRuleDocumentJson);
+
 const menu = {
 	id: "menu",
 	scopes: [{ matchers: [{ kind: "location_kind", value: "string_table_entry" }] }]
@@ -153,11 +158,7 @@ it.effect(
 			expect(
 				report.findings.some((finding) => finding.kind === "missing_translator_notes")
 			).toBe(false);
-			expect(
-				Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationQualityReport))(
-					JSON.stringify(report)
-				)
-			).toEqual(report);
+			expect(decodeLocalizationQualityReportJson(JSON.stringify(report))).toEqual(report);
 			expect(report.coverage).toEqual(text.coverage);
 		})
 );
@@ -183,7 +184,7 @@ it.effect(
 		})
 );
 it("omits unlisted culture policies without a default and preserves case-sensitive offsets", () => {
-	const document = Schema.decodeUnknownSync(Schema.fromJsonString(GameTextRuleDocument))(
+	const document = decodeGameTextRuleDocumentJsonSync(
 		JSON.stringify(authored)
 			.replace(',"defaultMaximumCharacters":6', "")
 			.replace('"caseSensitive":false', '"caseSensitive":true')

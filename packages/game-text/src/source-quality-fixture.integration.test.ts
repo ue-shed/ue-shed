@@ -14,6 +14,8 @@ import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { GameTextRuleDocument, decodeGameTextRuleDocumentJson } from "./game-text-rules.js";
 import type { TextCorpus } from "./schema.js";
 import { expectSameSourceQuality } from "./source-quality-index.test-support.js";
+
+const decodeRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 const recovery = "Revise the line.";
@@ -30,7 +32,7 @@ function matcherDocument(corpus: TextCorpus) {
 	const entry = locations.find((location) => location.kind === "string_table_entry");
 	const property = locations.find((location) => location.kind === "asset_property");
 	if (!cell || !entry || !property) throw new Error("The fixture lacks a location kind.");
-	return Schema.decodeUnknownSync(GameTextRuleDocument)({
+	return decodeRuleDocument({
 		schemaVersion: 1,
 		roles: [
 			{

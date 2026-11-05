@@ -23,6 +23,13 @@ import {
 } from "../packages/blueprints/dist/index.js";
 import { parseJsonObject } from "./json.ts";
 
+const decodeBlueprintNode = Schema.decodeUnknownSync(BlueprintNode);
+const decodeBlueprintPin = Schema.decodeUnknownSync(BlueprintPin);
+const decodeBlueprintLink = Schema.decodeUnknownSync(BlueprintGraph.fields.links.value);
+const decodeBlueprintGraph = Schema.decodeUnknownSync(BlueprintGraph);
+const StringFromJson = Schema.fromJsonString(Schema.String);
+const decodeJsonString = Schema.decodeUnknownSync(StringFromJson);
+
 const alias = (prefix: string, value: string) =>
 	prefix + createHash("sha256").update(value).digest("hex").slice(0, 12);
 const nodeAlias = (node: BlueprintNode) => alias("n", node.guid ?? node.object_path);
@@ -107,18 +114,18 @@ export function parseBlueprintDiagram(source: string): BlueprintGraph {
 			currentId = node[1]!;
 			if (ids.has(currentId)) throw new Error("Duplicate node alias: " + currentId);
 			ids.add(currentId);
-			const fields = Schema.decodeUnknownSync(BlueprintNode)({
+			const fields = decodeBlueprintNode({
 				...parseJsonObject(node[5]!),
-				title: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.String))(node[2]!),
+				title: decodeJsonString(node[2]!),
 				position: { x: Number(node[3]), y: Number(node[4]) },
 				pins: []
 			});
 			current = { ...fields, pins: [] };
 			nodes.push(current);
 		} else if (pin && current) {
-			const fields = Schema.decodeUnknownSync(BlueprintPin)({
+			const fields = decodeBlueprintPin({
 				...parseJsonObject(pin[4]!),
-				name: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.String))(pin[3]!),
+				name: decodeJsonString(pin[3]!),
 				direction: pin[1] === "in" ? "input" : "output"
 			});
 			const key = currentId + "." + pin[2];
@@ -132,15 +139,11 @@ export function parseBlueprintDiagram(source: string): BlueprintGraph {
 			links.push({ from, to });
 			current = undefined;
 		} else if (line.startsWith("unresolved ")) {
-			links.push(
-				Schema.decodeUnknownSync(BlueprintGraph.fields.links.value)(
-					parseJsonObject(line.slice(11))
-				)
-			);
+			links.push(decodeBlueprintLink(parseJsonObject(line.slice(11))));
 			current = undefined;
 		} else throw new Error(`Invalid diagram line ${lineIndex + 3}: ${line}`);
 	}
-	const graph = Schema.decodeUnknownSync(BlueprintGraph)({ ...metadata, nodes, links });
+	const graph = decodeBlueprintGraph({ ...metadata, nodes, links });
 	checkedIndex(graph);
 	return graph;
 }

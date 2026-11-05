@@ -14,6 +14,11 @@ import {
 	workingTable
 } from "./index.js";
 
+const PersistedSessionVersion = Schema.Struct({
+	draft: Schema.Struct({ version: Schema.Number })
+});
+const decodePersistedSessionVersion = Schema.decodeUnknownSync(PersistedSessionVersion);
+
 /** A session service over generated ids, or over the ids a test supplies. */
 const sessionService = (
 	config: Parameters<typeof makeAuthoringSessionService>[0],
@@ -284,9 +289,9 @@ describe("AuthoringSessionService", () => {
 			const migrated = await Effect.runPromise(restarted.open("legacy-session"));
 			expect(migrated.draft.version).toBe(2);
 			expect(migrated.draft.saveReceipts).toEqual([]);
-			const persisted = Schema.decodeUnknownSync(
-				Schema.Struct({ draft: Schema.Struct({ version: Schema.Number }) })
-			)(JSON.parse(await readFile(join(storageRoot, "legacy-session.json"), "utf8")));
+			const persisted = decodePersistedSessionVersion(
+				JSON.parse(await readFile(join(storageRoot, "legacy-session.json"), "utf8"))
+			);
 			expect(persisted.draft.version).toBe(2);
 		} finally {
 			await rm(root, { force: true, recursive: true });

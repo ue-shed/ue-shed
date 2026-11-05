@@ -14,6 +14,8 @@ export class CliCommandError extends Schema.TaggedError<CliCommandError>()("CliC
 /** Matches a {@link CliCommandError} by its tag and schema, never by `instanceof`. */
 export const isCliCommandError = Schema.is(CliCommandError);
 
+const isContractParseError = Schema.is(ContractParseError);
+
 /** Node errno code of a filesystem failure, when the cause carries one. */
 export function errnoCode(cause: unknown): string | undefined {
 	return cause instanceof Object && "code" in cause && Predicate.isString(cause.code)
@@ -29,7 +31,7 @@ export function jsonInputFileMessage(label: string, path: string, cause: unknown
 	if (
 		cause instanceof SyntaxError ||
 		Schema.isSchemaError(cause) ||
-		Schema.is(ContractParseError)(cause)
+		isContractParseError(cause)
 	) {
 		return `${label} ${path} is not valid JSON.`;
 	}
@@ -44,7 +46,7 @@ export function jsonInputFileMessage(label: string, path: string, cause: unknown
 
 /** Issue detail the CLI prints under a classified message when the user's input failed a schema. */
 export function inputIssueDetail(error: { readonly cause?: unknown }): string | undefined {
-	const cause = Schema.is(ContractParseError)(error.cause) ? error.cause.cause : error.cause;
+	const cause = isContractParseError(error.cause) ? error.cause.cause : error.cause;
 	return Schema.isSchemaError(cause) ? cause.message : undefined;
 }
 

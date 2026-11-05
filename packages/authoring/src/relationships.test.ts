@@ -8,6 +8,8 @@ import {
 	rowReferenceDiagnostics
 } from "./relationships.js";
 
+const decodeRowReferenceReport = Schema.decodeUnknownSync(RowReferenceReport);
+
 function snapshot(objectPath: string, rows: readonly AuthoringRow[]): AuthoringTableSnapshotV1 {
 	const packageName = objectPath.slice(0, objectPath.lastIndexOf("."));
 	return {
@@ -153,7 +155,7 @@ describe("DataTable row relationships", () => {
 			snapshot(rightPath, [row("Right")])
 		]);
 
-		expect(Schema.decodeUnknownSync(RowReferenceReport)(report)).toEqual(report);
+		expect(decodeRowReferenceReport(report)).toEqual(report);
 		expect(report.summary).toEqual({
 			issueCount: 0,
 			referenceCount: 1,

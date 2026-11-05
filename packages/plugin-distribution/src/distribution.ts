@@ -36,6 +36,8 @@ import {
 	type PluginVariantRequest
 } from "./variant.js";
 
+const decodePluginInstallRequest = Schema.decodeUnknownEffect(PluginInstallRequest);
+
 export interface PluginInstallOptions {
 	readonly onProgress?: (progress: PluginInstallProgress) => void;
 	readonly signal?: AbortSignal;
@@ -262,9 +264,9 @@ export const pluginDistributionLayer = (
 			const ensureUncached = Effect.fn("PluginDistribution.ensureUncached")(function* (
 				key: string
 			) {
-				const request = yield* Schema.decodeUnknownEffect(PluginInstallRequest)(
-					JSON.parse(key)
-				).pipe(Effect.mapError(decodeFailure));
+				const request = yield* decodePluginInstallRequest(JSON.parse(key)).pipe(
+					Effect.mapError(decodeFailure)
+				);
 				publishProgress(key, {
 					phase: "resolving",
 					releaseVersion: request.releaseVersion
@@ -427,7 +429,7 @@ export const pluginDistributionLayer = (
 				input: unknown,
 				installOptions: PluginInstallOptions = {}
 			) {
-				const request = yield* Schema.decodeUnknownEffect(PluginInstallRequest)(input).pipe(
+				const request = yield* decodePluginInstallRequest(input).pipe(
 					Effect.mapError(decodeFailure)
 				);
 				const key = canonicalRequest(request);

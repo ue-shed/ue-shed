@@ -17,6 +17,9 @@ import {
 } from "./localization.test-support.js";
 import { TextUnit } from "./schema.js";
 
+const decodeTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+
 const scaleLane = process.env.UE_SHED_GAME_TEXT_SCALE === "1";
 const LINES = scaleLane ? 50_000 : 5_000;
 const CULTURES = [
@@ -56,7 +59,7 @@ function largeProject() {
 			]
 		})
 	).targets[0];
-	const target = Schema.decodeUnknownSync(LocalizationTarget)(discovered);
+	const target = decodeTarget(discovered);
 	const units: TextUnit[] = [];
 	const manifests: ManifestEntry[] = [];
 	const archives: ArchiveEntry[] = [];
@@ -67,7 +70,7 @@ function largeProject() {
 		const table = `Text/Folder${index % 200}/Table${index % 1000}`;
 		const objectPath = `/Game/${table}.Table${index % 1000}`;
 		units.push(
-			Schema.decodeUnknownSync(TextUnit)({
+			decodeTextUnit({
 				id: `unit:${key}`,
 				source: { status: "consistent", value: source },
 				identity: { status: "resolved", namespace: "NS", key },

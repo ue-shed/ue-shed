@@ -9,6 +9,8 @@ import {
 	TextureInvestigationPreset
 } from "./investigation.js";
 
+const decodePreset = Schema.decodeUnknownEffect(TextureInvestigationPreset);
+
 const available = <A>(value: A) => ({
 	status: "available" as const,
 	source: "serialized" as const,
@@ -72,9 +74,7 @@ it("exports all matching textures and findings using the captured rules", async 
 	};
 	const preset = await Effect.runPromise(textureInvestigationPreset(model, query));
 	expect(preset.rules).toEqual(report.ruleSet);
-	const decoded = await Effect.runPromise(
-		Schema.decodeUnknownEffect(TextureInvestigationPreset)(JSON.parse(JSON.stringify(preset)))
-	);
+	const decoded = await Effect.runPromise(decodePreset(JSON.parse(JSON.stringify(preset))));
 	const document = exportTextureInvestigation(model, decoded, {
 		projectRoot: "/project",
 		generation: 9,
@@ -98,9 +98,5 @@ it("fails clearly for legacy reports without retained rules and rejects unknown 
 			})
 		)
 	).rejects.toMatchObject({ _tag: "InvestigationError" });
-	await expect(
-		Effect.runPromise(
-			Schema.decodeUnknownEffect(TextureInvestigationPreset)({ schemaVersion: 2 })
-		)
-	).rejects.toBeDefined();
+	await expect(Effect.runPromise(decodePreset({ schemaVersion: 2 }))).rejects.toBeDefined();
 });

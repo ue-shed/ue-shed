@@ -17,19 +17,10 @@ import type {
 } from "./editor-play-session.js";
 
 /**
- * Public wire ownership inventory (Plan 022).
- *
- * - Derived schema types: Camera* and EditorPlaySession* wire values, plus ordinary authoring
- *   envelopes that use `Schema.Schema.Type`.
- * - Recursive Schema.suspend exceptions (manual type + bidirectional AssertExact in authoring.ts):
- *   AuthoringValue, AuthoringFieldValue, AuthoringTypeDescriptor, AuthoringFieldDescriptor.
- * - JSON-authoritative cross-language contracts: `contracts/authoring` and
- *   `contracts/cameras/review` (capture request/response, assessment capabilities, and selection /
- *   subject-inspection response).
- *
- * TypeScript-owned Map Review persistence and Workbench IPC (ReviewSet, authoring session, live
- * preview DTOs) remain Effect-schema-first in `@ue-shed/cameras` and are not frozen into
- * language-neutral JSON while Plans 017–019 remain active.
+ * Public wire ownership: Camera*, EditorPlaySession* and ordinary authoring envelopes derive from
+ * schemas; recursive authoring values and descriptors (Schema.suspend) keep manual types checked
+ * by AssertExact in authoring.ts; `contracts/authoring` and `contracts/cameras/review` are JSON
+ * authoritative. Map Review persistence and Workbench IPC stay Effect-schema-first in cameras.
  */
 describe("public wire ownership inventory", () => {
 	it("keeps recursive authoring exceptions named", () => {

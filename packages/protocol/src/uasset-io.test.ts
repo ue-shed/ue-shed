@@ -12,8 +12,10 @@ import {
 	UAssetIoRequest
 } from "./uasset-io.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 const fixture = async (path: string): Promise<Schema.Json> =>
-	Schema.decodeUnknownSync(Schema.Json)(
+	decodeJson(
 		JSON.parse(
 			await readFile(
 				fileURLToPath(

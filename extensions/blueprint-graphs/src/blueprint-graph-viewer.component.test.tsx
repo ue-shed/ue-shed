@@ -45,10 +45,9 @@ const indexedProject = {
 	status: "ready" as const
 };
 
-// JSDOM has no layout, ResizeObserver or DOMMatrix. The real Solid Flow components still mount
-// nodes and selection; handle geometry, edges and fitting need a browser. Solid Flow measures on
-// timers that can outlive a test, so the stand-ins stay on this file's window instead of being
-// stubbed per test. Node presses use fireEvent.click: d3-zoom's pane handler reads the pointer
+// JSDOM has no layout, ResizeObserver or DOMMatrix; edges and fitting need a browser. Solid Flow
+// measures on timers that can outlive a test, so these stand-ins stay on this file's window
+// instead of being stubbed per test. Node presses use fireEvent.click: d3-zoom reads the pointer
 // event's view, which user-event leaves null in JSDOM.
 class NoLayoutResizeObserver {
 	observe() {}

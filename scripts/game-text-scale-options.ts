@@ -30,20 +30,19 @@ const Recipe = Schema.Struct({
 	gaps: Schema.Int.check(Schema.isGreaterThan(0)),
 	cultures: Schema.Array(Schema.String)
 });
+const ScaleDescriptor = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	recipe: Schema.optionalKey(Recipe),
+	["shape"]: Schema.optionalKey(Recipe)
+});
+const ScaleDescriptorJson = Schema.fromJsonString(ScaleDescriptor);
+const decodeScaleDescriptorJson = Schema.decodeUnknownSync(ScaleDescriptorJson);
 
 /** The pre-crash 1× descriptor called its recipe "shape". Never load an unbounded descriptor. */
 export async function readScaleRecipe(root: string) {
 	const path = resolve(root, "scale.json");
 	if ((await stat(path)).size > 64 * 1024) throw new Error("Scale descriptor exceeds 64 KiB.");
-	const descriptor = Schema.decodeUnknownSync(
-		Schema.fromJsonString(
-			Schema.Struct({
-				schemaVersion: Schema.Literal(1),
-				recipe: Schema.optionalKey(Recipe),
-				["shape"]: Schema.optionalKey(Recipe)
-			})
-		)
-	)(await readFile(path, "utf8"));
+	const descriptor = decodeScaleDescriptorJson(await readFile(path, "utf8"));
 	const recipe = descriptor.recipe ?? descriptor["shape"];
 	if (recipe === undefined) throw new Error("Missing scale recipe.");
 	if (

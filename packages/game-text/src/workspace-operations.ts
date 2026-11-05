@@ -70,6 +70,9 @@ export function safeLocalizationLogLine(line: string): string {
 		.replace(/[\u0000-\u0008\u000b-\u001f]/gu, "")
 		.slice(0, 2048);
 }
+const decodeRelativePath = Schema.decodeUnknownEffect(OperationRelativePath);
+const decodeRelativePathResult = Schema.decodeUnknownResult(OperationRelativePath);
+const isLocalizationOperationError = Schema.is(LocalizationOperationError);
 function failed(code: string, message: string, recovery: string): GameTextOperationFailure {
 	return { status: "failed", code, message, recovery, details: [] };
 }
@@ -189,28 +192,28 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 		  }
 		| undefined
 	>(undefined);
-	const publish = (value: GameTextOperationProgress) =>
-		Effect.gen(function* () {
-			yield* Ref.set(progress, value);
-			const current = yield* project.current();
-			const saved = yield* Ref.get(confirmation);
-			if (
-				current.status !== "ready" ||
-				current.project.projectRoot !== saved?.request.projectRoot
-			)
-				return;
-			yield* host.notifyProgress(value).pipe(Effect.ignore);
-		});
-	const authorized = (saved: RetainedPlan) =>
-		Effect.gen(function* () {
-			const current = yield* project.current();
-			return (
-				current.status === "ready" &&
-				current.project.projectRoot === saved.request.projectRoot &&
-				(current.project.generation ?? 0) === saved.generation &&
-				(yield* gameText.operationTarget(saved.view.target)) === saved.request.target
-			);
-		});
+	const publish = Effect.fnUntraced(function* (value: GameTextOperationProgress) {
+		yield* Ref.set(progress, value);
+		const current = yield* project.current();
+		const saved = yield* Ref.get(confirmation);
+		if (
+			current.status !== "ready" ||
+			current.project.projectRoot !== saved?.request.projectRoot
+		)
+			return;
+		yield* host.notifyProgress(value).pipe(Effect.ignore);
+	});
+	const authorized = Effect.fn("GameText.workspace.operations.authorized")(function* (
+		saved: RetainedPlan
+	) {
+		const current = yield* project.current();
+		return (
+			current.status === "ready" &&
+			current.project.projectRoot === saved.request.projectRoot &&
+			(current.project.generation ?? 0) === saved.generation &&
+			(yield* gameText.operationTarget(saved.view.target)) === saved.request.target
+		);
+	});
 	const state = Effect.fn("GameText.workspace.operations.operations.state")(function* (
 		target: LocalizationTargetName
 	): Effect.fn.Return<GameTextOperationState> {
@@ -267,9 +270,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 						};
 						const prepared = yield* runner.plan(runRequest);
 						for (const file of prepared.files)
-							yield* Schema.decodeUnknownEffect(OperationRelativePath)(
-								file.relativePath
-							).pipe(
+							yield* decodeRelativePath(file.relativePath).pipe(
 								Effect.mapError((cause) =>
 									localizationOperationError("unsafe_path", cause)
 								)
@@ -406,7 +407,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 							const terminationError =
 								stopped &&
 								Result.isSuccess(stopped) &&
-								Schema.is(LocalizationOperationError)(stopped.success)
+								isLocalizationOperationError(stopped.success)
 									? stopped.success
 									: undefined;
 							const result: GameTextOperationResult = Exit.isSuccess(exit)
@@ -495,11 +496,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 					: undefined;
 		if (!source) return stale();
 		const page = source.files;
-		if (
-			page.some((file) =>
-				Result.isFailure(Schema.decodeUnknownResult(OperationRelativePath)(file.path))
-			)
-		)
+		if (page.some((file) => Result.isFailure(decodeRelativePathResult(file.path))))
 			return failed(
 				"unsafe_path",
 				"The file list contains an unsafe path.",

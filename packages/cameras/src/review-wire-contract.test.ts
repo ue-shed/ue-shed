@@ -16,14 +16,15 @@ import {
 	ReviewSubjectProjection
 } from "./review-schema.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const isContractParseError = Schema.is(ContractParseError);
+const decodeReviewSubjectProjectionResult = Schema.decodeUnknownResult(ReviewSubjectProjection);
 const contractDirectory = fileURLToPath(
 	new URL("../../protocol/contracts/cameras/review/v1/", import.meta.url)
 );
 
 function json(path: string): Schema.Json {
-	return Schema.decodeUnknownSync(Schema.Json)(
-		JSON.parse(readFileSync(`${contractDirectory}${path}`, "utf8"))
-	);
+	return decodeJson(JSON.parse(readFileSync(`${contractDirectory}${path}`, "utf8")));
 }
 
 const decodeCapture = (input: Schema.Json) => Effect.runSync(decodeReviewCaptureResponse(input));
@@ -45,7 +46,7 @@ describe("Map Review language-neutral wire contracts", () => {
 		];
 		for (const parse of failures) {
 			const failure = await Effect.runPromise(Effect.flip(parse));
-			expect(Schema.is(ContractParseError)(failure)).toBe(true);
+			expect(isContractParseError(failure)).toBe(true);
 			expect(failure).toMatchObject({
 				code: "invalid_contract",
 				retrySafe: false,
@@ -198,7 +199,7 @@ describe("Map Review language-neutral wire contracts", () => {
 		});
 
 		expect(
-			Schema.decodeUnknownResult(ReviewSubjectProjection)({
+			decodeReviewSubjectProjectionResult({
 				status: "projected",
 				viewportStatus: "fully_within_viewport",
 				normalizedBounds: { minX: 0.2, minY: 0.2, maxX: 0.8, maxY: 0.8 }

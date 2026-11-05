@@ -23,6 +23,10 @@ import { openSnapshotFile, type SnapshotSource } from "../packages/game-text/src
 import type { SharedLoadedDomain } from "../packages/game-text/src/shared-string-file.ts";
 import { readScaleRecipe } from "./game-text-scale-options.ts";
 
+const PathPrefixMeta = Schema.Struct({ pathPrefix: Schema.String });
+const PathPrefixMetaJson = Schema.fromJsonString(PathPrefixMeta);
+const decodePathPrefixMetaJson = Schema.decodeUnknownSync(PathPrefixMetaJson);
+
 type Measure = <A>(
 	name: string,
 	run: () => Promise<A>,
@@ -340,9 +344,9 @@ export async function measureSharedIndex(
 					const po = yield* index.layer(
 						target.outputPaths.portableObjects[target.cultures[0]!]!
 					);
-					const metadata = Schema.decodeUnknownSync(
-						Schema.fromJsonString(Schema.Struct({ pathPrefix: Schema.String }))
-					)(new TextDecoder().decode(yield* po.section("file.meta")));
+					const metadata = decodePathPrefixMetaJson(
+						new TextDecoder().decode(yield* po.section("file.meta"))
+					);
 					const prefix = metadata.pathPrefix;
 					if (!prefix.endsWith("/")) throw new Error("Native folder prefix absent.");
 					let paths: Uint32Array = new Uint32Array(),

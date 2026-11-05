@@ -32,6 +32,10 @@ const FixtureContract = Schema.Struct({
 		subjects: Schema.Record(Schema.String, Schema.NonEmptyString)
 	})
 });
+const decodeFixtureContract = Schema.decodeUnknownSync(FixtureContract);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const DirtyMapPackages = Schema.Struct({ OutDirtyPackages: Schema.Array(Schema.String) });
+const decodeDirtyMapPackages = Schema.decodeUnknownSync(DirtyMapPackages);
 
 test.skip(!enabled, "run through pnpm test:flow:map-review with the live gallery editor");
 test.setTimeout(300_000);
@@ -54,13 +58,12 @@ async function remoteCall(args: {
 		signal: AbortSignal.timeout(30_000)
 	});
 	if (!response.ok) throw new Error(`${args.functionName} failed with HTTP ${response.status}.`);
-	return Schema.decodeUnknownSync(Schema.Json)(await response.json());
+	return decodeJson(await response.json());
 }
 
 async function contract() {
-	return Schema.decodeUnknownSync(FixtureContract)(
-		JSON.parse(await readFile(fixtureContractPath, "utf8"))
-	).mapReviewGallery;
+	return decodeFixtureContract(JSON.parse(await readFile(fixtureContractPath, "utf8")))
+		.mapReviewGallery;
 }
 
 async function selectSubject(actorPath: string) {
@@ -82,9 +85,7 @@ async function selectSubject(actorPath: string) {
 test.afterEach(async () => {
 	await remoteCall({ functionName: "SelectNothing", objectPath: editorActorSubsystem });
 	const gallery = await contract();
-	const dirty = Schema.decodeUnknownSync(
-		Schema.Struct({ OutDirtyPackages: Schema.Array(Schema.String) })
-	)(
+	const dirty = decodeDirtyMapPackages(
 		await remoteCall({
 			functionName: "GetDirtyMapPackages",
 			objectPath: editorLoadingLibrary

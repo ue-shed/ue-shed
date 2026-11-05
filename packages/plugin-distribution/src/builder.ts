@@ -164,6 +164,16 @@ const UnrealModules = Schema.Struct({
 	BuildId: Schema.String,
 	Modules: Schema.Record(Schema.String, Schema.String)
 });
+const EnginePluginReference = Schema.Struct({ Name: PluginId });
+const decodeUnrealBuildVersion = Schema.decodeUnknownSync(UnrealBuildVersion);
+const decodeModuleDescriptor = Schema.decodeUnknownSync(ModuleDescriptor);
+const decodeUnrealPluginDescriptor = Schema.decodeUnknownSync(UnrealPluginDescriptor);
+const decodeUnrealModules = Schema.decodeUnknownSync(UnrealModules);
+const decodeEnginePluginReference = Schema.decodeUnknownSync(EnginePluginReference);
+const decodeCompiledPluginBuildRequest = Schema.decodeUnknownEffect(CompiledPluginBuildRequest);
+const decodeCompiledPluginBundleManifestV3 = Schema.decodeUnknownEffect(
+	CompiledPluginBundleManifestV3
+);
 
 function sha256(bytes: Uint8Array) {
 	return Sha256Checksum.make(`sha256:${createHash("sha256").update(bytes).digest("hex")}`);
@@ -424,7 +434,7 @@ async function compiledModuleAttestations(options: {
 		const binaryRoot = `Plugins/${plugin.directory}/Binaries/${options.platform}/`;
 		for (const file of options.files) {
 			if (!file.path.startsWith(binaryRoot) || !file.path.endsWith(".modules")) continue;
-			const evidence = Schema.decodeUnknownSync(UnrealModules)(
+			const evidence = decodeUnrealModules(
 				JSON.parse(await readFile(join(options.graphRoot, ...file.path.split("/")), "utf8"))
 			);
 			if (evidence.BuildId !== options.buildId) {
@@ -453,11 +463,11 @@ async function prepareAggregatePlugin(options: {
 	const enginePlugins = new Map<string, Record<string, Schema.Json>>();
 	for (const plugin of options.plugins) {
 		const pluginRoot = join(options.pluginsRoot, plugin.directory);
-		const descriptor = Schema.decodeUnknownSync(UnrealPluginDescriptor)(
+		const descriptor = decodeUnrealPluginDescriptor(
 			JSON.parse(await readFile(join(pluginRoot, `${plugin.directory}.uplugin`), "utf8"))
 		);
 		for (const module of descriptor.Modules ?? []) {
-			const decoded = Schema.decodeUnknownSync(ModuleDescriptor)(module);
+			const decoded = decodeModuleDescriptor(module);
 			const source = join(pluginRoot, "Source", decoded.Name);
 			await regularFile(join(source, `${decoded.Name}.Build.cs`), `Module ${decoded.Name}`);
 			await cp(source, join(aggregateRoot, "Source", decoded.Name), {
@@ -467,9 +477,7 @@ async function prepareAggregatePlugin(options: {
 			modules.push(module);
 		}
 		for (const enginePlugin of descriptor.Plugins ?? []) {
-			const reference = Schema.decodeUnknownSync(Schema.Struct({ Name: PluginId }))(
-				enginePlugin
-			);
+			const reference = decodeEnginePluginReference(enginePlugin);
 			if (plugin.engineDependencies.includes(reference.Name)) {
 				enginePlugins.set(reference.Name, enginePlugin);
 			}
@@ -508,7 +516,7 @@ async function composeCompiledGraph(options: {
 	const packageBinaries = join(options.packageRoot, "Binaries", options.platform);
 	const moduleFile = (await readdir(packageBinaries)).find((name) => name.endsWith(".modules"));
 	if (moduleFile === undefined) throw new Error("RunUAT package has no .modules file.");
-	const moduleEvidence = Schema.decodeUnknownSync(UnrealModules)(
+	const moduleEvidence = decodeUnrealModules(
 		JSON.parse(await readFile(join(packageBinaries, moduleFile), "utf8"))
 	);
 	if (moduleEvidence.BuildId !== options.buildId) {
@@ -523,11 +531,11 @@ async function composeCompiledGraph(options: {
 		await cp(source, destination, { errorOnExist: true, recursive: true });
 		await rm(join(destination, "Binaries"), { force: true, recursive: true });
 		await rm(join(destination, "Intermediate"), { force: true, recursive: true });
-		const descriptor = Schema.decodeUnknownSync(UnrealPluginDescriptor)(
+		const descriptor = decodeUnrealPluginDescriptor(
 			JSON.parse(await readFile(join(destination, `${plugin.directory}.uplugin`), "utf8"))
 		);
 		const moduleNames = (descriptor.Modules ?? []).map(
-			(module) => Schema.decodeUnknownSync(ModuleDescriptor)(module).Name
+			(module) => decodeModuleDescriptor(module).Name
 		);
 		const modules = Object.fromEntries(
 			Object.entries(moduleEvidence.Modules).filter(([name]) => moduleNames.includes(name))
@@ -594,12 +602,9 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 				input: unknown,
 				options: CompiledPluginBuildOptions = {}
 			) {
-				const request = yield* Schema.decodeUnknownEffect(CompiledPluginBuildRequest)(
-					input,
-					{
-						onExcessProperty: "error"
-					}
-				).pipe(
+				const request = yield* decodeCompiledPluginBuildRequest(input, {
+					onExcessProperty: "error"
+				}).pipe(
 					Effect.mapError((cause) =>
 						invalid(
 							"validation",
@@ -679,10 +684,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 									throw new Error(
 										"Source manifest digest does not match the pinned digest."
 									);
-								const buildVersion = Schema.decodeUnknownSync(UnrealBuildVersion)(
+								const buildVersion = decodeUnrealBuildVersion(
 									JSON.parse(await readFile(buildVersionPath, "utf8"))
 								);
-								const engineModules = Schema.decodeUnknownSync(UnrealModules)(
+								const engineModules = decodeUnrealModules(
 									JSON.parse(await readFile(editorModulesPath, "utf8"))
 								);
 								const unrealVersion = `${buildVersion.MajorVersion}.${buildVersion.MinorVersion}.${buildVersion.PatchVersion}`;
@@ -1005,9 +1010,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											"Build the source bundle from the matching release candidate."
 										);
 									}
-									const manifest = yield* Schema.decodeUnknownEffect(
-										CompiledPluginBundleManifestV3
-									)({
+									const manifest = yield* decodeCompiledPluginBundleManifestV3({
 										artifact: {
 											bytes: artifact.bytes,
 											id: `ue-shed-plugin-compiled-${state.sourceManifest.releaseVersion}`,

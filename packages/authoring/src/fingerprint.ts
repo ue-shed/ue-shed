@@ -3,6 +3,8 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import type { AuthoringTableSnapshot, AuthoringValue } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
+const isNumber = Schema.is(Schema.Number);
+
 export const FINGERPRINT_VERSION = "sha256-v1" as const;
 
 function normalizeValue(value: AuthoringValue): AuthoringValue {
@@ -14,9 +16,7 @@ function normalizeValue(value: AuthoringValue): AuthoringValue {
 		case "float":
 			return {
 				kind: value.kind,
-				value: Schema.is(Schema.Number)(value.value)
-					? Math.fround(value.value)
-					: value.value
+				value: isNumber(value.value) ? Math.fround(value.value) : value.value
 			};
 		case "array":
 			return { kind: value.kind, values: value.values.map(normalizeValue) };

@@ -91,6 +91,8 @@ export const LocalizationReviewFile = Schema.Struct({
 	acceptedFindings: Schema.Array(LocalizationAcceptedFinding)
 });
 export type LocalizationReviewFile = typeof LocalizationReviewFile.Type;
+const LocalizationReviewFileJson = Schema.fromJsonString(LocalizationReviewFile);
+const decodeReviewFileJson = Schema.decodeUnknownResult(LocalizationReviewFileJson);
 
 /**
  * Malformed, duplicate or wrong-target review metadata. Correct or reconcile the review
@@ -149,7 +151,7 @@ export function decodeLocalizationReviewFile(
 	text: string,
 	target: LocalizationTargetName
 ): Result.Result<LocalizationReviewFile, LocalizationReviewFileError> {
-	const decoded = Schema.decodeUnknownResult(Schema.fromJsonString(LocalizationReviewFile))(text);
+	const decoded = decodeReviewFileJson(text);
 	if (Result.isFailure(decoded))
 		return Result.fail(
 			new LocalizationReviewFileError({

@@ -31,6 +31,13 @@ const subjectPath =
 const electronPath = Schema.decodeUnknownSync(Schema.String)(
 	createRequire(import.meta.url)("electron")
 );
+const decodeReviewSet = Schema.decodeUnknownSync(ReviewSet);
+const RemoteCallResult = Schema.Struct({ ResultJson: Schema.String });
+const decodeRemoteCallResult = Schema.decodeUnknownSync(RemoteCallResult);
+const decodeCameraBridgeResponse = Schema.decodeUnknownSync(CameraBridgeResponse);
+const ReviewSetIdentity = Schema.Struct({ id: ReviewSetId });
+const decodeReviewSetIdentity = Schema.decodeUnknownSync(ReviewSetIdentity);
+const decodeCameraAuthoringDocument = Schema.decodeUnknownSync(CameraAuthoringDocument);
 
 test.skip(
 	!enabled,
@@ -114,9 +121,7 @@ test("first camera set creates its destination and can be reopened through the R
 		await app!.close();
 		app = undefined;
 		const collectionPath = join(setsRoot, createdFile!);
-		const collection = Schema.decodeUnknownSync(ReviewSet)(
-			JSON.parse(await readFile(collectionPath, "utf8"))
-		);
+		const collection = decodeReviewSet(JSON.parse(await readFile(collectionPath, "utf8")));
 		await writeFile(
 			collectionPath,
 			JSON.stringify({ ...collection, displayName: collectionName })
@@ -160,10 +165,8 @@ test("first camera set creates its destination and can be reopened through the R
 				})
 			});
 			expect(response.ok).toBe(true);
-			const wire = Schema.decodeUnknownSync(Schema.Struct({ ResultJson: Schema.String }))(
-				await response.json()
-			);
-			return Schema.decodeUnknownSync(CameraBridgeResponse)(JSON.parse(wire.ResultJson));
+			const wire = decodeRemoteCallResult(await response.json());
+			return decodeCameraBridgeResponse(JSON.parse(wire.ResultJson));
 		};
 		await expect
 			.poll(async () => {
@@ -200,7 +203,7 @@ test("first camera set creates its destination and can be reopened through the R
 		await expect(
 			workspace.getByText("Native preset setup", { exact: true }).first()
 		).toBeVisible();
-		const reviewDocument = Schema.decodeUnknownSync(Schema.Struct({ id: ReviewSetId }))(
+		const reviewDocument = decodeReviewSetIdentity(
 			JSON.parse(await readFile(join(setsRoot, createdFile!), "utf8"))
 		);
 		const cameraDirectory = join(
@@ -212,7 +215,7 @@ test("first camera set creates its destination and can be reopened through the R
 			(await readdir(cameraDirectory))
 				.filter((name) => name.endsWith(".json"))
 				.map(async (name) =>
-					Schema.decodeUnknownSync(CameraAuthoringDocument)(
+					decodeCameraAuthoringDocument(
 						JSON.parse(await readFile(join(cameraDirectory, name), "utf8"))
 					)
 				)

@@ -77,6 +77,7 @@ const WorkerMessage = Schema.Struct({
 	seconds: Schema.optionalKey(Schema.Number)
 });
 type WorkerMessage = typeof WorkerMessage.Type;
+const decodeWorkerMessage = Schema.decodeUnknownSync(WorkerMessage);
 function group(name: string) {
 	if (/^c[0-9]+\.(b[0-9]|starts|translation|po)/u.test(name)) return "cultures";
 	if (name.startsWith("identity.")) return "identity";
@@ -469,7 +470,7 @@ if (values.worker) {
 	child.on("message", (message) => {
 		let decoded: WorkerMessage;
 		try {
-			decoded = Schema.decodeUnknownSync(WorkerMessage)(message);
+			decoded = decodeWorkerMessage(message);
 		} catch (cause) {
 			stop(`Invalid worker message: ${String(cause)}`);
 			return;

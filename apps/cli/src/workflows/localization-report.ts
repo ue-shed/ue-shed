@@ -13,6 +13,8 @@ import { CliRuntime, printJson } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 import { loadLocalizationContext } from "./localization.js";
 
+const encodeBaselineJson = Schema.encodeEffect(Schema.fromJsonString(LocalizationBaseline));
+
 export class LocalizationBaselineIOError extends Schema.TaggedError<LocalizationBaselineIOError>()(
 	"LocalizationBaselineIOError",
 	{
@@ -51,9 +53,9 @@ export const writeLocalizationBaseline = Effect.fn("Cli.localization.write_basel
 	if (!destination.toLowerCase().endsWith(".json"))
 		return yield* Effect.fail(ioError("invalid_baseline_destination"));
 	const fs = yield* FileSystem.FileSystem;
-	const json = yield* Schema.encodeEffect(Schema.fromJsonString(LocalizationBaseline))(
-		baseline
-	).pipe(Effect.mapError((cause) => ioError("baseline_unwritable", cause)));
+	const json = yield* encodeBaselineJson(baseline).pipe(
+		Effect.mapError((cause) => ioError("baseline_unwritable", cause))
+	);
 	if (new TextEncoder().encode(json).length > 32 * 1024 * 1024)
 		return yield* Effect.fail(ioError("baseline_limit"));
 	yield* fs

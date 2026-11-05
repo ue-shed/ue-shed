@@ -3,6 +3,8 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { JoinedView, buildJoinedView } from "./joined-views.js";
 
+const decodeJoinedView = Schema.decodeUnknownSync(JoinedView);
+
 function snapshot(objectPath: string, rows: readonly AuthoringRow[]): AuthoringTableSnapshotV1 {
 	return {
 		authority: { kind: "project_files", packageName: objectPath.split(".")[0]! },
@@ -61,7 +63,7 @@ describe("joined authoring views", () => {
 			snapshots: [left, right]
 		});
 
-		expect(Schema.decodeUnknownSync(JoinedView)(view)).toEqual(view);
+		expect(decodeJoinedView(view)).toEqual(view);
 		expect(view).toMatchObject({
 			editability: { kind: "read_only" },
 			rows: [

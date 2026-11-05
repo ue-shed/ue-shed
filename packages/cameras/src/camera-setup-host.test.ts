@@ -18,6 +18,8 @@ import {
 } from "./camera-setup-schema.js";
 import { makeCameraSetupHost } from "./camera-setup-host.js";
 
+const decodeCameraBridgeRequest = Schema.decodeUnknownEffect(CameraBridgeRequest);
+const decodeCameraBridgeResponse = Schema.decodeUnknownEffect(CameraBridgeResponse);
 const intent = Schema.decodeUnknownSync(CameraSetupIntent)({
 	id: "setup-1",
 	actorPath: "/Game/Fixture.Fixture:PersistentLevel.Subject",
@@ -101,7 +103,7 @@ it.effect("reports creation failures to the native UI without replaying the muta
 
 it.effect("validates setup input before it crosses the bridge", () =>
 	Effect.gen(function* () {
-		const result = yield* Schema.decodeUnknownEffect(CameraBridgeRequest)({
+		const result = yield* decodeCameraBridgeRequest({
 			version: 1,
 			operation: "setup_create",
 			intent: { ...intent, layout: { ...intent.layout, count: 0 } }
@@ -302,12 +304,12 @@ it.effect("keeps the setup wire contract backward compatible", () =>
 	Effect.gen(function* () {
 		const strict = { onExcessProperty: "error" } as const;
 		// Older plugins reply without reopen fields, and older hosts poll without them.
-		yield* Schema.decodeUnknownEffect(CameraBridgeResponse)(setupState(), strict);
-		yield* Schema.decodeUnknownEffect(CameraBridgeRequest)(
+		yield* decodeCameraBridgeResponse(setupState(), strict);
+		yield* decodeCameraBridgeRequest(
 			{ version: 1, operation: "setup_poll", hostId: "host-1", projectName: "Fixture" },
 			strict
 		);
-		yield* Schema.decodeUnknownEffect(CameraBridgeResponse)(
+		yield* decodeCameraBridgeResponse(
 			setupState({
 				canOpen: true,
 				sets: [savedSet],
@@ -321,11 +323,11 @@ it.effect("keeps the setup wire contract backward compatible", () =>
 			}),
 			strict
 		);
-		yield* Schema.decodeUnknownEffect(CameraBridgeRequest)(
+		yield* decodeCameraBridgeRequest(
 			{ version: 1, operation: "setup_open", intent: openIntent },
 			strict
 		);
-		const tooMany = yield* Schema.decodeUnknownEffect(CameraBridgeRequest)({
+		const tooMany = yield* decodeCameraBridgeRequest({
 			version: 1,
 			operation: "setup_poll",
 			hostId: "host-1",

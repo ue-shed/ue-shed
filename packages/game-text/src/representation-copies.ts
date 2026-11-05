@@ -72,11 +72,10 @@ function copyPrefixes(classes: readonly SavedAssetBlueprintClasses[]): Prefix[] 
 }
 
 /**
- * The authored site an object path copies, and the kind of copy, or undefined for a path outside
- * every class and default object the reader reported. `Pkg.X_C.WidgetTree.Title` copies
- * `Pkg.X.WidgetTree.Title`; a UMG animation `Pkg.X_C.FadeIn_INST.FadeIn.Track` copies
- * `Pkg.X.FadeIn.FadeIn.Track`; `Pkg.Default__X_C.Prompt` maps to `Pkg.X.Prompt`. The reader joins
- * outers with `.`; Unreal's `Pkg.X_C:WidgetTree.Title` spelling maps the same way, keeping `:`.
+ * The authored site an object path copies and the copy's kind, or undefined outside every class
+ * and default object the reader reported: `X_C.WidgetTree.Title` copies `X.WidgetTree.Title`, UMG
+ * animation `X_C.FadeIn_INST.FadeIn.Track` copies `X.FadeIn.FadeIn.Track`, `Default__X_C.Prompt`
+ * maps to `X.Prompt` (all under `Pkg.`). Unreal's `:` outer separator maps alike and is kept.
  */
 export function representationSite(
 	objectPath: string,
@@ -125,19 +124,10 @@ function withinObject(path: string, parent: string): boolean {
 }
 
 /**
- * Fold the representation copies of a package's Blueprints into the sites they copy.
- *
- * A Blueprint's compile saves its authored subobjects again under the generated class
- * (`X_C`, with UMG animations as `Name_INST`), its default object (`Default__X_C`) and, when one
- * was saved, the skeleton class (`SKEL_X_C`). Which exports those are comes from the reader's
- * `blueprintClasses` (the Blueprint's saved `GeneratedClass` and the export table), not from
- * names, so a record without it is returned unchanged. A copy folds into the occurrence at its
- * authored site with the same property and the same key: two properties of one object that share
- * a key stay two places. When no authored site was saved, the copies of one site fold into the
- * generated class's (then the default object's, then the skeleton's), which keeps its own path.
- *
- * The place keeps its own text; the copies keep theirs, with their raw paths, as provenance.
- * Folding is idempotent: a folded record folds to itself.
+ * Folds a package's Blueprint representation copies, found from the reader's `blueprintClasses`
+ * rather than names (a record without it is unchanged), into the occurrence at the authored site
+ * with the same property and key, else the generated class's, default object's or skeleton's.
+ * Places keep their text; copies keep theirs and raw paths as provenance. Folding is idempotent.
  */
 /** A record type whose occurrences may carry folded copies. */
 export type Folded<R> = Omit<R, "occurrences"> & {
@@ -246,10 +236,9 @@ export function foldRepresentationCopies<
 
 /**
  * The audience of a folded place: the line rollup (player, else unknown, else editor) over the
- * place and its copies, each classified from its own evidence: its path, its class and the gather
- * table's bit for its text. A runtime compiled copy of a place the table calls editor-only keeps
- * the line player text. The place's own classification wins ties, so a place without copies is
- * classified exactly as before.
+ * place and its copies, each classified from its own path, class and gather-table bit. A runtime
+ * compiled copy of a place the table calls editor-only keeps the line player text. The place's
+ * own classification wins ties, so a place without copies is classified exactly as before.
  */
 export function classifyFoldedTextAudience(
 	occurrence: PackageTextOccurrence

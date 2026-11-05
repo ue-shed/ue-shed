@@ -14,6 +14,14 @@ const fixture = resolve(workbenchRoot, "../../fixtures/unreal-project");
 const executablePath = Schema.decodeUnknownSync(Schema.String)(
 	createRequire(import.meta.url)("electron")
 );
+const RemoteCallRequest = Schema.Struct({
+	functionName: Schema.String,
+	parameters: Schema.optional(Schema.Struct({ RequestJson: Schema.optional(Schema.String) }))
+});
+const decodeRemoteCallRequest = Schema.decodeUnknownSync(RemoteCallRequest);
+const decodeEditorWorldOpenRequest = Schema.decodeUnknownSync(EditorWorldOpenRequest);
+const ServerAddress = Schema.Struct({ port: Schema.Number });
+const decodeServerAddress = Schema.decodeUnknownSync(ServerAddress);
 
 test("confirms cross-map review, waits for a slow editor and follows external map changes", async ({
 	browserName: _browserName
@@ -37,14 +45,9 @@ test("confirms cross-map review, waits for a slow editor and follows external ma
 		try {
 			const chunks: Buffer[] = [];
 			for await (const chunk of request) chunks.push(Buffer.from(chunk));
-			const input = Schema.decodeUnknownSync(
-				Schema.Struct({
-					functionName: Schema.String,
-					parameters: Schema.optional(
-						Schema.Struct({ RequestJson: Schema.optional(Schema.String) })
-					)
-				})
-			)(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+			const input = decodeRemoteCallRequest(
+				JSON.parse(Buffer.concat(chunks).toString("utf8"))
+			);
 			const result = (() => {
 				if (input.functionName === "GetCapabilityManifest")
 					return {
@@ -66,7 +69,7 @@ test("confirms cross-map review, waits for a slow editor and follows external ma
 						snapshot: snapshot()
 					};
 				if (input.functionName === "BeginOpenMap") {
-					operation = Schema.decodeUnknownSync(EditorWorldOpenRequest)(
+					operation = decodeEditorWorldOpenRequest(
 						JSON.parse(input.parameters?.RequestJson ?? "{}")
 					);
 					begins++;
@@ -102,9 +105,7 @@ test("confirms cross-map review, waits for a slow editor and follows external ma
 		}
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-	const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(
-		server.address()
-	);
+	const address = decodeServerAddress(server.address());
 	let app: ElectronApplication | undefined;
 	try {
 		await copyFile(

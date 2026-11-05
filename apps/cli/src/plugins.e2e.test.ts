@@ -11,6 +11,8 @@ import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { runInProcessCli as run } from "./cli-in-process.test-support.js";
 
+const decodeVariantRequest = Schema.decodeUnknownSync(CompiledPluginVariantRequest);
+
 const roots: string[] = [];
 
 interface TarEntry {
@@ -65,7 +67,7 @@ describe("compiled plugin CLI boundary", () => {
 		const sourceRoot = join(root, "source");
 		await mkdir(sourceRoot);
 		const engineSourceCommit = "b".repeat(40);
-		const artifactRequest = Schema.decodeUnknownSync(CompiledPluginVariantRequest)({
+		const artifactRequest = decodeVariantRequest({
 			architecture: "x64",
 			configuration: "Development",
 			engineBuildId: "47537391",

@@ -26,6 +26,7 @@ import { CameraWorkspaceError, makeWorkbenchCameraWorkspaceTestLayer } from "./c
 import { WorkbenchMapCapture, WorkbenchMapCaptureLive } from "./map-capture.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const roots: string[] = [];
 
 it.effect("focuses explicit map opening but never the map opened as capture preparation", () =>
@@ -520,7 +521,7 @@ it.effect("loads only manifest-owned capture proof tiles and verifies their hash
 		roots.push(projectRoot);
 		const fixture = yield* Effect.tryPromise({
 			try: async () =>
-				Schema.decodeUnknownSync(Schema.Json)(
+				decodeJson(
 					JSON.parse(
 						await readFile(
 							join(

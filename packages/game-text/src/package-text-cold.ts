@@ -24,32 +24,33 @@ export type ColdPackageTextInput = ColdPackageTextIdentity &
 				readonly stagingRoot: string;
 		  }
 	);
-export const importColdPackageTextLayer = (input: ColdPackageTextInput) =>
-	Effect.gen(function* () {
-		const selection = packageTextSelection(input.inventory);
-		const snapshots =
-			input.snapshots !== undefined
-				? input.snapshots
-				: yield* prepareRetainedPackageTextSnapshots(
-						selection,
-						input.recordDirectory,
-						input.stagingRoot
-					);
-		return yield* importColdPackageTextShards(
-			{
-				snapshots,
-				...(input.additionalSources
-					? { additionalSources: input.additionalSources }
-					: undefined)
-			},
-			selection.map((shard) => ({
-				name: shard.name,
-				key: shard.key,
-				packages: shard.entries.length
-			})),
-			input.inventory.length
-		);
-	});
+export const importColdPackageTextLayer = Effect.fn("PackageText.importColdLayer")(function* (
+	input: ColdPackageTextInput
+) {
+	const selection = packageTextSelection(input.inventory);
+	const snapshots =
+		input.snapshots !== undefined
+			? input.snapshots
+			: yield* prepareRetainedPackageTextSnapshots(
+					selection,
+					input.recordDirectory,
+					input.stagingRoot
+				);
+	return yield* importColdPackageTextShards(
+		{
+			snapshots,
+			...(input.additionalSources
+				? { additionalSources: input.additionalSources }
+				: undefined)
+		},
+		selection.map((shard) => ({
+			name: shard.name,
+			key: shard.key,
+			packages: shard.entries.length
+		})),
+		input.inventory.length
+	);
+});
 
 /** One shard a cold publication writes: its name, key and package count. */
 export interface ColdPackageTextShard {

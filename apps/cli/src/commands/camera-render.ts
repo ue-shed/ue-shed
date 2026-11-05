@@ -5,6 +5,12 @@ import { Argument, Command, Flag } from "effect/cli";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
+/** Decoder for a schema from a lazily imported module, built once per command run. */
+// Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
+const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
+
 const render = Command.make(
 	"render",
 	{
@@ -25,11 +31,9 @@ const render = Command.make(
 				const input = yield* Effect.tryPromise(async () => {
 					if ((await stat(args.requestPath)).size > 131072)
 						throw new Error("Camera render request exceeds 128 KiB.");
-					return Schema.decodeUnknownSync(Schema.Json)(
-						JSON.parse(await readFile(args.requestPath, "utf8"))
-					);
+					return decodeJson(JSON.parse(await readFile(args.requestPath, "utf8")));
 				});
-				const request = yield* Schema.decodeUnknownEffect(
+				const request = yield* decodeLazySchema(
 					Schema.Struct({
 						session: cameras.CameraRenderSessionRequest,
 						frame: cameras.CameraFrameRequest,

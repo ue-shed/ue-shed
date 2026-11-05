@@ -73,9 +73,10 @@ export const EngineRustTiming = Schema.Struct({
 	requestId: Schema.String,
 	ms: Schema.Record(Schema.String, NonNegative)
 });
+const decodeRustTiming = Schema.decodeUnknownSync(EngineRustTiming);
 
 export function decodeEngineRustTiming(input: unknown) {
-	const timing = Schema.decodeUnknownSync(EngineRustTiming)(input);
+	const timing = decodeRustTiming(input);
 	if ("bulkEncodeAndWrite" in timing.ms)
 		throw new Error(
 			"The reader has obsolete combined bulk timings; rebuild it with the current benchmark-timings feature."

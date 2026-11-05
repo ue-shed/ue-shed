@@ -18,6 +18,10 @@ import {
 	NiagaraPreviewProducerRequest
 } from "./schema.js";
 
+const decodeNiagaraPreviewProducerRequest = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest);
+const decodeNiagaraPreviewProducerReceipt = Schema.decodeUnknownSync(NiagaraPreviewProducerReceipt);
+const NiagaraPreviewArtifacts = Schema.Array(NiagaraPreviewArtifact);
+const decodeNiagaraPreviewArtifacts = Schema.decodeUnknownSync(NiagaraPreviewArtifacts);
 const runId = "11111111-1111-4111-8111-111111111111";
 const systemObjectPath = "/Game/Fixture/Niagara/NS_Preview.NS_Preview";
 
@@ -158,9 +162,7 @@ it.effect("publishes a run with high-range binary32 timing through a supervised 
 					const unknown: unknown = JSON.parse(
 						yield* Effect.promise(() => readFile(requestPath(options), "utf8"))
 					);
-					const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(
-						unknown
-					);
+					const request = decodeNiagaraPreviewProducerRequest(unknown);
 					const staging = join(
 						dirname(projectDescriptor),
 						"Saved",
@@ -243,7 +245,7 @@ it.effect("rejects a truncated PNG before publishing the run", () =>
 			),
 			makeOwnedProcessTreeTestLayer((options) =>
 				Effect.gen(function* () {
-					const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(
+					const request = decodeNiagaraPreviewProducerRequest(
 						JSON.parse(
 							yield* Effect.promise(() => readFile(requestPath(options), "utf8"))
 						)
@@ -324,7 +326,7 @@ it.effect("rejects a producer that ignores a requested override", () =>
 			),
 			makeOwnedProcessTreeTestLayer((options) =>
 				Effect.gen(function* () {
-					const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(
+					const request = decodeNiagaraPreviewProducerRequest(
 						JSON.parse(
 							yield* Effect.promise(() => readFile(requestPath(options), "utf8"))
 						)
@@ -440,7 +442,7 @@ it.effect("returns completion when staging cleanup fails after publication commi
 				writeFile(join(stagingRoot, "frames", "frame_0001.png"), image)
 			])
 		);
-		const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)({
+		const request = decodeNiagaraPreviewProducerRequest({
 			contract: {
 				name: "ue-shed-niagara-preview-request",
 				version: { major: 1, minor: 0 }
@@ -457,10 +459,8 @@ it.effect("returns completion when staging cleanup fails after publication commi
 			},
 			systemObjectPath
 		});
-		const receipt = Schema.decodeUnknownSync(NiagaraPreviewProducerReceipt)(
-			producerReceipt(request)
-		);
-		const artifacts = Schema.decodeUnknownSync(Schema.Array(NiagaraPreviewArtifact))(
+		const receipt = decodeNiagaraPreviewProducerReceipt(producerReceipt(request));
+		const artifacts = decodeNiagaraPreviewArtifacts(
 			receipt.frames.map((frame) => ({
 				bytes: image.byteLength,
 				height: 64,

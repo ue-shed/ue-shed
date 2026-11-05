@@ -43,6 +43,9 @@ const LocalizationApplyFailure = Schema.Union([
 	LocalizationError,
 	LocalizationOperationError
 ]);
+const encodeChangeSetReceipt = Schema.encodeSync(LocalizationChangeSetReceipt);
+const encodeApplyFailure = Schema.encodeSync(LocalizationApplyFailure);
+const decodeRunRequest = Schema.decodeUnknownEffect(LocalizationRunRequest);
 
 const readChangeSet = Effect.fn("Cli.localization.read_change_set")(function* (path: string) {
 	const fs = yield* FileSystem.FileSystem;
@@ -124,7 +127,7 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 					const output = {
 						schemaVersion: 1,
 						type: "receipt",
-						receipt: Schema.encodeSync(LocalizationChangeSetReceipt)(receipt)
+						receipt: encodeChangeSetReceipt(receipt)
 					};
 					if (command.json) yield* runtime.print(`${JSON.stringify(output)}\n`);
 					else yield* printJson(output);
@@ -152,7 +155,7 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 							const output = {
 								schemaVersion: 1,
 								type: "failure",
-								error: Schema.encodeSync(LocalizationApplyFailure)(error)
+								error: encodeApplyFailure(error)
 							};
 							if (command.json) yield* runtime.print(`${JSON.stringify(output)}\n`);
 							else yield* printJson(output);
@@ -177,7 +180,7 @@ const syncAfterWrite = Effect.fn("Cli.localization.sync_after_write")(function* 
 	};
 	if (command.engineRoot !== undefined)
 		Object.assign(input, { explicitEngineRoot: command.engineRoot });
-	const request = yield* Schema.decodeUnknownEffect(LocalizationRunRequest)(input).pipe(
+	const request = yield* decodeRunRequest(input).pipe(
 		Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
 	);
 	const operations = yield* LocalizationOperations;

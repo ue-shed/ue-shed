@@ -219,11 +219,10 @@ export const LocalizationQualityFinding = Schema.Union([
 		actual: Schema.Struct({ source: Schema.String, matches: Strings }),
 		expectation: Schema.Struct({ finalText: Schema.Literal(true) }),
 		/**
-		 * Present when the rule file's source terminology also reports some of `actual.matches`
-		 * (a discouraged term overlapping the placeholder in this text, at a place of the term's
-		 * role): the matches it does not report, in order, empty when it reports them all. A
-		 * list that shows the rule file's source findings beside this one names only these, and
-		 * leaves the finding out when none are left. Not part of the finding's ID.
+		 * Present when the rule file's source terminology also reports some of `actual.matches`:
+		 * the ones it does not, in order (empty when it reports all). A list showing source
+		 * findings beside this one names only these, and drops the finding when none are left.
+		 * Not part of the finding's ID.
 		 */
 		unreportedMatches: Schema.optionalKey(Strings)
 	}),
@@ -290,11 +289,10 @@ const CustomFields = {
 	subject: Schema.Literals(["source", "translation"])
 };
 /**
- * A finding of a rule the rule file defines (`customChecks`). `ruleId` is the rule's ID and
- * `label` its name; `check` is its kind, or `rule` for a complete rule. A check's
- * `actual.text` is the text checked: the source for a `source` check, the culture's shipped
- * translation for a `translation` check. A complete rule's `actual` and `expectation` are the
- * objects its expressions build.
+ * A finding of a rule the rule file defines: `check` is its kind, or `rule` for a complete rule.
+ * A check's `actual.text` is the source for a `source` check, or the culture's shipped translation
+ * for a `translation` check. A complete rule's `actual` and `expectation` are the objects its
+ * expressions build.
  */
 export const LocalizationCustomFinding = Schema.Union([
 	Schema.Struct({

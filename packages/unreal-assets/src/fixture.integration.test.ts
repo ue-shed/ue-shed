@@ -57,12 +57,10 @@ describe.skipIf(!executable)("batched project scan", () => {
 
 	it("inspects every fixture package in one reader process", async () => {
 		const scan = await runReader(scanSavedProject({ projectRoot: fixture.root }));
-		// 81 `.uasset` packages (including six World Partition external actors, two Blueprints, two
-		// animation fixtures, two Level Sequences, the 25-asset Enhanced Input surface, nine native
-		// coverage assets and three Game Text assets, one a user-defined enum) plus three maps,
-		// including Movement Gym, the ten Game Text problem packages and the twelve Game Text identity
-		// packages, plus identity slice 2's nine (two maps, a World Partition external actor and six
-		// assets). Levels use the same classic package container, so enumeration selects them too.
+		// 115 = 81 `.uasset` packages (World Partition actors, Blueprints, animations, Level
+		// Sequences, Enhanced Input, native coverage, Game Text) + 3 maps incl. Movement Gym + 10
+		// Game Text problem + 12 identity packages + identity slice 2's nine. Levels use the same
+		// classic package container, so enumeration selects them too.
 		expect(scan.summary.scannedAssets).toBe(115);
 		expect(scan.summary.emittedAssets).toBe(115);
 		expect(scan.summary.skippedAssets).toBe(0);
@@ -179,11 +177,10 @@ describe.skipIf(!executable)("batched project scan", () => {
 				projectRoot: fixture.root
 			})
 		);
-		// Every InputAction and InputMappingContext names TextProperty for its description; the
-		// LevelSequence and Blueprint fixtures name it for localized native graph/channel values, and
-		// the user-defined enum for its display names. All ten Game Text problem packages and
-		// all twelve Game Text identity packages hold text, as do eight of slice 2's nine (not its
-		// World Partition map, whose text is in the external actor).
+		// TextProperty holders: every InputAction and InputMappingContext (description), the
+		// LevelSequence and Blueprint fixtures (native graph/channel values), the user-defined
+		// enum (display names), all ten Game Text problem and twelve identity packages, and eight
+		// of slice 2's nine (its World Partition map's text is in the external actor).
 		expect(scan.summary.emittedAssets).toBe(65);
 		expect(
 			scan.assets

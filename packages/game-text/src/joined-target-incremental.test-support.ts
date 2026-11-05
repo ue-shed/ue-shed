@@ -12,6 +12,9 @@ import { decodeWtf8 } from "./wtf8.js";
 import type { JoinedSourcePatches } from "./joined-source-patches.js";
 import { longestSource } from "./source-metrics.js";
 
+const JoinedTargetMetaJson = Schema.fromJsonString(JoinedTargetMeta);
+const decodeJoinedTargetMetaJson = Schema.decodeUnknownEffect(JoinedTargetMetaJson);
+
 const same = (a: Uint32Array, b: Uint32Array) =>
 	a.length === b.length &&
 	Buffer.compare(
@@ -43,7 +46,7 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 		"join.meta",
 		"Metadata exceeds bound"
 	);
-	const candidate = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(JoinedTargetMeta))(
+	const candidate = yield* decodeJoinedTargetMetaJson(
 		new TextDecoder().decode(yield* raw.section("join.meta"))
 	);
 	if (

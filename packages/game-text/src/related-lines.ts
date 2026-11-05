@@ -74,13 +74,10 @@ export const RelatedSection = Schema.Struct({
 export type RelatedSection = typeof RelatedSection.Type;
 
 /**
- * The selection and its related members.
- * - `sameKey`: a unit's other units with its gathered identity; empty for a line, which holds
- *   them all.
- * - `sameText`: other resolved units with another identity whose one source is the unit's exactly,
- *   or other lines whose source is the line's.
- * - `conflict`, with a target: the units of the line's key whose source differs from the line's.
- * - `keyChange`, with a target: the line its key change pairs with this one.
+ * The selection and related members. `sameKey`: a unit's other units with its gathered identity
+ * (empty for a line, which holds them all). `sameText`: resolved units of another identity whose
+ * one source is exactly the unit's, or lines with the line's source. With a target, `conflict` has
+ * the key's units whose source differs from the line's; `keyChange`, the line its key change pairs.
  */
 export const RelatedLines = Schema.Struct({
 	self: RelatedMember,

@@ -771,15 +771,10 @@ const SavedAssetTextGapCounts = Schema.Struct({
 });
 
 /**
- * v1.8 opt-in package evidence. Sampling matches the legacy corpus fold exactly. From v1.10,
- * `gatherCoverage` is present when the package's gather table was read; status then reflects
- * missing runtime gatherable text rather than decoder gaps. From v1.17, `packageName` is the name
- * the package summary serializes, which its object paths are built from. A file moved or copied
- * outside Unreal keeps its old name there, while Unreal names the package from the file's location.
- * `assetClass` is the class of the package's main asset, chosen as Unreal's loader does; an actor
- * saved in its own package reports its world's class.
- * v1.18 textGapCounts counts gaps that may contain text; every gap sample carries
- * may_contain_text. Older producers omit both fields (unknown means text-capable).
+ * v1.8 opt-in package evidence, sampled as the legacy corpus fold. v1.10: `gatherCoverage` is set
+ * when the gather table was read; status then means missing gatherable text. v1.17: `packageName`
+ * is the serialized name (stale if moved outside Unreal); `assetClass` is the main asset's class.
+ * v1.18: `textGapCounts` and sample `may_contain_text`; when omitted (older), assume text-capable.
  */
 export const SavedAssetPackageTextRecord = Schema.Struct({
 	event: Schema.Literal("text_package_record"),

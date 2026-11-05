@@ -22,10 +22,13 @@ import {
 	ruleProblemError
 } from "./game-text-rules.js";
 
+const decodeGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
+const decodeLocalizationQualityReport = Schema.decodeUnknownSync(LocalizationQualityReport);
+
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
 type Entry = typeof CompleteRule.Encoded;
 const document = (rules: ReadonlyArray<Entry>) =>
-	Schema.decodeUnknownSync(GameTextRuleDocument)({ schemaVersion: 1, roles: [], rules });
+	decodeGameTextRuleDocument({ schemaVersion: 1, roles: [], rules });
 const failure = (rules: ReadonlyArray<unknown>) => {
 	const result = Effect.runSync(
 		Effect.result(
@@ -158,7 +161,7 @@ describe("complete rules", () => {
 			document([rule("all", { lit: true }, "line"), rule("every", { lit: true })]),
 			{}
 		);
-		expect(() => Schema.decodeUnknownSync(LocalizationQualityReport)(report)).not.toThrow();
+		expect(() => decodeLocalizationQualityReport(report)).not.toThrow();
 		expect(
 			custom(report)
 				.map(({ ruleId, identity }) => [ruleId, identity.key])

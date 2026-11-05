@@ -12,6 +12,8 @@ import { corpus, success } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { createLocalizationBaseline, localizationProgressReport } from "./localization-reports.js";
 
+const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+
 describe("word-count reports against Unreal's committed CSVs", () => {
 	for (const version of ["5.7", "5.8"])
 		it(`matches Unreal ${version} total and every culture without adjustments`, async () => {
@@ -28,7 +30,7 @@ describe("word-count reports against Unreal's committed CSVs", () => {
 						(target) => target.name === "FixtureGame"
 					);
 					if (!original) throw new Error("The fixture target is missing.");
-					const target = Schema.decodeUnknownSync(LocalizationTarget)({
+					const target = decodeLocalizationTarget({
 						...original,
 						outputPaths: {
 							...original.outputPaths,

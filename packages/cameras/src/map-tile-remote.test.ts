@@ -7,7 +7,11 @@ import { expect } from "vitest";
 import { makeMapTileCaptureRemotePort } from "./map-tile-capture.js";
 import { MapTileCaptureRequest } from "./map-tile-schema.js";
 
-const fixture = Schema.decodeUnknownSync(MapTileCaptureRequest)(
+const ResponseEnvelope = Schema.Struct({ response: Schema.Json });
+const decodeMapTileCaptureRequest = Schema.decodeUnknownSync(MapTileCaptureRequest);
+const decodeResponseEnvelope = Schema.decodeUnknownSync(ResponseEnvelope);
+
+const fixture = decodeMapTileCaptureRequest(
 	JSON.parse(
 		readFileSync(
 			new URL(
@@ -54,7 +58,7 @@ for (const sharedRenderer of [false, true]) {
 					const client: RemoteControlClientApi = {
 						request: (call) => {
 							if (call.functionName === "BeginMapTileCapture") {
-								const wire = Schema.decodeUnknownSync(MapTileCaptureRequest)(
+								const wire = decodeMapTileCaptureRequest(
 									JSON.parse(String(call.parameters?.RequestJson))
 								);
 								expect(wire.contract.version.minor).toBe(sharedRenderer ? 1 : 0);
@@ -176,9 +180,7 @@ it.effect("rejects another operation's running status without polling it", () =>
 it.effect("keeps the explicitly selected legacy backend synchronous", () =>
 	Effect.gen(function* () {
 		const calls: string[] = [];
-		const response = Schema.decodeUnknownSync(Schema.Struct({ response: Schema.Json }))(
-			terminal
-		).response;
+		const response = decodeResponseEnvelope(terminal).response;
 		const client: RemoteControlClientApi = {
 			request: (call) =>
 				Effect.sync(() => {

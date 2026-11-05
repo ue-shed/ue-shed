@@ -16,6 +16,10 @@ import {
 	type StringTableKeyMigrationRequest
 } from "./string-table-migration.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const GameTextActionsRequestJson = Schema.fromJsonString(GameTextActionsRequest);
+const decodeGameTextActionsRequestJson = Schema.decodeUnknownSync(GameTextActionsRequestJson);
+
 const input: StringTableKeyMigrationRequest = {
 	id: StringTableKeyMigrationId.make("migration"),
 	projectRoot: "C:/Fixture",
@@ -94,7 +98,7 @@ function setup(useCallback = false) {
 	const transport = makeRemoteControlClientTestLayer((call) =>
 		Effect.gen(function* () {
 			if (call.functionName === "GetCapabilityManifest")
-				return Schema.decodeUnknownSync(Schema.Json)({
+				return decodeJson({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
 					...(editorRoot ? { projectRoot: editorRoot } : undefined),
@@ -108,7 +112,7 @@ function setup(useCallback = false) {
 					}
 				});
 			if (call.functionName === "VerifyStringTableRedirect")
-				return Schema.decodeUnknownSync(Schema.Json)({
+				return decodeJson({
 					contract: "ue-shed-string-table-redirect",
 					version: "1.0",
 					status: redirectActive ? "active" : "inactive",
@@ -117,9 +121,7 @@ function setup(useCallback = false) {
 					source: input.source,
 					message: "Redirect not active"
 				});
-			const request = Schema.decodeUnknownSync(Schema.fromJsonString(GameTextActionsRequest))(
-				call.parameters.RequestJson
-			);
+			const request = decodeGameTextActionsRequestJson(call.parameters.RequestJson);
 			const kind = request.actions[0]!.edit.kind;
 			if (request.mode === "apply") writes.push(kind);
 			if (request.mode === "apply" && kind === "remove_string_table_entry" && lostDeleteReply)
@@ -157,7 +159,7 @@ function setup(useCallback = false) {
 				blueprints: [],
 				errors: []
 			};
-			return Schema.decodeUnknownSync(Schema.Json)(result);
+			return decodeJson(result);
 		})
 	);
 	return {

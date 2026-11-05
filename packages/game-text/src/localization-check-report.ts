@@ -21,6 +21,11 @@ import type { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextCorpusQuerySummary } from "./schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
 
+const LocalizationQualityReportJson = Schema.fromJsonString(LocalizationQualityReport);
+const decodeLocalizationQualityReportJson = Schema.decodeUnknownEffect(
+	LocalizationQualityReportJson
+);
+
 /**
  * A check whose report is ready to write: everything but its findings is read, and the engine
  * writes those as the report is written.
@@ -213,8 +218,6 @@ export const indexedLocalizationCheckReport = Effect.fn("GameText.localizationCh
 		const prepared = yield* prepareLocalizationCheck(...input);
 		const pieces: string[] = [];
 		yield* prepared.write((text) => Effect.sync(() => void pieces.push(text)));
-		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(LocalizationQualityReport))(
-			pieces.join("")
-		).pipe(Effect.orDie);
+		return yield* decodeLocalizationQualityReportJson(pieces.join("")).pipe(Effect.orDie);
 	}
 );

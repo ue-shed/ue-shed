@@ -31,6 +31,13 @@ import { CameraArrangementRecipe } from "./camera-arrangement.js";
 import { fileFailureReason, isMalformedDocument } from "./file-failure.js";
 
 const isCameraArrangementError = Schema.is(CameraArrangementError);
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const isJsonRecord = Schema.is(JsonRecord);
+const decodeCameraArrangementCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
+const decodeCameraArrangementRecipe = Schema.decodeUnknownSync(CameraArrangementRecipe);
+const decodeCameraVisibilityPreset = Schema.decodeUnknownSync(CameraVisibilityPreset);
+const decodeReviewSet = Schema.decodeUnknownSync(ReviewSet);
 
 const Outcome = Schema.Struct({
 	operationId: CameraOperationId,
@@ -52,6 +59,7 @@ export const CameraAuthoringDocument = Schema.Struct({
 	)
 });
 export type CameraAuthoringDocument = typeof CameraAuthoringDocument.Type;
+const decodeCameraAuthoringDocument = Schema.decodeUnknownSync(CameraAuthoringDocument);
 const ApprovalScope = {
 	operationId: CameraOperationId,
 	expectedRevision: Schema.Int,
@@ -74,6 +82,7 @@ export const CameraApproval = Schema.Union([
 	})
 ]);
 export type CameraApproval = typeof CameraApproval.Type;
+const decodeCameraApproval = Schema.decodeUnknownSync(CameraApproval);
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 /** Rebase disjoint set approvals while retaining conflict detection for this set's saved cameras. */
 export function cameraApprovalBase(
@@ -118,9 +127,9 @@ export function cameraApprovalBase(
 }
 const json = <Value>(value: Value) => `${JSON.stringify(value, null, "\t")}\n`;
 function canonical<Value>(input: Value): string {
-	const value = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(JSON.stringify(input)));
+	const value = decodeJson(JSON.parse(JSON.stringify(input)));
 	if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-	if (Schema.is(Schema.Record(Schema.String, Schema.Json))(value))
+	if (isJsonRecord(value))
 		return `{${Object.entries(value)
 			.sort(([a], [b]) => a.localeCompare(b))
 			.map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
@@ -157,6 +166,7 @@ const LockOwner = Schema.Struct({
 	host: Schema.NonEmptyString,
 	token: Schema.NonEmptyString
 });
+const decodeLockOwner = Schema.decodeUnknownSync(LockOwner);
 function hasCode(cause: unknown, code: string) {
 	return cause instanceof Error && "code" in cause && cause.code === code;
 }
@@ -201,7 +211,7 @@ async function recoverDeadOwner(path: string) {
 	try {
 		if ((await lstat(ownerPath)).isSymbolicLink() || (await stat(ownerPath)).size > 4096)
 			throw locked(path);
-		owner = Schema.decodeUnknownSync(LockOwner)(JSON.parse(await readFile(ownerPath, "utf8")));
+		owner = decodeLockOwner(JSON.parse(await readFile(ownerPath, "utf8")));
 	} catch (cause) {
 		if (hasCode(cause, "ENOENT")) return;
 		throw locked(path);
@@ -309,10 +319,9 @@ export const readCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.readR
 			try: async () => {
 				if ((await stat(path)).size > 4 * 1024 * 1024)
 					throw arrangementFailure("invalid", "Recipe exceeds the 4 MiB input limit.");
-				return Schema.decodeUnknownSync(CameraArrangementRecipe)(
-					JSON.parse(await readFile(path, "utf8")),
-					{ onExcessProperty: "error" }
-				);
+				return decodeCameraArrangementRecipe(JSON.parse(await readFile(path, "utf8")), {
+					onExcessProperty: "error"
+				});
 			},
 			catch: storageError(`camera arrangement recipe ${path}`)
 		})
@@ -351,7 +360,7 @@ export interface CameraAuthoringStore {
 export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringStore {
 	const path = resolve(documentPath);
 	const load = async () =>
-		Schema.decodeUnknownSync(CameraAuthoringDocument)(JSON.parse(await readFile(path, "utf8")));
+		decodeCameraAuthoringDocument(JSON.parse(await readFile(path, "utf8")));
 	const persist = async (document: CameraAuthoringDocument) => {
 		await writeAtomic(path, json(CameraAuthoringDocument.make(document)));
 		return document;
@@ -420,7 +429,7 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		),
 		mutate: Effect.fn("CameraAuthoringStore.mutate")((input) =>
 			transact(async () => {
-				const command = Schema.decodeUnknownSync(CameraArrangementCommand)(input);
+				const command = decodeCameraArrangementCommand(input);
 				const document = await recoverProjection(await load());
 				const fingerprint = digest(canonical(command));
 				if (prior(document, command.operationId, fingerprint)) return document;
@@ -441,7 +450,7 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		),
 		approve: Effect.fn("CameraAuthoringStore.approve")((input) =>
 			transact(async () => {
-				const approval = Schema.decodeUnknownSync(CameraApproval)(input);
+				const approval = decodeCameraApproval(input);
 				const document = await recoverProjection(await load());
 				const fingerprint = digest(canonical(approval));
 				if (prior(document, approval.operationId, fingerprint)) return document;
@@ -459,7 +468,7 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 					if (current !== null) {
 						let decoded: ReviewSet;
 						try {
-							decoded = Schema.decodeUnknownSync(ReviewSet)(JSON.parse(current));
+							decoded = decodeReviewSet(JSON.parse(current));
 						} catch {
 							throw arrangementFailure(
 								"stale",
@@ -538,10 +547,9 @@ export const readCameraVisibilityPreset = Effect.fn("CameraAuthoringStore.readVi
 						"invalid",
 						"Visibility preset exceeds the 4 MiB input limit."
 					);
-				return Schema.decodeUnknownSync(CameraVisibilityPreset)(
-					JSON.parse(await readFile(path, "utf8")),
-					{ onExcessProperty: "error" }
-				);
+				return decodeCameraVisibilityPreset(JSON.parse(await readFile(path, "utf8")), {
+					onExcessProperty: "error"
+				});
 			},
 			catch: storageError(`camera visibility preset ${path}`)
 		})

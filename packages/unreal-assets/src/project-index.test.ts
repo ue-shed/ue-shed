@@ -25,6 +25,9 @@ import {
 	projectIndexMemoryLayerWithConfig
 } from "./project-index-memory.js";
 
+const decodeQuery = Schema.decodeUnknownEffect(ProjectIndexQuery);
+const decodePage = Schema.decodeUnknownEffect(ProjectIndexPage);
+
 const projectId = ProjectIdentity.make("fixture-project");
 const projectRoot = "C:/Fixture";
 const cacheRoot = "C:/Caches/project-index";
@@ -160,7 +163,7 @@ describe("Project Index public contract", () => {
 	);
 	it("rejects a query above the package-enforced page limit", async () => {
 		const result = await Effect.runPromiseExit(
-			Schema.decodeUnknownEffect(ProjectIndexQuery)({
+			decodeQuery({
 				_tag: "Maps",
 				expectedGeneration: ProjectIndexGeneration.make(1),
 				limit: PROJECT_INDEX_MAX_PAGE_SIZE + 1,
@@ -172,7 +175,7 @@ describe("Project Index public contract", () => {
 
 	it("rejects an adapter page above the same bound", async () => {
 		const result = await Effect.runPromiseExit(
-			Schema.decodeUnknownEffect(ProjectIndexPage)({
+			decodePage({
 				generation: ProjectIndexGeneration.make(1),
 				items: Array.from({ length: PROJECT_INDEX_MAX_PAGE_SIZE + 1 }, (_, index) => ({
 					classes: [],

@@ -9,6 +9,9 @@ import { WorkbenchGameText } from "./game-text.js";
 
 export { safeLocalizationLogLine } from "@ue-shed/game-text/workspace";
 
+const encodeGameTextProgress = Schema.encodeSync(gameTextProgressEvent.payload);
+const encodeGameTextOperationProgress = Schema.encodeSync(GameTextOperationProgress);
+
 export type WorkbenchGameTextOperationsApi = GameTextOperationsApi;
 export class WorkbenchGameTextOperations extends Context.Service<
 	WorkbenchGameTextOperations,
@@ -29,10 +32,7 @@ export const WorkbenchGameTextOperationsLive = Layer.effect(
 			Stream.buffer({ capacity: 1, strategy: "sliding" }),
 			Stream.throttle({ cost: () => 1, units: 1, duration: "100 millis", strategy: "shape" }),
 			Stream.runForEach((progress) =>
-				window.send(
-					gameTextProgressEvent.channel,
-					Schema.encodeSync(gameTextProgressEvent.payload)(progress)
-				)
+				window.send(gameTextProgressEvent.channel, encodeGameTextProgress(progress))
 			),
 			Effect.forkScoped
 		);
@@ -50,7 +50,7 @@ export const WorkbenchGameTextOperationsLive = Layer.effect(
 				) {
 					yield* window.send(
 						"game-text:localization:operation-progress",
-						Schema.encodeSync(GameTextOperationProgress)(progress)
+						encodeGameTextOperationProgress(progress)
 					);
 				})
 			})

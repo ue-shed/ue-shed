@@ -73,6 +73,9 @@ const copyKinds = TextCopyKind.literals;
 const decodeBlueprintClasses = Schema.decodeUnknownSync(
 	Schema.fromJsonString(Schema.Array(SavedAssetBlueprintClasses))
 );
+const decodePackageTextEventJson = Schema.decodeUnknownSync(
+	Schema.fromJsonString(SavedAssetPackageTextEvent)
+);
 /** Bits of `occurrence.copies`: the place has folded copies, and one of them holds other text. */
 export const OCCURRENCE_HAS_COPIES = 1;
 export const OCCURRENCE_COPY_DIFFERS = 2;
@@ -369,9 +372,7 @@ export const decodePackageTextColumns = Effect.fn("PackageText.decodeColumns")(f
 					continue;
 				}
 				if (status === "error") {
-					const evidence = Schema.decodeUnknownSync(
-						Schema.fromJsonString(SavedAssetPackageTextEvent)
-					)(string("package.error", row));
+					const evidence = decodePackageTextEventJson(string("package.error", row));
 					snapshotCheck(evidence.event === "error", "package.error", "Invalid failure");
 					records.push({ path, signature, evidence });
 					continue;

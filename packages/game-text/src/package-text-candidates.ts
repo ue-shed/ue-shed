@@ -4,12 +4,11 @@ import { HostSliceClock, runHostStepsSync, type HostSteps } from "./host-slices.
 
 export const REQUIRES_LOCALIZATION_GATHER = 0x00040000;
 
-/** Header evidence is mandatory: older workers must be upgraded before candidate pruning.
- * External actor and object packages follow their own header like any other package. Unreal's
- * gatherer adds a gathered world's external actors to its list, then takes their text from the
- * saved gather table and loads one only when its header is flagged without a current table
- * (`CalculatePackageLocCacheState`, UE 5.7 and 5.8). An actor whose header claims no text gives
- * Unreal none, and neither the outer world nor its other actors are read on its behalf.
+/**
+ * Header evidence is mandatory: older workers must be upgraded before candidate pruning. External
+ * actor and object packages follow their own header: Unreal loads one only when it is flagged
+ * without a current gather table (`CalculatePackageLocCacheState`, UE 5.7 and 5.8), and neither
+ * the outer world nor its other actors are read for an actor whose header claims no text.
  */
 export function isPackageTextCandidate(
 	header: NonNullable<ProjectIndexHeader["headerData"]>

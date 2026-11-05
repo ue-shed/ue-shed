@@ -25,6 +25,9 @@ import {
 	textAudienceSubject
 } from "./text-audience.js";
 
+const decodeOccurrence = Schema.decodeUnknownSync(TextOccurrence);
+const decodeTarget = Schema.decodeUnknownSync(LocalizationTarget);
+
 function property(
 	objectPath: string,
 	propertyPath: string,
@@ -32,7 +35,7 @@ function property(
 	namespace = "NS"
 ): TextOccurrence {
 	const packagePath = objectPath.slice(0, objectPath.indexOf(".", objectPath.lastIndexOf("/")));
-	return Schema.decodeUnknownSync(TextOccurrence)({
+	return decodeOccurrence({
 		id: `occurrence:${objectPath}:${propertyPath}`,
 		packageFile: `Content/${packagePath.slice("/Game/".length)}.uasset`,
 		source: "Text",
@@ -44,7 +47,7 @@ function property(
 
 function cell(objectPath: string): TextOccurrence {
 	const packagePath = objectPath.slice(0, objectPath.lastIndexOf("."));
-	return Schema.decodeUnknownSync(TextOccurrence)({
+	return decodeOccurrence({
 		id: `occurrence:${objectPath}`,
 		packageFile: `Content/${packagePath.slice("/Game/".length)}.uasset`,
 		source: "Sword",
@@ -66,7 +69,7 @@ function gatherTarget(settings: string): LocalizationTarget {
 			]
 		})
 	).targets[0];
-	return Schema.decodeUnknownSync(LocalizationTarget)(discovered);
+	return decodeTarget(discovered);
 }
 
 describe("text audience policy table", () => {

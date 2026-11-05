@@ -8,11 +8,14 @@ import {
 	runLocalizationTextActions
 } from "./asset-text-actions.js";
 
+const isGameTextActionsRequest = Schema.is(GameTextActionsRequest);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 it.each([0.5, -1, 2147483648, "0"])(
 	"rejects invalid graph pin index %s at the shared boundary",
 	(index) => {
 		expect(
-			Schema.is(GameTextActionsRequest)({
+			isGameTextActionsRequest({
 				contract: "ue-shed-game-text-actions",
 				version: "1.0",
 				mode: "apply",
@@ -62,7 +65,7 @@ it.effect("refuses extended actions on older plugins before sending a mutation",
 					makeRemoteControlClientTestLayer((call) =>
 						Effect.sync(() => {
 							calls.push(call.functionName);
-							return Schema.decodeUnknownSync(Schema.Json)({
+							return decodeJson({
 								schemaVersion: 1,
 								producerKind: "unreal_editor",
 								gameTextObjectPath:
@@ -126,7 +129,7 @@ for (const capability of ["game-text.actions.key-repairs.v1", "game-text.actions
 								makeRemoteControlClientTestLayer((call) =>
 									Effect.sync(() => {
 										if (call.functionName === "GetCapabilityManifest")
-											return Schema.decodeUnknownSync(Schema.Json)({
+											return decodeJson({
 												schemaVersion: 1,
 												producerKind: "unreal_editor",
 												capabilities: ["game-text.actions.v1", capability],
@@ -134,7 +137,7 @@ for (const capability of ["game-text.actions.key-repairs.v1", "game-text.actions
 													"/Script/UEShedGameText.Default__UEShedGameTextLibrary"
 											});
 										mutations++;
-										return Schema.decodeUnknownSync(Schema.Json)({
+										return decodeJson({
 											...request,
 											status: "ok",
 											rolledBack: false,

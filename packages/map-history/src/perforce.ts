@@ -20,6 +20,7 @@ import { join, resolve, win32 } from "node:path";
 import { MapHistoryError, mapHistoryNextStep } from "./errors.js";
 
 const isMapHistoryError = Schema.is(MapHistoryError);
+const isString = Schema.is(Schema.String);
 
 export interface PerforceChangedFile {
 	readonly action: string;
@@ -236,7 +237,6 @@ function mapHistoryErrorKind(failure: P4FailureFields): MapHistoryError["kind"] 
 
 /** A Perforce failure as a Map History error: its kind, recovery and whether a read may repeat. */
 export function toMapHistoryError(operation: string, cause: unknown): MapHistoryError {
-	const isString = Schema.is(Schema.String);
 	const tag = cause instanceof Object && "_tag" in cause ? cause._tag : undefined;
 	const category = cause instanceof Object && "category" in cause ? cause.category : undefined;
 	const message = cause instanceof Object && "message" in cause ? cause.message : undefined;
@@ -288,7 +288,7 @@ function mapLineageError(
 
 function taggedString(record: Schema.JsonObject, key: string): string | undefined {
 	const value = record[key];
-	return Schema.is(Schema.String)(value) ? value : undefined;
+	return isString(value) ? value : undefined;
 }
 
 function positiveTaggedInt(record: Schema.JsonObject, key: string): number | undefined {
@@ -415,14 +415,12 @@ function selectedProjectRoot(): Effect.Effect<string | undefined> {
 	);
 }
 
-function resolveBackend(
+const resolveBackend = Effect.fnUntraced(function* (
 	backend: PerforceBackend | PerforceBackendResolver
-): Effect.Effect<PerforceBackend> {
-	return Effect.gen(function* () {
-		if (!(backend instanceof Function)) return backend;
-		return backend(yield* selectedProjectRoot());
-	});
-}
+): Effect.fn.Return<PerforceBackend> {
+	if (!(backend instanceof Function)) return backend;
+	return backend(yield* selectedProjectRoot());
+});
 
 export function makePerforceHistorySource(
 	backend: PerforceBackend | PerforceBackendResolver,
@@ -647,14 +645,13 @@ export function perforceHistorySourceLayer(
 					timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero)
 				}
 			);
-			const withClient = <A>(
+			const withClient = Effect.fnUntraced(function* <A>(
 				projectRoot: string | undefined,
 				run: (client: P4Service) => Effect.Effect<A, unknown>
-			) =>
-				Effect.gen(function* () {
-					const config = yield* Cache.get(contexts, projectRoot);
-					return yield* Effect.flatMap(P4, run).pipe(Effect.provide(makeLayer(config)));
-				});
+			) {
+				const config = yield* Cache.get(contexts, projectRoot);
+				return yield* Effect.flatMap(P4, run).pipe(Effect.provide(makeLayer(config)));
+			});
 			const backendForProject: PerforceBackendResolver = (projectRoot) => ({
 				describeChangelist: (change) =>
 					withClient(projectRoot, (client) => client.describeChangelist({ change })),
@@ -662,13 +659,12 @@ export function perforceHistorySourceLayer(
 					withClient(projectRoot, (client) => client.listDepotFilesAtChange(request)),
 				listSubmittedChangelists: (request) =>
 					withClient(projectRoot, (client) => client.listChangelists(request)),
-				materializeDepotFiles: (request) =>
-					Effect.gen(function* () {
-						const config = yield* Cache.get(contexts, projectRoot);
-						return yield* runOperation(materializeDepotFiles, request).pipe(
-							Effect.provide(makeLayer(config))
-						);
-					})
+				materializeDepotFiles: Effect.fnUntraced(function* (request) {
+					const config = yield* Cache.get(contexts, projectRoot);
+					return yield* runOperation(materializeDepotFiles, request).pipe(
+						Effect.provide(makeLayer(config))
+					);
+				})
 			});
 			const where = Effect.fn("PerforceHistorySource.where")(function* (path: string) {
 				const projectRoot = yield* selectedProjectRoot();

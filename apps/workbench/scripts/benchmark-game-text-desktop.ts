@@ -1,25 +1,8 @@
 /**
- * Actual desktop Game Text measurement: drives the production Electron Workbench through
- * launch, Project Index readiness, a cold Game Text scan, interactive search and facets, an
- * unchanged rescan and a warm reopen, while sampling aggregate process memory and the main
- * process event loop.
- *
- * Every run uses a fresh process, an isolated profile and an empty derived cache. Several
- * builds (`--app label=<workbench dir>`) alternate run by run, as ADR 0010 requires. Results
- * include a hash of every indexed row so builds can be compared for identical output. Before
- * each run the harness waits (`--quiet-wait-ms`) for other build and test processes to finish
- * and records any it gave up on.
- *
- * Each `<workbench dir>` is a built `apps/workbench` whose checkout has a release reader at
- * `target/release/uasset`. Memory is the working set of that checkout's Electron and reader
- * processes, sampled every 250 ms. Readiness is checked in the page every 10 ms and timed by
- * the page's clock, so a timing is not rounded up to the next poll of this process. `--trace
- * <dir>` also records the main process's spans, main and renderer CPU profiles of the cold scan,
- * the rescan and the warm reopen, and each run's milestones; tracing slows the run, so traced
- * timings are for profiling only.
- *
- * pnpm benchmark:game-text-desktop --project <project dir> \
- *   --app before=<dir> --app after=<dir> --runs 3 --output <file>
+ * Desktop Game Text benchmark: `pnpm benchmark:game-text-desktop --project <dir> --app a=<dir>
+ * --app b=<dir> --output <file>`. Each app is a built Workbench with a release reader at
+ * `target/release/uasset`; runs use a fresh process, profile and cache, alternate builds (ADR 0010)
+ * and time scan, search, rescan and warm reopen. `--trace <dir>` slows runs; profile only.
  */
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
@@ -38,6 +21,11 @@ import { performance } from "node:perf_hooks";
 import { Schema } from "effect";
 import { _electron as electron, type ElectronApplication, type Page } from "playwright";
 import { searchDoneInPage, searchRecorder } from "./benchmark-game-text-desktop-page.js";
+
+const decodeString = Schema.decodeUnknownSync(Schema.String);
+const decodeNumber = Schema.decodeUnknownSync(Schema.Number);
+const NumberList = Schema.Array(Schema.Number);
+const decodeNumberList = Schema.decodeUnknownSync(NumberList);
 
 interface AppUnderTest {
 	readonly label: string;
@@ -301,7 +289,7 @@ function launchEnvironment(
 
 async function launch(app: AppUnderTest, projectRoot: string, sessionRoot: string, trace?: string) {
 	const require = createRequire(join(app.workbenchRoot, "package.json"));
-	const executable = Schema.decodeUnknownSync(Schema.String)(require("electron"));
+	const executable = decodeString(require("electron"));
 	const application = await electron.launch({
 		args: [app.workbenchRoot, `--user-data-dir=${join(sessionRoot, "profile")}`],
 		cwd: app.workbenchRoot,
@@ -429,6 +417,7 @@ const ipcRecorderStart = `(() => {
 const IpcCalls = Schema.Array(
 	Schema.Struct({ call: Schema.String, start: Schema.Number, end: Schema.Number })
 );
+const decodeIpcCalls = Schema.decodeUnknownSync(IpcCalls);
 
 /** Starts main and renderer CPU profiles; the returned function writes `<prefix>-*.cpuprofile`. */
 async function startProfiles(application: ElectronApplication, page: Page) {
@@ -444,9 +433,9 @@ async function startProfiles(application: ElectronApplication, page: Page) {
 		await renderer.detach();
 		writeFileSync(
 			`${prefix}-main.cpuprofile`,
-			Schema.decodeUnknownSync(Schema.String)(await application.evaluate(mainProfileStop))
+			decodeString(await application.evaluate(mainProfileStop))
 		);
-		const calls = Schema.decodeUnknownSync(IpcCalls)(
+		const calls = decodeIpcCalls(
 			await application.evaluate("globalThis.__ueShedIpc.splice(0)")
 		);
 		writeFileSync(`${prefix}-ipc.json`, `${JSON.stringify(calls, null, "\t")}\n`);
@@ -742,7 +731,7 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			await profiler.detach();
 			writeFileSync(
 				join(options.trace, `${app.label}-${run}-main.cpuprofile`),
-				Schema.decodeUnknownSync(Schema.String)(await application.evaluate(mainProfileStop))
+				decodeString(await application.evaluate(mainProfileStop))
 			);
 		}
 		const firstResultsSummary = await page.getByLabel("Index status").innerText();
@@ -793,11 +782,9 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			// When each process's clock started, and the page's own load events.
 			milestones.set(
 				"warmMainOrigin",
-				Schema.decodeUnknownSync(Schema.Number)(
-					await warm.application.evaluate("performance.timeOrigin")
-				)
+				decodeNumber(await warm.application.evaluate("performance.timeOrigin"))
 			);
-			const page = Schema.decodeUnknownSync(Schema.Array(Schema.Number))(
+			const page = decodeNumberList(
 				await warm.page.evaluate(`(() => {
 					const navigation = performance.getEntriesByType("navigation")[0];
 					return [

@@ -36,6 +36,11 @@ import {
 	type VisibilityPolicyId
 } from "./review-schema.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeReviewAuthoringSessionId = Schema.decodeUnknownEffect(ReviewAuthoringSessionId);
+const decodeReviewAuthoringSession = Schema.decodeUnknownEffect(ReviewAuthoringSession);
+const decodeSessionViewId = Schema.decodeUnknownEffect(ReviewAuthoringSession.fields.viewId);
+
 /**
  * Project review-root subdirectory for persisted candidate authoring sessions. Sessions are
  * drafts/recovery evidence rather than immutable approved capture history.
@@ -189,7 +194,7 @@ function decodeSessionId(
 	operation: ReviewAuthoringSessionError["operation"],
 	projectRoot: string
 ): Effect.Effect<ReviewAuthoringSessionId, ReviewAuthoringSessionError> {
-	return Schema.decodeUnknownEffect(ReviewAuthoringSessionId)(id).pipe(
+	return decodeReviewAuthoringSessionId(id).pipe(
 		Effect.mapError((cause) =>
 			sessionError({
 				cause,
@@ -203,40 +208,37 @@ function decodeSessionId(
 	);
 }
 
-function loadDocument(args: {
+const loadDocument = Effect.fn("camera.review.authoring-session.load")(function* (args: {
 	readonly id: string;
 	readonly projectRoot: string;
-}): Effect.Effect<ReviewAuthoringSessionDocument, ReviewAuthoringSessionError> {
-	return Effect.gen(function* () {
-		const id = yield* decodeSessionId(args.id, "load", args.projectRoot);
-		const path = reviewAuthoringSessionPath({ id, projectRoot: args.projectRoot });
-		const input = yield* Effect.tryPromise({
-			try: async () =>
-				Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
-			catch: (cause) =>
-				sessionError({
-					cause,
-					operation: "load",
-					path,
-					recovery: "Repair the authoring-session document or discard it.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-		});
-		return yield* Schema.decodeUnknownEffect(ReviewAuthoringSession)(input).pipe(
-			Effect.mapError((cause) =>
-				sessionError({
-					cause,
-					operation: "load",
-					path,
-					recovery: "Repair the malformed authoring-session document or discard it.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			)
-		);
-	}).pipe(Effect.withSpan("camera.review.authoring-session.load"));
-}
+}): Effect.fn.Return<ReviewAuthoringSessionDocument, ReviewAuthoringSessionError> {
+	const id = yield* decodeSessionId(args.id, "load", args.projectRoot);
+	const path = reviewAuthoringSessionPath({ id, projectRoot: args.projectRoot });
+	const input = yield* Effect.tryPromise({
+		try: async () => decodeJson(JSON.parse(await readFile(path, "utf8"))),
+		catch: (cause) =>
+			sessionError({
+				cause,
+				operation: "load",
+				path,
+				recovery: "Repair the authoring-session document or discard it.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			})
+	});
+	return yield* decodeReviewAuthoringSession(input).pipe(
+		Effect.mapError((cause) =>
+			sessionError({
+				cause,
+				operation: "load",
+				path,
+				recovery: "Repair the malformed authoring-session document or discard it.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			})
+		)
+	);
+});
 
 function saveDocument(args: {
 	readonly projectRoot: string;
@@ -549,9 +551,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					mapPath: args.selection.mapPath
 				},
 				updatedAt: now,
-				viewId: yield* Schema.decodeUnknownEffect(ReviewAuthoringSession.fields.viewId)(
-					args.viewId
-				).pipe(
+				viewId: yield* decodeSessionViewId(args.viewId).pipe(
 					Effect.mapError((cause) =>
 						sessionError({
 							cause,

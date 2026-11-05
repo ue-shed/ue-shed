@@ -19,6 +19,9 @@ export function success<A, E>(result: Result.Result<A, E>): A {
 }
 
 export const cultureCode = Schema.decodeUnknownSync(CultureCode);
+const decodeManifestEntry = Schema.decodeUnknownSync(ManifestEntry);
+const decodeArchiveEntry = Schema.decodeUnknownSync(ArchiveEntry);
+const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
 export const testTarget = success(
 	discoverLocalizationTargets({
 		dashboardText: "",
@@ -40,7 +43,7 @@ export function manifestEntry(
 	path = "/Game/Text/Table.Table",
 	namespace = "NS"
 ): ManifestEntry {
-	return Schema.decodeUnknownSync(ManifestEntry)({
+	return decodeManifestEntry({
 		namespace,
 		key,
 		source: { Text: text },
@@ -54,7 +57,7 @@ export function archiveEntry(
 	translation = "Translation",
 	namespace = "NS"
 ): ArchiveEntry {
-	return Schema.decodeUnknownSync(ArchiveEntry)({
+	return decodeArchiveEntry({
 		namespace,
 		key,
 		source: { Text: source },
@@ -136,7 +139,7 @@ export function unit(
 	packageFile = "Content/Text/Table.uasset",
 	namespace = "NS"
 ): TextUnit {
-	return Schema.decodeUnknownSync(TextUnit)({
+	return decodeTextUnit({
 		id: `unit:${key}`,
 		source: { status: "consistent", value: source },
 		identity: { status: "resolved", namespace, key },

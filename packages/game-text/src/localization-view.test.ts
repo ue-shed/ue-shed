@@ -22,6 +22,11 @@ import {
 	unit
 } from "./localization.test-support.js";
 
+const decodeLocalizationFocus = Schema.decodeUnknownSync(LocalizationFocus);
+const decodeTextCorpusSearchPage = Schema.decodeUnknownSync(TextCorpusSearchPage);
+const decodeTextCorpusFocus = Schema.decodeUnknownSync(TextCorpusFocus);
+const decodeLocalizationStatusReport = Schema.decodeUnknownSync(LocalizationStatusReport);
+
 describe("localization presentation", () => {
 	it.live(
 		"counts and filters pending PO translations even when the source changed since gather",
@@ -92,7 +97,7 @@ describe("localization presentation", () => {
 			{ ...line, cultures: [...line.cultures].reverse() },
 			request
 		);
-		Schema.decodeUnknownSync(LocalizationFocus)(focus);
+		decodeLocalizationFocus(focus);
 		expect(focus.translations.map((mark) => mark.culture)).toEqual(["en", "de"]);
 		expect(focus.translations[1]).toMatchObject({
 			gameTranslation: "Source",
@@ -184,7 +189,7 @@ describe("localization presentation", () => {
 				target: target.name,
 				selection: { kind: "line", id: line.id }
 			});
-			Schema.decodeUnknownSync(LocalizationFocus)(focus);
+			decodeLocalizationFocus(focus);
 			expect(focus.translations[1]).toMatchObject({
 				state: example.state,
 				gameTranslation: example.game,
@@ -340,7 +345,7 @@ describe("localization presentation", () => {
 			selection: { kind: "line", id: line.id }
 		});
 		const first = localizationFocusPage(joined, expanded, request);
-		Schema.decodeUnknownSync(LocalizationFocus)(first);
+		decodeLocalizationFocus(first);
 		expect(first.translations).toHaveLength(50);
 		expect(first.translations[0]?.culture).toBe("en");
 		expect(first.nextCultureOffset).toBe(50);
@@ -372,7 +377,7 @@ describe("localization in the query", () => {
 			({ query }) =>
 				Effect.gen(function* () {
 					const page = yield* query.search(request);
-					Schema.decodeUnknownSync(TextCorpusSearchPage)(page);
+					decodeTextCorpusSearchPage(page);
 					expect(page.units[0]?.localization?.[0]?.state).toBe("not_synced");
 					const first = page.localization?.lines[0];
 					if (!first) throw new Error("Missing query line.");
@@ -387,7 +392,7 @@ describe("localization in the query", () => {
 					});
 					expect(focus?.manifest[0]?.path).toBe("/Game/Text/Table.Table");
 					const corpusFocus = yield* query.focus({ id: page.units[0]!.id, pageSize: 50 });
-					Schema.decodeUnknownSync(TextCorpusFocus)(corpusFocus);
+					decodeTextCorpusFocus(corpusFocus);
 					expect(corpusFocus?.localization?.cultures).toHaveLength(2);
 				})
 		)
@@ -454,9 +459,7 @@ describe("localization in the query", () => {
 							(count) => count.states.not_synced.lines === 0
 						)
 					).toBe(true);
-					Schema.decodeUnknownSync(LocalizationStatusReport)(
-						localizationStatusReport(text, files, page)
-					);
+					decodeLocalizationStatusReport(localizationStatusReport(text, files, page));
 				})
 			);
 		}

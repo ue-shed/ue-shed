@@ -18,6 +18,24 @@ import { CliRuntime } from "./cli-runtime.js";
 import { runCli as runCommand } from "./command.js";
 import { cliGameTextIndexLayer, refreshCliGameTextIndex } from "./workflows/game-text-index.js";
 
+const SearchPage = Schema.Struct({
+	total: Schema.Int,
+	omitted: Schema.Int,
+	matches: Schema.Array(Schema.Unknown)
+});
+const decodeStatusReportJson = Schema.decodeUnknownEffect(
+	Schema.fromJsonString(LocalizationStatusReport)
+);
+const decodeSearchPageJson = Schema.decodeUnknownEffect(Schema.fromJsonString(SearchPage));
+const decodeQualityReportJson = Schema.decodeUnknownSync(
+	Schema.fromJsonString(LocalizationQualityReport)
+);
+const decodeChangeSetJson = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationChangeSet));
+const decodeProgressReportJson = Schema.decodeUnknownSync(
+	Schema.fromJsonString(LocalizationProgressReport)
+);
+const decodeBaselineJson = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationBaseline));
+
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 let indexed: ReturnType<typeof makeIndexRuntime>;
@@ -89,9 +107,7 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 				executable
 			];
 			yield* runCli(["loc", "status", fixture.root, ...flags]).pipe(Effect.provide(runtime));
-			const status = yield* Schema.decodeUnknownEffect(
-				Schema.fromJsonString(LocalizationStatusReport)
-			)(yield* Ref.get(output));
+			const status = yield* decodeStatusReportJson(yield* Ref.get(output));
 			expect(status.diagnostics.length).toBeLessThanOrEqual(200);
 			expect(status.diagnosticCount).toBe(
 				status.diagnostics.length + status.diagnosticsOmitted
@@ -115,9 +131,7 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 			yield* runCli(["text", "search", fixture.root, "Ready", ...flags]).pipe(
 				Effect.provide(runtime)
 			);
-			const search = yield* Schema.decodeUnknownEffect(
-				Schema.fromJsonString(LocalizationStatusReport)
-			)(yield* Ref.get(output));
+			const search = yield* decodeStatusReportJson(yield* Ref.get(output));
 			expect(search.page.total).toBe(1);
 			expect(search.page.localization?.lines[0]?.source).toBe("Ready to begin");
 			expect(yield* Ref.get(exitCode)).toBe(0);
@@ -146,15 +160,7 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 				"--reader",
 				executable
 			]).pipe(Effect.provide(runtime));
-			const search = yield* Schema.decodeUnknownEffect(
-				Schema.fromJsonString(
-					Schema.Struct({
-						total: Schema.Int,
-						omitted: Schema.Int,
-						matches: Schema.Array(Schema.Unknown)
-					})
-				)
-			)(yield* Ref.get(output));
+			const search = yield* decodeSearchPageJson(yield* Ref.get(output));
 			expect(search.matches).toHaveLength(1);
 			expect(search.total).toBeGreaterThan(1);
 			expect(search.omitted).toBe(search.total - 1);
@@ -186,9 +192,7 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 						executable,
 						...extra
 					]).pipe(Effect.provide(runtime));
-					return yield* Schema.decodeUnknownEffect(
-						Schema.fromJsonString(LocalizationStatusReport)
-					)(yield* Ref.get(output));
+					return yield* decodeStatusReportJson(yield* Ref.get(output));
 				});
 			const all = yield* status();
 			const cpp = yield* status("--kind", "cpp");
@@ -309,8 +313,7 @@ describe.skipIf(!executable)("localization CLI with the real reader", () => {
 					]).pipe(Effect.provide(runtime));
 					return yield* Ref.get(output);
 				});
-			const report = (text: string) =>
-				Schema.decodeUnknownEffect(Schema.fromJsonString(LocalizationStatusReport))(text);
+			const report = (text: string) => decodeStatusReportJson(text);
 			const all = yield* report(yield* status());
 			const problems = all.page.problems;
 			if (problems === undefined) throw new Error("The status page has no problem counts.");
@@ -409,9 +412,7 @@ describe.skipIf(!executable)("localization check CLI with the real reader", () =
 				"--reader",
 				executable
 			]).pipe(Effect.provide(runtime));
-			const report = Schema.decodeUnknownSync(
-				Schema.fromJsonString(LocalizationQualityReport)
-			)(yield* Ref.get(output));
+			const report = decodeQualityReportJson(yield* Ref.get(output));
 			expect(report.findings.length).toBeGreaterThan(0);
 			expect(
 				report.findings.every(
@@ -428,11 +429,9 @@ describe.skipIf(!executable)("localization check CLI with the real reader", () =
 						change.translation === "Gespräch mit {PlayerName}"
 				)
 			).toBe(true);
-			expect(
-				Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationChangeSet))(
-					yield* fs.readFileString(changesPath)
-				)
-			).toEqual(report.changes);
+			expect(decodeChangeSetJson(yield* fs.readFileString(changesPath))).toEqual(
+				report.changes
+			);
 			expect(yield* fs.readDirectory(directory)).toEqual(["suggestions.json"]);
 			const after = yield* Effect.forEach(paths, (path) =>
 				fs.readFile(join(fixture.root, path))
@@ -488,9 +487,7 @@ describe.skipIf(!executable)("loc report with the real reader", () => {
 				yield* runCli([...args, "--save-baseline", baselinePath]).pipe(
 					Effect.provide(runtime)
 				);
-				const report = Schema.decodeUnknownSync(
-					Schema.fromJsonString(LocalizationProgressReport)
-				)(yield* Ref.get(output));
+				const report = decodeProgressReportJson(yield* Ref.get(output));
 				expect(
 					report.cultures
 						.map((culture) => [
@@ -516,15 +513,11 @@ describe.skipIf(!executable)("loc report with the real reader", () => {
 						(file) => file.kind === "manifest" && file.provenance
 					)
 				).toBe(true);
-				const baseline = Schema.decodeUnknownSync(
-					Schema.fromJsonString(LocalizationBaseline)
-				)(yield* fs.readFileString(baselinePath));
+				const baseline = decodeBaselineJson(yield* fs.readFileString(baselinePath));
 				expect(baseline.entries.length).toBeGreaterThan(0);
 				yield* Ref.set(output, "");
 				yield* runCli([...args, "--baseline", baselinePath]).pipe(Effect.provide(runtime));
-				const compared = Schema.decodeUnknownSync(
-					Schema.fromJsonString(LocalizationProgressReport)
-				)(yield* Ref.get(output));
+				const compared = decodeProgressReportJson(yield* Ref.get(output));
 				expect(
 					compared.cultures.every(
 						(culture) =>

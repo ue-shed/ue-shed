@@ -48,6 +48,9 @@ import {
 	isLocalizationOperationError
 } from "./operation-schema.js";
 
+const decodeRunRequest = Schema.decodeUnknownEffect(LocalizationRunRequest);
+const decodeEngine = Schema.decodeUnknownEffect(LocalizationEngine);
+
 /**
  * Plans and explicitly runs GatherText operations as an event stream. Execution revalidates
  * inputs and owns process cleanup; consuming only a plan never launches Unreal.
@@ -105,9 +108,7 @@ export const makeLocalizationOperationsLayer = (
 			const prepare = Effect.fn("LocalizationOperations.plan")(function* (
 				input: LocalizationRunRequest
 			) {
-				const request = yield* Schema.decodeUnknownEffect(LocalizationRunRequest)(
-					input
-				).pipe(
+				const request = yield* decodeRunRequest(input).pipe(
 					Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
 				);
 				const projectRoot = resolve(request.projectRoot);
@@ -130,7 +131,7 @@ export const makeLocalizationOperationsLayer = (
 						)
 					)
 				);
-				const engine = yield* Schema.decodeUnknownEffect(LocalizationEngine)(
+				const engine = yield* decodeEngine(
 					`${installation.version.major}.${installation.version.minor}`
 				).pipe(
 					Effect.mapError((cause) =>

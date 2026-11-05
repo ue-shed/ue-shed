@@ -4,6 +4,8 @@ import type { SavedAssetPackageTextRecord, SavedAssetTextOccurrence } from "@ue-
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { PackageTextDiff, diffPackageText, packageTextPlace } from "./package-text-diff.js";
 
+const decodeDiff = Schema.decodeUnknownSync(PackageTextDiff);
+
 const PACKAGE = "/Game/UI/W_Menu";
 
 function property(
@@ -75,7 +77,7 @@ describe("package text diff", () => {
 			notesChanged: true
 		});
 		expect(diff.counts).toEqual({ added: 1, removed: 1, rekeyed: 1, edited: 2, unchanged: 0 });
-		expect(Schema.decodeUnknownSync(PackageTextDiff)(diff)).toEqual(diff);
+		expect(decodeDiff(diff)).toEqual(diff);
 	});
 
 	it("treats a new namespace, a String Table reference or a lost key as a re-key", () => {

@@ -10,6 +10,8 @@ import {
 import { TextQualityRuleId, TextRoleId, type TextQualityReport } from "./quality-schema.js";
 import { makeTextOccurrenceId, makeTextUnitId } from "./schema.js";
 
+const decodeSearchPage = Schema.decodeUnknownSync(TextQualitySearchPage);
+
 const occurrence = {
 	id: makeTextOccurrenceId("occurrence:menu"),
 	location: {
@@ -148,7 +150,7 @@ describe("text quality query", () => {
 		});
 		const page = query.search({ filter: "all", pageSize: 1 });
 		expect(page.findings).toHaveLength(1);
-		expect(Schema.decodeUnknownSync(TextQualitySearchPage)(page)).toEqual(page);
+		expect(decodeSearchPage(page)).toEqual(page);
 		expect(page.findings[0]).not.toHaveProperty("affectedOccurrences");
 		expect(page.nextCursor).toBe(page.findings[0]?.id);
 		expect(page.findings[0]).toMatchObject({

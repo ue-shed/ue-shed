@@ -23,14 +23,10 @@ export const LocalizationFilePair = Schema.Struct({
 export type LocalizationFilePair = typeof LocalizationFilePair.Type;
 
 /**
- * What a change means for the text and its translations, in the order changes are listed:
- * - `rekeyed`: the text moved to a new key without its translation (in a manifest, any new key);
- * - `reworded`: the source's wording changed, so its translation needs redoing;
- * - `retouched`: only the source's case, punctuation or spacing changed;
- * - `removed`, `added`;
- * - `translation`: a translation, translator comment or flag changed, and the source did not;
- * - `carried`: the text moved to a new key and kept its translation, or had none;
- * - `context`: only notes, references or a manifest path changed.
+ * What a change means for the text and its translations, in listing order: `rekeyed` (new key, no
+ * translation; any new key in a manifest), `reworded` (translation needs redoing), `retouched`
+ * (case, punctuation or spacing only), `removed`, `added`, `translation` (source unchanged),
+ * `carried` (new key, translation kept or none) and `context` (notes, references or path only).
  */
 export const LocalizationFileGroup = Schema.Literals([
 	"rekeyed",

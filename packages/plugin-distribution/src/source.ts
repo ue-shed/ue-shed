@@ -24,6 +24,7 @@ import type { PluginVariantRequest } from "./variant.js";
 const COPY_CHUNK_BYTES = 64 * 1024;
 const isPluginDistributionValidationError = Schema.is(PluginDistributionValidationError);
 const isReleaseUnavailable = Schema.is(ReleaseUnavailable);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 
 export interface PluginReleaseDocument {
 	readonly bytes: Uint8Array;
@@ -117,9 +118,7 @@ function transport(
 
 function parseJson(bytes: Uint8Array, releaseVersion: string): Schema.Json {
 	try {
-		return Schema.decodeUnknownSync(Schema.Json)(
-			JSON.parse(Buffer.from(bytes).toString("utf8"))
-		);
+		return decodeJson(JSON.parse(Buffer.from(bytes).toString("utf8")));
 	} catch (cause) {
 		throw new PluginDistributionValidationError({
 			field: "manifest",

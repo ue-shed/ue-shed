@@ -1,8 +1,7 @@
-// Plan 058 A3 acceptance on a disposable copy of the fixture project: drive the GameTextActions
-// identity cases through the Game Text actions API over Remote Control, save, re-read the packages
-// with the saved-package reader, then compare with Unreal's own gather table (the fixture's
-// Evidence stage). The committed fixture is never written.
-// --source-edits selects the cross-version nine-place commandlet lifecycle instead.
+// Plan 058 A3 acceptance on a disposable fixture copy: drive the GameTextActions identity cases
+// over Remote Control, save, re-read with the saved-package reader and compare with Unreal's gather
+// table (the Evidence stage). The committed fixture is never written. --source-edits runs the
+// cross-version nine-place commandlet lifecycle instead.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

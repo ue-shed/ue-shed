@@ -72,6 +72,7 @@ const validateProtocolEventType = Schema.decodeUnknownExit(
 	exactProtocolParseOptions
 );
 const decodeProtocolEvent = Schema.decodeUnknownSync(UAssetIoEvent, exactProtocolParseOptions);
+const decodeString = Schema.decodeUnknownSync(Schema.String);
 
 const isProjectIndexPageFrame = Schema.is(
 	Schema.Struct({
@@ -959,7 +960,7 @@ export class UassetProtocolSession {
 		const lines = (async function* (output: NonNullable<ProtocolSessionProcess["stdout"]>) {
 			const decoder = new ProtocolLineDecoder();
 			for await (const chunk of output) {
-				const text = Schema.decodeUnknownSync(Schema.String)(chunk);
+				const text = decodeString(chunk);
 				for (const line of decoder.push(text)) yield line;
 			}
 			decoder.finish();
@@ -1715,11 +1716,10 @@ function invokeProtocolScanBatch(
 }
 
 /**
- * Scans in one reader process per path batch, one after another, and merges the batches into one
- * result. A path list that fits one request is sent unchanged. A longer one is de-duplicated as the
- * reader would, cut against the measured request envelope, and each package is reported once even
- * where roots overlap. `maximumAssets` bounds the unique packages of the whole scan, and each batch
- * keeps its own header cache beside `cachePath`.
+ * Scans in one reader process per path batch, sequentially, merging batches into one result.
+ * A list that fits one request is sent unchanged; a longer one is de-duplicated as the reader
+ * would and cut to the request envelope, reporting each package once even where roots overlap.
+ * `maximumAssets` bounds the whole scan's unique packages; each batch caches beside `cachePath`.
  */
 export function invokeProtocolScan(
 	configuration: AssetReaderConfiguration,
@@ -2200,11 +2200,10 @@ function makeProjectionRequest(
 }
 
 /**
- * Streams one compact projection. A path list that fits one request is sent unchanged. A longer
- * one is de-duplicated as the reader would, cut against the measured request envelope and sent in
- * consecutive batches, one reader process at a time. Their events are concatenated in order, a
- * package an earlier batch already reported is skipped, and their closing summaries merge into one,
- * emitted after the last batch. `maximumAssets` bounds the unique packages of the whole projection.
+ * Streams one compact projection. A path list too long for one request is de-duplicated as the
+ * reader would, cut against the measured request envelope and sent in sequential batches; events
+ * concatenate in order, skipping packages already reported, and summaries merge after the last
+ * batch. `maximumAssets` bounds the unique packages of the whole projection.
  */
 export function protocolProjectionStream<A>(
 	options: ProjectionRequestOptions & {

@@ -8,6 +8,8 @@ export const NiagaraPreviewProfile = Schema.Literals([
 	"environment"
 ]);
 export type NiagaraPreviewProfile = typeof NiagaraPreviewProfile.Type;
+const decodeNiagaraPreviewProfile = Schema.decodeUnknownSync(NiagaraPreviewProfile);
+const decodeNiagaraPreviewSettings = Schema.decodeUnknownSync(NiagaraPreviewSettings);
 
 /** Reuse framing and simulation settings; plain variants add no floor or scene props. */
 export function niagaraBackgroundVariant(
@@ -16,7 +18,7 @@ export function niagaraBackgroundVariant(
 ): NiagaraPreviewSettings {
 	if (manifest.camera.projection !== "perspective")
 		throw new Error("Background variants require a perspective reference camera.");
-	return Schema.decodeUnknownSync(NiagaraPreviewSettings)({
+	return decodeNiagaraPreviewSettings({
 		...manifest.requestedSettings,
 		...manifest.effectiveSettings,
 		background,
@@ -65,8 +67,8 @@ export function niagaraPreviewProfile(
 	overrides: NiagaraPreviewSettings = {}
 ): NiagaraPreviewSettings {
 	const durations = { ground_impact: 3, projectile: 2, aura: 4, environment: 6 };
-	const durationSeconds = durations[Schema.decodeUnknownSync(NiagaraPreviewProfile)(profile)];
-	return Schema.decodeUnknownSync(NiagaraPreviewSettings)({
+	const durationSeconds = durations[decodeNiagaraPreviewProfile(profile)];
+	return decodeNiagaraPreviewSettings({
 		renderMode: "scene",
 		captureMode: "full_scene",
 		cameraMode: "auto_fit",

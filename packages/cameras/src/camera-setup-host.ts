@@ -15,10 +15,9 @@ const savedSetsTtlMillis = 5_000;
 /**
  * One poll step; the owning host supplies scheduling, project authority and durable creation.
  *
- * Supplying both `open` and `sets` lets the native panel reopen a saved set for its selected
- * subject: each poll negotiates `reopen` and sends the listing (refreshed at most every five
- * seconds, and after every outcome). Opening shares creation's outcome and acknowledgement rules.
- * Hosts that omit them behave exactly as before, and older plugins ignore the extra fields.
+ * With both `open` and `sets`, each poll negotiates `reopen` and sends the saved-set listing
+ * (refreshed at most every five seconds and after every outcome). Opening shares creation's
+ * outcome and acknowledgement rules; older plugins ignore the extra fields.
  */
 export const makeCameraSetupHost = Effect.fn("CameraSetup.makeHost")(function* <
 	E,

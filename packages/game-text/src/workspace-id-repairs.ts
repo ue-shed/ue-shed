@@ -72,6 +72,10 @@ const Artifact = Schema.Struct({
 	plan: TextIdRepairPlan,
 	result: Schema.optionalKey(TextIdRepairResult)
 });
+const decodeArtifactJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Artifact));
+const decodeGuidance = Schema.decodeUnknownOption(Guidance);
+const decodeRepairRequest = Schema.decodeUnknownEffect(TextIdRepairRequest);
+const decodeRepairId = Schema.decodeUnknownEffect(TextIdRepairId);
 
 const folder = "Saved/UEShed/GameTextActions";
 
@@ -189,7 +193,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			{ exclusive }
 		);
 	const prepare = Effect.fn("GameText.idRepairs.prepare")(function* (input: TextIdRepairRequest) {
-		const request = yield* Schema.decodeUnknownEffect(TextIdRepairRequest)(input).pipe(
+		const request = yield* decodeRepairRequest(input).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -272,7 +276,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			nextStep: "reconcile"
 		});
 	const apply = Effect.fn("GameText.idRepairs.apply")(function* (input: TextIdRepairId) {
-		const id = yield* Schema.decodeUnknownEffect(TextIdRepairId)(input).pipe(
+		const id = yield* decodeRepairId(input).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -288,9 +292,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 		const bytes = yield* host.files.readFileWithin(root, `${folder}/${id}.json`, {
 			maxBytes: 4 * 1024 * 1024
 		});
-		const artifact = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Artifact))(
-			new TextDecoder().decode(bytes)
-		).pipe(
+		const artifact = yield* decodeArtifactJson(new TextDecoder().decode(bytes)).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -442,7 +444,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 		mutation: boolean
 	) => {
 		// Keep each failure's own guidance; only unguided failures fall back to the phase default.
-		const guidance = Schema.decodeUnknownOption(Guidance)(error);
+		const guidance = decodeGuidance(error);
 		return unavailable({
 			message: error.message,
 			recovery:

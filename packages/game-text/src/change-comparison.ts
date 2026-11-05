@@ -9,12 +9,10 @@ const Changelist = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 export const MAX_CHANGE_PAGE = 1000;
 
 /**
- * The change a comparison reads:
- * - `submitted`: a submitted changelist, against the changelist before it;
- * - `shelved`: a pending changelist's shelved files, against the depot's head;
- * - `range`: the changelists after `from` up to `to`, against `from`;
- * - `local`: listed working-copy files as they are on disk, against the revisions the workspace
- *   has. Paths are relative to the project folder, with `/`.
+ * The change a comparison reads: a `submitted` changelist against the one before it, a `shelved`
+ * pending changelist against the depot's head, a `range` after `from` up to `to` against `from`,
+ * or `local` working-copy files on disk against the workspace's revisions (paths relative to the
+ * project folder, with `/`).
  */
 export const GameTextChange = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("submitted"), change: Changelist }),

@@ -72,6 +72,8 @@ const Meta = Schema.Struct({
 	hasSourceText: Schema.Boolean,
 	pathPrefix: Schema.optionalKey(Schema.String)
 });
+const MetaJson = Schema.fromJsonString(Meta);
+const decodeMetaJson = Schema.decodeUnknownEffect(MetaJson);
 const fields = [
 	"namespace",
 	"key",
@@ -585,9 +587,7 @@ export const decodeLocalizationSnapshot = Effect.fn("LocalizationSnapshot.decode
 	maximum = 50
 ) {
 	const metaBytes = yield* reader.section("file.meta");
-	const meta = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Meta))(
-		new TextDecoder().decode(metaBytes)
-	);
+	const meta = yield* decodeMetaJson(new TextDecoder().decode(metaBytes));
 	if (
 		!Number.isSafeInteger(start) ||
 		!Number.isSafeInteger(maximum) ||

@@ -13,7 +13,6 @@ export const CLI_GUIDES = {
 export const guideFile = (name: keyof typeof CLI_GUIDES) =>
 	new URL(`../../guides/${name}.md`, import.meta.url);
 
-/** The guides' names. */
 export const CLI_GUIDE_NAMES = Object.keys(CLI_GUIDES).filter(
 	(name): name is keyof typeof CLI_GUIDES => Object.hasOwn(CLI_GUIDES, name)
 );

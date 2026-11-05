@@ -56,11 +56,9 @@ const allowRule =
 	"-ini:RemoteControl:[/Script/RemoteControlCommon.RemoteControlSettings]:+CustomAllowedRemoteFunctionCalls=";
 
 /**
- * Editor arguments that add process-local Remote Control allowlist rules, which UE 5.8 requires,
- * without replacing the project's own permissions. Each enabled UE Shed plugin ID adds its exact
- * API classes; `additionalClasses` adds a host's own plugin classes the same way, and
- * `functions` adds single functions. Child classes are never allowed. Earlier engines ignore
- * these settings.
+ * Editor arguments adding process-local Remote Control allowlist rules (required by UE 5.8, ignored
+ * by earlier engines) beside the project's own: each enabled UE Shed plugin's exact API classes,
+ * the host's `additionalClasses` and single `functions`. Child classes are never allowed.
  */
 export function unrealRemoteControlPermissions(
 	pluginIds: readonly string[],

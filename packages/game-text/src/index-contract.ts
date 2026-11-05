@@ -109,17 +109,10 @@ export type GameTextIndexRefreshRequest = typeof GameTextIndexRefreshRequest.Typ
 
 type ImportedTarget = Effect.Success<ReturnType<typeof importLocalizationTarget>>;
 /**
- * Pinned corpus, localization and query views from one validated revision. Keep its scope open
- * while executing asynchronous reads.
- *
- * The quality reads take `(ruleDocument, options)`: the rule document first, which only
- * `sourceQuality` requires, then the localization reads' check options. `sourceQuality` and
- * `localizationQuality` are interruptible and report progress through
- * `GameTextIndexProgressReporter`, counted in rules: a `source_quality` or
- * `localization_quality` event with no rules evaluated and no findings, one as each rule
- * finishes, and a last one with every rule evaluated and the findings; then `ready`, or the
- * latest event of another evaluation still running.
- * `prepareLocalizationCheck` and `localizationCheck` report none.
+ * Pinned corpus, localization and query views from one validated revision; keep its scope open
+ * while executing asynchronous reads. `sourceQuality` and `localizationQuality` are interruptible
+ * and report progress in rules (none run, each finished, all run with the findings, then `ready`
+ * or another running evaluation's latest event); the localization check reads report none.
  */
 export interface GameTextIndexRefreshResult {
 	/** Present on the steps implementation; optional for existing host-provided refresh adapters. */

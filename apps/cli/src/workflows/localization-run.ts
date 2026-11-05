@@ -47,6 +47,9 @@ const LocalizationRunFailure = Schema.Union([
 	LocalizationRunConfigurationError,
 	LocalizationCheckOutputError
 ]);
+const decodeTargetName = Schema.decodeUnknownEffect(LocalizationTargetName);
+const decodeRunRequest = Schema.decodeUnknownEffect(LocalizationRunRequest);
+const encodeRunFailure = Schema.encodeSync(LocalizationRunFailure);
 function discoveryFailure(error: LocalizationError): LocalizationOperationError {
 	switch (error.code) {
 		case "file_missing":
@@ -70,9 +73,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 			Effect.gen(function* () {
 				const runtime = yield* CliRuntime;
 				const work = Effect.gen(function* () {
-					const name = yield* Schema.decodeUnknownEffect(LocalizationTargetName)(
-						command.target
-					).pipe(
+					const name = yield* decodeTargetName(command.target).pipe(
 						Effect.mapError((cause) =>
 							localizationOperationError("invalid_request", cause)
 						)
@@ -92,9 +93,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 					};
 					if (command.engineRoot !== undefined)
 						Object.assign(input, { explicitEngineRoot: command.engineRoot });
-					const request = yield* Schema.decodeUnknownEffect(LocalizationRunRequest)(
-						input
-					).pipe(
+					const request = yield* decodeRunRequest(input).pipe(
 						Effect.mapError((cause) =>
 							localizationOperationError("invalid_request", cause)
 						)
@@ -238,7 +237,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 							const output = {
 								schemaVersion: 1,
 								type: "failure",
-								error: Schema.encodeSync(LocalizationRunFailure)(
+								error: encodeRunFailure(
 									error.code === "target_not_found"
 										? new LocalizationOperationError({
 												...error,

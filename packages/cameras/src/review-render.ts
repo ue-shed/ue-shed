@@ -25,6 +25,7 @@ import {
 } from "./review-schema.js";
 
 const isCameraRenderError = Schema.is(CameraRenderError);
+const decodeReviewCaptureRequestCurrent = Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent);
 
 export const ReviewRenderStageContract = Schema.Struct({
 	name: Schema.Literal("ue-shed-review-render-stages"),
@@ -101,7 +102,7 @@ export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(fun
 	readonly request: typeof ReviewCaptureRequestCurrent.Type;
 }) {
 	const client = yield* RemoteControlClient;
-	const request = yield* Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent)(args.request, {
+	const request = yield* decodeReviewCaptureRequestCurrent(args.request, {
 		onExcessProperty: "error"
 	});
 	if (request.authoredVisibility)

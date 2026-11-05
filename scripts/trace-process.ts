@@ -1,15 +1,8 @@
 /**
- * Preloaded into every Node process of a traced gate run (`NODE_OPTIONS=--import=…`, set by
- * `pnpm check:time` and `pnpm release:prepare`). Records one span per process from start to exit
- * and makes it the parent of the process's own spans and children, so scripts nest without each
- * one being instrumented.
- *
- * It also records a span for every non-Node subprocess the process starts (git, tar, npm, Cargo,
- * Electron, native tools) unless the caller already traces it (`traceProcess` in
- * `process-trace.ts`). Node subprocesses, including pnpm and npm shims, record their own process
- * span through this preload instead. Synchronous APIs and `spawn` are wrapped, which also passes
- * the active span to the child; `exec`, `execFile` and other asynchronous starts are recorded
- * through Node's `child_process` diagnostics channel, which sees every ChildProcess.
+ * Preloaded into every Node process of a traced gate run (`NODE_OPTIONS=--import=…`): records one
+ * span per process, parenting its own spans and children, plus a span per non-Node subprocess the
+ * caller does not trace itself (`traceProcess`). Sync APIs and `spawn` are wrapped, passing the
+ * active span; other async starts are seen through Node's `child_process` diagnostics channel.
  */
 
 import childProcess, {
@@ -160,11 +153,10 @@ function endReturned(span: Span) {
 }
 
 /**
- * Replaces the synchronous `child_process` exports and `spawn` with traced versions, and records
- * every other asynchronous child (`exec`, `execFile`, `promisify(execFile)`) from the
- * `child_process` diagnostics channel. Node's internals keep the original functions, so the
- * channel is the only hook that sees those; `spawn` marks its own children so they are not
- * recorded twice.
+ * Wraps the synchronous `child_process` exports and `spawn`, and records other async children
+ * (`exec`, `execFile`, `promisify(execFile)`) from the diagnostics channel, the only hook that sees
+ * them since Node's internals keep the original functions. `spawn` marks its own children so they
+ * are not recorded twice.
  */
 function traceSubprocesses() {
 	const original = {

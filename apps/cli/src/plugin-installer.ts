@@ -107,9 +107,13 @@ const OwnershipRecordDocument = Schema.Struct({
 	releaseVersion: Schema.String,
 	schemaVersion: Schema.Literal(1)
 });
+const isJsonObject = Schema.is(JsonObject);
+const decodeJsonObject = Schema.decodeUnknownSync(JsonObject);
+const decodeOwnershipRecordDocument = Schema.decodeUnknownSync(OwnershipRecordDocument);
+const isString = Schema.is(Schema.String);
 
 function isRecord(value: Schema.Json): value is Schema.JsonObject {
-	return Schema.is(JsonObject)(value);
+	return isJsonObject(value);
 }
 
 /** A classified installer refusal; its message is authored here, never copied from a cause. */
@@ -274,7 +278,7 @@ async function ensureDirectory(path: string): Promise<void> {
 
 async function readJsonRecord(path: string): Promise<Schema.JsonObject> {
 	try {
-		return Schema.decodeUnknownSync(JsonObject)(JSON.parse(await readFile(path, "utf8")));
+		return decodeJsonObject(JSON.parse(await readFile(path, "utf8")));
 	} catch (cause) {
 		fail(
 			cause instanceof SyntaxError || Schema.isSchemaError(cause)
@@ -289,7 +293,7 @@ async function readJsonRecord(path: string): Promise<Schema.JsonObject> {
 function parseOwnership(value: Schema.JsonObject, path: string): OwnershipRecord {
 	let ownership: Schema.Schema.Type<typeof OwnershipRecordDocument>;
 	try {
-		ownership = Schema.decodeUnknownSync(OwnershipRecordDocument)(value);
+		ownership = decodeOwnershipRecordDocument(value);
 	} catch {
 		return fail("fix_input", `Malformed plugin ownership record in ${path}.`);
 	}
@@ -411,7 +415,7 @@ async function updateProjectFile(
 			: []
 	).filter(
 		(item) =>
-			!Schema.is(Schema.String)(item.Name) ||
+			!isString(item.Name) ||
 			!previouslyOwnedPlugins.has(item.Name) ||
 			requestedPlugins.has(item.Name)
 	);

@@ -35,6 +35,13 @@ import {
 	importFailure,
 	LocalizationImportLimits
 } from "./localization-stream.js";
+
+const isLocalizationError = Schema.is(LocalizationError);
+const isSnapshotStoreError = Schema.is(SnapshotStoreError);
+const isSnapshotFormatError = Schema.is(SnapshotFormatError);
+const decodeLocalizationError = Schema.decodeUnknownSync(LocalizationError);
+const decodeLocalizationTargetResult = Schema.decodeUnknownResult(LocalizationTarget);
+
 import { SnapshotStoreError } from "./snapshot-store.js";
 import {
 	SharedIndex,
@@ -131,6 +138,11 @@ const FileRequest = Options.pipe(
 		projectScoped: Schema.optionalKey(Schema.Boolean)
 	})
 );
+
+const decodeOptions = Schema.decodeUnknownSync(Options);
+const decodeOptionsResult = Schema.decodeUnknownResult(Options);
+const decodeFileRequestResult = Schema.decodeUnknownResult(FileRequest);
+
 /**
  * One localization file's project/cache identity, format and import limits. Paths identify
  * authored evidence; derived snapshots remain disposable and must not replace those files.
@@ -174,11 +186,7 @@ function contained(root: string, path: string) {
 	return child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }
 function fileError(file: string, cause: unknown) {
-	if (
-		Schema.is(LocalizationError)(cause) ||
-		Schema.is(SnapshotStoreError)(cause) ||
-		Schema.is(SnapshotFormatError)(cause)
-	)
+	if (isLocalizationError(cause) || isSnapshotStoreError(cause) || isSnapshotFormatError(cause))
 		return cause;
 	return importFailure(
 		file,
@@ -204,6 +212,10 @@ const CachedFile = Schema.Struct({
 	contentHash: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u)),
 	key: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u))
 });
+
+const CachedFileJson = Schema.fromJsonString(CachedFile);
+const decodeCachedFileJsonResult = Schema.decodeUnknownResult(CachedFileJson);
+
 function stamp(value: BigIntStats) {
 	return {
 		size: Number(value.size),
@@ -231,7 +243,7 @@ export const nativeLocalizationStat = Effect.fn("LocalizationImport.stat")(funct
 		realpath(resolve(actualRoot, request.relativePath))
 	);
 	const observed = stamp(yield* io(request.relativePath, () => stat(actual, { bigint: true })));
-	const options = Schema.decodeUnknownSync(Options)(request);
+	const options = decodeOptions(request);
 	const path = join(
 		request.cacheRoot,
 		"localization-file-stats",
@@ -273,13 +285,13 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 	LocalizationFileSnapshotKey,
 	LocalizationError | SnapshotStoreError | SnapshotFormatError
 > {
-	const boundary = Schema.decodeUnknownResult(FileRequest)(input);
+	const boundary = decodeFileRequestResult(input);
 	if (Result.isFailure(boundary))
 		return yield* Effect.fail(importFailure("input", "invalid_schema"));
 	const request = boundary.success;
 	const file = request.relativePath;
 	const limits = request.limits ?? defaultLocalizationImportLimits;
-	const optionsResult = Schema.decodeUnknownResult(Options)(request);
+	const optionsResult = decodeOptionsResult(request);
 	if (Result.isFailure(optionsResult))
 		return yield* Effect.fail(importFailure(file, "invalid_schema"));
 	const options = optionsResult.success;
@@ -324,9 +336,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 					if ((await stat(statePath)).size > 4096) return undefined;
 					const bytes = await readFile(statePath, "utf8");
 					rootReadBytes += Buffer.byteLength(bytes);
-					const decoded = Schema.decodeUnknownResult(Schema.fromJsonString(CachedFile))(
-						bytes
-					);
+					const decoded = decodeCachedFileJsonResult(bytes);
 					return Result.isSuccess(decoded) ? decoded.success : undefined;
 				} catch (cause) {
 					if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
@@ -411,7 +421,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 		if (
 			hit &&
 			Result.isFailure(hit) &&
-			(!Schema.is(SnapshotStoreError)(hit.failure) || hit.failure.code !== "missing")
+			(!isSnapshotStoreError(hit.failure) || hit.failure.code !== "missing")
 		)
 			return yield* Effect.fail(hit.failure);
 		const result = yield* Effect.scoped(
@@ -440,7 +450,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 									const entry = reply.files[0]!;
 									if (entry.error)
 										return yield* Effect.fail(
-											Schema.decodeUnknownSync(LocalizationError)({
+											decodeLocalizationError({
 												_tag: "LocalizationError",
 												...entry.error
 											})
@@ -574,8 +584,7 @@ const importFile = Effect.fn("LocalizationSnapshot.importFile")(function* (
 					return { hash: content.hash, parsed: false, bytes: opened.success };
 				if (
 					opened &&
-					(!Schema.is(SnapshotStoreError)(opened.failure) ||
-						opened.failure.code !== "missing")
+					(!isSnapshotStoreError(opened.failure) || opened.failure.code !== "missing")
 				)
 					return yield* Effect.fail(opened.failure);
 				if (content.parseError)
@@ -724,6 +733,9 @@ const TargetRequest = LocalizationProjectRequest.pipe(
 		memoryBudgetBytes: Schema.optionalKey(Schema.Number)
 	})
 );
+
+const decodeTargetRequestResult = Schema.decodeUnknownResult(TargetRequest);
+
 /**
  * One discovered localization target and its import configuration. Import retains
  * manifest/archive/PO evidence and reports file failures instead of silently dropping
@@ -748,7 +760,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 > {
 	const reportProgress = yield* GameTextIndexProgressReporter;
 	reportProgress({ phase: "localization", completed: 0, total: 0 });
-	const boundary = Schema.decodeUnknownResult(TargetRequest)(input);
+	const boundary = decodeTargetRequestResult(input);
 	if (Result.isFailure(boundary))
 		return yield* Effect.fail(importFailure("target", "invalid_schema"));
 	const request = boundary.success;
@@ -758,7 +770,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 	const discovery = yield* evidence.discover(discoveryRequest);
 	const target = discovery.targets.find((value) => value.name === request.targetName);
 	if (!target) return yield* Effect.fail(importFailure(request.targetName, "target_not_found"));
-	const validated = Schema.decodeUnknownResult(LocalizationTarget)(target);
+	const validated = decodeLocalizationTargetResult(target);
 	if (Result.isFailure(validated))
 		return yield* Effect.fail(importFailure(request.targetName, "invalid_schema"));
 	if (
@@ -812,7 +824,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 	).pipe(
 		Effect.provide(indexLayer),
 		Effect.catch((cause) =>
-			Schema.is(SnapshotStoreError)(cause) && cause.code === "missing"
+			isSnapshotStoreError(cause) && cause.code === "missing"
 				? Effect.succeed(true)
 				: Effect.fail(cause)
 		)
@@ -858,7 +870,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 				diagnostics,
 				profile: result.success.profile
 			};
-		if (Result.isFailure(result) && !Schema.is(LocalizationError)(result.failure))
+		if (Result.isFailure(result) && !isLocalizationError(result.failure))
 			return yield* Effect.fail(result.failure);
 		// Preserve per-file diagnostics when an invalid authored file prevents the atomic cold build.
 	}
@@ -887,8 +899,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 		if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
 		const result = yield* importLocalizationFile(fileRequest).pipe(Effect.result);
 		if (Result.isFailure(result)) {
-			if (!Schema.is(LocalizationError)(result.failure))
-				return yield* Effect.fail(result.failure);
+			if (!isLocalizationError(result.failure)) return yield* Effect.fail(result.failure);
 			diagnostics.push({ relativePath, error: result.failure });
 		} else files.push(result.success);
 		completed++;

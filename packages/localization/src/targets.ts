@@ -19,6 +19,8 @@ import {
 	type LocalizationOutputPaths
 } from "./schema.js";
 
+const decodeRecipeFields = Schema.decodeUnknownResult(RecipeFields);
+
 type StructValue = typeof Schema.Json.Type;
 
 /** Unreal property text is a separate grammar from INI; INI remains Config Explorer's boundary. */
@@ -233,7 +235,7 @@ function recipeFields(text: string, section: string) {
 					: last;
 		}
 	}
-	const decoded = Schema.decodeUnknownResult(RecipeFields)(fields);
+	const decoded = decodeRecipeFields(fields);
 	if (Result.isFailure(decoded)) throw localizationError("malformed_ini");
 	return decoded.success;
 }

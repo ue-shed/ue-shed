@@ -1,11 +1,7 @@
-// Checks the Enhanced Input scan v2 and analysis against packages a real Unreal Engine saved.
-// For each requested engine (default 5.7 and 5.8) it builds a disposable project, runs
-// scripts/unreal-enhanced-input-probe.py through Unreal's Python commandlet, then runs the CLI and
-// asserts what the saved packages and config must yield. An engine that is not installed is
-// reported as skipped, never as passed. The repository fixture is never touched.
-//
-//   node scripts/probe-enhanced-input-unreal.ts [5.7] [5.8]
-//   UE_SHED_UNREAL_ENGINE_ROOT=<root> node scripts/probe-enhanced-input-unreal.ts
+// Checks Enhanced Input scan v2 and analysis against packages real Unreal saved: per engine, builds
+// a disposable project, runs unreal-enhanced-input-probe.py via Unreal's Python commandlet and
+// asserts the CLI's results. Missing engines are skipped, never passed; the fixture is untouched.
+//   node scripts/probe-enhanced-input-unreal.ts [5.7] [5.8]  (or UE_SHED_UNREAL_ENGINE_ROOT=<root>)
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

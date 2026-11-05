@@ -3,6 +3,8 @@ import { Effect, Schema } from "effect";
 import { NiagaraPreviewProgress } from "./progress-schema.js";
 import { NiagaraErrorGuidanceFields as ErrorGuidanceFields } from "./schema.js";
 export * from "./progress-schema.js";
+const NiagaraPreviewProgressJson = Schema.fromJsonString(NiagaraPreviewProgress);
+const decodeNiagaraPreviewProgressJson = Schema.decodeUnknownEffect(NiagaraPreviewProgressJson);
 export class NiagaraProgressError extends Schema.TaggedError<NiagaraProgressError>()(
 	"NiagaraProgressError",
 	{ ...ErrorGuidanceFields, cause: Schema.optionalKey(Schema.Defect()) }
@@ -48,9 +50,7 @@ export const readNiagaraPreviewProgress = Effect.fn("NiagaraPreview.readProgress
 			)
 	});
 	if (text === undefined) return undefined;
-	const progress = yield* Schema.decodeUnknownEffect(
-		Schema.fromJsonString(NiagaraPreviewProgress)
-	)(text).pipe(
+	const progress = yield* decodeNiagaraPreviewProgressJson(text).pipe(
 		Effect.mapError((cause) =>
 			progressError(
 				"Invalid Niagara progress.",

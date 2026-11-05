@@ -2,6 +2,9 @@ import { Effect, Schema } from "effect";
 import { BuiltInCheckId, CheckSeverity, SourceCheckId } from "./localization-check-ids.js";
 import { TextQualityRuleId } from "./quality-schema.js";
 
+const isSourceCheckId = Schema.is(SourceCheckId);
+const isBuiltInCheckId = Schema.is(BuiltInCheckId);
+
 /**
  * Where a check's logic comes from. `unreal`: the finding states what Unreal does with the text
  * (its parsers, validators, gather and runtime), so the logic is fixed and only severity, on/off
@@ -31,10 +34,9 @@ export type NoCheckParams = typeof NoCheckParams.Type;
 
 /**
  * `length_outlier`: a source of at least `minimumSourceLength` visible characters whose
- * translation is under `minimumRatio` or over `maximumRatio` times as long. Ordinary expansion
- * stays far inside (German and French run about 1.2–1.4×, East Asian scripts near 1× with wide
- * characters counted twice). Cultures starting with one of `compactCultures` often run shorter
- * than wide characters counted twice allow for, so their minimum is `compactMinimumRatio`.
+ * translation is under `minimumRatio` or over `maximumRatio` times as long (ordinary expansion is
+ * about 1.2–1.4×). Cultures starting with one of `compactCultures` often run shorter even with wide
+ * characters counted twice, so their minimum is `compactMinimumRatio`.
  */
 export const LengthOutlierParams = Schema.Struct({
 	minimumSourceLength: withDefault(PositiveInt, 20),
@@ -52,10 +54,9 @@ export type LengthOutlierParams = typeof LengthOutlierParams.Type;
 
 /**
  * `placeholder_translation`: a translation of at most `maximumLength` characters that is one of
- * `words` (compared trimmed, lower-cased, without trailing punctuation), starts with one of
- * `caseSensitiveWords` as written, or is only punctuation for a source of at least
- * `minimumPunctuationSourceWords` words. "script lama" is Indonesian for "old script"; "todo" is
- * Spanish and Portuguese for "all", so only an upper-case `TODO` counts.
+ * `words` (trimmed, lower-cased, without trailing punctuation), starts with one of
+ * `caseSensitiveWords` as written (Spanish and Portuguese "todo" means "all"), or is only
+ * punctuation for a source of at least `minimumPunctuationSourceWords` words.
  */
 export const PlaceholderTranslationParams = Schema.Struct({
 	words: withDefault(Words, [
@@ -180,14 +181,13 @@ function check<Id extends BuiltInCheckId, Params extends object, EncodedParams>(
 		readonly condition: (params: Params) => string;
 	}
 ): LocalizationCheckDescriptor<Id, Params, EncodedParams> {
-	const defaults = Schema.decodeUnknownSync(descriptor.params)({});
+	const decodeParams = Schema.decodeUnknownSync(descriptor.params);
+	const defaults = decodeParams({});
 	return {
 		id,
 		// These two source checks retain their historical LocalizationCheckId membership.
 		subject:
-			id === "missing_translator_notes" ||
-			id === "duplicate_source" ||
-			Schema.is(SourceCheckId)(id)
+			id === "missing_translator_notes" || id === "duplicate_source" || isSourceCheckId(id)
 				? "source"
 				: "localization",
 		...descriptor,
@@ -524,5 +524,5 @@ export function localizationRuleId(id: BuiltInCheckId): TextQualityRuleId {
 export function parseLocalizationRuleId(ruleId: string): BuiltInCheckId | undefined {
 	if (!ruleId.startsWith(RULE_ID_PREFIX)) return undefined;
 	const id = ruleId.slice(RULE_ID_PREFIX.length);
-	return Schema.is(BuiltInCheckId)(id) ? id : undefined;
+	return isBuiltInCheckId(id) ? id : undefined;
 }

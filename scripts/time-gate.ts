@@ -1,15 +1,8 @@
 /**
- * Runs a package.json gate (such as `check` or `check:precommit`) one command at a time and traces
- * it. `pnpm run <script>` steps inside `&&` chains are expanded, so the result is a tree of the real
- * commands the gate runs (see `gate-runner.ts`).
- *
- * Writes `out/gate-timing/<script>-<time>/`: `trace.json` (open it in https://ui.perfetto.dev),
- * `spans.jsonl`, `summary.json` and one log per command, and appends a line to
- * `out/gate-timing/history.jsonl`.
- *
- *   pnpm check:time check:precommit
- *   pnpm check:time check --keep-going
- *   pnpm check:time check:unreal
+ * Runs a package.json gate (such as `check`) one command at a time as a traced tree of its real
+ * commands (`gate-runner.ts`). Writes `out/gate-timing/<script>-<time>/` (`trace.json` for
+ * https://ui.perfetto.dev, `spans.jsonl`, `summary.json`, a log per command) and appends to
+ * `out/gate-timing/history.jsonl`. Usage: pnpm check:time <script> [--keep-going]
  */
 
 import { join, resolve } from "node:path";

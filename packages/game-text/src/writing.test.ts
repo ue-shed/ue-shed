@@ -15,6 +15,9 @@ import {
 	makeTextOccurrenceId,
 	makeTextUnitId
 } from "./schema.js";
+
+const decodeSearchPage = Schema.decodeUnknownSync(TextCorpusSearchPage);
+const decodeRuleDocumentSync = Schema.decodeUnknownSync(GameTextRuleDocument);
 function corpusOf(sources: readonly string[]): TextCorpus {
 	return {
 		schemaVersion: 1,
@@ -64,15 +67,15 @@ describe("writer counts", () => {
 						capability: "all",
 						pageSize: 50
 					});
-					expect(Schema.decodeUnknownSync(TextCorpusSearchPage)(page)).toEqual(page);
+					expect(decodeSearchPage(page)).toEqual(page);
 					expect(() =>
-						Schema.decodeUnknownSync(TextCorpusSearchPage)({
+						decodeSearchPage({
 							...page,
 							counts: { ...page.counts, all: -1 }
 						})
 					).toThrow();
 					expect(() =>
-						Schema.decodeUnknownSync(TextCorpusSearchPage)({
+						decodeSearchPage({
 							...page,
 							units: Array.from(
 								{ length: MAX_TEXT_QUERY_PAGE_SIZE + 1 },
@@ -286,6 +289,6 @@ describe("human CSV", () => {
 });
 it("decodes the neutral starter document through the existing decoder", async () => {
 	expect(await Effect.runPromise(decodeGameTextRuleDocument(STARTER_GAME_TEXT_RULES))).toEqual(
-		Schema.decodeUnknownSync(GameTextRuleDocument)(STARTER_GAME_TEXT_RULES)
+		decodeRuleDocumentSync(STARTER_GAME_TEXT_RULES)
 	);
 });

@@ -77,6 +77,7 @@ export async function prepareColdLayers(
 			: []
 	);
 	const Reply = coldLayerReply();
+	const decodeReply = Schema.decodeUnknownSync(Reply);
 	type Success = Extract<typeof Reply.Type, { ok: true }>;
 	const records = new Map<number, Success>();
 	if (tasks.length < 2) return records;
@@ -97,7 +98,7 @@ export async function prepareColdLayers(
 					const message = (input: typeof Reply.Encoded) => {
 						clean();
 						try {
-							const reply = Schema.decodeUnknownSync(Reply)(input);
+							const reply = decodeReply(input);
 							if (reply.ok) resolve(reply);
 							else reject(reply.error);
 						} catch (cause) {

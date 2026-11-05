@@ -5,6 +5,13 @@ import type { CliCommand } from "../command-model.js";
 
 type MapHistoryCommand = Extract<CliCommand, { readonly _tag: "MapHistory" }>;
 
+const decodeDurationOption = Schema.decodeUnknownOption(Schema.DurationFromString);
+
+/** Codecs for schemas from the lazily imported map-history module, built once per command run. */
+// Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
+const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
+const encodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.encodeUnknownEffect(schema);
+
 const DEFAULT_MAP_HISTORY_LIMITS = {
 	maxChangelists: 1_000,
 	maxConcurrency: 4,
@@ -46,7 +53,7 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 				);
 			}
 			const asTimestamp = decodeUtcTimestamp(command.since);
-			const duration = Schema.decodeUnknownOption(Schema.DurationFromString)(command.since);
+			const duration = decodeDurationOption(command.since);
 			const since = Option.isSome(asTimestamp)
 				? asTimestamp.value
 				: Option.isSome(duration) &&
@@ -96,7 +103,7 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 									},
 									kind: "actor" as const
 								};
-				const query = yield* Schema.decodeUnknownEffect(PerforceFastMapHistoryQuery)({
+				const query = yield* decodeLazySchema(PerforceFastMapHistoryQuery)({
 					limits,
 					mapPath: command.mapPath,
 					mode: "fast",
@@ -121,9 +128,7 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 				const history = yield* readPerforceFastMapHistory(query).pipe(
 					Effect.provide(mapHistoryLiveLayer)
 				);
-				const encoded = yield* Schema.encodeUnknownEffect(PerforceFastMapHistory)(
-					history
-				).pipe(
+				const encoded = yield* encodeLazySchema(PerforceFastMapHistory)(history).pipe(
 					Effect.mapError(
 						(cause) =>
 							new CliCommandError({
@@ -148,7 +153,7 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 				}
 				return;
 			}
-			const query = yield* Schema.decodeUnknownEffect(PerforceMapHistoryQuery)({
+			const query = yield* decodeLazySchema(PerforceMapHistoryQuery)({
 				limits,
 				mapPath: command.mapPath,
 				projectRoot: command.projectRoot,
@@ -170,7 +175,7 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 			const history = yield* readPerforceMapHistory(query).pipe(
 				Effect.provide(mapHistoryLiveLayer)
 			);
-			const encoded = yield* Schema.encodeUnknownEffect(PerforceMapHistory)(history).pipe(
+			const encoded = yield* encodeLazySchema(PerforceMapHistory)(history).pipe(
 				Effect.mapError(
 					(cause) =>
 						new CliCommandError({

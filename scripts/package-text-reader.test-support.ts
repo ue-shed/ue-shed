@@ -8,6 +8,9 @@ import {
 	type SavedAssetTextExtractionEvent
 } from "../packages/protocol/dist/index.js";
 
+const UAssetIoEventJson = Schema.fromJsonString(UAssetIoEvent);
+const decodeUAssetIoEventJson = Schema.decodeUnknownSync(UAssetIoEventJson);
+
 export const packageTextFixtureProjects = [
 	"fixtures/unreal-project",
 	"fixtures/legacy-unreal-project",
@@ -72,7 +75,7 @@ export function measureNativeText(
 	let sampleBytes = 0,
 		sampleCount = 0;
 	for (const line of child.stdout.toString("utf8").trim().split("\n")) {
-		const frame = Schema.decodeUnknownSync(Schema.fromJsonString(UAssetIoEvent))(line);
+		const frame = decodeUAssetIoEventJson(line);
 		if (
 			frame.sequence !== sequence++ ||
 			frame.requestId !== request.requestId ||

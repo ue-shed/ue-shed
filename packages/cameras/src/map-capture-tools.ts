@@ -19,6 +19,7 @@ export class MapCaptureInspectionError extends Schema.TaggedError<MapCaptureInsp
 ) {}
 const isMapCaptureInspectionError = Schema.is(MapCaptureInspectionError);
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+const isContractParseError = Schema.is(ContractParseError);
 const failure = (cause: unknown) =>
 	isMapCaptureInspectionError(cause)
 		? cause
@@ -30,7 +31,7 @@ const failure = (cause: unknown) =>
 					retrySafe: cause.retrySafe,
 					cause
 				})
-			: Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause)
+			: Schema.isSchemaError(cause) || isContractParseError(cause)
 				? new MapCaptureInspectionError({
 						message:
 							"The editor returned a map capture inspection response that does not match this package.",

@@ -31,6 +31,8 @@ import { ShowInUnrealButton } from "./game-text-locate-button.js";
 import { seenTranslation, type GameTextEdits } from "./game-text-translation-edits.js";
 import { identityLabel, locationDetail, savedObjectPath } from "./game-text-view.js";
 
+const decodeLocalizationEdit = Schema.decodeUnknownSync(LocalizationEdit);
+
 interface TranslationMove {
 	readonly culture: string;
 	readonly namespace: string;
@@ -209,7 +211,7 @@ export function GameTextIdRepairs(props: {
 					if (ok && fix.translations.length > 0) {
 						props.edits.stageAll(
 							fix.translations.map((item) => ({
-								edit: Schema.decodeUnknownSync(LocalizationEdit)(item),
+								edit: decodeLocalizationEdit(item),
 								source: item.source
 							}))
 						);

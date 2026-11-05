@@ -15,6 +15,7 @@ import {
 import { createMapTileGrid } from "./map-tile-pyramid.js";
 import { createMapTileSource, planMapTileSources, type MapTileSource } from "./map-tile-source.js";
 
+const decodeCameraRenderCapabilitiesV1 = Schema.decodeUnknownEffect(CameraRenderCapabilitiesV1);
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
 const projectRoot = process.env.UE_SHED_RENDER_FIXTURE_ROOT;
 const mapPath = process.env.UE_SHED_RENDER_FIXTURE_MAP_PATH ?? "/Game/Fixture/Cameras/L_CameraLoad";
@@ -71,7 +72,7 @@ describe.skipIf(!endpoint || !projectRoot)("composable map sources in a renderin
 					})
 					.pipe(
 						Effect.flatMap((value) =>
-							Schema.decodeUnknownEffect(CameraRenderCapabilitiesV1)(value, {
+							decodeCameraRenderCapabilitiesV1(value, {
 								onExcessProperty: "error"
 							})
 						)

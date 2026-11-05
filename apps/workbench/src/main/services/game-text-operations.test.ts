@@ -30,6 +30,9 @@ import {
 	safeLocalizationLogLine
 } from "./game-text-operations.js";
 
+const decodeGameTextOperationState = Schema.decodeUnknownSync(GameTextOperationState);
+const isGameTextOperationPlanResult = Schema.is(GameTextOperationPlanResult);
+const isGameTextOperationProgress = Schema.is(GameTextOperationProgress);
 const root = resolve("fixtures/unreal-project");
 const discovered = discoverLocalizationTargets({
 	dashboardText: readFileSync(resolve(root, "Config/DefaultEditor.ini"), "utf8"),
@@ -215,12 +218,10 @@ it.effect("plans without running, streams safe progress and refreshes evidence a
 				"prepare"
 			]);
 			// The state crosses IPC, so it must fit its schema with every operation offered.
-			expect(Schema.decodeUnknownSync(GameTextOperationState)(state).operations).toHaveLength(
-				7
-			);
+			expect(decodeGameTextOperationState(state).operations).toHaveLength(7);
 			const plan = yield* service.plan({ target: target.name, operation: "sync" });
 			if (plan.status !== "ready") throw new Error("Expected confirmation.");
-			expect(Schema.is(GameTextOperationPlanResult)(plan)).toBe(true);
+			expect(isGameTextOperationPlanResult(plan)).toBe(true);
 			expect(plan.plan.engine).toBe("5.8");
 			expect(JSON.stringify(plan)).not.toContain("Private");
 			const files = yield* service.files({ id: plan.plan.id, kind: "planned" });
@@ -247,7 +248,7 @@ it.effect("plans without running, streams safe progress and refreshes evidence a
 			expect(events).toHaveLength(3);
 			for (const event of events) {
 				expect(event.channel).toBe("game-text:localization:operation-progress");
-				expect(Schema.is(GameTextOperationProgress)(event.payload)).toBe(true);
+				expect(isGameTextOperationProgress(event.payload)).toBe(true);
 				expect(JSON.stringify(event.payload)).not.toContain("Private");
 			}
 			expect((yield* service.state(target.name)).busyReason).toBeUndefined();

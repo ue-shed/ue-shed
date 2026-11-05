@@ -16,6 +16,10 @@ import {
 import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 import { PerforceFastMapHistoryQuery, PerforceMapHistoryQuery } from "./schema.js";
 
+const decodeQuery = Schema.decodeUnknownSync(PerforceMapHistoryQuery);
+const decodeFastQuery = Schema.decodeUnknownSync(PerforceFastMapHistoryQuery);
+const encodeFastQuery = Schema.encodeSync(PerforceFastMapHistoryQuery);
+
 const projectRoot = "C:/Project";
 const mapPath = "Content/Maps/L_Example.umap";
 const mapDepotPath = "//Project/Main/Content/Maps/L_Example.umap";
@@ -26,7 +30,7 @@ const externalActorDepotPath =
 const externalActorRoot = "C:/Project/Content/__ExternalActors__/Maps/L_Example";
 
 function query(maxMaterializedFiles = 10, maxDurationMs = 60_000) {
-	return Schema.decodeUnknownSync(PerforceMapHistoryQuery)({
+	return decodeQuery({
 		limits: {
 			maxChangelists: 10,
 			maxConcurrency: 2,
@@ -595,7 +599,7 @@ describe("readPerforceMapHistory", () => {
 });
 
 function fastQuery() {
-	return Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
+	return decodeFastQuery({
 		limits: {
 			maxChangelists: 10,
 			maxConcurrency: 2,
@@ -618,8 +622,8 @@ function fastQuery() {
 }
 
 function fastClassQuery() {
-	return Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
-		...Schema.encodeSync(PerforceFastMapHistoryQuery)(fastQuery()),
+	return decodeFastQuery({
+		...encodeFastQuery(fastQuery()),
 		target: { classPath: actor.classPath, kind: "actor_class" }
 	});
 }
@@ -726,8 +730,8 @@ describe("readPerforceFastMapHistory", () => {
 			)
 		);
 		return Effect.gen(function* () {
-			const missing = Schema.decodeUnknownSync(PerforceFastMapHistoryQuery)({
-				...Schema.encodeSync(PerforceFastMapHistoryQuery)(fastQuery()),
+			const missing = decodeFastQuery({
+				...encodeFastQuery(fastQuery()),
 				target: {
 					identity: {
 						actorGuid: "00000000-0000-0000-0000-000000000099",

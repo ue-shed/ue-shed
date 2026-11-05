@@ -1,13 +1,10 @@
 import { Schema } from "effect";
 
 /**
- * What a caller can do next after an expected failure, as a stable code beside the prose
- * `recovery`:
- *
- * - `fix_input`: the request, configuration or project is wrong; change it and try again.
- * - `retry`: the same request may succeed later without changes. Only valid when `retrySafe` is true.
- * - `reconcile`: state changed underneath the caller; re-read it, then decide whether to retry.
- * - `escalate`: the caller cannot fix this; report it with the error's context.
+ * What a caller can do after an expected failure, as a stable code beside the prose `recovery`:
+ * `fix_input` (change the request, configuration or project and try again), `retry` (may succeed
+ * later unchanged; only when `retrySafe` is true), `reconcile` (state changed underneath: re-read,
+ * then decide) and `escalate` (the caller cannot fix it; report it with the error's context).
  */
 export const ErrorNextStep = Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]);
 export type ErrorNextStep = typeof ErrorNextStep.Type;

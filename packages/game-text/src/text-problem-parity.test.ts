@@ -18,6 +18,8 @@ import type {
 import { textProblemCounts, textProblems } from "./text-problems.js";
 import { TEXT_PROBLEMS } from "./text-problem-rules.js";
 
+const decodeCultureMark = Schema.decodeUnknownSync(LocalizationCultureMark);
+
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -112,10 +114,9 @@ const problem = (...values: TextProblem[]): TextFilter[number] => ({
 // Text without a key, as a row key.
 const NO_KEY = "(no key)";
 // Each row's problems. Without a target only the key with two texts has one. With it, UI/Changed
-// has other text than Unreal gathered and UI/Gone left the completely read Table; UI/New and
-// UI/Other were never gathered; the partly read package leaves UI/Partial unchecked, as text
-// without a key is; the PO files are empty, so no translation is synced, and UI/Untranslated
-// has none.
+// differs from what Unreal gathered, UI/Gone left the fully read Table, UI/New and UI/Other were
+// never gathered, the partly read package leaves UI/Partial (and keyless text) unchecked, and the
+// empty PO files sync no translation, so UI/Untranslated has none.
 const unitProblems = new Map(
 	Object.entries({
 		Changed: ["up_to_date"],
@@ -273,7 +274,7 @@ function explained(page: TextCorpusSearchPage) {
 describe("text problems in the engine and textProblems", () => {
 	it("maps states, facts and reasons through the shared table", () => {
 		const mark = (state: string, unknownReasons: string[] = [], facts: string[] = []) =>
-			Schema.decodeUnknownSync(LocalizationCultureMark)({
+			decodeCultureMark({
 				culture: "de",
 				state,
 				facts,

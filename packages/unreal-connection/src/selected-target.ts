@@ -38,13 +38,14 @@ export const makeSelectedUnrealTarget = Effect.fn("SelectedUnrealTarget.make")(f
 	return SelectedUnrealTarget.of({
 		endpoint,
 		select: Effect.fn("SelectedUnrealTarget.select")((value) => Ref.set(selected, value)),
-		withCurrent: (operation) =>
-			Effect.gen(function* () {
-				const captured = yield* Effect.serviceOption(OperationEndpoint);
-				const endpoints = new Map(Option.isSome(captured) ? captured.value : undefined);
-				endpoints.set(selected, yield* endpoint());
-				return yield* operation.pipe(Effect.provideService(OperationEndpoint, endpoints));
-			})
+		withCurrent: Effect.fn("SelectedUnrealTarget.withCurrent")(function* <A, E, R>(
+			operation: Effect.Effect<A, E, R>
+		): Effect.fn.Return<A, E, R> {
+			const captured = yield* Effect.serviceOption(OperationEndpoint);
+			const endpoints = new Map(Option.isSome(captured) ? captured.value : undefined);
+			endpoints.set(selected, yield* endpoint());
+			return yield* operation.pipe(Effect.provideService(OperationEndpoint, endpoints));
+		})
 	});
 });
 

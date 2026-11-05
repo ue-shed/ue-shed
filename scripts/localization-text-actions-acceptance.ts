@@ -79,8 +79,8 @@ export async function acceptLocalizationMigration(options: {
 				writeFileSync(path + ".migration", after);
 				renameSync(path + ".migration", path);
 			}),
-		verifySaved: (_root, request, result) =>
-			Effect.gen(function* () {
+		verifySaved: Effect.fn("LocalizationTextActionsAcceptance.verifySaved")(
+			function* (_root, request, result) {
 				const records = yield* Stream.runCollect(
 					extractProjectTextPackages({
 						projectRoot,
@@ -109,13 +109,13 @@ export async function acceptLocalizationMigration(options: {
 					verification.mismatches.length === 0 &&
 					verification.verified === request.actions.length
 				);
-			}).pipe(
-				Effect.provide(reader),
-				Effect.mapError((cause) => ({
-					message: String(cause),
-					recovery: "Inspect saved package evidence."
-				}))
-			)
+			},
+			Effect.provide(reader),
+			Effect.mapError((cause) => ({
+				message: String(cause),
+				recovery: "Inspect saved package evidence."
+			}))
+		)
 	};
 	const record = await Effect.runPromise(
 		Effect.gen(function* () {

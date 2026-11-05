@@ -1,14 +1,8 @@
 /**
- * Measures the public surface of host-facing packages: every name each entry point exports,
- * against the names other packages, apps and extensions import (Plan 058 D13).
- *
- *   node scripts/measure-package-exports.ts [--json] [package ...]
- *
- * A name is "used" when a file outside the package imports it by name from any of the package's
- * entry points, or re-exports it. A namespace import (`import * as x`) or `export *` from the
- * package counts every name of that entry point as used. Literal dynamic and type imports also
- * count the whole entry point, since member attribution is conservative. Uses inside the package itself, and
- * uses in other repositories (downstream hosts), are not visible here.
+ * Measures host-facing packages' public surface: each entry point's exports against the names
+ * other packages, apps and extensions import or re-export (Plan 058 D13). `import * as`, `export *`
+ * and literal dynamic or type imports count the whole entry point; in-package and downstream uses
+ * are invisible. Usage: node scripts/measure-package-exports.ts [--json] [package ...]
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";

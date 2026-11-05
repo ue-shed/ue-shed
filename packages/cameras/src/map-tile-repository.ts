@@ -27,6 +27,8 @@ import {
 } from "./map-tile-schema.js";
 
 const isCaptureArtifactSourceRejected = Schema.is(CaptureArtifactSourceRejected);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeMapTilePyramidManifestSync = Schema.decodeUnknownSync(MapTilePyramidManifest);
 
 /**
  * Default project-relative map-capture storage root, .ue-shed/map-capture. Hosts can supply a
@@ -513,10 +515,8 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 					);
 					for (const run of runs) {
 						const manifestPath = join(plan.path, run.name, "manifest.json");
-						const input = Schema.decodeUnknownSync(Schema.Json)(
-							JSON.parse(await readFile(manifestPath, "utf8"))
-						);
-						const manifest = Schema.decodeUnknownSync(MapTilePyramidManifest)(input);
+						const input = decodeJson(JSON.parse(await readFile(manifestPath, "utf8")));
+						const manifest = decodeMapTilePyramidManifestSync(input);
 						if (manifest.state !== "complete") {
 							throw new Error(`Published manifest ${manifestPath} is not complete.`);
 						}
@@ -546,8 +546,7 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 	}),
 	loadPlan: Effect.fn("MapCaptureRepository.loadPlan")(function* (path) {
 		const input = yield* Effect.tryPromise({
-			try: async () =>
-				Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
+			try: async () => decodeJson(JSON.parse(await readFile(path, "utf8"))),
 			catch: (cause) =>
 				storageError({
 					cause,

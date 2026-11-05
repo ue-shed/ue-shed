@@ -89,31 +89,27 @@ export const readIndexedLocalizationEvidence = Effect.fn("GameTextIndex.evidence
 	 * when it wrote the index, so they are not decoded again: that took most of an archive's read.
 	 * A yielding read lets other work run between pages.
 	 */
-	function readEntries<A extends Entry>(
+	const readEntries = Effect.fnUntraced(function* <A extends Entry>(
 		path: string,
 		format: "manifest" | "archive" | "po",
 		is: (entry: Entry) => entry is A,
 		yieldPages: boolean
 	) {
-		return Effect.gen(function* () {
-			const file = yield* reader.layer(path);
-			const result: { value: A; ordinal: number }[] = [];
-			for (let start = 0; ; start += 10000) {
-				if (yieldPages) yield* Effect.yieldNow;
-				const page = yield* decodeLocalizationSnapshot(file, start, 10000);
-				if (page.format !== format)
-					return yield* Effect.die(new Error(`${path} is not a ${format} snapshot`));
-				for (let row = 0; row < page.entries.length; row++) {
-					const value = page.entries[row]!;
-					if (is(value)) result.push({ value, ordinal: page.ordinals[row]! });
-				}
-				if (start + page.entries.length >= page.count) break;
+		const file = yield* reader.layer(path);
+		const result: { value: A; ordinal: number }[] = [];
+		for (let start = 0; ; start += 10000) {
+			if (yieldPages) yield* Effect.yieldNow;
+			const page = yield* decodeLocalizationSnapshot(file, start, 10000);
+			if (page.format !== format)
+				return yield* Effect.die(new Error(`${path} is not a ${format} snapshot`));
+			for (let row = 0; row < page.entries.length; row++) {
+				const value = page.entries[row]!;
+				if (is(value)) result.push({ value, ordinal: page.ordinals[row]! });
 			}
-			return result
-				.sort((left, right) => left.ordinal - right.ordinal)
-				.map((item) => item.value);
-		}).pipe(Effect.scoped);
-	}
+			if (start + page.entries.length >= page.count) break;
+		}
+		return result.sort((left, right) => left.ordinal - right.ordinal).map((item) => item.value);
+	}, Effect.scoped);
 	function entries<A extends Entry>(
 		path: string,
 		format: "manifest" | "archive" | "po",
@@ -205,30 +201,27 @@ export const readIndexedLocalizationEvidence = Effect.fn("GameTextIndex.evidence
 			entries: entries(target.outputPaths.portableObjects[culture]!, "po", isPOEntry)
 		}))
 	}));
-	const small = <A>(
+	const small = Effect.fn("GameTextIndex.evidence.readSmallFile")(function* <A>(
 		path: string | null,
 		parse: (bytes: Uint8Array) => Result.Result<A, LocalizationError>
-	) =>
-		Effect.gen(function* () {
-			const failed = (error: LocalizationError) => ({
-				status: "failed" as const,
-				relativePath: path,
-				error
-			});
-			if (path === null) return failed(localizationError("file_missing"));
-			const read = yield* files
-				.read(root, path, defaultLocalizationLimits)
-				.pipe(Effect.result);
-			if (Result.isFailure(read)) return failed(read.failure);
-			const decoded = parse(read.success.bytes);
-			return Result.isFailure(decoded)
-				? { ...failed(decoded.failure), provenance: read.success.provenance }
-				: {
-						status: "read" as const,
-						provenance: read.success.provenance,
-						value: decoded.success
-					};
+	) {
+		const failed = (error: LocalizationError) => ({
+			status: "failed" as const,
+			relativePath: path,
+			error
 		});
+		if (path === null) return failed(localizationError("file_missing"));
+		const read = yield* files.read(root, path, defaultLocalizationLimits).pipe(Effect.result);
+		if (Result.isFailure(read)) return failed(read.failure);
+		const decoded = parse(read.success.bytes);
+		return Result.isFailure(decoded)
+			? { ...failed(decoded.failure), provenance: read.success.provenance }
+			: {
+					status: "read" as const,
+					provenance: read.success.provenance,
+					value: decoded.success
+				};
+	});
 	const evidence: LocalizationTargetEvidence = {
 		schemaVersion: 1,
 		target,

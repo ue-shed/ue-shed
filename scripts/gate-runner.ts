@@ -1,10 +1,8 @@
 /**
- * Runs package.json gates as traced trees of commands. `pnpm run <script>` steps inside `&&` chains
- * are expanded, so a gate becomes a tree of the real commands it runs, each with its own span and
- * log. Every Node process in the run records a span (`trace-process.ts`), Vitest records a span per
- * test file and test (`vitest-trace-reporter.ts`), and Unreal and Cargo runs record their own spans
- * (`process-trace.ts`); see `gate-trace.ts` for how they join one trace. Used by
- * `pnpm check:time` (`time-gate.ts`) and `pnpm release:prepare`.
+ * Runs package.json gates as traced command trees, expanding `pnpm run <script>` steps in `&&`
+ * chains so each real command gets its own span and log. Node processes (`trace-process.ts`),
+ * Vitest files and tests (`vitest-trace-reporter.ts`) and Unreal/Cargo runs (`process-trace.ts`)
+ * add spans; `gate-trace.ts` joins them. Used by `pnpm check:time` and `pnpm release:prepare`.
  */
 
 import { spawn, spawnSync } from "node:child_process";

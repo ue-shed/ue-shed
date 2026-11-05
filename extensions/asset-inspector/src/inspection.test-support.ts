@@ -1,6 +1,8 @@
 import { Schema } from "effect";
 import { AssetInspection, type ReadyAssetInspection } from "./contract.js";
 
+const decodeAssetInspection = Schema.decodeUnknownSync(AssetInspection);
+
 export const packageHeader = {
 	name: "/Game/Fixture/Test",
 	version: { legacy_file: -9, legacy_ue3: null, ue4: 522, ue5: 1018, licensee: 0 },
@@ -142,6 +144,6 @@ export function readyInspection<Asset>(assets: readonly Asset[]): ReadyAssetInsp
 		status: "ready",
 		fileName: "Test.uasset",
 		fileBytes: 1024,
-		inspection: Schema.decodeUnknownSync(AssetInspection)({ ...cannedOutput(), assets })
+		inspection: decodeAssetInspection({ ...cannedOutput(), assets })
 	};
 }

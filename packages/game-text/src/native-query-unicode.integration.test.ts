@@ -7,6 +7,8 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { LocalizationFocusRequest, localizationFocusPage } from "./localization-view.js";
 
+const decodeFocusRequest = Schema.decodeUnknownSync(LocalizationFocusRequest);
+
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
 describe.skipIf(!executable)("native nested JSON evidence", () => {
@@ -176,7 +178,7 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 						expect(yield* model.query.localizationFocus(lines[0]!.id)).toEqual(
 							lines[0]
 						);
-						const detail = Schema.decodeUnknownSync(LocalizationFocusRequest)({
+						const detail = decodeFocusRequest({
 							target: fixture.target.name,
 							selection: { kind: "line", id: lines[0]!.id }
 						});

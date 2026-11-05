@@ -13,6 +13,7 @@ import {
 import { MapCapturePlanId } from "./map-tile-schema.js";
 
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+const isContractParseError = Schema.is(ContractParseError);
 const cameraLibraryPath = "/Script/UEShedCameras.Default__UEShedCameraLibrary";
 const positiveWidth = Schema.Int.check(Schema.isBetween({ minimum: 64, maximum: 2560 }));
 const positiveHeight = Schema.Int.check(Schema.isBetween({ minimum: 64, maximum: 1440 }));
@@ -147,6 +148,15 @@ const LegacyProvisionedCameraRequest = Schema.Struct({
 	).check(Schema.isMinLength(1), Schema.isMaxLength(32)),
 	previewFps: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10 })))
 });
+const SupportedProvisionedCameraRequest = Schema.Union([
+	ProvisionedCameraRequest,
+	PreviousProvisionedCameraRequest,
+	LegacyProvisionedCameraRequest
+]);
+const decodeSupportedProvisionedCameraRequest = Schema.decodeUnknownEffect(
+	SupportedProvisionedCameraRequest
+);
+const decodeCurrentProvisionedCameraRequest = Schema.decodeUnknownEffect(ProvisionedCameraRequest);
 
 /**
  * Validates current and supported legacy preview requests, normalizing legacy correlation.
@@ -154,13 +164,7 @@ const LegacyProvisionedCameraRequest = Schema.Struct({
  * visibility capabilities.
  */
 export function decodeProvisionedCameraRequest<Input>(input: Input) {
-	return Schema.decodeUnknownEffect(
-		Schema.Union([
-			ProvisionedCameraRequest,
-			PreviousProvisionedCameraRequest,
-			LegacyProvisionedCameraRequest
-		])
-	)(input).pipe(
+	return decodeSupportedProvisionedCameraRequest(input).pipe(
 		Effect.map((request) =>
 			"schemaVersion" in request
 				? request
@@ -210,6 +214,7 @@ const ProvisionedCameraStatus = Schema.Struct({
 	status: Schema.optional(Schema.String),
 	worldContext: Schema.optional(Schema.Literals(["editor", "play"]))
 });
+const decodeProvisionedCameraStatus = Schema.decodeUnknownEffect(ProvisionedCameraStatus);
 
 /**
  * Producer-assigned temporary camera ID/index, dimensions and editor-live/play-live preview
@@ -256,7 +261,7 @@ function provisionedCameraError(
 			cause
 		});
 	}
-	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
+	if (Schema.isSchemaError(cause) || isContractParseError(cause))
 		return subject === "request"
 			? new ProvisionedCameraError({
 					message: `The provisioned camera request for ${operation} does not match the provisioning contract.`,
@@ -318,162 +323,156 @@ export interface ProvisionedCameraOptions {
  * bindings. Requested options are honored or refused explicitly; requires
  * RemoteControlClient.
  */
-export function ensureProvisionedCameras(
+export const ensureProvisionedCameras = Effect.fn("camera.provisioned.ensure")(function* (
 	endpoint: string,
 	cameras: ReadonlyArray<ProvisionedCameraSpec>,
 	options: ProvisionedCameraOptions
-): Effect.Effect<
+): Effect.fn.Return<
 	ReadonlyArray<ProvisionedCameraBinding>,
 	ProvisionedCameraError,
 	RemoteControlClient
 > {
-	return Effect.gen(function* () {
-		const request = yield* Schema.decodeUnknownEffect(ProvisionedCameraRequest)(
-			provisionedCameraRequest(cameras, options)
-		).pipe(
+	const request = yield* decodeCurrentProvisionedCameraRequest(
+		provisionedCameraRequest(cameras, options)
+	).pipe(
+		Effect.mapError((cause) =>
+			provisionedCameraError(
+				"ensure_cameras",
+				cause,
+				"Provide one through 32 valid temporary camera requests.",
+				"request"
+			)
+		)
+	);
+	const client = yield* RemoteControlClient;
+	const value = yield* client
+		.request({
+			endpoint,
+			functionName: "EnsureProvisionedCameras",
+			objectPath: cameraLibraryPath,
+			operation: "camera.provisioned.ensure",
+			parameters: { RequestJson: JSON.stringify(request) },
+			timeout: "10 seconds"
+		})
+		.pipe(
 			Effect.mapError((cause) =>
 				provisionedCameraError(
 					"ensure_cameras",
 					cause,
-					"Provide one through 32 valid temporary camera requests.",
-					"request"
+					"Open the expected map in Unreal Editor, then retry live previews."
 				)
 			)
 		);
-		const client = yield* RemoteControlClient;
-		const value = yield* client
-			.request({
-				endpoint,
-				functionName: "EnsureProvisionedCameras",
-				objectPath: cameraLibraryPath,
-				operation: "camera.provisioned.ensure",
-				parameters: { RequestJson: JSON.stringify(request) },
-				timeout: "10 seconds"
+	const status = yield* decodeProvisionedCameraStatus(value).pipe(
+		Effect.mapError((cause) =>
+			provisionedCameraError(
+				"ensure_cameras",
+				cause,
+				"Update UEShedCameras and retry provisioning the cameras."
+			)
+		)
+	);
+	// Plugins that support version 5 echo it in every response, failures included.
+	if (request.schemaVersion === 5 && status.schemaVersion !== 5)
+		return yield* Effect.fail(
+			new ProvisionedCameraError({
+				code: "unsupported_capability",
+				operation: "ensure_cameras",
+				message: "The connected plugin cannot show editor previews in live previews.",
+				recovery:
+					"Omit editorPreviews or install a matching UE Shed Cameras plugin that supports provisioning version 5.",
+				retrySafe: false,
+				nextStep: "fix_input"
 			})
-			.pipe(
-				Effect.mapError((cause) =>
-					provisionedCameraError(
-						"ensure_cameras",
-						cause,
-						"Open the expected map in Unreal Editor, then retry live previews."
-					)
-				)
-			);
-		const status = yield* Schema.decodeUnknownEffect(ProvisionedCameraStatus)(value).pipe(
-			Effect.mapError((cause) =>
-				provisionedCameraError(
-					"ensure_cameras",
-					cause,
-					"Update UEShedCameras and retry provisioning the cameras."
-				)
-			)
 		);
-		// Plugins that support version 5 echo it in every response, failures included.
-		if (request.schemaVersion === 5 && status.schemaVersion !== 5)
-			return yield* Effect.fail(
+	if (request.schemaVersion === 4 && status.schemaVersion !== 4)
+		return yield* Effect.fail(
+			new ProvisionedCameraError({
+				code: "unsupported_capability",
+				operation: "ensure_cameras",
+				message: "The connected plugin cannot confirm authored preview visibility.",
+				recovery: "Install a matching Cameras plugin before previewing authored output.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			})
+		);
+	if (status.editorPreviews !== undefined)
+		yield* Effect.annotateCurrentSpan(
+			"camera.provisioned.editor_previews.revealed",
+			status.editorPreviews.revealedChildActors
+		);
+	const statusCameras = status.cameras ?? [];
+	if (status.error !== undefined || statusCameras.length === 0) {
+		return yield* Effect.fail(
+			new ProvisionedCameraError({
+				message:
+					status.message !== undefined && status.error !== undefined
+						? `${status.message} (${status.error})`
+						: (status.error ?? "No provisioned cameras were registered."),
+				operation: "ensure_cameras",
+				recovery: "Open the expected map with UEShedCameras enabled, then retry.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			})
+		);
+	}
+	return yield* Effect.forEach(statusCameras, (camera) => {
+		const correlation =
+			camera.correlation ??
+			(camera.candidateId === undefined
+				? undefined
+				: { candidateId: camera.candidateId, type: "framing_candidate" as const });
+		if (correlation === undefined) {
+			return Effect.fail(
 				new ProvisionedCameraError({
-					code: "unsupported_capability",
+					message: "Provisioned camera status did not include a durable correlation.",
 					operation: "ensure_cameras",
-					message: "The connected plugin cannot show editor previews in live previews.",
-					recovery:
-						"Omit editorPreviews or install a matching UE Shed Cameras plugin that supports provisioning version 5.",
+					recovery: "Update UEShedCameras before relying on provisioned camera status.",
 					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
-		if (request.schemaVersion === 4 && status.schemaVersion !== 4)
-			return yield* Effect.fail(
-				new ProvisionedCameraError({
-					code: "unsupported_capability",
-					operation: "ensure_cameras",
-					message: "The connected plugin cannot confirm authored preview visibility.",
-					recovery:
-						"Install a matching Cameras plugin before previewing authored output.",
-					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
-		if (status.editorPreviews !== undefined)
-			yield* Effect.annotateCurrentSpan(
-				"camera.provisioned.editor_previews.revealed",
-				status.editorPreviews.revealedChildActors
-			);
-		const statusCameras = status.cameras ?? [];
-		if (status.error !== undefined || statusCameras.length === 0) {
-			return yield* Effect.fail(
-				new ProvisionedCameraError({
-					message:
-						status.message !== undefined && status.error !== undefined
-							? `${status.message} (${status.error})`
-							: (status.error ?? "No provisioned cameras were registered."),
-					operation: "ensure_cameras",
-					recovery: "Open the expected map with UEShedCameras enabled, then retry.",
-					retrySafe: true,
-					nextStep: "fix_input"
+					nextStep: "escalate"
 				})
 			);
 		}
-		return yield* Effect.forEach(statusCameras, (camera) => {
-			const correlation =
-				camera.correlation ??
-				(camera.candidateId === undefined
-					? undefined
-					: { candidateId: camera.candidateId, type: "framing_candidate" as const });
-			if (correlation === undefined) {
-				return Effect.fail(
-					new ProvisionedCameraError({
-						message: "Provisioned camera status did not include a durable correlation.",
-						operation: "ensure_cameras",
-						recovery:
-							"Update UEShedCameras before relying on provisioned camera status.",
-						retrySafe: false,
-						nextStep: "escalate"
-					})
-				);
-			}
-			return Effect.succeed(
-				ProvisionedCameraBinding.make({
-					cameraId: camera.cameraId,
-					correlation,
-					height: camera.height,
-					index: camera.index,
-					previewContext: status.worldContext === "editor" ? "editor_live" : "play_live",
-					width: camera.width
-				})
-			);
-		});
-	}).pipe(Effect.withSpan("camera.provisioned.ensure"));
-}
+		return Effect.succeed(
+			ProvisionedCameraBinding.make({
+				cameraId: camera.cameraId,
+				correlation,
+				height: camera.height,
+				index: camera.index,
+				previewContext: status.worldContext === "editor" ? "editor_live" : "play_live",
+				width: camera.width
+			})
+		);
+	});
+});
 
 /**
  * Explicitly removes provisioned preview cameras through RemoteControlClient. Does not delete
  * saved review definitions or immutable capture history.
  */
-export function clearProvisionedCameras(
+export const clearProvisionedCameras = Effect.fn("camera.provisioned.clear")(function* (
 	endpoint: string
-): Effect.Effect<void, ProvisionedCameraError, RemoteControlClient> {
-	return Effect.gen(function* () {
-		const client = yield* RemoteControlClient;
-		yield* client
-			.request({
-				endpoint,
-				functionName: "ClearProvisionedCameras",
-				objectPath: cameraLibraryPath,
-				operation: "camera.provisioned.clear",
-				parameters: {},
-				timeout: "5 seconds"
-			})
-			.pipe(
-				Effect.mapError((cause) =>
-					provisionedCameraError(
-						"clear_cameras",
-						cause,
-						"Reconnect Unreal, then clear the provisioned preview cameras."
-					)
+): Effect.fn.Return<void, ProvisionedCameraError, RemoteControlClient> {
+	const client = yield* RemoteControlClient;
+	yield* client
+		.request({
+			endpoint,
+			functionName: "ClearProvisionedCameras",
+			objectPath: cameraLibraryPath,
+			operation: "camera.provisioned.clear",
+			parameters: {},
+			timeout: "5 seconds"
+		})
+		.pipe(
+			Effect.mapError((cause) =>
+				provisionedCameraError(
+					"clear_cameras",
+					cause,
+					"Reconnect Unreal, then clear the provisioned preview cameras."
 				)
-			);
-	}).pipe(Effect.withSpan("camera.provisioned.clear"));
-}
+			)
+		);
+});
 
 /**
  * Polls latest frames every 50 milliseconds until the requested index and optional camera ID

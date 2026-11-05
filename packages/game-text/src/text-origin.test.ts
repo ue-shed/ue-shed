@@ -21,8 +21,10 @@ import {
 	unitMatchesTextWhere
 } from "./text-origin.js";
 
+const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+
 function located(key: string, packageFile: string, location: Record<string, string>): TextUnit {
-	return Schema.decodeUnknownSync(TextUnit)({
+	return decodeTextUnit({
 		id: `unit:${key}`,
 		source: { status: "consistent", value: `Text ${key}` },
 		identity: { status: "resolved", namespace: "NS", key },

@@ -7,6 +7,15 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { parseRecord, runInProcessCli } from "./cli-in-process.test-support.js";
 
+const RemoteControlCall = Schema.Struct({
+	functionName: Schema.String,
+	parameters: Schema.Record(Schema.String, Schema.Json)
+});
+const ServerAddress = Schema.Struct({ port: Schema.Int });
+const decodeRemoteControlCall = Schema.decodeUnknownSync(RemoteControlCall);
+const decodeWorldRequest = Schema.decodeUnknownSync(WorldRequest);
+const decodeServerAddress = Schema.decodeUnknownSync(ServerAddress);
+
 it("negotiates world preparation and prints native evidence through the CLI commands", async () => {
 	const calls: string[] = [];
 	const world = {
@@ -20,12 +29,7 @@ it("negotiates world preparation and prints native evidence through the CLI comm
 		try {
 			let body = "";
 			for await (const chunk of request) body += String(chunk);
-			const call = Schema.decodeUnknownSync(
-				Schema.Struct({
-					functionName: Schema.String,
-					parameters: Schema.Record(Schema.String, Schema.Json)
-				})
-			)(JSON.parse(body));
+			const call = decodeRemoteControlCall(JSON.parse(body));
 			calls.push(call.functionName);
 			let result: Schema.Json;
 			if (call.functionName === "GetCapabilityManifest")
@@ -37,7 +41,7 @@ it("negotiates world preparation and prints native evidence through the CLI comm
 						"/Script/UEShedWorldEditor.Default__UEShedWorldLibrary"
 				};
 			else {
-				const operation = Schema.decodeUnknownSync(WorldRequest)(
+				const operation = decodeWorldRequest(
 					JSON.parse(String(call.parameters.RequestJson))
 				);
 				expect(operation.action).toBe("describe");
@@ -53,9 +57,7 @@ it("negotiates world preparation and prints native evidence through the CLI comm
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-world-cli-"));
 	try {
 		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-		const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Int }))(
-			server.address()
-		);
+		const address = decodeServerAddress(server.address());
 		const path = join(root, "describe.json");
 		await writeFile(
 			path,

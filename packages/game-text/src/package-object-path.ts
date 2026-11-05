@@ -29,10 +29,9 @@ interface PackageMount {
 
 /**
  * Completes a package-relative path and moves a path inside the serialized package to the file's
- * package, as Unreal resolves it. UE 4.27 usually saves `None` as a package's own name, so the
- * reader names its objects relative to it: `DT_Items` or `DT_Items:Sub` rather than
- * `/Game/Data/DT_Items.DT_Items`. Paths into other packages, such as a World Partition actor's
- * level or a referenced String Table, and empty paths are left as saved.
+ * package, as Unreal resolves it. UE 4.27 usually saves `None` as a package's own name, so objects
+ * are named relative to it (`DT_Items:Sub`). Paths into other packages, such as a World Partition
+ * actor's level, and empty paths are left as saved.
  */
 function remount(path: string, mount: PackageMount): string {
 	if (path === "") return path;
@@ -98,12 +97,10 @@ function mountGap(gap: SavedAssetTextCoverageGap, mount: PackageMount): SavedAss
 }
 
 /**
- * The reader's evidence with every package-relative object path completed, so the corpus and the
- * index store the paths Unreal uses, which rules, exports, key changes and String Table references
- * compare against. A package record whose summary names another package, because the file was
- * moved or copied outside Unreal, has its own paths moved to the file's package; the record keeps
- * the serialized `packageName` as evidence. Events whose paths are already Unreal's are returned
- * as they are.
+ * The reader's evidence with every package-relative object path completed to the path Unreal uses,
+ * which rules, exports and String Table references compare against. A record whose summary names
+ * another package (moved or copied outside Unreal) has its paths moved to the file's package and
+ * keeps the serialized `packageName` as evidence. Events already on Unreal's paths are returned.
  */
 export function mountPackageTextEvent(
 	projectRoot: string,

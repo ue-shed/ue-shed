@@ -12,6 +12,8 @@ const Occurrence = Schema.Struct({
 	path: Schema.String,
 	occurrence: SavedAssetTextOccurrence
 });
+const decodeRequest = Schema.decodeUnknownSync(Request);
+const isOccurrence = Schema.is(Occurrence);
 const decodeOccurrence = Schema.decodeUnknownSync(Occurrence);
 const decodeStored = Schema.decodeUnknownSync(PackageTextStored);
 const decodeLine = Schema.decodeUnknownSync(
@@ -19,13 +21,13 @@ const decodeLine = Schema.decodeUnknownSync(
 );
 parentPort?.on("message", async (message: typeof Request.Encoded) => {
 	try {
-		const request = Schema.decodeUnknownSync(Request)(message);
+		const request = decodeRequest(message);
 		const pending = new Map<string, (typeof SavedAssetTextOccurrence.Type)[]>();
 		const output = createWriteStream(request.output, { flags: "wx" });
 		try {
 			for await (const line of packageTextJsonLines(request.input)) {
 				const parsed = decodeLine(line);
-				if (Schema.is(Occurrence)(parsed)) {
+				if (isOccurrence(parsed)) {
 					const event = decodeOccurrence(parsed);
 					const occurrences = pending.get(event.path) ?? [];
 					occurrences.push(event.occurrence);

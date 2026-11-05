@@ -4,6 +4,12 @@ import { Argument, Command, Flag } from "effect/cli";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
+/** Decoder for a schema from a lazily imported module, built once per command run. */
+// Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
+const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
+
 const request = Command.make(
 	"request",
 	{
@@ -21,11 +27,9 @@ const request = Command.make(
 				const input = yield* Effect.tryPromise(async () => {
 					if ((await stat(args.requestPath)).size > 1024 * 1024)
 						throw new Error("World request exceeds 1 MiB.");
-					return Schema.decodeUnknownSync(Schema.Json)(
-						JSON.parse(await readFile(args.requestPath, "utf8"))
-					);
+					return decodeJson(JSON.parse(await readFile(args.requestPath, "utf8")));
 				});
-				const decoded = yield* Schema.decodeUnknownEffect(world.WorldRequest)(input, {
+				const decoded = yield* decodeLazySchema(world.WorldRequest)(input, {
 					onExcessProperty: "error"
 				});
 				const result = yield* Effect.gen(function* () {

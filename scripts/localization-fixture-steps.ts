@@ -2,14 +2,10 @@ import { localDerivedDataCacheArguments } from "./unreal-plugin-host.ts";
 import { dirname, join } from "node:path";
 
 /**
- * Each entry is a fresh editor process, so every fixture stage reads the packages the previous one
- * saved. Consecutive GatherText operations share one process: GatherText splits `-config` on `;`
- * and runs every config's steps in its phase order (manifests, archives, export, compile, reports),
- * the order these operations would run in separately. Export and Compile leave the manifests and
- * archives unchanged, so the gather's report is the same when it runs at the end. The engine
- * matrix compares the resulting evidence with the committed oracles on every engine. Never
- * gather/export after the final two mutations. Run explicit reports separately: Gather already
- * writes the word-count report, and Unreal may otherwise schedule both writers in parallel.
+ * Each entry is a fresh editor reading the previous one's saved packages. Consecutive GatherText
+ * operations share one process (`-config` split on `;`, steps in phase order, as if run apart).
+ * Never gather/export after the final two mutations. Run explicit reports separately: Gather
+ * already writes the word-count report, and Unreal may otherwise run both writers in parallel.
  */
 export function localizationFixtureSteps(project: string, evidence: string) {
 	const common = [

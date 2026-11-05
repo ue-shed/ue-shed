@@ -12,8 +12,10 @@ import {
 	mapProjectIndexProtocolFailure
 } from "./project-index-protocol.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 const fixture = async (name: string): Promise<Schema.Json> =>
-	Schema.decodeUnknownSync(Schema.Json)(
+	decodeJson(
 		JSON.parse(
 			await readFile(
 				fileURLToPath(

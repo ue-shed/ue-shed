@@ -124,12 +124,13 @@ describe.skipIf(!supervisedEnabled)("real supervised Unreal editor lifecycle", (
 });
 
 const ErrorWithCode = Schema.Struct({ code: Schema.String });
+const isErrorWithCode = Schema.is(ErrorWithCode);
 
 function processExists(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
 	} catch (cause) {
-		return !Schema.is(ErrorWithCode)(cause) || cause.code !== "ESRCH";
+		return !isErrorWithCode(cause) || cause.code !== "ESRCH";
 	}
 }

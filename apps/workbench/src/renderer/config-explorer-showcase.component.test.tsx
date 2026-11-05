@@ -50,7 +50,8 @@ const platformB = explanation({
 	value: { kind: "array", values: ["PlatformB", "PlatformB"] }
 });
 
-const ready = Schema.decodeUnknownSync(ConfigExplorerQueryResult)({
+const decodeConfigExplorerQueryResult = Schema.decodeUnknownSync(ConfigExplorerQueryResult);
+const ready = decodeConfigExplorerQueryResult({
 	evidence: {
 		schemaVersion: 1,
 		status: "different",
@@ -128,7 +129,7 @@ describe("ConfigExplorerShowcase", () => {
 	});
 
 	it("switches to the selected project and surfaces typed recovery", async () => {
-		const failed = Schema.decodeUnknownSync(ConfigExplorerQueryResult)({
+		const failed = decodeConfigExplorerQueryResult({
 			error: {
 				code: "project_unavailable",
 				message: "No Workbench project is selected.",

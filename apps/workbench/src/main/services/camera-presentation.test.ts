@@ -18,6 +18,7 @@ import {
 	type CameraPresentationApi
 } from "./camera-presentation.js";
 
+const decodeRendererCameraFrame = Schema.decodeUnknownSync(RendererCameraFrame);
 const configuration = makeWorkbenchConfigurationLayer({
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
@@ -75,7 +76,7 @@ const makeGatedRecordingWindow = () =>
 			_channel: string,
 			payload: Payload
 		) {
-			const frame = Schema.decodeUnknownSync(RendererCameraFrame)(payload);
+			const frame = decodeRendererCameraFrame(payload);
 			yield* Queue.offer(started, undefined);
 			if (yield* Ref.get(destroyed)) {
 				return yield* Effect.fail(

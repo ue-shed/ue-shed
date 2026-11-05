@@ -34,12 +34,10 @@ export const UnrealLaunchPlugin = Schema.Struct({
 export type UnrealLaunchPlugin = typeof UnrealLaunchPlugin.Type;
 
 /**
- * Normal launch or explicit plugin-enabled launch, optionally with a Remote Control HTTP
- * port. Plugin enablement is per launch rather than a persistent project-descriptor edit.
- * `remoteControlAllowedClasses` and `remoteControlAllowedFunctions` add a host's own Remote
- * Control classes and single functions to the per-launch allowlist beside the enabled UE Shed
- * plugins' classes. The WebSocket server listens on `remoteControlWebSocketPort`, else the port
- * after the HTTP port.
+ * Normal launch, or one enabling plugins for this run only (no descriptor edit) with optional
+ * Remote Control on `remoteControlHttpPort`; WebSocket uses `remoteControlWebSocketPort`, else the
+ * next port. `remoteControlAllowedClasses` and `remoteControlAllowedFunctions` add a host's own
+ * classes and single functions to the per-launch allowlist.
  */
 export const UnrealProjectLaunchMode = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("normal") }),
@@ -117,6 +115,7 @@ export class UnrealProjectLaunchError extends Schema.TaggedError<UnrealProjectLa
 	}
 ) {}
 const isUnrealProjectLaunchError = Schema.is(UnrealProjectLaunchError);
+const decodeUnrealProjectLaunchRequest = Schema.decodeUnknownEffect(UnrealProjectLaunchRequest);
 
 /**
  * Executable, working directory and literal argument array for an editor spawn. No shell
@@ -196,6 +195,7 @@ function fromEngineDiscovery(cause: EngineInstallationError): UnrealProjectLaunc
 }
 
 const ModuleBuild = Schema.Struct({ BuildId: Schema.String });
+const decodeModuleBuild = Schema.decodeUnknownSync(ModuleBuild);
 
 /** UE4 names editor binaries and module manifests `UE4Editor`; UE5 renamed them `UnrealEditor`. */
 export function unrealEditorBinaryName(version?: EngineVersion): "UE4Editor" | "UnrealEditor" {
@@ -221,9 +221,7 @@ export const validateUnrealProjectBuildId = Effect.fn("UnrealProjectLauncher.val
 			Effect.tryPromise({
 				try: async () => {
 					try {
-						return Schema.decodeUnknownSync(ModuleBuild)(
-							JSON.parse(await readFile(path, "utf8"))
-						);
+						return decodeModuleBuild(JSON.parse(await readFile(path, "utf8")));
 					} catch (cause) {
 						if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
 							return undefined;
@@ -271,6 +269,8 @@ const PluginModuleBuild = Schema.Struct({
 	BuildId: Schema.NonEmptyString,
 	Modules: Schema.Record(Schema.String, Schema.NonEmptyString)
 });
+const decodeEnginePluginDescriptor = Schema.decodeUnknownSync(EnginePluginDescriptor);
+const decodePluginModuleBuild = Schema.decodeUnknownSync(PluginModuleBuild);
 
 /** Validate the engine plugins needed by the optional Remote Control connection before spawning. */
 export const validateUnrealRemoteControlBuild = Effect.fn(
@@ -281,7 +281,7 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 			const binaryPlatform =
 				platform === "win32" ? "Win64" : platform === "darwin" ? "Mac" : "Linux";
 			const manifestName = `${unrealEditorBinaryName(version)}.modules`;
-			const engine = Schema.decodeUnknownSync(ModuleBuild)(
+			const engine = decodeModuleBuild(
 				JSON.parse(
 					await readFile(
 						join(engineRoot, "Engine", "Binaries", binaryPlatform, manifestName),
@@ -323,7 +323,7 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 					issues.push(`${id}: plugin is missing`);
 					continue;
 				}
-				const plugin = Schema.decodeUnknownSync(EnginePluginDescriptor)(
+				const plugin = decodeEnginePluginDescriptor(
 					JSON.parse(await readFile(descriptor, "utf8"))
 				);
 				for (const dependency of plugin.Plugins ?? []) {
@@ -332,7 +332,7 @@ export const validateUnrealRemoteControlBuild = Effect.fn(
 				if (!plugin.Modules?.length) continue;
 				const binaries = join(dirname(descriptor), "Binaries", binaryPlatform);
 				try {
-					const manifest = Schema.decodeUnknownSync(PluginModuleBuild)(
+					const manifest = decodePluginModuleBuild(
 						JSON.parse(await readFile(join(binaries, manifestName), "utf8"))
 					);
 					if (manifest.BuildId !== engine.BuildId) {
@@ -452,11 +452,10 @@ export function unrealEditorCommandletExecutable(
 }
 
 /**
- * Builds per-launch plugin and Remote Control arguments: the HTTP port, the WebSocket port
- * (`webSocketPort`, else the next port) and the allowlist. Accepts already validated input; does
- * not persist settings or start a process. `allowedClasses` and `allowedFunctions` add a host's
- * own classes and single functions to the UE 5.8 Remote Control allowlist. Live Coding is off for
- * the run through its setting, which UE 4.27 and 5.x both read.
+ * Builds per-launch plugin and Remote Control arguments from validated input: the HTTP port, the
+ * WebSocket port (`webSocketPort`, else the next) and the allowlist plus the host's
+ * `allowedClasses` and `allowedFunctions`. Persists and starts nothing. Live Coding is off for the
+ * run through its setting, which UE 4.27 and 5.x both read.
  */
 export function unrealRemoteControlArguments(
 	plugins: readonly UnrealLaunchPlugin[],
@@ -584,9 +583,7 @@ export const UnrealProjectLauncherLive = Layer.effect(
 		const launch = Effect.fn("UnrealProjectLauncher.launch")(function* (
 			input: UnrealProjectLaunchRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(UnrealProjectLaunchRequest)(
-				input
-			).pipe(
+			const request = yield* decodeUnrealProjectLaunchRequest(input).pipe(
 				Effect.mapError((cause) =>
 					launchError(
 						"invalid_request",

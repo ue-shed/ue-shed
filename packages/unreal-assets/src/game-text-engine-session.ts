@@ -14,6 +14,8 @@ import {
 } from "./game-text-engine-frames.js";
 import { type BatchRow, EngineBatch } from "./game-text-engine-batch.js";
 
+const isAssetReaderError = Schema.is(AssetReaderError);
+
 const benchmark = channel("ue-shed.game-text-benchmark");
 /** Bytes each request moves between the host and a native process, for boundary measurements. */
 const boundary = channel("ue-shed.native-boundary");
@@ -486,7 +488,7 @@ export class GameTextEngineSession {
 			} catch (cause) {
 				resume(
 					Effect.fail(
-						Schema.is(AssetReaderError)(cause)
+						isAssetReaderError(cause)
 							? cause
 							: failure("process", "The Game Text engine did not start.", { cause })
 					)

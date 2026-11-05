@@ -15,18 +15,22 @@ import {
 	verifyPluginBundleArtifactChecksum
 } from "./index.js";
 
+const isPluginBundleManifestValidationError = Schema.is(PluginBundleManifestValidationError);
+const decodePluginBundleManifestSync = Schema.decodeUnknownSync(PluginBundleManifest);
+const decodeCompiledPluginVariantRequest = Schema.decodeUnknownSync(CompiledPluginVariantRequest);
+
 const digest = `sha256:${"a".repeat(64)}`;
 
 it.effect("the schema-only manifest parser retains domain guidance and schema issues", () =>
 	Effect.gen(function* () {
 		const error = yield* decodePluginBundleManifest({ schemaVersion: 3 }).pipe(Effect.flip);
-		expect(Schema.is(PluginBundleManifestValidationError)(error)).toBe(true);
+		expect(isPluginBundleManifestValidationError(error)).toBe(true);
 		expect(error.code).toBe("schema_invalid");
 		expect(Schema.isSchemaError(error.cause)).toBe(true);
 	})
 );
 
-const validManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
+const validManifest = decodePluginBundleManifestSync({
 	artifact: {
 		bytes: 2_048,
 		id: "ue-shed-plugins-0.1.0-rc.1",
@@ -69,7 +73,7 @@ const validManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
 	unreal: { maximum: "5.7", minimum: "5.6" }
 });
 
-const validCompiledManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
+const validCompiledManifest = decodePluginBundleManifestSync({
 	artifact: {
 		bytes: 4_096,
 		id: "ue-shed-plugins-compiled-0.1.0-rc.1",
@@ -107,7 +111,7 @@ const validCompiledManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
 	schemaVersion: 2
 });
 
-const exactCompiledRequest = Schema.decodeUnknownSync(CompiledPluginVariantRequest)({
+const exactCompiledRequest = decodeCompiledPluginVariantRequest({
 	architecture: "x64",
 	configuration: "Development",
 	engineBuildId: "47537391",

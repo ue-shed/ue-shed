@@ -96,6 +96,8 @@ const FileMeta = Schema.Struct({
 	hasSourceText: Schema.Boolean,
 	pathPrefix: Schema.optionalKey(Schema.String)
 });
+const FileMetaJson = Schema.fromJsonString(FileMeta);
+const decodeFileMetaJson = Schema.decodeUnknownEffect(FileMetaJson);
 export interface JoinFile {
 	readonly name: string;
 	readonly reader?: ColumnReader;
@@ -121,7 +123,7 @@ export const loadJoinFile = Effect.fn("JoinedTarget.file")(function* (
 			order: new Uint32Array()
 		} satisfies JoinFile;
 	const file = yield* reader.layer(name);
-	const meta = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(FileMeta))(
+	const meta = yield* decodeFileMetaJson(
 		new TextDecoder().decode(yield* file.section("file.meta"))
 	);
 	for (const field of [

@@ -58,6 +58,12 @@ const isCorruptCacheEntry = Schema.is(CorruptCacheEntry);
 const isImmutableVersionConflict = Schema.is(ImmutableVersionConflict);
 const isMalformedOrUnsafeArchive = Schema.is(MalformedOrUnsafeArchive);
 const isPluginInstallCancelled = Schema.is(PluginInstallCancelled);
+const isString = Schema.is(Schema.String);
+const ProcessLock = Schema.Struct({ pid: Schema.Int.check(Schema.isGreaterThan(0)) });
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeProcessLock = Schema.decodeUnknownSync(ProcessLock);
+const decodeReleaseVersionEffect = Schema.decodeUnknownEffect(ReleaseVersion);
+const decodePluginVariantReference = Schema.decodeUnknownEffect(PluginVariantReference);
 
 const StoredMetadataV1 = Schema.Struct({
 	artifactBytes: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -85,6 +91,7 @@ const StoredMetadataV2 = Schema.Struct({
 });
 const StoredMetadata = Schema.Union([StoredMetadataV1, StoredMetadataV2]);
 type StoredMetadata = typeof StoredMetadata.Type;
+const decodeStoredMetadata = Schema.decodeUnknownSync(StoredMetadata);
 
 const LeaseRecordV1 = Schema.Struct({
 	createdAt: Schema.String,
@@ -102,6 +109,7 @@ const LeaseRecordV2 = Schema.Struct({
 	variantIdentity: PluginVariantIdentity
 });
 const LeaseRecord = Schema.Union([LeaseRecordV1, LeaseRecordV2]);
+const decodeLeaseRecord = Schema.decodeUnknownSync(LeaseRecord);
 
 export interface StoredPluginRelease extends CachedPluginRelease {
 	readonly artifactPath: string;
@@ -236,7 +244,7 @@ function corrupt(releaseVersion: string, cachePath: string, message: string, cau
 }
 
 function decodeReleaseVersion(input: string) {
-	return Schema.decodeUnknownEffect(ReleaseVersion)(input).pipe(
+	return decodeReleaseVersionEffect(input).pipe(
 		Effect.mapError(
 			(cause) =>
 				new PluginDistributionValidationError({
@@ -340,7 +348,7 @@ async function readStoredManifest(cacheRoot: string, releaseVersion: string, roo
 	let metadata: StoredMetadata;
 	try {
 		await assertRegularCacheFile(join(root, metadataFile));
-		metadata = Schema.decodeUnknownSync(StoredMetadata)(
+		metadata = decodeStoredMetadata(
 			JSON.parse(await readFile(join(root, metadataFile), "utf8"))
 		);
 	} catch (cause) {
@@ -378,9 +386,7 @@ async function readStoredManifest(cacheRoot: string, releaseVersion: string, roo
 	}
 	let manifest: unknown;
 	try {
-		manifest = Schema.decodeUnknownSync(Schema.Json)(
-			JSON.parse(manifestBytes.toString("utf8"))
-		);
+		manifest = decodeJson(JSON.parse(manifestBytes.toString("utf8")));
 	} catch (cause) {
 		throw corrupt(releaseVersion, root, "Cached manifest JSON is malformed.", cause);
 	}
@@ -621,7 +627,7 @@ async function activeLeaseFiles(
 				continue;
 			}
 			try {
-				const record = Schema.decodeUnknownSync(LeaseRecord)(JSON.parse(read.text));
+				const record = decodeLeaseRecord(JSON.parse(read.text));
 				const belongsToVariant =
 					record.schemaVersion === 1
 						? directory === legacyDirectory
@@ -697,9 +703,7 @@ async function acquireVersionLock<A>(
 			// A lock that cannot be read is treated as held; its owner may still be working.
 			if (read.kind === "text") {
 				try {
-					const lock = Schema.decodeUnknownSync(
-						Schema.Struct({ pid: Schema.Int.check(Schema.isGreaterThan(0)) })
-					)(JSON.parse(read.text));
+					const lock = decodeProcessLock(JSON.parse(read.text));
 					if (processLiveness(lock.pid) === "dead") {
 						await rm(path, { force: true });
 						continue;
@@ -761,7 +765,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 			}).pipe(Effect.orDie);
 
 			const decodeVariantReference = (reference: PluginVariantReference) =>
-				Schema.decodeUnknownEffect(PluginVariantReference)(reference, {
+				decodePluginVariantReference(reference, {
 					onExcessProperty: "error"
 				}).pipe(
 					Effect.mapError(
@@ -789,40 +793,41 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 			const resolveReference = Effect.fn("PluginStore.resolveReference")((
 				reference: string | PluginVariantReference
 			) => {
-				const exactVariant = (decoded: PluginVariantReference) =>
-					Effect.gen(function* () {
-						const exactLocation = yield* Effect.tryPromise({
-							try: () => exactStoredLocation(cacheRoot, decoded),
+				const exactVariant = Effect.fn("PluginStore.exactVariant")(function* (
+					decoded: PluginVariantReference
+				) {
+					const exactLocation = yield* Effect.tryPromise({
+						try: () => exactStoredLocation(cacheRoot, decoded),
+						catch: (cause) =>
+							storageError(
+								decoded.releaseVersion,
+								"Locate exact plugin variant",
+								cause
+							)
+					});
+					const location =
+						exactLocation ??
+						(yield* Effect.tryPromise({
+							try: () => legacyStoredLocation(cacheRoot, decoded.releaseVersion),
 							catch: (cause) =>
 								storageError(
 									decoded.releaseVersion,
-									"Locate exact plugin variant",
+									"Locate legacy plugin variant",
 									cause
 								)
-						});
-						const location =
-							exactLocation ??
-							(yield* Effect.tryPromise({
-								try: () => legacyStoredLocation(cacheRoot, decoded.releaseVersion),
-								catch: (cause) =>
-									storageError(
-										decoded.releaseVersion,
-										"Locate legacy plugin variant",
-										cause
-									)
-							}));
-						if (location === undefined) return yield* missingExactVariant(decoded);
-						const release = yield* verifyStored(
-							cacheRoot,
-							decoded.releaseVersion,
-							location
-						);
-						if (release.variantIdentity !== decoded.variantIdentity) {
-							return yield* missingExactVariant(decoded);
-						}
-						return release;
-					});
-				if (Schema.is(Schema.String)(reference)) {
+						}));
+					if (location === undefined) return yield* missingExactVariant(decoded);
+					const release = yield* verifyStored(
+						cacheRoot,
+						decoded.releaseVersion,
+						location
+					);
+					if (release.variantIdentity !== decoded.variantIdentity) {
+						return yield* missingExactVariant(decoded);
+					}
+					return release;
+				});
+				if (isString(reference)) {
 					return Effect.gen(function* () {
 						const releaseVersion = yield* decodeReleaseVersion(reference);
 						const releases = yield* allStored(cacheRoot, releaseVersion);
@@ -1154,7 +1159,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 				PruneTarget,
 				CorruptCacheEntry | PluginDistributionValidationError | PluginStorageFailure
 			> => {
-				if (Schema.is(Schema.String)(reference)) {
+				if (isString(reference)) {
 					return resolveReference(reference).pipe(
 						Effect.map((release) => ({
 							cachePath: release.cachePath,

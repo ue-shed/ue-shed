@@ -9,6 +9,9 @@ import {
 	decodeEditorWorldOpenResponse
 } from "./editor-world-control.js";
 
+const tryDecodeWorldOperation = Schema.decodeUnknownResult(EditorWorldOperation);
+const tryDecodeWorldOpenRequest = Schema.decodeUnknownResult(EditorWorldOpenRequest);
+
 const contract = {
 	name: "unreal-editor-world-control",
 	version: { major: 1, minor: 0 }
@@ -38,19 +41,10 @@ describe("editor world-control wire contract", () => {
 	});
 	it("requires completed map results and preserves dirty-world refusals", () => {
 		const base = { contract, operationId: "open", targetMapPath: "/Game/Fixture/Target" };
-		expect(
-			Schema.decodeUnknownResult(EditorWorldOperation)({ ...base, status: "pending" })._tag
-		).toBe("Success");
-		expect(
-			Schema.decodeUnknownResult(EditorWorldOperation)({ ...base, status: "completed" })._tag
-		).toBe("Failure");
-		expect(
-			Schema.decodeUnknownResult(EditorWorldOperation)({ ...base, status: "unavailable" })
-				._tag
-		).toBe("Failure");
-		expect(
-			Schema.decodeUnknownResult(EditorWorldOperation)({ ...base, status: "anything" })._tag
-		).toBe("Failure");
+		expect(tryDecodeWorldOperation({ ...base, status: "pending" })._tag).toBe("Success");
+		expect(tryDecodeWorldOperation({ ...base, status: "completed" })._tag).toBe("Failure");
+		expect(tryDecodeWorldOperation({ ...base, status: "unavailable" })._tag).toBe("Failure");
+		expect(tryDecodeWorldOperation({ ...base, status: "anything" })._tag).toBe("Failure");
 
 		{
 			const response = {
@@ -79,7 +73,7 @@ describe("editor world-control wire contract", () => {
 
 	it("rejects filesystem paths as map identities", () => {
 		expect(
-			Schema.decodeUnknownResult(EditorWorldOpenRequest)({
+			tryDecodeWorldOpenRequest({
 				contract,
 				operationId: "open",
 				targetMapPath: "C:/Project/Content/Map.umap"
@@ -89,7 +83,7 @@ describe("editor world-control wire contract", () => {
 
 	it("rejects engine packages as project map targets", () => {
 		expect(
-			Schema.decodeUnknownResult(EditorWorldOpenRequest)({
+			tryDecodeWorldOpenRequest({
 				contract,
 				operationId: "open",
 				targetMapPath: "/Engine/Maps/Templates/OpenWorld"

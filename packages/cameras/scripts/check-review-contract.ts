@@ -24,6 +24,7 @@ import {
 } from "../src/map-tile-schema.js";
 import { ProvisionedCameraRequest } from "../src/provisioned-cameras-live.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const fixturesDirectory = fileURLToPath(
 	new URL("../../protocol/contracts/cameras/review/v1/fixtures/", import.meta.url)
 );
@@ -110,14 +111,12 @@ const invalidFixtures: ReadonlyArray<{
 ];
 
 function readJson(file: string): Schema.Json {
-	return Schema.decodeUnknownSync(Schema.Json)(
-		JSON.parse(readFileSync(join(fixturesDirectory, file), "utf8"))
-	);
+	return decodeJson(JSON.parse(readFileSync(join(fixturesDirectory, file), "utf8")));
 }
 
 function roundTrip(schema: WireSchema, input: Schema.Json): Schema.Json {
 	const decoded = Schema.decodeUnknownSync(schema)(input, { onExcessProperty: "error" });
-	return Schema.decodeUnknownSync(Schema.Json)(Schema.encodeUnknownSync(schema)(decoded));
+	return decodeJson(Schema.encodeUnknownSync(schema)(decoded));
 }
 
 for (const { file, schema } of validFixtures) {
@@ -161,7 +160,7 @@ const provisioningFixtures = [
 	"provision-request-editor-previews.json"
 ];
 for (const file of provisioningFixtures) {
-	const provisioningFixture = Schema.decodeUnknownSync(Schema.Json)(
+	const provisioningFixture = decodeJson(
 		JSON.parse(readFileSync(join(provisioningFixturesDirectory, file), "utf8"))
 	);
 	try {

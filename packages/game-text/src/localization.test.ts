@@ -35,16 +35,21 @@ import {
 	unit
 } from "./localization.test-support.js";
 
+const decodeJoin = Schema.decodeUnknownSync(LocalizationJoin);
+const decodeTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeTargetEvidence = Schema.decodeUnknownSync(LocalizationTargetEvidence);
+const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+
 function mark(textCorpus = corpus(), files = evidence()) {
 	const join = joinLocalizationTarget(textCorpus, files);
-	Schema.decodeUnknownSync(LocalizationJoin)(join);
+	decodeJoin(join);
 	const result = join.lines[0]?.cultures[0];
 	if (!result) throw new Error("Expected one localization state.");
 	return result;
 }
 
 function configureGather(includes: readonly string[], excludes: readonly string[]) {
-	return Schema.decodeUnknownSync(LocalizationTarget)({
+	return decodeTarget({
 		...target,
 		configs: target.configs.map((config) => ({
 			...config,
@@ -253,7 +258,7 @@ describe("localization identity join and precedence", () => {
 				}
 			);
 			const joined = joinLocalizationTarget(text, files);
-			Schema.decodeUnknownSync(LocalizationJoin)(joined);
+			decodeJoin(joined);
 			expect(joined.lines).toHaveLength(2);
 			const units = new Map(text.units.map((unit) => [unit.id, unit]));
 			for (const line of joined.lines) {
@@ -541,7 +546,7 @@ describe("localization identity join and precedence", () => {
 	});
 	it("unavailable or duplicate evidence has typed reasons", () => {
 		const files = evidence();
-		const missing = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const missing = decodeTargetEvidence({
 			...files,
 			manifest: { ...files.locmeta, status: "failed" }
 		});
@@ -570,7 +575,7 @@ describe("localization identity join and precedence", () => {
 				})
 			).unknownReasons
 		).toContain("duplicate_po_identity");
-		const unresolved = Schema.decodeUnknownSync(TextUnit)({
+		const unresolved = decodeTextUnit({
 			...unit(),
 			identity: { status: "unresolved", reason: "culture_invariant" },
 			occurrences: unit().occurrences.map((occurrence) => ({
@@ -582,7 +587,7 @@ describe("localization identity join and precedence", () => {
 			joinLocalizationTarget(corpus([unresolved]), evidence([])).lines[0]?.cultures[0]
 				?.unknownReasons
 		).toContain("unresolved_identity");
-		const reference = Schema.decodeUnknownSync(TextUnit)({
+		const reference = decodeTextUnit({
 			...unit(),
 			identity: { status: "string_table", tableId: "/Game/Missing.Missing", key: "K" },
 			occurrences: unit().occurrences.map((occurrence) => ({
@@ -601,7 +606,7 @@ describe("localization identity join and precedence", () => {
 		expect(mark(corpus([conflicted])).unknownReasons).toContain("conflicting_source");
 		const unavailable = { ...evidence(), target: { ...target, configs: [] } };
 		expect(mark(corpus(), unavailable).unknownReasons).toContain("gather_settings_unavailable");
-		const collapsed = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const collapsed = decodeTargetEvidence({
 			...evidence(),
 			target: { ...target, collapseMode: "IdenticalNamespaceAndSource" }
 		});
@@ -615,7 +620,7 @@ describe("localization identity join and precedence", () => {
 			key: "K"
 		};
 		const saved = ftextUnit("K", "", "Content/Text/Reference.uasset");
-		const reference = Schema.decodeUnknownSync(TextUnit)({
+		const reference = decodeTextUnit({
 			...saved,
 			id: "reference",
 			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity })),
@@ -645,7 +650,7 @@ describe("localization identity join and precedence", () => {
 			tableId: "/Game/Text/Table.Table",
 			key: "Absent"
 		};
-		const reference = Schema.decodeUnknownSync(TextUnit)({
+		const reference = decodeTextUnit({
 			...saved,
 			identity,
 			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity }))
@@ -658,17 +663,17 @@ describe("localization identity join and precedence", () => {
 	});
 	it("distinguishes confirmed file absence from unreadable evidence", () => {
 		const files = evidence();
-		const missingArchive = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const missingArchive = decodeTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({ ...culture, archive: files.locmeta }))
 		});
 		expect(mark(corpus(), missingArchive).state).toBe("not_synced");
-		const missingPO = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const missingPO = decodeTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({ ...culture, po: files.locmeta }))
 		});
 		expect(mark(corpus(), missingPO).state).toBe("translated");
-		const unreadable = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const unreadable = decodeTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({
 				...culture,
@@ -780,13 +785,13 @@ describe("Unreal gather wildcard coverage", () => {
 		const occurrence = unit("K", "Source", "Content/Fixture/Localization/Table.uasset")
 			.occurrences[0];
 		if (!dashboard || !occurrence) throw new Error("Missing test Dashboard or occurrence.");
-		const configured = Schema.decodeUnknownSync(LocalizationTarget)({
+		const configured = decodeTarget({
 			...target,
 			configs: [],
 			dashboard
 		});
 		expect(localizationGatherCoverage(configured, occurrence)).toEqual({ status: "inside" });
-		const engineRoot = Schema.decodeUnknownSync(LocalizationTarget)({
+		const engineRoot = decodeTarget({
 			...configured,
 			dashboard: {
 				...dashboard,
@@ -844,7 +849,7 @@ describe("Unreal gather wildcard coverage", () => {
 			}).status
 		).toBe("outside");
 		const excluded = (name: string, derived: boolean) =>
-			Schema.decodeUnknownSync(LocalizationTarget)({
+			decodeTarget({
 				...target,
 				configs: target.configs.map((config) => ({
 					...config,

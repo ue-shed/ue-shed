@@ -74,6 +74,8 @@ export class LocalizationFileAccess extends Context.Service<
 >()("@ue-shed/localization/LocalizationFileAccess") {}
 
 const FileSystemFailure = Schema.Struct({ code: Schema.String });
+const decodeFileSystemFailure = Schema.decodeUnknownResult(FileSystemFailure);
+const isFileSystemFailure = Schema.is(FileSystemFailure);
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
@@ -83,7 +85,7 @@ function writeError(cause: unknown): LocalizationError {
 
 function fileError(cause: unknown): LocalizationError {
 	if (isLocalizationError(cause)) return cause;
-	const decoded = Schema.decodeUnknownResult(FileSystemFailure)(cause);
+	const decoded = decodeFileSystemFailure(cause);
 	return localizationError(
 		Result.isSuccess(decoded) && decoded.success.code === "ENOENT"
 			? "file_missing"
@@ -265,7 +267,7 @@ export const LocalizationFileAccessLive = Layer.succeed(
 			yield* Effect.tryPromise({
 				try: () => writeFile(actual, bytes, { flag: "wx" }),
 				catch: (cause) =>
-					Schema.is(FileSystemFailure)(cause) && cause.code === "EEXIST"
+					isFileSystemFailure(cause) && cause.code === "EEXIST"
 						? localizationError("file_changed")
 						: writeError(cause)
 			});

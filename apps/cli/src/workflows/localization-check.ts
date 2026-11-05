@@ -13,6 +13,7 @@ import type { CliCommand } from "../command-model.js";
 import { loadLocalizationContext } from "./localization.js";
 
 const isGameTextRuleDocumentError = Schema.is(GameTextRuleDocumentError);
+const encodeChangeSetJson = Schema.encodeEffect(Schema.fromJsonString(LocalizationChangeSet));
 
 export class LocalizationCheckOutputError extends Schema.TaggedError<LocalizationCheckOutputError>()(
 	"LocalizationCheckOutputError",
@@ -47,9 +48,7 @@ export const writeLocalizationCheckChanges = Effect.fn("Cli.localization.write_c
 			})
 		);
 	const fs = yield* FileSystem.FileSystem;
-	const json = yield* Schema.encodeEffect(Schema.fromJsonString(LocalizationChangeSet))(
-		document
-	).pipe(
+	const json = yield* encodeChangeSetJson(document).pipe(
 		Effect.mapError(
 			(cause) =>
 				new LocalizationCheckOutputError({

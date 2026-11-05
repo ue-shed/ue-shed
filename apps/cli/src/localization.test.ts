@@ -19,6 +19,8 @@ const Failure = Schema.Struct({
 	status: Schema.Literal("failed"),
 	error: Schema.Struct({ code: Schema.String, message: Schema.String, recovery: Schema.String })
 });
+const decodeFailureJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Failure));
+const decodeTargetsReport = Schema.decodeUnknownEffect(LocalizationTargetsReport);
 
 it.effect("loc status provides safe recovery for missing manifests and reader failures", () =>
 	Effect.gen(function* () {
@@ -45,9 +47,7 @@ it.effect("loc status provides safe recovery for missing manifests and reader fa
 			"--reader",
 			"missing-private-reader"
 		]).pipe(Effect.provide(runtime));
-		const missing = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
-			yield* Ref.get(output)
-		);
+		const missing = yield* decodeFailureJson(yield* Ref.get(output));
 		expect(missing.error.code).toBe("missing_manifest");
 		expect(missing.error.recovery).toContain("Gather");
 		expect(yield* Ref.get(exitCode)).toBe(2);
@@ -62,9 +62,7 @@ it.effect("loc status provides safe recovery for missing manifests and reader fa
 			"--reader",
 			"missing-private-reader"
 		]).pipe(Effect.provide(runtime));
-		const failed = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
-			yield* Ref.get(output)
-		);
+		const failed = yield* decodeFailureJson(yield* Ref.get(output));
 		expect(failed.error.code).toBe("reader_failure");
 		expect(failed.error.message).toBe("The native Game Text index executable is unavailable.");
 		expect(failed.error.recovery).toContain("@ue-shed/uasset");
@@ -139,9 +137,7 @@ it.effect.each(["status", "report", "check"])(
 				"--target",
 				"PrivateTargetName"
 			]).pipe(Effect.provide(runtime));
-			const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
-				yield* Ref.get(output)
-			);
+			const report = yield* decodeFailureJson(yield* Ref.get(output));
 			expect(report.error.code).toBe("target_not_found");
 			expect(report.error.message).not.toContain("PrivateTargetName");
 			expect(report.error.recovery).toContain("loc targets");
@@ -171,9 +167,7 @@ it.effect("loc status rejects an unsupported culture before scanning", () =>
 			"--culture",
 			"es"
 		]).pipe(Effect.provide(runtime));
-		const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
-			yield* Ref.get(output)
-		);
+		const report = yield* decodeFailureJson(yield* Ref.get(output));
 		expect(report.error.code).toBe("invalid_selection");
 		expect(yield* Ref.get(exitCode)).toBe(2);
 	})
@@ -215,9 +209,7 @@ it.effect("loc targets prints schema-versioned config-only evidence through the 
 		yield* runCli(["loc", "targets", resolve("fixtures/unreal-427-localization")]).pipe(
 			Effect.provide(runtime)
 		);
-		const report = yield* Schema.decodeUnknownEffect(LocalizationTargetsReport)(
-			JSON.parse(yield* Ref.get(output))
-		);
+		const report = yield* decodeTargetsReport(JSON.parse(yield* Ref.get(output)));
 		expect(report.targets[0]?.name).toBe("Fixture427");
 		expect(report.targets[0]?.source).toBe("config_only");
 		expect(report.targets[0]?.configs).toHaveLength(1);

@@ -14,6 +14,40 @@ import {
 	type PlannedText
 } from "../packages/game-text-corpus/dist/index.js";
 
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const isJsonRecord = Schema.is(JsonRecord);
+const decodeJsonRecord = Schema.decodeUnknownSync(JsonRecord);
+const JsonRecords = Schema.Array(JsonRecord);
+const decodeJsonRecords = Schema.decodeUnknownSync(JsonRecords);
+const isString = Schema.is(Schema.String);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeCorpusPlan = Schema.decodeUnknownSync(CorpusPlanSchema);
+const Rules = Schema.Struct({
+	schemaVersion: Schema.Int,
+	roles: Schema.Array(Schema.Json),
+	rules: Schema.Array(Schema.Json)
+});
+const decodeRules = Schema.decodeUnknownSync(Rules);
+const IdField = Schema.Struct({ id: Schema.String });
+const hasIdField = Schema.is(IdField);
+const RoleScopes = Schema.Array(
+	Schema.Struct({
+		id: Schema.String,
+		scopes: Schema.Array(
+			Schema.Struct({
+				matchers: Schema.Array(
+					Schema.Struct({
+						kind: Schema.String,
+						operator: Schema.optionalKey(Schema.String),
+						value: Schema.String
+					})
+				)
+			})
+		)
+	})
+);
+const decodeRoleScopes = Schema.decodeUnknownSync(RoleScopes);
+
 /** This module authors intent: it imports the corpus format, never a check, rule or index. */
 
 /**
@@ -1712,7 +1746,7 @@ function instantiate(batch: CorpusPlan, instance: number, seed: number) {
 	const transform = (value: typeof Schema.Json.Type): typeof Schema.Json.Type =>
 		Array.isArray(value)
 			? value.map(transform)
-			: Schema.is(Schema.Record(Schema.String, Schema.Json))(value)
+			: isJsonRecord(value)
 				? Object.fromEntries(
 						Object.entries(value).map(([key, item]) => [
 							swapCultures && key === "de"
@@ -1742,13 +1776,13 @@ function instantiate(batch: CorpusPlan, instance: number, seed: number) {
 								: transform(item)
 						])
 					)
-				: Schema.is(Schema.String)(value)
+				: isString(value)
 					? substitute(value)
 					: value;
 	// Every textual change is applied to both the construction and its literal evidence.
-	const result = transform(Schema.decodeUnknownSync(Schema.Json)(batch));
+	const result = transform(decodeJson(batch));
 	// SAFETY: the wire schema has validated all fields; the owned clone makes its arrays mutable for placement.
-	const plan = structuredClone(Schema.decodeUnknownSync(CorpusPlanSchema)(result)) as CorpusPlan;
+	const plan = structuredClone(decodeCorpusPlan(result)) as CorpusPlan;
 	for (const owner of plan.packages)
 		for (const text of owner.texts) {
 			text.case += `@${instance}`;
@@ -2059,32 +2093,24 @@ export function planCorpus({
 		edits: { packages: [], deletedPackages: [], changedFiles: [], operations: [] }
 	};
 	// Instance-scoped rules are composed explicitly; no global heuristic is introduced.
-	const Rules = Schema.Struct({
-		schemaVersion: Schema.Int,
-		roles: Schema.Array(Schema.Json),
-		rules: Schema.Array(Schema.Json)
-	});
 	// Built-in checks are listed once; project rules and roles have IDs, renamed per batch.
-	const hasId = (item: typeof Schema.Json.Type) =>
-		Schema.is(Schema.Struct({ id: Schema.String }))(item);
+	const hasId = (item: typeof Schema.Json.Type) => hasIdField(item);
 	const documents = batches.map((batch, i) => {
-		const data = Schema.decodeUnknownSync(Rules)(batch.rules);
+		const data = decodeRules(batch.rules);
 		const names = new Map<string, string>();
 		for (const group of [data.roles, data.rules])
 			for (const item of group) {
-				const record = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
-					item
-				);
-				if (Schema.is(Schema.String)(record.id)) names.set(record.id, `${record.id}.i${i}`);
+				const record = decodeJsonRecord(item);
+				if (isString(record.id)) names.set(record.id, `${record.id}.i${i}`);
 			}
 		const replace = (value: typeof Schema.Json.Type): typeof Schema.Json.Type =>
 			Array.isArray(value)
 				? value.map(replace)
-				: Schema.is(Schema.Record(Schema.String, Schema.Json))(value)
+				: isJsonRecord(value)
 					? Object.fromEntries(
 							Object.entries(value).map(([key, item]) => [key, replace(item)])
 						)
-					: Schema.is(Schema.String)(value)
+					: isString(value)
 						? (names.get(value) ?? value)
 						: value;
 		for (const owner of batches[i]!.packages)
@@ -2096,9 +2122,7 @@ export function planCorpus({
 					}));
 				text.absent = text.absent.map((id) => names.get(id) ?? id);
 			}
-		return Schema.decodeUnknownSync(Rules)(
-			replace(Schema.decodeUnknownSync(Schema.Json)(data))
-		);
+		return decodeRules(replace(decodeJson(data)));
 	});
 	plan.rules = {
 		schemaVersion: 1,
@@ -2239,26 +2263,9 @@ export function planCorpus({
 			)
 		);
 		const record = {
-			...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(plan.rules)
+			...decodeJsonRecord(plan.rules)
 		};
-		const roleValues = Schema.decodeUnknownSync(
-			Schema.Array(
-				Schema.Struct({
-					id: Schema.String,
-					scopes: Schema.Array(
-						Schema.Struct({
-							matchers: Schema.Array(
-								Schema.Struct({
-									kind: Schema.String,
-									operator: Schema.optionalKey(Schema.String),
-									value: Schema.String
-								})
-							)
-						})
-					)
-				})
-			)
-		)(record.roles);
+		const roleValues = decodeRoleScopes(record.roles);
 		record.roles = roleValues.map((role) => ({
 			...role,
 			scopes: role.scopes.map((scope) => {
@@ -2271,9 +2278,7 @@ export function planCorpus({
 			})
 		}));
 		// Custom checks drop their path scopes: the saved places moved.
-		const entries = Schema.decodeUnknownSync(
-			Schema.Array(Schema.Record(Schema.String, Schema.Json))
-		)(record.rules);
+		const entries = decodeJsonRecords(record.rules);
 		record.rules = entries.map((entry) => {
 			if (
 				entry.kind !== "pattern" &&
@@ -2282,7 +2287,7 @@ export function planCorpus({
 			)
 				return entry;
 			const scope = {
-				...Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(entry.scope)
+				...decodeJsonRecord(entry.scope)
 			};
 			delete scope.pathPrefixes;
 			return { ...entry, scope };

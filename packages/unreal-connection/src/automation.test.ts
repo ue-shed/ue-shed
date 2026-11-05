@@ -17,6 +17,8 @@ const Call = Schema.Struct({
 	generateTransaction: Schema.Boolean
 });
 type Call = typeof Call.Type;
+const decodeCall = Schema.decodeUnknownSync(Call);
+const isUnrealConnectionError = Schema.is(UnrealConnectionError);
 const servers: Server[] = [];
 afterEach(async () => {
 	await Promise.all(
@@ -42,7 +44,7 @@ async function listen(reply: (call: Call) => Schema.Json): Promise<string> {
 			body += chunk;
 		});
 		request.on("end", () => {
-			const call = Schema.decodeUnknownSync(Call)(JSON.parse(body));
+			const call = decodeCall(JSON.parse(body));
 			response.setHeader("content-type", "application/json");
 			response.end(JSON.stringify({ ResultJson: JSON.stringify(reply(call)) }));
 		});
@@ -165,7 +167,7 @@ describe("optional Unreal automation over real HTTP", () => {
 				body += chunk;
 			});
 			request.on("end", () => {
-				const call = Schema.decodeUnknownSync(Call)(JSON.parse(body));
+				const call = decodeCall(JSON.parse(body));
 				if (call.functionName !== "GetCapabilityManifest") {
 					mutationCalls++;
 					response.writeHead(503);
@@ -183,7 +185,7 @@ describe("optional Unreal automation over real HTTP", () => {
 		const connection = await run(connectUnrealAutomation(`http://127.0.0.1:${address.port}`));
 		const error = await run(Effect.flip(connection.injectInput(input)));
 		expect(error).toBeInstanceOf(UnrealConnectionError);
-		if (Schema.is(UnrealConnectionError)(error)) {
+		if (isUnrealConnectionError(error)) {
 			expect(error.retrySafe).toBe(false);
 			expect(error.nextStep).toBe("reconcile");
 			expect(error.cause).toMatchObject({

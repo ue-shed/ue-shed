@@ -452,12 +452,17 @@ const invalidRequest = (message: string, cause?: unknown): ProjectIndexInvalidRe
 		nextStep: "fix_input"
 	});
 
+const decodeCount = Schema.decodeUnknownEffect(ProjectIndexCount);
+const decodeCountResult = Schema.decodeUnknownEffect(ProjectIndexCountResult);
+const decodeTarget = Schema.decodeUnknownEffect(ProjectIndexTarget);
+const decodeQuery = Schema.decodeUnknownEffect(ProjectIndexQuery);
+
 /**
  * Validates a generation-bound distinct-package count request with one through sixteen
  * bounded filters. Invalid input retains the schema failure as cause.
  */
 export const decodeProjectIndexCount = <Input>(input: Input) =>
-	Schema.decodeUnknownEffect(ProjectIndexCount)(input).pipe(
+	decodeCount(input).pipe(
 		Effect.mapError((cause) =>
 			invalidRequest("Project Index counts require between 1 and 16 bounded filters.", cause)
 		)
@@ -473,7 +478,7 @@ export const countProjectIndex = Effect.fn("ProjectIndex.count")(function* (
 	const decoded = yield* decodeProjectIndexCount(request);
 	const index = yield* ProjectIndex;
 	const result = yield* index.count(decoded);
-	return yield* Schema.decodeUnknownEffect(ProjectIndexCountResult)(result).pipe(
+	return yield* decodeCountResult(result).pipe(
 		Effect.filterOrFail(
 			(value) =>
 				value.projectId === decoded.projectId &&
@@ -536,7 +541,7 @@ export const countProjectIndexPages = Effect.fn("ProjectIndex.countPages")(funct
  */
 export const decodeProjectIndexTarget = Effect.fn("ProjectIndex.decodeTarget")(
 	<Input>(input: Input) =>
-		Schema.decodeUnknownEffect(ProjectIndexTarget)(input).pipe(
+		decodeTarget(input).pipe(
 			Effect.mapError((cause) =>
 				invalidRequest("Project Index target must include a non-empty project root.", cause)
 			)
@@ -549,7 +554,7 @@ export const decodeProjectIndexTarget = Effect.fn("ProjectIndex.decodeTarget")(
  */
 export const decodeProjectIndexQuery = Effect.fn("ProjectIndex.decodeQuery")(
 	<Input>(input: Input) =>
-		Schema.decodeUnknownEffect(ProjectIndexQuery)(input).pipe(
+		decodeQuery(input).pipe(
 			Effect.mapError((cause) =>
 				invalidRequest(
 					`Project Index queries must be bounded to at most ${PROJECT_INDEX_MAX_PAGE_SIZE} items.`,

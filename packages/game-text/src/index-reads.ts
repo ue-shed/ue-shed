@@ -15,34 +15,34 @@ import {
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 /**
- * What an aggregate groups the matching rows by. `culture` fans a line out over the cultures in
- * scope; the culture-mark dimensions (`state`, `fact`, `unknown_reason`, `review`, `review_flag`)
- * follow it and read that culture's mark: `review` lenses, `review_status` (`not_reviewed`,
- * `current`, `changed`) and the flags of a current review (`review_flag`). A row counts once under each of a multi-valued
- * dimension's values (`fact`, `unknown_reason`, `review`, `review_flag`, `origin`, `problem`,
- * `finding`, `review_signal`, `asset`) and not at all when it has none. `finding` is the rules of
- * the search's findings layer with a finding on the row, and `review_signal` its facts. `translation_key` is
- * `JSON.stringify([namespace, key])`, or `""` for a line with no key; `gathered` is `"true"` when
- * Unreal's manifest lists the line. Culture, culture-mark, translation key and gathered
- * dimensions need a localization target.
+ * What an aggregate groups the matching rows by. A row counts once under each value of a
+ * multi-valued dimension (`fact`, `unknown_reason`, `review`, `review_flag`, `origin`, `problem`,
+ * `finding`, `review_signal`, `asset`) and not at all when it has none. `culture`, the
+ * culture-mark dimensions, `translation_key` and `gathered` need a localization target.
  */
 export const TextAggregateDimension = Schema.Literals([
+	// Fans a line out over the cultures in scope; the culture-mark dimensions below read its mark.
 	"culture",
 	"state",
 	"fact",
 	"unknown_reason",
+	// Review lenses; `review_status` is `not_reviewed`, `current` or `changed`.
 	"review",
 	"review_status",
+	// The flags of a current review.
 	"review_flag",
+	// `JSON.stringify([namespace, key])`, or `""` for a line with no key.
 	"translation_key",
 	"source",
 	"namespace",
 	"audience",
 	"origin",
 	"problem",
+	// The rules of the search's findings layer with a finding on the row; `review_signal` its facts.
 	"finding",
 	"review_signal",
 	"asset",
+	// `"true"` when Unreal's manifest lists the line.
 	"gathered"
 ]);
 export type TextAggregateDimension = typeof TextAggregateDimension.Type;
@@ -63,11 +63,10 @@ const NEEDS_TARGET: ReadonlySet<TextAggregateDimension> = new Set([
 ]);
 
 /**
- * What each group measures besides its line count: `sourceWords` are whitespace-separated words
- * of the line's source (as in localization state counts); `lineBreakWords` are Unreal's word
- * count (`unicode-line-break-v1`, the localization report's) of the text Unreal gathers for the
- * line: its first required manifest entry's source, else its saved source. Text in scripts that
- * need dictionary breaking has no such count; `unknownWords` counts those lines instead.
+ * What each group measures besides its line count: `sourceWords` splits the source on whitespace;
+ * `lineBreakWords` is Unreal's `unicode-line-break-v1` count of the gathered text (first required
+ * manifest entry's source, else the saved source). Scripts that need dictionary breaking have no
+ * such count; `unknownWords` counts those lines instead.
  */
 export const TextAggregateMeasure = Schema.Literals(["lines", "sourceWords", "lineBreakWords"]);
 export type TextAggregateMeasure = typeof TextAggregateMeasure.Type;

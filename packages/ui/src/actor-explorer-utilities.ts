@@ -8,6 +8,9 @@ const Preset = Schema.Struct({
 	classPaths: Schema.optionalKey(Schema.Array(Schema.String))
 });
 const Presets = Schema.Struct({ version: Schema.Literal(1), presets: Schema.Array(Preset) });
+const PresetsJson = Schema.fromJsonString(Presets);
+const decodePresetsJson = Schema.decodeUnknownEffect(PresetsJson);
+const decodePreset = Schema.decodeUnknownEffect(Preset);
 export type ActorFilterPreset = typeof Preset.Type;
 export const actorFilterStorageKey = "ue-shed.actor-filter-presets.v1";
 
@@ -39,7 +42,7 @@ export const readActorFilterPresets = Effect.fn("ActorFilters.read")(function* (
 		catch: (cause) => storageUnavailable(cause)
 	});
 	if (text === null) return [];
-	return (yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Presets))(text).pipe(
+	return (yield* decodePresetsJson(text).pipe(
 		Effect.mapError(
 			(cause) =>
 				new ActorUtilityError({
@@ -68,7 +71,7 @@ export const writeActorFilterPreset = Effect.fn("ActorFilters.write")(function* 
 			? retained
 			: [
 					...retained,
-					yield* Schema.decodeUnknownEffect(Preset)(presetInput).pipe(
+					yield* decodePreset(presetInput).pipe(
 						Effect.mapError(
 							(cause) =>
 								new ActorUtilityError({

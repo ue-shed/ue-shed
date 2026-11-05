@@ -4,6 +4,8 @@ import { ContractParseError, contractParser, contractParserSync } from "./contra
 import { decodeAutomationInputRequest } from "./automation.js";
 import { decodeSavedAssetInspection } from "./uasset-inspection.js";
 
+const isContractParseError = Schema.is(ContractParseError);
+
 describe("external contract failures", () => {
 	it("keeps the failing field and contract without losing recovery guidance", async () => {
 		const result = await Effect.runPromise(
@@ -13,7 +15,7 @@ describe("external contract failures", () => {
 		);
 		expect(Result.isFailure(result)).toBe(true);
 		if (!Result.isFailure(result)) throw new Error("Expected a rejected contract");
-		expect(Schema.is(ContractParseError)(result.failure)).toBe(true);
+		expect(isContractParseError(result.failure)).toBe(true);
 		expect(result.failure).toMatchObject({
 			code: "invalid_contract",
 			contract: "inventory",
@@ -38,7 +40,7 @@ describe("external contract failures", () => {
 			const result = await Effect.runPromise(Effect.result(rejected));
 			expect(Result.isFailure(result)).toBe(true);
 			if (!Result.isFailure(result)) throw new Error("Expected a rejected contract");
-			expect(Schema.is(ContractParseError)(result.failure)).toBe(true);
+			expect(isContractParseError(result.failure)).toBe(true);
 			expect(Schema.isSchemaError(result.failure.cause)).toBe(true);
 		}
 	});

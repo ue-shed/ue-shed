@@ -16,6 +16,8 @@ import {
 
 const isCameraRenderError = Schema.is(CameraRenderError);
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+const isContractParseError = Schema.is(ContractParseError);
+const decodeReviewCaptureRequestCurrent = Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent);
 const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
 
 /**
@@ -45,7 +47,7 @@ function connectionError(
 	}
 	const recovery =
 		"Update the Core and Cameras plugins together so the capture response matches this UE Shed version.";
-	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
+	if (Schema.isSchemaError(cause) || isContractParseError(cause))
 		return new ReviewCaptureConnectionError({
 			endpoint,
 			message: `A review capture request or response at ${endpoint} does not match the review capture contract.`,
@@ -90,7 +92,7 @@ export function captureReviewView(args: {
 	readonly request: ReviewCaptureRequest;
 }): Effect.Effect<ReviewCaptureResponse, ReviewCaptureConnectionError, RemoteControlClient> {
 	if (args.request.contract.version.minor >= 6) {
-		return Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent)(args.request).pipe(
+		return decodeReviewCaptureRequestCurrent(args.request).pipe(
 			Effect.flatMap((request) =>
 				captureRenderedReviewView({ endpoint: args.endpoint, request })
 			),

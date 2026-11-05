@@ -29,6 +29,7 @@ export function snapshotNodeChecksum(bytes: Uint8Array): number {
 	return checksum;
 }
 const codecOptions = { checksum: snapshotNodeChecksum, utf8Valid: isUtf8 };
+const isNumber = Schema.is(Schema.Number);
 function verifiedString(bytes: Uint8Array, id: number) {
 	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 	const count = view.getUint32(0, true),
@@ -183,7 +184,7 @@ export async function writeSnapshotFile(
 		} else {
 			const values = await loadColumn(column, signal),
 				raw = snapshotPayload({ ...column, values });
-			const compressionLevel = Schema.is(Schema.Number)(level) ? level : level(column);
+			const compressionLevel = isNumber(level) ? level : level(column);
 			const compressed =
 				compressionLevel === 0
 					? raw

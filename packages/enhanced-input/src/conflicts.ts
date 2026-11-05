@@ -54,11 +54,10 @@ function className(classPath: string | null): string | undefined {
 }
 
 /**
- * Unreal's own chord test is `Cast<UInputTriggerChordAction>` on the mapping's and its action's
- * triggers, so any subclass counts, and a chorded mapping never consumes its key (UE 5.7 and 5.8
- * `IEnhancedInputSubsystemInterface::RebuildControlMappings`). The engine's chord classes are
- * known by name and the plugin's other triggers are known not to be chords. Saved data does not
- * record a project class's ancestry, and a property name proves nothing, so its ancestry is unknown.
+ * Unreal tests chords with `Cast<UInputTriggerChordAction>`, so any subclass counts, and a chorded
+ * mapping never consumes its key (UE 5.7/5.8 `RebuildControlMappings`). Engine chord classes are
+ * known by name and other plugin triggers aren't chords; saved data does not record a project
+ * class's ancestry, so a project trigger is unknown.
  */
 function chordEvidence(classPath: string | null): "chord" | "not_chord" | "unknown" {
 	const name = className(classPath);

@@ -42,6 +42,8 @@ export class CameraWorkspaceError extends Schema.TaggedError<CameraWorkspaceErro
 		...ErrorCauseFields
 	}
 ) {}
+
+const decodeCameraWorkspaceRequest = Schema.decodeUnknownEffect(CameraWorkspaceRequest);
 const failure = (message: string) =>
 	new CameraWorkspaceError({
 		recovery:
@@ -198,7 +200,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			context: { projectRoot: string; reviewSetPath: string; endpoint: string },
 			input: CameraWorkspaceRequest
 		) {
-			const intent = yield* Schema.decodeUnknownEffect(CameraWorkspaceRequest)(input);
+			const intent = yield* decodeCameraWorkspaceRequest(input);
 			const owner = JSON.stringify(context);
 			if (active && active.owner !== owner) yield* close();
 			const set = yield* repository.loadSet(context.reviewSetPath);

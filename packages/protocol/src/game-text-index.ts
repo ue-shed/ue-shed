@@ -423,11 +423,12 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 }).annotate({ identifier: "GameTextIndexBuildOutcome" });
 export type GameTextIndexBuildOutcome = typeof GameTextIndexBuildOutcome.Type;
 
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const decodeJsonRecordString = Schema.decodeUnknownSync(Schema.fromJsonString(JsonRecord));
+
 /** Keep lone UTF-16 code units out of serde_json's scalar-only string decoder. */
 export function encodeGameTextJoinInput(serialized: string) {
-	const input = Schema.decodeUnknownSync(
-		Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json))
-	)(serialized);
+	const input = decodeJsonRecordString(serialized);
 	let prefix = "__ue_shed_join_utf16_";
 	while (serialized.includes(prefix)) prefix += "_";
 	const stringCodeUnits: Record<string, readonly number[]> = {};
@@ -451,7 +452,7 @@ export function encodeGameTextJoinInput(serialized: string) {
 		// oxlint-disable-next-line anti-slop/no-runtime-typeof
 		if (typeof value === "string") return encode(value);
 		if (Array.isArray(value)) return value.map(visit);
-		// oxlint-disable-next-line anti-slop/no-runtime-typeof
+		// oxlint-disable-next-line anti-slop/no-runtime-typeof -- Same decoded-JSON traversal.
 		if (value && typeof value === "object")
 			return Object.fromEntries(
 				Object.entries(value).map(([key, value]) => [encode(key), visit(value)])

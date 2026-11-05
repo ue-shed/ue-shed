@@ -704,8 +704,10 @@ export const WorkbenchProjectLive = Layer.effect(
 			return { project: inventory.project, status: "ready" as const };
 		});
 
-		const choose: WorkbenchProjectApi["choose"] = () =>
-			Effect.gen(function* () {
+		const choose: WorkbenchProjectApi["choose"] = Effect.fn(
+			"Workbench.WorkbenchProject.choose"
+		)(
+			function* () {
 				const choice = yield* dialog.chooseDirectory({
 					title: "Choose an Unreal project for Workbench"
 				});
@@ -713,14 +715,14 @@ export const WorkbenchProjectLive = Layer.effect(
 				// Choosing a project is an explicit operator request to index it, so it always
 				// revalidates against disk rather than answering from the reuse window.
 				return yield* open(choice.path, true);
-			}).pipe(
-				Effect.catch((error) =>
-					Effect.succeed({
-						error: mapProjectFailure(error.message),
-						status: "failed" as const
-					})
-				)
-			);
+			},
+			Effect.catch((error) =>
+				Effect.succeed({
+					error: mapProjectFailure(error.message),
+					status: "failed" as const
+				})
+			)
+		);
 		const sample = Effect.fn("Workbench.WorkbenchProject.sample")(function* () {
 			if (configuration.sourceCheckout.status !== "configured")
 				return {
@@ -744,27 +746,28 @@ export const WorkbenchProjectLive = Layer.effect(
 		});
 		const recent: WorkbenchProjectApi["recent"] = () =>
 			configuration.rememberProjects === false ? Effect.succeed([]) : history.recent();
-		const openRecent: WorkbenchProjectApi["openRecent"] = (projectRoot) =>
-			Effect.gen(function* () {
-				const projects = yield* recent();
-				if (!projects.some((project) => project.projectRoot === projectRoot)) {
-					return {
-						error: mapProjectFailure(
-							"That project is no longer in Workbench's recent list.",
-							"Choose it from disk to add it again."
-						),
+		const openRecent: WorkbenchProjectApi["openRecent"] = Effect.fn(
+			"Workbench.WorkbenchProject.openRecent"
+		)(function* (projectRoot: string) {
+			const projects = yield* recent();
+			if (!projects.some((project) => project.projectRoot === projectRoot)) {
+				return {
+					error: mapProjectFailure(
+						"That project is no longer in Workbench's recent list.",
+						"Choose it from disk to add it again."
+					),
+					status: "failed" as const
+				};
+			}
+			return yield* open(projectRoot, false).pipe(
+				Effect.catch((error) =>
+					Effect.succeed({
+						error: mapProjectFailure(error.message, error.recovery),
 						status: "failed" as const
-					};
-				}
-				return yield* open(projectRoot, false).pipe(
-					Effect.catch((error) =>
-						Effect.succeed({
-							error: mapProjectFailure(error.message, error.recovery),
-							status: "failed" as const
-						})
-					)
-				);
-			});
+					})
+				)
+			);
+		});
 
 		const selected = Effect.fn("Workbench.WorkbenchProject.selected")(function* () {
 			const root = yield* Ref.get(selectedRoot);

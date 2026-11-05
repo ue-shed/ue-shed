@@ -8,6 +8,8 @@ import {
 } from "@ue-shed/unreal-connection";
 import { EditorConnection, EditorConnectionLive } from "./editor-connection.js";
 
+const ServerAddress = Schema.Struct({ port: Schema.Number });
+const decodeServerAddress = Schema.decodeUnknownSync(ServerAddress);
 const manifest = {
 	capabilities: ["editor.play-session.v1"],
 	producerKind: "unreal_editor" as const,
@@ -26,9 +28,7 @@ async function withEditorHttp(
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	try {
-		const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(
-			server.address()
-		);
+		const address = decodeServerAddress(server.address());
 		await run(`http://127.0.0.1:${address.port}`, () => requests);
 	} finally {
 		await new Promise<void>((resolve, reject) =>

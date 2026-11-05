@@ -21,8 +21,10 @@ import {
 } from "./localization.test-support.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
 
+const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+
 function cell(key: string, source: string, row = "Start"): TextUnit {
-	return Schema.decodeUnknownSync(TextUnit)({
+	return decodeTextUnit({
 		id: `unit:${key}`,
 		source: { status: "consistent", value: source },
 		identity: { status: "resolved", namespace: "NS", key },

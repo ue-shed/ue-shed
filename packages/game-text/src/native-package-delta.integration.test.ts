@@ -19,6 +19,8 @@ import { TextCorpusSearchRequest } from "./schema.js";
 import { encodeStringBlock } from "./snapshot-format.js";
 import { snapshotColumnsSource } from "./snapshot-file.js";
 
+const decodeSearchRequest = Schema.decodeUnknownSync(TextCorpusSearchRequest);
+
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const sourceTarget = { ...target, cultures: [] };
 const header = {
@@ -450,9 +452,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										})
 									});
 									if (backend === "native" && step === states.length - 1) {
-										const invalid = Schema.decodeUnknownSync(
-											TextCorpusSearchRequest
-										)({
+										const invalid = decodeSearchRequest({
 											query: "",
 											capability: "all",
 											pageSize: 1,

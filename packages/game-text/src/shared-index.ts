@@ -62,6 +62,12 @@ export const SharedIndexManifestSchema = Schema.Struct({
 	layers: Schema.Record(Schema.String, LayerRecord)
 });
 export type SharedIndexManifest = typeof SharedIndexManifestSchema.Type;
+const decodeManifest = Schema.decodeUnknownEffect(SharedIndexManifestSchema);
+const decodeManifestJson = Schema.decodeUnknownEffect(
+	Schema.fromJsonString(SharedIndexManifestSchema)
+);
+const decodeLayerRecordJson = Schema.decodeUnknownSync(Schema.fromJsonString(LayerRecord));
+const decodeFileReuseJson = Schema.decodeUnknownSync(Schema.fromJsonString(FileReuse));
 type Failure = SnapshotStoreError | SnapshotFormatError;
 const boundary = <A>(operation: string, run: () => Promise<A>) =>
 	Effect.tryPromise({
@@ -257,9 +263,7 @@ function readIndex(reader: SnapshotReader) {
 		.section("index.meta")
 		.pipe(
 			Effect.flatMap((bytes) =>
-				Schema.decodeUnknownEffect(Schema.fromJsonString(SharedIndexManifestSchema))(
-					new TextDecoder().decode(bytes)
-				).pipe(
+				decodeManifestJson(new TextDecoder().decode(bytes)).pipe(
 					Effect.mapError((cause) =>
 						snapshotFailure(
 							"index.meta",
@@ -540,7 +544,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					next: SharedIndexManifest
 				) {
 					const started = performance.now();
-					yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(next).pipe(
+					yield* decodeManifest(next).pipe(
 						Effect.mapError((cause) =>
 							snapshotFailure(
 								"index.meta",
@@ -1227,7 +1231,7 @@ async function convertLayer(
 					"reuse",
 					"Reuse metadata exceeds cap"
 				);
-				const oldBlocks = Schema.decodeUnknownSync(Schema.fromJsonString(FileReuse))(
+				const oldBlocks = decodeFileReuseJson(
 					new TextDecoder().decode(await reader.load("reuse.meta"))
 				);
 				let total = 0,
@@ -1663,9 +1667,7 @@ async function validateCachedLayer(
 			"Layer metadata or size differs"
 		);
 		const bytes = await reader.load("shared.meta");
-		const metadata = Schema.decodeUnknownSync(Schema.fromJsonString(LayerRecord))(
-			new TextDecoder().decode(bytes)
-		);
+		const metadata = decodeLayerRecordJson(new TextDecoder().decode(bytes));
 		snapshotCheck(
 			JSON.stringify({ ...metadata, bytes: record.bytes }) === JSON.stringify(record),
 			"cached",

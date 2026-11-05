@@ -138,6 +138,9 @@ the rule on that line and say why:
 Effect.orElseSucceed(() => "unknown");
 ```
 
+Every lint or type-checker suppression says why, after `--` or in a comment on the line above
+(`t3code/require-suppression-reason`).
+
 Files that already had catch-alls when the rule arrived are listed in
 `tools/oxlint/effect-catch-all-baseline.ts`, where the rule only warns. Convert a file's catch-alls
 when you work in it, then remove it from the list. Never add a file to the list.

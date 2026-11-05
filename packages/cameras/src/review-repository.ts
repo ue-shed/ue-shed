@@ -24,6 +24,8 @@ import {
 	type CaptureRun
 } from "./review-schema.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 /**
  * Default project-relative .ue-shed/review storage for review sets and immutable runs.
  * Host-provided capture destinations can replace publication storage.
@@ -94,8 +96,7 @@ async function writeJsonAtomically<Value>(path: string, value: Value): Promise<v
 
 function loadReviewSetWithNode(path: string): Effect.Effect<ReviewSet, ReviewStorageError> {
 	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
+		try: async () => decodeJson(JSON.parse(await readFile(path, "utf8"))),
 		catch: (cause) =>
 			new ReviewStorageError({
 				message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
@@ -224,9 +225,7 @@ function listReviewSetsWithNode(
 					files.map(async (entry) => {
 						const path = join(root, entry.name);
 						return {
-							input: Schema.decodeUnknownSync(Schema.Json)(
-								JSON.parse(await readFile(path, "utf8"))
-							),
+							input: decodeJson(JSON.parse(await readFile(path, "utf8"))),
 							path
 						};
 					})
@@ -302,44 +301,42 @@ function reviewSetSlug(displayName: string): string {
  * under the explicit project. Does not change the host's active project or review-set
  * selection automatically.
  */
-export function createReviewSetFromTemplate(args: {
+export const createReviewSetFromTemplate = Effect.fn("camera.review.set.create")(function* (args: {
 	readonly displayName: string;
 	readonly projectRoot: string;
 	readonly templatePath: string;
-}): Effect.Effect<ReviewSetSummary, ReviewStorageError, ReviewRepository> {
-	return Effect.gen(function* () {
-		const repository = yield* ReviewRepository;
-		const template = yield* repository.loadSet(args.templatePath);
-		const displayName = args.displayName.trim();
-		if (displayName.length === 0) {
-			return yield* Effect.fail(
-				new ReviewStorageError({
-					message: "A Review Set display name is required.",
-					operation: "create_set",
-					path: reviewSetsRoot(args.projectRoot),
-					recovery: "Enter a name for the new Review Set.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
-		}
-		const id = ReviewSetId.make(`${reviewSetSlug(displayName)}-${randomUUID()}`);
-		const path = join(reviewSetsRoot(args.projectRoot), `${id}.json`);
-		const reviewSet = ReviewSet.make({
-			...template,
-			description: `Created from ${template.displayName} capture and visibility settings.`,
-			displayName,
-			id,
-			views: []
-		});
-		yield* repository.saveSet({ path, reviewSet });
-		return summarizeReviewSet(path, reviewSet);
-	}).pipe(
-		Effect.withSpan("camera.review.set.create", {
-			attributes: { projectRoot: args.projectRoot, templatePath: args.templatePath }
-		})
-	);
-}
+}): Effect.fn.Return<ReviewSetSummary, ReviewStorageError, ReviewRepository> {
+	yield* Effect.annotateCurrentSpan({
+		projectRoot: args.projectRoot,
+		templatePath: args.templatePath
+	});
+	const repository = yield* ReviewRepository;
+	const template = yield* repository.loadSet(args.templatePath);
+	const displayName = args.displayName.trim();
+	if (displayName.length === 0) {
+		return yield* Effect.fail(
+			new ReviewStorageError({
+				message: "A Review Set display name is required.",
+				operation: "create_set",
+				path: reviewSetsRoot(args.projectRoot),
+				recovery: "Enter a name for the new Review Set.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			})
+		);
+	}
+	const id = ReviewSetId.make(`${reviewSetSlug(displayName)}-${randomUUID()}`);
+	const path = join(reviewSetsRoot(args.projectRoot), `${id}.json`);
+	const reviewSet = ReviewSet.make({
+		...template,
+		description: `Created from ${template.displayName} capture and visibility settings.`,
+		displayName,
+		id,
+		views: []
+	});
+	yield* repository.saveSet({ path, reviewSet });
+	return summarizeReviewSet(path, reviewSet);
+});
 
 /**
  * Resolves the immutable capture-run root beneath an explicit project. Does not create a run
@@ -714,8 +711,7 @@ export function callerOwnedReviewCaptureDestination(root: string): ReviewCapture
 
 function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewStorageError> {
 	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
+		try: async () => decodeJson(JSON.parse(await readFile(path, "utf8"))),
 		catch: (cause) =>
 			new ReviewStorageError({
 				message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
@@ -776,9 +772,7 @@ function listCaptureRunsWithNode(
 				directories.map(async (entry) => {
 					const path = join(root, entry.name, "run.json");
 					return {
-						input: Schema.decodeUnknownSync(Schema.Json)(
-							JSON.parse(await readFile(path, "utf8"))
-						),
+						input: decodeJson(JSON.parse(await readFile(path, "utf8"))),
 						path
 					};
 				})

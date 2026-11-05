@@ -16,6 +16,8 @@ import {
 	verifyGameTextActions
 } from "./text-actions.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 const ENDPOINT = "http://127.0.0.1:30010";
 const GAME_TEXT = "/Script/UEShedGameText.Default__UEShedGameTextLibrary";
 const PATH = "/Game/Notes/DA_Notes.DA_Notes";
@@ -89,7 +91,7 @@ function run(handle: (request: RemoteControlRequest) => object, input = request(
 			Effect.provide(
 				makeRemoteControlClientTestLayer((call) => {
 					calls.push(call);
-					return Effect.sync(() => Schema.decodeUnknownSync(Schema.Json)(handle(call)));
+					return Effect.sync(() => decodeJson(handle(call)));
 				})
 			)
 		)
@@ -387,9 +389,7 @@ describe("Game Text mutation recovery", () => {
 						calls.push(call.functionName);
 						if (call.functionName === "GetCapabilityManifest")
 							return Effect.succeed(
-								Schema.decodeUnknownSync(Schema.Json)(
-									manifest(["game-text.actions.v1"], GAME_TEXT)
-								)
+								decodeJson(manifest(["game-text.actions.v1"], GAME_TEXT))
 							);
 						return Effect.fail(
 							new RemoteControlClientError({

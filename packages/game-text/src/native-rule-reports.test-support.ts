@@ -39,6 +39,23 @@ const Result = Schema.Struct({
 		})
 	)
 });
+const decodeResultJson = Schema.decodeUnknownSync(Schema.fromJsonString(Result));
+const decodeRow = Schema.decodeUnknownSync(Row);
+const TermMatchesActual = Schema.Struct({
+	matches: Schema.Array(
+		Schema.Struct({ match: Schema.String, start: Schema.Number, end: Schema.Number })
+	)
+});
+const decodeTermMatchesActual = Schema.decodeUnknownSync(TermMatchesActual);
+const VisibleLengthActual = Schema.Struct({ length: Schema.Number });
+const decodeVisibleLengthActual = Schema.decodeUnknownSync(VisibleLengthActual);
+// A custom check's finding: the union's first member.
+const checkFinding = LocalizationCustomFinding.members[0];
+const CustomFindingEvidence = Schema.Struct({
+	actual: checkFinding.fields.actual,
+	expectation: checkFinding.fields.expectation
+});
+const decodeCustomFindingEvidence = Schema.decodeUnknownSync(CustomFindingEvidence);
 /** Native unit-test transport. Subject facts are supplied explicitly; every row rule runs in Rust. */
 function evaluate(
 	document: GameTextRuleDocument | undefined,
@@ -82,7 +99,7 @@ function evaluateV4(
 			`Native rule unit-test driver failed. Build with cargo build -p game-text-index --example rule_test_driver. ${result.stderr}`,
 			{ cause: result.error }
 		);
-	const decoded = Schema.decodeUnknownSync(Schema.fromJsonString(Result))(result.stdout);
+	const decoded = decodeResultJson(result.stdout);
 	return {
 		...decoded,
 		// A finding's rule is its ordinal in the document this driver evaluated.
@@ -112,17 +129,13 @@ export function nativeTermMatches(source: string, term: string, caseSensitive: b
 		{ schemaVersion: 4, roles: [], rules: [definition] },
 		{ line: [], line_culture: [], unit_source: [{ fields: { source }, occurrences: [] }] }
 	);
-	return Schema.decodeUnknownSync(
-		Schema.Struct({
-			matches: Schema.Array(
-				Schema.Struct({ match: Schema.String, start: Schema.Number, end: Schema.Number })
-			)
+	return decodeTermMatchesActual(output.findings[0]!.actual).matches.map(
+		({ match, start, end }) => ({
+			matched: match,
+			start,
+			end
 		})
-	)(output.findings[0]!.actual).matches.map(({ match, start, end }) => ({
-		matched: match,
-		start,
-		end
-	}));
+	);
 }
 
 /** The native `visibleLength` of one text: characters a reader sees, tags and arguments removed. */
@@ -143,9 +156,7 @@ export function nativeVisibleLength(text: string): number {
 		{ schemaVersion: 4, roles: [], rules: [definition] },
 		{ line: [], line_culture: [], unit_source: [{ fields: { source: text }, occurrences: [] }] }
 	);
-	return Schema.decodeUnknownSync(Schema.Struct({ length: Schema.Number }))(
-		output.findings[0]!.actual
-	).length;
+	return decodeVisibleLengthActual(output.findings[0]!.actual).length;
 }
 
 /** Custom-kind unit assertions with one explicit source row, evaluated in Rust. */
@@ -155,7 +166,7 @@ export function nativeDetectCustom(check: CustomLocalizationCheck, text: string)
 		roles: [],
 		rules: [{ ...check, subject: "source" }]
 	});
-	const row = Schema.decodeUnknownSync(Row)({
+	const row = decodeRow({
 		fields: {
 			lineId: "line",
 			identity: { namespace: "", key: "K" },
@@ -186,16 +197,7 @@ export function nativeDetectCustom(check: CustomLocalizationCheck, text: string)
 		},
 		{ checks: [] }
 	).findings.find((finding) => finding.rule.family === "custom");
-	// A custom check's finding: the union's first member.
-	const checkFinding = LocalizationCustomFinding.members[0];
-	return finding
-		? Schema.decodeUnknownSync(
-				Schema.Struct({
-					actual: checkFinding.fields.actual,
-					expectation: checkFinding.fields.expectation
-				})
-			)(finding)
-		: undefined;
+	return finding ? decodeCustomFindingEvidence(finding) : undefined;
 }
 import { GameTextRuleDocument as importGameTextRuleDocument } from "./game-text-rules.js";
 

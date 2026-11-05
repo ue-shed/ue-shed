@@ -23,18 +23,10 @@ import {
 } from "./text-diff-model.js";
 
 /**
- * Keyed text on two sides, as a diff: each entry its key and where it is, and each changed field
- * as a removed line over an added one, the words that differ marked. Knows nothing of where the
- * text came from: a changelist's game text, two `.po` files or two `.archive` files all pass
- * `TextDiffEntry`s.
- *
- * Entries list by file, or with `groups` in sections, one per group in the groups' order. The
- * toolbar filters by kind (or group) and text. With `onFilter` the host filters every entry, not
- * only those given, and passes the page back; without it the diff filters what it has.
- *
- * `entries` may be a page of more: give `total` and the counts for the whole, and `onMore` to ask
- * for the next page. With `overview`, a section unfiltered holds a few of its entries and offers to
- * show all of them, which filters to it.
+ * Keyed text from any source as a diff: each changed field a removed line over an added one, with
+ * differing words marked, listed by file or by `groups`. With `onFilter` the host filters every
+ * entry and passes the page back, else the diff filters what it has. `total` and `onMore` page;
+ * `overview` shows a few entries per unfiltered section with a show-all that filters to it.
  */
 export function TextDiff(props: {
 	readonly entries: readonly TextDiffEntry[];

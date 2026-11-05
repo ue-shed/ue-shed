@@ -18,6 +18,9 @@ import type { CliCommand } from "../command-model.js";
 
 type LocalizationReviewCommand = Extract<CliCommand, { readonly _tag: "LocalizationReview" }>;
 
+const decodeIdentity = Schema.decodeUnknownEffect(LocalizationIdentity);
+const decodeCultureCode = Schema.decodeUnknownEffect(CultureCode);
+
 class LocalizationReviewCommandError extends Schema.TaggedError<LocalizationReviewCommandError>()(
 	"LocalizationReviewCommandError",
 	{
@@ -53,7 +56,7 @@ const commandError = (
 /** `Namespace,Key`, splitting on the last unescaped comma so namespaces may contain dots. */
 function parseLine(value: string) {
 	const comma = value.lastIndexOf(",");
-	return Schema.decodeUnknownEffect(LocalizationIdentity)({
+	return decodeIdentity({
 		namespace: comma < 0 ? "" : value.slice(0, comma),
 		key: comma < 0 ? value : value.slice(comma + 1)
 	}).pipe(
@@ -88,9 +91,7 @@ export const runLocalizationReview = Effect.fn("Cli.workflow.localization_review
 							)
 						);
 					// Every review flag and finding belongs to one culture's translation.
-					const culture = yield* Schema.decodeUnknownEffect(CultureCode)(
-						command.culture
-					).pipe(
+					const culture = yield* decodeCultureCode(command.culture).pipe(
 						Effect.mapError((cause) =>
 							commandError(
 								"invalid_selection",

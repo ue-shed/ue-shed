@@ -67,6 +67,15 @@ const Evidence = Schema.Struct({
 	)
 });
 type Evidence = typeof Evidence.Type;
+/** A text the reader read, as `[package, key, source]` JSON. */
+const ReadTextJson = Schema.fromJsonString(
+	Schema.Tuple([Schema.String, Schema.String, Schema.String])
+);
+const CasesJson = Schema.fromJsonString(Cases);
+const EvidenceJson = Schema.fromJsonString(Evidence);
+const decodeCasesJson = Schema.decodeUnknownSync(CasesJson);
+const decodeEvidenceJson = Schema.decodeUnknownSync(EvidenceJson);
+const decodeReadTextJson = Schema.decodeUnknownSync(ReadTextJson);
 
 const generatedRoot = process.env.UE_SHED_GAME_TEXT_ACTIONS_FIXTURE_ROOT;
 const fixture = generatedRoot === undefined ? useSavedFixtureProject() : { root: generatedRoot };
@@ -76,7 +85,7 @@ const fixtureEngine = Schema.decodeUnknownSync(Schema.Literals(ENGINES))(
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
 const readCases = async () =>
-	Schema.decodeUnknownSync(Schema.fromJsonString(Cases))(
+	decodeCasesJson(
 		await readFile(
 			join(fixture.root, "FixtureSource/GameTextActions/expected-cases.json"),
 			"utf8"
@@ -84,7 +93,7 @@ const readCases = async () =>
 	);
 
 const readEvidence = async (engine: (typeof ENGINES)[number]) =>
-	Schema.decodeUnknownSync(Schema.fromJsonString(Evidence))(
+	decodeEvidenceJson(
 		await readFile(
 			join(fixture.root, `FixtureExpected/game-text-actions/evidence.ue${engine}.json`),
 			"utf8"
@@ -330,11 +339,7 @@ describe("Game Text identity cases in the saved fixture", () => {
 				.filter((item) => {
 					const packageName = ROOT + item.site.slice(0, item.site.indexOf("."));
 					return [...fromReader].some((entry) => {
-						const [readPackage, readKey, readSource] = Schema.decodeUnknownSync(
-							Schema.fromJsonString(
-								Schema.Tuple([Schema.String, Schema.String, Schema.String])
-							)
-						)(entry);
+						const [readPackage, readKey, readSource] = decodeReadTextJson(entry);
 						return (
 							readPackage === packageName &&
 							readSource === item.source &&

@@ -93,11 +93,9 @@ export interface BlueprintCandidateSelection {
 }
 
 /**
- * Chooses which Blueprint packages to decode from a header scan. The base is every package with a
- * `...Blueprint` export, the same set the Blueprint search catalog lists. When the header scan also
- * asked for the action package names, a package whose name map holds none of them cannot
- * reference an action and is dropped. The bound is explicit; what it cuts is reported, and so are
- * the headers the scan could not read.
+ * Chooses which Blueprint packages to decode from a header scan: every package with a
+ * `...Blueprint` export, minus (when the scan probed action names) those whose name map holds
+ * none. The bound is explicit; what it cuts and unreadable headers are reported.
  */
 export function blueprintInputCandidatePaths(
 	index: SavedAssetScan,

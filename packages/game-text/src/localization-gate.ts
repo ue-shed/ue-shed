@@ -8,31 +8,25 @@ import type { LocalizationTargetEvidence } from "@ue-shed/localization/browser";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { textFileKey, textFileLabel, textFileScope } from "./text-origin.js";
 
-/**
- * What a change's text is checked for, in the order results list them:
- * - `key_changed`: a key changed and its earlier key has translations, which a gather run
- *   outside UE Shed would drop;
- * - `conflicting_source`: one key with two texts, so Unreal ships one of them everywhere;
- * - `translated_text_changed`: text changed after it was translated, so those languages show the
- *   new text untranslated until it is translated again;
- * - `text_changed`: text changed since the last gather, with nothing translated yet;
- * - `not_gathered`: new text Unreal has not gathered yet;
- * - `unresolved_key`: text without a reliable key, which cannot be translated;
- * - `removed`: gathered text its file no longer has, or a file that could not be read;
- * - `gathered_source`: text gathered from source code or config, whose keys are checked only
- *   across a gather;
- * - `partial_read`: a listed package the reader read only in part, so text in the parts it could
- *   not read is not checked. The text it did read is checked like any other.
- */
+/** What a change's text is checked for, in the order results list them. */
 export const LocalizationGateCheck = Schema.Literals([
+	// A key changed and its earlier key has translations, which a gather outside UE Shed would drop.
 	"key_changed",
+	// One key with two texts, so Unreal ships one of them everywhere.
 	"conflicting_source",
+	// Text changed after translation: those languages show it untranslated until retranslated.
 	"translated_text_changed",
+	// Text changed since the last gather, with nothing translated yet.
 	"text_changed",
+	// New text Unreal has not gathered yet.
 	"not_gathered",
+	// Text without a reliable key, which cannot be translated.
 	"unresolved_key",
+	// Gathered text its file no longer has, or a file that could not be read.
 	"removed",
+	// Text gathered from source code or config, whose keys are checked only across a gather.
 	"gathered_source",
+	// A listed package read only in part: text in the unread parts is not checked.
 	"partial_read"
 ]);
 

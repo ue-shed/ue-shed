@@ -16,6 +16,8 @@ import { joinLocalizationTarget } from "./localization.js";
 import { localizationShippedTranslation } from "./localization-checks.js";
 import { parseUnrealFormatPattern, unrealPluralForms } from "./unreal-text-syntax.js";
 
+const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+
 const Format = Schema.Struct({
 	valid: Schema.Boolean,
 	errors: Schema.Array(Schema.String),
@@ -46,12 +48,14 @@ const Oracle = Schema.Struct({
 		})
 	)
 });
+const OracleJson = Schema.fromJsonString(Oracle);
+const decodeOracleJson = Schema.decodeUnknownSync(OracleJson);
 
 describe("built-ins against Unreal's recorded validators", () => {
 	for (const version of ["5.7", "5.8"]) {
 		it(`covers every validator failure from Unreal ${version} on the same shipped text`, async () => {
 			const projectRoot = resolve("fixtures/unreal-project");
-			const expected = Schema.decodeUnknownSync(Schema.fromJsonString(Oracle))(
+			const expected = decodeOracleJson(
 				readFileSync(
 					resolve(projectRoot, `FixtureExpected/localization/evidence.ue${version}.json`),
 					"utf8"
@@ -67,7 +71,7 @@ describe("built-ins against Unreal's recorded validators", () => {
 						version === "5.8"
 							? "FixtureExpected/localization/ue5.8-output"
 							: "Content/Localization/FixtureGame";
-					const target = Schema.decodeUnknownSync(LocalizationTarget)({
+					const target = decodeLocalizationTarget({
 						...original,
 						outputPaths: {
 							...original.outputPaths,

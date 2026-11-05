@@ -10,6 +10,8 @@ import type {
 } from "./localization-import.js";
 import { nativeLocalizationStat, rememberNativeLocalizationStat } from "./localization-import.js";
 
+const decodeLocalizationError = Schema.decodeUnknownSync(LocalizationError);
+
 /** The leased writer owns parsing, dictionary construction and atomic cold publication. */
 export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.importColdTarget")(
 	function* (requests: readonly LocalizationFileImportRequest[], budgetOverride?: number) {
@@ -47,7 +49,7 @@ export const importColdLocalizationTarget = Effect.fn("LocalizationSnapshot.impo
 		for (const file of result.files) {
 			if (file.error)
 				return yield* Effect.fail(
-					Schema.decodeUnknownSync(LocalizationError)({
+					decodeLocalizationError({
 						_tag: "LocalizationError",
 						...file.error
 					})

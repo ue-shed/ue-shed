@@ -14,6 +14,8 @@ import {
 import { ArrangementCameraId, resolveArrangementCamera } from "./camera-arrangement.js";
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
 
+const decodeCameraPanelEvent = Schema.decodeUnknownSync(CameraPanelEvent);
+
 describe("replaceable native menu coordinator", () => {
 	it("reviews regeneration, recovers lost activation replies, and resumes the durable arrangement", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-panel-"));
@@ -87,7 +89,7 @@ describe("replaceable native menu coordinator", () => {
 			const enqueue = (action: CameraPanelAction) => {
 				native = {
 					...native,
-					panelEvent: Schema.decodeUnknownSync(CameraPanelEvent)({
+					panelEvent: decodeCameraPanelEvent({
 						id: `menu-${serial++}`,
 						expectedRevision: native.revision,
 						action

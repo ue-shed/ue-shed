@@ -20,7 +20,8 @@ const SearchDone = Schema.Union([
 	Schema.Literal(false),
 	Schema.Struct({ pressedAt: Schema.Number, doneAt: Schema.Number })
 ]);
-const done = () => Schema.decodeUnknownSync(SearchDone)((0, eval)(searchDoneInPage));
+const decodeSearchDone = Schema.decodeUnknownSync(SearchDone);
+const done = () => decodeSearchDone((0, eval)(searchDoneInPage));
 const settle = () => new Promise((done) => setTimeout(done, 0));
 
 afterEach(() => {

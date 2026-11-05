@@ -53,6 +53,7 @@ export class ReviewAuthoringConnectionError extends Schema.TaggedError<ReviewAut
 ) {}
 
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+const decodeSubjectLocator = Schema.decodeUnknownEffect(SubjectLocator);
 
 function reviewConnectionError(
 	endpoint: string,
@@ -194,7 +195,7 @@ export const ReviewAuthoringLive = Layer.effect(
 			readonly endpoint: string;
 			readonly subject: typeof SubjectLocator.Type;
 		}) {
-			const subject = yield* Schema.decodeUnknownEffect(SubjectLocator)(args.subject).pipe(
+			const subject = yield* decodeSubjectLocator(args.subject).pipe(
 				Effect.mapError(
 					(cause) =>
 						new ReviewAuthoringConnectionError({

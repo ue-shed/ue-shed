@@ -6,6 +6,8 @@ import {
 	type MapCapturePlan as MapCapturePlanValue
 } from "./map-tile-schema.js";
 
+const decodeMapCapturePlan = Schema.decodeUnknownSync(MapCapturePlan);
+
 /**
  * Explains a plan/backend capability mismatch when present. A missing issue means this
  * compatibility check passed, not that editor state and output storage are ready.
@@ -70,7 +72,7 @@ export function makeDefaultMapCapturePlan(args: {
 	readonly mapPath?: string;
 	readonly projectId: string;
 }): MapCapturePlanValue {
-	return Schema.decodeUnknownSync(MapCapturePlan)({
+	return decodeMapCapturePlan({
 		capture: {
 			dataLayers: { mode: "unchanged" },
 			orientation: { pitch: -90, roll: 0, yaw: 0 },
@@ -110,7 +112,7 @@ export function fitMapCapturePlanToSelection(
 	const b = selection.bounds;
 	const padX = Math.max(1, (b.maxX - b.minX) * paddingFraction);
 	const padY = Math.max(1, (b.maxY - b.minY) * paddingFraction);
-	return Schema.decodeUnknownSync(MapCapturePlan)({
+	return decodeMapCapturePlan({
 		...plan,
 		project: { ...plan.project, mapPath: selection.mapPath },
 		requestedBounds: {

@@ -21,6 +21,8 @@ import { makeWorkbenchTestConfigurationLayer as makeWorkbenchConfigurationLayer 
 import { type WorkbenchConfigurationApi } from "../workbench-config.js";
 import { WorkbenchAuthoring, WorkbenchAuthoringLive } from "./authoring.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 function fixtureSnapshot(): AuthoringTableSnapshotV1 {
 	return {
 		authority: { kind: "project_files", packageName: "/Game/Fixture/DT_Test" },
@@ -459,7 +461,7 @@ it.effect("opens the requested authority and restores only matching non-inert dr
 				});
 			}
 			if (functionName === "GetTableSnapshot") {
-				return Effect.succeed(Schema.decodeUnknownSync(Schema.Json)(live));
+				return Effect.succeed(decodeJson(live));
 			}
 			return Effect.die(`unexpected Remote Control call ${functionName}`);
 		});

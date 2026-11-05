@@ -28,6 +28,8 @@ const Failure = Schema.Struct({
 	status: Schema.Literal("failed"),
 	error: Schema.Struct({ code: Schema.String, message: Schema.String, recovery: Schema.String })
 });
+const decodeChangeSetJson = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationChangeSet));
+const decodeFailureJson = Schema.decodeUnknownSync(Schema.fromJsonString(Failure));
 
 it.effect("exclusively creates a change-set JSON and preserves an existing proposal", () =>
 	Effect.gen(function* () {
@@ -36,9 +38,7 @@ it.effect("exclusively creates a change-set JSON and preserves an existing propo
 		const destination = join(directory, "changes.json");
 		yield* writeLocalizationCheckChanges(destination, document);
 		const initial = yield* fs.readFileString(destination);
-		expect(
-			Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationChangeSet))(initial)
-		).toEqual(document);
+		expect(decodeChangeSetJson(initial)).toEqual(document);
 		const existing = yield* writeLocalizationCheckChanges(destination, {
 			...document,
 			changes: []
@@ -92,9 +92,7 @@ it.effect("loc check rejects unsupported cultures with safe actionable failures"
 			"--culture",
 			"zz-PrivateCulture"
 		]).pipe(Effect.provide(runtime));
-		const report = Schema.decodeUnknownSync(Schema.fromJsonString(Failure))(
-			yield* Ref.get(output)
-		);
+		const report = decodeFailureJson(yield* Ref.get(output));
 		expect(report.error.code).toBe("invalid_selection");
 		expect(report.error.message).not.toContain("Private");
 		expect(report.error.recovery.length).toBeGreaterThan(0);
@@ -127,6 +125,7 @@ const Report = Schema.Struct({
 	findings: Schema.Array(Schema.Struct({ kind: Schema.String })),
 	rules: Schema.Array(Schema.Struct({ ruleId: Schema.String }))
 });
+const decodeReportJson = Schema.decodeUnknownSync(Schema.fromJsonString(Report));
 
 it.effect("loc check runs the file --rules names, and says when no rules file ran", () =>
 	Effect.gen(function* () {
@@ -146,7 +145,7 @@ it.effect("loc check runs the file --rules names, and says when no rules file ra
 		const given = yield* run([...base, "--rules", rules]);
 		expect(given.exit).toBe(0);
 		expect(given.errors).not.toContain("No rules file");
-		const report = Schema.decodeUnknownSync(Schema.fromJsonString(Report))(given.output);
+		const report = decodeReportJson(given.output);
 		expect(report.rules.map((rule) => rule.ruleId)).toEqual([
 			"localization.missing_translator_notes"
 		]);
@@ -156,13 +155,11 @@ it.effect("loc check runs the file --rules names, and says when no rules file ra
 		// The fixture has no rules file of its own: nothing runs, and stderr says why.
 		const none = yield* run(base);
 		expect(none.exit).toBe(0);
-		expect(Schema.decodeUnknownSync(Schema.fromJsonString(Report))(none.output).rules).toEqual(
-			[]
-		);
+		expect(decodeReportJson(none.output).rules).toEqual([]);
 		expect(none.errors).toContain("No rules file: no checks ran.");
 		const missing = yield* run([...base, "--rules", join(directory, "missing.json")]);
 		expect(missing.exit).toBe(2);
-		const failure = Schema.decodeUnknownSync(Schema.fromJsonString(Failure))(missing.output);
+		const failure = decodeFailureJson(missing.output);
 		expect(failure.error.code).toBe("rules_unreadable");
 		expect(failure.error.message).not.toContain(directory);
 	}).pipe(Effect.provide(NodeServices.layer))

@@ -109,18 +109,10 @@ export type GameTextWorkspaceContractMethod<Entry extends GameTextWorkspaceContr
 			: never;
 
 /**
- * The browser-safe contract of the Game Text workspace, keyed by `GameTextWorkspaceApi` method
- * name: each method's params, success or events, and error schemas. It names no channels; each
- * host maps names to its own transport and serves an entry by calling the method with the
- * decoded params. `GameTextWorkspaceApi` must match it method for method, or the workspace does
- * not compile.
- *
- * Host-only methods are left out, because they run inside the host's own process:
- * - `operationStateTarget`, `operationTarget`, `operationBusyReason`, `beginOperation`,
- *   `endOperation` and `refreshAfterOperation` admit and refresh around the host's Unreal
- *   localization operations, and `localizationBeforeGather` runs before its gather; the first two
- *   also return a `LocalizationTarget` with its file paths.
- * - `configuredScan` returns the whole corpus; serve `configuredRefresh` instead.
+ * The browser-safe contract of the Game Text workspace: each `GameTextWorkspaceApi` method's
+ * params, success or events, and error schemas, with no channels; the API must match it or not
+ * compile. Host-only methods are left out: operation admission and refresh (`beginOperation` and
+ * kin), `localizationBeforeGather`, and `configuredScan` (serve `configuredRefresh` instead).
  */
 export const GameTextWorkspaceContract = {
 	localizationQualitySearch: { params: WorkspaceQualityRequest, success: WorkspaceQualityResult },

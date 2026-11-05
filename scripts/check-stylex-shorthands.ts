@@ -4,12 +4,10 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 /**
- * StyleX resolves styles with `property-specificity`, and that resolver refuses these shorthands.
- *
- * The refusal is silent: the build succeeds, `stylex.props` still returns a class name, and the
- * declaration is simply never written to the stylesheet. A dropped `border` on a `<button>` is
- * worse than nothing, because the user agent's own button border shows through instead — a bright
- * `ButtonBorder` box under `color-scheme: dark`. Write the longhands instead.
+ * StyleX's `property-specificity` resolver silently drops these shorthands: the build succeeds and
+ * `stylex.props` returns a class, but no declaration is written. A dropped `border` on a `<button>`
+ * lets the user agent's `ButtonBorder` show through, bright under `color-scheme: dark`. Write the
+ * longhands instead.
  */
 const droppedShorthands = [
 	"all",

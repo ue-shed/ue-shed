@@ -27,6 +27,8 @@ import {
 } from "./camera-authoring-recovery.js";
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
 
+const decodeCameraArrangementCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
+
 async function fixture(multiCamera = false) {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-sync-"));
 	const arrangement = fixtureArrangement(),
@@ -169,7 +171,7 @@ describe("replaceable camera bridge coordinator", () => {
 			const proposal = await Effect.runPromise(prepareCameraRecovery(f.store, f.inspect()));
 			await Effect.runPromise(
 				f.store.mutate(
-					Schema.decodeUnknownSync(CameraArrangementCommand)({
+					decodeCameraArrangementCommand({
 						kind: "tune",
 						arrangementId: f.attachment.sessionId,
 						expectedRevision: 0,
@@ -195,7 +197,7 @@ describe("replaceable camera bridge coordinator", () => {
 				f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
 				await Effect.runPromise(
 					f.store.mutate(
-						Schema.decodeUnknownSync(CameraArrangementCommand)({
+						decodeCameraArrangementCommand({
 							kind: "tune",
 							arrangementId: f.attachment.sessionId,
 							expectedRevision: 0,
@@ -410,7 +412,7 @@ describe("replaceable camera bridge coordinator", () => {
 			f.edit({ pose: { ...f.inspect().pose, fieldOfViewDegrees: 55 } });
 			await Effect.runPromise(
 				f.store.mutate(
-					Schema.decodeUnknownSync(CameraArrangementCommand)({
+					decodeCameraArrangementCommand({
 						kind: "tune",
 						arrangementId: f.attachment.sessionId,
 						expectedRevision: 0,
@@ -434,7 +436,7 @@ describe("replaceable camera bridge coordinator", () => {
 		try {
 			await Effect.runPromise(
 				f.store.mutate(
-					Schema.decodeUnknownSync(CameraArrangementCommand)({
+					decodeCameraArrangementCommand({
 						kind: "tune",
 						arrangementId: f.attachment.sessionId,
 						expectedRevision: 0,

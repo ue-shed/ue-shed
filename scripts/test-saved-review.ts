@@ -31,8 +31,9 @@ const wasmEntry = new URL("../packages/uasset-inspection-wasm/dist/node.js", imp
 const { createNodeRuntime }: typeof import("../packages/uasset-inspection-wasm/src/node.js") =
 	await import(wasmEntry.href);
 const runtime = createNodeRuntime();
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const readJson = (name: string) =>
-	Schema.decodeUnknownSync(Schema.Json)(JSON.parse(readFileSync(join(evidence, name), "utf8")));
+	decodeJson(JSON.parse(readFileSync(join(evidence, name), "utf8")));
 const Link = Schema.Struct({ node: Schema.String, pin: Schema.String });
 const Oracle = Schema.Struct({
 	producer: Schema.String,

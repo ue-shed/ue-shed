@@ -7,6 +7,8 @@ import { GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { localizationQualityWorkspaceOf } from "./localization-workspace.js";
 
+const decodeRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
+
 it.effect("reads native findings through both compact indexes and the CLI report", () =>
 	Effect.scoped(
 		Effect.gen(function* () {
@@ -17,7 +19,7 @@ it.effect("reads native findings through both compact indexes and the CLI report
 					projectRoot: fixture.projectRoot,
 					targetName: fixture.target.name
 				});
-				const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
+				const document = decodeRuleDocument({
 					schemaVersion: 1,
 					roles: [
 						{

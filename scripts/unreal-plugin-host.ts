@@ -83,12 +83,10 @@ export function unrealEngineTools(engineRoot: string): UnrealEngineTools {
 }
 
 /**
- * Derived-data cache arguments for the repository's `-NullRHI` Unreal processes. `-ddc=NoShared`
- * skips shared caches: tests must not depend on a studio cache, and an unreachable one (such as
- * `UE-ZenSharedDataCacheHost` while off the network) stalls every engine startup for about 10 s.
- * Unreal 4.27, 5.7 and 5.8 all define the `NoShared` graph. Never pass it to a rendering editor:
- * in 5.7 that graph drops the engine shader pak and leaves the local file cache delete-only, so the
- * editor recompiles engine shaders for minutes before Remote Control starts.
+ * Derived-data cache arguments for `-NullRHI` Unreal processes. `-ddc=NoShared` (defined in 4.27,
+ * 5.7, 5.8) skips shared caches: tests must not need a studio cache, and an unreachable one stalls
+ * each startup for about 10 s. Never pass it to a rendering editor: in 5.7 it drops the engine
+ * shader pak and makes the local cache delete-only, so shaders recompile for minutes first.
  */
 export const localDerivedDataCacheArguments = ["-ddc=NoShared"] as const;
 

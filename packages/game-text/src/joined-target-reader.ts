@@ -47,6 +47,8 @@ export const JoinedTargetMeta = Schema.Struct({
 	reducedSourceChecking: Schema.Array(Schema.Boolean)
 });
 export interface JoinedTargetMeta extends Schema.Schema.Type<typeof JoinedTargetMeta> {}
+const JoinedTargetMetaJson = Schema.fromJsonString(JoinedTargetMeta);
+const decodeJoinedTargetMetaJson = Schema.decodeUnknownEffect(JoinedTargetMetaJson);
 export const readJoinedTarget = Effect.fn("JoinedTarget.read")(function* (
 	reader: SharedIndexReader,
 	stale = false
@@ -54,7 +56,7 @@ export const readJoinedTarget = Effect.fn("JoinedTarget.read")(function* (
 	const rawLayer = yield* reader.layer("joined");
 	if ((rawLayer.directory.entries.get("join.meta")?.rawLength ?? Infinity) > 16 * 1024 ** 2)
 		return yield* Effect.fail(snapshotFailure("join.meta", "Metadata exceeds bound"));
-	const meta = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(JoinedTargetMeta))(
+	const meta = yield* decodeJoinedTargetMetaJson(
 		new TextDecoder().decode(yield* rawLayer.section("join.meta"))
 	);
 	for (const kind of ["raw", "slice"] as const) {

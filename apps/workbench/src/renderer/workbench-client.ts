@@ -43,6 +43,8 @@ import {
 	type WorkbenchTaskProgress as WorkbenchTaskProgressValue
 } from "../shared/project-workspace-contract.js";
 
+const decodeEditorHandoffNotice = Schema.decodeUnknownOption(EditorHandoffNotice);
+
 export class WorkbenchRendererError extends Schema.TaggedError<WorkbenchRendererError>()(
 	"WorkbenchRendererError",
 	{
@@ -272,7 +274,7 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 		Effect.acquireRelease(
 			Effect.sync(() =>
 				window.ueShed.onEditorHandoff((notice) => {
-					const decoded = Schema.decodeUnknownOption(EditorHandoffNotice)(notice);
+					const decoded = decodeEditorHandoffNotice(notice);
 					if (Option.isSome(decoded)) Queue.offerUnsafe(queue, decoded.value);
 				})
 			),

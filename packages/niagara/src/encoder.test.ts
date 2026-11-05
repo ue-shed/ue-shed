@@ -11,6 +11,8 @@ import { createHash } from "node:crypto";
 import { validateNiagaraEncodingManifest } from "./encoding-manifest.js";
 import { snapshotNiagaraFrames } from "./verified-frames.js";
 
+const decodeNiagaraPreviewRunManifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest);
+
 test("verified snapshot retains original frame bytes after source replacement", async () => {
 	const root = await mkdtemp(join(tmpdir(), "niagara-snapshot-test-"));
 	try {
@@ -54,7 +56,7 @@ test("verified snapshot retains original frame bytes after source replacement", 
 test("encoder rejects malformed sequences and corrupted frames before launching FFmpeg", async () => {
 	const root = await mkdtemp(join(tmpdir(), "niagara-encoder-test-"));
 	try {
-		const manifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)(
+		const manifest = decodeNiagaraPreviewRunManifest(
 			JSON.parse(
 				await readFile(
 					new URL(

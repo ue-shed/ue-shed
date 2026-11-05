@@ -24,6 +24,9 @@ type LocalizationSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearc
 type LocalizationCheckCommand = Extract<CliCommand, { readonly _tag: "LocalizationCheck" }>;
 type LocalizationReportCommand = Extract<CliCommand, { readonly _tag: "LocalizationReport" }>;
 
+const decodeSelection = Schema.decodeUnknownEffect(LocalizationSelection);
+const isAssetReaderError = Schema.is(AssetReaderError);
+
 /** Compatibility projection for explicit full-corpus reports and exports. */
 export const scanProjectText = Effect.fn("Cli.localization.scan")(function* (
 	projectRoot: string,
@@ -41,7 +44,7 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		| LocalizationReportCommand
 		| LocalizationExportCommand
 ) {
-	const selection = yield* Schema.decodeUnknownEffect(LocalizationSelection)({
+	const selection = yield* decodeSelection({
 		target: command.target,
 		...("culture" in command && command.culture !== undefined
 			? { culture: command.culture }
@@ -278,8 +281,7 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 						)
 						.pipe(
 							Effect.mapError((error) =>
-								Schema.is(AssetReaderError)(error.cause) &&
-								error.cause.code === "io_error"
+								isAssetReaderError(error.cause) && error.cause.code === "io_error"
 									? unwritable
 									: error
 							)

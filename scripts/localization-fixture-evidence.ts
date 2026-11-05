@@ -76,6 +76,8 @@ const LocalizationIntent = Schema.Struct({
 		})
 	)
 });
+const decodeLocalizationEvidence = Schema.decodeUnknownSync(LocalizationEvidence);
+const decodeLocalizationIntent = Schema.decodeUnknownSync(LocalizationIntent);
 
 function identity(entry: LocalizationIdentity): string {
 	return JSON.stringify([entry.culture, entry.namespace, entry.key]);
@@ -111,8 +113,8 @@ function state(entry: LocalizationEvidenceEntry) {
 }
 
 export function assertLocalizationIntent(evidenceJson: JsonObject, intentJson: JsonObject) {
-	const evidence = Schema.decodeUnknownSync(LocalizationEvidence)(evidenceJson);
-	const intent = Schema.decodeUnknownSync(LocalizationIntent)(intentJson);
+	const evidence = decodeLocalizationEvidence(evidenceJson);
+	const intent = decodeLocalizationIntent(intentJson);
 	assert.equal(evidence.target, intent.target);
 	assert.equal(evidence.nativeCulture, "en");
 	const actual = new Map<string, string>();

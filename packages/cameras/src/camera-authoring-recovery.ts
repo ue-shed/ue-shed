@@ -38,13 +38,16 @@ export type CameraRecoveryProposal = typeof CameraRecoveryProposal.Type;
  */
 export const CameraRecoveryChoice = Schema.Literals(["saved", "native"]);
 export type CameraRecoveryChoice = typeof CameraRecoveryChoice.Type;
+const decodeCameraBridgeSnapshot = Schema.decodeUnknownEffect(CameraBridgeSnapshot);
+const decodeCameraRecoveryProposal = Schema.decodeUnknownEffect(CameraRecoveryProposal);
+const decodeCameraRecoveryChoice = Schema.decodeUnknownEffect(CameraRecoveryChoice);
 
 /** Inspect a preserved recovery file without reconnecting or replaying it. */
 export const prepareCameraRecovery = Effect.fn("CameraAuthoring.prepareRecovery")(function* (
 	store: CameraAuthoringStore,
 	input: CameraBridgeSnapshot
 ) {
-	const native = yield* Schema.decodeUnknownEffect(CameraBridgeSnapshot)(input);
+	const native = yield* decodeCameraBridgeSnapshot(input);
 	const document = yield* store.load();
 	if (document.arrangement.id !== native.sessionId)
 		return yield* Effect.fail(
@@ -89,8 +92,8 @@ export const resolveCameraRecovery = Effect.fn("CameraAuthoring.resolveRecovery"
 	input: CameraRecoveryProposal,
 	inputChoice: CameraRecoveryChoice
 ) {
-	const proposal = yield* Schema.decodeUnknownEffect(CameraRecoveryProposal)(input);
-	const choice = yield* Schema.decodeUnknownEffect(CameraRecoveryChoice)(inputChoice);
+	const proposal = yield* decodeCameraRecoveryProposal(input);
+	const choice = yield* decodeCameraRecoveryChoice(inputChoice);
 	const inspected = yield* inspectCameraRecovery(store, bridge, proposal.native);
 	const native = inspected.native;
 	if (
@@ -132,8 +135,8 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 	input: CameraRecoveryProposal,
 	inputChoice: CameraRecoveryChoice
 ) {
-	const proposal = yield* Schema.decodeUnknownEffect(CameraRecoveryProposal)(input);
-	const choice = yield* Schema.decodeUnknownEffect(CameraRecoveryChoice)(inputChoice);
+	const proposal = yield* decodeCameraRecoveryProposal(input);
+	const choice = yield* decodeCameraRecoveryChoice(inputChoice);
 	const native = proposal.native;
 	if (!native.pending || native.panelEvent)
 		return yield* Effect.fail(

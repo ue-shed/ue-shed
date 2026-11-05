@@ -61,6 +61,8 @@ export const TextQualityQuerySummary = Schema.Struct({
 	terminologyCount: Count
 });
 export type TextQualityQuerySummary = Schema.Schema.Type<typeof TextQualityQuerySummary>;
+const decodeRoleSummaries = Schema.decodeUnknownSync(TextQualityQuerySummary.fields.roles);
+const decodeRuleSummaries = Schema.decodeUnknownSync(TextQualityQuerySummary.fields.rules);
 
 /**
  * Whether the host keeps a standalone rules file it can save these rules to. Hosts report only
@@ -644,8 +646,8 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 		}
 		const header: Omit<TextQualityReport, "findings"> = {
 			...report,
-			roles: Schema.decodeUnknownSync(Schema.Array(TextQualityRoleSummary))(roles),
-			rules: Schema.decodeUnknownSync(Schema.Array(TextQualityRuleSummary))(rules)
+			roles: decodeRoleSummaries(roles),
+			rules: decodeRuleSummaries(rules)
 		};
 		const summary: TextQualityQuerySummary = {
 			characterBudgetCount,
@@ -673,42 +675,43 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 		return {
 			findingsKey: evaluation.key,
 			summary: () => summary,
-			search: (request: TextQualitySearchRequest) =>
-				Effect.gen(function* () {
-					// One past the page says whether another follows.
-					const page = yield* query(request.filter, {
-						...(request.cursor ? { after: request.cursor } : undefined),
-						limit: request.pageSize + 1
-					});
-					const found = sourceFindings(page);
-					const shown = found.slice(0, request.pageSize);
-					const final = shown.at(-1);
-					return {
-						findings: shown.map((finding) =>
-							findingSummary(strip(finding), idOf(finding))
-						),
-						total: page.total,
-						...(final !== undefined && found.length > request.pageSize
-							? { nextCursor: idOf(final) }
-							: undefined)
-					};
-				}),
-			focus: (request: TextQualityFocusRequest) =>
-				Effect.gen(function* () {
-					const page = yield* query("all", { id: request.id, limit: 1 });
-					const finding = sourceFindings(page)[0];
-					return finding && findingFocus(strip(finding), idOf(finding), request);
-				}),
-			export: (filter: TextQualityFilter) =>
-				Effect.gen(function* () {
-					const all: TextQualityFinding[] = [];
-					for (let offset = 0; ; offset += 5000) {
-						const page = yield* query(filter, { offset, limit: 5000 });
-						all.push(...sourceFindings(page).map(strip));
-						if (page.findings.length < 5000) break;
-					}
-					return { ...header, findings: all };
-				})
+			search: Effect.fn("GameText.sourceQuality.search")(function* (
+				request: TextQualitySearchRequest
+			) {
+				// One past the page says whether another follows.
+				const page = yield* query(request.filter, {
+					...(request.cursor ? { after: request.cursor } : undefined),
+					limit: request.pageSize + 1
+				});
+				const found = sourceFindings(page);
+				const shown = found.slice(0, request.pageSize);
+				const final = shown.at(-1);
+				return {
+					findings: shown.map((finding) => findingSummary(strip(finding), idOf(finding))),
+					total: page.total,
+					...(final !== undefined && found.length > request.pageSize
+						? { nextCursor: idOf(final) }
+						: undefined)
+				};
+			}),
+			focus: Effect.fn("GameText.sourceQuality.focus")(function* (
+				request: TextQualityFocusRequest
+			) {
+				const page = yield* query("all", { id: request.id, limit: 1 });
+				const finding = sourceFindings(page)[0];
+				return finding && findingFocus(strip(finding), idOf(finding), request);
+			}),
+			export: Effect.fn("GameText.sourceQuality.export")(function* (
+				filter: TextQualityFilter
+			) {
+				const all: TextQualityFinding[] = [];
+				for (let offset = 0; ; offset += 5000) {
+					const page = yield* query(filter, { offset, limit: 5000 });
+					all.push(...sourceFindings(page).map(strip));
+					if (page.findings.length < 5000) break;
+				}
+				return { ...header, findings: all };
+			})
 		} satisfies AsyncTextQualityQuery<GameTextIndexError>;
 	}
 );

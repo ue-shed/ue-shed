@@ -171,8 +171,9 @@ export const CorpusPlanSchema = Schema.Struct({
 		})
 	)
 });
+const decodeCorpusPlanJson = Schema.decodeUnknownSync(Schema.fromJsonString(CorpusPlanSchema));
 export function decodeCorpusPlan(contents: string) {
-	const plan = Schema.decodeUnknownSync(Schema.fromJsonString(CorpusPlanSchema))(contents);
+	const plan = decodeCorpusPlanJson(contents);
 	if (plan.packages.reduce((total, item) => total + item.texts.length, 0) !== plan.lines)
 		throw new Error("Plan line count differs from its placements.");
 	decodeCorpusExpectations(JSON.stringify(plan.expectations));

@@ -34,6 +34,7 @@ export const StringTableKeyMigrationRequest = Schema.Struct({
 	)
 });
 export type StringTableKeyMigrationRequest = typeof StringTableKeyMigrationRequest.Type;
+const isMigrationRequest = Schema.is(StringTableKeyMigrationRequest);
 
 /** Non-mutating migration recipe. Persist and verify the redirect before approving removal. */
 export const StringTableKeyMigrationPlan = Schema.Struct({
@@ -69,8 +70,7 @@ export function planStringTableKeyMigration(
 		message,
 		recovery: "Review the owning table, source, destination key and explicit reference list."
 	});
-	if (!Schema.is(StringTableKeyMigrationRequest)(input))
-		return invalid("The migration request is invalid.");
+	if (!isMigrationRequest(input)) return invalid("The migration request is invalid.");
 	if (input.oldKey === input.newKey) return invalid("Choose a different destination key.");
 	if ([input.tableId, input.oldKey, input.newKey].some((value) => /["\r\n]/u.test(value)))
 		return invalid(

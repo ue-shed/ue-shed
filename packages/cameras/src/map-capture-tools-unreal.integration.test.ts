@@ -8,6 +8,23 @@ import {
 import { inspectMapCaptureReadiness, inspectMapCaptureSelection } from "./map-capture-tools.js";
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
 const mapPath = "/Game/Fixture/Cameras/L_CameraLoad";
+const SelectedActorPaths = Schema.Struct({ ReturnValue: Schema.Array(Schema.String) });
+const ActorSnapshotResponse = Schema.Struct({
+	snapshot: Schema.Struct({
+		mapPath: Schema.String,
+		actors: Schema.Array(
+			Schema.Struct({
+				path: Schema.String,
+				className: Schema.String,
+				classPath: Schema.String,
+				tags: Schema.Array(Schema.String),
+				levelPackage: Schema.String
+			})
+		)
+	})
+});
+const decodeSelectedActorPaths = Schema.decodeUnknownSync(SelectedActorPaths);
+const decodeActorSnapshotResponse = Schema.decodeUnknownSync(ActorSnapshotResponse);
 describe.skipIf(!endpoint)("capture inspection against the fixture editor", () => {
 	it("reports producer identity and actionable map mismatch without acquiring capture", async () => {
 		const producer = await Effect.runPromise(
@@ -45,9 +62,9 @@ describe.skipIf(!endpoint)("capture inspection against the fixture editor", () =
 			expect(response.ok).toBe(true);
 			return response.json();
 		};
-		const original = Schema.decodeUnknownSync(
-			Schema.Struct({ ReturnValue: Schema.Array(Schema.String) })
-		)(await stock("GetSelectedLevelActors", {})).ReturnValue;
+		const original = decodeSelectedActorPaths(
+			await stock("GetSelectedLevelActors", {})
+		).ReturnValue;
 		const snapshot = await Effect.runPromise(
 			Effect.gen(function* () {
 				const client = yield* RemoteControlClient;
@@ -59,22 +76,7 @@ describe.skipIf(!endpoint)("capture inspection against the fixture editor", () =
 				});
 			}).pipe(Effect.provide(RemoteControlClientLive))
 		);
-		const decoded = Schema.decodeUnknownSync(
-			Schema.Struct({
-				snapshot: Schema.Struct({
-					mapPath: Schema.String,
-					actors: Schema.Array(
-						Schema.Struct({
-							path: Schema.String,
-							className: Schema.String,
-							classPath: Schema.String,
-							tags: Schema.Array(Schema.String),
-							levelPackage: Schema.String
-						})
-					)
-				})
-			})
-		)(snapshot);
+		const decoded = decodeActorSnapshotResponse(snapshot);
 		expect(decoded.snapshot.mapPath).toBe(mapPath);
 		const actors = decoded.snapshot.actors
 			.filter((a) => a.className === "StaticMeshActor")

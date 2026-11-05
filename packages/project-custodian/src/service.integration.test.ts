@@ -23,6 +23,8 @@ import {
 import { CustodianReport } from "./schema.js";
 import { Custodian, CustodianNodeLive } from "./service.js";
 
+const decodeCustodianReport = Schema.decodeUnknownEffect(CustodianReport);
+
 function withWorkspace<A>(
 	use: (root: string) => Effect.Effect<A, unknown>
 ): Effect.Effect<A, unknown> {
@@ -117,7 +119,7 @@ it.effect("inventories only known regeneratable project targets", () =>
 			expect(project?.eligibility.kind).toBe("candidate");
 			expect(report.plan.items.map(({ name }) => name)).toEqual(["FixtureProject"]);
 			expect(report.destructiveOperationsAvailable).toBe(true);
-			yield* Schema.decodeUnknownEffect(CustodianReport)(report);
+			yield* decodeCustodianReport(report);
 		})
 	)
 );

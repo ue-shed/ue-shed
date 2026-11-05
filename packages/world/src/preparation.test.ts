@@ -17,6 +17,8 @@ import {
 	type WorldSnapshot
 } from "./schema.js";
 
+const decodeWorldRequest = Schema.decodeUnknownSync(WorldRequest);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const world = {
 	worldId: WorldId.make("world"),
 	mapPath: "/Game/Test",
@@ -91,13 +93,11 @@ function harness(
 						capabilities: ["world.preparation.v1"],
 						worldPreparationObjectPath: "/Script/Test"
 					};
-				const request = Schema.decodeUnknownSync(WorldRequest)(
-					JSON.parse(String(call.parameters.RequestJson))
-				);
+				const request = decodeWorldRequest(JSON.parse(String(call.parameters.RequestJson)));
 				calls.push(request);
 				if (request.action === "replace") revision = request.revision;
 				const custom = override(request);
-				return Schema.decodeUnknownSync(Schema.Json)(
+				return decodeJson(
 					custom
 						? yield* custom
 						: request.action === "describe"

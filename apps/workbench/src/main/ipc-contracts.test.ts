@@ -31,6 +31,31 @@ import {
 	type InvokeResult
 } from "./ipc-contracts.js";
 
+const isGameTextOperationProgress = Schema.is(gameTextOperationProgressEvent.payload);
+const decodeLocalizationFocusArgs = Schema.decodeUnknownResult(
+	invokeContracts["game-text:localization:focus"].args
+);
+const decodeLocalizationFocusResult = Schema.decodeUnknownResult(
+	invokeContracts["game-text:localization:focus"].result
+);
+const decodeLocalizationTargetResult = Schema.decodeUnknownResult(
+	invokeContracts["game-text:localization:target"].result
+);
+const decodeCorpusFocusArgs = Schema.decodeUnknownSync(invokeContracts["game-text:focus"].args);
+const decodeCorpusFocusArgsResult = Schema.decodeUnknownResult(
+	invokeContracts["game-text:focus"].args
+);
+const decodePresentationBudget = Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond);
+const decodeGameObjectPath = Schema.decodeUnknownEffect(GameObjectPath);
+const decodeCandidateId = Schema.decodeUnknownEffect(CandidateId);
+const decodeSessionId = Schema.decodeUnknownEffect(SessionId);
+const decodeRemoteControlPort = Schema.decodeUnknownEffect(RemoteControlPort);
+/** Each channel's contract differs, so the loops over channels compile one decoder per channel. */
+const decodeInvokeArgs = (channel: InvokeChannel) =>
+	Schema.decodeUnknownResult(invokeContracts[channel].args);
+const decodeInvokeResult = (channel: InvokeChannel) =>
+	Schema.decodeUnknownResult(invokeContracts[channel].result);
+
 const mainDir = dirname(fileURLToPath(import.meta.url));
 
 const preloadSource = readFileSync(join(mainDir, "preload.ts"), "utf8");
@@ -1095,7 +1120,7 @@ it("bounds Unreal operation plans, receipts, progress and project-relative file 
 		})
 	).toBe(false);
 	expect(
-		Schema.is(gameTextOperationProgressEvent.payload)({
+		isGameTextOperationProgress({
 			id: "operation-1",
 			target: "FixtureGame",
 			operation: "sync",
@@ -1106,7 +1131,7 @@ it("bounds Unreal operation plans, receipts, progress and project-relative file 
 		})
 	).toBe(true);
 	expect(
-		Schema.is(gameTextOperationProgressEvent.payload)({
+		isGameTextOperationProgress({
 			id: "operation-1",
 			target: "FixtureGame",
 			operation: "sync",
@@ -1118,7 +1143,6 @@ it("bounds Unreal operation plans, receipts, progress and project-relative file 
 });
 
 it("bounds localization details and rejects filesystem requests", () => {
-	const focus = invokeContracts["game-text:localization:focus"];
 	const detail = {
 		id: "line:Code",
 		origin: { kind: "evidence", id: "evidence:Code" },
@@ -1149,7 +1173,7 @@ it("bounds localization details and rejects filesystem requests", () => {
 	};
 	expect(
 		Result.isSuccess(
-			Schema.decodeUnknownResult(focus.result)({
+			decodeLocalizationFocusResult({
 				status: "found",
 				focus: { ...detail, translations: [translation], totalCultures: 1 }
 			})
@@ -1157,7 +1181,7 @@ it("bounds localization details and rejects filesystem requests", () => {
 	).toBe(true);
 	expect(
 		Result.isFailure(
-			Schema.decodeUnknownResult(focus.result)({
+			decodeLocalizationFocusResult({
 				status: "found",
 				focus: {
 					...detail,
@@ -1169,7 +1193,7 @@ it("bounds localization details and rejects filesystem requests", () => {
 	).toBe(true);
 	expect(
 		Result.isSuccess(
-			Schema.decodeUnknownResult(focus.result)({
+			decodeLocalizationFocusResult({
 				status: "found",
 				focus: detail
 			})
@@ -1177,7 +1201,7 @@ it("bounds localization details and rejects filesystem requests", () => {
 	).toBe(true);
 	expect(
 		Result.isFailure(
-			Schema.decodeUnknownResult(focus.result)({
+			decodeLocalizationFocusResult({
 				status: "found",
 				focus: { ...detail, locations: Array(51).fill("Source/Example.cpp(1)") }
 			})
@@ -1185,7 +1209,7 @@ it("bounds localization details and rejects filesystem requests", () => {
 	).toBe(true);
 	expect(
 		Result.isFailure(
-			Schema.decodeUnknownResult(focus.args)([
+			decodeLocalizationFocusArgs([
 				{
 					target: "FixtureGame",
 					selection: { kind: "file", id: "C:/Private/Game.po" }
@@ -1195,16 +1219,15 @@ it("bounds localization details and rejects filesystem requests", () => {
 	).toBe(true);
 	expect(
 		Result.isFailure(
-			Schema.decodeUnknownResult(focus.result)({
+			decodeLocalizationFocusResult({
 				status: "found",
 				focus: { manifest: [], cultures: [], files: [] }
 			})
 		)
 	).toBe(true);
-	const target = invokeContracts["game-text:localization:target"];
 	expect(
 		Result.isFailure(
-			Schema.decodeUnknownResult(target.result)({
+			decodeLocalizationTargetResult({
 				status: "ready",
 				target: {
 					name: "FixtureGame",
@@ -1220,9 +1243,7 @@ it("bounds localization details and rejects filesystem requests", () => {
 
 it("decodes valid arguments for every invoke channel", () => {
 	for (const channel of invokeChannelNames) {
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].args)(
-			validArgsByChannel[channel]
-		);
+		const decoded = decodeInvokeArgs(channel)(validArgsByChannel[channel]);
 		expect(Result.isSuccess(decoded)).toBe(true);
 		if (Result.isSuccess(decoded)) {
 			expect(Array.isArray(decoded.success)).toBe(true);
@@ -1231,14 +1252,13 @@ it("decodes valid arguments for every invoke channel", () => {
 });
 
 it("preserves optional localization selection in corpus focus requests", () => {
-	const args = invokeContracts["game-text:focus"].args;
 	const selected = validArgsByChannel["game-text:focus"];
-	expect(Schema.decodeUnknownSync(args)(selected)).toEqual(selected);
+	expect(decodeCorpusFocusArgs(selected)).toEqual(selected);
 	const plain = [{ id: "unreal:UI:Example", pageSize: 50 }];
-	expect(Schema.decodeUnknownSync(args)(plain)).toEqual(plain);
+	expect(decodeCorpusFocusArgs(plain)).toEqual(plain);
 	expect(
 		Result.isFailure(
-			Schema.decodeUnknownResult(args)([
+			decodeCorpusFocusArgsResult([
 				{ ...plain[0], localization: { target: "FixtureGame", id: 1 } }
 			])
 		)
@@ -1286,7 +1306,7 @@ it("tells the renderer whether a quality rule file is attached, never where it i
 
 it("keeps legacy Game Text scan replies bounded instead of accepting a full corpus", () => {
 	for (const channel of ["game-text:configured-scan", "game-text:configured-refresh"] as const) {
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].result)({
+		const decoded = decodeInvokeResult(channel)({
 			status: "completed",
 			corpus: { units: [] }
 		});
@@ -1298,7 +1318,7 @@ it("rejects no-input channels that receive unexpected values", () => {
 	for (const channel of invokeChannelNames) {
 		// SAFETY: validArgsByChannel is exhaustive and each value is an encoded argument tuple.
 		if ((validArgsByChannel[channel] as ReadonlyArray<unknown>).length !== 0) continue;
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].args)(["unexpected"]);
+		const decoded = decodeInvokeArgs(channel)(["unexpected"]);
 		expect(Result.isFailure(decoded)).toBe(true);
 	}
 });
@@ -1308,23 +1328,21 @@ it("rejects malformed input for every input-bearing channel", () => {
 	for (const [channel, args] of Object.entries(malformedArgsByChannel) as Array<
 		[InvokeChannel, unknown]
 	>) {
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].args)(args);
+		const decoded = decodeInvokeArgs(channel)(args);
 		expect(Result.isFailure(decoded)).toBe(true);
 	}
 });
 
 it("validates representative outputs for every invoke channel", () => {
 	for (const channel of invokeChannelNames) {
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].result)(
-			validResultByChannel[channel]
-		);
+		const decoded = decodeInvokeResult(channel)(validResultByChannel[channel]);
 		expect(Result.isSuccess(decoded)).toBe(true);
 	}
 });
 
 it("rejects malformed outputs for every invoke channel", () => {
 	for (const channel of invokeChannelNames) {
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].result)({
+		const decoded = decodeInvokeResult(channel)({
 			status: "not-a-real-result"
 		});
 		expect(Result.isFailure(decoded)).toBe(true);
@@ -1333,43 +1351,35 @@ it("rejects malformed outputs for every invoke channel", () => {
 
 it.effect("clamps finite presentation budgets into 25–500 MB/s", () =>
 	Effect.gen(function* () {
-		expect(yield* Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond)(10)).toBe(25);
-		expect(yield* Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond)(80)).toBe(80);
-		expect(yield* Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond)(900)).toBe(500);
-		const invalid = yield* Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond)(
-			Number.POSITIVE_INFINITY
-		).pipe(Effect.exit);
+		expect(yield* decodePresentationBudget(10)).toBe(25);
+		expect(yield* decodePresentationBudget(80)).toBe(80);
+		expect(yield* decodePresentationBudget(900)).toBe(500);
+		const invalid = yield* decodePresentationBudget(Number.POSITIVE_INFINITY).pipe(Effect.exit);
 		expect(Exit.isFailure(invalid)).toBe(true);
 	})
 );
 
 it.effect("constrains game object paths, session ids, and candidate ids", () =>
 	Effect.gen(function* () {
-		expect(yield* Schema.decodeUnknownEffect(GameObjectPath)("/Game/Data/Table")).toBe(
-			"/Game/Data/Table"
-		);
-		const badPath = yield* Schema.decodeUnknownEffect(GameObjectPath)("/Engine/Foo").pipe(
-			Effect.exit
-		);
+		expect(yield* decodeGameObjectPath("/Game/Data/Table")).toBe("/Game/Data/Table");
+		const badPath = yield* decodeGameObjectPath("/Engine/Foo").pipe(Effect.exit);
 		expect(Exit.isFailure(badPath)).toBe(true);
 
-		expect(yield* Schema.decodeUnknownEffect(CandidateId)("candidate-1")).toBe("candidate-1");
-		const emptyCandidate = yield* Schema.decodeUnknownEffect(CandidateId)("").pipe(Effect.exit);
+		expect(yield* decodeCandidateId("candidate-1")).toBe("candidate-1");
+		const emptyCandidate = yield* decodeCandidateId("").pipe(Effect.exit);
 		expect(Exit.isFailure(emptyCandidate)).toBe(true);
 
-		expect(yield* Schema.decodeUnknownEffect(SessionId)("session-1")).toBe("session-1");
-		const emptySession = yield* Schema.decodeUnknownEffect(SessionId)("").pipe(Effect.exit);
+		expect(yield* decodeSessionId("session-1")).toBe("session-1");
+		const emptySession = yield* decodeSessionId("").pipe(Effect.exit);
 		expect(Exit.isFailure(emptySession)).toBe(true);
 	})
 );
 
 it.effect("accepts only valid Remote Control ports", () =>
 	Effect.gen(function* () {
-		expect(yield* Schema.decodeUnknownEffect(RemoteControlPort)(30001)).toBe(30001);
+		expect(yield* decodeRemoteControlPort(30001)).toBe(30001);
 		for (const value of [0, 65_536, 30001.5, "30001"]) {
-			const result = yield* Schema.decodeUnknownEffect(RemoteControlPort)(value).pipe(
-				Effect.exit
-			);
+			const result = yield* decodeRemoteControlPort(value).pipe(Effect.exit);
 			expect(Exit.isFailure(result)).toBe(true);
 		}
 	})

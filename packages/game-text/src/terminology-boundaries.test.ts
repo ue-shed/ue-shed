@@ -12,6 +12,8 @@ import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
+
+const decodeRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
 it.each(["prefixTODOsuffix", "éTODO", "TODO界", "2TODO", "TODO٢", "𐐀TODO", "TODO𐐀"])(
 	"does not match a term beside a Unicode letter or number in %s",
 	(text) => {
@@ -19,7 +21,7 @@ it.each(["prefixTODOsuffix", "éTODO", "TODO界", "2TODO", "TODO٢", "𐐀TODO",
 	}
 );
 it("treats combining marks as part of the word around a term", () => {
-	// A decomposed accent before or after the term, as the precomposed "éTODO" above.
+	// A decomposed accent before or after the term, like the precomposed case above.
 	expect(termMatches("éTODO", "TODO", false)).toEqual([]);
 	expect(termMatches("TODÓsuffix", "TODO", false)).toEqual([]);
 	// An Indic vowel sign continues the word: "क" is not matched inside "किताब".
@@ -68,7 +70,7 @@ effectIt.live(
 				})),
 				{ kind: "preferred", term: "approved term", alternatives: ["draft term"] }
 			];
-			const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
+			const document = decodeRuleDocument({
 				schemaVersion: 1,
 				roles: [
 					{

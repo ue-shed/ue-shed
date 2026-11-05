@@ -21,6 +21,8 @@ import {
 } from "./builder.js";
 import { variantPluginReleaseAssetNames } from "./source.js";
 
+const isInvalidCompiledPluginBuild = Schema.is(InvalidCompiledPluginBuild);
+
 interface TarEntry {
 	readonly body: Uint8Array;
 	readonly name: string;
@@ -583,8 +585,7 @@ describe("compiled plugin builder", () => {
 		expect(error).toBeInstanceOf(InvalidCompiledPluginBuild);
 		expect(error.stage).toBe("archive");
 		expect(error).toHaveProperty("cause");
-		if (!Schema.is(InvalidCompiledPluginBuild)(error))
-			throw new Error("Expected invalid build");
+		if (!isInvalidCompiledPluginBuild(error)) throw new Error("Expected invalid build");
 		expect(error.cause).toMatchObject({ message: expect.stringContaining("file-size limit") });
 		expect(await readdir(source.request.outputDirectory)).toEqual([]);
 	});

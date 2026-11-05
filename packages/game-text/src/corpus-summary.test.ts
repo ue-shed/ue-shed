@@ -16,6 +16,12 @@ import {
 } from "./schema.js";
 import { TextCorpusDiagnosticSummary, textCorpusDiagnosticSummary } from "./corpus-summary.js";
 import { GameTextInvestigationExport, GameTextInvestigationPreset } from "./investigation.js";
+
+const decodeLocalizationStatusReport = Schema.decodeUnknownSync(LocalizationStatusReport);
+const decodeLocalizationProgressReport = Schema.decodeUnknownSync(LocalizationProgressReport);
+const decodeGameTextInvestigationExport = Schema.decodeUnknownSync(GameTextInvestigationExport);
+const decodeTextCorpusDiagnosticSummary = Schema.decodeUnknownSync(TextCorpusDiagnosticSummary);
+
 const diagnostics = Array.from({ length: 1000 }, (_, index) =>
 	TextCorpusDiagnostic.make({
 		code: TextCorpusDiagnostic.fields.code.literals[index % 3] ?? "package_inspection_failed",
@@ -57,7 +63,7 @@ describe("bounded corpus reports", () => {
 				}
 			]
 		};
-		const report = Schema.decodeUnknownSync(LocalizationStatusReport)(
+		const report = decodeLocalizationStatusReport(
 			localizationStatusReport(text, evidence(), page)
 		);
 		expect(report.packageCoverage?.counts.not_gatherable).toBe(1);
@@ -93,10 +99,8 @@ describe("bounded corpus reports", () => {
 				)
 			).toBe(true);
 		}
-		expect(Schema.decodeUnknownSync(LocalizationStatusReport)(reports[0])).toEqual(reports[0]);
-		expect(Schema.decodeUnknownSync(LocalizationProgressReport)(reports[1])).toEqual(
-			reports[1]
-		);
+		expect(decodeLocalizationStatusReport(reports[0])).toEqual(reports[0]);
+		expect(decodeLocalizationProgressReport(reports[1])).toEqual(reports[1]);
 	});
 	// Each report is its own driver process that builds a native index: about 15 s apiece.
 	it("bounds quality reports used by checks and investigations", { timeout: 120_000 }, () => {
@@ -153,7 +157,7 @@ describe("bounded corpus reports", () => {
 		expect(exported.result.corpus.packageCoverage?.packages).toHaveLength(200);
 		expect(exported.result.corpus.packageCoverage?.omitted).toBe(600);
 		expect(exported.result.corpus.units).toEqual(text.units);
-		expect(Schema.decodeUnknownSync(GameTextInvestigationExport)(exported)).toEqual(exported);
+		expect(decodeGameTextInvestigationExport(exported)).toEqual(exported);
 	});
 	it("handles absent package evidence and rejects oversized diagnostic payloads", () => {
 		const files = evidence();
@@ -167,7 +171,7 @@ describe("bounded corpus reports", () => {
 			diagnosticsOmitted: 0
 		});
 		expect(() =>
-			Schema.decodeUnknownSync(TextCorpusDiagnosticSummary)({
+			decodeTextCorpusDiagnosticSummary({
 				...textCorpusDiagnosticSummary(diagnostics),
 				diagnostics: diagnostics.slice(0, 201)
 			})

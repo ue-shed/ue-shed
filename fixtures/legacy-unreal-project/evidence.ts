@@ -91,6 +91,9 @@ const decodeNeutralEvidence = Schema.decodeUnknownSync(
 	),
 	{ onExcessProperty: "error" }
 );
+const decodeExactLegacyEvidence = Schema.decodeUnknownSync(LegacyEvidence, {
+	onExcessProperty: "error"
+});
 
 /** The reader's occurrences by default; callers that complete paths pass Unreal's `object_path`. */
 export function expectedLegacyOccurrences(
@@ -149,9 +152,7 @@ export function expectedLegacyOccurrences(
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Commandlet evidence decoding boundary.
 export function decodeLegacyEvidence(input: unknown): LegacyEvidence {
-	const evidence = Schema.decodeUnknownSync(LegacyEvidence, { onExcessProperty: "error" })(
-		decodeNeutralEvidence(input)
-	);
+	const evidence = decodeExactLegacyEvidence(decodeNeutralEvidence(input));
 	if (
 		evidence.packages.length !== legacyAssetNames.length ||
 		legacyAssetNames.some(

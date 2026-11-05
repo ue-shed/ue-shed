@@ -2,6 +2,9 @@ import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { decodeLocalizationChangeSet, LocalizationChangeSet } from "./change-sets.js";
 
+const LocalizationChangeSetJson = Schema.fromJsonString(LocalizationChangeSet);
+const encodeLocalizationChangeSetJson = Schema.encodeSync(LocalizationChangeSetJson);
+
 const document = Schema.decodeUnknownSync(LocalizationChangeSet)({
 	schemaVersion: 1,
 	provenance: {
@@ -35,7 +38,7 @@ describe("localization change sets", () => {
 				...document,
 				changes: document.changes.map((change) => ({ ...change, previousTranslation }))
 			};
-			const json = Schema.encodeSync(Schema.fromJsonString(LocalizationChangeSet))(value);
+			const json = encodeLocalizationChangeSetJson(value);
 			const decoded = decodeLocalizationChangeSet(json);
 			expect(Result.isSuccess(decoded)).toBe(true);
 			if (Result.isSuccess(decoded)) expect(decoded.success).toEqual(value);

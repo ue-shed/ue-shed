@@ -6,6 +6,7 @@ const NativeOperation = Schema.Struct({
 	io: GameTextIndexBuildOutcome.fields.io,
 	stageSeconds: GameTextIndexBuildOutcome.fields.stageSeconds
 });
+const isNativeOperation = Schema.is(NativeOperation);
 const TraceRecord = Schema.Struct({
 	name: Schema.String,
 	spanId: Schema.String,
@@ -43,7 +44,7 @@ export function makeGameTextBenchmarkTrace() {
 				for (const [key, value] of span.attributes)
 					if (isAttribute(value)) attributes[key] = value;
 				const native =
-					Exit.isSuccess(exit) && Schema.is(NativeOperation)(exit.value)
+					Exit.isSuccess(exit) && isNativeOperation(exit.value)
 						? {
 								action: exit.value.action,
 								io: exit.value.io,

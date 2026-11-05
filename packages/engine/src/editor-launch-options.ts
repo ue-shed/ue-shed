@@ -20,16 +20,10 @@ export const UnrealEditorArgument = Schema.NonEmptyString.check(
 );
 
 /**
- * Launch options shared by the plain launcher and supervised sessions.
- *
- * - `startupMap`: open this map directly instead of the default map.
- * - `logPath`: an absolute path the editor writes this run's log to (`-abslog`); its folder is
- *   created. The result and failures name it.
- * - `sourceControl: "disabled"`: start without connecting to source control (`-SCCProvider=None`)
- *   for this run only; the project's saved provider is unchanged.
- * - `additionalArguments`: other editor switches, such as `-nosplash`, `-nosound`, `-culture=`,
- *   `-ExecCmds=` or a non-Remote Control `-ini:` override. Switches the launcher owns are refused;
- *   see `reservedUnrealEditorArgument`.
+ * Launch options shared by the plain launcher and supervised sessions: `startupMap` opens that
+ * map; `logPath` is an absolute `-abslog` path whose folder is created; `sourceControl:
+ * "disabled"` passes `-SCCProvider=None` for this run only; `additionalArguments` are other
+ * editor switches, refusing those the launcher owns (see `reservedUnrealEditorArgument`).
  */
 export const UnrealEditorLaunchOptionFields = {
 	startupMap: Schema.optional(UnrealStartupMap),
@@ -199,6 +193,8 @@ const PackageRestoreData = Schema.Struct({
 	RestoreEnabled: Schema.Boolean,
 	Packages: Schema.optionalKey(Schema.Array(Schema.Unknown))
 });
+const PackageRestoreDataJson = Schema.fromJsonString(PackageRestoreData);
+const decodePackageRestoreDataJson = Schema.decodeUnknownEffect(PackageRestoreDataJson);
 
 /**
  * Whether the editor would offer to restore unsaved work for this project at startup:
@@ -212,9 +208,7 @@ export const pendingPackageRecovery = Effect.fn("UnrealEditor.pendingPackageReco
 	const file = join(dirname(projectDescriptor), "Saved", "Autosaves", "PackageRestoreData.json");
 	const text = yield* Effect.promise(() => readFile(file, "utf8").catch(() => undefined));
 	if (text === undefined) return false;
-	const data = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(PackageRestoreData))(
-		text
-	).pipe(Effect.option);
+	const data = yield* decodePackageRestoreDataJson(text).pipe(Effect.option);
 	// An unreadable file is treated as pending: losing recovery data is the worse mistake.
 	if (Option.isNone(data)) return true;
 	return data.value.RestoreEnabled && (data.value.Packages?.length ?? 0) > 0;

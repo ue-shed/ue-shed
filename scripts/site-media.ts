@@ -13,6 +13,8 @@ import {
 	type Journey
 } from "./site-media-model.ts";
 
+const decodeRecordingManifest = Schema.decodeUnknownSync(RecordingManifest);
+
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const mediaDir = join(repositoryRoot, "apps/site/public/media");
 const manifestPath = join(repositoryRoot, "apps/site/src/showcase/media.ts");
@@ -62,7 +64,7 @@ if (check) {
 		const recordingPattern = pins.get(journey) ?? `*-${journey}-*`;
 		const candidates = globSync(`${recordingPattern}/**/run.json`, { cwd: resultsRoot })
 			.map((path) => {
-				const manifest = Schema.decodeUnknownSync(RecordingManifest)(
+				const manifest = decodeRecordingManifest(
 					JSON.parse(readFileSync(containedFile(resultsRoot, path), "utf8"))
 				);
 				return { manifest, path, recordingId: path.split(/[\\/]/)[0] };

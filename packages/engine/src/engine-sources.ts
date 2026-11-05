@@ -41,6 +41,7 @@ const LauncherInstalled = Schema.Struct({
 	)
 });
 
+const decodeLauncherInstalled = Schema.decodeUnknownEffect(LauncherInstalled);
 const launcherEnginesKey = "HKLM\\SOFTWARE\\EpicGames\\Unreal Engine";
 const registeredBuildsKey = "HKCU\\Software\\Epic Games\\Unreal Engine\\Builds";
 const registryValue = /^\s*(.*?)\s{2,}REG_(?:EXPAND_)?SZ\s{2,}(.+?)\s*$/u;
@@ -63,7 +64,7 @@ function launcherListEngineRoots(programData: string): Effect.Effect<ReadonlyArr
 	const list = join(programData, "Epic", "UnrealEngineLauncher", "LauncherInstalled.dat");
 	return Effect.gen(function* () {
 		const contents = yield* Effect.tryPromise(() => readFile(list, "utf8"));
-		const installed = yield* Schema.decodeUnknownEffect(LauncherInstalled)(
+		const installed = yield* decodeLauncherInstalled(
 			yield* Effect.try(() => JSON.parse(contents))
 		);
 		// The list also holds Fab and Bridge plugins installed into an engine folder.

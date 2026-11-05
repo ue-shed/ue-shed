@@ -282,12 +282,10 @@ export interface SavedAssetScanOptions {
 	readonly classes?: readonly string[];
 	readonly concurrency?: number;
 	/**
-	 * Reuse header results for packages whose size and mtime are unchanged. Requires
-	 * `depth: "header"`. The cache is scoped to the class filters it was written with, so a caller
-	 * with different filters must name a different path. A `paths` list too large for one request
-	 * is scanned in batches, and batch `i` keeps its own cache at `${cachePath}.batch-${i}`; the
-	 * file at `cachePath` itself is left for scans that fit one request. Files of batch indices past
-	 * the last are removed after the scan.
+	 * Reuse header results for packages with unchanged size and mtime; requires `depth: "header"`.
+	 * The cache is scoped to its class filters, so callers with other filters need another path.
+	 * A batched scan keeps batch `i`'s cache at `${cachePath}.batch-${i}`, removing files past
+	 * the last batch; `cachePath` itself serves scans that fit one request.
 	 */
 	readonly cachePath?: string;
 	/**
@@ -323,12 +321,10 @@ export interface SavedAssetExtractionOptions {
 }
 
 /**
- * Package-text extraction that writes records to staging files instead of the event stream
- * (uasset-io v1.19). `groups[i]` is the group of `paths[i]`; the reader writes each package's
- * `SavedAssetPackageTextEvent` as one JSON line to `<directory>/<group>.ndjson`. The directory
- * must exist and hold none of those files. Records stay off the host's stream, so a consumer can
- * read each group in its own worker. v1.20 `snapshots` instead supplies each shard's signature
- * inventory and audience policy: the reader converts and writes `<group>.snapshot` directly.
+ * Package-text extraction to staging files, off the event stream (uasset-io v1.19): each package's
+ * `SavedAssetPackageTextEvent` becomes a JSON line in `<directory>/<group>.ndjson`, where
+ * `groups[i]` is `paths[i]`'s group. The directory must exist without those files. v1.20
+ * `snapshots` (per-shard signature inventory and audience policy) write `<group>.snapshot` instead.
  */
 export interface SavedAssetStagedTextExtractionOptions extends SavedAssetExtractionOptions {
 	readonly paths: readonly string[];
@@ -980,37 +976,37 @@ function makeAssetReader(
 	});
 }
 
-function makeScopedAssetReader(configuration: AssetReaderConfiguration & AssetReaderExecutable) {
-	return Effect.gen(function* () {
-		const mutex = yield* Semaphore.make(1);
-		const session = yield* Effect.acquireRelease(
-			Effect.sync(() => new UassetProtocolSession(configuration)),
-			(session) => Effect.promise(() => session.close())
+const makeScopedAssetReader = Effect.fn("AssetReader.make")(function* (
+	configuration: AssetReaderConfiguration & AssetReaderExecutable
+) {
+	const mutex = yield* Semaphore.make(1);
+	const session = yield* Effect.acquireRelease(
+		Effect.sync(() => new UassetProtocolSession(configuration)),
+		(session) => Effect.promise(() => session.close())
+	);
+	const invokeSingle: typeof invokeProtocolSingle = (options) =>
+		mutex.withPermits(1)(
+			invokeProtocolSessionSingle({
+				...options,
+				session
+			})
 		);
-		const invokeSingle: typeof invokeProtocolSingle = (options) =>
-			mutex.withPermits(1)(
-				invokeProtocolSessionSingle({
-					...options,
-					session
-				})
-			);
-		const invokeSingleWithEvidence: typeof invokeProtocolSingleWithEvidence = (options) =>
-			mutex.withPermits(1)(
-				invokeProtocolSessionSingleWithEvidence({
-					...options,
-					session
-				})
-			);
-		return makeAssetReader(
-			configuration,
-			{ current: idleCatalogProgress() },
-			{ current: idleScanProgress() },
-			{ current: idleSavedWorldProgress() },
-			invokeSingle,
-			invokeSingleWithEvidence
+	const invokeSingleWithEvidence: typeof invokeProtocolSingleWithEvidence = (options) =>
+		mutex.withPermits(1)(
+			invokeProtocolSessionSingleWithEvidence({
+				...options,
+				session
+			})
 		);
-	});
-}
+	return makeAssetReader(
+		configuration,
+		{ current: idleCatalogProgress() },
+		{ current: idleScanProgress() },
+		{ current: idleSavedWorldProgress() },
+		invokeSingle,
+		invokeSingleWithEvidence
+	);
+});
 
 const UASSET_PLATFORM_PACKAGE = "@ue-shed/uasset-win32-x64";
 

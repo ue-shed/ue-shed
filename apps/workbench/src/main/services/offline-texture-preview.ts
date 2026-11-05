@@ -172,14 +172,14 @@ function projectEngineAssociation(
 	);
 }
 
-function discoverEngineRoot(
-	host: OfflineTexturePreviewHostApi,
-	options: {
-		readonly configuredRoot?: string;
-		readonly projectFile: string;
-	}
-): Effect.Effect<string, Error> {
-	return Effect.gen(function* () {
+const discoverEngineRoot = Effect.fn("Workbench.OfflineTexturePreview.discoverEngineRoot")(
+	function* (
+		host: OfflineTexturePreviewHostApi,
+		options: {
+			readonly configuredRoot?: string;
+			readonly projectFile: string;
+		}
+	): Effect.fn.Return<string, Error> {
 		if (options.configuredRoot) {
 			const root = resolve(options.configuredRoot);
 			if (yield* host.exists(commandletExecutable(root))) return root;
@@ -217,14 +217,12 @@ function discoverEngineRoot(
 							: "No installed Unreal commandlet was discovered."
 					)
 				);
-	});
-}
+	}
+);
 
-function readPreview(
-	host: OfflineTexturePreviewHostApi,
-	path: string
-): Effect.Effect<TexturePreviewResult, OfflineTexturePreviewError> {
-	return Effect.gen(function* () {
+/** Untraced: runs once per texture in a preview batch. */
+const readPreview = Effect.fnUntraced(
+	function* (host: OfflineTexturePreviewHostApi, path: string) {
 		const bytes = yield* host
 			.readFile(path, maximumPreviewResultBytes)
 			.pipe(
@@ -249,20 +247,19 @@ function readPreview(
 				)
 		});
 		return yield* decodeTexturePreviewResult(json);
-	}).pipe(
-		Effect.mapError((cause) =>
-			isOfflineTexturePreviewError(cause)
-				? cause
-				: previewError(
-						"contract_failure",
-						`Unreal returned an invalid texture preview.`,
-						"Update UE Shed so Workbench and the Unreal plugin use compatible contracts.",
-						false,
-						cause
-					)
-		)
-	);
-}
+	},
+	Effect.mapError((cause) =>
+		isOfflineTexturePreviewError(cause)
+			? cause
+			: previewError(
+					"contract_failure",
+					`Unreal returned an invalid texture preview.`,
+					"Update UE Shed so Workbench and the Unreal plugin use compatible contracts.",
+					false,
+					cause
+				)
+	)
+);
 
 export const OfflineTexturePreviewLive = Layer.effect(
 	OfflineTexturePreview,

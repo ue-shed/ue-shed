@@ -45,6 +45,12 @@ import {
 	variantPluginReleaseAssetNames
 } from "./index.js";
 
+const ServerAddress = Schema.Struct({ port: Schema.Number });
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const decodeCompiledPluginVariantRequest = Schema.decodeUnknownSync(CompiledPluginVariantRequest);
+const decodeServerAddress = Schema.decodeUnknownSync(ServerAddress);
+const decodeJsonRecord = Schema.decodeUnknownSync(JsonRecord);
+
 interface TarEntry {
 	readonly body?: Uint8Array;
 	readonly name: string;
@@ -196,7 +202,7 @@ async function compiledFixture(
 		target: "UnrealEditor",
 		unrealVersion: "5.7"
 	} as const;
-	const artifact = Schema.decodeUnknownSync(CompiledPluginVariantRequest)(
+	const artifact = decodeCompiledPluginVariantRequest(
 		options.engineSourceCommit === undefined
 			? artifactWithoutCommit
 			: { ...artifactWithoutCommit, engineSourceCommit: options.engineSourceCommit }
@@ -378,7 +384,7 @@ function liveLayer(
 }
 
 function listeningPort(server: ReturnType<typeof createServer>): number {
-	return Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address()).port;
+	return decodeServerAddress(server.address()).port;
 }
 
 it.effect("stores source and multiple exact compiled variants for one release", () =>
@@ -485,9 +491,7 @@ it.effect("prunes only the matching legacy reference after recoverable content c
 			await mkdir(join(cacheRoot, "releases"), { recursive: true });
 			await rename(acquired.cachePath, legacyRoot);
 			const metadataPath = join(legacyRoot, ".ue-shed-distribution.json");
-			const metadata = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
-				JSON.parse(await readFile(metadataPath, "utf8"))
-			);
+			const metadata = decodeJsonRecord(JSON.parse(await readFile(metadataPath, "utf8")));
 			const {
 				artifactKind: _artifactKind,
 				variantIdentity: _variantIdentity,

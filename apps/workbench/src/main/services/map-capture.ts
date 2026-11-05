@@ -40,6 +40,7 @@ import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { WorkbenchWindow } from "../adapters/electron-window.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const progressEventChannel = "map-capture:progress";
 const livePreviewMaximumDimension = 640;
 const livePreviewHeight = 360;
@@ -362,10 +363,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					);
 				}
 				const manifest = yield* Effect.tryPromise({
-					try: async () =>
-						Schema.decodeUnknownSync(Schema.Json)(
-							JSON.parse(await readFile(manifestPath, "utf8"))
-						),
+					try: async () => decodeJson(JSON.parse(await readFile(manifestPath, "utf8"))),
 					catch: (cause) => cause
 				}).pipe(Effect.flatMap(decodeMapTilePyramidManifest));
 				const artifact = manifest.tiles.find(

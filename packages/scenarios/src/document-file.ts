@@ -13,6 +13,7 @@ export class ScenarioDocumentFileError extends Schema.TaggedError<ScenarioDocume
 	{ path: Schema.String, ...ErrorGuidanceFields, ...ErrorCauseFields }
 ) {}
 const isScenarioDocumentFileError = Schema.is(ScenarioDocumentFileError);
+const decodeScenarioDocument = Schema.decodeUnknownEffect(ScenarioDocument);
 
 class DocumentTooLarge extends Error {
 	constructor() {
@@ -91,7 +92,7 @@ export const readScenarioDocumentFile = Effect.fn("ScenarioDocumentFile.read")((
 /** Write a validated document beside its destination, then atomically replace the file. */
 export const writeScenarioDocumentFile = Effect.fn("ScenarioDocumentFile.write")(
 	(path: string, document: ScenarioDocument) =>
-		Schema.decodeUnknownEffect(ScenarioDocument)(document).pipe(
+		decodeScenarioDocument(document).pipe(
 			Effect.flatMap((decoded) =>
 				Effect.tryPromise({
 					try: async () => {

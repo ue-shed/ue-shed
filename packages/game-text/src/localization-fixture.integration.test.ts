@@ -26,6 +26,8 @@ const ExpectedStates = Schema.Struct({
 		})
 	)
 });
+const ExpectedStatesJson = Schema.fromJsonString(ExpectedStates);
+const decodeExpectedStatesJson = Schema.decodeUnknownSync(ExpectedStatesJson);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 
@@ -42,7 +44,7 @@ describe.skipIf(!executable)("real saved-reader localization states", () => {
 				return yield* service.read({ projectRoot: fixture.root, target });
 			}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 		);
-		const expected = Schema.decodeUnknownSync(Schema.fromJsonString(ExpectedStates))(
+		const expected = decodeExpectedStatesJson(
 			await readFile(
 				resolve(fixture.root, "FixtureSource/Localization/expected-states.json"),
 				"utf8"

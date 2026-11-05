@@ -28,39 +28,41 @@ function clientError(options: {
 
 const decodeHandle = Schema.decodeUnknownEffect(ScenarioRunHandle);
 
-const status = (handle: ScenarioRunHandle) =>
-	Effect.gen(function* (): Effect.fn.Return<ScenarioRunnerStatus, ScenarioStudioClientError> {
-		const value = yield* Effect.tryPromise({
-			try: () => window.ueShed.scenarios.status(handle),
-			catch: (cause) =>
-				clientError({
-					cause,
-					message: "Scenario Studio could not read the live PIE run.",
-					operation: "scenario.status",
-					recovery: "Confirm the same Unreal Editor and PIE session are still running."
-				})
-		});
-		const response = yield* parseScenarioStatusResponse(value).pipe(
-			Effect.mapError((cause) =>
-				clientError({
-					cause,
-					message: "Scenario Studio received an invalid live status.",
-					operation: "scenario.status.decode",
-					recovery: "Update Workbench and the scenario extension together."
-				})
-			)
-		);
-		if (response._tag === "Rejected")
-			return yield* Effect.fail(
-				clientError({
-					cause: response,
-					message: response.message,
-					operation: "scenario.status",
-					recovery: response.recovery
-				})
-			);
-		return response;
+/** Untraced: the live run polls this every 100 ms. */
+const status = Effect.fnUntraced(function* (
+	handle: ScenarioRunHandle
+): Effect.fn.Return<ScenarioRunnerStatus, ScenarioStudioClientError> {
+	const value = yield* Effect.tryPromise({
+		try: () => window.ueShed.scenarios.status(handle),
+		catch: (cause) =>
+			clientError({
+				cause,
+				message: "Scenario Studio could not read the live PIE run.",
+				operation: "scenario.status",
+				recovery: "Confirm the same Unreal Editor and PIE session are still running."
+			})
 	});
+	const response = yield* parseScenarioStatusResponse(value).pipe(
+		Effect.mapError((cause) =>
+			clientError({
+				cause,
+				message: "Scenario Studio received an invalid live status.",
+				operation: "scenario.status.decode",
+				recovery: "Update Workbench and the scenario extension together."
+			})
+		)
+	);
+	if (response._tag === "Rejected")
+		return yield* Effect.fail(
+			clientError({
+				cause: response,
+				message: response.message,
+				operation: "scenario.status",
+				recovery: response.recovery
+			})
+		);
+	return response;
+});
 
 const fileOperation = (document?: ScenarioDocument) =>
 	Effect.tryPromise({

@@ -4,6 +4,7 @@ import { TransportRequestError, UnrealRC } from "unreal-rc";
 
 const RemoteCallEnvelope = Schema.Struct({ ResultJson: Schema.String });
 const decodeRemoteCallEnvelope = Schema.decodeUnknownEffect(RemoteCallEnvelope);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 
 /**
  * Classified HTTP, connection or response-contract failure with endpoint/function context and
@@ -176,16 +177,10 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 }
 
 /**
- * Creates the Effect HTTP adapter with an explicit default timeout. Each request scopes its
- * upstream client, validates both JSON boundaries, and disables upstream retries, including for
- * idempotent calls.
- *
- * `passphrase` is sent as Unreal's Remote Control `Passphrase` header. An editor that restricts
- * server access with configured passphrases checks it on every request, including requests from
- * the same machine, and answers a wrong or missing one with HTTP 401 (verified on UE 5.7 and 5.8).
- * Without `passphrase` the transport sends its own built-in phrase, which such an editor refuses.
- * `headers` are added to every request, for example for a proxy in front of the editor; a
- * `Passphrase` entry there wins over `passphrase`. Omit both to keep the transport's defaults.
+ * Creates the Effect HTTP adapter with a default timeout; each request scopes its client, checks
+ * both JSON boundaries and never retries. `passphrase` is sent as Unreal's `Passphrase` header; a
+ * restricted editor checks it on every request, local ones too, and answers 401 to a wrong one or
+ * the built-in default (UE 5.7, 5.8). `headers` go on every request; their `Passphrase` wins.
  */
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;
@@ -252,7 +247,7 @@ export function makeRemoteControlClient(options: {
 				)
 			);
 			return yield* Effect.try({
-				try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(envelope.ResultJson)),
+				try: () => decodeJson(JSON.parse(envelope.ResultJson)),
 				catch: (cause) =>
 					clientError(request, {
 						code: "invalid_result_json",

@@ -26,6 +26,8 @@ const ExpectedStates = Schema.Struct({
 		})
 	)
 });
+const ExpectedStatesJson = Schema.fromJsonString(ExpectedStates);
+const decodeExpectedStatesJson = Schema.decodeUnknownSync(ExpectedStatesJson);
 
 /** These are disposable fixtures generated and verified by each actual engine, never studio data. */
 describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtures", () => {
@@ -36,7 +38,7 @@ describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtu
 			async () => {
 				if (!fixture || !executable)
 					throw new Error("Explicit fixture and native executable required");
-				const expected = Schema.decodeUnknownSync(Schema.fromJsonString(ExpectedStates))(
+				const expected = decodeExpectedStatesJson(
 					await readFile(
 						new URL(
 							"../fixtures/unreal-project/FixtureSource/Localization/expected-states.json",

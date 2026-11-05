@@ -10,6 +10,10 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import type { LocalizationCultureMark } from "./localization-schema.js";
 import { TextCorpusFocusRequest, makeTextUnitId } from "./schema.js";
 
+const decodeTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeFocusRequest = Schema.decodeUnknownSync(LocalizationFocusRequest);
+const decodeTextFocusRequest = Schema.decodeUnknownSync(TextCorpusFocusRequest);
+
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
 describe.skipIf(!executable)("production native Game Text queries", () => {
@@ -81,7 +85,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						...Array.from({ length: 54 }, (_, index) => `x-${index}`),
 						"en"
 					];
-					const target = Schema.decodeUnknownSync(LocalizationTarget)({
+					const target = decodeTarget({
 						...fixture.target,
 						cultures,
 						nativeCulture: "en",
@@ -158,7 +162,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 								{ cultureOffset: 50, locationOffset: 10000, poContextOffset: 50 },
 								{ cultureOffset: 99, locationOffset: 10100, poContextOffset: 150 }
 							]) {
-								const request = Schema.decodeUnknownSync(LocalizationFocusRequest)({
+								const request = decodeFocusRequest({
 									target: target.name,
 									selection,
 									...offsets
@@ -598,7 +602,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							for (const selected of [page, scoped])
 								for (const [position, unit] of selected.units.entries()) {
 									const line = selected.localization?.lines[position];
-									const focus = Schema.decodeUnknownSync(TextCorpusFocusRequest)({
+									const focus = decodeTextFocusRequest({
 										id: unit.id,
 										pageSize: 1,
 										...(line

@@ -23,6 +23,7 @@ import { WorkbenchProject } from "./project-workspace.js";
 
 const previewRootName = ".ue-shed/niagara-preview";
 const isNiagaraPreviewError = Schema.is(NiagaraPreviewError);
+const decodeNiagaraSystemObjectPath = Schema.decodeUnknownOption(NiagaraSystemObjectPath);
 const ProjectEngineAssociation = Schema.Struct({
 	EngineAssociation: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^\d+\.\d+$/u)))
 });
@@ -117,12 +118,12 @@ function engineAssociation(descriptor: string): Effect.Effect<string | undefined
 	);
 }
 
-function pluginDescriptor(options: {
-	readonly projectDescriptor: string;
-	readonly projectRoot: string;
-	readonly sourceCheckout: string | undefined;
-}): Effect.Effect<string | undefined> {
-	return Effect.gen(function* () {
+const pluginDescriptor = Effect.fn("Workbench.NiagaraPreview.pluginDescriptor")(
+	function* (options: {
+		readonly projectDescriptor: string;
+		readonly projectRoot: string;
+		readonly sourceCheckout: string | undefined;
+	}): Effect.fn.Return<string | undefined> {
 		const installed = join(
 			options.projectRoot,
 			"Plugins",
@@ -143,8 +144,8 @@ function pluginDescriptor(options: {
 			"UEShedNiagara.uplugin"
 		);
 		return (yield* existing(staged)) ? staged : undefined;
-	});
-}
+	}
+);
 
 export interface WorkbenchNiagaraPreviewApi extends NiagaraPreviewClientApi {}
 
@@ -192,8 +193,7 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 						.sort((left, right) => left.localeCompare(right))
 						.flatMap((objectPath) => {
 							// One malformed header entry must not reject the whole catalogue.
-							const decoded =
-								Schema.decodeUnknownOption(NiagaraSystemObjectPath)(objectPath);
+							const decoded = decodeNiagaraSystemObjectPath(objectPath);
 							return Option.isSome(decoded) ? [{ objectPath: decoded.value }] : [];
 						}),
 					status: "ready" as const

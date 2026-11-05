@@ -71,6 +71,15 @@ export const LocalizationBaseline = Schema.Struct({
 	entries: Schema.Array(LocalizationBaselineEntry).check(Schema.isMaxLength(MAX_BASELINE_ENTRIES))
 });
 export type LocalizationBaseline = typeof LocalizationBaseline.Type;
+const LocalizationBaselineJson = Schema.fromJsonString(LocalizationBaseline);
+const decodeLocalizationBaselineJsonResult = Schema.decodeUnknownResult(LocalizationBaselineJson);
+const decodeBaselineCreatedAtResult = Schema.decodeUnknownResult(
+	LocalizationBaseline.fields.provenance.fields.createdAt
+);
+const JsonText = Schema.fromJsonString(Schema.Json);
+const decodeJsonText = Schema.decodeUnknownSync(JsonText);
+const TextCorpusJson = Schema.fromJsonString(TextCorpus);
+const encodeTextCorpusJson = Schema.encodeSync(TextCorpusJson);
 /**
  * Typed invalid baseline, unavailable/ambiguous evidence or reporting-context failure. Code and
  * recovery explain required correction; cause retains original schema/manifest evidence when
@@ -95,6 +104,7 @@ export class LocalizationReportError extends Schema.TaggedError<LocalizationRepo
 		recovery: Schema.String
 	}
 ) {}
+const isLocalizationReportError = Schema.is(LocalizationReportError);
 function reportError(
 	code: LocalizationReportError["code"],
 	cause?: unknown
@@ -135,7 +145,7 @@ function baselineValid(document: LocalizationBaseline): boolean {
 export function decodeLocalizationBaselineJson(
 	input: string
 ): Result.Result<LocalizationBaseline, LocalizationReportError> {
-	const result = Schema.decodeUnknownResult(Schema.fromJsonString(LocalizationBaseline))(input);
+	const result = decodeLocalizationBaselineJsonResult(input);
 	if (Result.isFailure(result))
 		return Result.fail(reportError("invalid_baseline", result.failure));
 	if (!baselineValid(result.success)) return Result.fail(reportError("invalid_baseline"));
@@ -176,9 +186,7 @@ function manifestEntries(
 /** The corpus fingerprint a baseline records, computed from the corpus itself. */
 function corpusGeneration(corpus: TextCorpus): string {
 	// Encode optional undefined values as JSON omissions before canonicalizing the corpus.
-	const corpusJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(
-		Schema.encodeSync(Schema.fromJsonString(TextCorpus))(corpus)
-	);
+	const corpusJson = decodeJsonText(encodeTextCorpusJson(corpus));
 	return localizationFingerprint(canonicalLocalizationJson(corpusJson));
 }
 /** The baseline entries of the target's manifest: every required key, its source and words. */
@@ -203,13 +211,7 @@ function baselineWith(
 	evidence: LocalizationTargetEvidence,
 	createdAt: string
 ): (generation: string) => LocalizationBaseline {
-	if (
-		Result.isFailure(
-			Schema.decodeUnknownResult(LocalizationBaseline.fields.provenance.fields.createdAt)(
-				createdAt
-			)
-		)
-	)
+	if (Result.isFailure(decodeBaselineCreatedAtResult(createdAt)))
 		throw reportError("invalid_baseline");
 	const files = localizationEvidenceFileStatuses(evidence).flatMap((file) =>
 		file.provenance ? [file.provenance] : []
@@ -283,7 +285,7 @@ export const indexedLocalizationBaseline = Effect.fn("GameText.localizationBasel
 const reportFailure =
 	(code: LocalizationReportError["code"]) =>
 	(cause: unknown): LocalizationReportError =>
-		Schema.is(LocalizationReportError)(cause) ? cause : reportError(code, cause);
+		isLocalizationReportError(cause) ? cause : reportError(code, cause);
 /** A key that left the manifest, paired one to one with the key that took its place. */
 export const LocalizationBaselineKeyChange = Schema.Struct({
 	from: LocalizationBaselineEntry,
@@ -457,6 +459,12 @@ export const LocalizationProgressCulture = Schema.Struct({
 	baselineDelta: Schema.optionalKey(LocalizationBaselineDelta)
 });
 export type LocalizationProgressCulture = typeof LocalizationProgressCulture.Type;
+const decodeProgressCultureStates = Schema.decodeUnknownSync(
+	LocalizationProgressCulture.fields.states
+);
+const decodeProgressCultureUnknownReasons = Schema.decodeUnknownSync(
+	LocalizationProgressCulture.fields.unknownReasons
+);
 /**
  * Versioned target progress report with culture totals, word-count diagnostics and
  * package/gather coverage. Pending PO edits remain separate from archive/shipping progress.
@@ -772,12 +780,8 @@ function progressReport(
 				: "not_tracked";
 		const result: LocalizationProgressCulture = {
 			culture,
-			states: Schema.decodeUnknownSync(LocalizationProgressCulture.fields.states)(
-				tally.states
-			),
-			unknownReasons: Schema.decodeUnknownSync(
-				LocalizationProgressCulture.fields.unknownReasons
-			)(tally.unknownReasons),
+			states: decodeProgressCultureStates(tally.states),
+			unknownReasons: decodeProgressCultureUnknownReasons(tally.unknownReasons),
 			notSynced: tally.notSynced,
 			reducedSourceChecking: tally.reducedSourceChecking,
 			total: { lines, sourceWords: totalWords },

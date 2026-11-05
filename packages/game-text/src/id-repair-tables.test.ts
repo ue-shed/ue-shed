@@ -13,6 +13,9 @@ import type {
 import { applyTextIdTableRepair, prepareTextIdTableRepair } from "./id-repair-tables.js";
 import { TextIdRepairRequest } from "./id-repair-schema.js";
 
+const decodeTextIdRepairRequest = Schema.decodeUnknownSync(TextIdRepairRequest);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 const contract = { name: "unreal-authoring-apply", version: { major: 1, minor: 2 } } as const;
 const authoring: AuthoringApplyRequest = {
 	contract,
@@ -123,7 +126,7 @@ function tableSnapshot(column: { name: string; propertyName?: string }, key = be
 
 /** A key fix for the saved reader's cell `Lamp.<propertyPath>` in DT_Items. */
 function tableRequest(propertyPath: string) {
-	return Schema.decodeUnknownSync(TextIdRepairRequest)({
+	return decodeTextIdRepairRequest({
 		projectKey: "C:/Fixture",
 		title: "Fix table key",
 		changes: [
@@ -157,7 +160,7 @@ function connection(snapshot?: ReturnType<typeof tableSnapshot>) {
 			Effect.gen(function* () {
 				calls.push(call.functionName);
 				if (call.functionName === "GetCapabilityManifest")
-					return Schema.decodeUnknownSync(Schema.Json)({
+					return decodeJson({
 						schemaVersion: 1,
 						producerKind: "unreal_editor",
 						authoringObjectPath:
@@ -176,9 +179,9 @@ function connection(snapshot?: ReturnType<typeof tableSnapshot>) {
 						]
 					});
 				if (call.functionName === "GetTableSnapshot" && snapshot)
-					return Schema.decodeUnknownSync(Schema.Json)(snapshot);
+					return decodeJson(snapshot);
 				if (call.functionName === "Apply")
-					return Schema.decodeUnknownSync(Schema.Json)({
+					return decodeJson({
 						contract,
 						operationId: "repair",
 						errors: [],
@@ -219,7 +222,7 @@ it.effect("retains committed table edits before a save reply is lost", () =>
 it.effect("refuses copied table paths that still point at another physical package", () =>
 	Effect.gen(function* () {
 		const remote = connection();
-		const request = Schema.decodeUnknownSync(TextIdRepairRequest)({
+		const request = decodeTextIdRepairRequest({
 			projectKey: "C:/Fixture",
 			title: "Fix copied table",
 			changes: [

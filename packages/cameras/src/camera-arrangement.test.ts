@@ -26,6 +26,9 @@ import { generateFramingCandidates } from "./review-framing.js";
 
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
 const decodeCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
+const decodeReviewAuthoringSession = Schema.decodeUnknownSync(ReviewAuthoringSession);
+const decodeCameraArrangement = Schema.decodeUnknownSync(CameraArrangement);
+const decodeReviewSetSync = Schema.decodeUnknownSync(ReviewSet);
 const command = (arrangement: CameraArrangement, fields: Schema.JsonObject) =>
 	decodeCommand({
 		arrangementId: arrangement.id,
@@ -54,7 +57,7 @@ describe("actor-scoped camera arrangements", () => {
 		};
 		const candidates = generateFramingCandidates(subject);
 		const draftPose = { ...candidates[0]!.approvedPose, fieldOfViewDegrees: 43 };
-		const session = Schema.decodeUnknownSync(ReviewAuthoringSession)({
+		const session = decodeReviewAuthoringSession({
 			contract: { name: "ue-shed-review-authoring-session", version: { major: 1, minor: 0 } },
 			id: "legacy",
 			viewId: "legacy-view",
@@ -356,7 +359,7 @@ describe("durable camera coordination", () => {
 	it("prevents another arrangement on the same actor from replacing an owned View", () => {
 		const a = fixtureArrangement();
 		const set = approveArrangementCamera(a, "camera-0", fixtureSet());
-		const other = Schema.decodeUnknownSync(CameraArrangement)({
+		const other = decodeCameraArrangement({
 			...a,
 			id: "another-arrangement"
 		});
@@ -364,7 +367,7 @@ describe("durable camera coordination", () => {
 			"another camera arrangement"
 		);
 		expect(() =>
-			Schema.decodeUnknownSync(ReviewSet)({
+			decodeReviewSetSync({
 				...set,
 				contract: { name: "ue-shed-review-set", version: { major: 1, minor: 3 } }
 			})

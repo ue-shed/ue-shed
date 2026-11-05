@@ -18,6 +18,10 @@ import {
 } from "./workspace-contract.js";
 import type { GameTextWorkspaceFileHooks } from "./workspace-host.js";
 
+const ProgressEvent = GameTextWorkspaceContract.progressChanges.events;
+const decodeProgressEvent = Schema.decodeUnknownEffect(ProgressEvent);
+const encodeProgressEvent = Schema.encodeUnknownEffect(ProgressEvent);
+
 /** Files kept in memory; dialogs are cancelled, as a headless host answers them. */
 function memoryFiles(): GameTextWorkspaceFileHooks {
 	const contents = new Map<string, Uint8Array>();
@@ -136,17 +140,18 @@ describe("GameTextWorkspaceContract", () => {
 						params: NoInfer<I>
 					) =>
 						Effect.gen(function* () {
-							const decoded = yield* Schema.decodeEffect(entry.params)(
+							// The entry is the caller's, so each call compiles its codecs once.
+							const decodeParams = Schema.decodeEffect(entry.params);
+							const encodeParams = Schema.encodeEffect(entry.params);
+							const decodeSuccess = Schema.decodeEffect(entry.success);
+							const encodeSuccess = Schema.encodeEffect(entry.success);
+							const decoded = yield* decodeParams(overJson(params));
+							expect(overJson(yield* encodeParams(decoded))).toEqual(
 								overJson(params)
 							);
-							expect(
-								overJson(yield* Schema.encodeEffect(entry.params)(decoded))
-							).toEqual(overJson(params));
 							const result = yield* method(decoded);
-							const wire = overJson(
-								yield* Schema.encodeEffect(entry.success)(result)
-							);
-							expect(yield* Schema.decodeEffect(entry.success)(wire)).toEqual(result);
+							const wire = overJson(yield* encodeSuccess(result));
+							expect(yield* decodeSuccess(wire)).toEqual(result);
 							served.add(entry);
 							return result;
 						});
@@ -166,15 +171,7 @@ describe("GameTextWorkspaceContract", () => {
 						workspace.progressChanges().pipe(Stream.take(1))
 					);
 					expect(
-						yield* Schema.decodeUnknownEffect(
-							GameTextWorkspaceContract.progressChanges.events
-						)(
-							overJson(
-								yield* Schema.encodeUnknownEffect(
-									GameTextWorkspaceContract.progressChanges.events
-								)(first)
-							)
-						)
+						yield* decodeProgressEvent(overJson(yield* encodeProgressEvent(first)))
 					).toEqual(first);
 
 					const search = { capability: "all", pageSize: 10, query: "" } as const;

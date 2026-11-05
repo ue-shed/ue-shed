@@ -19,6 +19,10 @@ import {
 import { withSpanAsync } from "./gate-trace.ts";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 
+const isString = Schema.is(Schema.String);
+const decodeCameraBridgeResponse = Schema.decodeUnknownEffect(Cameras.CameraBridgeResponse);
+const decodeArrangementCommand = Schema.decodeUnknownSync(Cameras.CameraArrangementCommand);
+
 const engineRoot = process.env.UE_SHED_UNREAL_ENGINE_ROOT;
 const output = process.argv[2];
 if (!engineRoot || !output)
@@ -48,7 +52,7 @@ const port = await new Promise<number>((resolvePort, reject) => {
 	server.once("error", reject);
 	server.listen(0, "127.0.0.1", () => {
 		const address = server.address();
-		if (!address || Schema.is(Schema.String)(address)) {
+		if (!address || isString(address)) {
 			server.close();
 			reject(new Error("No test port"));
 			return;
@@ -445,9 +449,7 @@ try {
 						ActionJson: JSON.stringify(event)
 					}
 				});
-				const decoded = yield* Schema.decodeUnknownEffect(Cameras.CameraBridgeResponse)(
-					response
-				);
+				const decoded = yield* decodeCameraBridgeResponse(response);
 				return yield* Cameras.readyCameraBridge(decoded);
 			})
 		);
@@ -467,7 +469,7 @@ try {
 		const doc = await Effect.runPromise(store.load());
 		return action({
 			kind: "command",
-			command: Schema.decodeUnknownSync(Cameras.CameraArrangementCommand)({
+			command: decodeArrangementCommand({
 				arrangementId: doc.arrangement.id,
 				expectedRevision: doc.arrangement.revision,
 				operationId: `journey-${doc.arrangement.revision}`,

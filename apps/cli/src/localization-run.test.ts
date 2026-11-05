@@ -11,6 +11,30 @@ import {
 import { runCli } from "./command.js";
 import { CliRuntime } from "./cli-runtime.js";
 
+const OperationFailure = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	type: Schema.Literal("failure"),
+	error: LocalizationOperationError
+});
+const ConfigurationFailure = Schema.Struct({
+	schemaVersion: Schema.Literal(1),
+	type: Schema.Literal("failure"),
+	error: Schema.Struct({
+		_tag: Schema.Literal("LocalizationRunConfigurationError"),
+		code: Schema.Literal("invalid_configuration"),
+		message: Schema.NonEmptyString,
+		recovery: Schema.NonEmptyString,
+		retrySafe: Schema.Literal(true)
+	})
+});
+const decodeOperationFailureJson = Schema.decodeUnknownSync(
+	Schema.fromJsonString(OperationFailure)
+);
+const decodeConfigurationFailureJson = Schema.decodeUnknownSync(
+	Schema.fromJsonString(ConfigurationFailure)
+);
+const decodePlanJson = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationOperationPlan));
+
 it.effect(
 	"loc run classifies invalid target input before discovery and keeps parser evidence",
 	() =>
@@ -35,15 +59,7 @@ it.effect(
 				"--plan",
 				"--json"
 			]).pipe(Effect.provide(runtime));
-			const failure = Schema.decodeUnknownSync(
-				Schema.fromJsonString(
-					Schema.Struct({
-						schemaVersion: Schema.Literal(1),
-						type: Schema.Literal("failure"),
-						error: LocalizationOperationError
-					})
-				)
-			)(yield* Ref.get(output));
+			const failure = decodeOperationFailureJson(yield* Ref.get(output));
 			expect(failure.error.code).toBe("invalid_request");
 			expect(failure.error.nextStep).toBe("fix_input");
 			expect(failure.error.cause).toBeDefined();
@@ -90,9 +106,7 @@ it.effect("loc run --plan returns validated recipe writes without a commandlet o
 				engine,
 				"--plan"
 			]).pipe(Effect.provide(runtime));
-			const plan = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationOperationPlan))(
-				yield* Ref.get(output)
-			);
+			const plan = decodePlanJson(yield* Ref.get(output));
 			expect(plan.engine).toBe("4.27");
 			expect(plan.wholeRecipe).toBe(true);
 			expect(plan.files).toHaveLength(13);
@@ -139,21 +153,7 @@ it.effect("loc run reports configuration provider failures without echoing priva
 				)
 			)
 		);
-		const failure = Schema.decodeUnknownSync(
-			Schema.fromJsonString(
-				Schema.Struct({
-					schemaVersion: Schema.Literal(1),
-					type: Schema.Literal("failure"),
-					error: Schema.Struct({
-						_tag: Schema.Literal("LocalizationRunConfigurationError"),
-						code: Schema.Literal("invalid_configuration"),
-						message: Schema.NonEmptyString,
-						recovery: Schema.NonEmptyString,
-						retrySafe: Schema.Literal(true)
-					})
-				})
-			)
-		)(yield* Ref.get(output));
+		const failure = decodeConfigurationFailureJson(yield* Ref.get(output));
 		expect(failure.error.recovery).toContain("ProgramFiles / ProgramData");
 		expect(failure.error.recovery).toContain("--plan");
 		expect(yield* Ref.get(output)).not.toContain("private-environment-value");
@@ -182,15 +182,7 @@ it.effect("loc run returns a typed unknown-target failure before engine discover
 			"UnknownTargetSelection",
 			"--json"
 		]).pipe(Effect.provide(runtime));
-		const failure = Schema.decodeUnknownSync(
-			Schema.fromJsonString(
-				Schema.Struct({
-					schemaVersion: Schema.Literal(1),
-					type: Schema.Literal("failure"),
-					error: LocalizationOperationError
-				})
-			)
-		)(yield* Ref.get(output));
+		const failure = decodeOperationFailureJson(yield* Ref.get(output));
 		expect(failure.error.code).toBe("target_not_found");
 		expect(failure.error.recovery).toContain("loc targets");
 		expect(yield* Ref.get(output)).not.toContain("UnknownTargetSelection");

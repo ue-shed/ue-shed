@@ -36,6 +36,7 @@ import {
 } from "./review-schema.js";
 
 const isReviewArtifactSourceRejected = Schema.is(ReviewArtifactSourceRejected);
+const decodeCameraRendererPolicy = Schema.decodeUnknownEffect(CameraRendererPolicy);
 
 /**
  * Review preparation, capture or finalization failure with run identity and original cause.
@@ -358,7 +359,7 @@ const captureWithSavedPositionFallback = Effect.fn(
 	};
 });
 
-function captureOneView(args: {
+const captureOneView = Effect.fn("ReviewCapture.captureView")(function* (args: {
 	readonly renderer?: CameraRendererPolicy;
 	readonly attempt: ReviewCaptureAttempt;
 	readonly capturePort: ReviewCapturePortApi;
@@ -368,194 +369,192 @@ function captureOneView(args: {
 	readonly runId: typeof CaptureRunId.Type;
 	readonly unrealStagingRoot: string;
 	readonly view: ReviewSet["views"][number];
-}): Effect.Effect<ViewResult, ReviewStorageError> {
-	return Effect.gen(function* () {
-		const profile = args.reviewSet.captureProfiles.find(
-			(candidate) => candidate.id === args.view.captureProfileId
-		);
-		if (!profile) {
-			return {
-				code: "capture_profile_missing",
-				message: `Review View ${args.view.id} references missing profile ${args.view.captureProfileId}`,
-				recovery: "Add the profile to the Review Set or update the Review View.",
-				retrySafe: false,
-				status: "failed" as const,
-				viewId: args.view.id,
-				viewRevision: args.view.revision
-			};
-		}
-		const visibilityPolicy = args.reviewSet.visibilityPolicies.find(
-			(candidate) => candidate.id === args.view.visibilityPolicyId
-		);
-		if (!visibilityPolicy) {
-			return {
-				code: "visibility_policy_missing",
-				message: `Review View ${args.view.id} references missing policy ${args.view.visibilityPolicyId}`,
-				recovery: "Add the policy to the Review Set or update the Review View.",
-				retrySafe: false,
-				status: "failed" as const,
-				viewId: args.view.id,
-				viewRevision: args.view.revision
-			};
-		}
-		const operationId = yield* args.ids.generate();
-		const request = ReviewCaptureRequestCurrent.make({
-			...(args.view.authoredVisibility
-				? { authoredVisibility: args.view.authoredVisibility }
-				: undefined),
-			assessment: visibilityPolicy.assessment,
-			clearCompanion: args.view.authoredVisibility
-				? { status: "not_requested" }
-				: clearCompanionRequest({ policy: visibilityPolicy, view: args.view }),
-			contract: {
-				name: "ue-shed-review-capture",
-				version: { major: 1, minor: args.view.authoredVisibility ? 7 : 6 }
-			},
-			expectedMapPath: args.reviewSet.project.mapPath,
-			operationId,
-			resolution: profile.resolution,
-			renderPolicy: reviewCaptureRenderPolicy(profile.renderPolicy, args.renderer),
-			subject:
-				args.view.target.kind === "actor"
-					? args.view.target.subject
-					: { bounds: args.view.target.bounds, kind: "oriented_bounds" },
+}): Effect.fn.Return<ViewResult, ReviewStorageError> {
+	const profile = args.reviewSet.captureProfiles.find(
+		(candidate) => candidate.id === args.view.captureProfileId
+	);
+	if (!profile) {
+		return {
+			code: "capture_profile_missing",
+			message: `Review View ${args.view.id} references missing profile ${args.view.captureProfileId}`,
+			recovery: "Add the profile to the Review Set or update the Review View.",
+			retrySafe: false,
+			status: "failed" as const,
 			viewId: args.view.id,
-			viewpoint: args.view.viewpoint
-		});
-		const response = yield* captureWithSavedPositionFallback({
-			capturePort: args.capturePort,
-			request,
-			view: args.view
-		}).pipe(
-			Effect.tapError((cause) =>
-				Effect.logError("Review capture connection failed", {
-					cause,
-					operationId,
-					viewId: args.view.id
-				})
-			),
-			Effect.catch(() =>
-				Effect.succeed({
-					code: "capture_connection_failed",
-					message: "The connected editor did not return a valid capture result.",
-					operationId,
-					recovery:
-						"Inspect the capture operation and partial artifacts, then verify the editor connection before another capture.",
-					retrySafe: false,
-					contract: {
-						name: "ue-shed-review-capture" as const,
-						version: { major: 1 as const, minor: 6 as const }
-					},
-					status: "failed" as const,
-					viewId: args.view.id
-				})
-			)
-		);
-		if (response.status === "failed") {
-			return {
-				code: response.code,
-				message: response.message,
-				recovery: response.recovery,
-				retrySafe: response.retrySafe,
-				status: "failed" as const,
-				viewId: args.view.id,
-				viewRevision: args.view.revision
-			};
-		}
-		if (response.mapPackageDirtyAfter !== response.mapPackageDirtyBefore) {
-			return {
-				code: "map_package_dirty_state_changed",
-				message: "Transient review capture changed the map package dirty state.",
-				recovery: "Inspect the editor map before retrying; do not save tooling changes.",
-				retrySafe: false,
-				status: "failed" as const,
-				viewId: args.view.id,
-				viewRevision: args.view.revision
-			};
-		}
-		const responseArtifacts = stagedArtifacts(response);
-		const artifacts = yield* Effect.forEach(responseArtifacts, (artifact) => {
-			const relativePath = `views/${args.view.id}/${artifact.variant}.png`;
-			return args.attempt
-				.storeArtifact({
-					relativePath,
-					sourceAuthorizationRoot: args.projectRoot,
-					sourcePath: request.authoredVisibility
-						? resolve(args.projectRoot, artifact.stagingPath)
-						: artifact.stagingPath,
-					sourceRoot: request.authoredVisibility
-						? resolve(args.projectRoot, "Saved", "UEShed", "CameraRenderStaging")
-						: args.unrealStagingRoot
-				})
-				.pipe(
-					Effect.map((stored) => ({
-						byteLength: stored.size,
-						contentHash: sha256(stored.bytes),
-						height: response.height,
-						id: ArtifactId.make(`${args.runId}:${args.view.id}:${artifact.variant}`),
-						mediaType: "image/png" as const,
-						relativePath,
-						variant: artifact.variant,
-						width: response.width
-					}))
-				);
-		}).pipe(
-			Effect.catchTag("ReviewArtifactSourceRejected", (cause: ReviewArtifactSourceRejected) =>
-				Effect.succeed(cause)
-			)
-		);
-		if (isReviewArtifactSourceRejected(artifacts)) {
-			return {
-				code: "capture_staging_path_rejected",
-				message: artifacts.message,
-				recovery: "Verify the connected project and editor capability version.",
-				retrySafe: false,
-				status: "failed" as const,
-				viewId: args.view.id,
-				viewRevision: args.view.revision
-			};
-		}
-		const result = {
-			...("authoredVisibility" in response && response.authoredVisibility
-				? { authoredVisibility: response.authoredVisibility }
-				: undefined),
-			...("authoredEvidence" in response && response.authoredEvidence
-				? { authoredEvidence: response.authoredEvidence }
-				: undefined),
-			...("renderEvidence" in response && response.renderEvidence !== undefined
-				? { renderEvidence: response.renderEvidence }
-				: undefined),
-			artifacts,
-			captureDurationMs: response.captureDurationMs,
-			clearCompanion: durableClearCompanion(response),
-			realization:
-				"resolvedSubject" in response
-					? {
-							effectiveWorldPose: response.effectiveWorldPose,
-							resolvedSubject: response.resolvedSubject,
-							status: "resolved" as const,
-							viewpoint: args.view.viewpoint
-						}
-					: {
-							resolvedActorPath: response.actorPath,
-							status: "legacy_not_recorded" as const
-						},
-			status: "captured" as const,
-			viewId: args.view.id,
-			viewRevision: args.view.revision,
-			...(args.view.visibilityOverrides === undefined
-				? undefined
-				: { visibilityOverrides: args.view.visibilityOverrides }),
-			visibilityPolicy,
-			visibility: durableVisibility(response)
+			viewRevision: args.view.revision
 		};
-		yield* args.attempt.writeDocument({
-			relativePath: `views/${args.view.id}/result.json`,
-			value: result
-		});
-		return result;
+	}
+	const visibilityPolicy = args.reviewSet.visibilityPolicies.find(
+		(candidate) => candidate.id === args.view.visibilityPolicyId
+	);
+	if (!visibilityPolicy) {
+		return {
+			code: "visibility_policy_missing",
+			message: `Review View ${args.view.id} references missing policy ${args.view.visibilityPolicyId}`,
+			recovery: "Add the policy to the Review Set or update the Review View.",
+			retrySafe: false,
+			status: "failed" as const,
+			viewId: args.view.id,
+			viewRevision: args.view.revision
+		};
+	}
+	const operationId = yield* args.ids.generate();
+	const request = ReviewCaptureRequestCurrent.make({
+		...(args.view.authoredVisibility
+			? { authoredVisibility: args.view.authoredVisibility }
+			: undefined),
+		assessment: visibilityPolicy.assessment,
+		clearCompanion: args.view.authoredVisibility
+			? { status: "not_requested" }
+			: clearCompanionRequest({ policy: visibilityPolicy, view: args.view }),
+		contract: {
+			name: "ue-shed-review-capture",
+			version: { major: 1, minor: args.view.authoredVisibility ? 7 : 6 }
+		},
+		expectedMapPath: args.reviewSet.project.mapPath,
+		operationId,
+		resolution: profile.resolution,
+		renderPolicy: reviewCaptureRenderPolicy(profile.renderPolicy, args.renderer),
+		subject:
+			args.view.target.kind === "actor"
+				? args.view.target.subject
+				: { bounds: args.view.target.bounds, kind: "oriented_bounds" },
+		viewId: args.view.id,
+		viewpoint: args.view.viewpoint
 	});
-}
+	const response = yield* captureWithSavedPositionFallback({
+		capturePort: args.capturePort,
+		request,
+		view: args.view
+	}).pipe(
+		Effect.tapError((cause) =>
+			Effect.logError("Review capture connection failed", {
+				cause,
+				operationId,
+				viewId: args.view.id
+			})
+		),
+		Effect.catch(() =>
+			Effect.succeed({
+				code: "capture_connection_failed",
+				message: "The connected editor did not return a valid capture result.",
+				operationId,
+				recovery:
+					"Inspect the capture operation and partial artifacts, then verify the editor connection before another capture.",
+				retrySafe: false,
+				contract: {
+					name: "ue-shed-review-capture" as const,
+					version: { major: 1 as const, minor: 6 as const }
+				},
+				status: "failed" as const,
+				viewId: args.view.id
+			})
+		)
+	);
+	if (response.status === "failed") {
+		return {
+			code: response.code,
+			message: response.message,
+			recovery: response.recovery,
+			retrySafe: response.retrySafe,
+			status: "failed" as const,
+			viewId: args.view.id,
+			viewRevision: args.view.revision
+		};
+	}
+	if (response.mapPackageDirtyAfter !== response.mapPackageDirtyBefore) {
+		return {
+			code: "map_package_dirty_state_changed",
+			message: "Transient review capture changed the map package dirty state.",
+			recovery: "Inspect the editor map before retrying; do not save tooling changes.",
+			retrySafe: false,
+			status: "failed" as const,
+			viewId: args.view.id,
+			viewRevision: args.view.revision
+		};
+	}
+	const responseArtifacts = stagedArtifacts(response);
+	const artifacts = yield* Effect.forEach(responseArtifacts, (artifact) => {
+		const relativePath = `views/${args.view.id}/${artifact.variant}.png`;
+		return args.attempt
+			.storeArtifact({
+				relativePath,
+				sourceAuthorizationRoot: args.projectRoot,
+				sourcePath: request.authoredVisibility
+					? resolve(args.projectRoot, artifact.stagingPath)
+					: artifact.stagingPath,
+				sourceRoot: request.authoredVisibility
+					? resolve(args.projectRoot, "Saved", "UEShed", "CameraRenderStaging")
+					: args.unrealStagingRoot
+			})
+			.pipe(
+				Effect.map((stored) => ({
+					byteLength: stored.size,
+					contentHash: sha256(stored.bytes),
+					height: response.height,
+					id: ArtifactId.make(`${args.runId}:${args.view.id}:${artifact.variant}`),
+					mediaType: "image/png" as const,
+					relativePath,
+					variant: artifact.variant,
+					width: response.width
+				}))
+			);
+	}).pipe(
+		Effect.catchTag("ReviewArtifactSourceRejected", (cause: ReviewArtifactSourceRejected) =>
+			Effect.succeed(cause)
+		)
+	);
+	if (isReviewArtifactSourceRejected(artifacts)) {
+		return {
+			code: "capture_staging_path_rejected",
+			message: artifacts.message,
+			recovery: "Verify the connected project and editor capability version.",
+			retrySafe: false,
+			status: "failed" as const,
+			viewId: args.view.id,
+			viewRevision: args.view.revision
+		};
+	}
+	const result = {
+		...("authoredVisibility" in response && response.authoredVisibility
+			? { authoredVisibility: response.authoredVisibility }
+			: undefined),
+		...("authoredEvidence" in response && response.authoredEvidence
+			? { authoredEvidence: response.authoredEvidence }
+			: undefined),
+		...("renderEvidence" in response && response.renderEvidence !== undefined
+			? { renderEvidence: response.renderEvidence }
+			: undefined),
+		artifacts,
+		captureDurationMs: response.captureDurationMs,
+		clearCompanion: durableClearCompanion(response),
+		realization:
+			"resolvedSubject" in response
+				? {
+						effectiveWorldPose: response.effectiveWorldPose,
+						resolvedSubject: response.resolvedSubject,
+						status: "resolved" as const,
+						viewpoint: args.view.viewpoint
+					}
+				: {
+						resolvedActorPath: response.actorPath,
+						status: "legacy_not_recorded" as const
+					},
+		status: "captured" as const,
+		viewId: args.view.id,
+		viewRevision: args.view.revision,
+		...(args.view.visibilityOverrides === undefined
+			? undefined
+			: { visibilityOverrides: args.view.visibilityOverrides }),
+		visibilityPolicy,
+		visibility: durableVisibility(response)
+	};
+	yield* args.attempt.writeDocument({
+		relativePath: `views/${args.view.id}/result.json`,
+		value: result
+	});
+	return result;
+});
 
 function captureReviewSetWith(args: {
 	readonly capturePort: ReviewCapturePortApi;
@@ -570,9 +569,7 @@ function captureReviewSetWith(args: {
 		const renderer =
 			args.options.renderer === undefined
 				? undefined
-				: yield* Schema.decodeUnknownEffect(CameraRendererPolicy)(
-						args.options.renderer
-					).pipe(
+				: yield* decodeCameraRendererPolicy(args.options.renderer).pipe(
 						Effect.mapError(
 							(cause) =>
 								new ReviewCaptureRunError({

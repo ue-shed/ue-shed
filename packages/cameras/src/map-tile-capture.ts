@@ -59,6 +59,9 @@ import {
 } from "./map-tile-schema.js";
 
 const isMapCaptureArtifactSourceRejected = Schema.is(MapCaptureArtifactSourceRejected);
+const decodeMapTileCaptureOperation = Schema.decodeUnknownEffect(MapTileCaptureOperation);
+const decodeMapCaptureRunId = Schema.decodeUnknownEffect(MapCaptureRunId);
+const decodeMapCaptureOperationId = Schema.decodeUnknownEffect(MapCaptureOperationId);
 const mapTileReviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
 const litCameraTilesPerBatch = 4;
 const maximumEnumeratedTiles = 1_000_000;
@@ -190,7 +193,7 @@ export function makeMapTileCaptureRemotePort(
 				);
 			}
 			const decode = (value: Schema.Json) =>
-				Schema.decodeUnknownEffect(MapTileCaptureOperation)(value).pipe(
+				decodeMapTileCaptureOperation(value).pipe(
 					Effect.flatMap((status) => {
 						const operationId =
 							status.state === "running"
@@ -593,9 +596,7 @@ function runMapCaptureWith(args: {
 					: { levels: args.options.levels }),
 				...(args.options.tiles === undefined ? undefined : { tiles: args.options.tiles })
 			});
-			const runId = yield* Schema.decodeUnknownEffect(MapCaptureRunId)(
-				args.options.runId ?? randomUUID()
-			).pipe(
+			const runId = yield* decodeMapCaptureRunId(args.options.runId ?? randomUUID()).pipe(
 				Effect.mapError(
 					(cause) =>
 						new MapCaptureRunError({
@@ -608,7 +609,7 @@ function runMapCaptureWith(args: {
 						})
 				)
 			);
-			const correlationId = yield* Schema.decodeUnknownEffect(MapCaptureOperationId)(
+			const correlationId = yield* decodeMapCaptureOperationId(
 				args.options.correlationId ?? runId
 			).pipe(
 				Effect.mapError(

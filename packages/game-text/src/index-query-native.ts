@@ -45,6 +45,17 @@ export class GameTextIndexQuery extends Context.Service<
 	}
 >()("@ue-shed/game-text/GameTextIndexQuery") {}
 
+/** A snapshot reader's key: the JSON `open` writes. */
+const ReaderKeyJson = Schema.fromJsonString(
+	Schema.Struct({
+		configuration: GameTextIndexConfiguration,
+		generation: Schema.String,
+		joinedKey: Schema.String,
+		audienceRules: Schema.Array(Schema.String)
+	})
+);
+const decodeReaderKeyJson = Schema.decodeUnknownEffect(ReaderKeyJson);
+
 const compareFailed = (cause: unknown) =>
 	new GameTextIndexError({
 		code: "index_failed",
@@ -76,33 +87,24 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 		GameTextIndexQuery,
 		Effect.gen(function* () {
 			const engine = yield* Layer.build(nativeGameTextEngineClientLayer(configuration));
-			const Request = Schema.Struct({
-				configuration: GameTextIndexConfiguration,
-				generation: Schema.String,
-				joinedKey: Schema.String,
-				audienceRules: Schema.Array(Schema.String)
-			});
 			// Only live caller pins retain entries. No idle timeout retains unused snapshots.
 			const readers: RcMap.RcMap<
 				string,
 				Effect.Success<ReturnType<typeof openNativeTextQuery>>,
 				GameTextIndexError
 			> = yield* RcMap.make({
-				lookup: (key: string) =>
-					Effect.gen(function* () {
-						let invalidated = false;
-						const input = yield* Schema.decodeUnknownEffect(
-							Schema.fromJsonString(Request)
-						)(key).pipe(Effect.orDie);
-						return yield* openNativeTextQuery({
-							...input,
-							onFailure: Effect.suspend(() => {
-								if (invalidated) return Effect.void;
-								invalidated = true;
-								return RcMap.invalidate(readers, key);
-							})
-						}).pipe(Effect.provide(engine));
-					})
+				lookup: Effect.fn("GameTextIndexQuery.openReader")(function* (key: string) {
+					let invalidated = false;
+					const input = yield* decodeReaderKeyJson(key).pipe(Effect.orDie);
+					return yield* openNativeTextQuery({
+						...input,
+						onFailure: Effect.suspend(() => {
+							if (invalidated) return Effect.void;
+							invalidated = true;
+							return RcMap.invalidate(readers, key);
+						})
+					}).pipe(Effect.provide(engine));
+				})
 			});
 			const client = Context.get(engine, NativeGameTextEngineClient);
 			return GameTextIndexQuery.of({

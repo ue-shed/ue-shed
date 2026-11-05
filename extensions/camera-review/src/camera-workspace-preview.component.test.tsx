@@ -15,6 +15,8 @@ import {
 } from "../../../packages/cameras/src/camera-arrangement.test-support.js";
 import { CameraWorkspace } from "./camera-workspace.js";
 
+const decodeProvisionedCameraBinding = Schema.decodeUnknownSync(ProvisionedCameraBinding);
+
 it("displays only frames belonging to the provisioned active camera", async () => {
 	const runtime = ManagedRuntime.make(Layer.empty);
 	const frames = await Effect.runPromise(Queue.unbounded<CameraFrame>());
@@ -38,7 +40,7 @@ it("displays only frames belonging to the provisioned active camera", async () =
 		ArrangementCameraId.make("camera-0"),
 		{ draftPath: "draft", approvalPath: "views" }
 	);
-	const preview = Schema.decodeUnknownSync(ProvisionedCameraBinding)({
+	const preview = decodeProvisionedCameraBinding({
 		cameraId: "expected-camera",
 		correlation: { type: "framing_candidate", candidateId: "camera-0" },
 		index: 0,

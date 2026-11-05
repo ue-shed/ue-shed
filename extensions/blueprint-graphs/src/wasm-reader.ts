@@ -44,6 +44,9 @@ const WasmBlueprintOutput = Schema.Union([
 	})
 ]);
 
+const decodeBlueprintAssetPath = Schema.decodeUnknownEffect(BlueprintAssetPath);
+const decodeWasmBlueprintOutput = Schema.decodeUnknownEffect(WasmBlueprintOutput);
+
 function diagnosticCode(code: string): string {
 	switch (code) {
 		case "malformed_data":
@@ -105,7 +108,7 @@ export const adaptWasmBlueprintResult = Effect.fn("BlueprintGraphs.adaptWasmResu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<BlueprintGraphReadResult> {
-	const path = yield* Schema.decodeUnknownEffect(BlueprintAssetPath)(assetPath).pipe(
+	const path = yield* decodeBlueprintAssetPath(assetPath).pipe(
 		Effect.catch(() => Effect.succeed(undefined))
 	);
 	if (path === undefined) {
@@ -116,7 +119,7 @@ export const adaptWasmBlueprintResult = Effect.fn("BlueprintGraphs.adaptWasmResu
 			status: "failed"
 		};
 	}
-	return yield* Schema.decodeUnknownEffect(WasmBlueprintOutput)(output).pipe(
+	return yield* decodeWasmBlueprintOutput(output).pipe(
 		Effect.map((read): BlueprintGraphReadResult => {
 			if (read.status === "error") {
 				return failed(path, failureReason(read.kind), read.message);

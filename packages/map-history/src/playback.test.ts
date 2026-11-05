@@ -10,6 +10,9 @@ import {
 } from "./playback.js";
 import { PerforceMapHistory } from "./schema.js";
 
+const decodeHistory = Schema.decodeUnknownSync(PerforceMapHistory);
+const encodeHistory = Schema.encodeSync(PerforceMapHistory);
+
 function resolvedTransform(location = { x: 1, y: 2, z: 3 }) {
 	return {
 		location,
@@ -58,7 +61,7 @@ function history(input: {
 	readonly start?: readonly SavedWorldActor[];
 	readonly startCompleteness?: "complete" | "partial";
 }) {
-	return Schema.decodeUnknownSync(PerforceMapHistory)({
+	return decodeHistory({
 		baseline:
 			input.start === undefined
 				? { status: "map_not_yet_created" }
@@ -291,11 +294,9 @@ describe("Map History playback", () => {
 	});
 
 	it("rejects a baseline result missing the required playback snapshot", () => {
-		const encoded = Schema.encodeSync(PerforceMapHistory)(
-			history({ end: [], revisions: [], start: [] })
-		);
+		const encoded = encodeHistory(history({ end: [], revisions: [], start: [] }));
 		const { rangeStartSnapshot: _rangeStartSnapshot, ...missingSnapshot } = encoded;
-		const malformed = Schema.decodeUnknownSync(PerforceMapHistory)(missingSnapshot);
+		const malformed = decodeHistory(missingSnapshot);
 
 		expect(() => createMapHistoryPlaybackState({ history: malformed })).toThrow(
 			"no rangeStartSnapshot"

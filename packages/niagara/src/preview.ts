@@ -43,6 +43,7 @@ import {
 import { submitNiagaraSessionRequest } from "./session.js";
 
 const MAXIMUM_RECEIPT_BYTES = 8 * 1024 * 1024;
+const decodeNiagaraPreviewRunManifest = Schema.decodeUnknownEffect(NiagaraPreviewRunManifest);
 const COMMANDLET_TIMEOUT = Duration.minutes(30);
 
 export interface RunNiagaraPreviewOptions {
@@ -483,204 +484,199 @@ export function validateReceipt(
 	return Effect.void;
 }
 
-function validateArtifacts(options: {
+const validateArtifacts = Effect.fn("NiagaraPreview.validateArtifacts")(function* (options: {
 	readonly receipt: NiagaraPreviewProducerReceipt;
 	readonly stagingRoot: string;
-}): Effect.Effect<NiagaraPreviewRunManifestValue["artifacts"], NiagaraPreviewError> {
-	return Effect.gen(function* () {
-		const rootDetails = yield* safeIo(
-			Effect.promise(() => lstat(options.stagingRoot)),
-			previewError(
-				"artifact_invalid",
-				"capture",
-				"The producer staging directory is unavailable.",
-				"Inspect the Unreal log and retry the preview.",
-				true,
-				options.receipt.runId
-			)
+}): Effect.fn.Return<NiagaraPreviewRunManifestValue["artifacts"], NiagaraPreviewError> {
+	const rootDetails = yield* safeIo(
+		Effect.promise(() => lstat(options.stagingRoot)),
+		previewError(
+			"artifact_invalid",
+			"capture",
+			"The producer staging directory is unavailable.",
+			"Inspect the Unreal log and retry the preview.",
+			true,
+			options.receipt.runId
+		)
+	);
+	if (!rootDetails.isDirectory() || rootDetails.isSymbolicLink()) {
+		return yield* previewError(
+			"artifact_invalid",
+			"capture",
+			"The producer staging root is not a normal directory.",
+			"Remove the staged path and retry.",
+			false,
+			options.receipt.runId
 		);
-		if (!rootDetails.isDirectory() || rootDetails.isSymbolicLink()) {
-			return yield* previewError(
-				"artifact_invalid",
-				"capture",
-				"The producer staging root is not a normal directory.",
-				"Remove the staged path and retry.",
-				false,
-				options.receipt.runId
-			);
-		}
-		const canonicalRoot = yield* safeIo(
-			Effect.promise(() => realpath(options.stagingRoot)),
-			previewError(
-				"artifact_invalid",
-				"capture",
-				"The producer staging root could not be resolved.",
-				"Inspect filesystem permissions and retry.",
-				true,
-				options.receipt.runId
-			)
+	}
+	const canonicalRoot = yield* safeIo(
+		Effect.promise(() => realpath(options.stagingRoot)),
+		previewError(
+			"artifact_invalid",
+			"capture",
+			"The producer staging root could not be resolved.",
+			"Inspect filesystem permissions and retry.",
+			true,
+			options.receipt.runId
+		)
+	);
+	const frameDirectory = join(options.stagingRoot, "frames");
+	const names = yield* safeIo(
+		Effect.promise(() => readdir(frameDirectory)),
+		previewError(
+			"artifact_invalid",
+			"capture",
+			"The staged frame directory is unavailable.",
+			"Inspect the Unreal log and retry.",
+			true,
+			options.receipt.runId
+		)
+	);
+	const expectedNames = options.receipt.frames.map((frame) => basename(frame.relativePath));
+	if (
+		names.length !== expectedNames.length ||
+		names.some((name) => !expectedNames.includes(name))
+	) {
+		return yield* previewError(
+			"artifact_invalid",
+			"capture",
+			"The staged frame directory does not exactly match the producer receipt.",
+			"Remove the staged run and retry.",
+			false,
+			options.receipt.runId
 		);
-		const frameDirectory = join(options.stagingRoot, "frames");
-		const names = yield* safeIo(
-			Effect.promise(() => readdir(frameDirectory)),
-			previewError(
-				"artifact_invalid",
-				"capture",
-				"The staged frame directory is unavailable.",
-				"Inspect the Unreal log and retry.",
-				true,
-				options.receipt.runId
-			)
-		);
-		const expectedNames = options.receipt.frames.map((frame) => basename(frame.relativePath));
-		if (
-			names.length !== expectedNames.length ||
-			names.some((name) => !expectedNames.includes(name))
-		) {
-			return yield* previewError(
-				"artifact_invalid",
-				"capture",
-				"The staged frame directory does not exactly match the producer receipt.",
-				"Remove the staged run and retry.",
-				false,
-				options.receipt.runId
-			);
-		}
-		return yield* Effect.forEach(
-			options.receipt.frames,
-			(frame) =>
-				Effect.gen(function* () {
-					const candidate = resolve(
-						options.stagingRoot,
-						...frame.relativePath.split("/")
+	}
+	return yield* Effect.forEach(
+		options.receipt.frames,
+		(frame) =>
+			Effect.gen(function* () {
+				const candidate = resolve(options.stagingRoot, ...frame.relativePath.split("/"));
+				if (!pathContained(resolve(options.stagingRoot), candidate)) {
+					return yield* previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} escapes the producer staging root.`,
+						"Update the producer and retry.",
+						false,
+						options.receipt.runId
 					);
-					if (!pathContained(resolve(options.stagingRoot), candidate)) {
-						return yield* previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} escapes the producer staging root.`,
-							"Update the producer and retry.",
-							false,
-							options.receipt.runId
-						);
-					}
-					const details = yield* safeIo(
-						Effect.promise(() => lstat(candidate)),
-						previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} is missing.`,
-							"Inspect the Unreal log and retry.",
-							true,
-							options.receipt.runId
-						)
+				}
+				const details = yield* safeIo(
+					Effect.promise(() => lstat(candidate)),
+					previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} is missing.`,
+						"Inspect the Unreal log and retry.",
+						true,
+						options.receipt.runId
+					)
+				);
+				if (!details.isFile() || details.isSymbolicLink()) {
+					return yield* previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} is not a normal file.`,
+						"Remove the staged run and retry.",
+						false,
+						options.receipt.runId
 					);
-					if (!details.isFile() || details.isSymbolicLink()) {
-						return yield* previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} is not a normal file.`,
-							"Remove the staged run and retry.",
-							false,
-							options.receipt.runId
-						);
-					}
-					const canonical = yield* safeIo(
-						Effect.promise(() => realpath(candidate)),
-						previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} could not be resolved.`,
-							"Inspect filesystem permissions and retry.",
-							true,
-							options.receipt.runId
-						)
+				}
+				const canonical = yield* safeIo(
+					Effect.promise(() => realpath(candidate)),
+					previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} could not be resolved.`,
+						"Inspect filesystem permissions and retry.",
+						true,
+						options.receipt.runId
+					)
+				);
+				if (!pathContained(canonicalRoot, canonical)) {
+					return yield* previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} resolves outside the producer staging root.`,
+						"Remove the staged run and retry.",
+						false,
+						options.receipt.runId
 					);
-					if (!pathContained(canonicalRoot, canonical)) {
-						return yield* previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} resolves outside the producer staging root.`,
-							"Remove the staged run and retry.",
-							false,
-							options.receipt.runId
-						);
-					}
-					const maximumBytes =
-						options.receipt.effectiveSettings.width *
-							options.receipt.effectiveSettings.height *
-							4 +
-						8 * 1024 * 1024;
-					if (details.size < 1 || details.size > maximumBytes) {
-						return yield* previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} has an invalid byte length.`,
-							"Update the producer and retry.",
-							false,
-							options.receipt.runId
-						);
-					}
-					const bytes = yield* safeIo(
-						Effect.promise(() => readFile(candidate)),
-						previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} could not be read.`,
-							"Inspect filesystem permissions and retry.",
-							true,
-							options.receipt.runId
-						)
+				}
+				const maximumBytes =
+					options.receipt.effectiveSettings.width *
+						options.receipt.effectiveSettings.height *
+						4 +
+					8 * 1024 * 1024;
+				if (details.size < 1 || details.size > maximumBytes) {
+					return yield* previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} has an invalid byte length.`,
+						"Update the producer and retry.",
+						false,
+						options.receipt.runId
 					);
-					let dimensions: { readonly height: number; readonly width: number };
-					try {
-						dimensions = pngDimensions(bytes);
-					} catch {
-						return yield* previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} is not a valid PNG header.`,
-							"Update the producer and retry.",
-							false,
-							options.receipt.runId
-						);
-					}
-					if (
-						dimensions.width !== options.receipt.effectiveSettings.width ||
-						dimensions.height !== options.receipt.effectiveSettings.height
-					) {
-						return yield* previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} dimensions do not match the producer receipt.`,
-							"Update the producer and retry.",
-							false,
-							options.receipt.runId
-						);
-					}
-					return {
-						...(frame.activityScore === undefined
-							? undefined
-							: { activityScore: frame.activityScore }),
-						...(frame.edgePixelFraction === undefined
-							? undefined
-							: { edgePixelFraction: frame.edgePixelFraction }),
-						bytes: details.size,
-						height: dimensions.height,
-						index: frame.index,
-						maximumRgb: frame.maximumRgb,
-						mimeType: "image/png" as const,
-						nonTransparentPixelFraction: frame.nonTransparentPixelFraction,
-						relativePath: frame.relativePath,
-						sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-						timeSeconds: frame.timeSeconds,
-						width: dimensions.width
-					};
-				}),
-			{ concurrency: 1 }
-		);
-	});
-}
+				}
+				const bytes = yield* safeIo(
+					Effect.promise(() => readFile(candidate)),
+					previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} could not be read.`,
+						"Inspect filesystem permissions and retry.",
+						true,
+						options.receipt.runId
+					)
+				);
+				let dimensions: { readonly height: number; readonly width: number };
+				try {
+					dimensions = pngDimensions(bytes);
+				} catch {
+					return yield* previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} is not a valid PNG header.`,
+						"Update the producer and retry.",
+						false,
+						options.receipt.runId
+					);
+				}
+				if (
+					dimensions.width !== options.receipt.effectiveSettings.width ||
+					dimensions.height !== options.receipt.effectiveSettings.height
+				) {
+					return yield* previewError(
+						"artifact_invalid",
+						"capture",
+						`Frame ${frame.index} dimensions do not match the producer receipt.`,
+						"Update the producer and retry.",
+						false,
+						options.receipt.runId
+					);
+				}
+				return {
+					...(frame.activityScore === undefined
+						? undefined
+						: { activityScore: frame.activityScore }),
+					...(frame.edgePixelFraction === undefined
+						? undefined
+						: { edgePixelFraction: frame.edgePixelFraction }),
+					bytes: details.size,
+					height: dimensions.height,
+					index: frame.index,
+					maximumRgb: frame.maximumRgb,
+					mimeType: "image/png" as const,
+					nonTransparentPixelFraction: frame.nonTransparentPixelFraction,
+					relativePath: frame.relativePath,
+					sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+					timeSeconds: frame.timeSeconds,
+					width: dimensions.width
+				};
+			}),
+		{ concurrency: 1 }
+	);
+});
 
 interface PublishRunOptions {
 	readonly artifacts: NiagaraPreviewRunManifestValue["artifacts"];
@@ -692,111 +688,106 @@ interface PublishRunOptions {
 }
 
 /** @internal Exported from this module only for deterministic publication tests. */
-export function publishRun(
+export const publishRun = Effect.fn("NiagaraPreview.publishRun")(function* (
 	options: PublishRunOptions
-): Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
-	return Effect.gen(function* () {
-		const manifest = yield* Schema.decodeUnknownEffect(NiagaraPreviewRunManifest)({
-			alphaPolicy: options.receipt.alphaPolicy,
-			artifacts: options.artifacts,
-			camera: options.receipt.camera,
-			colorSpace: options.receipt.colorSpace,
-			contract: {
-				name: "ue-shed-niagara-preview-run",
-				version: { major: 1, minor: 2 }
-			},
-			diagnostics: diagnosticsFor(
-				options.receipt.frames,
-				options.receipt.missingMaterialCount
-			),
-			effectiveSettings: options.receipt.effectiveSettings,
-			generatedAtUtc: options.generatedAtUtc,
-			producer: {
-				engineVersion: options.receipt.engineVersion,
-				receiptContract: options.receipt.contract
-			},
-			requestedSettings: options.receipt.requestedSettings,
-			runId: options.receipt.runId,
-			status: "complete",
-			systemObjectPath: options.receipt.systemObjectPath
-		}).pipe(
-			Effect.mapError((cause) =>
-				previewError(
-					"receipt_invalid",
-					"publication",
-					"The validated producer result could not form a published manifest.",
-					"Update UE Shed so the producer and host contracts match.",
-					false,
-					options.receipt.runId,
-					cause
-				)
-			)
-		);
-		const runsRoot = join(resolve(options.outputRoot), "runs");
-		const finalRoot = join(runsRoot, options.receipt.runId);
-		const temporaryRoot = join(runsRoot, `.${options.receipt.runId}.publishing`);
-		const exists = yield* Effect.promise(() =>
-			stat(finalRoot)
-				.then(() => true)
-				.catch(() => false)
-		);
-		if (exists) {
-			return yield* previewError(
-				"run_exists",
+): Effect.fn.Return<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
+	const manifest = yield* decodeNiagaraPreviewRunManifest({
+		alphaPolicy: options.receipt.alphaPolicy,
+		artifacts: options.artifacts,
+		camera: options.receipt.camera,
+		colorSpace: options.receipt.colorSpace,
+		contract: {
+			name: "ue-shed-niagara-preview-run",
+			version: { major: 1, minor: 2 }
+		},
+		diagnostics: diagnosticsFor(options.receipt.frames, options.receipt.missingMaterialCount),
+		effectiveSettings: options.receipt.effectiveSettings,
+		generatedAtUtc: options.generatedAtUtc,
+		producer: {
+			engineVersion: options.receipt.engineVersion,
+			receiptContract: options.receipt.contract
+		},
+		requestedSettings: options.receipt.requestedSettings,
+		runId: options.receipt.runId,
+		status: "complete",
+		systemObjectPath: options.receipt.systemObjectPath
+	}).pipe(
+		Effect.mapError((cause) =>
+			previewError(
+				"receipt_invalid",
 				"publication",
-				`Niagara Preview Run ${options.receipt.runId} already exists.`,
-				"Choose a new run ID or inspect the existing immutable run.",
+				"The validated producer result could not form a published manifest.",
+				"Update UE Shed so the producer and host contracts match.",
 				false,
-				options.receipt.runId
-			);
-		}
-		const publishFailure = previewError(
-			"publish_failed",
+				options.receipt.runId,
+				cause
+			)
+		)
+	);
+	const runsRoot = join(resolve(options.outputRoot), "runs");
+	const finalRoot = join(runsRoot, options.receipt.runId);
+	const temporaryRoot = join(runsRoot, `.${options.receipt.runId}.publishing`);
+	const exists = yield* Effect.promise(() =>
+		stat(finalRoot)
+			.then(() => true)
+			.catch(() => false)
+	);
+	if (exists) {
+		return yield* previewError(
+			"run_exists",
 			"publication",
-			"The validated Niagara Preview Run could not be published atomically.",
-			"Verify destination permissions and free space, then retry with a new run ID.",
-			true,
+			`Niagara Preview Run ${options.receipt.runId} already exists.`,
+			"Choose a new run ID or inspect the existing immutable run.",
+			false,
 			options.receipt.runId
 		);
-		yield* safeIo(
-			Effect.promise(async () => {
-				await mkdir(runsRoot, { recursive: true });
-				await mkdir(temporaryRoot, { recursive: false });
-				await mkdir(join(temporaryRoot, "frames"), { recursive: false });
-				try {
-					for (const artifact of options.artifacts) {
-						await copyFile(
-							resolve(options.stagingRoot, ...artifact.relativePath.split("/")),
-							resolve(temporaryRoot, ...artifact.relativePath.split("/"))
-						);
-					}
-					await writeFile(
-						join(temporaryRoot, "manifest.json"),
-						`${JSON.stringify(manifest, null, 2)}\n`,
-						"utf8"
+	}
+	const publishFailure = previewError(
+		"publish_failed",
+		"publication",
+		"The validated Niagara Preview Run could not be published atomically.",
+		"Verify destination permissions and free space, then retry with a new run ID.",
+		true,
+		options.receipt.runId
+	);
+	yield* safeIo(
+		Effect.promise(async () => {
+			await mkdir(runsRoot, { recursive: true });
+			await mkdir(temporaryRoot, { recursive: false });
+			await mkdir(join(temporaryRoot, "frames"), { recursive: false });
+			try {
+				for (const artifact of options.artifacts) {
+					await copyFile(
+						resolve(options.stagingRoot, ...artifact.relativePath.split("/")),
+						resolve(temporaryRoot, ...artifact.relativePath.split("/"))
 					);
-					await rename(temporaryRoot, finalRoot);
-				} catch (cause) {
-					await rm(temporaryRoot, { force: true, recursive: true });
-					throw cause;
 				}
-			}),
-			publishFailure
-		);
-		const cleanupStaging =
-			options.cleanupStaging ??
-			((path: string) => Effect.promise(() => rm(path, { force: true, recursive: true })));
-		// The rename above is the commit point. Cleanup must never turn a visible completed run
-		// into a reported failure that encourages an unsafe retry.
-		yield* cleanupStaging(options.stagingRoot).pipe(
-			Effect.ignore({
-				log: "Warn",
-				message: `Niagara Preview Run ${options.receipt.runId} committed, but staging cleanup failed.`
-			})
-		);
-		return { manifest, manifestPath: join(finalRoot, "manifest.json") };
-	});
-}
+				await writeFile(
+					join(temporaryRoot, "manifest.json"),
+					`${JSON.stringify(manifest, null, 2)}\n`,
+					"utf8"
+				);
+				await rename(temporaryRoot, finalRoot);
+			} catch (cause) {
+				await rm(temporaryRoot, { force: true, recursive: true });
+				throw cause;
+			}
+		}),
+		publishFailure
+	);
+	const cleanupStaging =
+		options.cleanupStaging ??
+		((path: string) => Effect.promise(() => rm(path, { force: true, recursive: true })));
+	// The rename above is the commit point. Cleanup must never turn a visible completed run
+	// into a reported failure that encourages an unsafe retry.
+	yield* cleanupStaging(options.stagingRoot).pipe(
+		Effect.ignore({
+			log: "Warn",
+			message: `Niagara Preview Run ${options.receipt.runId} committed, but staging cleanup failed.`
+		})
+	);
+	return { manifest, manifestPath: join(finalRoot, "manifest.json") };
+});
 
 interface CommandletFailure {
 	readonly code: NiagaraPreviewError["code"];

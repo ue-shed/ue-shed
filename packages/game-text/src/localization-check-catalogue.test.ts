@@ -20,6 +20,8 @@ import {
 import { evaluateCatalogueRule } from "./native-text-shape.test-support.js";
 import { nativeVisibleLength } from "./native-rule-reports.test-support.js";
 
+const decodeLengthOutlierParams = Schema.decodeUnknownSync(LengthOutlierParams);
+
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 
 describe("localization check catalogue", () => {
@@ -47,9 +49,9 @@ describe("localization check catalogue", () => {
 	});
 
 	it("decodes partial parameters over the defaults and rejects invalid ones", () => {
-		const params = Schema.decodeUnknownSync(LengthOutlierParams)({ maximumRatio: 4 });
+		const params = decodeLengthOutlierParams({ maximumRatio: 4 });
 		expect(params).toEqual({ ...localizationCheckDefaults.length_outlier, maximumRatio: 4 });
-		expect(() => Schema.decodeUnknownSync(LengthOutlierParams)({ minimumRatio: -1 })).toThrow();
+		expect(() => decodeLengthOutlierParams({ minimumRatio: -1 })).toThrow();
 		expect(localizationCheckCatalogue.length_outlier.condition(params)).toContain("four times");
 	});
 

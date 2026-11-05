@@ -563,13 +563,15 @@ const ProcessTreeEvidence = Schema.Struct({
 	childPid: Schema.Int.check(Schema.isGreaterThan(0)),
 	parentPid: Schema.Int.check(Schema.isGreaterThan(0))
 });
+const isErrorWithCode = Schema.is(ErrorWithCode);
+const decodeProcessTreeEvidence = Schema.decodeUnknownSync(ProcessTreeEvidence);
 
 function processExists(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
 	} catch (cause) {
-		return !Schema.is(ErrorWithCode)(cause) || cause.code !== "ESRCH";
+		return !isErrorWithCode(cause) || cause.code !== "ESRCH";
 	}
 }
 
@@ -580,7 +582,7 @@ async function processIsRunning(pid: number): Promise<boolean> {
 		const commandEnd = stat.lastIndexOf(")");
 		return commandEnd !== -1 && stat.slice(commandEnd + 2).trimStart()[0] !== "Z";
 	} catch (cause) {
-		if (Schema.is(ErrorWithCode)(cause) && cause.code === "ENOENT") return false;
+		if (isErrorWithCode(cause) && cause.code === "ENOENT") return false;
 		throw cause;
 	}
 }
@@ -619,7 +621,7 @@ describe("owned process trees", () => {
 			).pipe(Effect.provide(OwnedProcessTreeLive))
 		);
 		const outcome = await Effect.runPromise(handle.awaitExit);
-		const evidence = Schema.decodeUnknownSync(ProcessTreeEvidence)(
+		const evidence = decodeProcessTreeEvidence(
 			JSON.parse(await readFile(evidencePath, "utf8"))
 		);
 
@@ -662,7 +664,7 @@ describe("owned process trees", () => {
 			).pipe(Effect.provide(OwnedProcessTreeLive))
 		);
 		await access(evidencePath);
-		const evidence = Schema.decodeUnknownSync(ProcessTreeEvidence)(
+		const evidence = decodeProcessTreeEvidence(
 			JSON.parse(await readFile(evidencePath, "utf8"))
 		);
 		expect(await processIsRunning(evidence.parentPid)).toBe(false);

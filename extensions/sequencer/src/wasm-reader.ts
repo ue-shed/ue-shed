@@ -44,6 +44,9 @@ const WasmSequenceOutput = Schema.Union([
 	})
 ]);
 
+const decodeSequenceAssetPath = Schema.decodeUnknownEffect(SequenceAssetPath);
+const decodeWasmSequenceOutput = Schema.decodeUnknownEffect(WasmSequenceOutput);
+
 function diagnosticCode(code: string): string {
 	switch (code) {
 		case "malformed_data":
@@ -103,7 +106,7 @@ export const adaptWasmSequenceResult = Effect.fn("Sequencer.adaptWasmResult")(fu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<SequenceReadResult> {
-	const path = yield* Schema.decodeUnknownEffect(SequenceAssetPath)(assetPath).pipe(
+	const path = yield* decodeSequenceAssetPath(assetPath).pipe(
 		Effect.catch(() => Effect.succeed(undefined))
 	);
 	if (path === undefined) {
@@ -114,7 +117,7 @@ export const adaptWasmSequenceResult = Effect.fn("Sequencer.adaptWasmResult")(fu
 			status: "failed"
 		};
 	}
-	return yield* Schema.decodeUnknownEffect(WasmSequenceOutput)(output).pipe(
+	return yield* decodeWasmSequenceOutput(output).pipe(
 		Effect.map((read): SequenceReadResult => {
 			if (read.status === "error") {
 				return failed(path, failureReason(read.kind), read.message);

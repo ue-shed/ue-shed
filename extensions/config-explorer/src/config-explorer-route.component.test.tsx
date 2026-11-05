@@ -4,8 +4,11 @@ import { Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { ConfigExplorerRoute } from "./config-explorer-route.js";
 
+const decodeConfigExplanation = Schema.decodeUnknownSync(ConfigExplanation);
+const decodeConfigComparison = Schema.decodeUnknownSync(ConfigComparison);
+
 function explanation(platform: "PlatformA" | "PlatformB", partial = false) {
-	return Schema.decodeUnknownSync(ConfigExplanation)({
+	return decodeConfigExplanation({
 		schemaVersion: 1,
 		status: partial ? "partial" : "complete",
 		project: { descriptor: "FixtureProject" },
@@ -71,7 +74,7 @@ describe("ConfigExplorerRoute", () => {
 	});
 
 	it("renders independent platform ledgers side by side", () => {
-		const comparison = Schema.decodeUnknownSync(ConfigComparison)({
+		const comparison = decodeConfigComparison({
 			schemaVersion: 1,
 			status: "different",
 			left: explanation("PlatformA"),
@@ -87,7 +90,7 @@ describe("ConfigExplorerRoute", () => {
 		expect(screen.getByText("Coverage aligned")).toBeDefined();
 		cleanup();
 
-		const matching = Schema.decodeUnknownSync(ConfigComparison)({
+		const matching = decodeConfigComparison({
 			schemaVersion: 1,
 			status: "same",
 			left: explanation("PlatformA"),
@@ -101,7 +104,7 @@ describe("ConfigExplorerRoute", () => {
 
 	it("keeps missing and explicit-empty values semantically distinct", () => {
 		const base = explanation("PlatformA");
-		const missing = Schema.decodeUnknownSync(ConfigExplanation)({
+		const missing = decodeConfigExplanation({
 			...base,
 			effectiveValue: { kind: "missing" }
 		});
@@ -109,7 +112,7 @@ describe("ConfigExplorerRoute", () => {
 		expect(screen.getByText("Missing")).toBeDefined();
 		cleanup();
 
-		const empty = Schema.decodeUnknownSync(ConfigExplanation)({
+		const empty = decodeConfigExplanation({
 			...base,
 			effectiveValue: { kind: "empty_array" }
 		});

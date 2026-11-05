@@ -9,6 +9,8 @@ import {
 import { CameraArrangementId } from "./camera-arrangement.js";
 
 const decode = Schema.decodeUnknownSync(CameraBridgeResponse);
+const CameraBridgeRequestJson = Schema.fromJsonString(CameraBridgeRequest);
+const decodeCameraBridgeRequestJson = Schema.decodeUnknownSync(CameraBridgeRequestJson);
 const legacyFailure = Schema.Struct({
 	version: Schema.Literal(1),
 	status: Schema.Literals(["busy", "stale", "unavailable", "invalid", "detached"]),
@@ -30,9 +32,9 @@ describe("camera bridge failure codes", () => {
 		const bridge = makeCameraAuthoringBridge(
 			{
 				request: (request) => {
-					const wire = Schema.decodeUnknownSync(
-						Schema.fromJsonString(CameraBridgeRequest)
-					)(request.parameters.RequestJson, { onExcessProperty: "error" });
+					const wire = decodeCameraBridgeRequestJson(request.parameters.RequestJson, {
+						onExcessProperty: "error"
+					});
 					expect(wire.codedFailures).toBe(true);
 					return Effect.succeed(response);
 				}
@@ -57,9 +59,7 @@ describe("camera bridge failure codes", () => {
 		const bridge = makeCameraAuthoringBridge(
 			{
 				request: (request) => {
-					const wire = Schema.decodeUnknownSync(
-						Schema.fromJsonString(CameraBridgeRequest)
-					)(request.parameters.RequestJson);
+					const wire = decodeCameraBridgeRequestJson(request.parameters.RequestJson);
 					expect(wire.codedFailures).toBe(false);
 					return Effect.succeed(response);
 				}

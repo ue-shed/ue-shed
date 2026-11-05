@@ -61,6 +61,9 @@ const WasmAuthoringOutput = Schema.Union([
 	})
 ]);
 
+const decodeAuthoringAssetPath = Schema.decodeUnknownEffect(AuthoringAssetPath);
+const decodeWasmAuthoringOutput = Schema.decodeUnknownEffect(WasmAuthoringOutput);
+
 function diagnosticCode(code: string): string {
 	switch (code) {
 		case "malformed_data":
@@ -95,7 +98,7 @@ export const adaptWasmAuthoringTable = Effect.fn("DataAuthoring.adaptWasmTable")
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<AuthoringReadResult> {
-	const path = yield* Schema.decodeUnknownEffect(AuthoringAssetPath)(assetPath).pipe(
+	const path = yield* decodeAuthoringAssetPath(assetPath).pipe(
 		Effect.catch(() => Effect.succeed(undefined))
 	);
 	if (path === undefined) {
@@ -106,7 +109,7 @@ export const adaptWasmAuthoringTable = Effect.fn("DataAuthoring.adaptWasmTable")
 			recovery: "Rename the file and choose it again."
 		};
 	}
-	return yield* Schema.decodeUnknownEffect(WasmAuthoringOutput)(output).pipe(
+	return yield* decodeWasmAuthoringOutput(output).pipe(
 		Effect.map((read): AuthoringReadResult => {
 			if (read.status === "error") {
 				const reason =

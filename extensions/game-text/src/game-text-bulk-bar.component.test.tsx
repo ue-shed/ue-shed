@@ -11,6 +11,7 @@ import { afterAll, afterEach, expect, it, vi } from "vitest";
 import { BulkBar, createLineSelection } from "./game-text-bulk-bar.js";
 import { createGameTextEdits } from "./game-text-translation-edits.js";
 
+const decodeLinePreview = Schema.decodeUnknownSync(LocalizationLinePreview);
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 afterEach(cleanup);
@@ -23,7 +24,7 @@ it("confirms bulk review, reports progress and retains partial failure context",
 		target: LocalizationSelection.fields.target.make("Game")
 	});
 	const lines = Array.from({ length: 501 }, (_, index) =>
-		Schema.decodeUnknownSync(LocalizationLinePreview)({
+		decodeLinePreview({
 			id: `line:${index}`,
 			identity: { namespace: "UI", key: `K${index}` },
 			source: `Line ${index}`,

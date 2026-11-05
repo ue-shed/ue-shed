@@ -14,11 +14,10 @@ export interface JoinDifference {
 }
 
 /**
- * Lines match by stable line ID; their array order does not matter. Join.cultures order matters:
- * it is the target's display order. Per-line cultures match by culture, origin unit IDs, facts,
- * unknown reasons and review flags are sets. Manifest entries and key-change translations are
- * multisets (duplicates remain significant). Object key order is immaterial. Text, metadata array
- * order, PO comment order and previous-msgid line order remain significant. No data is dropped.
+ * Lines match by stable ID in any order; Join.cultures keeps the target's display order. Per-line
+ * cultures match by culture; origin unit IDs, facts, unknown reasons and review flags are sets;
+ * manifest entries and key-change translations are multisets. Object key order is immaterial; text,
+ * metadata array order, PO comment order and previous-msgid line order matter. Nothing is dropped.
  */
 export function compareLocalizationJoins(
 	expected: LocalizationJoin,

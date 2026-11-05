@@ -5,11 +5,17 @@ import { Argument, Command, Flag } from "effect/cli";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
+/** Decoder for a schema from the lazily imported cameras module, built once per command run. */
+// Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
+const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
+
 const readInput = Effect.fn("Cli.camera_authoring.read")(function* (path: string) {
 	return yield* Effect.tryPromise(async () => {
 		if ((await stat(path)).size > 4 * 1024 * 1024)
 			throw new Error("Authoring input exceeds 4 MiB.");
-		return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
+		return decodeJson(JSON.parse(await readFile(path, "utf8")));
 	});
 });
 const draft = { draftPath: Argument.String("draft-json") };
@@ -21,7 +27,7 @@ const create = Command.make(
 			"CameraAuthoringCreate",
 			Effect.gen(function* () {
 				const cameras = yield* Effect.promise(() => import("@ue-shed/cameras"));
-				const input = yield* Schema.decodeUnknownEffect(
+				const input = yield* decodeLazySchema(
 					Schema.Struct({
 						arrangement: cameras.CameraArrangement,
 						reviewSet: Schema.Json
@@ -92,7 +98,7 @@ const patch = Command.make(
 			"CameraAuthoringPatch",
 			Effect.gen(function* () {
 				const cameras = yield* Effect.promise(() => import("@ue-shed/cameras"));
-				const input = yield* Schema.decodeUnknownEffect(cameras.CameraArrangementCommand)(
+				const input = yield* decodeLazySchema(cameras.CameraArrangementCommand)(
 					yield* readInput(args.inputPath),
 					{ onExcessProperty: "error" }
 				);
@@ -110,7 +116,7 @@ const approve = Command.make(
 			"CameraAuthoringApprove",
 			Effect.gen(function* () {
 				const cameras = yield* Effect.promise(() => import("@ue-shed/cameras"));
-				const input = yield* Schema.decodeUnknownEffect(cameras.CameraApproval)(
+				const input = yield* decodeLazySchema(cameras.CameraApproval)(
 					yield* readInput(args.inputPath),
 					{ onExcessProperty: "error" }
 				);
@@ -131,7 +137,7 @@ const bridge = Command.make(
 				const connection = yield* Effect.promise(
 					() => import("@ue-shed/unreal-connection")
 				);
-				const input = yield* Schema.decodeUnknownEffect(cameras.CameraBridgeRequest)(
+				const input = yield* decodeLazySchema(cameras.CameraBridgeRequest)(
 					yield* readInput(args.inputPath),
 					{ onExcessProperty: "error" }
 				);
@@ -285,16 +291,16 @@ const recovery = Command.make(
 					const port = cameras.makeCameraAuthoringBridge(client, args.endpoint);
 					const store = cameras.makeCameraAuthoringStore(args.draftPath);
 					if (args.choice === "inspect") {
-						const snapshot = yield* Schema.decodeUnknownEffect(
-							cameras.CameraBridgeSnapshot
-						)(input);
+						const snapshot = yield* decodeLazySchema(cameras.CameraBridgeSnapshot)(
+							input
+						);
 						yield* printJson(
 							yield* cameras.inspectCameraRecovery(store, port, snapshot)
 						);
 					} else {
-						const proposal = yield* Schema.decodeUnknownEffect(
-							cameras.CameraRecoveryProposal
-						)(input);
+						const proposal = yield* decodeLazySchema(cameras.CameraRecoveryProposal)(
+							input
+						);
 						yield* printJson(
 							yield* cameras.resolveCameraRecovery(store, port, proposal, args.choice)
 						);
@@ -325,14 +331,10 @@ const recoveryFile = Command.make(
 				const store = cameras.makeCameraAuthoringStore(args.draftPath);
 				const input = yield* readInput(args.inputPath);
 				if (args.choice === "inspect") {
-					const snapshot = yield* Schema.decodeUnknownEffect(
-						cameras.CameraBridgeSnapshot
-					)(input);
+					const snapshot = yield* decodeLazySchema(cameras.CameraBridgeSnapshot)(input);
 					yield* printJson(yield* cameras.prepareCameraRecovery(store, snapshot));
 				} else {
-					const proposal = yield* Schema.decodeUnknownEffect(
-						cameras.CameraRecoveryProposal
-					)(input);
+					const proposal = yield* decodeLazySchema(cameras.CameraRecoveryProposal)(input);
 					yield* printJson(
 						yield* cameras.restoreCameraRecovery(store, proposal, args.choice)
 					);

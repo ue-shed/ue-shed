@@ -17,6 +17,7 @@ export interface MapCaptureDraftCenter {
 	readonly y: number;
 }
 
+const decodeMapCapturePlan = Schema.decodeUnknownSync(MapCapturePlan);
 const safeIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const gameMapPathPattern = /^\/Game\/[A-Za-z0-9_./-]+$/;
 
@@ -162,7 +163,7 @@ export function validateMapCapturePlanDraft(draft: MapCapturePlanDraft): MapCapt
 	}
 	if (errors.length > 0) return { errors, status: "invalid" };
 	try {
-		return { plan: Schema.decodeUnknownSync(MapCapturePlan)(draft), status: "valid" };
+		return { plan: decodeMapCapturePlan(draft), status: "valid" };
 	} catch {
 		return {
 			errors: ["The plan does not satisfy the Map Capture Plan v1 contract."],

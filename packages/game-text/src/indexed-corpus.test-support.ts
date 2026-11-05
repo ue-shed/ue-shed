@@ -18,6 +18,8 @@ import { emptyPackageTextRecord } from "./package-text-record.js";
 import type { LocalizationKeyChangePair } from "./localization-key-changes.js";
 import type { TextCorpus, TextOccurrence } from "./schema.js";
 
+const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+
 type SavedOccurrence = SavedAssetPackageTextRecord["occurrences"][number];
 
 /** The reader's form of a saved place. */
@@ -211,7 +213,7 @@ export const withIndexedCorpus = <A, E>(
 			let targetName: string | undefined;
 			if (files === undefined) fixture.setTargets([]);
 			else {
-				const target = Schema.decodeUnknownSync(LocalizationTarget)({
+				const target = decodeLocalizationTarget({
 					...files.target,
 					poFormat:
 						files.cultures.flatMap((culture) =>

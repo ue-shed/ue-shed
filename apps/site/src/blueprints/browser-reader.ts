@@ -12,6 +12,8 @@ import { adaptWasmInspectionResult } from "@ue-shed/extension-asset-inspector/wa
 import { Effect, Schema } from "effect";
 import { BlueprintBrowserError, BlueprintWorkerResponse } from "./worker-contract.js";
 
+const decodeWorkerResponse = Schema.decodeUnknownEffect(BlueprintWorkerResponse);
+
 function browserError(operation: string, message: string, cause?: unknown): BlueprintBrowserError {
 	return new BlueprintBrowserError({
 		...(cause === undefined ? undefined : { cause }),
@@ -86,7 +88,7 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 			browserError("transport", "The asset decoder request failed or timed out.", error)
 		)
 	);
-	const response = yield* Schema.decodeUnknownEffect(BlueprintWorkerResponse)(reply.data).pipe(
+	const response = yield* decodeWorkerResponse(reply.data).pipe(
 		Effect.mapError((cause) =>
 			browserError("transport", "The decoder returned an invalid response.", cause)
 		)

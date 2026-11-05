@@ -33,6 +33,7 @@ const PreferenceDocument = Schema.Struct({
 	keepUnrealResponsive: Schema.Boolean,
 	schemaVersion: Schema.Literal(1)
 });
+const decodePreferenceDocument = Schema.decodeUnknownEffect(PreferenceDocument);
 
 export interface EditorResponsivenessPreferenceStore {
 	/** The saved preference; on by default. */
@@ -226,7 +227,7 @@ export const editorResponsivenessPreferenceFile = Effect.gen(function* () {
 		load: Effect.gen(function* () {
 			const bytes = yield* files.readFile(path, { maxBytes: PREFERENCE_MAX_BYTES });
 			const json = yield* Effect.try(() => JSON.parse(new TextDecoder().decode(bytes)));
-			const document = yield* Schema.decodeUnknownEffect(PreferenceDocument)(json);
+			const document = yield* decodePreferenceDocument(json);
 			return document.keepUnrealResponsive;
 		}).pipe(Effect.catch(() => Effect.succeed(true))),
 		save: (keepUnrealResponsive: boolean) =>

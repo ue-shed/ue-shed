@@ -47,6 +47,14 @@ export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.
 
 const benchmark = channel("ue-shed.game-text-benchmark");
 
+const decodeSearchRequest = Schema.decodeUnknownEffect(TextCorpusSearchRequest);
+const decodeAggregateRequest = Schema.decodeUnknownEffect(TextAggregateRequest);
+const decodeFocusRequest = Schema.decodeUnknownEffect(TextCorpusFocusRequest);
+const decodeLocalizationFocusRequest = Schema.decodeUnknownEffect(LocalizationFocusRequest);
+const decodeRelatedRequest = Schema.decodeUnknownEffect(RelatedLinesRequest);
+const isGameTextIndexError = Schema.is(GameTextIndexError);
+const isAssetReaderError = Schema.is(AssetReaderError);
+
 const NativeExportFile = Schema.Struct({
 	...TextCorpus.fields,
 	findingRules: Schema.optionalKey(
@@ -169,52 +177,51 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			failed("open", "Native reader returned a different snapshot identity.")
 		);
 	const pinned: Pinned = { reader: opened.reader, execute };
-	function response<S extends Schema.Codec<unknown, unknown>>(
+	const response = Effect.fn("GameTextIndex.nativeResponse")(function* <
+		S extends Schema.Codec<unknown, unknown>
+	>(
 		pinned: Pinned,
 		request: GameTextContract.EngineRequest,
 		schema: S
-	): Effect.Effect<S["Type"], GameTextIndexError> {
-		return Effect.gen(function* () {
-			const answer = yield* pinned.execute(request);
-			const decodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
-			const value = yield* Schema.decodeUnknownEffect(schema)(answerJson<unknown>(answer));
-			if (decodeStarted !== undefined)
-				benchmark.publish({
-					stage: "tsPayloadDecode",
-					action: request.action,
-					ms: performance.now() - decodeStarted
-				});
-			return value;
-		}).pipe(
-			Effect.mapError((cause) =>
-				Schema.is(GameTextIndexError)(cause) ? cause : failed(request.action, cause)
-			)
+	): Effect.fn.Return<S["Type"], GameTextIndexError> {
+		const toIndexError = (cause: unknown) =>
+			isGameTextIndexError(cause) ? cause : failed(request.action, cause);
+		const answer = yield* pinned.execute(request).pipe(Effect.mapError(toIndexError));
+		const decodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
+		const value = yield* Schema.decodeUnknownEffect(schema)(answerJson<unknown>(answer)).pipe(
+			Effect.mapError(toIndexError)
 		);
-	}
+		if (decodeStarted !== undefined)
+			benchmark.publish({
+				stage: "tsPayloadDecode",
+				action: request.action,
+				ms: performance.now() - decodeStarted
+			});
+		return value;
+	});
 	/** Decodes a read's rows into the domain type, timed as building row objects. */
-	const decodeRows = <A>(
+	const decodeRows = Effect.fn("GameTextIndex.nativeDecodeRows")(function* <A>(
 		operation: string,
 		schema: Schema.Codec<A, unknown>,
 		rows: GameTextContract.JsonValue
-	) =>
-		Effect.gen(function* () {
-			const started = benchmark.hasSubscribers ? performance.now() : undefined;
-			const value = yield* Schema.decodeUnknownEffect(schema)(rows).pipe(
-				Effect.mapError((cause) => failed(`${operation}_decode`, cause))
-			);
-			if (started !== undefined)
-				benchmark.publish({
-					stage: "tsRowObjects",
-					action: operation,
-					ms: performance.now() - started
-				});
-			return value;
-		});
+	) {
+		const started = benchmark.hasSubscribers ? performance.now() : undefined;
+		const value = yield* Schema.decodeUnknownEffect(schema)(rows).pipe(
+			Effect.mapError((cause) => failed(`${operation}_decode`, cause))
+		);
+		if (started !== undefined)
+			benchmark.publish({
+				stage: "tsRowObjects",
+				action: operation,
+				ms: performance.now() - started
+			});
+		return value;
+	});
 	const localizationLines = Effect.fn("GameTextIndex.nativeLocalizationExport")(function* (
 		pinned: Pinned,
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">
 	) {
-		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+		const decoded = yield* decodeSearchRequest({
 			...request,
 			pageSize: 50
 		}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
@@ -233,7 +240,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		pinned: Pinned,
 		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined
 	) {
-		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+		const decoded = yield* decodeSearchRequest({
 			query: "",
 			capability: "all",
 			...request,
@@ -277,7 +284,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		pinned: Pinned,
 		request: TextAggregateRequest
 	) {
-		const decoded = yield* Schema.decodeUnknownEffect(TextAggregateRequest)(request).pipe(
+		const decoded = yield* decodeAggregateRequest(request).pipe(
 			Effect.mapError((cause) => failed("aggregate", cause))
 		);
 		const { by, measures } = decoded;
@@ -292,14 +299,14 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			groups: answerRows(answer, "groups")
 		});
 	});
-	const selectLocalizationLines = <F extends LocalizationLineField>(
-		pinned: Pinned,
-		request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
-		fields: readonly F[]
-	) =>
-		Effect.gen(function* () {
+	const selectLocalizationLines = Effect.fn("GameTextIndex.nativeSelectLocalizationLines")(
+		function* <F extends LocalizationLineField>(
+			pinned: Pinned,
+			request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize">,
+			fields: readonly F[]
+		) {
 			const encodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
-			const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+			const decoded = yield* decodeSearchRequest({
 				...request,
 				pageSize: 50
 			}).pipe(Effect.mapError((cause) => failed("localization_export", cause)));
@@ -323,7 +330,8 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 					fields.some((field) => field === "places")
 				)
 			);
-		});
+		}
+	);
 	/**
 	 * Writes a request's rows to a file through an engine sink: `exists` when the file is
 	 * exclusive and already there, else what the sink wrote.
@@ -336,7 +344,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		file: { readonly path: string; readonly exclusive?: boolean },
 		envelope?: GameTextContract.Envelope
 	) {
-		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)({
+		const decoded = yield* decodeSearchRequest({
 			...request,
 			pageSize: 50
 		}).pipe(Effect.mapError((cause) => failed(action, cause)));
@@ -357,8 +365,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			.pipe(
 				Effect.map((answer) => ({ answer })),
 				Effect.catchIf(
-					(error) =>
-						Schema.is(AssetReaderError)(error.cause) && error.cause.code === "exists",
+					(error) => isAssetReaderError(error.cause) && error.cause.code === "exists",
 					() => Effect.succeed({ answer: undefined })
 				)
 			);
@@ -436,38 +443,39 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	 * A findings reply as the contract's type. The session's handshake checked the engine's
 	 * contract, so the reply is parsed, not decoded.
 	 */
-	const engineReply = <T>(
+	const engineReply = Effect.fn("GameTextIndex.nativeEngineReply")(function* <T>(
 		pinned: Pinned,
 		request: GameTextContract.EngineRequest,
 		progress?: EngineProgressObserver,
 		text?: EngineTextSink
-	) =>
-		Effect.gen(function* () {
-			const reply = answerJson<T>(yield* pinned.execute(request, progress, text));
-			if (reply === undefined)
-				return yield* Effect.fail(failed(request.action, "The engine sent no reply."));
-			return reply;
-		});
+	) {
+		const reply = answerJson<T>(yield* pinned.execute(request, progress, text));
+		if (reply === undefined)
+			return yield* Effect.fail(failed(request.action, "The engine sent no reply."));
+		return reply;
+	});
 	/**
 	 * A findings page: its part, its findings, and the place sets they name. The handshake checked
 	 * the engine's contract, so the reply is read, not decoded.
 	 */
-	const findingsPage = (pinned: Pinned, request: GameTextContract.FindingsQueryRequest) =>
-		Effect.gen(function* () {
-			const answer = yield* pinned.execute({ action: "findings_query", reader, request });
-			const page = answerJson<GameTextContract.FindingsPage>(answer);
-			if (page === undefined)
-				return yield* Effect.fail(failed("findings_query", "The engine sent no reply."));
-			const sets = new Map<number, Row[]>();
-			for (const { parent, ...place } of answerRows(answer, "places")) {
-				const set = Number(parent);
-				const places = sets.get(set);
-				if (places === undefined) sets.set(set, [place]);
-				else places.push(place);
-			}
-			const findings = answerRows(answer, "findings").map(({ finding }) => finding);
-			return { page, sets, findings };
-		});
+	const findingsPage = Effect.fn("GameTextIndex.nativeFindingsPage")(function* (
+		pinned: Pinned,
+		request: GameTextContract.FindingsQueryRequest
+	) {
+		const answer = yield* pinned.execute({ action: "findings_query", reader, request });
+		const page = answerJson<GameTextContract.FindingsPage>(answer);
+		if (page === undefined)
+			return yield* Effect.fail(failed("findings_query", "The engine sent no reply."));
+		const sets = new Map<number, Row[]>();
+		for (const { parent, ...place } of answerRows(answer, "places")) {
+			const set = Number(parent);
+			const places = sets.get(set);
+			if (places === undefined) sets.set(set, [place]);
+			else places.push(place);
+		}
+		const findings = answerRows(answer, "findings").map(({ finding }) => finding);
+		return { page, sets, findings };
+	});
 	const summary = Effect.fn("GameTextIndex.nativeSummary")(() =>
 		response(pinned, { action: "summary", reader }, TextCorpusQuerySummary)
 	);
@@ -475,7 +483,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		request: TextCorpusSearchRequest
 	) {
 		const encodeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
-		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(request).pipe(
+		const decoded = yield* decodeSearchRequest(request).pipe(
 			Effect.mapError((cause) => failed("search", cause))
 		);
 		const query = searchQuery(decoded, true);
@@ -497,7 +505,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const searchRows = Effect.fn("GameTextIndex.nativeSearchRows")(function* (
 		request: TextCorpusSearchRequest
 	) {
-		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusSearchRequest)(request).pipe(
+		const decoded = yield* decodeSearchRequest(request).pipe(
 			Effect.mapError((cause) => failed("search", cause))
 		);
 		const answer = yield* execute({
@@ -516,7 +524,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const focus = Effect.fn("GameTextIndex.nativeFocus")(function* (
 		request: TextCorpusFocusRequest
 	) {
-		const decoded = yield* Schema.decodeUnknownEffect(TextCorpusFocusRequest)(request).pipe(
+		const decoded = yield* decodeFocusRequest(request).pipe(
 			Effect.mapError((cause) => failed("focus", cause))
 		);
 		// A unit's places; with a target, the places of the line's unit.
@@ -562,7 +570,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const localizationDetail = Effect.fn("GameTextIndex.nativeLocalizationDetail")(function* (
 		request: LocalizationFocusRequest
 	) {
-		const decoded = yield* Schema.decodeUnknownEffect(LocalizationFocusRequest)(request).pipe(
+		const decoded = yield* decodeLocalizationFocusRequest(request).pipe(
 			Effect.mapError((cause) => failed("localization_detail", cause))
 		);
 		const { target, selection, culture, cultures, findings } = decoded;
@@ -592,7 +600,7 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	const related = Effect.fn("GameTextIndex.nativeRelated")(function* (
 		request: RelatedLinesRequest
 	) {
-		const decoded = yield* Schema.decodeUnknownEffect(RelatedLinesRequest)(request).pipe(
+		const decoded = yield* decodeRelatedRequest(request).pipe(
 			Effect.mapError((cause) => failed("related", cause))
 		);
 		const { related: result } = yield* response(

@@ -9,6 +9,8 @@ import {
 import type { LocalizationRuleDiagnostic } from "./localization-quality-schema.js";
 import type { TextRole } from "./quality-schema.js";
 
+const decodeCultureCode = Schema.decodeUnknownSync(CultureCode);
+
 export type LocalizationPolicyRule = {
 	readonly rule: LocalizationProjectRule;
 	readonly role: TextRole;
@@ -27,7 +29,7 @@ export function localizationPolicyRules(
 	const roles = new Map(document.roles.map((role) => [role.id, role]));
 	for (const rule of localizationRulesOf(document).sort((a, b) => a.id.localeCompare(b.id))) {
 		for (const key of Object.keys(rule.cultures).sort()) {
-			const culture = Schema.decodeUnknownSync(CultureCode)(key);
+			const culture = decodeCultureCode(key);
 			if (!cultures.includes(culture))
 				diagnostics.push({
 					code: "rule_culture_not_in_target",

@@ -15,6 +15,8 @@ import {
 import { TextUnit, type TextCorpusSearchRequest, type TextGroupBy } from "./schema.js";
 import { textFileLabel, textFolderLabel } from "./text-origin.js";
 
+const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+
 interface Placement {
 	readonly key: string;
 	readonly folder: string;
@@ -24,7 +26,7 @@ interface Placement {
 
 function placed({ key, folder, namespace, source }: Placement): TextUnit {
 	const identity = { status: "resolved", namespace, key };
-	return Schema.decodeUnknownSync(TextUnit)({
+	return decodeTextUnit({
 		id: `unit:${key}`,
 		source: { status: "consistent", value: source },
 		identity,

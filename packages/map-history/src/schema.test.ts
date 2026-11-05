@@ -10,6 +10,11 @@ import {
 	type PerforceMapHistoryQuery as PerforceMapHistoryQueryType
 } from "./schema.js";
 
+const decodeQuery = Schema.decodeUnknownSync(PerforceMapHistoryQuery);
+const encodeQuery = Schema.encodeSync(PerforceMapHistoryQuery);
+const decodeFastHistory = Schema.decodeUnknownSync(PerforceFastMapHistory);
+const encodeFastHistory = Schema.encodeSync(PerforceFastMapHistory);
+
 const query = {
 	limits: {
 		maxChangelists: 100,
@@ -28,8 +33,8 @@ const query = {
 
 describe("Map History schemas", () => {
 	it("round-trips a bounded Perforce query", () => {
-		const decoded = Schema.decodeUnknownSync(PerforceMapHistoryQuery)(query);
-		const encoded = Schema.encodeSync(PerforceMapHistoryQuery)(decoded);
+		const decoded = decodeQuery(query);
+		const encoded = encodeQuery(decoded);
 		expect(encoded).toEqual(query);
 		expect(DateTime.formatIso(decoded.range.since)).toBe(query.range.since);
 		expect(DateTime.formatIso(decoded.range.until)).toBe(query.range.until);
@@ -38,7 +43,7 @@ describe("Map History schemas", () => {
 
 	it("rejects unbounded query limits", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(PerforceMapHistoryQuery)({
+			decodeQuery({
 				...query,
 				limits: { ...query.limits, maxChangelists: 0 }
 			})
@@ -47,7 +52,7 @@ describe("Map History schemas", () => {
 
 	it("rejects a backwards time range", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(PerforceMapHistoryQuery)({
+			decodeQuery({
 				...query,
 				range: { since: query.range.until, until: query.range.since }
 			})
@@ -107,8 +112,8 @@ describe("Map History schemas", () => {
 			revisions: [],
 			schemaVersion: 2
 		};
-		const decoded = Schema.decodeUnknownSync(PerforceFastMapHistory)(fastHistory);
-		const encoded = Schema.encodeSync(PerforceFastMapHistory)(decoded);
+		const decoded = decodeFastHistory(fastHistory);
+		const encoded = encodeFastHistory(decoded);
 		expect(encoded).toEqual(fastHistory);
 		expect(decoded.coverage.claimsCompleteMapCoverage).toBe(false);
 		expect(decoded.coverage.claimsHistoricalClassCoverage).toBe(false);
@@ -117,7 +122,7 @@ describe("Map History schemas", () => {
 
 	it("rejects Fast History coverage that claims complete map coverage", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(PerforceFastMapHistory)({
+			decodeFastHistory({
 				baseline: { status: "map_not_yet_created" },
 				completeness: "complete",
 				coverage: {

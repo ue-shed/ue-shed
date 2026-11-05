@@ -27,10 +27,13 @@ import {
 } from "./camera-authoring-store.js";
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
 
+const decodeCameraArrangementCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
+const decodeCameraApproval = Schema.decodeUnknownSync(CameraApproval);
+
 const edit = (a: CameraArrangement, fields: Schema.JsonObject) =>
 	applyCameraArrangementCommand(
 		a,
-		Schema.decodeUnknownSync(CameraArrangementCommand)({
+		decodeCameraArrangementCommand({
 			arrangementId: a.id,
 			expectedRevision: a.revision,
 			operationId: `edit-${a.revision}`,
@@ -326,7 +329,7 @@ describe("complete camera arrangement editing", () => {
 			await Effect.runPromise(store.create(a, fixtureSet()));
 			await Effect.runPromise(
 				store.approve(
-					Schema.decodeUnknownSync(CameraApproval)({
+					decodeCameraApproval({
 						operationId: "save-1",
 						expectedRevision: 0,
 						cameraIds: ["camera-0", "camera-1"],
@@ -335,7 +338,7 @@ describe("complete camera arrangement editing", () => {
 					})
 				)
 			);
-			const remove = Schema.decodeUnknownSync(CameraArrangementCommand)({
+			const remove = decodeCameraArrangementCommand({
 				arrangementId: a.id,
 				expectedRevision: 0,
 				operationId: "remove",
@@ -346,7 +349,7 @@ describe("complete camera arrangement editing", () => {
 			a = (await Effect.runPromise(store.mutate(remove))).arrangement;
 			const approved = await Effect.runPromise(
 				store.approve(
-					Schema.decodeUnknownSync(CameraApproval)({
+					decodeCameraApproval({
 						operationId: "save-2",
 						expectedRevision: a.revision,
 						cameraIds: ["camera-0"],

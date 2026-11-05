@@ -38,11 +38,10 @@ export function coveredMs(intervals: readonly (readonly [bigint, bigint])[]) {
 }
 
 /**
- * Records the spans an effect ends, in this process only, for a stage breakdown of a measured
- * run. Spans of one name report how many ended, the wall time they cover (overlapping spans,
- * such as concurrent reads, count once, never as summed worker time) and the longest one.
- * Numeric `*.stage_ms.*` attributes, the in-step stages of `StageClock`, are summed per name.
- * Workers run their own runtimes: their spans are not recorded, only the coordinator's wait.
+ * Records the spans an effect ends in this process: per name, the count, the wall time covered
+ * (overlaps such as concurrent reads count once, not summed) and the longest. Numeric
+ * `*.stage_ms.*` attributes (`StageClock` in-step stages) are summed per name. Workers run their
+ * own runtimes, so only the coordinator's wait is recorded.
  */
 export function makeStageRecorder() {
 	const ended: EndedSpan[] = [];

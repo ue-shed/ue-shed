@@ -90,6 +90,9 @@ export class Observatory extends Context.Service<Observatory, ObservatoryApi>()(
 
 const objectPath = "/Script/UEShedObservatoryEditor.Default__UEShedObservatoryLibrary";
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+const decodeSnapshotResponse = Schema.decodeUnknownEffect(SnapshotResponse);
+const decodeFocusResponse = Schema.decodeUnknownEffect(FocusResponse);
+const decodeObservationCadenceResponse = Schema.decodeUnknownEffect(ObservationCadenceResponse);
 
 function connectionError(
 	operation: string,
@@ -130,7 +133,7 @@ export const observatoryLayer = Layer.effect(
 					parameters: {}
 				})
 				.pipe(Effect.mapError((cause) => connectionError("actor_snapshot", cause)));
-			const response = yield* Schema.decodeUnknownEffect(SnapshotResponse)(value).pipe(
+			const response = yield* decodeSnapshotResponse(value).pipe(
 				Effect.mapError((cause) => connectionError("actor_snapshot.decode", cause))
 			);
 			if (response.status === "failed") {
@@ -161,7 +164,7 @@ export const observatoryLayer = Layer.effect(
 					parameters: { ActorId: actorId, BringToFront: false }
 				})
 				.pipe(Effect.mapError((cause) => connectionError("focus_actor", cause)));
-			const focused = yield* Schema.decodeUnknownEffect(FocusResponse)(value).pipe(
+			const focused = yield* decodeFocusResponse(value).pipe(
 				Effect.mapError((cause) => connectionError("focus_actor.decode", cause))
 			);
 			if (focused.status !== "focused" || !bringToFront) return focused;
@@ -194,9 +197,7 @@ export const observatoryLayer = Layer.effect(
 						connectionError("set_actor_observation_cadence", cause)
 					)
 				);
-			const response = yield* Schema.decodeUnknownEffect(ObservationCadenceResponse)(
-				value
-			).pipe(
+			const response = yield* decodeObservationCadenceResponse(value).pipe(
 				Effect.mapError((cause) =>
 					connectionError("set_actor_observation_cadence.decode", cause)
 				)

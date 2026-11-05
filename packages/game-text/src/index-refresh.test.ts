@@ -22,11 +22,14 @@ import {
 	gameTextIndexRefreshLayer
 } from "./index-refresh.js";
 
+const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeTextCorpusSearchRequest = Schema.decodeUnknownSync(TextCorpusSearchRequest);
+
 it("retains readers across refresh steps updating selected inputs and review", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "ue-shed-game-text-index-"));
 	try {
 		const projectRoot = await realpath(directory);
-		const authored = Schema.decodeUnknownSync(LocalizationTarget)({
+		const authored = decodeLocalizationTarget({
 			...target,
 			name: "Refresh",
 			outputPaths: {
@@ -159,13 +162,13 @@ it("retains readers across refresh steps updating selected inputs and review", a
 							localization: { target: authored.name, culture: "de" },
 							facets: { folder: "", assets: true, origins: true, cultures: true }
 						}
-					].map((request) => Schema.decodeUnknownSync(TextCorpusSearchRequest)(request));
+					].map((request) => decodeTextCorpusSearchRequest(request));
 					for (const search of searches)
 						expect(yield* first.search(search)).toEqual(
 							yield* first.query.search(search)
 						);
 					const groupRequests = ["Content/Text", "Content/Other"].map((openGroup) =>
-						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+						decodeTextCorpusSearchRequest({
 							...searches[0],
 							group: "folder",
 							openGroup

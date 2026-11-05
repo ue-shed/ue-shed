@@ -4,6 +4,8 @@ import { parseLocalizationRecipe } from "./index.js";
 import { Result, Schema } from "effect";
 import { sourceGatherEngine, sourceGatherSteps } from "./source-gather.js";
 
+const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+
 const recipe = (text: string) => {
 	const parsed = parseLocalizationRecipe(text, "Config/Localization/Game_Gather.ini");
 	if (Result.isFailure(parsed)) throw new Error("The recipe did not parse.");
@@ -11,7 +13,7 @@ const recipe = (text: string) => {
 };
 
 const target = (text: string): LocalizationTarget =>
-	Schema.decodeUnknownSync(LocalizationTarget)({
+	decodeLocalizationTarget({
 		name: "Game",
 		source: "config_only",
 		nativeCulture: "en",

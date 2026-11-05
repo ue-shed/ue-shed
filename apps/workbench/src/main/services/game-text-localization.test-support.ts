@@ -14,6 +14,7 @@ import {
 import { Result, Schema } from "effect";
 
 export const cultureCode = Schema.decodeUnknownSync(CultureCode);
+const decodeLocalizationTargetEvidence = Schema.decodeUnknownSync(LocalizationTargetEvidence);
 export const target = Schema.decodeUnknownSync(LocalizationTarget)({
 	name: "Test",
 	source: "config_only",
@@ -93,7 +94,7 @@ export function evidence(po = poDocument()): LocalizationTargetEvidence {
 		modifiedTime: "2026-01-01T00:00:00Z",
 		contentHash: "hash"
 	};
-	return Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+	return decodeLocalizationTargetEvidence({
 		schemaVersion: 1,
 		target,
 		manifest: {

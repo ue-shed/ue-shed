@@ -8,6 +8,8 @@ import {
 	UassetProtocolSession
 } from "./protocol-transport.js";
 
+const decodeBuildRequest = Schema.decodeUnknownEffect(GameTextIndexBuildRequest);
+
 /** Validated native outcome plus the stable incremental eligibility reason from diagnostic frames. */
 export type NativeGameTextIndexOutcome = GameTextIndexBuildOutcome & {
 	readonly incrementalFallback?: string;
@@ -46,9 +48,7 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 			);
 			return NativeGameTextIndexClient.of({
 				execute: Effect.fn("NativeGameTextIndex.execute")(function* (input, onProgress) {
-					const decoded = yield* Schema.decodeUnknownEffect(GameTextIndexBuildRequest)(
-						input
-					).pipe(
+					const decoded = yield* decodeBuildRequest(input).pipe(
 						Effect.mapError(
 							(cause) =>
 								new AssetReaderError({

@@ -32,6 +32,9 @@ const Message = Schema.Struct({
 	counts: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number))
 });
 type Message = typeof Message.Type;
+const decodeMessage = Schema.decodeUnknownSync(Message);
+const ResultStatus = Schema.Struct({ status: Schema.String });
+const decodeResultStatus = Schema.decodeUnknownSync(ResultStatus);
 type Memory = typeof Memory.Type;
 const { values } = parseArgs({
 	options: {
@@ -301,7 +304,7 @@ if (values.worker) {
 		});
 		child.on("message", (raw) => {
 			if (result.status === "stopped") return;
-			const message = Schema.decodeUnknownSync(Message)(raw);
+			const message = decodeMessage(raw);
 			if (message.counts !== undefined)
 				result.counts = { ...result.counts, ...message.counts };
 			stage = message.stage;
@@ -384,12 +387,6 @@ if (values.worker) {
 		console.log(JSON.stringify(result));
 	}
 	console.log(`Results: ${output}`);
-	if (
-		results.some(
-			(result) =>
-				Schema.decodeUnknownSync(Schema.Struct({ status: Schema.String }))(result)
-					.status !== "passed"
-		)
-	)
+	if (results.some((result) => decodeResultStatus(result).status !== "passed"))
 		process.exitCode = 1;
 }

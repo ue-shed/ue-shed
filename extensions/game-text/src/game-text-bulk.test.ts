@@ -10,6 +10,7 @@ import { carryEdits, exportRequest, keysText, lineRange, reviewChanges } from ".
 type Encoded = typeof LocalizationLinePreview.Encoded;
 const preview = Schema.decodeUnknownSync(LocalizationLinePreview);
 const id = Schema.decodeUnknownSync(LocalizationLineId);
+const decodeSelection = Schema.decodeUnknownSync(LocalizationSelection);
 
 const mark = (
 	code: string,
@@ -103,7 +104,7 @@ describe("bulk actions", () => {
 	});
 
 	it("exports the ticked lines without the list's state, review or key-change filters", () => {
-		const selection = Schema.decodeUnknownSync(LocalizationSelection)({
+		const selection = decodeSelection({
 			target: "Game",
 			cultures: ["de", "fr"],
 			state: "not_translated",

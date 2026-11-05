@@ -1,9 +1,8 @@
 /**
- * Writes the native line-break word-count tables from the `linebreak` package that
- * `localizationWordCount` uses, so the Rust count reproduces it code point for code point:
- * every UAX #14 class the package assigns, its pair table, and the code points of the scripts
- * that need dictionary breaking. Run `node scripts/generate-line-break-tables.ts` after
- * upgrading `linebreak` or Node, then rerun the parity tests.
+ * Writes the native line-break tables `localizationWordCount` needs from the `linebreak` package
+ * (UAX #14 classes, pair table, dictionary-breaking script code points) so the Rust count matches
+ * it code point for code point. Rerun `node scripts/generate-line-break-tables.ts` and the parity
+ * tests after upgrading `linebreak` or Node.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";

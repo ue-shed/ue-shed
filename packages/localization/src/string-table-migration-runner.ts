@@ -66,6 +66,11 @@ export class StringTableKeyMigrationError extends Schema.TaggedError<StringTable
 		cause: Schema.optionalKey(Schema.Defect())
 	}
 ) {}
+
+const isMigrationApproval = Schema.is(StringTableKeyMigrationApproval);
+const isMigrationError = Schema.is(StringTableKeyMigrationError);
+const decodeMigrationRecord = Schema.decodeUnknownEffect(StringTableKeyMigrationRecord);
+const decodeMigrationId = Schema.decodeUnknownEffect(StringTableKeyMigrationId);
 type HostFailure = { readonly message: string; readonly recovery: string };
 
 /** Host-owned selection, durable atomic storage, config compare/replace and saved-reader authority. */
@@ -217,11 +222,9 @@ export const makeStringTableKeyMigrations = Effect.fn("Localization.stringTable.
 		const execute = Effect.fn("Localization.stringTable.migrations.execute")(function* (
 			input: StringTableKeyMigrationApproval
 		) {
-			if (!Schema.is(StringTableKeyMigrationApproval)(input))
+			if (!isMigrationApproval(input))
 				return yield* failure("Approval must identify a reviewed migration proposal.");
-			let record = yield* Schema.decodeUnknownEffect(StringTableKeyMigrationRecord)(
-				yield* host.store.read(input.id)
-			);
+			let record = yield* decodeMigrationRecord(yield* host.store.read(input.id));
 			if (record.plan.request.id !== input.id || record.state.status !== "prepared")
 				return yield* failure("This migration is no longer an unapplied proposal.");
 			const root = record.plan.request.projectRoot;
@@ -408,18 +411,14 @@ export const makeStringTableKeyMigrations = Effect.fn("Localization.stringTable.
 			gate.withPermit(effect).pipe(
 				Effect.provideService(RemoteControlClient, client),
 				Effect.mapError((cause) =>
-					Schema.is(StringTableKeyMigrationError)(cause)
-						? cause
-						: failure(cause.message, cause)
+					isMigrationError(cause) ? cause : failure(cause.message, cause)
 				)
 			);
 		const inspect = Effect.fn("Localization.stringTable.migrations.inspect")(function* (
 			id: StringTableKeyMigrationId
 		) {
-			const key = yield* Schema.decodeUnknownEffect(StringTableKeyMigrationId)(id);
-			return yield* Schema.decodeUnknownEffect(StringTableKeyMigrationRecord)(
-				yield* host.store.read(key)
-			);
+			const key = yield* decodeMigrationId(id);
+			return yield* decodeMigrationRecord(yield* host.store.read(key));
 		});
 		return {
 			prepare: (input: StringTableKeyMigrationRequest) => run(prepare(input)),

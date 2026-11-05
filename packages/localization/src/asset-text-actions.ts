@@ -77,6 +77,8 @@ export function localizationTextActionsRequest(options: {
 
 const decodeRequest = Schema.decodeUnknownEffect(GameTextActionsRequest);
 const decodeResult = Schema.decodeUnknownEffect(GameTextActionsResult);
+const decodeRedirectRequest = Schema.decodeUnknownEffect(StringTableRedirectRequest);
+const decodeRedirectResult = Schema.decodeUnknownEffect(StringTableRedirectResult);
 
 function connectionFailed(endpoint: string, error: RemoteControlClientError, mutation = false) {
 	const retrySafe = !mutation && error.retrySafe;
@@ -213,9 +215,7 @@ export const runLocalizationTextActions = Effect.fn("game_text.actions.run")(fun
 export const verifyLocalizationStringTableRedirect = Effect.fn(
 	"Localization.stringTable.verifyRedirect"
 )(function* (options: { readonly endpoint: string; readonly request: StringTableRedirectRequest }) {
-	const request = yield* Schema.decodeUnknownEffect(StringTableRedirectRequest)(
-		options.request
-	).pipe(
+	const request = yield* decodeRedirectRequest(options.request).pipe(
 		Effect.mapError(
 			(cause) =>
 				new LocalizationTextActionsError({
@@ -265,7 +265,7 @@ export const verifyLocalizationStringTableRedirect = Effect.fn(
 		.pipe(
 			Effect.mapError((error) => connectionFailed(options.endpoint, error, request.activate))
 		);
-	return yield* Schema.decodeUnknownEffect(StringTableRedirectResult)(value).pipe(
+	return yield* decodeRedirectResult(value).pipe(
 		Effect.mapError(
 			(cause) =>
 				new LocalizationTextActionsError({

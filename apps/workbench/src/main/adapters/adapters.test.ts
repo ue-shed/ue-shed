@@ -24,6 +24,8 @@ import {
 	offlineTexturePreviewHostLayer
 } from "./offline-texture-preview-host.js";
 
+const decodeContentObservatoryState = Schema.decodeUnknownSync(ContentObservatoryState);
+
 it.effect("OfflineTexturePreviewHost returns nonzero commandlet exits for output validation", () =>
 	Effect.gen(function* () {
 		const host = yield* OfflineTexturePreviewHost;
@@ -103,7 +105,7 @@ it.effect("ElectronIpc encodes transformed result fields before crossing the bou
 		Effect.gen(function* () {
 			const ipc = yield* ElectronIpc;
 			const probe = yield* ElectronIpcTest;
-			const state = Schema.decodeUnknownSync(ContentObservatoryState)({
+			const state = decodeContentObservatoryState({
 				jobId: "map-history-1",
 				maps: [],
 				progress: {

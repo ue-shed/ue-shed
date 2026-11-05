@@ -34,6 +34,17 @@ import {
 	localDerivedDataCacheArguments
 } from "./unreal-plugin-host.ts";
 
+const JsonFromString = Schema.fromJsonString(Schema.Json);
+const decodeJsonLine = Schema.decodeUnknownSync(JsonFromString);
+const OperationPlanJson = Schema.fromJsonString(LocalizationOperationPlan);
+const decodeOperationPlanJson = Schema.decodeUnknownSync(OperationPlanJson);
+const CarrySummary = Schema.Struct({
+	type: Schema.Literal("carry"),
+	keys: Schema.Number,
+	changes: Schema.Number
+});
+const decodeCarrySummary = Schema.decodeUnknownOption(CarrySummary);
+
 const EngineLane = Schema.Struct({
 	label: Schema.Literals(["5.6", "5.7", "5.8", "4.27"]),
 	root: Schema.NonEmptyString
@@ -101,9 +112,7 @@ async function cliThroughLane(...args: string[]) {
 				lines: text
 					.split("\n")
 					.filter((line) => line.trim().startsWith("{"))
-					.map((line) =>
-						Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(line)
-					)
+					.map((line) => decodeJsonLine(line))
 			};
 		})
 	);
@@ -144,9 +153,7 @@ async function applyThroughCli(
 				lines: text
 					.split("\n")
 					.filter((line) => line.trim() !== "")
-					.map((line) =>
-						Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(line)
-					)
+					.map((line) => decodeJsonLine(line))
 			};
 		})
 	);
@@ -201,9 +208,7 @@ async function capturePlan(
 				"--plan"
 			]).pipe(Effect.provide(runtime));
 			assert.equal(yield* Ref.get(code), 0);
-			return Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationOperationPlan))(
-				yield* Ref.get(output)
-			);
+			return decodeOperationPlanJson(yield* Ref.get(output));
 		})
 	);
 	assert.equal(result.engine, engine.label);
@@ -607,14 +612,7 @@ for (const engine of configured) {
 			"--json"
 		);
 		assert.equal(carried.code, 0, JSON.stringify(carried.lines));
-		const CarrySummary = Schema.Struct({
-			type: Schema.Literal("carry"),
-			keys: Schema.Number,
-			changes: Schema.Number
-		});
-		const summary = carried.lines
-			.map((line) => Schema.decodeUnknownOption(CarrySummary)(line))
-			.find(Option.isSome);
+		const summary = carried.lines.map((line) => decodeCarrySummary(line)).find(Option.isSome);
 		assert.equal(summary?.value.keys, 1, JSON.stringify(carried.lines));
 		const carrySynced = await applyThroughCli(project, carryFile, engine, "--sync");
 		assert.equal(carrySynced.code, 0, JSON.stringify(carrySynced.lines));

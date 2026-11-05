@@ -35,6 +35,12 @@ import {
 	isBuiltInCheckEntry
 } from "./game-text-rules.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
+
+const decodeGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
+const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+const decodeLocalizationQualityReport = Schema.decodeUnknownSync(LocalizationQualityReport);
+const decodeWorkspaceQualityPage = Schema.decodeUnknownSync(WorkspaceQualityPage);
+
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
 const provenance = {
 	relativePath: "Content/Localization/Test",
@@ -90,7 +96,7 @@ type CheckParams = {
 };
 /** The starter file, with these checks' parameters; a check it doesn't list is added. */
 const starter = (params: CheckParams = {}) =>
-	Schema.decodeUnknownSync(GameTextRuleDocument)({
+	decodeGameTextRuleDocument({
 		...STARTER_GAME_TEXT_RULES,
 		rules: [
 			...STARTER_GAME_TEXT_RULES.rules.map((entry) =>
@@ -134,7 +140,7 @@ function kind<K extends LocalizationQualityFinding["kind"]>(
 /** A second saved unit for an existing key, in another asset. */
 function another(key: string, source: string, objectPath: string): TextUnit {
 	const base = unit(key, source);
-	return Schema.decodeUnknownSync(TextUnit)({
+	return decodeTextUnit({
 		...base,
 		id: `unit:${key}:${objectPath}`,
 		occurrences: base.occurrences.map((occurrence) => ({
@@ -358,7 +364,7 @@ describe("built-in source checks", () => {
 			"en · Placeholder “TODO”"
 		]);
 		// A role that does not select the line's place leaves the placeholder to the built-in.
-		const elsewhere = Schema.decodeUnknownSync(GameTextRuleDocument)({
+		const elsewhere = decodeGameTextRuleDocument({
 			...STARTER_GAME_TEXT_RULES,
 			roles: [
 				...STARTER_GAME_TEXT_RULES.roles,
@@ -425,7 +431,7 @@ describe("built-in source checks", () => {
 			audience?: string
 		) => {
 			const base = ftextUnit(id, source);
-			return Schema.decodeUnknownSync(TextUnit)({
+			return decodeTextUnit({
 				...base,
 				id: `unit:${id}`,
 				identity: { status: "unresolved", reason: "culture_invariant" },
@@ -535,9 +541,7 @@ describe("built-in source checks", () => {
 				finding.severity
 			])
 		).toEqual([["Blessing Description", null, "en", "low"]]);
-		expect(
-			Schema.decodeUnknownSync(LocalizationQualityReport)(JSON.parse(JSON.stringify(value)))
-		).toEqual(value);
+		expect(decodeLocalizationQualityReport(JSON.parse(JSON.stringify(value)))).toEqual(value);
 	});
 	it("lists conflicting sources apart and never compares or groups their joined text", () => {
 		const text = corpus([
@@ -583,7 +587,7 @@ describe("severity", () => {
 			expect(finding.severity).toBe(localizationCheckCatalogue[finding.kind].severity);
 		const workspace = localizationQualityWorkspace(undefined, value, joined);
 		const page = workspace.search({ target: joined.target, filter: "all" });
-		expect(Schema.decodeUnknownSync(WorkspaceQualityPage)(page)).toEqual(page);
+		expect(decodeWorkspaceQualityPage(page)).toEqual(page);
 		const severities = page.findings.map((finding) => finding.severity);
 		expect(severities[0]).toBe("blocking");
 		const rank = { blocking: 0, normal: 1, low: 2 };

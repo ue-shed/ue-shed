@@ -35,6 +35,9 @@ const FileIdentity = Schema.Struct({
 	fileBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 });
 
+const decodeFileIdentity = Schema.decodeUnknownEffect(FileIdentity);
+const decodeOutput = Schema.decodeUnknownEffect(Output);
+
 function failureReason(kind: Schema.Schema.Type<typeof FailureKind>): AssetInspectionFailureReason {
 	switch (kind) {
 		case "malformed_data":
@@ -72,7 +75,7 @@ export const adaptWasmInspectionResult = Effect.fn("AssetInspector.adaptWasmResu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<AssetInspectionReadResult> {
-	const identity = yield* Schema.decodeUnknownEffect(FileIdentity)({ fileName, fileBytes }).pipe(
+	const identity = yield* decodeFileIdentity({ fileName, fileBytes }).pipe(
 		Effect.catch(() => Effect.succeed(undefined))
 	);
 	if (identity === undefined) {
@@ -84,7 +87,7 @@ export const adaptWasmInspectionResult = Effect.fn("AssetInspector.adaptWasmResu
 			recovery: "Rename the file and choose it again."
 		};
 	}
-	return yield* Schema.decodeUnknownEffect(Output)(output).pipe(
+	return yield* decodeOutput(output).pipe(
 		Effect.map((value): AssetInspectionReadResult => {
 			if (value.status !== "error") {
 				return { status: "ready", fileName, fileBytes, inspection: value };

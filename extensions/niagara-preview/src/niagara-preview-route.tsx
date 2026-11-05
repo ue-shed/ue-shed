@@ -25,6 +25,7 @@ import {
 } from "./niagara-preview-client.js";
 
 const isNiagaraPreviewClientError = Schema.is(NiagaraPreviewClientError);
+const decodeNiagaraPreviewIntentOption = Schema.decodeUnknownOption(NiagaraPreviewIntentSchema);
 const defaultSystem = "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion";
 
 type RouteState =
@@ -176,7 +177,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 	let cachedBytes = 0;
 
 	const candidateIntent = createMemo(() =>
-		Schema.decodeUnknownOption(NiagaraPreviewIntentSchema)({
+		decodeNiagaraPreviewIntentOption({
 			settings: {
 				captureMode: captureMode(),
 				durationSeconds: Number(duration()),

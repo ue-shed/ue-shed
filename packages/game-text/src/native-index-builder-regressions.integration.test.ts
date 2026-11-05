@@ -18,6 +18,8 @@ import { sharedIndexNodeLayer } from "./shared-index.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target } from "./localization.test-support.js";
 
+const decodeReviewFile = Schema.decodeUnknownSync(LocalizationReviewFile);
+
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const files = [
 	["Test.manifest", "manifest"],
@@ -65,7 +67,7 @@ describe.skipIf(!executable)("native join current evidence", () => {
 					}),
 					`msgctxt ${JSON.stringify(`${identity},${key}`)}\nmsgid ${JSON.stringify(source)}\nmsgstr "Shipped"\n`
 				];
-				const review = Schema.decodeUnknownSync(LocalizationReviewFile)({
+				const review = decodeReviewFile({
 					schemaVersion: 1,
 					target: authored.name,
 					acceptedFindings: [],

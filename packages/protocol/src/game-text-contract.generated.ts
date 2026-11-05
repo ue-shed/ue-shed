@@ -4,7 +4,16 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "961355da52328b60cf89b0d0ed40400f9cae25ee4798a0bfbdbeed946932254a"
+	contractHash: "45d396fd4c90b1ab7d5ed0f9cb7e2f3d6c7bbace8ff77a16bf5220d46d39de27"
+} as const;
+
+/**
+ * The localization import: the version of its semantics in every content key it returns, and
+ * the most files one request may name.
+ */
+export const localizationImport = {
+	version: 6,
+	maximumFiles: 2560
 } as const;
 
 /**
@@ -38,15 +47,27 @@ export type LocalizationDiagnostic = { code: string, message: string, recovery: 
 
 export type LocalizationInput = { chunkBytes?: number, projectRoot: string, file: string, relativePath: string, options: LocalizationOptions, limits: LocalizationLimits, };
 
-export type LocalizationImportRequest = { files: ReadonlyArray<LocalizationInput>, maximumInFlightBytes: number, cold: boolean, };
+export type LocalizationImportRequest = { files: ReadonlyArray<LocalizationInput>, 
+/**
+ * Bound on the bytes of the files being read and parsed at once.
+ */
+maximumInFlightBytes: number, };
 
 export type LocalizationProvenance = { relativePath: string, size: number, modifiedTime: string, contentHash: string, };
 
 export type LocalizationPreparedFile = { key: string, contentHash: string, provenance: LocalizationProvenance, relativePath: string, format: LocalizationFormat, inputBytes: number, parsed: boolean, snapshotBytes: number, };
 
-export type LocalizationFileResult = { file: LocalizationPreparedFile | null, error: LocalizationDiagnostic | null, };
+export type LocalizationFileResult = { "outcome": "imported", file: LocalizationPreparedFile, } | { "outcome": "failed", error: LocalizationDiagnostic, };
 
-export type LocalizationImportOutcome = { lookupStrings: number, reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
+export type LocalizationImportOutcome = { 
+/**
+ * Dictionary lookups made while publishing.
+ */
+lookupStrings: number, 
+/**
+ * Strings of warm-route files kept without a dictionary lookup.
+ */
+reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
 
 export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "review_lines", reader: string, request: ReviewLinesRequest, } | { "action": "findings_evaluate", reader: string, 
 /**

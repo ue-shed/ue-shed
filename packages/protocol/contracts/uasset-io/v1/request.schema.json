@@ -890,16 +890,9 @@
 																	"exclusiveMinimum": 0
 																}
 															]
-														},
-														"cold": {
-															"type": "boolean"
 														}
 													},
-													"required": [
-														"files",
-														"maximumInFlightBytes",
-														"cold"
-													],
+													"required": ["files", "maximumInFlightBytes"],
 													"additionalProperties": false
 												}
 											},

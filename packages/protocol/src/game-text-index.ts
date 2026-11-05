@@ -46,9 +46,49 @@ const LocalizationImport: Schema.Codec<GameTextContract.LocalizationImportReques
 			limits: LocalizationLimits
 		})
 	),
-	maximumInFlightBytes: Positive,
-	cold: Schema.Boolean
+	maximumInFlightBytes: Positive
 });
+const LocalizationImportOutcome: Schema.Codec<GameTextContract.LocalizationImportOutcome> =
+	Schema.Struct({
+		lookupStrings: Natural,
+		reusedStrings: Natural,
+		files: Schema.Array(
+			Schema.Union([
+				Schema.Struct({
+					outcome: Schema.Literal("imported"),
+					file: Schema.Struct({
+						key: Schema.String,
+						contentHash: Schema.String,
+						provenance: Schema.Struct({
+							relativePath: Schema.String,
+							size: Natural,
+							modifiedTime: Schema.String,
+							contentHash: Schema.String
+						}),
+						relativePath: Schema.String,
+						format: LocalizationFormat,
+						inputBytes: Natural,
+						parsed: Schema.Boolean,
+						snapshotBytes: Natural
+					})
+				}),
+				Schema.Struct({
+					outcome: Schema.Literal("failed"),
+					error: Schema.Struct({
+						code: Schema.String,
+						message: Schema.String,
+						recovery: Schema.String,
+						retrySafe: Schema.Boolean,
+						nextStep: Schema.String
+					})
+				})
+			])
+		),
+		workerCount: Natural,
+		parseMs: Schema.Number,
+		parseCpuMs: Schema.Number,
+		publishMs: Schema.Number
+	});
 /** One native index operation; begin/end own its session, and publish/join mutate cached state. */
 export const GameTextIndexPreviousBuildRequest = Schema.Union([
 	Schema.Struct({
@@ -380,46 +420,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 			firstKey: Name
 		})
 	),
-	localization: Schema.optionalKey(
-		Schema.Struct({
-			lookupStrings: Natural,
-			reusedStrings: Natural,
-			files: Schema.Array(
-				Schema.Struct({
-					file: Schema.NullOr(
-						Schema.Struct({
-							key: Schema.String,
-							contentHash: Schema.String,
-							provenance: Schema.Struct({
-								relativePath: Schema.String,
-								size: Natural,
-								modifiedTime: Schema.String,
-								contentHash: Schema.String
-							}),
-							relativePath: Schema.String,
-							format: LocalizationFormat,
-							inputBytes: Natural,
-							parsed: Schema.Boolean,
-							snapshotBytes: Natural
-						})
-					),
-					error: Schema.NullOr(
-						Schema.Struct({
-							code: Schema.String,
-							message: Schema.String,
-							recovery: Schema.String,
-							retrySafe: Schema.Boolean,
-							nextStep: Schema.String
-						})
-					)
-				})
-			),
-			workerCount: Natural,
-			parseMs: Schema.Number,
-			parseCpuMs: Schema.Number,
-			publishMs: Schema.Number
-		})
-	)
+	localization: Schema.optionalKey(LocalizationImportOutcome)
 }).annotate({ identifier: "GameTextIndexBuildOutcome" });
 export type GameTextIndexBuildOutcome = typeof GameTextIndexBuildOutcome.Type;
 

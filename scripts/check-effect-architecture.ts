@@ -65,8 +65,6 @@ const approvedPromiseAdapters = new Set([
 	// Native build staging adapts Node filesystem/snapshot Promise ports below the scoped
 	// Effect builder; leases, temporary files and the protocol process share its scope.
 	"packages/game-text/src/native-index-builder.ts",
-	// The cold importer adapts worker messages and staged snapshot handles below SharedIndex.
-	"packages/game-text/src/localization-cold-import.ts",
 	// Package cold import owns the same worker-message Promise bridge under Effect.acquireRelease;
 	// callers receive only a scoped Effect, and workers/readers/staging close on every exit.
 	"packages/game-text/src/package-text-cold.ts",
@@ -183,8 +181,6 @@ const approvedResourceAdapters = new Set([
 	// The file comparison's typing pause belongs to the Solid owner: each new view, and onCleanup,
 	// clear it.
 	"extensions/game-text/src/game-text-file-comparison.tsx",
-	// Parser workers and their listeners are closed on success, failure and scope cancellation.
-	"packages/game-text/src/localization-cold-import.ts",
 	// Cold layer listeners and workers terminate in the publication adapter's finally block.
 	"packages/game-text/src/cold-layer-pool.ts",
 	"packages/game-text/src/cold-layer-worker.ts",

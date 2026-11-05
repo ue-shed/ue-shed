@@ -121,6 +121,13 @@ mod tests {
              export const gameTextEngineContract = {{\n\tbuildId: \"{}\",\n\tcontractHash: \"{}\"\n}} as const;\n\n",
             identity.build_id, identity.contract_hash
         ));
+        text.push_str(&format!(
+            "/**\n * The localization import: the version of its semantics in every content key it returns, and\n \
+             * the most files one request may name.\n */\n\
+             export const localizationImport = {{\n\tversion: {},\n\tmaximumFiles: {}\n}} as const;\n\n",
+            crate::localization::import::VERSION,
+            crate::localization::import::MAXIMUM_FILES
+        ));
         text.push_str(
             "/**\n * The Game Text engine's message types: the v4 rule IR, the findings replies and the\n\
              * evaluation profile. Hosts build and read engine messages with these types; the session\n\

@@ -80,6 +80,7 @@ export {
 	LOCALIZATION_IMPORT_VERSION,
 	type LocalizationFileImportRequest,
 	type LocalizationFileSnapshotKey,
+	type LocalizationImportProfile,
 	LocalizationImportSource,
 	type LocalizationImportSourceFile,
 	type LocalizationTargetImportRequest,

@@ -742,11 +742,15 @@
 						"files": {
 							"type": "array",
 							"items": {
-								"type": "object",
-								"properties": {
-									"file": {
-										"anyOf": [
-											{
+								"anyOf": [
+									{
+										"type": "object",
+										"properties": {
+											"outcome": {
+												"type": "string",
+												"enum": ["imported"]
+											},
+											"file": {
 												"type": "object",
 												"properties": {
 													"key": {
@@ -822,15 +826,19 @@
 													"snapshotBytes"
 												],
 												"additionalProperties": false
-											},
-											{
-												"type": "null"
 											}
-										]
+										},
+										"required": ["outcome", "file"],
+										"additionalProperties": false
 									},
-									"error": {
-										"anyOf": [
-											{
+									{
+										"type": "object",
+										"properties": {
+											"outcome": {
+												"type": "string",
+												"enum": ["failed"]
+											},
+											"error": {
 												"type": "object",
 												"properties": {
 													"code": {
@@ -857,15 +865,12 @@
 													"nextStep"
 												],
 												"additionalProperties": false
-											},
-											{
-												"type": "null"
 											}
-										]
+										},
+										"required": ["outcome", "error"],
+										"additionalProperties": false
 									}
-								},
-								"required": ["file", "error"],
-								"additionalProperties": false
+								]
 							}
 						},
 						"workerCount": {

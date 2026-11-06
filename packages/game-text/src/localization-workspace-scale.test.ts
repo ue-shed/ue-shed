@@ -96,13 +96,6 @@ it.live(
 							({ summary }) =>
 								!culture || !summary.culture || summary.culture === culture
 						);
-						const severityCounts = Object.fromEntries(
-							CheckSeverity.literals.map((severity) => [
-								severity,
-								inCulture.filter(({ summary }) => summary.severity === severity)
-									.length
-							])
-						);
 						const ruleCounts = new Map<string, number>();
 						for (const { finding } of inCulture)
 							ruleCounts.set(
@@ -121,6 +114,14 @@ it.live(
 						for (const filter of BuiltInQualityFilter.literals) {
 							const selected = inCulture.filter(
 								({ summary }) => filter === "all" || summary.filter === filter
+							);
+							// Severity counts follow the check, as choosing a severity would list.
+							const severityCounts = Object.fromEntries(
+								CheckSeverity.literals.map((severity) => [
+									severity,
+									selected.filter(({ summary }) => summary.severity === severity)
+										.length
+								])
 							);
 							const suggestedFixCount = selected.filter(({ finding }) =>
 								eligibleLocalizationChange(finding)

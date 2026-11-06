@@ -430,6 +430,84 @@ it.live(
 									).toEqual(legacy.focus({ ...request, id, occurrenceOffset }));
 							}
 						}
+					// A search, severities and suggested fixes narrow a list the same way in both,
+					// and its counts follow every filter but their own.
+					const narrowings: ReadonlyArray<
+						Pick<WorkspaceQualityRequest, "query" | "severities" | "fixable">
+					> = [
+						{ query: "hello" },
+						{ query: "HALLO" },
+						{ query: "  bold   gold " },
+						{ query: "spiel speichern" },
+						{ query: "no such words" },
+						{ severities: ["blocking"] },
+						{ severities: ["normal", "low"] },
+						{ fixable: true },
+						{ fixable: false },
+						{ query: "hello", severities: ["blocking"], fixable: true }
+					];
+					for (const culture of [undefined, "de"])
+						for (const filter of ["all", "placeholder_text", "whitespace"] as const)
+							for (const narrowing of narrowings) {
+								const request: WorkspaceQualityRequest = {
+									target: join.target,
+									filter,
+									...(culture ? { culture } : undefined),
+									...narrowing
+								};
+								expect(yield* indexed.search(request)).toEqual(
+									legacy.search(request)
+								);
+								expect(yield* indexed.export(request)).toEqual(
+									legacy.export(request)
+								);
+								expect(yield* indexed.changes(request)).toEqual(
+									legacy.changes(request)
+								);
+							}
+					const searched = (query: string, culture?: string) =>
+						legacy
+							.export({
+								target: join.target,
+								filter: "all",
+								query,
+								...(culture ? { culture } : undefined)
+							})
+							.findings.map(({ source, culture }) => [source, culture]);
+					// Source text and a culture's translation match; another culture's does not.
+					expect(searched("hello").length).toBeGreaterThan(0);
+					expect(searched("hello").every(([source]) => /hello/iu.test(source!))).toBe(
+						true
+					);
+					const hallo = searched("hallo");
+					expect(hallo.length).toBeGreaterThan(0);
+					expect(hallo.every(([, culture]) => culture === "de")).toBe(true);
+					expect(searched("no such words")).toEqual([]);
+					const exported = legacy.export({
+						target: join.target,
+						filter: "all",
+						query: "hello"
+					});
+					expect(exported.query).toBe("hello");
+					// Choosing a severity leaves the severity counts as they were, and narrows the
+					// check counts to it.
+					const blocking = legacy.search({
+						target: join.target,
+						filter: "all",
+						severities: ["blocking"]
+					});
+					expect(blocking.severityCounts).toEqual(all.severityCounts);
+					expect(blocking.total).toBe(all.severityCounts.blocking);
+					expect(blocking.counts.all).toBe(all.severityCounts.blocking);
+					// Choosing a check leaves the check counts as they were.
+					const placeholders = legacy.search({
+						target: join.target,
+						filter: "placeholder_text",
+						query: "hello"
+					});
+					expect(placeholders.counts).toEqual(
+						legacy.search({ target: join.target, filter: "all", query: "hello" }).counts
+					);
 					const unknown = TextQualityFindingId.make(
 						all.findings[0]!.id.replace(/.$/u, "x")
 					);

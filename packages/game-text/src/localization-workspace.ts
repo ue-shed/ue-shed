@@ -129,12 +129,24 @@ export function workspaceQualitySeverity(
 }
 const Selection = { target: LocalizationTargetName, culture: Schema.optionalKey(CultureCode) };
 /**
- * Target/culture quality-list request with a filter and offset. The workspace retains complete
- * findings while each host page stays bounded.
+ * What narrows a quality list besides its check. `query` searches as the Text tab does: each
+ * word in the line's source or in the finding's culture's translation, ignoring case; a source
+ * finding's own source text. `severities` keeps those severities' findings, and `fixable` the
+ * findings with (or without) a suggested fix.
+ */
+export const WorkspaceQualityNarrowing = {
+	query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512))),
+	severities: Schema.optionalKey(Schema.Array(CheckSeverity).check(Schema.isMaxLength(3))),
+	fixable: Schema.optionalKey(Schema.Boolean)
+};
+/**
+ * Target/culture quality-list request with a filter, its narrowing and an offset. The workspace
+ * retains complete findings while each host page stays bounded.
  */
 export const WorkspaceQualityRequest = Schema.Struct({
 	...Selection,
 	filter: WorkspaceQualityFilter,
+	...WorkspaceQualityNarrowing,
 	offset: Offset
 });
 export type WorkspaceQualityRequest = typeof WorkspaceQualityRequest.Type;
@@ -185,7 +197,11 @@ export const WorkspaceQualityPage = Schema.Struct({
 	customFilters: Schema.Array(
 		Schema.Struct({ filter: CustomQualityFilter, label: Schema.String })
 	).check(Schema.isMaxLength(512)),
-	/** Findings by severity in the culture selection, as `counts.all` counts them. */
+	/**
+	 * Counts follow every filter but their own: `counts` each check's findings under the
+	 * narrowing, and `severityCounts` each severity's findings under the check and the narrowing
+	 * without `severities`. `total` follows every filter.
+	 */
 	severityCounts: Schema.Record(CheckSeverity, Count),
 	nextOffset: Offset,
 	suggestedFixCount: Count,
@@ -207,7 +223,8 @@ export const WorkspaceQualityReport = WorkspaceQualityPage.mapFields(
 		status: TextCorpus.fields.status,
 		target: WorkspaceQualityRequest.fields.target,
 		culture: WorkspaceQualityRequest.fields.culture,
-		filter: WorkspaceQualityRequest.fields.filter
+		filter: WorkspaceQualityRequest.fields.filter,
+		...WorkspaceQualityNarrowing
 	})
 );
 export type WorkspaceQualityReport = typeof WorkspaceQualityReport.Type;
@@ -913,6 +930,51 @@ function withoutSourceReportedSummary(
  * The workspace over any finding list. Pages and exports list blocking findings, then normal, then
  * low; within a severity, source findings come first, then localization findings in report order.
  */
+/** A quality search's words, as the engine splits them: lowercase, between whitespace. */
+function searchTerms(query: string | undefined): readonly string[] {
+	return (query ?? "")
+		.toLowerCase()
+		.split(/\s+/u)
+		.filter((term) => term.length > 0);
+}
+
+/**
+ * Whether each word is in the finding's source, or for a line finding in its culture's archive
+ * translation or, when not synced, its PO text: the text the engine searches.
+ */
+function itemMatches(item: WorkspaceQualityItem, terms: readonly string[]): boolean {
+	const texts = [item.line?.source ?? item.summary.source];
+	const finding = item.finding;
+	if ("culture" in finding) {
+		const mark = item.line?.cultures.find((mark) => mark.culture === finding.culture);
+		if (mark?.archive) texts.push(mark.archive.translation.Text);
+		if (mark && (mark.facts.includes("not_synced") || mark.state === "not_synced"))
+			texts.push(mark.poTranslation ?? "");
+	}
+	const lowered = texts.map((text) => text.toLowerCase());
+	return terms.every((term) => lowered.some((text) => text.includes(term)));
+}
+
+/** The request's narrowing, for a report to record what it lists. */
+function narrowingOf(request: WorkspaceQualityRequest) {
+	return {
+		...(request.query?.trim() ? { query: request.query } : undefined),
+		...(request.severities ? { severities: request.severities } : undefined),
+		...(request.fixable !== undefined ? { fixable: request.fixable } : undefined)
+	};
+}
+
+/** What a retained selection was selected by. */
+function selectionKey(request: WorkspaceQualityRequest): string {
+	return JSON.stringify([
+		request.culture ?? null,
+		request.filter,
+		searchTerms(request.query),
+		request.severities ?? null,
+		request.fixable ?? null
+	]);
+}
+
 function localizationQualityReads(
 	source: TextQualityReport | undefined,
 	{
@@ -989,8 +1051,42 @@ function localizationQualityReads(
 				summaries.push(item.summary);
 		return summaries;
 	};
+	/**
+	 * The narrowing's test besides severities. A search reads every finding's line in the culture
+	 * selection, in batches, as the engine reads its text columns.
+	 */
+	const narrowedBy = function* (
+		request: WorkspaceQualityRequest
+	): QualityRead<(position: number) => boolean, WorkspaceQualityItem> {
+		const terms = searchTerms(request.query);
+		let found: Uint8Array | undefined;
+		if (terms.length > 0) {
+			const hits = new Uint8Array(total);
+			const positions: number[] = [];
+			for (let position = 0; position < total; position++)
+				if (inCulture(request, position)) positions.push(position);
+			for (let start = 0; start < positions.length; start += 2048) {
+				const batch = positions.slice(start, start + 2048);
+				const items = yield* itemsAt(batch);
+				items.forEach((item, index) => {
+					if (itemMatches(item, terms)) hits[batch[index]!] = 1;
+				});
+			}
+			found = hits;
+		}
+		const fixable = request.fixable;
+		return (position) =>
+			(fixable === undefined || eligibleAt(position) === fixable) &&
+			(found === undefined || found[position] === 1);
+	};
+	const severityWanted = (request: WorkspaceQualityRequest, severity: CheckSeverity) =>
+		request.severities === undefined || request.severities.includes(severity);
 	/** Matching positions, blocking findings first, then normal, then low; else in order. */
-	const matched = (request: WorkspaceQualityRequest, wanted = (_position: number) => true) => {
+	const matched = (
+		request: WorkspaceQualityRequest,
+		narrowed: (position: number) => boolean,
+		wanted = (_position: number) => true
+	) => {
 		const bySeverity = new Map<CheckSeverity, number[]>(
 			CheckSeverity.literals.map((severity) => [severity, []])
 		);
@@ -998,6 +1094,8 @@ function localizationQualityReads(
 			if (
 				inCulture(request, position) &&
 				(request.filter === "all" || request.filter === filterAt(position)) &&
+				severityWanted(request, severityAt(position)) &&
+				narrowed(position) &&
 				wanted(position)
 			)
 				bySeverity.get(severityAt(position))!.push(position);
@@ -1005,7 +1103,7 @@ function localizationQualityReads(
 	};
 	// Keep just the current selection's numeric positions and counts. Moving through its pages
 	// neither rechecks findings nor walks the full list again; changing selection replaces it.
-	const select = (request: WorkspaceQualityRequest) => {
+	const select = (request: WorkspaceQualityRequest, narrowed: (position: number) => boolean) => {
 		const typeCounts = new Map<WorkspaceQualityFilter, number>();
 		const ruleCounts = new Map<string, number>();
 		const severityCounts = { blocking: 0, normal: 0, low: 0 };
@@ -1017,6 +1115,7 @@ function localizationQualityReads(
 		let cultureCount = 0,
 			matchedCount = 0,
 			suggestedFixCount = 0;
+		// Counts follow every filter but their own, as the engine counts them.
 		const record = (
 			filter: WorkspaceQualityFilter,
 			severity: CheckSeverity,
@@ -1024,17 +1123,21 @@ function localizationQualityReads(
 			count: number,
 			eligible: number
 		) => {
-			cultureCount += count;
-			typeCounts.set(filter, (typeCounts.get(filter) ?? 0) + count);
-			ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + count);
-			severityCounts[severity] += count;
-			if (request.filter !== "all" && request.filter !== filter) return false;
+			const byFilter = request.filter === "all" || request.filter === filter,
+				bySeverity = severityWanted(request, severity);
+			if (bySeverity) {
+				cultureCount += count;
+				typeCounts.set(filter, (typeCounts.get(filter) ?? 0) + count);
+				ruleCounts.set(rule, (ruleCounts.get(rule) ?? 0) + count);
+			}
+			if (byFilter) severityCounts[severity] += count;
+			if (!byFilter || !bySeverity) return false;
 			matchedCount += count;
 			suggestedFixCount += eligible;
 			return true;
 		};
 		for (let position = 0; position < total; position++) {
-			if (!inCulture(request, position)) continue;
+			if (!inCulture(request, position) || !narrowed(position)) continue;
 			const filter = filterAt(position),
 				rule = ruleAt(position),
 				severity = severityAt(position);
@@ -1062,8 +1165,7 @@ function localizationQualityReads(
 			])
 		);
 		return {
-			culture: request.culture,
-			filter: request.filter,
+			key: selectionKey(request),
 			positions: CheckSeverity.literals.map((severity) => runs[severity]),
 			counts,
 			customFilters,
@@ -1081,13 +1183,9 @@ function localizationQualityReads(
 	const search = function* (
 		request: WorkspaceQualityRequest
 	): QualityRead<WorkspaceQualityPage, WorkspaceQualityItem> {
-		if (
-			!selection ||
-			selection.culture !== request.culture ||
-			selection.filter !== request.filter
-		)
-			selection = select(request);
-		const { culture: _culture, filter: _filter, positions, ...page } = selection;
+		if (selection?.key !== selectionKey(request))
+			selection = select(request, yield* narrowedBy(request));
+		const { key: _key, positions, ...page } = selection;
 		const offset = request.offset ?? 0;
 		const selected: number[] = [];
 		let skipped = 0;
@@ -1148,12 +1246,13 @@ function localizationQualityReads(
 			const { nextOffset: _offset, ...page } = yield* search(request);
 			return {
 				...page,
-				findings: yield* summariesAt(matched(request)),
+				findings: yield* summariesAt(matched(request, yield* narrowedBy(request))),
 				corpusCoverage: metadata.coverage,
 				status: metadata.status,
 				target: request.target,
 				filter: request.filter,
-				...(request.culture ? { culture: request.culture } : undefined)
+				...(request.culture ? { culture: request.culture } : undefined),
+				...narrowingOf(request)
 			};
 		},
 		focus: function* (
@@ -1250,7 +1349,7 @@ function localizationQualityReads(
 			let remaining = 0,
 				bytes = 0,
 				read = 0;
-			const eligible = matched(request, eligibleAt);
+			const eligible = matched(request, yield* narrowedBy(request), eligibleAt);
 			// Only format-argument findings suggest changes: one per line and culture, and a line's
 			// identity is unique, so changes past the first 100 are counted without reading lines.
 			while (read < eligible.length && changes.length < 100) {
@@ -1617,7 +1716,10 @@ export function queriedLocalizationQualityWorkspace(options: {
 		label
 	}));
 	const query = (
-		request: Pick<WorkspaceQualityRequest, "culture" | "filter">,
+		request: Pick<
+			WorkspaceQualityRequest,
+			"culture" | "filter" | "query" | "severities" | "fixable"
+		>,
 		fields: Omit<GameTextContract.FindingsQueryRequest, "key" | "view" | "order">
 	) =>
 		findings.findingsQuery({
@@ -1633,6 +1735,9 @@ export function queriedLocalizationQualityWorkspace(options: {
 							.filter(([, filter]) => filter === request.filter)
 							.map(([ruleId]) => ruleId)
 					}),
+			...(request.query?.trim() ? { lines: { text: request.query } } : undefined),
+			...(request.severities ? { severities: request.severities } : undefined),
+			...(request.fixable !== undefined ? { fixable: request.fixable } : undefined),
 			...fields
 		});
 	const summaryOf = (finding: QueriedFinding): WorkspaceFinding => {
@@ -1703,7 +1808,8 @@ export function queriedLocalizationQualityWorkspace(options: {
 				status: metadata.status,
 				target: request.target,
 				filter: request.filter,
-				...(request.culture ? { culture: request.culture } : undefined)
+				...(request.culture ? { culture: request.culture } : undefined),
+				...narrowingOf(request)
 			};
 		}),
 		focus: Effect.fn("GameText.quality.focus")(function* (
@@ -1812,31 +1918,33 @@ export function queriedLocalizationQualityWorkspace(options: {
 				total = 0;
 			// Only format-argument findings suggest changes: one per line and culture, and a line's
 			// identity is unique, so changes past the first 100 are counted without reading them.
-			do {
-				const page = yield* query(request, { fixable: true, offset: read, limit: 128 });
-				total = page.total;
-				read += page.findings.length;
-				for (const finding of page.findings) {
-					const change = eligibleLocalizationChange(finding);
-					if (!change) continue;
-					const id = JSON.stringify([
-						change.target,
-						change.culture,
-						change.namespace,
-						change.key
-					]);
-					if (seen.has(id)) continue;
-					seen.add(id);
-					const size = new TextEncoder().encode(JSON.stringify(change)).length;
-					if (changes.length === 100 || bytes + size > 1_000_000) {
-						remaining++;
-						continue;
+			// Findings without a suggested fix offer none, so that filter copies nothing.
+			if (request.fixable !== false)
+				do {
+					const page = yield* query(request, { fixable: true, offset: read, limit: 128 });
+					total = page.total;
+					read += page.findings.length;
+					for (const finding of page.findings) {
+						const change = eligibleLocalizationChange(finding);
+						if (!change) continue;
+						const id = JSON.stringify([
+							change.target,
+							change.culture,
+							change.namespace,
+							change.key
+						]);
+						if (seen.has(id)) continue;
+						seen.add(id);
+						const size = new TextEncoder().encode(JSON.stringify(change)).length;
+						if (changes.length === 100 || bytes + size > 1_000_000) {
+							remaining++;
+							continue;
+						}
+						changes.push(change);
+						bytes += size;
 					}
-					changes.push(change);
-					bytes += size;
-				}
-				if (page.findings.length === 0) break;
-			} while (read < total && changes.length < 100);
+					if (page.findings.length === 0) break;
+				} while (read < total && changes.length < 100);
 			remaining += total - read;
 			return {
 				status: "ready" as const,

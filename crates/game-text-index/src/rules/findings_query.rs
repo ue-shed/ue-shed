@@ -9,6 +9,8 @@ use super::replies::{LineDiagnostic, PlaceSet, ReadProfile};
 use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, javascript_json};
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
+use crate::engine_rows::RowSet;
+use crate::engine_types::{FindingsSelection, Selection, TextSearch};
 use crate::sink::{Format, Sink, SinkSummary, SinkWriter, pretty_json};
 use crate::store::digest;
 use crate::{Error, ErrorCode, Result, require};
@@ -96,6 +98,32 @@ pub(crate) struct Page {
     limit: usize,
 }
 
+/// Findings by their line, as the Text tab searches lines: each `text` term in the line's source
+/// or the finding's culture's translation, and `where` over the line. A finding without a
+/// culture reads the request's culture, or every culture. A source finding matches `text` in its
+/// unit's source; none matches a `where`, which tests lines.
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "FindingsLineSearch"))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct LineSearch {
+    #[cfg_attr(test, ts(optional))]
+    text: Option<String>,
+    #[serde(rename = "where")]
+    #[cfg_attr(test, ts(optional, type = "Expr"))]
+    filter: Option<Value>,
+}
+
+impl LineSearch {
+    /// Blank text and no `where` keep every finding.
+    fn text(&self) -> Option<&str> {
+        self.text.as_deref().filter(|text| !text.trim().is_empty())
+    }
+    fn narrows(&self) -> bool {
+        self.text().is_some() || self.filter.is_some()
+    }
+}
+
 /// `findings_query`: a view's findings, filtered, in an order, paged and counted.
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(TS))]
@@ -120,6 +148,8 @@ pub(crate) struct QueryRequest {
     line: Option<String>,
     #[cfg_attr(test, ts(optional))]
     id: Option<String>,
+    #[cfg_attr(test, ts(optional))]
+    lines: Option<LineSearch>,
     order: Order,
     #[cfg_attr(test, ts(optional))]
     after: Option<String>,
@@ -152,12 +182,15 @@ pub(crate) struct RuleTotal {
 #[cfg_attr(test, ts(rename = "FindingCounts"))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Counts {
-    /// Findings in the view and the culture selection, accepted ones left out.
+    /// Findings in the view, the culture selection and the line search that every filter but
+    /// `rules` selects, accepted ones left out.
     all: u32,
+    /// Each rule's findings that every filter but `rules` selects.
     rules: Vec<RuleTotal>,
+    /// Each severity's findings that every filter but `severities` selects.
     #[cfg_attr(test, ts(type = "{ blocking: number, normal: number, low: number }"))]
     severities: BTreeMap<&'static str, u32>,
-    /// Findings in the view and the culture selection the acceptance key hid.
+    /// Findings in the view, the culture selection and the line search the acceptance key hid.
     accepted: u32,
     /// Findings every filter selects, and those of them with an acceptable change.
     total: u32,
@@ -444,6 +477,8 @@ fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
 struct Columns {
     rule: Arc<[u32]>,
     line: Arc<[u32]>,
+    /// A source finding's unit, a `raw` row.
+    unit: Arc<[u32]>,
     culture: Arc<[u32]>,
     flags: Arc<[u32]>,
     /// Each rule's first finding number, then the count.
@@ -472,6 +507,7 @@ fn columns(layer: &FindingsLayer) -> Result<Columns> {
     let result = Columns {
         rule: layer.column("f.rule")?,
         line: layer.column("f.line")?,
+        unit: layer.column("f.unit")?,
         culture: layer.column("f.culture")?,
         flags: layer.column("f.flags")?,
         bases,
@@ -483,6 +519,7 @@ fn columns(layer: &FindingsLayer) -> Result<Columns> {
         [
             result.rule.len(),
             result.line.len(),
+            result.unit.len(),
             result.culture.len(),
             result.flags.len(),
         ]
@@ -498,6 +535,109 @@ impl Columns {
         let rule = self.rule[number as usize] as usize;
         let position = (number - self.bases[rule]) as usize;
         (self.id0[rule][position], self.id1[rule][position])
+    }
+}
+
+/// The rows a line search keeps: by culture index, the line rows for findings of that culture;
+/// `any`, for findings without one; `units`, the `raw` rows for source findings.
+struct LineMatches {
+    cultures: Vec<RowSet>,
+    any: RowSet,
+    units: Option<RowSet>,
+}
+
+impl LineMatches {
+    /// Each set is the Text tab's `matching` for the search in one culture scope, so its atoms
+    /// are cached with the Text tab's.
+    fn open(
+        query: &EngineQuery,
+        request: &QueryRequest,
+        search: &LineSearch,
+        culture: Option<u32>,
+        cancelled: &AtomicBool,
+    ) -> Result<Self> {
+        #[cfg(feature = "benchmark-timings")]
+        let _span = crate::benchmark_timings::Span::new("findingsLines");
+        let target = query.target["name"]
+            .as_str()
+            .ok_or("The findings' target has no name.")?
+            .to_owned();
+        let text = search.text();
+        let findings = search.filter.as_ref().map(|_| FindingsSelection {
+            key: request.key.clone(),
+            acceptance: request.acceptance.clone(),
+            source_only: None,
+        });
+        let lines = query.reader.column("line.source")?.len();
+        let select = |culture: Option<String>, cultures: Option<Vec<String>>| -> Result<RowSet> {
+            let selection = Selection {
+                target: Some(target.clone()),
+                culture,
+                cultures,
+                findings: findings.clone(),
+                filter: search.filter.clone(),
+                text: text.map(|query| TextSearch {
+                    query: query.to_owned(),
+                    translations: Some(true),
+                }),
+                dropped: Vec::new(),
+            };
+            selection.validate()?;
+            RowSet::from_rows(lines, &query.matching(&selection, cancelled)?)
+        };
+        let names = query.cultures.clone();
+        let (any, cultures) = match culture {
+            // Every finding the culture selection keeps is the culture's or has none.
+            Some(ci) => (select(Some(names[ci as usize].clone()), None)?, Vec::new()),
+            None => (
+                select(None, Some(names.clone()))?,
+                names
+                    .iter()
+                    .map(|name| select(Some(name.clone()), None))
+                    .collect::<Result<_>>()?,
+            ),
+        };
+        let units = match (text, &search.filter) {
+            (Some(text), None) => {
+                let selection = Selection {
+                    text: Some(TextSearch {
+                        query: text.to_owned(),
+                        translations: None,
+                    }),
+                    ..Selection::default()
+                };
+                selection.validate()?;
+                let units = crate::engine_match::Projection::open(query, cancelled)?
+                    .raw
+                    .visible
+                    .len();
+                Some(RowSet::from_rows(
+                    units,
+                    &query.matching(&selection, cancelled)?,
+                )?)
+            }
+            _ => None,
+        };
+        Ok(Self {
+            cultures,
+            any,
+            units,
+        })
+    }
+
+    fn holds(&self, columns: &Columns, number: u32) -> bool {
+        let n = number as usize;
+        let line = columns.line[n];
+        if line == NONE {
+            return self
+                .units
+                .as_ref()
+                .is_some_and(|units| units.contains(columns.unit[n] as usize));
+        }
+        self.cultures
+            .get(columns.culture[n] as usize)
+            .unwrap_or(&self.any)
+            .contains(line as usize)
     }
 }
 
@@ -572,14 +712,35 @@ fn run_query(
         None => None,
     };
     let id = request.id.as_deref().map(id_lanes);
-    let selected = |number: u32| {
+    let lines = match request.lines.as_ref().filter(|search| search.narrows()) {
+        Some(search) => {
+            let lines = LineMatches::open(query, request, search, culture, cancelled)?;
+            mark(&mut stages, "lines", &mut since);
+            Some(lines)
+        }
+        None => None,
+    };
+    let searched = |number: u32| {
+        lines
+            .as_ref()
+            .is_none_or(|lines| lines.holds(&columns, number))
+    };
+    let rule_selected = |number: u32| {
+        wanted_rules
+            .as_ref()
+            .is_none_or(|wanted| wanted[columns.rule[number as usize] as usize])
+    };
+    let severity_selected = |number: u32| {
+        severities
+            .as_ref()
+            .is_none_or(|wanted| wanted[columns.rule[number as usize] as usize])
+    };
+    // The filters besides rules and severities, which every count follows.
+    let otherwise_selected = |number: u32| {
         let n = number as usize;
-        let rule = columns.rule[n] as usize;
-        wanted_rules.as_ref().is_none_or(|wanted| wanted[rule])
-            && severities.as_ref().is_none_or(|wanted| wanted[rule])
-            && request
-                .fixable
-                .is_none_or(|wanted| (columns.flags[n] & FIXABLE != 0) == wanted)
+        request
+            .fixable
+            .is_none_or(|wanted| (columns.flags[n] & FIXABLE != 0) == wanted)
             && request
                 .change
                 .is_none_or(|wanted| (columns.flags[n] & CHANGE != 0) == wanted)
@@ -628,10 +789,12 @@ fn run_query(
         severities: SEVERITIES.iter().map(|(_, name)| (*name, 0)).collect(),
         ..Counts::default()
     });
+    // Counts are facets: a rule's count follows every filter but the rules, a severity's every
+    // filter but the severities, so a list can show what choosing another one would select.
     let mut matched = Vec::new();
     for number in &sequence {
         let number = *number;
-        if !in_culture(number) {
+        if !in_culture(number) || !searched(number) {
             continue;
         }
         if accepted(number) {
@@ -640,21 +803,29 @@ fn run_query(
             }
             continue;
         }
-        if let Some(counts) = &mut counts {
-            let rule = &rules[columns.rule[number as usize] as usize];
-            counts.all += 1;
-            counts.rules[columns.rule[number as usize] as usize].count += 1;
-            *counts
-                .severities
-                .entry(
-                    SEVERITIES
-                        .iter()
-                        .find(|(s, _)| *s == rule.severity)
-                        .map_or("normal", |(_, name)| name),
-                )
-                .or_default() += 1;
+        if !otherwise_selected(number) {
+            continue;
         }
-        if selected(number) {
+        let (by_rule, by_severity) = (rule_selected(number), severity_selected(number));
+        if let Some(counts) = &mut counts {
+            let rule = columns.rule[number as usize] as usize;
+            if by_severity {
+                counts.all += 1;
+                counts.rules[rule].count += 1;
+            }
+            if by_rule {
+                *counts
+                    .severities
+                    .entry(
+                        SEVERITIES
+                            .iter()
+                            .find(|(s, _)| *s == rules[rule].severity)
+                            .map_or("normal", |(_, name)| name),
+                    )
+                    .or_default() += 1;
+            }
+        }
+        if by_rule && by_severity {
             matched.push(number);
             if let Some(counts) = &mut counts {
                 counts.total += 1;

@@ -46,6 +46,7 @@ export const LocalizationErrorCode = Schema.Literals([
 	"malformed_struct",
 	"malformed_ini",
 	"malformed_po",
+	"malformed_locres",
 	"malformed_locmeta",
 	"malformed_csv",
 	"limit_exceeded",
@@ -398,7 +399,16 @@ export type LocalizationOutputPaths = typeof LocalizationOutputPaths.Type;
  */
 export const LocalizationTarget = Schema.Struct({
 	name: LocalizationTargetName,
-	source: Schema.Literals(["dashboard_settings", "config_only"]),
+	/**
+	 * Where the target is defined: the Localization Dashboard, gather configs alone, or (in a
+	 * project with no gather configs) only compiled resources found by Unreal's runtime convention.
+	 */
+	source: Schema.Literals(["dashboard_settings", "config_only", "resource_files"]),
+	/**
+	 * Present when `outputPaths.resources` was discovered from the project's
+	 * `Content/Localization/<Target>/<culture>/<Target>.locres` files rather than configured.
+	 */
+	resourcesDiscovered: Schema.optionalKey(Schema.Literal(true)),
 	nativeCulture: Schema.NullOr(CultureCode),
 	cultures: Schema.Array(CultureCode),
 	dashboard: Schema.optionalKey(LocalizationTargetSettings),

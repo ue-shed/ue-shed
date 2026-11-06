@@ -43,6 +43,7 @@ import {
 	DiskChangesRequest,
 	watchDiskChanges,
 	watchedFolders,
+	watchedLocalizationFiles,
 	type DiskChangesWatchRequest
 } from "./disk-changes.js";
 import {
@@ -171,6 +172,29 @@ type MutableFileDiagnostics = {
 		JoinedTargetInput["fileDiagnostics"]
 	>[K];
 };
+
+/**
+ * Drops retained observations of resources the join won't read: a culture reads its resource only
+ * while its archive is missing (the join's `resource_inputs` rule). Otherwise a culture that got its
+ * archive back keeps an observation of an input the join no longer depends on, and the next scoped
+ * refresh rejects it as superseded.
+ */
+function retireUnreadResources(
+	target: Imported["target"],
+	fileErrors: MutableFileErrors,
+	fileProvenances: MutableFileProvenances,
+	fileDiagnostics: MutableFileDiagnostics
+) {
+	for (const culture of target.cultures) {
+		const resource = target.outputPaths.resources[culture];
+		const archive = target.outputPaths.archives[culture];
+		if (!resource || !archive || fileErrors[archive] === "file_missing") continue;
+		delete fileErrors[resource];
+		delete fileProvenances[resource];
+		delete fileDiagnostics[resource];
+	}
+}
+
 /** A verified package revision. It owns no reader or writer lease and can be reused by targets. */
 export interface GameTextProject {
 	readonly projectRoot: string;
@@ -660,6 +684,12 @@ export const makeGameTextIndexSteps = Effect.fn("GameTextIndex.makeSteps")(funct
 						fileDiagnostics[diagnostic.relativePath] = diagnostic.error;
 						delete fileProvenances[diagnostic.relativePath];
 					}
+				retireUnreadResources(
+					imported.target,
+					fileErrors,
+					fileProvenances,
+					fileDiagnostics
+				);
 				const fileKeys = yield* observeGameTextImport({
 					imported,
 					fileErrors,
@@ -1532,14 +1562,11 @@ export const makeGameTextIndexSteps = Effect.fn("GameTextIndex.makeSteps")(funct
 						.discover({ projectRoot })
 						.pipe(Effect.mapError(manifestIndexFailure));
 					const target = discovery.targets.find((item) => item.name === input.target);
-					const outputs = target?.outputPaths;
-					for (const path of [
-						outputs?.manifest,
-						...Object.values(outputs?.archives ?? {}),
-						...Object.values(outputs?.portableObjects ?? {}),
+					for (const path of watchedLocalizationFiles(
+						target?.outputPaths,
 						defaultLocalizationReviewPath(input.target)
-					])
-						if (path) files.add(path.replaceAll("\\", "/"));
+					))
+						files.add(path);
 				}
 				return watchDiskChanges({
 					projectRoot,

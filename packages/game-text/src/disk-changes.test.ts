@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Queue, Stream } from "effect";
+import { LocalizationOutputPaths } from "@ue-shed/localization/browser";
+import { Effect, Layer, Queue, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { describe, expect } from "vitest";
 import {
@@ -10,10 +11,13 @@ import {
 	DiskWatcherNodeLive,
 	watchDiskChanges,
 	watchedFolders,
+	watchedLocalizationFiles,
 	type DiskChangeItem,
 	type DiskChangesState,
 	type DiskWatchListener
 } from "./disk-changes.js";
+
+const decodeOutputPaths = Schema.decodeUnknownSync(LocalizationOutputPaths);
 
 /** A watcher whose events and failures the test raises, by watched folder. */
 const fakeWatcher = () => {
@@ -230,6 +234,87 @@ describe("watchDiskChanges", () => {
 				yield* until(() => checks.length > 1);
 			}).pipe(Effect.scoped)
 		);
+
+	it("names every culture's compiled resource among a target's watched files", () => {
+		expect([
+			...watchedLocalizationFiles(
+				decodeOutputPaths({
+					manifest: "Content/Localization/Game/Game.manifest",
+					archives: { de: "Content/Localization/Game/de/Game.archive" },
+					portableObjects: {},
+					resources: {
+						de: "Content\\Localization\\Game\\de\\Game.locres",
+						id: "Content/Localization/Game/id/Game.locres"
+					},
+					locmeta: null,
+					wordCount: null,
+					conflicts: null
+				}),
+				"Config/UEShed/Localization/Game.review.json"
+			)
+		]).toEqual([
+			"Content/Localization/Game/Game.manifest",
+			"Content/Localization/Game/de/Game.archive",
+			"Content/Localization/Game/de/Game.locres",
+			"Content/Localization/Game/id/Game.locres",
+			"Config/UEShed/Localization/Game.review.json"
+		]);
+	});
+
+	it.effect("rechecks a recompiled or deleted resource by name", () =>
+		Effect.gen(function* () {
+			const watcher = fakeWatcher();
+			const resource = "Content/Localization/Game/id/Game.locres";
+			const checks: (readonly string[] | "walk")[] = [];
+			const states = yield* Queue.unbounded<DiskChangesState>();
+			const files = watchedLocalizationFiles(
+				decodeOutputPaths({
+					manifest: null,
+					archives: {},
+					portableObjects: {},
+					resources: { id: resource },
+					locmeta: null,
+					wordCount: null,
+					conflicts: null
+				}),
+				"Config/UEShed/Localization/Game.review.json"
+			);
+			yield* watchDiskChanges({
+				projectRoot: "/project",
+				folders: watchedFolders(files),
+				localizationFiles: files,
+				published: Stream.never,
+				check: ({ paths }) =>
+					Effect.sync(() => {
+						checks.push(paths ?? "walk");
+						// Ready, so later events are checked by name rather than walked again.
+						return {
+							status: "ready" as const,
+							counts: {
+								packages: { added: 0, changed: 0, removed: 0 },
+								localization: { added: 0, changed: 0, removed: 0 }
+							},
+							items: []
+						};
+					})
+			}).pipe(
+				Stream.runForEach((state) => Queue.offer(states, state)),
+				Effect.provide(watcher.layer),
+				Effect.forkScoped
+			);
+			yield* Queue.take(states);
+			expect(checks).toEqual(["walk"]);
+			// A recompile, then a deletion: the same event, so both name the resource.
+			for (const round of [1, 2]) {
+				watcher.change("Content", "Localization/Game/id/Game.locres");
+				yield* Queue.take(states);
+				yield* TestClock.adjust("300 millis");
+				yield* Queue.take(states);
+				expect(checks).toHaveLength(round + 1);
+				expect(checks.at(-1)).toEqual([resource]);
+			}
+		})
+	);
 
 	it("watches Content and each target folder outside it once", () => {
 		expect(

@@ -89,7 +89,7 @@ export class JoinStrings {
 }
 
 const FileMeta = Schema.Struct({
-	format: Schema.Literals(["manifest", "archive", "po"]),
+	format: Schema.Literals(["manifest", "archive", "po", "locres"]),
 	count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	poFormat: Schema.Literals(["Unreal", "Crowdin"]),
 	hasSourceText: Schema.Boolean,

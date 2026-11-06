@@ -32,7 +32,7 @@ pub(crate) const LINE_FIELDS: [&str; 21] = [
     "split_unit",
     "audience",
 ];
-pub(crate) const CULTURE_FIELDS: [&str; 7] = [
+pub(crate) const CULTURE_FIELDS: [&str; 8] = [
     "state",
     "facts",
     "reasons",
@@ -40,7 +40,11 @@ pub(crate) const CULTURE_FIELDS: [&str; 7] = [
     "po",
     "review",
     "review_record",
+    "locres",
 ];
+/// A culture's compiled-resource row (plus one) in `c{ci}.locres`, for a culture that reads its
+/// translations from its `.locres` because it has no archive.
+pub(crate) const C_LOCRES: usize = 7;
 pub(crate) const L_NS: usize = 0;
 pub(crate) const L_KEY: usize = 1;
 pub(crate) const L_SOURCE: usize = 2;
@@ -64,7 +68,7 @@ pub(crate) const L_SPLIT_UNIT: usize = 19;
 pub(crate) const L_AUDIENCE: usize = 20;
 /// v8 drops the persisted `line.problems` column and the retired shared, duplicate source and long
 /// signals; queries classify problems per request.
-pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v8:";
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v9:";
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -136,6 +140,8 @@ pub(crate) struct Joined {
     pub manifest: FileColumns,
     pub archives: Vec<FileColumns>,
     pub pos: Vec<FileColumns>,
+    /// Each culture's compiled resource, loaded only for a culture without an archive.
+    pub resources: Vec<FileColumns>,
     pub strings: Vec<String>,
     pub unit_ids: UnitIds,
 }
@@ -175,16 +181,20 @@ impl Joined {
                 })
         })
     }
+    /// The translation the culture ships: the PO's pending edit when not synced, else the
+    /// archive's, else, for a culture without an archive, its compiled resource's.
     pub fn translation(&self, row: usize, ci: usize) -> Option<u32> {
         let marks = &self.cultures[ci];
         let po = marks[1][row] & (1 << 3) != 0;
-        let index = marks[if po { 4 } else { 3 }][row].checked_sub(1)? as usize;
-        let c = &if po {
-            &self.pos[ci]
+        let (column, file) = if po {
+            (4, &self.pos[ci])
+        } else if marks[3][row] != 0 {
+            (3, &self.archives[ci])
         } else {
-            &self.archives[ci]
-        }
-        .columns;
+            (C_LOCRES, &self.resources[ci])
+        };
+        let index = marks[column][row].checked_sub(1)? as usize;
+        let c = &file.columns;
         Some(
             c[if c[OPTIONS][index] & 128 != 0 {
                 SOURCE
@@ -193,6 +203,15 @@ impl Joined {
             }][index],
         )
     }
+}
+/// The text a localization row shows: its translation, or its source when they are equal.
+fn shown_text(file: &FileColumns, row: usize) -> u32 {
+    let c = &file.columns;
+    c[if c[OPTIONS][row] & 128 != 0 {
+        SOURCE
+    } else {
+        TRANSLATION
+    }][row]
 }
 pub(crate) fn ordinal(a: &str, b: &str) -> Ordering {
     if !a.chars().any(|c| ('\u{f0000}'..='\u{f0800}').contains(&c))
@@ -477,7 +496,8 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 .ok_or_else(|| "culture must be text".into())
         })
         .collect::<Result<Vec<_>>>()?;
-    let paths = input_paths(target)?;
+    let paths = input_paths(target, input.file_errors.as_ref())?;
+    let resource_paths = resource_inputs(target, input.file_errors.as_ref())?;
     let native_culture = target["nativeCulture"].as_str();
     let native_path =
         native_culture.and_then(|culture| target["outputPaths"]["archives"][culture].as_str());
@@ -592,6 +612,15 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         pos.push(load(&paths[ci * 2 + 2])?);
     }
     let native_archive = load(native_path.unwrap_or("<native archive>"))?;
+    let resources = resource_paths
+        .iter()
+        .zip(&cultures)
+        .map(|(path, culture)| {
+            path.as_deref()
+                .map_or_else(|| load(&format!("<resource:{culture}>")), load)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    measure.mark("join.resources");
     crate::join_incremental::note_stage("dictionary", &mut stage);
     measure.mark("join.dictionary");
     let packages = PackageColumns::load(store, &strings, &input.project_root, target)?;
@@ -852,7 +881,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     measure.mark("join.folders");
     let mut joined = Joined {
         line: vec![vec![0; groups.len()]; LINE_FIELDS.len()],
-        cultures: vec![vec![vec![0; groups.len()]; 7]; cultures.len()],
+        cultures: vec![vec![vec![0; groups.len()]; CULTURE_FIELDS.len()]; cultures.len()],
         groups,
         order,
         raw_order,
@@ -864,12 +893,15 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         manifest,
         archives,
         pos,
+        resources,
         strings,
         unit_ids,
     };
     let mut folder_rows = Vec::new();
     let mut file_rows = Vec::new();
-    let mut cursors = vec![[0; 2]; cultures.len()];
+    let mut cursors = vec![[0; 3]; cultures.len()];
+    let native_ci = native_culture.and_then(|native| cultures.iter().position(|c| c == native));
+    let mut native_resource_cursor = 0;
     let mut native_cursor = 0;
     let collapsed = target["collapseMode"] == "IdenticalNamespaceAndSource";
     let collapsed_pos = joined
@@ -1170,9 +1202,26 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 None
             }
         };
+        // A compiled resource holds the hash of the manifest source it was compiled from; without
+        // a manifest, the line's saved source is the source the game would compile.
+        let resource_source = if first == ABSENT {
+            source
+        } else {
+            m[SOURCE][first as usize]
+        };
+        let mut resource_source_hash = None;
+        // Unreal compiles an untranslated foreign entry with the native culture's text.
+        let native_resource_text = native_ci
+            .filter(|ci| joined.resources[*ci].loaded && g.ns != ABSENT)
+            .and_then(|ci| {
+                let file = &joined.resources[ci];
+                let (entry, count) = file.lookup(g.ns, g.key, &mut native_resource_cursor);
+                (count == 1).then(|| shown_text(file, entry as usize))
+            });
         for (ci, cursor) in cursors.iter_mut().enumerate() {
             let af = &joined.archives[ci];
             let pf = &joined.pos[ci];
+            let rf = &joined.resources[ci];
             let (ar, ac) = if g.ns == ABSENT {
                 (ABSENT, 0)
             } else {
@@ -1245,15 +1294,56 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             if ac == 1 && g.me - g.ms == 1 && !matches {
                 facts |= 1 << 2;
             }
-            if (af.loaded || af.missing) && ac <= 1 {
+            let rr = if rf.loaded && g.ns != ABSENT {
+                rf.lookup(g.ns, g.key, &mut cursor[2]).0
+            } else {
+                ABSENT
+            };
+            let mut operative = unknown;
+            // The culture's resource stands in for a missing archive but could not be read
+            // (malformed, unsupported or unreadable): its translations are unknown, so nothing is
+            // decided and the missing archive stays an operative reason. A culture with no
+            // resource has a placeholder that counts as missing.
+            let resource_failed = !rf.loaded && !rf.missing;
+            if rf.loaded {
+                // The culture has no archive: its compiled resource decides what it can.
+                if rr != ABSENT {
+                    let r = rr as usize;
+                    let shown = shown_text(rf, r);
+                    let hash = *resource_source_hash.get_or_insert_with(|| {
+                        crate::localization::locres::source_hash_of_view(
+                            joined.string(resource_source),
+                        )
+                    });
+                    // Unreal counts the native culture's entries as translated.
+                    let untranslated = Some(ci) != native_ci
+                        && (shown == resource_source
+                            || Some(shown)
+                                == native_override
+                                    .map(|value| value.0)
+                                    .or(native_resource_text));
+                    if rf.verified && rf.hashes[r] != hash {
+                        facts |= 1 << 2;
+                    } else if untranslated {
+                        facts |= 1 << 1;
+                    } else {
+                        facts |= 1;
+                    }
+                    // The resource answers what a missing manifest would leave unknown.
+                    operative &= !1;
+                } else if joined.manifest.loaded {
+                    facts |= 1 << 1;
+                }
+            } else if resource_failed {
+                // Decided by nothing: see `resource_failed`.
+            } else if (af.loaded || af.missing) && ac <= 1 {
                 if ar == ABSENT || at == empty {
                     facts |= 1 << 1;
                 } else if matches {
                     facts |= 1;
                 }
             }
-            let mut operative = unknown;
-            if !af.loaded && af.missing {
+            if !af.loaded && af.missing && !resource_failed {
                 operative &= !(1 << 1);
             }
             if !pf.loaded && pf.missing {
@@ -1271,6 +1361,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             marks[2][row] = unknown;
             marks[3][row] = ar.wrapping_add(1);
             marks[4][row] = pr.wrapping_add(1);
+            marks[C_LOCRES][row] = rr.wrapping_add(1);
         }
     }
     measure.mark("join.line_values");
@@ -1437,7 +1528,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
             unique_columns.push(column);
         }
     }
-    let meta = json!({"version":3,"engineSummary":summary,"count":joined.groups.len(),"input":input,"aliases":aliases,"chunks":chunks,"generation":generation,"dependencies":dependencies,"packageNames":joined.packages.names,"packageStarts":joined.packages.starts,"pairs":marks["pairs"],"ambiguous":marks["ambiguous"],"oldCandidates":marks["oldCandidates"],"reducedSourceChecking":joined.pos.iter().map(|f|f.loaded&&!f.has_source).collect::<Vec<_>>()});
+    let meta = json!({"version":3,"engineSummary":summary,"count":joined.groups.len(),"input":input,"aliases":aliases,"chunks":chunks,"generation":generation,"dependencies":dependencies,"packageNames":joined.packages.names,"packageStarts":joined.packages.starts,"pairs":marks["pairs"],"ambiguous":marks["ambiguous"],"oldCandidates":marks["oldCandidates"],"reducedSourceChecking":joined.pos.iter().zip(&joined.resources).map(|(f,r)|(f.loaded&&!f.has_source)||r.loaded).collect::<Vec<_>>(),"resources":resource_paths});
     let count = joined.groups.len() as u32;
     crate::scan_timings::count("join.lines", u64::from(count));
     crate::scan_timings::count(
@@ -1479,7 +1570,10 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
 /// The layer names of a target's localization inputs: its manifest, then each culture's archive
 /// and PO, then the native culture's archive if no culture listed it. An output the target
 /// lacks is a `<...>` placeholder, which names no file.
-pub(crate) fn input_paths(target: &Value) -> Result<Vec<String>> {
+pub(crate) fn input_paths(
+    target: &Value,
+    file_errors: Option<&BTreeMap<String, String>>,
+) -> Result<Vec<String>> {
     let cultures = target["cultures"]
         .as_array()
         .ok_or("target cultures absent")?
@@ -1518,7 +1612,38 @@ pub(crate) fn input_paths(target: &Value) -> Result<Vec<String>> {
     {
         paths.push(path.to_owned());
     }
+    for path in resource_inputs(target, file_errors)?.into_iter().flatten() {
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
     Ok(paths)
+}
+
+/// Per culture, the compiled resource the join reads instead of an archive: the culture's
+/// `outputPaths.resources` entry when it has no archive path, or its archive is missing on disk.
+/// A culture with an archive never reads its resource, so a recompile changes no join input.
+pub(crate) fn resource_inputs(
+    target: &Value,
+    file_errors: Option<&BTreeMap<String, String>>,
+) -> Result<Vec<Option<String>>> {
+    let cultures = target["cultures"]
+        .as_array()
+        .ok_or("target cultures absent")?;
+    cultures
+        .iter()
+        .map(|culture| {
+            let culture = culture.as_str().ok_or("culture must be text")?;
+            let resource = target["outputPaths"]["resources"][culture].as_str();
+            let archive = target["outputPaths"]["archives"][culture].as_str();
+            let archive_missing = archive.is_none_or(|path| {
+                file_errors
+                    .and_then(|errors| errors.get(path))
+                    .is_some_and(|code| code == "file_missing")
+            });
+            Ok(resource.filter(|_| archive_missing).map(str::to_owned))
+        })
+        .collect()
 }
 
 fn build_summary(

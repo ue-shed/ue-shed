@@ -473,6 +473,12 @@ fn rows(
     side: &TextFileSide,
     options: &Options,
 ) -> Result<(Vec<Row>, Option<String>)> {
+    if options.format == Format::Locres {
+        return Err(Error::new(
+            ErrorCode::InvalidInput,
+            format!("{}: compiled .locres files are not compared", side.path),
+        ));
+    }
     let text = decode(bytes, side, options.format)?;
     let limits = Limits::default();
     let failed = |diagnostic: crate::localization::Diagnostic| {

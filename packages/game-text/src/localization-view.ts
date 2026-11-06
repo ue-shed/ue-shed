@@ -24,7 +24,9 @@ const Page = Schema.Array(Schema.String).check(Schema.isMaxLength(50));
 export const LocalizationTargetPreview = Schema.Struct({
 	name: LocalizationTargetName,
 	nativeCulture: Schema.NullOr(CultureCode),
-	cultures: Schema.Array(CultureCode).check(Schema.isMaxLength(MAX_LOCALIZATION_CULTURES))
+	cultures: Schema.Array(CultureCode).check(Schema.isMaxLength(MAX_LOCALIZATION_CULTURES)),
+	/** The target's compiled resources were discovered on disk, not configured. */
+	discovered: Schema.optionalKey(Schema.Literal(true))
 });
 export type LocalizationTargetPreview = typeof LocalizationTargetPreview.Type;
 const Failure = Schema.Struct({

@@ -217,6 +217,24 @@ identity order, including root children appearing after subnamespaces in the JSO
 The PO scanner splits only physical CR/LF lines, preserving U+2028/U+2029 inside strings. It sends
 bounded blocks to the localization package's shared `parsePOBlock` decoder, then resolves identities
 using the target's format/collapse mode or the first header. Errors carry file and line/offset context.
+
+Compiled resources (`.locres`, format `locres`) are read natively by `localization/locres.rs`,
+following Unreal's `FTextLocalizationResource::LoadFromArchive`: versions 0 (legacy, no magic), 1
+(compact string table), 2 (CRC32 key hashes) and 3 (CityHash64 key hashes); a newer version is
+`unsupported_version`. Every byte is accounted for: the namespaces end where the string table
+starts, the table ends at the end of the file, a namespace/key pair appears once and every text
+index names a table string; anything else is a typed `malformed_locres`. One-byte `FString`s are
+Latin-1 and UTF-16 strings keep lone surrogates through the WTF-8 views. The layer has an archive's
+shape: namespace, key, the display string as the translation and no source text
+(`hasSourceText: false`), plus `entry.source-hash`. Unreal stores
+`FTextLocalizationResource::HashString(source)`, which is `FCrc::StrCrc32<TCHAR>`: CRC-32 over each
+UTF-16 code unit widened to four little-endian bytes, stopping at the first NUL
+(`locres::source_hash`). That is proven for version 3 only, against every entry of the
+Unreal-compiled fixture resources (UE 4.27 and UE 5.x) and their manifests' sources. No
+Unreal-compiled resource of versions 0 to 2 is available, so for those the hash is exposed but
+unverified (`sourceHashVerified: false` in `file.meta`, `locres::source_hash_verified`).
+The join reads a culture's resource only when the culture has no archive; the culture-state rule
+is in [plan 064](../../plans/064-locres-fallback.md).
 The document reader and its existing callers keep their original limits and behavior.
 
 The importer defaults to 16 GiB input/spill bytes, 4 million entries or namespace nodes, depth 64,
@@ -249,7 +267,8 @@ Each file uses layout version 4, with the following logical localization columns
 | `entry.po-extra`                                | Noncanonical context/plural, nonzero msgstr values and nonempty comment/flag arrays as JSON                                                                                                                                                                                     |
 | `entry.options`                                 | u32 bits: optional present/true (1/2), notes present (4), metadata present (8), null PO identity (16), canonical context (32), translation zero present (64), translation equals source (128), leading key comment (256), leading reference (512), path uses file prefix (1024) |
 | `entry.ordinal`                                 | u32 original flattened order; restores PO parser order and stabilizes duplicates                                                                                                                                                                                                |
-| `file.meta`                                     | Bounded JSON: file format, row count, PO format and source-presence boolean and independent path prefix                                                                                                                                                                         |
+| `entry.source-hash`                             | `.locres` only: u32 `SourceStringHash` of each entry                                                                                                                                                                                                                            |
+| `file.meta`                                     | Bounded JSON: file format, row count, PO format and source-presence boolean and independent path prefix; `.locres` adds `locresVersion` and `sourceHashVerified`                                                                                                                |
 
 Optional absence differs from empty or false. Full source/translation objects matter to source
 matching; `metadata.Info.Comment`, developer notes and paths matter to origins and translator notes.

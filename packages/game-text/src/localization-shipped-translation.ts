@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import type { LocalizationCultureState } from "./localization-schema.js";
 
 export const LocalizationShippedTranslation = Schema.Struct({
-	origin: Schema.Literals(["po", "archive", "absent"]),
+	origin: Schema.Literals(["po", "archive", "locres", "absent"]),
 	value: Schema.NullOr(Schema.String)
 });
 
@@ -16,8 +16,8 @@ export function localizationShippedTranslation(
 ): typeof LocalizationShippedTranslation.Type {
 	if (culture.facts.includes("not_synced") || culture.state === "not_synced")
 		return { origin: "po", value: culture.poTranslation };
-	return {
-		origin: culture.archive ? "archive" : "absent",
-		value: culture.archive?.translation.Text ?? null
-	};
+	if (culture.archive) return { origin: "archive", value: culture.archive.translation.Text };
+	// A culture without an archive ships its compiled resource's text.
+	if (culture.locres) return { origin: "locres", value: culture.locres.text };
+	return { origin: "absent", value: null };
 }

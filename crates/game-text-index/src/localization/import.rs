@@ -690,6 +690,87 @@ mod tests {
     }
 
     #[test]
+    fn compiled_resources_import_like_the_other_formats() -> Result<()> {
+        let fixture = Fixture::new("localization-import-locres")?;
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .ok_or("workspace")?;
+        let resource = fs::read(
+            workspace.join("fixtures/unreal-project/Content/Localization/Game/ja/Game.locres"),
+        )?;
+        fs::write(fixture.project.join("Game.locres"), &resource)?;
+        fs::write(
+            fixture.project.join("Bad.locres"),
+            &resource[..resource.len() - 1],
+        )?;
+        let locres = |name: &str| Input {
+            options: Options {
+                format: Format::Locres,
+                po_format: None,
+                collapse_mode: None,
+            },
+            ..fixture.input(name, None)
+        };
+        let request = Request {
+            files: vec![locres("Game.locres"), locres("Bad.locres")],
+            maximum_in_flight_bytes: 1 << 20,
+        };
+        request.validate()?;
+        let mut store = Store::writer(fixture.configuration.clone())?;
+        let outcome = import(&mut store, &request, &mut |_, _| Ok(()))?;
+        let game = imported(&outcome.files[0])?;
+        assert!(game.parsed);
+        assert_eq!(game.format, Format::Locres);
+        assert_eq!(game.input_bytes, resource.len() as u64);
+        assert!(game.snapshot_bytes > 0);
+        // The parse timings cover the resources: both files were read and parsed in them.
+        assert!(outcome.worker_count >= 1 && outcome.parse_ms > 0.0);
+        assert_eq!(
+            game.key,
+            digest(&serde_json::to_vec(&json!([
+                VERSION,
+                {"format": "locres"},
+                digest(&resource)
+            ]))?)
+        );
+        // The published layer keeps each entry's source hash beside the archive-shaped columns.
+        let layer = crate::snapshot::Reader::open(
+            &store.directory.join(
+                store.root["layers"][&game.key]["file"]
+                    .as_str()
+                    .ok_or("layer file")?,
+            ),
+        )?;
+        let hashes = layer
+            .entries
+            .iter()
+            .find(|entry| entry.name == "entry.source-hash")
+            .ok_or("source hashes absent")?;
+        assert_eq!(hashes.count, 44);
+        let bad = failed(&outcome.files[1]).ok_or("Bad.locres imported")?;
+        assert_eq!(bad.code, "malformed_locres");
+        assert!(bad.message.starts_with("Bad.locres"));
+        assert_eq!(
+            fixture.published()?,
+            BTreeMap::from([("Game.locres".to_owned(), game.key.clone())])
+        );
+        // Unchanged content is cached by its key: the second import does not parse it.
+        let again = import(
+            &mut store,
+            &Request {
+                files: vec![locres("Game.locres")],
+                maximum_in_flight_bytes: 1 << 20,
+            },
+            &mut |_, _| Ok(()),
+        )?;
+        let cached = imported(&again.files[0])?;
+        assert!(!cached.parsed);
+        assert_eq!(cached.key, game.key);
+        Ok(())
+    }
+
+    #[test]
     fn a_request_names_each_file_once() -> Result<()> {
         let fixture = Fixture::new("localization-import-names")?;
         let request = Request {

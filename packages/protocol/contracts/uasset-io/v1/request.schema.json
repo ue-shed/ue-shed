@@ -827,7 +827,8 @@
 																				"enum": [
 																					"manifest",
 																					"archive",
-																					"po"
+																					"po",
+																					"locres"
 																				]
 																			},
 																			"poFormat": {

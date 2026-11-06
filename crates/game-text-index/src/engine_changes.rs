@@ -570,6 +570,15 @@ impl Entries {
     fn open(reader: &EngineReader, culture: &str, po: bool) -> Result<Self> {
         let field = if po { "portableObjects" } else { "archives" };
         let path = reader.meta["input"]["target"]["outputPaths"][field][culture].as_str();
+        Self::open_path(reader, path, po)
+    }
+
+    /// The compiled resource culture `ci` reads instead of an archive, if any.
+    fn open_resource(reader: &EngineReader, ci: usize) -> Result<Self> {
+        Self::open_path(reader, reader.meta["resources"][ci].as_str(), false)
+    }
+
+    fn open_path(reader: &EngineReader, path: Option<&str>, po: bool) -> Result<Self> {
         let key = path
             .and_then(|path| reader.meta["dependencies"][path].as_str())
             .map(str::to_owned);
@@ -618,7 +627,7 @@ impl Entries {
 struct CultureComparison {
     values: Vec<Pair>,
     review_record: Pair,
-    entries: [(Pair, Entries, Entries); 2],
+    entries: [(Pair, Entries, Entries); 3],
 }
 
 /// What a host shows for a line, in both generations: its identity, source, facts and flags, its
@@ -643,6 +652,16 @@ struct LineComparison<'a> {
 
 fn pair(earlier: &EngineReader, current: &EngineReader, name: &str) -> Result<Pair> {
     Ok((earlier.column(name)?, current.column(name)?))
+}
+
+/// A culture's compiled-resource rows; none when the generation read no resource for it.
+fn resource_rows(reader: &EngineReader, ci: usize, count: usize) -> Result<Arc<[u32]>> {
+    let name = format!("c{ci}.locres");
+    if reader.meta["resources"][ci].is_string() {
+        reader.column(&name)
+    } else {
+        Ok(Arc::from(vec![0; count]))
+    }
 }
 
 fn cultures(reader: &EngineReader) -> Result<Vec<String>> {
@@ -731,6 +750,14 @@ impl<'a> LineComparison<'a> {
                             pair("po")?,
                             Entries::open(earlier, culture, true)?,
                             Entries::open(current, culture, true)?,
+                        ),
+                        (
+                            (
+                                resource_rows(earlier, oci, old.count)?,
+                                resource_rows(current, nci, new.count)?,
+                            ),
+                            Entries::open_resource(earlier, oci)?,
+                            Entries::open_resource(current, nci)?,
                         ),
                     ],
                 });

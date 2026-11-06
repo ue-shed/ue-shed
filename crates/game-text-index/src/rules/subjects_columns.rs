@@ -54,6 +54,9 @@ struct Projector<'a, 'q> {
     manifest: Option<Manifest>,
     files: HashMap<(usize, bool), InputFile>,
     references: Vec<(Ids, Ids)>,
+    /// Each culture's compiled-resource rows, for a culture without an archive.
+    resources: HashMap<usize, InputFile>,
+    resource_references: Vec<Ids>,
     choices: Vec<Option<usize>>,
     json: HashMap<u32, Value>,
     work: super::stages::Measure,
@@ -61,11 +64,18 @@ struct Projector<'a, 'q> {
 impl<'a, 'q> Projector<'a, 'q> {
     fn new(subjects: &'a mut NativeSubjects<'q>, arena: &'a mut Arena) -> Result<Self> {
         let mut references = Vec::new();
+        let mut resource_references = Vec::new();
         for ci in 0..subjects.query.cultures.len() {
             references.push((
                 subjects.query.reader.column(&format!("c{ci}.po"))?,
                 subjects.query.reader.column(&format!("c{ci}.archive"))?,
             ));
+            // Only a join that read a resource for the culture has its column.
+            resource_references.push(if subjects.query.resource_path(ci).is_some() {
+                subjects.query.reader.column(&format!("c{ci}.locres"))?
+            } else {
+                Arc::from(vec![0; subjects.projection.source.len()])
+            });
         }
         let native = subjects.query.target["nativeCulture"]
             .as_str()
@@ -102,6 +112,8 @@ impl<'a, 'q> Projector<'a, 'q> {
             manifest: None,
             files: HashMap::new(),
             references,
+            resources: HashMap::new(),
+            resource_references,
             choices,
             json: HashMap::new(),
             work: super::stages::Measure::start(),
@@ -204,12 +216,42 @@ impl<'a, 'q> Projector<'a, 'q> {
             .get(&(ci, po))
             .ok_or_else(|| "Missing loaded translation file.".into())
     }
+    /// The compiled resource a culture without an archive ships, loaded once.
+    fn resource(&mut self, ci: usize) -> Result<()> {
+        if self.resources.contains_key(&ci) {
+            return Ok(());
+        }
+        let references = Arc::clone(&self.resource_references[ci]);
+        let mut file = InputFile {
+            references,
+            options: Arc::from([]),
+            source: Arc::from([]),
+            translation: Arc::from([]),
+            source_extra: Arc::from([]),
+            translation_extra: Arc::from([]),
+            po: false,
+        };
+        if let Some(name) = self.subjects.query.resource_path(ci)
+            && file.references.iter().any(|entry| *entry != 0)
+        {
+            let reader = &self.subjects.query.reader;
+            file.options = reader.input_column(&name, "entry.options")?;
+            file.source = reader.input_column(&name, "entry.source")?;
+            file.translation = reader.input_column(&name, "entry.translation")?;
+            self.strings(&file.source)?;
+            self.strings(&file.translation)?;
+        }
+        self.resources.insert(ci, file);
+        Ok(())
+    }
     fn origin(&mut self, line: usize, ci: usize) -> Result<Atom> {
         let mark = &self.subjects.projection.cultures[ci];
         let name = if mark.facts[line] & 8 != 0 || mark.state[line] == 3 {
             "po"
         } else if self.references[ci].1[line] != 0 {
             "archive"
+        } else if self.resource_references[ci][line] != 0 {
+            "locres"
         } else {
             "absent"
         };
@@ -781,6 +823,7 @@ impl<'a, 'q> Projector<'a, 'q> {
                 self.input(ci, name == "po")?;
                 if name == "latest" {
                     self.input(ci, true)?;
+                    self.resource(ci)?;
                 }
             }
         }
@@ -828,9 +871,10 @@ impl<'a, 'q> Projector<'a, 'q> {
                 self.string("po")?,
                 self.string("archive")?,
                 self.string("absent")?,
+                self.string("locres")?,
             ]
         } else {
-            [Atom::Null; 3]
+            [Atom::Null; 4]
         };
         let reduced = (0..culture_names.len())
             .map(|ci| {
@@ -861,6 +905,8 @@ impl<'a, 'q> Projector<'a, 'q> {
         let rows = &self.subjects.cultures;
         let marks = &self.subjects.projection.cultures;
         let references = &self.references;
+        let resource_references = &self.resource_references;
+        let resources = &self.resources;
         let files = &self.files;
         let arena = &*self.arena;
         let value = |row: usize| -> Atom {
@@ -883,6 +929,8 @@ impl<'a, 'q> Projector<'a, 'q> {
                         origins[0]
                     } else if references[ci].1[line] != 0 {
                         origins[1]
+                    } else if resource_references[ci][line] != 0 {
+                        origins[3]
                     } else {
                         origins[2]
                     }
@@ -897,8 +945,13 @@ impl<'a, 'q> Projector<'a, 'q> {
                         Atom::Str(StrId(file.source[entry as usize - 1]))
                     }
                 }
-                "latest" => files[&(ci, mark.facts[line] & 8 != 0 || mark.state[line] == 3)]
-                    .translation(line),
+                "latest" => {
+                    let po = mark.facts[line] & 8 != 0 || mark.state[line] == 3;
+                    match files[&(ci, po)].translation(line) {
+                        Atom::Null if !po => resources[&ci].translation(line),
+                        value => value,
+                    }
+                }
                 _ => {
                     let column = if native.as_deref() == Some(&culture_names[ci]) {
                         &manifest

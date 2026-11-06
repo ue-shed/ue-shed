@@ -24,7 +24,8 @@ import {
 	type LocalizationImportLimits
 } from "./localization-stream.js";
 
-export type LocalizationFileFormat = "manifest" | "archive" | "po";
+/** `locres` is a compiled resource; only the native import reads it. */
+export type LocalizationFileFormat = "manifest" | "archive" | "po" | "locres";
 export interface LocalizationImportOptions {
 	readonly format: LocalizationFileFormat;
 	readonly poFormat?: POFormat;
@@ -430,6 +431,8 @@ export function localizationColumnsBuilder(
 			count++;
 		}
 	}
+	// Compiled resources are bulk binary data that only the native import reads (ADR 0012).
+	if (options.format === "locres") throw importFailure(file, "unsupported_version");
 	const parser =
 		options.format === "po"
 			? { kind: "po" as const, parser: localizationPOStream(file, limits, poBlock) }

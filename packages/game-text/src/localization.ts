@@ -384,13 +384,61 @@ function collapsedPOEntries(file: LocalizationTargetEvidence["cultures"][number]
 	return groups;
 }
 
-/** Join gathered namespace/key, stripping package markers only from saved FText occurrences. */
+/** One decoded compiled-resource entry, as the native reader produces it. */
+export interface LocalizationReferenceResourceEntry {
+	readonly namespace: string;
+	readonly key: string;
+	readonly sourceHash: number;
+	readonly text: string;
+}
+/** A culture's decoded `.locres`; `verified` is false for versions whose hash is unproven. */
+export interface LocalizationReferenceResource {
+	readonly verified: boolean;
+	readonly entries: readonly LocalizationReferenceResourceEntry[];
+}
+
+const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
+	let value = index;
+	for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+	return value;
+});
+/**
+ * Unreal's `SourceStringHash`, `FCrc::StrCrc32<TCHAR>`: CRC-32 over each UTF-16 code unit as four
+ * little-endian bytes, up to the first NUL. Mirrors `localization::locres::source_hash`.
+ */
+export function localizationResourceSourceHash(text: string): number {
+	let crc = 0xffffffff;
+	for (let index = 0; index < text.length; index++) {
+		const unit = text.charCodeAt(index);
+		if (unit === 0) break;
+		for (const byte of [unit & 0xff, unit >>> 8, 0, 0])
+			crc = crcTable[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+	}
+	return (crc ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * Join gathered namespace/key, stripping package markers only from saved FText occurrences. A
+ * culture with no archive takes its translations from `options.resources` when given.
+ */
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
 	target: LocalizationTarget = evidence.target,
-	/** Only a caller holding the complete project inventory can prove a deleted package absent. */
-	options: { readonly completePackageInventory?: boolean } = {}
+	options: {
+		/** Only a caller holding the complete project inventory can prove a deleted package absent. */
+		readonly completePackageInventory?: boolean;
+		/**
+		 * Decoded compiled resources by culture. A culture whose archive is missing reads its
+		 * resource, as the native join does; TypeScript reads no `.locres` itself.
+		 */
+		readonly resources?: ReadonlyMap<string, LocalizationReferenceResource>;
+		/**
+		 * Cultures whose selected resource could not be read (malformed, unsupported or
+		 * unreadable). They decide nothing, and the missing archive stays an operative reason.
+		 */
+		readonly failedResources?: ReadonlySet<string>;
+	} = {}
 ): LocalizationJoin {
 	const manifest = groupByIdentity(
 		evidence.manifest.status === "read" ? evidence.manifest.value.entries : []
@@ -447,6 +495,31 @@ export function joinLocalizationTarget(
 				: []
 		)
 	}));
+	const resourceIndexes = new Map(
+		[...(options.resources ?? [])].flatMap(([culture, resource]) => {
+			const index = cultureIndexes.find((item) => item.culture === culture);
+			const archiveMissing =
+				!index ||
+				(index.archive.status === "failed" && index.archive.error.code === "file_missing");
+			return archiveMissing
+				? [
+						[
+							culture,
+							{
+								verified: resource.verified,
+								entries: new Map(
+									resource.entries.map((entry) => [
+										// gatheredIdentityKey's spelling, for unbranded names.
+										JSON.stringify([entry.namespace, entry.key]),
+										entry
+									])
+								)
+							}
+						] as const
+					]
+				: [];
+		})
+	);
 	// Unreal skips editor-only text when the target does not gather editor-only data.
 	const skipsEditorOnlyData = localizationGathersEditorOnlyData(target) === false;
 	const lines: LocalizationLine[] = [];
@@ -617,7 +690,41 @@ export function joinLocalizationTarget(
 				!localizationTextMatches(archive.source, expectedSource)
 			)
 				facts.push("needs_update");
-			if ((index?.archive.status === "read" || archiveAbsent) && archives.length <= 1) {
+			const resource = resourceIndexes.get(culture);
+			const compiled = resource?.entries.get(key);
+			const resourceFailed =
+				!resource && archiveAbsent && (options.failedResources?.has(culture) ?? false);
+			if (resourceFailed) {
+				// The stand-in for the missing archive could not be read: nothing is decided.
+			} else if (resource) {
+				// The culture has no archive: its compiled resource decides what it can.
+				if (compiled) {
+					const compiledSource = first?.source.Text ?? sources[0] ?? "";
+					const nativeArchive =
+						nativeEntries?.length === 1 ? nativeEntries[0] : undefined;
+					const nativeText =
+						nativeArchive &&
+						!localizationTextMatches(nativeArchive.source, nativeArchive.translation)
+							? nativeArchive.translation.Text
+							: target.nativeCulture === null
+								? undefined
+								: resourceIndexes.get(target.nativeCulture)?.entries.get(key)?.text;
+					if (
+						resource.verified &&
+						compiled.sourceHash !== localizationResourceSourceHash(compiledSource)
+					)
+						facts.push("needs_update");
+					else if (
+						culture !== target.nativeCulture &&
+						(compiled.text === compiledSource || compiled.text === nativeText)
+					)
+						facts.push("not_translated");
+					else facts.push("translated");
+				} else if (evidence.manifest.status === "read") facts.push("not_translated");
+			} else if (
+				(index?.archive.status === "read" || archiveAbsent) &&
+				archives.length <= 1
+			) {
 				if (!archive || archive.translation.Text === "") facts.push("not_translated");
 				else if (
 					entries.length === 1 &&
@@ -631,22 +738,34 @@ export function joinLocalizationTarget(
 			if (
 				unknownReasons.some(
 					(reason) =>
-						!(reason === "missing_archive" && archiveAbsent) &&
-						!(reason === "missing_po" && poAbsent)
+						!(reason === "missing_archive" && archiveAbsent && !resourceFailed) &&
+						!(reason === "missing_po" && poAbsent) &&
+						// The resource answers what a missing manifest would leave unknown.
+						!(reason === "missing_manifest" && compiled)
 				)
 			)
 				facts.push("unknown");
 			const state = precedence.find((candidate) => facts.includes(candidate)) ?? "unknown";
-			return {
+			const result: LocalizationCultureState = {
 				culture,
 				state,
 				facts: [...new Set(facts)],
 				unknownReasons: [...new Set(unknownReasons)],
-				reducedSourceChecking: index?.po.status === "read" && !index.po.value.hasSourceText,
+				reducedSourceChecking:
+					(index?.po.status === "read" && !index.po.value.hasSourceText) ||
+					resource !== undefined,
 				archive,
 				poTranslation: facts.includes("not_synced") ? poValue : null,
 				po
 			};
+			// Only a culture that reads its compiled resource has the field, as in the native join.
+			if (resource)
+				Object.assign(result, {
+					locres: compiled
+						? { text: compiled.text, sourceHash: compiled.sourceHash }
+						: null
+				});
+			return result;
 		});
 		const evidenceId = LocalizationEvidenceLineId.make(`evidence:${target.name}:${key}`);
 		const origin: LocalizationLine["origin"] = row.units.length

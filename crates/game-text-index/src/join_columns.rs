@@ -64,6 +64,10 @@ pub(crate) struct FileColumns {
     pub missing: bool,
     pub has_source: bool,
     pub prefix: String,
+    /// A compiled resource's `SourceStringHash` per row; empty for other formats.
+    pub hashes: Vec<u32>,
+    /// Whether the resource's hash formula was proven for its version.
+    pub verified: bool,
 }
 impl FileColumns {
     pub fn load(store: &Store, name: String, failure: Option<&str>) -> Result<Self> {
@@ -75,6 +79,8 @@ impl FileColumns {
             missing: failure.is_none_or(|f| f == "file_missing"),
             has_source: false,
             prefix: String::new(),
+            hashes: Vec::new(),
+            verified: false,
         };
         // An active layer can belong to an earlier successful import. A current failure
         // must hide that evidence without deleting snapshots pinned by older readers.
@@ -90,6 +96,11 @@ impl FileColumns {
                 .as_bool()
                 .ok_or("source availability absent")?;
             result.prefix = meta["pathPrefix"].as_str().unwrap_or("").into();
+            if meta["format"] == "locres" {
+                result.verified = meta["sourceHashVerified"] == true;
+                result.hashes = column(&mut reader, &record, "entry.source-hash")?;
+                require(result.hashes.len() == count, "join resource hash length")?;
+            }
             for (field, name) in LOCALIZATION_FIELDS.iter().enumerate() {
                 // Native translations may be the foreign source, including their metadata.
                 // PO extras are only needed for hydration.

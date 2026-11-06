@@ -99,15 +99,20 @@ export const LocalizationEvidenceLive = Layer.effect(
 				? parseResult(() => decodeText(editor.success.bytes, limits))
 				: Result.succeed("");
 			if (Result.isFailure(dashboard)) return yield* dashboard.failure;
+			// Without gather configs, compiled resources are the only record of a target's outputs.
+			const resources =
+				names.length === 0 ? yield* files.listResources(request.projectRoot, limits) : [];
 			const parsed = discoverLocalizationTargets({
 				dashboardText: dashboard.success,
 				configs,
+				resources,
 				limits
 			});
 			if (Result.isFailure(parsed)) return yield* parsed.failure;
 			yield* Effect.annotateCurrentSpan({
 				"localization.targets": parsed.success.targets.length,
 				"localization.configs": configs.length,
+				"localization.resources": resources.length,
 				"localization.failures": diagnostics.length + parsed.success.diagnostics.length
 			});
 			return immutable({

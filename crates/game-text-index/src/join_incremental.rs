@@ -276,6 +276,14 @@ pub(crate) fn refresh(
     if meta["generation"] != store.root["generation"] {
         return fallback("generation");
     }
+    // A culture read from its compiled resource compares source hashes against the line's
+    // source; the delta path does not recompute them yet.
+    if meta["resources"]
+        .as_array()
+        .is_some_and(|paths| paths.iter().any(Value::is_string))
+    {
+        return fallback("resource-culture");
+    }
     if meta["oldCandidates"] != 0
         || meta["ambiguous"] != 0
         || meta["pairs"].as_array().is_some_and(|v| !v.is_empty())

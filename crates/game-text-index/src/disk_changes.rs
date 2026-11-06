@@ -623,7 +623,7 @@ fn joined_input(
     )?;
     let bytes = crate::store::section(&reader, "join.meta")?;
     let meta: JoinedMeta = crate::json_value::parse_as(std::str::from_utf8(&bytes)?)?;
-    let paths = crate::join::input_paths(&meta.input.target)?;
+    let paths = crate::join::input_paths(&meta.input.target, Some(&meta.input.file_errors))?;
     let target = meta.input.target["name"]
         .as_str()
         .ok_or("Joined target name.")?

@@ -121,7 +121,7 @@ export const localizationImportMetrics = {
 };
 const Positive = Schema.Int.check(Schema.isGreaterThan(0));
 const Options = Schema.Struct({
-	format: Schema.Literals(["manifest", "archive", "po"]),
+	format: Schema.Literals(["manifest", "archive", "po", "locres"]),
 	poFormat: Schema.optionalKey(Schema.Literals(["Unreal", "Crowdin"])),
 	collapseMode: Schema.optionalKey(
 		Schema.Literals([
@@ -462,6 +462,8 @@ const referenceImport = Effect.fn("LocalizationImport.referenceFile")(function* 
 	prepared: PreparedFile
 ): Effect.fn.Return<ImportedFile, ImportFailure, SharedIndex> {
 	const { file, options, limits, observed, actual } = prepared;
+	// Compiled resources are bulk binary data that only the native import reads (ADR 0012).
+	if (options.format === "locres") return yield* importFailure(file, "unsupported_version");
 	const chunkBytes = prepared.chunkBytes ?? 256 * 1024;
 	const key = (hash: string) =>
 		createHash("sha256")
@@ -950,6 +952,34 @@ type TargetImportReply = {
 	/** The native import's work, cold or warm; null for the TypeScript reference parser. */
 	profile: LocalizationImportProfile | null;
 };
+/**
+ * The compiled resources a target's cultures read instead of archives: a culture's
+ * `outputPaths.resources` entry when it has no archive path or its archive is not on disk. The
+ * join makes the same choice from the import's `file_missing` failures; a culture with an archive
+ * never reads its resource, so its recompiles are not imported.
+ */
+const resourcesInUse = Effect.fn("LocalizationSnapshot.resourcesInUse")(function* (
+	projectRoot: string,
+	target: LocalizationTarget
+) {
+	const resources: string[] = [];
+	for (const culture of target.cultures) {
+		const resource = target.outputPaths.resources[culture];
+		if (!resource) continue;
+		const archive = target.outputPaths.archives[culture];
+		const archived =
+			archive !== undefined &&
+			(yield* io(archive, () => stat(resolve(projectRoot, archive))).pipe(
+				Effect.as(true),
+				// An unreadable archive still counts as present: its import reports the failure.
+				Effect.catchTag("LocalizationError", (error) =>
+					Effect.succeed(error.code !== "file_missing")
+				)
+			));
+		if (!archived) resources.push(resource);
+	}
+	return resources;
+});
 /** Discovery remains the localization service's authority. Each file has an independent key. */
 export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTarget")(function* (
 	input: LocalizationTargetImportRequest
@@ -969,7 +999,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 	if (Result.isFailure(validated))
 		return yield* importFailure(request.targetName, "invalid_schema");
 	if (
-		target.cultures.length * 2 + 1 >
+		target.cultures.length * 3 + 1 >
 		(request.importLimits ?? defaultLocalizationImportLimits).maxFiles
 	)
 		return yield* importFailure(request.targetName, "limit_exceeded");
@@ -989,6 +1019,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 	const selectedFiles = Option.isSome(session) ? session.value.files : undefined;
 	const diagnostics: { relativePath: string | null; error: LocalizationError }[] = [];
 	const requests: LocalizationFileImportRequest[] = [];
+	const resources = yield* resourcesInUse(actualRoot, target);
 	const paths = [
 		[target.outputPaths.manifest, "manifest"] as const,
 		...target.cultures.flatMap((culture) => [
@@ -1012,6 +1043,34 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 			format,
 			poFormat: target.poFormat,
 			collapseMode: target.collapseMode,
+			sharedTargetKey: configuration.targetKey,
+			projectScoped: request.projectScoped ?? false
+		};
+		if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
+		requests.push(fileRequest);
+	}
+	// A changed archive can make its culture read the resource instead (the archive was removed),
+	// so a scoped import of an archive also imports the resource it hands over to.
+	const archiveOfResource = new Map(
+		target.cultures.flatMap((culture) => {
+			const resource = target.outputPaths.resources[culture];
+			const archive = target.outputPaths.archives[culture];
+			return resource && archive ? [[resource, archive] as const] : [];
+		})
+	);
+	for (const relativePath of resources) {
+		const archive = archiveOfResource.get(relativePath);
+		if (
+			selectedFiles !== undefined &&
+			!selectedFiles.includes(relativePath) &&
+			!(archive !== undefined && selectedFiles.includes(archive))
+		)
+			continue;
+		const fileRequest: LocalizationFileImportRequest = {
+			projectRoot: actualRoot,
+			cacheRoot: request.cacheRoot,
+			relativePath,
+			format: "locres",
 			sharedTargetKey: configuration.targetKey,
 			projectScoped: request.projectScoped ?? false
 		};

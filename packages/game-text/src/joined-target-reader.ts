@@ -51,7 +51,9 @@ export const JoinedTargetMeta = Schema.Struct({
 	pairs: Schema.Array(LocalizationKeyChangePair),
 	ambiguous: Schema.Int,
 	oldCandidates: Schema.Int,
-	reducedSourceChecking: Schema.Array(Schema.Boolean)
+	reducedSourceChecking: Schema.Array(Schema.Boolean),
+	/** Per culture, the compiled resource read because the culture has no archive. */
+	resources: Schema.optionalKey(Schema.Array(Schema.NullOr(Schema.String)))
 });
 export interface JoinedTargetMeta extends Schema.Schema.Type<typeof JoinedTargetMeta> {}
 const JoinedTargetMetaJson = Schema.fromJsonString(JoinedTargetMeta);
@@ -295,6 +297,17 @@ export const inspectJoinedTarget = Effect.fn("JoinedTarget.inspect")(function* (
 				: 0;
 			for (const value of yield* u32(layer, `c${ci}.${field}`))
 				snapshotCheck(value <= maximum, field, "Input row outside layer");
+		}
+		// Only joins that record their resources write `c{ci}.locres`; the TypeScript reference
+		// builder's layers have neither, as the engine's reader assumes too.
+		if (meta.resources !== undefined) {
+			const resource = meta.resources[ci];
+			const resourceKey = resource ? meta.dependencies[resource] : undefined;
+			const resourceRows = resourceKey
+				? (yield* reader.layer(resourceKey)).directory.entries.get("entry.key")!.count
+				: 0;
+			for (const value of yield* u32(layer, `c${ci}.locres`))
+				snapshotCheck(value <= resourceRows, "locres", "Input row outside layer");
 		}
 		for (const value of yield* u32(layer, `c${ci}.review_record`))
 			snapshotCheck(

@@ -216,8 +216,12 @@ remain a separate structural path that rebuilds the projection and rewires the g
 refresh of an index in the current package format and audience policy is a package delta, however
 many of the 256 shards changed. The writer compares the changed shards' planned entries with the
 shards it holds (`compare_packages`) and writes each shard's rows, so no unchanged entry crosses
-into the host. The producer reads and converts only changed packages and sends one
-`publish_packages` request for all changed shards, so the publication stays atomic. Rows cross as a little-endian `i32` file per shard, not in the request,
+into the host. The comparison writes the changed entries as a plan file, which the reader stages
+as it stages a cold build's plan: it reads and converts only the changed packages into one snapshot
+per shard, so no package record crosses into the host either. A host source without staging spools
+each record to its shard's file as it arrives, so the host never holds the changed corpus. One
+`publish_packages` request covers all changed shards, so the publication stays atomic. Rows cross
+as a little-endian `i32` file per shard, not in the request,
 and a shard the index doesn't hold yet joins the same publication without a previous key. Rust
 interns each string domain once across all input files, so a change to every shard adds a few
 dictionary segments rather than one per shard and domain, preserves unchanged global string IDs

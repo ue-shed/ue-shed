@@ -31,8 +31,11 @@ import { HostSliceClock, sortRowsInSlices } from "./host-slices.js";
 import { StageClock } from "./stage-clock.js";
 import {
 	comparePackageText,
+	convertSpooledPackageText,
 	PackageTextPlanLine,
-	replacePackageTextRecords
+	replacePackageTextRecords,
+	spoolPackageReads,
+	stagePlannedPackageText
 } from "./package-text-delta.js";
 
 /** The caller supplies the Project Index's opaque package-and-sidecar signature, never a layer hash.
@@ -603,32 +606,19 @@ const rebuildChangedShards = Effect.fn("PackageText.rebuildShards")(function* <E
 			for (const { entry, selected } of shard.entries)
 				if (selected) requested.set(entry.path, entry);
 		const expected = reads;
+		const onRead = (path: string) => {
+			received.add(path);
+			completed++;
+			report();
+		};
 		if (stage && planned.file) {
-			yield* stage
-				.read([], directory, [], {
-					rules: packageTextAudienceRules(),
-					shards: [],
-					planFile: planned.file,
-					groups: changed.map(group)
-				})
-				.pipe(
-					Stream.runForEach((event) =>
-						Effect.gen(function* () {
-							if (received.has(event.path))
-								return yield* Effect.fail(
-									snapshotFailure(
-										"package-text.read",
-										"Unexpected or duplicate package"
-									)
-								);
-							received.add(event.path);
-							completed++;
-							report();
-						})
-					)
-				);
-			for (const shard of changed)
-				snapshots.set(shard.name, join(directory, `${group(shard)}.snapshot`));
+			const staged = yield* stagePlannedPackageText(
+				stage,
+				{ file: planned.file, groups: changed.map(group), selected: expected },
+				directory,
+				onRead
+			);
+			for (const shard of changed) snapshots.set(shard.name, staged.get(group(shard))!);
 		} else if (stage) {
 			const paths = [...requested.keys()];
 			yield* stage
@@ -665,72 +655,31 @@ const rebuildChangedShards = Effect.fn("PackageText.rebuildShards")(function* <E
 					join(directory, `${Number(shard.name.slice("package-text.".length))}.snapshot`)
 				);
 		} else {
-			const records = new Map<string, PackageTextStored[]>();
-			for (const shard of shards) {
-				const rows: PackageTextStored[] = [];
-				for (const { entry, selected } of shard.entries)
-					if (!selected)
-						rows.push({
-							path: entry.path,
+			// Without staging, records are spooled to files as they arrive and converted from those.
+			const requests = new Map<string, { signature: string; group: number }>();
+			const shardRequests = shards.map((shard) => ({
+				group: group(shard),
+				expected: shard.entries.map(({ entry, selected }) => {
+					if (selected)
+						requests.set(entry.path, {
 							signature: entry.signature,
-							evidence: { event: "not_gatherable", path: entry.path }
+							group: group(shard)
 						});
-				records.set(shard.name, rows);
-			}
-			if (requested.size)
-				yield* input
-					.read(
-						[...requested.keys()],
-						new Map([...requested].map(([path, entry]) => [path, entry.signature]))
-					)
-					.pipe(
-						Stream.runForEach((event) =>
-							Effect.gen(function* () {
-								if (event.event === "text_summary") return;
-								const entry = requested.get(event.path);
-								if (!entry || received.has(event.path))
-									return yield* Effect.fail(
-										snapshotFailure(
-											"package-text.read",
-											"Unexpected or duplicate package"
-										)
-									);
-								received.add(event.path);
-								records.get(shardName(packageTextShard(event.path)))!.push({
-									path: event.path,
-									signature: entry.signature,
-									evidence: event
-								});
-								completed++;
-								report();
-							})
-						)
-					);
-			for (const shard of changed) {
-				const path = join(
-					directory,
-					`${Number(shard.name.slice("package-text.".length))}.snapshot`
-				);
-				yield* Effect.scoped(
-					Effect.gen(function* () {
-						const source = yield* nativePackageTextColumns(records.get(shard.name)!);
-						yield* Effect.tryPromise({
-							try: () =>
-								writeSnapshotFile(path, source, 0, undefined, undefined, {
-									durable: false
-								}),
-							catch: (cause) =>
-								snapshotFailure(
-									"package-text.stage",
-									"The package text staging operation failed.",
-									cause
-								)
-						});
-					})
-				);
-				records.delete(shard.name);
-				snapshots.set(shard.name, path);
-			}
+					return { path: entry.path, signature: entry.signature, selected };
+				})
+			}));
+			const files = yield* spoolPackageReads(
+				input.read,
+				requests,
+				join(directory, "records"),
+				onRead
+			);
+			const converted = yield* convertSpooledPackageText(
+				shardRequests,
+				files,
+				join(directory, "converted")
+			);
+			for (const shard of changed) snapshots.set(shard.name, converted.get(group(shard))!);
 		}
 		if (received.size !== expected)
 			return yield* Effect.fail(

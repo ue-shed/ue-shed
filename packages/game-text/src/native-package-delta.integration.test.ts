@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { Effect, Stream, Scope, Exit, Schema, Result } from "effect";
 import { describe, expect, it } from "vitest";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
@@ -618,6 +620,106 @@ describe.skipIf(!executable)("native package record deltas", () => {
 				unchanged: 1200 - 40 - 30
 			});
 			expect(fresh.progress.map((event) => event.phase)).toContain("package_publish");
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	}, 300_000);
+
+	it("keeps the host's heap flat however much changed text an in-place refresh reads", async () => {
+		if (!executable) throw new Error("Native reader required");
+		setFlagsFromString("--expose-gc");
+		// SAFETY: --expose-gc, set just above, defines `gc` in every new context.
+		const gc = runInNewContext("gc") as () => void;
+		const heap = () => {
+			gc();
+			return process.memoryUsage().heapUsed;
+		};
+		const root = await mkdtemp(join(tmpdir(), "ue-shed-package-delta-heap-"));
+		try {
+			// Two text packages in every shard; the refresh gives one of each a distinct 256 KiB
+			// source, 64 MiB of changed text in all, read one package at a time.
+			const changed: string[] = [],
+				kept: string[] = [];
+			for (let id = 0; changed.length < 256 || kept.length < 256; id++) {
+				const path = `Content/Large/Item${id}.uasset`;
+				const shard = packageTextShard(path);
+				if (!changed.some((other) => packageTextShard(other) === shard)) changed.push(path);
+				else if (!kept.some((other) => packageTextShard(other) === shard)) kept.push(path);
+			}
+			const inventory = (revision: number) =>
+				[...changed, ...kept]
+					.sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
+					.map((path) => ({
+						path,
+						signature: changed.includes(path) ? `${revision}` : "0",
+						headerData: header
+					}));
+			const large = 256 * 1024;
+			// A flat string: `repeat` builds a rope that shares its parts and would cost nothing.
+			const text = (path: string) => {
+				const fill = Buffer.alloc(large - path.length - 1, 0x61 + (path.length % 26));
+				return `${path}:${fill.toString("latin1")}`;
+			};
+			const sample = { reads: 0, start: 0, end: 0 };
+			const configuration = { cacheRoot: root, projectKey: "heap", targetKey: "text" };
+			const refresh = (revision: number) =>
+				Effect.gen(function* () {
+					const builder = yield* GameTextIndexBuilder;
+					return yield* builder.withSession(
+						{ configuration },
+						Effect.scoped(
+							builder.refreshPackageTextLayer({
+								inventory: inventory(revision),
+								read: (paths) =>
+									Stream.fromIterable(paths, { chunkSize: 1 }).pipe(
+										Stream.map((path) => {
+											if (revision && sample.reads++ === 0)
+												sample.start = heap();
+											return record(path, revision ? text(path) : path, path);
+										}),
+										// The whole read has passed through the host here.
+										Stream.onEnd(
+											Effect.sync(() => {
+												if (revision) sample.end = heap();
+											})
+										)
+									)
+							})
+						)
+					);
+				});
+			const result = await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						yield* refresh(0);
+						return yield* refresh(1);
+					})
+				).pipe(
+					Effect.provide(
+						nativeIndexBuilderLayer({
+							executable,
+							timeoutMs: 120_000,
+							catalogTimeoutMs: 120_000
+						})
+					)
+				)
+			);
+			expect(result).toMatchObject({ readPackages: 256, reusedPackages: 256 });
+			// Holding the read records would retain the 64 MiB the read passed through.
+			expect(sample.end - sample.start).toBeLessThan(16 * 1024 * 1024);
+			const stored = await Effect.runPromise(
+				Effect.gen(function* () {
+					const reader = yield* (yield* SharedIndex).open();
+					return yield* decodePackageTextColumns(
+						yield* reader.layer(`package-text.${packageTextShard(changed[0]!)}`)
+					);
+				}).pipe(Effect.scoped, Effect.provide(sharedIndexNodeLayer(configuration)))
+			);
+			const updated = stored.find((item) => item.path === changed[0]);
+			expect(
+				updated?.evidence.event === "text_package_record" &&
+					updated.evidence.occurrences[0]?.source.length
+			).toBe(large);
 		} finally {
 			await rm(root, { recursive: true, force: true });
 		}

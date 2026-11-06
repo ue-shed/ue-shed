@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, open, readFile, rm } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { Effect, Schema, Stream } from "effect";
@@ -28,11 +28,34 @@ export const PackageTextPlanLine = Schema.fromJsonString(
 		)
 	})
 );
-type PlanEntry = (typeof PackageTextPlanLine.Type)["expected"][number];
+const decodePlanLine = Schema.decodeUnknownEffect(PackageTextPlanLine);
 
 const stagingFailure = (cause: unknown) =>
 	snapshotFailure("package-text.stage", "The package text staging operation failed.", cause);
 const group = (name: string) => Number(name.slice("package-text.".length));
+
+/** A plan file's shards: paths, signatures and selection only, never package records. */
+const readPlanLines = Effect.fnUntraced(function* (file: string) {
+	const text = yield* Effect.tryPromise({
+		try: () => readFile(file, "utf8"),
+		catch: stagingFailure
+	});
+	const shards: (typeof PackageTextPlanLine.Type)[] = [];
+	for (const line of text.split("\n"))
+		if (line)
+			shards.push(
+				yield* decodePlanLine(line).pipe(
+					Effect.mapError((cause) =>
+						snapshotFailure(
+							"package-text.compare",
+							"Invalid package comparison.",
+							cause
+						)
+					)
+				)
+			);
+	return shards;
+});
 
 /** A refresh's changed shards compared with the index, and the directory holding their rows. */
 export interface PackageTextComparison {
@@ -106,14 +129,88 @@ export const comparePackageText = Effect.fn("PackageText.compare")(function* <E>
 	return { shards: comparison.shards, directory } satisfies PackageTextComparison;
 });
 
+/** Decoded records held before the spool writes them out; a larger record is written alone. */
+const SPOOL_BUFFER_CHARACTERS = 4 * 1024 * 1024;
+
 /**
- * Converts the changed records into one snapshot per shard with the paired reader, in batches
- * that bound each request. Records go through files; entries that weren't read are written from
- * the inventory alone. A shard without changed entries gets an empty snapshot.
+ * Reads packages and appends each record to its shard's file in `directory` as it arrives, so
+ * the host holds at most one buffer of decoded evidence however many packages change. Fails on a
+ * package that wasn't requested, a duplicate or an omission. Returns each shard's record file.
  */
-const convertChanges = Effect.fn("PackageText.convertChanges")(function* (
+export const spoolPackageReads = Effect.fn("PackageText.spoolReads")(function* <E, R>(
+	read: PackageTextRefreshInput<E, R>["read"],
+	requests: ReadonlyMap<string, { readonly signature: string; readonly group: number }>,
+	directory: string,
+	onRead: (path: string) => void
+) {
+	const files = new Map<number, string>();
+	const pending = new Map<number, string[]>();
+	const received = new Set<string>();
+	let buffered = 0;
+	const flush = Effect.tryPromise({
+		try: async () => {
+			for (const [group, lines] of pending) {
+				let file = files.get(group);
+				if (file === undefined) {
+					file = join(directory, `${group}.ndjson`);
+					files.set(group, file);
+				}
+				await appendFile(file, lines.join(""));
+			}
+			pending.clear();
+			buffered = 0;
+		},
+		catch: stagingFailure
+	});
+	yield* Effect.tryPromise({
+		try: () => mkdir(directory, { recursive: true }),
+		catch: stagingFailure
+	});
+	if (requests.size)
+		yield* read(
+			[...requests.keys()],
+			new Map([...requests].map(([path, { signature }]) => [path, signature]))
+		).pipe(
+			Stream.runForEach(
+				Effect.fnUntraced(function* (event) {
+					if (event.event === "text_summary") return;
+					const request = requests.get(event.path);
+					if (request === undefined || received.has(event.path))
+						return yield* Effect.fail(
+							snapshotFailure("package-text.read", "Unexpected or duplicate package")
+						);
+					received.add(event.path);
+					const line = `${JSON.stringify({
+						path: event.path,
+						signature: request.signature,
+						evidence: event
+					} satisfies PackageTextStored)}\n`;
+					const lines = pending.get(request.group);
+					if (lines) lines.push(line);
+					else pending.set(request.group, [line]);
+					buffered += line.length;
+					if (buffered >= SPOOL_BUFFER_CHARACTERS) yield* flush;
+					onRead(event.path);
+				})
+			)
+		);
+	yield* flush;
+	if (received.size !== requests.size)
+		return yield* Effect.fail(
+			snapshotFailure("package-text.read", "Reader omitted requested packages")
+		);
+	const spooled: ReadonlyMap<number, string> = files;
+	return spooled;
+});
+
+/**
+ * Converts spooled records into one snapshot per shard with the paired reader, in batches that
+ * bound each request. Entries that weren't read are written from the inventory alone, so a shard
+ * without a record file gets the snapshot of its unread entries, or an empty one.
+ */
+export const convertSpooledPackageText = Effect.fn("PackageText.convertSpooled")(function* (
 	shards: PackageTextSnapshots["shards"],
-	records: ReadonlyMap<string, PackageTextStored>,
+	files: ReadonlyMap<number, string>,
 	directory: string
 ) {
 	const snapshots = new Map<number, string>();
@@ -121,25 +218,15 @@ const convertChanges = Effect.fn("PackageText.convertChanges")(function* (
 	yield* Effect.annotateCurrentSpan({ "package-text.convert.batches": batches.length });
 	for (const [index, batch] of batches.entries()) {
 		const batchDirectory = join(directory, `batch-${index}`);
-		const recordFile = join(batchDirectory, "records.ndjson");
+		const recordFiles = batch.flatMap((shard) => files.get(shard.group) ?? []);
 		yield* Effect.tryPromise({
 			try: async () => {
-				await mkdir(batchDirectory);
-				const file = await open(recordFile, "wx");
-				try {
-					let chunk = "";
-					for (const shard of batch)
-						for (const entry of shard.expected) {
-							if (!entry.selected) continue;
-							chunk += `${JSON.stringify(records.get(entry.path)!)}\n`;
-							if (chunk.length > 1024 * 1024) {
-								await file.write(chunk);
-								chunk = "";
-							}
-						}
-					if (chunk) await file.write(chunk);
-				} finally {
-					await file.close();
+				await mkdir(batchDirectory, { recursive: true });
+				// The reader converts record files; a batch with no reads replays an empty one.
+				if (!recordFiles.length) {
+					const empty = join(batchDirectory, "empty.ndjson");
+					await writeFile(empty, "", { flag: "wx" });
+					recordFiles.push(empty);
 				}
 			},
 			catch: stagingFailure
@@ -154,14 +241,64 @@ const convertChanges = Effect.fn("PackageText.convertChanges")(function* (
 					rules: packageTextAudienceRules(),
 					shards: batch,
 					records: [],
-					recordFiles: [recordFile]
+					recordFiles
 				}
 			}
 		});
 		for (const shard of batch)
 			snapshots.set(shard.group, join(batchDirectory, `${shard.group}.snapshot`));
 	}
-	return snapshots;
+	const converted: ReadonlyMap<number, string> = snapshots;
+	return converted;
+});
+
+/**
+ * The reader reads the selected packages of a plan file's shards and writes each shard's
+ * snapshot itself, so no package record crosses into the host. Fails on a duplicate package or
+ * when fewer than `selected` packages were staged. Returns each shard's snapshot.
+ */
+export const stagePlannedPackageText = Effect.fn("PackageText.stagePlanned")(function* <E, R>(
+	stage: NonNullable<PackageTextRefreshInput<E, R>["stage"]>,
+	plan: { readonly file: string; readonly groups: readonly number[]; readonly selected: number },
+	directory: string,
+	onRead: (path: string) => void
+) {
+	const received = new Set<string>();
+	yield* Effect.tryPromise({
+		try: () => mkdir(directory, { recursive: true }),
+		catch: stagingFailure
+	});
+	if (plan.groups.length)
+		yield* stage
+			.read([], directory, [], {
+				rules: packageTextAudienceRules(),
+				shards: [],
+				planFile: plan.file,
+				groups: [...plan.groups]
+			})
+			.pipe(
+				Stream.runForEach(
+					Effect.fnUntraced(function* (event) {
+						if (received.has(event.path))
+							return yield* Effect.fail(
+								snapshotFailure(
+									"package-text.read",
+									"Unexpected or duplicate package"
+								)
+							);
+						received.add(event.path);
+						onRead(event.path);
+					})
+				)
+			);
+	if (received.size !== plan.selected)
+		return yield* Effect.fail(
+			snapshotFailure("package-text.read", "Reader omitted requested packages")
+		);
+	const staged: ReadonlyMap<number, string> = new Map(
+		plan.groups.map((group) => [group, join(directory, `${group}.snapshot`)])
+	);
+	return staged;
 });
 
 /**
@@ -186,63 +323,70 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 	const { writer, replace, stages } = context;
 	const report = yield* GameTextIndexProgressReporter;
 	const compared = join(comparison.directory, "compared");
-	const changedByGroup = new Map<number, readonly PlanEntry[]>();
-	const text = yield* Effect.tryPromise({
-		try: () => readFile(join(compared, "changed.ndjson"), "utf8"),
-		catch: stagingFailure
-	});
-	for (const line of text.split("\n")) {
-		if (!line) continue;
-		const { group: shard, expected } = yield* Schema.decodeUnknownEffect(PackageTextPlanLine)(
-			line
-		).pipe(
-			Effect.mapError((cause) =>
-				snapshotFailure("package-text.compare", "Invalid package comparison.", cause)
-			)
-		);
-		changedByGroup.set(shard, expected);
-	}
-	const requests = new Map<string, string>();
-	for (const entries of changedByGroup.values())
-		for (const entry of entries) if (entry.selected) requests.set(entry.path, entry.signature);
+	const changedFile = join(compared, "changed.ndjson");
 	const unchanged =
 		plan.packages - comparison.shards.reduce((sum, shard) => sum + shard.changed, 0);
+	const total = comparison.shards.reduce((sum, shard) => sum + shard.selected, 0);
 	stages.mark("compare");
-	const total = requests.size;
 	let completed = 0;
+	const onRead = () =>
+		report({ phase: "package_read", completed: ++completed, total, unchanged });
 	report({ phase: "package_read", completed, total, unchanged });
-	const records = new Map<string, PackageTextStored>();
-	if (total)
-		yield* input.read([...requests.keys()], requests).pipe(
-			Stream.runForEach((event) =>
-				Effect.gen(function* () {
-					if (event.event === "text_summary") return;
-					const signature = requests.get(event.path);
-					if (signature === undefined || records.has(event.path))
-						return yield* Effect.fail(
-							snapshotFailure("package-text.read", "Unexpected or duplicate package")
-						);
-					records.set(event.path, { path: event.path, signature, evidence: event });
-					completed++;
-					report({ phase: "package_read", completed, total, unchanged });
-				})
-			)
+	const snapshots = new Map<number, string>();
+	// A shard whose key changed only by removals has no changed entries: an empty snapshot.
+	const emptied: PackageTextSnapshots["shards"][number][] = comparison.shards
+		.filter((shard) => !shard.changed)
+		.map((shard) => ({ group: shard.group, expected: [] }));
+	if (input.stage) {
+		// The changed entries are a plan file, so the reader stages them as a cold build stages
+		// its plan, and no package record crosses into the host.
+		const staged = yield* stagePlannedPackageText(
+			input.stage,
+			{
+				file: changedFile,
+				groups: comparison.shards
+					.filter((shard) => shard.changed)
+					.map((shard) => shard.group),
+				selected: total
+			},
+			join(comparison.directory, "staged"),
+			onRead
 		);
-	if (records.size !== total)
-		return yield* Effect.fail(
-			snapshotFailure("package-text.read", "Reader omitted requested packages")
+		for (const [group, file] of staged) snapshots.set(group, file);
+		stages.mark("read");
+		report({ phase: "package_update", completed: 0, total: 0 });
+	} else {
+		// Without staging, records are spooled to files as they arrive and converted from those.
+		const shards = yield* readPlanLines(changedFile);
+		const requests = new Map<string, { signature: string; group: number }>();
+		for (const shard of shards)
+			for (const entry of shard.expected)
+				if (entry.selected)
+					requests.set(entry.path, { signature: entry.signature, group: shard.group });
+		const files = yield* spoolPackageReads(
+			input.read,
+			requests,
+			join(comparison.directory, "records"),
+			onRead
 		);
-	stages.mark("read");
-	report({ phase: "package_update", completed: 0, total: 0 });
-	const snapshots = yield* convertChanges(
-		comparison.shards.map((shard) => ({
-			group: shard.group,
-			expected: changedByGroup.get(shard.group) ?? []
-		})),
-		records,
-		comparison.directory
-	);
-	records.clear();
+		stages.mark("read");
+		report({ phase: "package_update", completed: 0, total: 0 });
+		emptied.push(...shards);
+		const converted = yield* convertSpooledPackageText(
+			emptied.splice(0),
+			files,
+			join(comparison.directory, "converted")
+		);
+		for (const [group, file] of converted) snapshots.set(group, file);
+	}
+	if (emptied.length) {
+		const empty = yield* convertSpooledPackageText(
+			emptied,
+			new Map(),
+			join(comparison.directory, "empty")
+		);
+		for (const [group, file] of empty) snapshots.set(group, file);
+	}
 	stages.mark("convert");
 	if (input.publishGate) {
 		yield* input.publishGate;

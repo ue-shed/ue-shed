@@ -8,23 +8,28 @@
  * Then run one change against a fresh copy of it:
  *   node --expose-gc --import tsx scripts/benchmark-game-text-package-refresh.ts --mode run
  *     --executable <uasset> --module <checkout>/packages/game-text/src
- *     --template test-results/package-refresh/template --case one|spread|shards
+ *     --template test-results/package-refresh/template --case one|spread|shards|large [--files]
  *     --output test-results/package-refresh/<run>
  *
  * `--module` may name another checkout's `packages/game-text/src`, so a base revision runs with
- * its own packages and its own reader. Packages are generated, never written as `.uasset` files:
- * the refresh reads them through its `read` stream, as `benchmark-game-text-incremental.ts` does.
+ * its own packages and its own reader. Packages are generated and read through the refresh's
+ * `read` stream, as `benchmark-game-text-incremental.ts` does. With `--files`, the changed text
+ * packages are copies of a fixture package on disk, read or staged through the node source.
+ * `large` gives one text package in every shard a distinct 256 KiB source.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { copyFile, cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { parseArgs } from "node:util";
-import { Effect, Layer, Stream } from "effect";
-import type { SavedAssetPackageTextRecord } from "../packages/unreal-assets/dist/index.js";
+import { Effect, Layer, ManagedRuntime, Stream } from "effect";
+import {
+	assetReaderLayer,
+	type SavedAssetPackageTextRecord
+} from "../packages/unreal-assets/dist/index.js";
 import { makeGameTextBenchmarkTrace } from "./game-text-benchmark-trace.ts";
 
 const { values } = parseArgs({
@@ -36,7 +41,8 @@ const { values } = parseArgs({
 		case: { type: "string" },
 		output: { type: "string" },
 		packages: { type: "string", default: "652257" },
-		label: { type: "string", default: "" }
+		label: { type: "string", default: "" },
+		files: { type: "boolean", default: false }
 	}
 });
 const mode = values.mode;
@@ -74,6 +80,17 @@ const progressModule: typeof import("../packages/game-text/src/index-progress.js
 	load("index-progress.ts")
 );
 const { GameTextIndexProgressReporter, GAME_TEXT_INDEX_PHASE_LABELS } = progressModule;
+const { packageTextShard }: typeof import("../packages/game-text/src/package-text-layer.js") =
+	await import(load("package-text-layer.ts"));
+const { GameTextIndexSource }: typeof import("../packages/game-text/src/index-refresh.js") =
+	await import(load("index-refresh.ts"));
+const {
+	gameTextIndexSourceNodeLayer
+}: typeof import("../packages/game-text/src/index-source-node.js") = await import(
+	load("index-source-node.ts")
+);
+const { mountPackageTextEvent }: typeof import("../packages/game-text/src/package-object-path.js") =
+	await import(load("package-object-path.ts"));
 
 // The generated project: folders of ordinary packages, one in sixteen with text. A change adds
 // World Partition external actors, almost all without text, as a version control sync does.
@@ -113,6 +130,13 @@ for (let id = 0; id < count; id++) {
 		id
 	});
 }
+/** A flat string: `repeat` builds a rope that shares its parts and would cost no heap. */
+const largeSource = (entry: Generated) => {
+	const prefix = `Large text ${entry.id} `;
+	return (
+		prefix + Buffer.alloc(256 * 1024 - prefix.length, 0x61 + (entry.id % 26)).toString("latin1")
+	);
+};
 const record = (entry: Generated): SavedAssetPackageTextRecord => {
 	const name = `P${entry.id}`;
 	const object = `/Game/Generated/${name}.${name}`;
@@ -123,18 +147,28 @@ const record = (entry: Generated): SavedAssetPackageTextRecord => {
 		schema_version: 1,
 		status: "complete",
 		decodeErrors: 0,
-		occurrences: Array.from({ length: 1 + (entry.id % 3) }, (_, slot) => ({
-			source: `Generated text ${entry.id % 5000} slot ${slot} revision ${entry.revision}`,
-			dev_notes: "",
-			identity: { status: "resolved", namespace: "Generated", key: `K${entry.id}-${slot}` },
-			location: {
-				kind: "asset_property",
-				object_path: `${object}.Widget${slot}`,
-				class_path: "/Script/UMG.TextBlock",
-				property_path: "Text"
-			},
-			edit_capability: "read_only"
-		})),
+		occurrences: Array.from(
+			{ length: entry.revision === 2 ? 1 : 1 + (entry.id % 3) },
+			(_, slot) => ({
+				source:
+					entry.revision === 2
+						? largeSource(entry)
+						: `Generated text ${entry.id % 5000} slot ${slot} revision ${entry.revision}`,
+				dev_notes: "",
+				identity: {
+					status: "resolved",
+					namespace: "Generated",
+					key: `K${entry.id}-${slot}`
+				},
+				location: {
+					kind: "asset_property",
+					object_path: `${object}.Widget${slot}`,
+					class_path: "/Script/UMG.TextBlock",
+					property_path: "Text"
+				},
+				edit_capability: "read_only"
+			})
+		),
 		gapCounts: {
 			unsupported_text_history: 0,
 			legacy_container_element_without_type_information: 0,
@@ -169,22 +203,23 @@ if (mode === "run") {
 			packages.set(path, { path, signature: `s0-${id}`, selected, revision: 0, id });
 			changed.push(path);
 		}
-	} else throw new Error("--case must be one, spread or shards.");
+	} else if (change === "large") {
+		// The first text package of every shard gets a distinct 256 KiB source: 64 MiB of text.
+		const seen = new Set<number>();
+		for (const entry of packages.values()) {
+			const shard = packageTextShard(entry.path);
+			if (!entry.selected || seen.has(shard)) continue;
+			seen.add(shard);
+			packages.set(entry.path, { ...entry, signature: `s2-${entry.id}`, revision: 2 });
+			changed.push(entry.path);
+		}
+	} else throw new Error("--case must be one, spread, shards or large.");
 }
-const inventory = [...packages.values()]
-	.map((entry) => ({ entry, key: Buffer.from(entry.path) }))
-	.sort((a, b) => Buffer.compare(a.key, b.key))
-	.map(({ entry }) => ({
-		path: entry.path,
-		signature: entry.signature,
-		headerData: header(entry.selected)
-	}));
-let readCount = 0;
-const read = (paths: readonly string[]) => {
-	readCount += paths.length;
-	return Stream.fromIterable(paths).pipe(Stream.map((path) => record(packages.get(path)!)));
-};
-
+/** Fixture copies on disk, with the signatures and headers the node source reports. */
+const files = new Map<
+	string,
+	import("../packages/game-text/src/package-text-layer.js").PackageTextInventoryEntry
+>();
 const cacheRoot = join(output, "cache");
 const projectRoot = join(output, "project");
 const configuration = { cacheRoot, projectKey: "generated-package-refresh", targetKey: "text" };
@@ -193,6 +228,92 @@ if (mode === "run") {
 	await cp(join(resolve(values.template), "cache"), cacheRoot, { recursive: true });
 }
 await mkdir(projectRoot, { recursive: true });
+
+// Retained heap after a forced collection, before the refresh and when its read stream ends.
+const retainedHeap = () => {
+	globalThis.gc?.();
+	return process.memoryUsage().heapUsed;
+};
+const heapAtReadEnd: number[] = [];
+const atReadEnd = <A, E, R>(stream: Stream.Stream<A, E, R>) =>
+	stream.pipe(Stream.onEnd(Effect.sync(() => heapAtReadEnd.push(retainedHeap()))));
+type RefreshInput =
+	import("../packages/game-text/src/package-text-layer.js").PackageTextRefreshInput<
+		unknown,
+		never
+	>;
+let readCount = 0;
+let stageCount = 0;
+let read: RefreshInput["read"] = (paths) => {
+	readCount += paths.length;
+	return atReadEnd(
+		Stream.fromIterable(paths, { chunkSize: 1 }).pipe(
+			Stream.map((path) => record(packages.get(path)!))
+		)
+	);
+};
+let stage: RefreshInput["stage"];
+let disposeSource = async () => {};
+if (values.files && mode === "run") {
+	// The changed text packages become copies of one fixture package, with their real signatures.
+	const fixture = resolve("fixtures/unreal-project");
+	await copyFile(
+		join(fixture, "UEShedFixture.uproject"),
+		join(projectRoot, "UEShedFixture.uproject")
+	);
+	await cp(join(fixture, "Config"), join(projectRoot, "Config"), { recursive: true });
+	const textPackage = join(fixture, "Content/Fixture/GameTextProblems/DT_FixtureItems.uasset");
+	for (const path of changed.filter((path) => packages.get(path)!.selected)) {
+		await mkdir(dirname(join(projectRoot, path)), { recursive: true });
+		await copyFile(textPackage, join(projectRoot, path));
+	}
+	const sourceLayer = gameTextIndexSourceNodeLayer(join(output, "catalog")).pipe(
+		Layer.provideMerge(assetReaderLayer({ executable }))
+	);
+	// The source's reader stays up for the refresh and is released at the end.
+	const runtime = ManagedRuntime.make(sourceLayer);
+	disposeSource = () => runtime.dispose();
+	const source = await runtime.runPromise(Effect.service(GameTextIndexSource));
+	const real = await runtime.runPromise(source.inventory({ projectRoot }));
+	for (const entry of real) {
+		const generated = packages.get(entry.path);
+		if (!generated?.selected) throw new Error(`Unexpected fixture package ${entry.path}.`);
+		files.set(entry.path, entry);
+	}
+	read = (paths) => {
+		readCount += paths.length;
+		return atReadEnd(
+			source
+				.read(
+					projectRoot,
+					paths.map((path) => files.get(path)!)
+				)
+				.pipe(Stream.map((event) => mountPackageTextEvent(projectRoot, event)))
+		);
+	};
+	stage = {
+		projectRoot,
+		read: (paths, directory, groups, snapshots) =>
+			atReadEnd(
+				source.stage!(
+					projectRoot,
+					paths.map((path) => files.get(path)!),
+					{ directory, groups, snapshots }
+				).pipe(Stream.tap(() => Effect.sync(() => stageCount++)))
+			)
+	};
+}
+const inventory = [...packages.values()]
+	.map((entry) => ({ entry, key: Buffer.from(entry.path) }))
+	.sort((a, b) => Buffer.compare(a.key, b.key))
+	.map(
+		({ entry }) =>
+			files.get(entry.path) ?? {
+				path: entry.path,
+				signature: entry.signature,
+				headerData: header(entry.selected)
+			}
+	);
 
 /** Each descendant process's peak working set, sampled while the refresh runs. */
 const nativePeaks = new Map<number, { name: string; peak: number }>();
@@ -240,7 +361,7 @@ const builderLayer = nativeIndexBuilderLayer({
 	catalogTimeoutMs: 3_600_000
 });
 
-globalThis.gc?.();
+const heapBefore = retainedHeap();
 let heapPeak = 0;
 let rssPeak = 0;
 const sampleMemory = () => {
@@ -265,7 +386,8 @@ const refreshed = await Effect.runPromise(
 					const result = yield* Effect.scoped(
 						builder.refreshPackageTextLayer({
 							inventory,
-							read
+							read,
+							...(stage ? { stage } : undefined)
 						})
 					);
 					// The writer process is still leased: take its peak before it is released.
@@ -348,6 +470,8 @@ const summary = {
 	wallMs: Math.round(wallMs),
 	result: { ...refreshed, profile: undefined },
 	readsRequested: readCount,
+	files: values.files,
+	packagesStaged: stageCount,
 	spanAttributes: refreshSpan?.attributes ?? {},
 	spans: Object.fromEntries(
 		[
@@ -358,6 +482,9 @@ const summary = {
 			"PackageText.compare",
 			"PackageText.replaceRecords",
 			"PackageText.convertChanges",
+			"PackageText.convertSpooled",
+			"PackageText.spoolReads",
+			"PackageText.stagePlanned",
 			"PackageText.refreshShards",
 			"PackageText.rebuildShards",
 			"PackageText.decodeColumns",
@@ -376,6 +503,9 @@ const summary = {
 	memory: {
 		nodeHeapPeakMiB: Math.round(heapPeak / 2 ** 20),
 		nodeRssPeakMiB: Math.round(rssPeak / 2 ** 20),
+		nodeHeapBeforeMiB: Math.round(heapBefore / 2 ** 20),
+		// Retained heap when the read ends, after a forced collection: what the read holds.
+		nodeHeapAtReadEndMiB: heapAtReadEnd.map((bytes) => Math.round(bytes / 2 ** 20)),
 		nativePeakMiB: Math.round((nativeRows[0]?.peak ?? 0) / 2 ** 20),
 		nativeProcesses: nativeRows.length,
 		sampling: "Node every 50 ms; native descendants' peak working set every 1 s and at the end."
@@ -387,4 +517,5 @@ const summary = {
 await writeFile(join(output, "result.json"), JSON.stringify(summary, null, "\t") + "\n");
 await writeFile(join(output, "spans.json"), JSON.stringify(spans) + "\n");
 console.log(JSON.stringify({ ...summary, progress: undefined, nativeStageSeconds: undefined }));
+await disposeSource();
 if (mode === "run") await rm(cacheRoot, { recursive: true, force: true });

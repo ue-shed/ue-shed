@@ -6,7 +6,9 @@
 
 A Game Text rescan of an existing index now updates it in place however many package shards
 changed: it reads and converts only the changed packages, and the native writer keeps every
-unchanged record. A change that touched more than 8 of the 256 shards used to decode every changed
+unchanged record. The reader stages the changed packages straight into shard snapshots, as a
+first scan does, so their records never sit in the JavaScript heap; a source without staging
+spools them to files as they arrive. A change that touched more than 8 of the 256 shards used to decode every changed
 shard in JavaScript and re-encode each record. All changed shards still publish atomically. Only a
 first scan, or an index in an older package format or audience policy, reads and writes the
 changed shards again.

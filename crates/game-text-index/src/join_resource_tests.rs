@@ -304,6 +304,39 @@ fn without_a_manifest_the_resource_decides_against_the_saved_source() -> Result<
     Ok(())
 }
 
+#[test]
+fn a_resource_that_failed_to_import_decides_nothing() -> Result<()> {
+    let root = workspace().join("fixtures/unreal-project");
+    let manifest = format!("{GAME}/Game.manifest");
+    let resource = format!("{GAME}/de/Game.locres");
+    for code in ["malformed_locres", "unsupported_version", "file_unreadable"] {
+        let mut fixture = Fixture::new()?;
+        // The manifest is read; the resource that stands in for the missing archive is not.
+        import_files(&mut fixture, &root, &[(&manifest, Format::Manifest)])?;
+        fixture.packages(&[])?;
+        fixture.target = target(&["en", "de"], Some(&manifest), json!({"de": resource}));
+        let outcome = fixture.join_with(json!({"fileErrors": {&resource: code}}))?;
+        let query = EngineQuery::open(&fixture.configuration, Some(&outcome.key))?;
+        let count = query.reader.meta["count"].as_u64().ok_or("line count")? as usize;
+        assert!(count > 0);
+        for row in 0..count {
+            let line = query.localization_line(row, &AtomicBool::new(false))?;
+            let de = &line["cultures"][1];
+            // Not "not_translated": the resource's translations are unreadable. (With no saved
+            // packages every line is `not_found`, which outranks `unknown` as the state.)
+            assert!(has(de, "unknown"), "{code} {line}");
+            assert_eq!(decided(de), "none", "{code} {line}");
+            assert!(
+                de["unknownReasons"]
+                    .as_array()
+                    .is_some_and(|reasons| reasons.contains(&json!("missing_archive"))),
+                "{code}"
+            );
+        }
+    }
+    Ok(())
+}
+
 fn sample(namespace: &str, key: &str, source: &str, text: &str) -> Sample {
     Sample {
         namespace: namespace.encode_utf16().collect(),

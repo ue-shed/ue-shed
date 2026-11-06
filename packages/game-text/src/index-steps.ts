@@ -43,6 +43,7 @@ import {
 	DiskChangesRequest,
 	watchDiskChanges,
 	watchedFolders,
+	watchedLocalizationFiles,
 	type DiskChangesWatchRequest
 } from "./disk-changes.js";
 import {
@@ -1532,14 +1533,11 @@ export const makeGameTextIndexSteps = Effect.fn("GameTextIndex.makeSteps")(funct
 						.discover({ projectRoot })
 						.pipe(Effect.mapError(manifestIndexFailure));
 					const target = discovery.targets.find((item) => item.name === input.target);
-					const outputs = target?.outputPaths;
-					for (const path of [
-						outputs?.manifest,
-						...Object.values(outputs?.archives ?? {}),
-						...Object.values(outputs?.portableObjects ?? {}),
+					for (const path of watchedLocalizationFiles(
+						target?.outputPaths,
 						defaultLocalizationReviewPath(input.target)
-					])
-						if (path) files.add(path.replaceAll("\\", "/"));
+					))
+						files.add(path);
 				}
 				return watchDiskChanges({
 					projectRoot,

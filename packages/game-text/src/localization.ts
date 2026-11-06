@@ -433,6 +433,11 @@ export function joinLocalizationTarget(
 		 * resource, as the native join does; TypeScript reads no `.locres` itself.
 		 */
 		readonly resources?: ReadonlyMap<string, LocalizationReferenceResource>;
+		/**
+		 * Cultures whose selected resource could not be read (malformed, unsupported or
+		 * unreadable). They decide nothing, and the missing archive stays an operative reason.
+		 */
+		readonly failedResources?: ReadonlySet<string>;
 	} = {}
 ): LocalizationJoin {
 	const manifest = groupByIdentity(
@@ -687,7 +692,11 @@ export function joinLocalizationTarget(
 				facts.push("needs_update");
 			const resource = resourceIndexes.get(culture);
 			const compiled = resource?.entries.get(key);
-			if (resource) {
+			const resourceFailed =
+				!resource && archiveAbsent && (options.failedResources?.has(culture) ?? false);
+			if (resourceFailed) {
+				// The stand-in for the missing archive could not be read: nothing is decided.
+			} else if (resource) {
 				// The culture has no archive: its compiled resource decides what it can.
 				if (compiled) {
 					const compiledSource = first?.source.Text ?? sources[0] ?? "";
@@ -729,7 +738,7 @@ export function joinLocalizationTarget(
 			if (
 				unknownReasons.some(
 					(reason) =>
-						!(reason === "missing_archive" && archiveAbsent) &&
+						!(reason === "missing_archive" && archiveAbsent && !resourceFailed) &&
 						!(reason === "missing_po" && poAbsent) &&
 						// The resource answers what a missing manifest would leave unknown.
 						!(reason === "missing_manifest" && compiled)

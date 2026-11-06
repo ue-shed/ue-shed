@@ -1,5 +1,8 @@
 import { posix } from "node:path";
-import { LocalizationTargetName } from "@ue-shed/localization/browser";
+import {
+	LocalizationTargetName,
+	type LocalizationOutputPaths
+} from "@ue-shed/localization/browser";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { Duration, Effect, Queue, Ref, Schema, Stream } from "effect";
 import { DiskWatcher } from "./disk-watcher.js";
@@ -145,6 +148,27 @@ export interface DiskChangesWatchRequest {
 	/** How long a burst of events settles before it is checked; 300 ms by default. */
 	readonly settle?: Duration.Input;
 }
+
+/**
+ * A target's localization files, as project-relative `/` paths, that a watcher rechecks by name.
+ * Every culture's resource is included: whether the join reads it depends on its archive existing,
+ * which can change while watching.
+ */
+export const watchedLocalizationFiles = (
+	outputs: LocalizationOutputPaths | undefined,
+	reviewPath: string
+): ReadonlySet<string> => {
+	const files = new Set<string>();
+	for (const path of [
+		outputs?.manifest,
+		...Object.values(outputs?.archives ?? {}),
+		...Object.values(outputs?.portableObjects ?? {}),
+		...Object.values(outputs?.resources ?? {}),
+		reviewPath
+	])
+		if (path) files.add(path.replaceAll("\\", "/"));
+	return files;
+};
 
 /** `Content`, and each folder of `files` outside the folders already watched. */
 export const watchedFolders = (files: Iterable<string>) => {

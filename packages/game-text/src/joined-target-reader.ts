@@ -298,13 +298,17 @@ export const inspectJoinedTarget = Effect.fn("JoinedTarget.inspect")(function* (
 			for (const value of yield* u32(layer, `c${ci}.${field}`))
 				snapshotCheck(value <= maximum, field, "Input row outside layer");
 		}
-		const resource = meta.resources?.[ci];
-		const resourceKey = resource ? meta.dependencies[resource] : undefined;
-		const resourceRows = resourceKey
-			? (yield* reader.layer(resourceKey)).directory.entries.get("entry.key")!.count
-			: 0;
-		for (const value of yield* u32(layer, `c${ci}.locres`))
-			snapshotCheck(value <= resourceRows, "locres", "Input row outside layer");
+		// Only joins that record their resources write `c{ci}.locres`; the TypeScript reference
+		// builder's layers have neither, as the engine's reader assumes too.
+		if (meta.resources !== undefined) {
+			const resource = meta.resources[ci];
+			const resourceKey = resource ? meta.dependencies[resource] : undefined;
+			const resourceRows = resourceKey
+				? (yield* reader.layer(resourceKey)).directory.entries.get("entry.key")!.count
+				: 0;
+			for (const value of yield* u32(layer, `c${ci}.locres`))
+				snapshotCheck(value <= resourceRows, "locres", "Input row outside layer");
+		}
 		for (const value of yield* u32(layer, `c${ci}.review_record`))
 			snapshotCheck(
 				value <= (meta.input.review?.records.length ?? 0),

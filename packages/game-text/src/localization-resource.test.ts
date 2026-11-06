@@ -111,6 +111,17 @@ describe("a culture without an archive reads its compiled resource", () => {
 		expect(german(withoutArchive(false), resource(null)).state).toBe("unknown");
 	});
 
+	it("decides nothing for a culture whose resource could not be read", () => {
+		const join = joinLocalizationTarget(corpus([unit()]), withoutArchive(), undefined, {
+			failedResources: new Set(["de"])
+		});
+		decodeLocalizationJoin(join);
+		const culture = join.lines[0]?.cultures.find((item) => item.culture === "de");
+		expect(culture?.state).toBe("unknown");
+		expect(culture?.facts).not.toContain("not_translated");
+		expect(culture?.unknownReasons).toContain("missing_archive");
+	});
+
 	it("never reads the resource of a culture that has its archive", () => {
 		const files = evidence(
 			[manifestEntry()],

@@ -1300,6 +1300,11 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 ABSENT
             };
             let mut operative = unknown;
+            // The culture's resource stands in for a missing archive but could not be read
+            // (malformed, unsupported or unreadable): its translations are unknown, so nothing is
+            // decided and the missing archive stays an operative reason. A culture with no
+            // resource has a placeholder that counts as missing.
+            let resource_failed = !rf.loaded && !rf.missing;
             if rf.loaded {
                 // The culture has no archive: its compiled resource decides what it can.
                 if rr != ABSENT {
@@ -1329,6 +1334,8 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 } else if joined.manifest.loaded {
                     facts |= 1 << 1;
                 }
+            } else if resource_failed {
+                // Decided by nothing: see `resource_failed`.
             } else if (af.loaded || af.missing) && ac <= 1 {
                 if ar == ABSENT || at == empty {
                     facts |= 1 << 1;
@@ -1336,7 +1343,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                     facts |= 1;
                 }
             }
-            if !af.loaded && af.missing {
+            if !af.loaded && af.missing && !resource_failed {
                 operative &= !(1 << 1);
             }
             if !pf.loaded && pf.missing {

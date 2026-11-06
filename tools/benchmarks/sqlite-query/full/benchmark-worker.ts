@@ -35,6 +35,7 @@ async function measure(execute: (entry: Case) => Promise<Json>, version: Json) {
 	const warmups = [],
 		samples = [];
 	for (const entry of cases) {
+		console.log(JSON.stringify({ lane, round, phase: "warmup", starting: entry.name }));
 		const at = performance.now(),
 			value = await execute(entry),
 			ms = performance.now() - at;
@@ -46,6 +47,7 @@ async function measure(execute: (entry: Case) => Promise<Json>, version: Json) {
 	for (let repetition = 0; repetition < repetitions; repetition++) {
 		const offset = (round + repetition) % cases.length;
 		for (const entry of [...cases.slice(offset), ...cases.slice(0, offset)]) {
+			console.log(JSON.stringify({ lane, round, repetition, starting: entry.name }));
 			events.length = 0;
 			const loop = trackBenchmarkEventLoop();
 			const at = performance.now();
@@ -68,6 +70,7 @@ async function measure(execute: (entry: Case) => Promise<Json>, version: Json) {
 				phases,
 				callbackGap: loop.stop()
 			});
+			console.log(JSON.stringify({ lane, round, repetition, complete: entry.name, ms }));
 		}
 		console.log(
 			JSON.stringify({ lane, round, repetition: repetition + 1, complete: cases.length })

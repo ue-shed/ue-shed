@@ -13,6 +13,7 @@ import { Schema } from "effect";
 import { TextUnitId } from "./identifiers.js";
 import { TextAudience, TextOutOfScopeReason } from "./text-audience-schema.js";
 import { TextRowProblems, textRowFindingFields } from "./text-problem-schema.js";
+import { MAX_TEXT_QUERY_PAGE_SIZE } from "./query-limits.js";
 
 /**
  * Primary localization state derived from saved corpus and gathered/archive/PO evidence.
@@ -292,7 +293,7 @@ export const LocalizationQueryPage = Schema.Struct({
 	/** New keys among the matched lines; present when any key changed. */
 	keyChanged: Schema.optionalKey(Count),
 	notSynced: Count,
-	lines: Schema.Array(LocalizationLinePreview).check(Schema.isMaxLength(50))
+	lines: Schema.Array(LocalizationLinePreview).check(Schema.isMaxLength(MAX_TEXT_QUERY_PAGE_SIZE))
 });
 export type LocalizationQueryPage = typeof LocalizationQueryPage.Type;
 /**

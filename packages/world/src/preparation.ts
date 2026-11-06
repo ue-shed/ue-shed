@@ -588,11 +588,20 @@ export const withPreparedWorld = Effect.fn("WorldPreparation.withPreparedWorld")
 			? reason.defect.original.cause.reasons.filter(Cause.isFailReason)
 			: []
 	);
-	const preserved = new Set(originalFailures.map((reason) => reason.error));
-	const unexpected = defects.filter(
-		(reason) =>
-			!(reason.defect instanceof WorldRestorationFailure) && !preserved.has(reason.defect)
-	);
+	const elected = new Map<unknown, number>();
+	for (const reason of originalFailures)
+		elected.set(reason.error, (elected.get(reason.error) ?? 0) + 1);
+	const matched = new Map<unknown, number>();
+	const unexpected = defects.filter((reason) => {
+		if (reason.defect instanceof WorldRestorationFailure) return false;
+		const expected = elected.get(reason.defect) ?? 0;
+		const seen = matched.get(reason.defect) ?? 0;
+		if (seen < expected) {
+			matched.set(reason.defect, seen + 1);
+			return false;
+		}
+		return true;
+	});
 	if (!Cause.hasInterrupts(outcome.cause) && restorations.length > 0 && unexpected.length === 0)
 		return yield* failure(
 			"restoration_failed",

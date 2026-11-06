@@ -328,6 +328,39 @@ it.effect("reports work and restoration failures through the scoped public bound
 	})
 );
 
+it.effect("preserves an independent cleanup defect that shares the work error value", () =>
+	Effect.gen(function* () {
+		const h = harness((r) =>
+			r.action === "release"
+				? Effect.succeed({
+						status: "failed",
+						code: "restoration_conflict",
+						message: "External layer change",
+						recovery: "Inspect preserved state"
+					})
+				: undefined
+		);
+		const service = WorldPreparation.of({
+			...h.api,
+			acquire: (input) => h.api.acquire(input, { leaseId: id })
+		});
+		const sharedError = new Error("shared work and finalizer error");
+		const result = yield* withPreparedWorld(requirements, () =>
+			Effect.gen(function* () {
+				yield* Effect.addFinalizer(() => Effect.die(sharedError));
+				return yield* Effect.fail(sharedError);
+			})
+		).pipe(Effect.provideService(WorldPreparation, service), Effect.exit);
+		if (Exit.isSuccess(result)) throw new Error("Expected a defect");
+		expect(Cause.hasFails(result.cause)).toBe(false);
+		expect(
+			result.cause.reasons.some(
+				(reason) => Cause.isDieReason(reason) && reason.defect === sharedError
+			)
+		).toBe(true);
+	})
+);
+
 it.effect("describes and plans without acquiring ownership", () =>
 	Effect.gen(function* () {
 		const h = harness();

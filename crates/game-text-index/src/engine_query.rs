@@ -966,13 +966,18 @@ impl EngineQuery {
         let mut texts = Vec::with_capacity(3);
         for stage in ["archive", "locres", "po"] {
             let po = stage == "po";
-            let entries = self.reader.column(&format!("c{ci}.{stage}"))?;
             let path = match stage {
                 "locres" => self.resource_path(ci),
                 _ => self.target["outputPaths"][if po { "portableObjects" } else { "archives" }]
                     .get(&culture)
                     .and_then(Value::as_str)
                     .map(str::to_owned),
+            };
+            // Only a join that read a resource for the culture has its column.
+            let entries = if stage == "locres" && path.is_none() {
+                Arc::from(Vec::new())
+            } else {
+                self.reader.column(&format!("c{ci}.{stage}"))?
             };
             let mut ids = vec![0; entries.len()];
             if let Some(path) = path.filter(|_| entries.iter().any(|entry| *entry != 0)) {

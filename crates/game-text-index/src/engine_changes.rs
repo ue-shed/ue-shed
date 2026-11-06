@@ -654,10 +654,10 @@ fn pair(earlier: &EngineReader, current: &EngineReader, name: &str) -> Result<Pa
     Ok((earlier.column(name)?, current.column(name)?))
 }
 
-/// A culture's compiled-resource rows; none in a generation joined before resources were read.
+/// A culture's compiled-resource rows; none when the generation read no resource for it.
 fn resource_rows(reader: &EngineReader, ci: usize, count: usize) -> Result<Arc<[u32]>> {
     let name = format!("c{ci}.locres");
-    if reader.meta["resources"].is_array() {
+    if reader.meta["resources"][ci].is_string() {
         reader.column(&name)
     } else {
         Ok(Arc::from(vec![0; count]))

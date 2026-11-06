@@ -70,7 +70,12 @@ impl<'a, 'q> Projector<'a, 'q> {
                 subjects.query.reader.column(&format!("c{ci}.po"))?,
                 subjects.query.reader.column(&format!("c{ci}.archive"))?,
             ));
-            resource_references.push(subjects.query.reader.column(&format!("c{ci}.locres"))?);
+            // Only a join that read a resource for the culture has its column.
+            resource_references.push(if subjects.query.resource_path(ci).is_some() {
+                subjects.query.reader.column(&format!("c{ci}.locres"))?
+            } else {
+                Arc::from(vec![0; subjects.projection.source.len()])
+            });
         }
         let native = subjects.query.target["nativeCulture"]
             .as_str()

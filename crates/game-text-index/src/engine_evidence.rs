@@ -128,9 +128,12 @@ impl EngineQuery {
     }
     /// The compiled-resource entry a culture without an archive reads for a line, or null.
     pub(crate) fn resource_entry(&self, ci: usize, row: usize) -> Result<Value> {
-        let entry = self.reader.value(&format!("c{ci}.locres"), row)?;
-        match self.resource_path(ci) {
-            Some(name) if entry != 0 => {
+        // Only a join that read a resource for the culture has its column.
+        let Some(name) = self.resource_path(ci) else {
+            return Ok(Value::Null);
+        };
+        match self.reader.value(&format!("c{ci}.locres"), row)? {
+            entry if entry != 0 => {
                 let mut value = self.evidence_entry(&name, (entry - 1) as usize)?;
                 Ok(json!({"text":value["text"].take(),"sourceHash":value["sourceHash"].take()}))
             }
@@ -204,7 +207,10 @@ impl EngineQuery {
                     self.evidence_entry(&name, (entry - 1) as usize)?
                 };
             }
-            mark["locres"] = self.resource_entry(ci, row)?;
+            // Only a culture that reads its compiled resource has the field.
+            if self.resource_path(ci).is_some() {
+                mark["locres"] = self.resource_entry(ci, row)?;
+            }
             mark.as_object_mut()
                 .ok_or("Invalid culture mark.")?
                 .remove("translation");

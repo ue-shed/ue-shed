@@ -247,7 +247,8 @@ impl<'a> NativeSubjects<'a> {
                 "po"
             } else if self.query.reader.meta["input"]["target"].is_null() {
                 "absent"
-            } else if self.query.reader.value(&format!("c{ci}.archive"), line)? == 0
+            } else if self.query.resource_path(ci).is_some()
+                && self.query.reader.value(&format!("c{ci}.archive"), line)? == 0
                 && self.query.reader.value(&format!("c{ci}.locres"), line)? != 0
             {
                 "locres"

@@ -4,6 +4,10 @@ Completed implementation plans. Kept as execution history (intent, STOP conditio
 paths). They are not living guidance — prefer product docs, ADRs, and active plans under
 [`../`](../README.md).
 
+- [SQLite query-engine spike](064-sqlite-query-engine-spike.md) — DONE; isolated Rust/SQLite,
+  direct Node/Bun, production-frame costs, projection/SQL controls, independent reads and lifecycle
+  evidence. This is query research, not a production backend migration.
+
 - [Game Text review workspace](053-game-text-review-workspace.md) — DONE; problems-first Workbench
   Game Text surface, documentation and website pass; keyboard, saved views, history and the `X` key
   were skipped as showcase polish. Shipped with PR #58.

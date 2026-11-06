@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>Game Text query-engine spike</title>
+		<style>
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				font: 13px var(--font-sans, system-ui);
+				color: var(--foreground, CanvasText);
+			}
+			p {
+				margin: 0;
+			}
+			.caption,
+			.note {
+				font-size: 12px;
+				line-height: 1.5;
+				color: var(--muted-foreground, GrayText);
+			}
+			h2 {
+				font-size: 14px;
+				margin: 17px 0 8px;
+				font-weight: 600;
+			}
+			.plot {
+				height: 150px;
+			}
+			.plot.counts {
+				height: 120px;
+			}
+			.row {
+				display: grid;
+				grid-template-columns: 174px minmax(0, 1fr) 70px;
+				align-items: center;
+				gap: 10px;
+				height: 30px;
+				font-size: 12px;
+			}
+			.track {
+				height: 13px;
+				background: var(--secondary, ButtonFace);
+				border-radius: 2px;
+				overflow: hidden;
+			}
+			.bar {
+				height: 13px;
+				background: var(--series);
+				border-radius: 2px;
+			}
+			.number {
+				text-align: right;
+				font-family: var(--font-mono, monospace);
+			}
+			.note {
+				margin-top: 10px;
+			}
+			@media (max-width: 460px) {
+				.row {
+					grid-template-columns: 125px minmax(0, 1fr) 60px;
+					gap: 6px;
+					font-size: 11px;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<p class="caption">
+			58,351 generated lines · ten cultures · median milliseconds · lower is faster
+		</p>
+		<h2>Export identity and source for every line</h2>
+		<div class="plot">
+			<div class="row">
+				<span>Rust · current</span>
+				<div class="track">
+					<div class="bar" style="width: 100%; --series: var(--chart-1, steelblue)"></div>
+				</div>
+				<span class="number">1875.25</span>
+			</div>
+			<div class="row">
+				<span>Rust · projection control</span>
+				<div class="track">
+					<div
+						class="bar"
+						style="width: 12.139600470060365%; --series: var(--chart-2, seagreen)"
+					></div>
+				</div>
+				<span class="number">227.65</span>
+			</div>
+			<div class="row">
+				<span>SQLite · process bridge</span>
+				<div class="track">
+					<div
+						class="bar"
+						style="width: 21.75502374698353%; --series: var(--chart-3, mediumpurple)"
+					></div>
+				</div>
+				<span class="number">407.96</span>
+			</div>
+			<div class="row">
+				<span>SQLite · Node</span>
+				<div class="track">
+					<div
+						class="bar"
+						style="width: 11.081164860959529%; --series: var(--chart-4, goldenrod)"
+					></div>
+				</div>
+				<span class="number">207.80</span>
+			</div>
+			<div class="row">
+				<span>SQLite · Bun</span>
+				<div class="track">
+					<div
+						class="bar"
+						style="width: 8.371401617289454%; --series: var(--chart-5, coral)"
+					></div>
+				</div>
+				<span class="number">156.98</span>
+			</div>
+		</div>
+		<p class="caption">
+			The Rust control skips unrequested preview construction. Its source patch is
+			experimental and has been reverted.
+		</p>
+		<h2>Culture/state counts after SQL preaggregation</h2>
+		<div class="plot counts">
+			<div class="row">
+				<span>Rust · current</span>
+				<div class="track">
+					<div
+						class="bar"
+						style="width: 78.86584689148751%; --series: var(--chart-1, steelblue)"
+					></div>
+				</div>
+				<span class="number">32.83</span>
+			</div>
+			<div class="row">
+				<span>SQLite · process bridge</span>
+				<div class="track">
+					<div
+						class="bar"
+						style="width: 98.77370025438832%; --series: var(--chart-3, mediumpurple)"
+					></div>
+				</div>
+				<span class="number">41.12</span>
+			</div>
+			<div class="row">
+				<span>SQLite · Node</span>
+				<div class="track">
+					<div
+						class="bar"
+						style="width: 84.35717151141144%; --series: var(--chart-4, goldenrod)"
+					></div>
+				</div>
+				<span class="number">35.12</span>
+			</div>
+			<div class="row">
+				<span>SQLite · Bun</span>
+				<div class="track">
+					<div class="bar" style="width: 100%; --series: var(--chart-5, coral)"></div>
+				</div>
+				<span class="number">41.63</span>
+			</div>
+		</div>
+		<p class="note">
+			Separate serial campaigns with three fresh processes per path. Nine observations per
+			export/count baseline; 21 per tuned SQL count. Each chart has its own scale. These are
+			retained-fact queries, not complete-store or migration acceptance.
+		</p>
+		<p class="note">
+			Source: sqlite-query-engine-spike-2026-11-06.json · 8,637 total timed operations with
+			matching result hashes/counts.
+		</p>
+	</body>
+</html>

@@ -93,6 +93,10 @@ should follow [Website and illustrated guides](engineering/website.md).
 
 ## Research
 
+- [SQLite query-engine spike (2026-11-06)](research/sqlite-query-engine-spike-2026-11-06.md) —
+  Rust/SQLite, direct Node/Bun, production-frame costs, projection and SQL aggregate controls,
+  independent consumer reads, and explicit limits of the retained-fact comparison.
+
 - [Architecture and API catalog (2026-10-21)](research/architecture-api-catalog-2026-10-21.md) —
   per-package findings for downstream hosts: Workbench- and CLI-only capabilities, unexported
   internals, hard-coded policy, test layers and entry points, with a ranked top 15.

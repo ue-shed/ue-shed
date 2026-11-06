@@ -1,0 +1,29 @@
+diff --git a/crates/game-text-index/src/engine_rollup.rs b/crates/game-text-index/src/engine_rollup.rs
+index 2eeed921..cc2137bf 100644
+--- a/crates/game-text-index/src/engine_rollup.rs
++++ b/crates/game-text-index/src/engine_rollup.rs
+@@ -635,6 +635,24 @@ impl EngineQuery {
+         findings: Option<&FindingRows>,
+         cancelled: &AtomicBool,
+     ) -> Result<Value> {
++        // Diagnostic projection control for the isolated SQLite spike, not a production change.
++        if fields == ["identity", "source"] {
++            let namespace = self.reader.string(self.reader.value("line.namespace", row)?)?;
++            let key = self.reader.string(self.reader.value("line.key", row)?)?;
++            let starts = self.column("line", "starts")?;
++            let begin = *starts.get(row).ok_or("Line outside slice starts")?;
++            let end = *starts.get(row + 1).ok_or("Line outside slice ends")?;
++            let identity = if begin != end && key.is_empty() {
++                Value::Null
++            } else {
++                json!({"namespace": namespace, "key": key})
++            };
++            return Ok(json!({
++                "id": self.packed("line", row)?,
++                "identity": identity,
++                "source": self.reader.string(self.reader.value("line.source", row)?)?
++            }));
++        }
+         let preview = self.preview(row)?;
+         let mut result = serde_json::Map::new();
+         result.insert("id".into(), preview["id"].clone());

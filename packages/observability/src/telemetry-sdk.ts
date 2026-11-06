@@ -1,4 +1,4 @@
-import { NodeSdk } from "@effect/opentelemetry";
+import * as NodeSdk from "@effect/opentelemetry/NodeSdk";
 import { ConsoleLogRecordExporter, SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { ConsoleMetricExporter, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { ConsoleSpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";

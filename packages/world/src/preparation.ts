@@ -120,11 +120,13 @@ export class WorldPreparationError extends Schema.TaggedError<
 // Effect finalizers cannot fail in the typed channel. Only this private carrier is
 // translated by withPreparedWorld; unrelated defects must retain their original cause.
 class WorldRestorationFailure extends Error {
+	readonly original: Exit.Exit<unknown, unknown>;
 	constructor(error: WorldPreparationError, original: Exit.Exit<unknown, unknown>) {
 		super("The owned world lease could not restore editor state.", {
 			cause: { error, original }
 		});
 		this.name = "WorldRestorationFailure";
+		this.original = original;
 	}
 }
 /**
@@ -575,17 +577,29 @@ export const withPreparedWorld = Effect.fn("WorldPreparation.withPreparedWorld")
 	);
 	if (Exit.isSuccess(outcome)) return outcome.value;
 	const defects = outcome.cause.reasons.filter(Cause.isDieReason);
-	if (
-		!Cause.hasInterrupts(outcome.cause) &&
-		defects.length > 0 &&
-		defects.every((reason) => reason.defect instanceof WorldRestorationFailure)
-	)
+	const restorations = defects.filter(
+		(reason): reason is Cause.Die & { readonly defect: WorldRestorationFailure } =>
+			reason.defect instanceof WorldRestorationFailure
+	);
+	// Effect 4.1 elevates a typed work failure to a defect when cleanup also defects, so recover
+	// the original typed reasons from the restoration carrier and keep unrelated defects intact.
+	const originalFailures = restorations.flatMap((reason) =>
+		Exit.isFailure(reason.defect.original)
+			? reason.defect.original.cause.reasons.filter(Cause.isFailReason)
+			: []
+	);
+	const preserved = new Set(originalFailures.map((reason) => reason.error));
+	const unexpected = defects.filter(
+		(reason) =>
+			!(reason.defect instanceof WorldRestorationFailure) && !preserved.has(reason.defect)
+	);
+	if (!Cause.hasInterrupts(outcome.cause) && restorations.length > 0 && unexpected.length === 0)
 		return yield* failure(
 			"restoration_failed",
 			"scope",
 			"The owned world lease could not restore editor state.",
 			undefined,
-			outcome.cause
+			Cause.fromReasons([...originalFailures, ...restorations])
 		);
 	return yield* Effect.failCause(outcome.cause);
 });

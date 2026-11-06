@@ -44,6 +44,14 @@ export interface LocalizationFileAccessApi {
 		root: string,
 		limits: LocalizationLimits
 	) => Effect.Effect<readonly string[], LocalizationError>;
+	/**
+	 * Compiled resources by Unreal's runtime convention: each
+	 * `Content/Localization/<Target>/<culture>/<Target>.locres`, sorted and project-relative.
+	 */
+	readonly listResources: (
+		root: string,
+		limits: LocalizationLimits
+	) => Effect.Effect<readonly string[], LocalizationError>;
 	readonly presence: (root: string, path: string) => Effect.Effect<boolean, LocalizationError>;
 	/**
 	 * Atomically replaces an existing project file, only while its content still hashes to
@@ -217,6 +225,38 @@ export const LocalizationFileAccessLive = Layer.succeed(
 				.map((entry) => `Config/Localization/${entry.name}`)
 				.sort();
 			if (names.length > limits.maxFiles) return yield* localizationError("limit_exceeded");
+			return names;
+		}),
+		listResources: Effect.fn("LocalizationFileAccess.listResources")(function* (root, limits) {
+			const location = yield* projectPath(root, "Content/Localization").pipe(Effect.result);
+			if (location._tag === "Failure") {
+				if (location.failure.code === "file_missing") return [];
+				return yield* location.failure;
+			}
+			const names = yield* Effect.tryPromise({
+				try: async () => {
+					const found: string[] = [];
+					const folders = (path: string) => readdir(path, { withFileTypes: true });
+					for (const target of await folders(location.success)) {
+						if (!target.isDirectory()) continue;
+						const targetPath = resolve(location.success, target.name);
+						for (const culture of await folders(targetPath)) {
+							if (!culture.isDirectory()) continue;
+							const file = `${target.name}.locres`;
+							const entries = await folders(resolve(targetPath, culture.name));
+							if (entries.some((entry) => entry.isFile() && entry.name === file))
+								found.push(
+									`Content/Localization/${target.name}/${culture.name}/${file}`
+								);
+							if (found.length > limits.maxFiles) return found;
+						}
+					}
+					return found.sort();
+				},
+				catch: () => localizationError("directory_unreadable")
+			});
+			if (names.length > limits.maxFiles) return yield* localizationError("limit_exceeded");
+			yield* Effect.annotateCurrentSpan({ "localization.resources": names.length });
 			return names;
 		}),
 		replace: Effect.fn("LocalizationFileAccess.replace")(

@@ -35,6 +35,7 @@ import {
 	type LocalizationEditResult,
 	type LocalizationFocusRequest,
 	type LocalizationFocusResult,
+	type LocalizationTargetPreview,
 	type LocalizationTargetResult,
 	type LocalizationTargetsResult
 } from "./entry-corpus.js";
@@ -406,11 +407,11 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				return failure("discovery_incomplete");
 			const result: LocalizationTargetsResult = {
 				status: "ready",
-				targets: available.map(({ name, nativeCulture, cultures }) => ({
-					name,
-					nativeCulture,
-					cultures
-				}))
+				targets: available.map(({ name, nativeCulture, cultures, resourcesDiscovered }) => {
+					const preview: LocalizationTargetPreview = { name, nativeCulture, cultures };
+					if (resourcesDiscovered) Object.assign(preview, { discovered: true });
+					return preview;
+				})
 			};
 			yield* Ref.set(discovery, { revision, targets: available, result });
 			yield* Effect.annotateCurrentSpan({ targetCount: available.length });

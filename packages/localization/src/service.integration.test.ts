@@ -201,6 +201,7 @@ it.effect("preserves cancellation while reading through the file port", () =>
 					return yield* Effect.never;
 				}).pipe(Effect.ensuring(Deferred.succeed(released, undefined))),
 			listConfigs: () => Effect.succeed([]),
+			listResources: () => Effect.succeed([]),
 			presence: () => Effect.succeed(false),
 			replace: () => Effect.fail(localizationError("file_unwritable")),
 			create: () => Effect.fail(localizationError("file_unwritable"))

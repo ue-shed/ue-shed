@@ -3,6 +3,7 @@ import {
 	explainLocalizationFile,
 	type LocalizationFileProblem,
 	type LocalizationFocus,
+	type LocalizationTargetPreview,
 	type LocalizationTranslation
 } from "@ue-shed/game-text/corpus";
 import {
@@ -127,6 +128,20 @@ function visibleTranslations(detail: LocalizationFocus, culture: string | undefi
 
 const TARGET_TOOLTIP =
 	"The localization target in this project: it decides which translations, PO files and Unreal steps are used.";
+const DISCOVERED_TOOLTIP =
+	"No gather config names this target's outputs: its compiled .locres files were found in Content/Localization.";
+
+/** Marks a target whose compiled resources were found on disk rather than configured. */
+function DiscoveredTag(props: { readonly target: LocalizationTargetPreview | undefined }) {
+	return (
+		<Show when={props.target?.discovered}>
+			<span title={DISCOVERED_TOOLTIP} {...stylex.attrs(styles.muted)}>
+				{" "}
+				discovered
+			</span>
+		</Show>
+	);
+}
 
 /** Which translations the workspace shows: the target, and the cultures picked within it. */
 export function LocalizationControls(props: {
@@ -146,6 +161,7 @@ export function LocalizationControls(props: {
 							<span title={TARGET_TOOLTIP} {...stylex.attrs(styles.contextLabel)}>
 								<span {...stylex.attrs(styles.muted)}>Target </span>
 								{target().name}
+								<DiscoveredTag target={target()} />
 							</span>
 						)}
 					</Show>
@@ -162,6 +178,11 @@ export function LocalizationControls(props: {
 						const target = props.model.targets().find((item) => item.name === value);
 						if (target) props.model.selectTarget(target.name);
 					}}
+				/>
+				<DiscoveredTag
+					target={props.model
+						.targets()
+						.find((item) => item.name === props.model.target())}
 				/>
 			</Show>
 			<Show when={props.model.active()}>

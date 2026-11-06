@@ -42,7 +42,9 @@ export function localizationError(code: LocalizationError["code"]): Localization
 		file_changed: "Retry after localization processes finish writing the saved evidence.",
 		file_unwritable:
 			"Check the file out in source control or make it writable, then write the changes again.",
-		malformed_po: "Repair the PO syntax with the translation tool, then read the file again."
+		malformed_po: "Repair the PO syntax with the translation tool, then read the file again.",
+		malformed_locres:
+			"Recompile the localization target's resources in Unreal, then read the file again."
 	} satisfies Record<LocalizationError["code"], LocalizationError["recovery"]>;
 	return new LocalizationError({
 		code,

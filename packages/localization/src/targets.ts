@@ -8,6 +8,7 @@ import {
 import { Result, Schema } from "effect";
 import { immutable, limitsFor, localizationError, parseResult, validate } from "./decode.js";
 import {
+	CultureCode,
 	DashboardSettings,
 	LocalizationRecipe,
 	LocalizationTarget,
@@ -417,14 +418,42 @@ export const LocalizationConfigInput = Schema.Struct({
 });
 export type LocalizationConfigInput = typeof LocalizationConfigInput.Type;
 
+const isTargetName = Schema.is(LocalizationTargetName);
+const isCultureCode = Schema.is(CultureCode);
 /**
- * Pure discovery from Dashboard text and GatherText configs. Returns a Result with normalized
- * targets and per-config diagnostics; enforces limits and does not read files or launch
- * Unreal.
+ * Compiled resources by target, from project-relative paths that follow Unreal's runtime
+ * convention, `Content/Localization/<Target>/<culture>/<Target>.locres` (folder name equals file
+ * stem). Other paths are ignored.
+ */
+function resourcesByTarget(paths: readonly string[]) {
+	const targets = new Map<LocalizationTargetName, Record<CultureCode, string>>();
+	for (const path of paths) {
+		const parts = path.replaceAll("\\", "/").split("/");
+		const [content, localization, name, culture, file] = parts;
+		if (
+			parts.length !== 5 ||
+			content !== "Content" ||
+			localization !== "Localization" ||
+			file !== `${name}.locres` ||
+			!isTargetName(name) ||
+			!isCultureCode(culture)
+		)
+			continue;
+		targets.set(name, { ...targets.get(name), [culture]: parts.join("/") });
+	}
+	return targets;
+}
+
+/**
+ * Pure discovery from Dashboard text and GatherText configs, with typed per-config diagnostics.
+ * With no configs, `resources` (convention `.locres` paths) fill `outputPaths.resources` of the
+ * Dashboard target of that name, or of a new `resource_files` target; both get
+ * `resourcesDiscovered`.
  */
 export function discoverLocalizationTargets(input: {
 	readonly dashboardText?: string;
 	readonly configs: readonly LocalizationConfigInput[];
+	readonly resources?: readonly string[];
 	readonly limits?: LocalizationLimits;
 }) {
 	return parseResult(() => {
@@ -452,15 +481,39 @@ export function discoverLocalizationTargets(input: {
 			const name = manifest.slice(0, -".manifest".length);
 			recipes.set(name, [...(recipes.get(name) ?? []), recipe]);
 		}
+		const discovered =
+			input.configs.length === 0 ? resourcesByTarget(input.resources ?? []) : new Map();
 		const names = new Set([
 			...dashboard.success.targets.map((target) => target.name),
-			...recipes.keys()
+			...recipes.keys(),
+			...discovered.keys()
 		]);
 		const targets: LocalizationTarget[] = [];
 		for (const [targetIndex, name] of [...names].sort().entries()) {
 			const result = parseResult(() => {
 				const configured = dashboard.success.targets.find((target) => target.name === name);
 				const configs = recipes.get(name) ?? [];
+				const resources = discovered.get(name);
+				if (configured === undefined && configs.length === 0 && resources)
+					return validate(LocalizationTarget, {
+						name,
+						source: "resource_files",
+						resourcesDiscovered: true,
+						nativeCulture: null,
+						cultures: Object.keys(resources).sort(),
+						configs: [],
+						outputPaths: {
+							manifest: null,
+							archives: {},
+							portableObjects: {},
+							resources,
+							locmeta: null,
+							wordCount: null,
+							conflicts: null
+						},
+						poFormat: "Unreal",
+						collapseMode: "IdenticalTextIdAndSource"
+					});
 				const cultures = configured?.cultures ?? [
 					...new Set(
 						configs.flatMap((config) => [
@@ -518,6 +571,18 @@ export function discoverLocalizationTargets(input: {
 						"IdenticalTextIdAndSource"
 				};
 				if (configured !== undefined) Object.assign(target, { dashboard: configured });
+				if (resources) {
+					const named = Object.fromEntries(
+						Object.entries(resources).filter(([culture]) =>
+							target.cultures.some((item) => item === culture)
+						)
+					);
+					if (Object.keys(named).length)
+						Object.assign(target, {
+							outputPaths: { ...target.outputPaths, resources: named },
+							resourcesDiscovered: true
+						});
+				}
 				return validate(LocalizationTarget, target);
 			});
 			if (Result.isFailure(result)) diagnostics.push({ targetIndex, error: result.failure });

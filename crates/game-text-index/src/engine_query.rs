@@ -801,31 +801,78 @@ impl EngineQuery {
         Ok(result)
     }
 
-    pub fn preview(&self, row: usize) -> Result<Value> {
-        let id = self.packed("line", row)?;
-        let source_id = self.reader.value("line.source", row)?;
-        let source = self.reader.string(source_id)?;
-        let begin = self.value("line", "starts", row)? as usize;
-        let end = *self
-            .column("line", "starts")?
-            .get(row + 1)
-            .ok_or("Invalid line slice range.")? as usize;
+    /// A line's slice range: the slices of its saved units, empty for an evidence-only line.
+    fn line_slices(&self, row: usize) -> Result<std::ops::Range<usize>> {
+        let starts = self.column("line", "starts")?;
+        let begin = *starts.get(row).ok_or("Invalid line slice range.")? as usize;
+        let end = *starts.get(row + 1).ok_or("Invalid line slice range.")? as usize;
+        Ok(begin..end)
+    }
+
+    /// A line's source text.
+    pub(crate) fn line_source(&self, row: usize) -> Result<String> {
+        self.reader.string(self.reader.value("line.source", row)?)
+    }
+
+    /// A line's identity: its namespace and key, or null for saved units gathered without a key.
+    pub(crate) fn line_identity(&self, row: usize) -> Result<Value> {
+        let key = self.reader.string(self.reader.value("line.key", row)?)?;
+        if !self.line_slices(row)?.is_empty() && key.is_empty() {
+            return Ok(Value::Null);
+        }
+        let namespace = self
+            .reader
+            .string(self.reader.value("line.namespace", row)?)?;
+        Ok(json!({"namespace":namespace,"key":key}))
+    }
+
+    /// Where a line comes from: its saved units' IDs in ordinal order, or its evidence ID.
+    pub(crate) fn line_origin(&self, row: usize, id: &str) -> Result<Value> {
         let raws = self.column("slice", "raw")?;
         let mut units = Vec::new();
-        for raw in raws.get(begin..end).ok_or("Invalid line slices.")? {
+        for raw in raws
+            .get(self.line_slices(row)?)
+            .ok_or("Invalid line slices.")?
+        {
             units.push(self.packed("raw", *raw as usize)?);
         }
         units.sort_by(|left, right| crate::join::ordinal(left, right));
         units.dedup();
-        let ns = self.reader.value("line.namespace", row)?;
-        let key = self.reader.value("line.key", row)?;
-        let namespace = self.reader.string(ns)?;
-        let key = self.reader.string(key)?;
-        let identity = if !units.is_empty() && key.is_empty() {
-            Value::Null
+        Ok(if units.is_empty() {
+            json!({"kind":"evidence","id":format!("evidence:{id}")})
         } else {
-            json!({"namespace":namespace,"key":key})
-        };
+            json!({"kind":"corpus","unitIds":units})
+        })
+    }
+
+    /// Each culture's mark of a line, in target culture order.
+    pub(crate) fn line_marks(&self, row: usize) -> Result<Vec<Value>> {
+        (0..self.cultures.len())
+            .map(|ci| self.culture_mark(ci, row))
+            .collect()
+    }
+
+    /// Why a line is out of the gather's scope, if it is.
+    pub(crate) fn line_out_of_scope(&self, row: usize) -> Result<Option<&'static str>> {
+        let code = self.reader.value("line.audience", row)?;
+        Ok(["outside_gather_paths", "editor_only_data_not_gathered"]
+            .get((code >> 4).wrapping_sub(1) as usize)
+            .copied())
+    }
+
+    /// The key change a line is part of, if any.
+    pub(crate) fn line_key_change(&self, row: usize) -> Result<Option<Value>> {
+        let change = self.reader.value("line.key_change", row)?;
+        Ok(self.reader.meta["pairs"]
+            .get(((change >> 1) as usize).wrapping_sub(1))
+            .map(|pair| json!({"direction":if change & 1 != 0 {"from"}else{"to"},"other":pair[if change & 1 != 0 {"to"}else{"from"}],"match":pair["match"],"sourceChanged":pair["sourceChanged"],"previousSource":pair["previousSource"],"translations":pair["translations"]})))
+    }
+
+    pub fn preview(&self, row: usize) -> Result<Value> {
+        let id = self.packed("line", row)?;
+        let source = self.line_source(row)?;
+        let identity = self.line_identity(row)?;
+        let origin = self.line_origin(row, &id)?;
         let begin = self.reader.value("line.manifest_start", row)? as usize;
         let end = self.reader.value("line.manifest_end", row)? as usize;
         let rows = self.reader.column("manifest.rows")?;
@@ -849,13 +896,11 @@ impl EngineQuery {
                     .string(*paths.get(entry).ok_or("Manifest path outside input.")?)?;
                 locations.push(
                     if options.get(entry).ok_or("Manifest flags outside input.")? & 1024 != 0 {
-                        format!(
-                            "{}{}",
-                            self.reader.input_metadata(&name, "file.meta")?["pathPrefix"]
-                                .as_str()
-                                .unwrap_or(""),
-                            path
-                        )
+                        // The input's file metadata, parsed once per reader as evidence reads it.
+                        let meta = self.evidence_meta.get_or_try(name.clone(), || {
+                            Ok(Arc::new(self.reader.input_metadata(&name, "file.meta")?))
+                        })?;
+                        format!("{}{}", meta["pathPrefix"].as_str().unwrap_or(""), path)
                     } else {
                         path
                     },
@@ -863,16 +908,12 @@ impl EngineQuery {
             }
         }
         let code = self.reader.value("line.audience", row)?;
-        let mut result = json!({"id":id,"source":source,"identity":identity,"audience":audience(code),"manifestLocations":locations,"remainingLocationCount":end.saturating_sub(begin+3),"origin":if units.is_empty() { json!({"kind":"evidence","id":format!("evidence:{id}")}) } else { json!({"kind":"corpus","unitIds":units}) },"cultures":(0..self.cultures.len()).map(|ci| self.culture_mark(ci,row)).collect::<Result<Vec<_>>>()?});
-        if let Some(reason) = ["outside_gather_paths", "editor_only_data_not_gathered"]
-            .get((code >> 4).wrapping_sub(1) as usize)
-        {
+        let mut result = json!({"id":id,"source":source,"identity":identity,"audience":audience(code),"manifestLocations":locations,"remainingLocationCount":end.saturating_sub(begin+3),"origin":origin,"cultures":self.line_marks(row)?});
+        if let Some(reason) = self.line_out_of_scope(row)? {
             result["outOfScope"] = json!(reason);
         }
-        let change = self.reader.value("line.key_change", row)?;
-        if let Some(pair) = self.reader.meta["pairs"].get(((change >> 1) as usize).wrapping_sub(1))
-        {
-            result["keyChange"] = json!({"direction":if change & 1 != 0 {"from"}else{"to"},"other":pair[if change & 1 != 0 {"to"}else{"from"}],"match":pair["match"],"sourceChanged":pair["sourceChanged"],"previousSource":pair["previousSource"],"translations":pair["translations"]});
+        if let Some(change) = self.line_key_change(row)? {
+            result["keyChange"] = change;
         }
         Ok(result)
     }

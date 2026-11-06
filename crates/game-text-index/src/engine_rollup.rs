@@ -626,7 +626,8 @@ pub fn line_fields(fields: &[String]) -> Result<Vec<&'static str>> {
 }
 
 impl EngineQuery {
-    /// One line with only the chosen fields, plus its ID.
+    /// One line with only the chosen fields, plus its ID. Each field is read on its own, so a
+    /// narrow export never builds the whole preview.
     pub(crate) fn localization_line_fields(
         &self,
         row: usize,
@@ -635,9 +636,9 @@ impl EngineQuery {
         findings: Option<&FindingRows>,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
-        let preview = self.preview(row)?;
+        let id = self.packed("line", row)?;
         let mut result = serde_json::Map::new();
-        result.insert("id".into(), preview["id"].clone());
+        result.insert("id".into(), json!(id));
         for field in fields {
             match *field {
                 "manifest" => {
@@ -651,7 +652,30 @@ impl EngineQuery {
                     result.insert("cultures".into(), json!(cultures));
                 }
                 "marks" => {
-                    result.insert("marks".into(), preview["cultures"].clone());
+                    result.insert("marks".into(), json!(self.line_marks(row)?));
+                }
+                "identity" => {
+                    result.insert("identity".into(), self.line_identity(row)?);
+                }
+                "source" => {
+                    result.insert("source".into(), json!(self.line_source(row)?));
+                }
+                "origin" => {
+                    result.insert("origin".into(), self.line_origin(row, &id)?);
+                }
+                "audience" => {
+                    let code = self.reader.value("line.audience", row)?;
+                    result.insert("audience".into(), json!(audience(code)));
+                }
+                "outOfScope" => {
+                    if let Some(reason) = self.line_out_of_scope(row)? {
+                        result.insert("outOfScope".into(), json!(reason));
+                    }
+                }
+                "keyChange" => {
+                    if let Some(change) = self.line_key_change(row)? {
+                        result.insert("keyChange".into(), change);
+                    }
                 }
                 "problems" => {
                     let projection = Projection::open(self, cancelled)?;
@@ -667,11 +691,7 @@ impl EngineQuery {
                     let places = self.line_places(row, cancelled)?;
                     result.insert("places".into(), json!(places));
                 }
-                other => {
-                    if let Some(value) = preview.get(other) {
-                        result.insert(other.into(), value.clone());
-                    }
-                }
+                _ => return Err(invalid("Unknown localization line field.")),
             }
         }
         Ok(Value::Object(result))

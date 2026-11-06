@@ -591,6 +591,106 @@ it.effect("closes the lease scope when the work is interrupted", () =>
 	})
 );
 
+it.effect("keeps restoration evidence when cancellation arrives during release", () =>
+	Effect.gen(function* () {
+		const releaseStarted = yield* Deferred.make<void>();
+		const releaseUnblock = yield* Deferred.make<void>();
+		const h = harness((r) =>
+			r.action === "release"
+				? Effect.gen(function* () {
+						yield* Deferred.succeed(releaseStarted, undefined);
+						yield* Deferred.await(releaseUnblock);
+						return {
+							status: "failed",
+							code: "restoration_conflict",
+							message: "External layer change",
+							recovery: "Inspect preserved state"
+						};
+					})
+				: undefined
+		);
+		const service = WorldPreparation.of({
+			...h.api,
+			acquire: (input) => h.api.acquire(input, { leaseId: id })
+		});
+		const fiber = yield* withPreparedWorld(requirements, () => Effect.succeed("done")).pipe(
+			Effect.provideService(WorldPreparation, service),
+			Effect.forkChild
+		);
+		yield* Deferred.await(releaseStarted);
+		yield* Fiber.interrupt(fiber).pipe(Effect.forkChild);
+		yield* Effect.yieldNow;
+		yield* Deferred.succeed(releaseUnblock, undefined);
+		const result = yield* Fiber.await(fiber);
+		if (Exit.isSuccess(result)) throw new Error("Expected interruption");
+		expect(Cause.hasInterrupts(result.cause)).toBe(true);
+		expect(
+			result.cause.reasons.some(
+				(reason) =>
+					Cause.isDieReason(reason) &&
+					reason.defect instanceof Error &&
+					reason.defect.name === "WorldRestorationFailure"
+			)
+		).toBe(true);
+		expect(Cause.pretty(result.cause)).toContain("External layer change");
+	})
+);
+
+it.effect(
+	"keeps restoration evidence when cancellation arrives during release after typed work",
+	() =>
+		Effect.gen(function* () {
+			const releaseStarted = yield* Deferred.make<void>();
+			const releaseUnblock = yield* Deferred.make<void>();
+			const h = harness((r) =>
+				r.action === "release"
+					? Effect.gen(function* () {
+							yield* Deferred.succeed(releaseStarted, undefined);
+							yield* Deferred.await(releaseUnblock);
+							return {
+								status: "failed",
+								code: "restoration_conflict",
+								message: "External layer change",
+								recovery: "Inspect preserved state"
+							};
+						})
+					: undefined
+			);
+			const service = WorldPreparation.of({
+				...h.api,
+				acquire: (input) => h.api.acquire(input, { leaseId: id })
+			});
+			const workError = new WorldPreparationError({
+				code: "invalid_request",
+				operation: "test",
+				message: "Work failed",
+				recovery: "Inspect work",
+				retrySafe: false,
+				nextStep: "escalate"
+			});
+			const fiber = yield* withPreparedWorld(requirements, () => Effect.fail(workError)).pipe(
+				Effect.provideService(WorldPreparation, service),
+				Effect.forkChild
+			);
+			yield* Deferred.await(releaseStarted);
+			yield* Fiber.interrupt(fiber).pipe(Effect.forkChild);
+			yield* Effect.yieldNow;
+			yield* Deferred.succeed(releaseUnblock, undefined);
+			const result = yield* Fiber.await(fiber);
+			if (Exit.isSuccess(result)) throw new Error("Expected interruption");
+			expect(Cause.hasInterrupts(result.cause)).toBe(true);
+			expect(
+				result.cause.reasons.some(
+					(reason) =>
+						Cause.isDieReason(reason) &&
+						reason.defect instanceof Error &&
+						reason.defect.name === "WorldRestorationFailure"
+				)
+			).toBe(true);
+			expect(Cause.pretty(result.cause)).toContain("External layer change");
+		})
+);
+
 it.effect("describes and plans without acquiring ownership", () =>
 	Effect.gen(function* () {
 		const h = harness();

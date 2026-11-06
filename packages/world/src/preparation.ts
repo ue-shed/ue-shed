@@ -578,6 +578,26 @@ export const withPreparedWorld = Effect.fn("WorldPreparation.withPreparedWorld")
 				).pipe(Scope.provide(scope))
 			);
 			const cleanup = yield* Effect.exit(Scope.close(scope, work));
+			const pending = yield* Effect.exit(restore(Effect.void));
+			if (Exit.isFailure(pending)) {
+				const workReasons = Exit.isFailure(work) ? work.cause.reasons : [];
+				const workFailReasons = Array.dedupe(workReasons.filter(Cause.isFailReason));
+				const workDefectReasons = Array.dedupe(
+					workReasons.filter((reason) => !Cause.isFailReason(reason))
+				);
+				const cleanupReasons = Exit.isFailure(cleanup) ? cleanup.cause.reasons : [];
+				const missingWorkDefects = workDefectReasons.filter(
+					(reason) => !cleanupReasons.includes(reason)
+				);
+				return yield* Effect.failCause(
+					Cause.fromReasons([
+						...missingWorkDefects,
+						...workFailReasons,
+						...cleanupReasons,
+						...pending.cause.reasons
+					])
+				);
+			}
 			if (Exit.isSuccess(cleanup)) return yield* work;
 			const workReasons = Exit.isFailure(work) ? work.cause.reasons : [];
 			const workFailReasons = Array.dedupe(workReasons.filter(Cause.isFailReason));

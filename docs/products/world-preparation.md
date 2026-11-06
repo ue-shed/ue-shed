@@ -98,8 +98,9 @@ identities for the full recovery window. Exhaustion rejects new identities with 
 existing leases can still poll, replace and release without allocating a new slot.
 
 The scoped helper reports expected restoration failures as typed errors. Caller or cleanup defects
-remain defects, and cancellation remains interruption, even if cleanup also fails. Combined failure
-diagnostics retain the original work failure.
+remain defects, and cancellation remains interruption, even if cleanup also fails; cancellation
+keeps restoration defects alongside the interruption. Non-cancelled combined failures retain the
+original work failure.
 
 Unreal unload may reset the editor transaction buffer and schedule GC. Released objects can remain
 resident until GC, and other owners can retain them. The package bounds its selection and loading

@@ -100,6 +100,36 @@
 			"required": ["name", "version"],
 			"additionalProperties": false
 		},
+		"UAssetIoPackageComparisonContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 22
+								}
+							]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
 		"UAssetIoContract": {
 			"type": "object",
 			"properties": {
@@ -2484,15 +2514,20 @@
 																		"maxItems": 64000000
 																	}
 																]
+															},
+															"rowsFile": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	},
+																	{
+																		"maxLength": 32767
+																	}
+																]
 															}
 														},
-														"required": [
-															"name",
-															"key",
-															"previousKey",
-															"file",
-															"rows"
-														],
+														"required": ["name", "key", "file"],
 														"additionalProperties": false
 													},
 													"allOf": [
@@ -3797,6 +3832,219 @@
 											"additionalProperties": false
 										}
 									]
+								}
+							},
+							"required": ["kind", "request"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
+							"$ref": "#/$defs/UAssetIoPackageComparisonContract"
+						},
+						"operation": {
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["game_text_index"]
+								},
+								"request": {
+									"type": "object",
+									"properties": {
+										"action": {
+											"type": "string",
+											"enum": ["compare_packages"]
+										},
+										"configuration": {
+											"anyOf": [
+												{
+													"type": "object",
+													"properties": {
+														"cacheRoot": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"projectKey": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"targetKey": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"sharedProject": {
+															"type": "boolean",
+															"enum": [false]
+														}
+													},
+													"required": [
+														"cacheRoot",
+														"projectKey",
+														"targetKey",
+														"sharedProject"
+													],
+													"additionalProperties": false
+												},
+												{
+													"type": "object",
+													"properties": {
+														"cacheRoot": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"projectKey": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"targetKey": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"sharedProject": {
+															"type": "boolean",
+															"enum": [true]
+														},
+														"viewPrefix": {
+															"type": "string",
+															"allOf": [
+																{
+																	"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																}
+															]
+														}
+													},
+													"required": [
+														"cacheRoot",
+														"projectKey",
+														"targetKey",
+														"sharedProject"
+													],
+													"additionalProperties": false
+												}
+											]
+										},
+										"request": {
+											"type": "object",
+											"properties": {
+												"format": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												},
+												"policyJson": {
+													"type": "string"
+												},
+												"planFile": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												},
+												"groups": {
+													"type": "array",
+													"items": {
+														"type": "integer",
+														"allOf": [
+															{
+																"minimum": 0
+															}
+														]
+													},
+													"allOf": [
+														{
+															"maxItems": 256
+														}
+													]
+												},
+												"outputDirectory": {
+													"type": "string",
+													"allOf": [
+														{
+															"minLength": 1
+														},
+														{
+															"maxLength": 32767
+														}
+													]
+												}
+											},
+											"required": [
+												"format",
+												"policyJson",
+												"planFile",
+												"groups",
+												"outputDirectory"
+											],
+											"additionalProperties": false
+										}
+									},
+									"required": ["action", "configuration", "request"],
+									"additionalProperties": false
 								}
 							},
 							"required": ["kind", "request"],

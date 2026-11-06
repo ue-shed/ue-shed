@@ -86,10 +86,12 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 								{
 									contractMinor:
 										request.action === "publish_packages" ||
-										request.action === "plan_packages" ||
-										request.action === "disk_changes"
-											? 16
-											: 13
+										request.action === "compare_packages"
+											? 22
+											: request.action === "plan_packages" ||
+												  request.action === "disk_changes"
+												? 16
+												: 13
 								}
 							),
 							expected: "game_text_index",

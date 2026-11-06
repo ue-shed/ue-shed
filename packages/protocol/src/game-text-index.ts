@@ -140,7 +140,10 @@ export const GameTextIndexPreviousBuildRequest = Schema.Union([
 	})
 ]);
 const PackageLayerName = Name.check(Schema.isPattern(/^package-text\./u));
-/** Added in uasset-io 1.16; input snapshots contain only changed authored records. */
+/**
+ * Added in uasset-io 1.16; input snapshots contain only changed authored records. All inputs are
+ * published in one root publication.
+ */
 export const GameTextIndexPackageReplacement = Schema.Struct({
 	action: Schema.Literal("publish_packages"),
 	...Configuration,
@@ -148,16 +151,37 @@ export const GameTextIndexPackageReplacement = Schema.Struct({
 		Schema.Struct({
 			name: PackageLayerName,
 			key: Name,
-			previousKey: Name,
+			/** The shard's active key; omitted for a shard the index doesn't hold yet (1.22). */
+			previousKey: Schema.optionalKey(Name),
 			file: Text,
-			rows: Schema.Array(
-				Schema.Int.check(Schema.isGreaterThanOrEqualTo(-64000000)).check(
-					Schema.isLessThanOrEqualTo(63999999)
-				)
-			).check(Schema.isMaxLength(64000000))
+			/** Nonnegative rows retain previous records; -1-row selects a record of `file`. */
+			rows: Schema.optionalKey(
+				Schema.Array(
+					Schema.Int.check(Schema.isGreaterThanOrEqualTo(-64000000)).check(
+						Schema.isLessThanOrEqualTo(63999999)
+					)
+				).check(Schema.isMaxLength(64000000))
+			),
+			/** The same rows as little-endian 32-bit integers, in place of `rows` (1.22). */
+			rowsFile: Schema.optionalKey(Text)
 		})
 	).check(Schema.isMaxLength(256)),
 	removedNames: Schema.optionalKey(Schema.Array(PackageLayerName).check(Schema.isMaxLength(256)))
+});
+/**
+ * Added in uasset-io 1.22: compares a package-text refresh's changed shards with the index and
+ * writes each shard's rows and the changed entries to `outputDirectory`.
+ */
+export const GameTextIndexPackageComparison = Schema.Struct({
+	action: Schema.Literal("compare_packages"),
+	...Configuration,
+	request: Schema.Struct({
+		format: Text,
+		policyJson: Schema.String,
+		planFile: Text,
+		groups: Schema.Array(Natural).check(Schema.isMaxLength(256)),
+		outputDirectory: Text
+	})
 });
 /**
  * The reader plans a package-text refresh from a Project Index Catalog generation and writes the
@@ -284,6 +308,7 @@ export const GameTextIndexDiskChanges = Schema.Struct({
 export const GameTextIndexBuildRequest = Schema.Union([
 	...GameTextIndexPreviousBuildRequest.members,
 	GameTextIndexPackageReplacement,
+	GameTextIndexPackageComparison,
 	GameTextIndexPackagePlan,
 	GameTextIndexCodeLayer,
 	GameTextIndexReadPoint,
@@ -416,6 +441,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		"status",
 		"publish",
 		"publish_packages",
+		"compare_packages",
 		"plan_packages",
 		"publish_code",
 		"read_point",
@@ -459,6 +485,20 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 			removed: Schema.Array(Name),
 			packages: Natural,
 			firstKey: Name
+		})
+	),
+	comparison: Schema.optionalKey(
+		Schema.Struct({
+			shards: Schema.Array(
+				Schema.Struct({
+					group: Natural,
+					previousKey: Schema.optionalKey(Name),
+					current: Schema.Boolean,
+					retained: Natural,
+					changed: Natural,
+					selected: Natural
+				})
+			)
 		})
 	),
 	localization: Schema.optionalKey(LocalizationImportOutcome)

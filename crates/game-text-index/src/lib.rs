@@ -62,6 +62,7 @@ mod sink_lines;
 mod line_break_tables;
 mod package_delta;
 mod package_evidence;
+pub mod package_text_compare;
 pub mod package_text_contract;
 pub mod package_text_plan;
 pub mod point_compare;

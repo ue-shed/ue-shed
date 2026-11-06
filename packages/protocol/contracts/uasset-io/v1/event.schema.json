@@ -57,6 +57,7 @@
 						"status",
 						"publish",
 						"publish_packages",
+						"compare_packages",
 						"plan_packages",
 						"publish_code",
 						"read_point",
@@ -843,6 +844,69 @@
 						}
 					},
 					"required": ["changed", "removed", "packages", "firstKey"],
+					"additionalProperties": false
+				},
+				"comparison": {
+					"type": "object",
+					"properties": {
+						"shards": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"properties": {
+									"group": {
+										"type": "integer",
+										"allOf": [
+											{
+												"minimum": 0
+											}
+										]
+									},
+									"previousKey": {
+										"type": "string",
+										"allOf": [
+											{
+												"minLength": 1
+											},
+											{
+												"maxLength": 1024
+											}
+										]
+									},
+									"current": {
+										"type": "boolean"
+									},
+									"retained": {
+										"type": "integer",
+										"allOf": [
+											{
+												"minimum": 0
+											}
+										]
+									},
+									"changed": {
+										"type": "integer",
+										"allOf": [
+											{
+												"minimum": 0
+											}
+										]
+									},
+									"selected": {
+										"type": "integer",
+										"allOf": [
+											{
+												"minimum": 0
+											}
+										]
+									}
+								},
+								"required": ["group", "current", "retained", "changed", "selected"],
+								"additionalProperties": false
+							}
+						}
+					},
+					"required": ["shards"],
 					"additionalProperties": false
 				},
 				"localization": {

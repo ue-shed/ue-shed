@@ -136,7 +136,7 @@ it("retains readers across refresh steps updating selected inputs and review", a
 						expect.arrayContaining([
 							"localization",
 							"inventory",
-							"packages",
+							"package_read",
 							"joining",
 							"opening",
 							"ready"
@@ -147,7 +147,13 @@ it("retains readers across refresh steps updating selected inputs and review", a
 						completed: 5,
 						total: 5
 					});
-					expect(progress).toContainEqual({ phase: "packages", completed: 1, total: 1 });
+					// A first scan reads the one package with text; none is kept from an index.
+					expect(progress).toContainEqual({
+						phase: "package_read",
+						completed: 1,
+						total: 1,
+						unchanged: 0
+					});
 					expect(progress.at(-1)?.phase).toBe("ready");
 					const searches = [
 						{ query: "source", capability: "all" as const, pageSize: 10 },

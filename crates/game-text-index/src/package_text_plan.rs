@@ -40,18 +40,39 @@ pub struct ShardPlan {
     pub expected: Vec<Expected>,
 }
 
+/// A shard key in the making: the format and audience policy, then each entry in path order.
+pub(crate) struct ShardKey(Sha256);
+impl ShardKey {
+    pub(crate) fn new(format: &str, policy_json: &str) -> Self {
+        let mut hash = Sha256::new();
+        hash.update(format.as_bytes());
+        hash.update(policy_json.as_bytes());
+        Self(hash)
+    }
+    pub(crate) fn add(&mut self, path: &Wtf8Buf, signature: &Wtf8Buf, selected: bool) {
+        // `JSON.stringify([path, signature, selected])`, fed in parts.
+        self.0.update(b"[");
+        self.0.update(path.json_string().as_bytes());
+        self.0.update(b",");
+        self.0.update(signature.json_string().as_bytes());
+        self.0.update(if selected {
+            b",true]" as &[u8]
+        } else {
+            b",false]"
+        });
+    }
+    pub(crate) fn finish(self, format: &str, group: u32) -> String {
+        format!("{format}:{group}:{:x}", self.0.finalize())
+    }
+}
+
 /// Shards and keys an inventory of `(path, signature, selected)` entries, one entry per path.
 pub fn shard_plans(
     entries: BTreeMap<String, Expected>,
     request: &PackageTextPlanRequest,
 ) -> Vec<ShardPlan> {
     let mut hashes = (0..SHARDS)
-        .map(|_| {
-            let mut hash = Sha256::new();
-            hash.update(request.format.as_bytes());
-            hash.update(request.policy_json.as_bytes());
-            hash
-        })
+        .map(|_| ShardKey::new(&request.format, &request.policy_json))
         .collect::<Vec<_>>();
     let mut shards = (0..SHARDS)
         .map(|_| Vec::new())
@@ -59,14 +80,10 @@ pub fn shard_plans(
     // UTF-8 byte order is the host's WTF-8 order for well-formed paths.
     for (path, entry) in entries {
         let group = shard(&path);
-        hashes[group].update(
-            format!(
-                "[{},{},{}]",
-                Wtf8Buf::from_utf8(&entry.path).json_string(),
-                Wtf8Buf::from_utf8(&entry.signature).json_string(),
-                entry.selected
-            )
-            .as_bytes(),
+        hashes[group].add(
+            &Wtf8Buf::from_utf8(&entry.path),
+            &Wtf8Buf::from_utf8(&entry.signature),
+            entry.selected,
         );
         shards[group].push(entry);
     }
@@ -76,7 +93,7 @@ pub fn shard_plans(
         .enumerate()
         .map(|(group, (expected, hash))| ShardPlan {
             group: group as u32,
-            key: format!("{}:{group}:{:x}", request.format, hash.finalize()),
+            key: hash.finish(&request.format, group as u32),
             expected,
         })
         .collect()
@@ -226,11 +243,12 @@ pub fn plan(
     })
 }
 
+/// One shard's entries in a plan file: a JSON line.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct PlanLine {
-    group: u32,
-    expected: Vec<Expected>,
+pub(crate) struct PlanLine {
+    pub(crate) group: u32,
+    pub(crate) expected: Vec<Expected>,
 }
 
 /// The shards a plan file holds for `groups`, in the file's order.

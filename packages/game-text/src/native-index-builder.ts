@@ -247,6 +247,17 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				);
 			return { ...result.point, stageSeconds: result.stageSeconds };
 		}),
+		comparePackages: Effect.fn("NativeIndexBuilder.comparePackages")(function* (request) {
+			const result = yield* command({ action: "compare_packages", configuration, request });
+			if (!result.comparison)
+				return yield* Effect.fail(
+					unavailable(
+						"native-package-comparison",
+						new Error("The writer returned no comparison.")
+					)
+				);
+			return result.comparison;
+		}),
 		planPackages: Effect.fn("NativeIndexBuilder.planPackages")(function* (request) {
 			const result = yield* command({ action: "plan_packages", configuration, request });
 			if (!result.plan)
@@ -258,15 +269,17 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		}),
 		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
 			function* (entries, removedNames) {
-				const inputs = [];
-				for (const entry of entries)
-					inputs.push({
-						name: entry.name,
-						key: entry.key,
-						previousKey: entry.previousKey,
-						file: yield* staged(entry.source),
-						rows: entry.rows
-					});
+				// Rows cross as files, not in the request, so every shard fits one request.
+				const inputs = entries.map((entry) => ({
+					name: entry.name,
+					key: entry.key,
+					...(entry.previousKey === undefined
+						? undefined
+						: { previousKey: entry.previousKey }),
+					file: entry.stagedFile,
+					rowsFile: entry.rowsFile
+				}));
+				yield* Effect.annotateCurrentSpan({ "package-text.publish.shards": inputs.length });
 				const result = yield* command({
 					action: "publish_packages",
 					configuration,

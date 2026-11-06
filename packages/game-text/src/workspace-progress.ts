@@ -21,9 +21,10 @@ export const GameTextWorkspacePhase = Schema.Literals([
 		"inventory",
 		"localization",
 		"localization_publish",
-		"packages",
+		"package_read",
 		"package_text",
 		"package_publish",
+		"package_update",
 		"joining",
 		"opening",
 		"corpus",
@@ -42,9 +43,10 @@ export const GAME_TEXT_WORKSPACE_PHASE_LABELS = {
 	inventory: GAME_TEXT_INDEX_PHASE_LABELS.inventory,
 	localization: GAME_TEXT_INDEX_PHASE_LABELS.localization,
 	localization_publish: GAME_TEXT_INDEX_PHASE_LABELS.localization_publish,
-	packages: GAME_TEXT_INDEX_PHASE_LABELS.packages,
+	package_read: GAME_TEXT_INDEX_PHASE_LABELS.package_read,
 	package_text: GAME_TEXT_INDEX_PHASE_LABELS.package_text,
 	package_publish: GAME_TEXT_INDEX_PHASE_LABELS.package_publish,
+	package_update: GAME_TEXT_INDEX_PHASE_LABELS.package_update,
 	joining: GAME_TEXT_INDEX_PHASE_LABELS.joining,
 	opening: GAME_TEXT_INDEX_PHASE_LABELS.opening,
 	corpus: GAME_TEXT_INDEX_PHASE_LABELS.corpus,
@@ -62,6 +64,8 @@ export const GameTextWorkspaceProgress = Schema.Struct({
 	total: Count,
 	/** Findings so far, during a quality scan; its last event has the scan's count. */
 	findings: Schema.optionalKey(Count),
+	/** Packages kept from the existing index without reading them, while reading packages. */
+	unchanged: Schema.optionalKey(Count),
 	/**
 	 * The scan step running now, of `steps`: the host's project scan, then each Game Text scan
 	 * phase in the order they start. A step a scan does not need is skipped, not renumbered.

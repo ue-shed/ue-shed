@@ -22,10 +22,49 @@ pub struct InputLayer {
 pub struct PackageInput {
     pub name: String,
     pub key: String,
-    pub previous_key: String,
+    /// The shard's active key. Absent for a shard the store doesn't hold yet (uasset-io 1.22).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_key: Option<String>,
     pub file: PathBuf,
     /// Nonnegative rows retain previous records; -1-row selects an authored replacement.
+    #[serde(default)]
     pub rows: Vec<i64>,
+    /// The same rows as little-endian `i32`s, in place of `rows` (uasset-io 1.22), so a refresh
+    /// of every shard sends no row through the request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows_file: Option<PathBuf>,
+}
+
+/// The most rows one replacement holds.
+pub const MAX_PACKAGE_ROWS: usize = 64_000_000;
+
+impl PackageInput {
+    /// The input's rows, from `rows` or from its `rows_file`.
+    pub(crate) fn rows(&self) -> Result<std::borrow::Cow<'_, [i64]>> {
+        let Some(file) = &self.rows_file else {
+            return Ok(std::borrow::Cow::Borrowed(&self.rows));
+        };
+        let bytes = bounded(file, (MAX_PACKAGE_ROWS * 4) as u64)?;
+        require(
+            bytes.len().is_multiple_of(4),
+            crate::Error::new(crate::ErrorCode::InvalidInput, "package rows file length"),
+        )?;
+        let rows = bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|value| i64::from(i32::from_le_bytes(*value)))
+            .collect::<Vec<_>>();
+        require(
+            rows.iter().all(|row| valid_row(*row)),
+            crate::Error::new(crate::ErrorCode::InvalidInput, "package row bounds"),
+        )?;
+        Ok(std::borrow::Cow::Owned(rows))
+    }
+}
+
+fn valid_row(row: i64) -> bool {
+    (-(MAX_PACKAGE_ROWS as i64)..MAX_PACKAGE_ROWS as i64).contains(&row)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -81,6 +120,11 @@ pub enum BuildRequest {
         configuration: Configuration,
         request: crate::package_text_contract::PointRequest,
     },
+    /// Compares a refresh's changed shards with the index (uasset-io 1.22).
+    ComparePackages {
+        configuration: Configuration,
+        request: crate::package_text_contract::PackageTextCompareRequest,
+    },
     /// Checked by the reader, which walks the project as its Project Index does.
     DiskChanges {
         configuration: Configuration,
@@ -129,7 +173,9 @@ pub struct BuildOutcome {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub localization: Option<crate::localization::import::Outcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub plan: Option<crate::package_text_contract::PackageTextPlan>,
+    pub plan: Option<Box<crate::package_text_contract::PackageTextPlan>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comparison: Option<Box<crate::package_text_contract::PackageTextComparison>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<Box<crate::package_text_contract::CodeLayerOutcome>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -153,6 +199,7 @@ impl BuildOutcome {
             stage_seconds: BTreeMap::new(),
             localization: None,
             plan: None,
+            comparison: None,
             code: None,
             point: None,
             disk_changes: None,
@@ -171,6 +218,7 @@ impl BuildRequest {
             | Self::Publish { configuration, .. }
             | Self::PublishIds { configuration, .. }
             | Self::PublishPackages { configuration, .. }
+            | Self::ComparePackages { configuration, .. }
             | Self::PlanPackages { configuration, .. }
             | Self::PublishCode { configuration, .. }
             | Self::ReadPoint { configuration, .. }
@@ -189,6 +237,9 @@ impl BuildRequest {
         }
         match self {
             Self::ImportLocalization { request, .. } => request.validate()?,
+            Self::ComparePackages { request, .. } => {
+                crate::package_text_compare::validate(request)?
+            }
             Self::PublishPackages {
                 inputs,
                 removed_names,
@@ -205,13 +256,13 @@ impl BuildRequest {
                             && input.name.len() <= 1024
                             && !input.key.is_empty()
                             && input.key.len() <= 1024
-                            && !input.previous_key.is_empty()
-                            && input.previous_key.len() <= 1024
-                            && input.rows.len() <= 64_000_000
                             && input
-                                .rows
-                                .iter()
-                                .all(|row| (-64_000_000..64_000_000).contains(row))
+                                .previous_key
+                                .as_ref()
+                                .is_none_or(|key| !key.is_empty() && key.len() <= 1024)
+                            && input.rows.len() <= MAX_PACKAGE_ROWS
+                            && input.rows.iter().all(|row| valid_row(*row))
+                            && (input.rows_file.is_none() || input.rows.is_empty())
                             && names.insert(&input.name),
                         "invalid package replacement",
                     )?;
@@ -411,7 +462,9 @@ impl BuildSession {
         )?;
         let started = std::time::Instant::now();
         let mut outcome = BuildOutcome::new("plan_packages");
-        outcome.plan = Some(crate::package_text_plan::plan(store, request, inventory)?);
+        outcome.plan = Some(Box::new(crate::package_text_plan::plan(
+            store, request, inventory,
+        )?));
         outcome
             .stage_seconds
             .insert("plan.keys".into(), started.elapsed().as_secs_f64());
@@ -470,7 +523,24 @@ fn execute(
             ..
         } => {
             outcome.action = "publish_packages".into();
-            outcome.records = crate::package_delta::publish(store, inputs, removed_names)?;
+            let mut stages = Vec::new();
+            outcome.records =
+                crate::package_delta::publish_timed(store, inputs, removed_names, &mut stages)?;
+            for (stage, seconds) in stages {
+                outcome.stage_seconds.insert(stage.into(), seconds);
+            }
+        }
+        BuildRequest::ComparePackages { request, .. } => {
+            outcome.action = "compare_packages".into();
+            let mut stages = Vec::new();
+            outcome.comparison = Some(Box::new(crate::package_text_compare::compare(
+                store,
+                request,
+                &mut stages,
+            )?));
+            for (stage, seconds) in stages {
+                outcome.stage_seconds.insert(stage.into(), seconds);
+            }
         }
         BuildRequest::Status { .. } => {}
         BuildRequest::PlanPackages { .. } => {
@@ -674,7 +744,7 @@ fn bounded(path: &Path, maximum: u64) -> Result<Vec<u8>> {
         bytes.len() as u64 <= maximum,
         crate::Error::new(
             crate::ErrorCode::LimitExceeded,
-            "staged input exceeds 32 MiB",
+            format!("staged input exceeds {} MiB", maximum / (1024 * 1024)),
         ),
     )?;
     Ok(bytes)

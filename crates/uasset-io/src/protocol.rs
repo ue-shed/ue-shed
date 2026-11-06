@@ -647,6 +647,26 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
                     "publish_packages requires uasset-io v1.16".into(),
                 ));
             }
+            if matches!(
+                build,
+                game_text_index::builder::BuildRequest::ComparePackages { .. }
+            ) && request.contract.version.minor < 22
+            {
+                return Err(ProtocolError(
+                    "compare_packages requires uasset-io v1.22".into(),
+                ));
+            }
+            if let game_text_index::builder::BuildRequest::PublishPackages { inputs, .. } = build
+                && inputs
+                    .iter()
+                    .any(|input| input.previous_key.is_none() || input.rows_file.is_some())
+                && request.contract.version.minor < 22
+            {
+                return Err(ProtocolError(
+                    "publish_packages without previousKey or with rowsFile requires uasset-io v1.22"
+                        .into(),
+                ));
+            }
             if request.contract.version.minor < 13 {
                 return Err(ProtocolError(
                     "game_text_index requires uasset-io v1.13".into(),
@@ -1430,6 +1450,24 @@ mod game_text_contract_tests {
         assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/game-text-index-request-old-minor.json")).is_err());
         assert!(super::decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-index-result-event.json")).is_ok());
         assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-disk-changes-request.json")).is_ok());
+    }
+
+    #[test]
+    fn package_rows_files_and_new_shards_need_minor_22() {
+        const ROWS_FILE: &[u8] = include_bytes!(
+            "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-package-delta-rows-file-request.json"
+        );
+        assert!(super::decode_request(ROWS_FILE).is_ok());
+        let old = String::from_utf8_lossy(ROWS_FILE).replace("\"minor\": 22", "\"minor\": 16");
+        assert!(super::decode_request(old.as_bytes()).is_err());
+        // Inline rows with a previous key keep the 1.16 form.
+        assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-package-delta-request.json")).is_ok());
+        // An input names its rows once.
+        let both = String::from_utf8_lossy(ROWS_FILE).replace(
+            "\"rowsFile\": \"changes-0.rows\"",
+            "\"rowsFile\": \"changes-0.rows\", \"rows\": [0]",
+        );
+        assert!(super::decode_request(both.as_bytes()).is_err());
     }
 
     #[test]

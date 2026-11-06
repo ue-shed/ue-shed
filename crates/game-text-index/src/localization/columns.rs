@@ -362,6 +362,10 @@ fn parse_columns_inner(
     limits: &Limits,
     finalize: bool,
 ) -> Parsed<LocalLayer> {
+    // Compiled resources are binary; `parse_bytes` reads them before any text decoding.
+    if options.format == Format::Locres {
+        return Err(failure(file, "malformed_locres", ""));
+    }
     let (document, error) = if options.format == Format::Po {
         let (document, error) =
             super::po::parse_po_outcome(&chunks.concat(), file, options, limits, finalize);
@@ -376,7 +380,7 @@ fn parse_columns_inner(
         );
         (Document::Json(document), error)
     };
-    build(document, error, file, options, limits, finalize)
+    build(document, error, file, options, limits, finalize, None)
 }
 enum Document {
     Po(super::po::PoDocument),
@@ -397,6 +401,7 @@ pub(super) fn build_po(
         options,
         limits,
         finalize,
+        None,
     )
 }
 pub(super) fn build_json(
@@ -414,6 +419,27 @@ pub(super) fn build_json(
         options,
         limits,
         finalize,
+        None,
+    )
+}
+/// A compiled resource's rows (empty sources, display strings as translations) plus each row's
+/// source hash, in row order.
+pub(super) fn build_locres(
+    document: super::json::JsonDocument,
+    version: u8,
+    source_hashes: &[u32],
+    file: &str,
+    options: &Options,
+    limits: &Limits,
+) -> Parsed<LocalLayer> {
+    build(
+        Document::Json(document),
+        None,
+        file,
+        options,
+        limits,
+        true,
+        Some((version, source_hashes)),
     )
 }
 fn build(
@@ -423,6 +449,7 @@ fn build(
     options: &Options,
     limits: &Limits,
     finalize: bool,
+    locres: Option<(u8, &[u32])>,
 ) -> Parsed<LocalLayer> {
     let mut b = Builder {
         file,
@@ -671,6 +698,10 @@ fn build(
             u32_bytes(&values),
         );
     }
+    if let Some((_, hashes)) = locres {
+        let values = order.iter().map(|row| hashes[*row]).collect::<Vec<_>>();
+        output.add("entry.source-hash", 2, "", 0, u32_bytes(&values));
+    }
     let [identity, source, translation, paths, comments] = b.tables;
     for (domain, table) in [
         ("source", source),
@@ -685,14 +716,21 @@ fn build(
         Format::Manifest => "manifest",
         Format::Archive => "archive",
         Format::Po => "po",
+        Format::Locres => "locres",
     };
-    let has_source = po_format != "Crowdin"
-        || options
-            .collapse_mode
-            .as_deref()
-            .unwrap_or("IdenticalTextIdAndSource")
-            != "IdenticalTextIdAndSource";
-    let metadata = json!({"format":format,"count":count,"poFormat":po_format,"pathPrefix":b.path_prefix,"hasSourceText":has_source});
+    // A compiled resource keeps only a hash of each source.
+    let has_source = locres.is_none()
+        && (po_format != "Crowdin"
+            || options
+                .collapse_mode
+                .as_deref()
+                .unwrap_or("IdenticalTextIdAndSource")
+                != "IdenticalTextIdAndSource");
+    let mut metadata = json!({"format":format,"count":count,"poFormat":po_format,"pathPrefix":b.path_prefix,"hasSourceText":has_source});
+    if let Some((version, _)) = locres {
+        metadata["locresVersion"] = json!(version);
+        metadata["sourceHashVerified"] = json!(super::locres::source_hash_verified(version));
+    }
     output.add("file.meta", 0, "", 0, stringify(&metadata).into_bytes());
     Ok(output)
 }

@@ -982,7 +982,12 @@
 													},
 													"format": {
 														"type": "string",
-														"enum": ["manifest", "archive", "po"]
+														"enum": [
+															"manifest",
+															"archive",
+															"po",
+															"locres"
+														]
 													},
 													"inputBytes": {
 														"type": "integer",

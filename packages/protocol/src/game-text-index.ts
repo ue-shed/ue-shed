@@ -21,7 +21,7 @@ const Configuration = { configuration: GameTextIndexConfiguration };
 const Name = Schema.NonEmptyString.check(Schema.isMaxLength(1024));
 const Names = Schema.Array(Name).check(Schema.isMaxLength(2560));
 const Positive = Natural.check(Schema.isGreaterThan(0));
-const LocalizationFormat = Schema.Literals(["manifest", "archive", "po"]);
+const LocalizationFormat = Schema.Literals(["manifest", "archive", "po", "locres"]);
 const LocalizationOptions = Schema.Struct({
 	format: LocalizationFormat,
 	poFormat: Schema.optionalKey(Schema.String),

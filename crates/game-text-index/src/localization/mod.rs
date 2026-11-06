@@ -3,6 +3,7 @@ pub mod columns;
 mod fast;
 pub mod import;
 mod json;
+pub mod locres;
 mod po;
 
 use indexmap::IndexMap;
@@ -16,6 +17,8 @@ pub enum Format {
     Manifest,
     Archive,
     Po,
+    /// A compiled resource (`.locres`), read as a culture's translations.
+    Locres,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -86,6 +89,7 @@ pub fn failure(file: &str, code: &str, location: &str) -> Diagnostic {
             "unsafe_path" => "Configure evidence paths inside the selected project root without external symlinks.",
             "file_changed" => "Retry after localization processes finish writing the saved evidence.",
             "malformed_po" => "Repair the PO syntax with the translation tool, then read the file again.",
+            "malformed_locres" => "Recompile the localization target's resources in Unreal, then read the file again.",
             _ => "Check the target configuration and regenerate its evidence through Unreal if needed."
         }.into(),
         retry_safe: true,
@@ -228,6 +232,9 @@ fn parse_bytes_with_chunk(
     limits: &Limits,
     chunk_bytes: usize,
 ) -> Parsed<columns::LocalLayer> {
+    if options.format == Format::Locres {
+        return locres::layer(bytes, file, options, limits);
+    }
     if let Some(layer) = fast::parse(bytes, file, options, limits) {
         return Ok(layer);
     }
@@ -250,6 +257,9 @@ fn parse_bytes_reference_with_chunk(
     limits: &Limits,
     chunk_bytes: usize,
 ) -> Parsed<columns::LocalLayer> {
+    if options.format == Format::Locres {
+        return locres::layer(bytes, file, options, limits);
+    }
     if bytes.len() as u64 > limits.max_file_bytes {
         return Err(failure(file, "limit_exceeded", ""));
     }

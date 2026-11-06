@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "241a172d1668c073c9e08a2856958cdb56fca724f93921e484058d7a9a86d153"
+	contractHash: "bfcc80705617cb817144b1f0433331fb95e91cbb81d4f5d37d8dee2352c2bc31"
 } as const;
 
 /**
@@ -37,7 +37,7 @@ export type Finding = {
 	readonly [key: string]: JsonValue;
 };
 
-export type LocalizationFormat = "manifest" | "archive" | "po";
+export type LocalizationFormat = "manifest" | "archive" | "po" | "locres";
 
 export type LocalizationOptions = { format: LocalizationFormat, poFormat?: string | null, collapseMode?: string | null, };
 

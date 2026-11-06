@@ -446,7 +446,8 @@ it.live(
 						{ fixable: false },
 						{ query: "hello", severities: ["blocking"], fixable: true }
 					];
-					for (const culture of [undefined, "de"])
+					const german = join.cultures.find((culture) => culture === "de")!;
+					for (const culture of [undefined, german])
 						for (const filter of ["all", "placeholder_text", "whitespace"] as const)
 							for (const narrowing of narrowings) {
 								const request: WorkspaceQualityRequest = {
@@ -465,14 +466,9 @@ it.live(
 									legacy.changes(request)
 								);
 							}
-					const searched = (query: string, culture?: string) =>
+					const searched = (query: string) =>
 						legacy
-							.export({
-								target: join.target,
-								filter: "all",
-								query,
-								...(culture ? { culture } : undefined)
-							})
+							.export({ target: join.target, filter: "all", query })
 							.findings.map(({ source, culture }) => [source, culture]);
 					// Source text and a culture's translation match; another culture's does not.
 					expect(searched("hello").length).toBeGreaterThan(0);

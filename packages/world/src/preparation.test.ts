@@ -361,6 +361,125 @@ it.effect("preserves an independent cleanup defect that shares the work error va
 	})
 );
 
+it.effect("preserves an independent cleanup defect when the work repeats the same failure", () =>
+	Effect.gen(function* () {
+		const h = harness((r) =>
+			r.action === "release"
+				? Effect.succeed({
+						status: "failed",
+						code: "restoration_conflict",
+						message: "External layer change",
+						recovery: "Inspect preserved state"
+					})
+				: undefined
+		);
+		const service = WorldPreparation.of({
+			...h.api,
+			acquire: (input) => h.api.acquire(input, { leaseId: id })
+		});
+		const sharedError = new Error("shared work and finalizer error");
+		const result = yield* withPreparedWorld(requirements, () =>
+			Effect.gen(function* () {
+				yield* Effect.addFinalizer(() => Effect.die(sharedError));
+				return yield* Effect.failCause(
+					Cause.fromReasons([
+						...Cause.fail(sharedError).reasons,
+						...Cause.fail(sharedError).reasons
+					])
+				);
+			})
+		).pipe(Effect.provideService(WorldPreparation, service), Effect.exit);
+		if (Exit.isSuccess(result)) throw new Error("Expected a defect");
+		expect(Cause.hasFails(result.cause)).toBe(false);
+		expect(
+			result.cause.reasons.some(
+				(reason) => Cause.isDieReason(reason) && reason.defect === sharedError
+			)
+		).toBe(true);
+	})
+);
+
+it.effect(
+	"preserves an independent cleanup defect when restoration carriers share the work exit",
+	() =>
+		Effect.gen(function* () {
+			const h = harness((r) =>
+				r.action === "release"
+					? Effect.succeed({
+							status: "failed",
+							code: "restoration_conflict",
+							message: "External layer change",
+							recovery: "Inspect preserved state"
+						})
+					: undefined
+			);
+			const service = WorldPreparation.of({
+				...h.api,
+				acquire: (input) => h.api.acquire(input, { leaseId: id })
+			});
+			const sharedError = new Error("shared work and finalizer error");
+			const result = yield* withPreparedWorld(requirements, () =>
+				Effect.gen(function* () {
+					yield* h.api.acquire(requirements, { leaseId: id });
+					yield* Effect.addFinalizer(() => Effect.die(sharedError));
+					return yield* Effect.fail(sharedError);
+				})
+			).pipe(Effect.provideService(WorldPreparation, service), Effect.exit);
+			if (Exit.isSuccess(result)) throw new Error("Expected a defect");
+			expect(Cause.hasFails(result.cause)).toBe(false);
+			expect(
+				result.cause.reasons.some(
+					(reason) => Cause.isDieReason(reason) && reason.defect === sharedError
+				)
+			).toBe(true);
+			expect(h.calls.filter((call) => call.action === "release")).toHaveLength(2);
+		})
+);
+
+it.effect("reports a typed work failure with a restoration failure as typed", () =>
+	Effect.gen(function* () {
+		const h = harness((r) =>
+			r.action === "release"
+				? Effect.succeed({
+						status: "failed",
+						code: "restoration_conflict",
+						message: "External layer change",
+						recovery: "Inspect preserved state"
+					})
+				: undefined
+		);
+		const service = WorldPreparation.of({
+			...h.api,
+			acquire: (input) => h.api.acquire(input, { leaseId: id })
+		});
+		const workError = new WorldPreparationError({
+			code: "invalid_request",
+			operation: "test",
+			message: "Work failed",
+			recovery: "Inspect work",
+			retrySafe: false,
+			nextStep: "escalate"
+		});
+		const result = yield* withPreparedWorld(requirements, () => Effect.fail(workError)).pipe(
+			Effect.provideService(WorldPreparation, service),
+			Effect.result
+		);
+		if (result._tag !== "Failure") throw new Error("Expected a typed restoration failure");
+		expect(result.failure.code).toBe("restoration_failed");
+		if (!Cause.isCause(result.failure.cause)) throw new Error("Expected combined failures");
+		expect(
+			result.failure.cause.reasons.some(
+				(reason) => Cause.isFailReason(reason) && reason.error === workError
+			)
+		).toBe(true);
+		expect(
+			result.failure.cause.reasons.some(
+				(reason) => Cause.isDieReason(reason) && reason.defect === workError
+			)
+		).toBe(false);
+	})
+);
+
 it.effect("describes and plans without acquiring ownership", () =>
 	Effect.gen(function* () {
 		const h = harness();

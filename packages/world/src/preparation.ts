@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+	Array,
 	type Brand,
 	Cause,
 	Context,
@@ -120,13 +121,11 @@ export class WorldPreparationError extends Schema.TaggedError<
 // Effect finalizers cannot fail in the typed channel. Only this private carrier is
 // translated by withPreparedWorld; unrelated defects must retain their original cause.
 class WorldRestorationFailure extends Error {
-	readonly original: Exit.Exit<unknown, unknown>;
 	constructor(error: WorldPreparationError, original: Exit.Exit<unknown, unknown>) {
 		super("The owned world lease could not restore editor state.", {
 			cause: { error, original }
 		});
 		this.name = "WorldRestorationFailure";
-		this.original = original;
 	}
 }
 /**
@@ -566,49 +565,50 @@ export const withPreparedWorld = Effect.fn("WorldPreparation.withPreparedWorld")
 	use: (lease: WorldLease) => Effect.Effect<A, E, R>,
 	leaseOptions: { readonly leaseId?: WorldLeaseId; readonly leaseMs?: number } = {}
 ) {
+	// Capture the work exit before the scope closes. If its typed failure reached the finalizer
+	// combine, Effect 4.1 would elect it to a defect that looks like an independent defect.
+	let work: Exit.Exit<A, E | WorldPreparationError> | undefined;
 	const outcome = yield* Effect.exit(
 		Effect.scoped(
 			Effect.gen(function* () {
 				const service = yield* WorldPreparation;
 				const lease = yield* service.acquire(requirements, leaseOptions);
-				return yield* lease.guard(use(lease));
+				const exit = yield* Effect.exit(lease.guard(use(lease)));
+				work = exit;
+				return exit;
 			})
 		)
 	);
-	if (Exit.isSuccess(outcome)) return outcome.value;
-	const defects = outcome.cause.reasons.filter(Cause.isDieReason);
-	const restorations = defects.filter(
+	if (Exit.isSuccess(outcome)) return yield* outcome.value;
+	if (work === undefined) return yield* Effect.failCause(outcome.cause);
+	const cleanup = outcome.cause;
+	const workReasons = Exit.isFailure(work) ? work.cause.reasons : [];
+	const workFailReasons = Array.dedupe(workReasons.filter(Cause.isFailReason));
+	const workDefectReasons = Array.dedupe(
+		workReasons.filter((reason) => !Cause.isFailReason(reason))
+	);
+	const carriers = cleanup.reasons.filter(
 		(reason): reason is Cause.Die & { readonly defect: WorldRestorationFailure } =>
-			reason.defect instanceof WorldRestorationFailure
+			Cause.isDieReason(reason) && reason.defect instanceof WorldRestorationFailure
 	);
-	// Effect 4.1 elevates a typed work failure to a defect when cleanup also defects, so recover
-	// the original typed reasons from the restoration carrier and keep unrelated defects intact.
-	const originalFailures = restorations.flatMap((reason) =>
-		Exit.isFailure(reason.defect.original)
-			? reason.defect.original.cause.reasons.filter(Cause.isFailReason)
-			: []
-	);
-	const elected = new Map<unknown, number>();
-	for (const reason of originalFailures)
-		elected.set(reason.error, (elected.get(reason.error) ?? 0) + 1);
-	const matched = new Map<unknown, number>();
-	const unexpected = defects.filter((reason) => {
-		if (reason.defect instanceof WorldRestorationFailure) return false;
-		const expected = elected.get(reason.defect) ?? 0;
-		const seen = matched.get(reason.defect) ?? 0;
-		if (seen < expected) {
-			matched.set(reason.defect, seen + 1);
-			return false;
-		}
-		return true;
-	});
-	if (!Cause.hasInterrupts(outcome.cause) && restorations.length > 0 && unexpected.length === 0)
+	const carrierSet = new Set<unknown>(carriers);
+	const workDefectSet = new Set<unknown>(workDefectReasons);
+	const otherReasons = cleanup.reasons.filter((reason) => !carrierSet.has(reason));
+	if (
+		!Cause.hasInterrupts(cleanup) &&
+		carriers.length > 0 &&
+		otherReasons.every((reason) => workDefectSet.has(reason)) &&
+		workDefectReasons.length === 0
+	)
 		return yield* failure(
 			"restoration_failed",
 			"scope",
 			"The owned world lease could not restore editor state.",
 			undefined,
-			Cause.fromReasons([...originalFailures, ...restorations])
+			Cause.fromReasons([...workFailReasons, ...carriers])
 		);
-	return yield* Effect.failCause(outcome.cause);
+	const missingWorkDefects = workDefectReasons.filter(
+		(reason) => !cleanup.reasons.includes(reason)
+	);
+	return yield* Effect.failCause(Cause.fromReasons([...missingWorkDefects, ...cleanup.reasons]));
 });

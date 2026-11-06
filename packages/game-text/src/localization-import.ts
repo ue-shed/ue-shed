@@ -1049,8 +1049,23 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 		if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
 		requests.push(fileRequest);
 	}
+	// A changed archive can make its culture read the resource instead (the archive was removed),
+	// so a scoped import of an archive also imports the resource it hands over to.
+	const archiveOfResource = new Map(
+		target.cultures.flatMap((culture) => {
+			const resource = target.outputPaths.resources[culture];
+			const archive = target.outputPaths.archives[culture];
+			return resource && archive ? [[resource, archive] as const] : [];
+		})
+	);
 	for (const relativePath of resources) {
-		if (selectedFiles !== undefined && !selectedFiles.includes(relativePath)) continue;
+		const archive = archiveOfResource.get(relativePath);
+		if (
+			selectedFiles !== undefined &&
+			!selectedFiles.includes(relativePath) &&
+			!(archive !== undefined && selectedFiles.includes(archive))
+		)
+			continue;
 		const fileRequest: LocalizationFileImportRequest = {
 			projectRoot: actualRoot,
 			cacheRoot: request.cacheRoot,

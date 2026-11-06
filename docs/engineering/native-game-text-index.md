@@ -136,8 +136,69 @@ travel as `browseUnit` and `browseLine` batches, open groups' rows with their gr
 
 A `line` request reads one selected row, a line or a unit, with the sections a host shows:
 `places` (the unit's places after a cursor), `detail` (translations, locations and problems),
-`related` (same key, same text, conflict and key change) and `line` (the whole line as a `lines`
-batch). Selecting a row is one request whatever it shows.
+`related` (same key, same text, conflict, key change and, when asked, similar keys) and `line`
+(the whole line as a `lines` batch). Selecting a row is one request whatever it shows.
+
+`related`'s `similarKeys` section (`engine_similar.rs`) is a fourth key-change tier after the
+join's exact ones, answered only by `related`: it never changes the join, its `key_changed` marks
+or their counts. Earlier lines are visible `not_found` lines without saved places; new lines are
+visible `not_gathered` lines with saved places and an identity; lines the exact tiers paired and
+lines with blank or trivial text (fewer than two letters outside `{...}` and `<...>` spans) are
+left out. Texts are compared with whitespace collapsed, trimmed and lowercased, by Levenshtein
+distance over UTF-16 code units within `min(12, max(1, floor(longer length × 0.2)))`. Each new
+line, in line ID order, compares the earlier lines sharing one of its package files (the join's
+`facet.files`: a saved line's packages, an earlier line's manifest files) and, only when none is
+near enough, the earlier lines whose length is within `min(12, max(1, ceil(length × 0.25)))`; once
+more than 2,000,000 comparisons were made, no further new line runs that cross-package pass and the
+answer is `truncated`. A new line proposes its single nearest earlier line, and an earlier line
+accepts its single nearest proposal, so a tie pairs neither. The answer names the selected line's
+side, its pair with the earlier line's carried translations, and its near lines ranked by
+distance, same-package first, then line ID. The ratios, the cap, the budget and the letter minimum
+are optional request fields. A reader builds the index for the whole target on the first request
+that asks for it and keeps one parameter set; other parameters build it again.
+
+A `review_lines` request reads, for one culture, up to 2,560 lines by identity in request order:
+each line's manifest source, the translation the next sync ships, its PO entry with the line's own
+key, and the review fingerprint the join compares stored reviews with (`review_fingerprint` in
+`join_marks.rs`). A line the target lacks, one without a manifest entry, or a culture the target
+lacks answers `not_gathered`. Hosts stamp reviews and check staged edits with it, so neither decodes
+a localization file; `reviewLines` sends larger batches in parts.
+
+### Generations and what changed since one
+
+A target's `generation` is its joined key: a digest of the store's dictionary epoch, the project
+root, every input layer's key (package-text shards, localization files by content key, the code
+layer), the target and its policy, the review file, key-change pairs and file evidence
+(`join.rs`). It changes whenever something the target shows changes, stays equal across refreshes
+that change nothing, and is safe to persist and compare across processes. The store's own
+`generation` is not a change counter: it is the dictionary epoch, renewed only when the store is
+created again or compacted (`store.rs`), so a package publish or localization import keeps it.
+Host types call that epoch `storeEpoch`; a refresh result, a target index, the workspace's
+completed refresh and a selected target report the target's `generation`.
+
+A `changed_since` request (`engine_changes.rs`) answers what changed in the open reader's target
+since an earlier generation: its `lines`, by line ID, or its `packages`, by path. Earlier joined
+layers and their inputs stay in the store until compaction, and layers of one dictionary epoch
+share string IDs, so the engine opens the earlier joined layer read-only by key (its inputs need
+only be listed, not active) and compares columns without materialising strings:
+
+- Lines are matched by line ID. A line changed when its namespace, key, source, facts, flags,
+  files, units (by unit ID), saved places, key-change pair, or a culture's state, review or
+  translation (archive and PO text) differs. A place is identified as the focus query identifies an
+  occurrence (package path, object, location kind, and the row and property that kind names), by
+  string ID, so an occurrence moved to another object of the same package, or one added to or
+  removed from an existing unit, changes the line. A change of the target's cultures changes every
+  line.
+- Packages come from the package-text shards whose keys differ between the two joins' dependencies:
+  their `package.path` and `package.signature` columns, so packages without text count too.
+
+The answer is `same` when `since` is the current generation, `too_old` with a reason when it can't
+be diffed (`compacted`: the layer or an input is gone, or a compaction renumbered its strings;
+`format`: another joined format; `unknown`: not a generation of this target), or `changes`: every
+change's counts and a page of items in ID order (WTF-8 bytes), whose last ID is the next page's
+cursor. The engine never answers "everything is new"; that is the host's choice on `too_old`. A
+reader keeps one diff per kind, only the changed items, so later pages are cheap. It runs as a bulk
+request.
 
 Each immutable native reader caches page-independent search metadata: counts, problems, groups,
 facets, file scope and localization totals. Counts are also shared across requests that differ
@@ -185,6 +246,64 @@ responsibility.
 `prepareTarget` coordinates localization import, package refresh and target publication under
 one writer session. Individual steps still acquire their own session when called separately.
 Source-only recovery releases the failed target session before acquiring its source session.
+
+### What on disk differs from the index
+
+A `disk_changes` builder request (`disk_changes.rs` in both crates) answers which saved packages,
+and with a `target` which of its localization inputs, differ on disk from what the view's index
+holds, without refreshing anything: the reader opens the store's committed root read-only, takes no
+writer lease, and writes no Catalog, index or cache file. A host can show "N saved packages changed
+since the last scan" from it instead of keeping its own snapshot of the tree.
+
+- Without `paths`, the reader walks the project's `Content` with the Project Index's own walk
+  (`scanner::enumerate_content`: the same root, package and sidecar rules and directory-listing
+  metadata, so a Windows walk states no file), on at most 8 threads, checking cancellation per
+  entry. Each package is grouped with its `.uexp`, `.ubulk` and `.uptnl` sidecars from the same
+  listing and signed with the Catalog's `bundle_signature`, so its signature is the one the
+  package-text shards hold. With `paths` (project-relative, at most 4,096), only those are stated
+  with `fs::metadata`; a sidecar checks its package. A test proves both give the same signature.
+- Packages are compared by path with the `package-text.*` shards the view's joined layer read (its
+  `join.meta` dependencies, as `changed_since` takes them), a batch of shards' strings at a time:
+  `added` on disk only, `removed` in the index only, `changed` when the signature differs. Shards a
+  project-only refresh or another target's scan publishes are not the view's until it is joined
+  again, so a difference stays reported until then.
+- Each observed path is converted once to the dictionary's scalar view, as a scan interns it, and
+  compared, ordered and paged as that view; the raw name is used only to stat the file and to pick
+  its shard, which a scan picks from the raw name too. On the wire an item's path and the cursor are
+  the file's own name, the same text `changed_since` sends for that package, so a name with a
+  literal reserved scalar (U+F0000 to U+F0800) matches its indexed package.
+- With `target`, the view must be that target's. Its manifest, archives and POs (the paths the join
+  reads, `join::input_paths`) and its review file are stated and compared by size and modification
+  time with what the join recorded (`fileProvenances`, and `reviewFile`, which the join records and
+  keys like a provenance). A recorded file now missing is `removed`; a file on disk the join did not
+  record is `added`, unless its import failed for another reason than its absence, when its size
+  and time are unknown. Contents are never hashed, as the refresh's own stat check doesn't. Config
+  changes that alter which files a target has are out of scope: the check reads the target as the
+  join recorded it.
+- The answer is `not_indexed` while the view has no joined layer, otherwise every count and a page
+  of items in path order (WTF-8 bytes, as `changed_since` orders IDs), whose last path is the next
+  page's cursor. A first page
+  checks again; the session keeps that check's differences (only the changed paths), so its later
+  pages read them.
+
+`watchDiskChanges` (`packages/game-text/src/disk-changes.ts`) keeps a badge current: one full
+check, then `Content` and the target's folders are watched recursively through the `DiskWatcher`
+service (`fs.watch` in production). A folder that doesn't exist yet, such as the default review
+folder `Config/UEShed/Localization` before the first review is saved, is watched from its nearest
+existing ancestor below the project root, recursively, and an event under it counts as one for the
+folder; when only the project root exists, the root is watched for its own entries and the watch
+moves one level deeper as each folder appears. The root is never watched recursively, since it
+holds `Content`. Every handle closes with the watching scope. A burst of events settles for 300 ms (a host option); named
+packages, sidecars and localization files are then rechecked by path, and a folder-level or unnamed
+event, a watcher error or a published scan runs one full walk. It holds only the set of differing
+paths.
+
+`scripts/benchmark-game-text-disk-changes.ts` generates a project of real files, indexes it with
+their stated signatures and times the checks. On 707k packages (796k files, 8,633 folders, warm OS
+cache, release reader, median of 3 fresh readers): a full walk takes 2.3 s (1.2 s walking, the rest
+reading and comparing the shards) with a 224 MiB peak working set, whether nothing or 2,000
+packages differ; 100 named paths take 0.29 s and 25 MiB. A host's own `readdir` plus `stat` in
+batches of 64 took 13.6 s on the same tree.
 
 ## Incremental publication
 

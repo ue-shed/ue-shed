@@ -1,5 +1,5 @@
 import { Result, Schema } from "effect";
-import { currentLocalizationTranslation } from "./change-set-review.js";
+import { evidenceArchiveEntries, shippedEvidenceTranslation } from "./change-set-review.js";
 import {
 	CultureCode,
 	LocalizationErrorGuidanceFields as ErrorGuidanceFields,
@@ -11,7 +11,13 @@ import { sha256Hex } from "./sha256.js";
 
 /**
  * Fingerprint of a line and culture straight from target evidence: the manifest source and the
- * translation that ships next. Undefined when the line is not gathered or the culture is missing.
+ * translation that ships next, as `shippedEvidenceTranslation` decides it. Undefined when the
+ * line is not gathered or the culture is missing.
+ *
+ * A Game Text index computes the same fingerprint natively (`review_lines`), which is the one its
+ * join compares stored reviews with; hosts holding an index use that. The two differ only for a
+ * line with several manifest entries, where each takes its first, and for a PO collapsed by
+ * `IdenticalNamespaceAndSource` (see `shippedEvidenceTranslation`).
  */
 export function localizationEvidenceFingerprint(
 	evidence: LocalizationTargetEvidence,
@@ -26,17 +32,16 @@ export function localizationEvidenceFingerprint(
 			: undefined;
 	const files = evidence.cultures.find((item) => item.culture === culture);
 	if (source === undefined || files === undefined) return undefined;
-	const archive =
-		files.archive.status === "read"
-			? (files.archive.value.entries.find(same)?.translation.Text ?? null)
-			: null;
 	const po =
 		files.po.status === "read"
-			? files.po.value.entries.find(
+			? files.po.value.entries.filter(
 					(entry) => entry.identity !== null && same(entry.identity)
 				)
-			: undefined;
-	return localizationReviewFingerprint(source, currentLocalizationTranslation(archive, po));
+			: [];
+	return localizationReviewFingerprint(
+		source,
+		shippedEvidenceTranslation(evidenceArchiveEntries(files.archive, identity), po)
+	);
 }
 
 /** Review progress Unreal does not store. `machine_translated` records how the text was made. */

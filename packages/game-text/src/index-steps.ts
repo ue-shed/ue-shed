@@ -40,6 +40,12 @@ import {
 } from "./shared-index.js";
 import { GameTextIndexBuilder, type GameTextIndexBuildSessionRequest } from "./index-builder.js";
 import {
+	DiskChangesRequest,
+	watchDiskChanges,
+	watchedFolders,
+	type DiskChangesWatchRequest
+} from "./disk-changes.js";
+import {
 	type GameTextIndexProgress,
 	GameTextIndexProgressReporter,
 	progressHost,
@@ -156,11 +162,15 @@ export interface GameTextProject {
 	readonly cacheRoot: string;
 }
 /**
- * Verified package revision reusable across localization targets. Its generation and package
+ * Verified package revision reusable across localization targets. Its store epoch and package
  * key establish dependency identity; the value itself holds no reader pin or writer lease.
  */
 export interface GameTextProjectIndex extends GameTextProject {
-	readonly generation: string;
+	/**
+	 * The store's dictionary epoch: renewed only when the store is created again or compacted,
+	 * not when inputs change. Compare a target's `generation` to tell whether it changed.
+	 */
+	readonly storeEpoch: string;
 	readonly packageKey: string;
 	readonly packages: Packages;
 	readonly changedFiles?: readonly string[];
@@ -191,6 +201,11 @@ export interface GameTextTargetIndex {
 	readonly view: GameTextProjectView;
 	readonly join: Join;
 	readonly review: LocalizationReviewSnapshot;
+	/** The store's dictionary epoch the target was built in; see `GameTextProjectIndex`. */
+	readonly storeEpoch: string;
+	/**
+	 * The target's generation, its joined key; see `GameTextIndexRefreshResult["generation"]`.
+	 */
 	readonly generation: string;
 	/** Opaque identity for comparing this validated target with an already opened model. */
 	readonly queryRevision?: string | undefined;
@@ -223,8 +238,8 @@ const runningEvaluations = new WeakMap<
 
 /** Models opened by this process, numbering each model's revision. */
 let openedModels = 0;
-const queryRevisionFor = (project: GameTextProject, generation: string, joinedKey: string) =>
-	JSON.stringify([project.cacheRoot, project.projectRoot, generation, joinedKey]);
+const queryRevisionFor = (project: GameTextProject, storeEpoch: string, joinedKey: string) =>
+	JSON.stringify([project.cacheRoot, project.projectRoot, storeEpoch, joinedKey]);
 
 const failure = (
 	operation: string,
@@ -287,7 +302,7 @@ const configurationFor = (
 		targetName === undefined ? { kind: "source" } : { kind: "localization", target: targetName }
 });
 const checkProject = (project: GameTextProjectIndex, manifest: SharedIndexManifest) =>
-	project.generation === manifest.generation && project.packageKey === packageKey(manifest)
+	project.storeEpoch === manifest.generation && project.packageKey === packageKey(manifest)
 		? Effect.void
 		: Effect.fail(stale("project"));
 const normalizeFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -529,7 +544,7 @@ export const makeGameTextIndexSteps = (
 						projectRoot,
 						cacheRoot,
 						packages,
-						generation: manifest.generation,
+						storeEpoch: manifest.generation,
 						packageKey: packageKey(manifest)
 					};
 					if (request.changedFiles !== undefined)
@@ -770,6 +785,8 @@ export const makeGameTextIndexSteps = (
 			readonly localization?: GameTextContract.BaseLocalization;
 			readonly changes?: GameTextContract.PageRequest;
 			readonly findings?: GameTextContract.PageRequest;
+			/** The checks that fail; the engine lists their findings first, before paging. */
+			readonly failOn?: readonly GameTextContract.GateCheck[];
 		}) {
 			const { projectRoot } = yield* openProject(request);
 			if (!queries.comparePoints)
@@ -796,7 +813,8 @@ export const makeGameTextIndexSteps = (
 						? undefined
 						: { localization: request.localization }),
 					changes: request.changes ?? page,
-					findings: request.findings ?? page
+					findings: request.findings ?? page,
+					...(request.failOn === undefined ? undefined : { failOn: [...request.failOn] })
 				}
 			});
 			yield* Effect.annotateCurrentSpan({
@@ -959,11 +977,23 @@ export const makeGameTextIndexSteps = (
 						Object.assign(joinInput, { keyChangePairs: request.keyChangePairs });
 					if (review.contentHash !== null)
 						Object.assign(joinInput, { review: review.file });
+					// Its size and time, so a disk check can tell whether it changed since.
+					const reviewRead = "provenance" in review ? review.provenance : undefined;
+					if (target.view.kind === "localization")
+						Object.assign(joinInput, {
+							reviewFile: {
+								relativePath: review.relativePath,
+								...(reviewRead && {
+									size: reviewRead.size,
+									modifiedTime: reviewRead.modifiedTime
+								})
+							}
+						});
 					reportProgress({ phase: "joining", completed: 0, total: 0 });
 					const join = yield* Effect.scoped(builder.refreshJoinedTarget(joinInput));
 					if ((yield* index.inspect()).active["joined.invalidated"])
 						yield* (yield* index.writer()).publishBatch([], ["joined.invalidated"]);
-					const generation = (yield* index.inspect()).generation;
+					const storeEpoch = (yield* index.inspect()).generation;
 					return {
 						project,
 						view: target.view,
@@ -971,8 +1001,9 @@ export const makeGameTextIndexSteps = (
 						fileKeys: target.fileKeys,
 						join,
 						review,
-						generation,
-						queryRevision: queryRevisionFor(project, generation, join.key)
+						storeEpoch,
+						generation: join.key,
+						queryRevision: queryRevisionFor(project, storeEpoch, join.key)
 					} satisfies GameTextTargetIndex;
 				})
 			);
@@ -1081,7 +1112,7 @@ export const makeGameTextIndexSteps = (
 			)
 				return yield* Effect.fail(stale("localization"));
 			if (
-				joined.reader.manifest.generation !== target.generation ||
+				joined.reader.manifest.generation !== target.storeEpoch ||
 				joined.reader.manifest.active.joined !== target.join.key ||
 				joined.reader.manifest.active["joined.invalidated"]
 			)
@@ -1105,7 +1136,7 @@ export const makeGameTextIndexSteps = (
 			);
 			const native = yield* queries.open({
 				configuration,
-				generation: target.generation,
+				storeEpoch: target.storeEpoch,
 				joinedKey: target.join.key
 			});
 			const query = native;
@@ -1199,6 +1230,7 @@ export const makeGameTextIndexSteps = (
 					target.join.key
 				),
 				revision: `${joined.reader.manifest.generation}#${++openedModels}`,
+				generation: target.join.key,
 				joined,
 				query,
 				summary,
@@ -1340,7 +1372,7 @@ export const makeGameTextIndexSteps = (
 							return yield* Effect.fail(stale("committed_identity"));
 						const indexed: GameTextProjectIndex = {
 							...project,
-							generation: manifest.generation,
+							storeEpoch: manifest.generation,
 							packageKey: packageKey(manifest),
 							packages: {
 								readPackages: 0,
@@ -1396,7 +1428,8 @@ export const makeGameTextIndexSteps = (
 								relativePath: defaultLocalizationReviewPath(meta.input.target.name),
 								contentHash: null
 							},
-							generation: manifest.generation,
+							storeEpoch: manifest.generation,
+							generation: key,
 							fileKeys: {}
 						} satisfies GameTextTargetIndex;
 					}).pipe(
@@ -1464,6 +1497,108 @@ export const makeGameTextIndexSteps = (
 				})
 			);
 		});
+		/**
+		 * A page of what on disk differs from the project's index, read-only: the scanned saved
+		 * packages, and with `target` that target's view and its localization inputs.
+		 */
+		const diskChanges = Effect.fn("GameText.diskChanges")(function* (
+			input: DiskChangesRequest
+		) {
+			const request = yield* Schema.decodeUnknownEffect(DiskChangesRequest)(input).pipe(
+				Effect.mapError((cause) =>
+					failure(
+						"request",
+						"The disk check request is invalid.",
+						"Choose a project, and name at most 4096 project-relative paths.",
+						cause
+					)
+				)
+			);
+			if (!builder.diskChanges)
+				return yield* Effect.fail(
+					failure(
+						"disk",
+						"This Game Text index backend can't check the disk.",
+						"Use the native index builder."
+					)
+				);
+			const { projectRoot } = yield* openProject(request);
+			const { target, ...page } = request;
+			const { answer, engineSeconds } = yield* builder
+				.diskChanges(configurationFor(cacheRoot, projectRoot, target), {
+					...page,
+					projectRoot,
+					...(target === undefined ? undefined : { target })
+				})
+				.pipe(normalizeFailure);
+			yield* Effect.annotateCurrentSpan({
+				"game_text.disk_changes.mode": request.paths === undefined ? "walk" : "paths",
+				"game_text.disk_changes.paths": request.paths?.length ?? 0,
+				"game_text.disk_changes.status": answer.status,
+				"game_text.disk_changes.engine_seconds": engineSeconds,
+				...(answer.status === "ready"
+					? {
+							"game_text.disk_changes.packages_added": answer.counts.packages.added,
+							"game_text.disk_changes.packages_changed":
+								answer.counts.packages.changed,
+							"game_text.disk_changes.packages_removed":
+								answer.counts.packages.removed,
+							"game_text.disk_changes.localization_added":
+								answer.counts.localization.added,
+							"game_text.disk_changes.localization_changed":
+								answer.counts.localization.changed,
+							"game_text.disk_changes.localization_removed":
+								answer.counts.localization.removed,
+							"game_text.disk_changes.items": answer.items.length
+						}
+					: undefined)
+			});
+			return answer;
+		});
+
+		/**
+		 * The paths that differ from the index as they change: see `watchDiskChanges`. The target's
+		 * files are discovered once; a config change that alters discovery is not followed.
+		 */
+		const watchProjectDiskChanges = (
+			input: DiskChangesWatchRequest,
+			published: Stream.Stream<unknown> = Stream.never
+		) =>
+			Stream.unwrap(
+				Effect.gen(function* () {
+					const { projectRoot } = yield* openProject(input);
+					const files = new Set<string>();
+					if (input.target !== undefined) {
+						const discovery = yield* evidence
+							.discover({ projectRoot })
+							.pipe(Effect.mapError(manifestIndexFailure));
+						const target = discovery.targets.find((item) => item.name === input.target);
+						const outputs = target?.outputPaths;
+						for (const path of [
+							outputs?.manifest,
+							...Object.values(outputs?.archives ?? {}),
+							...Object.values(outputs?.portableObjects ?? {}),
+							defaultLocalizationReviewPath(input.target)
+						])
+							if (path) files.add(path.replaceAll("\\", "/"));
+					}
+					return watchDiskChanges({
+						projectRoot,
+						folders: watchedFolders(files),
+						localizationFiles: files,
+						published,
+						...(input.settle === undefined ? undefined : { settle: input.settle }),
+						check: (page) =>
+							diskChanges({
+								projectRoot,
+								...(input.target === undefined
+									? undefined
+									: { target: input.target }),
+								...page
+							})
+					});
+				})
+			);
 		// Index work runs on the host's event loop; slicing keeps a server host answering meanwhile.
 		const sliced =
 			<Args extends ReadonlyArray<unknown>, A, E, R>(
@@ -1482,7 +1617,9 @@ export const makeGameTextIndexSteps = (
 			readPoint: sliced(readPoint),
 			comparePoints: sliced(comparePoints),
 			compareTextFiles: sliced(compareTextFiles),
-			invalidate: sliced(invalidate)
+			invalidate: sliced(invalidate),
+			diskChanges: sliced(diskChanges),
+			watchDiskChanges: watchProjectDiskChanges
 		};
 	});
 

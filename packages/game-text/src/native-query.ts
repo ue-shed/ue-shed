@@ -47,6 +47,9 @@ export type { NativeTextQuery, NativeTextExport } from "./native-query-contract.
 
 const benchmark = channel("ue-shed.game-text-benchmark");
 
+/** The identities one `review_lines` request reads: the engine's `MAX_REVIEW_LINES`. */
+const MAX_REVIEW_LINES = 2560;
+
 const NativeExportFile = Schema.Struct({
 	...TextCorpus.fields,
 	findingRules: Schema.optionalKey(
@@ -603,7 +606,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				request: {
 					selection: decoded.selection,
 					...(decoded.target !== undefined && { target: decoded.target }),
-					related: { limit: decoded.pageSize }
+					related: {
+						limit: decoded.pageSize,
+						...(decoded.similarKeys !== undefined && {
+							similarKeys: decoded.similarKeys
+						})
+					}
 				}
 			},
 			Schema.Struct({ related: Schema.NullOr(RelatedLines) })
@@ -613,12 +621,73 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				"game_text.related.same_key": result.sameKey.members.length,
 				"game_text.related.same_text": result.sameText.members.length,
 				"game_text.related.conflict": result.conflict?.members.length ?? 0,
-				"game_text.related.key_change": result.keyChange?.members.length ?? 0
+				"game_text.related.key_change": result.keyChange?.members.length ?? 0,
+				...(result.similarKeys !== undefined && {
+					"game_text.related.similar_keys.pairs": result.similarKeys.pairs,
+					"game_text.related.similar_keys.candidates":
+						result.similarKeys.candidates.length,
+					"game_text.related.similar_keys.paired": result.similarKeys.pair !== undefined,
+					"game_text.related.similar_keys.truncated": result.similarKeys.truncated,
+					"game_text.related.similar_keys.build_ms": result.similarKeys.buildMs
+				})
 			});
 		return result ?? undefined;
 	});
 	const exported = (request: Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> | undefined) =>
 		exportWithSignals(pinned, request);
+	const reviewLines = Effect.fn("GameText.native.reviewLines")(function* (
+		request: GameTextContract.ReviewLinesRequest
+	) {
+		const lines: GameTextContract.ReviewLine[] = [];
+		let engineSeconds = 0;
+		for (let start = 0; start < request.identities.length; start += MAX_REVIEW_LINES) {
+			const answer = yield* execute({
+				action: "review_lines",
+				reader,
+				request: {
+					...request,
+					identities: request.identities.slice(start, start + MAX_REVIEW_LINES)
+				}
+			});
+			const reply = answerJson<GameTextContract.ReviewLinesAnswer>(answer);
+			if (reply === undefined)
+				return yield* Effect.fail(failed("review_lines", "The engine sent no reply."));
+			lines.push(...reply.lines);
+			engineSeconds += answer.profile.stageSeconds["review_lines"] ?? 0;
+		}
+		yield* Effect.annotateCurrentSpan({
+			"game_text.review_lines.identities": request.identities.length,
+			"game_text.review_lines.found": lines.filter((line) => line.status === "found").length,
+			"game_text.review_lines.engine_seconds": engineSeconds
+		});
+		return lines;
+	});
+	const changedSince = Effect.fn("GameText.native.changedSince")(function* (
+		request: GameTextContract.ChangedSinceRequest
+	) {
+		const answer = yield* execute({ action: "changed_since", reader, request });
+		const reply = answerJson<GameTextContract.ChangedSinceAnswer>(answer);
+		if (reply === undefined)
+			return yield* Effect.fail(failed("changed_since", "The engine sent no reply."));
+		yield* Effect.annotateCurrentSpan({
+			"game_text.changed_since.kind": request.kind,
+			"game_text.changed_since.page_size": request.limit,
+			"game_text.changed_since.status": reply.status,
+			"game_text.changed_since.engine_seconds":
+				answer.profile.stageSeconds["changed_since"] ?? 0,
+			...(reply.status === "changes"
+				? {
+						"game_text.changed_since.added": reply.counts.added,
+						"game_text.changed_since.changed": reply.counts.changed,
+						"game_text.changed_since.removed": reply.counts.removed,
+						"game_text.changed_since.items": reply.items.length
+					}
+				: reply.status === "too_old"
+					? { "game_text.changed_since.reason": reply.reason }
+					: undefined)
+		});
+		return reply;
+	});
 	const model: NativeTextQuery = {
 		findingsEvaluate: Effect.fn("GameText.native.findingsEvaluate")(
 			function* (document, progress) {
@@ -718,6 +787,8 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 		readFileCoverage: (files) => readFileCoverage(pinned, files),
 		readCorpusReportHeader: () => readCorpusReportHeader(pinned),
 		readUnits: (ids) => (ids.length === 0 ? Effect.succeed([]) : readUnits(pinned, ids)),
+		reviewLines,
+		changedSince,
 		corpusFingerprint: () => corpusFingerprint(pinned)
 	};
 	return model;

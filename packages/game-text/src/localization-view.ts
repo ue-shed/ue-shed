@@ -66,7 +66,12 @@ export const LocalizationTargetResult = Schema.Union([
 			)
 		),
 		/** The folder Game Text looked in for the target's evidence files. */
-		localizationFolder: Schema.optionalKey(Schema.String)
+		localizationFolder: Schema.optionalKey(Schema.String),
+		/**
+		 * The selected target's generation, as `TextCorpusQueryRunResult` describes it; pass it to
+		 * `changedSince` with the target.
+		 */
+		generation: Schema.optionalKey(Schema.String)
 	})
 ]);
 export type LocalizationTargetResult = typeof LocalizationTargetResult.Type;

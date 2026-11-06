@@ -164,7 +164,7 @@ describe.skipIf(!executable)("native index build capability", () => {
 									);
 									const query = yield* (yield* GameTextIndexQuery).open({
 										configuration: options,
-										generation: joined.reader.manifest.generation,
+										storeEpoch: joined.reader.manifest.generation,
 										joinedKey: joined.reader.manifest.active.joined!
 									});
 									expect(joined.meta.input.fileProvenances?.["de.po"]).toEqual(
@@ -305,7 +305,7 @@ describe.skipIf(!executable)("native index build capability", () => {
 										);
 										const query = yield* (yield* GameTextIndexQuery).open({
 											configuration: options,
-											generation: joined.reader.manifest.generation,
+											storeEpoch: joined.reader.manifest.generation,
 											joinedKey: joined.reader.manifest.active.joined!
 										});
 										const pages = yield* Effect.forEach(

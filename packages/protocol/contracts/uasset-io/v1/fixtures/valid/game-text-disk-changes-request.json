@@ -1,0 +1,28 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 16
+		}
+	},
+	"requestId": "disk-changes",
+	"limits": {},
+	"operation": {
+		"kind": "game_text_index",
+		"request": {
+			"action": "disk_changes",
+			"configuration": {
+				"cacheRoot": ".cache",
+				"projectKey": "generic-project",
+				"targetKey": "SavedText",
+				"sharedProject": false
+			},
+			"request": {
+				"projectRoot": "generic-project",
+				"paths": ["Content/Maps/Example.umap", "Content/Maps/Example.uexp"],
+				"limit": 100
+			}
+		}
+	}
+}

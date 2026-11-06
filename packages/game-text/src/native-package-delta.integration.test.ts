@@ -420,7 +420,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 									);
 									const native = yield* queries.open({
 										configuration,
-										generation: joined.reader.manifest.generation,
+										storeEpoch: joined.reader.manifest.generation,
 										joinedKey: joined.reader.manifest.active.joined!
 									});
 									if (backend === "native") {
@@ -428,7 +428,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										const borrowed = yield* queries
 											.open({
 												joinedKey: joined.reader.manifest.active.joined!,
-												generation: joined.reader.manifest.generation,
+												storeEpoch: joined.reader.manifest.generation,
 												configuration
 											})
 											.pipe(Effect.provideService(Scope.Scope, owner));
@@ -470,7 +470,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										).toBe(true);
 										const request = {
 											configuration,
-											generation: joined.reader.manifest.generation,
+											storeEpoch: joined.reader.manifest.generation,
 											joinedKey: joined.reader.manifest.active.joined!
 										};
 										const recovered = yield* queries.open(request);

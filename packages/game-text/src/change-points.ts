@@ -224,6 +224,11 @@ export function readGameTextChangePoints<E>(input: {
 	readonly code?: GameTextCodeSource;
 	readonly changes?: GameTextChangePage;
 	readonly findings?: GameTextChangePage;
+	/**
+	 * The checks that fail, as `localizationGateFailures` gives them. The engine lists their
+	 * findings first before it pages them, so no page holds a warning before a later failure.
+	 */
+	readonly failOn?: readonly LocalizationGateCheck[];
 }) {
 	return Effect.gen(function* () {
 		const targetNames = input.targetNames ?? [];
@@ -263,6 +268,7 @@ export function readGameTextChangePoints<E>(input: {
 					base,
 					changes: input.changes ?? WHOLE,
 					findings: input.findings ?? WHOLE,
+					...(input.failOn === undefined ? undefined : { failOn: input.failOn }),
 					...(targetName === undefined ? undefined : { targetName }),
 					...(localization === undefined ? undefined : { localization })
 				});
@@ -361,7 +367,9 @@ function readSides<E>(
 
 /**
  * A target's comparison as `compareChange` answers it, judged by `failing`: each finding's
- * severity and way forward, failing checks first, and the verdict when the change was judged.
+ * severity and way forward, and the verdict when the change was judged. The findings keep the
+ * engine's order, which lists failing checks first when the points were read with the same
+ * `failOn`; ordering here would only order one page.
  */
 export function changeComparisonTarget(
 	points: GameTextTargetPoints,
@@ -369,9 +377,6 @@ export function changeComparisonTarget(
 ): ChangeComparisonTarget {
 	const { comparison } = points;
 	const fails = new Set(failing);
-	const order = (check: LocalizationGateCheck) =>
-		(fails.has(check) ? 0 : LocalizationGateCheck.literals.length) +
-		LocalizationGateCheck.literals.indexOf(check);
 	const findings = comparison.findings;
 	// The verdict counts every finding, not only the page's, as `loc gate` does.
 	const status =
@@ -396,15 +401,13 @@ export function changeComparisonTarget(
 					findings: {
 						counts: findings.counts,
 						total: findings.total,
-						rows: findings.rows
-							.map((finding) => ({
-								...finding,
-								severity: fails.has(finding.check)
-									? ("fail" as const)
-									: ("warn" as const),
-								guidance: comparisonGuidance(finding)
-							}))
-							.sort((left, right) => order(left.check) - order(right.check))
+						rows: findings.rows.map((finding) => ({
+							...finding,
+							severity: fails.has(finding.check)
+								? ("fail" as const)
+								: ("warn" as const),
+							guidance: comparisonGuidance(finding)
+						}))
 					}
 				})
 	};

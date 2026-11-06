@@ -46,6 +46,20 @@ export class GameTextIndexBuilder extends Context.Service<
 			domain: string,
 			values: readonly string[]
 		) => Effect.Effect<Uint32Array, IndexFailure, SharedIndex | Scope.Scope>;
+		/**
+		 * One page of what on disk differs from the configuration's view, read-only: no writer
+		 * lease, no Catalog or index write. Absent when the backend can't walk the project.
+		 */
+		readonly diskChanges?: (
+			configuration: SharedIndexOptions,
+			request: import("@ue-shed/protocol").GameTextContract.DiskChangesRequest
+		) => Effect.Effect<
+			{
+				readonly answer: import("@ue-shed/protocol").GameTextContract.DiskChangesAnswer;
+				readonly engineSeconds: number;
+			},
+			IndexFailure
+		>;
 		readonly compact: (
 			force?: boolean
 		) => Effect.Effect<

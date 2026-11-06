@@ -569,4 +569,8 @@ export {
 	contractParserSync
 } from "./contract-parser.js";
 
-export { gameTextEngineContract, type GameTextContract } from "./game-text-contract.generated.js";
+export {
+	gameTextEngineContract,
+	localizationImport,
+	type GameTextContract
+} from "./game-text-contract.generated.js";

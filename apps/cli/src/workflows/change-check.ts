@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { LocalizationEvidence } from "@ue-shed/localization";
-import type { LocalizationGateChange } from "@ue-shed/game-text/checks";
+import type { LocalizationGateCheck } from "@ue-shed/game-text/checks";
 import { GameTextLocalizationError } from "@ue-shed/game-text/schema";
 import {
 	GameTextIndexError,
@@ -169,6 +169,8 @@ export const readChange = Effect.fn("Cli.localization.read_change")(function* (i
 	readonly targetNames: readonly string[];
 	readonly reader?: string;
 	readonly changes?: { readonly offset: number; readonly limit: number };
+	/** The checks that fail, whose findings the comparison lists first. */
+	readonly failOn?: readonly LocalizationGateCheck[];
 }) {
 	const cacheRoot = yield* cliCacheRoot.pipe(Effect.mapError(configurationFailure));
 	const code = yield* cliProjectCode(input.projectRoot).pipe(
@@ -187,7 +189,8 @@ export const readChange = Effect.fn("Cli.localization.read_change")(function* (i
 		revisions: perforceChangeRevisions({ directory: join(cacheRoot, "revisions") }),
 		targetNames: input.targetNames,
 		...(code === undefined ? undefined : { code }),
-		...(input.changes === undefined ? undefined : { changes: input.changes })
+		...(input.changes === undefined ? undefined : { changes: input.changes }),
+		...(input.failOn === undefined ? undefined : { failOn: input.failOn })
 	}).pipe(
 		Effect.provide(cliGameTextIndexLayer(input.reader)),
 		Effect.provide(LocalizationEvidenceNodeLive),

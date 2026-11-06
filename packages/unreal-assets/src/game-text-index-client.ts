@@ -88,7 +88,8 @@ export const nativeGameTextIndexClientLayer = (configuration: AssetReaderConfigu
 										request.action === "publish_packages" ||
 										request.action === "compare_packages"
 											? 22
-											: request.action === "plan_packages"
+											: request.action === "plan_packages" ||
+												  request.action === "disk_changes"
 												? 16
 												: 13
 								}

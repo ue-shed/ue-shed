@@ -88,6 +88,19 @@ pub(super) fn enumerate(
     enumerate_with_limits(project_root, cancellation, workers, MAX_QUEUED_DIRECTORIES)
 }
 
+/// The same walk on at most `maximum_workers` threads, for checks that run beside other work.
+pub(super) fn enumerate_bounded(
+    project_root: &str,
+    cancellation: &CancellationToken,
+    maximum_workers: usize,
+) -> Result<Vec<PackageSignature>, Failure> {
+    let workers = std::thread::available_parallelism()
+        .map_or(4, std::num::NonZeroUsize::get)
+        .min(maximum_workers)
+        .max(1);
+    enumerate_with_limits(project_root, cancellation, workers, MAX_QUEUED_DIRECTORIES)
+}
+
 fn enumerate_with_limits(
     project_root: &str,
     cancellation: &CancellationToken,

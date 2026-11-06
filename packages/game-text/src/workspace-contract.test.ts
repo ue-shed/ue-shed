@@ -151,13 +151,16 @@ describe("GameTextWorkspaceContract", () => {
 							return result;
 						});
 
-					expect(
-						(yield* serve(
-							GameTextWorkspaceContract.configuredRefresh,
-							workspace.configuredRefresh,
-							{}
-						)).status
-					).toBe("completed");
+					const refreshed = yield* serve(
+						GameTextWorkspaceContract.configuredRefresh,
+						workspace.configuredRefresh,
+						{}
+					);
+					expect(refreshed.status).toBe("completed");
+					const generation =
+						refreshed.status === "completed" ? refreshed.generation : undefined;
+					// The target's joined key: opaque to hosts.
+					expect(generation).toEqual(expect.any(String));
 					expect(
 						(yield* serve(GameTextWorkspaceContract.progress, workspace.progress, {}))
 							.phase
@@ -200,6 +203,17 @@ describe("GameTextWorkspaceContract", () => {
 						selection: { kind: "unit", id },
 						pageSize: 10
 					});
+					expect(
+						yield* serve(
+							GameTextWorkspaceContract.changedSince,
+							workspace.changedSince,
+							{
+								since: generation!,
+								kind: "lines",
+								limit: 10
+							}
+						)
+					).toEqual({ status: "same" });
 
 					expect(
 						(yield* serve(
@@ -251,13 +265,28 @@ describe("GameTextWorkspaceContract", () => {
 							{}
 						)).status
 					).toBe("ready");
+					const selected = yield* serve(
+						GameTextWorkspaceContract.localizationTarget,
+						workspace.localizationTarget,
+						target
+					);
+					expect(selected.status).toBe("ready");
+					// The selected target's generation: the scan's, since the scan read this target.
+					expect(selected.status === "ready" ? selected.generation : undefined).toBe(
+						generation
+					);
 					expect(
-						(yield* serve(
-							GameTextWorkspaceContract.localizationTarget,
-							workspace.localizationTarget,
-							target
-						)).status
-					).toBe("ready");
+						yield* serve(
+							GameTextWorkspaceContract.changedSince,
+							workspace.changedSince,
+							{
+								target,
+								since: "not a generation",
+								kind: "packages",
+								limit: 10
+							}
+						)
+					).toEqual({ status: "too_old", reason: "unknown" });
 					const quality = { target, filter: "all", offset: 0 } as const;
 					const checked = yield* serve(
 						GameTextWorkspaceContract.localizationQualitySearch,

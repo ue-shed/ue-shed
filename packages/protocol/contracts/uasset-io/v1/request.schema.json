@@ -920,16 +920,9 @@
 																	"exclusiveMinimum": 0
 																}
 															]
-														},
-														"cold": {
-															"type": "boolean"
 														}
 													},
-													"required": [
-														"files",
-														"maximumInFlightBytes",
-														"cold"
-													],
+													"required": ["files", "maximumInFlightBytes"],
 													"additionalProperties": false
 												}
 											},
@@ -3641,6 +3634,197 @@
 														"rules",
 														"files"
 													],
+													"additionalProperties": false
+												}
+											},
+											"required": ["action", "configuration", "request"],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"action": {
+													"type": "string",
+													"enum": ["disk_changes"]
+												},
+												"configuration": {
+													"anyOf": [
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [false]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														},
+														{
+															"type": "object",
+															"properties": {
+																"cacheRoot": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"projectKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"targetKey": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"minLength": 1
+																		},
+																		{
+																			"maxLength": 32767
+																		}
+																	]
+																},
+																"sharedProject": {
+																	"type": "boolean",
+																	"enum": [true]
+																},
+																"viewPrefix": {
+																	"type": "string",
+																	"allOf": [
+																		{
+																			"pattern": "^target-join\\.[a-f0-9]{64}\\.$"
+																		}
+																	]
+																}
+															},
+															"required": [
+																"cacheRoot",
+																"projectKey",
+																"targetKey",
+																"sharedProject"
+															],
+															"additionalProperties": false
+														}
+													]
+												},
+												"request": {
+													"type": "object",
+													"properties": {
+														"projectRoot": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"target": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 1024
+																}
+															]
+														},
+														"paths": {
+															"type": "array",
+															"items": {
+																"type": "string",
+																"allOf": [
+																	{
+																		"minLength": 1
+																	},
+																	{
+																		"maxLength": 1024
+																	}
+																]
+															},
+															"allOf": [
+																{
+																	"maxItems": 4096
+																}
+															]
+														},
+														"after": {
+															"type": "string",
+															"allOf": [
+																{
+																	"minLength": 1
+																},
+																{
+																	"maxLength": 32767
+																}
+															]
+														},
+														"limit": {
+															"type": "integer",
+															"allOf": [
+																{
+																	"exclusiveMinimum": 0
+																},
+																{
+																	"maximum": 1000
+																}
+															]
+														}
+													},
+													"required": ["projectRoot", "limit"],
 													"additionalProperties": false
 												}
 											},

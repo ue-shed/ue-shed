@@ -5,6 +5,7 @@ use crate::snapshot::{Reader, integers};
 use crate::store::{Configuration, decode_ids, open_root, section};
 use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result, require};
+use rustc_hash::FxHashMap;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -61,13 +62,14 @@ fn imaged_string(segments: &[Segment], id: u32) -> Result<String> {
 /// query cache, and are dropped as soon as the evaluation has built what it needs from them.
 #[derive(Default)]
 struct ScopedColumns {
-    columns: HashMap<(String, String), Arc<[u32]>>,
+    columns: Columns,
     bytes: HashMap<String, Arc<[u8]>>,
 }
 /// Every input is selected from the same immutable joined metadata and held open until drop.
 /// Writers may publish or compact concurrently without changing this reader's results.
-/// Decoded columns by input layer key and name; the joined view's own columns use an empty key.
-type Columns = HashMap<(String, String), Arc<[u32]>>;
+/// Decoded columns by input layer key, then name; the joined view's own columns use an empty key.
+/// Nested so a lookup borrows both names: reads hit this cache for every value they hydrate.
+type Columns = FxHashMap<String, FxHashMap<String, Arc<[u32]>>>;
 
 /// Concurrent requests share one reader: its inputs are immutable and its caches are locked.
 pub struct EngineReader {
@@ -348,9 +350,10 @@ impl EngineReader {
 
     /// Heap bytes of the cached columns, dictionary images and evaluation scope.
     pub(crate) fn cache_bytes(&self) -> usize {
-        let columns = |columns: &HashMap<(String, String), Arc<[u32]>>| {
+        let columns = |columns: &Columns| {
             columns
                 .values()
+                .flat_map(FxHashMap::values)
                 .map(|column| column.len() * 4)
                 .sum::<usize>()
         };
@@ -388,20 +391,31 @@ impl EngineReader {
     pub(crate) fn end_evaluation(&self) {
         *self.evaluation.lock() = None;
     }
-    fn cached_column(&self, key: &(String, String)) -> Option<Arc<[u32]>> {
-        if let Some(values) = self.columns.lock().get(key) {
+    fn cached_column(&self, layer: &str, name: &str) -> Option<Arc<[u32]>> {
+        if let Some(values) = self
+            .columns
+            .lock()
+            .get(layer)
+            .and_then(|names| names.get(name))
+        {
             return Some(Arc::clone(values));
         }
         let scope = self.evaluation.lock();
-        scope.as_ref()?.columns.get(key).cloned()
+        scope.as_ref()?.columns.get(layer)?.get(name).cloned()
     }
     /// Keeps a loaded column in the evaluation's scope while one runs, else in the reader's cache.
-    fn store_column(&self, key: (String, String), values: &Arc<[u32]>) {
+    fn store_column(&self, layer: &str, name: &str, values: &Arc<[u32]>) {
+        let store = |columns: &mut Columns| {
+            columns
+                .entry(layer.to_owned())
+                .or_default()
+                .insert(name.to_owned(), Arc::clone(values));
+        };
         if let Some(scope) = &mut *self.evaluation.lock() {
-            scope.columns.insert(key, Arc::clone(values));
+            store(&mut scope.columns);
             return;
         }
-        self.columns.lock().insert(key, Arc::clone(values));
+        store(&mut self.columns.lock());
     }
     fn cached_bytes(&self, key: &str) -> Option<Arc<[u8]>> {
         if let Some(values) = self.byte_columns.lock().get(key) {
@@ -420,8 +434,7 @@ impl EngineReader {
             .insert(key.to_owned(), Arc::clone(values));
     }
     pub fn layer_column(&self, key: &str, name: &str) -> Result<Arc<[u32]>> {
-        let cache_key = (key.to_owned(), name.to_owned());
-        if let Some(values) = self.cached_column(&cache_key) {
+        if let Some(values) = self.cached_column(key, name) {
             return Ok(values);
         }
         let layer = self.layers.get(key).ok_or("Query input was not pinned.")?;
@@ -432,16 +445,15 @@ impl EngineReader {
             integers(&bytes)?
         }
         .into();
-        self.store_column(cache_key, &values);
+        self.store_column(key, name, &values);
         Ok(values)
     }
 
     pub fn input_column(&self, name: &str, field: &str) -> Result<Arc<[u32]>> {
         let key = self.meta["dependencies"][name]
             .as_str()
-            .ok_or("Joined input dependency is absent.")?
-            .to_owned();
-        self.layer_column(&key, field)
+            .ok_or("Joined input dependency is absent.")?;
+        self.layer_column(key, field)
     }
 
     pub fn input_metadata(&self, name: &str, section_name: &str) -> Result<Value> {
@@ -501,8 +513,7 @@ impl EngineReader {
 
     /// Read logical columns: immutable full-build columns plus one flat bounded overlay.
     pub fn column(&self, name: &str) -> Result<Arc<[u32]>> {
-        let cache_key = (String::new(), name.to_owned());
-        if let Some(values) = self.cached_column(&cache_key) {
+        if let Some(values) = self.cached_column("", name) {
             return Ok(values);
         }
         if let Some(kind) = self.source_patch_kind(name) {
@@ -510,7 +521,7 @@ impl EngineReader {
         }
         let original = self.original_column(name)?;
         if self.meta["patches"][name].is_null() {
-            self.store_column(cache_key, &original);
+            self.store_column("", name, &original);
             return Ok(original);
         }
         let mut values = original.to_vec();
@@ -537,7 +548,7 @@ impl EngineReader {
             }
         }
         let values: Arc<[u32]> = values.into();
-        self.store_column(cache_key, &values);
+        self.store_column("", name, &values);
         Ok(values)
     }
 
@@ -597,9 +608,9 @@ impl EngineReader {
             ("sources", out_values),
         ] {
             let values: Arc<[u32]> = values.into();
-            self.store_column((String::new(), format!("{prefix}{field}")), &values);
+            self.store_column("", &format!("{prefix}{field}"), &values);
         }
-        self.cached_column(&(String::new(), name.to_owned()))
+        self.cached_column("", name)
             .ok_or_else(|| "Source patch field is absent.".into())
     }
 

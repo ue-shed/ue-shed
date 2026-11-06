@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, mkdir, open, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { pipeline } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { Effect, Predicate, Schema } from "effect";
 import {
@@ -319,8 +320,13 @@ export async function extractPluginArchiveToDirectory(
 		);
 		if (initialCancellation !== undefined) throw initialCancellation;
 		await mkdir(options.destination);
-		const gunzip = createReadStream(options.archivePath, { signal: options.signal }).pipe(
-			createGunzip()
+		// `pipeline`, not `.pipe`: an abort or failure in either stage destroys both, so the
+		// iterator below rejects instead of waiting forever on a gunzip whose source is gone.
+		// The iterator reports that error, so the callback only has to exist.
+		const gunzip = pipeline(
+			createReadStream(options.archivePath, { signal: options.signal }),
+			createGunzip(),
+			() => undefined
 		);
 		// SAFETY: no text encoding is configured, so Node's readable stream yields Buffer chunks.
 		// Verified by: packages/plugin-distribution/src/distribution.integration.test.ts

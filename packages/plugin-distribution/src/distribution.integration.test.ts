@@ -14,7 +14,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { crc32, deflateRawSync, gzipSync } from "node:zlib";
 import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
 import { expect, vi } from "vitest";
@@ -60,6 +60,10 @@ function writeOctal(block: Buffer, offset: number, length: number, value: number
 }
 
 function tarArchive(entries: readonly TarEntry[]): Buffer {
+	return gzipSync(tarBytes(entries), { level: 1 });
+}
+
+function tarBytes(entries: readonly TarEntry[]): Buffer {
 	const blocks: Buffer[] = [];
 	for (const entry of entries) {
 		const body = Buffer.from(entry.body ?? new Uint8Array());
@@ -82,7 +86,32 @@ function tarArchive(entries: readonly TarEntry[]): Buffer {
 		if (padding > 0) blocks.push(Buffer.alloc(padding));
 	}
 	blocks.push(Buffer.alloc(1024));
-	return gzipSync(Buffer.concat(blocks), { level: 1 });
+	return Buffer.concat(blocks);
+}
+
+/**
+ * Gzips the tar as two members split at byte `splitAt`, the second behind a header comment of
+ * `commentBytes`. Gunzip yields nothing while it reads the comment, so a reader that needs bytes
+ * past the split waits on the stream, not on a write, until the whole comment is read.
+ */
+function stalledTarArchive(
+	entries: readonly TarEntry[],
+	stall: { readonly splitAt: number; readonly commentBytes: number }
+): Buffer {
+	const tar = tarBytes(entries);
+	const tail = tar.subarray(stall.splitAt);
+	const trailer = Buffer.alloc(8);
+	trailer.writeUInt32LE(crc32(tail), 0);
+	trailer.writeUInt32LE(tail.byteLength, 4);
+	return Buffer.concat([
+		gzipSync(tar.subarray(0, stall.splitAt), { level: 1 }),
+		// ID1 ID2, deflate, FCOMMENT, no mtime, no extra flags, unknown OS.
+		Buffer.from([0x1f, 0x8b, 8, 0x10, 0, 0, 0, 0, 0, 255]),
+		Buffer.alloc(stall.commentBytes, "a"),
+		Buffer.from([0]),
+		deflateRawSync(tail, { level: 1 }),
+		trailer
+	]);
 }
 
 function digest(bytes: Uint8Array) {
@@ -93,28 +122,32 @@ async function fixture(
 	options: {
 		readonly entries?: readonly TarEntry[];
 		readonly releaseVersion?: string;
+		/** Stalls gunzip at a byte of the tar; see `stalledTarArchive`. */
+		readonly stall?: { readonly splitAt: number; readonly commentBytes: number };
 	} = {}
 ) {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-plugin-distribution-"));
 	roots.push(root);
 	const releaseVersion = options.releaseVersion ?? "0.3.1";
 	const names = pluginReleaseAssetNames(releaseVersion);
-	const archive = tarArchive(
-		options.entries ?? [
-			{
-				body: Buffer.from('{"FileVersion":3}\n'),
-				name: "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"
-			},
-			{
-				body: Buffer.from("core source\n"),
-				name: "UEShed/Plugins/UEShedCore/Source/Core.cpp"
-			},
-			{
-				body: Buffer.from('{"FileVersion":3}\n'),
-				name: "UEShed/Plugins/UEShedCameras/UEShedCameras.uplugin"
-			}
-		]
-	);
+	const entries = options.entries ?? [
+		{
+			body: Buffer.from('{"FileVersion":3}\n'),
+			name: "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"
+		},
+		{
+			body: Buffer.from("core source\n"),
+			name: "UEShed/Plugins/UEShedCore/Source/Core.cpp"
+		},
+		{
+			body: Buffer.from('{"FileVersion":3}\n'),
+			name: "UEShed/Plugins/UEShedCameras/UEShedCameras.uplugin"
+		}
+	];
+	const archive =
+		options.stall === undefined
+			? tarArchive(entries)
+			: stalledTarArchive(entries, options.stall);
 	const archivePath = join(root, names.artifact);
 	await writeFile(archivePath, archive);
 	const manifest = {
@@ -1577,6 +1610,60 @@ it.effect("cancels during extraction and removes staging", () =>
 		expect(error).toBeInstanceOf(PluginInstallCancelled);
 		const entries = yield* Effect.promise(() => readdir(cacheRoot));
 		expect(entries.some((entry) => entry.startsWith(".publish-"))).toBe(false);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("interrupting the install mid-extraction settles and removes staging", () =>
+	Effect.gen(function* () {
+		// The first file's first chunk is in the first gzip member and the rest of it is behind a
+		// 64 MiB comment, so right after the first progress event extraction waits on gunzip.
+		const source = yield* Effect.promise(() =>
+			fixture({
+				entries: [
+					{
+						body: randomBytes(256 * 1024),
+						name: "UEShed/Plugins/UEShedCameras/Content.bin"
+					},
+					{
+						body: Buffer.from('{"FileVersion":3}\n'),
+						name: "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"
+					},
+					{
+						body: Buffer.from('{"FileVersion":3}\n'),
+						name: "UEShed/Plugins/UEShedCameras/UEShedCameras.uplugin"
+					}
+				],
+				stall: { splitAt: 512 + 96 * 1024, commentBytes: 64 * 1024 * 1024 }
+			})
+		);
+		const cacheRoot = join(source.root, "interrupt-cache");
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({ directory: source.root }),
+			cacheRoot
+		);
+		const extracting = yield* Deferred.make<void>();
+		const install = yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install(request(source.releaseVersion), {
+					onProgress: (progress) => {
+						if (progress.phase === "extracting")
+							Deferred.doneUnsafe(extracting, Effect.void);
+					}
+				})
+			)
+		).pipe(Effect.provide(layer), Effect.forkChild);
+		yield* Deferred.await(extracting);
+		// Interruption waits for the extraction Promise and its staging cleanup to settle.
+		yield* Fiber.interrupt(install);
+		const entries = yield* Effect.promise(() => readdir(cacheRoot));
+		expect(entries.some((entry) => entry.startsWith(".publish-"))).toBe(false);
+		expect(entries.some((entry) => entry.startsWith(".download-"))).toBe(false);
 	}).pipe(
 		Effect.ensuring(
 			Effect.promise(async () => {

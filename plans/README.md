@@ -27,6 +27,7 @@ the status row when done.
 | [061](061-localization-file-diff.md)                     | What changed between two localization files                                | P2       | M      | 060                       | IN PROGRESS — owner review        |
 | [062](062-blueprint-graph-diff.md)                       | What a change does to a Blueprint's graph                                  | P2       | L      | 060, 061                  | IN PROGRESS — Phase 3 waits       |
 | [063](063-changelist-filters-and-project-file-picks.md)  | Changelists that touch text, and the project's own localization files      | P1       | L      | 060, 061                  | TODO                              |
+| [064](064-locres-fallback.md)                            | A culture's translations from its `.locres`                                | P1       | M      | `.locres` import          | IN PROGRESS — review              |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED` with a one-line reason, or `REJECTED` with a
 one-line rationale. When a plan is `DONE`, move it into [`archive/`](archive/) and update both this

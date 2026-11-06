@@ -233,6 +233,8 @@ UTF-16 code unit widened to four little-endian bytes, stopping at the first NUL
 Unreal-compiled fixture resources (UE 4.27 and UE 5.x) and their manifests' sources. No
 Unreal-compiled resource of versions 0 to 2 is available, so for those the hash is exposed but
 unverified (`sourceHashVerified: false` in `file.meta`, `locres::source_hash_verified`).
+The join reads a culture's resource only when the culture has no archive; the culture-state rule
+is in [plan 064](../../plans/064-locres-fallback.md).
 The document reader and its existing callers keep their original limits and behavior.
 
 The importer defaults to 16 GiB input/spill bytes, 4 million entries or namespace nodes, depth 64,

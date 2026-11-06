@@ -1,5 +1,9 @@
 # SQLite query-engine spike
 
+The follow-up uses **direct Bun SQLite and the current Rust reader only**, with complete evidence
+and full-size generated data: [full-evidence pilot](full/README.md). Node SQLite and the SQLite
+process adapter below are retained only to reproduce the initial historical experiment.
+
 Research for [Plan 064](../../../plans/archive/064-sqlite-query-engine-spike.md), isolated from production.
 Use the same retained generated facts with the current Rust query engine, SQLite over the production
 frame/batch/host session, direct Node SQLite, and direct Bun SQLite. The Rust SQLite server is serial;
@@ -121,7 +125,7 @@ production policies, responsiveness under concurrent rules, or complete cache re
 pnpm exec tsc -p tools/benchmarks/sqlite-query/tsconfig.json
 pnpm exec oxlint tools/benchmarks/sqlite-query
 pnpm exec oxfmt --check tools/benchmarks/sqlite-query
-node --import tsx --test tools/benchmarks/sqlite-query/sqlite.test.ts
+node --import tsx --test tools/benchmarks/sqlite-query/sqlite.checks.ts
 cargo +1.98.1 test --locked --manifest-path tools/benchmarks/sqlite-query/native/Cargo.toml
 cargo +1.98.1 clippy --locked --manifest-path tools/benchmarks/sqlite-query/native/Cargo.toml --all-targets -- -D warnings
 cargo +1.98.1 fmt --manifest-path tools/benchmarks/sqlite-query/native/Cargo.toml -- --check

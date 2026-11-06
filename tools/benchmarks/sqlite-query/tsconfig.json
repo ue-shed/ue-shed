@@ -1,4 +1,4 @@
 {
 	"extends": "../../../tsconfig.scripts.json",
-	"include": ["./*.ts", "../../../packages/game-text/src/linebreak.d.ts"]
+	"include": ["./**/*.ts", "../../../packages/game-text/src/linebreak.d.ts"]
 }

@@ -20,7 +20,7 @@ export async function openSqlite(
 			const statement = db.prepare(sql);
 			return {
 				// SAFETY: workload SQL selects TEXT, NULL and safe-size counts/IDs, never BLOB or bigint.
-				// Verified by: sqlite.test.ts compares every workload result against its independent oracle.
+				// Verified by: sqlite.checks.ts compares every workload result against its independent oracle.
 				all: (...parameters) => statement.all(...parameters) as SqlRow[],
 				run: (...parameters) => {
 					statement.run(...parameters);

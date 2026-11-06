@@ -657,7 +657,8 @@ impl EngineQuery {
     /// The selection's rows, in display order.
     pub fn matching(&self, selection: &Selection, cancelled: &AtomicBool) -> Result<Arc<[u32]>> {
         checkpoint(cancelled)?;
-        Ok(self.match_rows(selection, cancelled)?.into())
+        let (set, order) = self.match_set(selection, cancelled)?;
+        Ok(set.in_order(&order, cancelled)?.into())
     }
 
     /// Every row's problems in a culture scope, with `finding` from the counted rows of a
@@ -736,8 +737,13 @@ impl EngineQuery {
 
     /// The intersection of the selection's atoms: its text, its visible rows and each conjunct of
     /// its `where`. Each atom is keyed by what it reads: the relation, the culture scope where it
-    /// depends on it, and the findings layer it reads.
-    fn match_rows(&self, selection: &Selection, cancelled: &AtomicBool) -> Result<Vec<u32>> {
+    /// depends on it, and the findings layer it reads. Returns the set with its relation's display
+    /// order, so a caller that needs only a page can walk the order without listing every row.
+    pub(crate) fn match_set(
+        &self,
+        selection: &Selection,
+        cancelled: &AtomicBool,
+    ) -> Result<(RowSet, Arc<[u32]>)> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchMatch");
         let plan = selection.plan()?;
@@ -883,6 +889,6 @@ impl EngineQuery {
                 })
             })?);
         }
-        RowSet::intersection(len, &sets)?.in_order(&order, cancelled)
+        Ok((RowSet::intersection(len, &sets)?, order))
     }
 }

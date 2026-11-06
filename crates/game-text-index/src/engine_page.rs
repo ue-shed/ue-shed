@@ -112,6 +112,37 @@ impl EngineQuery {
         })
     }
 
+    /// A rows part's page when nothing else needs every matching row: the rows after its cursor
+    /// in display order, at most `limit` of them, and whether more follow. The walk stops once
+    /// it has the page. As in `after_cursor`, a cursor whose row no longer matches restarts.
+    pub(crate) fn page_rows(
+        &self,
+        selection: &Selection,
+        part: &RowsPart,
+        cancelled: &AtomicBool,
+    ) -> Result<(Vec<u32>, bool)> {
+        let kind = if selection.localized() { "line" } else { "raw" };
+        let (set, order) = self.match_set(selection, cancelled)?;
+        let start = match part.after.as_ref() {
+            Some(cursor) => match self.find_id(kind, cursor)? {
+                Some(row) if set.contains(row) => {
+                    let ranks = self.row_ranks.get_or_try(kind.into(), || {
+                        ranks(&self.column(kind, "order")?, cancelled)
+                    })?;
+                    ranks[row] as usize + 1
+                }
+                _ => 0,
+            },
+            None => 0,
+        };
+        let limit = part.limit as usize;
+        let rest = order.get(start..).ok_or("Page cursor outside order")?;
+        let mut rows = set.first_in_order(rest, limit.saturating_add(1), cancelled)?;
+        let more = rows.len() > limit;
+        rows.truncate(limit);
+        Ok((rows, more))
+    }
+
     pub(crate) fn after_cursor(
         &self,
         kind: &str,

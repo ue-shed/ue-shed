@@ -625,22 +625,45 @@ impl EngineQuery {
         reply: &mut dyn Reply,
     ) -> Result<()> {
         let selection = &request.selection;
-        let matched = self.matching(selection, cancelled)?;
-        let mut result = self.search_metadata(request, &matched, cancelled)?;
-        if let Some(open) = &request.parts.open_groups {
+        let parts = &request.parts;
+        // Counts, groups, facets and a group's rows read every matching row. Without them a
+        // rows part reads only its page, so the matching rows are never listed in full.
+        let page_only = parts.counts != Some(true)
+            && parts.groups.is_none()
+            && parts.facets.is_none()
+            && parts.open_groups.is_none()
+            && parts.rows.as_ref().is_none_or(|part| part.group.is_none());
+        let matched = if page_only {
+            None
+        } else {
+            Some(self.matching(selection, cancelled)?)
+        };
+        let mut result =
+            self.search_metadata(request, matched.as_deref().unwrap_or(&[]), cancelled)?;
+        if let Some(open) = &parts.open_groups
+            && let Some(matched) = &matched
+        {
             result.open_groups =
-                Some(self.send_open_groups(selection, open, &matched, reply, cancelled)?);
+                Some(self.send_open_groups(selection, open, matched, reply, cancelled)?);
         }
-        if let Some(part) = &request.parts.rows {
-            let listed =
-                self.listed_rows(selection, part, std::sync::Arc::clone(&matched), cancelled)?;
+        if let Some(part) = &parts.rows {
             let kind = if selection.localized() { "line" } else { "raw" };
-            let after = self.after_cursor(kind, &listed, part.after.as_ref(), cancelled)?;
-            let end = listed.len().min(after.saturating_add(part.limit as usize));
-            let page = &listed[after..end];
-            if end < listed.len()
-                && let Some(last) = page.last()
-            {
+            let (page, more) = match &matched {
+                Some(matched) => {
+                    let listed = self.listed_rows(
+                        selection,
+                        part,
+                        std::sync::Arc::clone(matched),
+                        cancelled,
+                    )?;
+                    let after = self.after_cursor(kind, &listed, part.after.as_ref(), cancelled)?;
+                    let end = listed.len().min(after.saturating_add(part.limit as usize));
+                    (listed[after..end].to_vec(), end < listed.len())
+                }
+                None => self.page_rows(selection, part, cancelled)?,
+            };
+            let page = &page[..];
+            if more && let Some(last) = page.last() {
                 result.next_cursor = Some(self.packed(kind, *last as usize)?);
             }
             let mut units = Batches::new(&BROWSE_UNIT, "units", BROWSE_UNIT.without_parent());

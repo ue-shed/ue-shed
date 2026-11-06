@@ -480,6 +480,117 @@ it.effect("reports a typed work failure with a restoration failure as typed", ()
 	})
 );
 
+it.effect("gives callback finalizers the real work exit", () =>
+	Effect.gen(function* () {
+		for (const kind of ["typed", "defect"] as const) {
+			let observed: Exit.Exit<unknown, unknown> | undefined;
+			const h = harness();
+			const service = WorldPreparation.of({
+				...h.api,
+				acquire: (input) => h.api.acquire(input, { leaseId: id })
+			});
+			const workError = new WorldPreparationError({
+				code: "invalid_request",
+				operation: "test",
+				message: "Work failed",
+				recovery: "Inspect work",
+				retrySafe: false,
+				nextStep: "escalate"
+			});
+			const defect = new Error("callback work defect");
+			const result = yield* withPreparedWorld(requirements, () =>
+				Effect.gen(function* () {
+					yield* Effect.addFinalizer((exit) =>
+						Effect.sync(() => {
+							observed = exit;
+						})
+					);
+					return kind === "typed"
+						? yield* Effect.fail(workError)
+						: yield* Effect.die(defect);
+				})
+			).pipe(Effect.provideService(WorldPreparation, service), Effect.exit);
+			if (Exit.isSuccess(result)) throw new Error("Expected work failure");
+			if (observed === undefined) throw new Error("Expected a finalizer exit");
+			if (Exit.isSuccess(observed)) throw new Error("Expected the real failed work exit");
+			const expected = kind === "typed" ? workError : defect;
+			expect(
+				observed.cause.reasons.some((reason) =>
+					Cause.isFailReason(reason)
+						? reason.error === expected
+						: Cause.isDieReason(reason) && reason.defect === expected
+				)
+			).toBe(true);
+		}
+	})
+);
+
+it.effect("translates acquisition and restoration failures through the typed boundary", () =>
+	Effect.gen(function* () {
+		const h = harness((r) =>
+			r.action === "acquire"
+				? Effect.succeed({
+						...evidence("blocked"),
+						issues: [
+							{
+								code: "actor_unloaded",
+								subject: "actor",
+								message: "Actor is not loaded."
+							}
+						]
+					})
+				: r.action === "release"
+					? Effect.succeed({
+							status: "failed",
+							code: "restoration_conflict",
+							message: "External layer change",
+							recovery: "Inspect preserved state"
+						})
+					: undefined
+		);
+		const service = WorldPreparation.of({
+			...h.api,
+			acquire: (input) => h.api.acquire(input, { leaseId: id })
+		});
+		const result = yield* withPreparedWorld(requirements, () => Effect.void).pipe(
+			Effect.provideService(WorldPreparation, service),
+			Effect.result
+		);
+		if (result._tag !== "Failure") throw new Error("Expected restoration failure");
+		expect(result.failure.code).toBe("restoration_failed");
+		if (!Cause.isCause(result.failure.cause)) throw new Error("Expected combined failures");
+		expect(
+			result.failure.cause.reasons.some(
+				(reason) =>
+					Cause.isFailReason(reason) &&
+					reason.error instanceof WorldPreparationError &&
+					reason.error.code === "preparation_blocked"
+			)
+		).toBe(true);
+		expect(h.calls.map((call) => call.action)).toEqual(["acquire", "release"]);
+	})
+);
+
+it.effect("closes the lease scope when the work is interrupted", () =>
+	Effect.gen(function* () {
+		const entered = yield* Deferred.make<void>();
+		const h = harness();
+		const service = WorldPreparation.of({
+			...h.api,
+			acquire: (input) => h.api.acquire(input, { leaseId: id })
+		});
+		const fiber = yield* withPreparedWorld(requirements, () =>
+			Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+		).pipe(Effect.provideService(WorldPreparation, service), Effect.forkChild);
+		yield* Deferred.await(entered);
+		yield* Fiber.interrupt(fiber);
+		const result = yield* Fiber.await(fiber);
+		if (Exit.isSuccess(result)) throw new Error("Expected interruption");
+		expect(Cause.hasInterrupts(result.cause)).toBe(true);
+		expect(h.calls.at(-1)?.action).toBe("release");
+	})
+);
+
 it.effect("describes and plans without acquiring ownership", () =>
 	Effect.gen(function* () {
 		const h = harness();

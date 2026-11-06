@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, mkdir, open, readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { pipeline } from "node:stream";
+import { pipeline, type Readable, type Transform } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { Effect, Predicate, Schema } from "effect";
 import {
@@ -312,6 +312,9 @@ export interface ExtractPluginArchiveOptions {
 export async function extractPluginArchiveToDirectory(
 	options: ExtractPluginArchiveOptions
 ): Promise<ArchiveExtractionReport> {
+	// Both stages, so every exit waits for them to close: callers remove the staging folder
+	// and release the archive as soon as this settles.
+	const stages: (Readable | Transform)[] = [];
 	try {
 		const initialCancellation = abortError(
 			options.signal,
@@ -323,11 +326,9 @@ export async function extractPluginArchiveToDirectory(
 		// `pipeline`, not `.pipe`: an abort or failure in either stage destroys both, so the
 		// iterator below rejects instead of waiting forever on a gunzip whose source is gone.
 		// The iterator reports that error, so the callback only has to exist.
-		const gunzip = pipeline(
-			createReadStream(options.archivePath, { signal: options.signal }),
-			createGunzip(),
-			() => undefined
-		);
+		const source = createReadStream(options.archivePath, { signal: options.signal });
+		const gunzip = pipeline(source, createGunzip(), () => undefined);
+		stages.push(source, gunzip);
 		// SAFETY: no text encoding is configured, so Node's readable stream yields Buffer chunks.
 		// Verified by: packages/plugin-distribution/src/distribution.integration.test.ts
 		// ("stores source and multiple exact compiled variants for one release")
@@ -572,7 +573,17 @@ export async function extractPluginArchiveToDirectory(
 				cause
 			)
 		);
+	} finally {
+		await Promise.all(stages.map(closeStage));
 	}
+}
+
+/** Destroys a stream stage (a no-op once it has ended) and resolves when it has closed. */
+function closeStage(stage: Readable | Transform): Promise<void> {
+	if (stage.closed) return Promise.resolve();
+	const closed = new Promise<void>((resolveClosed) => stage.once("close", () => resolveClosed()));
+	stage.destroy();
+	return closed;
 }
 
 /** Extracts the strict ustar subset emitted by UE Shed without following archive links. */

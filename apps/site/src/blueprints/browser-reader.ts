@@ -33,7 +33,7 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 	operation: "blueprints" | "inspect" | "sequencer" | "authoring" = "blueprints"
 ) {
 	if (bytes.byteLength > MAX_ASSET_FILE_BYTES) {
-		return yield* Effect.fail(browserError("size", "Choose a .uasset of up to 64 MiB."));
+		return yield* browserError("size", "Choose a .uasset of up to 64 MiB.");
 	}
 	const worker = yield* Effect.acquireRelease(
 		Effect.try({
@@ -94,16 +94,14 @@ const decodeBytes = Effect.fn("Website.Blueprints.decodeBytes")(function* (
 		)
 	);
 	if (response.status === "failed") {
-		return yield* Effect.fail(browserError("decode", response.message));
+		return yield* browserError("decode", response.message);
 	}
 	if (
 		(operation === "inspect") !== (response.status === "inspected") ||
 		(operation === "sequencer") !== (response.status === "sequenced") ||
 		(operation === "authoring") !== (response.status === "authored")
 	) {
-		return yield* Effect.fail(
-			browserError("transport", "The decoder returned the wrong evidence.")
-		);
+		return yield* browserError("transport", "The decoder returned the wrong evidence.");
 	}
 	return response;
 }, Effect.scoped);
@@ -112,9 +110,7 @@ export const readBlueprintFile = Effect.fn("Website.Blueprints.readFile")(functi
 	file: File
 ): Effect.fn.Return<BlueprintGraphReadResult, BlueprintBrowserError> {
 	if (file.size > MAX_ASSET_FILE_BYTES) {
-		return yield* Effect.fail(
-			browserError("size", "Choose a Blueprint .uasset of up to 64 MiB.")
-		);
+		return yield* browserError("size", "Choose a Blueprint .uasset of up to 64 MiB.");
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => file.arrayBuffer(),
@@ -135,7 +131,7 @@ export const readBlueprintSample = Effect.fn("Website.Blueprints.readSample")(fu
 			browserError("sample", "The sample Blueprint could not be downloaded.", cause)
 	});
 	if (!response.ok) {
-		return yield* Effect.fail(browserError("sample", "The sample Blueprint is unavailable."));
+		return yield* browserError("sample", "The sample Blueprint is unavailable.");
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => response.arrayBuffer(),
@@ -160,7 +156,7 @@ const inspectBytes = Effect.fn("Website.Inspector.decodeBytes")(function* (
 	const fileBytes = bytes.byteLength;
 	const response = yield* decodeBytes(path, bytes, "inspect");
 	if (response.status !== "inspected") {
-		return yield* Effect.fail(browserError("transport", "The decoder returned no inspection."));
+		return yield* browserError("transport", "The decoder returned no inspection.");
 	}
 	const read = yield* adaptWasmInspectionResult(path, fileBytes, response.inspection);
 	const blueprint = yield* adaptWasmBlueprintResult(path, response.output);
@@ -173,7 +169,7 @@ export const readAssetFile = Effect.fn("Website.Inspector.readFile")(function* (
 	file: File
 ): Effect.fn.Return<SiteAssetRead, BlueprintBrowserError> {
 	if (file.size > MAX_ASSET_FILE_BYTES) {
-		return yield* Effect.fail(browserError("size", "Choose a .uasset of up to 64 MiB."));
+		return yield* browserError("size", "Choose a .uasset of up to 64 MiB.");
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => file.arrayBuffer(),
@@ -191,8 +187,7 @@ export const readAssetSample = Effect.fn("Website.Inspector.readSample")(functio
 		try: (signal) => fetch(url, { signal }),
 		catch: (cause) => browserError("sample", "The sample asset could not be downloaded.", cause)
 	});
-	if (!response.ok)
-		return yield* Effect.fail(browserError("sample", "The sample asset is unavailable."));
+	if (!response.ok) return yield* browserError("sample", "The sample asset is unavailable.");
 	const bytes = yield* Effect.tryPromise({
 		try: () => response.arrayBuffer(),
 		catch: (cause) =>
@@ -205,7 +200,7 @@ export const readSequenceFile = Effect.fn("Website.Sequencer.readFile")(function
 	file: File
 ): Effect.fn.Return<SequenceReadResult, BlueprintBrowserError> {
 	if (file.size > MAX_ASSET_FILE_BYTES) {
-		return yield* Effect.fail(browserError("size", "Choose a .uasset of up to 64 MiB."));
+		return yield* browserError("size", "Choose a .uasset of up to 64 MiB.");
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => file.arrayBuffer(),
@@ -225,9 +220,7 @@ export const readSequenceSample = Effect.fn("Website.Sequencer.readSample")(func
 			browserError("sample", "The sample Level Sequence could not be downloaded.", cause)
 	});
 	if (!response.ok) {
-		return yield* Effect.fail(
-			browserError("sample", "The sample Level Sequence is unavailable.")
-		);
+		return yield* browserError("sample", "The sample Level Sequence is unavailable.");
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => response.arrayBuffer(),
@@ -241,7 +234,7 @@ export const readAuthoringFile = Effect.fn("Website.DataTables.readFile")(functi
 	file: File
 ): Effect.fn.Return<AuthoringReadResult, BlueprintBrowserError> {
 	if (file.size > MAX_ASSET_FILE_BYTES) {
-		return yield* Effect.fail(browserError("size", "Choose a .uasset of up to 64 MiB."));
+		return yield* browserError("size", "Choose a .uasset of up to 64 MiB.");
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => file.arrayBuffer(),
@@ -261,7 +254,7 @@ export const readAuthoringSample = Effect.fn("Website.DataTables.readSample")(fu
 			browserError("sample", "The sample DataTable could not be downloaded.", cause)
 	});
 	if (!response.ok) {
-		return yield* Effect.fail(browserError("sample", "The sample DataTable is unavailable."));
+		return yield* browserError("sample", "The sample DataTable is unavailable.");
 	}
 	const bytes = yield* Effect.tryPromise({
 		try: () => response.arrayBuffer(),

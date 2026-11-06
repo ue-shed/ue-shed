@@ -26,7 +26,7 @@ import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import { EditorPlaySessionId, decodeEditorWorldOpenRequest } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
-import { Effect, Layer, Queue, Ref, Stream } from "effect";
+import { Effect, Layer, Queue, Ref, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { join, resolve } from "node:path";
 import { expect } from "vitest";
@@ -39,6 +39,16 @@ import {
 } from "./camera-workspace.js";
 import { WorkbenchMapReview, WorkbenchMapReviewLive } from "./map-review.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
+
+const decodeString = Schema.decodeUnknownEffect(Schema.String);
+const ProvisioningRequestJson = Schema.fromJsonString(
+	Schema.Struct({
+		cameras: Schema.Array(
+			Schema.Struct({ location: Schema.Unknown, projection: Schema.Unknown })
+		)
+	})
+);
+const decodeProvisioningRequestJson = Schema.decodeUnknownEffect(ProvisioningRequestJson);
 
 // Map Review receives the app-wide project's cached map inventory from this focused test seam.
 const mapReviewProject = {
@@ -55,16 +65,15 @@ const mapReviewProject = {
 	}
 };
 const projectTestLayer = makeWorkbenchProjectTestLayer({
-	selectedProject: () => Effect.succeed(mapReviewProject.project),
-	choose: () => Effect.succeed({ project: mapReviewProject.project, status: "ready" as const }),
-	current: () => Effect.succeed({ status: "not_configured" as const }),
-	inputAtlas: () => Effect.die("not used"),
-	savedTables: () => Effect.die("savedTables is not used"),
-	savedProject: () =>
-		Effect.succeed({
-			maps: mapReviewProject.maps,
-			projectRoot: mapReviewProject.project.projectRoot
-		})
+	selectedProject: Effect.sync(() => mapReviewProject.project),
+	choose: Effect.sync(() => ({ project: mapReviewProject.project, status: "ready" as const })),
+	current: Effect.sync(() => ({ status: "not_configured" as const })),
+	inputAtlas: Effect.suspend(() => Effect.die("not used")),
+	savedTables: Effect.suspend(() => Effect.die("savedTables is not used")),
+	savedProject: Effect.sync(() => ({
+		maps: mapReviewProject.maps,
+		projectRoot: mapReviewProject.project.projectRoot
+	}))
 });
 const MapReviewWithProject = Layer.provide(WorkbenchMapReviewLive, projectTestLayer);
 const MapReviewLiveWithDialog = MapReviewWithProject.pipe(
@@ -168,9 +177,8 @@ const mapReviewRemoteControl = (editorProjectRoot: string | undefined) =>
 		}
 		if (request.functionName === "OpenMap") {
 			return Effect.gen(function* () {
-				const intent = yield* decodeEditorWorldOpenRequest(
-					JSON.parse(String(request.parameters.RequestJson))
-				).pipe(Effect.orDie);
+				const json = yield* decodeString(request.parameters.RequestJson);
+				const intent = yield* decodeEditorWorldOpenRequest(JSON.parse(json));
 				expect(intent.targetMapPath).toBe("/Game/Maps/L_Alpha");
 				const snapshot = {
 					dirtyWorldPackages: [],
@@ -178,7 +186,7 @@ const mapReviewRemoteControl = (editorProjectRoot: string | undefined) =>
 					playSessionActive: false
 				};
 				return { ...intent, outcome: "opened", before: snapshot, after: snapshot };
-			});
+			}).pipe(Effect.orDie);
 		}
 		if (request.functionName === "EnsureProvisionedCameras") {
 			return Effect.succeed({
@@ -251,26 +259,31 @@ const dyingAuthoringSessions: ReviewAuthoringSessionsApi = {
 	resume: () => Effect.die("not used")
 };
 const assetReaderTestLayer = makeAssetReaderTestLayer({
-	configuration: () =>
-		Effect.succeed({ executable: "uasset", timeoutMs: 30_000, catalogTimeoutMs: 50 * 60_000 }),
-	catalogProgress: () =>
-		Effect.succeed({
-			phase: "idle",
-			cacheHits: 0,
-			processedAssets: 0,
-			tablesFound: 0,
-			totalAssets: 0
-		}),
-	scanProgress: () =>
-		Effect.succeed({
-			phase: "idle",
-			cacheHits: 0,
-			emittedAssets: 0,
-			processedAssets: 0,
-			totalAssets: 0
-		}),
-	savedWorldProgress: () =>
-		Effect.succeed({ phase: "idle", actorsFound: 0, processedPackages: 0, totalPackages: 0 }),
+	configuration: Effect.sync(() => ({
+		executable: "uasset",
+		timeoutMs: 30_000,
+		catalogTimeoutMs: 50 * 60_000
+	})),
+	catalogProgress: Effect.sync(() => ({
+		phase: "idle",
+		cacheHits: 0,
+		processedAssets: 0,
+		tablesFound: 0,
+		totalAssets: 0
+	})),
+	scanProgress: Effect.sync(() => ({
+		phase: "idle",
+		cacheHits: 0,
+		emittedAssets: 0,
+		processedAssets: 0,
+		totalAssets: 0
+	})),
+	savedWorldProgress: Effect.sync(() => ({
+		phase: "idle",
+		actorsFound: 0,
+		processedPackages: 0,
+		totalPackages: 0
+	})),
 	readBlueprint: () => Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 	readLevelSequence: () =>
 		Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
@@ -286,7 +299,7 @@ const assetReaderTestLayer = makeAssetReaderTestLayer({
 	discoverTables: () => Effect.die("not used"),
 	readAsset: () => Effect.die("not used"),
 	readTable: () => Effect.die("not used"),
-	source: () => Effect.succeed("configured" as const)
+	source: Effect.sync(() => "configured" as const)
 });
 
 const clearOnlyRemoteControl = mapReviewRemoteControl(mapReviewProject.project.projectRoot);
@@ -342,14 +355,14 @@ for (const editorProjectRoot of [
 			const opened = yield* service.openMapInUnreal!("Content/Maps/L_Alpha.umap");
 			const matches = editorProjectRoot === mapReviewProject.project.projectRoot;
 			expect(opened.outcome).toBe(matches ? "opened" : "failed");
-			expect((yield* service.editorWorld!()).status).toBe(matches ? "ready" : "unavailable");
+			expect((yield* service.editorWorld!).status).toBe(matches ? "ready" : "unavailable");
 			// The shell-selected project's cached inventory exposes project-relative map paths.
-			const maps = yield* service.savedWorldMaps();
+			const maps = yield* service.savedWorldMaps;
 			expect(maps.map((map) => map.mapPath)).toEqual([
 				"Content/Maps/L_Alpha.umap",
 				"Content/Maps/L_Beta.umap"
 			]);
-			expect(yield* service.savedWorldProgress()).toEqual({
+			expect(yield* service.savedWorldProgress).toEqual({
 				actorsFound: 0,
 				phase: "idle",
 				processedPackages: 0,
@@ -395,7 +408,7 @@ for (const editorProjectRoot of [
 it.effect("returns not_configured when no review project is configured", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
-		const result = yield* service.load();
+		const result = yield* service.load;
 		expect(result).toEqual({ status: "not_configured" });
 	}).pipe(
 		Effect.provide(
@@ -430,7 +443,7 @@ it.effect("returns not_configured when no review project is configured", () =>
 it.effect("enters first-run Map Review setup when a project has no configured Review Set", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
-		expect(yield* service.load()).toEqual({ status: "setup_required" });
+		expect(yield* service.load).toEqual({ status: "setup_required" });
 		if (!service.cameraWorkspace) throw new Error("Camera workspace service missing");
 		expect(yield* service.cameraWorkspace({ kind: "list" })).toEqual({
 			panel: null,
@@ -475,7 +488,7 @@ it.effect("enters first-run Map Review setup when a project has no configured Re
 it.effect("loads the review set and reads captured artifacts with bounded concurrency", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
-		const result = yield* service.load();
+		const result = yield* service.load;
 		expect(result.status).toBe("ready");
 		if (result.status !== "ready") return;
 		expect(result.reviewSet).toEqual({
@@ -618,7 +631,7 @@ it.effect("lists, switches, and creates project Review Sets without changing the
 
 	return Effect.gen(function* () {
 		const service = yield* WorkbenchMapReview;
-		const library = yield* service.reviewSetLibrary();
+		const library = yield* service.reviewSetLibrary;
 		expect(library).toEqual({
 			activeReviewSetId: "review-set-1",
 			sets: [
@@ -815,15 +828,14 @@ it.effect("does not carry the startup Review Set into a newly selected project",
 	let startArgs: Parameters<ReviewAuthoringSessionsApi["start"]>[0] | undefined;
 	const selectedProjectRoot = "D:/Games/Hex";
 	const selectedProjectLayer = makeWorkbenchProjectTestLayer({
-		choose: () => Effect.die("not used"),
-		current: () =>
-			Effect.succeed({
-				project: { ...mapReviewProject.project, projectRoot: selectedProjectRoot },
-				status: "ready" as const
-			}),
-		inputAtlas: () => Effect.die("not used"),
-		savedTables: () => Effect.die("not used"),
-		savedProject: () => Effect.die("not used")
+		choose: Effect.suspend(() => Effect.die("not used")),
+		current: Effect.sync(() => ({
+			project: { ...mapReviewProject.project, projectRoot: selectedProjectRoot },
+			status: "ready" as const
+		})),
+		inputAtlas: Effect.suspend(() => Effect.die("not used")),
+		savedTables: Effect.suspend(() => Effect.die("not used")),
+		savedProject: Effect.suspend(() => Effect.die("not used"))
 	});
 	const sessions: ReviewAuthoringSessionsApi = {
 		...dyingAuthoringSessions,
@@ -1702,11 +1714,11 @@ it.effect("subscribes to world observations, coalesces transform bursts, and cle
 			yield* Queue.offer(observationQueue, moved);
 			yield* Queue.offer(observationQueue, movedAgain);
 			yield* settle;
-			expect(yield* mapReview.worldObservationPresentationReplacements()).toBeGreaterThan(0);
+			expect(yield* mapReview.worldObservationPresentationReplacements).toBeGreaterThan(0);
 			yield* TestClock.adjust("20 millis");
 			yield* settle;
 
-			const afterTransforms = yield* windowTest.sent();
+			const afterTransforms = yield* windowTest.sent;
 			const catalogEventIndex = afterTransforms.findIndex(
 				(entry) =>
 					entry.channel === "map-review:world-observation" &&
@@ -1730,7 +1742,7 @@ it.effect("subscribes to world observations, coalesces transform bursts, and cle
 				0, 1
 			]);
 
-			yield* mapReview.unsubscribeWorldObservations();
+			yield* mapReview.unsubscribeWorldObservations;
 			yield* settle;
 			expect(yield* Ref.get(activeObservers)).toBe(0);
 		}).pipe(Effect.provide(serviceLayer));
@@ -1860,7 +1872,7 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 			yield* mapReview.setWorldObservationRate(WorldScoutRefreshRate.make(20));
 			yield* settle;
 
-			const sent = yield* windowTest.sent();
+			const sent = yield* windowTest.sent;
 			expect(
 				sent.some(
 					(entry) =>
@@ -1873,7 +1885,7 @@ it.effect("keeps observation live while focusing an actor and retuning cadence",
 			).toBe(false);
 			expect(yield* Ref.get(observeStarts)).toBe(1);
 			expect(yield* Ref.get(cadenceUpdates)).toEqual([20]);
-			yield* mapReview.unsubscribeWorldObservations();
+			yield* mapReview.unsubscribeWorldObservations;
 		}).pipe(Effect.provide(serviceLayer));
 	})
 );
@@ -1979,28 +1991,29 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				makeWorkbenchWindowTestLayer(),
 				makeRemoteControlClientTestLayer((request) => {
 					if (request.functionName === "EnsureProvisionedCameras") {
-						// SAFETY: WorkbenchMapReview just serialized this private provisioning request.
-						const provisioned = JSON.parse(String(request.parameters.RequestJson)) as {
-							cameras: Array<{ location: unknown; projection: unknown }>;
-						};
-						expect(provisioned.cameras[0]).toMatchObject({
-							location: { x: 40, y: 50, z: 60 },
-							projection: { fieldOfViewDegrees: 55, type: "perspective" }
-						});
-						return Effect.succeed({
-							cameras: [
-								{
-									cameraId: "cam-0",
-									candidateId: "facade_front",
-									displayName: "facade_front",
-									height: 180,
-									index: 0,
-									width: 320
-								}
-							],
-							schemaVersion: 2,
-							worldContext
-						});
+						return decodeProvisioningRequestJson(request.parameters.RequestJson).pipe(
+							Effect.orDie,
+							Effect.flatMap((provisioned) => {
+								expect(provisioned.cameras[0]).toMatchObject({
+									location: { x: 40, y: 50, z: 60 },
+									projection: { fieldOfViewDegrees: 55, type: "perspective" }
+								});
+								return Effect.succeed({
+									cameras: [
+										{
+											cameraId: "cam-0",
+											candidateId: "facade_front",
+											displayName: "facade_front",
+											height: 180,
+											index: 0,
+											width: 320
+										}
+									],
+									schemaVersion: 2,
+									worldContext
+								});
+							})
+						);
 					}
 					if (request.functionName === "ClearProvisionedCameras") {
 						return Effect.succeed({ cameras: [], schemaVersion: 2, worldContext });
@@ -2184,10 +2197,9 @@ it.effect("closes the open camera set before Capture Set renders", () =>
 				MapReviewWithProject.pipe(
 					Layer.provide(
 						makeWorkbenchCameraWorkspaceTestLayer({
-							close: () =>
-								Effect.sync(() => {
-									calls.push("close");
-								})
+							close: Effect.sync(() => {
+								calls.push("close");
+							})
 						})
 					),
 					Layer.provide(

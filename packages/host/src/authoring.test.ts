@@ -112,35 +112,31 @@ it.effect("reconciles a lost Apply acknowledgement without replaying the pending
 				AuthoringFilePickerCancelled,
 				makeAuthoringCatalogTestLayer({ discover: () => Effect.die("unused") }),
 				makeAssetReaderTestLayer({
-					configuration: () =>
-						Effect.succeed({
-							executable: "uasset",
-							timeoutMs: 30_000,
-							catalogTimeoutMs: 50 * 60_000
-						}),
-					catalogProgress: () =>
-						Effect.succeed({
-							phase: "idle",
-							cacheHits: 0,
-							processedAssets: 0,
-							tablesFound: 0,
-							totalAssets: 0
-						}),
-					scanProgress: () =>
-						Effect.succeed({
-							phase: "idle",
-							cacheHits: 0,
-							emittedAssets: 0,
-							processedAssets: 0,
-							totalAssets: 0
-						}),
-					savedWorldProgress: () =>
-						Effect.succeed({
-							phase: "idle",
-							actorsFound: 0,
-							processedPackages: 0,
-							totalPackages: 0
-						}),
+					configuration: Effect.sync(() => ({
+						executable: "uasset",
+						timeoutMs: 30_000,
+						catalogTimeoutMs: 50 * 60_000
+					})),
+					catalogProgress: Effect.sync(() => ({
+						phase: "idle",
+						cacheHits: 0,
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					})),
+					scanProgress: Effect.sync(() => ({
+						phase: "idle",
+						cacheHits: 0,
+						emittedAssets: 0,
+						processedAssets: 0,
+						totalAssets: 0
+					})),
+					savedWorldProgress: Effect.sync(() => ({
+						phase: "idle",
+						actorsFound: 0,
+						processedPackages: 0,
+						totalPackages: 0
+					})),
 					readBlueprint: () =>
 						Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 					readLevelSequence: () =>
@@ -169,7 +165,7 @@ it.effect("reconciles a lost Apply acknowledgement without replaying the pending
 					discoverTables: () => Effect.die("unused"),
 					readAsset: () => Effect.die("unused"),
 					readTable: () => Effect.succeed(snapshot),
-					source: () => Effect.succeed("configured")
+					source: Effect.succeed("configured")
 				})
 			);
 			const host = ShedAuthoringLive.pipe(
@@ -179,7 +175,7 @@ it.effect("reconciles a lost Apply acknowledgement without replaying the pending
 			);
 			yield* Effect.gen(function* () {
 				const client = yield* AuthoringClient;
-				yield* client.loadConfiguredTable();
+				yield* client.loadConfiguredTable;
 				const session = yield* client.beginSession(snapshot.table.objectPath);
 				if (session.status !== "ready") throw new Error("Expected a draft session");
 				const id = session.view.sessionId;
@@ -236,47 +232,42 @@ it.effect(
 				const projectB = { status: "configured" as const, projectRoot: join(root, "B") };
 				const dependencies = Layer.mergeAll(
 					Layer.succeed(ShedHostConfiguration, {
-						project: () => Ref.get(selected),
-						authoringAsset: () =>
-							Effect.succeed({
-								status: "configured" as const,
-								path: "DT_Test.uasset"
-							}),
-						remoteControlEndpoint: () => Ref.get(endpoint)
+						project: Ref.get(selected),
+						authoringAsset: Effect.sync(() => ({
+							status: "configured" as const,
+							path: "DT_Test.uasset"
+						})),
+						remoteControlEndpoint: Ref.get(endpoint)
 					}),
 					AuthoringFilePickerCancelled,
 					failingRemoteControl,
 					makeAuthoringCatalogTestLayer({ discover: () => Effect.die("unused") }),
 					makeAssetReaderTestLayer({
-						configuration: () =>
-							Effect.succeed({
-								executable: "uasset",
-								timeoutMs: 30_000,
-								catalogTimeoutMs: 50 * 60_000
-							}),
-						catalogProgress: () =>
-							Effect.succeed({
-								phase: "idle",
-								cacheHits: 0,
-								processedAssets: 0,
-								tablesFound: 0,
-								totalAssets: 0
-							}),
-						scanProgress: () =>
-							Effect.succeed({
-								phase: "idle",
-								cacheHits: 0,
-								emittedAssets: 0,
-								processedAssets: 0,
-								totalAssets: 0
-							}),
-						savedWorldProgress: () =>
-							Effect.succeed({
-								phase: "idle",
-								actorsFound: 0,
-								processedPackages: 0,
-								totalPackages: 0
-							}),
+						configuration: Effect.sync(() => ({
+							executable: "uasset",
+							timeoutMs: 30_000,
+							catalogTimeoutMs: 50 * 60_000
+						})),
+						catalogProgress: Effect.sync(() => ({
+							phase: "idle",
+							cacheHits: 0,
+							processedAssets: 0,
+							tablesFound: 0,
+							totalAssets: 0
+						})),
+						scanProgress: Effect.sync(() => ({
+							phase: "idle",
+							cacheHits: 0,
+							emittedAssets: 0,
+							processedAssets: 0,
+							totalAssets: 0
+						})),
+						savedWorldProgress: Effect.sync(() => ({
+							phase: "idle",
+							actorsFound: 0,
+							processedPackages: 0,
+							totalPackages: 0
+						})),
 						readBlueprint: () =>
 							Effect.die(
 								new Error("Unexpected readBlueprint in this reader fixture")
@@ -311,7 +302,7 @@ it.effect(
 						discoverTables: () => Effect.die("unused"),
 						readAsset: () => Effect.die("unused"),
 						readTable: () => Effect.succeed(snapshot),
-						source: () => Effect.succeed("configured")
+						source: Effect.succeed("configured")
 					})
 				);
 				const host = ShedAuthoringLive.pipe(
@@ -320,9 +311,9 @@ it.effect(
 				);
 				const sessionId = yield* Effect.gen(function* () {
 					const client = yield* AuthoringClient;
-					expect((yield* client.listSessions()).status).toBe("failed");
+					expect((yield* client.listSessions).status).toBe("failed");
 					yield* Ref.set(selected, projectA);
-					yield* client.loadConfiguredTable();
+					yield* client.loadConfiguredTable;
 					const a = yield* client.beginSession(snapshot.table.objectPath);
 					if (a.status !== "ready") throw new Error("A did not acquire its repository");
 					yield* Ref.set(endpoint, "http://editor-b:30001");
@@ -335,7 +326,7 @@ it.effect(
 					expect((yield* client.beginSession(snapshot.table.objectPath)).status).toBe(
 						"failed"
 					);
-					yield* client.loadConfiguredTable();
+					yield* client.loadConfiguredTable;
 					const b = yield* client.beginSession(snapshot.table.objectPath);
 					if (b.status !== "ready") throw new Error("B did not acquire its repository");
 					expect(b.view.sessionId).not.toBe(a.view.sessionId);
@@ -364,36 +355,34 @@ it.effect("checks selected identity while reusing the table catalog", () =>
 		const configuration = Layer.succeed(
 			ShedHostConfiguration,
 			ShedHostConfiguration.of({
-				authoringAsset: () => Effect.succeed({ status: "not_configured" as const }),
-				project: () =>
+				authoringAsset: Effect.sync(() => ({ status: "not_configured" as const })),
+				project: Effect.suspend(() =>
 					Ref.update(projectResolutions, (count) => count + 1).pipe(
 						Effect.as({ projectRoot, status: "configured" as const })
-					),
-				remoteControlEndpoint: () => Effect.succeed("http://127.0.0.1:30001")
+					)
+				),
+				remoteControlEndpoint: Effect.succeed("http://127.0.0.1:30001")
 			})
 		);
 		const reader = makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 50 * 60_000
-				}),
-			scanProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					emittedAssets: 0,
-					processedAssets: 0,
-					totalAssets: 0
-				}),
-			savedWorldProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					actorsFound: 0,
-					processedPackages: 0,
-					totalPackages: 0
-				}),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			})),
+			scanProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			})),
+			savedWorldProgress: Effect.sync(() => ({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			})),
 			readBlueprint: () =>
 				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 			readLevelSequence: () =>
@@ -410,14 +399,13 @@ it.effect("checks selected identity while reusing the table catalog", () =>
 				),
 			extractProjectTextures: () =>
 				Stream.die(new Error("Unexpected extractProjectTextures in this reader fixture")),
-			catalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "idle" as const,
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
+			catalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "idle" as const,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
 			discoverAssets: () => Effect.succeed([]),
 			discoverTables: () =>
 				Effect.succeed({
@@ -445,7 +433,7 @@ it.effect("checks selected identity while reusing the table catalog", () =>
 				}),
 			readAsset: () => Effect.die("not used"),
 			readTable: () => Ref.update(tableReads, (count) => count + 1).pipe(Effect.as(snapshot)),
-			source: () => Effect.succeed("configured")
+			source: Effect.succeed("configured")
 		});
 		const catalog = makeAuthoringCatalogTestLayer({
 			discover: () =>
@@ -488,7 +476,7 @@ it.effect("checks selected identity while reusing the table catalog", () =>
 
 		yield* Effect.gen(function* () {
 			const client = yield* AuthoringClient;
-			expect((yield* client.loadConfiguredCatalog()).status).toBe("ready");
+			expect((yield* client.loadConfiguredCatalog).status).toBe("ready");
 			const afterCatalog = yield* Ref.get(projectResolutions);
 
 			for (let open = 0; open < 5; open += 1) {

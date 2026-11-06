@@ -12,9 +12,9 @@ import {
 	type RecipeFields
 } from "./browser.js";
 import { parseLocalizationProgress, localizationExitFailure } from "./operation-progress.js";
+const decodeCultureCode = Schema.decodeSync(CultureCode);
 
 const decodeEngine = Schema.decodeUnknownSync(LocalizationOperationPlan.fields.engine);
-const decodeCultureCode = Schema.decodeUnknownSync(CultureCode);
 
 function targetAt(fixture: string, name: string): LocalizationTarget {
 	const root = resolve("fixtures", fixture);

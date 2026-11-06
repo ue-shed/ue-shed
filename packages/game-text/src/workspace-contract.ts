@@ -1,6 +1,7 @@
 import { Schema, type Effect, type Stream } from "effect";
 import { InvestigationFileResult, InvestigationFormat } from "@ue-shed/unreal-assets/investigation";
 import { ChangeComparisonRequest, ChangeComparisonResult } from "./change-comparison.js";
+import { ChangedSinceRequest, ChangedSinceResult } from "./changed-since.js";
 import {
 	LocalizationFileChoiceRequest,
 	LocalizationFileChoiceResult,
@@ -99,20 +100,24 @@ type EntryError<Entry extends GameTextWorkspaceContractEntry> = Entry extends {
  */
 export type GameTextWorkspaceContractMethod<Entry extends GameTextWorkspaceContractEntry> =
 	Entry extends { readonly success: Schema.Top }
-		? (
-				...params: EntryParameters<Entry>
-			) => Effect.Effect<Entry["success"]["Type"], EntryError<Entry>>
-		: Entry extends { readonly events: Schema.Top }
-			? (
+		? EntryParameters<Entry> extends []
+			? Effect.Effect<Entry["success"]["Type"], EntryError<Entry>>
+			: (
 					...params: EntryParameters<Entry>
-				) => Stream.Stream<Entry["events"]["Type"], EntryError<Entry>>
+				) => Effect.Effect<Entry["success"]["Type"], EntryError<Entry>>
+		: Entry extends { readonly events: Schema.Top }
+			? EntryParameters<Entry> extends []
+				? Stream.Stream<Entry["events"]["Type"], EntryError<Entry>>
+				: (
+						...params: EntryParameters<Entry>
+					) => Stream.Stream<Entry["events"]["Type"], EntryError<Entry>>
 			: never;
 
 /**
  * The browser-safe contract of the Game Text workspace: each `GameTextWorkspaceApi` method's
- * params, success or events, and error schemas, with no channels; the API must match it or not
- * compile. Host-only methods are left out: operation admission and refresh (`beginOperation` and
- * kin), `localizationBeforeGather`, and `configuredScan` (serve `configuredRefresh` instead).
+ * params, success or events, and error schemas, without channels. Host-only methods are left
+ * out: Unreal operation hooks (`beginOperation` and kin), `configuredScan` (serve
+ * `configuredRefresh`), and disk changes, whose project root only the host's selection chooses.
  */
 export const GameTextWorkspaceContract = {
 	localizationQualitySearch: { params: WorkspaceQualityRequest, success: WorkspaceQualityResult },
@@ -151,6 +156,8 @@ export const GameTextWorkspaceContract = {
 		success: LocalizationFileComparisonResult
 	},
 	related: { params: RelatedLinesRequest, success: RelatedLinesResult },
+	/** What changed in the scanned or selected target since an earlier generation of it. */
+	changedSince: { params: ChangedSinceRequest, success: ChangedSinceResult },
 	investigationExport: {
 		params: GameTextInvestigationExportRequest,
 		success: InvestigationFileResult
@@ -192,7 +199,9 @@ export type GameTextWorkspaceHostOnlyMethod =
 	| "endOperation"
 	| "refreshAfterOperation"
 	| "localizationBeforeGather"
-	| "configuredScan";
+	| "configuredScan"
+	| "diskChanges"
+	| "watchDiskChanges";
 
 /** A workspace method the contract describes. */
 export type GameTextWorkspaceContractName = keyof GameTextWorkspaceContract;

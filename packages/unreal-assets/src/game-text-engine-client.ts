@@ -111,10 +111,8 @@ export const nativeGameTextEngineClientLayer = (
 					yield* call({ action: "capabilities" })
 				);
 				if (contract?.contractHash !== gameTextEngineContract.contractHash)
-					return yield* Effect.fail(
-						contractError(
-							"The native Game Text engine was built against a different contract than this host."
-						)
+					return yield* contractError(
+						"The native Game Text engine was built against a different contract than this host."
 					);
 				// A development override may be a separate build of the same contract.
 				if (contract.buildId !== gameTextEngineContract.buildId)
@@ -136,10 +134,8 @@ export const nativeGameTextEngineClientLayer = (
 						// this call ran on its unchecked replacement; one that exited after replying is fine.
 						const now = session.generation;
 						if (now !== undefined && now !== checked)
-							return yield* Effect.fail(
-								contractError(
-									"The native Game Text engine restarted before its contract was checked."
-								)
+							return yield* contractError(
+								"The native Game Text engine restarted before its contract was checked."
 							);
 						return answer;
 					}

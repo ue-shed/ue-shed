@@ -111,7 +111,7 @@ function sessionLayer(args: {
 			Layer.mergeAll(
 				makeReviewRepositoryTestLayer({
 					discardStaging: () => Effect.die("not used"),
-					findSet: () => Effect.succeed(undefined),
+					findSet: () => Effect.undefined,
 					finalizeRun: () => Effect.die("not used"),
 					listRuns: () => Effect.die("not used"),
 					listSets: () => Effect.die("not used"),

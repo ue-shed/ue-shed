@@ -102,7 +102,7 @@ export function decodeText(bytes: Uint8Array, limits = defaultLocalizationLimits
 const JsonFromString = Schema.fromJsonString(Schema.Json);
 const FormatVersion = Schema.Struct({ FormatVersion: Schema.Int });
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
-const decodeJsonSyntax = Schema.decodeUnknownResult(UnknownFromJsonString);
+const decodeJsonSyntax = Schema.decodeResult(UnknownFromJsonString);
 
 /** Bound nesting before recursive schema validation, ignoring brackets inside JSON strings. */
 function checkJsonNesting(text: string, limits: LocalizationLimits): void {

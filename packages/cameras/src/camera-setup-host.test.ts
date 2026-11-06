@@ -17,10 +17,10 @@ import {
 	cameraSetupSavedSet
 } from "./camera-setup-schema.js";
 import { makeCameraSetupHost } from "./camera-setup-host.js";
+const decodeCameraBridgeRequest = Schema.decodeEffect(CameraBridgeRequest);
+const decodeCameraBridgeResponse = Schema.decodeEffect(CameraBridgeResponse);
 
-const decodeCameraBridgeRequest = Schema.decodeUnknownEffect(CameraBridgeRequest);
-const decodeCameraBridgeResponse = Schema.decodeUnknownEffect(CameraBridgeResponse);
-const intent = Schema.decodeUnknownSync(CameraSetupIntent)({
+const intent = Schema.decodeSync(CameraSetupIntent)({
 	id: "setup-1",
 	actorPath: "/Game/Fixture.Fixture:PersistentLevel.Subject",
 	mapPath: "/Game/Fixture",
@@ -45,15 +45,13 @@ it.effect("does not recreate cameras after a lost setup acknowledgement", () =>
 					if (request.operation !== "setup_poll")
 						return yield* Effect.die("Unexpected operation");
 					if (request.outcome && ++acknowledgements === 1)
-						return yield* Effect.fail(
-							new CameraBridgeError({
-								code: "disconnected",
-								message: "Reply lost",
-								recovery: "Poll again",
-								retrySafe: true,
-								nextStep: "retry"
-							})
-						);
+						return yield* new CameraBridgeError({
+							code: "disconnected",
+							message: "Reply lost",
+							recovery: "Poll again",
+							retrySafe: true,
+							nextStep: "retry"
+						});
 					return {
 						version: 1 as const,
 						status: "setup" as const,
@@ -145,14 +143,14 @@ it.effect("releases only its own connection on graceful shutdown", () =>
 	})
 );
 
-const savedSet = Schema.decodeUnknownSync(CameraSetupSavedSet)({
+const savedSet = Schema.decodeSync(CameraSetupSavedSet)({
 	id: "arrangement-a",
 	name: "Four sides",
 	mapPath: "/Game/Fixture",
 	subject: { kind: "actor_path", actorPath: "/Game/Fixture.Fixture:PersistentLevel.Subject" },
 	cameras: 4
 });
-const openIntent = Schema.decodeUnknownSync(CameraSetupOpenIntent)({
+const openIntent = Schema.decodeSync(CameraSetupOpenIntent)({
 	id: "open-1",
 	arrangementId: "arrangement-a"
 });
@@ -181,15 +179,13 @@ it.effect("reopens a listed set once, even after a lost acknowledgement", () =>
 					if (request.operation !== "setup_poll")
 						return yield* Effect.die("Unexpected operation");
 					if (request.outcome && ++acknowledgements === 1)
-						return yield* Effect.fail(
-							new CameraBridgeError({
-								code: "disconnected",
-								message: "Reply lost",
-								recovery: "Poll again",
-								retrySafe: true,
-								nextStep: "retry"
-							})
-						);
+						return yield* new CameraBridgeError({
+							code: "disconnected",
+							message: "Reply lost",
+							recovery: "Poll again",
+							retrySafe: true,
+							nextStep: "retry"
+						});
 					return setupState({ canOpen: true, sets: [savedSet], open: openIntent });
 				})
 		};

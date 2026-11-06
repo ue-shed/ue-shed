@@ -6,12 +6,11 @@ import type {
 	ColumnIndex,
 	SheetOperation
 } from "peculiar-sheets";
-import { Schema } from "effect";
+import { Schema, Predicate } from "effect";
 import type { AuthoringColumn } from "./authoring-view.js";
 import { fieldInRow, formatAuthoringValue } from "./authoring-view.js";
 
 const isBoolean = Schema.is(Schema.Boolean);
-const isNumber = Schema.is(Schema.Number);
 const isString = Schema.is(Schema.String);
 
 export interface ReadOnlyAuthoringGridModel {
@@ -164,7 +163,7 @@ function decodeValue(current: AuthoringValue, input: CellValue): AuthoringValue 
 		}
 		case "float":
 		case "double": {
-			const value = isNumber(input) ? input : Number(input);
+			const value = Predicate.isNumber(input) ? input : Number(input);
 			return Number.isFinite(value) ? { kind: current.kind, value } : undefined;
 		}
 		case "name":

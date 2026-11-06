@@ -29,6 +29,6 @@ const ExampleHostLive = ShedHostLive.pipe(
 	Layer.provide(AuthoringFilePickerCancelled)
 );
 
-Effect.runPromiseExit(application.pipe(Effect.provide(ExampleHostLive))).then((exit) => {
+await Effect.runPromiseExit(application.pipe(Effect.provide(ExampleHostLive))).then((exit) => {
 	if (exit._tag === "Failure") process.exitCode = 1;
 });

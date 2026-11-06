@@ -68,7 +68,7 @@ export const ProjectLauncherLive = Layer.effect(
 		const launch = Effect.fn("Workbench.ProjectLauncher.launch")(function* (
 			mode: ProjectLaunchMode
 		) {
-			const selected = yield* project.current();
+			const selected = yield* project.current;
 			if (selected.status !== "ready") return noSelectedProject;
 			if (configuration.sourceCheckout.status !== "configured") return noLauncher;
 
@@ -104,7 +104,7 @@ export const ProjectLauncherLive = Layer.effect(
 									? { mode, status: "launched" }
 									: projectLaunchFailure(result.message)
 						),
-						Effect.catch((error) =>
+						Effect.catchTag("Workbench.FixtureProcessError", (error) =>
 							Effect.succeed({
 								status: "failed" as const,
 								message: error.message,

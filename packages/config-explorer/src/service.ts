@@ -4,7 +4,7 @@ import {
 	EngineInstallationDiscoveryLive,
 	type EngineInstallationError
 } from "@ue-shed/engine";
-import { Context, Effect, Layer, Result, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Result, Schema } from "effect";
 import {
 	ConfigErrorGuidanceFields as ErrorGuidanceFields,
 	ConfigFileAccess,
@@ -35,19 +35,18 @@ import {
 	type ConfigExplanation,
 	type ConfigLayerCoverage
 } from "./schema.js";
+const decodeConfigExplainRequest = Schema.decodeEffect(ConfigExplainRequest);
+const decodeConfigCompareRequest = Schema.decodeEffect(ConfigCompareRequest);
 
-const decodeConfigExplainRequest = Schema.decodeUnknownEffect(ConfigExplainRequest);
-const decodeConfigCompareRequest = Schema.decodeUnknownEffect(ConfigCompareRequest);
-
-export class ConfigExplorerError extends Schema.TaggedError<ConfigExplorerError>()(
-	"ConfigExplorerError",
-	{
-		code: ConfigExplorerPublicError.fields.code,
-		...ErrorGuidanceFields,
-		candidates: ConfigExplorerPublicError.fields.candidates,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class ConfigExplorerError extends Schema.TaggedError<
+	ConfigExplorerError,
+	Brand.Brand<"packages/config-explorer/src/service/ConfigExplorerError">
+>()("ConfigExplorerError", {
+	code: ConfigExplorerPublicError.fields.code,
+	...ErrorGuidanceFields,
+	candidates: ConfigExplorerPublicError.fields.candidates,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * Request, project, engine, family and platform failures all need a changed selection; only a
@@ -183,7 +182,7 @@ const discoverFamilies = Effect.fn("ConfigExplorer.discoverFamilies")(function* 
 			Effect.map((entries) =>
 				entries.filter((entry) => entry.kind === "file").map((entry) => entry.name)
 			),
-			Effect.catch(() => Effect.succeed([]))
+			Effect.catchTag("ConfigFileAccessError", () => Effect.succeed([]))
 		)
 	);
 	return [

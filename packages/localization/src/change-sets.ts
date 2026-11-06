@@ -1,4 +1,4 @@
-import { Result, Schema } from "effect";
+import { type Brand, Result, Schema } from "effect";
 import {
 	CultureCode,
 	FileProvenance,
@@ -35,26 +35,26 @@ export const LocalizationChangeSet = Schema.Struct({
 	changes: Schema.Array(LocalizationChange)
 });
 const LocalizationChangeSetJson = Schema.fromJsonString(LocalizationChangeSet);
-const decodeChangeSetJson = Schema.decodeUnknownResult(LocalizationChangeSetJson);
+const decodeChangeSetJson = Schema.decodeResult(LocalizationChangeSetJson);
 export type LocalizationChangeSet = typeof LocalizationChangeSet.Type;
 
 /**
  * Invalid, duplicate, multi-target or unwritable translation proposal. Code and guidance
  * identify the correction; optional cause retains a domain failure when available.
  */
-export class LocalizationChangeSetError extends Schema.TaggedError<LocalizationChangeSetError>()(
-	"LocalizationChangeSetError",
-	{
-		code: Schema.Literals([
-			"invalid_change_set",
-			"duplicate_change",
-			"multiple_targets",
-			"unwritable_change"
-		]),
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class LocalizationChangeSetError extends Schema.TaggedError<
+	LocalizationChangeSetError,
+	Brand.Brand<"packages/localization/src/change-sets/LocalizationChangeSetError">
+>()("LocalizationChangeSetError", {
+	code: Schema.Literals([
+		"invalid_change_set",
+		"duplicate_change",
+		"multiple_targets",
+		"unwritable_change"
+	]),
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * Parses a version-1 JSON translation proposal and rejects duplicate

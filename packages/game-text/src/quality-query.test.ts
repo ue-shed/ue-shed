@@ -5,12 +5,19 @@ import {
 	textQualityEvidenceHash,
 	textQualityFindingIdHash,
 	textQualityFindingIdOf,
-	textQualityQuery
+	textQualityFindingId,
+	textQualityQuery,
+	textQualityQueryOf,
+	type TextQualityFindingList
 } from "./quality-query.js";
-import { TextQualityRuleId, TextRoleId, type TextQualityReport } from "./quality-schema.js";
+import {
+	TextQualityRuleId,
+	TextRoleId,
+	type TextQualityFinding,
+	type TextQualityReport
+} from "./quality-schema.js";
 import { makeTextOccurrenceId, makeTextUnitId } from "./schema.js";
-
-const decodeSearchPage = Schema.decodeUnknownSync(TextQualitySearchPage);
+const decodeTextQualitySearchPage = Schema.decodeSync(TextQualitySearchPage);
 
 const occurrence = {
 	id: makeTextOccurrenceId("occurrence:menu"),
@@ -150,7 +157,7 @@ describe("text quality query", () => {
 		});
 		const page = query.search({ filter: "all", pageSize: 1 });
 		expect(page.findings).toHaveLength(1);
-		expect(decodeSearchPage(page)).toEqual(page);
+		expect(decodeTextQualitySearchPage(page)).toEqual(page);
 		expect(page.findings[0]).not.toHaveProperty("affectedOccurrences");
 		expect(page.nextCursor).toBe(page.findings[0]?.id);
 		expect(page.findings[0]).toMatchObject({
@@ -239,4 +246,42 @@ it("hashes finding evidence as 64-bit FNV-1a, and finding IDs round-trip to thei
 	for (const id of ["quality-finding:0ff", "quality-finding:FF", "quality-finding:", "ff"])
 		expect(textQualityFindingIdHash(id)).toBeUndefined();
 	expect(textQualityFindingIdHash("quality-finding:0")).toEqual([0, 0]);
+});
+
+it("preserves the finding-list receiver across search, focus and export hydration", () => {
+	class FindingList implements TextQualityFindingList {
+		readonly findings = report.findings;
+		readonly length = this.findings.length;
+		reads = 0;
+		at(position: number): TextQualityFinding {
+			const finding = this.findings[position];
+			if (!finding) throw new Error("Unexpected finding position");
+			return finding;
+		}
+		kind(position: number) {
+			return this.at(position).kind;
+		}
+		id(position: number) {
+			return textQualityFindingId(this.at(position));
+		}
+		find(id: ReturnType<typeof textQualityFindingId>) {
+			const position = this.findings.findIndex(
+				(finding) => textQualityFindingId(finding) === id
+			);
+			return position < 0 ? undefined : position;
+		}
+		items(positions: readonly number[]) {
+			this.reads++;
+			return positions.map((position) => this.at(position));
+		}
+	}
+	const list = new FindingList();
+	const query = textQualityQueryOf(report, list);
+	const page = query.search({ filter: "all", pageSize: 50 });
+	expect(page.total).toBe(report.findings.length);
+	const first = page.findings[0];
+	if (!first) throw new Error("Search did not hydrate a finding");
+	expect(query.focus({ id: first.id, pageSize: 50 })).toBeDefined();
+	expect(query.export("all")).toEqual(report);
+	expect(list.reads).toBe(3);
 });

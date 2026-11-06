@@ -1,8 +1,11 @@
 import { ErrorNextStep, ContractParseError } from "@ue-shed/protocol";
 import { ErrorCauseFields } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Predicate, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Predicate, Schema } from "effect";
 
-export class CliCommandError extends Schema.TaggedError<CliCommandError>()("CliCommandError", {
+export class CliCommandError extends Schema.TaggedError<
+	CliCommandError,
+	Brand.Brand<"apps/cli/src/cli-runtime/CliCommandError">
+>()("CliCommandError", {
 	recovery: Schema.String,
 	retrySafe: Schema.Boolean,
 	nextStep: ErrorNextStep,

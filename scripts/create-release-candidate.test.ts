@@ -22,7 +22,7 @@ import {
 	type PublishRequest
 } from "./publish-public-packages.ts";
 
-test("accepts generated WASM build evidence for optimized and no-opt builds", () => {
+void test("accepts generated WASM build evidence for optimized and no-opt builds", () => {
 	const buildInfo: WasmBuildInfo = {
 		schemaVersion: 1,
 		cargoLocked: true,
@@ -68,7 +68,7 @@ test("accepts generated WASM build evidence for optimized and no-opt builds", ()
 	);
 });
 
-test("rejects WASM evidence that hides optimizer state", () => {
+void test("rejects WASM evidence that hides optimizer state", () => {
 	assert.throws(
 		() =>
 			validateWasmBuildInfo({
@@ -100,7 +100,7 @@ test("rejects WASM evidence that hides optimizer state", () => {
 	);
 });
 
-test("rejects non-string WASM tool identities even when they are truthy", () => {
+void test("rejects non-string WASM tool identities even when they are truthy", () => {
 	const malformedJson = JSON.stringify({
 		schemaVersion: 1,
 		cargoLocked: true,
@@ -134,7 +134,7 @@ test("rejects non-string WASM tool identities even when they are truthy", () => 
 	);
 });
 
-test("rejects non-string enabled optimizer identities even when they compare equal", () => {
+void test("rejects non-string enabled optimizer identities even when they compare equal", () => {
 	const malformedJson = JSON.stringify({
 		schemaVersion: 1,
 		cargoLocked: true,
@@ -168,7 +168,7 @@ test("rejects non-string enabled optimizer identities even when they compare equ
 	);
 });
 
-test("rejects non-string and empty disabled optimizer identities", () => {
+void test("rejects non-string and empty disabled optimizer identities", () => {
 	const malformedJson = JSON.stringify({
 		schemaVersion: 1,
 		cargoLocked: true,
@@ -204,7 +204,7 @@ test("rejects non-string and empty disabled optimizer identities", () => {
 	);
 });
 
-test("requires a candidate to bind the exact successful Trusted Unreal evidence artifact", () => {
+void test("requires a candidate to bind the exact successful Trusted Unreal evidence artifact", () => {
 	const manifest = {
 		evidence: { unrealWorkflow: "Trusted Unreal", unrealRunId: "123456" },
 		artifacts: [{ kind: "trusted-unreal-evidence" }]
@@ -224,7 +224,7 @@ test("requires a candidate to bind the exact successful Trusted Unreal evidence 
 	);
 });
 
-test("accepts exact identities and rejects ranges, latest, shortened commits, and ambiguous run IDs", () => {
+void test("accepts exact identities and rejects ranges, latest, shortened commits, and ambiguous run IDs", () => {
 	assert.equal(validateCandidateVersion("0.1.0-rc.1"), "0.1.0-rc.1");
 	assert.equal(validateCommit("a".repeat(40)), "a".repeat(40));
 	assert.equal(validateRunId("123456"), "123456");
@@ -236,7 +236,7 @@ test("accepts exact identities and rejects ranges, latest, shortened commits, an
 	assert.throws(() => validateRunId("0"), /exact positive integer/);
 });
 
-test("computes npm SHA-512 SRI and makes retry-safe publication decisions", () => {
+void test("computes npm SHA-512 SRI and makes retry-safe publication decisions", () => {
 	const integrity =
 		"sha512-3a81oZNherrMQXNJriBBMRLm+k6JqX6iCp7u5ktV05ohkpkqJ0/BqDa6PCOj/uu9RU1EI2Q86A4qmslPpUyknw==";
 	assert.equal(sha512Integrity(Buffer.from("abc")), integrity);
@@ -267,7 +267,7 @@ test("computes npm SHA-512 SRI and makes retry-safe publication decisions", () =
 	);
 });
 
-test("treats only an exact npm E404 as an absent package version", () => {
+void test("treats only an exact npm E404 as an absent package version", () => {
 	const packageSpec = "@ue-shed/uasset-inspection-wasm@0.1.0-rc.4";
 	const integrity = sha512Integrity(Buffer.from("candidate"));
 	assert.equal(
@@ -297,7 +297,7 @@ test("treats only an exact npm E404 as an absent package version", () => {
 	);
 });
 
-test("validates the exact publication manifest order", () => {
+void test("validates the exact publication manifest order", () => {
 	const manifest = {
 		schemaVersion: 1,
 		version: "0.1.0-rc.4",
@@ -322,7 +322,7 @@ test("validates the exact publication manifest order", () => {
 	);
 });
 
-test("reconciles a tarball by skipping exact bytes and publishing only an absent version", async () => {
+void test("reconciles a tarball by skipping exact bytes and publishing only an absent version", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "ue-shed-publication-reconcile-"));
 	try {
 		const bytes = Buffer.from("candidate tarball bytes\n");

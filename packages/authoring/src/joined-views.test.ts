@@ -2,8 +2,7 @@ import type { AuthoringRow, AuthoringTableSnapshotV1 } from "@ue-shed/protocol";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { JoinedView, buildJoinedView } from "./joined-views.js";
-
-const decodeJoinedView = Schema.decodeUnknownSync(JoinedView);
+const decodeJoinedView = Schema.decodeSync(JoinedView);
 
 function snapshot(objectPath: string, rows: readonly AuthoringRow[]): AuthoringTableSnapshotV1 {
 	return {

@@ -1,5 +1,5 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import type { ActorExplorerFilters, ActorExplorerItem } from "./actor-explorer-core.js";
 
 const Preset = Schema.Struct({
@@ -7,23 +7,23 @@ const Preset = Schema.Struct({
 	query: Schema.String.check(Schema.isMaxLength(4096)),
 	classPaths: Schema.optionalKey(Schema.Array(Schema.String))
 });
+const decodePresetEffect = Schema.decodeEffect(Preset);
 const Presets = Schema.Struct({ version: Schema.Literal(1), presets: Schema.Array(Preset) });
 const PresetsJson = Schema.fromJsonString(Presets);
-const decodePresetsJson = Schema.decodeUnknownEffect(PresetsJson);
-const decodePreset = Schema.decodeUnknownEffect(Preset);
+const decodePresetsJson = Schema.decodeEffect(PresetsJson);
 export type ActorFilterPreset = typeof Preset.Type;
 export const actorFilterStorageKey = "ue-shed.actor-filter-presets.v1";
 
-export class ActorUtilityError extends Schema.TaggedError<ActorUtilityError>()(
-	"ActorUtilityError",
-	{
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class ActorUtilityError extends Schema.TaggedError<
+	ActorUtilityError,
+	Brand.Brand<"packages/ui/src/actor-explorer-utilities/ActorUtilityError">
+>()("ActorUtilityError", {
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 /** Reading presets, writing the whole preset list and copying text are all repeatable. */
 const storageUnavailable = (cause?: unknown) =>
 	new ActorUtilityError({
@@ -71,7 +71,7 @@ export const writeActorFilterPreset = Effect.fn("ActorFilters.write")(function* 
 			? retained
 			: [
 					...retained,
-					yield* decodePreset(presetInput).pipe(
+					yield* decodePresetEffect(presetInput).pipe(
 						Effect.mapError(
 							(cause) =>
 								new ActorUtilityError({

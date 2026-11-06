@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { PluginErrorGuidanceFields as ErrorGuidanceFields } from "./errors.js";
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
@@ -315,14 +315,14 @@ export type PluginBundleManifestValidationCode = Schema.Schema.Type<
 >;
 
 /** An expected manifest or artifact failure that a CLI can report with recovery guidance. */
-export class PluginBundleManifestValidationError extends Schema.TaggedError<PluginBundleManifestValidationError>()(
-	"PluginBundleManifestValidationError",
-	{
-		code: PluginBundleManifestValidationCode,
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class PluginBundleManifestValidationError extends Schema.TaggedError<
+	PluginBundleManifestValidationError,
+	Brand.Brand<"packages/plugin-distribution/src/manifest/PluginBundleManifestValidationError">
+>()("PluginBundleManifestValidationError", {
+	code: PluginBundleManifestValidationCode,
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 export { PluginBundleManifestValidationError as PluginManifestValidationError };
 
@@ -514,7 +514,7 @@ function validateGraph(
 		const error = visit(plugin.id);
 		if (error !== undefined) return Effect.fail(error);
 	}
-	return Effect.succeed(undefined);
+	return Effect.undefined;
 }
 
 /** Validates the graph and cross-field invariants of an already decoded manifest. */
@@ -527,12 +527,10 @@ export const validatePluginBundleManifestValue = Effect.fn("PluginBundleManifest
 			const range = sourceUnrealRange(manifest);
 			const rangeOrder = compareVersions(range.minimum, range.maximum);
 			if (rangeOrder === undefined || rangeOrder > 0) {
-				yield* Effect.fail(
-					validationError(
-						"invalid_unreal_range",
-						`Unreal compatibility range ${range.minimum}..${range.maximum} is invalid.`,
-						"Set minimum to a version less than or equal to maximum."
-					)
+				return yield* validationError(
+					"invalid_unreal_range",
+					`Unreal compatibility range ${range.minimum}..${range.maximum} is invalid.`,
+					"Set minimum to a version less than or equal to maximum."
 				);
 			}
 		}
@@ -541,22 +539,18 @@ export const validatePluginBundleManifestValue = Effect.fn("PluginBundleManifest
 			isCompiledPluginBundleManifest(manifest) &&
 			manifest.build.sourceArtifactSha256 === manifest.artifact.sha256
 		) {
-			yield* Effect.fail(
-				validationError(
-					"compiled_identity_mismatch",
-					"Compiled artifact digest contradicts its source artifact digest.",
-					"Record the portable source bundle digest separately from the compiled archive digest."
-				)
+			return yield* validationError(
+				"compiled_identity_mismatch",
+				"Compiled artifact digest contradicts its source artifact digest.",
+				"Record the portable source bundle digest separately from the compiled archive digest."
 			);
 		}
 
 		if (manifest.provenance.candidateManifest.version !== manifest.releaseVersion) {
-			yield* Effect.fail(
-				validationError(
-					"provenance_mismatch",
-					"The candidate manifest version does not match the plugin bundle release version.",
-					"Build the plugin bundle and package artifacts from the same release candidate."
-				)
+			return yield* validationError(
+				"provenance_mismatch",
+				"The candidate manifest version does not match the plugin bundle release version.",
+				"Build the plugin bundle and package artifacts from the same release candidate."
 			);
 		}
 
@@ -615,12 +609,10 @@ export const validatePluginBundleManifestValue = Effect.fn("PluginBundleManifest
 			options.expectedCandidateVersion !== undefined &&
 			options.expectedCandidateVersion !== manifest.provenance.candidateManifest.version
 		) {
-			yield* Effect.fail(
-				validationError(
-					"provenance_mismatch",
-					`Expected candidate ${options.expectedCandidateVersion}, received ${manifest.provenance.candidateManifest.version}.`,
-					"Select the plugin manifest generated for the requested release candidate."
-				)
+			return yield* validationError(
+				"provenance_mismatch",
+				`Expected candidate ${options.expectedCandidateVersion}, received ${manifest.provenance.candidateManifest.version}.`,
+				"Select the plugin manifest generated for the requested release candidate."
 			);
 		}
 
@@ -639,12 +631,10 @@ export const validatePluginBundleManifestValue = Effect.fn("PluginBundleManifest
 				JSON.stringify(resolved.orderedPluginIds) !==
 				JSON.stringify(manifest.build.resolvedPluginIds)
 			) {
-				yield* Effect.fail(
-					validationError(
-						"compiled_graph_mismatch",
-						"Compiled artifact resolved plugin graph does not match its manifest graph.",
-						"Rebuild the artifact from the exact requested dependency graph."
-					)
+				return yield* validationError(
+					"compiled_graph_mismatch",
+					"Compiled artifact resolved plugin graph does not match its manifest graph.",
+					"Rebuild the artifact from the exact requested dependency graph."
 				);
 			}
 		}
@@ -659,12 +649,10 @@ export const validatePluginBundleManifestValue = Effect.fn("PluginBundleManifest
 						const range = sourceUnrealRange(manifest);
 						return `${range.minimum}..${range.maximum}`;
 					})();
-			yield* Effect.fail(
-				validationError(
-					"unsupported_unreal",
-					`Unreal ${options.unrealVersion} is incompatible with ${supported}.`,
-					"Use a supported Unreal Engine version or select a compatible plugin release."
-				)
+			return yield* validationError(
+				"unsupported_unreal",
+				`Unreal ${options.unrealVersion} is incompatible with ${supported}.`,
+				"Use a supported Unreal Engine version or select a compatible plugin release."
 			);
 		}
 
@@ -714,7 +702,7 @@ export const verifyPluginBundleArtifactChecksum = (
 ): Effect.Effect<void, PluginBundleManifestValidationError> => {
 	const normalized = actualSha256.startsWith("sha256:") ? actualSha256 : `sha256:${actualSha256}`;
 	if (Sha256Pattern.test(normalized) && normalized === manifest.artifact.sha256) {
-		return Effect.succeed(undefined);
+		return Effect.undefined;
 	}
 	return Effect.fail(
 		validationError(
@@ -751,13 +739,13 @@ export const ResolvedPluginGraph = Schema.Struct({
 });
 export type ResolvedPluginGraph = typeof ResolvedPluginGraph.Type;
 
-export class PluginDependencyResolutionError extends Schema.TaggedError<PluginDependencyResolutionError>()(
-	"PluginDependencyResolutionError",
-	{
-		code: Schema.Literals(["duplicate_requested_plugin", "requested_plugin_unavailable"]),
-		...ErrorGuidanceFields
-	}
-) {}
+export class PluginDependencyResolutionError extends Schema.TaggedError<
+	PluginDependencyResolutionError,
+	Brand.Brand<"packages/plugin-distribution/src/manifest/PluginDependencyResolutionError">
+>()("PluginDependencyResolutionError", {
+	code: Schema.Literals(["duplicate_requested_plugin", "requested_plugin_unavailable"]),
+	...ErrorGuidanceFields
+}) {}
 
 /** Resolves the requested plugin closure in deterministic dependency-first order. */
 export const resolvePluginBundleDependencies = Effect.fn(

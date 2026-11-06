@@ -1,7 +1,8 @@
+import { GameTextWorkspaceHostFailure } from "./workspace-host.js";
 import { resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { expect } from "vitest";
-import { Effect, Schema, Stream } from "effect";
+import { Layer, Effect, Schema, Stream } from "effect";
 import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import {
 	RemoteControlClientError,
@@ -10,13 +11,12 @@ import {
 import { GameTextActionsRequest, type GameTextActionsResult } from "@ue-shed/protocol";
 import { makeGameTextIdRepairs } from "./workspace-id-repairs.js";
 import { TextIdRepairRequest } from "./id-repair-schema.js";
-import { makeTextUnitId } from "./identifiers.js";
+import { makeTextOccurrenceId, makeTextUnitId } from "./identifiers.js";
 import { textOccurrenceFromExtraction } from "./corpus.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import type { TextCorpusFocus } from "./schema.js";
-
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
-const decodeActionsRequestJson = Schema.decodeUnknownSync(
+const decodeJsonEffect = Schema.decodeEffect(Schema.Json);
+const decodeActionsRequestJson = Schema.decodeUnknownEffect(
 	Schema.fromJsonString(GameTextActionsRequest)
 );
 
@@ -93,6 +93,9 @@ function setup(dataTable = false, authoring = false) {
 	let mutations = 0;
 	let savesFail = false;
 	let focusValue = { ...focus, occurrences: [reviewed] };
+	let focusReads = 0;
+	// Runs once, after the first page is served: a rescan between two pages.
+	let afterFirstPage: (() => void) | undefined;
 	let readerFails = false;
 	let readerRetrySafe = false;
 	let lostReply = false;
@@ -100,7 +103,7 @@ function setup(dataTable = false, authoring = false) {
 		Effect.gen(function* () {
 			calls.push(call.functionName);
 			if (call.functionName === "GetCapabilityManifest")
-				return decodeJson({
+				return yield* decodeJsonEffect({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
 					capabilities: [
@@ -121,8 +124,10 @@ function setup(dataTable = false, authoring = false) {
 						sessionId: session,
 						plugins: []
 					}
-				});
-			const input = decodeActionsRequestJson(call.parameters.RequestJson);
+				}).pipe(Effect.orDie);
+			const input = yield* decodeActionsRequestJson(call.parameters.RequestJson).pipe(
+				Effect.orDie
+			);
 			if (input.mode === "apply") mutations++;
 			if (input.mode === "apply" && lostReply)
 				return yield* new RemoteControlClientError({
@@ -170,22 +175,22 @@ function setup(dataTable = false, authoring = false) {
 							]
 						: []
 			};
-			return decodeJson(result);
+			return yield* decodeJsonEffect(result).pipe(Effect.orDie);
 		})
 	);
-	const unused = () => Effect.die("Unexpected reader operation");
+	const unused = Effect.suspend(() => Effect.die("Unexpected reader operation"));
 	const reader = makeAssetReaderTestLayer({
 		configuration: unused,
-		discoverAssets: unused,
-		discoverTables: unused,
+		discoverAssets: () => unused,
+		discoverTables: () => unused,
 		extractProjectText: () => Stream.die("Unused"),
 		extractProjectTextures: () => Stream.die("Unused"),
-		readAsset: unused,
-		readBlueprint: unused,
-		readLevelSequence: unused,
-		readTable: unused,
-		readSavedWorld: unused,
-		scanProject: unused,
+		readAsset: () => unused,
+		readBlueprint: () => unused,
+		readLevelSequence: () => unused,
+		readTable: () => unused,
+		readSavedWorld: () => unused,
+		scanProject: () => unused,
 		scanProgress: unused,
 		savedWorldProgress: unused,
 		source: unused,
@@ -213,12 +218,33 @@ function setup(dataTable = false, authoring = false) {
 	});
 	const make = makeGameTextIdRepairs({
 		workspace: {
-			focus: () => Effect.succeed({ status: "found", focus: focusValue }),
-			beginOperation: () => Effect.succeed(true),
-			endOperation: () => Effect.void
+			// Pages as the engine does: an unknown cursor serves the first page again.
+			focus: (input) =>
+				Effect.sync(() => {
+					focusReads++;
+					const all = focusValue.occurrences;
+					const start =
+						input.occurrenceCursor === undefined
+							? 0
+							: all.findIndex((item) => item.id === input.occurrenceCursor) + 1;
+					const occurrences = all.slice(start, start + input.pageSize);
+					const next =
+						start + input.pageSize < all.length ? occurrences.at(-1) : undefined;
+					const page: TextCorpusFocus = {
+						...focusValue,
+						occurrences,
+						totalOccurrences: all.length,
+						...(next === undefined ? undefined : { nextOccurrenceCursor: next.id })
+					};
+					afterFirstPage?.();
+					afterFirstPage = undefined;
+					return { status: "found" as const, focus: page };
+				}),
+			beginOperation: Effect.succeed(true),
+			endOperation: Effect.void
 		},
-		current: () => Effect.succeed({ status: "ready", project: { projectRoot: currentRoot } }),
-		endpoint: () => Effect.succeed("http://127.0.0.1:30010"),
+		current: Effect.sync(() => ({ status: "ready", project: { projectRoot: currentRoot } })),
+		endpoint: Effect.succeed("http://127.0.0.1:30010"),
 		editorProject: () => Effect.succeed(editorRoot),
 		files: {
 			readFileWithin: (directory, path) =>
@@ -228,10 +254,14 @@ function setup(dataTable = false, authoring = false) {
 						if (!bytes) throw new Error("Missing artifact");
 						return bytes;
 					},
-					catch: () => ({
-						message: "Missing artifact",
-						recovery: "Choose the original project and review again."
-					})
+					catch: (cause) =>
+						new GameTextWorkspaceHostFailure({
+							message: "Missing artifact",
+							recovery: "Choose the original project and review again.",
+							cause,
+							retrySafe: false,
+							nextStep: "reconcile"
+						})
 				}),
 			writeFile: (path, bytes, options) =>
 				Effect.try({
@@ -240,13 +270,17 @@ function setup(dataTable = false, authoring = false) {
 						if (options?.exclusive && files.has(key)) throw new Error("Already exists");
 						files.set(key, bytes);
 					},
-					catch: () => ({
-						message: "Already claimed",
-						recovery: "Inspect the saved receipt."
-					})
+					catch: (cause) =>
+						new GameTextWorkspaceHostFailure({
+							message: "Already claimed",
+							recovery: "Inspect the saved receipt.",
+							cause,
+							retrySafe: false,
+							nextStep: "reconcile"
+						})
 				})
 		}
-	}).pipe(Effect.provide(native), Effect.provide(reader));
+	}).pipe(Effect.provide(Layer.provideMerge(native, reader)));
 	return {
 		make,
 		calls,
@@ -265,6 +299,31 @@ function setup(dataTable = false, authoring = false) {
 		stale: () => {
 			focusValue = { ...focus, occurrences: [] };
 		},
+		/**
+		 * The unit's places: `count` others, named from `prefix`, with the reviewed place at `at`.
+		 * With `without`, that other is left out and one more is named instead.
+		 */
+		places: (count: number, at: number, prefix = "Other", without?: number) => {
+			const others = Array.from(
+				{ length: count + (without === undefined ? 0 : 1) },
+				(_, index) =>
+					textOccurrenceFromExtraction({
+						packageFile: "Content/Notes.uasset",
+						occurrence: {
+							...extracted,
+							location: { ...extracted.location, property_path: `${prefix}${index}` }
+						}
+					})
+			).filter((_, index) => index !== without);
+			focusValue = {
+				...focus,
+				occurrences: [...others.slice(0, at), reviewed, ...others.slice(at)]
+			};
+		},
+		changeAfterFirstPage: (change: () => void) => {
+			afterFirstPage = change;
+		},
+		focusReads: () => focusReads,
 		saveFails: () => {
 			savesFail = true;
 		},
@@ -484,6 +543,72 @@ it.effect("DataTable fallback retains stale-place and saved-verification refusal
 				expect(result).toMatchObject({ status: "finished", verified: false });
 			else expect(result.status).toBe("unavailable");
 			expect(test.mutations()).toBe(kind === "stale" ? 0 : 1);
+		}
+	})
+);
+
+it.effect("finds a reviewed place beyond the unit's first page, reading the unit once", () =>
+	Effect.gen(function* () {
+		const test = setup();
+		test.places(1200, 1100);
+		const service = yield* test.make;
+		const preview = yield* service.prepare(request);
+		expect(preview.status).toBe("prepared");
+		// Three pages of 500 for 1,201 places.
+		expect(test.focusReads()).toBe(3);
+		const [change] = request.changes;
+		if (change === undefined) throw new Error("The request has a change.");
+		const twice = yield* service.prepare({
+			...request,
+			changes: [
+				change,
+				{
+					...change,
+					occurrence: { ...occurrence, id: makeTextOccurrenceId("not-a-place") }
+				}
+			]
+		});
+		// The second change shares the unit, which is not read again before it is refused.
+		expect(twice.status).toBe("unavailable");
+		expect(test.focusReads()).toBe(6);
+		expect(test.mutations()).toBe(0);
+	})
+);
+
+it.effect("refuses a unit that changes between its pages", () =>
+	Effect.gen(function* () {
+		for (const change of ["grown", "shrunk"] as const) {
+			const test = setup();
+			test.places(1200, 1100);
+			test.changeAfterFirstPage(() =>
+				change === "grown" ? test.places(1300, 1100) : test.places(800, 700)
+			);
+			const service = yield* test.make;
+			expect(yield* service.prepare(request)).toMatchObject({
+				status: "unavailable",
+				message: "A reviewed place is no longer in the current scan.",
+				retrySafe: true
+			});
+			expect(test.mutations()).toBe(0);
+		}
+	})
+);
+
+it.effect("refuses a unit whose cursor is lost, rather than reading the first page forever", () =>
+	Effect.gen(function* () {
+		// The same number of places, but the cursor's place is gone, so the engine serves the
+		// first page again: with the places seen already, or with every place renamed.
+		for (const prefix of ["Other", "Moved"]) {
+			const test = setup();
+			test.places(1200, 1100);
+			test.changeAfterFirstPage(() =>
+				prefix === "Other"
+					? test.places(1200, 1100, prefix, 499)
+					: test.places(1200, 1100, prefix)
+			);
+			const service = yield* test.make;
+			expect((yield* service.prepare(request)).status).toBe("unavailable");
+			expect(test.focusReads()).toBeLessThanOrEqual(4);
 		}
 	})
 );

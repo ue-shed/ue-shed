@@ -1,5 +1,5 @@
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { reviseReviewView } from "./review-framing.js";
 import { ReviewRepository, type ReviewStorageError } from "./review-repository.js";
 import {
@@ -13,14 +13,14 @@ import {
  * Approved view definition/revision validation failure with view identity and original cause.
  * Area-relative poses and invalid referenced definitions require corrected input.
  */
-export class ReviewViewDefinitionError extends Schema.TaggedError<ReviewViewDefinitionError>()(
-	"ReviewViewDefinitionError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		viewId: Schema.String
-	}
-) {}
+export class ReviewViewDefinitionError extends Schema.TaggedError<
+	ReviewViewDefinitionError,
+	Brand.Brand<"packages/cameras/src/review-view/ReviewViewDefinitionError">
+>()("ReviewViewDefinitionError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	viewId: Schema.String
+}) {}
 
 /**
  * Created, revised or unchanged approved view with the resulting set. Status records whether

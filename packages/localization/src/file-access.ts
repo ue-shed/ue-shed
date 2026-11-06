@@ -106,10 +106,10 @@ const projectPath = Effect.fn("LocalizationFileAccess.projectPath")(function* (
 	const resolved = resolveLocalizationGatherPath(path);
 	const normalized = resolved.root === "project" ? resolved.path : path;
 	if (isAbsolute(normalized) || normalized.includes("\u0000") || normalized.includes("%"))
-		return yield* Effect.fail(localizationError("unsafe_path"));
+		return yield* localizationError("unsafe_path");
 	const base = resolve(root);
 	const candidate = resolve(base, normalized);
-	if (!contained(base, candidate)) return yield* Effect.fail(localizationError("unsafe_path"));
+	if (!contained(base, candidate)) return yield* localizationError("unsafe_path");
 	const actualRoot = yield* Effect.tryPromise({
 		try: () => realpath(base),
 		catch: () => localizationError("directory_unreadable")
@@ -118,8 +118,7 @@ const projectPath = Effect.fn("LocalizationFileAccess.projectPath")(function* (
 		try: () => realpath(candidate),
 		catch: fileError
 	});
-	if (!contained(actualRoot, actualPath))
-		return yield* Effect.fail(localizationError("unsafe_path"));
+	if (!contained(actualRoot, actualPath)) return yield* localizationError("unsafe_path");
 	return actualPath;
 });
 
@@ -129,10 +128,10 @@ const newProjectPath = Effect.fn("LocalizationFileAccess.newProjectPath")(functi
 	path: string
 ) {
 	if (isAbsolute(path) || path.includes("\u0000") || path.includes("%"))
-		return yield* Effect.fail(localizationError("unsafe_path"));
+		return yield* localizationError("unsafe_path");
 	const base = resolve(root);
 	const candidate = resolve(base, path);
-	if (!contained(base, candidate)) return yield* Effect.fail(localizationError("unsafe_path"));
+	if (!contained(base, candidate)) return yield* localizationError("unsafe_path");
 	const actualRoot = yield* Effect.tryPromise({
 		try: () => realpath(base),
 		catch: () => localizationError("directory_unreadable")
@@ -144,7 +143,7 @@ const newProjectPath = Effect.fn("LocalizationFileAccess.newProjectPath")(functi
 		},
 		catch: writeError
 	});
-	if (!contained(actualRoot, folder)) return yield* Effect.fail(localizationError("unsafe_path"));
+	if (!contained(actualRoot, folder)) return yield* localizationError("unsafe_path");
 	return candidate;
 });
 
@@ -167,10 +166,9 @@ export const LocalizationFileAccessLive = Layer.succeed(
 						try: () => handle.stat(),
 						catch: fileError
 					});
-					if (!before.isFile())
-						return yield* Effect.fail(localizationError("file_unreadable"));
+					if (!before.isFile()) return yield* localizationError("file_unreadable");
 					if (before.size > limits.maxFileBytes)
-						return yield* Effect.fail(localizationError("limit_exceeded"));
+						return yield* localizationError("limit_exceeded");
 					const bytes = new Uint8Array(before.size);
 					let offset = 0;
 					while (offset < bytes.length) {
@@ -178,8 +176,7 @@ export const LocalizationFileAccessLive = Layer.succeed(
 							try: () => handle.read(bytes, offset, bytes.length - offset, offset),
 							catch: fileError
 						});
-						if (read.bytesRead === 0)
-							return yield* Effect.fail(localizationError("file_changed"));
+						if (read.bytesRead === 0) return yield* localizationError("file_changed");
 						offset += read.bytesRead;
 					}
 					const after = yield* Effect.tryPromise({
@@ -191,7 +188,7 @@ export const LocalizationFileAccessLive = Layer.succeed(
 						before.mtimeMs !== after.mtimeMs ||
 						before.ctimeMs !== after.ctimeMs
 					) {
-						return yield* Effect.fail(localizationError("file_changed"));
+						return yield* localizationError("file_changed");
 					}
 					return validate(LocalizationFileRead, {
 						bytes,
@@ -209,7 +206,7 @@ export const LocalizationFileAccessLive = Layer.succeed(
 			const location = yield* projectPath(root, "Config/Localization").pipe(Effect.result);
 			if (location._tag === "Failure") {
 				if (location.failure.code === "file_missing") return [];
-				return yield* Effect.fail(location.failure);
+				return yield* location.failure;
 			}
 			const files = yield* Effect.tryPromise({
 				try: () => readdir(location.success, { withFileTypes: true }),
@@ -219,21 +216,20 @@ export const LocalizationFileAccessLive = Layer.succeed(
 				.filter((entry) => entry.isFile() && /\.ini$/iu.test(entry.name))
 				.map((entry) => `Config/Localization/${entry.name}`)
 				.sort();
-			if (names.length > limits.maxFiles)
-				return yield* Effect.fail(localizationError("limit_exceeded"));
+			if (names.length > limits.maxFiles) return yield* localizationError("limit_exceeded");
 			return names;
 		}),
 		replace: Effect.fn("LocalizationFileAccess.replace")(
 			function* (root, path, bytes, expectedHash, limits) {
 				if (bytes.byteLength > limits.maxFileBytes)
-					return yield* Effect.fail(localizationError("limit_exceeded"));
+					return yield* localizationError("limit_exceeded");
 				const actual = yield* projectPath(root, path);
 				const current = yield* Effect.tryPromise({
 					try: () => readFile(actual),
 					catch: fileError
 				});
 				if (sha256(current) !== expectedHash)
-					return yield* Effect.fail(localizationError("file_changed"));
+					return yield* localizationError("file_changed");
 				// Write beside the target and rename over it, so readers never see a partial file.
 				const temporary = `${actual}.ue-shed-${randomUUID().slice(0, 8)}.tmp`;
 				yield* Effect.tryPromise({
@@ -262,7 +258,7 @@ export const LocalizationFileAccessLive = Layer.succeed(
 		),
 		create: Effect.fn("LocalizationFileAccess.create")(function* (root, path, bytes, limits) {
 			if (bytes.byteLength > limits.maxFileBytes)
-				return yield* Effect.fail(localizationError("limit_exceeded"));
+				return yield* localizationError("limit_exceeded");
 			const actual = yield* newProjectPath(root, path);
 			yield* Effect.tryPromise({
 				try: () => writeFile(actual, bytes, { flag: "wx" }),
@@ -283,7 +279,7 @@ export const LocalizationFileAccessLive = Layer.succeed(
 			const location = yield* projectPath(root, path).pipe(Effect.result);
 			if (location._tag === "Failure") {
 				if (location.failure.code === "file_missing") return false;
-				return yield* Effect.fail(location.failure);
+				return yield* location.failure;
 			}
 			const info = yield* Effect.tryPromise({
 				try: () => stat(location.success),

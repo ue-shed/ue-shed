@@ -6,8 +6,7 @@ import type {
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { AnalysisPlan, buildAnalysisPlan } from "./analysis.js";
-
-const decodeAnalysisPlan = Schema.decodeUnknownSync(AnalysisPlan);
+const decodeAnalysisPlan = Schema.decodeSync(AnalysisPlan);
 
 function descriptor(
 	name: string,

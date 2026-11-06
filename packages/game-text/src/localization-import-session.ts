@@ -19,15 +19,13 @@ export const localizationImportLayer = Effect.fn("LocalizationImport.sessionLaye
 	const session = yield* Effect.serviceOption(LocalizationImportSession);
 	if (Option.isNone(session)) return undefined;
 	if (sharedIndexDirectory(configuration) !== sharedIndexDirectory(session.value.configuration))
-		return yield* Effect.fail(
-			new SnapshotStoreError({
-				retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
-				nextStep: snapshotStoreGuidance("unavailable").nextStep,
-				operation: "localization-import-session",
-				code: "unavailable",
-				message: "The localization import belongs to a different project or target.",
-				recovery: "Open a refresh session for the selected project and target."
-			})
-		);
+		return yield* new SnapshotStoreError({
+			retrySafe: snapshotStoreGuidance("unavailable").retrySafe,
+			nextStep: snapshotStoreGuidance("unavailable").nextStep,
+			operation: "localization-import-session",
+			code: "unavailable",
+			message: "The localization import belongs to a different project or target.",
+			recovery: "Open a refresh session for the selected project and target."
+		});
 	return Layer.succeed(SharedIndex, session.value.index);
 });

@@ -6,11 +6,11 @@ import { WorkbenchWindow } from "../adapters/electron-window.js";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 import { WorkbenchGameText } from "./game-text.js";
+const encodeGameTextOperationProgressEffect = Schema.encodeEffect(GameTextOperationProgress);
 
 export { safeLocalizationLogLine } from "@ue-shed/game-text/workspace";
 
 const encodeGameTextProgress = Schema.encodeSync(gameTextProgressEvent.payload);
-const encodeGameTextOperationProgress = Schema.encodeSync(GameTextOperationProgress);
 
 export type WorkbenchGameTextOperationsApi = GameTextOperationsApi;
 export class WorkbenchGameTextOperations extends Context.Service<
@@ -28,7 +28,7 @@ export const WorkbenchGameTextOperationsLive = Layer.effect(
 		const window = yield* WorkbenchWindow;
 		// The window follows Game Text's progress as it changes, at most ten times a second; the
 		// last change always goes.
-		yield* gameText.progressChanges().pipe(
+		yield* gameText.progressChanges.pipe(
 			Stream.buffer({ capacity: 1, strategy: "sliding" }),
 			Stream.throttle({ cost: () => 1, units: 1, duration: "100 millis", strategy: "shape" }),
 			Stream.runForEach((progress) =>
@@ -50,7 +50,7 @@ export const WorkbenchGameTextOperationsLive = Layer.effect(
 				) {
 					yield* window.send(
 						"game-text:localization:operation-progress",
-						encodeGameTextOperationProgress(progress)
+						yield* encodeGameTextOperationProgressEffect(progress).pipe(Effect.orDie)
 					);
 				})
 			})

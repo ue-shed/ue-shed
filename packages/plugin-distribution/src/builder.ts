@@ -21,8 +21,8 @@ import {
 	type OwnedProcessExit,
 	type SupervisedEditorSessionError
 } from "@ue-shed/engine";
-import { Context, Duration, Effect, Exit, Layer, Option, Ref, Schema } from "effect";
-import { extractPluginArchive, verifyPluginArtifact } from "./archive.js";
+import { type Brand, Context, Duration, Effect, Exit, Layer, Option, Ref, Schema } from "effect";
+import { awaitCancelableOperation, extractPluginArchive, verifyPluginArtifact } from "./archive.js";
 import {
 	PluginErrorGuidanceFields as ErrorGuidanceFields,
 	PluginInstallCancelled,
@@ -41,6 +41,9 @@ import {
 import { defaultPluginDistributionLimits, type PluginDistributionLimits } from "./model.js";
 import { variantPluginReleaseAssetNames } from "./source.js";
 import { CompiledPluginVariantRequest } from "./variant.js";
+const decodeCompiledPluginBundleManifestV3Effect = Schema.decodeEffect(
+	CompiledPluginBundleManifestV3
+);
 
 const BoundedPath = Schema.NonEmptyString.check(Schema.isMaxLength(32_767));
 const PositiveSeconds = Schema.Int.check(
@@ -77,20 +80,23 @@ const BuildErrorFields = {
 	stage: Schema.String
 };
 
-export class InvalidCompiledPluginBuild extends Schema.TaggedError<InvalidCompiledPluginBuild>()(
-	"InvalidCompiledPluginBuild",
-	{ ...BuildErrorFields, cause: Schema.optionalKey(Schema.Defect()) }
-) {}
+export class InvalidCompiledPluginBuild extends Schema.TaggedError<
+	InvalidCompiledPluginBuild,
+	Brand.Brand<"packages/plugin-distribution/src/builder/InvalidCompiledPluginBuild">
+>()("InvalidCompiledPluginBuild", {
+	...BuildErrorFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
-export class CompiledPluginBuildFailed extends Schema.TaggedError<CompiledPluginBuildFailed>()(
-	"CompiledPluginBuildFailed",
-	{ ...BuildErrorFields, exitCode: Schema.NullOr(Schema.Int) }
-) {}
+export class CompiledPluginBuildFailed extends Schema.TaggedError<
+	CompiledPluginBuildFailed,
+	Brand.Brand<"packages/plugin-distribution/src/builder/CompiledPluginBuildFailed">
+>()("CompiledPluginBuildFailed", { ...BuildErrorFields, exitCode: Schema.NullOr(Schema.Int) }) {}
 
-export class CompiledPluginBuildCancelled extends Schema.TaggedError<CompiledPluginBuildCancelled>()(
-	"CompiledPluginBuildCancelled",
-	BuildErrorFields
-) {}
+export class CompiledPluginBuildCancelled extends Schema.TaggedError<
+	CompiledPluginBuildCancelled,
+	Brand.Brand<"packages/plugin-distribution/src/builder/CompiledPluginBuildCancelled">
+>()("CompiledPluginBuildCancelled", BuildErrorFields) {}
 
 const isCompiledPluginBuildCancelled = Schema.is(CompiledPluginBuildCancelled);
 const isPluginInstallCancelled = Schema.is(PluginInstallCancelled);
@@ -151,6 +157,7 @@ const UnrealBuildVersion = Schema.Struct({
 	MinorVersion: Schema.Int,
 	PatchVersion: Schema.Int
 });
+const decodeUnrealBuildVersionEffect = Schema.decodeUnknownEffect(UnrealBuildVersion);
 
 const ModuleDescriptor = Schema.Struct({ Name: Schema.NonEmptyString });
 const UnrealPluginDescriptor = Schema.Struct({
@@ -164,16 +171,13 @@ const UnrealModules = Schema.Struct({
 	BuildId: Schema.String,
 	Modules: Schema.Record(Schema.String, Schema.String)
 });
+const decodeUnrealModulesEffect = Schema.decodeUnknownEffect(UnrealModules);
 const EnginePluginReference = Schema.Struct({ Name: PluginId });
-const decodeUnrealBuildVersion = Schema.decodeUnknownSync(UnrealBuildVersion);
 const decodeModuleDescriptor = Schema.decodeUnknownSync(ModuleDescriptor);
 const decodeUnrealPluginDescriptor = Schema.decodeUnknownSync(UnrealPluginDescriptor);
 const decodeUnrealModules = Schema.decodeUnknownSync(UnrealModules);
 const decodeEnginePluginReference = Schema.decodeUnknownSync(EnginePluginReference);
 const decodeCompiledPluginBuildRequest = Schema.decodeUnknownEffect(CompiledPluginBuildRequest);
-const decodeCompiledPluginBundleManifestV3 = Schema.decodeUnknownEffect(
-	CompiledPluginBundleManifestV3
-);
 
 function sha256(bytes: Uint8Array) {
 	return Sha256Checksum.make(`sha256:${createHash("sha256").update(bytes).digest("hex")}`);
@@ -574,7 +578,7 @@ function abortBuild(signal: AbortSignal) {
 }
 
 function validateExit(exit: OwnedProcessExit) {
-	if (exit.kind === "exited" && exit.exitCode === 0) return Effect.succeed(undefined);
+	if (exit.kind === "exited" && exit.exitCode === 0) return Effect.undefined;
 	return Effect.fail(
 		new CompiledPluginBuildFailed({
 			exitCode: exit.exitCode,
@@ -616,10 +620,14 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 					)
 				);
 				const limits = { ...defaultPluginDistributionLimits, ...options.limits };
-				const buildSignal = options.signal ?? new AbortController().signal;
-				if (buildSignal.aborted) return yield* cancelled("validation");
+				if (options.signal?.aborted) return yield* cancelled("validation");
 				return yield* Effect.scoped(
 					Effect.gen(function* () {
+						const scopeSignal = yield* Effect.abortSignal;
+						const buildSignal =
+							options.signal === undefined
+								? scopeSignal
+								: AbortSignal.any([scopeSignal, options.signal]);
 						const outputRoot = resolve(request.outputDirectory);
 						const engineRoot = resolve(request.engineRoot);
 						if (dirname(outputRoot) === outputRoot || within(engineRoot, outputRoot)) {
@@ -657,60 +665,91 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 						);
 						const sourceManifestPath = resolve(request.sourceManifestPath);
 						const sourceArtifactPath = resolve(request.sourceArtifactPath);
-						const validatedFiles = yield* Effect.tryPromise({
-							try: async () => {
-								await mkdir(outputRoot, { recursive: true });
-								const outputDetails = await lstat(outputRoot);
-								if (!outputDetails.isDirectory() || outputDetails.isSymbolicLink())
-									throw new Error(
-										"Output root must be a real directory, not a link."
-									);
-								const canonicalOutput = await realpath(outputRoot);
-								const canonicalEngine = await realpath(engineRoot);
-								if (within(canonicalEngine, canonicalOutput))
-									throw new Error(
-										"Output root resolves beneath the engine root."
-									);
-								await regularFile(runUat, "RunUAT");
-								await regularFile(buildVersionPath, "Engine Build.version");
-								await regularFile(
-									editorModulesPath,
-									`${request.artifact.target}.modules`
-								);
-								await regularFile(sourceManifestPath, "Source manifest");
-								await regularFile(sourceArtifactPath, "Source artifact");
-								const manifestBytes = await readFile(sourceManifestPath);
-								if (sha256(manifestBytes) !== request.expectedSourceManifestSha256)
-									throw new Error(
-										"Source manifest digest does not match the pinned digest."
-									);
-								const buildVersion = decodeUnrealBuildVersion(
-									JSON.parse(await readFile(buildVersionPath, "utf8"))
-								);
-								const engineModules = decodeUnrealModules(
-									JSON.parse(await readFile(editorModulesPath, "utf8"))
-								);
-								const unrealVersion = `${buildVersion.MajorVersion}.${buildVersion.MinorVersion}.${buildVersion.PatchVersion}`;
-								if (
-									unrealVersion !== request.artifact.unrealVersion ||
-									(buildVersion.MajorVersion === 4
-										? "UE4Editor"
-										: "UnrealEditor") !== request.artifact.target ||
-									engineModules.BuildId !== request.artifact.engineBuildId
-								)
-									throw new Error(
-										"Requested Unreal version or BuildId does not match the explicit engine root."
-									);
-								return { manifestInput: decodeJson(manifestBytes) };
-							},
-							catch: (cause) =>
+						const validatedFiles = yield* Effect.gen(function* () {
+							const onValidationError = (cause: unknown) =>
 								invalid(
 									"validation",
 									"Compiled plugin build validation failed.",
 									"Correct the engine root, exact source pins, graph, or output directory before invoking UAT.",
 									"fix_input",
 									cause
+								);
+							const manifestBytes = yield* Effect.tryPromise({
+								try: async () => {
+									await mkdir(outputRoot, { recursive: true });
+									const outputDetails = await lstat(outputRoot);
+									if (
+										!outputDetails.isDirectory() ||
+										outputDetails.isSymbolicLink()
+									)
+										throw new Error(
+											"Output root must be a real directory, not a link."
+										);
+									const canonicalOutput = await realpath(outputRoot);
+									const canonicalEngine = await realpath(engineRoot);
+									if (within(canonicalEngine, canonicalOutput))
+										throw new Error(
+											"Output root resolves beneath the engine root."
+										);
+									await regularFile(runUat, "RunUAT");
+									await regularFile(buildVersionPath, "Engine Build.version");
+									await regularFile(
+										editorModulesPath,
+										`${request.artifact.target}.modules`
+									);
+									await regularFile(sourceManifestPath, "Source manifest");
+									await regularFile(sourceArtifactPath, "Source artifact");
+									const manifestBytes = await readFile(sourceManifestPath);
+									if (
+										sha256(manifestBytes) !==
+										request.expectedSourceManifestSha256
+									)
+										throw new Error(
+											"Source manifest digest does not match the pinned digest."
+										);
+									return manifestBytes;
+								},
+								catch: onValidationError
+							});
+							const buildVersion = yield* Effect.tryPromise({
+								try: async () =>
+									JSON.parse(await readFile(buildVersionPath, "utf8")),
+								catch: onValidationError
+							}).pipe(
+								Effect.flatMap((input) =>
+									decodeUnrealBuildVersionEffect(input).pipe(
+										Effect.mapError(onValidationError)
+									)
 								)
+							);
+							const engineModules = yield* Effect.tryPromise({
+								try: async () =>
+									JSON.parse(await readFile(editorModulesPath, "utf8")),
+								catch: onValidationError
+							}).pipe(
+								Effect.flatMap((input) =>
+									decodeUnrealModulesEffect(input).pipe(
+										Effect.mapError(onValidationError)
+									)
+								)
+							);
+							return yield* Effect.try({
+								try: () => {
+									const unrealVersion = `${buildVersion.MajorVersion}.${buildVersion.MinorVersion}.${buildVersion.PatchVersion}`;
+									if (
+										unrealVersion !== request.artifact.unrealVersion ||
+										(buildVersion.MajorVersion === 4
+											? "UE4Editor"
+											: "UnrealEditor") !== request.artifact.target ||
+										engineModules.BuildId !== request.artifact.engineBuildId
+									)
+										throw new Error(
+											"Requested Unreal version or BuildId does not match the explicit engine root."
+										);
+									return { manifestInput: decodeJson(manifestBytes) };
+								},
+								catch: onValidationError
+							});
 						});
 						const sourceManifest = yield* validatePluginBundleManifest(
 							validatedFiles.manifestInput
@@ -756,20 +795,20 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 							)
 						);
 						const stage = join(outputRoot, `.compiled-plugin-${randomUUID()}`);
-						yield* Effect.tryPromise({
-							try: () => mkdir(stage),
-							catch: (cause) =>
-								invalid(
-									"validation",
-									"Could not create the private build stage.",
-									"Choose a writable caller-owned output directory.",
-									"fix_input",
-									cause
-								)
-						});
+
 						const prepared = { graph, sourceManifest, stage };
 						return yield* Effect.acquireUseRelease(
-							Effect.succeed(prepared),
+							Effect.tryPromise({
+								try: () => mkdir(stage),
+								catch: (cause) =>
+									invalid(
+										"validation",
+										"Could not create the private build stage.",
+										"Choose a writable caller-owned output directory.",
+										"fix_input",
+										cause
+									)
+							}).pipe(Effect.as(prepared)),
 							(state) =>
 								Effect.gen(function* () {
 									const extracted = join(state.stage, "source");
@@ -887,8 +926,10 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 										},
 										(owned) =>
 											owned.terminate("cancelled").pipe(
-												Effect.catch((cause) =>
-													Ref.set(cleanupFailure, Option.some(cause))
+												Effect.catchTag(
+													"SupervisedEditorSessionError",
+													(cause) =>
+														Ref.set(cleanupFailure, Option.some(cause))
 												),
 												Effect.asVoid
 											)
@@ -962,15 +1003,18 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											)
 									});
 									const artifactPath = join(publishStage, names.artifact);
-									const artifact = yield* Effect.tryPromise({
-										try: () =>
+									const artifact = yield* awaitCancelableOperation(
+										(runtimeSignal) =>
 											writeDeterministicArchive({
 												destination: artifactPath,
 												limits,
 												root: graphRoot,
-												signal: buildSignal
+												signal: AbortSignal.any([
+													runtimeSignal,
+													buildSignal
+												])
 											}),
-										catch: (cause) =>
+										(cause) =>
 											isCompiledPluginBuildCancelled(cause) ||
 											buildSignal.aborted
 												? cancelled("archive")
@@ -981,7 +1025,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 														"fix_input",
 														cause
 													)
-									});
+									);
 									const nativeFiles = artifact.files.filter((file) =>
 										/\.(?:dll|dylib|modules|pdb|so|uplugin)$/iu.test(file.path)
 									);
@@ -1010,67 +1054,71 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											"Build the source bundle from the matching release candidate."
 										);
 									}
-									const manifest = yield* decodeCompiledPluginBundleManifestV3({
-										artifact: {
-											bytes: artifact.bytes,
-											id: `ue-shed-plugin-compiled-${state.sourceManifest.releaseVersion}`,
-											kind: "unreal-editor-plugin-binary",
-											path: names.artifact,
-											sha256: artifact.digest
-										},
-										build: {
-											builder: "@ue-shed/plugin-distribution",
-											builderVersion: "1",
-											compiler: request.compiler,
-											invocationSha256: sha256(
-												Buffer.from(
-													canonicalInvocation(
-														request,
-														state.graph.orderedPluginIds
+									const manifest =
+										yield* decodeCompiledPluginBundleManifestV3Effect({
+											artifact: {
+												bytes: artifact.bytes,
+												id: `ue-shed-plugin-compiled-${state.sourceManifest.releaseVersion}`,
+												kind: "unreal-editor-plugin-binary",
+												path: names.artifact,
+												sha256: artifact.digest
+											},
+											build: {
+												builder: "@ue-shed/plugin-distribution",
+												builderVersion: "1",
+												compiler: request.compiler,
+												invocationSha256: sha256(
+													Buffer.from(
+														canonicalInvocation(
+															request,
+															state.graph.orderedPluginIds
+														)
 													)
+												),
+												requestedPluginIds: request.pluginIds,
+												resolvedPluginIds: state.graph.orderedPluginIds,
+												sourceArtifactSha256:
+													request.expectedSourceArtifactSha256,
+												sourceManifestSha256:
+													request.expectedSourceManifestSha256
+											},
+											buildRecipe: [
+												"ue-shed plugins build",
+												`--plugin ${request.pluginIds.join(" --plugin ")}`,
+												`--unreal ${request.artifact.unrealVersion}`,
+												`--build-id ${request.artifact.engineBuildId}`,
+												`--platform ${request.artifact.platform}`,
+												`--architecture ${request.artifact.architecture}`,
+												`--compiler ${request.compiler.compiler}`,
+												`--compiler-version ${request.compiler.compilerVersion}`,
+												`--toolchain "${request.compiler.toolchain}"`,
+												`--toolchain-version ${request.compiler.toolchainVersion}`,
+												`--source-manifest-digest ${request.expectedSourceManifestSha256}`,
+												`--source-artifact-digest ${request.expectedSourceArtifactSha256}`
+											].join(" "),
+											compatibility: {
+												...request.artifact,
+												kind: "compiled"
+											},
+											contracts: state.sourceManifest.contracts,
+											modules,
+											nativeFiles,
+											packages: state.sourceManifest.packages,
+											plugins: state.graph.plugins,
+											provenance: state.sourceManifest.provenance,
+											releaseVersion: state.sourceManifest.releaseVersion,
+											schemaVersion: 3
+										}).pipe(
+											Effect.mapError((cause) =>
+												invalid(
+													"manifest",
+													"Generated compiled manifest is invalid.",
+													"Inspect the validated build inputs and retry.",
+													"escalate",
+													cause
 												)
-											),
-											requestedPluginIds: request.pluginIds,
-											resolvedPluginIds: state.graph.orderedPluginIds,
-											sourceArtifactSha256:
-												request.expectedSourceArtifactSha256,
-											sourceManifestSha256:
-												request.expectedSourceManifestSha256
-										},
-										buildRecipe: [
-											"ue-shed plugins build",
-											`--plugin ${request.pluginIds.join(" --plugin ")}`,
-											`--unreal ${request.artifact.unrealVersion}`,
-											`--build-id ${request.artifact.engineBuildId}`,
-											`--platform ${request.artifact.platform}`,
-											`--architecture ${request.artifact.architecture}`,
-											`--compiler ${request.compiler.compiler}`,
-											`--compiler-version ${request.compiler.compilerVersion}`,
-											`--toolchain "${request.compiler.toolchain}"`,
-											`--toolchain-version ${request.compiler.toolchainVersion}`,
-											`--source-manifest-digest ${request.expectedSourceManifestSha256}`,
-											`--source-artifact-digest ${request.expectedSourceArtifactSha256}`
-										].join(" "),
-										compatibility: { ...request.artifact, kind: "compiled" },
-										contracts: state.sourceManifest.contracts,
-										modules,
-										nativeFiles,
-										packages: state.sourceManifest.packages,
-										plugins: state.graph.plugins,
-										provenance: state.sourceManifest.provenance,
-										releaseVersion: state.sourceManifest.releaseVersion,
-										schemaVersion: 3
-									}).pipe(
-										Effect.mapError((cause) =>
-											invalid(
-												"manifest",
-												"Generated compiled manifest is invalid.",
-												"Inspect the validated build inputs and retry.",
-												"escalate",
-												cause
 											)
-										)
-									);
+										);
 									const manifestPath = join(publishStage, names.manifest);
 									const manifestBytes = Buffer.from(
 										`${JSON.stringify(manifest, null, "\t")}\n`

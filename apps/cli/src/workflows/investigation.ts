@@ -1,6 +1,6 @@
 import { refreshCliGameTextIndex } from "./game-text-index.js";
 import { resolve } from "node:path";
-import { Effect, Schema } from "effect";
+import { Layer, Effect, Schema } from "effect";
 import {
 	readInvestigationPresetJson,
 	writeInvestigationFile
@@ -95,8 +95,12 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 					const report = yield* Effect.flatMap(textures.TextureAudit, (service) =>
 						service.scan({ projectRoot: source.projectRoot, rules: preset.rules })
 					).pipe(
-						Effect.provide(textures.TextureAuditLive),
-						Effect.provide(readerLayer(command.reader))
+						Effect.provide(
+							Layer.provideMerge(
+								textures.TextureAuditLive,
+								readerLayer(command.reader)
+							)
+						)
 					);
 					const document = textures.exportTextureInvestigation(
 						textures.textureAuditQuery(report),

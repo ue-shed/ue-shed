@@ -38,8 +38,7 @@ import type {
 	SavedAssetTextOccurrence
 } from "../packages/unreal-assets/dist/index.js";
 import { importLocalizationFile } from "../packages/game-text/src/localization-import.ts";
-
-const decodeTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
 
 export async function withJoinCache(run: (cache: string) => Promise<void>) {
 	const cache = await mkdtemp(join(tmpdir(), "ue-shed-columnar-join-"));
@@ -156,7 +155,7 @@ export async function tinyJoinInput(cache: string, scale: number, seed = 57) {
 	const recipe = gameTextScaleRecipe(scale),
 		projectRoot = join(cache, "tiny");
 	await mkdir(projectRoot);
-	const generatedTarget = decodeTarget({
+	const generatedTarget = decodeLocalizationTarget({
 		...target,
 		name: "Generated",
 		cultures: recipe.cultures,
@@ -333,7 +332,7 @@ export async function semanticJoinInput(cache: string) {
 		["A1", "Ambiguous", "/Game/Text/Other.Other.A1", "UI"],
 		["A2", "Ambiguous", "/Game/Text/Other.Other.A2", "UI"]
 	] as const;
-	const authored = decodeTarget({
+	const authored = decodeLocalizationTarget({
 		...target,
 		name: "Cases",
 		configs: target.configs.map((config) => ({

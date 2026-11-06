@@ -53,14 +53,12 @@ const status = Effect.fnUntraced(function* (
 		)
 	);
 	if (response._tag === "Rejected")
-		return yield* Effect.fail(
-			clientError({
-				cause: response,
-				message: response.message,
-				operation: "scenario.status",
-				recovery: response.recovery
-			})
-		);
+		return yield* clientError({
+			cause: response,
+			message: response.message,
+			operation: "scenario.status",
+			recovery: response.recovery
+		});
 	return response;
 });
 
@@ -89,7 +87,7 @@ const fileOperation = (document?: ScenarioDocument) =>
 		)
 	);
 export const scenarioStudioClient: ScenarioStudioClient = {
-	openDocument: () => fileOperation(),
+	openDocument: Effect.suspend(() => fileOperation()),
 	saveDocument: (document) => fileOperation(document),
 	cancel: (handle) =>
 		Effect.tryPromise({
@@ -115,7 +113,7 @@ export const scenarioStudioClient: ScenarioStudioClient = {
 				)
 			)
 		),
-	settings: () =>
+	settings: Effect.suspend(() =>
 		Effect.tryPromise({
 			try: () => window.ueShed.editorSession.settings(),
 			catch: (cause) =>
@@ -129,7 +127,8 @@ export const scenarioStudioClient: ScenarioStudioClient = {
 			Effect.map(({ endpoint, port }) => ({
 				endpoint: endpoint ?? `http://127.0.0.1:${port}`
 			}))
-		),
+		)
+	),
 	start: ({ document, endpoint }) =>
 		Effect.tryPromise({
 			try: () => window.ueShed.scenarios.start(document, endpoint),

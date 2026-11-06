@@ -50,7 +50,7 @@ describe("PO translation writer", () => {
 		expect(after[changed[0] ?? -1]?.replace(/\r$/u, "")).toBe(
 			'msgstr "Gespräch mit {PlayerName}"'
 		);
-		expect([...output.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+		expect(Array.from(output.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
 		const entry = parsed(output).blocks.find(
 			(block) => block.entry?.identity?.key === "NamedArgument"
 		)?.entry;

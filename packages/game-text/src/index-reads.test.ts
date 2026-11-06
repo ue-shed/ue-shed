@@ -694,9 +694,9 @@ describe("index reads", () => {
 									)
 								).toEqual([{ status: "consistent", value: source }]);
 							}
-							const header = yield* model.query.readCorpusHeader();
+							const header = yield* model.query.readCorpusHeader;
 							expect(header.diagnostics.length).toBeGreaterThan(0);
-							expect(yield* model.query.readCorpusReportHeader()).toEqual(
+							expect(yield* model.query.readCorpusReportHeader).toEqual(
 								textCorpusReportHeader(header)
 							);
 						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
@@ -838,9 +838,9 @@ describe("index reads", () => {
 							]);
 
 							// The header is the corpus's without its units.
-							const corpus = yield* model.query.readCorpus();
+							const corpus = yield* model.query.readCorpus;
 							const { units: _units, ...header } = corpus;
-							expect(yield* model.query.readCorpusHeader()).toEqual(header);
+							expect(yield* model.query.readCorpusHeader).toEqual(header);
 							const unitIds = corpus.units.slice(0, 3).map((unit) => unit.id);
 							expect(yield* model.query.readUnits([...unitIds, unitIds[0]!])).toEqual(
 								corpus.units.slice(0, 3)
@@ -855,7 +855,7 @@ describe("index reads", () => {
 								createdAt
 							);
 							// The engine fingerprints the corpus as the baseline does.
-							expect(yield* model.query.corpusFingerprint()).toBe(
+							expect(yield* model.query.corpusFingerprint).toBe(
 								baseline.provenance.corpusGeneration
 							);
 							expect(yield* indexedLocalizationBaseline(model, createdAt)).toEqual(
@@ -1059,7 +1059,7 @@ describe("index reads", () => {
 										yield* exportGameTextInvestigation(rules, preset, source, {
 											export: () =>
 												Effect.map(
-													model.query.readCorpusHeader(),
+													model.query.readCorpusHeader,
 													corpusWithoutUnits
 												).pipe(Effect.orDie)
 										})

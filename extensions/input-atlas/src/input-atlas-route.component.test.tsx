@@ -24,7 +24,7 @@ const mappingContext = (name: string, key: string, action: string) => ({
 	exports: []
 });
 
-const report = decodeEnhancedInputReport({
+const report = Schema.decodeSync(EnhancedInputReport)({
 	schemaVersion: 1,
 	status: "complete",
 	coverage: {
@@ -75,7 +75,7 @@ function renderRoute(client?: Partial<InputAtlasClientApi>) {
 		<EffectRuntimeProvider runtime={runtime}>
 			<InputAtlasRoute
 				client={{
-					loadConfiguredProject: () => Effect.succeed(completed),
+					loadConfiguredProject: Effect.succeed(completed),
 					...client
 				}}
 			/>
@@ -105,8 +105,9 @@ describe("InputAtlasRoute interactions", () => {
 		const user = userEvent.setup();
 		let scans = 0;
 		renderRoute({
-			loadConfiguredProject: () =>
+			loadConfiguredProject: Effect.suspend(() =>
 				Effect.suspend(() => (scans++ === 0 ? Effect.succeed(completed) : Effect.never))
+			)
 		});
 		await screen.findByText("SpaceBar");
 
@@ -118,7 +119,7 @@ describe("InputAtlasRoute interactions", () => {
 	});
 
 	it("directs users to the workspace project picker when no project is selected", async () => {
-		renderRoute({ loadConfiguredProject: () => Effect.succeed({ status: "not_configured" }) });
+		renderRoute({ loadConfiguredProject: Effect.sync(() => ({ status: "not_configured" })) });
 		expect(
 			await screen.findByText(
 				"No project selected. Choose a project using the workspace project picker, then return here."
@@ -177,28 +178,27 @@ describe("InputAtlasRoute interactions", () => {
 	it("filters by conflict class and explains the class of the selected key", async () => {
 		const user = userEvent.setup();
 		renderRoute({
-			loadConfiguredProject: () =>
-				Effect.succeed({
-					...completed,
-					analysis: {
-						coActivation: {
-							sets: [
-								{
-									id: "host_document:driving",
-									label: "Driving",
-									source: "host_document",
-									origin: "coactivation.json",
-									contexts: [
-										{ context: "/Game/Input/IMC_Gameplay", priority: 0 },
-										{ context: "/Game/Input/IMC_Vehicle", priority: 1 }
-									]
-								}
-							],
-							sources: []
-						},
-						platforms: []
-					}
-				})
+			loadConfiguredProject: Effect.sync(() => ({
+				...completed,
+				analysis: {
+					coActivation: {
+						sets: [
+							{
+								id: "host_document:driving",
+								label: "Driving",
+								source: "host_document",
+								origin: "coactivation.json",
+								contexts: [
+									{ context: "/Game/Input/IMC_Gameplay", priority: 0 },
+									{ context: "/Game/Input/IMC_Vehicle", priority: 1 }
+								]
+							}
+						],
+						sources: []
+					},
+					platforms: []
+				}
+			}))
 		});
 		await screen.findByText("SpaceBar");
 		expect(screen.getByText("1 co-activation set")).toBeDefined();
@@ -223,28 +223,27 @@ describe("InputAtlasRoute interactions", () => {
 	it("offers platform views inside the project and applies their redirects", async () => {
 		const user = userEvent.setup();
 		renderRoute({
-			loadConfiguredProject: () =>
-				Effect.succeed({
-					...completed,
-					analysis: {
-						coActivation: { sets: [], sources: [] },
-						platforms: [
-							{
-								platform: "Switch",
-								status: "resolved",
-								inputData: ["/Game/Input/BP_SwitchData.BP_SwitchData_C"],
-								redirects: [
-									{
-										from: "/Game/Input/IMC_Vehicle.IMC_Vehicle",
-										to: "/Game/Input/IMC_Gameplay.IMC_Gameplay",
-										inputData: "/Game/Input/BP_SwitchData.BP_SwitchData_C"
-									}
-								],
-								diagnostics: []
-							}
-						]
-					}
-				})
+			loadConfiguredProject: Effect.sync(() => ({
+				...completed,
+				analysis: {
+					coActivation: { sets: [], sources: [] },
+					platforms: [
+						{
+							platform: "Switch",
+							status: "resolved",
+							inputData: ["/Game/Input/BP_SwitchData.BP_SwitchData_C"],
+							redirects: [
+								{
+									from: "/Game/Input/IMC_Vehicle.IMC_Vehicle",
+									to: "/Game/Input/IMC_Gameplay.IMC_Gameplay",
+									inputData: "/Game/Input/BP_SwitchData.BP_SwitchData_C"
+								}
+							],
+							diagnostics: []
+						}
+					]
+				}
+			}))
 		});
 		await screen.findByText("SpaceBar");
 		const view = screen.getByRole("combobox", { name: "View within this project" });
@@ -280,24 +279,23 @@ describe("InputAtlasRoute interactions", () => {
 			]
 		});
 		renderRoute({
-			loadConfiguredProject: () => Effect.succeed({ ...completed, report: withHold })
+			loadConfiguredProject: Effect.sync(() => ({ ...completed, report: withHold }))
 		});
 		expect(await screen.findByText("hold (HoldTimeThreshold 0.4)")).toBeDefined();
 	});
 
 	it("surfaces a failed scan with its recovery guidance", async () => {
 		renderRoute({
-			loadConfiguredProject: () =>
-				Effect.succeed({
-					status: "failed",
-					error: {
-						code: "invalid_project",
-						message: "Content directory is missing.",
-						recovery: "Choose an Unreal project directory.",
-						nextStep: "fix_input" as const,
-						retrySafe: true
-					}
-				})
+			loadConfiguredProject: Effect.sync(() => ({
+				status: "failed",
+				error: {
+					code: "invalid_project",
+					message: "Content directory is missing.",
+					recovery: "Choose an Unreal project directory.",
+					nextStep: "fix_input" as const,
+					retrySafe: true
+				}
+			}))
 		});
 		expect(await screen.findByText("Couldn’t scan this project")).toBeDefined();
 		expect(screen.getByText("Content directory is missing.")).toBeDefined();

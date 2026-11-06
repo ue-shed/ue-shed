@@ -9,7 +9,7 @@ let bindingPromise;
 /**
  * @param {BrowserRuntimeOptions | undefined} options
  */
-async function loadBinding(options = undefined) {
+async function loadBinding(options) {
 	if (bindingPromise === undefined) {
 		bindingPromise = import(
 			new URL("./wasm/browser/uasset_inspection_wasm.js", import.meta.url).href

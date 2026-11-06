@@ -8,8 +8,7 @@ import {
 } from "./game-text-rules.js";
 import type { LocalizationRuleDiagnostic } from "./localization-quality-schema.js";
 import type { TextRole } from "./quality-schema.js";
-
-const decodeCultureCode = Schema.decodeUnknownSync(CultureCode);
+const decodeCultureCode = Schema.decodeSync(CultureCode);
 
 export type LocalizationPolicyRule = {
 	readonly rule: LocalizationProjectRule;

@@ -8,7 +8,7 @@ import { JoinFuzzInput, compareJoinFuzzInput } from "./columnar-join-fuzz.test-s
 import { withJoinCache } from "./columnar-join.test-support.ts";
 
 const JoinFuzzInputJson = Schema.fromJsonString(JoinFuzzInput);
-const decodeJoinFuzzInputJson = Schema.decodeUnknownSync(JoinFuzzInputJson);
+const decodeJoinFuzzInputJson = Schema.decodeSync(JoinFuzzInputJson);
 
 it.each(["lone-utf16-source"])(
 	"%s preserves a source containing a lone UTF-16 code unit",

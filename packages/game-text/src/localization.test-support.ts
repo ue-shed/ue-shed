@@ -12,6 +12,9 @@ import {
 	type PODocument
 } from "@ue-shed/localization/browser";
 import { TextCorpus, TextUnit, makeTextOccurrenceId } from "./schema.js";
+const decodeManifestEntry = Schema.decodeSync(ManifestEntry);
+const decodeArchiveEntry = Schema.decodeSync(ArchiveEntry);
+const decodeTextUnit = Schema.decodeSync(TextUnit);
 
 export function success<A, E>(result: Result.Result<A, E>): A {
 	if (Result.isFailure(result)) throw result.failure;
@@ -19,9 +22,6 @@ export function success<A, E>(result: Result.Result<A, E>): A {
 }
 
 export const cultureCode = Schema.decodeUnknownSync(CultureCode);
-const decodeManifestEntry = Schema.decodeUnknownSync(ManifestEntry);
-const decodeArchiveEntry = Schema.decodeUnknownSync(ArchiveEntry);
-const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
 export const testTarget = success(
 	discoverLocalizationTargets({
 		dashboardText: "",
@@ -35,7 +35,7 @@ export const testTarget = success(
 ).targets[0];
 if (!testTarget) throw new Error("Test target recipe did not produce a target.");
 // A separately decoded value preserves narrowing for callers of test helpers.
-export const target = Schema.decodeUnknownSync(LocalizationTarget)(testTarget);
+export const target = Schema.decodeSync(LocalizationTarget)(testTarget);
 
 export function manifestEntry(
 	key = "K",

@@ -19,21 +19,19 @@ const OperationFailure = Schema.Struct({
 const ConfigurationFailure = Schema.Struct({
 	schemaVersion: Schema.Literal(1),
 	type: Schema.Literal("failure"),
-	error: Schema.Struct({
-		_tag: Schema.Literal("LocalizationRunConfigurationError"),
+	error: Schema.TaggedStruct("LocalizationRunConfigurationError", {
 		code: Schema.Literal("invalid_configuration"),
 		message: Schema.NonEmptyString,
 		recovery: Schema.NonEmptyString,
 		retrySafe: Schema.Literal(true)
 	})
 });
-const decodeOperationFailureJson = Schema.decodeUnknownSync(
-	Schema.fromJsonString(OperationFailure)
-);
-const decodeConfigurationFailureJson = Schema.decodeUnknownSync(
-	Schema.fromJsonString(ConfigurationFailure)
-);
-const decodePlanJson = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationOperationPlan));
+const OperationFailureJson = Schema.fromJsonString(OperationFailure);
+const ConfigurationFailureJson = Schema.fromJsonString(ConfigurationFailure);
+const PlanJson = Schema.fromJsonString(LocalizationOperationPlan);
+const decodeOperationFailureJson = Schema.decodeEffect(OperationFailureJson);
+const decodeConfigurationFailureJson = Schema.decodeEffect(ConfigurationFailureJson);
+const decodePlanJson = Schema.decodeEffect(PlanJson);
 
 it.effect(
 	"loc run classifies invalid target input before discovery and keeps parser evidence",
@@ -59,7 +57,9 @@ it.effect(
 				"--plan",
 				"--json"
 			]).pipe(Effect.provide(runtime));
-			const failure = decodeOperationFailureJson(yield* Ref.get(output));
+			const failure = yield* decodeOperationFailureJson(yield* Ref.get(output)).pipe(
+				Effect.orDie
+			);
 			expect(failure.error.code).toBe("invalid_request");
 			expect(failure.error.nextStep).toBe("fix_input");
 			expect(failure.error.cause).toBeDefined();
@@ -106,7 +106,7 @@ it.effect("loc run --plan returns validated recipe writes without a commandlet o
 				engine,
 				"--plan"
 			]).pipe(Effect.provide(runtime));
-			const plan = decodePlanJson(yield* Ref.get(output));
+			const plan = yield* decodePlanJson(yield* Ref.get(output)).pipe(Effect.orDie);
 			expect(plan.engine).toBe("4.27");
 			expect(plan.wholeRecipe).toBe(true);
 			expect(plan.files).toHaveLength(13);
@@ -138,22 +138,26 @@ it.effect("loc run reports configuration provider failures without echoing priva
 			"--plan",
 			"--json"
 		]).pipe(
-			Effect.provide(runtime),
 			Effect.provide(
-				ConfigProvider.layer(
-					ConfigProvider.make((path) =>
-						path.length === 1 && path[0] === "ProgramFiles"
-							? Effect.fail(
-									new ConfigProvider.SourceError({
-										message: "private-environment-value"
-									})
-								)
-							: Effect.succeed(undefined)
+				Layer.provideMerge(
+					runtime,
+					ConfigProvider.layer(
+						ConfigProvider.make((path) =>
+							path.length === 1 && path[0] === "ProgramFiles"
+								? Effect.fail(
+										new ConfigProvider.SourceError({
+											message: "private-environment-value"
+										})
+									)
+								: Effect.undefined
+						)
 					)
 				)
 			)
 		);
-		const failure = decodeConfigurationFailureJson(yield* Ref.get(output));
+		const failure = yield* decodeConfigurationFailureJson(yield* Ref.get(output)).pipe(
+			Effect.orDie
+		);
 		expect(failure.error.recovery).toContain("ProgramFiles / ProgramData");
 		expect(failure.error.recovery).toContain("--plan");
 		expect(yield* Ref.get(output)).not.toContain("private-environment-value");
@@ -182,7 +186,9 @@ it.effect("loc run returns a typed unknown-target failure before engine discover
 			"UnknownTargetSelection",
 			"--json"
 		]).pipe(Effect.provide(runtime));
-		const failure = decodeOperationFailureJson(yield* Ref.get(output));
+		const failure = yield* decodeOperationFailureJson(yield* Ref.get(output)).pipe(
+			Effect.orDie
+		);
 		expect(failure.error.code).toBe("target_not_found");
 		expect(failure.error.recovery).toContain("loc targets");
 		expect(yield* Ref.get(output)).not.toContain("UnknownTargetSelection");

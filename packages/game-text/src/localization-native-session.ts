@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Layer, Effect } from "effect";
 import { AssetReaderLive } from "@ue-shed/unreal-assets";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import type { SharedIndexOptions } from "./shared-index.js";
@@ -16,8 +16,7 @@ export const withNativeLocalizationSession = Effect.fn("LocalizationImport.nativ
 				return yield* builder.withSession({ configuration }, effect);
 			})
 		).pipe(
-			Effect.provide(GameTextIndexBuilderLive),
-			Effect.provide(AssetReaderLive),
+			Effect.provide(Layer.provideMerge(GameTextIndexBuilderLive, AssetReaderLive)),
 			Effect.catchTag("ConfigError", (cause) =>
 				Effect.fail(
 					snapshotStoreFailure(

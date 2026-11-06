@@ -127,7 +127,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 				);
 	});
 
-	const run = (operation: () => ReturnType<CustodianClientApi["configuredScan"]>) => {
+	const run = (operation: () => CustodianClientApi["configuredScan"]) => {
 		setCleanupOpen(false);
 		setState({ status: "loading" });
 		action.run(operation(), {
@@ -151,7 +151,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 		return current.status === "failed" ? current : undefined;
 	});
 
-	onSettled(() => run(() => props.client.configuredScan()));
+	onSettled(() => run(() => props.client.configuredScan));
 
 	return (
 		<main {...stylex.attrs(styles.page)}>
@@ -167,7 +167,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 					<Button
 						tone="quiet"
 						disabled={state().status === "loading"}
-						onClick={() => run(() => props.client.configuredScan())}
+						onClick={() => run(() => props.client.configuredScan)}
 					>
 						Rescan
 					</Button>
@@ -215,7 +215,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 								<div {...stylex.attrs(styles.errorActions)}>
 									<Button
 										tone="secondary"
-										onClick={() => run(() => props.client.configuredScan())}
+										onClick={() => run(() => props.client.configuredScan)}
 									>
 										Retry
 									</Button>
@@ -249,7 +249,7 @@ export function ProjectCustodianRoute(props: { readonly client: CustodianClientA
 						client={props.client}
 						report={current}
 						onClose={() => setCleanupOpen(false)}
-						onFinished={() => run(() => props.client.configuredScan())}
+						onFinished={() => run(() => props.client.configuredScan)}
 					/>
 				)}
 			</Show>

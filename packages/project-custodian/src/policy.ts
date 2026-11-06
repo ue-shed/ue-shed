@@ -1,5 +1,5 @@
 import type { CustodianPolicy, ProjectTargetKey } from "./schema.js";
-import { Schema } from "effect";
+import { Schema, Predicate } from "effect";
 
 /** One reclaimable project location with its rebuild cost, risk and default selection. */
 export interface ProjectTargetDefinition {
@@ -149,15 +149,16 @@ export interface PolicyResolution {
 
 const JsonObject = Schema.Record(Schema.String, Schema.Json);
 const isJsonObject = Schema.is(JsonObject);
-const isNumber = Schema.is(Schema.Number);
 const isBoolean = Schema.is(Schema.Boolean);
+const TargetNames = Schema.Array(Schema.String);
+const isTargetNames = Schema.is(TargetNames);
 
 function isRecord(value: Schema.Json): value is Schema.JsonObject {
 	return isJsonObject(value);
 }
 
 function nonNegativeNumber(value: Schema.Json): value is number {
-	return isNumber(value) && Number.isFinite(value) && value >= 0;
+	return Predicate.isNumber(value) && Number.isFinite(value) && value >= 0;
 }
 
 /**
@@ -213,7 +214,7 @@ export function resolvePolicyDocument(value: Schema.Json): PolicyResolution {
 	let targets = defaultCustodianPolicy.targets;
 	if (value.targets !== undefined) {
 		const targetNames = value.targets;
-		if (!Array.isArray(targetNames) || !targetNames.every(Schema.is(Schema.String))) {
+		if (!isTargetNames(targetNames)) {
 			return {
 				policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
 				error: "targets must be an array of known target keys."

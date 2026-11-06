@@ -12,9 +12,10 @@ import type {
 } from "@ue-shed/protocol";
 import { applyTextIdTableRepair, prepareTextIdTableRepair } from "./id-repair-tables.js";
 import { TextIdRepairRequest } from "./id-repair-schema.js";
-
-const decodeTextIdRepairRequest = Schema.decodeUnknownSync(TextIdRepairRequest);
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeTextIdRepairRequest = Schema.decodeSync(TextIdRepairRequest);
+const decodeJsonEffect = Schema.decodeEffect(Schema.Json);
+const decodeUnknownJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
+const decodeTextIdRepairRequestEffect = Schema.decodeEffect(TextIdRepairRequest);
 
 const contract = { name: "unreal-authoring-apply", version: { major: 1, minor: 2 } } as const;
 const authoring: AuthoringApplyRequest = {
@@ -160,7 +161,7 @@ function connection(snapshot?: ReturnType<typeof tableSnapshot>) {
 			Effect.gen(function* () {
 				calls.push(call.functionName);
 				if (call.functionName === "GetCapabilityManifest")
-					return decodeJson({
+					return yield* decodeJsonEffect({
 						schemaVersion: 1,
 						producerKind: "unreal_editor",
 						authoringObjectPath:
@@ -177,17 +178,17 @@ function connection(snapshot?: ReturnType<typeof tableSnapshot>) {
 							"authoring.apply-result.v1",
 							"authoring.save.v1"
 						]
-					});
+					}).pipe(Effect.orDie);
 				if (call.functionName === "GetTableSnapshot" && snapshot)
-					return decodeJson(snapshot);
+					return yield* decodeUnknownJsonEffect(snapshot).pipe(Effect.orDie);
 				if (call.functionName === "Apply")
-					return decodeJson({
+					return yield* decodeJsonEffect({
 						contract,
 						operationId: "repair",
 						errors: [],
 						snapshots: [],
 						status: "committed"
-					});
+					}).pipe(Effect.orDie);
 				return yield* new RemoteControlClientError({
 					code: "request_timeout",
 					endpoint: call.endpoint,
@@ -222,7 +223,7 @@ it.effect("retains committed table edits before a save reply is lost", () =>
 it.effect("refuses copied table paths that still point at another physical package", () =>
 	Effect.gen(function* () {
 		const remote = connection();
-		const request = decodeTextIdRepairRequest({
+		const request = yield* decodeTextIdRepairRequestEffect({
 			projectKey: "C:/Fixture",
 			title: "Fix copied table",
 			changes: [
@@ -245,7 +246,7 @@ it.effect("refuses copied table paths that still point at another physical packa
 					edit: { kind: "change_key", namespace: "UI", key: "New" }
 				}
 			]
-		});
+		}).pipe(Effect.orDie);
 		const error = yield* prepareTextIdTableRepair(
 			"http://localhost:30010",
 			request,

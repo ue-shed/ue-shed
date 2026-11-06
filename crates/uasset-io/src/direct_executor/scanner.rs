@@ -225,6 +225,16 @@ impl ProjectScanner for FilesystemProjectScanner {
     }
 }
 
+/// Every package and sidecar under the project's `Content`, as the Project Index enumerates them
+/// (directory-listing metadata, path order), walked on at most `maximum_workers` threads.
+pub(crate) fn enumerate_content(
+    project_root: &str,
+    cancellation: &CancellationToken,
+    maximum_workers: usize,
+) -> Result<Vec<PackageSignature>, Failure> {
+    discovery::enumerate_bounded(project_root, cancellation, maximum_workers)
+}
+
 pub(crate) fn discover_paths(
     roots: &[PathBuf],
     include_sidecars: bool,

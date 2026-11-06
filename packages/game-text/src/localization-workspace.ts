@@ -195,6 +195,7 @@ export const WorkspaceQualityPage = Schema.Struct({
 	unsupportedRuleCultures: Count,
 	rules: Schema.Array(TextQualityRuleSummary).check(Schema.isMaxLength(1032))
 });
+const decodeCounts = Schema.decodeUnknownEffect(WorkspaceQualityPage.fields.counts);
 export type WorkspaceQualityPage = typeof WorkspaceQualityPage.Type;
 const decodeQualityCounts = Schema.decodeUnknownSync(WorkspaceQualityPage.fields.counts);
 /** File reports keep every matching finding; renderer pages remain bounded. */
@@ -310,7 +311,7 @@ interface SeverityBuckets<A> {
 	low: A[];
 }
 type SourceFinding = TextQualityReport["findings"][number];
-type RuleId = (typeof TextQualityRuleSummary.Type)["ruleId"];
+type RuleId = TextQualityRuleSummary["ruleId"];
 /** A shown finding: the finding, its line when known, and the summary the list displays. */
 export interface WorkspaceQualityItem {
 	readonly finding: Finding | SourceFinding;
@@ -739,7 +740,8 @@ interface LocalizationFindingList {
 	reportedBySource(position: number): boolean;
 	/** The first position with this ID within the culture selection. */
 	find(id: TextQualityFindingId, culture: CultureCode | undefined): number | undefined;
-	items(positions: readonly number[]): readonly WorkspaceQualityItem[];
+	/** Materializes positions as a detached callback; the implementation captures its report. */
+	readonly items: (this: void, positions: readonly number[]) => readonly WorkspaceQualityItem[];
 	/** Check diagnostic counts in first-seen order. */
 	limits(
 		culture: CultureCode | undefined
@@ -1307,8 +1309,8 @@ export const WorkspaceReportRow = Schema.Struct({
 	culture: CultureCode,
 	translatedLines: Words,
 	totalLines: Count,
-	linesPercent: Schema.NullOr(Schema.Number),
-	wordsPercent: Schema.NullOr(Schema.Number),
+	linesPercent: Schema.NullOr(Schema.Finite),
+	wordsPercent: Schema.NullOr(Schema.Finite),
 	wordsNeedingWork: Words,
 	notSynced: Count,
 	/** Present once the project has a review file for the target. */
@@ -1660,7 +1662,7 @@ export function queriedLocalizationQualityWorkspace(options: {
 		const result: WorkspaceQualityPage = {
 			findings: page.findings.map(summaryOf),
 			total: page.total,
-			counts: decodeQualityCounts(
+			counts: yield* decodeCounts(
 				Object.fromEntries([
 					...BuiltInQualityFilter.literals.map((filter) => [
 						filter,
@@ -1668,7 +1670,7 @@ export function queriedLocalizationQualityWorkspace(options: {
 					]),
 					...customFilters.map(({ filter }) => [filter, typeCounts.get(filter) ?? 0])
 				])
-			),
+			).pipe(Effect.orDie),
 			customFilters,
 			severityCounts: counts.severities,
 			// SAFETY: diagnostic codes are the engine's DIAGNOSTIC_CODES, the host's code union.

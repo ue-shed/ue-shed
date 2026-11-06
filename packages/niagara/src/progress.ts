@@ -1,14 +1,19 @@
 import { readFile, lstat } from "node:fs/promises";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { NiagaraPreviewProgress } from "./progress-schema.js";
 import { NiagaraErrorGuidanceFields as ErrorGuidanceFields } from "./schema.js";
 export * from "./progress-schema.js";
+
 const NiagaraPreviewProgressJson = Schema.fromJsonString(NiagaraPreviewProgress);
-const decodeNiagaraPreviewProgressJson = Schema.decodeUnknownEffect(NiagaraPreviewProgressJson);
-export class NiagaraProgressError extends Schema.TaggedError<NiagaraProgressError>()(
-	"NiagaraProgressError",
-	{ ...ErrorGuidanceFields, cause: Schema.optionalKey(Schema.Defect()) }
-) {}
+const decodeNiagaraPreviewProgressJson = Schema.decodeEffect(NiagaraPreviewProgressJson);
+
+export class NiagaraProgressError extends Schema.TaggedError<
+	NiagaraProgressError,
+	Brand.Brand<"packages/niagara/src/progress/NiagaraProgressError">
+>()("NiagaraProgressError", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 /** Progress is optional telemetry the producer rewrites; reading it again is always safe. */
 const progressError = (
 	message: string,
@@ -61,12 +66,10 @@ export const readNiagaraPreviewProgress = Effect.fn("NiagaraPreview.readProgress
 		)
 	);
 	if (progress.runId !== runId)
-		return yield* Effect.fail(
-			progressError(
-				"Niagara progress belongs to another run.",
-				"reconcile",
-				"Wait for the current run to write its own progress, then read it again."
-			)
+		return yield* progressError(
+			"Niagara progress belongs to another run.",
+			"reconcile",
+			"Wait for the current run to write its own progress, then read it again."
 		);
 	return progress;
 });

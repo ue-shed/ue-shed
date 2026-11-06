@@ -81,35 +81,31 @@ it.each(["before", "during"] as const)(
 			if (when === "before") await writeFile(changed, "new sidecar");
 			let reads = 0;
 			const reader = makeAssetReaderTestLayer({
-				configuration: () =>
-					Effect.succeed({
-						executable: "uasset",
-						timeoutMs: 30_000,
-						catalogTimeoutMs: 50 * 60_000
-					}),
-				catalogProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						cacheHits: 0,
-						processedAssets: 0,
-						tablesFound: 0,
-						totalAssets: 0
-					}),
-				scanProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						cacheHits: 0,
-						emittedAssets: 0,
-						processedAssets: 0,
-						totalAssets: 0
-					}),
-				savedWorldProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						actorsFound: 0,
-						processedPackages: 0,
-						totalPackages: 0
-					}),
+				configuration: Effect.sync(() => ({
+					executable: "uasset",
+					timeoutMs: 30_000,
+					catalogTimeoutMs: 50 * 60_000
+				})),
+				catalogProgress: Effect.sync(() => ({
+					phase: "idle",
+					cacheHits: 0,
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				})),
+				scanProgress: Effect.sync(() => ({
+					phase: "idle",
+					cacheHits: 0,
+					emittedAssets: 0,
+					processedAssets: 0,
+					totalAssets: 0
+				})),
+				savedWorldProgress: Effect.sync(() => ({
+					phase: "idle",
+					actorsFound: 0,
+					processedPackages: 0,
+					totalPackages: 0
+				})),
 				readBlueprint: () =>
 					Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 				readLevelSequence: () =>
@@ -126,7 +122,7 @@ it.each(["before", "during"] as const)(
 				discoverTables: () => Effect.die("unused"),
 				readAsset: () => Effect.die("unused"),
 				readTable: () => Effect.die("unused"),
-				source: () => Effect.succeed("configured"),
+				source: Effect.succeed("configured"),
 				scanProject: () => Effect.die("second enumeration"),
 				extractProjectTextPackages: (request) => {
 					reads++;
@@ -222,35 +218,31 @@ it.each([true, false])(
 				}
 			});
 			const reader = makeAssetReaderTestLayer({
-				configuration: () =>
-					Effect.succeed({
-						executable: "uasset",
-						timeoutMs: 30_000,
-						catalogTimeoutMs: 50 * 60_000
-					}),
-				catalogProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						cacheHits: 0,
-						processedAssets: 0,
-						tablesFound: 0,
-						totalAssets: 0
-					}),
-				scanProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						cacheHits: 0,
-						emittedAssets: 0,
-						processedAssets: 0,
-						totalAssets: 0
-					}),
-				savedWorldProgress: () =>
-					Effect.succeed({
-						phase: "idle",
-						actorsFound: 0,
-						processedPackages: 0,
-						totalPackages: 0
-					}),
+				configuration: Effect.sync(() => ({
+					executable: "uasset",
+					timeoutMs: 30_000,
+					catalogTimeoutMs: 50 * 60_000
+				})),
+				catalogProgress: Effect.sync(() => ({
+					phase: "idle",
+					cacheHits: 0,
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				})),
+				scanProgress: Effect.sync(() => ({
+					phase: "idle",
+					cacheHits: 0,
+					emittedAssets: 0,
+					processedAssets: 0,
+					totalAssets: 0
+				})),
+				savedWorldProgress: Effect.sync(() => ({
+					phase: "idle",
+					actorsFound: 0,
+					processedPackages: 0,
+					totalPackages: 0
+				})),
 				readBlueprint: () =>
 					Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 				readLevelSequence: () =>
@@ -267,7 +259,7 @@ it.each([true, false])(
 				discoverTables: () => Effect.die("unused"),
 				readAsset: () => Effect.die("unused"),
 				readTable: () => Effect.die("unused"),
-				source: () => Effect.succeed("configured"),
+				source: Effect.succeed("configured"),
 				scanProject: () => Effect.die("second enumeration"),
 				extractProjectTextPackages: (request) => {
 					reads++;
@@ -332,15 +324,14 @@ it("stages a group split across reader requests into one exclusive file per requ
 		const groups = entries.map((_, row) => Math.floor((row * 256) / entries.length));
 		const requests: { directory: string; groups: readonly number[] }[] = [];
 		const reader = makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 60_000
-				}),
-			catalogProgress: () => Effect.die("unused"),
-			scanProgress: () => Effect.die("unused"),
-			savedWorldProgress: () => Effect.die("unused"),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 60_000
+			})),
+			catalogProgress: Effect.suspend(() => Effect.die("unused")),
+			scanProgress: Effect.suspend(() => Effect.die("unused")),
+			savedWorldProgress: Effect.suspend(() => Effect.die("unused")),
 			readBlueprint: () => Effect.die("unused"),
 			readLevelSequence: () => Effect.die("unused"),
 			readSavedWorld: () => Effect.die("unused"),
@@ -350,7 +341,7 @@ it("stages a group split across reader requests into one exclusive file per requ
 			discoverTables: () => Effect.die("unused"),
 			readAsset: () => Effect.die("unused"),
 			readTable: () => Effect.die("unused"),
-			source: () => Effect.succeed("configured"),
+			source: Effect.succeed("configured"),
 			scanProject: () => Effect.die("unused"),
 			extractProjectTextPackages: () => Stream.die("unused"),
 			// As the native reader does: each group file of a request is created exclusively.

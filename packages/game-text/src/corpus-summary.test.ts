@@ -16,11 +16,12 @@ import {
 } from "./schema.js";
 import { TextCorpusDiagnosticSummary, textCorpusDiagnosticSummary } from "./corpus-summary.js";
 import { GameTextInvestigationExport, GameTextInvestigationPreset } from "./investigation.js";
+const decodeLocalizationStatusReport = Schema.decodeSync(LocalizationStatusReport);
+const decodeGameTextInvestigationExport = Schema.decodeSync(GameTextInvestigationExport);
+const decodeTextCorpusDiagnosticSummary = Schema.decodeSync(TextCorpusDiagnosticSummary);
 
-const decodeLocalizationStatusReport = Schema.decodeUnknownSync(LocalizationStatusReport);
+const decodeUnknownLocalizationStatusReport = Schema.decodeUnknownSync(LocalizationStatusReport);
 const decodeLocalizationProgressReport = Schema.decodeUnknownSync(LocalizationProgressReport);
-const decodeGameTextInvestigationExport = Schema.decodeUnknownSync(GameTextInvestigationExport);
-const decodeTextCorpusDiagnosticSummary = Schema.decodeUnknownSync(TextCorpusDiagnosticSummary);
 
 const diagnostics = Array.from({ length: 1000 }, (_, index) =>
 	TextCorpusDiagnostic.make({
@@ -99,7 +100,7 @@ describe("bounded corpus reports", () => {
 				)
 			).toBe(true);
 		}
-		expect(decodeLocalizationStatusReport(reports[0])).toEqual(reports[0]);
+		expect(decodeUnknownLocalizationStatusReport(reports[0])).toEqual(reports[0]);
 		expect(decodeLocalizationProgressReport(reports[1])).toEqual(reports[1]);
 	});
 	// Each report is its own driver process that builds a native index: about 15 s apiece.

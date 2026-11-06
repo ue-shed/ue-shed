@@ -17,6 +17,8 @@ export interface JoinedTargetInput {
 	readonly fileDiagnostics?: Readonly<
 		Record<string, import("@ue-shed/localization").LocalizationError>
 	>;
+	/** The review file's path, and its size and time when it was read; keyed like provenances. */
+	readonly reviewFile?: import("@ue-shed/protocol").GameTextContract.JoinedReviewFile;
 	readonly force?: boolean;
 }
 

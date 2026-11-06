@@ -35,9 +35,9 @@ function mapDisplayName(mapPath: string): string {
  * Callers retain shell project ownership and validate the destination before persistence.
  */
 export interface MapReviewBootstrap {
-	readonly reviewSet: typeof ReviewSet.Type;
+	readonly reviewSet: ReviewSet;
 	readonly reviewSetPath: string;
-	readonly viewId: typeof ReviewViewId.Type;
+	readonly viewId: ReviewViewId;
 }
 
 /**

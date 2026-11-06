@@ -19,9 +19,7 @@ import { GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import type { TextOccurrence } from "./schema.js";
 import { hasSearchableSource } from "./search.js";
-
-const decodeGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
-
+const decodeGameTextRuleDocument = Schema.decodeSync(GameTextRuleDocument);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const generated = fileURLToPath(
 	new URL("../../../fixtures/legacy-unreal-project/Generated/", import.meta.url)

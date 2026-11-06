@@ -31,15 +31,12 @@ import type { TextCorpusSearchPage } from "./schema.js";
  */
 export const indexedLocalizationStatusReport = Effect.fn("GameTextIndex.statusReport")(function* (
 	query: {
-		readonly readCorpusReportHeader: () => Effect.Effect<
-			TextCorpusReportHeader,
-			GameTextIndexError
-		>;
+		readonly readCorpusReportHeader: Effect.Effect<TextCorpusReportHeader, GameTextIndexError>;
 	},
 	evidence: LocalizationTargetEvidence,
 	page: TextCorpusSearchPage
 ) {
-	const header = yield* query.readCorpusReportHeader();
+	const header = yield* query.readCorpusReportHeader;
 	// The members in the order the report has always listed them.
 	const report: LocalizationStatusReport = {
 		schemaVersion: 1,
@@ -61,6 +58,14 @@ type Entry = ManifestEntry | ArchiveEntry | POEntry;
 const isManifestEntry = (entry: Entry): entry is ManifestEntry => "path" in entry;
 const isArchiveEntry = (entry: Entry): entry is ArchiveEntry => "translation" in entry;
 const isPOEntry = (entry: Entry): entry is POEntry => "msgid" in entry;
+
+/**
+ * Whether a target's PO files carry each line's source text, as the index reads them: all but
+ * keyed Crowdin files, whose msgid is the key.
+ */
+export function localizationPoHasSourceText(target: LocalizationTargetEvidence["target"]) {
+	return target.poFormat !== "Crowdin" || target.collapseMode !== "IdenticalTextIdAndSource";
+}
 
 /** The query whose lines are the indexed join's lines: every visible line of the target. */
 export function indexedLocalizationLinesRequest(joined: JoinedTargetReader) {
@@ -196,8 +201,7 @@ export const readIndexedLocalizationEvidence = Effect.fn("GameTextIndex.evidence
 		),
 		po: file(target.outputPaths.portableObjects[culture], () => ({
 			format: target.poFormat,
-			hasSourceText:
-				target.poFormat !== "Crowdin" || target.collapseMode !== "IdenticalTextIdAndSource",
+			hasSourceText: localizationPoHasSourceText(target),
 			entries: entries(target.outputPaths.portableObjects[culture]!, "po", isPOEntry)
 		}))
 	}));

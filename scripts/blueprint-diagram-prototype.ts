@@ -28,7 +28,7 @@ const decodeBlueprintPin = Schema.decodeUnknownSync(BlueprintPin);
 const decodeBlueprintLink = Schema.decodeUnknownSync(BlueprintGraph.fields.links.value);
 const decodeBlueprintGraph = Schema.decodeUnknownSync(BlueprintGraph);
 const StringFromJson = Schema.fromJsonString(Schema.String);
-const decodeJsonString = Schema.decodeUnknownSync(StringFromJson);
+const decodeJsonString = Schema.decodeSync(StringFromJson);
 
 const alias = (prefix: string, value: string) =>
 	prefix + createHash("sha256").update(value).digest("hex").slice(0, 12);

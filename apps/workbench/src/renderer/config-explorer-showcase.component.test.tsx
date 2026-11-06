@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { ConfigExplorerQuery } from "../shared/ipc-contracts.js";
 import { ConfigExplorerQueryResult } from "../shared/ipc-contracts.js";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
+const decodeConfigExplorerQueryResult = Schema.decodeSync(ConfigExplorerQueryResult);
 
 const runtime = ManagedRuntime.make(Layer.empty);
 
@@ -50,8 +51,8 @@ const platformB = explanation({
 	value: { kind: "array", values: ["PlatformB", "PlatformB"] }
 });
 
-const decodeConfigExplorerQueryResult = Schema.decodeUnknownSync(ConfigExplorerQueryResult);
-const ready = decodeConfigExplorerQueryResult({
+const decodeUnknownConfigExplorerQueryResult = Schema.decodeUnknownSync(ConfigExplorerQueryResult);
+const ready = decodeUnknownConfigExplorerQueryResult({
 	evidence: {
 		schemaVersion: 1,
 		status: "different",

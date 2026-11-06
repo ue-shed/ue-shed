@@ -21,11 +21,10 @@ import {
 	target,
 	unit
 } from "./localization.test-support.js";
-
-const decodeLocalizationFocus = Schema.decodeUnknownSync(LocalizationFocus);
-const decodeTextCorpusSearchPage = Schema.decodeUnknownSync(TextCorpusSearchPage);
-const decodeTextCorpusFocus = Schema.decodeUnknownSync(TextCorpusFocus);
-const decodeLocalizationStatusReport = Schema.decodeUnknownSync(LocalizationStatusReport);
+const decodeLocalizationFocus = Schema.decodeSync(LocalizationFocus);
+const decodeTextCorpusSearchPage = Schema.decodeEffect(TextCorpusSearchPage);
+const decodeTextCorpusFocus = Schema.decodeUnknownEffect(TextCorpusFocus);
+const decodeLocalizationStatusReport = Schema.decodeEffect(LocalizationStatusReport);
 
 describe("localization presentation", () => {
 	it.live(
@@ -377,7 +376,7 @@ describe("localization in the query", () => {
 			({ query }) =>
 				Effect.gen(function* () {
 					const page = yield* query.search(request);
-					decodeTextCorpusSearchPage(page);
+					yield* decodeTextCorpusSearchPage(page).pipe(Effect.orDie);
 					expect(page.units[0]?.localization?.[0]?.state).toBe("not_synced");
 					const first = page.localization?.lines[0];
 					if (!first) throw new Error("Missing query line.");
@@ -392,7 +391,7 @@ describe("localization in the query", () => {
 					});
 					expect(focus?.manifest[0]?.path).toBe("/Game/Text/Table.Table");
 					const corpusFocus = yield* query.focus({ id: page.units[0]!.id, pageSize: 50 });
-					decodeTextCorpusFocus(corpusFocus);
+					yield* decodeTextCorpusFocus(corpusFocus).pipe(Effect.orDie);
 					expect(corpusFocus?.localization?.cultures).toHaveLength(2);
 				})
 		)
@@ -459,7 +458,9 @@ describe("localization in the query", () => {
 							(count) => count.states.not_synced.lines === 0
 						)
 					).toBe(true);
-					decodeLocalizationStatusReport(localizationStatusReport(text, files, page));
+					yield* decodeLocalizationStatusReport(
+						localizationStatusReport(text, files, page)
+					).pipe(Effect.orDie);
 				})
 			);
 		}

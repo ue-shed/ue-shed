@@ -22,7 +22,7 @@ import {
 	verifyPluginArtifact
 } from "@ue-shed/plugin-distribution";
 import { ErrorNextStep, ErrorCauseFields } from "@ue-shed/protocol";
-import { Effect, Predicate, Schema } from "effect";
+import { type Brand, Effect, Predicate, Schema } from "effect";
 
 /**
  * This is the intentionally narrow filesystem/archive boundary consumed by the CLI. The manifest
@@ -31,17 +31,17 @@ import { Effect, Predicate, Schema } from "effect";
 export type PluginManifestEntry = PluginBundleManifest["plugins"][number];
 export type PluginReleaseManifest = PluginBundleManifest;
 
-export class PluginInstallerError extends Schema.TaggedError<PluginInstallerError>()(
-	"PluginInstallerError",
-	{
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("plugin_installer_failed"),
-		message: Schema.String,
-		...ErrorCauseFields
-	}
-) {}
+export class PluginInstallerError extends Schema.TaggedError<
+	PluginInstallerError,
+	Brand.Brand<"apps/cli/src/plugin-installer/PluginInstallerError">
+>()("PluginInstallerError", {
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("plugin_installer_failed"),
+	message: Schema.String,
+	...ErrorCauseFields
+}) {}
 
 export interface PluginVerificationReport {
 	readonly artifact: {

@@ -24,6 +24,7 @@ import {
 	type AuthoringTableSnapshot
 } from "@ue-shed/protocol";
 import {
+	type Brand,
 	Config,
 	Context,
 	Duration,
@@ -149,7 +150,10 @@ export type { SavedProperty, SavedPropertyValue } from "@ue-shed/protocol";
  * large for the reader. Carries operation/path context and original cause; honor nextStep before
  * replaying a mutating index command.
  */
-export class AssetReaderError extends Schema.TaggedError<AssetReaderError>()("AssetReaderError", {
+export class AssetReaderError extends Schema.TaggedError<
+	AssetReaderError,
+	Brand.Brand<"packages/unreal-assets/src/asset-reader/AssetReaderError">
+>()("AssetReaderError", {
 	code: Schema.optional(Schema.String),
 	kind: Schema.Literals([
 		"timeout",
@@ -398,9 +402,9 @@ export type AssetReaderProtocolObservation =
  * requiring an editor connection.
  */
 export interface AssetReaderApi {
-	readonly catalogProgress?: () => Effect.Effect<SavedTableCatalogProgress>;
+	readonly catalogProgress?: Effect.Effect<SavedTableCatalogProgress>;
 	/** Returns the native worker settings needed by sibling headless adapters. */
-	readonly configuration: () => Effect.Effect<AssetReaderConfiguration>;
+	readonly configuration: Effect.Effect<AssetReaderConfiguration>;
 	readonly discoverAssets: (
 		projectRoot: string
 	) => Effect.Effect<readonly string[], AssetReaderError>;
@@ -455,9 +459,9 @@ export interface AssetReaderApi {
 	readonly scanProject: (
 		options: SavedAssetScanOptions
 	) => Effect.Effect<SavedAssetScan, AssetReaderError>;
-	readonly scanProgress: () => Effect.Effect<SavedAssetScanProgress>;
-	readonly savedWorldProgress: () => Effect.Effect<SavedWorldProgress>;
-	readonly source: () => Effect.Effect<AssetReaderSource>;
+	readonly scanProgress: Effect.Effect<SavedAssetScanProgress>;
+	readonly savedWorldProgress: Effect.Effect<SavedWorldProgress>;
+	readonly source: Effect.Effect<AssetReaderSource>;
 }
 
 /**
@@ -692,24 +696,22 @@ function makeAssetReader(
 	invokeSingle: typeof invokeProtocolSingle = invokeProtocolSingle,
 	invokeSingleWithEvidence: typeof invokeProtocolSingleWithEvidence = invokeProtocolSingleWithEvidence
 ): AssetReaderApi {
-	const catalogProgress = Effect.fn("AssetReader.catalogProgress")(() =>
-		Effect.sync(() => progress.current)
+	const catalogProgress = Effect.sync(() => progress.current).pipe(
+		Effect.withSpan("AssetReader.catalogProgress")
 	);
-	const getConfiguration = Effect.fn("AssetReader.configuration")(() =>
-		Effect.succeed({
-			catalogTimeoutMs: configuration.catalogTimeoutMs,
-			executable: configuration.executable,
-			...(configuration.protocolObserver === undefined
-				? undefined
-				: { protocolObserver: configuration.protocolObserver }),
-			timeoutMs: configuration.timeoutMs
-		})
+	const getConfiguration = Effect.sync(() => ({
+		catalogTimeoutMs: configuration.catalogTimeoutMs,
+		executable: configuration.executable,
+		...(configuration.protocolObserver === undefined
+			? undefined
+			: { protocolObserver: configuration.protocolObserver }),
+		timeoutMs: configuration.timeoutMs
+	})).pipe(Effect.withSpan("AssetReader.configuration"));
+	const scanProgress = Effect.sync(() => scanStore.current).pipe(
+		Effect.withSpan("AssetReader.scanProgress")
 	);
-	const scanProgress = Effect.fn("AssetReader.scanProgress")(() =>
-		Effect.sync(() => scanStore.current)
-	);
-	const savedWorldProgress = Effect.fn("AssetReader.savedWorldProgress")(() =>
-		Effect.sync(() => savedWorldStore.current)
+	const savedWorldProgress = Effect.sync(() => savedWorldStore.current).pipe(
+		Effect.withSpan("AssetReader.savedWorldProgress")
 	);
 	const scanProject = Effect.fn("AssetReader.scanProject")(
 		function* (options: SavedAssetScanOptions) {
@@ -953,7 +955,9 @@ function makeAssetReader(
 		);
 		return savedTableCatalogFromScan(scan);
 	});
-	const source = Effect.fn("AssetReader.source")(() => Effect.succeed(configuration.source));
+	const source = Effect.sync(() => configuration.source).pipe(
+		Effect.withSpan("AssetReader.source")
+	);
 	return AssetReader.of({
 		catalogProgress,
 		configuration: getConfiguration,
@@ -1244,6 +1248,5 @@ export function readSavedWorld(
  * Reports whether the reader executable was configured, found in the installed platform package,
  * or left to PATH. It does not launch the worker or prove its protocol compatibility.
  */
-export function getAssetReaderSource(): Effect.Effect<AssetReaderSource, never, AssetReader> {
-	return Effect.flatMap(AssetReader, (reader) => reader.source());
-}
+export const getAssetReaderSource: Effect.Effect<AssetReaderSource, never, AssetReader> =
+	Effect.flatMap(AssetReader, (reader) => reader.source);

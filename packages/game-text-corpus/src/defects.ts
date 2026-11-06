@@ -12,25 +12,29 @@ export interface CorpusKnownDefect {
 	withCheck?: string;
 	status: "defect" | "open";
 	why: string;
-	actual: typeof Schema.Json.Type;
-	rightAnswer: typeof Schema.Json.Type;
+	actual: Schema.Json;
+	rightAnswer: Schema.Json;
 }
 /** Today's engine agrees with every planted answer; a newly found defect is pinned here. */
 export const corpusKnownDefects: readonly CorpusKnownDefect[] = [];
 
 const Dictionary = Schema.Record(Schema.String, Schema.Json);
+const decodeDictionary = Schema.decodeSync(Dictionary);
 const isStringArray = Schema.is(Schema.Array(Schema.String));
-const decodeDictionary = Schema.decodeUnknownSync(Dictionary);
+const decodeUnknownDictionary = Schema.decodeUnknownSync(Dictionary);
 const isCorpusSubject = Schema.is(CorpusSubject);
 // These fields are sets in the portable diff; finding evidence and problem priority remain ordered.
-type CorpusDefectValue = typeof Schema.Json.Type | undefined;
+type CorpusDefectValue = Schema.Json | undefined;
 function sameDefectField(key: string, left: CorpusDefectValue, right: CorpusDefectValue) {
 	if (
 		["facts", "signals", "unknownReasons"].includes(key) &&
 		isStringArray(left) &&
 		isStringArray(right)
 	)
-		return isDeepStrictEqual([...left].sort(), [...right].sort());
+		return isDeepStrictEqual(
+			[...left].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+			[...right].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+		);
 	return isDeepStrictEqual(left, right);
 }
 
@@ -64,11 +68,11 @@ export function corpusDefectsFor(
 				if (!subject.findings.some((finding) => finding.check === template.withCheck))
 					continue;
 			} else if (template.culture !== subject.culture) continue;
-			const right = decodeDictionary(template.rightAnswer),
+			const right = decodeUnknownDictionary(template.rightAnswer),
 				value = decodeDictionary(subject);
 			if (!Object.keys(right).every((key) => sameDefectField(key, right[key], value[key])))
 				throw new Error(`Known defect no longer describes the recipe: ${subject.case}`);
-			Object.assign(predicted, decodeDictionary(template.actual));
+			Object.assign(predicted, decodeUnknownDictionary(template.actual));
 			explanations.push(template.why);
 			defectIds.push(...template.defects);
 		}
@@ -126,8 +130,8 @@ export function triageCorpusDifferences(
 				actual = difference.actual,
 				repaired = { ...actual };
 			for (const defect of candidates) {
-				const right = decodeDictionary(defect.rightAnswer),
-					today = decodeDictionary(defect.actual);
+				const right = decodeUnknownDictionary(defect.rightAnswer),
+					today = decodeUnknownDictionary(defect.actual);
 				const e = decodeDictionary(expected),
 					a = decodeDictionary(actual);
 				if (

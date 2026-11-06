@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
 import {
@@ -6,6 +6,7 @@ import {
 	EditorWindowActivation,
 	EditorWindowActivationLive
 } from "./editor-window-activation.js";
+const isString = Schema.is(Schema.String);
 
 function exercise(
 	options: { endpoint?: string; capability?: boolean; status?: string; responsePid?: number } = {}
@@ -32,7 +33,9 @@ function exercise(
 					if (request.functionName === "GetCapabilityManifest")
 						return Effect.succeed(manifest);
 					expect(request.objectPath).toBe("/Script/Fixture.Window");
-					expect(JSON.parse(String(request.parameters.RequestJson))).toEqual({
+					const raw = request.parameters.RequestJson;
+					if (!isString(raw)) throw new Error("RequestJson must be a JSON string");
+					expect(JSON.parse(raw)).toEqual({
 						expectedProcessId: 42
 					});
 					return Effect.succeed({

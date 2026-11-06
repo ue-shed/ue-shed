@@ -68,8 +68,7 @@ const catalogWithLive = Effect.fn("Cli.authoring.catalog_with_live")(function* (
 		);
 	});
 	return yield* program.pipe(
-		Effect.provide(RemoteControlClientLive),
-		Effect.provide(readerLayer(args.reader))
+		Effect.provide(Layer.provideMerge(RemoteControlClientLive, readerLayer(args.reader)))
 	);
 });
 
@@ -231,7 +230,7 @@ export const runAuthoringParity = Effect.fn("Cli.workflow.authoring_parity")(
 						(table) => reader.readTable(table.assetPath),
 						{ concurrency: 4 }
 					);
-					const liveSnapshots = yield* connection.listTableObjectPaths().pipe(
+					const liveSnapshots = yield* connection.listTableObjectPaths.pipe(
 						Effect.flatMap((paths) =>
 							Effect.forEach(paths, connection.getTableSnapshot, {
 								concurrency: 4
@@ -276,16 +275,14 @@ export const runAuthoringParity = Effect.fn("Cli.workflow.authoring_parity")(
 						status
 					});
 					if (status === "nonconformant") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: "Saved/live authoring parity did not pass"
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: "Saved/live authoring parity did not pass"
+						});
 					}
 				});
 				return yield* program.pipe(Effect.provide(RemoteControlClientLive));
@@ -353,7 +350,7 @@ function sessionProgram(command: SessionCommand) {
 				const sessions = yield* AuthoringSessions;
 				switch (command._tag) {
 					case "SessionsList":
-						return yield* sessions.list().pipe(Effect.flatMap(printJson));
+						return yield* sessions.list.pipe(Effect.flatMap(printJson));
 					case "SessionsCreate": {
 						const reader = yield* AssetReader;
 						const snapshot = yield* reader.readTable(command.assetPath);
@@ -466,16 +463,14 @@ function sessionProgram(command: SessionCommand) {
 						const connection = yield* connectUnrealAuthoring(command.endpoint);
 						const limits = connection.manifest.authoringLimits;
 						if (command._tag === "SessionsApply" && limits === undefined) {
-							return yield* Effect.fail(
-								new CliCommandError({
-									recovery:
-										"Inspect the command context and original cause before deciding whether to retry.",
-									retrySafe: false,
-									nextStep: "escalate",
-									code: "cli_command_failed",
-									message: "Editor did not negotiate authoring mutation limits"
-								})
-							);
+							return yield* new CliCommandError({
+								recovery:
+									"Inspect the command context and original cause before deciding whether to retry.",
+								retrySafe: false,
+								nextStep: "escalate",
+								code: "cli_command_failed",
+								message: "Editor did not negotiate authoring mutation limits"
+							});
 						}
 						if (command._tag === "SessionsApply") {
 							if (limits === undefined)
@@ -506,12 +501,16 @@ function sessionProgram(command: SessionCommand) {
 				}
 			}).pipe(
 				Effect.provide(
-					authoringSessionServiceLayer({ projectRoot: command.projectRoot }).pipe(
-						Layer.provide(AuthoringIdGeneratorLive)
+					Layer.provideMerge(
+						Layer.provideMerge(
+							authoringSessionServiceLayer({ projectRoot: command.projectRoot }).pipe(
+								Layer.provide(AuthoringIdGeneratorLive)
+							),
+							readerLayer("reader" in command ? command.reader : undefined)
+						),
+						RemoteControlClientLive
 					)
-				),
-				Effect.provide(readerLayer("reader" in command ? command.reader : undefined)),
-				Effect.provide(RemoteControlClientLive)
+				)
 			);
 		}
 	);

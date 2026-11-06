@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { NiagaraPreviewSettings, type NiagaraPreviewRunManifest } from "./schema.js";
+const decodeNiagaraPreviewSettings = Schema.decodeSync(NiagaraPreviewSettings);
 
 export const NiagaraPreviewProfile = Schema.Literals([
 	"ground_impact",
@@ -7,9 +8,8 @@ export const NiagaraPreviewProfile = Schema.Literals([
 	"aura",
 	"environment"
 ]);
+const decodeNiagaraPreviewProfile = Schema.decodeSync(NiagaraPreviewProfile);
 export type NiagaraPreviewProfile = typeof NiagaraPreviewProfile.Type;
-const decodeNiagaraPreviewProfile = Schema.decodeUnknownSync(NiagaraPreviewProfile);
-const decodeNiagaraPreviewSettings = Schema.decodeUnknownSync(NiagaraPreviewSettings);
 
 /** Reuse framing and simulation settings; plain variants add no floor or scene props. */
 export function niagaraBackgroundVariant(

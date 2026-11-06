@@ -16,9 +16,9 @@ import {
 	type StringTableKeyMigrationRequest
 } from "./string-table-migration.js";
 
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeJsonEffect = Schema.decodeEffect(Schema.Json);
 const GameTextActionsRequestJson = Schema.fromJsonString(GameTextActionsRequest);
-const decodeGameTextActionsRequestJson = Schema.decodeUnknownSync(GameTextActionsRequestJson);
+const decodeGameTextActionsRequestJson = Schema.decodeUnknownEffect(GameTextActionsRequestJson);
 
 const input: StringTableKeyMigrationRequest = {
 	id: StringTableKeyMigrationId.make("migration"),
@@ -60,7 +60,7 @@ function setup(useCallback = false) {
 	const fail = (message: string) => ({ message, recovery: "Inspect the journal." });
 	const host: StringTableKeyMigrationHostApi = {
 		...(useCallback ? { editorProject: () => Effect.succeed(callbackRoot) } : undefined),
-		current: () => Effect.succeed({ projectRoot: selected, endpoint: "http://fixture" }),
+		current: Effect.sync(() => ({ projectRoot: selected, endpoint: "http://fixture" })),
 		store: {
 			create: (value) =>
 				Effect.sync(() => {
@@ -98,7 +98,7 @@ function setup(useCallback = false) {
 	const transport = makeRemoteControlClientTestLayer((call) =>
 		Effect.gen(function* () {
 			if (call.functionName === "GetCapabilityManifest")
-				return decodeJson({
+				return yield* decodeJsonEffect({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
 					...(editorRoot ? { projectRoot: editorRoot } : undefined),
@@ -110,9 +110,9 @@ function setup(useCallback = false) {
 						sessionId: session,
 						plugins: []
 					}
-				});
+				}).pipe(Effect.orDie);
 			if (call.functionName === "VerifyStringTableRedirect")
-				return decodeJson({
+				return yield* decodeJsonEffect({
 					contract: "ue-shed-string-table-redirect",
 					version: "1.0",
 					status: redirectActive ? "active" : "inactive",
@@ -120,8 +120,10 @@ function setup(useCallback = false) {
 					key: input.newKey,
 					source: input.source,
 					message: "Redirect not active"
-				});
-			const request = decodeGameTextActionsRequestJson(call.parameters.RequestJson);
+				}).pipe(Effect.orDie);
+			const request = yield* decodeGameTextActionsRequestJson(
+				call.parameters.RequestJson
+			).pipe(Effect.orDie);
 			const kind = request.actions[0]!.edit.kind;
 			if (request.mode === "apply") writes.push(kind);
 			if (request.mode === "apply" && kind === "remove_string_table_entry" && lostDeleteReply)
@@ -159,7 +161,7 @@ function setup(useCallback = false) {
 				blueprints: [],
 				errors: []
 			};
-			return decodeJson(result);
+			return yield* decodeJsonEffect(result).pipe(Effect.orDie);
 		})
 	);
 	return {

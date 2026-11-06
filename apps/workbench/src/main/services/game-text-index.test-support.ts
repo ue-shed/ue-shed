@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { indexedTestReports } from "../../../../../packages/game-text/src/indexed-reports.test-support.js";
-import { Effect, Layer, Option, Result, type Scope } from "effect";
+import { Effect, Layer, Option, Result, Stream, type Scope } from "effect";
 import {
 	GameTextIndexRefresh,
 	GameTextIndexSteps,
@@ -16,6 +16,7 @@ import {
 	joinLocalizationTarget,
 	applyLocalizationReview,
 	applyLocalizationKeyChanges,
+	evidenceReviewLines,
 	localizationKeyChanges,
 	mergeLocalizationKeyChanges,
 	localizationQuality,
@@ -53,9 +54,14 @@ export type CannedQuery = (inputs: CannedQueryInputs) => Partial<NativeTextQuery
 
 /**
  * The query a host test reads: its planted answers, and every other member dies naming itself.
- * Hosts read a refresh's summary at once, so an unplanted summary is `emptySummary`.
+ * Hosts read a refresh's summary at once, so an unplanted summary is `emptySummary`, and an
+ * unplanted `reviewLines` reads the target's files as a host without an index would.
  */
-function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>): NativeTextQuery {
+function cannedTextQuery(
+	corpus: TextCorpus,
+	answers: Partial<NativeTextQuery>,
+	evidence?: LocalizationTargetEvidence
+): NativeTextQuery {
 	const unplanted = (member: string) => () =>
 		Effect.die(`This test planted no answer for ${member}.`);
 	return {
@@ -64,9 +70,9 @@ function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>):
 		findingsQuery: unplanted("findingsQuery"),
 		findingsWrite: unplanted("findingsWrite"),
 		rulesCheck: unplanted("rulesCheck"),
-		readCorpus: unplanted("readCorpus"),
-		readLocalizationLines: unplanted("readLocalizationLines"),
-		summary: () => Effect.succeed(emptySummary(corpus)),
+		readCorpus: Effect.die("This test planted no answer for readCorpus."),
+		readLocalizationLines: Effect.die("This test planted no answer for readLocalizationLines."),
+		summary: Effect.sync(() => emptySummary(corpus)),
 		search: unplanted("search"),
 		searchRows: unplanted("searchRows"),
 		focus: unplanted("focus"),
@@ -81,10 +87,16 @@ function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>):
 		writeCorpusCsv: unplanted("writeCorpusCsv"),
 		writeCorpusJson: unplanted("writeCorpusJson"),
 		readUnits: unplanted("readUnits"),
-		readCorpusHeader: unplanted("readCorpusHeader"),
+		readCorpusHeader: Effect.die("This test planted no answer for readCorpusHeader."),
 		readFileCoverage: unplanted("readFileCoverage"),
-		readCorpusReportHeader: unplanted("readCorpusReportHeader"),
-		corpusFingerprint: unplanted("corpusFingerprint"),
+		readCorpusReportHeader: Effect.die(
+			"This test planted no answer for readCorpusReportHeader."
+		),
+		corpusFingerprint: Effect.die("This test planted no answer for corpusFingerprint."),
+		reviewLines: evidence
+			? (request) => Effect.sync(() => evidenceReviewLines(evidence, request))
+			: unplanted("reviewLines"),
+		changedSince: unplanted("changedSince"),
 		export: unplanted("export"),
 		...answers
 	};
@@ -159,8 +171,8 @@ const emptySummary = (corpus: TextCorpus): TextCorpusQuerySummary => ({
 /** Answers over a corpus with no text: an empty page for every search, and no unit to focus. */
 const emptyCorpusAnswers: CannedQuery = ({ corpus: { units: _units, ...header } }) => ({
 	search: () => Effect.succeed(searchPage()),
-	focus: () => Effect.succeed(undefined),
-	readCorpusHeader: () => Effect.succeed(header),
+	focus: () => Effect.undefined,
+	readCorpusHeader: Effect.sync(() => header),
 	// The corpus export the engine writes when no unit matches.
 	writeCorpusJson: (_request, file, envelope) =>
 		Effect.sync(() => {
@@ -276,12 +288,13 @@ export function cannedGameTextIndexLayer<E>(
 							corpus,
 							evidence: files,
 							review: review?.contentHash ? review.file : undefined
-						})
+						}),
+						files
 					);
 					return {
 						project: testProjectIndex(request.projectRoot),
 						corpus: Effect.succeed(corpus),
-						summary: yield* query.summary(),
+						summary: yield* query.summary,
 						query,
 						search: query.search,
 						searchRows: query.searchRows,
@@ -409,10 +422,9 @@ export const makeCannedGameTextLocalization = (
 			cannedGameTextIndexLayer(
 				() =>
 					currentCorpus().pipe(
-						Effect.flatMap((corpus) =>
-							corpus
-								? Effect.succeed(corpus)
-								: Effect.die("No corpus in this test request")
+						Effect.filterOrElse(
+							(corpus) => corpus !== undefined,
+							() => Effect.die("No corpus in this test request")
 						)
 					),
 				answers
@@ -425,7 +437,7 @@ export function testProjectIndex(projectRoot: string): GameTextProjectIndex {
 	return {
 		projectRoot,
 		cacheRoot: "test",
-		generation: "test",
+		storeEpoch: "test",
 		packageKey: "test",
 		get packages(): GameTextProjectIndex["packages"] {
 			throw new Error("Unused compact-store evidence in test index");
@@ -439,7 +451,7 @@ const testIndexStepsLayer = Layer.effect(
 		const evidence = yield* LocalizationEvidence;
 		const requests = new WeakMap<GameTextTargetIndex, GameTextIndexRefreshRequest>();
 		const steps: Effect.Success<typeof GameTextIndexSteps> = GameTextIndexSteps.of({
-			openCommitted: () => Effect.succeed(Option.none()),
+			openCommitted: () => Effect.succeedNone,
 			prepareTarget: (request, options) =>
 				Effect.gen(function* () {
 					const project = yield* steps.openProject(request);
@@ -447,7 +459,7 @@ const testIndexStepsLayer = Layer.effect(
 						.importTarget(project, request)
 						.pipe(Effect.result);
 					if (Result.isFailure(imported) && !options?.fallbackToSource)
-						return yield* Effect.fail(imported.failure);
+						return yield* imported.failure;
 					const input = Result.isFailure(imported)
 						? yield* steps.importTarget(project)
 						: imported.success;
@@ -466,16 +478,14 @@ const testIndexStepsLayer = Layer.effect(
 									projectRoot: project.projectRoot
 								})).targets.find((target) => target.name === request.targetName);
 					if (!target && request.targetName !== undefined)
-						return yield* Effect.fail(
-							new GameTextIndexError({
-								nextStep: "escalate",
-								retrySafe: false,
-								code: "index_failed",
-								operation: "target_not_found",
-								message: "Target not found",
-								recovery: "Select an available target."
-							})
-						);
+						return yield* new GameTextIndexError({
+							nextStep: "escalate",
+							retrySafe: false,
+							code: "index_failed",
+							operation: "target_not_found",
+							message: "Target not found",
+							recovery: "Select an available target."
+						});
 					return {
 						project,
 						view:
@@ -519,6 +529,7 @@ const testIndexStepsLayer = Layer.effect(
 						project,
 						view: imported.view,
 						imported: imported.imported,
+						storeEpoch: "test",
 						generation: "test",
 						fileKeys: {},
 						get join(): GameTextTargetIndex["join"] {
@@ -552,6 +563,8 @@ const testIndexStepsLayer = Layer.effect(
 			readPoint: () => Effect.die("This test reads no points."),
 			comparePoints: () => Effect.die("This test compares no points."),
 			compareTextFiles: () => Effect.die("This test compares no files."),
+			diskChanges: () => Effect.die("This test checks no disk."),
+			watchDiskChanges: () => Stream.die("This test watches no disk."),
 			invalidate: legacy.invalidate
 		});
 		return steps;

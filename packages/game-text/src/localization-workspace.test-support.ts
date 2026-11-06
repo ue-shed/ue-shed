@@ -14,8 +14,7 @@ import { GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { localizationQualityWorkspace, localizationReportPage } from "./localization-workspace.js";
 import { createLocalizationBaseline, localizationProgressReport } from "./localization-reports.js";
-
-const decodeRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
+const decodeGameTextRuleDocument = Schema.decodeSync(GameTextRuleDocument);
 export function qualityFixture(count = 1) {
 	const source = "Hello {PlayerName}";
 	const text = corpus(Array.from({ length: count }, (_, index) => unit("K" + index, source)));
@@ -37,7 +36,7 @@ export function qualityFixture(count = 1) {
 		po
 	);
 	const join = joinLocalizationTarget(text, files);
-	const document = decodeRuleDocument({
+	const document = decodeGameTextRuleDocument({
 		schemaVersion: 1,
 		roles: [
 			{

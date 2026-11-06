@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { Context, Effect, Layer, Predicate, Schedule, Schema, Semaphore } from "effect";
+import { type Brand, Context, Effect, Layer, Predicate, Schedule, Schema, Semaphore } from "effect";
 import {
 	FramingCandidateId,
 	ensureProvisionedCameras,
@@ -30,20 +30,19 @@ import {
 import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { ErrorNextStep, ErrorCauseFields } from "@ue-shed/protocol";
+const decodeCameraWorkspaceRequest = Schema.decodeEffect(CameraWorkspaceRequest);
 
-export class CameraWorkspaceError extends Schema.TaggedError<CameraWorkspaceError>()(
-	"CameraWorkspaceError",
-	{
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("camera_workspace_failed"),
-		message: Schema.String,
-		...ErrorCauseFields
-	}
-) {}
-
-const decodeCameraWorkspaceRequest = Schema.decodeUnknownEffect(CameraWorkspaceRequest);
+export class CameraWorkspaceError extends Schema.TaggedError<
+	CameraWorkspaceError,
+	Brand.Brand<"apps/workbench/src/main/services/camera-workspace/CameraWorkspaceError">
+>()("CameraWorkspaceError", {
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("camera_workspace_failed"),
+	message: Schema.String,
+	...ErrorCauseFields
+}) {}
 const failure = (message: string) =>
 	new CameraWorkspaceError({
 		recovery:
@@ -122,9 +121,9 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 		return yield* Effect.forEach(
 			names.filter((name) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.json$/u.test(name)),
 			(name) =>
-				makeCameraAuthoringStore(join(root, name))
-					.load()
-					.pipe(Effect.map((document) => document.arrangement))
+				makeCameraAuthoringStore(join(root, name)).load.pipe(
+					Effect.map((document) => document.arrangement)
+				)
 		);
 	});
 	const close = Effect.fn("Workbench.CameraWorkspace.close")(function* () {
@@ -137,7 +136,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			producerId: current.snapshot.producerId
 		});
 		if (detached.status !== "detached" && detached.status !== "unavailable")
-			return yield* Effect.fail(failure(detached.message));
+			return yield* failure(detached.message);
 		active = undefined;
 		recovery = null;
 		if (current.livePreview)
@@ -181,10 +180,12 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 		error = null;
 	});
 	yield* tick().pipe(
-		Effect.catch((cause) =>
-			Effect.sync(() => {
-				error = cause.message;
-			})
+		Effect.catchTag(
+			["CameraArrangementError", "CameraBridgeError", "ProvisionedCameraError"],
+			(cause) =>
+				Effect.sync(() => {
+					error = cause.message;
+				})
 		),
 		gate.withPermits(1),
 		Effect.repeat(Schedule.spaced("250 millis")),
@@ -192,7 +193,10 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 	);
 	yield* Effect.addFinalizer(() =>
 		close().pipe(
-			Effect.catch((cause) => Effect.logWarning("Camera workspace detach failed", cause))
+			Effect.catchTag(
+				["CameraBridgeError", "ProvisionedCameraError", "CameraWorkspaceError"],
+				(cause) => Effect.logWarning("Camera workspace detach failed", cause)
+			)
 		)
 	);
 	const request = Effect.fn("Workbench.CameraWorkspace.request")(
@@ -212,9 +216,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 						? intent.id
 						: intent.proposal.native.sessionId;
 				if (!active || active.snapshot.sessionId !== id)
-					return yield* Effect.fail(
-						failure("Open the matching camera set before recovery.")
-					);
+					return yield* failure("Open the matching camera set before recovery.");
 				if (intent.kind === "inspect_recovery") {
 					recovery = yield* inspectCameraRecovery(
 						active.store,
@@ -249,18 +251,15 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 							})
 						: yield* authoring.inspectSelection(context.endpoint);
 					if (inspected.status !== "selected")
-						return yield* Effect.fail(failure("Select an actor in Unreal first."));
+						return yield* failure("Select an actor in Unreal first.");
 					if (inspected.mapPath !== set.project.mapPath)
-						return yield* Effect.fail(
-							failure("Open a Review Set for the selected actor's map.")
-						);
+						return yield* failure("Open a Review Set for the selected actor's map.");
 					const projects = yield* Effect.tryPromise({
 						try: () => readdir(context.projectRoot),
 						catch: directoryReadFailure("project files", context.projectRoot)
 					});
 					const projectFile = projects.find((name) => name.endsWith(".uproject"));
-					if (!projectFile)
-						return yield* Effect.fail(failure("No Unreal project found."));
+					if (!projectFile) return yield* failure("No Unreal project found.");
 					const created = createCameraArrangementFromSelection({
 						id,
 						projectName: basename(projectFile, ".uproject"),
@@ -270,8 +269,8 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 					const profile = set.captureProfiles[0];
 					const visibility = set.visibilityPolicies[0];
 					if (!profile || !visibility)
-						return yield* Effect.fail(
-							failure("The Review Set needs a capture profile and visibility policy.")
+						return yield* failure(
+							"The Review Set needs a capture profile and visibility policy."
 						);
 					yield* store.create(
 						CameraArrangement.make({
@@ -284,11 +283,9 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 						set
 					);
 				}
-				const doc = yield* store.load();
+				const doc = yield* store.load;
 				if (doc.reviewSet.id !== set.id || doc.arrangement.mapPath !== set.project.mapPath)
-					return yield* Effect.fail(
-						failure("This camera set belongs to another Review Set.")
-					);
+					return yield* failure("This camera set belongs to another Review Set.");
 				yield* close();
 				const bridge = makeCameraAuthoringBridge(client, context.endpoint);
 				const snapshot = yield* attachArrangementCamera(
@@ -315,7 +312,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			}
 			if (intent.kind === "action" || intent.kind === "native") {
 				if (!active || active.snapshot.sessionId !== intent.id)
-					return yield* Effect.fail(failure("Load this camera set before editing it."));
+					return yield* failure("Load this camera set before editing it.");
 				yield* tick();
 				const current = active;
 				const scope = {
@@ -325,8 +322,8 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 				};
 				if (intent.kind === "action") {
 					if (intent.expectedRevision !== current.snapshot.revision)
-						return yield* Effect.fail(
-							failure("The set changed. Review the updated values and retry.")
+						return yield* failure(
+							"The set changed. Review the updated values and retry."
 						);
 					if (
 						[
@@ -336,9 +333,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 							"export_visibility"
 						].includes(intent.action.kind)
 					)
-						return yield* Effect.fail(
-							failure("File operations require a host-selected path.")
-						);
+						return yield* failure("File operations require a host-selected path.");
 					yield* current.bridge
 						.call({ ...scope, operation: "enqueue", action: intent.action })
 						.pipe(Effect.flatMap(readyCameraBridge));
@@ -351,7 +346,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 						operation: "selection"
 					});
 					if (selected.status !== "selection" || !selected.actors.length)
-						return yield* Effect.fail(failure("Select actors in Unreal first."));
+						return yield* failure("Select actors in Unreal first.");
 					yield* current.bridge
 						.call({
 							...scope,
@@ -382,13 +377,15 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			}
 			if (active)
 				yield* tick().pipe(
-					Effect.catch((cause) =>
-						Effect.sync(() => {
-							error = cause.message;
-						})
+					Effect.catchTag(
+						["CameraArrangementError", "CameraBridgeError", "ProvisionedCameraError"],
+						(cause) =>
+							Effect.sync(() => {
+								error = cause.message;
+							})
 					)
 				);
-			const document = active ? yield* active.store.load() : undefined;
+			const document = active ? yield* active.store.load : undefined;
 			const savedViews =
 				document?.reviewSet.views
 					.filter((view) => view.authoring?.arrangementId === document.arrangement.id)
@@ -422,14 +419,24 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			} satisfies CameraWorkspaceResult;
 		},
 		gate.withPermits(1),
-		Effect.catch((cause) =>
-			Effect.succeed({
-				preview: active?.preview ?? null,
-				panel: active?.snapshot.panel ?? null,
-				sets: savedSets,
-				recovery,
-				error: requestFailureMessage(cause)
-			})
+		Effect.catchTag(
+			[
+				"SchemaError",
+				"CameraArrangementError",
+				"CameraBridgeError",
+				"ProvisionedCameraError",
+				"CameraWorkspaceError",
+				"ReviewStorageError",
+				"ReviewAuthoringConnectionError"
+			],
+			(cause) =>
+				Effect.succeed({
+					preview: active?.preview ?? null,
+					panel: active?.snapshot.panel ?? null,
+					sets: savedSets,
+					recovery,
+					error: requestFailureMessage(cause)
+				})
 		)
 	);
 	/** The active collection's camera sets, as the native panel's reopen list. */
@@ -443,7 +450,11 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			.filter((arrangement) => arrangement.mapPath === set.project.mapPath)
 			.map(cameraSetupSavedSet);
 	}, gate.withPermits(1));
-	return { request, setupSets, close: () => close().pipe(Effect.asVoid, gate.withPermits(1)) };
+	return {
+		request,
+		setupSets,
+		close: Effect.suspend(close).pipe(Effect.asVoid, gate.withPermits(1))
+	};
 });
 
 export type WorkbenchCameraWorkspaceApi = Effect.Success<ReturnType<typeof makeCameraWorkspace>>;
@@ -474,7 +485,7 @@ export function makeWorkbenchCameraWorkspaceTestLayer(
 	return Layer.succeed(
 		WorkbenchCameraWorkspace,
 		WorkbenchCameraWorkspace.of({
-			close: () => Effect.void,
+			close: Effect.void,
 			request: () =>
 				Effect.succeed({
 					preview: null,

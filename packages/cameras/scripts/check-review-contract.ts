@@ -115,7 +115,7 @@ function readJson(file: string): Schema.Json {
 }
 
 function roundTrip(schema: WireSchema, input: Schema.Json): Schema.Json {
-	const decoded = Schema.decodeUnknownSync(schema)(input, { onExcessProperty: "error" });
+	const decoded = Schema.decodeSync(schema)(input, { onExcessProperty: "error" });
 	return decodeJson(Schema.encodeUnknownSync(schema)(decoded));
 }
 
@@ -132,7 +132,7 @@ for (const { file, schema } of validFixtures) {
 
 for (const { file, schema } of invalidFixtures) {
 	const fixture = readJson(file);
-	const result = Schema.decodeUnknownResult(schema)(fixture, { onExcessProperty: "error" });
+	const result = Schema.decodeResult(schema)(fixture, { onExcessProperty: "error" });
 	if (result._tag !== "Failure") {
 		throw new Error(`invalid fixture ${file} was accepted by Effect schema`);
 	}

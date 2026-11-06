@@ -4,6 +4,18 @@ use crate::join::{JoinInput, Joined, L_KEY, L_KEY_CHANGE, L_NS, L_SOURCE, intern
 use crate::join_columns::*;
 use crate::join_policy::*;
 use crate::store::{Store, digest};
+
+/// A review's fingerprint of a line in a culture: the SHA-256 of its manifest source, a NUL, and
+/// the translation the next sync ships, or a second NUL and `absent` without one. Both are string
+/// views. The join compares stored reviews with it, so a host must write this value.
+pub(crate) fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
+    // Published review fingerprints hash TextEncoder's UTF-8 bytes. Lossy conversion is
+    // restricted to this hash policy; the source and translation columns remain lossless WTF-8.
+    let lossy =
+        |view: &str| String::from_utf16_lossy(&crate::wtf8::Wtf8Buf::from_view(view).to_utf16());
+    let translation = translation.map_or_else(|| "\0absent".to_owned(), lossy);
+    digest(format!("{}\0{translation}", lossy(source)).as_bytes())
+}
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
@@ -345,23 +357,9 @@ pub(crate) fn finish(
                     if let Some(index) =
                         map.get(&(culture.clone(), j.line[L_NS][row], j.line[L_KEY][row]))
                     {
-                        let source = j.string(j.manifest_source(row));
-                        let translation = j
-                            .translation(row, ci)
-                            .map(|id| j.string(id))
-                            .unwrap_or("\0absent");
-                        let source_bytes = crate::wtf8::Wtf8Buf::from_view(source);
-                        let translation_bytes = crate::wtf8::Wtf8Buf::from_view(translation);
-                        let fingerprint = digest(
-                            format!(
-                                "{}\0{}",
-                                // Published review fingerprints hash TextEncoder's UTF-8 bytes.
-                                // Lossy conversion is restricted to this existing hash policy;
-                                // the source and translation columns remain lossless WTF-8.
-                                String::from_utf16_lossy(&source_bytes.to_utf16()),
-                                String::from_utf16_lossy(&translation_bytes.to_utf16())
-                            )
-                            .as_bytes(),
+                        let fingerprint = review_fingerprint(
+                            j.string(j.manifest_source(row)),
+                            j.translation(row, ci).map(|id| j.string(id)),
                         );
                         j.cultures[ci][5][row] = if records[*index]["fingerprint"] == fingerprint {
                             2

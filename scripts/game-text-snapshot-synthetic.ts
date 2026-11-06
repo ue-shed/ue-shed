@@ -22,7 +22,7 @@ const RetainedRecipe = Schema.Struct({
 	})
 });
 const RetainedRecipeJson = Schema.fromJsonString(RetainedRecipe);
-const decodeRetainedRecipeJson = Schema.decodeUnknownSync(RetainedRecipeJson);
+const decodeRetainedRecipeJson = Schema.decodeSync(RetainedRecipeJson);
 
 /** Format-size probe only. Uses measured deduplicated 1× bytes, never PO widths or today's 10× join. */
 export async function syntheticScaleSnapshot(

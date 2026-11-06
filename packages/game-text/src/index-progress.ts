@@ -8,11 +8,17 @@ export const GameTextIndexPhase = Schema.Literals([
 	"localization",
 	/** Publishing the parsed localization files; no count. */
 	"localization_publish",
-	"packages",
+	/**
+	 * Reading the saved packages a refresh needs: packages read of packages to read, with
+	 * `unchanged`, the packages kept from the existing index without reading them.
+	 */
+	"package_read",
 	/** Preparing the package text layer: packages prepared of the packages in the inventory. */
 	"package_text",
-	/** Publishing the package text layer; no count. */
+	/** Publishing a package text layer written again; no count. */
 	"package_publish",
+	/** Updating the existing package text layer with the packages read; no count. */
+	"package_update",
 	/** Joining source text with translations; no count. */
 	"joining",
 	/** Opening the joined index: the engine's preparation stages done, of three. */
@@ -33,9 +39,10 @@ export const GAME_TEXT_INDEX_PHASE_LABELS = {
 	inventory: "Reading project asset inventory",
 	localization: "Reading localization files",
 	localization_publish: "Saving localization text",
-	packages: "Checking saved packages for text",
+	package_read: "Reading changed packages",
 	package_text: "Preparing package text",
 	package_publish: "Saving package text",
+	package_update: "Updating package text",
 	joining: "Joining source text and translations",
 	opening: "Opening text index",
 	ready: "Text index ready",
@@ -54,7 +61,9 @@ export const GameTextIndexProgress = Schema.Struct({
 	completed: Count,
 	total: Count,
 	/** Findings so far, during a quality scan; the last event has the scan's count. */
-	findings: Schema.optionalKey(Count)
+	findings: Schema.optionalKey(Count),
+	/** Packages kept from the existing index without reading them, while reading packages. */
+	unchanged: Schema.optionalKey(Count)
 });
 export type GameTextIndexProgress = typeof GameTextIndexProgress.Type;
 

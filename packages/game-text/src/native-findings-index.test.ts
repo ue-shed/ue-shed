@@ -6,8 +6,7 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { localizationQualityWorkspaceOf } from "./localization-workspace.js";
-
-const decodeRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
+const decodeGameTextRuleDocument = Schema.decodeEffect(GameTextRuleDocument);
 
 it.effect("reads native findings through both compact indexes and the CLI report", () =>
 	Effect.scoped(
@@ -19,7 +18,7 @@ it.effect("reads native findings through both compact indexes and the CLI report
 					projectRoot: fixture.projectRoot,
 					targetName: fixture.target.name
 				});
-				const document = decodeRuleDocument({
+				const document = yield* decodeGameTextRuleDocument({
 					schemaVersion: 1,
 					roles: [
 						{
@@ -43,7 +42,7 @@ it.effect("reads native findings through both compact indexes and the CLI report
 							recovery: "Shorten the source."
 						}
 					]
-				});
+				}).pipe(Effect.orDie);
 				const source = yield* model.sourceQuality(document);
 				const report = yield* source.export("all");
 				expect(report.findings).toHaveLength(1);

@@ -6,8 +6,7 @@ import { GameTextIndexRefresh, GameTextIndexSource } from "./index-contract.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { LocalizationFocusRequest, localizationFocusPage } from "./localization-view.js";
-
-const decodeFocusRequest = Schema.decodeUnknownSync(LocalizationFocusRequest);
+const decodeLocalizationFocusRequest = Schema.decodeEffect(LocalizationFocusRequest);
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
@@ -40,7 +39,7 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 					).pipe(Layer.provide(fixture.source));
 					yield* Effect.gen(function* () {
 						const model = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
-						const corpus = yield* model.query.readCorpus();
+						const corpus = yield* model.query.readCorpus;
 						expect(corpus.diagnostics).toContainEqual(
 							expect.objectContaining({
 								code: "package_inspection_failed",
@@ -71,7 +70,7 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 				Effect.gen(function* () {
 					const fixture = yield* makeIndexRegressionFixture();
 					const scalars = "literal \u{f0000} \u{f0001} \u{f0800} \u{100000} 😀";
-					const value = `${scalars} \\ud800 \"quoted\"\n`;
+					const value = `${scalars} \\ud800 "quoted"\n`;
 					const extra = { [value]: { value, nested: [value, null, 7, true] } };
 					yield* Effect.promise(async () => {
 						await writeFile(
@@ -174,14 +173,14 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 						];
 						const lines = yield* model.query.localizationLines(request);
 						expect(lines).toEqual(expected);
-						expect(yield* model.query.readLocalizationLines()).toEqual(expected);
+						expect(yield* model.query.readLocalizationLines).toEqual(expected);
 						expect(yield* model.query.localizationFocus(lines[0]!.id)).toEqual(
 							lines[0]
 						);
-						const detail = decodeFocusRequest({
+						const detail = yield* decodeLocalizationFocusRequest({
 							target: fixture.target.name,
 							selection: { kind: "line", id: lines[0]!.id }
-						});
+						}).pipe(Effect.orDie);
 						// The engine adds the line's problems; with no culture scope, every culture's.
 						expect(yield* model.query.localizationDetail(detail)).toEqual({
 							...localizationFocusPage(model.localization, lines[0]!, detail),

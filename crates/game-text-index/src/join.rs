@@ -78,6 +78,10 @@ pub struct JoinInput {
     pub file_provenances: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_diagnostics: Option<Value>,
+    /// The review file's path, and its size and time when it was read; descriptive like
+    /// `fileProvenances`, so a disk check can tell whether it changed since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_file: Option<crate::disk_changes::ReviewFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_change_pairs: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -473,34 +477,10 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 .ok_or_else(|| "culture must be text".into())
         })
         .collect::<Result<Vec<_>>>()?;
-    let mut paths = vec![
-        target["outputPaths"]["manifest"]
-            .as_str()
-            .unwrap_or("<manifest>")
-            .to_owned(),
-    ];
-    for culture in &cultures {
-        paths.push(
-            target["outputPaths"]["archives"][culture]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| format!("<archive:{culture}>")),
-        );
-        paths.push(
-            target["outputPaths"]["portableObjects"][culture]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| format!("<po:{culture}>")),
-        );
-    }
+    let paths = input_paths(target)?;
     let native_culture = target["nativeCulture"].as_str();
     let native_path =
         native_culture.and_then(|culture| target["outputPaths"]["archives"][culture].as_str());
-    if let Some(path) = native_path
-        && !paths.iter().any(|value| value == path)
-    {
-        paths.push(path.to_owned());
-    }
     let mut dependencies = serde_json::Map::new();
     let mut names = store.root["active"]
         .as_object()
@@ -517,34 +497,42 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     for name in names {
         dependencies.insert(name.clone(), store.root["active"][&name].clone());
     }
+    let mut keyed = json!([
+        generation,
+        input.project_root,
+        dependencies,
+        target,
+        input.review.clone().unwrap_or(Value::Null),
+        input.key_change_pairs.clone().unwrap_or(Value::Null),
+        input.file_errors.clone().unwrap_or_default(),
+        input.file_provenances.clone().unwrap_or(json!({})),
+        input.file_diagnostics.clone().unwrap_or(json!({})),
+        "native-summary-v3"
+    ]);
+    // Only a join that records its review file keys it, so other keys stay as they were.
+    if let Some(review) = &input.review_file {
+        keyed
+            .as_array_mut()
+            .ok_or("join key values")?
+            .push(serde_json::to_value(review)?);
+    }
     let key = format!(
         "{JOINED_KEY_PREFIX}{}",
         digest(
             format!(
                 "[{}]",
-                json!([
-                    generation,
-                    input.project_root,
-                    dependencies,
-                    target,
-                    input.review.clone().unwrap_or(Value::Null),
-                    input.key_change_pairs.clone().unwrap_or(Value::Null),
-                    input.file_errors.clone().unwrap_or_default(),
-                    input.file_provenances.clone().unwrap_or(json!({})),
-                    input.file_diagnostics.clone().unwrap_or(json!({})),
-                    "native-summary-v3"
-                ])
-                .as_array()
-                .ok_or("join key values")?
-                .iter()
-                .enumerate()
-                .map(|(index, value)| if index < 4 {
-                    Ok(serde_json::to_string(value)?)
-                } else {
-                    crate::wtf8::view_json(value)
-                })
-                .collect::<Result<Vec<_>>>()?
-                .join(",")
+                keyed
+                    .as_array()
+                    .ok_or("join key values")?
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| if index < 4 {
+                        Ok(serde_json::to_string(value)?)
+                    } else {
+                        crate::wtf8::view_json(value)
+                    })
+                    .collect::<Result<Vec<_>>>()?
+                    .join(",")
             )
             .as_bytes()
         )
@@ -1486,6 +1474,51 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         key_changes: Some(marks["pairs"].as_array().ok_or("pairs")?.len() as u32),
         affected_lines: None,
     })
+}
+
+/// The layer names of a target's localization inputs: its manifest, then each culture's archive
+/// and PO, then the native culture's archive if no culture listed it. An output the target
+/// lacks is a `<...>` placeholder, which names no file.
+pub(crate) fn input_paths(target: &Value) -> Result<Vec<String>> {
+    let cultures = target["cultures"]
+        .as_array()
+        .ok_or("target cultures absent")?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "culture must be text".into())
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut paths = vec![
+        target["outputPaths"]["manifest"]
+            .as_str()
+            .unwrap_or("<manifest>")
+            .to_owned(),
+    ];
+    for culture in &cultures {
+        paths.push(
+            target["outputPaths"]["archives"][culture]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("<archive:{culture}>")),
+        );
+        paths.push(
+            target["outputPaths"]["portableObjects"][culture]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("<po:{culture}>")),
+        );
+    }
+    let native_culture = target["nativeCulture"].as_str();
+    let native_path =
+        native_culture.and_then(|culture| target["outputPaths"]["archives"][culture].as_str());
+    if let Some(path) = native_path
+        && !paths.iter().any(|value| value == path)
+    {
+        paths.push(path.to_owned());
+    }
+    Ok(paths)
 }
 
 fn build_summary(

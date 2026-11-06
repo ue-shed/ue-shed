@@ -61,8 +61,8 @@ export const TextQualityQuerySummary = Schema.Struct({
 	terminologyCount: Count
 });
 export type TextQualityQuerySummary = Schema.Schema.Type<typeof TextQualityQuerySummary>;
-const decodeRoleSummaries = Schema.decodeUnknownSync(TextQualityQuerySummary.fields.roles);
-const decodeRuleSummaries = Schema.decodeUnknownSync(TextQualityQuerySummary.fields.rules);
+const decodeRoleSummaries = Schema.decodeEffect(TextQualityQuerySummary.fields.roles);
+const decodeRuleSummaries = Schema.decodeEffect(TextQualityQuerySummary.fields.rules);
 
 /**
  * Whether the host keeps a standalone rules file it can save these rules to. Hosts report only
@@ -576,9 +576,9 @@ export function textQualityQueryOf(
 	const reads = textQualityReads(report, list);
 	return {
 		summary: reads.summary,
-		search: (request) => materializeQualityRead(reads.search(request), list.items),
-		focus: (request) => materializeQualityRead(reads.focus(request), list.items),
-		export: (filter) => materializeQualityRead(reads.export(filter), list.items)
+		search: (request) => materializeQualityRead(reads.search(request), list.items.bind(list)),
+		focus: (request) => materializeQualityRead(reads.focus(request), list.items.bind(list)),
+		export: (filter) => materializeQualityRead(reads.export(filter), list.items.bind(list))
 	};
 }
 /** The presentation query over a report whose findings are all in memory. */
@@ -646,8 +646,8 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 		}
 		const header: Omit<TextQualityReport, "findings"> = {
 			...report,
-			roles: decodeRoleSummaries(roles),
-			rules: decodeRuleSummaries(rules)
+			roles: yield* decodeRoleSummaries(roles).pipe(Effect.orDie),
+			rules: yield* decodeRuleSummaries(rules).pipe(Effect.orDie)
 		};
 		const summary: TextQualityQuerySummary = {
 			characterBudgetCount,

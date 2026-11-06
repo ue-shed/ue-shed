@@ -16,9 +16,9 @@ const FixtureEvidence = Schema.Struct({
 	events: Schema.Array(SavedAssetTextExtractionEvent),
 	packageEvents: Schema.Array(SavedAssetPackageTextEvent)
 });
-const decodeFixtureEvidence = Schema.decodeUnknownSync(FixtureEvidence);
+const decodeFixtureEvidence = Schema.decodeSync(FixtureEvidence);
 const FixtureEvidenceJson = Schema.fromJsonString(FixtureEvidence);
-const decodeFixtureEvidenceJson = Schema.decodeUnknownSync(FixtureEvidenceJson);
+const decodeFixtureEvidenceJson = Schema.decodeSync(FixtureEvidenceJson);
 
 /** Read-only evidence is reusable; writable indexes remain private to each test. */
 export async function packageTextFixtureEvidence(executable: string, project: string) {

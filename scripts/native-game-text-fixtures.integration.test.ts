@@ -27,7 +27,7 @@ const ExpectedStates = Schema.Struct({
 	)
 });
 const ExpectedStatesJson = Schema.fromJsonString(ExpectedStates);
-const decodeExpectedStatesJson = Schema.decodeUnknownSync(ExpectedStatesJson);
+const decodeExpectedStatesJson = Schema.decodeSync(ExpectedStatesJson);
 
 /** These are disposable fixtures generated and verified by each actual engine, never studio data. */
 describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtures", () => {
@@ -70,7 +70,7 @@ describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtu
 								expect(corpus.coverage.textUnits).toBeGreaterThan(100);
 								expect(model.summary.coverage).toEqual(corpus.coverage);
 								// Every committed intent entry is a stored line's culture state.
-								const states = (yield* model.query.readLocalizationLines()).flatMap(
+								const states = (yield* model.query.readLocalizationLines).flatMap(
 									({ identity, cultures }) =>
 										identity === null
 											? []
@@ -96,20 +96,22 @@ describe.skipIf(!executable)("native Game Text over Unreal-generated saved fixtu
 							})
 						).pipe(
 							Effect.provide(
-								gameTextIndexRefreshLayer(cache).pipe(
-									Layer.provide(gameTextIndexSourceNodeLayer(cache)),
-									Layer.provide(GameTextIndexBuilderLive),
-									Layer.provide(
-										assetReaderLayer({
-											executable,
-											timeoutMs: 30000,
-											catalogTimeoutMs: 120000
-										})
+								Layer.provideMerge(
+									gameTextIndexRefreshLayer(cache).pipe(
+										Layer.provide(gameTextIndexSourceNodeLayer(cache)),
+										Layer.provide(GameTextIndexBuilderLive),
+										Layer.provide(
+											assetReaderLayer({
+												executable,
+												timeoutMs: 30000,
+												catalogTimeoutMs: 120000
+											})
+										),
+										Layer.provide(LocalizationEvidenceNodeLive)
 									),
-									Layer.provide(LocalizationEvidenceNodeLive)
+									LocalizationEvidenceNodeLive
 								)
-							),
-							Effect.provide(LocalizationEvidenceNodeLive)
+							)
 						)
 					);
 				} finally {

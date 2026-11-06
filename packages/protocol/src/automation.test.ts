@@ -9,6 +9,9 @@ import {
 } from "./automation.js";
 import { AuthoringActorReferencesRequest } from "./authoring-actor-references.js";
 import { CompanionCapabilityManifest } from "./companion.js";
+const decodeAutomationInputRequest = Schema.decodeSync(AutomationInputRequest);
+const decodeAuthoringActorReferencesRequest = Schema.decodeSync(AuthoringActorReferencesRequest);
+const decodeCompanionCapabilityManifest = Schema.decodeSync(CompanionCapabilityManifest);
 
 const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const decodePlayersRequest = Schema.decodeUnknownSync(AutomationPlayersRequest);
@@ -16,7 +19,6 @@ const decodeInputRequest = Schema.decodeUnknownSync(AutomationInputRequest);
 const decodeCsvRequest = Schema.decodeUnknownSync(AutomationCsvRequest);
 const decodeCsvResult = Schema.decodeUnknownSync(AutomationCsvResult);
 const decodeActorReferencesRequest = Schema.decodeUnknownSync(AuthoringActorReferencesRequest);
-const decodeCapabilityManifest = Schema.decodeUnknownSync(CompanionCapabilityManifest);
 
 function fixture(path: string): Schema.Json {
 	return decodeJson(JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8")));
@@ -62,7 +64,7 @@ describe("automation and live reference wire contracts", () => {
 			).toThrow();
 		}
 		expect(() =>
-			decodeInputRequest({
+			decodeAutomationInputRequest({
 				...input,
 				worldObjectPath: ""
 			})
@@ -75,14 +77,14 @@ describe("automation and live reference wire contracts", () => {
 		);
 		for (const maxActors of [0, 1.5, 100001]) {
 			expect(() =>
-				decodeActorReferencesRequest({
+				decodeAuthoringActorReferencesRequest({
 					...request,
 					maxActors
 				})
 			).toThrow();
 		}
 		expect(() =>
-			decodeActorReferencesRequest({
+			decodeAuthoringActorReferencesRequest({
 				...request,
 				maxResults: 10001
 			})
@@ -112,7 +114,7 @@ describe("automation and live reference wire contracts", () => {
 
 	it("accepts an automation-only packaged runtime producer", () => {
 		expect(
-			decodeCapabilityManifest({
+			decodeCompanionCapabilityManifest({
 				producerKind: "unreal_runtime",
 				schemaVersion: 1,
 				automationObjectPath: "/Script/UEShedAutomation.Default__UEShedAutomationLibrary",

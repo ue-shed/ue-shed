@@ -1,5 +1,5 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { CultureCode } from "@ue-shed/localization/browser";
 import { BuiltInCheckId, CheckSeverity } from "./localization-check-ids.js";
@@ -214,14 +214,14 @@ export const GameTextRuleDocument = Schema.Struct({
 	roles: Schema.Array(TextRole).check(Schema.isMaxLength(256)),
 	rules: Schema.Array(GameTextRuleEntry).check(Schema.isMaxLength(1024))
 });
-export type GameTextRuleDocument = typeof GameTextRuleDocument.Type;
 const encodeGameTextRuleDocument = Schema.encodeSync(GameTextRuleDocument);
 const decodeGameTextRuleDocumentEffect = Schema.decodeUnknownEffect(GameTextRuleDocument);
+export type GameTextRuleDocument = typeof GameTextRuleDocument.Type;
 /** A JSON string literal, quotes and escapes included. */
 const JsonStringLiteral = Schema.fromJsonString(Schema.String);
-const decodeJsonStringLiteral = Schema.decodeUnknownSync(JsonStringLiteral);
+const decodeJsonStringLiteral = Schema.decodeSync(JsonStringLiteral);
 const JsonText = Schema.fromJsonString(Schema.Json);
-const decodeJsonText = Schema.decodeUnknownEffect(JsonText);
+const decodeJsonText = Schema.decodeEffect(JsonText);
 
 /** A decoded document's canonical JSON: equal documents encode alike, whatever object held them. */
 export function canonicalGameTextRuleDocumentJson(document: GameTextRuleDocument): string {
@@ -320,27 +320,27 @@ export function customLocalizationChecks(
  * correction; the original JSON/schema cause remains available when parsing failed. The engine
  * finds `invalid_expression` and `rule_cycle` in a complete rule, named by `ruleId`.
  */
-export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDocumentError>()(
-	"GameTextRuleDocumentError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"invalid_json",
-			"invalid_structure",
-			"duplicate_culture_key",
-			"duplicate_role_id",
-			"duplicate_rule_id",
-			"unknown_role_id",
-			"invalid_expression",
-			"rule_cycle"
-		]),
-		ruleId: Schema.optionalKey(Schema.String),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class GameTextRuleDocumentError extends Schema.TaggedError<
+	GameTextRuleDocumentError,
+	Brand.Brand<"packages/game-text/src/game-text-rules/GameTextRuleDocumentError">
+>()("GameTextRuleDocumentError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"invalid_json",
+		"invalid_structure",
+		"duplicate_culture_key",
+		"duplicate_role_id",
+		"duplicate_rule_id",
+		"unknown_role_id",
+		"invalid_expression",
+		"rule_cycle"
+	]),
+	ruleId: Schema.optionalKey(Schema.String),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 /** What a rule file error tells the user, by code. */
 function ruleDocumentErrorText(code: GameTextRuleDocumentError["code"]) {
@@ -488,7 +488,7 @@ export const decodeGameTextRuleDocumentJson = Effect.fn("GameText.rules.decodeJs
 		Effect.mapError((cause) => invalid("invalid_json", cause))
 	);
 	const document = yield* decodeGameTextRuleDocument(json);
-	if (duplicateCultureKey(input)) return yield* Effect.fail(invalid("duplicate_culture_key"));
+	if (duplicateCultureKey(input)) return yield* invalid("duplicate_culture_key");
 	return document;
 });
 

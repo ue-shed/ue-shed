@@ -20,8 +20,7 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
-
-const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+const decodeTextUnit = Schema.decodeSync(TextUnit);
 
 function cell(key: string, source: string, row = "Start"): TextUnit {
 	return decodeTextUnit({

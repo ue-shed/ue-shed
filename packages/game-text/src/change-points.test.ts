@@ -40,14 +40,6 @@ const comparison: GameTextContract.PointComparison = {
 		built: false,
 		rows: [
 			{
-				check: "not_gathered",
-				path: "Content/UI/WBP_Menu.uasset",
-				namespace: "UI",
-				key: "Play",
-				source: "Play",
-				cultures: []
-			},
-			{
 				check: "key_changed",
 				path: "Content/UI/WBP_Menu.uasset",
 				namespace: "UI",
@@ -55,6 +47,14 @@ const comparison: GameTextContract.PointComparison = {
 				source: "Quit",
 				cultures: ["de", "fr"],
 				earlier: { namespace: "UI", key: "Quit" }
+			},
+			{
+				check: "not_gathered",
+				path: "Content/UI/WBP_Menu.uasset",
+				namespace: "UI",
+				key: "Play",
+				source: "Play",
+				cultures: []
 			}
 		]
 	}
@@ -69,7 +69,7 @@ const points = {
 };
 
 describe("a change's comparison for a host", () => {
-	it("lists failing findings first, each with its severity and way forward", () => {
+	it("gives each finding its severity and way forward", () => {
 		const target = changeComparisonTarget(points, localizationGateFailures());
 		expect(target.status).toBe("failed");
 		expect(target.findings?.rows.map((row) => [row.check, row.severity])).toEqual([
@@ -77,6 +77,28 @@ describe("a change's comparison for a host", () => {
 			["not_gathered", "warn"]
 		]);
 		expect(target.findings?.rows[0]?.guidance).toContain("de, fr");
+	});
+
+	it("keeps the engine's order, which put failing checks first before it paged them", () => {
+		// The engine read the points with `not_gathered` failing; ordering this page again would
+		// only order one page, so a failure on the next page would still follow these warnings.
+		const failing = localizationGateFailures(["not_gathered"], ["key_changed"]);
+		const findings = comparison.findings;
+		if (findings === undefined) throw new Error("The comparison has findings.");
+		const engineOrder = { ...findings, rows: [...findings.rows].reverse() };
+		const target = changeComparisonTarget(
+			{ ...points, comparison: { ...comparison, findings: engineOrder } },
+			failing
+		);
+		expect(target.findings?.rows.map((row) => [row.check, row.severity])).toEqual([
+			["not_gathered", "fail"],
+			["key_changed", "warn"]
+		]);
+		const reordered = changeComparisonTarget(points, failing);
+		expect(reordered.findings?.rows.map((row) => row.check)).toEqual([
+			"key_changed",
+			"not_gathered"
+		]);
 	});
 
 	it("follows the policy: a check that only warns passes the change", () => {

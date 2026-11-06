@@ -3,7 +3,7 @@ import { sha256Hex } from "@ue-shed/localization/browser";
 
 const JsonObject = Schema.Record(Schema.String, Schema.Json);
 const isJsonObject = Schema.is(JsonObject);
-export function canonicalLocalizationJson(value: typeof Schema.Json.Type): string {
+export function canonicalLocalizationJson(value: Schema.Json): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalLocalizationJson).join(",")}]`;
 	if (isJsonObject(value))
 		return `{${Object.keys(value)

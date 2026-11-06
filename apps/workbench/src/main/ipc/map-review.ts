@@ -8,7 +8,7 @@ export const register = Effect.gen(function* () {
 	const mapReview = yield* WorkbenchMapReview;
 	yield* ipc.register(invokeContracts["map-review:editor-world"], () =>
 		mapReview.editorWorld
-			? mapReview.editorWorld()
+			? mapReview.editorWorld
 			: Effect.succeed({
 					status: "unavailable",
 					message: "Live map state is unavailable.",
@@ -34,9 +34,10 @@ export const register = Effect.gen(function* () {
 					recovery: "Update this host."
 				})
 	);
-	yield* ipc.register(invokeContracts["map-review:load"], () => mapReview.load());
-	yield* ipc.register(invokeContracts["map-review:review-sets"], () =>
-		mapReview.reviewSetLibrary()
+	yield* ipc.register(invokeContracts["map-review:load"], () => mapReview.load);
+	yield* ipc.register(
+		invokeContracts["map-review:review-sets"],
+		() => mapReview.reviewSetLibrary
 	);
 	yield* ipc.register(invokeContracts["map-review:create-review-set"], (...args) => {
 		const [intent] = args;
@@ -58,18 +59,20 @@ export const register = Effect.gen(function* () {
 		const [intent] = args;
 		return mapReview.replaceVisibilityPolicy(intent);
 	});
-	yield* ipc.register(invokeContracts["map-review:world-snapshot"], () =>
-		mapReview.worldSnapshot()
+	yield* ipc.register(
+		invokeContracts["map-review:world-snapshot"],
+		() => mapReview.worldSnapshot
 	);
 	yield* ipc.register(invokeContracts["map-review:saved-world"], (...args) => {
 		const [mapPath] = args;
 		return mapReview.savedWorld(mapPath).pipe(Effect.orDie);
 	});
 	yield* ipc.register(invokeContracts["map-review:saved-world-maps"], () =>
-		mapReview.savedWorldMaps().pipe(Effect.orDie)
+		mapReview.savedWorldMaps.pipe(Effect.orDie)
 	);
-	yield* ipc.register(invokeContracts["map-review:saved-world-progress"], () =>
-		mapReview.savedWorldProgress()
+	yield* ipc.register(
+		invokeContracts["map-review:saved-world-progress"],
+		() => mapReview.savedWorldProgress
 	);
 	yield* ipc.register(invokeContracts["map-review:focus-actor"], (...args) => {
 		const [actorId, bringToFront] = args;
@@ -123,6 +126,6 @@ export const register = Effect.gen(function* () {
 		return mapReview.setWorldObservationRate(cadenceHz);
 	});
 	yield* ipc.register(invokeContracts["map-review:unsubscribe-world-observations"], () =>
-		mapReview.unsubscribeWorldObservations().pipe(Effect.as(undefined))
+		mapReview.unsubscribeWorldObservations.pipe(Effect.as(undefined))
 	);
 }).pipe(Effect.withSpan("Workbench.Ipc.registerMapReview"));

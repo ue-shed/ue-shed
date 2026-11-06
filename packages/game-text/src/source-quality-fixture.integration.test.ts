@@ -171,13 +171,15 @@ describe.skipIf(!executable)("source quality over the saved fixture's index", ()
 					})
 				).pipe(
 					Effect.provide(
-						gameTextIndexRefreshLayer(cacheRoot).pipe(
-							Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
-							Layer.provide(typeScriptIndexBuilderLayer),
-							Layer.provide(LocalizationEvidenceNodeLive)
+						Layer.provideMerge(
+							gameTextIndexRefreshLayer(cacheRoot).pipe(
+								Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
+								Layer.provide(typeScriptIndexBuilderLayer),
+								Layer.provide(LocalizationEvidenceNodeLive)
+							),
+							assetReaderLayer({ executable: executable! })
 						)
-					),
-					Effect.provide(assetReaderLayer({ executable: executable! }))
+					)
 				)
 			);
 			// The example rules find the fixture's long prompts and their terms.

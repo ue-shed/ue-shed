@@ -18,7 +18,8 @@ export class GameTextIndexQuery extends Context.Service<
 	{
 		readonly open: (input: {
 			readonly configuration: SharedIndexOptions;
-			readonly generation: string;
+			/** The store's dictionary epoch the joined layer was built in. */
+			readonly storeEpoch: string;
 			readonly joinedKey: string;
 		}) => Effect.Effect<
 			Effect.Success<ReturnType<typeof openNativeTextQuery>>,
@@ -45,7 +46,6 @@ export class GameTextIndexQuery extends Context.Service<
 	}
 >()("@ue-shed/game-text/GameTextIndexQuery") {}
 
-/** A snapshot reader's key: the JSON `open` writes. */
 const ReaderKeyJson = Schema.fromJsonString(
 	Schema.Struct({
 		configuration: GameTextIndexConfiguration,
@@ -54,7 +54,7 @@ const ReaderKeyJson = Schema.fromJsonString(
 		audienceRules: Schema.Array(Schema.String)
 	})
 );
-const decodeReaderKeyJson = Schema.decodeUnknownEffect(ReaderKeyJson);
+const decodeReaderKeyJson = Schema.decodeEffect(ReaderKeyJson);
 
 const compareFailed = (cause: unknown) =>
 	new GameTextIndexError({
@@ -118,7 +118,7 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 						.pipe(Effect.mapError(compareFailed));
 					const comparison = answerJson<GameTextContract.PointComparison>(answer);
 					if (comparison === undefined)
-						return yield* Effect.fail(compareFailed("The engine sent no comparison."));
+						return yield* compareFailed("The engine sent no comparison.");
 					return comparison;
 				}),
 				compareTextFiles: Effect.fn("GameTextIndexQuery.compareTextFiles")(
@@ -128,9 +128,7 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 							.pipe(Effect.mapError(fileCompareFailed));
 						const comparison = answerJson<GameTextContract.TextFileComparison>(answer);
 						if (comparison === undefined)
-							return yield* Effect.fail(
-								fileCompareFailed("The engine sent no comparison.")
-							);
+							return yield* fileCompareFailed("The engine sent no comparison.");
 						yield* Effect.annotateCurrentSpan({
 							"textFiles.total": comparison.total,
 							"textFiles.kept": comparison.kept
@@ -143,7 +141,7 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 						readers,
 						JSON.stringify({
 							configuration: nativeIndexConfiguration(input.configuration),
-							generation: input.generation,
+							generation: input.storeEpoch,
 							joinedKey: input.joinedKey,
 							audienceRules: TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
 						})

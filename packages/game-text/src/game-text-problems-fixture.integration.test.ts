@@ -71,7 +71,7 @@ const Cases = Schema.Struct({
 	})
 });
 const CasesJson = Schema.fromJsonString(Cases);
-const decodeCasesJson = Schema.decodeUnknownSync(CasesJson);
+const decodeCasesJson = Schema.decodeSync(CasesJson);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 const NAMESPACE_PREFIX = "Fixture.GameTextProblems.";
@@ -365,16 +365,18 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 					})
 				).pipe(
 					Effect.provide(
-						Layer.mergeAll(
-							gameTextIndexRefreshLayer(cacheRoot).pipe(
-								Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
-								Layer.provide(typeScriptIndexBuilderLayer),
-								Layer.provide(LocalizationEvidenceNodeLive)
+						Layer.provideMerge(
+							Layer.mergeAll(
+								gameTextIndexRefreshLayer(cacheRoot).pipe(
+									Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
+									Layer.provide(typeScriptIndexBuilderLayer),
+									Layer.provide(LocalizationEvidenceNodeLive)
+								),
+								LocalizationEvidenceNodeLive
 							),
-							LocalizationEvidenceNodeLive
+							assetReaderLayer({ executable: executable! })
 						)
-					),
-					Effect.provide(assetReaderLayer({ executable: executable! }))
+					)
 				)
 			);
 		} finally {

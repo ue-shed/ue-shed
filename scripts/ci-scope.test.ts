@@ -18,7 +18,7 @@ const none = { uasset_io: false, uasset_libraries: false, catalog_oracle: false,
 const all = { uasset_io: true, uasset_libraries: true, catalog_oracle: true, site: true };
 const site = ["apps/site", "packages/ui", "packages/protocol", "extensions/data-authoring"];
 
-test("planning and engine-only changes do not schedule unrelated portable native/browser lanes", () => {
+void test("planning and engine-only changes do not schedule unrelated portable native/browser lanes", () => {
 	for (const file of [
 		"plans/058.md",
 		"docs/research/results.md",
@@ -29,7 +29,7 @@ test("planning and engine-only changes do not schedule unrelated portable native
 	}
 });
 
-test("main and shared toolchain/dependency/workflow changes always exercise every lane", () => {
+void test("main and shared toolchain/dependency/workflow changes always exercise every lane", () => {
 	assert.deepEqual(selectCiScope([], site, true), all);
 	for (const file of [
 		"Cargo.lock",
@@ -48,7 +48,7 @@ test("main and shared toolchain/dependency/workflow changes always exercise ever
 	}
 });
 
-test("Game Text, native index and CLI changes exercise IO without the site or Catalog oracle", () => {
+void test("Game Text, native index and CLI changes exercise IO without the site or Catalog oracle", () => {
 	for (const file of [
 		"packages/game-text/src/entry-schema.ts",
 		"crates/game-text-index/src/lib.rs",
@@ -67,7 +67,7 @@ test("Game Text, native index and CLI changes exercise IO without the site or Ca
 	);
 });
 
-test("parser and saved-byte changes keep downstream IO and browser conformance", () => {
+void test("parser and saved-byte changes keep downstream IO and browser conformance", () => {
 	for (const file of [
 		"crates/uasset-parser/src/lib.rs",
 		"crates/uasset-inspection-wasm/src/lib.rs",
@@ -90,7 +90,7 @@ test("parser and saved-byte changes keep downstream IO and browser conformance",
 	);
 });
 
-test("website changes include transitive workspace dependencies, media and browser configuration", () => {
+void test("website changes include transitive workspace dependencies, media and browser configuration", () => {
 	for (const file of [
 		"apps/site/src/App.tsx",
 		"packages/ui/src/button.tsx",
@@ -126,7 +126,7 @@ test("website changes include transitive workspace dependencies, media and brows
 	assert.throws(() => siteWorkspaceDirectories([]), /Missing website workspace/);
 });
 
-test("Git change detection includes removed/renamed inputs and fails instead of silently skipping", () => {
+void test("Git change detection includes removed/renamed inputs and fails instead of silently skipping", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-ci-scope-"));
 	const git = (...args: string[]) =>
 		execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true }).trim();
@@ -152,7 +152,7 @@ test("Git change detection includes removed/renamed inputs and fails instead of 
 	}
 });
 
-test("only a push of release notes alone can reuse the previous passing run", () => {
+void test("only a push of release notes alone can reuse the previous passing run", () => {
 	assert.equal(releaseNotesOnly(["docs/releases/0.21.0.md"]), true);
 	assert.equal(releaseNotesOnly(["docs/releases/0.21.0.md", "docs/releases/0.20.0.md"]), true);
 	assert.equal(releaseNotesOnly([]), false);
@@ -164,7 +164,7 @@ test("only a push of release notes alone can reuse the previous passing run", ()
 	assert.equal(releaseNotesOnly(["docs/releases.md"]), false);
 });
 
-test("reuse requires the previous head to contain the base its new merge result tests", () => {
+void test("reuse requires the previous head to contain the base its new merge result tests", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-ci-base-"));
 	const git = (...args: string[]) =>
 		execFileSync("git", args, { cwd: root, encoding: "utf8", windowsHide: true }).trim();

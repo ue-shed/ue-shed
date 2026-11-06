@@ -28,7 +28,7 @@ if (process.env.NODE_OPTIONS) throw new Error("Use Node's default heap.");
 const configuration = { projectKey: project, targetKey: "Generated", cacheRoot: cache };
 const manifest = await Effect.runPromise(
 	Effect.gen(function* () {
-		return yield* (yield* SharedIndex).inspect();
+		return yield* (yield* SharedIndex).inspect;
 	}).pipe(Effect.scoped, Effect.provide(sharedIndexNodeLayer(configuration)))
 );
 if (!manifest.segments.some((segment) => segment.domains.includes("source")))

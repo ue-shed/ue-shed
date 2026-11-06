@@ -1,5 +1,5 @@
 import { contractParser } from "./contract-parser.js";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields } from "./error-guidance.js";
 
 /**
@@ -19,15 +19,15 @@ export type IdentifierKind = Schema.Schema.Type<typeof IdentifierKind>;
  * An identifier was empty after trimming. The error names its category and original input; its
  * cause retains the schema issue. Supply a non-empty value before retrying.
  */
-export class IdentifierValidationError extends Schema.TaggedError<IdentifierValidationError>()(
-	"IdentifierValidationError",
-	{
-		kind: IdentifierKind,
-		input: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class IdentifierValidationError extends Schema.TaggedError<
+	IdentifierValidationError,
+	Brand.Brand<"packages/protocol/src/index/IdentifierValidationError">
+>()("IdentifierValidationError", {
+	kind: IdentifierKind,
+	input: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 const IdentifierString = Schema.Trim.check(Schema.isNonEmpty());
 
@@ -87,7 +87,7 @@ function decodeIdentifier<S extends Schema.ConstraintDecoder<string>>(
 	kind: IdentifierKind,
 	input: string
 ): Effect.Effect<S["Type"], IdentifierValidationError, S["DecodingServices"]> {
-	return Schema.decodeUnknownEffect(schema)(input).pipe(
+	return Schema.decodeEffect(schema)(input).pipe(
 		Effect.mapError((cause) => identifierError(kind, input, cause))
 	);
 }
@@ -98,7 +98,7 @@ function createIdentifier<S extends Schema.ConstraintDecoder<string>>(
 	input: string
 ): S["Type"] {
 	try {
-		return Schema.decodeUnknownSync(schema)(input);
+		return Schema.decodeSync(schema)(input);
 	} catch (cause) {
 		throw identifierError(kind, input, cause);
 	}
@@ -569,4 +569,8 @@ export {
 	contractParserSync
 } from "./contract-parser.js";
 
-export { gameTextEngineContract, type GameTextContract } from "./game-text-contract.generated.js";
+export {
+	gameTextEngineContract,
+	localizationImport,
+	type GameTextContract
+} from "./game-text-contract.generated.js";

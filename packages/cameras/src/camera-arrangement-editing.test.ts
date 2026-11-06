@@ -1,7 +1,7 @@
 import { legacyReviewRenderPolicy } from "./camera-render-schema.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -23,17 +23,19 @@ import {
 	CameraApproval,
 	makeCameraAuthoringStore,
 	writeCameraVisibilityPreset,
-	readCameraVisibilityPreset
+	readCameraVisibilityPreset,
+	readCameraArrangementRecipe
 } from "./camera-authoring-store.js";
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
+const decodeCameraApproval = Schema.decodeSync(CameraApproval);
+const decodeCameraArrangementCommand = Schema.decodeSync(CameraArrangementCommand);
 
-const decodeCameraArrangementCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
-const decodeCameraApproval = Schema.decodeUnknownSync(CameraApproval);
+const decodeUnknownCameraArrangementCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
 
 const edit = (a: CameraArrangement, fields: Schema.JsonObject) =>
 	applyCameraArrangementCommand(
 		a,
-		decodeCameraArrangementCommand({
+		decodeUnknownCameraArrangementCommand({
 			arrangementId: a.id,
 			expectedRevision: a.revision,
 			operationId: `edit-${a.revision}`,
@@ -158,6 +160,33 @@ describe("complete camera arrangement editing", () => {
 			})
 		).toThrow("shorter arrangement ID");
 	});
+	it.each(["recipe", "preset"])(
+		"retains syntax and schema failures as recoverable %s storage errors",
+		async (kind) => {
+			const root = await mkdtemp(join(tmpdir(), "ue-shed-malformed-camera-document-"));
+			try {
+				const path = join(root, `${kind}.json`);
+				for (const contents of ["{", "{}"]) {
+					await writeFile(path, contents);
+					const error =
+						kind === "recipe"
+							? await Effect.runPromise(
+									readCameraArrangementRecipe(path).pipe(Effect.flip)
+								)
+							: await Effect.runPromise(
+									readCameraVisibilityPreset(path).pipe(Effect.flip)
+								);
+					expect(error.code).toBe("storage");
+					expect(error.nextStep).toBe("fix_input");
+					expect(error.retrySafe).toBe(true);
+					if (contents === "{") expect(error.cause).toBeInstanceOf(SyntaxError);
+					else expect(Schema.isSchemaError(error.cause)).toBe(true);
+				}
+			} finally {
+				await rm(root, { recursive: true, force: true });
+			}
+		}
+	);
 	it("keeps map-specific visibility presets immutable and allows retrying the same export", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-preset-"));
 		try {

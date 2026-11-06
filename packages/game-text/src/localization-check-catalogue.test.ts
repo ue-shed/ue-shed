@@ -19,8 +19,7 @@ import {
 } from "./localization-check-table.js";
 import { evaluateCatalogueRule } from "./native-text-shape.test-support.js";
 import { nativeVisibleLength } from "./native-rule-reports.test-support.js";
-
-const decodeLengthOutlierParams = Schema.decodeUnknownSync(LengthOutlierParams);
+const decodeLengthOutlierParams = Schema.decodeSync(LengthOutlierParams);
 
 const README = fileURLToPath(new URL("../README.md", import.meta.url));
 

@@ -11,6 +11,7 @@ import {
 	EditorForegroundResponsiveness,
 	EditorForegroundResponsivenessLive
 } from "./editor-foreground-responsiveness.js";
+const isString = Schema.is(Schema.String);
 
 const endpoint = "http://127.0.0.1:30010";
 const objectPath = "/Script/UEShedCoreEditor.Default__UEShedEditorResponsivenessLibrary";
@@ -74,7 +75,9 @@ function fakeEditor() {
 			});
 		}
 		expect(request.objectPath).toBe(objectPath);
-		const body = JSON.parse(String(request.parameters.RequestJson));
+		const raw = request.parameters.RequestJson;
+		if (!isString(raw)) throw new Error("RequestJson must be a JSON string");
+		const body = JSON.parse(raw);
 		if (request.functionName === "GetForegroundResponsivenessState") {
 			editor.calls.push("state");
 			return Effect.succeed(

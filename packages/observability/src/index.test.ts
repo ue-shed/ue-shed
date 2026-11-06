@@ -1,6 +1,6 @@
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { it } from "@effect/vitest";
-import { ConfigProvider, Effect, Metric } from "effect";
+import { Layer, ConfigProvider, Effect, Metric } from "effect";
 import { expect } from "vitest";
 import {
 	aggregateHealth,
@@ -30,13 +30,15 @@ it.effect("captures a named domain operation through the real runtime telemetry 
 		expect(span?.attributes.operation).toBe("Authoring.testOperation");
 	}).pipe(
 		Effect.provide(
-			runtimeObservabilityLayer({
-				serviceName: "ue-shed-test",
-				spanProcessor: new SimpleSpanProcessor(exporter)
-			})
-		),
-		Effect.provide(
-			ConfigProvider.layer(ConfigProvider.fromUnknown({ UE_SHED_TELEMETRY_MODE: "disabled" }))
+			Layer.provideMerge(
+				runtimeObservabilityLayer({
+					serviceName: "ue-shed-test",
+					spanProcessor: new SimpleSpanProcessor(exporter)
+				}),
+				ConfigProvider.layer(
+					ConfigProvider.fromUnknown({ UE_SHED_TELEMETRY_MODE: "disabled" })
+				)
+			)
 		)
 	);
 });
@@ -63,13 +65,17 @@ it.effect.each(["disabled", "console"] as const)(
 	(mode) =>
 		Effect.gen(function* () {
 			const health = yield* RuntimeHealthService;
-			expect((yield* health.snapshot()).telemetry).toBe(
+			expect((yield* health.snapshot).telemetry).toBe(
 				mode === "disabled" ? "disabled" : "ready"
 			);
 		}).pipe(
-			Effect.provide(runtimeObservabilityLayer({ serviceName: "ue-shed-test" })),
 			Effect.provide(
-				ConfigProvider.layer(ConfigProvider.fromUnknown({ UE_SHED_TELEMETRY_MODE: mode }))
+				Layer.provideMerge(
+					runtimeObservabilityLayer({ serviceName: "ue-shed-test" }),
+					ConfigProvider.layer(
+						ConfigProvider.fromUnknown({ UE_SHED_TELEMETRY_MODE: mode })
+					)
+				)
 			)
 		)
 );

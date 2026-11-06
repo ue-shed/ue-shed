@@ -9,22 +9,25 @@ import {
 	type ErrorNextStep
 } from "@ue-shed/protocol";
 import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import { isLoopbackEndpoint } from "./loopback-endpoint.js";
 import { processSupervisorExecutable } from "./process-supervisor.js";
+const decodeEditorWindowActivationRequestEffect = Schema.decodeEffect(
+	EditorWindowActivationRequest
+);
 
 /**
  * Foreground permission, negotiation or activation failure with operation context and
  * original cause. A host may offer manual focusing using the supplied recovery guidance.
  */
-export class EditorWindowActivationError extends Schema.TaggedError<EditorWindowActivationError>()(
-	"EditorWindowActivationError",
-	{
-		operation: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class EditorWindowActivationError extends Schema.TaggedError<
+	EditorWindowActivationError,
+	Brand.Brand<"packages/engine/src/editor-window-activation/EditorWindowActivationError">
+>()("EditorWindowActivationError", {
+	operation: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /** Optional local OS permission handoff; a remote editor must never receive a local PID grant. */
 export class EditorForegroundPermission extends Context.Service<
@@ -41,9 +44,6 @@ interface Guidance {
 }
 
 const isContractParseError = Schema.is(ContractParseError);
-const decodeEditorWindowActivationRequest = Schema.decodeUnknownEffect(
-	EditorWindowActivationRequest
-);
 const pluginMismatch: Guidance = {
 	recovery: "Install the UE Shed Core plugin version paired with this client, then reconnect.",
 	retrySafe: false,
@@ -74,7 +74,7 @@ const failure = (operation: string, message: string, guidance: Guidance, cause?:
 export const EditorForegroundPermissionLive = Layer.succeed(EditorForegroundPermission, {
 	grant: Effect.fn("EditorForegroundPermission.grant")(function* (processId: number) {
 		if (process.platform !== "win32") return;
-		yield* decodeEditorWindowActivationRequest({
+		yield* decodeEditorWindowActivationRequestEffect({
 			expectedProcessId: processId
 		}).pipe(
 			Effect.mapError((cause) =>
@@ -174,17 +174,15 @@ export const EditorWindowActivationLive = Layer.effect(
 					!manifest.windowActivationObjectPath ||
 					!manifest.identity
 				) {
-					return yield* Effect.fail(
-						failure(
-							"negotiate",
-							"The connected editor does not provide verified window activation. Update UE Shed Core.",
-							{
-								recovery:
-									"Update the project's UE Shed Core plugin to a version with window activation, then reconnect.",
-								retrySafe: false,
-								nextStep: "fix_input"
-							}
-						)
+					return yield* failure(
+						"negotiate",
+						"The connected editor does not provide verified window activation. Update UE Shed Core.",
+						{
+							recovery:
+								"Update the project's UE Shed Core plugin to a version with window activation, then reconnect.",
+							retrySafe: false,
+							nextStep: "fix_input"
+						}
 					);
 				}
 				const processId = manifest.identity.processId;
@@ -192,7 +190,7 @@ export const EditorWindowActivationLive = Layer.effect(
 					yield* permission
 						.grant(processId)
 						.pipe(
-							Effect.catch((cause) =>
+							Effect.catchTag("EditorWindowActivationError", (cause) =>
 								Effect.logDebug(
 									"Foreground handoff unavailable; trying editor activation",
 									cause
@@ -224,13 +222,15 @@ export const EditorWindowActivationLive = Layer.effect(
 						)
 					);
 				if (result.processId !== processId)
-					return yield* Effect.fail(
-						failure("verify", "The editor process changed during activation.", {
+					return yield* failure(
+						"verify",
+						"The editor process changed during activation.",
+						{
 							recovery:
 								"Another editor process answered. Reconnect to the editor you meant, then activate again.",
 							retrySafe: true,
 							nextStep: "reconcile"
-						})
+						}
 					);
 				return result;
 			})

@@ -123,6 +123,36 @@ const corpus: TextCorpus = {
 		}
 	]
 };
+it.effect("isolates report requests and recovers after an unsupported fixture", () =>
+	Effect.gen(function* () {
+		const document = yield* decodeGameTextRuleDocumentJson(
+			yield* Effect.promise(() => readFile(fixtureRules, "utf8"))
+		);
+		const first = indexedTestReports(corpus).source(document);
+		const before = JSON.stringify(first);
+		const unsupported: TextCorpus = {
+			...corpus,
+			units: corpus.units.map((unit) => ({
+				...unit,
+				occurrences: unit.occurrences.map((occurrence) => ({
+					...occurrence,
+					location: {
+						kind: "code_place",
+						file: "Source/Text.cpp",
+						line: 1,
+						macro: "LOCTEXT"
+					}
+				}))
+			}))
+		};
+		expect(() => indexedTestReports(unsupported).source(document)).toThrow(
+			"A code place has no saved package."
+		);
+		const next = indexedTestReports(corpus).source({ ...document, rules: [] });
+		expect(next.findings).toHaveLength(0);
+		expect(JSON.stringify(first)).toBe(before);
+	})
+);
 it.effect("preserves Unicode case folding, literal offsets and immutable occurrence inputs", () =>
 	Effect.gen(function* () {
 		const units = ["A+B old old", "K ſ İ ı Σ σ ς"].map((source, row) => {
@@ -367,6 +397,7 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 		} = yield* Effect.promise(() => import("./investigation.js"));
 		const { Schema } = yield* Effect.promise(() => import("effect"));
 		const decodePreset = Schema.decodeUnknownEffect(GameTextInvestigationPreset);
+		const decodeTypedPreset = Schema.decodeEffect(GameTextInvestigationPreset);
 		const rules = yield* decodeGameTextRuleDocumentJson(
 			yield* Effect.promise(() => readFile(fixtureRules, "utf8"))
 		);
@@ -431,7 +462,7 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 			).pipe(Effect.result)
 		).toMatchObject({ _tag: "Failure" });
 		const { rules: _rules, ...withoutRules } = preset;
-		expect(yield* decodePreset(withoutRules).pipe(Effect.result)).toMatchObject({
+		expect(yield* decodeTypedPreset(withoutRules).pipe(Effect.result)).toMatchObject({
 			_tag: "Failure"
 		});
 	})

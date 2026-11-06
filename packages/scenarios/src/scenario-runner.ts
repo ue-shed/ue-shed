@@ -6,7 +6,7 @@ import {
 } from "@ue-shed/protocol";
 import { EditorPlaySession, type EditorPlaySessionError } from "@ue-shed/engine";
 import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Context, Duration, Effect, Layer, Schedule, Schema } from "effect";
+import { type Brand, Context, Duration, Effect, Layer, Schedule, Schema } from "effect";
 import { movementGymScenario } from "./demo.js";
 import {
 	parseScenarioCancelResponse,
@@ -24,25 +24,25 @@ import type { ScenarioDocument, ScenarioRun } from "./schema.js";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 
-export class ScenarioRunnerError extends Schema.TaggedError<ScenarioRunnerError>()(
-	"ScenarioRunnerError",
-	{
-		code: Schema.Literals([
-			"capability_unavailable",
-			"contract_failure",
-			"invalid_document",
-			"pie_unavailable",
-			"poll_timeout",
-			"producer_rejected",
-			"stale_session",
-			"transport_failure"
-		]),
-		endpoint: Schema.String,
-		operation: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class ScenarioRunnerError extends Schema.TaggedError<
+	ScenarioRunnerError,
+	Brand.Brand<"packages/scenarios/src/scenario-runner/ScenarioRunnerError">
+>()("ScenarioRunnerError", {
+	code: Schema.Literals([
+		"capability_unavailable",
+		"contract_failure",
+		"invalid_document",
+		"pie_unavailable",
+		"poll_timeout",
+		"producer_rejected",
+		"stale_session",
+		"transport_failure"
+	]),
+	endpoint: Schema.String,
+	operation: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /**
  * One scenario run. `pieStartTimeout` bounds the wait for Play In Editor to reach running state
@@ -81,7 +81,10 @@ export class ScenarioRunner extends Context.Service<ScenarioRunner, ScenarioRunn
 ) {}
 
 /** Internal poll marker; it never leaves the runner, but carries the shared guidance shape. */
-class PollPending extends Schema.TaggedError<PollPending>()("ScenarioRunner.PollPending", {
+class PollPending extends Schema.TaggedError<
+	PollPending,
+	Brand.Brand<"packages/scenarios/src/scenario-runner/PollPending">
+>()("ScenarioRunner.PollPending", {
 	operation: Schema.String,
 	...ErrorGuidanceFields
 }) {}
@@ -281,17 +284,15 @@ export const ScenarioRunnerLive = Layer.effect(
 						)
 					);
 				if (started.outcome === "rejected") {
-					return yield* Effect.fail(
-						new ScenarioRunnerError({
-							code: "pie_unavailable",
-							endpoint,
-							message: started.message,
-							operation: "scenario.pie.start",
-							recovery: started.recovery,
-							retrySafe: false,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new ScenarioRunnerError({
+						code: "pie_unavailable",
+						endpoint,
+						message: started.message,
+						operation: "scenario.pie.start",
+						recovery: started.recovery,
+						retrySafe: false,
+						nextStep: "reconcile"
+					});
 				}
 			}
 			if (status.state.status === "paused") {
@@ -303,17 +304,15 @@ export const ScenarioRunnerLive = Layer.effect(
 						)
 					);
 				if (resumed.outcome === "rejected") {
-					return yield* Effect.fail(
-						new ScenarioRunnerError({
-							code: "pie_unavailable",
-							endpoint,
-							message: resumed.message,
-							operation: "scenario.pie.resume",
-							recovery: resumed.recovery,
-							retrySafe: false,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new ScenarioRunnerError({
+						code: "pie_unavailable",
+						endpoint,
+						message: resumed.message,
+						operation: "scenario.pie.resume",
+						recovery: resumed.recovery,
+						retrySafe: false,
+						nextStep: "reconcile"
+					});
 				}
 			}
 
@@ -421,7 +420,7 @@ export const ScenarioRunnerLive = Layer.effect(
 				Effect.mapError((cause) => contractError(endpoint, prepareOperation, cause))
 			);
 			if (prepared._tag === "Rejected") {
-				return yield* Effect.fail(rejectedError(endpoint, prepareOperation, prepared));
+				return yield* rejectedError(endpoint, prepareOperation, prepared);
 			}
 			const pieSessionId = yield* runningPieSessionId(
 				endpoint,
@@ -459,12 +458,12 @@ export const ScenarioRunnerLive = Layer.effect(
 				Effect.mapError((cause) => contractError(endpoint, startOperation, cause))
 			);
 			if (started._tag === "Rejected") {
-				return yield* Effect.fail(rejectedError(endpoint, startOperation, started));
+				return yield* rejectedError(endpoint, startOperation, started);
 			}
 			const runId = started.runId;
 			if (started.pieSessionId !== pieSessionId) {
 				yield* cancelTarget(endpoint, target.objectPath, runId).pipe(Effect.ignore);
-				return yield* Effect.fail(staleBindingError(endpoint, startOperation));
+				return yield* staleBindingError(endpoint, startOperation);
 			}
 			return ScenarioRunHandle.make({
 				endpoint,
@@ -489,28 +488,26 @@ export const ScenarioRunnerLive = Layer.effect(
 				Effect.mapError((cause) => contractError(handle.endpoint, pollOperation, cause))
 			);
 			if (response._tag === "Rejected") {
-				return yield* Effect.fail(rejectedError(handle.endpoint, pollOperation, response));
+				return yield* rejectedError(handle.endpoint, pollOperation, response);
 			}
 			if (response._tag === "Terminal") {
 				if (
 					response.result.pieSessionId !== handle.pieSessionId ||
 					response.result.scenarioId !== handle.scenarioId
 				) {
-					return yield* Effect.fail(staleBindingError(handle.endpoint, pollOperation));
+					return yield* staleBindingError(handle.endpoint, pollOperation);
 				}
 				if (response.result.evidence.length > handle.evidenceLimit) {
-					return yield* Effect.fail(
-						contractError(
-							handle.endpoint,
-							pollOperation,
-							"producer exceeded the negotiated evidence limit"
-						)
+					return yield* contractError(
+						handle.endpoint,
+						pollOperation,
+						"producer exceeded the negotiated evidence limit"
 					);
 				}
 				return response;
 			}
 			if (response.runId !== handle.runId || response.pieSessionId !== handle.pieSessionId) {
-				return yield* Effect.fail(staleBindingError(handle.endpoint, pollOperation));
+				return yield* staleBindingError(handle.endpoint, pollOperation);
 			}
 			return response;
 		});

@@ -23,7 +23,7 @@ it.effect("persists a bounded most-recent-first project list without duplicates"
 		}
 		yield* history.record("d:/projects/project5/");
 
-		const recent = yield* history.recent();
+		const recent = yield* history.recent;
 		expect(recent).toHaveLength(8);
 		expect(recent[0]).toEqual({
 			projectName: "project5",
@@ -33,7 +33,7 @@ it.effect("persists a bounded most-recent-first project list without duplicates"
 			recent.filter((project) => project.projectName.toLowerCase() === "project5")
 		).toHaveLength(1);
 		expect(recent.at(-1)?.projectName).toBe("Project2");
-	}).pipe(Effect.provide(WorkbenchProjectHistoryLive), Effect.provide(historyDependencies()))
+	}).pipe(Effect.provide(Layer.provideMerge(WorkbenchProjectHistoryLive, historyDependencies())))
 );
 
 it.effect("treats a malformed local history as an empty recoverable preference", () => {
@@ -42,13 +42,12 @@ it.effect("treats a malformed local history as an empty recoverable preference",
 	]);
 	return Effect.gen(function* () {
 		const history = yield* WorkbenchProjectHistory;
-		expect(yield* history.recent()).toEqual([]);
+		expect(yield* history.recent).toEqual([]);
 		yield* history.record("C:/Projects/Recovered");
-		expect(yield* history.recent()).toEqual([
+		expect(yield* history.recent).toEqual([
 			{ projectName: "Recovered", projectRoot: "C:/Projects/Recovered" }
 		]);
 	}).pipe(
-		Effect.provide(WorkbenchProjectHistoryLive),
-		Effect.provide(historyDependencies(files))
+		Effect.provide(Layer.provideMerge(WorkbenchProjectHistoryLive, historyDependencies(files)))
 	);
 });

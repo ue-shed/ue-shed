@@ -3,16 +3,16 @@ import type { SequenceOpenerControls, SequenceReadEffect } from "./sequence-view
 
 export const MAX_SEQUENCE_FILE_BYTES = MAX_ASSET_FILE_BYTES;
 
-export interface FileSequenceSample {
+export interface FileSequenceSample<E = never> {
 	readonly label: string;
-	readonly load: () => SequenceReadEffect;
+	readonly load: () => SequenceReadEffect<E>;
 }
-export interface FileSequenceOpenerProps {
+export interface FileSequenceOpenerProps<E = never> {
 	readonly controls: SequenceOpenerControls;
-	readonly readFile: (file: File) => SequenceReadEffect;
-	readonly sample?: FileSequenceSample;
+	readonly readFile: (file: File) => SequenceReadEffect<E>;
+	readonly sample?: FileSequenceSample<E>;
 }
-export function FileSequenceOpener(props: FileSequenceOpenerProps) {
+export function FileSequenceOpener<E = never>(props: FileSequenceOpenerProps<E>) {
 	const controls = props.controls;
 	const readFile = props.readFile;
 	const sample = props.sample;

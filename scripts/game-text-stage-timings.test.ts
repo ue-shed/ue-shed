@@ -95,22 +95,21 @@ for (const fallback of [false, true]) {
 						const store = yield* SharedIndex;
 						return SharedIndex.of({
 							...store,
-							open: () =>
-								Effect.gen(function* () {
-									const reader = yield* store.open();
-									// Advance measured time without depending on a real sleep or runner speed.
-									now += 50;
-									return {
-										...reader,
-										layer: (name: string) => {
-											if (name === "joined" && !delayedIncrementalRead) {
-												delayedIncrementalRead = true;
-												now += 70;
-											}
-											return reader.layer(name);
+							open: Effect.gen(function* () {
+								const reader = yield* store.open;
+								// Advance measured time without depending on a real sleep or runner speed.
+								now += 50;
+								return {
+									...reader,
+									layer: (name: string) => {
+										if (name === "joined" && !delayedIncrementalRead) {
+											delayedIncrementalRead = true;
+											now += 70;
 										}
-									};
-								})
+										return reader.layer(name);
+									}
+								};
+							})
 						});
 					})
 				).pipe(
@@ -125,7 +124,7 @@ for (const fallback of [false, true]) {
 				yield* Effect.gen(function* () {
 					const input = { projectRoot: fixture.projectRoot, target: fixture.target };
 					yield* Effect.gen(function* () {
-						const writer = yield* (yield* SharedIndex).writer();
+						const writer = yield* (yield* SharedIndex).writer;
 						yield* writer.intern("identity", [""]);
 						yield* writer.publishIds(
 							"seed",

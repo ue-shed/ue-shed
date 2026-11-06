@@ -4,7 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-test("the full Unreal gate includes every native automation test", () => {
+void test("the full Unreal gate includes every native automation test", () => {
 	const plugins = fileURLToPath(new URL("../unreal/Plugins/", import.meta.url));
 	const nativeTests = readdirSync(plugins, { recursive: true, encoding: "utf8" })
 		.filter((file) => file.endsWith(".cpp"))

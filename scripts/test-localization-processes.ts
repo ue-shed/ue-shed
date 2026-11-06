@@ -35,9 +35,9 @@ import {
 } from "./unreal-plugin-host.ts";
 
 const JsonFromString = Schema.fromJsonString(Schema.Json);
-const decodeJsonLine = Schema.decodeUnknownSync(JsonFromString);
+const decodeJsonLine = Schema.decodeSync(JsonFromString);
 const OperationPlanJson = Schema.fromJsonString(LocalizationOperationPlan);
-const decodeOperationPlanJson = Schema.decodeUnknownSync(OperationPlanJson);
+const decodeOperationPlanJson = Schema.decodeEffect(OperationPlanJson);
 const CarrySummary = Schema.Struct({
 	type: Schema.Literal("carry"),
 	keys: Schema.Number,
@@ -208,7 +208,7 @@ async function capturePlan(
 				"--plan"
 			]).pipe(Effect.provide(runtime));
 			assert.equal(yield* Ref.get(code), 0);
-			return decodeOperationPlanJson(yield* Ref.get(output));
+			return yield* decodeOperationPlanJson(yield* Ref.get(output)).pipe(Effect.orDie);
 		})
 	);
 	assert.equal(result.engine, engine.label);
@@ -341,7 +341,7 @@ for (const engine of configured) {
 				)
 		);
 		const descriptorPath = join(project, "UEShedFixture.uproject");
-		const descriptor = Schema.decodeUnknownSync(
+		const descriptor = Schema.decodeSync(
 			Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json))
 		)(await readFile(descriptorPath, "utf8"));
 		await writeFile(
@@ -410,7 +410,7 @@ for (const engine of configured) {
 	const reviewBytes = legacy ? undefined : await readFile(reviewPath);
 	for (const operation of legacy
 		? operations
-		: Schema.decodeUnknownSync(Schema.Array(LocalizationOperation))([
+		: Schema.decodeSync(Schema.Array(LocalizationOperation))([
 				"export",
 				"import",
 				"compile",
@@ -442,9 +442,13 @@ for (const engine of configured) {
 			Effect.flatMap(TextCorpusService, (service) =>
 				service.scan({ projectRoot: project })
 			).pipe(
-				Effect.provide(TextCorpusServiceLive),
 				Effect.provide(
-					readerLayer(process.env.UE_SHED_UASSET_EXECUTABLE ?? ensureUassetExecutable())
+					Layer.provideMerge(
+						TextCorpusServiceLive,
+						readerLayer(
+							process.env.UE_SHED_UASSET_EXECUTABLE ?? ensureUassetExecutable()
+						)
+					)
 				)
 			)
 		);

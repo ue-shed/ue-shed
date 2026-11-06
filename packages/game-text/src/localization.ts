@@ -260,8 +260,8 @@ export function textGatherScope(
 }
 
 /** A unit has one gathered identity only when all its occurrences agree. */
-export function gatheredTextIdentity(unit: TextUnit): typeof LocalizationIdentity.Type | null {
-	let identity: typeof LocalizationIdentity.Type | null = null;
+export function gatheredTextIdentity(unit: TextUnit): LocalizationIdentity | null {
+	let identity: LocalizationIdentity | null = null;
 	for (const occurrence of unit.occurrences) {
 		const gathered = gatheredTextOccurrenceIdentity(occurrence);
 		if (
@@ -278,14 +278,14 @@ export function gatheredTextIdentity(unit: TextUnit): typeof LocalizationIdentit
  * Whether an already-decoded JSON value is an object. Built once and shallow: text comparison runs
  * for every culture of every line, and its values were validated when the files were read.
  */
-type JsonValue = typeof Schema.Json.Type;
+type JsonValue = Schema.Json;
 
 // Decoded JSON objects are plain objects; JSON's strings, numbers and booleans are primitives.
 function isJsonRecord(value: JsonValue): value is { readonly [key: string]: JsonValue } {
 	return value instanceof Object && !Array.isArray(value);
 }
 
-function sameJson(left: typeof Schema.Json.Type, right: typeof Schema.Json.Type): boolean {
+function sameJson(left: Schema.Json, right: Schema.Json): boolean {
 	if (left === right) return true;
 	if (left === null || right === null) return false;
 	if (Array.isArray(left))
@@ -362,9 +362,7 @@ const precedence = [
 	"translated"
 ] satisfies readonly LocalizationState[];
 
-function groupByIdentity<A extends typeof LocalizationIdentity.Type>(
-	entries: readonly A[]
-): Map<string, A[]> {
+function groupByIdentity<A extends LocalizationIdentity>(entries: readonly A[]): Map<string, A[]> {
 	const grouped = new Map<string, A[]>();
 	for (const entry of entries) {
 		const key = gatheredIdentityKey(entry);

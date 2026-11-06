@@ -234,8 +234,8 @@ function makeRemote(options: {
 	};
 }
 
-async function takeStates(
-	stream: Stream.Stream<WorldObservationState, unknown>,
+async function takeStates<E>(
+	stream: Stream.Stream<WorldObservationState, E>,
 	count: number
 ): Promise<ReadonlyArray<WorldObservationState>> {
 	return Effect.runPromise(stream.pipe(Stream.take(count), Stream.runCollect));
@@ -316,7 +316,7 @@ describe("ActorFeed", () => {
 				Effect.gen(function* () {
 					const context = yield* Layer.build(actorFeedLayer({ pipeName: name }));
 					yield* Deferred.succeed(acquired, Context.get(context, ActorFeed));
-					yield* Effect.never;
+					return yield* Effect.never;
 				})
 			)
 		);

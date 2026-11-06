@@ -1,7 +1,7 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 
 /**
@@ -9,17 +9,17 @@ import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "./starte
  * never overwritten; the code distinguishes that refusal from an invalid project or filesystem
  * failure.
  */
-export class TextRulesFileError extends Schema.TaggedError<TextRulesFileError>()(
-	"TextRulesFileError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals(["already_exists", "write_failed", "invalid_project"]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class TextRulesFileError extends Schema.TaggedError<
+	TextRulesFileError,
+	Brand.Brand<"packages/game-text/src/rules-file/TextRulesFileError">
+>()("TextRulesFileError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals(["already_exists", "write_failed", "invalid_project"]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 /**
  * Exclusively creates the starter rule document in the selected project or explicit output
@@ -44,15 +44,13 @@ export const createStarterTextRules = Effect.fn("GameText.createStarterTextRules
 			})
 	});
 	if (!directory.isDirectory()) {
-		return yield* Effect.fail(
-			new TextRulesFileError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "invalid_project",
-				message: "The project root must be a directory.",
-				recovery: "Choose an existing project directory and retry."
-			})
-		);
+		return yield* new TextRulesFileError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "invalid_project",
+			message: "The project root must be a directory.",
+			recovery: "Choose an existing project directory and retry."
+		});
 	}
 	const path = resolve(root, output ?? GAME_TEXT_RULES_RELATIVE_PATH);
 	yield* Effect.tryPromise({

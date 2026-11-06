@@ -29,15 +29,19 @@ import {
 	localizationReportCsv,
 	workspaceQualityCsv
 } from "./localization-workspace.js";
-
-const decodeQualityPage = Schema.decodeUnknownSync(WorkspaceQualityPage);
-const decodeQualityFocusResult = Schema.decodeUnknownSync(WorkspaceQualityFocusResult);
-const decodeChangesResult = Schema.decodeUnknownSync(WorkspaceChangesResult);
-const decodeReportPage = Schema.decodeUnknownSync(WorkspaceReportPage);
-const decodePreset = Schema.decodeUnknownSync(GameTextInvestigationPreset);
-const decodePresetResult = Schema.decodeUnknownResult(GameTextInvestigationPreset);
-const decodeInvestigationExport = Schema.decodeUnknownSync(GameTextInvestigationExport);
-const decodeTarget = Schema.decodeUnknownSync(WorkspaceQualityRequest.fields.target);
+const decodeWorkspaceQualityPage = Schema.decodeSync(WorkspaceQualityPage);
+const decodeWorkspaceQualityFocusResult = Schema.decodeSync(WorkspaceQualityFocusResult);
+const decodeWorkspaceChangesResult = Schema.decodeSync(WorkspaceChangesResult);
+const decodeGameTextInvestigationPreset = Schema.decodeSync(GameTextInvestigationPreset);
+const decodeGameTextInvestigationExport = Schema.decodeSync(GameTextInvestigationExport);
+const decodeUnknownGameTextInvestigationPreset = Schema.decodeUnknownSync(
+	GameTextInvestigationPreset
+);
+const decodeWorkspaceReportPage = Schema.decodeSync(WorkspaceReportPage);
+const decodeGameTextInvestigationPresetResult = Schema.decodeUnknownResult(
+	GameTextInvestigationPreset
+);
+const decodeTarget = Schema.decodeSync(WorkspaceQualityRequest.fields.target);
 
 describe("bounded localization workspace", () => {
 	it("combines source, built-in and culture rules through the same culture selection", () => {
@@ -48,7 +52,7 @@ describe("bounded localization workspace", () => {
 			filter: "all"
 		} as const;
 		const page = workspace.search(request);
-		expect(decodeQualityPage(page)).toEqual(page);
+		expect(decodeWorkspaceQualityPage(page)).toEqual(page);
 		expect(page.counts.all).toBe(page.total);
 		expect(page.counts.character_budget).toBe(2);
 		expect(page.counts.terminology).toBe(1);
@@ -61,7 +65,7 @@ describe("bounded localization workspace", () => {
 		const id = filtered.findings[0]?.id;
 		if (!id) throw new Error("Expected a format argument finding");
 		const result = workspace.focus({ ...request, id });
-		expect(decodeQualityFocusResult(result)).toEqual(result);
+		expect(decodeWorkspaceQualityFocusResult(result)).toEqual(result);
 		if (result.status !== "found" || result.focus.kind !== "localization")
 			throw new Error("Expected localization detail");
 		const focus = result.focus;
@@ -90,7 +94,7 @@ describe("bounded localization workspace", () => {
 		expect(first.nextOffset).toBe(50);
 		expect(workspace.search({ ...request, offset: 100 }).findings).toHaveLength(5);
 		const changes = workspace.changes(request);
-		expect(decodeChangesResult(changes)).toEqual(changes);
+		expect(decodeWorkspaceChangesResult(changes)).toEqual(changes);
 		if (changes.status !== "ready") throw new Error("Expected proposals");
 		expect(changes.document.changes).toHaveLength(100);
 		expect(changes.remaining).toBe(5);
@@ -99,7 +103,7 @@ describe("bounded localization workspace", () => {
 
 	it("preserves the rules file in source investigation exports", async () => {
 		const { text, document } = qualityFixture();
-		const preset = decodePreset({
+		const preset = decodeGameTextInvestigationPreset({
 			schemaVersion: 1,
 			kind: "game_text",
 			sort: "domain_order",
@@ -119,7 +123,7 @@ describe("bounded localization workspace", () => {
 				authority: "project_files"
 			})
 		);
-		expect(decodeInvestigationExport(exported)).toEqual(exported);
+		expect(decodeGameTextInvestigationExport(exported)).toEqual(exported);
 		expect(exported.preset.rules).toEqual(document);
 		expect(exported.result).toMatchObject({
 			mode: "quality",
@@ -142,7 +146,7 @@ describe("bounded localization workspace", () => {
 		} as const;
 		type Query = (typeof GameTextInvestigationPreset.Encoded)["query"];
 		const preset = (filter: Query["filter"], localization?: Query["localization"]) =>
-			decodePreset({
+			decodeUnknownGameTextInvestigationPreset({
 				schemaVersion: 1,
 				kind: "game_text",
 				sort: "domain_order",
@@ -192,7 +196,7 @@ describe("bounded localization workspace", () => {
 
 	it("projects native-first report rows, zero baseline deltas and spreadsheet-safe CSV", () => {
 		const { page } = qualityFixture();
-		expect(decodeReportPage(page)).toEqual(page);
+		expect(decodeWorkspaceReportPage(page)).toEqual(page);
 		expect(page.rows.map((row) => row.culture)).toEqual(["en", "de"]);
 		expect(page.rows.every((row) => row.newWords === 0 && row.changedWords === 0)).toBe(true);
 		expect(JSON.stringify(page)).not.toContain("relativePath");
@@ -232,7 +236,7 @@ it("exports and replays the exact localization quality filter and culture with c
 			localization: { target: selection.target, culture: selection.culture }
 		}
 	};
-	const preset = decodePreset(input);
+	const preset = decodeUnknownGameTextInvestigationPreset(input);
 	const source = {
 		projectRoot: "C:/Project",
 		generation: null,
@@ -243,13 +247,13 @@ it("exports and replays the exact localization quality filter and culture with c
 	);
 	expect(exported.schemaVersion).toBe(2);
 	expect(exported.result).toEqual({ mode: "localization_quality", report });
-	expect(decodeInvestigationExport(exported)).toEqual(exported);
+	expect(decodeGameTextInvestigationExport(exported)).toEqual(exported);
 	expect(gameTextInvestigationCsv(exported)).toContain("finding_id");
 	expect(gameTextInvestigationCsv(exported)).toContain("format_arguments");
 	// The workspace filter belongs to a quality query over a target; other shapes are rejected.
 	const { localization: _localization, ...withoutTarget } = input.query;
 	for (const query of [withoutTarget, { ...input.query, mode: "corpus" }])
-		expect(decodePresetResult({ ...input, query })._tag).toBe("Failure");
+		expect(decodeGameTextInvestigationPresetResult({ ...input, query })._tag).toBe("Failure");
 	const unavailable = await Effect.runPromise(
 		Effect.flip(exportGameTextInvestigation(fixture.text, preset, source))
 	);

@@ -39,7 +39,7 @@ export interface MapTilePyramidViewerController {
 	readonly resetView: () => void;
 }
 
-export interface MapTilePyramidViewerProps {
+export interface MapTilePyramidViewerProps<E = never> {
 	readonly actorMarkers?: ReadonlyArray<MapTileActorMarker> | undefined;
 	readonly manifest: MapTilePyramidManifestValue;
 	readonly onActorSelect?: ((key: string | undefined) => void) | undefined;
@@ -47,16 +47,13 @@ export interface MapTilePyramidViewerProps {
 		| ((controller: MapTilePyramidViewerController | undefined) => void)
 		| undefined;
 	readonly selectedActorKey?: string | undefined;
-	readonly loadTile: (
-		key: MapTileKey,
-		relativePath: string
-	) => Effect.Effect<Uint8Array, unknown>;
+	readonly loadTile: (key: MapTileKey, relativePath: string) => Effect.Effect<Uint8Array, E>;
 	readonly maximumCacheEntries?: number;
 }
 
-function MapTileRequest(props: {
+function MapTileRequest<E>(props: {
 	readonly keyValue: MapTileKey;
-	readonly load: () => Effect.Effect<Uint8Array, unknown>;
+	readonly load: () => Effect.Effect<Uint8Array, E>;
 	readonly onFailed: (key: MapTileKey) => void;
 	readonly onLoaded: (key: MapTileKey, bytes: Uint8Array) => void;
 }) {
@@ -71,7 +68,7 @@ function MapTileRequest(props: {
 	return null;
 }
 
-export function MapTilePyramidViewer(props: MapTilePyramidViewerProps) {
+export function MapTilePyramidViewer<E = never>(props: MapTilePyramidViewerProps<E>) {
 	const copyAction = createEffectAction();
 	const [pointer, setPointer] = createSignal<{ left: number; top: number }>();
 	const [coordinateFeedback, setCoordinateFeedback] = createSignal("");

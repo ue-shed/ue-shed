@@ -164,7 +164,7 @@ describe.skipIf(!executable)("native index build capability", () => {
 									);
 									const query = yield* (yield* GameTextIndexQuery).open({
 										configuration: options,
-										generation: joined.reader.manifest.generation,
+										storeEpoch: joined.reader.manifest.generation,
 										joinedKey: joined.reader.manifest.active.joined!
 									});
 									expect(joined.meta.input.fileProvenances?.["de.po"]).toEqual(
@@ -305,7 +305,7 @@ describe.skipIf(!executable)("native index build capability", () => {
 										);
 										const query = yield* (yield* GameTextIndexQuery).open({
 											configuration: options,
-											generation: joined.reader.manifest.generation,
+											storeEpoch: joined.reader.manifest.generation,
 											joinedKey: joined.reader.manifest.active.joined!
 										});
 										const pages = yield* Effect.forEach(
@@ -340,7 +340,7 @@ describe.skipIf(!executable)("native index build capability", () => {
 										return {
 											query,
 											value: {
-												summary: yield* query.summary(),
+												summary: yield* query.summary,
 												pages,
 												filtered,
 												focus: yield* query.focus({
@@ -505,7 +505,7 @@ describe.skipIf(!executable)("native index build capability", () => {
 						yield* builder.withSession(
 							{ configuration: options },
 							Effect.gen(function* () {
-								const writer = yield* (yield* SharedIndex).writer();
+								const writer = yield* (yield* SharedIndex).writer;
 								const ids = yield* writer.intern("source", ["probe"]);
 								const rejected = yield* Effect.exit(
 									writer.publishIds(
@@ -555,7 +555,7 @@ describe.skipIf(!executable)("native index build capability", () => {
 							{ configuration: options },
 							Effect.gen(function* () {
 								const index = yield* SharedIndex,
-									writer = yield* index.writer();
+									writer = yield* index.writer;
 								const values = [
 									"",
 									"lone \ud800 \udfff 😀",
@@ -608,8 +608,8 @@ describe.skipIf(!executable)("native index build capability", () => {
 							{ configuration: options },
 							Effect.gen(function* () {
 								const index = yield* SharedIndex,
-									writer = yield* index.writer();
-								const reader = yield* index.open(),
+									writer = yield* index.writer;
+								const reader = yield* index.open,
 									layer = yield* reader.layer("probe");
 								const ids = yield* layer.section("entry.source");
 								if (!(ids instanceof Uint32Array))

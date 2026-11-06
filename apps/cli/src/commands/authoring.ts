@@ -1,11 +1,11 @@
 import { AuthoringValue } from "@ue-shed/protocol";
 import { Argument, Command, Flag } from "effect/cli";
 import { Effect, Schema } from "effect";
-import { CliCommandError, isCliCommandError } from "../cli-runtime.js";
+import { CliCommandError } from "../cli-runtime.js";
 import { nonNegativeIntegerFlag, optionalFlag, optionalValue, readerFields } from "./options.js";
 import { lazyWorkflow } from "../lazy-workflows.js";
 
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeJson = Schema.decodeUnknownEffect(Schema.Json);
 
 const runAuthoringAnalyze = lazyWorkflow(
 	() => import("../workflows/authoring.js"),
@@ -49,9 +49,13 @@ const runAuthoringTables = lazyWorkflow(
 );
 
 /** Decode an inline JSON flag value, classifying JSON syntax and schema failures separately. */
-function parseJsonFlag<A>(label: string, value: string, schema: Schema.Decoder<A>) {
-	return Effect.try({
-		try: () => decodeJson(JSON.parse(value)),
+const parseJsonFlag = Effect.fn("Cli.authoring.parse_json_flag")(function* <A>(
+	label: string,
+	value: string,
+	schema: Schema.Decoder<A>
+) {
+	const sourceValue = yield* Effect.try({
+		try: () => JSON.parse(value),
 		catch: (cause) =>
 			new CliCommandError({
 				recovery:
@@ -62,23 +66,36 @@ function parseJsonFlag<A>(label: string, value: string, schema: Schema.Decoder<A
 				message: `${label} is not valid JSON.`,
 				cause
 			})
-	}).pipe(
-		Effect.flatMap(Schema.decodeUnknownEffect(schema)),
-		Effect.mapError((cause) =>
-			isCliCommandError(cause)
-				? cause
-				: new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message: `${label} does not match its schema.`,
-						cause
-					})
+	});
+	const decodedValue0 = yield* decodeJson(sourceValue).pipe(
+		Effect.mapError(
+			(cause) =>
+				new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: `${label} is not valid JSON.`,
+					cause
+				})
 		)
 	);
-}
+	return yield* Schema.decodeEffect(schema)(decodedValue0).pipe(
+		Effect.mapError(
+			(cause) =>
+				new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: `${label} does not match its schema.`,
+					cause
+				})
+		)
+	);
+});
 
 function parseAuthoringValue(valueJson: string) {
 	return parseJsonFlag("Authoring value", valueJson, AuthoringValue);

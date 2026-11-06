@@ -5,11 +5,10 @@ import { Stream, Effect, Layer, Schema } from "effect";
 import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 import { PerforceMapHistoryQuery } from "./schema.js";
 import { resolvePerforceMapScope, scopedPerforceFile } from "./perforce-map-scope.js";
-
-const decodeQuery = Schema.decodeUnknownSync(PerforceMapHistoryQuery);
+const decodePerforceMapHistoryQuery = Schema.decodeSync(PerforceMapHistoryQuery);
 
 function query() {
-	return decodeQuery({
+	return decodePerforceMapHistoryQuery({
 		limits: {
 			maxChangelists: 100,
 			maxConcurrency: 4,
@@ -62,35 +61,31 @@ function perforceSource(): PerforceHistorySourceApi {
 
 function readerLayer(savedWorld: SavedWorld) {
 	return makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -107,7 +102,7 @@ function readerLayer(savedWorld: SavedWorld) {
 		readAsset: () => Effect.die("Scope resolution must not read an asset."),
 		readSavedWorld: () => Effect.succeed(savedWorld),
 		readTable: () => Effect.die("Scope resolution must not read a table."),
-		source: () => Effect.succeed("configured")
+		source: Effect.succeed("configured")
 	});
 }
 

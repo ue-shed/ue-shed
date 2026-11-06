@@ -1,7 +1,7 @@
 import { it as effectIt } from "@effect/vitest";
 import { WorldScoutContractError, parseWorldScoutResult } from "./spatial.js";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
-import { Effect, Schema } from "effect";
+import { Layer, Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	ActorId,
@@ -13,8 +13,7 @@ import {
 	projectActors,
 	remapObservedActorId
 } from "./index.js";
-
-const decodeWorldScoutRefreshRate = Schema.decodeUnknownSync(WorldScoutRefreshRate);
+const decodeWorldScoutRefreshRateEffect = Schema.decodeEffect(WorldScoutRefreshRate);
 
 function actor(id: string, x: number, y: number, path = `/Game/Fixture.${id}`): ObservedActor {
 	return {
@@ -98,11 +97,15 @@ describe("coded stream failures", () => {
 				const observatory = yield* Observatory;
 				return yield* observatory.setObservationCadence(
 					"http://127.0.0.1:30010",
-					decodeWorldScoutRefreshRate(10)
+					yield* decodeWorldScoutRefreshRateEffect(10).pipe(Effect.orDie)
 				);
 			}).pipe(
-				Effect.provide(ObservatoryLive),
-				Effect.provide(makeRemoteControlClientTestLayer(() => Effect.succeed(value)))
+				Effect.provide(
+					Layer.provideMerge(
+						ObservatoryLive,
+						makeRemoteControlClientTestLayer(() => Effect.succeed(value))
+					)
+				)
 			)
 		);
 

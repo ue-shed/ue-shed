@@ -7,12 +7,12 @@ import { SavedAssetTextOccurrence } from "../packages/unreal-assets/dist/index.j
 import { PackageTextStored } from "../packages/game-text/dist/package-text-columns.js";
 
 const Request = Schema.Struct({ input: Schema.String, output: Schema.String });
+const decodeRequest = Schema.decodeSync(Request);
 const Occurrence = Schema.Struct({
 	event: Schema.Literal("text_occurrence"),
 	path: Schema.String,
 	occurrence: SavedAssetTextOccurrence
 });
-const decodeRequest = Schema.decodeUnknownSync(Request);
 const isOccurrence = Schema.is(Occurrence);
 const decodeOccurrence = Schema.decodeUnknownSync(Occurrence);
 const decodeStored = Schema.decodeUnknownSync(PackageTextStored);
@@ -22,7 +22,7 @@ const decodeLine = Schema.decodeUnknownSync(
 parentPort?.on("message", async (message: typeof Request.Encoded) => {
 	try {
 		const request = decodeRequest(message);
-		const pending = new Map<string, (typeof SavedAssetTextOccurrence.Type)[]>();
+		const pending = new Map<string, SavedAssetTextOccurrence[]>();
 		const output = createWriteStream(request.output, { flags: "wx" });
 		try {
 			for await (const line of packageTextJsonLines(request.input)) {

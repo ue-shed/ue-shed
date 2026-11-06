@@ -12,10 +12,10 @@ import {
 	projectPOEvidence
 } from "@ue-shed/localization";
 import { Result, Schema } from "effect";
+const decodeLocalizationTargetEvidence = Schema.decodeUnknownSync(LocalizationTargetEvidence);
 
 export const cultureCode = Schema.decodeUnknownSync(CultureCode);
-const decodeLocalizationTargetEvidence = Schema.decodeUnknownSync(LocalizationTargetEvidence);
-export const target = Schema.decodeUnknownSync(LocalizationTarget)({
+export const target = Schema.decodeSync(LocalizationTarget)({
 	name: "Test",
 	source: "config_only",
 	nativeCulture: "en",

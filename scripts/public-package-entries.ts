@@ -24,7 +24,7 @@ const PackageJson = Schema.Struct({
 	)
 });
 const PackageJsonText = Schema.fromJsonString(PackageJson);
-const decodePackageJsonText = Schema.decodeUnknownSync(PackageJsonText);
+const decodePackageJsonText = Schema.decodeSync(PackageJsonText);
 
 /** Each entry point's subpath and source file, from the package's `exports` map. */
 export function publicPackageEntries(directory: string) {

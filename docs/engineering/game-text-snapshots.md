@@ -104,7 +104,7 @@ lowercase substring scan. The caller owns that buffer; page reads still load onl
 ## Store lifecycle
 
 The configured cache root contains `game-text-v2/<hash-of-project-and-target-keys>`, beside
-`catalogs-v6`. Both `SnapshotStore.open()` and `writer()` require an Effect scope. The reader
+`catalogs-v6`. Both `SnapshotStore.open` and `writer` are effect properties requiring a scope. The reader
 holds its physical file open until scope release, preserving that generation through publication
 and retirement. Windows tests retire the old filename before reading its previously unloaded
 strings through the retained handle.
@@ -177,13 +177,33 @@ named spans, structured logs, metrics and typed filesystem failures.
 
 ## Localization file import
 
-`importLocalizationFile` records size, mtime, ctime, inode and device beside its content key.
-Matching stats reuse the snapshot without opening authored bytes. A changed stat hashes and parses
-one bounded read; an existing hash discards that parse. Before/after handle and path stats detect
-in-place writes and replacement, returning typed `file_changed` retry guidance. There is no input
-spool. Bounded column string blocks still spill while building a changed file. Stat records are
-validated, atomically replaced disposable hints; content keys remain SHA-256 over importer version,
-format/PO options and the authored content hash. Importer version 5 separates shared ID layers.
+`importLocalizationTarget` and `importLocalizationFile` share one path. The host stats every
+selected file and keeps a stat hint per file: size, mtime, ctime, inode and device beside the
+content key. Matching stats reuse the hinted layer without opening authored bytes or calling the
+engine. Every other file goes to the native engine's `import_localization` in one request (or one
+per 2560 files). The engine reads, hashes and parses each file in one bounded read, discards the
+parse when the hash is already stored, and decides per file: a name that is not active takes the
+cold route (a store with nothing active is built in one merge), an active name the warm route, which
+keeps the previous layer's IDs. Warm files look up their changed strings by probing the dictionary's
+segment files until a writer session has probed 64 Ki strings; after that it loads the dictionary
+once and looks the rest up in memory, so a refresh after a gather rewrote every file does not open
+every segment for every changed block. It publishes every file that imported in one root and returns
+a typed failure (code, message, recovery) for each file that did not; those files keep their
+previous layer and become the target's diagnostics. Interrupting a request publishes nothing.
+Before/after handle and path stats detect in-place writes and replacement, returning typed
+`file_changed` retry guidance.
+
+The engine owns the content key: SHA-256 over the importer version, format/PO options and the
+authored content hash. It returns the key for each file, and the host keeps that key in the stat
+hint instead of deriving it; the generated contract exports the importer version
+(`localizationImport.version`) that stat hints are scoped by. Stat hints are validated, atomically
+replaced and disposable, and record the stat observed before the engine's read. Importer version 5
+separates shared ID layers.
+
+With an alternate `LocalizationImportSource` or a writer without the native import (the
+TypeScript reference builder), the TypeScript reference parser reads each file instead, with the
+same stat hints and keys. Bounded column string blocks spill while it builds a changed file.
+
 `sharedTargetKey` selects the target store; target discovery supplies the target name. Standalone
 file imports default to the explicit `localization` target store. Content hashes remain independent
 of other files and the manifest, and a changed-then-restored file can reuse its older cache key.
@@ -236,7 +256,7 @@ matching; `metadata.Info.Comment`, developer notes and paths matter to origins a
 Plural translations and every comment array round-trip; empty arrays and canonical context/key
 comments are derived, and translation zero lives only in its text domain. Duplicate diagnostics are derivable from adjacent identities rather than another object tree.
 `decodeLocalizationSnapshot` hydrates an explicit bounded page (default 50, maximum 10,000),
-using the layer returned by `SharedIndex.open().layer(contentKey)`.
+using the layer returned by `(yield* index.open).layer(contentKey)`.
 `importLocalizationTarget` uses `LocalizationEvidence.discover`, imports manifest/archive/PO files
 sequentially, and returns independent snapshot keys plus typed per-file diagnostics. Locmeta and
 reports remain outside this layer. Missing evidence does not suppress successfully imported files.

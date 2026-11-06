@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { LocalizationEvidence } from "@ue-shed/localization";
-import type { LocalizationGateChange } from "@ue-shed/game-text/checks";
+import type { LocalizationGateCheck } from "@ue-shed/game-text/checks";
 import { GameTextLocalizationError } from "@ue-shed/game-text/schema";
 import {
 	GameTextIndexError,
@@ -12,7 +12,7 @@ import {
 import type { GameTextChange } from "@ue-shed/game-text/schema";
 import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { perforceChangeRevisions } from "@ue-shed/map-history";
-import { Effect, Schema } from "effect";
+import { Layer, type Brand, Effect, Schema } from "effect";
 import { CliCommandError } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 import { readChangedFiles } from "./changed-files.js";
@@ -92,44 +92,40 @@ export const selectTargets = Effect.fn("Cli.localization.select_targets")(functi
 		(name) => !discovery.targets.some((target) => target.name === name)
 	);
 	if (unknown.length > 0)
-		return yield* Effect.fail(
-			new GameTextLocalizationError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "target_not_found",
-				message: `The localization target ${unknown.join(", ")} was not found.`,
-				recovery: "Run loc targets and choose a listed target."
-			})
-		);
+		return yield* new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "target_not_found",
+			message: `The localization target ${unknown.join(", ")} was not found.`,
+			recovery: "Run loc targets and choose a listed target."
+		});
 	const targets =
 		names.length === 0
 			? discovery.targets
 			: discovery.targets.filter((target) => names.includes(target.name));
 	if (targets.length === 0)
-		return yield* Effect.fail(
-			new GameTextLocalizationError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "target_not_found",
-				message: "The project has no localization targets to check.",
-				recovery: "Set up a localization target in Unreal, or check the project root."
-			})
-		);
+		return yield* new GameTextLocalizationError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "target_not_found",
+			message: "The project has no localization targets to check.",
+			recovery: "Set up a localization target in Unreal, or check the project root."
+		});
 	return targets;
 });
 
 /** The change could not be judged: a verdict here could pass what it never saw. */
-export class LocalizationGateError extends Schema.TaggedError<LocalizationGateError>()(
-	"LocalizationGateError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals(["unreadable_evidence", "unreadable_package"]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class LocalizationGateError extends Schema.TaggedError<
+	LocalizationGateError,
+	Brand.Brand<"apps/cli/src/workflows/change-check/LocalizationGateError">
+>()("LocalizationGateError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals(["unreadable_evidence", "unreadable_package"]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 /** Changed packages, or code and config files, a point could not read at all. */
 export function unreadableFiles(targets: readonly GameTextTargetPoints[]) {
@@ -169,6 +165,8 @@ export const readChange = Effect.fn("Cli.localization.read_change")(function* (i
 	readonly targetNames: readonly string[];
 	readonly reader?: string;
 	readonly changes?: { readonly offset: number; readonly limit: number };
+	/** The checks that fail, whose findings the comparison lists first. */
+	readonly failOn?: readonly LocalizationGateCheck[];
 }) {
 	const cacheRoot = yield* cliCacheRoot.pipe(Effect.mapError(configurationFailure));
 	const code = yield* cliProjectCode(input.projectRoot).pipe(
@@ -187,10 +185,12 @@ export const readChange = Effect.fn("Cli.localization.read_change")(function* (i
 		revisions: perforceChangeRevisions({ directory: join(cacheRoot, "revisions") }),
 		targetNames: input.targetNames,
 		...(code === undefined ? undefined : { code }),
-		...(input.changes === undefined ? undefined : { changes: input.changes })
+		...(input.changes === undefined ? undefined : { changes: input.changes }),
+		...(input.failOn === undefined ? undefined : { failOn: input.failOn })
 	}).pipe(
-		Effect.provide(cliGameTextIndexLayer(input.reader)),
-		Effect.provide(LocalizationEvidenceNodeLive),
+		Effect.provide(
+			Layer.provideMerge(cliGameTextIndexLayer(input.reader), LocalizationEvidenceNodeLive)
+		),
 		Effect.catchTag("ConfigError", (cause) => Effect.fail(configurationFailure(cause)))
 	);
 	return { targets: result.targets, change: result.change };

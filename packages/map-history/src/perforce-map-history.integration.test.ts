@@ -12,6 +12,7 @@ import { layerNode, materializeDepotFiles, materializedFilePath } from "p4client
 import { mapHistoryLayer, readPerforceMapHistory } from "./map-history.js";
 import { perforceHistorySourceLayer } from "./perforce.js";
 import { PerforceMapHistoryQuery, type PerforceMapRevision } from "./schema.js";
+const decodePerforceMapHistoryQuery = Schema.decodeSync(PerforceMapHistoryQuery);
 
 const runFile = promisify(execFile);
 
@@ -56,7 +57,6 @@ const HarnessConfig = Schema.Struct({
 });
 type HarnessConfig = Schema.Schema.Type<typeof HarnessConfig>;
 const decodeHarnessConfig = Schema.decodeUnknownSync(HarnessConfig);
-const decodeQuery = Schema.decodeUnknownSync(PerforceMapHistoryQuery);
 
 function readHarnessConfig(): HarnessConfig | undefined {
 	const path = process.env.UE_SHED_PERFORCE_MAP_HISTORY_CONFIG;
@@ -82,7 +82,7 @@ function p4Environment(value: HarnessConfig): NodeJS.ProcessEnv {
 }
 
 function query(value: HarnessConfig, mapPath: string, range: { since: string; until: string }) {
-	return decodeQuery({
+	return decodePerforceMapHistoryQuery({
 		limits: {
 			maxChangelists: 16,
 			maxConcurrency: 2,

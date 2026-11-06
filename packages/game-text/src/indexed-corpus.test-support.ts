@@ -17,8 +17,7 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import type { LocalizationKeyChangePair } from "./localization-key-changes.js";
 import type { TextCorpus, TextOccurrence } from "./schema.js";
-
-const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeLocalizationTargetEffect = Schema.decodeEffect(LocalizationTarget);
 
 type SavedOccurrence = SavedAssetPackageTextRecord["occurrences"][number];
 
@@ -213,7 +212,7 @@ export const withIndexedCorpus = <A, E>(
 			let targetName: string | undefined;
 			if (files === undefined) fixture.setTargets([]);
 			else {
-				const target = decodeLocalizationTarget({
+				const target = yield* decodeLocalizationTargetEffect({
 					...files.target,
 					poFormat:
 						files.cultures.flatMap((culture) =>
@@ -222,7 +221,7 @@ export const withIndexedCorpus = <A, E>(
 								: []
 						)[0] ?? files.target.poFormat,
 					outputPaths: fixture.target.outputPaths
-				});
+				}).pipe(Effect.orDie);
 				fixture.setTargets([target]);
 				targetName = target.name;
 				const write = (path: string, contents: string | undefined) =>

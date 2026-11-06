@@ -67,8 +67,8 @@ export const preparePackageTextSnapshots = Effect.fn("PackageText.prepareSnapsho
 		const reader = yield* AssetReader,
 			stage = reader.stageProjectTextPackages;
 		if (!stage)
-			return yield* Effect.fail(
-				nativeFailure(new Error("The paired reader cannot prepare package snapshots."))
+			return yield* nativeFailure(
+				new Error("The paired reader cannot prepare package snapshots.")
 			);
 		yield* stage(options).pipe(Stream.runDrain, Effect.mapError(nativeFailure));
 	});

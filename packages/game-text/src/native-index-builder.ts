@@ -161,9 +161,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			onProgress?: (completed: number, total: number) => void
 		) {
 			if (closed)
-				return yield* Effect.fail(
-					unavailable("native-index-session", "The build session is closed.")
-				);
+				return yield* unavailable("native-index-session", "The build session is closed.");
 			const result = yield* client
 				.execute(request, onProgress)
 				.pipe(
@@ -225,9 +223,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 					onProgress
 				);
 				if (!result.localization)
-					return yield* Effect.fail(
-						unavailable("native-localization", "Missing import outcome.")
-					);
+					return yield* unavailable("native-localization", "Missing import outcome.");
 				lookupStrings += result.localization.lookupStrings;
 				reusedStrings += result.localization.reusedStrings;
 				return result.localization;
@@ -241,41 +237,54 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				request: { ...request, stagingFile: join(stage, `${++sequence}.code`) }
 			});
 			if (!result.code)
-				return yield* Effect.fail(
-					unavailable(
-						"native-code-layer",
-						new Error("The reader returned no code layer.")
-					)
+				return yield* unavailable(
+					"native-code-layer",
+					new Error("The reader returned no code layer.")
 				);
 			return result.code;
 		}),
 		readPoint: Effect.fn("NativeIndexBuilder.readPoint")(function* (request) {
 			const result = yield* command({ action: "read_point", configuration, request });
 			if (!result.point)
-				return yield* Effect.fail(
-					unavailable("native-point", new Error("The reader returned no point."))
+				return yield* unavailable(
+					"native-point",
+					new Error("The reader returned no point.")
 				);
 			return { ...result.point, stageSeconds: result.stageSeconds };
+		}),
+		comparePackages: Effect.fn("NativeIndexBuilder.comparePackages")(function* (request) {
+			const result = yield* command({ action: "compare_packages", configuration, request });
+			if (!result.comparison)
+				return yield* Effect.fail(
+					unavailable(
+						"native-package-comparison",
+						new Error("The writer returned no comparison.")
+					)
+				);
+			return result.comparison;
 		}),
 		planPackages: Effect.fn("NativeIndexBuilder.planPackages")(function* (request) {
 			const result = yield* command({ action: "plan_packages", configuration, request });
 			if (!result.plan)
-				return yield* Effect.fail(
-					unavailable("native-package-plan", new Error("The reader returned no plan."))
+				return yield* unavailable(
+					"native-package-plan",
+					new Error("The reader returned no plan.")
 				);
 			return result.plan;
 		}),
 		replacePackages: Effect.fn("NativeIndexBuilder.replacePackages")(
 			function* (entries, removedNames) {
-				const inputs = [];
-				for (const entry of entries)
-					inputs.push({
-						name: entry.name,
-						key: entry.key,
-						previousKey: entry.previousKey,
-						file: yield* staged(entry.source),
-						rows: entry.rows
-					});
+				// Rows cross as files, not in the request, so every shard fits one request.
+				const inputs = entries.map((entry) => ({
+					name: entry.name,
+					key: entry.key,
+					...(entry.previousKey === undefined
+						? undefined
+						: { previousKey: entry.previousKey }),
+					file: entry.stagedFile,
+					rowsFile: entry.rowsFile
+				}));
+				yield* Effect.annotateCurrentSpan({ "package-text.publish.shards": inputs.length });
 				const result = yield* command({
 					action: "publish_packages",
 					configuration,
@@ -477,8 +486,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 		);
 		const response = yield* command({ action: "join", configuration, file });
 		const result = response.join;
-		if (!result)
-			return yield* Effect.fail(unavailable("native-index-join", "Missing join result"));
+		if (!result) return yield* unavailable("native-index-join", "Missing join result");
 		if (!result.rebuilt)
 			return {
 				rebuilt: false,
@@ -488,12 +496,10 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				keyChanges: null
 			};
 		if (result.count === null || result.keyChanges === null)
-			return yield* Effect.fail(unavailable("native-index-join", "Missing rebuilt counts"));
+			return yield* unavailable("native-index-join", "Missing rebuilt counts");
 		if (result.strategy === "incremental") {
 			if (result.affectedLines === null)
-				return yield* Effect.fail(
-					unavailable("native-index-join", "Missing affected row count")
-				);
+				return yield* unavailable("native-index-join", "Missing affected row count");
 			return {
 				rebuilt: true,
 				strategy: "incremental" as const,
@@ -563,18 +569,58 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 				timeToLive: WRITER_PROCESS_IDLE,
 				timeToLiveStrategy: "usage"
 			});
+			// Disk checks take no writer lease, so they never wait on a build. One process serves
+			// them, so a check's later pages read the differences its first page kept.
+			const checkers = yield* Pool.makeWithTTL({
+				acquire: Layer.build(nativeGameTextIndexClientLayer(configuration)).pipe(
+					Effect.map((services) => Context.get(services, NativeGameTextIndexClient))
+				),
+				min: 0,
+				max: 1,
+				timeToLive: WRITER_PROCESS_IDLE,
+				timeToLiveStrategy: "usage"
+			});
 			return GameTextIndexBuilder.of({
+				diskChanges: Effect.fn("NativeIndexBuilder.diskChanges")(
+					function* (options, request) {
+						const result = yield* Effect.scoped(
+							Effect.gen(function* () {
+								const client = yield* Pool.get(checkers);
+								return yield* client
+									.execute({
+										action: "disk_changes",
+										configuration: nativeIndexConfiguration(options),
+										request
+									})
+									.pipe(Effect.tapError(() => Pool.invalidate(checkers, client)));
+							})
+						).pipe(
+							Effect.mapError((cause) =>
+								nativeFailure(cause, "native-index-disk_changes")
+							)
+						);
+						if (!result.diskChanges)
+							return yield* unavailable(
+								"native-disk-changes",
+								new Error("The reader returned no disk check.")
+							);
+						return {
+							answer: result.diskChanges,
+							engineSeconds: result.stageSeconds["disk_changes"] ?? 0
+						};
+					}
+				),
 				importLocalizationFile,
 				importLocalizationTarget,
 				refreshPackageTextLayer,
 				plansPackages: true,
 				intern: Effect.fn("NativeIndexBuilder.intern")(function* (domain, values) {
 					const index = yield* SharedIndex;
-					return yield* (yield* index.writer()).intern(domain, values);
+					return yield* (yield* index.writer).intern(domain, values);
 				}),
 				compact: Effect.fn("NativeIndexBuilder.compact")(function* (force) {
 					const index = yield* SharedIndex;
-					return yield* (yield* index.writer()).compact(force);
+					return yield* (yield* index.writer).compact(force);
 				}),
 				withSession: (request, effect) =>
 					Effect.scoped(
@@ -610,7 +656,7 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 												endedCleanly = native.ended();
 											})
 										),
-										Effect.catch((cause) =>
+										Effect.catchTag("SnapshotStoreError", (cause) =>
 											Effect.logWarning(
 												"Native index session cleanup failed",
 												cause
@@ -621,8 +667,8 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 							);
 							const leased = SharedIndex.of({
 								...backing,
-								inspect: () => Effect.succeed(native.writer.manifest()),
-								writer: () => Effect.succeed(native.writer)
+								inspect: Effect.sync(() => native.writer.manifest()),
+								writer: Effect.sync(() => native.writer)
 							});
 							return yield* effect.pipe(
 								Effect.provide(packageTextReaderConfigurationLayer(configuration)),
@@ -642,11 +688,9 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 					function* (input) {
 						const session = yield* Effect.serviceOption(NativeBuildSession);
 						if (Option.isNone(session))
-							return yield* Effect.fail(
-								unavailable(
-									"native-index-session",
-									"Call withSession around native build operations."
-								)
+							return yield* unavailable(
+								"native-index-session",
+								"Call withSession around native build operations."
 							);
 						return yield* session.value.refreshJoinedTarget(input);
 					}
@@ -663,7 +707,7 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 export const GameTextIndexBuilderLive = Layer.unwrap(
 	Effect.gen(function* () {
 		const reader = yield* AssetReader;
-		const configuration = yield* reader.configuration();
+		const configuration = yield* reader.configuration;
 		return nativeIndexBuilderLayer(configuration);
 	})
 );

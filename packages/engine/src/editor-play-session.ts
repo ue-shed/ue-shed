@@ -10,7 +10,7 @@ import {
 	type EditorPlaySessionStateResponse
 } from "@ue-shed/protocol";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const capability = "editor.play-session.v1";
@@ -20,16 +20,16 @@ const capability = "editor.play-session.v1";
  * reads from commands that may already have changed the editor; the underlying cause is
  * retained.
  */
-export class EditorPlaySessionError extends Schema.TaggedError<EditorPlaySessionError>()(
-	"EditorPlaySessionError",
-	{
-		code: Schema.Literals(["capability_unavailable", "contract_failure", "transport_failure"]),
-		endpoint: Schema.String,
-		operation: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class EditorPlaySessionError extends Schema.TaggedError<
+	EditorPlaySessionError,
+	Brand.Brand<"packages/engine/src/editor-play-session/EditorPlaySessionError">
+>()("EditorPlaySessionError", {
+	code: Schema.Literals(["capability_unavailable", "contract_failure", "transport_failure"]),
+	endpoint: Schema.String,
+	operation: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /**
  * Reads PIE state and sends explicit start, stop, pause or resume commands. After an
@@ -159,18 +159,16 @@ export const EditorPlaySessionLive = Layer.effect(
 				Effect.mapError((cause) => contractError(endpoint, operation, cause))
 			);
 			if (!manifest.capabilities.includes(capability) || !manifest.playSessionObjectPath) {
-				return yield* Effect.fail(
-					new EditorPlaySessionError({
-						code: "capability_unavailable",
-						endpoint,
-						message: `Connected producer does not advertise ${capability}.`,
-						operation,
-						recovery:
-							"Enable a compatible UEShedCoreEditor module in Unreal Editor, then reconnect.",
-						retrySafe: false,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new EditorPlaySessionError({
+					code: "capability_unavailable",
+					endpoint,
+					message: `Connected producer does not advertise ${capability}.`,
+					operation,
+					recovery:
+						"Enable a compatible UEShedCoreEditor module in Unreal Editor, then reconnect.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				});
 			}
 			return { endpoint, objectPath: manifest.playSessionObjectPath };
 		});

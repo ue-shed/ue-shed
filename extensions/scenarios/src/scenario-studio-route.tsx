@@ -376,7 +376,7 @@ export function ScenarioStudioRoute(
 	const openDocument = () => {
 		const client = props.client;
 		if (!client?.openDocument) return;
-		fileAction.run(client.openDocument(), {
+		fileAction.run(client.openDocument, {
 			onFailure: (cause) => setFileMessage(formatClientFailure(cause)),
 			onSuccess: (result) => {
 				if (result.status === "failed")
@@ -411,7 +411,7 @@ export function ScenarioStudioRoute(
 
 	onSettled(() => {
 		if (props.client === undefined) return;
-		settingsAction.run(props.client.settings(), {
+		settingsAction.run(props.client.settings, {
 			onFailure: (cause) =>
 				setLiveRunState({ message: formatClientFailure(cause), status: "unavailable" }),
 			onSuccess: (settings) => setEndpoint(settings.endpoint)

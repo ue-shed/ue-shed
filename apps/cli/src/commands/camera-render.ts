@@ -1,13 +1,11 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Effect, Layer, Schema } from "effect";
+import { Cause, Effect, Layer, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
-
-/** Decoder for a schema from a lazily imported module, built once per command run. */
+const decodeJson = Schema.decodeUnknownEffect(Schema.Json);
 // Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
 const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
 
@@ -31,8 +29,14 @@ const render = Command.make(
 				const input = yield* Effect.tryPromise(async () => {
 					if ((await stat(args.requestPath)).size > 131072)
 						throw new Error("Camera render request exceeds 128 KiB.");
-					return decodeJson(JSON.parse(await readFile(args.requestPath, "utf8")));
-				});
+					return JSON.parse(await readFile(args.requestPath, "utf8"));
+				}).pipe(
+					Effect.flatMap((input) =>
+						decodeJson(input).pipe(
+							Effect.mapError((cause) => new Cause.UnknownError(cause))
+						)
+					)
+				);
 				const request = yield* decodeLazySchema(
 					Schema.Struct({
 						session: cameras.CameraRenderSessionRequest,

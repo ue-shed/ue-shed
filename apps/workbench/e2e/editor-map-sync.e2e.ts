@@ -21,7 +21,6 @@ const RemoteCallRequest = Schema.Struct({
 const decodeRemoteCallRequest = Schema.decodeUnknownSync(RemoteCallRequest);
 const decodeEditorWorldOpenRequest = Schema.decodeUnknownSync(EditorWorldOpenRequest);
 const ServerAddress = Schema.Struct({ port: Schema.Number });
-const decodeServerAddress = Schema.decodeUnknownSync(ServerAddress);
 
 test("confirms cross-map review, waits for a slow editor and follows external map changes", async ({
 	browserName: _browserName
@@ -105,7 +104,9 @@ test("confirms cross-map review, waits for a slow editor and follows external ma
 		}
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-	const address = decodeServerAddress(server.address());
+	const address = server.address();
+	if (!(address instanceof Object))
+		throw new Error("The fixture TCP server did not expose its address.");
 	let app: ElectronApplication | undefined;
 	try {
 		await copyFile(

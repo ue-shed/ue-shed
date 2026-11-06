@@ -7,8 +7,7 @@ import { GameTextIndexSteps } from "@ue-shed/game-text/index";
 import { STARTER_GAME_TEXT_RULES } from "@ue-shed/game-text/rules";
 import { makeHost, request } from "./game-text-index-lifetime.test-support.js";
 import { WorkbenchGameText } from "./game-text.js";
-
-const decodeTextCorpusQueryRunResult = Schema.decodeUnknownEffect(TextCorpusQueryRunResult);
+const decodeTextCorpusQueryRunResultEffect = Schema.decodeEffect(TextCorpusQueryRunResult);
 
 it.live(
 	"reopens a persisted target immediately, then replaces and releases its cached reader",
@@ -19,7 +18,7 @@ it.live(
 				const host = yield* WorkbenchGameText;
 				const result = yield* host.configuredRefresh({ refresh: false });
 				expect(result).toMatchObject({ status: "completed", cached: true });
-				expect(yield* decodeTextCorpusQueryRunResult(result)).toEqual(result);
+				expect(yield* decodeTextCorpusQueryRunResultEffect(result)).toEqual(result);
 				expect(test.fixture.inventories()).toBe(1);
 				expect(test.modelOpens()).toBe(0);
 				// Unverified against the current Project Index: browsable, but not current.

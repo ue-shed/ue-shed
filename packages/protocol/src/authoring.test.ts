@@ -19,11 +19,12 @@ import {
 	editAuthoringText,
 	makeAuthoringJsonSchema
 } from "./authoring.js";
+const decodeAuthoringTableSnapshotV = Schema.decodeSync(AuthoringTableSnapshotV2);
+const decodeAuthoringValue = Schema.decodeSync(AuthoringValue);
 
 const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
-const decodeTableSnapshotV2 = Schema.decodeUnknownSync(AuthoringTableSnapshotV2);
-const decodeAuthoringValue = Schema.decodeUnknownSync(AuthoringValue);
+const decodeUnknownAuthoringValue = Schema.decodeUnknownSync(AuthoringValue);
 const encodeAuthoringValue = Schema.encodeUnknownSync(AuthoringValue);
 const decodeEndpointError = Schema.decodeUnknownSync(AuthoringEndpointError);
 const isApplyResult = Schema.is(AuthoringApplyResult);
@@ -141,7 +142,7 @@ describe("authoring wire contract", () => {
 			type,
 			typeName: "TextProperty"
 		});
-		const snapshot = decodeTableSnapshotV2({
+		const snapshot = decodeAuthoringTableSnapshotV({
 			authority: { kind: "live_editor", producerId: "producer", sessionId: "session" },
 			completeness: "complete",
 			contract: { name: "unreal-authoring", version: { major: 2, minor: 4 } },
@@ -269,11 +270,11 @@ describe("authoring wire contract", () => {
 			{ kind: "text", value: "legacy" }
 		];
 		for (const value of values) {
-			const decoded = decodeAuthoringValue(value);
+			const decoded = decodeUnknownAuthoringValue(value);
 			expect(encodeAuthoringValue(decoded)).toEqual(value);
 		}
 		expect(() =>
-			decodeAuthoringValue({
+			decodeUnknownAuthoringValue({
 				identity: { kind: "string_table", tableId: "/Game/ST_Menu.ST_Menu" },
 				kind: "text",
 				value: "Main Menu"

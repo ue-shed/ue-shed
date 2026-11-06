@@ -17,7 +17,7 @@ const Marker = Schema.Struct({
 	descriptor: Schema.String
 });
 const MarkerJson = Schema.fromJsonString(Marker);
-const decodeMarkerJson = Schema.decodeUnknownSync(MarkerJson);
+const decodeMarkerJson = Schema.decodeSync(MarkerJson);
 
 /** Refuse real projects before building or launching Unreal. Existing empty directories are safe. */
 export function assertCorpusScratch(project: string) {

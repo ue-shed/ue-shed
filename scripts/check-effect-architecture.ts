@@ -65,8 +65,6 @@ const approvedPromiseAdapters = new Set([
 	// Native build staging adapts Node filesystem/snapshot Promise ports below the scoped
 	// Effect builder; leases, temporary files and the protocol process share its scope.
 	"packages/game-text/src/native-index-builder.ts",
-	// The cold importer adapts worker messages and staged snapshot handles below SharedIndex.
-	"packages/game-text/src/localization-cold-import.ts",
 	// Package cold import owns the same worker-message Promise bridge under Effect.acquireRelease;
 	// callers receive only a scoped Effect, and workers/readers/staging close on every exit.
 	"packages/game-text/src/package-text-cold.ts",
@@ -177,14 +175,15 @@ const approvedResourceAdapters = new Set([
 	// Bounded snapshot producer cancellation removes its abort listener in finally; the owning
 	// native build scope closes staging handles. Verified by native-index-lifecycle.integration.test.ts.
 	"packages/game-text/src/snapshot-file.ts",
+	// The fs.watch handle and its error listener are acquired and released together in
+	// Effect.acquireRelease, so they close with the watching scope; disk-watcher.test.ts pins it.
+	"packages/game-text/src/disk-watcher.ts",
 	// Ctrl+K, page-hide and the preference save timer belong to the Solid owner; onSettled cleanup
 	// removes them and flushes the pending save.
 	"extensions/game-text/src/game-text-query-route.tsx",
 	// The file comparison's typing pause belongs to the Solid owner: each new view, and onCleanup,
 	// clear it.
 	"extensions/game-text/src/game-text-file-comparison.tsx",
-	// Parser workers and their listeners are closed on success, failure and scope cancellation.
-	"packages/game-text/src/localization-cold-import.ts",
 	// Cold layer listeners and workers terminate in the publication adapter's finally block.
 	"packages/game-text/src/cold-layer-pool.ts",
 	"packages/game-text/src/cold-layer-worker.ts",
@@ -533,6 +532,32 @@ export async function checkCatalogUsage(root: string) {
 	return failures;
 }
 
+function hasNamedOperation(text: string, path: string): boolean {
+	const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+	let found = false;
+	function visit(node: ts.Node): void {
+		if (found) return;
+		if (ts.isCallExpression(node)) {
+			const name = node.arguments[0];
+			if (name && ts.isStringLiteralLike(name) && name.text.length > 0) {
+				const method = node.expression.getText(source);
+				if (method === "Effect.fn" && ts.isCallExpression(node.parent)) found = true;
+				if (
+					method === "Effect.withSpan" &&
+					ts.isCallExpression(node.parent) &&
+					ts.isPropertyAccessExpression(node.parent.expression) &&
+					node.parent.expression.name.text === "pipe" &&
+					node.parent.arguments.includes(node)
+				)
+					found = true;
+			}
+		}
+		ts.forEachChild(node, visit);
+	}
+	visit(source);
+	return found;
+}
+
 export async function checkServiceStrategies(root: string = repositoryRoot) {
 	const failures: string[] = [];
 	const sourceFiles = (
@@ -557,8 +582,10 @@ export async function checkServiceStrategies(root: string = repositoryRoot) {
 		if (!text.includes("Layer.")) {
 			failures.push(`${path}: service declaration has no live or test layer strategy`);
 		}
-		if (!operationlessServices.has(path) && !text.includes("Effect.fn(")) {
-			failures.push(`${path}: service operations must use Effect.fn`);
+		if (!operationlessServices.has(path) && !hasNamedOperation(text, path)) {
+			failures.push(
+				`${path}: service operations must use named Effect.fn or Effect.withSpan`
+			);
 		}
 	}
 	return failures;
@@ -582,8 +609,10 @@ export async function checkDomainServices(root: string = repositoryRoot) {
 		if (!text.includes("Context.Service")) {
 			failures.push(`${path}: domain service file must use Context.Service`);
 		}
-		if (!text.includes("Effect.fn(")) {
-			failures.push(`${path}: domain service operations must use Effect.fn`);
+		if (!hasNamedOperation(text, path)) {
+			failures.push(
+				`${path}: domain service operations must use named Effect.fn or Effect.withSpan`
+			);
 		}
 	}
 
@@ -960,7 +989,7 @@ function sourcesGuardedElsewhere(root: string) {
 
 /** The source behind a `.js` module path: its TypeScript form, else the JavaScript file itself. */
 async function moduleSource(path: string) {
-	for (const candidate of /\.js$/u.test(path) ? [path.replace(/\.js$/u, ".ts"), path] : [path]) {
+	for (const candidate of path.endsWith(".js") ? [path.replace(/\.js$/u, ".ts"), path] : [path]) {
 		try {
 			await readFile(candidate, "utf8");
 			return candidate;

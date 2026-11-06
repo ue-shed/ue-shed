@@ -28,9 +28,8 @@ import {
 	workspaceQualityCsv,
 	workspaceQualityLabel
 } from "./localization-workspace.js";
-
-const decodeGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
-const decodeReport = Schema.decodeUnknownSync(ReportSchema);
+const decodeGameTextRuleDocument = Schema.decodeSync(GameTextRuleDocument);
+const decodeReportSchema = Schema.decodeSync(ReportSchema);
 
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
 type CustomChecks = ReadonlyArray<typeof CustomLocalizationCheck.Encoded>;
@@ -283,7 +282,7 @@ describe("custom checks", () => {
 			}
 		]);
 		const { joined, report } = check(rules);
-		expect(decodeReport(report)).toEqual(report);
+		expect(decodeReportSchema(report)).toEqual(report);
 		const found = custom(report).map((finding) => [
 			finding.ruleId,
 			finding.culture,

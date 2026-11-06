@@ -10,8 +10,7 @@ import {
 	makeGameTextIndexSteps,
 	type GameTextIndexStepsOptions
 } from "./index-steps.js";
-
-const decodeGameTextIndexRefreshRequest = Schema.decodeUnknownEffect(GameTextIndexRefreshRequest);
+const decodeGameTextIndexRefreshRequestEffect = Schema.decodeEffect(GameTextIndexRefreshRequest);
 
 export * from "./index-contract.js";
 
@@ -31,7 +30,7 @@ export const gameTextIndexRefreshLayer = (
 			const refresh = Effect.fn("GameTextIndex.refresh")(function* (
 				input: GameTextIndexRefreshRequest
 			) {
-				const request = yield* decodeGameTextIndexRefreshRequest(input).pipe(
+				const request = yield* decodeGameTextIndexRefreshRequestEffect(input).pipe(
 					Effect.mapError(
 						(cause) =>
 							new GameTextIndexError({

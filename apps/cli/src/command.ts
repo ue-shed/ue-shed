@@ -96,8 +96,7 @@ export const runCli = Effect.fn("Cli.run")(function* (
 	const consoleLayer = Layer.succeed(Console.Console, makeBufferedConsole(help, errors));
 	const result = yield* Effect.exit(
 		Command.runWith(cliCommand, { version })(normalizeArgs(args)).pipe(
-			Effect.provide(cliFormatter),
-			Effect.provide(consoleLayer),
+			Effect.provide(Layer.provideMerge(cliFormatter, consoleLayer)),
 			Effect.provideService(Logger.LogToStderr, true),
 			Effect.provide(NodeServices.layer)
 		)
@@ -116,7 +115,7 @@ export const runCli = Effect.fn("Cli.run")(function* (
 		return;
 	}
 	if (Option.isSome(error) && isCliCommandError(error.value)) {
-		return yield* Effect.fail<CliCommandError>(error.value);
+		return yield* error.value;
 	}
 	return yield* Effect.die(Cause.squash(result.cause));
 });

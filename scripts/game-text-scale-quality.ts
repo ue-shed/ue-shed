@@ -229,7 +229,7 @@ export async function scaleQuality(result: GameTextIndexRefreshResult, tracer?: 
  * Source rules over the generated project's evidence. Every generated source holds each of the
  * generator's eight words, so the terminology rules match in every line their roles select.
  */
-export const scaleSourceRules = Schema.decodeUnknownSync(GameTextRuleDocument)({
+export const scaleSourceRules = Schema.decodeSync(GameTextRuleDocument)({
 	schemaVersion: 1,
 	roles: [
 		{

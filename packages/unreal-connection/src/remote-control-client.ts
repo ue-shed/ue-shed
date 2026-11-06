@@ -1,36 +1,36 @@
-import { Config, Context, Duration, Effect, Layer, Schema } from "effect";
+import { type Brand, Config, Context, Duration, Effect, Layer, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
 import { TransportRequestError, UnrealRC } from "unreal-rc";
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
 
 const RemoteCallEnvelope = Schema.Struct({ ResultJson: Schema.String });
 const decodeRemoteCallEnvelope = Schema.decodeUnknownEffect(RemoteCallEnvelope);
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 
 /**
  * Classified HTTP, connection or response-contract failure with endpoint/function context and
  * the original cause. An interrupted or malformed mutation reply can follow an applied change:
  * honor nextStep before sending it again.
  */
-export class RemoteControlClientError extends Schema.TaggedError<RemoteControlClientError>()(
-	"RemoteControlClientError",
-	{
-		code: Schema.Literals([
-			"transport_failed",
-			"http_decode_failed",
-			"http_refused",
-			"connection_failed",
-			"request_timeout",
-			"invalid_envelope",
-			"invalid_result_json"
-		]),
-		endpoint: Schema.String,
-		functionName: Schema.String,
-		operation: Schema.String,
-		status: Schema.optional(Schema.Number),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class RemoteControlClientError extends Schema.TaggedError<
+	RemoteControlClientError,
+	Brand.Brand<"packages/unreal-connection/src/remote-control-client/RemoteControlClientError">
+>()("RemoteControlClientError", {
+	code: Schema.Literals([
+		"transport_failed",
+		"http_decode_failed",
+		"http_refused",
+		"connection_failed",
+		"request_timeout",
+		"invalid_envelope",
+		"invalid_result_json"
+	]),
+	endpoint: Schema.String,
+	functionName: Schema.String,
+	operation: Schema.String,
+	status: Schema.optional(Schema.Number),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /**
  * One UFUNCTION call at an explicit editor endpoint. Timeout overrides the client's default;
@@ -247,7 +247,7 @@ export function makeRemoteControlClient(options: {
 				)
 			);
 			return yield* Effect.try({
-				try: () => decodeJson(JSON.parse(envelope.ResultJson)),
+				try: () => JSON.parse(envelope.ResultJson),
 				catch: (cause) =>
 					clientError(request, {
 						code: "invalid_result_json",
@@ -260,7 +260,25 @@ export function makeRemoteControlClient(options: {
 						retrySafe: request.idempotent === true,
 						nextStep: request.idempotent === true ? "escalate" : "reconcile"
 					})
-			});
+			}).pipe(
+				Effect.flatMap((input) =>
+					decodeJsonEffect(input).pipe(
+						Effect.mapError((cause) =>
+							clientError(request, {
+								code: "invalid_result_json",
+								cause,
+								message: `The ResultJson returned by ${request.functionName} is not valid JSON.`,
+								recovery:
+									request.idempotent === true
+										? malformedResponseRecovery
+										: `The editor may have applied this request. Reconcile its state before sending it again. ${malformedResponseRecovery}`,
+								retrySafe: request.idempotent === true,
+								nextStep: request.idempotent === true ? "escalate" : "reconcile"
+							})
+						)
+					)
+				)
+			);
 		},
 		(effect, request) =>
 			effect.pipe(

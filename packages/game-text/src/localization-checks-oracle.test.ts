@@ -15,8 +15,7 @@ import { corpus } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { localizationShippedTranslation } from "./localization-checks.js";
 import { parseUnrealFormatPattern, unrealPluralForms } from "./unreal-text-syntax.js";
-
-const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeLocalizationTargetEffect = Schema.decodeEffect(LocalizationTarget);
 
 const Format = Schema.Struct({
 	valid: Schema.Boolean,
@@ -49,7 +48,7 @@ const Oracle = Schema.Struct({
 	)
 });
 const OracleJson = Schema.fromJsonString(Oracle);
-const decodeOracleJson = Schema.decodeUnknownSync(OracleJson);
+const decodeOracleJson = Schema.decodeSync(OracleJson);
 
 describe("built-ins against Unreal's recorded validators", () => {
 	for (const version of ["5.7", "5.8"]) {
@@ -71,7 +70,7 @@ describe("built-ins against Unreal's recorded validators", () => {
 						version === "5.8"
 							? "FixtureExpected/localization/ue5.8-output"
 							: "Content/Localization/FixtureGame";
-					const target = decodeLocalizationTarget({
+					const target = yield* decodeLocalizationTargetEffect({
 						...original,
 						outputPaths: {
 							...original.outputPaths,
@@ -91,7 +90,7 @@ describe("built-ins against Unreal's recorded validators", () => {
 							locmeta: `${directory}/FixtureGame.locmeta`,
 							wordCount: `${directory}/FixtureGame.csv`
 						}
-					});
+					}).pipe(Effect.orDie);
 					return yield* service.read({ projectRoot, target });
 				}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 			);

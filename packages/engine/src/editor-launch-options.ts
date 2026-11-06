@@ -194,7 +194,7 @@ const PackageRestoreData = Schema.Struct({
 	Packages: Schema.optionalKey(Schema.Array(Schema.Unknown))
 });
 const PackageRestoreDataJson = Schema.fromJsonString(PackageRestoreData);
-const decodePackageRestoreDataJson = Schema.decodeUnknownEffect(PackageRestoreDataJson);
+const decodePackageRestoreDataJson = Schema.decodeEffect(PackageRestoreDataJson);
 
 /**
  * Whether the editor would offer to restore unsaved work for this project at startup:

@@ -102,22 +102,22 @@ const projectIndex: SavedAssetScan & { readonly generation: number } = {
 	}
 };
 const selectedProject = makeWorkbenchProjectTestLayer({
-	choose: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
-	current: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
-	inputAtlas: () => Effect.die("not used"),
+	choose: Effect.sync(() => ({ project: projectSummary, status: "ready" as const })),
+	current: Effect.sync(() => ({ project: projectSummary, status: "ready" as const })),
+	inputAtlas: Effect.suspend(() => Effect.die("not used")),
 	candidates: (kind) => {
 		expect(kind).toBe("texture");
 		return Effect.succeed(projectIndex);
 	},
-	savedTables: () => Effect.die("savedTables is not used"),
-	savedProject: () => Effect.succeed({ maps: [], projectRoot: "C:/FixtureProject" })
+	savedTables: Effect.suspend(() => Effect.die("savedTables is not used")),
+	savedProject: Effect.sync(() => ({ maps: [], projectRoot: "C:/FixtureProject" }))
 });
 const unselectedProject = makeWorkbenchProjectTestLayer({
-	choose: () => Effect.succeed({ status: "cancelled" as const }),
-	current: () => Effect.succeed({ status: "not_configured" as const }),
-	inputAtlas: () => Effect.die("not used"),
-	savedTables: () => Effect.die("savedTables is not used"),
-	savedProject: () => Effect.die("not used")
+	choose: Effect.sync(() => ({ status: "cancelled" as const })),
+	current: Effect.sync(() => ({ status: "not_configured" as const })),
+	inputAtlas: Effect.suspend(() => Effect.die("not used")),
+	savedTables: Effect.suspend(() => Effect.die("savedTables is not used")),
+	savedProject: Effect.suspend(() => Effect.die("not used"))
 });
 
 for (const phase of ["candidates", "scan"] as const) {
@@ -131,13 +131,14 @@ for (const phase of ["candidates", "scan"] as const) {
 				const pause = Deferred.succeed(started, undefined).pipe(
 					Effect.andThen(Deferred.await(release))
 				);
-				const current = () =>
+				const current = Effect.suspend(() =>
 					Ref.get(generation).pipe(
 						Effect.map((generation) => ({
 							status: "ready" as const,
 							project: { ...projectSummary, generation }
 						}))
-					);
+					)
+				);
 				const project = makeWorkbenchProjectTestLayer({
 					current,
 					choose: current,
@@ -147,9 +148,9 @@ for (const phase of ["candidates", "scan"] as const) {
 							if (phase === "candidates" && captured === 1) yield* pause;
 							return { ...projectIndex, generation: captured };
 						}),
-					inputAtlas: () => Effect.die("unused"),
-					savedProject: () => Effect.die("unused"),
-					savedTables: () => Effect.die("unused")
+					inputAtlas: Effect.suspend(() => Effect.die("unused")),
+					savedProject: Effect.suspend(() => Effect.die("unused")),
+					savedTables: Effect.suspend(() => Effect.die("unused"))
 				});
 				const scanner = makeTextureAuditTestLayer({
 					scan: () => Effect.die("unused"),
@@ -205,7 +206,7 @@ for (const phase of ["candidates", "scan"] as const) {
 it.effect("returns not_configured when project or rules are absent", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchAssetAudits;
-		const result = yield* service.configuredScan();
+		const result = yield* service.configuredScan;
 		expect(result).toEqual({ status: "not_configured" });
 	}).pipe(
 		Effect.provide(
@@ -280,7 +281,7 @@ it.effect("keeps refreshed audit data in main and serves bounded query results",
 it.effect("translates a typed scan failure into the failed result variant", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchAssetAudits;
-		const result = yield* service.configuredScan();
+		const result = yield* service.configuredScan;
 		expect(result).toEqual({
 			error: {
 				code: "scan_failed",

@@ -21,8 +21,7 @@ import { target } from "./localization.test-support.js";
 import { gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { GameTextIndexBuilderLive } from "./native-index-builder.js";
-
-const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeLocalizationTargetEffect = Schema.decodeEffect(LocalizationTarget);
 
 /** A synthetic project shaped like a large server-hosted scan: most inventory rows are packages
  * without text, a minority carry many occurrences, and a two-culture target localizes them.
@@ -59,7 +58,7 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 		(path) => Effect.promise(() => rm(path, { recursive: true, force: true }))
 	);
 	const projectRoot = yield* Effect.promise(() => realpath(directory));
-	const authored = decodeLocalizationTarget({
+	const authored = yield* decodeLocalizationTargetEffect({
 		...target,
 		name: "Synthetic",
 		outputPaths: {
@@ -68,7 +67,7 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 			archives: { en: "en.archive", de: "de.archive" },
 			portableObjects: { en: "en.po", de: "de.po" }
 		}
-	});
+	}).pipe(Effect.orDie);
 	const keys = Array.from({ length: project.keys }, (_, key) => key);
 	yield* Effect.promise(async () => {
 		await writeFile(
@@ -179,35 +178,31 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 	});
 	// Reader records arrive in pipe-sized groups on separate macrotasks.
 	const reader = makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: process.env.UE_SHED_UASSET_EXECUTABLE ?? "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: process.env.UE_SHED_UASSET_EXECUTABLE ?? "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -222,7 +217,7 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 		discoverTables: () => Effect.die("unused"),
 		readAsset: () => Effect.die("unused"),
 		readTable: () => Effect.die("unused"),
-		source: () => Effect.succeed("configured"),
+		source: Effect.succeed("configured"),
 		scanProject: () => Effect.die("The fixture never enumerates packages."),
 		extractProjectTextPackages: (request) =>
 			Stream.fromAsyncIterable(

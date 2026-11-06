@@ -29,7 +29,7 @@ import {
 	type EditorAssetLocateResult,
 	type EditorAssetOpenResult
 } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import {
 	RemoteControlClient,
 	type RemoteControlClientError,
@@ -68,27 +68,27 @@ const requiredCapabilities = [
  * distinguish invalid requests from uncertain editor mutations; cause retains transport or
  * parser evidence.
  */
-export class UnrealConnectionError extends Schema.TaggedError<UnrealConnectionError>()(
-	"UnrealConnectionError",
-	{
-		endpoint: Schema.String,
-		operation: Schema.String,
-		status: Schema.optional(Schema.Number),
-		/** Producer refusal code, such as `invalid_request` or `operation_not_found`. */
-		code: Schema.optional(Schema.String),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class UnrealConnectionError extends Schema.TaggedError<
+	UnrealConnectionError,
+	Brand.Brand<"packages/unreal-connection/src/index/UnrealConnectionError">
+>()("UnrealConnectionError", {
+	endpoint: Schema.String,
+	operation: Schema.String,
+	status: Schema.optional(Schema.Number),
+	/** Producer refusal code, such as `invalid_request` or `operation_not_found`. */
+	code: Schema.optional(Schema.String),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /**
  * The editor manifest cannot satisfy the requested capability or endpoint contract. Install
  * matching enabled plugins or choose an advertised capability before retrying.
  */
-export class UnrealCapabilityError extends Schema.TaggedError<UnrealCapabilityError>()(
-	"UnrealCapabilityError",
-	{ capability: Schema.String, ...ErrorGuidanceFields }
-) {}
+export class UnrealCapabilityError extends Schema.TaggedError<
+	UnrealCapabilityError,
+	Brand.Brand<"packages/unreal-connection/src/index/UnrealCapabilityError">
+>()("UnrealCapabilityError", { capability: Schema.String, ...ErrorGuidanceFields }) {}
 
 /**
  * Negotiated live table authoring port. After an uncertain Apply, use its operation ID with
@@ -98,7 +98,7 @@ export class UnrealCapabilityError extends Schema.TaggedError<UnrealCapabilityEr
 export interface UnrealAuthoringConnection {
 	readonly endpoint: string;
 	readonly manifest: CompanionCapabilityManifest;
-	readonly listTableObjectPaths: () => Effect.Effect<readonly string[], UnrealConnectionError>;
+	readonly listTableObjectPaths: Effect.Effect<readonly string[], UnrealConnectionError>;
 	readonly getTableSnapshot: (
 		objectPath: string
 	) => Effect.Effect<AuthoringTableSnapshot, UnrealConnectionError>;
@@ -169,20 +169,18 @@ function validateRequest<A, DecodeError>(
 					nextStep: "fix_input"
 				})
 		),
-		Effect.flatMap((request) =>
-			new TextEncoder().encode(JSON.stringify(request)).byteLength <= 16384
-				? Effect.succeed(request)
-				: Effect.fail(
-						new UnrealConnectionError({
-							endpoint,
-							operation,
-							message: "Companion requests are limited to 16384 UTF-8 bytes.",
-							recovery:
-								"Split the request into smaller requests of at most 16384 UTF-8 bytes.",
-							retrySafe: false,
-							nextStep: "fix_input"
-						})
-					)
+		Effect.filterOrFail(
+			(request) => new TextEncoder().encode(JSON.stringify(request)).byteLength <= 16384,
+			() =>
+				new UnrealConnectionError({
+					endpoint,
+					operation,
+					message: "Companion requests are limited to 16384 UTF-8 bytes.",
+					recovery:
+						"Split the request into smaller requests of at most 16384 UTF-8 bytes.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				})
 		)
 	);
 }
@@ -266,7 +264,7 @@ export const findUnrealActorsReferencingRow = Effect.fn(
 		result.actorObjectPaths.length > request.maxResults ||
 		(result.status === "rejected" && result.isComplete)
 	) {
-		return yield* Effect.fail(resultMismatch(endpoint, operation));
+		return yield* resultMismatch(endpoint, operation);
 	}
 	return result;
 });
@@ -342,7 +340,7 @@ export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutoma
 			false
 		);
 		if (result.worldObjectPath !== request.worldObjectPath) {
-			return yield* Effect.fail(resultMismatch(endpoint, "ListPlayers"));
+			return yield* resultMismatch(endpoint, "ListPlayers");
 		}
 		return result;
 	});
@@ -367,7 +365,7 @@ export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutoma
 			result.playerControllerObjectPath !== request.playerControllerObjectPath ||
 			result.actionObjectPath !== request.actionObjectPath
 		) {
-			return yield* Effect.fail(resultMismatch(endpoint, "InjectInput"));
+			return yield* resultMismatch(endpoint, "InjectInput");
 		}
 		return result;
 	});
@@ -464,33 +462,30 @@ function decodeAuthoringResult<A, DecodeError>(
 	operation: string,
 	decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>
 ): Effect.Effect<A, UnrealConnectionError> {
-	const refusalChecked = effect.pipe(
-		Effect.flatMap((input) =>
-			isAuthoringEndpointError(input)
-				? Effect.fail(
-						new UnrealConnectionError({
-							code: input.code,
-							endpoint,
-							message: `${operation} refused (${input.code}): ${input.message}`,
-							operation,
-							// The producer refused before acting. Only a missing table may appear later.
-							retrySafe: input.code === "table_not_found",
-							...(input.code === "table_not_found"
-								? {
-										recovery:
-											"Refresh the table list; retry once the table exists in the editor.",
-										nextStep: "reconcile" as const
-									}
-								: {
-										recovery:
-											"The editor refused the request before changing anything. Correct it using the refusal code, then send it again.",
-										nextStep: "fix_input" as const
-									})
+	const refusalChecked = Effect.gen(function* () {
+		const input = yield* effect;
+		if (isAuthoringEndpointError(input))
+			return yield* new UnrealConnectionError({
+				code: input.code,
+				endpoint,
+				message: `${operation} refused (${input.code}): ${input.message}`,
+				operation,
+				// The producer refused before acting. Only a missing table may appear later.
+				retrySafe: input.code === "table_not_found",
+				...(input.code === "table_not_found"
+					? {
+							recovery:
+								"Refresh the table list; retry once the table exists in the editor.",
+							nextStep: "reconcile" as const
+						}
+					: {
+							recovery:
+								"The editor refused the request before changing anything. Correct it using the refusal code, then send it again.",
+							nextStep: "fix_input" as const
 						})
-					)
-				: Effect.succeed(input)
-		)
-	);
+			});
+		return input;
+	});
 	return decodeResult(refusalChecked, endpoint, operation, decode);
 }
 
@@ -518,22 +513,18 @@ export function locateUnrealAsset(options: {
 			decodeCompanionCapabilityManifest
 		);
 		if (!manifest.capabilities.includes(assetNavigationCapability)) {
-			return yield* Effect.fail(
-				new UnrealCapabilityError({
-					capability: assetNavigationCapability,
-					message: `Connected editor does not advertise ${assetNavigationCapability}`,
-					...missingCapabilityGuidance(assetNavigationCapability)
-				})
-			);
+			return yield* new UnrealCapabilityError({
+				capability: assetNavigationCapability,
+				message: `Connected editor does not advertise ${assetNavigationCapability}`,
+				...missingCapabilityGuidance(assetNavigationCapability)
+			});
 		}
 		if (!manifest.assetNavigationObjectPath) {
-			return yield* Effect.fail(
-				new UnrealCapabilityError({
-					capability: "editor.asset-navigation.endpoint.v1",
-					message: "Connected editor advertises asset navigation without an object path",
-					...invalidManifestGuidance
-				})
-			);
+			return yield* new UnrealCapabilityError({
+				capability: "editor.asset-navigation.endpoint.v1",
+				message: "Connected editor advertises asset navigation without an object path",
+				...invalidManifestGuidance
+			});
 		}
 		return yield* decodeResult(
 			remoteCall(client, endpoint, manifest.assetNavigationObjectPath, "LocateAsset", {
@@ -576,22 +567,18 @@ export function openUnrealAsset(options: {
 			decodeCompanionCapabilityManifest
 		);
 		if (!manifest.capabilities.includes(assetOpenCapability)) {
-			return yield* Effect.fail(
-				new UnrealCapabilityError({
-					capability: assetOpenCapability,
-					message: `Connected editor does not advertise ${assetOpenCapability}`,
-					...missingCapabilityGuidance(assetOpenCapability)
-				})
-			);
+			return yield* new UnrealCapabilityError({
+				capability: assetOpenCapability,
+				message: `Connected editor does not advertise ${assetOpenCapability}`,
+				...missingCapabilityGuidance(assetOpenCapability)
+			});
 		}
 		if (!manifest.assetNavigationObjectPath) {
-			return yield* Effect.fail(
-				new UnrealCapabilityError({
-					capability: "editor.asset-open.endpoint.v1",
-					message: "Connected editor advertises asset opening without an object path",
-					...invalidManifestGuidance
-				})
-			);
+			return yield* new UnrealCapabilityError({
+				capability: "editor.asset-open.endpoint.v1",
+				message: "Connected editor advertises asset opening without an object path",
+				...invalidManifestGuidance
+			});
 		}
 		return yield* decodeResult(
 			remoteCall(client, endpoint, manifest.assetNavigationObjectPath, "OpenAsset", {
@@ -634,23 +621,19 @@ export function connectUnrealAuthoring(
 			(capability) => !manifest.capabilities.includes(capability)
 		);
 		if (missing) {
-			return yield* Effect.fail(
-				new UnrealCapabilityError({
-					capability: missing,
-					message: `Connected editor does not advertise ${missing}`,
-					...missingCapabilityGuidance(missing)
-				})
-			);
+			return yield* new UnrealCapabilityError({
+				capability: missing,
+				message: `Connected editor does not advertise ${missing}`,
+				...missingCapabilityGuidance(missing)
+			});
 		}
 		if (!manifest.authoringObjectPath) {
-			return yield* Effect.fail(
-				new UnrealCapabilityError({
-					capability: "authoring.endpoint.v1",
-					message:
-						"Connected editor advertises authoring capabilities without an object path",
-					...invalidManifestGuidance
-				})
-			);
+			return yield* new UnrealCapabilityError({
+				capability: "authoring.endpoint.v1",
+				message:
+					"Connected editor advertises authoring capabilities without an object path",
+				...invalidManifestGuidance
+			});
 		}
 		if (
 			!manifest.authoringLimits ||
@@ -658,13 +641,11 @@ export function connectUnrealAuthoring(
 			manifest.authoringLimits.maxPayloadBytes < 1 ||
 			manifest.authoringLimits.maxTables < 1
 		) {
-			return yield* Effect.fail(
-				new UnrealCapabilityError({
-					capability: "authoring.limits.v1",
-					message: "Connected editor does not advertise valid authoring mutation limits",
-					...invalidManifestGuidance
-				})
-			);
+			return yield* new UnrealCapabilityError({
+				capability: "authoring.limits.v1",
+				message: "Connected editor does not advertise valid authoring mutation limits",
+				...invalidManifestGuidance
+			});
 		}
 		const authoringObjectPath = manifest.authoringObjectPath;
 		const call = (functionName: string, parameters: Schema.JsonObject, idempotent = false) =>
@@ -672,13 +653,14 @@ export function connectUnrealAuthoring(
 		return {
 			endpoint,
 			manifest,
-			listTableObjectPaths: () =>
+			listTableObjectPaths: Effect.suspend(() =>
 				decodeAuthoringResult(
 					call("ListTableObjectPaths", {}, true),
 					endpoint,
 					"table list",
 					decodeAuthoringTableList
-				).pipe(Effect.map((result) => result.objectPaths)),
+				).pipe(Effect.map((result) => result.objectPaths))
+			),
 			getTableSnapshot: (objectPath) =>
 				decodeAuthoringResult(
 					call("GetTableSnapshot", { TableObjectPath: objectPath }, true),

@@ -14,10 +14,11 @@ import {
 	NiagaraPreviewProducerReceipt
 } from "./schema.js";
 import { validateReceipt } from "./preview.js";
+const decodeNiagaraPreviewSettings = Schema.decodeSync(NiagaraPreviewSettings);
 
 const decodeNiagaraPreviewProducerRequest = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest);
 const decodeNiagaraPreviewProducerReceipt = Schema.decodeUnknownSync(NiagaraPreviewProducerReceipt);
-const decodeNiagaraPreviewSettings = Schema.decodeUnknownSync(NiagaraPreviewSettings);
+const decodeUnknownNiagaraPreviewSettings = Schema.decodeUnknownSync(NiagaraPreviewSettings);
 const fixture = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)(
 	JSON.parse(
 		readFileSync(
@@ -112,7 +113,7 @@ describe("preview presentation", () => {
 		expect(selected.frameCount).toBe(selectNiagaraPresentation(reference).frameCount);
 		expect(() => selectNiagaraVariantPresentation(sequence([0.1]), reference)).toThrow();
 		expect(() =>
-			decodeNiagaraPreviewSettings({
+			decodeUnknownNiagaraPreviewSettings({
 				cameraOverride: { ...light.cameraOverride, location: { x: Infinity, y: 0, z: 0 } }
 			})
 		).toThrow();

@@ -5,8 +5,7 @@ import {
 	type MapCaptureBackend,
 	type MapCapturePlan as MapCapturePlanValue
 } from "./map-tile-schema.js";
-
-const decodeMapCapturePlan = Schema.decodeUnknownSync(MapCapturePlan);
+const decodeMapCapturePlan = Schema.decodeSync(MapCapturePlan);
 
 /**
  * Explains a plan/backend capability mismatch when present. A missing issue means this

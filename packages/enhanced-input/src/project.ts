@@ -8,7 +8,7 @@ import {
 	type AssetReaderApi,
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import {
 	buildEnhancedInputReport,
 	ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
@@ -18,14 +18,14 @@ import {
 } from "./projectors.js";
 import { EnhancedInputPublicError, type EnhancedInputReport } from "./schema.js";
 
-export class EnhancedInputScanError extends Schema.TaggedError<EnhancedInputScanError>()(
-	"EnhancedInputScanError",
-	{
-		code: EnhancedInputPublicError.fields.code,
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class EnhancedInputScanError extends Schema.TaggedError<
+	EnhancedInputScanError,
+	Brand.Brand<"packages/enhanced-input/src/project/EnhancedInputScanError">
+>()("EnhancedInputScanError", {
+	code: EnhancedInputPublicError.fields.code,
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 export const EnhancedInputScanOptions = Schema.Struct({
 	concurrency: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),

@@ -226,7 +226,7 @@ describe("PerforceHistorySource", () => {
 			.resolveLocalPath("D:/Perforce/ExampleProject/Content/Maps/Example.umap")
 			.pipe(Effect.provideService(PerforceProjectContext, "D:/Perforce/ExampleProject"));
 
-		expect((await Effect.runPromise(Effect.exit(resolveMap)))._tag).toBe("Failure");
+		expect((await Effect.runPromiseExit(resolveMap))._tag).toBe("Failure");
 		const mapping = await Effect.runPromise(resolveMap);
 		expect(mapping.depotPath).toBe("//Depot/Main/Content/Maps/Example.umap");
 		expect(infoCalls).toBe(2);

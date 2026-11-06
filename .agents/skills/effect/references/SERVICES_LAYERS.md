@@ -67,6 +67,14 @@ Guidance:
 
 ## Layer Constructors
 
+Parameterless service operations are Effect or Stream properties. Use `Effect.sync`, `Effect.gen`,
+or the owning resource constructor and attach `Effect.withSpan("Domain.operation")`. Callers run
+`yield* service.refresh`, rather than `service.refresh()`. Keep ID generation, mutable reads and
+resource acquisition inside each execution. Parameterful operations keep named `Effect.fn`.
+Layer factories still need functions when each call must return a distinct layer identity or own
+call-time state; a shared layer constant changes memoization. See the repository's
+`docs/engineering/effect-operation-properties.md` for the coordinated source migration.
+
 Choose the layer constructor that matches the thing produced.
 
 ```ts

@@ -19,7 +19,7 @@ const limits = (day: number, hour: number) => ({
 	}
 });
 
-test("boat runs the jobs only when the run's starts fit with headroom in both windows", () => {
+void test("boat runs the jobs only when the run's starts fit with headroom in both windows", () => {
 	const enough = 2 + startHeadroom;
 	assert.equal(selectRunner(2, { unlimited: false, day: enough, hour: enough }), boatRunner);
 	assert.equal(selectRunner(2, { unlimited: false, day: enough - 1, hour: 60 }), githubRunner);
@@ -31,14 +31,14 @@ test("boat runs the jobs only when the run's starts fit with headroom in both wi
 	assert.equal(selectRunner(2, { unlimited: true, day: 0, hour: 0 }), boatRunner);
 });
 
-test("no answer from boat falls back to GitHub-hosted runners", () => {
+void test("no answer from boat falls back to GitHub-hosted runners", () => {
 	assert.equal(selectRunner(1, undefined), githubRunner);
 	assert.equal(selectRunner(1, remainingStarts(null)), githubRunner);
 	assert.equal(selectRunner(1, remainingStarts({ ok: true })), githubRunner);
 	assert.equal(selectRunner(1, remainingStarts({ starts: { day: {}, hour: {} } })), githubRunner);
 });
 
-test("remaining starts are read from boat's limits response", () => {
+void test("remaining starts are read from boat's limits response", () => {
 	assert.deepEqual(remainingStarts(limits(183, 43)), { unlimited: false, day: 183, hour: 43 });
 	assert.deepEqual(remainingStarts({ ...limits(183, 43), canStart: false }), {
 		unlimited: false,

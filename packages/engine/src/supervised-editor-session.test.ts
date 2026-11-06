@@ -444,7 +444,7 @@ test("cancellation during launch cancels the process acquisition", async () => {
 		fixture,
 		process: makeOwnedProcessTreeTestLayer(() =>
 			Deferred.succeed(launchStarted, undefined).pipe(
-				Effect.flatMap(() => neverLaunch),
+				Effect.andThen(neverLaunch),
 				Effect.ensuring(Deferred.succeed(launchCancelled, undefined))
 			)
 		)

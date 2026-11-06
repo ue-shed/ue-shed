@@ -29,8 +29,7 @@ import {
 	WorkbenchGameTextOperationsLive,
 	safeLocalizationLogLine
 } from "./game-text-operations.js";
-
-const decodeGameTextOperationState = Schema.decodeUnknownSync(GameTextOperationState);
+const decodeGameTextOperationStateEffect = Schema.decodeEffect(GameTextOperationState);
 const isGameTextOperationPlanResult = Schema.is(GameTextOperationPlanResult);
 const isGameTextOperationProgress = Schema.is(GameTextOperationProgress);
 const root = resolve("fixtures/unreal-project");
@@ -108,7 +107,7 @@ function environment(
 		const projectRoot = yield* Ref.make(root);
 		const refreshed = yield* Ref.make<readonly boolean[]>([]);
 		const requests = yield* Ref.make<readonly LocalizationRunRequest[]>([]);
-		const current = () =>
+		const current = Effect.suspend(() =>
 			Ref.get(projectRoot).pipe(
 				Effect.map((projectRoot) => ({
 					status: "ready" as const,
@@ -121,24 +120,26 @@ function environment(
 						mapCount: 0
 					}
 				}))
-			);
+			)
+		);
 		const project = makeWorkbenchProjectTestLayer({
 			current,
 			choose: current,
-			inputAtlas: () => Effect.die("unused"),
-			savedTables: () => Effect.die("unused"),
-			savedProject: () => Effect.die("unused")
+			inputAtlas: Effect.suspend(() => Effect.die("unused")),
+			savedTables: Effect.suspend(() => Effect.die("unused")),
+			savedProject: Effect.suspend(() => Effect.die("unused"))
 		});
 		const gameText = makeWorkbenchGameTextTestLayer({
-			configuredScan: () => Effect.die("unused"),
+			configuredScan: Effect.suspend(() => Effect.die("unused")),
 			operationStateTarget: () => Effect.succeed(options.noTargets ? undefined : target),
 			operationTarget: () => Effect.succeed(options.noTargets ? undefined : target),
-			operationBusyReason: () =>
+			operationBusyReason: Effect.suspend(() =>
 				Ref.get(busy).pipe(
 					Effect.map((value) => (value ? "A scan or Unreal step is running." : undefined))
-				),
-			beginOperation: () => Ref.modify(busy, (value) => [!value, true]),
-			endOperation: () => Ref.set(busy, false),
+				)
+			),
+			beginOperation: Effect.suspend(() => Ref.modify(busy, (value) => [!value, true])),
+			endOperation: Effect.suspend(() => Ref.set(busy, false)),
 			refreshAfterOperation: (_target, gather) =>
 				Ref.update(refreshed, (values) => [...values, gather]).pipe(Effect.as(true)),
 			localizationTarget: () =>
@@ -218,7 +219,9 @@ it.effect("plans without running, streams safe progress and refreshes evidence a
 				"prepare"
 			]);
 			// The state crosses IPC, so it must fit its schema with every operation offered.
-			expect(decodeGameTextOperationState(state).operations).toHaveLength(7);
+			expect(
+				(yield* decodeGameTextOperationStateEffect(state).pipe(Effect.orDie)).operations
+			).toHaveLength(7);
 			const plan = yield* service.plan({ target: target.name, operation: "sync" });
 			if (plan.status !== "ready") throw new Error("Expected confirmation.");
 			expect(isGameTextOperationPlanResult(plan)).toBe(true);
@@ -244,7 +247,7 @@ it.effect("plans without running, streams safe progress and refreshes evidence a
 				)
 			).toBe(true);
 			const window = yield* WorkbenchWindowTest;
-			const events = yield* window.sent();
+			const events = yield* window.sent;
 			expect(events).toHaveLength(3);
 			for (const event of events) {
 				expect(event.channel).toBe("game-text:localization:operation-progress");

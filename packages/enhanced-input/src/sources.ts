@@ -16,7 +16,7 @@ import {
 } from "@ue-shed/config-explorer";
 import { AssetReader, isHeaderScanEntry, type AssetReaderError } from "@ue-shed/unreal-assets";
 import { blueprintReferences } from "@ue-shed/unreal-assets/saved-review";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import {
 	coActivationFromDefaultContexts,
 	CoActivationDocument,
@@ -45,22 +45,22 @@ import {
 	type BlueprintUseCoverage
 } from "./usage.js";
 
-export class EnhancedInputAnalysisError extends Schema.TaggedError<EnhancedInputAnalysisError>()(
-	"EnhancedInputAnalysisError",
-	{
-		code: Schema.Literals([
-			"invalid_co_activation_document",
-			"invalid_device_sets_document",
-			"project_files_unreadable",
-			"reader_failed"
-		]),
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class EnhancedInputAnalysisError extends Schema.TaggedError<
+	EnhancedInputAnalysisError,
+	Brand.Brand<"packages/enhanced-input/src/sources/EnhancedInputAnalysisError">
+>()("EnhancedInputAnalysisError", {
+	code: Schema.Literals([
+		"invalid_co_activation_document",
+		"invalid_device_sets_document",
+		"project_files_unreadable",
+		"reader_failed"
+	]),
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /** The section and key the project's default contexts live under, in the `Input` family. */
 export const ENHANCED_INPUT_DEVELOPER_SETTINGS_SECTION =

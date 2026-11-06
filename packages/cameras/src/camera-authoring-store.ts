@@ -29,14 +29,14 @@ import {
 } from "./camera-arrangement.js";
 import { CameraArrangementRecipe } from "./camera-arrangement.js";
 import { fileFailureReason, isMalformedDocument } from "./file-failure.js";
+const decodeCameraArrangementRecipeEffect = Schema.decodeUnknownEffect(CameraArrangementRecipe);
+const decodeCameraArrangementCommand = Schema.decodeSync(CameraArrangementCommand);
+const decodeCameraVisibilityPresetEffect = Schema.decodeUnknownEffect(CameraVisibilityPreset);
 
 const isCameraArrangementError = Schema.is(CameraArrangementError);
 const JsonRecord = Schema.Record(Schema.String, Schema.Json);
 const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const isJsonRecord = Schema.is(JsonRecord);
-const decodeCameraArrangementCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
-const decodeCameraArrangementRecipe = Schema.decodeUnknownSync(CameraArrangementRecipe);
-const decodeCameraVisibilityPreset = Schema.decodeUnknownSync(CameraVisibilityPreset);
 const decodeReviewSet = Schema.decodeUnknownSync(ReviewSet);
 
 const Outcome = Schema.Struct({
@@ -81,8 +81,8 @@ export const CameraApproval = Schema.Union([
 		removeRetiredViewIds: Schema.Array(ReviewViewId)
 	})
 ]);
+const decodeCameraApproval = Schema.decodeSync(CameraApproval);
 export type CameraApproval = typeof CameraApproval.Type;
-const decodeCameraApproval = Schema.decodeUnknownSync(CameraApproval);
 const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 /** Rebase disjoint set approvals while retaining conflict detection for this set's saved cameras. */
 export function cameraApprovalBase(
@@ -319,12 +319,16 @@ export const readCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.readR
 			try: async () => {
 				if ((await stat(path)).size > 4 * 1024 * 1024)
 					throw arrangementFailure("invalid", "Recipe exceeds the 4 MiB input limit.");
-				return decodeCameraArrangementRecipe(JSON.parse(await readFile(path, "utf8")), {
-					onExcessProperty: "error"
-				});
+				return JSON.parse(await readFile(path, "utf8"));
 			},
 			catch: storageError(`camera arrangement recipe ${path}`)
-		})
+		}).pipe(
+			Effect.flatMap((input) =>
+				decodeCameraArrangementRecipeEffect(input, {
+					onExcessProperty: "error"
+				}).pipe(Effect.mapError(storageError(`camera arrangement recipe ${path}`)))
+			)
+		)
 );
 /**
  * Validates and atomically writes a reusable arrangement recipe to an explicit path. This
@@ -340,7 +344,7 @@ export const writeCameraArrangementRecipe = Effect.fn("CameraAuthoringStore.writ
 
 /** File-backed coordinator state. A studio can implement this port over another durable store. */
 export interface CameraAuthoringStore {
-	readonly load: () => Effect.Effect<CameraAuthoringDocument, CameraArrangementError>;
+	readonly load: Effect.Effect<CameraAuthoringDocument, CameraArrangementError>;
 	readonly create: (
 		arrangement: CameraArrangement,
 		reviewSet: ReviewSet
@@ -402,12 +406,10 @@ export function makeCameraAuthoringStore(documentPath: string): CameraAuthoringS
 		return outcome;
 	};
 	return {
-		load: Effect.fn("CameraAuthoringStore.load")(() =>
-			Effect.tryPromise({
-				try: load,
-				catch: storageError(`camera authoring document ${path}`)
-			})
-		),
+		load: Effect.tryPromise({
+			try: load,
+			catch: storageError(`camera authoring document ${path}`)
+		}).pipe(Effect.withSpan("CameraAuthoringStore.load")),
 		create: Effect.fn("CameraAuthoringStore.create")((arrangement, reviewSet) =>
 			transact(async () => {
 				if ((await optionalRead(path)) !== null)
@@ -547,12 +549,16 @@ export const readCameraVisibilityPreset = Effect.fn("CameraAuthoringStore.readVi
 						"invalid",
 						"Visibility preset exceeds the 4 MiB input limit."
 					);
-				return decodeCameraVisibilityPreset(JSON.parse(await readFile(path, "utf8")), {
-					onExcessProperty: "error"
-				});
+				return JSON.parse(await readFile(path, "utf8"));
 			},
 			catch: storageError(`camera visibility preset ${path}`)
-		})
+		}).pipe(
+			Effect.flatMap((input) =>
+				decodeCameraVisibilityPresetEffect(input, {
+					onExcessProperty: "error"
+				}).pipe(Effect.mapError(storageError(`camera visibility preset ${path}`)))
+			)
+		)
 );
 /**
  * Exports an immutable visibility preset under an explicit path. Repeating identical bytes

@@ -8,9 +8,9 @@ import {
 	EditorWorldState,
 	decodeEditorWorldOpenResponse
 } from "./editor-world-control.js";
-
-const tryDecodeWorldOperation = Schema.decodeUnknownResult(EditorWorldOperation);
-const tryDecodeWorldOpenRequest = Schema.decodeUnknownResult(EditorWorldOpenRequest);
+const decodeEditorWorldOperation = Schema.decodeResult(EditorWorldOperation);
+const decodeEditorWorldOperationResult = Schema.decodeUnknownResult(EditorWorldOperation);
+const decodeEditorWorldOpenRequest = Schema.decodeResult(EditorWorldOpenRequest);
 
 const contract = {
 	name: "unreal-editor-world-control",
@@ -41,10 +41,16 @@ describe("editor world-control wire contract", () => {
 	});
 	it("requires completed map results and preserves dirty-world refusals", () => {
 		const base = { contract, operationId: "open", targetMapPath: "/Game/Fixture/Target" };
-		expect(tryDecodeWorldOperation({ ...base, status: "pending" })._tag).toBe("Success");
-		expect(tryDecodeWorldOperation({ ...base, status: "completed" })._tag).toBe("Failure");
-		expect(tryDecodeWorldOperation({ ...base, status: "unavailable" })._tag).toBe("Failure");
-		expect(tryDecodeWorldOperation({ ...base, status: "anything" })._tag).toBe("Failure");
+		expect(decodeEditorWorldOperation({ ...base, status: "pending" })._tag).toBe("Success");
+		expect(decodeEditorWorldOperationResult({ ...base, status: "completed" })._tag).toBe(
+			"Failure"
+		);
+		expect(decodeEditorWorldOperationResult({ ...base, status: "unavailable" })._tag).toBe(
+			"Failure"
+		);
+		expect(decodeEditorWorldOperationResult({ ...base, status: "anything" })._tag).toBe(
+			"Failure"
+		);
 
 		{
 			const response = {
@@ -73,7 +79,7 @@ describe("editor world-control wire contract", () => {
 
 	it("rejects filesystem paths as map identities", () => {
 		expect(
-			tryDecodeWorldOpenRequest({
+			decodeEditorWorldOpenRequest({
 				contract,
 				operationId: "open",
 				targetMapPath: "C:/Project/Content/Map.umap"
@@ -83,7 +89,7 @@ describe("editor world-control wire contract", () => {
 
 	it("rejects engine packages as project map targets", () => {
 		expect(
-			tryDecodeWorldOpenRequest({
+			decodeEditorWorldOpenRequest({
 				contract,
 				operationId: "open",
 				targetMapPath: "/Engine/Maps/Templates/OpenWorld"

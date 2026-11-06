@@ -201,7 +201,7 @@ describe("Game Text line page", () => {
 					{ key: "up_to_date", label: "Up to date", worst: "up_to_date" }
 				)
 			];
-			const later = Effect.runSync(Deferred.make<void>());
+			const later = Deferred.makeUnsafe<void>();
 			const user = userEvent.setup({ delay: null });
 			mount({
 				...client(),

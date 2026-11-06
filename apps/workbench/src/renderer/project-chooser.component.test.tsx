@@ -53,9 +53,9 @@ function renderChooser(args: {
 						args.launch ?? ((mode) => Effect.succeed({ mode, status: "launched" })),
 					openRecentProject:
 						args.openRecent ?? (() => Effect.succeed({ status: "cancelled" })),
-					project: args.project ?? (() => Effect.succeed(args.current)),
-					projectProgress: () => Effect.succeed(progress),
-					recentProjects: () => Effect.succeed(args.recent ?? [])
+					project: args.project ?? Effect.sync(() => args.current),
+					projectProgress: Effect.succeed(progress),
+					recentProjects: Effect.sync(() => args.recent ?? [])
 				}}
 				onChosen={args.onChosen ?? (() => undefined)}
 			/>
@@ -68,7 +68,7 @@ describe("ProjectChooser", () => {
 		const user = userEvent.setup();
 		renderChooser({
 			current: ready,
-			choose: () => Effect.succeed(ready),
+			choose: Effect.succeed(ready),
 			launch: () =>
 				Effect.succeed({
 					status: "failed",
@@ -96,7 +96,7 @@ describe("ProjectChooser", () => {
 	});
 	it("keeps a failed selection visible after indexing closes", async () => {
 		renderChooser({
-			choose: () => Effect.succeed(failed),
+			choose: Effect.succeed(failed),
 			current: { status: "not_configured" }
 		});
 
@@ -118,7 +118,7 @@ describe("ProjectChooser", () => {
 	it("clears the prior failure only after a retry starts", async () => {
 		const completion = await Effect.runPromise(Deferred.make<WorkbenchProjectState>());
 		renderChooser({
-			choose: () => Deferred.await(completion),
+			choose: Effect.suspend(() => Deferred.await(completion)),
 			current: failed
 		});
 
@@ -141,7 +141,7 @@ describe("ProjectChooser", () => {
 	it("shows the ready project and notifies routes after selection", async () => {
 		const onChosen = vi.fn();
 		renderChooser({
-			choose: () => Effect.succeed(ready),
+			choose: Effect.succeed(ready),
 			current: { status: "not_configured" },
 			onChosen
 		});
@@ -156,7 +156,7 @@ describe("ProjectChooser", () => {
 	});
 
 	it("keeps project selection offline and offers explicit launch modes", async () => {
-		renderChooser({ choose: () => Effect.succeed(ready), current: ready });
+		renderChooser({ choose: Effect.succeed(ready), current: ready });
 
 		expect(await screen.findByText("Offline")).toBeDefined();
 		const user = userEvent.setup();
@@ -187,7 +187,7 @@ describe("ProjectChooser", () => {
 		};
 		const openRecent = vi.fn(() => Effect.succeed(otherProject));
 		renderChooser({
-			choose: () => Effect.succeed({ status: "cancelled" }),
+			choose: Effect.sync(() => ({ status: "cancelled" })),
 			current: ready,
 			onChosen,
 			openRecent,
@@ -227,10 +227,12 @@ describe("ProjectChooser", () => {
 			status: "ready"
 		};
 		renderChooser({
-			choose: () => Effect.succeed({ status: "cancelled" }),
+			choose: Effect.sync(() => ({ status: "cancelled" })),
 			current: ready,
 			openRecent: () => Effect.succeed(otherProject),
-			project: () => Deferred.await(staleRefresh).pipe(Effect.uninterruptible),
+			project: Effect.suspend(() =>
+				Deferred.await(staleRefresh).pipe(Effect.uninterruptible)
+			),
 			recent: [ready.project, otherProject.project]
 		});
 
@@ -255,12 +257,12 @@ describe("ProjectChooser", () => {
 			<EffectRuntimeProvider runtime={runtime}>
 				<ProjectChooser
 					client={{
-						chooseProject: () => Effect.succeed(ready),
+						chooseProject: Effect.succeed(ready),
 						launchProject,
 						openRecentProject: () => Effect.succeed(ready),
-						project: () => Effect.succeed(ready),
-						projectProgress: () => Effect.succeed(progress),
-						recentProjects: () => Effect.succeed([])
+						project: Effect.succeed(ready),
+						projectProgress: Effect.succeed(progress),
+						recentProjects: Effect.sync(() => [])
 					}}
 					onChosen={() => undefined}
 				/>

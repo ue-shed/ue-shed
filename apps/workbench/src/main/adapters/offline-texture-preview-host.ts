@@ -4,29 +4,29 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { installedEngineRoots, queryWindowsRegistry } from "@ue-shed/engine";
-import { Context, Effect, Exit, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Exit, Layer, Schema } from "effect";
 
-export class OfflineTexturePreviewHostError extends Schema.TaggedError<OfflineTexturePreviewHostError>()(
-	"Workbench.OfflineTexturePreviewHostError",
-	{
-		recovery: Schema.String,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("offline_texture_preview_host_failed"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		causeText: Schema.String,
-		message: Schema.String,
-		operation: Schema.Literals([
-			"create_directory",
-			"list_project_files",
-			"read_file",
-			"run_commandlet",
-			"stat_file",
-			"write_file"
-		]),
-		path: Schema.String,
-		retrySafe: Schema.Boolean
-	}
-) {}
+export class OfflineTexturePreviewHostError extends Schema.TaggedError<
+	OfflineTexturePreviewHostError,
+	Brand.Brand<"apps/workbench/src/main/adapters/offline-texture-preview-host/OfflineTexturePreviewHostError">
+>()("Workbench.OfflineTexturePreviewHostError", {
+	recovery: Schema.String,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("offline_texture_preview_host_failed"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	causeText: Schema.String,
+	message: Schema.String,
+	operation: Schema.Literals([
+		"create_directory",
+		"list_project_files",
+		"read_file",
+		"run_commandlet",
+		"stat_file",
+		"write_file"
+	]),
+	path: Schema.String,
+	retrySafe: Schema.Boolean
+}) {}
 
 export interface OfflineTexturePreviewHostFile {
 	readonly modifiedMs: number;

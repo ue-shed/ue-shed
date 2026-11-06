@@ -16,8 +16,7 @@ import {
 } from "../packages/game-text/src/localization.test-support.ts";
 import { diffCorpus } from "../packages/game-text-corpus/dist/index.js";
 import { planCorpus } from "./game-text-corpus-plan.ts";
-
-const decodeLocalizationChange = Schema.decodeUnknownSync(LocalizationChange);
+const decodeLocalizationChange = Schema.decodeSync(LocalizationChange);
 
 for (const seed of [1, 73139]) {
 	test(`nested plural recipes include today's Japanese modifier evidence, seed ${seed}`, () => {

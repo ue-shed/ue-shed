@@ -133,6 +133,50 @@ pub struct PackageTextPlan {
     pub first_key: String,
 }
 
+/// `compare_packages`: compares a refresh's changed shards with the shards the index holds, so the
+/// host reads and converts only changed packages and never the index's unchanged entries.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageTextCompareRequest {
+    /// The shard key prefix, as `PackageTextPlanRequest`.
+    pub format: String,
+    pub policy_json: String,
+    /// A plan file: one `{group, expected}` JSON line per shard, its entries in path order.
+    pub plan_file: String,
+    /// The shards of `plan_file` to compare.
+    pub groups: Vec<u32>,
+    /// A new directory the writer fills: `{group}.rows` per shard, the rows of its next records
+    /// as little-endian `i32`s (a previous row, or -1 - the index of a changed entry), and
+    /// `changed.ndjson`, each shard's changed entries in path order as plan-file lines.
+    pub output_directory: String,
+}
+/// One compared shard.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageTextCompareShard {
+    pub group: u32,
+    /// The key the index holds for the shard, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub previous_key: Option<String>,
+    /// Whether the held shard's records are in this format and audience policy: its key is the
+    /// one its own stored entries give. Only a current shard's records are retained.
+    pub current: bool,
+    /// Entries whose stored record is kept.
+    pub retained: u32,
+    /// Entries converted again, and of those the ones to read.
+    pub changed: u32,
+    pub selected: u32,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageTextComparison {
+    pub shards: Vec<PackageTextCompareShard>,
+}
+
 /// The layer holding a target's code text: places `unreal-code` found in the C++, config and
 /// String Table CSV files its `GatherTextFromSource` steps read, in the package shards' format.
 #[must_use]
@@ -266,6 +310,12 @@ pub struct ComparePointsRequest {
     pub localization: Option<BaseLocalization>,
     pub changes: PageRequest,
     pub findings: PageRequest,
+    /// The checks that fail the change, which the findings list first so that every page before
+    /// the first warning holds only failures. The order within each group is the checks' order,
+    /// then the path.
+    #[serde(default)]
+    #[cfg_attr(test, ts(as = "Option<Vec<GateCheck>>", optional))]
+    pub fail_on: Vec<GateCheck>,
 }
 
 /// Which rows of a list to return; the total is always counted.

@@ -29,7 +29,7 @@ const Conflicts = Schema.Struct({
 });
 
 const decode = <S extends Schema.Decoder<unknown>>(schema: S, output: string) =>
-	Schema.decodeUnknownSync(Schema.fromJsonString(schema))(output);
+	Schema.decodeSync(Schema.fromJsonString(schema))(output);
 
 describe.skipIf(!executable)("Enhanced Input CLI with the real reader", () => {
 	it("prints the atlas with contested keys and no false config diagnostic", async () => {

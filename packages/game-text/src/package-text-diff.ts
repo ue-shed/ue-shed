@@ -51,6 +51,9 @@ export const PackageTextChange = Schema.Union([
 ]).annotate({ identifier: "PackageTextChange" });
 export type PackageTextChange = typeof PackageTextChange.Type;
 
+// These are cardinalities accumulated by diffPackageText, never Unreal numeric values.
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+
 /**
  * Saved text comparison result with changes and inspection/coverage evidence. Unsupported or
  * failed reads cannot establish that a package's text is unchanged.
@@ -58,11 +61,11 @@ export type PackageTextChange = typeof PackageTextChange.Type;
 export const PackageTextDiff = Schema.Struct({
 	changes: Schema.Array(PackageTextChange),
 	counts: Schema.Struct({
-		added: Schema.Number,
-		removed: Schema.Number,
-		rekeyed: Schema.Number,
-		edited: Schema.Number,
-		unchanged: Schema.Number
+		added: Count,
+		removed: Count,
+		rekeyed: Count,
+		edited: Count,
+		unchanged: Count
 	}),
 	/**
 	 * False when either copy was read only in part (`status: "partial"`): text the reader could

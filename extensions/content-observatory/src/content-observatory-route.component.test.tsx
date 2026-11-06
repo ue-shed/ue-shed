@@ -15,12 +15,9 @@ import {
 	ContentObservatoryTargetCatalog
 } from "./content-observatory-client.js";
 import { ContentObservatoryRoute } from "./content-observatory-route.js";
-
-const decodeContentObservatoryState = Schema.decodeUnknownSync(ContentObservatoryState);
+const decodeContentObservatoryState = Schema.decodeSync(ContentObservatoryState);
+const decodeContentObservatoryTargetCatalog = Schema.decodeSync(ContentObservatoryTargetCatalog);
 const encodeContentObservatoryState = Schema.encodeSync(ContentObservatoryState);
-const decodeContentObservatoryTargetCatalog = Schema.decodeUnknownSync(
-	ContentObservatoryTargetCatalog
-);
 const runtime = ManagedRuntime.make(Layer.empty);
 afterEach(cleanup);
 afterAll(() => runtime.dispose());
@@ -282,9 +279,9 @@ function fastCompleteState(): CompletedContentObservatoryState {
 describe("ContentObservatoryRoute", () => {
 	it("explains the project prerequisite without exposing filesystem authority", async () => {
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed({ status: "not_configured" as const }),
+			cancel: Effect.sync(() => ({ status: "not_configured" as const })),
 			start: () => Effect.succeed({ status: "not_configured" as const }),
-			status: () => Effect.succeed({ status: "not_configured" as const })
+			status: Effect.sync(() => ({ status: "not_configured" as const }))
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -332,13 +329,13 @@ describe("ContentObservatoryRoute", () => {
 			status: "running" as const
 		});
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(running),
+			cancel: Effect.succeed(running),
 			start: (request) =>
 				Effect.sync(() => {
 					received = request;
 					return running;
 				}),
-			status: () => Effect.succeed(ready)
+			status: Effect.succeed(ready)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -377,9 +374,9 @@ describe("ContentObservatoryRoute", () => {
 			summary: currentWorld.summary
 		});
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
+			cancel: Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(ready),
+			status: Effect.succeed(ready),
 			targets: () => Effect.succeed(catalog)
 		};
 		render(() => (
@@ -475,13 +472,13 @@ describe("ContentObservatoryRoute", () => {
 			status: "running" as const
 		});
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(running),
+			cancel: Effect.succeed(running),
 			start: (request) =>
 				Effect.sync(() => {
 					received = request;
 					return running;
 				}),
-			status: () => Effect.succeed(ready),
+			status: Effect.succeed(ready),
 			targets: () => Effect.succeed(catalog)
 		};
 		render(() => (
@@ -543,12 +540,12 @@ describe("ContentObservatoryRoute", () => {
 			}
 		});
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(ready),
+			cancel: Effect.succeed(ready),
 			start: (request) => {
 				received = request;
 				return Effect.succeed(ready);
 			},
-			status: () => Effect.succeed(ready),
+			status: Effect.succeed(ready),
 			targets: () => Effect.succeed(catalog)
 		};
 		render(() => (
@@ -582,9 +579,9 @@ describe("ContentObservatoryRoute", () => {
 	it("preserves Fast coverage when decoding a completed actor-class result", async () => {
 		const complete = fastCompleteState();
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
+			cancel: Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(complete)
+			status: Effect.succeed(complete)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -599,9 +596,9 @@ describe("ContentObservatoryRoute", () => {
 	it("uses the point map and outliner to narrow changelist evidence to one saved actor", async () => {
 		const complete = completeState();
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
+			cancel: Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(complete)
+			status: Effect.succeed(complete)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -634,9 +631,9 @@ describe("ContentObservatoryRoute", () => {
 	it("keeps attributable actor focus and package evidence together for a timeline change", async () => {
 		const complete = completeState();
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
+			cancel: Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(complete)
+			status: Effect.succeed(complete)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -673,9 +670,9 @@ describe("ContentObservatoryRoute", () => {
 	it("uses field-qualified actor View Filters and opens a selected actor event locally", async () => {
 		const complete = completeState();
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
+			cancel: Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(complete)
+			status: Effect.succeed(complete)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -718,9 +715,9 @@ describe("ContentObservatoryRoute", () => {
 	it("replays discrete saved actor frames without another history request", async () => {
 		const complete = completeState();
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
+			cancel: Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(complete)
+			status: Effect.succeed(complete)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -753,9 +750,9 @@ describe("ContentObservatoryRoute", () => {
 	it("retains and labels a completed result when its map query becomes stale", async () => {
 		const complete = completeState();
 		const client: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(complete),
+			cancel: Effect.succeed(complete),
 			start: () => Effect.succeed(complete),
-			status: () => Effect.succeed(complete)
+			status: Effect.succeed(complete)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -792,9 +789,9 @@ describe("ContentObservatoryRoute", () => {
 			}
 		};
 		const partialClient: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(partial),
+			cancel: Effect.succeed(partial),
 			start: () => Effect.succeed(partial),
-			status: () => Effect.succeed(partial)
+			status: Effect.succeed(partial)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>
@@ -825,9 +822,9 @@ describe("ContentObservatoryRoute", () => {
 			}
 		};
 		const emptyClient: ContentObservatoryClientApi = {
-			cancel: () => Effect.succeed(empty),
+			cancel: Effect.succeed(empty),
 			start: () => Effect.succeed(empty),
-			status: () => Effect.succeed(empty)
+			status: Effect.succeed(empty)
 		};
 		render(() => (
 			<EffectRuntimeProvider runtime={runtime}>

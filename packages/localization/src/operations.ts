@@ -47,8 +47,7 @@ import {
 	type LocalizationRunEvent,
 	isLocalizationOperationError
 } from "./operation-schema.js";
-
-const decodeRunRequest = Schema.decodeUnknownEffect(LocalizationRunRequest);
+const decodeLocalizationRunRequest = Schema.decodeEffect(LocalizationRunRequest);
 const decodeEngine = Schema.decodeUnknownEffect(LocalizationEngine);
 
 /**
@@ -108,7 +107,7 @@ export const makeLocalizationOperationsLayer = (
 			const prepare = Effect.fn("LocalizationOperations.plan")(function* (
 				input: LocalizationRunRequest
 			) {
-				const request = yield* decodeRunRequest(input).pipe(
+				const request = yield* decodeLocalizationRunRequest(input).pipe(
 					Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
 				);
 				const projectRoot = resolve(request.projectRoot);
@@ -172,12 +171,12 @@ export const makeLocalizationOperationsLayer = (
 						catch: (cause) => localizationOperationError("unsupported_config", cause)
 					});
 					if (Result.isFailure(parsed))
-						return yield* Effect.fail(localizationOperationError("unsupported_config"));
+						return yield* localizationOperationError("unsupported_config");
 					const prior = request.target.configs.find(
 						(recipe) => recipe.relativePath === config
 					);
 					if (JSON.stringify(parsed.success) !== JSON.stringify(prior))
-						return yield* Effect.fail(localizationOperationError("config_changed"));
+						return yield* localizationOperationError("config_changed");
 				}
 				for (const file of plan.files) {
 					if (
@@ -190,7 +189,7 @@ export const makeLocalizationOperationsLayer = (
 								)
 							)
 					)
-						return yield* Effect.fail(localizationOperationError("unsupported_config"));
+						return yield* localizationOperationError("unsupported_config");
 					yield* Effect.tryPromise({
 						try: () => validateLocalizationOutputPath(projectRoot, file.relativePath),
 						catch: localizationIOFailure
@@ -345,10 +344,12 @@ export const makeLocalizationOperationsLayer = (
 						);
 						yield* consume(true);
 						if (exit.kind === "terminated")
-							return yield* Effect.fail(localizationOperationError("cancelled"));
+							return yield* localizationOperationError("cancelled");
 						if (exit.exitCode !== 0)
-							return yield* Effect.fail(
-								localizationExitFailure(exit.exitCode, lines, plan.logPath)
+							return yield* localizationExitFailure(
+								exit.exitCode,
+								lines,
+								plan.logPath
 							);
 						// End any owned descendants before taking the final durable-file snapshot.
 						yield* handle.terminate("cancelled").pipe(
@@ -429,7 +430,7 @@ export const makeLocalizationOperationsLayer = (
 								yield* Queue.offer(queue, receipt);
 								return yield* Queue.end(queue);
 							}).pipe(
-								Effect.catch((error) =>
+								Effect.catchTag("LocalizationOperationError", (error) =>
 									Effect.gen(function* () {
 										yield* Metric.update(
 											Metric.counter("localization.operations.failures"),

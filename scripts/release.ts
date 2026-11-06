@@ -105,7 +105,7 @@ const PackEvidence = Schema.Struct({
 	commit: Schema.String
 });
 const PackEvidenceJson = Schema.fromJsonString(PackEvidence);
-const decodePackEvidenceJson = Schema.decodeUnknownSync(PackEvidenceJson);
+const decodePackEvidenceJson = Schema.decodeSync(PackEvidenceJson);
 
 const PublicationManifestFile = Schema.Struct({
 	schemaVersion: Schema.Number,
@@ -122,7 +122,7 @@ const PublicationManifestFile = Schema.Struct({
 	)
 });
 const PublicationManifestFileJson = Schema.fromJsonString(PublicationManifestFile);
-const decodePublicationManifestFileJson = Schema.decodeUnknownSync(PublicationManifestFileJson);
+const decodePublicationManifestFileJson = Schema.decodeSync(PublicationManifestFileJson);
 
 function sha256(bytes: Buffer) {
 	return createHash("sha256").update(bytes).digest();
@@ -174,7 +174,7 @@ const ChangesetsPublishPlan = Schema.Struct({
 	plan: Schema.Array(Schema.Array(Schema.Union([PublishRelease, TagRelease])))
 });
 const ChangesetsPublishPlanJson = Schema.fromJsonString(ChangesetsPublishPlan);
-const decodeChangesetsPublishPlanJson = Schema.decodeUnknownSync(ChangesetsPublishPlanJson);
+const decodeChangesetsPublishPlanJson = Schema.decodeSync(ChangesetsPublishPlanJson);
 type ChangesetsPublishPlan = typeof ChangesetsPublishPlan.Type;
 
 /**

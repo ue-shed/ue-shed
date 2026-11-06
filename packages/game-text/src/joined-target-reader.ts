@@ -36,7 +36,14 @@ export const JoinedTargetMeta = Schema.Struct({
 		keyChangePairs: Schema.optionalKey(Schema.Array(LocalizationKeyChangePair)),
 		fileErrors: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 		fileProvenances: Schema.optionalKey(Schema.Record(Schema.String, FileProvenance)),
-		fileDiagnostics: Schema.optionalKey(Schema.Record(Schema.String, LocalizationError))
+		fileDiagnostics: Schema.optionalKey(Schema.Record(Schema.String, LocalizationError)),
+		reviewFile: Schema.optionalKey(
+			Schema.Struct({
+				relativePath: Schema.String,
+				size: Schema.optionalKey(Schema.Int),
+				modifiedTime: Schema.optionalKey(Schema.String)
+			})
+		)
 	}),
 	dependencies: Schema.Record(Schema.String, Schema.String),
 	packageNames: Schema.Array(Schema.String),
@@ -48,14 +55,14 @@ export const JoinedTargetMeta = Schema.Struct({
 });
 export interface JoinedTargetMeta extends Schema.Schema.Type<typeof JoinedTargetMeta> {}
 const JoinedTargetMetaJson = Schema.fromJsonString(JoinedTargetMeta);
-const decodeJoinedTargetMetaJson = Schema.decodeUnknownEffect(JoinedTargetMetaJson);
+const decodeJoinedTargetMetaJson = Schema.decodeEffect(JoinedTargetMetaJson);
 export const readJoinedTarget = Effect.fn("JoinedTarget.read")(function* (
 	reader: SharedIndexReader,
 	stale = false
 ) {
 	const rawLayer = yield* reader.layer("joined");
 	if ((rawLayer.directory.entries.get("join.meta")?.rawLength ?? Infinity) > 16 * 1024 ** 2)
-		return yield* Effect.fail(snapshotFailure("join.meta", "Metadata exceeds bound"));
+		return yield* snapshotFailure("join.meta", "Metadata exceeds bound");
 	const meta = yield* decodeJoinedTargetMetaJson(
 		new TextDecoder().decode(yield* rawLayer.section("join.meta"))
 	);
@@ -74,8 +81,9 @@ export const readJoinedTarget = Effect.fn("JoinedTarget.read")(function* (
 			);
 	}
 	if (!stale && meta.generation !== reader.manifest.generation)
-		return yield* Effect.fail(
-			snapshotFailure("join.meta", "Joined generation changed; refresh before querying")
+		return yield* snapshotFailure(
+			"join.meta",
+			"Joined generation changed; refresh before querying"
 		);
 	const baseLayer = meta.base ? yield* reader.layer(meta.base) : rawLayer;
 	if (meta.base)
@@ -86,7 +94,7 @@ export const readJoinedTarget = Effect.fn("JoinedTarget.read")(function* (
 		);
 	for (const canonical of Object.values(meta.aliases))
 		if (!baseLayer.directory.entries.has(canonical))
-			return yield* Effect.fail(snapshotFailure("join.meta", "Invalid column alias"));
+			return yield* snapshotFailure("join.meta", "Invalid column alias");
 	for (const names of Object.values(meta.chunks ?? {})) {
 		snapshotCheck(names.length > 1, "join.meta", "Invalid column chunks");
 		for (const name of names)
@@ -162,13 +170,14 @@ export const readJoinedTarget = Effect.fn("JoinedTarget.read")(function* (
 	const layer = { ...baseLayer, section };
 	for (const [name, key] of Object.entries(meta.dependencies))
 		if (!stale && reader.manifest.active[name] !== key)
-			return yield* Effect.fail(
-				snapshotFailure("join.meta", "Joined inputs changed; refresh before querying")
+			return yield* snapshotFailure(
+				"join.meta",
+				"Joined inputs changed; refresh before querying"
 			);
 	return { reader, layer, rawLayer, baseLayer, meta };
 });
 export const openJoinedTarget = Effect.fn("JoinedTarget.open")(function* () {
-	return yield* readJoinedTarget(yield* (yield* SharedIndex).open());
+	return yield* readJoinedTarget(yield* (yield* SharedIndex).open);
 });
 export type JoinedTargetReader = Effect.Success<ReturnType<typeof openJoinedTarget>>;
 

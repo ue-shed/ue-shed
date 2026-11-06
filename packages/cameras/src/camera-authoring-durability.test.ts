@@ -14,11 +14,10 @@ import { CameraApproval, makeCameraAuthoringStore } from "./camera-authoring-sto
 import { CameraBridgeSnapshot } from "./camera-authoring-bridge.js";
 import { prepareCameraRecovery, restoreCameraRecovery } from "./camera-authoring-recovery.js";
 import { legacyReviewRenderPolicy } from "./camera-render-schema.js";
-
-const decodeCameraApproval = Schema.decodeUnknownSync(CameraApproval);
-const decodeCameraArrangement = Schema.decodeUnknownSync(CameraArrangement);
-const decodeCameraArrangementCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
-const decodeCameraBridgeSnapshot = Schema.decodeUnknownSync(CameraBridgeSnapshot);
+const decodeCameraApproval = Schema.decodeSync(CameraApproval);
+const decodeCameraArrangement = Schema.decodeSync(CameraArrangement);
+const decodeCameraArrangementCommand = Schema.decodeSync(CameraArrangementCommand);
+const decodeCameraBridgeSnapshot = Schema.decodeSync(CameraBridgeSnapshot);
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -45,7 +44,7 @@ it("does not commit approval intent when the destination is locked", async () =>
 	await expect(Effect.runPromise(store.approve(approval))).rejects.toMatchObject({
 		code: "busy"
 	});
-	const untouched = await Effect.runPromise(store.load());
+	const untouched = await Effect.runPromise(store.load);
 	expect(untouched.projection).toBeUndefined();
 	expect(untouched.outcomes).toEqual([]);
 	await rm(`${approval.destination}.lock`);

@@ -20,7 +20,9 @@ export function ProjectLaunchError(props: {
 	return (
 		<Portal>
 			<dialog
-				ref={dialog}
+				ref={(element) => {
+					dialog = element;
+				}}
 				aria-labelledby={title}
 				aria-describedby={description}
 				onCancel={(event) => {

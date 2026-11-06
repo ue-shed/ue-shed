@@ -24,10 +24,10 @@ import { StageClock } from "./stage-clock.js";
 
 import { packageTextSnapshotBatches } from "./package-text-native.js";
 
-const FileStamp = Schema.Struct({ size: Schema.Number, modifiedMs: Schema.Number });
+const FileStamp = Schema.Struct({ size: Schema.Finite, modifiedMs: Schema.Finite });
 const Signature = Schema.Array(Schema.NullOr(FileStamp));
 const SignatureJson = Schema.fromJsonString(Signature);
-const decodeSignatureJson = Schema.decodeUnknownEffect(SignatureJson);
+const decodeSignatureJson = Schema.decodeEffect(SignatureJson);
 const bundlePaths = (path: string) => [
 	path,
 	...["uexp", "ubulk", "uptnl"].map((extension) => path.replace(/\.[^.]+$/u, `.${extension}`))
@@ -124,11 +124,9 @@ export function gameTextIndexSourceNodeLayer(
 							.pipe(Effect.mapError(mapError));
 						for (const item of page.items) {
 							if (item.kind !== "inventory")
-								return yield* Effect.fail(
-									failure(
-										"inventory",
-										"The paired Project Index did not return signature rows."
-									)
+								return yield* failure(
+									"inventory",
+									"The paired Project Index did not return signature rows."
 								);
 							result.push({
 								path: item.packagePath,
@@ -144,8 +142,9 @@ export function gameTextIndexSourceNodeLayer(
 						cursor = page.nextCursor;
 					} while (cursor !== undefined);
 					if (result.length !== key.packageCount)
-						return yield* Effect.fail(
-							failure("inventory", "The committed signature inventory is incomplete.")
+						return yield* failure(
+							"inventory",
+							"The committed signature inventory is incomplete."
 						);
 					// Encode each path once, then sort row numbers in host slices.
 					const clock = new HostSliceClock(),
@@ -192,11 +191,9 @@ export function gameTextIndexSourceNodeLayer(
 						.pipe(Effect.mapError(mapError));
 					stages.mark("status");
 					if (status.status !== "ready" || status.summary.completeness !== "complete")
-						return yield* Effect.fail(
-							failure(
-								"inventory",
-								"Refresh a complete Project Index before reading signature inventory."
-							)
+						return yield* failure(
+							"inventory",
+							"Refresh a complete Project Index before reading signature inventory."
 						);
 					return status.summary;
 				});
@@ -264,11 +261,9 @@ export function gameTextIndexSourceNodeLayer(
 								);
 								const paths = bundlePaths(resolve(root, entry.path));
 								if (expected.length !== paths.length)
-									return yield* Effect.fail(
-										failure(
-											"signature",
-											"The Project Index returned an invalid package bundle signature."
-										)
+									return yield* failure(
+										"signature",
+										"The Project Index returned an invalid package bundle signature."
 									);
 								for (let index = 0; index < paths.length; index++) {
 									const actual = yield* Effect.tryPromise({
@@ -306,11 +301,9 @@ export function gameTextIndexSourceNodeLayer(
 												actual.size !== prior.size ||
 												actual.modifiedMs !== prior.modifiedMs
 									)
-										return yield* Effect.fail(
-											failure(
-												"signature",
-												`Package or sidecar changed while reading ${entry.path}.`
-											)
+										return yield* failure(
+											"signature",
+											`Package or sidecar changed while reading ${entry.path}.`
 										);
 								}
 							}),
@@ -509,7 +502,7 @@ export function gameTextIndexSourceNodeLayer(
 				).pipe(Layer.provide(Layer.succeed(ProjectIndex, supplied.value)));
 			}
 			const reader = yield* AssetReader;
-			const configuration = yield* reader.configuration();
+			const configuration = yield* reader.configuration;
 			return source(cacheRoot).pipe(
 				Layer.provide(projectIndexProcessLayerFromReader({ ...configuration, cacheRoot }))
 			);

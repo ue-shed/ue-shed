@@ -38,22 +38,23 @@ const decodeLocalizationFocusArgs = Schema.decodeUnknownResult(
 const decodeLocalizationFocusResult = Schema.decodeUnknownResult(
 	invokeContracts["game-text:localization:focus"].result
 );
-const decodeLocalizationTargetResult = Schema.decodeUnknownResult(
+const decodeLocalizationTargetResult = Schema.decodeResult(
 	invokeContracts["game-text:localization:target"].result
 );
-const decodeCorpusFocusArgs = Schema.decodeUnknownSync(invokeContracts["game-text:focus"].args);
-const decodeCorpusFocusArgsResult = Schema.decodeUnknownResult(
-	invokeContracts["game-text:focus"].args
-);
-const decodePresentationBudget = Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond);
-const decodeGameObjectPath = Schema.decodeUnknownEffect(GameObjectPath);
-const decodeCandidateId = Schema.decodeUnknownEffect(CandidateId);
-const decodeSessionId = Schema.decodeUnknownEffect(SessionId);
-const decodeRemoteControlPort = Schema.decodeUnknownEffect(RemoteControlPort);
+const decodePresentationBudget = Schema.decodeEffect(PresentationBudgetMbPerSecond);
+const decodeGameObjectPath = Schema.decodeEffect(GameObjectPath);
+const decodeCandidateId = Schema.decodeEffect(CandidateId);
+const decodeSessionId = Schema.decodeEffect(SessionId);
+const decodeRemoteControlPort = Schema.decodeEffect(RemoteControlPort);
+const decodeUnknownRemoteControlPort = Schema.decodeUnknownEffect(RemoteControlPort);
 /** Each channel's contract differs, so the loops over channels compile one decoder per channel. */
 const decodeInvokeArgs = (channel: InvokeChannel) =>
+	Schema.decodeResult(invokeContracts[channel].args);
+const decodeUnknownInvokeArgs = (channel: InvokeChannel) =>
 	Schema.decodeUnknownResult(invokeContracts[channel].args);
 const decodeInvokeResult = (channel: InvokeChannel) =>
+	Schema.decodeResult(invokeContracts[channel].result);
+const decodeUnknownInvokeResult = (channel: InvokeChannel) =>
 	Schema.decodeUnknownResult(invokeContracts[channel].result);
 
 const mainDir = dirname(fileURLToPath(import.meta.url));
@@ -1252,13 +1253,14 @@ it("decodes valid arguments for every invoke channel", () => {
 });
 
 it("preserves optional localization selection in corpus focus requests", () => {
+	const args = invokeContracts["game-text:focus"].args;
 	const selected = validArgsByChannel["game-text:focus"];
-	expect(decodeCorpusFocusArgs(selected)).toEqual(selected);
+	expect(Schema.decodeSync(args)(selected)).toEqual(selected);
 	const plain = [{ id: "unreal:UI:Example", pageSize: 50 }];
-	expect(decodeCorpusFocusArgs(plain)).toEqual(plain);
+	expect(Schema.decodeUnknownSync(args)(plain)).toEqual(plain);
 	expect(
 		Result.isFailure(
-			decodeCorpusFocusArgsResult([
+			Schema.decodeUnknownResult(args)([
 				{ ...plain[0], localization: { target: "FixtureGame", id: 1 } }
 			])
 		)
@@ -1306,7 +1308,7 @@ it("tells the renderer whether a quality rule file is attached, never where it i
 
 it("keeps legacy Game Text scan replies bounded instead of accepting a full corpus", () => {
 	for (const channel of ["game-text:configured-scan", "game-text:configured-refresh"] as const) {
-		const decoded = decodeInvokeResult(channel)({
+		const decoded = decodeUnknownInvokeResult(channel)({
 			status: "completed",
 			corpus: { units: [] }
 		});
@@ -1328,7 +1330,7 @@ it("rejects malformed input for every input-bearing channel", () => {
 	for (const [channel, args] of Object.entries(malformedArgsByChannel) as Array<
 		[InvokeChannel, unknown]
 	>) {
-		const decoded = decodeInvokeArgs(channel)(args);
+		const decoded = decodeUnknownInvokeArgs(channel)(args);
 		expect(Result.isFailure(decoded)).toBe(true);
 	}
 });
@@ -1342,7 +1344,7 @@ it("validates representative outputs for every invoke channel", () => {
 
 it("rejects malformed outputs for every invoke channel", () => {
 	for (const channel of invokeChannelNames) {
-		const decoded = decodeInvokeResult(channel)({
+		const decoded = decodeUnknownInvokeResult(channel)({
 			status: "not-a-real-result"
 		});
 		expect(Result.isFailure(decoded)).toBe(true);
@@ -1379,7 +1381,7 @@ it.effect("accepts only valid Remote Control ports", () =>
 	Effect.gen(function* () {
 		expect(yield* decodeRemoteControlPort(30001)).toBe(30001);
 		for (const value of [0, 65_536, 30001.5, "30001"]) {
-			const result = yield* decodeRemoteControlPort(value).pipe(Effect.exit);
+			const result = yield* decodeUnknownRemoteControlPort(value).pipe(Effect.exit);
 			expect(Exit.isFailure(result)).toBe(true);
 		}
 	})

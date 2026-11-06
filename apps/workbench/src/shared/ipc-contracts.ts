@@ -458,9 +458,15 @@ export type RendererWorldObservationEvent = Schema.Schema.Type<
 export const CameraMetricsResult = Schema.UndefinedOr(WorkbenchCameraMetrics);
 export type CameraMetricsResult = Schema.Schema.Type<typeof CameraMetricsResult>;
 
+// IPC codecs must run on both sides without external Effect services.
+interface IpcSchema extends Schema.Top {
+	readonly DecodingServices: never;
+	readonly EncodingServices: never;
+}
+
 export interface InvokeContract<
-	Args extends Schema.Top = Schema.Top,
-	Result extends Schema.Top = Schema.Top
+	Args extends IpcSchema = IpcSchema,
+	Result extends IpcSchema = IpcSchema
 > {
 	readonly kind: "invoke";
 	readonly channel: string;
@@ -470,8 +476,8 @@ export interface InvokeContract<
 
 const invoke = <
 	const Channel extends string,
-	Args extends Schema.Top,
-	Result extends Schema.Top
+	Args extends IpcSchema,
+	Result extends IpcSchema
 >(contract: {
 	readonly channel: Channel;
 	readonly args: Args;

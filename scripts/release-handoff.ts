@@ -25,7 +25,7 @@ import { assertCleanReleaseSource } from "./release-source.ts";
 import { releaseGateCoverage, verifyPackedRelease } from "./release.ts";
 
 const ReleaseEvidenceJson = Schema.fromJsonString(ReleaseEvidence);
-const decodeReleaseEvidenceJson = Schema.decodeUnknownSync(ReleaseEvidenceJson);
+const decodeReleaseEvidenceJson = Schema.decodeSync(ReleaseEvidenceJson);
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 

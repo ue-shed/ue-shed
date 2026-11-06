@@ -3,22 +3,22 @@ import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 
-export class LocalFilesError extends Schema.TaggedError<LocalFilesError>()(
-	"Workbench.LocalFilesError",
-	{
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		causeText: Schema.String,
-		code: Schema.optionalKey(Schema.Literal("already_exists")),
-		message: Schema.String,
-		operation: Schema.Literals(["exists", "readFile", "writeFile"]),
-		path: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean
-	}
-) {}
+export class LocalFilesError extends Schema.TaggedError<
+	LocalFilesError,
+	Brand.Brand<"apps/workbench/src/main/adapters/local-files/LocalFilesError">
+>()("Workbench.LocalFilesError", {
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	causeText: Schema.String,
+	code: Schema.optionalKey(Schema.Literal("already_exists")),
+	message: Schema.String,
+	operation: Schema.Literals(["exists", "readFile", "writeFile"]),
+	path: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean
+}) {}
 
 export interface LocalFilesApi {
 	readonly exists: (path: string) => Effect.Effect<boolean>;
@@ -94,14 +94,12 @@ export const LocalFilesLive = Layer.succeed(
 					maxBytes < 0 ||
 					maxBytes > maximumHostReadBytes
 				) {
-					return yield* Effect.fail(
-						filesError(
-							"readFile",
-							path,
-							`The maximum byte count must be between 0 and ${maximumHostReadBytes}.`,
-							"Pass a valid bounded host read limit.",
-							false
-						)
+					return yield* filesError(
+						"readFile",
+						path,
+						`The maximum byte count must be between 0 and ${maximumHostReadBytes}.`,
+						"Pass a valid bounded host read limit.",
+						false
 					);
 				}
 				return yield* Effect.scoped(
@@ -160,14 +158,12 @@ export const LocalFilesLive = Layer.succeed(
 								)
 						});
 						if (result.status === "ready") return result.bytes;
-						return yield* Effect.fail(
-							filesError(
-								"readFile",
-								path,
-								`File exceeds the ${maxBytes} byte host read limit.`,
-								"Use a smaller artifact or raise the bounded read limit deliberately.",
-								false
-							)
+						return yield* filesError(
+							"readFile",
+							path,
+							`File exceeds the ${maxBytes} byte host read limit.`,
+							"Use a smaller artifact or raise the bounded read limit deliberately.",
+							false
 						);
 					})
 				);
@@ -182,14 +178,12 @@ export const LocalFilesLive = Layer.succeed(
 					function* (directory, relativePath, options) {
 						const path = containedPath(directory, relativePath);
 						if (!path) {
-							return yield* Effect.fail(
-								filesError(
-									"readFile",
-									relativePath,
-									"Artifact path escapes its capture-run directory.",
-									"Regenerate or repair the capture-run document before loading it.",
-									false
-								)
+							return yield* filesError(
+								"readFile",
+								relativePath,
+								"Artifact path escapes its capture-run directory.",
+								"Regenerate or repair the capture-run document before loading it.",
+								false
 							);
 						}
 						return yield* readBounded(path, options);
@@ -204,14 +198,12 @@ export const LocalFilesLive = Layer.succeed(
 							maxBytes > maximumHostReadBytes ||
 							bytes.byteLength > maxBytes
 						) {
-							return yield* Effect.fail(
-								filesError(
-									"writeFile",
-									path,
-									`File exceeds the ${maxBytes} byte host write limit.`,
-									"Reduce the rule document before saving.",
-									false
-								)
+							return yield* filesError(
+								"writeFile",
+								path,
+								`File exceeds the ${maxBytes} byte host write limit.`,
+								"Reduce the rule document before saving.",
+								false
 							);
 						}
 						const temporaryPath = `${path}.${randomUUID()}.tmp`;
@@ -260,25 +252,21 @@ export const makeLocalFilesTestLayer = (
 			) {
 				const bytes = files.get(path);
 				if (!bytes) {
-					return yield* Effect.fail(
-						filesError(
-							"readFile",
-							path,
-							"File does not exist",
-							"Verify the artifact path still exists on disk."
-						)
+					return yield* filesError(
+						"readFile",
+						path,
+						"File does not exist",
+						"Verify the artifact path still exists on disk."
 					);
 				}
 				const maxBytes = options?.maxBytes ?? defaultMaxBytes;
 				if (bytes.byteLength > maxBytes) {
-					return yield* Effect.fail(
-						filesError(
-							"readFile",
-							path,
-							`File exceeds the ${maxBytes} byte host read limit.`,
-							"Use a smaller artifact or raise the bounded read limit deliberately.",
-							false
-						)
+					return yield* filesError(
+						"readFile",
+						path,
+						`File exceeds the ${maxBytes} byte host read limit.`,
+						"Use a smaller artifact or raise the bounded read limit deliberately.",
+						false
 					);
 				}
 				return bytes;
@@ -287,37 +275,31 @@ export const makeLocalFilesTestLayer = (
 				function* (directory, relativePath, options) {
 					const path = containedPath(directory, relativePath);
 					if (!path) {
-						return yield* Effect.fail(
-							filesError(
-								"readFile",
-								relativePath,
-								"Artifact path escapes its capture-run directory.",
-								"Regenerate or repair the capture-run document before loading it.",
-								false
-							)
+						return yield* filesError(
+							"readFile",
+							relativePath,
+							"Artifact path escapes its capture-run directory.",
+							"Regenerate or repair the capture-run document before loading it.",
+							false
 						);
 					}
 					const bytes = files.get(path);
 					if (!bytes) {
-						return yield* Effect.fail(
-							filesError(
-								"readFile",
-								path,
-								"File does not exist",
-								"Verify the artifact path still exists on disk."
-							)
+						return yield* filesError(
+							"readFile",
+							path,
+							"File does not exist",
+							"Verify the artifact path still exists on disk."
 						);
 					}
 					const maxBytes = options?.maxBytes ?? defaultMaxBytes;
 					return bytes.byteLength > maxBytes
-						? yield* Effect.fail(
-								filesError(
-									"readFile",
-									path,
-									`File exceeds the ${maxBytes} byte host read limit.`,
-									"Use a smaller artifact or raise the bounded read limit deliberately.",
-									false
-								)
+						? yield* filesError(
+								"readFile",
+								path,
+								`File exceeds the ${maxBytes} byte host read limit.`,
+								"Use a smaller artifact or raise the bounded read limit deliberately.",
+								false
 							)
 						: bytes;
 				}
@@ -326,24 +308,20 @@ export const makeLocalFilesTestLayer = (
 				function* (path, bytes, options) {
 					const maxBytes = options?.maxBytes ?? defaultMaxBytes;
 					if (bytes.byteLength > maxBytes) {
-						return yield* Effect.fail(
-							filesError(
-								"writeFile",
-								path,
-								`File exceeds the ${maxBytes} byte host write limit.`,
-								"Reduce the rule document before saving.",
-								false
-							)
+						return yield* filesError(
+							"writeFile",
+							path,
+							`File exceeds the ${maxBytes} byte host write limit.`,
+							"Reduce the rule document before saving.",
+							false
 						);
 					}
 					if (options?.exclusive && files.has(path))
-						return yield* Effect.fail(
-							filesError(
-								"writeFile",
-								path,
-								"File exists.",
-								"Choose a new destination."
-							)
+						return yield* filesError(
+							"writeFile",
+							path,
+							"File exists.",
+							"Choose a new destination."
 						);
 					files.set(path, bytes);
 				}

@@ -5,8 +5,8 @@ import { WorkbenchConfiguration } from "../workbench-config.js";
 
 export interface WorkbenchUnrealConnectionApi {
 	readonly withCurrent: SelectedUnrealTargetApi["withCurrent"];
-	readonly endpoint: () => Effect.Effect<string>;
-	readonly settings: () => Effect.Effect<UnrealConnectionSettings>;
+	readonly endpoint: Effect.Effect<string>;
+	readonly settings: Effect.Effect<UnrealConnectionSettings>;
 	readonly setPort: (port: number) => Effect.Effect<UnrealConnectionSettings>;
 }
 
@@ -35,14 +35,14 @@ export function makeWorkbenchUnrealConnectionLayer(
 		Effect.gen(function* () {
 			const target = yield* makeSelectedUnrealTarget(initialEndpoint);
 			const endpoint = target.endpoint;
-			const settings = Effect.fn("Workbench.UnrealConnection.settings")(function* () {
-				const current = yield* endpoint();
+			const settings = Effect.gen(function* () {
+				const current = yield* endpoint;
 				return { endpoint: current, port: endpointPort(current) };
-			});
+			}).pipe(Effect.withSpan("Workbench.UnrealConnection.settings"));
 			const setPort = Effect.fn("Workbench.UnrealConnection.setPort")(function* (
 				port: number
 			) {
-				const next = endpointWithPort(yield* endpoint(), port);
+				const next = endpointWithPort(yield* endpoint, port);
 				yield* target.select(next);
 				return { endpoint: next, port: endpointPort(next) };
 			});

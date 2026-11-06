@@ -1,5 +1,5 @@
 import { contractParseError, contractParser } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Predicate } from "effect";
 import { CameraAuthoredVisibility } from "./camera-visibility.js";
 import {
 	CameraRenderPolicy,
@@ -7,9 +7,7 @@ import {
 	CameraWorldVector,
 	CameraWorldRotation
 } from "./camera-render-schema.js";
-
 const isBoolean = Schema.is(Schema.Boolean);
-const isNumber = Schema.is(Schema.Number);
 const isString = Schema.is(Schema.String);
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const SafeIdentifier = NonEmptyString.check(
@@ -832,7 +830,11 @@ const maxRuntimeTriggerArrayLength = 32;
 
 function boundedJsonIssue(value: Schema.Json, depth = 0): string | undefined {
 	if (depth > maxRuntimeTriggerDepth) return "Runtime trigger provenance is nested too deeply.";
-	if (value === null || isBoolean(value) || (isNumber(value) && Number.isFinite(value))) {
+	if (
+		value === null ||
+		isBoolean(value) ||
+		(Predicate.isNumber(value) && Number.isFinite(value))
+	) {
 		return undefined;
 	}
 	if (isString(value)) {
@@ -1843,7 +1845,7 @@ const StagedCaptureArtifact = Schema.Struct({
 
 function stagedArtifactVariantIssue(response: {
 	readonly stagedArtifacts: ReadonlyArray<Schema.Schema.Type<typeof StagedCaptureArtifact>>;
-	readonly authoredVisibility?: typeof CameraAuthoredVisibility.Type;
+	readonly authoredVisibility?: CameraAuthoredVisibility;
 }) {
 	const variants = new Set<string>();
 	for (const artifact of response.stagedArtifacts) {
@@ -2323,8 +2325,8 @@ const CaptureRealizationPrevious = Schema.Union([
 
 function capturedArtifactVariantIssue(result: {
 	readonly artifacts: ReadonlyArray<CaptureArtifact>;
-	readonly authoredVisibility?: typeof CameraAuthoredVisibility.Type;
-	readonly authoredEvidence?: typeof CameraFrameEvidence.Type;
+	readonly authoredVisibility?: CameraAuthoredVisibility;
+	readonly authoredEvidence?: CameraFrameEvidence;
 }) {
 	if (
 		result.authoredVisibility &&

@@ -237,7 +237,16 @@ for (const variable of oracle.variables) {
 				? `(${property.values.map((v) => (v.value_kind === "int" ? v.value : "unsupported")).join(",")})`
 				: property.value_kind === "object_ref"
 					? property.value
-					: "value" in property
+					: property.value_kind === "int" ||
+						  property.value_kind === "uint" ||
+						  property.value_kind === "float" ||
+						  property.value_kind === "double" ||
+						  property.value_kind === "name" ||
+						  property.value_kind === "enum" ||
+						  property.value_kind === "string" ||
+						  property.value_kind === "guid" ||
+						  property.value_kind === "soft_object_path" ||
+						  property.value_kind === "text"
 						? String(property.value)
 						: "unsupported";
 	if (property.value_kind === "object_ref")

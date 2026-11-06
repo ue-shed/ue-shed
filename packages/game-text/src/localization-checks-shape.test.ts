@@ -35,11 +35,13 @@ import {
 	isBuiltInCheckEntry
 } from "./game-text-rules.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
+const decodeTextUnit = Schema.decodeSync(TextUnit);
+const decodeGameTextRuleDocument = Schema.decodeSync(GameTextRuleDocument);
+const decodeWorkspaceQualityPage = Schema.decodeSync(WorkspaceQualityPage);
 
-const decodeGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
-const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+const decodeUnknownGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
+const decodeUnknownTextUnit = Schema.decodeUnknownSync(TextUnit);
 const decodeLocalizationQualityReport = Schema.decodeUnknownSync(LocalizationQualityReport);
-const decodeWorkspaceQualityPage = Schema.decodeUnknownSync(WorkspaceQualityPage);
 
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
 const provenance = {
@@ -96,7 +98,7 @@ type CheckParams = {
 };
 /** The starter file, with these checks' parameters; a check it doesn't list is added. */
 const starter = (params: CheckParams = {}) =>
-	decodeGameTextRuleDocument({
+	decodeUnknownGameTextRuleDocument({
 		...STARTER_GAME_TEXT_RULES,
 		rules: [
 			...STARTER_GAME_TEXT_RULES.rules.map((entry) =>
@@ -431,7 +433,7 @@ describe("built-in source checks", () => {
 			audience?: string
 		) => {
 			const base = ftextUnit(id, source);
-			return decodeTextUnit({
+			return decodeUnknownTextUnit({
 				...base,
 				id: `unit:${id}`,
 				identity: { status: "unresolved", reason: "culture_invariant" },

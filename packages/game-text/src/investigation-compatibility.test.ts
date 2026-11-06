@@ -8,14 +8,12 @@ import {
 	investigationRequest
 } from "./investigation.js";
 import { qualityFixture } from "./localization-workspace.test-support.js";
+const decodeGameTextInvestigationExport = Schema.decodeSync(GameTextInvestigationExport);
+const decodeGameTextInvestigationExportResult = Schema.decodeResult(GameTextInvestigationExport);
 
 const decodeGameTextInvestigationPreset = Schema.decodeUnknownSync(GameTextInvestigationPreset);
 const decodeGameTextInvestigationPresetResult = Schema.decodeUnknownResult(
 	GameTextInvestigationPreset
-);
-const decodeGameTextInvestigationExport = Schema.decodeUnknownSync(GameTextInvestigationExport);
-const decodeGameTextInvestigationExportResult = Schema.decodeUnknownResult(
-	GameTextInvestigationExport
 );
 
 // Freeze the fields and version check shipped in 0.11.0. Its decoder ignores unknown fields.

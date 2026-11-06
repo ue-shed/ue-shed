@@ -12,8 +12,7 @@ import {
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf
 } from "./localization-workspace.js";
-
-const decodeRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
+const decodeGameTextRuleDocument = Schema.decodeUnknownEffect(GameTextRuleDocument);
 it.each(["prefixTODOsuffix", "éTODO", "TODO界", "2TODO", "TODO٢", "𐐀TODO", "TODO𐐀"])(
 	"does not match a term beside a Unicode letter or number in %s",
 	(text) => {
@@ -70,7 +69,7 @@ effectIt.live(
 				})),
 				{ kind: "preferred", term: "approved term", alternatives: ["draft term"] }
 			];
-			const document = decodeRuleDocument({
+			const document = yield* decodeGameTextRuleDocument({
 				schemaVersion: 1,
 				roles: [
 					{
@@ -96,7 +95,7 @@ effectIt.live(
 						cultures: { de: terms }
 					}
 				]
-			});
+			}).pipe(Effect.orDie);
 			yield* Effect.gen(function* () {
 				const indexed = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 				const source = yield* expectSameSourceQuality(indexed, document);

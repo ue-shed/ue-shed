@@ -3,9 +3,8 @@ import { cleanup, render, screen, within } from "@solidjs/testing-library";
 import { Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { ConfigExplorerRoute } from "./config-explorer-route.js";
-
-const decodeConfigExplanation = Schema.decodeUnknownSync(ConfigExplanation);
-const decodeConfigComparison = Schema.decodeUnknownSync(ConfigComparison);
+const decodeConfigExplanation = Schema.decodeSync(ConfigExplanation);
+const decodeConfigComparison = Schema.decodeSync(ConfigComparison);
 
 function explanation(platform: "PlatformA" | "PlatformB", partial = false) {
 	return decodeConfigExplanation({

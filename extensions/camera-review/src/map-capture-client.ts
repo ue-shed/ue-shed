@@ -11,7 +11,7 @@ import {
 	SavedWorld,
 	SavedWorldMap
 } from "@ue-shed/protocol";
-import { Effect, Schema, type Stream } from "effect";
+import { type Brand, Effect, Schema, type Stream } from "effect";
 
 const MapCaptureUiOperationId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
 
@@ -151,18 +151,18 @@ export interface MapCaptureProgressEvent extends Schema.Schema.Type<
 	typeof MapCaptureProgressEvent
 > {}
 
-export class MapCaptureClientError extends Schema.TaggedError<MapCaptureClientError>()(
-	"MapCaptureClientError",
-	{
-		message: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("map_capture_client_failed"),
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class MapCaptureClientError extends Schema.TaggedError<
+	MapCaptureClientError,
+	Brand.Brand<"extensions/camera-review/src/map-capture-client/MapCaptureClientError">
+>()("MapCaptureClientError", {
+	message: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("map_capture_client_failed"),
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export interface MapCaptureClientApi {
 	readonly actors: (
@@ -171,8 +171,8 @@ export interface MapCaptureClientApi {
 	readonly capture: (
 		intent: MapCaptureExecuteIntent
 	) => Effect.Effect<MapCaptureExecuteResult, MapCaptureClientError>;
-	readonly choosePlan: () => Effect.Effect<MapCaptureSelectionResult, MapCaptureClientError>;
-	readonly newPlan: () => Effect.Effect<MapCaptureSelectionResult, MapCaptureClientError>;
+	readonly choosePlan: Effect.Effect<MapCaptureSelectionResult, MapCaptureClientError>;
+	readonly newPlan: Effect.Effect<MapCaptureSelectionResult, MapCaptureClientError>;
 	readonly openMap: (
 		plan: MapCapturePlanValue
 	) => Effect.Effect<MapCaptureOpenResult, MapCaptureClientError>;
@@ -193,17 +193,17 @@ export interface MapCaptureClientApi {
  * A value that does not match the Map Capture contract: the two sides disagree about the contract, so
  * repeating the same call returns the same mismatch.
  */
-export class MapCaptureContractError extends Schema.TaggedError<MapCaptureContractError>()(
-	"MapCaptureContractError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("invalid_contract"),
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class MapCaptureContractError extends Schema.TaggedError<
+	MapCaptureContractError,
+	Brand.Brand<"extensions/camera-review/src/map-capture-client/MapCaptureContractError">
+>()("MapCaptureContractError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("invalid_contract"),
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A unary parser for one Map Capture contract value: it decodes the encoded value and fails with

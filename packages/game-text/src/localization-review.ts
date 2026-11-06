@@ -5,8 +5,11 @@ import {
 	TextKey,
 	TextNamespace,
 	localizationReviewFingerprint,
-	type LocalizationReviewFile
+	shippedEvidenceTranslation,
+	type LocalizationReviewFile,
+	type LocalizationTargetEvidence
 } from "@ue-shed/localization/browser";
+import type { GameTextContract } from "@ue-shed/protocol";
 import { Schema } from "effect";
 
 export { LocalizationReviewFlag } from "@ue-shed/localization/browser";
@@ -19,6 +22,66 @@ import type {
 	LocalizationReviewState
 } from "./localization-schema.js";
 import { localizationShippedTranslation } from "./localization-shipped-translation.js";
+
+/**
+ * `review_lines` answered from parsed evidence files rather than an index: what hosts without one
+ * read, and the reference native answers are compared with. Each file is read once per call; the
+ * translation is `shippedEvidenceTranslation`'s, so the fingerprint is
+ * `localizationEvidenceFingerprint`'s, whose doc names where it differs from the engine's.
+ */
+export function evidenceReviewLines(
+	evidence: LocalizationTargetEvidence,
+	request: GameTextContract.ReviewLinesRequest
+): GameTextContract.ReviewLine[] {
+	const files = evidence.cultures.find((item) => item.culture === request.culture);
+	const notGathered = { status: "not_gathered" } as const;
+	if (evidence.target.name !== request.target || files === undefined)
+		return request.identities.map(() => notGathered);
+	const id = (namespace: string, key: string) => JSON.stringify([namespace, key]);
+	const grouped = <A>(entries: readonly A[], identity: (entry: A) => string | undefined) => {
+		const groups = new Map<string, A[]>();
+		for (const entry of entries) {
+			const key = identity(entry);
+			if (key === undefined) continue;
+			const group = groups.get(key);
+			if (group === undefined) groups.set(key, [entry]);
+			else group.push(entry);
+		}
+		return groups;
+	};
+	const manifest = grouped(
+		evidence.manifest.status === "read" ? evidence.manifest.value.entries : [],
+		(entry) => id(entry.namespace, entry.key)
+	);
+	const archive =
+		files.archive.status === "read"
+			? grouped(files.archive.value.entries, (entry) => id(entry.namespace, entry.key))
+			: undefined;
+	// A missing archive translates nothing; an unreadable one leaves its translations unknown.
+	const archiveMissing =
+		files.archive.status === "failed" && files.archive.error.code === "file_missing";
+	const po = grouped(files.po.status === "read" ? files.po.value.entries : [], (entry) =>
+		entry.identity === null ? undefined : id(entry.identity.namespace, entry.identity.key)
+	);
+	return request.identities.map((identity) => {
+		const key = id(identity.namespace, identity.key);
+		const source = manifest.get(key)?.[0]?.source.Text;
+		if (source === undefined) return notGathered;
+		const entries = po.get(key) ?? [];
+		const translation = shippedEvidenceTranslation(
+			archive === undefined ? (archiveMissing ? [] : undefined) : (archive.get(key) ?? []),
+			entries
+		);
+		const [entry] = entries;
+		return {
+			status: "found",
+			source,
+			translation,
+			fingerprint: localizationReviewFingerprint(source, translation),
+			po: entry === undefined ? null : { msgid: entry.msgid }
+		};
+	});
+}
 
 /** The source a review is about: the gathered source, which is what translators worked from. */
 function reviewSource(line: LocalizationLine): string {

@@ -211,7 +211,7 @@ function ready(projection: BlueprintGraphProjection = blueprint): BlueprintGraph
 }
 
 type BlueprintViewerClient = Pick<
-	ProjectBlueprintSearchProps,
+	ProjectBlueprintSearchProps<string, string>,
 	"readBlueprint" | "searchBlueprints"
 >;
 

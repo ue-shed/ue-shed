@@ -203,12 +203,10 @@ const projectPrefix = Effect.fnUntraced(function* (projectRoot: string) {
 	const mapping = yield* p4.whereFiles({ fileSpec: `${projectRoot}/...` });
 	const root = mapping.items.find((item) => !item.isExcluded)?.depotFile;
 	if (root === undefined)
-		return yield* Effect.fail(
-			failure(
-				"Perforce does not map the project folder.",
-				undefined,
-				"ambiguous_depot_mapping"
-			)
+		return yield* failure(
+			"Perforce does not map the project folder.",
+			undefined,
+			"ambiguous_depot_mapping"
 		);
 	return root.replace(/\/\.\.\.$/u, "/");
 });
@@ -273,17 +271,15 @@ const printMissing = Effect.fnUntraced(function* (
 				.printBatch({ fileSpec: chunk.map((item) => item.spec) })
 				.pipe(step(`print the changed files of ${what}`));
 			if (batch.failures.length > 0 || batch.items.length !== chunk.length)
-				return yield* Effect.fail(
-					failure(
-						`Perforce printed ${batch.items.length} of ${chunk.length} revisions for ${what}.`,
-						batch.failures
-					)
+				return yield* failure(
+					`Perforce printed ${batch.items.length} of ${chunk.length} revisions for ${what}.`,
+					batch.failures
 				);
 			for (const item of batch.items) {
 				const target = byDepotFile.get(item.file.depotFile);
 				if (target === undefined)
-					return yield* Effect.fail(
-						failure(`Perforce printed ${item.file.depotFile}, which was not asked for.`)
+					return yield* failure(
+						`Perforce printed ${item.file.depotFile}, which was not asked for.`
 					);
 				bytes += item.content.byteLength;
 				printed++;
@@ -359,7 +355,7 @@ export const changelistRevisions = Effect.fnUntraced(function* (options: Changel
 				.pipe(step(`describe changelist ${options.change}`)),
 			projectPrefix(options.projectRoot).pipe(step("map the project folder")),
 			options.before === undefined
-				? Effect.succeed(undefined)
+				? Effect.undefined
 				: listAt(options.projectRoot, options.before, at).pipe(
 						step(`list the files changelist ${options.change} changes from`)
 					)
@@ -370,16 +366,14 @@ export const changelistRevisions = Effect.fnUntraced(function* (options: Changel
 	// the wrong revisions.
 	const expected = options.shelved ? "shelved" : "submitted";
 	if (description.status !== expected)
-		return yield* Effect.fail(
-			new MapHistoryError({
-				kind: "invalid_target",
-				message: `Changelist ${options.change} is ${description.status}, not ${expected}.`,
-				recovery:
-					"Read a submitted changelist as submitted, and a pending changelist's shelved files as shelved.",
-				retrySafe: false,
-				nextStep: "fix_input"
-			})
-		);
+		return yield* new MapHistoryError({
+			kind: "invalid_target",
+			message: `Changelist ${options.change} is ${description.status}, not ${expected}.`,
+			recovery:
+				"Read a submitted changelist as submitted, and a pending changelist's shelved files as shelved.",
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
 	const cached = (spec: string, digest: string | null) =>
 		cacheFile(cache.directory, spec, digest);
 	const files: ChangelistRevisionFile[] = [];
@@ -656,15 +650,13 @@ export const readRangeRevisions = Effect.fn("Perforce.rangeRevisions")(function*
 }) {
 	const what = `changelists ${options.from} to ${options.to}`;
 	if (!Number.isSafeInteger(options.from) || options.from < 1 || options.to <= options.from)
-		return yield* Effect.fail(
-			new MapHistoryError({
-				kind: "invalid_target",
-				message: `${what} is not a range: it runs from an earlier submitted changelist to a later one.`,
-				recovery: "Name the earlier changelist as the start and the later one as the end.",
-				retrySafe: false,
-				nextStep: "fix_input"
-			})
-		);
+		return yield* new MapHistoryError({
+			kind: "invalid_target",
+			message: `${what} is not a range: it runs from an earlier submitted changelist to a later one.`,
+			recovery: "Name the earlier changelist as the start and the later one as the end.",
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
 	const layer = yield* projectLayer(options.projectRoot, options.perforce);
 	return yield* Effect.gen(function* () {
 		const p4 = yield* P4;
@@ -675,7 +667,7 @@ export const readRangeRevisions = Effect.fn("Perforce.rangeRevisions")(function*
 				serverDirectory(options.directory).pipe(step("identify the server")),
 				projectPrefix(options.projectRoot).pipe(step("map the project folder")),
 				options.before === undefined
-					? Effect.succeed(undefined)
+					? Effect.undefined
 					: listAt(options.projectRoot, options.before, options.from).pipe(
 							step(`list the files ${what} change from`)
 						)
@@ -697,15 +689,13 @@ export const readRangeRevisions = Effect.fn("Perforce.rangeRevisions")(function*
 		});
 		const limit = options.limit ?? RANGE_FILE_LIMIT;
 		if (read.length > limit)
-			return yield* Effect.fail(
-				new MapHistoryError({
-					kind: "invalid_target",
-					message: `${what} change ${read.length} files a review reads; it reads at most ${limit}.`,
-					recovery: "Pick a shorter range.",
-					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new MapHistoryError({
+				kind: "invalid_target",
+				message: `${what} change ${read.length} files a review reads; it reads at most ${limit}.`,
+				recovery: "Pick a shorter range.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
 		// A file the range adds matches nothing at `from`, which `files` reports apart.
 		const earlier =
 			read.length === 0

@@ -23,18 +23,18 @@ const SearchPage = Schema.Struct({
 	omitted: Schema.Int,
 	matches: Schema.Array(Schema.Unknown)
 });
-const decodeStatusReportJson = Schema.decodeUnknownEffect(
-	Schema.fromJsonString(LocalizationStatusReport)
-);
-const decodeSearchPageJson = Schema.decodeUnknownEffect(Schema.fromJsonString(SearchPage));
-const decodeQualityReportJson = Schema.decodeUnknownSync(
-	Schema.fromJsonString(LocalizationQualityReport)
-);
-const decodeChangeSetJson = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationChangeSet));
-const decodeProgressReportJson = Schema.decodeUnknownSync(
-	Schema.fromJsonString(LocalizationProgressReport)
-);
-const decodeBaselineJson = Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationBaseline));
+const StatusReportJson = Schema.fromJsonString(LocalizationStatusReport);
+const SearchPageJson = Schema.fromJsonString(SearchPage);
+const QualityReportJson = Schema.fromJsonString(LocalizationQualityReport);
+const ChangeSetJson = Schema.fromJsonString(LocalizationChangeSet);
+const ProgressReportJson = Schema.fromJsonString(LocalizationProgressReport);
+const BaselineJson = Schema.fromJsonString(LocalizationBaseline);
+const decodeStatusReportJson = Schema.decodeEffect(StatusReportJson);
+const decodeSearchPageJson = Schema.decodeEffect(SearchPageJson);
+const decodeQualityReportJson = Schema.decodeEffect(QualityReportJson);
+const decodeChangeSetJson = Schema.decodeEffect(ChangeSetJson);
+const decodeProgressReportJson = Schema.decodeEffect(ProgressReportJson);
+const decodeBaselineJson = Schema.decodeEffect(BaselineJson);
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
@@ -412,7 +412,9 @@ describe.skipIf(!executable)("localization check CLI with the real reader", () =
 				"--reader",
 				executable
 			]).pipe(Effect.provide(runtime));
-			const report = decodeQualityReportJson(yield* Ref.get(output));
+			const report = yield* decodeQualityReportJson(yield* Ref.get(output)).pipe(
+				Effect.orDie
+			);
 			expect(report.findings.length).toBeGreaterThan(0);
 			expect(
 				report.findings.every(
@@ -429,9 +431,9 @@ describe.skipIf(!executable)("localization check CLI with the real reader", () =
 						change.translation === "Gespräch mit {PlayerName}"
 				)
 			).toBe(true);
-			expect(decodeChangeSetJson(yield* fs.readFileString(changesPath))).toEqual(
-				report.changes
-			);
+			expect(
+				yield* decodeChangeSetJson(yield* fs.readFileString(changesPath)).pipe(Effect.orDie)
+			).toEqual(report.changes);
 			expect(yield* fs.readDirectory(directory)).toEqual(["suggestions.json"]);
 			const after = yield* Effect.forEach(paths, (path) =>
 				fs.readFile(join(fixture.root, path))
@@ -487,7 +489,9 @@ describe.skipIf(!executable)("loc report with the real reader", () => {
 				yield* runCli([...args, "--save-baseline", baselinePath]).pipe(
 					Effect.provide(runtime)
 				);
-				const report = decodeProgressReportJson(yield* Ref.get(output));
+				const report = yield* decodeProgressReportJson(yield* Ref.get(output)).pipe(
+					Effect.orDie
+				);
 				expect(
 					report.cultures
 						.map((culture) => [
@@ -495,7 +499,11 @@ describe.skipIf(!executable)("loc report with the real reader", () => {
 							culture.total.sourceWords,
 							culture.upToDateArchive.sourceWords
 						])
-						.sort()
+						.sort((left, right) => {
+							const leftText = left.join(",");
+							const rightText = right.join(",");
+							return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+						})
 				).toEqual([
 					["de", 62, 59],
 					["en", 62, 62],
@@ -513,11 +521,15 @@ describe.skipIf(!executable)("loc report with the real reader", () => {
 						(file) => file.kind === "manifest" && file.provenance
 					)
 				).toBe(true);
-				const baseline = decodeBaselineJson(yield* fs.readFileString(baselinePath));
+				const baseline = yield* decodeBaselineJson(
+					yield* fs.readFileString(baselinePath)
+				).pipe(Effect.orDie);
 				expect(baseline.entries.length).toBeGreaterThan(0);
 				yield* Ref.set(output, "");
 				yield* runCli([...args, "--baseline", baselinePath]).pipe(Effect.provide(runtime));
-				const compared = decodeProgressReportJson(yield* Ref.get(output));
+				const compared = yield* decodeProgressReportJson(yield* Ref.get(output)).pipe(
+					Effect.orDie
+				);
 				expect(
 					compared.cultures.every(
 						(culture) =>

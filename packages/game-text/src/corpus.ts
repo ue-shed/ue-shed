@@ -14,7 +14,7 @@ import {
 	type SavedProperty,
 	type SavedPropertyValue
 } from "@ue-shed/unreal-assets";
-import { Context, Effect, Layer, Schema, Stream } from "effect";
+import { type Brand, Context, Effect, Layer, Schema, Stream } from "effect";
 import {
 	TextOccurrenceId,
 	TextCorpusPublicError,
@@ -57,17 +57,17 @@ const reportExtraction = Effect.fnUntraced(function* (
  * code identifies the category; recovery and nextStep describe the required change, and cause
  * retains reader evidence.
  */
-export class TextCorpusScanError extends Schema.TaggedError<TextCorpusScanError>()(
-	"TextCorpusScanError",
-	{
-		nextStep: ErrorNextStep,
-		code: TextCorpusPublicError.fields.code,
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class TextCorpusScanError extends Schema.TaggedError<
+	TextCorpusScanError,
+	Brand.Brand<"packages/game-text/src/corpus/TextCorpusScanError">
+>()("TextCorpusScanError", {
+	nextStep: ErrorNextStep,
+	code: TextCorpusPublicError.fields.code,
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A positive concurrency or asset limit. The brand is the evidence that the value was checked,

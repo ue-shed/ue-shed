@@ -21,9 +21,8 @@ import {
 	decodeGameTextRuleDocumentJson,
 	ruleProblemError
 } from "./game-text-rules.js";
-
-const decodeGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
-const decodeLocalizationQualityReport = Schema.decodeUnknownSync(LocalizationQualityReport);
+const decodeGameTextRuleDocument = Schema.decodeSync(GameTextRuleDocument);
+const decodeLocalizationQualityReport = Schema.decodeSync(LocalizationQualityReport);
 
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
 type Entry = typeof CompleteRule.Encoded;
@@ -116,7 +115,11 @@ describe("complete rules", () => {
 					culture,
 					severity
 				])
-				.sort()
+				.sort((left, right) => {
+					const leftText = left.join(",");
+					const rightText = right.join(",");
+					return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+				})
 		).toEqual([
 			["source.gate", "rule", "source", "en", "normal"],
 			["ui.exclamation", "rule", "translation", "de", "low"],
@@ -165,7 +168,11 @@ describe("complete rules", () => {
 		expect(
 			custom(report)
 				.map(({ ruleId, identity }) => [ruleId, identity.key])
-				.sort()
+				.sort((left, right) => {
+					const leftText = left.join(",");
+					const rightText = right.join(",");
+					return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+				})
 		).toEqual([
 			["all", "A"],
 			["every", "A"],

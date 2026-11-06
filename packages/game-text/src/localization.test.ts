@@ -34,22 +34,25 @@ import {
 	target,
 	unit
 } from "./localization.test-support.js";
-
-const decodeJoin = Schema.decodeUnknownSync(LocalizationJoin);
-const decodeTarget = Schema.decodeUnknownSync(LocalizationTarget);
-const decodeTargetEvidence = Schema.decodeUnknownSync(LocalizationTargetEvidence);
-const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
+const decodeLocalizationJoin = Schema.decodeSync(LocalizationJoin);
+const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
+const decodeUnknownLocalizationTargetEvidence = Schema.decodeUnknownSync(
+	LocalizationTargetEvidence
+);
+const decodeUnknownTextUnit = Schema.decodeUnknownSync(TextUnit);
+const decodeLocalizationTargetEvidence = Schema.decodeSync(LocalizationTargetEvidence);
+const decodeTextUnit = Schema.decodeSync(TextUnit);
 
 function mark(textCorpus = corpus(), files = evidence()) {
 	const join = joinLocalizationTarget(textCorpus, files);
-	decodeJoin(join);
+	decodeLocalizationJoin(join);
 	const result = join.lines[0]?.cultures[0];
 	if (!result) throw new Error("Expected one localization state.");
 	return result;
 }
 
 function configureGather(includes: readonly string[], excludes: readonly string[]) {
-	return decodeTarget({
+	return decodeLocalizationTarget({
 		...target,
 		configs: target.configs.map((config) => ({
 			...config,
@@ -258,7 +261,7 @@ describe("localization identity join and precedence", () => {
 				}
 			);
 			const joined = joinLocalizationTarget(text, files);
-			decodeJoin(joined);
+			decodeLocalizationJoin(joined);
 			expect(joined.lines).toHaveLength(2);
 			const units = new Map(text.units.map((unit) => [unit.id, unit]));
 			for (const line of joined.lines) {
@@ -300,10 +303,30 @@ describe("localization identity join and precedence", () => {
 			return withIndexedCorpus(text, { files }, ({ query }) =>
 				Effect.gen(function* () {
 					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 0 });
-					const lines = yield* query.readLocalizationLines();
+					const lines = yield* query.readLocalizationLines;
 					expect(lines.map((line) => line.identity)).toEqual(
 						joined.lines.map((line) => line.identity)
 					);
+					// The engine's review fingerprints are the parsed files' fingerprints.
+					for (const culture of target.cultures) {
+						const identities = joined.lines.flatMap((line) =>
+							line.identity ? [line.identity] : []
+						);
+						const native = yield* query.reviewLines({
+							target: target.name,
+							culture,
+							identities
+						});
+						expect(
+							native.map((line) =>
+								line.status === "found" ? line.fingerprint : undefined
+							)
+						).toEqual(
+							identities.map((identity) =>
+								localizationEvidenceFingerprint(files, culture, identity)
+							)
+						);
+					}
 					for (const line of lines) {
 						const page = yield* query.search({
 							...request,
@@ -407,14 +430,25 @@ describe("localization identity join and precedence", () => {
 					// Saved, the package variant gathers as UI/K beside the asset text: one unit
 					// with both sources.
 					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 1 });
-					const lines = (yield* query.readLocalizationLines()).filter(
+					const lines = (yield* query.readLocalizationLines).filter(
 						(line) => line.origin.kind === "corpus"
 					);
 					// The String Table line and the asset line both have saved text.
-					expect(lines.map((line) => line.identity?.namespace).sort()).toEqual([
-						"UI",
-						"UI [Beta]"
-					]);
+					expect(
+						lines
+							.map((line) => line.identity?.namespace)
+							.sort((left, right) =>
+								left === right
+									? 0
+									: left === undefined
+										? 1
+										: right === undefined
+											? -1
+											: left < right
+												? -1
+												: 1
+							)
+					).toEqual(["UI", "UI [Beta]"]);
 					for (const line of lines) {
 						const page = yield* query.search({
 							...request,
@@ -546,7 +580,7 @@ describe("localization identity join and precedence", () => {
 	});
 	it("unavailable or duplicate evidence has typed reasons", () => {
 		const files = evidence();
-		const missing = decodeTargetEvidence({
+		const missing = decodeUnknownLocalizationTargetEvidence({
 			...files,
 			manifest: { ...files.locmeta, status: "failed" }
 		});
@@ -575,7 +609,7 @@ describe("localization identity join and precedence", () => {
 				})
 			).unknownReasons
 		).toContain("duplicate_po_identity");
-		const unresolved = decodeTextUnit({
+		const unresolved = decodeUnknownTextUnit({
 			...unit(),
 			identity: { status: "unresolved", reason: "culture_invariant" },
 			occurrences: unit().occurrences.map((occurrence) => ({
@@ -587,7 +621,7 @@ describe("localization identity join and precedence", () => {
 			joinLocalizationTarget(corpus([unresolved]), evidence([])).lines[0]?.cultures[0]
 				?.unknownReasons
 		).toContain("unresolved_identity");
-		const reference = decodeTextUnit({
+		const reference = decodeUnknownTextUnit({
 			...unit(),
 			identity: { status: "string_table", tableId: "/Game/Missing.Missing", key: "K" },
 			occurrences: unit().occurrences.map((occurrence) => ({
@@ -606,7 +640,7 @@ describe("localization identity join and precedence", () => {
 		expect(mark(corpus([conflicted])).unknownReasons).toContain("conflicting_source");
 		const unavailable = { ...evidence(), target: { ...target, configs: [] } };
 		expect(mark(corpus(), unavailable).unknownReasons).toContain("gather_settings_unavailable");
-		const collapsed = decodeTargetEvidence({
+		const collapsed = decodeLocalizationTargetEvidence({
 			...evidence(),
 			target: { ...target, collapseMode: "IdenticalNamespaceAndSource" }
 		});
@@ -663,17 +697,17 @@ describe("localization identity join and precedence", () => {
 	});
 	it("distinguishes confirmed file absence from unreadable evidence", () => {
 		const files = evidence();
-		const missingArchive = decodeTargetEvidence({
+		const missingArchive = decodeUnknownLocalizationTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({ ...culture, archive: files.locmeta }))
 		});
 		expect(mark(corpus(), missingArchive).state).toBe("not_synced");
-		const missingPO = decodeTargetEvidence({
+		const missingPO = decodeUnknownLocalizationTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({ ...culture, po: files.locmeta }))
 		});
 		expect(mark(corpus(), missingPO).state).toBe("translated");
-		const unreadable = decodeTargetEvidence({
+		const unreadable = decodeUnknownLocalizationTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({
 				...culture,
@@ -785,13 +819,13 @@ describe("Unreal gather wildcard coverage", () => {
 		const occurrence = unit("K", "Source", "Content/Fixture/Localization/Table.uasset")
 			.occurrences[0];
 		if (!dashboard || !occurrence) throw new Error("Missing test Dashboard or occurrence.");
-		const configured = decodeTarget({
+		const configured = decodeLocalizationTarget({
 			...target,
 			configs: [],
 			dashboard
 		});
 		expect(localizationGatherCoverage(configured, occurrence)).toEqual({ status: "inside" });
-		const engineRoot = decodeTarget({
+		const engineRoot = decodeLocalizationTarget({
 			...configured,
 			dashboard: {
 				...dashboard,
@@ -849,7 +883,7 @@ describe("Unreal gather wildcard coverage", () => {
 			}).status
 		).toBe("outside");
 		const excluded = (name: string, derived: boolean) =>
-			decodeTarget({
+			decodeLocalizationTarget({
 				...target,
 				configs: target.configs.map((config) => ({
 					...config,

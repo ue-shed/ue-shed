@@ -20,7 +20,8 @@ const decodeJsonRecord = Schema.decodeUnknownSync(JsonRecord);
 const JsonRecords = Schema.Array(JsonRecord);
 const decodeJsonRecords = Schema.decodeUnknownSync(JsonRecords);
 const isString = Schema.is(Schema.String);
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeUnknownJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeJson = Schema.decodeSync(Schema.Json);
 const decodeCorpusPlan = Schema.decodeUnknownSync(CorpusPlanSchema);
 const Rules = Schema.Struct({
 	schemaVersion: Schema.Int,
@@ -1743,7 +1744,7 @@ function instantiate(batch: CorpusPlan, instance: number, seed: number) {
 				: output;
 	};
 
-	const transform = (value: typeof Schema.Json.Type): typeof Schema.Json.Type =>
+	const transform = (value: Schema.Json): Schema.Json =>
 		Array.isArray(value)
 			? value.map(transform)
 			: isJsonRecord(value)
@@ -1780,7 +1781,7 @@ function instantiate(batch: CorpusPlan, instance: number, seed: number) {
 					? substitute(value)
 					: value;
 	// Every textual change is applied to both the construction and its literal evidence.
-	const result = transform(decodeJson(batch));
+	const result = transform(decodeUnknownJson(batch));
 	// SAFETY: the wire schema has validated all fields; the owned clone makes its arrays mutable for placement.
 	const plan = structuredClone(decodeCorpusPlan(result)) as CorpusPlan;
 	for (const owner of plan.packages)
@@ -1925,15 +1926,18 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		plan.edits.operations.push({ kind, subject: `${owner.path}:${text.key}`, value });
 		if (!plan.edits.packages.includes(owner.path)) plan.edits.packages.push(owner.path);
 	};
-	const newSource = `Reef ${sourceEdit.text.parameters.token}`;
+	const tokenOf = (text: PlannedText) => {
+		const token = text.parameters.token;
+		if (!isString(token)) throw new Error("A background edit requires a string token.");
+		return token;
+	};
+	const sourceToken = tokenOf(sourceEdit.text);
+	const poToken = tokenOf(poEdit.text);
+	const archiveToken = tokenOf(archiveEdit.text);
+	const newSource = `Reef ${sourceToken}`;
 	register("source", sourceEdit.owner, sourceEdit.text, newSource);
-	register("po", poEdit.owner, poEdit.text, `Import ${poEdit.text.parameters.token}`);
-	register(
-		"archive",
-		archiveEdit.owner,
-		archiveEdit.text,
-		`Archiv ${archiveEdit.text.parameters.token}`
-	);
+	register("po", poEdit.owner, poEdit.text, `Import ${poToken}`);
+	register("archive", archiveEdit.owner, archiveEdit.text, `Archiv ${archiveToken}`);
 	if (plan.phase === "after") {
 		sourceEdit.text.case = "edit-source";
 		sourceEdit.text.source = newSource;
@@ -1944,7 +1948,7 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		}
 		poEdit.text.case = "edit-po";
 		const po = poEdit.text.cultures[culture]!;
-		po.po = `Import ${poEdit.text.parameters.token}`;
+		po.po = `Import ${poToken}`;
 		po.importPending = true;
 		po.state = "not_synced";
 		po.facts = ["translated", "not_synced"];
@@ -1952,7 +1956,7 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		archiveEdit.text.case = "edit-archive";
 		const archive = archiveEdit.text.cultures[culture]!;
 		archive.resourceTranslation = archive.translation;
-		archive.translation = `Archiv ${archiveEdit.text.parameters.token}`;
+		archive.translation = `Archiv ${archiveToken}`;
 		archive.importPending = true;
 		archive.compilePending = true;
 		archive.state = "not_synced";
@@ -2094,7 +2098,7 @@ export function planCorpus({
 	};
 	// Instance-scoped rules are composed explicitly; no global heuristic is introduced.
 	// Built-in checks are listed once; project rules and roles have IDs, renamed per batch.
-	const hasId = (item: typeof Schema.Json.Type) => hasIdField(item);
+	const hasId = (item: Schema.Json) => hasIdField(item);
 	const documents = batches.map((batch, i) => {
 		const data = decodeRules(batch.rules);
 		const names = new Map<string, string>();
@@ -2103,7 +2107,7 @@ export function planCorpus({
 				const record = decodeJsonRecord(item);
 				if (isString(record.id)) names.set(record.id, `${record.id}.i${i}`);
 			}
-		const replace = (value: typeof Schema.Json.Type): typeof Schema.Json.Type =>
+		const replace = (value: Schema.Json): Schema.Json =>
 			Array.isArray(value)
 				? value.map(replace)
 				: isJsonRecord(value)

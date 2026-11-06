@@ -1,0 +1,38 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 22
+		}
+	},
+	"requestId": "package-delta-rows-file",
+	"limits": {},
+	"operation": {
+		"kind": "game_text_index",
+		"request": {
+			"action": "publish_packages",
+			"configuration": {
+				"cacheRoot": ".cache",
+				"projectKey": "generic-project",
+				"targetKey": "SavedText",
+				"sharedProject": false
+			},
+			"inputs": [
+				{
+					"name": "package-text.0",
+					"key": "next",
+					"previousKey": "previous",
+					"file": "changes-0.snapshot",
+					"rowsFile": "changes-0.rows"
+				},
+				{
+					"name": "package-text.1",
+					"key": "new",
+					"file": "changes-1.snapshot",
+					"rows": [-1]
+				}
+			]
+		}
+	}
+}

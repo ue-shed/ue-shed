@@ -55,11 +55,11 @@ describe("fresh-process Game Text benchmark checks", () => {
 							status: Schema.String,
 							failureStage: Schema.String,
 							error: Schema.String,
-							seconds: Schema.Number,
+							seconds: Schema.Finite,
 							peak: Schema.Struct({
-								heapUsed: Schema.Number,
-								rss: Schema.Number,
-								arrayBuffers: Schema.Number
+								heapUsed: Schema.Finite,
+								rss: Schema.Finite,
+								arrayBuffers: Schema.Finite
 							})
 						})
 					)

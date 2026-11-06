@@ -83,9 +83,7 @@ export const CorpusExpectations = Schema.Struct({
 	})
 });
 export type CorpusExpectations = typeof CorpusExpectations.Type;
-const decodeCorpusExpectationsJson = Schema.decodeUnknownSync(
-	Schema.fromJsonString(CorpusExpectations)
-);
+const decodeCorpusExpectationsJson = Schema.decodeSync(Schema.fromJsonString(CorpusExpectations));
 
 export function subjectKey(
 	subject: Pick<CorpusSubject, "packagePath" | "namespace" | "key" | "kind" | "field" | "culture">

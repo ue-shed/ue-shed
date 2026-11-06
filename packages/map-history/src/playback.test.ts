@@ -9,6 +9,7 @@ import {
 	revertMapHistoryRevision
 } from "./playback.js";
 import { PerforceMapHistory } from "./schema.js";
+const decodePerforceMapHistory = Schema.decodeSync(PerforceMapHistory);
 
 const decodeHistory = Schema.decodeUnknownSync(PerforceMapHistory);
 const encodeHistory = Schema.encodeSync(PerforceMapHistory);
@@ -296,7 +297,7 @@ describe("Map History playback", () => {
 	it("rejects a baseline result missing the required playback snapshot", () => {
 		const encoded = encodeHistory(history({ end: [], revisions: [], start: [] }));
 		const { rangeStartSnapshot: _rangeStartSnapshot, ...missingSnapshot } = encoded;
-		const malformed = decodeHistory(missingSnapshot);
+		const malformed = decodePerforceMapHistory(missingSnapshot);
 
 		expect(() => createMapHistoryPlaybackState({ history: malformed })).toThrow(
 			"no rangeStartSnapshot"

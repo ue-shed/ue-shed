@@ -1,23 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { readFile, stat, writeFile } from "node:fs/promises";
-import { Effect, Ref, Schedule, Schema } from "effect";
+import { Cause, Effect, Ref, Schedule, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
-
-/** Decoder for a schema from the lazily imported cameras module, built once per command run. */
-// Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
+const decodeJson = Schema.decodeUnknownEffect(Schema.Json);
+// Schemas arrive through each command's lazy import, so they can't be compiled at module scope.
 const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
 
-const readInput = Effect.fn("Cli.camera_authoring.read")(function* (path: string) {
-	return yield* Effect.tryPromise(async () => {
-		if ((await stat(path)).size > 4 * 1024 * 1024)
-			throw new Error("Authoring input exceeds 4 MiB.");
-		return decodeJson(JSON.parse(await readFile(path, "utf8")));
-	});
-});
+const readInput = Effect.fn("Cli.camera_authoring.read")(
+	(path: string) =>
+		Effect.tryPromise(async () => {
+			if ((await stat(path)).size > 4 * 1024 * 1024)
+				throw new Error("Authoring input exceeds 4 MiB.");
+			return JSON.parse(await readFile(path, "utf8"));
+		}),
+	Effect.flatMap((input) =>
+		decodeJson(input).pipe(Effect.mapError((cause) => new Cause.UnknownError(cause)))
+	)
+);
 const draft = { draftPath: Argument.String("draft-json") };
 const create = Command.make(
 	"create",
@@ -57,12 +59,15 @@ const fromSelection = Command.make(
 					const client = yield* connection.RemoteControlClient;
 					const selection = yield* cameras.inspectReviewSelection(args.endpoint);
 					if (selection.status !== "selected")
-						return yield* Effect.fail(
-							new Error(`${selection.message} ${selection.recovery}`)
-						);
-					const capabilities = yield* cameras
-						.makeCameraRenderer(client, args.endpoint)
-						.capabilities();
+						return yield* new cameras.CameraBridgeError({
+							code: "unavailable",
+							message: selection.message,
+							recovery: selection.recovery,
+							nextStep: "fix_input",
+							retrySafe: true
+						});
+					const capabilities = yield* cameras.makeCameraRenderer(client, args.endpoint)
+						.capabilities;
 					const input = cameras.createCameraArrangementFromSelection({
 						id: cameras.CameraArrangementId.make(randomUUID()),
 						projectName: capabilities.projectName,
@@ -86,7 +91,7 @@ const show = Command.make("show", draft, (args) =>
 		"CameraAuthoringShow",
 		Effect.gen(function* () {
 			const cameras = yield* Effect.promise(() => import("@ue-shed/cameras"));
-			yield* printJson(yield* cameras.makeCameraAuthoringStore(args.draftPath).load());
+			yield* printJson(yield* cameras.makeCameraAuthoringStore(args.draftPath).load);
 		})
 	)
 );
@@ -173,17 +178,15 @@ const attach = Command.make(
 						store = cameras.makeCameraAuthoringStore(args.draftPath);
 					const capability = yield* port.call({ version: 1, operation: "discover" });
 					if (capability.status !== "available" || !capability.arrangementPanel)
-						return yield* Effect.fail(
-							new cameras.CameraBridgeError({
-								code: "unavailable",
-								message:
-									"The installed authoring bridge lacks arrangement panel support.",
-								recovery:
-									"Install a matching CameraAuthoringBridge plugin before attaching this arrangement.",
-								retrySafe: true,
-								nextStep: "fix_input"
-							})
-						);
+						return yield* new cameras.CameraBridgeError({
+							code: "unavailable",
+							message:
+								"The installed authoring bridge lacks arrangement panel support.",
+							recovery:
+								"Install a matching CameraAuthoringBridge plugin before attaching this arrangement.",
+							retrySafe: true,
+							nextStep: "fix_input"
+						});
 					const attachment = yield* cameras.attachArrangementCamera(
 						store,
 						port,
@@ -208,7 +211,7 @@ const attach = Command.make(
 								})
 								.pipe(
 									Effect.flatMap(cameras.readyCameraBridge),
-									Effect.catch(() => Ref.get(latest))
+									Effect.catchTag("CameraBridgeError", () => Ref.get(latest))
 								);
 							// Preserve the last native state before releasing the ephemeral proxy, including unresolved edits.
 							yield* Effect.tryPromise(() =>
@@ -217,7 +220,7 @@ const attach = Command.make(
 									`${JSON.stringify(snapshot, null, "\t")}\n`
 								)
 							).pipe(
-								Effect.catch((error) =>
+								Effect.catchTag("UnknownError", (error) =>
 									Effect.logError(
 										"Could not preserve native camera recovery",
 										error
@@ -231,7 +234,7 @@ const attach = Command.make(
 									sessionId: attachment.sessionId,
 									producerId: attachment.producerId
 								})
-								.pipe(Effect.catch(() => Effect.void));
+								.pipe(Effect.catchTag("CameraBridgeError", () => Effect.void));
 						})
 					);
 					yield* printJson(
@@ -246,7 +249,10 @@ const attach = Command.make(
 					yield* Effect.gen(function* () {
 						const result = yield* panel.tick().pipe(
 							Effect.tap((snapshot) => Ref.set(latest, snapshot)),
-							Effect.catch((error) => Effect.succeed({ status: "blocked", error }))
+							Effect.catchTag(
+								["CameraArrangementError", "CameraBridgeError"],
+								(error) => Effect.succeed({ status: "blocked", error })
+							)
 						);
 						const text = JSON.stringify(result);
 						if (text !== (yield* Ref.get(previousOutput))) {

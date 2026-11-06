@@ -1,4 +1,4 @@
-import { Effect, Schema, Tuple } from "effect";
+import { type Brand, Effect, Schema, Tuple } from "effect";
 import { CameraSetupRequest, CameraSetupState } from "./camera-setup-schema.js";
 import {
 	decodeCompanionCapabilityManifest,
@@ -158,6 +158,7 @@ export const CameraBridgeRequest = Schema.Union([
 	CameraSetupRequest.mapMembers(Tuple.map(withCodedFailures)),
 	...CameraSessionRequest.members
 ]);
+const decodeCameraBridgeRequestEffect = Schema.decodeEffect(CameraBridgeRequest);
 export type CameraBridgeRequest = typeof CameraBridgeRequest.Type;
 /**
  * Ready editor-session snapshot with producer, revision/sequence, pending/piloting state and
@@ -233,31 +234,30 @@ export const CameraBridgeResponse = Schema.Union([
 	})
 ]);
 export type CameraBridgeResponse = typeof CameraBridgeResponse.Type;
-const decodeCameraBridgeRequest = Schema.decodeUnknownEffect(CameraBridgeRequest);
 const decodeCameraBridgeResponse = Schema.decodeUnknownEffect(CameraBridgeResponse);
 /**
  * Missing plugin, connection, contract or editor refusal with stable code and original cause.
  * Stale/busy states require session reconciliation rather than treating a parsed reply as
  * success.
  */
-export class CameraBridgeError extends Schema.TaggedError<CameraBridgeError>()(
-	"CameraBridgeError",
-	{
-		code: Schema.Literals([
-			"missing_plugin",
-			"disconnected",
-			"invalid_request",
-			"manifest_invalid",
-			"response_invalid",
-			"busy",
-			"stale",
-			"unavailable",
-			"invalid"
-		]),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class CameraBridgeError extends Schema.TaggedError<
+	CameraBridgeError,
+	Brand.Brand<"packages/cameras/src/camera-authoring-bridge/CameraBridgeError">
+>()("CameraBridgeError", {
+	code: Schema.Literals([
+		"missing_plugin",
+		"disconnected",
+		"invalid_request",
+		"manifest_invalid",
+		"response_invalid",
+		"busy",
+		"stale",
+		"unavailable",
+		"invalid"
+	]),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 /**
  * Effect transport port for validated camera setup/session requests. The host supplies the
  * endpoint/connection implementation; the domain arrangement remains independent of
@@ -275,7 +275,7 @@ export function makeCameraAuthoringBridge(
 ): CameraAuthoringBridge {
 	return {
 		call: Effect.fn("CameraAuthoringBridge.call")(function* (input) {
-			const request = yield* decodeCameraBridgeRequest(input, {
+			const request = yield* decodeCameraBridgeRequestEffect(input, {
 				onExcessProperty: "error"
 			}).pipe(
 				Effect.mapError(
@@ -331,16 +331,14 @@ export function makeCameraAuthoringBridge(
 						)
 					);
 				if (!manifest.capabilities.includes("cameras.authoring.v1"))
-					return yield* Effect.fail(
-						new CameraBridgeError({
-							code: "missing_plugin",
-							message: "This editor does not advertise cameras.authoring.v1.",
-							recovery:
-								"Enable UEShedCameraAuthoringBridge. The reference menu is independently optional.",
-							retrySafe: true,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new CameraBridgeError({
+						code: "missing_plugin",
+						message: "This editor does not advertise cameras.authoring.v1.",
+						recovery:
+							"Enable UEShedCameraAuthoringBridge. The reference menu is independently optional.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					});
 			}
 			const response = yield* client
 				.request({
@@ -440,7 +438,7 @@ export const attachArrangementCamera = Effect.fn("CameraAuthoring.attach")(funct
 	bridge: CameraAuthoringBridge,
 	cameraId: ArrangementCameraId
 ) {
-	const { arrangement } = yield* store.load();
+	const { arrangement } = yield* store.load;
 	return yield* bridge
 		.call({
 			version: 1,
@@ -473,14 +471,15 @@ export const synchronizeArrangementCamera = Effect.fn("CameraAuthoring.synchroni
 				producerId: attachment.producerId
 			})
 			.pipe(Effect.flatMap(readyCameraBridge));
-		let document = yield* store.load();
+		let document = yield* store.load;
 		if (
 			native.sessionId !== document.arrangement.id ||
 			(native.cameras === undefined && native.cameraId !== attachment.cameraId) ||
 			native.producerId !== attachment.producerId
 		)
-			return yield* Effect.fail(
-				arrangementFailure("scope_mismatch", "The editor attachment changed scope.")
+			return yield* arrangementFailure(
+				"scope_mismatch",
+				"The editor attachment changed scope."
 			);
 		const operationId = CameraOperationId.make(
 			`native-${native.producerId}-${native.sequence}`
@@ -503,11 +502,9 @@ export const synchronizeArrangementCamera = Effect.fn("CameraAuthoring.synchroni
 			});
 			const ownRevisionCount = new Set(ownPredecessors.map((entry) => entry.revision)).size;
 			if (revisionGap < 0 || revisionGap > 256 || ownRevisionCount !== revisionGap)
-				return yield* Effect.fail(
-					arrangementFailure(
-						"stale",
-						"Native and host edits overlap. The native pose remains pending; explicitly resolve the conflict."
-					)
+				return yield* arrangementFailure(
+					"stale",
+					"Native and host edits overlap. The native pose remains pending; explicitly resolve the conflict."
 				);
 			const present = new Set(document.arrangement.cameras.map((camera) => camera.id));
 			// Undo can reverse a membership change after disk commit but before its native ack.
@@ -585,11 +582,9 @@ export const synchronizeArrangementCamera = Effect.fn("CameraAuthoring.synchroni
 		}
 		if (native.saveRequested) {
 			if (committed && committed.revision !== document.arrangement.revision)
-				return yield* Effect.fail(
-					arrangementFailure(
-						"stale",
-						"The host changed after this Save request. Review the latest camera before saving."
-					)
+				return yield* arrangementFailure(
+					"stale",
+					"The host changed after this Save request. Review the latest camera before saving."
 				);
 			document = yield* store.approve({
 				cameraId: native.cameraId,

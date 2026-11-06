@@ -83,8 +83,8 @@ controls PO/review writes separately; `reviewer` and `changeAuthor` supply attri
 selected-project state, explicit engine-root policy and progress notification hook, plus the
 `LocalizationOperations` service. Unreal remains a separately enabled capability.
 
-The underlying pipeline uses `GameTextIndexProgressReporter` for each operation; `workspace.progress()`
-and `progressChanges()` return the workspace's latest `GameTextWorkspaceProgress`: a raw phase code
+The underlying pipeline uses `GameTextIndexProgressReporter` for each operation; `workspace.progress`
+and `progressChanges` expose the workspace's latest `GameTextWorkspaceProgress`: a raw phase code
 with its counts, which the host words with `GAME_TEXT_WORKSPACE_PHASE_LABELS` from `./labels`.
 
 To serve the workspace over a transport (IPC, WebSocket, MCP), build its handlers from
@@ -165,11 +165,11 @@ Which query answers which question:
 | Lines in changed files and their problems                        | `indexedLocalizationGateTarget(model.query, { join, files, failOn })`                                 |
 | A spreadsheet of every line                                      | `query.writeLocalizationLinesCsv(request, { path })`                                                  |
 | Keys and translations before a gather                            | `query.selectLocalizationLines(request, KEY_CHANGE_FIELDS)`                                           |
-| Package coverage and diagnostics                                 | `query.readCorpusHeader()`                                                                            |
+| Package coverage and diagnostics                                 | `query.readCorpusHeader`                                                                              |
 | The units quality findings name                                  | `query.readUnits(ids)`, or `readFindingUnits`                                                         |
 | Source rules in an investigation                                 | `exportGameTextInvestigation({ sourceQuality: model.sourceQuality }, …)`                              |
 | Has the model changed?                                           | Compare `model.revision`                                                                              |
-| The whole corpus or join, to write it out                        | `model.corpus`, `query.readLocalizationLines()`, `query.export(request)`                              |
+| The whole corpus or join, to write it out                        | `model.corpus`, `query.readLocalizationLines`, `query.export(request)`                                |
 
 `aggregate` groups by up to four dimensions; `culture` fans each line out over the cultures in
 scope and the culture-mark dimensions (`state`, `fact`, `unknown_reason`, `review`,

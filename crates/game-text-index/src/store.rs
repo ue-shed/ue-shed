@@ -624,8 +624,14 @@ pub struct Compaction {
     pub dead_bytes: u64,
     pub total_bytes: u64,
 }
+/// Strings a writer looks up by probing segment files before it loads the whole dictionary once.
+/// A probe opens every segment, so it suits small updates; past this many strings in one writer
+/// session, one load and in-memory lookups cost less.
+const BOUNDED_LOOKUP_BUDGET: u64 = 64 * 1024;
 pub struct Store {
     pub(crate) localization_lookups: u64,
+    /// Strings looked up by segment probes in this session, against `BOUNDED_LOOKUP_BUDGET`.
+    bounded_lookups: u64,
     pub directory: PathBuf,
     pub root: Value,
     configuration: Configuration,
@@ -694,6 +700,7 @@ impl Store {
             current,
             root,
             localization_lookups: 0,
+            bounded_lookups: 0,
             dictionary: None,
             dictionary_lengths: None,
             _lock: lock,
@@ -708,17 +715,6 @@ impl Store {
     }
     /// Reserve the worst-case append count before callers retain any global IDs.
     /// False selects ordinary per-domain interning instead of per-block bounded interning.
-    pub(crate) fn reserve_local_segments(
-        &mut self,
-        files: &[&Path],
-        reuse: Option<&Value>,
-    ) -> Result<bool> {
-        let readers = files
-            .iter()
-            .map(|file| Reader::open(file))
-            .collect::<Result<Vec<_>>>()?;
-        self.reserve_local_readers(&readers.iter().collect::<Vec<_>>(), reuse)
-    }
     fn reserve_local_readers(
         &mut self,
         readers: &[&Reader],
@@ -783,6 +779,11 @@ impl Store {
                 .checked_add(file_domains.len())
                 .ok_or("local domain count overflow")?;
         }
+        self.reserve_segments(chunks, domains)
+    }
+    /// Makes room for a publication that interns `chunks` 8192-string chunks, or one batch per
+    /// each of its `domains`, compacting when neither fits. Returns whether chunks fit.
+    pub(crate) fn reserve_segments(&mut self, chunks: usize, domains: usize) -> Result<bool> {
         let count = self.root["segments"].as_array().ok_or("segments")?.len();
         if count + chunks <= 256 {
             return Ok(true);
@@ -826,7 +827,11 @@ impl Store {
             !self.uncertain && domain.len() <= 23,
             "writer closed or invalid domain",
         )?;
-        if self.dictionary.is_none() && values.len() <= 8192 {
+        if self.dictionary.is_none()
+            && values.len() <= 8192
+            && self.bounded_lookups + values.len() as u64 <= BOUNDED_LOOKUP_BUDGET
+        {
+            self.bounded_lookups += values.len() as u64;
             let ids = crate::bounded_intern::intern(self, domain, values);
             measure.mark("intern.bounded");
             return ids;

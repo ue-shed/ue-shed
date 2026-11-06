@@ -4,7 +4,16 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "4b5c265ee344fdbd3581a2f208392761475320f82aaa21ddc6e345a9f4e126f3"
+	contractHash: "241a172d1668c073c9e08a2856958cdb56fca724f93921e484058d7a9a86d153"
+} as const;
+
+/**
+ * The localization import: the version of its semantics in every content key it returns, and
+ * the most files one request may name.
+ */
+export const localizationImport = {
+	version: 6,
+	maximumFiles: 2560
 } as const;
 
 /**
@@ -38,17 +47,29 @@ export type LocalizationDiagnostic = { code: string, message: string, recovery: 
 
 export type LocalizationInput = { chunkBytes?: number, projectRoot: string, file: string, relativePath: string, options: LocalizationOptions, limits: LocalizationLimits, };
 
-export type LocalizationImportRequest = { files: ReadonlyArray<LocalizationInput>, maximumInFlightBytes: number, cold: boolean, };
+export type LocalizationImportRequest = { files: ReadonlyArray<LocalizationInput>, 
+/**
+ * Bound on the bytes of the files being read and parsed at once.
+ */
+maximumInFlightBytes: number, };
 
 export type LocalizationProvenance = { relativePath: string, size: number, modifiedTime: string, contentHash: string, };
 
 export type LocalizationPreparedFile = { key: string, contentHash: string, provenance: LocalizationProvenance, relativePath: string, format: LocalizationFormat, inputBytes: number, parsed: boolean, snapshotBytes: number, };
 
-export type LocalizationFileResult = { file: LocalizationPreparedFile | null, error: LocalizationDiagnostic | null, };
+export type LocalizationFileResult = { "outcome": "imported", file: LocalizationPreparedFile, } | { "outcome": "failed", error: LocalizationDiagnostic, };
 
-export type LocalizationImportOutcome = { lookupStrings: number, reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
+export type LocalizationImportOutcome = { 
+/**
+ * Dictionary lookups made while publishing.
+ */
+lookupStrings: number, 
+/**
+ * Strings of warm-route files kept without a dictionary lookup.
+ */
+reusedStrings: number, files: ReadonlyArray<LocalizationFileResult>, workerCount: number, parseMs: number, parseCpuMs: number, publishMs: number, };
 
-export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "findings_evaluate", reader: string, 
+export type EngineRequest = { "action": "capabilities" } | { "action": "open", configuration: IndexConfiguration, expectedGeneration: string, expectedJoined: string, policy: EnginePolicy, } | { "action": "close", reader: string, } | { "action": "summary", reader: string, } | { "action": "query", reader: string, request: Query, } | { "action": "corpus", reader: string, } | { "action": "corpus_header", reader: string, } | { "action": "file_coverage", reader: string, files: ReadonlyArray<string>, } | { "action": "corpus_fingerprint", reader: string, } | { "action": "corpus_report_header", reader: string, } | { "action": "aggregate", reader: string, request: unknown, } | { "action": "localization_corpus", reader: string, } | { "action": "export", reader: string, request: unknown, } | { "action": "line", reader: string, request: LineRequest, } | { "action": "localization_export", reader: string, request: unknown, } | { "action": "review_lines", reader: string, request: ReviewLinesRequest, } | { "action": "changed_since", reader: string, request: ChangedSinceRequest, } | { "action": "findings_evaluate", reader: string, 
 /**
  * The v4 rule document.
  */
@@ -457,6 +478,85 @@ findings?: FindingsSelection, places?: PlacesSection, detail?: DetailSection, re
  */
 line?: boolean, };
 
+export type ReviewLinesRequest = { target: string, culture: string, identities: ReadonlyArray<ReviewIdentity>, };
+
+export type ReviewIdentity = { namespace: string, key: string, };
+
+export type ReviewLine = { "status": "found", source: string, translation: string | null, fingerprint: string, po: ReviewPoEntry | null, } | { "status": "not_gathered" };
+
+export type ReviewPoEntry = { msgid: string, };
+
+export type ReviewLinesAnswer = { lines: ReadonlyArray<ReviewLine>, };
+
+export type ChangedSinceRequest = { 
+/**
+ * A generation an earlier refresh or open reported for this target.
+ */
+since: string, kind: ChangeKind, 
+/**
+ * The last ID of the previous page; absent for the first.
+ */
+after?: string, 
+/**
+ * Changes one page lists, from 1 to 1000.
+ */
+limit: number, };
+
+export type ChangeKind = "lines" | "packages";
+
+export type ChangedSinceAnswer = { "status": "same" } | { "status": "too_old", reason: TooOldReason, } | { "status": "changes", counts: ChangeCounts, items: ReadonlyArray<ChangeItem>, 
+/**
+ * The cursor of the next page; absent on the last.
+ */
+nextCursor?: string, };
+
+export type TooOldReason = "compacted" | "format" | "unknown";
+
+export type ChangeCounts = { added: number, changed: number, removed: number, };
+
+export type ChangeItem = { change: Change, 
+/**
+ * A line's ID (`<target>:["namespace","key"]` or `<target>:unresolved:<unit ID>`), or a
+ * package's path as the package-text shards store it.
+ */
+id: string, 
+/**
+ * A line's namespace and key, when it has that identity: as the current generation has it,
+ * or for a removed line, as the earlier one had it.
+ */
+namespace?: string, key?: string, };
+
+export type Change = "added" | "changed" | "removed";
+
+export type DiskChangesRequest = { projectRoot: string, target?: string, paths?: ReadonlyArray<string>, 
+/**
+ * The last path of the previous page; absent for the first.
+ */
+after?: string, 
+/**
+ * Items one page lists, from 1 to 1000.
+ */
+limit: number, };
+
+export type DiskChangeKind = "package" | "localization";
+
+export type DiskChangeItem = { kind: DiskChangeKind, change: Change, 
+/**
+ * The project-relative path, `/`-separated: a package's as the Project Index lists it. It is
+ * the file's own name, as `changedSince` names a changed package.
+ */
+path: string, };
+
+export type DiskChangeCounts = { packages: ChangeCounts, localization: ChangeCounts, };
+
+export type DiskChangesAnswer = { "status": "not_indexed" } | { "status": "ready", counts: DiskChangeCounts, items: ReadonlyArray<DiskChangeItem>, 
+/**
+ * The cursor of the next page; absent on the last.
+ */
+nextCursor?: string, };
+
+export type JoinedReviewFile = { relativePath: string, size?: number, modifiedTime?: string, };
+
 export type RowSelection = { kind: RowKind, id: string, };
 
 export type RowKind = "line" | "unit";
@@ -509,6 +609,28 @@ removed: ReadonlyArray<string>, packages: number,
  * Shard 0's key, the marker an empty inventory publishes.
  */
 firstKey: string, };
+
+export type PackageTextCompareRequest = { 
+/**
+ * The shard key prefix, as `PackageTextPlanRequest`.
+ */
+format: string, policyJson: string, 
+/**
+ * A plan file: one `{group, expected}` JSON line per shard, its entries in path order.
+ */
+planFile: string, 
+/**
+ * The shards of `plan_file` to compare.
+ */
+groups: ReadonlyArray<number>, 
+/**
+ * A new directory the writer fills: `{group}.rows` per shard, the rows of its next records
+ * as little-endian `i32`s (a previous row, or -1 - the index of a changed entry), and
+ * `changed.ndjson`, each shard's changed entries in path order as plan-file lines.
+ */
+outputDirectory: string, };
+
+export type PackageTextComparison = { shards: ReadonlyArray<PackageTextCompareShard>, };
 
 export type CodeLayerRequest = { target: string, 
 /**
@@ -611,7 +733,13 @@ gatherEditorOnly: boolean,
 /**
  * The target's manifest and archives at the base; without them there are no findings.
  */
-localization?: BaseLocalization, changes: PageRequest, findings: PageRequest, };
+localization?: BaseLocalization, changes: PageRequest, findings: PageRequest, 
+/**
+ * The checks that fail the change, which the findings list first so that every page before
+ * the first warning holds only failures. The order within each group is the checks' order,
+ * then the path.
+ */
+failOn?: ReadonlyArray<GateCheck>, };
 
 export type PageRequest = { offset: number, limit: number, };
 
@@ -751,6 +879,25 @@ kept: boolean, stageSeconds: { [key in string]: number }, };
 
 export type PackageTextPlanShard = { group: number, key: string, packages: number, selected: number, };
 
+export type PackageTextCompareShard = { group: number, 
+/**
+ * The key the index holds for the shard, if any.
+ */
+previousKey?: string, 
+/**
+ * Whether the held shard's records are in this format and audience policy: its key is the
+ * one its own stored entries give. Only a current shard's records are retained.
+ */
+current: boolean, 
+/**
+ * Entries whose stored record is kept.
+ */
+retained: number, 
+/**
+ * Entries converted again, and of those the ones to read.
+ */
+changed: number, selected: number, };
+
 export type PackageTextShard = { group: number, expected: ReadonlyArray<PackageTextExpected>, };
 
 export type PackageTextExpected = { path: string, signature: string, selected: boolean, };
@@ -767,7 +914,91 @@ export type RelatedSection = {
 /**
  * Places each unit member lists.
  */
-limit: number, };
+limit: number, 
+/**
+ * With a target, the line's similar-key pair and candidates.
+ */
+similarKeys?: SimilarKeysSection, };
+
+export type SimilarKeysSection = { 
+/**
+ * Candidates listed, from 0 to 500.
+ */
+limit: number, 
+/**
+ * The most edits two texts may differ by, as a share of the longer one's UTF-16 length,
+ * rounded down and at least 1: above 0, at most 1. Default 0.2.
+ */
+distanceRatio?: number, 
+/**
+ * The length difference the cross-package pass reaches, as a share of the new line's UTF-16
+ * length, rounded up and at least 1: above 0, at most 1. Default 0.25.
+ */
+reachRatio?: number, 
+/**
+ * The cap on both the edit distance and the reach, from 1 to 64. Default 12.
+ */
+maxDistance?: number, 
+/**
+ * Comparisons after which no further new line runs the cross-package pass; the answer is
+ * then `truncated`. The same-package pass always runs. Default 2,000,000.
+ */
+comparisonBudget?: number, 
+/**
+ * Letters (`\p{L}`) a text needs outside `{...}` and `<...>` spans to be compared, from 0
+ * (compare every non-blank text) to 64. Default 2.
+ */
+minLetters?: number, };
+
+export type SimilarKeysAnswer = { 
+/**
+ * The selected line's side, absent when it is neither an earlier nor a new line the matcher
+ * compares.
+ */
+state?: SimilarKeyState, 
+/**
+ * The selected line's pair, when the one-to-one rule gives it one.
+ */
+pair?: SimilarKeyPair, 
+/**
+ * The lines near the selected one, the pair's line among them, nearest first, then
+ * same-package before cross-package, then by line ID; up to the request's `limit`. A new
+ * line lists the earlier lines its deciding pass found within the distance limit; an earlier
+ * line, the new lines that found it.
+ */
+candidates: ReadonlyArray<SimilarKeyCandidate>, candidatesComplete: boolean, 
+/**
+ * Pairs in the whole target.
+ */
+pairs: number, 
+/**
+ * The comparison budget ran out: some new lines skipped the cross-package pass.
+ */
+truncated: boolean, 
+/**
+ * Milliseconds this request spent building the reader's index; 0 when it reused it.
+ */
+buildMs: number, };
+
+export type SimilarKeyState = "not_found" | "not_gathered";
+
+export type SimilarKeyScope = "same_package" | "cross_package";
+
+export type SimilarKeyLine = { id: string, namespace: string, key: string, source: string, state: SimilarKeyState, };
+
+export type SimilarKeyPair = { line: SimilarKeyLine, 
+/**
+ * Edits between the two lines' comparable texts, in UTF-16 code units.
+ */
+distance: number, scope: SimilarKeyScope, 
+/**
+ * The earlier line's translations, which a repair carries to the new key.
+ */
+translations: ReadonlyArray<SimilarKeyTranslation>, };
+
+export type SimilarKeyCandidate = { line: SimilarKeyLine, distance: number, scope: SimilarKeyScope, };
+
+export type SimilarKeyTranslation = { culture: string, translation: string, };
 
 export type LineAnswer = { places?: JsonValue, detail?: JsonValue, related?: JsonValue, };
 

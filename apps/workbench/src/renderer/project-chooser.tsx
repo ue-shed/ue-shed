@@ -67,7 +67,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 	};
 	const refresh = (notifyRoutes: boolean) => {
 		if (pending()) return;
-		refreshAction.run(props.client.project(), {
+		refreshAction.run(props.client.project, {
 			onFailure: () => {
 				if (project()?.status !== "failed") setProject(undefined);
 			},
@@ -75,7 +75,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 		});
 	};
 	const refreshRecent = () =>
-		recentAction.run(props.client.recentProjects(), {
+		recentAction.run(props.client.recentProjects, {
 			onSuccess: setRecentProjects
 		});
 
@@ -92,9 +92,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 		return () => window.removeEventListener("focus", onFocus);
 	});
 
-	const selectProject = (
-		selection: ReturnType<ProjectChooserProps["client"]["chooseProject"]>
-	) => {
+	const selectProject = (selection: ProjectChooserProps["client"]["chooseProject"]) => {
 		// A focus event from the native picker must not let an older project refresh replace
 		// the explicit selection after it completes. createEffectAction's generation guard also
 		// covers refreshes backed by uninterruptible foreign work.
@@ -105,10 +103,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 		setProject(undefined);
 		setProgress({ completed: 0, phase: "idle", stage: "project_index", total: 0 });
 		progressSubscription.subscribe(
-			Stream.fromEffectSchedule(
-				props.client.projectProgress(),
-				Schedule.spaced("100 millis")
-			),
+			Stream.fromEffectSchedule(props.client.projectProgress, Schedule.spaced("100 millis")),
 			{ onValue: setProgress }
 		);
 		chooseAction.run(selection, {
@@ -128,7 +123,7 @@ export function ProjectChooser(props: ProjectChooserProps) {
 			}
 		});
 	};
-	const choose = () => selectProject(props.client.chooseProject());
+	const choose = () => selectProject(props.client.chooseProject);
 	const openRecent = (projectRoot: string) =>
 		selectProject(props.client.openRecentProject(projectRoot));
 

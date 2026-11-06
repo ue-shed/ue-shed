@@ -41,11 +41,11 @@ const selected = {
 
 function projectLayer(state: typeof selected | { readonly status: "not_configured" }) {
 	return makeWorkbenchProjectTestLayer({
-		choose: () => Effect.succeed(state),
-		current: () => Effect.succeed(state),
-		inputAtlas: () => Effect.die("not used"),
-		savedProject: () => Effect.die("not used"),
-		savedTables: () => Effect.die("not used")
+		choose: Effect.sync(() => state),
+		current: Effect.sync(() => state),
+		inputAtlas: Effect.suspend(() => Effect.die("not used")),
+		savedProject: Effect.suspend(() => Effect.die("not used")),
+		savedTables: Effect.suspend(() => Effect.die("not used"))
 	});
 }
 
@@ -72,7 +72,7 @@ it.effect("launches the selected project with an explicit UE Shed mode", () =>
 			mode: "ue_shed",
 			status: "launched"
 		});
-		const launches = yield* processHost.launches();
+		const launches = yield* processHost.launches;
 		expect(launches).toHaveLength(1);
 		expect(launches[0]?.args).toEqual([
 			"--import",
@@ -97,7 +97,7 @@ it.effect("does not launch anything before a project is selected", () =>
 		const result = yield* launcher.launch("normal");
 
 		expect(result.status).toBe("failed");
-		expect(yield* processHost.launches()).toEqual([]);
+		expect(yield* processHost.launches).toEqual([]);
 	}).pipe(Effect.provide(launcherLayer({ status: "not_configured" })))
 );
 

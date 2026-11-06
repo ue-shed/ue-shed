@@ -709,9 +709,7 @@ function ShowcaseHome(props: { readonly onChosen: () => void }) {
 		setOpening(true);
 		setNotice(undefined);
 		selectionAction.run(
-			sample
-				? workbenchRendererClient.sampleProject()
-				: workbenchRendererClient.chooseProject(),
+			sample ? workbenchRendererClient.sampleProject : workbenchRendererClient.chooseProject,
 			{
 				onFailure: () => {
 					setOpening(false);
@@ -727,14 +725,14 @@ function ShowcaseHome(props: { readonly onChosen: () => void }) {
 		);
 	};
 	onSettled(() => {
-		contextAction.run(workbenchRendererClient.showcaseContext(), {
+		contextAction.run(workbenchRendererClient.showcaseContext, {
 			onFailure: () => {
 				setContextFailed(true);
 				setNotice("Project status could not be loaded. Open a project to retry.");
 			},
 			onSuccess: setContext
 		});
-		statusAction.run(workbenchRendererClient.getStatus(), {
+		statusAction.run(workbenchRendererClient.getStatus, {
 			onFailure: () => setCameraStatus({ status: "failed" }),
 			onSuccess: (value) => setCameraStatus({ status: "ready", value })
 		});

@@ -8,11 +8,10 @@ import { Effect, Result, Schema } from "effect";
 import { observeCliOperation } from "../cli-operation.js";
 import { CliRuntime, printJson } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
+const decodeConfigExplainRequest = Schema.decodeEffect(ConfigExplainRequest);
+const decodeConfigCompareRequest = Schema.decodeEffect(ConfigCompareRequest);
 
 type Command<Tag extends CliCommand["_tag"]> = Extract<CliCommand, { readonly _tag: Tag }>;
-
-const decodeExplainRequest = Schema.decodeUnknownEffect(ConfigExplainRequest);
-const decodeCompareRequest = Schema.decodeUnknownEffect(ConfigCompareRequest);
 
 const printConfigOutcome = Effect.fn("Cli.config.print_outcome")(function* <A>(
 	effect: Effect.Effect<A, { readonly code: string }>
@@ -32,7 +31,7 @@ export const runConfigExplain = Effect.fn("Cli.workflow.config_explain")(
 		observeCliOperation(
 			command._tag,
 			Effect.gen(function* () {
-				const request = yield* decodeExplainRequest({
+				const request = yield* decodeConfigExplainRequest({
 					project: command.project,
 					platform: command.platform,
 					section: command.section,
@@ -53,7 +52,7 @@ export const runConfigCompare = Effect.fn("Cli.workflow.config_compare")(
 		observeCliOperation(
 			command._tag,
 			Effect.gen(function* () {
-				const request = yield* decodeCompareRequest({
+				const request = yield* decodeConfigCompareRequest({
 					project: command.project,
 					leftPlatform: command.leftPlatform,
 					rightPlatform: command.rightPlatform,

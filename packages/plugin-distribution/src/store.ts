@@ -48,6 +48,8 @@ import {
 	pluginVariantMatches,
 	type PluginVariantRequest
 } from "./variant.js";
+const decodeReleaseVersionEffect = Schema.decodeEffect(ReleaseVersion);
+const decodePluginVariantReferenceEffect = Schema.decodeEffect(PluginVariantReference);
 
 const metadataFile = ".ue-shed-distribution.json";
 const manifestFile = "plugins.manifest.json";
@@ -62,8 +64,6 @@ const isString = Schema.is(Schema.String);
 const ProcessLock = Schema.Struct({ pid: Schema.Int.check(Schema.isGreaterThan(0)) });
 const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const decodeProcessLock = Schema.decodeUnknownSync(ProcessLock);
-const decodeReleaseVersionEffect = Schema.decodeUnknownEffect(ReleaseVersion);
-const decodePluginVariantReference = Schema.decodeUnknownEffect(PluginVariantReference);
 
 const StoredMetadataV1 = Schema.Struct({
 	artifactBytes: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -143,7 +143,7 @@ export interface PluginStoreApi {
 	readonly lease: (
 		release: StoredPluginRelease
 	) => Effect.Effect<PluginLease, PluginStorageFailure, Scope.Scope>;
-	readonly list: () => Effect.Effect<
+	readonly list: Effect.Effect<
 		ReadonlyArray<CachedPluginRelease>,
 		CorruptCacheEntry | PluginStorageFailure
 	>;
@@ -765,7 +765,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 			}).pipe(Effect.orDie);
 
 			const decodeVariantReference = (reference: PluginVariantReference) =>
-				decodePluginVariantReference(reference, {
+				decodePluginVariantReferenceEffect(reference, {
 					onExcessProperty: "error"
 				}).pipe(
 					Effect.mapError(
@@ -834,19 +834,17 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 						if (releases.length === 1 && releases[0] !== undefined) {
 							return releases[0];
 						}
-						return yield* Effect.fail(
-							new PluginDistributionValidationError({
-								field: "variantIdentity",
-								message:
-									releases.length === 0
-										? `Release ${reference} has no cached variants.`
-										: `Release ${reference} has multiple cached variants.`,
-								recovery:
-									"Pass the exact releaseVersion and variantIdentity returned by install or list.",
-								retrySafe: true,
-								nextStep: "fix_input"
-							})
-						);
+						return yield* new PluginDistributionValidationError({
+							field: "variantIdentity",
+							message:
+								releases.length === 0
+									? `Release ${reference} has no cached variants.`
+									: `Release ${reference} has multiple cached variants.`,
+							recovery:
+								"Pass the exact releaseVersion and variantIdentity returned by install or list.",
+							retrySafe: true,
+							nextStep: "fix_input"
+						});
 					});
 				}
 				return decodeVariantReference(reference).pipe(Effect.flatMap(exactVariant));
@@ -891,17 +889,15 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 						request.expectedManifestDigest !== undefined)
 				) {
 					const existing = compatible[0];
-					return yield* Effect.fail(
-						new ImmutableVersionConflict({
-							cachePath: existing.cachePath,
-							message: `Source release ${request.releaseVersion} already exists with different immutable digests.`,
-							recovery:
-								"Use its exact pinned digests or explicitly prune this source variant.",
-							releaseVersion: request.releaseVersion,
-							retrySafe: true,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new ImmutableVersionConflict({
+						cachePath: existing.cachePath,
+						message: `Source release ${request.releaseVersion} already exists with different immutable digests.`,
+						recovery:
+							"Use its exact pinned digests or explicitly prune this source variant.",
+						releaseVersion: request.releaseVersion,
+						retrySafe: true,
+						nextStep: "reconcile"
+					});
 				}
 				return Option.none<StoredPluginRelease>();
 			});
@@ -1272,7 +1268,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 					)
 			);
 
-			const list = Effect.fn("PluginStore.list")(() =>
+			const list = Effect.suspend(() =>
 				Effect.tryPromise({
 					try: async () => {
 						const versions = new Set<string>();
@@ -1307,7 +1303,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 						)
 					)
 				)
-			);
+			).pipe(Effect.withSpan("PluginStore.list"));
 
 			return PluginStore.of({
 				cacheRoot,

@@ -1,15 +1,15 @@
 import { ErrorGuidanceFields as ConfigErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { access, readdir, readFile, stat } from "node:fs/promises";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 
-export class ConfigFileAccessError extends Schema.TaggedError<ConfigFileAccessError>()(
-	"ConfigFileAccessError",
-	{
-		operation: Schema.Literals(["read", "list", "stat"]),
-		...ConfigErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class ConfigFileAccessError extends Schema.TaggedError<
+	ConfigFileAccessError,
+	Brand.Brand<"packages/config-explorer/src/file-access/ConfigFileAccessError">
+>()("ConfigFileAccessError", {
+	operation: Schema.Literals(["read", "list", "stat"]),
+	...ConfigErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 export interface ConfigDirectoryEntry {
 	readonly name: string;
@@ -50,7 +50,7 @@ export const ConfigFileAccessLive = Layer.succeed(
 	ConfigFileAccess.of({
 		exists: Effect.fn("ConfigFileAccess.exists")((path: string) =>
 			Effect.tryPromise({ try: () => access(path), catch: () => undefined }).pipe(
-				Effect.match({ onFailure: () => false, onSuccess: () => true })
+				Effect.isSuccess
 			)
 		),
 		isFile: Effect.fn("ConfigFileAccess.isFile")((path: string) =>

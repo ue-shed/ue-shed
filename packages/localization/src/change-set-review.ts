@@ -4,6 +4,7 @@ import {
 	CultureCode,
 	LocalizationIdentity,
 	LocalizationTargetName,
+	type ArchiveEntry,
 	type LocalizationTargetEvidence,
 	type POEntry
 } from "./schema.js";
@@ -59,7 +60,11 @@ export type LocalizationChangeSetReview = typeof LocalizationChangeSetReview.Typ
 const same = (left: LocalizationIdentity, right: LocalizationIdentity) =>
 	left.namespace === right.namespace && left.key === right.key;
 
-/** The translation the next sync ships: a non-empty PO msgstr wins over the archive (import rule). */
+/**
+ * The translation the next sync ships: a non-empty PO msgstr wins over the archive (import rule).
+ * Given one entry of each, this is the rule; `shippedEvidenceTranslation` applies it to a line's
+ * entries as the Game Text join does.
+ */
 export function currentLocalizationTranslation(
 	archiveTranslation: string | null,
 	po: POEntry | undefined
@@ -68,13 +73,81 @@ export function currentLocalizationTranslation(
 	return pending !== undefined && pending !== "" ? pending : archiveTranslation;
 }
 
-/** Revalidates every change against fresh evidence. Pure: it neither reads nor writes files. */
+/**
+ * The translation the next sync ships, decided as the Game Text join decides it so review
+ * fingerprints match the engine's. A pending PO edit counts only with one PO entry, at most one
+ * archive entry and a read or missing archive (`undefined`: unreadable); else the first archive
+ * entry ships. Unlike the join, an `IdenticalNamespaceAndSource` PO's pending edit never counts.
+ */
+export function shippedEvidenceTranslation(
+	archive: readonly ArchiveEntry[] | undefined,
+	po: readonly POEntry[]
+): string | null {
+	const archived = archive?.[0]?.translation.Text ?? null;
+	const pending =
+		archive !== undefined && archive.length <= 1 && po.length === 1 ? po[0] : undefined;
+	return currentLocalizationTranslation(archived, pending);
+}
+
+/** A culture's archive entries for a line: undefined when the archive exists but is unreadable. */
+export function evidenceArchiveEntries(
+	archive: LocalizationTargetEvidence["cultures"][number]["archive"],
+	identity: LocalizationIdentity
+): readonly ArchiveEntry[] | undefined {
+	if (archive.status === "read")
+		return archive.value.entries.filter((entry) => same(entry, identity));
+	return archive.error.code === "file_missing" ? [] : undefined;
+}
+
+/**
+ * What review reads of one change's line, when a host has already read it, such as from a Game
+ * Text index: with it, review decodes no whole localization file.
+ */
+export interface LocalizationChangeLine {
+	/** The manifest's source; undefined when the manifest has no entry with the identity. */
+	readonly source: string | undefined;
+	/** What the next sync ships before the change. */
+	readonly currentTranslation: string | null;
+	/** The PO entry with the identity; undefined when the PO has none. */
+	readonly po: { readonly msgid: string } | undefined;
+	/** Whether the PO carries source text, so an entry exported before the source changed shows. */
+	readonly poHasSourceText: boolean;
+}
+
+/** One change's line read from the parsed evidence files. */
+function evidenceLine(
+	evidence: LocalizationTargetEvidence,
+	culture: LocalizationTargetEvidence["cultures"][number],
+	identity: LocalizationIdentity
+): LocalizationChangeLine | undefined {
+	if (culture.po.status !== "read") return undefined;
+	const manifest = evidence.manifest.status === "read" ? evidence.manifest.value : undefined;
+	const document = culture.po.value;
+	const entries = document.entries.filter(
+		(entry) => entry.identity !== null && same(entry.identity, identity)
+	);
+	return {
+		source: manifest?.entries.find((entry) => same(entry, identity))?.source.Text,
+		currentTranslation: shippedEvidenceTranslation(
+			evidenceArchiveEntries(culture.archive, identity),
+			entries
+		),
+		po: entries[0],
+		poHasSourceText: document.hasSourceText
+	};
+}
+
+/**
+ * Revalidates every change against fresh evidence. Pure: it neither reads nor writes files. With
+ * `lines`, each change's line comes from the host instead of the evidence's parsed files; the
+ * evidence then gives only the target, its cultures and their files' statuses and provenance.
+ */
 export function reviewLocalizationChangeSet(
 	evidence: LocalizationTargetEvidence,
-	changeSet: LocalizationChangeSet
+	changeSet: LocalizationChangeSet,
+	lines?: (change: LocalizationChange) => LocalizationChangeLine
 ): LocalizationChangeSetReview {
 	const target = evidence.target.name;
-	const manifest = evidence.manifest.status === "read" ? evidence.manifest.value : undefined;
 	const changes = changeSet.changes.map((change): LocalizationChangeReview => {
 		const review = (
 			outcome: LocalizationChangeOutcome,
@@ -85,22 +158,14 @@ export function reviewLocalizationChangeSet(
 		if (culture === undefined || culture.po.status !== "read")
 			return review("culture_unavailable");
 		const identity = { namespace: change.namespace, key: change.key };
-		const source = manifest?.entries.find((entry) => same(entry, identity))?.source.Text;
+		const line = lines?.(change) ?? evidenceLine(evidence, culture, identity);
+		if (line === undefined) return review("culture_unavailable");
+		const { source, po, currentTranslation: current } = line;
 		if (source === undefined) return review("not_in_manifest");
 		if (source !== change.source) return review("stale_source");
-		const document = culture.po.value;
-		const po = document.entries.find(
-			(entry) => entry.identity !== null && same(entry.identity, identity)
-		);
-		const archive =
-			culture.archive.status === "read"
-				? (culture.archive.value.entries.find((entry) => same(entry, identity))?.translation
-						.Text ?? null)
-				: null;
-		const current = currentLocalizationTranslation(archive, po);
 		if (po === undefined) return review("not_in_po", current);
 		// A PO exported before the source changed would import the edit against the old source.
-		if (document.hasSourceText && po.msgid !== source) return review("po_out_of_date", current);
+		if (line.poHasSourceText && po.msgid !== source) return review("po_out_of_date", current);
 		// Absent and empty both mean nothing ships. A gather gives a new key an empty translation,
 		// so an edit staged before the gather, against no translation at all, is still current.
 		if ((change.previousTranslation ?? "") !== (current ?? ""))

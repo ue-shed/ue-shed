@@ -9,10 +9,9 @@ import {
 } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
 
 type Command<Tag extends CliCommand["_tag"]> = Extract<CliCommand, { readonly _tag: Tag }>;
-
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 
 /** Decoder for a schema from the lazily imported cameras module, built once per command run. */
 // Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
@@ -59,7 +58,7 @@ export const runReviewSetValidate = Effect.fn("Cli.workflow.review_set_validate"
 
 function readJsonDocument(path: string): Effect.Effect<unknown, CliCommandError> {
 	return Effect.tryPromise({
-		try: async () => decodeJson(JSON.parse(await readFile(path, "utf8"))),
+		try: async () => JSON.parse(await readFile(path, "utf8")),
 		catch: (cause) =>
 			new CliCommandError({
 				recovery:
@@ -70,7 +69,24 @@ function readJsonDocument(path: string): Effect.Effect<unknown, CliCommandError>
 				message: jsonInputFileMessage("JSON document", path, cause),
 				cause
 			})
-	});
+	}).pipe(
+		Effect.flatMap((input) =>
+			decodeJsonEffect(input).pipe(
+				Effect.mapError(
+					(cause) =>
+						new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: jsonInputFileMessage("JSON document", path, cause),
+							cause
+						})
+				)
+			)
+		)
+	);
 }
 
 /** Classify a schema rejection of a JSON input document without copying the issue into prose. */
@@ -207,16 +223,14 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 					const authoring = yield* ReviewAuthoring;
 					const selection = yield* authoring.inspectSelection(command.endpoint);
 					if (selection.status === "failed") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `${selection.message} ${selection.recovery}`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `${selection.message} ${selection.recovery}`
+						});
 					}
 					const parameters =
 						command.parametersPath === undefined
@@ -241,16 +255,14 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 						(item) => item.id === FramingCandidateId.make(command.candidateId)
 					);
 					if (!candidate) {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `Unknown framing candidate: ${command.candidateId}`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `Unknown framing candidate: ${command.candidateId}`
+						});
 					}
 					const repository = yield* ReviewRepository;
 					const reviewSet = yield* repository.loadSet(command.reviewSetPath);
@@ -265,16 +277,14 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 						viewId: ReviewViewId.make(command.viewId)
 					});
 					if (approved.status === "view_not_found") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `Review View ${approved.viewId} was not found`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `Review View ${approved.viewId} was not found`
+						});
 					}
 					yield* repository.saveSet({
 						path: command.reviewSetPath,
@@ -287,8 +297,12 @@ export const runReviewFraming = Effect.fn("Cli.workflow.review_framing")(
 					});
 				});
 				return yield* program.pipe(
-					Effect.provide(ReviewRepositoryLive),
-					Effect.provide(ReviewAuthoringLive.pipe(Layer.provide(RemoteControlClientLive)))
+					Effect.provide(
+						Layer.provideMerge(
+							ReviewRepositoryLive,
+							ReviewAuthoringLive.pipe(Layer.provide(RemoteControlClientLive))
+						)
+					)
 				);
 			})
 		)
@@ -370,16 +384,14 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 					const authoring = yield* ReviewAuthoring;
 					const selection = yield* authoring.inspectSelection(command.endpoint);
 					if (selection.status === "failed") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `${selection.message} ${selection.recovery}`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `${selection.message} ${selection.recovery}`
+						});
 					}
 					const candidates = generateFramingCandidates(selection);
 					const session =
@@ -415,10 +427,12 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 					return yield* printJson(session);
 				});
 				return yield* program.pipe(
-					Effect.provide(reviewAuthoring),
 					Effect.provide(
-						ReviewAuthoringSessionsLive.pipe(
-							Layer.provide(Layer.mergeAll(ReviewRepositoryLive, reviewAuthoring))
+						Layer.provideMerge(
+							reviewAuthoring,
+							ReviewAuthoringSessionsLive.pipe(
+								Layer.provide(Layer.mergeAll(ReviewRepositoryLive, reviewAuthoring))
+							)
 						)
 					)
 				);
@@ -468,7 +482,7 @@ export const runReviewCapture = Effect.fn("Cli.workflow.review_capture")(
 											? undefined
 											: { correlationId: command.correlationId })
 									},
-									id: CaptureInvocationId.make(yield* ids.generate()),
+									id: CaptureInvocationId.make(yield* ids.generate),
 									reviewSetId: reviewSet.id
 								});
 					const run = yield* capture.captureSet({
@@ -479,8 +493,12 @@ export const runReviewCapture = Effect.fn("Cli.workflow.review_capture")(
 					if (run.status !== "completed") yield* runtime.setExitCode(1);
 				});
 				return yield* program.pipe(
-					Effect.provide(ReviewCaptureLive.pipe(Layer.provide(captureDependencies))),
-					Effect.provide(captureDependencies)
+					Effect.provide(
+						Layer.provideMerge(
+							ReviewCaptureLive.pipe(Layer.provide(captureDependencies)),
+							captureDependencies
+						)
+					)
 				);
 			})
 		)

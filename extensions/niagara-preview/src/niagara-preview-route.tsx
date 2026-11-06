@@ -23,9 +23,9 @@ import {
 	NiagaraPreviewClientError,
 	NiagaraPreviewIntent as NiagaraPreviewIntentSchema
 } from "./niagara-preview-client.js";
+const decodeNiagaraPreviewIntentSchema = Schema.decodeOption(NiagaraPreviewIntentSchema);
 
 const isNiagaraPreviewClientError = Schema.is(NiagaraPreviewClientError);
-const decodeNiagaraPreviewIntentOption = Schema.decodeUnknownOption(NiagaraPreviewIntentSchema);
 const defaultSystem = "/Niagara/DefaultAssets/Templates/Systems/SimpleExplosion.SimpleExplosion";
 
 type RouteState =
@@ -177,7 +177,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 	let cachedBytes = 0;
 
 	const candidateIntent = createMemo(() =>
-		decodeNiagaraPreviewIntentOption({
+		decodeNiagaraPreviewIntentSchema({
 			settings: {
 				captureMode: captureMode(),
 				durationSeconds: Number(duration()),
@@ -219,7 +219,7 @@ export function NiagaraPreviewRoute(props: { readonly client: NiagaraPreviewClie
 
 	const refreshCatalogue = () => {
 		setCatalogue({ status: "loading" });
-		catalogueAction.run(props.client.catalogue(), {
+		catalogueAction.run(props.client.catalogue, {
 			onFailure: (cause) => {
 				const failure = clientFailure(cause, "validation");
 				const parts = failureParts(failure.error.message);

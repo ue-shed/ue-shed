@@ -113,7 +113,7 @@ describe("WorldScout", () => {
 		const observation = fallbackObservation(snapshot);
 		const paint = syncPaintScheduler();
 		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			connectWorld: Effect.sync(() => readyResult(snapshot)),
 			focusActor: (actorId, bringToFront) =>
 				Effect.sync(() => {
 					focused = actorId;
@@ -209,7 +209,7 @@ describe("WorldScout", () => {
 		};
 		const paint = syncPaintScheduler();
 		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			connectWorld: Effect.sync(() => readyResult(snapshot)),
 			focusActor: (actorId) =>
 				Effect.succeed({
 					actorId,
@@ -254,7 +254,7 @@ describe("WorldScout", () => {
 		};
 		const paint = syncPaintScheduler();
 		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			connectWorld: Effect.sync(() => readyResult(snapshot)),
 			focusActor: (actorId) =>
 				Effect.succeed({
 					actorId,
@@ -305,7 +305,7 @@ describe("WorldScout", () => {
 		await Effect.runPromise(Queue.offer(updates, fallbackObservation(snapshot)));
 		const paint = syncPaintScheduler();
 		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			connectWorld: Effect.sync(() => readyResult(snapshot)),
 			focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
 			worldObservations: () => Stream.fromQueue(updates)
 		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
@@ -360,7 +360,7 @@ describe("WorldScout", () => {
 		};
 		const paint = syncPaintScheduler();
 		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			connectWorld: Effect.sync(() => readyResult(snapshot)),
 			focusActor: (actorId, bringToFront) =>
 				Effect.sync(() => {
 					focusCalls.push({ actorId, bringToFront });
@@ -427,7 +427,7 @@ describe("WorldScout", () => {
 			}
 		};
 		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshots[0]!)),
+			connectWorld: Effect.sync(() => readyResult(snapshots[0]!)),
 			focusActor: (actorId) =>
 				Effect.succeed({
 					actorId,
@@ -535,7 +535,7 @@ describe("WorldScout", () => {
 		const appliedCounts: number[] = [];
 		const paint = syncPaintScheduler();
 		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			connectWorld: Effect.sync(() => readyResult(snapshot)),
 			focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
 			worldObservations: () => Stream.make(initial, next)
 		} satisfies Pick<MapReviewClientApi, "connectWorld" | "focusActor" | "worldObservations">;
@@ -571,7 +571,7 @@ describe("WorldScout", () => {
 		let received = 0;
 		const selected: Array<ObservedActor | undefined> = [];
 		const client = {
-			connectWorld: () => Effect.succeed(readyResult(snapshot)),
+			connectWorld: Effect.sync(() => readyResult(snapshot)),
 			focusActor: (actorId) => Effect.succeed({ actorId, status: "not_supported" as const }),
 			worldObservations: () =>
 				Stream.fromQueue(updates).pipe(

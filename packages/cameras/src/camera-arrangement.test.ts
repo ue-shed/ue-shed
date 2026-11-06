@@ -25,10 +25,10 @@ import {
 import { generateFramingCandidates } from "./review-framing.js";
 
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
+const decodeReviewAuthoringSession = Schema.decodeSync(ReviewAuthoringSession);
+const decodeCameraArrangement = Schema.decodeSync(CameraArrangement);
+const decodeReviewSetSync = Schema.decodeSync(ReviewSet);
 const decodeCommand = Schema.decodeUnknownSync(CameraArrangementCommand);
-const decodeReviewAuthoringSession = Schema.decodeUnknownSync(ReviewAuthoringSession);
-const decodeCameraArrangement = Schema.decodeUnknownSync(CameraArrangement);
-const decodeReviewSetSync = Schema.decodeUnknownSync(ReviewSet);
 const command = (arrangement: CameraArrangement, fields: Schema.JsonObject) =>
 	decodeCommand({
 		arrangementId: arrangement.id,
@@ -282,7 +282,7 @@ describe("durable camera coordination", () => {
 			)
 		);
 		expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-		expect((await Effect.runPromise(store.load())).arrangement.revision).toBe(1);
+		expect((await Effect.runPromise(store.load)).arrangement.revision).toBe(1);
 	});
 	it("restarts with exact state, rejects stale writers, and deduplicates committed operations", async () => {
 		const p = await paths(),

@@ -1,4 +1,4 @@
-import { Config, Context, Effect, Layer, Option, Schema, Stream } from "effect";
+import { type Brand, Config, Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields, PackageHeaderData } from "@ue-shed/protocol";
 import { findValidatedPage, retainValidatedPage } from "./project-index-page-validation.js";
 
@@ -190,6 +190,7 @@ export const ProjectIndexCountResult = Schema.Struct({
 	generation: ProjectIndexGeneration,
 	count: NonNegativeInt
 });
+const decodeProjectIndexCountResult = Schema.decodeEffect(ProjectIndexCountResult);
 /**
  * Distinct matching package count bound to one project identity and committed generation. It
  * counts packages rather than exports or matching filter occurrences.
@@ -285,59 +286,59 @@ const ErrorFields = {
  * whether refreshing/rebuilding or repairing the host is appropriate; the underlying cause is
  * retained when available.
  */
-export class ProjectIndexUnavailable extends Schema.TaggedError<ProjectIndexUnavailable>()(
-	"ProjectIndexUnavailable",
-	ErrorFields
-) {}
+export class ProjectIndexUnavailable extends Schema.TaggedError<
+	ProjectIndexUnavailable,
+	Brand.Brand<"packages/unreal-assets/src/project-index/ProjectIndexUnavailable">
+>()("ProjectIndexUnavailable", ErrorFields) {}
 
 /**
  * Invalid catalog target, query, filter or configuration. Correct the request rather than
  * retrying unchanged input.
  */
-export class ProjectIndexInvalidRequest extends Schema.TaggedError<ProjectIndexInvalidRequest>()(
-	"ProjectIndexInvalidRequest",
-	ErrorFields
-) {}
+export class ProjectIndexInvalidRequest extends Schema.TaggedError<
+	ProjectIndexInvalidRequest,
+	Brand.Brand<"packages/unreal-assets/src/project-index/ProjectIndexInvalidRequest">
+>()("ProjectIndexInvalidRequest", ErrorFields) {}
 
 /**
  * A query references an older committed generation. Read current status and restart
  * pagination/counting against the new generation instead of combining old and new pages.
  */
-export class ProjectIndexStaleGeneration extends Schema.TaggedError<ProjectIndexStaleGeneration>()(
-	"ProjectIndexStaleGeneration",
-	{
-		...ErrorFields,
-		actualGeneration: ProjectIndexGeneration,
-		expectedGeneration: ProjectIndexGeneration
-	}
-) {}
+export class ProjectIndexStaleGeneration extends Schema.TaggedError<
+	ProjectIndexStaleGeneration,
+	Brand.Brand<"packages/unreal-assets/src/project-index/ProjectIndexStaleGeneration">
+>()("ProjectIndexStaleGeneration", {
+	...ErrorFields,
+	actualGeneration: ProjectIndexGeneration,
+	expectedGeneration: ProjectIndexGeneration
+}) {}
 
 /**
  * The native worker cannot satisfy the requested catalog contract/encoding. Install a paired
  * worker rather than treating its response as an empty inventory.
  */
-export class ProjectIndexIncompatibleWorker extends Schema.TaggedError<ProjectIndexIncompatibleWorker>()(
-	"ProjectIndexIncompatibleWorker",
-	ErrorFields
-) {}
+export class ProjectIndexIncompatibleWorker extends Schema.TaggedError<
+	ProjectIndexIncompatibleWorker,
+	Brand.Brand<"packages/unreal-assets/src/project-index/ProjectIndexIncompatibleWorker">
+>()("ProjectIndexIncompatibleWorker", ErrorFields) {}
 
 /**
  * Stored catalog evidence is invalid or incompatible. Follow rebuild/quarantine guidance; do
  * not continue serving partially trusted cached rows.
  */
-export class ProjectIndexCorruptCatalog extends Schema.TaggedError<ProjectIndexCorruptCatalog>()(
-	"ProjectIndexCorruptCatalog",
-	ErrorFields
-) {}
+export class ProjectIndexCorruptCatalog extends Schema.TaggedError<
+	ProjectIndexCorruptCatalog,
+	Brand.Brand<"packages/unreal-assets/src/project-index/ProjectIndexCorruptCatalog">
+>()("ProjectIndexCorruptCatalog", ErrorFields) {}
 
 /**
  * Refresh/rebuild failed or ended without a completed summary. The previous committed
  * generation remains separate from uncommitted work; inspect guidance before retrying.
  */
-export class ProjectIndexRefreshFailed extends Schema.TaggedError<ProjectIndexRefreshFailed>()(
-	"ProjectIndexRefreshFailed",
-	ErrorFields
-) {}
+export class ProjectIndexRefreshFailed extends Schema.TaggedError<
+	ProjectIndexRefreshFailed,
+	Brand.Brand<"packages/unreal-assets/src/project-index/ProjectIndexRefreshFailed">
+>()("ProjectIndexRefreshFailed", ErrorFields) {}
 
 /** Tag guard for every Project Index failure; match by tag, not `instanceof`. */
 export const isProjectIndexError = Schema.is(
@@ -453,7 +454,6 @@ const invalidRequest = (message: string, cause?: unknown): ProjectIndexInvalidRe
 	});
 
 const decodeCount = Schema.decodeUnknownEffect(ProjectIndexCount);
-const decodeCountResult = Schema.decodeUnknownEffect(ProjectIndexCountResult);
 const decodeTarget = Schema.decodeUnknownEffect(ProjectIndexTarget);
 const decodeQuery = Schema.decodeUnknownEffect(ProjectIndexQuery);
 
@@ -478,7 +478,7 @@ export const countProjectIndex = Effect.fn("ProjectIndex.count")(function* (
 	const decoded = yield* decodeProjectIndexCount(request);
 	const index = yield* ProjectIndex;
 	const result = yield* index.count(decoded);
-	return yield* decodeCountResult(result).pipe(
+	return yield* decodeProjectIndexCountResult(result).pipe(
 		Effect.filterOrFail(
 			(value) =>
 				value.projectId === decoded.projectId &&
@@ -717,15 +717,11 @@ export function requireProjectIndexCacheRoot(
 		);
 	}
 	if (Option.isOption(cacheRoot)) {
-		return Option.match(cacheRoot, {
-			onNone: () =>
-				Effect.fail(
-					invalidRequest(
-						`Project Index requires ${PROJECT_INDEX_CACHE_ROOT_ENV} or an explicit cache root.`
-					)
-				),
-			onSome: (value) => Effect.succeed(value)
-		});
+		return Effect.fromOption(cacheRoot, () =>
+			invalidRequest(
+				`Project Index requires ${PROJECT_INDEX_CACHE_ROOT_ENV} or an explicit cache root.`
+			)
+		);
 	}
 	return Effect.succeed(cacheRoot);
 }

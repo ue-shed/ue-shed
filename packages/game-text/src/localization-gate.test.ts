@@ -31,10 +31,10 @@ import {
 	unit
 } from "./localization.test-support.js";
 import { TextUnit, type TextCorpus } from "./schema.js";
-
-const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
-const encodeTextUnit = Schema.encodeSync(TextUnit);
-const decodeLocalizationTargetName = Schema.decodeUnknownSync(LocalizationTargetName);
+const decodeTextUnit = Schema.decodeSync(TextUnit);
+const decodeTextUnitEffect = Schema.decodeUnknownEffect(TextUnit);
+const encodeTextUnitEffect = Schema.encodeEffect(TextUnit);
+const decodeLocalizationTargetName = Schema.decodeSync(LocalizationTargetName);
 
 const MENU = "Content/Text/DT_Menu.uasset";
 
@@ -274,17 +274,21 @@ describe("checking a change's text", () => {
 
 	it.live("names the listed file when a line lives in several", () =>
 		Effect.gen(function* () {
-			const shared = decodeTextUnit({
-				...encodeTextUnit(cell("Hello", "Hello there")),
+			const shared = yield* decodeTextUnitEffect({
+				...(yield* encodeTextUnitEffect(cell("Hello", "Hello there")).pipe(Effect.orDie)),
 				occurrences: [
-					...encodeTextUnit(cell("Hello", "Hello there")).occurrences,
+					...(yield* encodeTextUnitEffect(cell("Hello", "Hello there")).pipe(
+						Effect.orDie
+					)).occurrences,
 					{
-						...encodeTextUnit(cell("Hello", "Hello there")).occurrences[0],
+						...(yield* encodeTextUnitEffect(cell("Hello", "Hello there")).pipe(
+							Effect.orDie
+						)).occurrences[0],
 						id: "occurrence:other",
 						packageFile: "Content/Text/Other.uasset"
 					}
 				]
-			});
+			}).pipe(Effect.orDie);
 			const result = yield* gate(
 				scanned([shared]),
 				evidence(

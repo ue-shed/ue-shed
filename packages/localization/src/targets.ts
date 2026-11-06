@@ -18,10 +18,9 @@ import {
 	type LocalizationLimits,
 	type LocalizationOutputPaths
 } from "./schema.js";
-
 const decodeRecipeFields = Schema.decodeUnknownResult(RecipeFields);
 
-type StructValue = typeof Schema.Json.Type;
+type StructValue = Schema.Json;
 
 /** Unreal property text is a separate grammar from INI; INI remains Config Explorer's boundary. */
 export function parseStructText(text: string, options?: LocalizationLimits) {

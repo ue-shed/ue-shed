@@ -15,9 +15,10 @@ import {
 	makeTextOccurrenceId,
 	makeTextUnitId
 } from "./schema.js";
-
-const decodeSearchPage = Schema.decodeUnknownSync(TextCorpusSearchPage);
-const decodeRuleDocumentSync = Schema.decodeUnknownSync(GameTextRuleDocument);
+const decodeTextCorpusSearchPage = Schema.decodeEffect(TextCorpusSearchPage);
+const decodeTextCorpusSearchPageSync = Schema.decodeSync(TextCorpusSearchPage);
+const decodeUnknownTextCorpusSearchPage = Schema.decodeUnknownSync(TextCorpusSearchPage);
+const decodeGameTextRuleDocumentSync = Schema.decodeSync(GameTextRuleDocument);
 function corpusOf(sources: readonly string[]): TextCorpus {
 	return {
 		schemaVersion: 1,
@@ -67,15 +68,17 @@ describe("writer counts", () => {
 						capability: "all",
 						pageSize: 50
 					});
-					expect(decodeSearchPage(page)).toEqual(page);
+					expect(yield* decodeTextCorpusSearchPage(page).pipe(Effect.orDie)).toEqual(
+						page
+					);
 					expect(() =>
-						decodeSearchPage({
+						decodeTextCorpusSearchPageSync({
 							...page,
 							counts: { ...page.counts, all: -1 }
 						})
 					).toThrow();
 					expect(() =>
-						decodeSearchPage({
+						decodeUnknownTextCorpusSearchPage({
 							...page,
 							units: Array.from(
 								{ length: MAX_TEXT_QUERY_PAGE_SIZE + 1 },
@@ -88,7 +91,7 @@ describe("writer counts", () => {
 					).toEqual(page.counts);
 					expect(page.total).toBe(2);
 					expect(page.counts.all).toBe(page.total);
-					const summary = yield* query.summary();
+					const summary = yield* query.summary;
 					expect(summary.counts).toEqual(page.counts);
 					expect(summary.review).toEqual({ all: 2, unresolved: 0, conflicting: 0 });
 					expect(summary.sources.dataTable).toBe(2);
@@ -289,6 +292,6 @@ describe("human CSV", () => {
 });
 it("decodes the neutral starter document through the existing decoder", async () => {
 	expect(await Effect.runPromise(decodeGameTextRuleDocument(STARTER_GAME_TEXT_RULES))).toEqual(
-		decodeRuleDocumentSync(STARTER_GAME_TEXT_RULES)
+		decodeGameTextRuleDocumentSync(STARTER_GAME_TEXT_RULES)
 	);
 });

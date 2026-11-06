@@ -56,7 +56,7 @@ export class GameTextIndexSource extends Context.Service<
 		readonly read: (
 			projectRoot: string,
 			entries: readonly PackageTextInventoryEntry[]
-		) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, GameTextIndexError>;
+		) => Stream.Stream<SavedAssetPackageTextEvent, GameTextIndexError>;
 		/**
 		 * Verified native preparation. With `snapshots`, each complete shard stays in one
 		 * request and the reader writes `<directory>/<group>.snapshot`. Completion events name
@@ -128,6 +128,13 @@ export interface GameTextIndexRefreshResult {
 	 * model always has one.
 	 */
 	readonly revision?: string | undefined;
+	/**
+	 * An opaque string, the same for every process reading one store and safe to persist. It
+	 * changes when anything the target shows changes (packages, localization files, review file,
+	 * code or policy) or the store is compacted (`query.changedSince` then answers `too_old`), and
+	 * not across refreshes that change nothing. Absent on legacy adapters.
+	 */
+	readonly generation?: string | undefined;
 	readonly joined: JoinedTargetReader;
 	readonly query: NativeTextQuery;
 	readonly summary: import("./schema.js").TextCorpusQuerySummary;

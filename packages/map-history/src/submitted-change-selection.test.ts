@@ -7,11 +7,10 @@ import {
 } from "./perforce.js";
 import { MapHistoryRange } from "./schema.js";
 import { selectSubmittedChanges } from "./submitted-change-selection.js";
-
-const decodeRange = Schema.decodeUnknownSync(MapHistoryRange);
+const decodeMapHistoryRange = Schema.decodeSync(MapHistoryRange);
 
 function range() {
-	return decodeRange({
+	return decodeMapHistoryRange({
 		since: "2026-07-21T00:00:00.000Z",
 		until: "2026-07-28T00:00:00.000Z"
 	});

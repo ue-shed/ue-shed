@@ -12,8 +12,7 @@ import {
 	StagedEditsButton,
 	StagedEditsPanel
 } from "./game-text-translation-edits.js";
-
-const decodeLocalizationEdit = Schema.decodeUnknownSync(LocalizationEdit);
+const decodeLocalizationEdit = Schema.decodeSync(LocalizationEdit);
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 afterEach(cleanup);

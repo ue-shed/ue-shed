@@ -10,7 +10,7 @@ import { SharedIndex } from "./shared-index.js";
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 describe.skipIf(!executable)("native localization import", () => {
-	it("reports files, preserves failed cold publication, and reuses previous content", async () => {
+	it("publishes the files that import, reports the rest, and reuses previous content", async () => {
 		if (!executable) throw new Error("The native reader is required.");
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-native-localization-"));
 		try {
@@ -33,7 +33,7 @@ describe.skipIf(!executable)("native localization import", () => {
 								}
 							},
 							Effect.gen(function* () {
-								const writer = yield* (yield* SharedIndex).writer();
+								const writer = yield* (yield* SharedIndex).writer;
 								if (!writer.importLocalization)
 									throw new Error("The native import is required.");
 								const files = ["valid.po", "bad.po"].map((relativePath) => ({
@@ -45,7 +45,7 @@ describe.skipIf(!executable)("native localization import", () => {
 								}));
 								const progress: number[] = [];
 								const failed = yield* writer.importLocalization(
-									{ files, maximumInFlightBytes: 1, cold: true },
+									{ files, maximumInFlightBytes: 1 },
 									(completed, total) => {
 										expect(total).toBe(2);
 										progress.push(completed);
@@ -53,25 +53,38 @@ describe.skipIf(!executable)("native localization import", () => {
 								);
 								expect(progress).toEqual([1, 2]);
 								expect(failed.workerCount).toBe(1);
-								expect(failed.files[1]?.error).toMatchObject({
-									code: "malformed_po",
-									message:
-										"bad.po at line 1: localization import failed (malformed_po)."
+								expect(failed.files[1]).toMatchObject({
+									outcome: "failed",
+									error: {
+										code: "malformed_po",
+										message:
+											"bad.po at line 1: localization import failed (malformed_po)."
+									}
 								});
-								expect(writer.manifest().active).toEqual({});
+								const valid = failed.files[0];
+								if (valid?.outcome !== "imported")
+									throw new Error("valid.po did not import.");
+								expect(writer.manifest().active).toEqual({
+									"valid.po": valid.file.key
+								});
 								yield* Effect.promise(() =>
 									writeFile(join(projectRoot, "bad.po"), source)
 								);
 								const published = yield* writer.importLocalization({
 									files,
-									maximumInFlightBytes: 1,
-									cold: true
+									maximumInFlightBytes: 1
 								});
-								expect(published.files.every((entry) => entry.file?.parsed)).toBe(
-									true
-								);
-								const key = published.files[0]?.file?.key;
-								expect(writer.manifest().active["valid.po"]).toBe(key);
+								// bad.po now holds valid.po's content, so both reuse its layer.
+								expect(
+									published.files.map((entry) =>
+										entry.outcome === "imported" ? entry.file.parsed : null
+									)
+								).toEqual([false, false]);
+								const key = valid.file.key;
+								expect(writer.manifest().active).toEqual({
+									"valid.po": key,
+									"bad.po": key
+								});
 								yield* Effect.promise(() =>
 									writeFile(
 										join(projectRoot, "valid.po"),
@@ -80,18 +93,19 @@ describe.skipIf(!executable)("native localization import", () => {
 								);
 								yield* writer.importLocalization({
 									files: files.slice(0, 1),
-									maximumInFlightBytes: 1,
-									cold: false
+									maximumInFlightBytes: 1
 								});
 								yield* Effect.promise(() =>
 									writeFile(join(projectRoot, "valid.po"), source)
 								);
 								const reused = yield* writer.importLocalization({
 									files: files.slice(0, 1),
-									maximumInFlightBytes: 1,
-									cold: false
+									maximumInFlightBytes: 1
 								});
-								expect(reused.files[0]?.file).toMatchObject({ key, parsed: false });
+								expect(reused.files[0]).toMatchObject({
+									outcome: "imported",
+									file: { key, parsed: false }
+								});
 								expect(writer.manifest().active["valid.po"]).toBe(key);
 							})
 						);

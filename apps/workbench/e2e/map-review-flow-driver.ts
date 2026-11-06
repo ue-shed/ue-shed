@@ -74,6 +74,10 @@ const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const decodeReviewSet = Schema.decodeUnknownSync(ReviewSet);
 const decodeCaptureRun = Schema.decodeUnknownSync(CaptureRun);
 const decodeReviewAuthoringSession = Schema.decodeUnknownSync(ReviewAuthoringSession);
+const CameraLibraryStatusJson = Schema.fromJsonString(
+	Schema.Struct({ cameras: Schema.optionalKey(Schema.Array(Schema.Unknown)) })
+);
+const decodeCameraLibraryStatusJson = Schema.decodeUnknownPromise(CameraLibraryStatusJson);
 
 export interface MapReviewFlowLifecycle {
 	readonly afterLaunch?: (args: {
@@ -328,7 +332,7 @@ export async function createMapReviewFlowHarness(args: {
 	await launch();
 
 	const driver: MapReviewAuthoringRoundtripDriver = {
-		prepareFixture: () =>
+		prepareFixture: Effect.suspend(() =>
 			step("prepareFixture", async () => {
 				const current = currentWorkbench();
 				await current.expectShowcaseReady();
@@ -350,8 +354,9 @@ export async function createMapReviewFlowHarness(args: {
 					timeout: 60_000
 				});
 				return {};
-			}),
-		selectSubject: () =>
+			})
+		),
+		selectSubject: Effect.suspend(() =>
 			step("selectSubject", async () => {
 				const page = currentWorkbench().page;
 				const stop = page.getByRole("button", { exact: true, name: "Stop" });
@@ -363,8 +368,9 @@ export async function createMapReviewFlowHarness(args: {
 				});
 				await selectActor(compoundSubject);
 				return {};
-			}),
-		generateRig: () =>
+			})
+		),
+		generateRig: Effect.suspend(() =>
 			step("generateRig", async () => {
 				const page = currentWorkbench().page;
 				await page.getByRole("button", { name: "ADD SELECTED ACTOR AS VIEW" }).click();
@@ -384,8 +390,9 @@ export async function createMapReviewFlowHarness(args: {
 				createdSessionPaths.add(sessionPath);
 				const session = decodeReviewAuthoringSession(await readOnlyJson(sessionPath));
 				return { identity: { sessionId: session.id } };
-			}),
-		tuneRig: () =>
+			})
+		),
+		tuneRig: Effect.suspend(() =>
 			step("tuneRig", async () => {
 				const page = currentWorkbench().page;
 				const framing = page.locator("details").filter({ hasText: "VIEW PRESETS + RIG" });
@@ -432,8 +439,9 @@ export async function createMapReviewFlowHarness(args: {
 					throw new Error("The tuned session has no selected candidate.");
 				}
 				return { identity: { candidateId: session.selectedCandidateId } };
-			}),
-		previewCandidate: () =>
+			})
+		),
+		previewCandidate: Effect.suspend(() =>
 			step("previewCandidate", async () => {
 				const candidates = currentWorkbench().page.getByRole("region", {
 					name: "Framing candidates"
@@ -452,8 +460,9 @@ export async function createMapReviewFlowHarness(args: {
 				});
 				expect(width).toBe(320);
 				return {};
-			}),
-		approveView: () =>
+			})
+		),
+		approveView: Effect.suspend(() =>
 			step("approveView", async () => {
 				const page = currentWorkbench().page;
 				const candidates = page.getByRole("region", { name: "Framing candidates" });
@@ -524,8 +533,9 @@ export async function createMapReviewFlowHarness(args: {
 						viewRevisionId: saved.views[0]!.revision.id
 					}
 				};
-			}),
-		verifyPersistence: () =>
+			})
+		),
+		verifyPersistence: Effect.suspend(() =>
 			step("verifyPersistence", async () => {
 				if (sessionPath === undefined) throw new Error("The session path is unavailable.");
 				const persistedRoot = join(args.artifactRoot, "persisted");
@@ -541,15 +551,17 @@ export async function createMapReviewFlowHarness(args: {
 					],
 					identity: { sessionId: session.id }
 				};
-			}),
-		relaunchWorkbench: () =>
+			})
+		),
+		relaunchWorkbench: Effect.suspend(() =>
 			step("relaunchWorkbench", async () => {
 				await closeWorkbench();
 				await launch();
 				await currentWorkbench().expectShowcaseReady();
 				return {};
-			}),
-		loadView: () =>
+			})
+		),
+		loadView: Effect.suspend(() =>
 			step("loadView", async () => {
 				const current = currentWorkbench();
 				await current.openRoute("Map Review");
@@ -571,8 +583,9 @@ export async function createMapReviewFlowHarness(args: {
 						viewRevisionId: saved.views[0]!.revision.id
 					}
 				};
-			}),
-		captureView: () =>
+			})
+		),
+		captureView: Effect.suspend(() =>
 			step("captureView", async () => {
 				firstRunPath = await captureCurrentSet();
 				if (collection) {
@@ -614,8 +627,9 @@ export async function createMapReviewFlowHarness(args: {
 				}
 				const run = decodeCaptureRun(await readOnlyJson(runPath));
 				return { identity: { invocationId: run.invocation.id, runId: run.id } };
-			}),
-		inspectEvidence: () =>
+			})
+		),
+		inspectEvidence: Effect.suspend(() =>
 			step("inspectEvidence", async () => {
 				if (runPath === undefined) throw new Error("The capture run path is unavailable.");
 				const run = decodeCaptureRun(await readOnlyJson(runPath));
@@ -686,8 +700,9 @@ export async function createMapReviewFlowHarness(args: {
 					attachments: [...attachments],
 					identity: { artifactId: artifact.id }
 				};
-			}),
-		cleanup: () =>
+			})
+		),
+		cleanup: Effect.suspend(() =>
 			Effect.tryPromise({
 				try: async (): Promise<MapReviewFlowCleanup> => {
 					if (cleaned) {
@@ -714,10 +729,7 @@ export async function createMapReviewFlowHarness(args: {
 						functionName: "GetStatus",
 						objectPath: cameraLibrary
 					});
-					// SAFETY: GetMapCaptureStatus returns this UE Shed-owned status payload in ResultJson.
-					const status = JSON.parse(String(statusResponse.ResultJson)) as {
-						readonly cameras?: ReadonlyArray<unknown>;
-					};
+					const status = await decodeCameraLibraryStatusJson(statusResponse.ResultJson);
 					const dirtyResponse = await remoteCall({
 						endpoint: args.endpoint,
 						functionName: "GetDirtyMapPackages",
@@ -755,10 +767,11 @@ export async function createMapReviewFlowHarness(args: {
 				},
 				catch: (cause) => flowError("cleanup", cause)
 			}).pipe(
-				Effect.catch((error) =>
+				Effect.catchTag("MapReviewFlowExecutionError", (error) =>
 					Effect.succeed({ message: error.message, status: "failed" as const })
 				)
 			)
+		)
 	};
 
 	return {

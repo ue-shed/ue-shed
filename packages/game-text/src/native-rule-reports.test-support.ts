@@ -39,8 +39,9 @@ const Result = Schema.Struct({
 		})
 	)
 });
-const decodeResultJson = Schema.decodeUnknownSync(Schema.fromJsonString(Result));
-const decodeRow = Schema.decodeUnknownSync(Row);
+const ResultJson = Schema.fromJsonString(Result);
+const decodeResultJson = Schema.decodeSync(ResultJson);
+const decodeRow = Schema.decodeSync(Row);
 const TermMatchesActual = Schema.Struct({
 	matches: Schema.Array(
 		Schema.Struct({ match: Schema.String, start: Schema.Number, end: Schema.Number })
@@ -161,7 +162,7 @@ export function nativeVisibleLength(text: string): number {
 
 /** Custom-kind unit assertions with one explicit source row, evaluated in Rust. */
 export function nativeDetectCustom(check: CustomLocalizationCheck, text: string) {
-	const document = Schema.decodeUnknownSync(importGameTextRuleDocument)({
+	const document = Schema.decodeSync(importGameTextRuleDocument)({
 		schemaVersion: 1,
 		roles: [],
 		rules: [{ ...check, subject: "source" }]

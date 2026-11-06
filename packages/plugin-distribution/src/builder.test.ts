@@ -9,7 +9,7 @@ import {
 	type OwnedProcessTreeHandle,
 	type OwnedProcessTreeLaunchOptions
 } from "@ue-shed/engine";
-import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	CompiledPluginBuildCancelled,
@@ -475,40 +475,54 @@ describe("compiled plugin builder", () => {
 		expect(await readdir(source.request.outputDirectory)).toEqual([]);
 	});
 
-	it("cancels the owned process tree and leaves no published output", async () => {
-		const source = await fixture();
-		const launched = await Effect.runPromise(Deferred.make<void>());
-		const terminated = await Effect.runPromise(Deferred.make<void>());
-		const layer = builderLayer(() =>
-			Deferred.succeed(launched, undefined).pipe(
-				Effect.as({
-					awaitExit: Effect.never,
-					pid: 42,
-					terminate: (reason: "cancelled" | "failed" | "released") =>
-						Deferred.succeed(terminated, undefined).pipe(
-							Effect.as({
-								exitCode: null,
-								kind: "terminated" as const,
-								reason,
-								signal: null
-							})
-						)
-				})
-			)
-		);
-		const controller = new AbortController();
-		const fiber = Effect.runFork(
-			Effect.flatMap(CompiledPluginBuilder, (builder) =>
-				builder.build(source.request, { signal: controller.signal })
-			).pipe(Effect.provide(layer))
-		);
-		await Effect.runPromise(Deferred.await(launched));
-		controller.abort();
-		const error = await Effect.runPromise(Fiber.join(fiber).pipe(Effect.flip));
-		await Effect.runPromise(Deferred.await(terminated));
-		expect(error).toBeInstanceOf(CompiledPluginBuildCancelled);
-		expect(await readdir(source.request.outputDirectory)).toEqual([]);
-	});
+	it.each(["caller_signal", "fiber"])(
+		"cancels the owned process tree through %s and leaves no published output",
+		async (mode) => {
+			const source = await fixture();
+			const launched = await Effect.runPromise(Deferred.make<void>());
+			const terminated = await Effect.runPromise(Deferred.make<void>());
+			const layer = builderLayer(() =>
+				Deferred.succeed(launched, undefined).pipe(
+					Effect.as({
+						awaitExit: Effect.never,
+						pid: 42,
+						terminate: (reason: "cancelled" | "failed" | "released") =>
+							Deferred.succeed(terminated, undefined).pipe(
+								Effect.as({
+									exitCode: null,
+									kind: "terminated" as const,
+									reason,
+									signal: null
+								})
+							)
+					})
+				)
+			);
+			const controller = mode === "caller_signal" ? new AbortController() : undefined;
+			const fiber = Effect.runFork(
+				Effect.flatMap(CompiledPluginBuilder, (builder) =>
+					builder.build(
+						source.request,
+						controller === undefined ? {} : { signal: controller.signal }
+					)
+				).pipe(Effect.provide(layer))
+			);
+			await Effect.runPromise(Deferred.await(launched));
+			if (controller === undefined) {
+				await Effect.runPromise(Fiber.interrupt(fiber));
+				const exit = await Effect.runPromise(Fiber.await(fiber));
+				expect(Exit.isFailure(exit)).toBe(true);
+				if (Exit.isFailure(exit))
+					expect(exit.cause.reasons.every(Cause.isInterruptReason)).toBe(true);
+			} else {
+				controller.abort();
+				const error = await Effect.runPromise(Fiber.join(fiber).pipe(Effect.flip));
+				expect(error).toBeInstanceOf(CompiledPluginBuildCancelled);
+			}
+			await Effect.runPromise(Deferred.await(terminated));
+			expect(await readdir(source.request.outputDirectory)).toEqual([]);
+		}
+	);
 
 	it("preserves cancellation during source extraction and cleans the stage", async () => {
 		const source = await fixture();

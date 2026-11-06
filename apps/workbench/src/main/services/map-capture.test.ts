@@ -25,8 +25,8 @@ import { type WorkbenchConfigurationApi } from "../workbench-config.js";
 import { CameraWorkspaceError, makeWorkbenchCameraWorkspaceTestLayer } from "./camera-workspace.js";
 import { WorkbenchMapCapture, WorkbenchMapCaptureLive } from "./map-capture.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
-
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
+const decodeString = Schema.decodeUnknownEffect(Schema.String);
 const roots: string[] = [];
 
 it.effect("focuses explicit map opening but never the map opened as capture preparation", () =>
@@ -123,10 +123,9 @@ it.effect("closes the open camera set before the capture touches the editor", ()
 			Effect.provide(
 				mapCaptureLayer(projectRoot, {
 					cameraWorkspace: makeWorkbenchCameraWorkspaceTestLayer({
-						close: () =>
-							Effect.sync(() => {
-								calls.push("close");
-							})
+						close: Effect.sync(() => {
+							calls.push("close");
+						})
 					}),
 					worldControl: makeEditorWorldControlTestLayer({
 						snapshot: () => Effect.die("not used"),
@@ -192,21 +191,20 @@ it.effect("stops a capture before rendering when the open camera set will not cl
 			Effect.provide(
 				mapCaptureLayer(projectRoot, {
 					cameraWorkspace: makeWorkbenchCameraWorkspaceTestLayer({
-						close: () =>
-							Effect.sync(() => calls.push("close")).pipe(
-								Effect.andThen(
-									Effect.fail(
-										new CameraWorkspaceError({
-											recovery:
-												"Read the current editor and saved camera state before repeating a workspace action.",
-											retrySafe: false,
-											nextStep: "reconcile",
-											code: "camera_workspace_failed",
-											message: "detach refused"
-										})
-									)
+						close: Effect.sync(() => calls.push("close")).pipe(
+							Effect.andThen(
+								Effect.fail(
+									new CameraWorkspaceError({
+										recovery:
+											"Read the current editor and saved camera state before repeating a workspace action.",
+										retrySafe: false,
+										nextStep: "reconcile",
+										code: "camera_workspace_failed",
+										message: "detach refused"
+									})
 								)
 							)
+						)
 					}),
 					worldControl: makeEditorWorldControlTestLayer({
 						open: () => Effect.die("the map must not open"),
@@ -255,16 +253,15 @@ function mapCaptureLayer(
 	} = {}
 ) {
 	const project = makeWorkbenchProjectTestLayer({
-		choose: () => Effect.die("not used"),
-		current: () => Effect.die("not used"),
-		inputAtlas: () => Effect.die("not used"),
-		savedProject: () =>
-			Effect.succeed({
-				maps: [{ label: "City", mapPath: "Content/Maps/L_City.umap" }],
-				projectRoot
-			}),
-		savedTables: () => Effect.die("not used"),
-		selectedProject: () => Effect.succeed({ projectName: "City Project", projectRoot })
+		choose: Effect.suspend(() => Effect.die("not used")),
+		current: Effect.suspend(() => Effect.die("not used")),
+		inputAtlas: Effect.suspend(() => Effect.die("not used")),
+		savedProject: Effect.sync(() => ({
+			maps: [{ label: "City", mapPath: "Content/Maps/L_City.umap" }],
+			projectRoot
+		})),
+		savedTables: Effect.suspend(() => Effect.die("not used")),
+		selectedProject: Effect.sync(() => ({ projectName: "City Project", projectRoot }))
 	});
 	const dialog = Layer.succeed(
 		ElectronDialog,
@@ -284,35 +281,31 @@ function mapCaptureLayer(
 	const assetReader =
 		options.assetReader ??
 		makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 50 * 60_000
-				}),
-			catalogProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
-			scanProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					emittedAssets: 0,
-					processedAssets: 0,
-					totalAssets: 0
-				}),
-			savedWorldProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					actorsFound: 0,
-					processedPackages: 0,
-					totalPackages: 0
-				}),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			})),
+			catalogProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
+			scanProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			})),
+			savedWorldProgress: Effect.sync(() => ({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			})),
 			readBlueprint: () =>
 				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 			readLevelSequence: () =>
@@ -333,7 +326,7 @@ function mapCaptureLayer(
 			discoverTables: () => Effect.die("not used"),
 			readAsset: () => Effect.die("not used"),
 			readTable: () => Effect.die("not used"),
-			source: () => Effect.succeed("path")
+			source: Effect.succeed("path")
 		});
 	return WorkbenchMapCaptureLive.pipe(
 		Layer.provide(
@@ -365,7 +358,7 @@ it.effect(
 			roots.push(projectRoot);
 			const result = yield* Effect.gen(function* () {
 				const service = yield* WorkbenchMapCapture;
-				const created = yield* service.newPlan();
+				const created = yield* service.newPlan;
 				if (created.status !== "ready") return created;
 				return yield* service.savePlan({ plan: created.plan, saveAs: false });
 			}).pipe(Effect.provide(mapCaptureLayer(projectRoot)));
@@ -399,7 +392,7 @@ it.effect("does not inspect published runs while creating a plan", () =>
 
 		const result = yield* Effect.gen(function* () {
 			const service = yield* WorkbenchMapCapture;
-			return yield* service.newPlan();
+			return yield* service.newPlan;
 		}).pipe(Effect.provide(mapCaptureLayer(projectRoot)));
 
 		expect(result.status).toBe("ready");
@@ -445,35 +438,31 @@ it.effect("loads saved actors for the capture map through the shared asset reade
 			}
 		};
 		const assetReader = makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 50 * 60_000
-				}),
-			catalogProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
-			scanProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					emittedAssets: 0,
-					processedAssets: 0,
-					totalAssets: 0
-				}),
-			savedWorldProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					actorsFound: 0,
-					processedPackages: 0,
-					totalPackages: 0
-				}),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			})),
+			catalogProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
+			scanProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			})),
+			savedWorldProgress: Effect.sync(() => ({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			})),
 			readBlueprint: () =>
 				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 			readLevelSequence: () =>
@@ -497,7 +486,7 @@ it.effect("loads saved actors for the capture map through the shared asset reade
 					return world;
 				}),
 			readTable: () => Effect.die("not used"),
-			source: () => Effect.succeed("path")
+			source: Effect.succeed("path")
 		});
 		const result = yield* Effect.gen(function* () {
 			const service = yield* WorkbenchMapCapture;
@@ -519,21 +508,21 @@ it.effect("loads only manifest-owned capture proof tiles and verifies their hash
 			mkdtemp(join(tmpdir(), "ue-shed-map-proof-"))
 		);
 		roots.push(projectRoot);
-		const fixture = yield* Effect.tryPromise({
-			try: async () =>
-				decodeJson(
-					JSON.parse(
-						await readFile(
-							join(
-								process.cwd(),
-								"packages/protocol/contracts/cameras/map-tile/v1/fixtures/manifest-valid.json"
-							),
-							"utf8"
-						)
+		const fixture = yield* Effect.gen(function* () {
+			const sourceValue = yield* Effect.tryPromise(async () =>
+				JSON.parse(
+					await readFile(
+						join(
+							process.cwd(),
+							"packages/protocol/contracts/cameras/map-tile/v1/fixtures/manifest-valid.json"
+						),
+						"utf8"
 					)
-				),
-			catch: (cause) => cause
-		}).pipe(Effect.flatMap(decodeMapTilePyramidManifest));
+				)
+			);
+			const decodedValue0 = yield* decodeJsonEffect(sourceValue);
+			return yield* decodeMapTilePyramidManifest(decodedValue0);
+		});
 		const fixtureArtifact = fixture.tiles[0]!;
 		const tileBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 		const artifact = {
@@ -574,24 +563,29 @@ it.effect("provisions the snapped bounds as one orthographic live camera", () =>
 		let provisionRequest: unknown;
 		const remoteControl = makeRemoteControlClientTestLayer((request) => {
 			if (request.functionName !== "EnsureProvisionedCameras") return Effect.die("not used");
-			provisionRequest = JSON.parse(String(request.parameters.RequestJson));
-			return Effect.succeed({
-				cameras: [
-					{
-						cameraId: "map-camera",
-						correlation: {
-							mapCapturePlanId: "map-overview",
-							type: "map_capture_plan"
-						},
-						displayName: "map-overview",
-						height: 360,
-						index: 0,
-						width: 640
-					}
-				],
-				schemaVersion: 3,
-				worldContext: "editor"
-			});
+			return decodeString(request.parameters.RequestJson).pipe(
+				Effect.orDie,
+				Effect.map((json) => {
+					provisionRequest = JSON.parse(json);
+					return {
+						cameras: [
+							{
+								cameraId: "map-camera",
+								correlation: {
+									mapCapturePlanId: "map-overview",
+									type: "map_capture_plan"
+								},
+								displayName: "map-overview",
+								height: 360,
+								index: 0,
+								width: 640
+							}
+						],
+						schemaVersion: 3,
+						worldContext: "editor"
+					} as const;
+				})
+			);
 		});
 		const cameraFeed = makeCameraFeedTestLayer({
 			latestFrames: Effect.succeed(
@@ -620,7 +614,7 @@ it.effect("provisions the snapped bounds as one orthographic live camera", () =>
 		});
 		const result = yield* Effect.gen(function* () {
 			const service = yield* WorkbenchMapCapture;
-			const created = yield* service.newPlan();
+			const created = yield* service.newPlan;
 			if (created.status !== "ready") return created;
 			return yield* service.preview(created.plan);
 		}).pipe(Effect.provide(mapCaptureLayer(projectRoot, { cameraFeed, remoteControl })));

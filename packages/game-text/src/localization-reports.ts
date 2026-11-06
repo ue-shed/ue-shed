@@ -5,7 +5,7 @@ import {
 	textCorpusReportHeader,
 	type TextCorpusReportHeader
 } from "./corpus-summary.js";
-import { Effect, Result, Schema } from "effect";
+import { type Brand, Effect, Result, Schema } from "effect";
 import {
 	CultureCode,
 	FileProvenance,
@@ -70,14 +70,14 @@ export const LocalizationBaseline = Schema.Struct({
 	}),
 	entries: Schema.Array(LocalizationBaselineEntry).check(Schema.isMaxLength(MAX_BASELINE_ENTRIES))
 });
-export type LocalizationBaseline = typeof LocalizationBaseline.Type;
-const LocalizationBaselineJson = Schema.fromJsonString(LocalizationBaseline);
-const decodeLocalizationBaselineJsonResult = Schema.decodeUnknownResult(LocalizationBaselineJson);
-const decodeBaselineCreatedAtResult = Schema.decodeUnknownResult(
+const decodeCreatedAt = Schema.decodeResult(
 	LocalizationBaseline.fields.provenance.fields.createdAt
 );
+export type LocalizationBaseline = typeof LocalizationBaseline.Type;
+const LocalizationBaselineJson = Schema.fromJsonString(LocalizationBaseline);
+const decodeLocalizationBaselineJsonResult = Schema.decodeResult(LocalizationBaselineJson);
 const JsonText = Schema.fromJsonString(Schema.Json);
-const decodeJsonText = Schema.decodeUnknownSync(JsonText);
+const decodeJsonText = Schema.decodeSync(JsonText);
 const TextCorpusJson = Schema.fromJsonString(TextCorpus);
 const encodeTextCorpusJson = Schema.encodeSync(TextCorpusJson);
 /**
@@ -85,25 +85,25 @@ const encodeTextCorpusJson = Schema.encodeSync(TextCorpusJson);
  * recovery explain required correction; cause retains original schema/manifest evidence when
  * available.
  */
-export class LocalizationReportError extends Schema.TaggedError<LocalizationReportError>()(
-	"LocalizationReportError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"invalid_baseline",
-			"baseline_target_mismatch",
-			"missing_manifest",
-			"unreadable_manifest",
-			"ambiguous_manifest",
-			"word_count_unavailable",
-			"invalid_report_context"
-		]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class LocalizationReportError extends Schema.TaggedError<
+	LocalizationReportError,
+	Brand.Brand<"packages/game-text/src/localization-reports/LocalizationReportError">
+>()("LocalizationReportError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"invalid_baseline",
+		"baseline_target_mismatch",
+		"missing_manifest",
+		"unreadable_manifest",
+		"ambiguous_manifest",
+		"word_count_unavailable",
+		"invalid_report_context"
+	]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 const isLocalizationReportError = Schema.is(LocalizationReportError);
 function reportError(
 	code: LocalizationReportError["code"],
@@ -211,8 +211,7 @@ function baselineWith(
 	evidence: LocalizationTargetEvidence,
 	createdAt: string
 ): (generation: string) => LocalizationBaseline {
-	if (Result.isFailure(decodeBaselineCreatedAtResult(createdAt)))
-		throw reportError("invalid_baseline");
+	if (Result.isFailure(decodeCreatedAt(createdAt))) throw reportError("invalid_baseline");
 	const files = localizationEvidenceFileStatuses(evidence).flatMap((file) =>
 		file.provenance ? [file.provenance] : []
 	);
@@ -276,7 +275,7 @@ export const indexedLocalizationBaseline = Effect.fn("GameText.localizationBasel
 		try: () => baselineWith(model.evidence, createdAt),
 		catch: reportFailure("invalid_baseline")
 	});
-	const generation = yield* model.query.corpusFingerprint();
+	const generation = yield* model.query.corpusFingerprint;
 	return yield* Effect.try({
 		try: () => complete(generation),
 		catch: reportFailure("invalid_baseline")
@@ -435,7 +434,7 @@ function pairBaselineKeys(
 /** "not_tracked" until the project has a review file for the target. */
 const ReviewProgress = Schema.Union([
 	Schema.Literal("not_tracked"),
-	Schema.Struct({ lines: Count, percent: Schema.NullOr(Schema.Number) })
+	Schema.Struct({ lines: Count, percent: Schema.NullOr(Schema.Finite) })
 ]);
 /**
  * Per-culture state, translation and review progress with explicit unknown totals. Null
@@ -451,20 +450,16 @@ export const LocalizationProgressCulture = Schema.Struct({
 	total: Counts,
 	upToDateArchive: Schema.Struct({ lines: Schema.NullOr(Count), sourceWords: Words }),
 	translatedPercent: Schema.Struct({
-		lines: Schema.NullOr(Schema.Number),
-		words: Schema.NullOr(Schema.Number)
+		lines: Schema.NullOr(Schema.Finite),
+		words: Schema.NullOr(Schema.Finite)
 	}),
 	reviewed: ReviewProgress,
 	proofread: ReviewProgress,
 	baselineDelta: Schema.optionalKey(LocalizationBaselineDelta)
 });
+const decodeStates = Schema.decodeSync(LocalizationProgressCulture.fields.states);
+const decodeUnknownReasons = Schema.decodeSync(LocalizationProgressCulture.fields.unknownReasons);
 export type LocalizationProgressCulture = typeof LocalizationProgressCulture.Type;
-const decodeProgressCultureStates = Schema.decodeUnknownSync(
-	LocalizationProgressCulture.fields.states
-);
-const decodeProgressCultureUnknownReasons = Schema.decodeUnknownSync(
-	LocalizationProgressCulture.fields.unknownReasons
-);
 /**
  * Versioned target progress report with culture totals, word-count diagnostics and
  * package/gather coverage. Pending PO edits remain separate from archive/shipping progress.
@@ -780,8 +775,8 @@ function progressReport(
 				: "not_tracked";
 		const result: LocalizationProgressCulture = {
 			culture,
-			states: decodeProgressCultureStates(tally.states),
-			unknownReasons: decodeProgressCultureUnknownReasons(tally.unknownReasons),
+			states: decodeStates(tally.states),
+			unknownReasons: decodeUnknownReasons(tally.unknownReasons),
 			notSynced: tally.notSynced,
 			reducedSourceChecking: tally.reducedSourceChecking,
 			total: { lines, sourceWords: totalWords },
@@ -895,7 +890,7 @@ const indexedEvidenceFacts = Effect.fn("GameText.localizationReport.evidence")(f
 export const indexedLocalizationProgressReport = Effect.fn("GameText.localizationReport")(
 	function* (model: LocalizationReportIndex, baseline?: LocalizationBaseline) {
 		if (model.localization.target !== model.evidence.target.name)
-			return yield* Effect.fail(reportError("invalid_report_context"));
+			return yield* reportError("invalid_report_context");
 		const cached = reportFacts.get(model.evidence);
 		yield* Effect.annotateCurrentSpan("game_text.report.evidence_cached", cached !== undefined);
 		// A manifest that cannot be read fails the report before any native read.
@@ -920,7 +915,7 @@ export const indexedLocalizationProgressReport = Effect.fn("GameText.localizatio
 		const failure = baseline ? "invalid_baseline" : "invalid_report_context";
 		const [[header, tallies], facts] = yield* Effect.all(
 			[
-				Effect.all([model.query.readCorpusReportHeader(), indexTallies(model)]),
+				Effect.all([model.query.readCorpusReportHeader, indexTallies(model)]),
 				entries
 					? indexedEvidenceFacts(model.evidence, entries, failure)
 					: Effect.succeed(cached!)

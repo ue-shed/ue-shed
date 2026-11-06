@@ -16,8 +16,7 @@ import { afterAll, afterEach, expect, it } from "vitest";
 import { GameTextIdRepairs } from "./game-text-id-repairs.js";
 import { createGameTextEdits } from "./game-text-translation-edits.js";
 import type { GameTextClientApi } from "./game-text-client.js";
-
-const decodeLocalizationFocus = Schema.decodeUnknownSync(LocalizationFocus);
+const decodeLocalizationFocus = Schema.decodeSync(LocalizationFocus);
 const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 afterEach(cleanup);

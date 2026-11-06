@@ -19,7 +19,8 @@ const Failure = Schema.Struct({
 	status: Schema.Literal("failed"),
 	error: Schema.Struct({ code: Schema.String, message: Schema.String, recovery: Schema.String })
 });
-const decodeFailureJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Failure));
+const FailureJson = Schema.fromJsonString(Failure);
+const decodeFailureJson = Schema.decodeEffect(FailureJson);
 const decodeTargetsReport = Schema.decodeUnknownEffect(LocalizationTargetsReport);
 
 it.effect("loc status provides safe recovery for missing manifests and reader failures", () =>

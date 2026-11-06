@@ -66,6 +66,8 @@ describe("uasset IO protocol v1", () => {
 					"valid/extract-text-packages-text-capability-result-event.json",
 					"valid/blueprint-request.json",
 					"valid/compare-blueprints-request.json",
+					"valid/game-text-package-delta-request.json",
+					"valid/game-text-package-delta-rows-file-request.json",
 					"valid/level-sequence-request.json",
 					"valid/accepted-event.json",
 					"valid/inspect-result-event.json",
@@ -97,7 +99,8 @@ describe("uasset IO protocol v1", () => {
 					"valid/project-index-status-result-event.json",
 					"valid/project-index-summary-result-event.json",
 					"valid/project-index-page-result-event.json",
-					"valid/project-index-stale-generation-failed-event.json"
+					"valid/project-index-stale-generation-failed-event.json",
+					"valid/game-text-disk-changes-request.json"
 				]) {
 					const value = yield* Effect.promise(() => fixture(name));
 					if (name.includes("request")) yield* decodeUAssetIoRequest(value);

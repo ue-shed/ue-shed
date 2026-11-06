@@ -6,6 +6,7 @@ import {
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { RemoteControlClientError, type RemoteControlClientApi } from "@ue-shed/unreal-connection";
 import {
+	type Brand,
 	Context,
 	Duration,
 	Effect,
@@ -63,7 +64,10 @@ export interface ActorObservationDiagnostic {
 	readonly sequence: bigint;
 }
 
-export class ActorFeedError extends Schema.TaggedError<ActorFeedError>()("ActorFeedError", {
+export class ActorFeedError extends Schema.TaggedError<
+	ActorFeedError,
+	Brand.Brand<"packages/observatory/src/actor-feed/ActorFeedError">
+>()("ActorFeedError", {
 	operation: Schema.Literals(["listen", "decode_limit"]),
 	pipeName: Schema.String,
 	...ErrorGuidanceFields,
@@ -290,7 +294,7 @@ export function actorFeedLayer(options: ActorFeedOptions): Layer.Layer<ActorFeed
 
 export function makeActorFeedTestLayer(feed: Partial<ActorFeedApi> = {}): Layer.Layer<ActorFeed> {
 	return Layer.succeed(ActorFeed, {
-		latestPacket: feed.latestPacket ?? Effect.succeed(undefined),
+		latestPacket: feed.latestPacket ?? Effect.undefined,
 		metrics:
 			feed.metrics ??
 			Effect.succeed({
@@ -306,35 +310,35 @@ export function makeActorFeedTestLayer(feed: Partial<ActorFeedApi> = {}): Layer.
 	});
 }
 
-export class ActorObservationControlError extends Schema.TaggedError<ActorObservationControlError>()(
-	"ActorObservationControlError",
-	{
-		endpoint: Schema.String,
-		operation: Schema.Literals(["start", "stop", "status"]),
-		status: Schema.optional(Schema.Number),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class ActorObservationControlError extends Schema.TaggedError<
+	ActorObservationControlError,
+	Brand.Brand<"packages/observatory/src/actor-feed/ActorObservationControlError">
+>()("ActorObservationControlError", {
+	endpoint: Schema.String,
+	operation: Schema.Literals(["start", "stop", "status"]),
+	status: Schema.optional(Schema.Number),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
-export class ActorObservationSessionError extends Schema.TaggedError<ActorObservationSessionError>()(
-	"ActorObservationSessionError",
-	{
-		endpoint: Schema.String,
-		expectedSessionId: Schema.String,
-		receivedSessionId: Schema.String,
-		...ErrorGuidanceFields
-	}
-) {}
+export class ActorObservationSessionError extends Schema.TaggedError<
+	ActorObservationSessionError,
+	Brand.Brand<"packages/observatory/src/actor-feed/ActorObservationSessionError">
+>()("ActorObservationSessionError", {
+	endpoint: Schema.String,
+	expectedSessionId: Schema.String,
+	receivedSessionId: Schema.String,
+	...ErrorGuidanceFields
+}) {}
 
-export class ActorObservationRecoveryExhaustedError extends Schema.TaggedError<ActorObservationRecoveryExhaustedError>()(
-	"ActorObservationRecoveryExhaustedError",
-	{
-		attempts: Schema.Int,
-		endpoint: Schema.String,
-		...ErrorGuidanceFields
-	}
-) {}
+export class ActorObservationRecoveryExhaustedError extends Schema.TaggedError<
+	ActorObservationRecoveryExhaustedError,
+	Brand.Brand<"packages/observatory/src/actor-feed/ActorObservationRecoveryExhaustedError">
+>()("ActorObservationRecoveryExhaustedError", {
+	attempts: Schema.Int,
+	endpoint: Schema.String,
+	...ErrorGuidanceFields
+}) {}
 
 const WireCatalogActor = Schema.Struct({
 	...ActorMetadata.fields,
@@ -408,7 +412,7 @@ const decodeSnapshotResponse = Schema.decodeUnknownEffect(SnapshotResponse);
 function controlError(
 	endpoint: string,
 	operation: "start" | "stop" | "status",
-	cause: RemoteControlClientError | unknown
+	cause: RemoteControlClientError | Schema.SchemaError
 ): ActorObservationControlError {
 	if (isRemoteControlClientError(cause)) {
 		return new ActorObservationControlError({
@@ -485,16 +489,14 @@ const requestActorSnapshotForFallback = Effect.fn("ActorObservation.snapshotFall
 		Effect.mapError((cause) => controlError(endpoint, "status", cause))
 	);
 	if (response.status === "ready") return response.snapshot;
-	return yield* Effect.fail(
-		new ActorObservationControlError({
-			endpoint,
-			message: response.message,
-			operation: "status",
-			recovery: "Wait for the editor world to become ready, then request the snapshot again.",
-			retrySafe: true,
-			nextStep: "retry"
-		})
-	);
+	return yield* new ActorObservationControlError({
+		endpoint,
+		message: response.message,
+		operation: "status",
+		recovery: "Wait for the editor world to become ready, then request the snapshot again.",
+		retrySafe: true,
+		nextStep: "retry"
+	});
 });
 
 function buildCatalogFromReady(
@@ -728,17 +730,15 @@ function driveObservation(
 		) {
 			attempts += 1;
 			if (attempts > maxRecoveryAttempts) {
-				return yield* Effect.fail(
-					new ActorObservationRecoveryExhaustedError({
-						attempts: attempts - 1,
-						endpoint,
-						message,
-						recovery:
-							"Check that the editor is running with UEShedObservatory enabled, then start observation again.",
-						retrySafe: true,
-						nextStep: "retry"
-					})
-				);
+				return yield* new ActorObservationRecoveryExhaustedError({
+					attempts: attempts - 1,
+					endpoint,
+					message,
+					recovery:
+						"Check that the editor is running with UEShedObservatory enabled, then start observation again.",
+					retrySafe: true,
+					nextStep: "retry"
+				});
 			}
 			yield* publishUnavailable(message, "Retrying actor observation negotiation.");
 			yield* backoff(attempts);
@@ -818,20 +818,18 @@ function driveObservation(
 			if (liveOutcome.reason === "wrong_session") {
 				attempts += 1;
 				if (attempts > maxRecoveryAttempts) {
-					return yield* Effect.fail(
-						new ActorObservationSessionError({
-							endpoint,
-							expectedSessionId: liveOutcome.expectedSessionId ?? "",
-							message: `Actor observation kept receiving packets for the wrong session after ${
-								attempts - 1
-							} recovery attempts.`,
-							receivedSessionId: liveOutcome.receivedSessionId ?? "",
-							recovery:
-								"Stop other observers of this editor, then start observation again to negotiate a fresh session.",
-							retrySafe: true,
-							nextStep: "reconcile"
-						})
-					);
+					return yield* new ActorObservationSessionError({
+						endpoint,
+						expectedSessionId: liveOutcome.expectedSessionId ?? "",
+						message: `Actor observation kept receiving packets for the wrong session after ${
+							attempts - 1
+						} recovery attempts.`,
+						receivedSessionId: liveOutcome.receivedSessionId ?? "",
+						recovery:
+							"Stop other observers of this editor, then start observation again to negotiate a fresh session.",
+						retrySafe: true,
+						nextStep: "reconcile"
+					});
 				}
 				yield* publishUnavailable(
 					"Actor observation packets did not match the negotiated session.",

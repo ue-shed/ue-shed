@@ -18,8 +18,7 @@ import {
 	ConfigPlatform,
 	ConfigSection
 } from "./schema.js";
-
-const decodeConfigExplanation = Schema.decodeUnknownEffect(ConfigExplanation);
+const decodeConfigExplanationEffect = Schema.decodeEffect(ConfigExplanation);
 
 const fixture = resolve("packages/config-explorer/fixtures/config-source");
 const fixtureEngine = makeEngineInstallationDiscoveryTestLayer(() =>
@@ -94,7 +93,7 @@ it.effect("explains ordered source contributions and preserves missing-layer cov
 				.map((layer) => layer.source.path)
 		).toContain("Config/PlatformA/PlatformAGame.ini");
 		expect(JSON.stringify(result)).not.toContain(fixture);
-		yield* decodeConfigExplanation(result);
+		yield* decodeConfigExplanationEffect(result);
 	}).pipe(Effect.provide(ConfigExplorerNodeLive))
 );
 

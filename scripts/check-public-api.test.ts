@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { checkPublicApi } from "./check-public-api.ts";
 
-test("public contracts cannot grow through wildcard exports or lose caller documentation", async () => {
+void test("public contracts cannot grow through wildcard exports or lose caller documentation", async () => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-public-api-"));
 	try {
 		const directory = join(root, "packages/protocol");
@@ -39,7 +39,7 @@ test("public contracts cannot grow through wildcard exports or lose caller docum
 	}
 });
 
-test("documentation enforcement covers every reviewed SDK and focused entry point", async () => {
+void test("documentation enforcement covers every reviewed SDK and focused entry point", async () => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-sdk-docs-"));
 	const packages = [
 		"protocol",

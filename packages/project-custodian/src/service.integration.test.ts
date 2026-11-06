@@ -22,12 +22,9 @@ import {
 } from "./node-executor.js";
 import { CustodianReport } from "./schema.js";
 import { Custodian, CustodianNodeLive } from "./service.js";
+const decodeCustodianReport = Schema.decodeEffect(CustodianReport);
 
-const decodeCustodianReport = Schema.decodeUnknownEffect(CustodianReport);
-
-function withWorkspace<A>(
-	use: (root: string) => Effect.Effect<A, unknown>
-): Effect.Effect<A, unknown> {
+function withWorkspace<A, E>(use: (root: string) => Effect.Effect<A, E>) {
 	return Effect.acquireUseRelease(
 		Effect.tryPromise(() => mkdtemp(join(tmpdir(), "ue-shed-custodian-"))),
 		use,
@@ -84,7 +81,7 @@ function scan(root: string, ignorePressure = true) {
 function exists(path: string) {
 	return Effect.tryPromise(() => access(path)).pipe(
 		Effect.as(true),
-		Effect.catch(() => Effect.succeed(false))
+		Effect.catchTag("UnknownError", () => Effect.succeed(false))
 	);
 }
 

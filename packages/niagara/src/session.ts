@@ -1,12 +1,15 @@
 import { copyFile, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { Effect, Exit, Schedule, Schema } from "effect";
+import { type Brand, Effect, Exit, Schedule, Schema } from "effect";
 import { NiagaraErrorGuidanceFields as ErrorGuidanceFields } from "./schema.js";
 
-export class NiagaraSessionError extends Schema.TaggedError<NiagaraSessionError>()(
-	"NiagaraSessionError",
-	{ ...ErrorGuidanceFields, cause: Schema.optionalKey(Schema.Defect()) }
-) {}
+export class NiagaraSessionError extends Schema.TaggedError<
+	NiagaraSessionError,
+	Brand.Brand<"packages/niagara/src/session/NiagaraSessionError">
+>()("NiagaraSessionError", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 type SessionGuidance = Pick<NiagaraSessionError, "nextStep" | "recovery" | "retrySafe">;
 const failure = (message: string, guidance: SessionGuidance, cause?: unknown) =>
 	new NiagaraSessionError({
@@ -74,13 +77,11 @@ export const submitNiagaraSessionRequest = Effect.fn("NiagaraSession.submit")(fu
 	timeoutMs?: number;
 }) {
 	if (!isAbsolute(input.directory) || !/^[a-f0-9-]{36}$/.test(input.runId))
-		return yield* Effect.fail(
-			failure("Invalid Niagara session request.", {
-				recovery: "Pass an absolute session directory and a UUID run ID.",
-				retrySafe: true,
-				nextStep: "fix_input"
-			})
-		);
+		return yield* failure("Invalid Niagara session request.", {
+			recovery: "Pass an absolute session directory and a UUID run ID.",
+			retrySafe: true,
+			nextStep: "fix_input"
+		});
 	const ready = yield* readOptional(join(input.directory, "ready.json"), beforeSubmit);
 	yield* decodeSessionReadyJson(ready).pipe(
 		Effect.mapError((cause) =>
@@ -100,7 +101,7 @@ export const submitNiagaraSessionRequest = Effect.fn("NiagaraSession.submit")(fu
 	const poll = Effect.gen(function* () {
 		const text = yield* readOptional(`${prefix}.result.json`, afterSubmit);
 		if (text !== undefined) {
-			const result = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(resultSchema))(
+			const result = yield* Schema.decodeEffect(Schema.fromJsonString(resultSchema))(
 				text
 			).pipe(
 				Effect.mapError((cause) =>
@@ -108,19 +109,15 @@ export const submitNiagaraSessionRequest = Effect.fn("NiagaraSession.submit")(fu
 				)
 			);
 			if (result.runId !== input.runId)
-				return yield* Effect.fail(
-					failure("Invalid session result identity.", producerMismatch)
-				);
+				return yield* failure("Invalid session result identity.", producerMismatch);
 			return result.exitCode;
 		}
 		if ((yield* readOptional(join(input.directory, "closed"), afterSubmit)) !== undefined)
-			return yield* Effect.fail(
-				failure("Niagara session closed before completing capture.", {
-					recovery: "Start a new Niagara session, then submit the run again.",
-					retrySafe: false,
-					nextStep: "reconcile"
-				})
-			);
+			return yield* failure("Niagara session closed before completing capture.", {
+				recovery: "Start a new Niagara session, then submit the run again.",
+				retrySafe: false,
+				nextStep: "reconcile"
+			});
 		return undefined;
 	}).pipe(
 		Effect.repeat({

@@ -1,5 +1,5 @@
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 
 /** Generation is null for a direct scan that did not use a persistent Project Index. */
 export const InvestigationSource = Schema.Struct({
@@ -19,10 +19,10 @@ export type InvestigationFormat = Schema.Schema.Type<typeof InvestigationFormat>
  * Investigation preset/read/export failure with original cause and recovery guidance. Correct
  * the supplied preset or destination before retrying unchanged input.
  */
-export class InvestigationError extends Schema.TaggedError<InvestigationError>()(
-	"InvestigationError",
-	{ ...ErrorGuidanceFields, ...ErrorCauseFields }
-) {}
+export class InvestigationError extends Schema.TaggedError<
+	InvestigationError,
+	Brand.Brand<"packages/unreal-assets/src/investigation/InvestigationError">
+>()("InvestigationError", { ...ErrorGuidanceFields, ...ErrorCauseFields }) {}
 /**
  * Serializable failed export outcome for a host, carrying message and recovery. It does not
  * represent a saved file or a user cancellation.

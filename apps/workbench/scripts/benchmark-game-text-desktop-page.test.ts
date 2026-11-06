@@ -18,7 +18,7 @@ const run = (script: string): void => {
 };
 const SearchDone = Schema.Union([
 	Schema.Literal(false),
-	Schema.Struct({ pressedAt: Schema.Number, doneAt: Schema.Number })
+	Schema.Struct({ pressedAt: Schema.Finite, doneAt: Schema.Finite })
 ]);
 const decodeSearchDone = Schema.decodeUnknownSync(SearchDone);
 const done = () => decodeSearchDone((0, eval)(searchDoneInPage));

@@ -3,8 +3,7 @@ import { LocalizationTarget } from "./schema.js";
 import { parseLocalizationRecipe } from "./index.js";
 import { Result, Schema } from "effect";
 import { sourceGatherEngine, sourceGatherSteps } from "./source-gather.js";
-
-const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
+const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
 
 const recipe = (text: string) => {
 	const parsed = parseLocalizationRecipe(text, "Config/Localization/Game_Gather.ini");

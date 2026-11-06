@@ -3,8 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { SavedAssetPackageTextRecord, SavedAssetTextOccurrence } from "@ue-shed/unreal-assets";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { PackageTextDiff, diffPackageText, packageTextPlace } from "./package-text-diff.js";
-
-const decodeDiff = Schema.decodeUnknownSync(PackageTextDiff);
+const decodePackageTextDiff = Schema.decodeSync(PackageTextDiff);
 
 const PACKAGE = "/Game/UI/W_Menu";
 
@@ -77,7 +76,7 @@ describe("package text diff", () => {
 			notesChanged: true
 		});
 		expect(diff.counts).toEqual({ added: 1, removed: 1, rekeyed: 1, edited: 2, unchanged: 0 });
-		expect(decodeDiff(diff)).toEqual(diff);
+		expect(decodePackageTextDiff(diff)).toEqual(diff);
 	});
 
 	it("treats a new namespace, a String Table reference or a lost key as a re-key", () => {
@@ -176,4 +175,21 @@ describe("package text diff", () => {
 			false
 		);
 	});
+});
+
+it("accepts only non-negative integer cardinalities for package text diffs", () => {
+	const valid = { added: 0, removed: 1, rekeyed: 2, edited: 3, unchanged: 4 };
+	const accepts = Schema.is(PackageTextDiff.fields.counts);
+	expect(accepts(valid)).toBe(true);
+	for (const field of Object.keys(valid)) {
+		for (const value of [-1, 0.5, NaN, Infinity, -Infinity]) {
+			expect(accepts({ ...valid, [field]: value }), `${field}=${value}`).toBe(false);
+		}
+	}
+	const diff = diffPackageText(
+		packageText([property("Text", "Before", "key")]),
+		packageText([property("Text", "After", "key"), property("Added", "New", "new")])
+	);
+	expect(accepts(diff.counts)).toBe(true);
+	expect(diff.counts).toEqual({ added: 1, removed: 0, rekeyed: 0, edited: 1, unchanged: 0 });
 });

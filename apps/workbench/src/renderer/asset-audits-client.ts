@@ -75,12 +75,13 @@ export const assetAuditsClient: TextureAuditClientApi = TextureAuditClient.of({
 				invoke: () => window.ueShed.assetAudits.investigationSave(query),
 				decode: Schema.decodeUnknownEffect(InvestigationFileResult)
 			}),
-		open: () =>
+		open: Effect.suspend(() =>
 			request({
 				operation: "assetAudits.investigationOpen",
 				invoke: () => window.ueShed.assetAudits.investigationOpen(),
 				decode: Schema.decodeUnknownEffect(TextureInvestigationPresetResult)
 			})
+		)
 	},
 	locateAsset: Effect.fn("TextureAuditClient.locateAsset")(
 		(objectPath: string): Effect.Effect<EditorAssetLocateResult, TextureAuditClientError> =>
@@ -98,13 +99,13 @@ export const assetAuditsClient: TextureAuditClientApi = TextureAuditClient.of({
 				operation: "assetAudits.loadConfiguredProject"
 			})
 	),
-	progress: Effect.fn("TextureAuditClient.progress")(() =>
+	progress: Effect.suspend(() =>
 		request({
 			decode: Schema.decodeUnknownEffect(WorkbenchTaskProgress),
 			invoke: () => window.ueShed.assetAudits.progress(),
 			operation: "assetAudits.progress"
 		})
-	),
+	).pipe(Effect.withSpan("TextureAuditClient.progress")),
 	search: Effect.fn("TextureAuditClient.search")(
 		(
 			input: TextureAuditSearchRequest
@@ -149,12 +150,12 @@ export const assetAuditsClient: TextureAuditClientApi = TextureAuditClient.of({
 				operation: "assetAudits.previewOfflineBatch"
 			})
 	),
-	launchUnreal: Effect.fn("TextureAuditClient.launchUnreal")(
+	launchUnreal: Effect.suspend(
 		(): Effect.Effect<TextureAuditLaunchResult, TextureAuditClientError> =>
 			request({
 				decode: decodeTextureAuditLaunchResult,
 				invoke: () => window.ueShed.fixture.launch(),
 				operation: "fixture.launch"
 			})
-	)
+	).pipe(Effect.withSpan("TextureAuditClient.launchUnreal"))
 });

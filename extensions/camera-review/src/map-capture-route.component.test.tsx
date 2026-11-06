@@ -51,29 +51,28 @@ describe("MapCaptureRoute", () => {
 		const client: MapCaptureClientApi = {
 			actors: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
-			choosePlan: () =>
-				Effect.succeed({
-					grid: {
-						levels: [
-							{
-								columns: 1,
-								rows: 1,
-								tileWorldSize: 2048,
-								unitsPerPixel: 4,
-								zoom: 0
-							}
-						],
-						snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
-					},
-					maps: [],
-					plan,
-					projectRoot: "C:/Fixture",
-					source: "opened" as const,
-					status: "ready" as const,
-					tileCount: 1
-				}),
+			choosePlan: Effect.sync(() => ({
+				grid: {
+					levels: [
+						{
+							columns: 1,
+							rows: 1,
+							tileWorldSize: 2048,
+							unitsPerPixel: 4,
+							zoom: 0
+						}
+					],
+					snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
+				},
+				maps: [],
+				plan,
+				projectRoot: "C:/Fixture",
+				source: "opened" as const,
+				status: "ready" as const,
+				tileCount: 1
+			})),
 			liveFrames: Stream.empty,
-			newPlan: () => Effect.die("not used"),
+			newPlan: Effect.suspend(() => Effect.die("not used")),
 			openMap: () => Effect.die("not used"),
 			preview: (current) =>
 				Effect.sync(() => {
@@ -118,30 +117,29 @@ describe("MapCaptureRoute", () => {
 						status: "failed" as const
 					};
 				}),
-			choosePlan: () =>
-				Effect.succeed({
-					grid: {
-						levels: [
-							{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
-							{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
-						],
-						snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
-					},
-					maps: [
-						{
-							label: "Camera Load",
-							mapPath: "Content/Fixture/Cameras/L_CameraLoad.umap"
-						},
-						{ label: "Lighting Lab", mapPath: "Content/Maps/L_Lighting.umap" }
+			choosePlan: Effect.sync(() => ({
+				grid: {
+					levels: [
+						{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
+						{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
 					],
-					plan,
-					planPath: "C:/Fixture/map-capture.json",
-					projectRoot: "C:/Fixture",
-					source: "opened" as const,
-					status: "ready" as const,
-					tileCount: 5
-				}),
-			newPlan: () => Effect.die("not used"),
+					snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
+				},
+				maps: [
+					{
+						label: "Camera Load",
+						mapPath: "Content/Fixture/Cameras/L_CameraLoad.umap"
+					},
+					{ label: "Lighting Lab", mapPath: "Content/Maps/L_Lighting.umap" }
+				],
+				plan,
+				planPath: "C:/Fixture/map-capture.json",
+				projectRoot: "C:/Fixture",
+				source: "opened" as const,
+				status: "ready" as const,
+				tileCount: 5
+			})),
+			newPlan: Effect.suspend(() => Effect.die("not used")),
 			openMap: () => Effect.die("not used"),
 			liveFrames: Stream.empty,
 			preview: () => Effect.die("not used"),
@@ -198,23 +196,22 @@ describe("MapCaptureRoute", () => {
 		const client: MapCaptureClientApi = {
 			actors: () => Effect.die("not used"),
 			capture: () => Effect.die("not used"),
-			choosePlan: () => Effect.die("not used"),
-			newPlan: () =>
-				Effect.succeed({
-					grid: {
-						levels: [
-							{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
-							{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
-						],
-						snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
-					},
-					maps: [],
-					plan,
-					projectRoot: "C:/Fixture",
-					source: "new" as const,
-					status: "ready" as const,
-					tileCount: 5
-				}),
+			choosePlan: Effect.suspend(() => Effect.die("not used")),
+			newPlan: Effect.sync(() => ({
+				grid: {
+					levels: [
+						{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
+						{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
+					],
+					snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
+				},
+				maps: [],
+				plan,
+				projectRoot: "C:/Fixture",
+				source: "new" as const,
+				status: "ready" as const,
+				tileCount: 5
+			})),
 			openMap: () => Effect.die("not used"),
 			liveFrames: Stream.empty,
 			preview: () => Effect.die("not used"),
@@ -288,23 +285,22 @@ describe("MapCaptureRoute", () => {
 				Effect.sync(() => {
 					captured = intent;
 				}).pipe(Effect.andThen(Effect.never)),
-			choosePlan: () =>
-				Effect.succeed({
-					grid: {
-						levels: [
-							{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
-							{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
-						],
-						snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
-					},
-					maps: [],
-					plan,
-					projectRoot: "C:/Fixture",
-					source: "opened" as const,
-					status: "ready" as const,
-					tileCount: 5
-				}),
-			newPlan: () => Effect.die("not used"),
+			choosePlan: Effect.sync(() => ({
+				grid: {
+					levels: [
+						{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 },
+						{ columns: 2, rows: 2, tileWorldSize: 1024, unitsPerPixel: 2, zoom: 1 }
+					],
+					snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
+				},
+				maps: [],
+				plan,
+				projectRoot: "C:/Fixture",
+				source: "opened" as const,
+				status: "ready" as const,
+				tileCount: 5
+			})),
+			newPlan: Effect.suspend(() => Effect.die("not used")),
 			openMap: () => Effect.die("not used"),
 			liveFrames: Stream.empty,
 			preview: () => Effect.die("not used"),

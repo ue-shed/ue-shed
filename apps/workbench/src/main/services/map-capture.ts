@@ -4,6 +4,7 @@ import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 import {
 	CameraFeed,
 	MapCaptureRepository,
+	ProvisionedCameraError,
 	awaitProvisionedCameraFrame,
 	clearProvisionedCameras,
 	decodeMapTilePyramidManifest,
@@ -31,20 +32,38 @@ import type {
 	MapCaptureTileResult
 } from "@ue-shed/extension-camera-review/map-capture-client";
 import { AssetReader } from "@ue-shed/unreal-assets";
+import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ElectronDialog } from "../adapters/electron-dialog.js";
 import { WorkbenchWindow } from "../adapters/electron-window.js";
 import { WorkbenchProject } from "./project-workspace.js";
-
-const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
 const progressEventChannel = "map-capture:progress";
 const livePreviewMaximumDimension = 640;
 const livePreviewHeight = 360;
 const livePreviewFps = 5;
+
+class MapCaptureProofError extends Schema.TaggedError<
+	MapCaptureProofError,
+	Brand.Brand<"apps/workbench/src/main/services/map-capture/MapCaptureProofError">
+>()("Workbench.MapCaptureProofError", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
+
+function proofError(message: string, cause?: unknown): MapCaptureProofError {
+	return new MapCaptureProofError({
+		message,
+		recovery: "Inspect or recapture this run; Workbench only loads manifest-owned PNG tiles.",
+		nextStep: "fix_input",
+		retrySafe: true,
+		...(cause === undefined ? undefined : { cause })
+	});
+}
 
 function messageOf(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
@@ -90,8 +109,8 @@ function previewCameraFrame(bounds: {
 export interface WorkbenchMapCaptureApi {
 	readonly actors: (mapPath: string) => Effect.Effect<MapCaptureActorCatalogResult>;
 	readonly capture: (intent: MapCaptureExecuteIntent) => Effect.Effect<MapCaptureExecuteResult>;
-	readonly choosePlan: () => Effect.Effect<MapCaptureSelectionResult>;
-	readonly newPlan: () => Effect.Effect<MapCaptureSelectionResult>;
+	readonly choosePlan: Effect.Effect<MapCaptureSelectionResult>;
+	readonly newPlan: Effect.Effect<MapCaptureSelectionResult>;
 	readonly openMap: (plan: MapCapturePlan) => Effect.Effect<MapCaptureOpenResult>;
 	readonly preview: (plan: MapCapturePlan) => Effect.Effect<MapCaptureLivePreviewResult>;
 	readonly savePlan: (intent: MapCaptureSaveIntent) => Effect.Effect<MapCaptureSaveResult>;
@@ -120,22 +139,20 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 		const reportProgress = (progress: MapCaptureProgressEvent): Effect.Effect<void> =>
 			window.send(progressEventChannel, progress).pipe(Effect.ignore);
 		const clearLivePreview = () =>
-			connection
-				.endpoint()
-				.pipe(
-					Effect.flatMap((endpoint) =>
-						clearProvisionedCameras(endpoint).pipe(
-							Effect.provideService(RemoteControlClient, remoteControl),
-							Effect.ignore
-						)
+			connection.endpoint.pipe(
+				Effect.flatMap((endpoint) =>
+					clearProvisionedCameras(endpoint).pipe(
+						Effect.provideService(RemoteControlClient, remoteControl),
+						Effect.ignore
 					)
-				);
+				)
+			);
 
 		const openMap = Effect.fn("Workbench.MapCapture.openMap")(function* (
 			plan: MapCapturePlan,
 			handoff: boolean
 		) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			yield* clearLivePreview();
 			return yield* worldControl
@@ -151,7 +168,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 							: Effect.void
 					),
 					Effect.map((response) => ({ response, status: "completed" as const })),
-					Effect.catch((cause) =>
+					Effect.catchTag("EditorWorldControlError", (cause) =>
 						Effect.succeed(
 							failure(
 								cause,
@@ -163,7 +180,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 		});
 
 		const preview = Effect.fn("Workbench.MapCapture.preview")(function* (plan: MapCapturePlan) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			return yield* Effect.gen(function* () {
 				const inspection = yield* inspectMapCapturePlan(plan);
@@ -193,9 +210,13 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				).pipe(Effect.provideService(RemoteControlClient, remoteControl));
 				const binding = bindings[0];
 				if (binding === undefined) {
-					return yield* Effect.fail(
-						new Error("Unreal did not register the map preview camera.")
-					);
+					return yield* new ProvisionedCameraError({
+						operation: "ensure_cameras",
+						message: "Unreal did not register the map preview camera.",
+						recovery: "Reconnect to the editor and retry the live preview.",
+						nextStep: "reconcile",
+						retrySafe: false
+					});
 				}
 				const firstFrame = yield* awaitProvisionedCameraFrame({
 					cameraIndex: binding.index,
@@ -213,7 +234,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					width: firstFrame.width
 				};
 			}).pipe(
-				Effect.catch((cause) =>
+				Effect.catchTag(["MapCaptureRunError", "ProvisionedCameraError"], (cause) =>
 					Effect.succeed(
 						failure(
 							cause,
@@ -229,7 +250,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			readonly planPath?: string;
 			readonly source: "new" | "opened";
 		}) {
-			const selectedProject = yield* project.savedProject();
+			const selectedProject = yield* project.savedProject;
 			const inspection = yield* inspectMapCapturePlan(args.plan);
 			return {
 				grid: {
@@ -248,7 +269,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 
 		const actors = Effect.fn("Workbench.MapCapture.actors")(
 			function* (mapPath: string) {
-				const selectedProject = yield* project.savedProject();
+				const selectedProject = yield* project.savedProject;
 				const savedMap = selectedProject.maps.find(
 					(candidate) => savedMapPathToGameMapPath(candidate.mapPath) === mapPath
 				);
@@ -265,7 +286,7 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				});
 				return { status: "ready" as const, world };
 			},
-			Effect.catch((cause) =>
+			Effect.catchTag(["AssetReaderError", "WorkbenchProjectUnavailable"], (cause) =>
 				Effect.succeed(
 					failure(
 						cause,
@@ -275,54 +296,61 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 			)
 		);
 
-		const choosePlan = Effect.fn("Workbench.MapCapture.choosePlan")(
-			function* () {
-				const choice = yield* dialog.chooseFile({
-					filters: [{ extensions: ["json"], name: "Map Capture Plan" }],
-					title: "Choose a UE Shed Map Capture Plan"
-				});
-				if (choice.status === "cancelled") return { status: "cancelled" as const };
-				const plan = yield* repository.loadPlan(choice.path);
-				return yield* readySelection({ plan, planPath: choice.path, source: "opened" });
-			},
-			Effect.catch((cause) =>
-				Effect.succeed(
-					failure(
-						cause,
-						"Choose a valid plan and a Workbench project containing one .uproject file."
+		const choosePlan = Effect.gen(function* () {
+			const choice = yield* dialog.chooseFile({
+				filters: [{ extensions: ["json"], name: "Map Capture Plan" }],
+				title: "Choose a UE Shed Map Capture Plan"
+			});
+			if (choice.status === "cancelled") return { status: "cancelled" as const };
+			const plan = yield* repository.loadPlan(choice.path);
+			return yield* readySelection({ plan, planPath: choice.path, source: "opened" });
+		}).pipe(
+			Effect.catchTag(
+				[
+					"Workbench.WorkbenchWindowError",
+					"WorkbenchProjectUnavailable",
+					"MapCaptureRunError",
+					"MapCaptureStorageError"
+				],
+				(cause) =>
+					Effect.succeed(
+						failure(
+							cause,
+							"Choose a valid plan and a Workbench project containing one .uproject file."
+						)
 					)
-				)
-			)
+			),
+			Effect.withSpan("Workbench.MapCapture.choosePlan")
 		);
 
-		const newPlan = Effect.fn("Workbench.MapCapture.newPlan")(
-			function* () {
-				const [selectedProject, savedProject] = yield* Effect.all([
-					project.selectedProject(),
-					project.savedProject()
-				]);
-				const mapPath = savedProject.maps
-					.map((map) => savedMapPathToGameMapPath(map.mapPath))
-					.find((candidate) => candidate !== undefined);
-				const plan = makeDefaultMapCapturePlan({
-					...(mapPath === undefined ? undefined : { mapPath }),
-					projectId: selectedProject.projectName
-				});
-				return yield* readySelection({ plan, source: "new" });
-			},
-			Effect.catch((cause) =>
+		const newPlan = Effect.gen(function* () {
+			const [selectedProject, savedProject] = yield* Effect.all([
+				project.selectedProject,
+				project.savedProject
+			]);
+			const mapPath = savedProject.maps
+				.map((map) => savedMapPathToGameMapPath(map.mapPath))
+				.find((candidate) => candidate !== undefined);
+			const plan = makeDefaultMapCapturePlan({
+				...(mapPath === undefined ? undefined : { mapPath }),
+				projectId: selectedProject.projectName
+			});
+			return yield* readySelection({ plan, source: "new" });
+		}).pipe(
+			Effect.catchTag(["WorkbenchProjectUnavailable", "MapCaptureRunError"], (cause) =>
 				Effect.succeed(
 					failure(
 						cause,
 						"Choose a Workbench project and let its saved-map inventory finish."
 					)
 				)
-			)
+			),
+			Effect.withSpan("Workbench.MapCapture.newPlan")
 		);
 
 		const savePlan = Effect.fn("Workbench.MapCapture.savePlan")(
 			function* (intent: MapCaptureSaveIntent) {
-				const selectedProject = yield* project.selectedProject();
+				const selectedProject = yield* project.selectedProject;
 				const defaultPath = join(
 					mapCapturePlansRoot(selectedProject.projectRoot),
 					`${intent.plan.id}.json`
@@ -342,90 +370,107 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 				yield* repository.savePlan(planPath, intent.plan);
 				return { plan: intent.plan, planPath, status: "saved" as const };
 			},
-			Effect.catch((cause) =>
-				Effect.succeed(
-					failure(cause, "Choose a writable plan location and retry Save or Save As.")
-				)
+			Effect.catchTag(
+				[
+					"Workbench.WorkbenchWindowError",
+					"WorkbenchProjectUnavailable",
+					"MapCaptureStorageError"
+				],
+				(cause) =>
+					Effect.succeed(
+						failure(cause, "Choose a writable plan location and retry Save or Save As.")
+					)
 			)
 		);
 
 		const tile = Effect.fn("Workbench.MapCapture.tile")(
 			function* (intent: MapCaptureTileIntent) {
-				const selectedProject = yield* project.selectedProject();
+				const selectedProject = yield* project.selectedProject;
 				const captureRoot = mapCaptureRoot(selectedProject.projectRoot);
 				const manifestPath = resolve(intent.manifestPath);
 				if (
 					basename(manifestPath) !== "manifest.json" ||
 					!isContainedPath(captureRoot, manifestPath)
 				) {
-					return yield* Effect.fail(
-						new Error("Capture proof manifest is outside the selected project.")
+					return yield* proofError(
+						"Capture proof manifest is outside the selected project."
 					);
 				}
-				const manifest = yield* Effect.tryPromise({
-					try: async () => decodeJson(JSON.parse(await readFile(manifestPath, "utf8"))),
-					catch: (cause) => cause
-				}).pipe(Effect.flatMap(decodeMapTilePyramidManifest));
+				const manifest = yield* Effect.gen(function* () {
+					const sourceValue = yield* Effect.tryPromise({
+						try: async () => JSON.parse(await readFile(manifestPath, "utf8")),
+						catch: (cause) => proofError(messageOf(cause), cause)
+					});
+					const decodedValue0 = yield* decodeJsonEffect(sourceValue);
+					return yield* decodeMapTilePyramidManifest(decodedValue0);
+				});
 				const artifact = manifest.tiles.find(
 					(candidate) => candidate.relativePath === intent.relativePath
 				);
 				if (artifact === undefined) {
-					return yield* Effect.fail(
-						new Error("Capture proof tile is not listed by this manifest.")
-					);
+					return yield* proofError("Capture proof tile is not listed by this manifest.");
 				}
 				const runRoot = dirname(manifestPath);
 				const tilePath = resolve(runRoot, ...artifact.relativePath.split("/"));
 				if (!isContainedPath(runRoot, tilePath)) {
-					return yield* Effect.fail(
-						new Error("Capture proof tile resolves outside its immutable run.")
+					return yield* proofError(
+						"Capture proof tile resolves outside its immutable run."
 					);
 				}
 				const bytes = yield* Effect.tryPromise({
 					try: () => readFile(tilePath),
-					catch: (cause) => cause
+					catch: (cause) => proofError(messageOf(cause), cause)
 				});
 				const hash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 				if (bytes.byteLength !== artifact.bytes || hash !== artifact.hash) {
-					return yield* Effect.fail(
-						new Error("Capture proof tile no longer matches its immutable manifest.")
+					return yield* proofError(
+						"Capture proof tile no longer matches its immutable manifest."
 					);
 				}
 				return { bytes: new Uint8Array(bytes), status: "ready" as const };
 			},
-			Effect.catch((cause) =>
-				Effect.succeed(
-					failure(
-						cause,
-						"Inspect or recapture this run; Workbench only loads manifest-owned PNG tiles."
+			Effect.catchTag(
+				[
+					"Workbench.MapCaptureProofError",
+					"WorkbenchProjectUnavailable",
+					"SchemaError",
+					"ContractParseError"
+				],
+				(cause) =>
+					Effect.succeed(
+						failure(
+							cause,
+							"Inspect or recapture this run; Workbench only loads manifest-owned PNG tiles."
+						)
 					)
-				)
 			)
 		);
 
 		const capture = Effect.fn("Workbench.MapCapture.capture")(function* (
 			intent: MapCaptureExecuteIntent
 		) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			// UE Shed refuses render sessions while a camera set is open, so detach it first
 			// exactly like Review capture; a set that will not detach stops the capture here.
-			const closeFailure = yield* cameraWorkspace.close().pipe(
+			const closeFailure = yield* cameraWorkspace.close.pipe(
 				Effect.as(undefined),
-				Effect.catch((cause) =>
-					Effect.succeed(
-						failure(
-							`Workbench could not close the open camera set before capturing: ${messageOf(cause)}`,
-							"Close the camera set in the editor or Workbench, then retry the capture."
+				Effect.catchTag(
+					["CameraBridgeError", "ProvisionedCameraError", "CameraWorkspaceError"],
+					(cause) =>
+						Effect.succeed(
+							failure(
+								`Workbench could not close the open camera set before capturing: ${messageOf(cause)}`,
+								"Close the camera set in the editor or Workbench, then retry the capture."
+							)
 						)
-					)
 				)
 			);
 			if (closeFailure !== undefined) return closeFailure;
 
 			return yield* Effect.gen(function* () {
 				yield* clearLivePreview();
-				const selectedProject = yield* project.selectedProject();
+				const selectedProject = yield* project.selectedProject;
 				if (intent.openMap) {
 					const inspection = yield* inspectMapCapturePlan(intent.plan);
 					yield* reportProgress({
@@ -454,13 +499,15 @@ export const WorkbenchMapCaptureLive = Layer.effect(
 					status: "completed" as const
 				};
 			}).pipe(
-				Effect.catch((cause) =>
-					Effect.succeed(
-						failure(
-							cause,
-							"Inspect the selected plan, editor map, capture attempt, and Remote Control session."
+				Effect.catchTag(
+					["WorkbenchProjectUnavailable", "MapCaptureRunError", "MapCaptureStorageError"],
+					(cause) =>
+						Effect.succeed(
+							failure(
+								cause,
+								"Inspect the selected plan, editor map, capture attempt, and Remote Control session."
+							)
 						)
-					)
 				)
 			);
 		});

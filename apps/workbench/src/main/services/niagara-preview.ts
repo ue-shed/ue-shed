@@ -20,10 +20,10 @@ import { access, readFile, readdir } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
+const decodeNiagaraSystemObjectPathOption = Schema.decodeOption(NiagaraSystemObjectPath);
 
 const previewRootName = ".ue-shed/niagara-preview";
 const isNiagaraPreviewError = Schema.is(NiagaraPreviewError);
-const decodeNiagaraSystemObjectPath = Schema.decodeUnknownOption(NiagaraSystemObjectPath);
 const ProjectEngineAssociation = Schema.Struct({
 	EngineAssociation: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^\d+\.\d+$/u)))
 });
@@ -33,16 +33,18 @@ function failure(
 	message: string,
 	recovery: string,
 	stage: NiagaraPreviewFailure["stage"] = "validation",
-	retrySafe = false
-): NiagaraPreviewFailure {
-	return {
+	retrySafe = false,
+	cause?: unknown
+): NiagaraPreviewError {
+	return new NiagaraPreviewError({
+		...(cause === undefined ? undefined : { cause }),
 		code,
 		message,
 		recovery,
 		retrySafe,
 		stage,
 		nextStep: code === "invalid_request" ? "fix_input" : retrySafe ? "retry" : "reconcile"
-	};
+	});
 }
 
 function failureResult(error: NiagaraPreviewFailure): NiagaraPreviewRunResult {
@@ -75,7 +77,7 @@ function existing(path: string): Effect.Effect<boolean> {
 	);
 }
 
-function projectDescriptor(projectRoot: string): Effect.Effect<string, NiagaraPreviewFailure> {
+function projectDescriptor(projectRoot: string): Effect.Effect<string, NiagaraPreviewError> {
 	return Effect.tryPromise({
 		try: async () =>
 			(await readdir(projectRoot, { withFileTypes: true }))
@@ -87,7 +89,10 @@ function projectDescriptor(projectRoot: string): Effect.Effect<string, NiagaraPr
 			failure(
 				"invalid_request",
 				`The selected project directory could not be read: ${messageOf(cause)}`,
-				"Choose a readable Unreal project directory and retry."
+				"Choose a readable Unreal project directory and retry.",
+				"validation",
+				false,
+				cause
 			)
 	}).pipe(
 		Effect.flatMap((descriptors) => {
@@ -108,13 +113,10 @@ function projectDescriptor(projectRoot: string): Effect.Effect<string, NiagaraPr
 }
 
 function engineAssociation(descriptor: string): Effect.Effect<string | undefined> {
-	return Effect.tryPromise({
-		try: () => readFile(descriptor, "utf8").then(JSON.parse),
-		catch: (cause) => cause
-	}).pipe(
+	return Effect.tryPromise(() => readFile(descriptor, "utf8").then(JSON.parse)).pipe(
 		Effect.flatMap(Schema.decodeUnknownEffect(ProjectEngineAssociation)),
 		Effect.map((metadata) => metadata.EngineAssociation),
-		Effect.catch(() => Effect.succeed(undefined))
+		Effect.catchTag(["UnknownError", "SchemaError"], () => Effect.undefined)
 	);
 }
 
@@ -193,7 +195,7 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 						.sort((left, right) => left.localeCompare(right))
 						.flatMap((objectPath) => {
 							// One malformed header entry must not reject the whole catalogue.
-							const decoded = decodeNiagaraSystemObjectPath(objectPath);
+							const decoded = decodeNiagaraSystemObjectPathOption(objectPath);
 							return Option.isSome(decoded) ? [{ objectPath: decoded.value }] : [];
 						}),
 					status: "ready" as const
@@ -201,8 +203,8 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 			}
 		);
 
-		const catalogue = Effect.fn("Workbench.NiagaraPreview.catalogue")(function* () {
-			const current = yield* project.current();
+		const catalogue = Effect.gen(function* () {
+			const current = yield* project.current;
 			if (current.status === "not_configured" || current.status === "cancelled") {
 				return { status: "not_configured" as const };
 			}
@@ -218,24 +220,24 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 				Effect.flatMap((candidates) =>
 					niagaraSystemCatalogue(current.project.projectRoot, candidates)
 				),
-				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
-					Effect.succeed({
-						error: { message: error.message, recovery: error.recovery },
-						status: "failed" as const
-					})
-				),
-				Effect.catchTag("AssetReaderError", (error) =>
-					Effect.succeed({
-						error: { message: error.message, recovery: readerFailure },
-						status: "failed" as const
-					})
-				)
+				Effect.catchTags({
+					WorkbenchProjectUnavailable: (error) =>
+						Effect.succeed({
+							error: { message: error.message, recovery: error.recovery },
+							status: "failed" as const
+						}),
+					AssetReaderError: (error) =>
+						Effect.succeed({
+							error: { message: error.message, recovery: readerFailure },
+							status: "failed" as const
+						})
+				})
 			);
-		});
+		}).pipe(Effect.withSpan("Workbench.NiagaraPreview.catalogue"));
 
 		const run = Effect.fn("Workbench.NiagaraPreview.run")(
 			function* (intent: NiagaraPreviewIntent) {
-				const selected = yield* project.selectedProject();
+				const selected = yield* project.selectedProject;
 				const descriptor = yield* projectDescriptor(selected.projectRoot);
 				const plugin = yield* pluginDescriptor({
 					projectDescriptor: descriptor,
@@ -260,7 +262,7 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 					status: "completed" as const
 				};
 			},
-			Effect.catch((cause) =>
+			Effect.catchTag(["WorkbenchProjectUnavailable", "NiagaraPreviewError"], (cause) =>
 				Effect.succeed(
 					failureResult(
 						isNiagaraPreviewError(cause)
@@ -268,7 +270,10 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 							: failure(
 									"invalid_request",
 									messageOf(cause),
-									"Choose a Workbench project, verify its descriptor, and retry."
+									"Choose a Workbench project, verify its descriptor, and retry.",
+									"validation",
+									false,
+									cause
 								)
 					)
 				)
@@ -277,20 +282,18 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 
 		const frame = Effect.fn("Workbench.NiagaraPreview.frame")(
 			function* (intent: NiagaraPreviewFrameIntent) {
-				const selected = yield* project.selectedProject();
+				const selected = yield* project.selectedProject;
 				const previewRoot = resolve(selected.projectRoot, previewRootName);
 				const manifestPath = resolve(intent.manifestPath);
 				if (
 					basename(manifestPath) !== "manifest.json" ||
 					!isContainedPath(previewRoot, manifestPath)
 				) {
-					return yield* Effect.fail(
-						failure(
-							"artifact_invalid",
-							"The preview manifest is outside the selected project.",
-							"Select or capture a Niagara Preview Run owned by this project.",
-							"publication"
-						)
+					return yield* failure(
+						"artifact_invalid",
+						"The preview manifest is outside the selected project.",
+						"Select or capture a Niagara Preview Run owned by this project.",
+						"publication"
 					);
 				}
 				const manifest = yield* Effect.tryPromise({
@@ -319,25 +322,21 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 					(candidate) => candidate.relativePath === intent.relativePath
 				);
 				if (artifact === undefined) {
-					return yield* Effect.fail(
-						failure(
-							"artifact_invalid",
-							"The requested frame is not listed by this manifest.",
-							"Select a manifest-owned frame.",
-							"publication"
-						)
+					return yield* failure(
+						"artifact_invalid",
+						"The requested frame is not listed by this manifest.",
+						"Select a manifest-owned frame.",
+						"publication"
 					);
 				}
 				const runRoot = dirname(manifestPath);
 				const artifactPath = resolve(runRoot, ...artifact.relativePath.split("/"));
 				if (!isContainedPath(runRoot, artifactPath)) {
-					return yield* Effect.fail(
-						failure(
-							"artifact_invalid",
-							"The requested frame resolves outside its immutable run.",
-							"Inspect or recapture the run.",
-							"publication"
-						)
+					return yield* failure(
+						"artifact_invalid",
+						"The requested frame resolves outside its immutable run.",
+						"Inspect or recapture the run.",
+						"publication"
 					);
 				}
 				const bytes = yield* Effect.tryPromise({
@@ -352,27 +351,27 @@ export const WorkbenchNiagaraPreviewLive = Layer.effect(
 				});
 				const hash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 				if (bytes.byteLength !== artifact.bytes || hash !== artifact.sha256) {
-					return yield* Effect.fail(
-						failure(
-							"artifact_invalid",
-							"The requested frame no longer matches its immutable manifest.",
-							"Inspect or recapture the run before trusting this frame.",
-							"publication"
-						)
+					return yield* failure(
+						"artifact_invalid",
+						"The requested frame no longer matches its immutable manifest.",
+						"Inspect or recapture the run before trusting this frame.",
+						"publication"
 					);
 				}
 				return { bytes: new Uint8Array(bytes), status: "ready" as const };
 			},
-			Effect.catch((cause) =>
+			Effect.catchTag(["WorkbenchProjectUnavailable", "NiagaraPreviewError"], (cause) =>
 				Effect.succeed(
 					frameFailure(
-						"stage" in cause
+						isNiagaraPreviewError(cause)
 							? cause
 							: failure(
 									"artifact_invalid",
 									messageOf(cause),
 									"Inspect or recapture the immutable run.",
-									"publication"
+									"publication",
+									false,
+									cause
 								)
 					)
 				)

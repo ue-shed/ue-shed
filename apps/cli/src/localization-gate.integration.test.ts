@@ -10,9 +10,8 @@ import { CliRuntime } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 import { cliGameTextIndexLayer } from "./workflows/game-text-index.js";
 
-const decodeGateResultJson = Schema.decodeUnknownEffect(
-	Schema.fromJsonString(LocalizationGateResult)
-);
+const GateResultJson = Schema.fromJsonString(LocalizationGateResult);
+const decodeGateResultJson = Schema.decodeEffect(GateResultJson);
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();

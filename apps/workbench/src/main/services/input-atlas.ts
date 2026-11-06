@@ -15,7 +15,7 @@ import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 export interface WorkbenchInputAtlasApi {
-	readonly configuredScan: () => Effect.Effect<EnhancedInputRunResult>;
+	readonly configuredScan: Effect.Effect<EnhancedInputRunResult>;
 }
 
 export class WorkbenchInputAtlas extends Context.Service<
@@ -98,23 +98,21 @@ export const WorkbenchInputAtlasLive = Layer.effect(
 			} satisfies EnhancedInputHostAnalysis;
 		});
 
-		const configuredScan = Effect.fn("Workbench.WorkbenchInputAtlas.configuredScan")(
-			function* () {
-				// Without a selected project the route sends users to the shell's project picker.
-				const current = yield* project.current();
-				if (current.status === "not_configured" || current.status === "cancelled")
-					return { status: "not_configured" as const };
-				const result = yield* project.inputAtlas();
-				if (result.status !== "completed") return result;
-				return {
-					...result,
-					analysis: yield* analysis(result.projectRoot, result.report).pipe(
-						Effect.provideService(ConfigExplorer, explorer),
-						Effect.provideService(AssetReader, reader)
-					)
-				};
-			}
-		);
+		const configuredScan = Effect.gen(function* () {
+			// Without a selected project the route sends users to the shell's project picker.
+			const current = yield* project.current;
+			if (current.status === "not_configured" || current.status === "cancelled")
+				return { status: "not_configured" as const };
+			const result = yield* project.inputAtlas;
+			if (result.status !== "completed") return result;
+			return {
+				...result,
+				analysis: yield* analysis(result.projectRoot, result.report).pipe(
+					Effect.provideService(ConfigExplorer, explorer),
+					Effect.provideService(AssetReader, reader)
+				)
+			};
+		}).pipe(Effect.withSpan("Workbench.WorkbenchInputAtlas.configuredScan"));
 
 		return WorkbenchInputAtlas.of({ configuredScan });
 	})

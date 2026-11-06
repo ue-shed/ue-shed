@@ -19,7 +19,7 @@ it("offers Show Unreal and retains focus feedback independently of session statu
 		<EffectRuntimeProvider runtime={runtime}>
 			<EditorSessionTransport
 				client={{
-					activateEditorWindow: activate,
+					activateEditorWindow: Effect.suspend(activate),
 					editorHandoffs: Stream.callback<EditorHandoffNotice>((queue) =>
 						Effect.sync(() => {
 							sendNotice = (notice) => {
@@ -37,10 +37,10 @@ it("offers Show Unreal and retains focus feedback independently of session statu
 							state: { status: "stopped" }
 						} as const)
 					),
-					unrealConnectionSettings: () => Effect.succeed({ endpoint, port: 30001 }),
+					unrealConnectionSettings: Effect.sync(() => ({ endpoint, port: 30001 })),
 					setUnrealConnectionPort: () => Effect.die("unused"),
 					executeEditorSessionCommand: () => Effect.die("unused"),
-					editorResponsiveness: () => Effect.die("unused"),
+					editorResponsiveness: Effect.suspend(() => Effect.die("unused")),
 					setEditorResponsiveness: () => Effect.die("unused")
 				}}
 			/>
@@ -72,13 +72,13 @@ it("keeps a pending responsiveness change usable when the settings are reopened"
 		<EffectRuntimeProvider runtime={runtime}>
 			<EditorSessionTransport
 				client={{
-					activateEditorWindow: () => Effect.die("unused"),
+					activateEditorWindow: Effect.suspend(() => Effect.die("unused")),
 					editorHandoffs: Stream.empty,
 					editorSessionStatuses: Stream.empty,
-					unrealConnectionSettings: () => Effect.succeed({ endpoint, port: 30001 }),
+					unrealConnectionSettings: Effect.sync(() => ({ endpoint, port: 30001 })),
 					setUnrealConnectionPort: () => Effect.die("unused"),
 					executeEditorSessionCommand: () => Effect.die("unused"),
-					editorResponsiveness: () => Effect.sync(() => settings(saved)),
+					editorResponsiveness: Effect.sync(() => settings(saved)),
 					setEditorResponsiveness: (enabled) =>
 						Effect.promise(
 							() =>

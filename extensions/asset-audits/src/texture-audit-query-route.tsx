@@ -357,7 +357,7 @@ export function TextureAuditRoute(props: {
 		setState({ status: "loading" });
 		setProgress({ completed: 0, phase: "idle", stage: "texture_audit", total: 0 });
 		progressSubscription.subscribe(
-			Stream.fromEffectSchedule(props.client.progress(), Schedule.spaced("100 millis")),
+			Stream.fromEffectSchedule(props.client.progress, Schedule.spaced("100 millis")),
 			{ onValue: setProgress }
 		);
 		refreshAction.run(props.client.loadConfiguredProject(refresh), {

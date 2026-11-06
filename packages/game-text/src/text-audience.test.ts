@@ -24,8 +24,7 @@ import {
 	textAudienceOfMask,
 	textAudienceSubject
 } from "./text-audience.js";
-
-const decodeOccurrence = Schema.decodeUnknownSync(TextOccurrence);
+const decodeTextOccurrence = Schema.decodeSync(TextOccurrence);
 const decodeTarget = Schema.decodeUnknownSync(LocalizationTarget);
 
 function property(
@@ -35,7 +34,7 @@ function property(
 	namespace = "NS"
 ): TextOccurrence {
 	const packagePath = objectPath.slice(0, objectPath.indexOf(".", objectPath.lastIndexOf("/")));
-	return decodeOccurrence({
+	return decodeTextOccurrence({
 		id: `occurrence:${objectPath}:${propertyPath}`,
 		packageFile: `Content/${packagePath.slice("/Game/".length)}.uasset`,
 		source: "Text",
@@ -47,7 +46,7 @@ function property(
 
 function cell(objectPath: string): TextOccurrence {
 	const packagePath = objectPath.slice(0, objectPath.lastIndexOf("."));
-	return decodeOccurrence({
+	return decodeTextOccurrence({
 		id: `occurrence:${objectPath}`,
 		packageFile: `Content/${packagePath.slice("/Game/".length)}.uasset`,
 		source: "Sword",

@@ -16,15 +16,16 @@ import {
 	type CannedQuery
 } from "./game-text-index.test-support.js";
 import { makeGameTextLocalization as indexedGameTextLocalization } from "./game-text-localization.js";
-import { ElectronDialog } from "../adapters/electron-dialog.js";
+import type { ElectronDialogApi } from "../adapters/electron-dialog.js";
 import { LocalFiles, makeLocalFilesTestLayer } from "../adapters/local-files.js";
+import { gameTextFileHooks } from "./game-text.js";
 
 const files = evidence();
 const fixture = {
 	text: corpus(),
 	files,
 	join: { target: files.target.name },
-	document: Schema.decodeUnknownSync(GameTextRuleDocument)({
+	document: Schema.decodeSync(GameTextRuleDocument)({
 		schemaVersion: 1,
 		roles: [
 			{
@@ -53,7 +54,7 @@ const fixture = {
 		]
 	})
 };
-const other = Schema.decodeUnknownSync(LocalizationTarget)({ ...files.target, name: "Other" });
+const other = Schema.decodeSync(LocalizationTarget)({ ...files.target, name: "Other" });
 /** The fixture's one line in each culture: unknown, as the target has no gather settings. */
 function tally(by: readonly string[]): TextAggregate | undefined {
 	switch (by.join()) {
@@ -105,8 +106,8 @@ const answers: CannedQuery = ({ request }) => ({
 		const tallied = tally(request.by);
 		return tallied ? Effect.succeed(tallied) : Effect.die(`No tally by ${request.by.join()}.`);
 	},
-	readCorpusReportHeader: () => Effect.succeed(textCorpusReportHeader(fixture.text)),
-	corpusFingerprint: () => Effect.succeed("f".repeat(64))
+	readCorpusReportHeader: Effect.sync(() => textCorpusReportHeader(fixture.text)),
+	corpusFingerprint: Effect.sync(() => "f".repeat(64))
 });
 const reader = makeLocalizationEvidenceTestLayer({
 	discover: () =>
@@ -177,7 +178,7 @@ it.effect(
 			yield* host.select(fixture.join.target);
 			const baselinePath = "C:/Exports/baseline.json",
 				csvPath = "C:/Exports/report.csv";
-			const dialog = ElectronDialog.of({
+			const dialog = {
 				chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
 				chooseFiles: () => Effect.succeed({ status: "cancelled" }),
 				chooseFile: () => Effect.succeed({ status: "selected", path: baselinePath }),
@@ -187,22 +188,24 @@ it.effect(
 						path:
 							options.title === "Save localization baseline" ? baselinePath : csvPath
 					})
-			});
+			} satisfies ElectronDialogApi;
 			const request = { target: fixture.join.target, operation: "save_baseline" } as const;
-			expect(yield* host.reportFile(request, dialog, files)).toEqual({
+			expect(yield* host.reportFile(request, dialog, gameTextFileHooks(files))).toEqual({
 				status: "saved",
 				message: "Baseline saved."
 			});
 			const saved = yield* files.readFile(baselinePath);
-			expect(yield* host.reportFile(request, dialog, files)).toMatchObject({
-				status: "failed",
-				recovery: expect.stringContaining("never overwritten")
-			});
+			expect(yield* host.reportFile(request, dialog, gameTextFileHooks(files))).toMatchObject(
+				{
+					status: "failed",
+					recovery: expect.stringContaining("never overwritten")
+				}
+			);
 			expect(yield* files.readFile(baselinePath)).toEqual(saved);
 			const compared = yield* host.reportFile(
 				{ ...request, operation: "compare_baseline" },
 				dialog,
-				files
+				gameTextFileHooks(files)
 			);
 			expect(compared).toMatchObject({
 				status: "compared",
@@ -216,7 +219,11 @@ it.effect(
 			});
 			expect(JSON.stringify(compared)).not.toContain(baselinePath);
 			expect(JSON.stringify(compared)).not.toContain("relativePath");
-			yield* host.reportFile({ ...request, operation: "export_csv" }, dialog, files);
+			yield* host.reportFile(
+				{ ...request, operation: "export_csv" },
+				dialog,
+				gameTextFileHooks(files)
+			);
 			const csv = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
 				yield* files.readFile(csvPath)
 			);

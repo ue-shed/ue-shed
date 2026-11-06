@@ -37,7 +37,7 @@ const change = {
 const Line = Schema.fromJsonString(
 	Schema.Struct({ type: Schema.String, receipt: Schema.optionalKey(Schema.Json) })
 );
-const decodeLine = Schema.decodeUnknownEffect(Line);
+const decodeLineEffect = Schema.decodeEffect(Line);
 
 const apply = (root: string, changes: string, ...flags: string[]) =>
 	Effect.gen(function* () {
@@ -85,7 +85,7 @@ it.effect("loc apply reviews, writes only the PO msgstr, and rejects a stale re-
 
 		const written = yield* apply(root, changes);
 		expect(written.code).toBe(0);
-		const receipt = yield* decodeLine(written.text.trim());
+		const receipt = yield* decodeLineEffect(written.text.trim());
 		expect(receipt.type).toBe("receipt");
 		expect(JSON.stringify(receipt.receipt)).toContain('"status":"written"');
 		const after = yield* Effect.promise(() => readFile(join(root, dePO), "utf8"));
@@ -152,7 +152,7 @@ it.effect("loc apply keeps its JSON receipt clean when cache invalidation warns"
 		);
 		expect(yield* Ref.get(invalidations)).toBe(1);
 		expect(result.code).toBe(0);
-		const receipt = yield* decodeLine(result.text.trim());
+		const receipt = yield* decodeLineEffect(result.text.trim());
 		expect(receipt.type).toBe("receipt");
 		expect(JSON.stringify(receipt.receipt)).toContain('"status":"written"');
 		expect(result.errors).toContain("Game Text write succeeded but cache invalidation failed");

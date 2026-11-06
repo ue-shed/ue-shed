@@ -15,6 +15,7 @@ import { Effect, Result } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	LocalizationEvidenceNodeLive,
+	makeLocalizationEvidenceTestLayer,
 	parseManifest,
 	parseArchive,
 	parsePO
@@ -32,6 +33,33 @@ import { GameTextIndexProgressReporter } from "../packages/game-text/src/index-p
 
 let temporary: string;
 let generated: string;
+
+it.each([NaN, Infinity, -Infinity])(
+	"refuses a non-finite explicit parser budget (%s) before discovery",
+	async (budget) => {
+		const result = await Effect.runPromise(
+			importLocalizationTarget({
+				projectRoot: "fixture-project",
+				cacheRoot: "fixture-cache",
+				targetName: "Generated",
+				memoryBudgetBytes: budget
+			}).pipe(
+				Effect.provide(
+					makeLocalizationEvidenceTestLayer({
+						discover: () =>
+							Effect.die("An invalid budget must not discover project inputs."),
+						read: () => Effect.die("An invalid budget must not read project inputs."),
+						targets: () => Effect.die("An invalid budget must not read project inputs.")
+					})
+				),
+				Effect.result
+			)
+		);
+		expect(Result.isFailure(result)).toBe(true);
+		if (Result.isFailure(result))
+			expect(result.failure).toMatchObject({ code: "invalid_schema" });
+	}
+);
 beforeAll(async () => {
 	await mkdir(resolve("test-results/localization-import"), { recursive: true });
 	temporary = await mkdtemp(resolve("test-results/localization-import/test-"));
@@ -109,7 +137,7 @@ describe("localization snapshot parser oracle", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const index = yield* SharedIndex;
-					const writer = yield* index.writer();
+					const writer = yield* index.writer;
 					yield* writer.compact(true);
 				})
 			).pipe(
@@ -373,6 +401,65 @@ describe("localization import cache and failures", () => {
 			)
 		).toHaveLength(1);
 	});
+	it("reads a target in one native call after every file changed, and none when nothing did", async () => {
+		const root = resolve(temporary, "rewrite-all");
+		await cp(generated, root, { recursive: true });
+		const progress: { phase: string; completed: number; total: number }[] = [];
+		const run = () =>
+			Effect.runPromise(
+				importLocalizationTarget({
+					projectRoot: root,
+					cacheRoot: resolve(temporary, "rewrite-all-cache"),
+					targetName: "Generated"
+				}).pipe(
+					Effect.provide(LocalizationEvidenceNodeLive),
+					Effect.provideService(GameTextIndexProgressReporter, (event) => {
+						progress.push(event);
+					})
+				)
+			);
+		const cold = await run();
+		expect(cold.profile).toMatchObject({
+			files: 21,
+			statHits: 0,
+			imported: 21,
+			nativeCalls: 1
+		});
+		const unchanged = await run();
+		expect(unchanged.profile).toMatchObject({ statHits: 21, imported: 0, nativeCalls: 0 });
+		for (const file of cold.files) {
+			const path = resolve(root, file.relativePath);
+			const bytes = await readFile(path);
+			// Trailing whitespace keeps every file valid and changes every content hash.
+			const utf16 = bytes[0] === 0xff && bytes[1] === 0xfe;
+			await writeFile(
+				path,
+				Buffer.concat([bytes, Buffer.from("\n", utf16 ? "utf16le" : "utf8")])
+			);
+		}
+		progress.length = 0;
+		const changed = await run();
+		expect(changed.diagnostics).toEqual([]);
+		expect(changed.files.every((file) => file.parsed && !file.statHit)).toBe(true);
+		expect(changed.profile).toMatchObject({
+			files: 21,
+			statHits: 0,
+			imported: 21,
+			failed: 0,
+			nativeCalls: 1
+		});
+		expect(changed.profile?.parseMs).toBeGreaterThan(0);
+		expect(changed.profile?.publishMs).toBeGreaterThan(0);
+		// The engine reports each file as it finishes, then the publication.
+		expect(
+			progress
+				.filter((event) => event.phase === "localization" && event.total > 0)
+				.map((event) => event.completed)
+		).toEqual(Array.from({ length: 22 }, (_, index) => index));
+		expect(progress.at(-1)?.phase).toBe("localization_publish");
+		const coldKeys = new Set(cold.files.map((file) => file.key));
+		expect(changed.files.filter((file) => coldKeys.has(file.key))).toEqual([]);
+	}, 60000);
 	it("keeps authored-file diagnostics without creating worker staging after a cold parser failure", async () => {
 		const root = resolve(temporary, "cold-failure");
 		await cp(generated, root, { recursive: true });

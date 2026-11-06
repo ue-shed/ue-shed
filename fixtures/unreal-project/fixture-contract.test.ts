@@ -621,7 +621,7 @@ describe("generic Unreal fixture contract", () => {
 		expect(Array.isArray(source)).toBe(true);
 		expect(source).toEqual(
 			expect.arrayContaining(
-				audit.textures.map(({ expectedFindingIds: _, ...texture }) =>
+				audit.textures.map(({ expectedFindingIds: _expectedFindingIds, ...texture }) =>
 					expect.objectContaining(texture)
 				)
 			)

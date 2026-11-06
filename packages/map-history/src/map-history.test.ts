@@ -15,10 +15,11 @@ import {
 } from "./map-history.js";
 import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 import { PerforceFastMapHistoryQuery, PerforceMapHistoryQuery } from "./schema.js";
-
-const decodeQuery = Schema.decodeUnknownSync(PerforceMapHistoryQuery);
-const decodeFastQuery = Schema.decodeUnknownSync(PerforceFastMapHistoryQuery);
-const encodeFastQuery = Schema.encodeSync(PerforceFastMapHistoryQuery);
+const decodePerforceMapHistoryQuery = Schema.decodeSync(PerforceMapHistoryQuery);
+const decodePerforceFastMapHistoryQuery = Schema.decodeSync(PerforceFastMapHistoryQuery);
+const encodePerforceFastMapHistoryQuery = Schema.encodeSync(PerforceFastMapHistoryQuery);
+const decodePerforceFastMapHistoryQueryEffect = Schema.decodeEffect(PerforceFastMapHistoryQuery);
+const encodePerforceFastMapHistoryQueryEffect = Schema.encodeEffect(PerforceFastMapHistoryQuery);
 
 const projectRoot = "C:/Project";
 const mapPath = "Content/Maps/L_Example.umap";
@@ -30,7 +31,7 @@ const externalActorDepotPath =
 const externalActorRoot = "C:/Project/Content/__ExternalActors__/Maps/L_Example";
 
 function query(maxMaterializedFiles = 10, maxDurationMs = 60_000) {
-	return decodeQuery({
+	return decodePerforceMapHistoryQuery({
 		limits: {
 			maxChangelists: 10,
 			maxConcurrency: 2,
@@ -82,35 +83,31 @@ const actor: SavedWorld["actors"][number] = {
 
 function readerLayer(observedHistoricalRoots: string[]) {
 	return makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -142,7 +139,7 @@ function readerLayer(observedHistoricalRoots: string[]) {
 			});
 		},
 		readTable: () => Effect.die("Map History must not read tables."),
-		source: () => Effect.succeed("configured")
+		source: Effect.succeed("configured")
 	});
 }
 
@@ -280,35 +277,31 @@ function relocatedHistoryLayer(materializedRoot: string, observedMapPaths: strin
 		}
 	});
 	const reader = makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -332,7 +325,7 @@ function relocatedHistoryLayer(materializedRoot: string, observedMapPaths: strin
 			});
 		},
 		readTable: () => Effect.die("Map History must not read tables."),
-		source: () => Effect.succeed("configured")
+		source: Effect.succeed("configured")
 	});
 	const materializedPath = (file: { readonly depotPath: string; readonly revision: number }) =>
 		resolve(materializedRoot, `${file.revision}-${basename(file.depotPath)}`);
@@ -461,7 +454,7 @@ describe("readPerforceMapHistory", () => {
 					const observedHistoricalRoots: string[] = [];
 					const history = yield* Effect.gen(function* () {
 						const result = yield* readPerforceMapHistory(query());
-						const finalProgress = yield* mapHistoryProgress();
+						const finalProgress = yield* mapHistoryProgress;
 						return { finalProgress, result };
 					}).pipe(
 						Effect.provide(historyLayer(materializedRoot, observedHistoricalRoots))
@@ -599,7 +592,7 @@ describe("readPerforceMapHistory", () => {
 });
 
 function fastQuery() {
-	return decodeFastQuery({
+	return decodePerforceFastMapHistoryQuery({
 		limits: {
 			maxChangelists: 10,
 			maxConcurrency: 2,
@@ -622,8 +615,8 @@ function fastQuery() {
 }
 
 function fastClassQuery() {
-	return decodeFastQuery({
-		...encodeFastQuery(fastQuery()),
+	return decodePerforceFastMapHistoryQuery({
+		...encodePerforceFastMapHistoryQuery(fastQuery()),
 		target: { classPath: actor.classPath, kind: "actor_class" }
 	});
 }
@@ -730,8 +723,8 @@ describe("readPerforceFastMapHistory", () => {
 			)
 		);
 		return Effect.gen(function* () {
-			const missing = decodeFastQuery({
-				...encodeFastQuery(fastQuery()),
+			const missing = yield* decodePerforceFastMapHistoryQueryEffect({
+				...(yield* encodePerforceFastMapHistoryQueryEffect(fastQuery()).pipe(Effect.orDie)),
 				target: {
 					identity: {
 						actorGuid: "00000000-0000-0000-0000-000000000099",
@@ -739,7 +732,7 @@ describe("readPerforceFastMapHistory", () => {
 					},
 					kind: "actor"
 				}
-			});
+			}).pipe(Effect.orDie);
 			const error = yield* readPerforceFastMapHistory(missing).pipe(
 				Effect.provide(layer),
 				Effect.flip

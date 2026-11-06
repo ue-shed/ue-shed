@@ -21,9 +21,9 @@ import {
 	GameTextIndexRefresh,
 	gameTextIndexRefreshLayer
 } from "./index-refresh.js";
-
-const decodeLocalizationTarget = Schema.decodeUnknownSync(LocalizationTarget);
-const decodeTextCorpusSearchRequest = Schema.decodeUnknownSync(TextCorpusSearchRequest);
+const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
+const decodeTextCorpusSearchRequest = Schema.decodeSync(TextCorpusSearchRequest);
+const decodeUnknownTextCorpusSearchRequest = Schema.decodeUnknownSync(TextCorpusSearchRequest);
 
 it("retains readers across refresh steps updating selected inputs and review", async () => {
 	const directory = await mkdtemp(join(tmpdir(), "ue-shed-game-text-index-"));
@@ -139,7 +139,7 @@ it("retains readers across refresh steps updating selected inputs and review", a
 						expect.arrayContaining([
 							"localization",
 							"inventory",
-							"packages",
+							"package_read",
 							"joining",
 							"opening",
 							"ready"
@@ -150,7 +150,13 @@ it("retains readers across refresh steps updating selected inputs and review", a
 						completed: 5,
 						total: 5
 					});
-					expect(progress).toContainEqual({ phase: "packages", completed: 1, total: 1 });
+					// A first scan reads the one package with text; none is kept from an index.
+					expect(progress).toContainEqual({
+						phase: "package_read",
+						completed: 1,
+						total: 1,
+						unchanged: 0
+					});
 					expect(progress.at(-1)?.phase).toBe("ready");
 					const searches = [
 						{ query: "source", capability: "all" as const, pageSize: 10 },
@@ -168,19 +174,19 @@ it("retains readers across refresh steps updating selected inputs and review", a
 							yield* first.query.search(search)
 						);
 					const groupRequests = ["Content/Text", "Content/Other"].map((openGroup) =>
-						decodeTextCorpusSearchRequest({
+						decodeUnknownTextCorpusSearchRequest({
 							...searches[0],
 							group: "folder",
 							openGroup
 						})
 					);
 					expect(
-						yield* Effect.all(groupRequests.map(first.search), {
+						yield* Effect.forEach(groupRequests, first.search, {
 							concurrency: "unbounded"
 						})
 					).toEqual(
-						yield* Effect.all(
-							groupRequests.map((request) => first.query.search(request))
+						yield* Effect.forEach(groupRequests, (request) =>
+							first.query.search(request)
 						)
 					);
 					expect(

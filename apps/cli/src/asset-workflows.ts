@@ -8,7 +8,7 @@ import {
 	scanSavedProject,
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
-import { Effect, Result } from "effect";
+import { Layer, Effect, Result } from "effect";
 import {
 	CliCommandError,
 	CliRuntime,
@@ -145,16 +145,14 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 		command._tag,
 		Effect.gen(function* () {
 			if (command.query.length === 0) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message: "text search requires a non-empty query"
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: "text search requires a non-empty query"
+				});
 			}
 			if (command.target !== undefined) {
 				const result = yield* loadLocalizationStatus(command).pipe(
@@ -174,16 +172,14 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 				command.state !== undefined ||
 				command.searchTranslations
 			) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message: "Localization search options require --target."
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: "Localization search options require --target."
+				});
 			}
 			const { textCorpusDiagnosticSummary } = yield* Effect.promise(
 				() => import("@ue-shed/game-text/corpus")
@@ -300,8 +296,9 @@ export const runInputInspect = Effect.fn("Cli.workflow.input_inspect")(
 					}
 					return yield* service.inspectPath(command.path);
 				}).pipe(
-					Effect.provide(EnhancedInputServiceLive),
-					Effect.provide(readerLayer(command.reader)),
+					Effect.provide(
+						Layer.provideMerge(EnhancedInputServiceLive, readerLayer(command.reader))
+					),
 					Effect.mapError((error) =>
 						isCliCommandError(error)
 							? error

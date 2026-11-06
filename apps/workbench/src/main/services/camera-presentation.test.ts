@@ -17,8 +17,7 @@ import {
 	CameraPresentationLive,
 	type CameraPresentationApi
 } from "./camera-presentation.js";
-
-const decodeRendererCameraFrame = Schema.decodeUnknownSync(RendererCameraFrame);
+const decodeRendererCameraFrameEffect = Schema.decodeUnknownEffect(RendererCameraFrame);
 const configuration = makeWorkbenchConfigurationLayer({
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
@@ -76,20 +75,18 @@ const makeGatedRecordingWindow = () =>
 			_channel: string,
 			payload: Payload
 		) {
-			const frame = decodeRendererCameraFrame(payload);
+			const frame = yield* decodeRendererCameraFrameEffect(payload).pipe(Effect.orDie);
 			yield* Queue.offer(started, undefined);
 			if (yield* Ref.get(destroyed)) {
-				return yield* Effect.fail(
-					new WorkbenchWindowError({
-						nextStep: "escalate",
-						code: "workbench_window_failed",
-						causeText: "Window is destroyed",
-						message: "Workbench window send failed.",
-						operation: "send",
-						recovery: "Ignore late renderer deliveries after shutdown.",
-						retrySafe: false
-					})
-				);
+				return yield* new WorkbenchWindowError({
+					nextStep: "escalate",
+					code: "workbench_window_failed",
+					causeText: "Window is destroyed",
+					message: "Workbench window send failed.",
+					operation: "send",
+					recovery: "Ignore late renderer deliveries after shutdown.",
+					retrySafe: false
+				});
 			}
 			yield* Queue.take(release);
 			yield* Ref.update(sentFrames, (frames) => [...frames, frame]);
@@ -105,7 +102,11 @@ const makeGatedRecordingWindow = () =>
 		return {
 			awaitStarted: () => Queue.take(started),
 			destroyWindow: destroy,
-			layer: makeWorkbenchWindowTestLayer({ destroy, isDestroyed, send }),
+			layer: makeWorkbenchWindowTestLayer({
+				destroy: Effect.suspend(destroy),
+				isDestroyed: Effect.suspend(isDestroyed),
+				send
+			}),
 			pollStarted: () => Queue.poll(started),
 			releaseNext: () => Queue.offer(release, undefined).pipe(Effect.asVoid),
 			sentFrames: () => Ref.get(sentFrames)
@@ -161,7 +162,7 @@ it.effect("sends the latest frame and reports frames-sent metrics", () =>
 				expect(sent).toHaveLength(1);
 				expect(sent[0]).toMatchObject({ cameraIndex: 3, sequence: "7" });
 
-				const metrics = yield* presentation.metrics();
+				const metrics = yield* presentation.metrics;
 				expect(metrics.presentationFramesSent).toBe(1);
 				expect(metrics.presentationReplacements).toBe(0);
 				expect(metrics.presentationBudgetMbPerSecond).toBe(80);
@@ -218,7 +219,7 @@ it.effect("rejects camera indices outside the supported 0-31 range", () =>
 				expect(sent).toHaveLength(1);
 				expect(sent[0]).toMatchObject({ cameraIndex: 0, sequence: "3" });
 
-				const metrics = yield* presentation.metrics();
+				const metrics = yield* presentation.metrics;
 				expect(metrics.presentationReplacements).toBe(0);
 			})
 		);
@@ -248,7 +249,7 @@ it.effect("remains bounded when the window is slow to accept frames", () =>
 				const sent = yield* recordingWindow.sentFrames();
 				expect(sent.map((frame) => frame.sequence)).toEqual(["1", "5"]);
 
-				const metrics = yield* presentation.metrics();
+				const metrics = yield* presentation.metrics;
 				expect(metrics.presentationReplacements).toBe(3);
 				expect(metrics.presentationFramesSent).toBe(2);
 			})
@@ -352,7 +353,7 @@ it.effect("stops delivering frames once the window is destroyed", () =>
 				const sent = yield* recordingWindow.sentFrames();
 				expect(sent).toHaveLength(1);
 
-				const metrics = yield* presentation.metrics();
+				const metrics = yield* presentation.metrics;
 				expect(metrics.presentationFramesSent).toBe(1);
 			})
 		);

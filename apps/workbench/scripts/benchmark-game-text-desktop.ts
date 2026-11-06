@@ -23,9 +23,9 @@ import { _electron as electron, type ElectronApplication, type Page } from "play
 import { searchDoneInPage, searchRecorder } from "./benchmark-game-text-desktop-page.js";
 
 const decodeString = Schema.decodeUnknownSync(Schema.String);
-const decodeNumber = Schema.decodeUnknownSync(Schema.Number);
-const NumberList = Schema.Array(Schema.Number);
-const decodeNumberList = Schema.decodeUnknownSync(NumberList);
+const decodeFinite = Schema.decodeUnknownSync(Schema.Finite);
+const FiniteList = Schema.Array(Schema.Finite);
+const decodeFiniteList = Schema.decodeUnknownSync(FiniteList);
 
 interface AppUnderTest {
 	readonly label: string;
@@ -311,9 +311,9 @@ async function launch(app: AppUnderTest, projectRoot: string, sessionRoot: strin
 }
 
 const StallReport = Schema.Struct({
-	maxStallMs: Schema.Number,
-	over50Ms: Schema.Number,
-	over50TotalMs: Schema.Number
+	maxStallMs: Schema.Finite,
+	over50Ms: Schema.Finite,
+	over50TotalMs: Schema.Finite
 });
 const decodeStallReport = Schema.decodeUnknownSync(StallReport);
 
@@ -415,7 +415,7 @@ const ipcRecorderStart = `(() => {
 	}
 })()`;
 const IpcCalls = Schema.Array(
-	Schema.Struct({ call: Schema.String, start: Schema.Number, end: Schema.Number })
+	Schema.Struct({ call: Schema.String, start: Schema.Finite, end: Schema.Finite })
 );
 const decodeIpcCalls = Schema.decodeUnknownSync(IpcCalls);
 
@@ -519,9 +519,9 @@ const rescanUsableInPage = `(() => {
 	if (!usable) rescan.busy = true;
 	return rescan.busy && usable ? { clickedAt: rescan.clickedAt, usableAt: usable } : false;
 })()`;
-const Epoch = Schema.Number;
-const WarmState = Schema.Union([Schema.Number, Schema.Literal("scan")]);
-const RescanTiming = Schema.Struct({ clickedAt: Schema.Number, usableAt: Schema.Number });
+const Epoch = Schema.Finite;
+const WarmState = Schema.Union([Schema.Finite, Schema.Literal("scan")]);
+const RescanTiming = Schema.Struct({ clickedAt: Schema.Finite, usableAt: Schema.Finite });
 
 /** Polls `script` in the page every 10 ms until it is truthy, and decodes that value. */
 async function inPage<A>(
@@ -562,7 +562,7 @@ async function countText(page: Page) {
 		.innerText({ timeout: 1_000 });
 }
 
-const SearchDone = Schema.Struct({ pressedAt: Schema.Number, doneAt: Schema.Number });
+const SearchDone = Schema.Struct({ pressedAt: Schema.Finite, doneAt: Schema.Finite });
 
 async function timedSearch(page: Page, query: string): Promise<SearchTiming> {
 	const search = page.getByRole("searchbox", { name: "Search game text" });
@@ -654,7 +654,7 @@ const hashScript = `(async () => {
 })()`;
 
 const decodeHash = Schema.decodeUnknownSync(
-	Schema.Struct({ hash: Schema.String, rows: Schema.Number })
+	Schema.Struct({ hash: Schema.String, rows: Schema.Finite })
 );
 
 async function hashResults(page: Page) {
@@ -782,9 +782,9 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			// When each process's clock started, and the page's own load events.
 			milestones.set(
 				"warmMainOrigin",
-				decodeNumber(await warm.application.evaluate("performance.timeOrigin"))
+				decodeFinite(await warm.application.evaluate("performance.timeOrigin"))
 			);
-			const page = decodeNumberList(
+			const page = decodeFiniteList(
 				await warm.page.evaluate(`(() => {
 					const navigation = performance.getEntriesByType("navigation")[0];
 					return [

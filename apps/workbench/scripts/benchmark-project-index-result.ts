@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { Schema } from "effect";
 
-const NonNegativeNumber = Schema.Number.check(Schema.isGreaterThanOrEqualTo(0));
+const NonNegativeNumber = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 const BoundedString = Schema.String.check(Schema.isMaxLength(4_096));

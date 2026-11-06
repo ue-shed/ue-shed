@@ -22,9 +22,7 @@ import type { TextCorpusQuerySummary } from "./schema.js";
 import type { LocalizationJoin } from "./localization-schema.js";
 
 const LocalizationQualityReportJson = Schema.fromJsonString(LocalizationQualityReport);
-const decodeLocalizationQualityReportJson = Schema.decodeUnknownEffect(
-	LocalizationQualityReportJson
-);
+const decodeLocalizationQualityReportJson = Schema.decodeEffect(LocalizationQualityReportJson);
 
 /**
  * A check whose report is ready to write: everything but its findings is read, and the engine

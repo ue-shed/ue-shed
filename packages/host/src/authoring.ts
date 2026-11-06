@@ -80,15 +80,15 @@ class AuthoringTarget extends Data.Class<{
  * reconciled before replay.
  */
 export interface ShedAuthoringApi {
-	readonly catalogProgress?: () => Effect.Effect<AuthoringCatalogProgress>;
+	readonly catalogProgress?: Effect.Effect<AuthoringCatalogProgress>;
 	readonly applySession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly beginSession: (objectPath: string) => Effect.Effect<AuthoringSessionResult>;
 	readonly discardSession: (sessionId: string) => Effect.Effect<AuthoringSessionListResult>;
-	readonly listSessions: () => Effect.Effect<AuthoringSessionListResult>;
+	readonly listSessions: Effect.Effect<AuthoringSessionListResult>;
 	readonly openSession: (sessionId: string) => Effect.Effect<AuthoringSessionResult>;
-	readonly chooseTable: () => Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
-	readonly configuredCatalog: () => Effect.Effect<AuthoringCatalogResult>;
-	readonly configuredTable: () => Effect.Effect<AuthoringLoadResult>;
+	readonly chooseTable: Effect.Effect<AuthoringLoadResult, AuthoringClientError>;
+	readonly configuredCatalog: Effect.Effect<AuthoringCatalogResult>;
+	readonly configuredTable: Effect.Effect<AuthoringLoadResult>;
 	readonly editSession: (intent: AuthoringSessionIntent) => Effect.Effect<AuthoringSessionResult>;
 	readonly openCatalogTable: (
 		objectPath: string,
@@ -113,7 +113,7 @@ export class ShedAuthoring extends Context.Service<ShedAuthoring, ShedAuthoringA
 /** @deprecated ShedAuthoringLive now acquires project-scoped repositories on demand. */
 export const ShedAuthoringSessionsLive = Layer.unwrap(
 	Effect.flatMap(ShedHostConfiguration, (configuration) =>
-		Effect.map(configuration.project(), (project) =>
+		Effect.map(configuration.project, (project) =>
 			project.status === "configured"
 				? authoringSessionServiceLayer({
 						projectRoot: project.projectRoot,
@@ -269,7 +269,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 	);
 
-	const project = yield* configurationService.project();
+	const project = yield* configurationService.project;
 	const sessions =
 		project.status === "configured"
 			? Option.some(
@@ -283,15 +283,15 @@ const makeShedAuthoring = Effect.gen(function* () {
 			: Option.none();
 
 	const getConnectionResult = Effect.fn("ShedAuthoring.getConnectionResult")(function* () {
-		const endpoint = yield* configurationService.remoteControlEndpoint();
+		const endpoint = yield* configurationService.remoteControlEndpoint;
 		return yield* Cache.get(connectionCache, endpoint).pipe(Effect.result);
 	});
 
 	const invalidateConnectionOnLiveFailure = (cause: unknown) =>
 		Predicate.isTagged(cause, "AuthoringSessionLiveError")
-			? configurationService
-					.remoteControlEndpoint()
-					.pipe(Effect.flatMap((endpoint) => Cache.invalidate(connectionCache, endpoint)))
+			? configurationService.remoteControlEndpoint.pipe(
+					Effect.flatMap((endpoint) => Cache.invalidate(connectionCache, endpoint))
+				)
 			: Effect.void;
 
 	const loadSavedTable = Effect.fn("ShedAuthoring.loadSavedTable")(
@@ -302,7 +302,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 			);
 			return { snapshot, status: "ready" as const };
 		},
-		Effect.catch((error) =>
+		Effect.catchTag("AssetReaderError", (error) =>
 			Effect.succeed(
 				readerFailure(
 					`Could not read the saved DataTable: ${error.message}`,
@@ -326,8 +326,8 @@ const makeShedAuthoring = Effect.gen(function* () {
 					Effect.as({ snapshot, status: "ready" as const })
 				)
 			),
-			Effect.catch((error) =>
-				configurationService.remoteControlEndpoint().pipe(
+			Effect.catchTag("UnrealConnectionError", (error) =>
+				configurationService.remoteControlEndpoint.pipe(
 					Effect.flatMap((endpoint) => Cache.invalidate(connectionCache, endpoint)),
 					Effect.as(
 						readerFailure(
@@ -345,7 +345,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 	) {
 		// Answered by the host's project index. In Workbench that is the one inventory the
 		// workspace already built, so opening this route no longer re-enumerates the project.
-		const savedCatalogResult = yield* savedTableIndex.savedTables().pipe(Effect.result);
+		const savedCatalogResult = yield* savedTableIndex.savedTables.pipe(Effect.result);
 		if (Result.isFailure(savedCatalogResult)) {
 			return catalogReaderFailure(
 				`Could not discover saved DataTables: ${savedCatalogResult.failure.message}`
@@ -370,7 +370,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 					.pipe(Effect.provideService(AuthoringLiveConnection, connection))
 		});
 		if (discovered.diagnostics.some((diagnostic) => diagnostic.authority === "live")) {
-			const endpoint = yield* configurationService.remoteControlEndpoint();
+			const endpoint = yield* configurationService.remoteControlEndpoint;
 			yield* Cache.invalidate(connectionCache, endpoint);
 		}
 
@@ -419,23 +419,23 @@ const makeShedAuthoring = Effect.gen(function* () {
 		};
 	});
 
-	const configuredTable = Effect.fn("ShedAuthoring.configuredTable")(function* () {
-		const authoringAsset = yield* configurationService.authoringAsset();
+	const configuredTable = Effect.gen(function* () {
+		const authoringAsset = yield* configurationService.authoringAsset;
 		if (authoringAsset.status !== "configured") {
 			return { status: "not_configured" as const };
 		}
 		return yield* loadSavedTable(authoringAsset.path);
-	});
+	}).pipe(Effect.withSpan("ShedAuthoring.configuredTable"));
 
-	const configuredCatalog = Effect.fn("ShedAuthoring.configuredCatalog")(function* () {
-		const project = yield* configurationService.project();
+	const configuredCatalog = Effect.gen(function* () {
+		const project = yield* configurationService.project;
 		if (project.status !== "configured") {
 			return { status: "not_configured" as const };
 		}
 		return yield* refreshCatalog(project);
-	});
+	}).pipe(Effect.withSpan("ShedAuthoring.configuredCatalog"));
 
-	const catalogProgress = Effect.fn("ShedAuthoring.catalogProgress")(() =>
+	const catalogProgress = Effect.suspend(() =>
 		assetReader.catalogProgress === undefined
 			? Effect.succeed({
 					cacheHits: 0,
@@ -444,10 +444,10 @@ const makeShedAuthoring = Effect.gen(function* () {
 					tablesFound: 0,
 					totalAssets: 0
 				})
-			: assetReader.catalogProgress()
-	);
+			: assetReader.catalogProgress
+	).pipe(Effect.withSpan("ShedAuthoring.catalogProgress"));
 
-	const chooseTable = Effect.fn("ShedAuthoring.chooseTable")(function* () {
+	const chooseTable = Effect.gen(function* () {
 		const choice = yield* filePicker
 			.chooseFile({
 				extensions: ["uasset"],
@@ -468,7 +468,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 			);
 		if (choice.status === "cancelled") return { status: "cancelled" as const };
 		return yield* loadSavedTable(choice.path);
-	});
+	}).pipe(Effect.withSpan("ShedAuthoring.chooseTable"));
 
 	const openCatalogTable = Effect.fn("ShedAuthoring.openCatalogTable")(function* (
 		objectPath: string,
@@ -479,7 +479,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 		// Resolving the configured project can cost a project-wide index, so it is deferred
 		// to the miss path. A table the catalog already indexed opens without touching it.
 		if (!assetPath && !index.liveObjectPaths.has(objectPath)) {
-			const project = yield* configurationService.project();
+			const project = yield* configurationService.project;
 			if (project.status === "configured") {
 				yield* refreshCatalog(project);
 				index = yield* Ref.get(catalogIndex);
@@ -514,7 +514,7 @@ const makeShedAuthoring = Effect.gen(function* () {
 					message: `No loaded snapshot exists for ${objectPath}`
 				});
 			}
-			const listed = yield* service.list();
+			const listed = yield* service.list;
 			const existingSessions = listed.sessions.filter((candidate) =>
 				candidate.tableObjectPaths.includes(objectPath)
 			);
@@ -542,14 +542,26 @@ const makeShedAuthoring = Effect.gen(function* () {
 			}
 			const document = yield* service.create([snapshot]);
 			return { status: "ready" as const, view: sessionView(document, objectPath) };
-		}).pipe(Effect.catch(toSessionFailure));
+		}).pipe(
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
+		);
 	});
 
-	const listSessions = Effect.fn("ShedAuthoring.listSessions")(function* () {
+	const listSessions = Effect.gen(function* () {
 		if (Option.isNone(sessions)) {
 			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
 		}
-		return yield* sessions.value.list().pipe(
+		return yield* sessions.value.list.pipe(
 			Effect.map((result) => ({
 				diagnostics: result.diagnostics.map(({ code, message }) => ({ code, message })),
 				sessions: result.sessions.filter(
@@ -557,9 +569,9 @@ const makeShedAuthoring = Effect.gen(function* () {
 				),
 				status: "ready" as const
 			})),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag("AuthoringSessionStorageError", toSessionFailure)
 		);
-	});
+	}).pipe(Effect.withSpan("ShedAuthoring.listSessions"));
 
 	const openSession = Effect.fn("ShedAuthoring.openSession")(function* (sessionId: string) {
 		if (Option.isNone(sessions)) {
@@ -567,13 +579,22 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		const service = sessions.value;
 		return yield* service.open(sessionId).pipe(
-			Effect.flatMap((document) =>
-				document.lifecycle === "closed"
-					? service.resume(sessionId)
-					: Effect.succeed(document)
+			Effect.filterOrElse(
+				(document) => !(document.lifecycle === "closed"),
+				() => service.resume(sessionId)
 			),
 			Effect.map(documentView),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
 		);
 	});
 
@@ -581,10 +602,22 @@ const makeShedAuthoring = Effect.gen(function* () {
 		if (Option.isNone(sessions)) {
 			return sessionFailure({ message: "UE_SHED_PROJECT_ROOT is not configured" });
 		}
-		return yield* sessions.value.discard(sessionId).pipe(
-			Effect.flatMap(() => listSessions()),
-			Effect.catch(toSessionFailure)
-		);
+		return yield* sessions.value
+			.discard(sessionId)
+			.pipe(
+				Effect.andThen(listSessions),
+				Effect.catchTag(
+					[
+						"InvalidSessionIdError",
+						"SessionNotFoundError",
+						"AuthoringSessionStorageError",
+						"SessionCorruptError",
+						"AuthoringSessionTransitionError",
+						"DraftIntentError"
+					],
+					toSessionFailure
+				)
+			);
 	});
 
 	const editSession = Effect.fn("ShedAuthoring.editSession")(function* (
@@ -643,7 +676,17 @@ const makeShedAuthoring = Effect.gen(function* () {
 				status: "ready" as const,
 				view: sessionView(document, intent.tableObjectPath)
 			})),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
 		);
 	});
 
@@ -653,7 +696,17 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		return yield* sessions.value.review(sessionId).pipe(
 			Effect.map((review) => ({ review, status: "ready" as const })),
-			Effect.catch(toSessionFailure)
+			Effect.catchTag(
+				[
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError"
+				],
+				toSessionFailure
+			)
 		);
 	});
 
@@ -663,7 +716,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		return yield* sessions.value
 			.undo(sessionId)
-			.pipe(Effect.map(documentView), Effect.catch(toSessionFailure));
+			.pipe(
+				Effect.map(documentView),
+				Effect.catchTag(
+					[
+						"InvalidSessionIdError",
+						"SessionNotFoundError",
+						"AuthoringSessionStorageError",
+						"SessionCorruptError",
+						"AuthoringSessionTransitionError",
+						"DraftIntentError"
+					],
+					toSessionFailure
+				)
+			);
 	});
 
 	const redoSession = Effect.fn("ShedAuthoring.redoSession")(function* (sessionId: string) {
@@ -672,16 +738,29 @@ const makeShedAuthoring = Effect.gen(function* () {
 		}
 		return yield* sessions.value
 			.redo(sessionId)
-			.pipe(Effect.map(documentView), Effect.catch(toSessionFailure));
+			.pipe(
+				Effect.map(documentView),
+				Effect.catchTag(
+					[
+						"InvalidSessionIdError",
+						"SessionNotFoundError",
+						"AuthoringSessionStorageError",
+						"SessionCorruptError",
+						"AuthoringSessionTransitionError",
+						"DraftIntentError"
+					],
+					toSessionFailure
+				)
+			);
 	});
 
 	const requireLiveConnection = (): Effect.Effect<
 		UnrealAuthoringConnection,
 		UnrealConnectionError | UnrealCapabilityError
 	> =>
-		configurationService
-			.remoteControlEndpoint()
-			.pipe(Effect.flatMap((endpoint) => Cache.get(connectionCache, endpoint)));
+		configurationService.remoteControlEndpoint.pipe(
+			Effect.flatMap((endpoint) => Cache.get(connectionCache, endpoint))
+		);
 
 	const applySession = Effect.fn("ShedAuthoring.applySession")(function* (sessionId: string) {
 		if (Option.isNone(sessions)) {
@@ -703,8 +782,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 					Effect.map(documentView)
 				);
 		}).pipe(
-			Effect.catch((cause: SessionFailureCause) =>
-				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			Effect.catchTag(
+				[
+					"UnrealConnectionError",
+					"UnrealCapabilityError",
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError",
+					"AuthoringSessionLiveError"
+				],
+				(cause: SessionFailureCause) =>
+					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
 			)
 		);
 	});
@@ -725,8 +816,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 					Effect.map(documentView)
 				);
 		}).pipe(
-			Effect.catch((cause: SessionFailureCause) =>
-				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			Effect.catchTag(
+				[
+					"UnrealConnectionError",
+					"UnrealCapabilityError",
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError",
+					"AuthoringSessionLiveError"
+				],
+				(cause: SessionFailureCause) =>
+					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
 			)
 		);
 	});
@@ -745,8 +848,20 @@ const makeShedAuthoring = Effect.gen(function* () {
 					Effect.map(documentView)
 				);
 		}).pipe(
-			Effect.catch((cause: SessionFailureCause) =>
-				invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
+			Effect.catchTag(
+				[
+					"UnrealConnectionError",
+					"UnrealCapabilityError",
+					"InvalidSessionIdError",
+					"SessionNotFoundError",
+					"AuthoringSessionStorageError",
+					"SessionCorruptError",
+					"AuthoringSessionTransitionError",
+					"DraftIntentError",
+					"AuthoringSessionLiveError"
+				],
+				(cause: SessionFailureCause) =>
+					invalidateConnectionOnLiveFailure(cause).pipe(Effect.as(sessionFailure(cause)))
 			)
 		);
 	});
@@ -778,20 +893,18 @@ export const ShedAuthoringLive = Layer.effect(
 		const configuration = yield* ShedHostConfiguration;
 		const hosts = yield* Cache.makeWith(
 			({ project, endpoint }: AuthoringTarget) =>
-				Effect.gen(function* () {
-					return yield* makeShedAuthoring.pipe(
-						Effect.provideService(ShedHostConfiguration, {
-							...configuration,
-							project: () => Effect.succeed(project),
-							remoteControlEndpoint: () => Effect.succeed(endpoint)
-						})
-					);
-				}),
+				makeShedAuthoring.pipe(
+					Effect.provideService(ShedHostConfiguration, {
+						...configuration,
+						project: Effect.sync(() => project),
+						remoteControlEndpoint: Effect.sync(() => endpoint)
+					})
+				),
 			{ capacity: 16, timeToLive: () => Duration.infinity }
 		);
 		const selected = Effect.fn("ShedAuthoring.selected")(function* () {
-			const project = yield* configuration.project();
-			const endpoint = yield* configuration.remoteControlEndpoint();
+			const project = yield* configuration.project;
+			const endpoint = yield* configuration.remoteControlEndpoint;
 			return yield* Cache.get(
 				hosts,
 				new AuthoringTarget({
@@ -808,11 +921,11 @@ export const ShedAuthoringLive = Layer.effect(
 				selected().pipe(Effect.flatMap((host) => host.applySession(...args))),
 			beginSession: (...args) =>
 				selected().pipe(Effect.flatMap((host) => host.beginSession(...args))),
-			catalogProgress: () =>
+			catalogProgress: Effect.suspend(() =>
 				selected().pipe(
 					Effect.flatMap(
 						(host) =>
-							host.catalogProgress?.() ??
+							host.catalogProgress ??
 							Effect.succeed({
 								cacheHits: 0,
 								phase: "idle" as const,
@@ -821,17 +934,24 @@ export const ShedAuthoringLive = Layer.effect(
 								totalAssets: 0
 							})
 					)
-				),
-			chooseTable: () => selected().pipe(Effect.flatMap((host) => host.chooseTable())),
-			configuredCatalog: () =>
-				selected().pipe(Effect.flatMap((host) => host.configuredCatalog())),
-			configuredTable: () =>
-				selected().pipe(Effect.flatMap((host) => host.configuredTable())),
+				)
+			),
+			chooseTable: Effect.suspend(() =>
+				selected().pipe(Effect.flatMap((host) => host.chooseTable))
+			),
+			configuredCatalog: Effect.suspend(() =>
+				selected().pipe(Effect.flatMap((host) => host.configuredCatalog))
+			),
+			configuredTable: Effect.suspend(() =>
+				selected().pipe(Effect.flatMap((host) => host.configuredTable))
+			),
 			discardSession: (...args) =>
 				selected().pipe(Effect.flatMap((host) => host.discardSession(...args))),
 			editSession: (...args) =>
 				selected().pipe(Effect.flatMap((host) => host.editSession(...args))),
-			listSessions: () => selected().pipe(Effect.flatMap((host) => host.listSessions())),
+			listSessions: Effect.suspend(() =>
+				selected().pipe(Effect.flatMap((host) => host.listSessions))
+			),
 			openCatalogTable: (...args) =>
 				selected().pipe(Effect.flatMap((host) => host.openCatalogTable(...args))),
 			openSession: (...args) =>
@@ -864,14 +984,13 @@ export function makeShedAuthoringTestLayer(
 		ShedAuthoring.of({
 			catalogProgress:
 				service.catalogProgress ??
-				(() =>
-					Effect.succeed({
-						cacheHits: 0,
-						phase: "idle",
-						processedAssets: 0,
-						tablesFound: 0,
-						totalAssets: 0
-					})),
+				Effect.sync(() => ({
+					cacheHits: 0,
+					phase: "idle",
+					processedAssets: 0,
+					tablesFound: 0,
+					totalAssets: 0
+				})),
 			...service
 		})
 	);
@@ -895,14 +1014,13 @@ export const AuthoringClientLive = Layer.effect(
 				editSession: authoring.editSession,
 				getCatalogProgress:
 					authoring.catalogProgress ??
-					(() =>
-						Effect.succeed({
-							cacheHits: 0,
-							phase: "idle" as const,
-							processedAssets: 0,
-							tablesFound: 0,
-							totalAssets: 0
-						})),
+					Effect.sync(() => ({
+						cacheHits: 0,
+						phase: "idle" as const,
+						processedAssets: 0,
+						tablesFound: 0,
+						totalAssets: 0
+					})),
 				listSessions: authoring.listSessions,
 				loadConfiguredCatalog: authoring.configuredCatalog,
 				loadConfiguredTable: authoring.configuredTable,

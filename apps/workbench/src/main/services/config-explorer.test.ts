@@ -11,11 +11,11 @@ const repositoryRoot = resolve(import.meta.dirname, "../../../../..");
 const fixtureRoot = resolve(repositoryRoot, "packages/config-explorer/fixtures/config-source");
 
 const unusedProjectOperations = {
-	choose: () => Effect.die("not used"),
-	current: () => Effect.die("not used"),
-	inputAtlas: () => Effect.die("not used"),
-	savedProject: () => Effect.die("not used"),
-	savedTables: () => Effect.die("not used")
+	choose: Effect.die("not used"),
+	current: Effect.die("not used"),
+	inputAtlas: Effect.die("not used"),
+	savedProject: Effect.die("not used"),
+	savedTables: Effect.die("not used")
 };
 
 function configuration(options?: {
@@ -46,8 +46,10 @@ function layer(options?: {
 }) {
 	const project = makeWorkbenchProjectTestLayer({
 		...unusedProjectOperations,
-		selectedProject: () =>
-			Effect.succeed({ projectName: "FixtureProject", projectRoot: fixtureRoot })
+		selectedProject: Effect.sync(() => ({
+			projectName: "FixtureProject",
+			projectRoot: fixtureRoot
+		}))
 	});
 	return WorkbenchConfigExplorerLive.pipe(
 		Layer.provide(Layer.mergeAll(ConfigExplorerNodeLive, configuration(options), project))

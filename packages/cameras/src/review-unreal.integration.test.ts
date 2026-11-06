@@ -1226,7 +1226,17 @@ describe.skipIf(!endpoint)("real Unreal provisioned cameras", () => {
 							? item.correlation.candidateId
 							: undefined
 					)
-					.sort()
+					.sort((left, right) =>
+						left === right
+							? 0
+							: left === undefined
+								? 1
+								: right === undefined
+									? -1
+									: left < right
+										? -1
+										: 1
+					)
 			).toEqual(["context_three_quarter", "facade_front"]);
 
 			const statusWhileLive = await Effect.runPromise(

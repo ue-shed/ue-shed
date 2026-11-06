@@ -27,7 +27,7 @@ const ExpectedStates = Schema.Struct({
 	)
 });
 const ExpectedStatesJson = Schema.fromJsonString(ExpectedStates);
-const decodeExpectedStatesJson = Schema.decodeUnknownSync(ExpectedStatesJson);
+const decodeExpectedStatesJson = Schema.decodeSync(ExpectedStatesJson);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 

@@ -9,9 +9,8 @@ import {
 	type PerforceFastMapHistory as PerforceFastMapHistoryType,
 	type PerforceMapHistoryQuery as PerforceMapHistoryQueryType
 } from "./schema.js";
-
-const decodeQuery = Schema.decodeUnknownSync(PerforceMapHistoryQuery);
-const encodeQuery = Schema.encodeSync(PerforceMapHistoryQuery);
+const decodePerforceMapHistoryQuery = Schema.decodeSync(PerforceMapHistoryQuery);
+const encodePerforceMapHistoryQuery = Schema.encodeSync(PerforceMapHistoryQuery);
 const decodeFastHistory = Schema.decodeUnknownSync(PerforceFastMapHistory);
 const encodeFastHistory = Schema.encodeSync(PerforceFastMapHistory);
 
@@ -33,8 +32,8 @@ const query = {
 
 describe("Map History schemas", () => {
 	it("round-trips a bounded Perforce query", () => {
-		const decoded = decodeQuery(query);
-		const encoded = encodeQuery(decoded);
+		const decoded = decodePerforceMapHistoryQuery(query);
+		const encoded = encodePerforceMapHistoryQuery(decoded);
 		expect(encoded).toEqual(query);
 		expect(DateTime.formatIso(decoded.range.since)).toBe(query.range.since);
 		expect(DateTime.formatIso(decoded.range.until)).toBe(query.range.until);
@@ -43,7 +42,7 @@ describe("Map History schemas", () => {
 
 	it("rejects unbounded query limits", () => {
 		expect(() =>
-			decodeQuery({
+			decodePerforceMapHistoryQuery({
 				...query,
 				limits: { ...query.limits, maxChangelists: 0 }
 			})
@@ -52,7 +51,7 @@ describe("Map History schemas", () => {
 
 	it("rejects a backwards time range", () => {
 		expect(() =>
-			decodeQuery({
+			decodePerforceMapHistoryQuery({
 				...query,
 				range: { since: query.range.until, until: query.range.since }
 			})

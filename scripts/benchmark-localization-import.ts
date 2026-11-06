@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { performance } from "node:perf_hooks";
-import { trackBenchmarkEventLoop } from "./benchmark-event-loop.ts";
+import { timeBenchmarkEffect, timeBenchmarkPromise } from "./benchmark-effect-timer.ts";
 import { Effect, Schema } from "effect";
 import {
 	LocalizationEvidence,
@@ -64,9 +64,9 @@ const changedPoByte = boundedNumber(values["po-change-byte"] ?? "110", "--po-cha
 if (!Number.isInteger(changedPoByte) || changedPoByte < 97)
 	throw new Error("--po-change-byte must be a lowercase ASCII letter's byte (97–122).");
 const Memory = Schema.Struct({
-	heapUsed: Schema.Number,
-	arrayBuffers: Schema.Number,
-	rss: Schema.Number
+	heapUsed: Schema.Finite,
+	arrayBuffers: Schema.Finite,
+	rss: Schema.Finite
 });
 const Message = Schema.Struct({
 	kind: Schema.Literals(["stage", "sample", "result", "done", "failed"]),
@@ -94,45 +94,22 @@ if (values.worker) {
 		process.send?.({ kind: "sample", stage, memory: peak });
 	};
 	const timer = setInterval(sample, 25);
-	async function measure<A>(name: string, run: () => Promise<A>, summary: (value: A) => object) {
+	function beginMeasurement(name: string) {
 		globalThis.gc?.();
 		trace?.clear();
 		stage = name;
 		peak = memory();
 		process.send?.({ kind: "stage", stage });
-		const started = performance.now();
-		const loopStart = performance.eventLoopUtilization();
-		const profileStarted = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
-		const probe = trackBenchmarkEventLoop();
-		let value: A;
-		let finished: number;
-		let profileFinished: number;
-		let utilization: number;
-		let eventLoop: ReturnType<typeof probe.stop>;
-		try {
-			value = await run();
-			finished = performance.now();
-			profileFinished = values.profile ? Number(process.hrtime.bigint() / 1000n) : 0;
-			utilization = performance.eventLoopUtilization(loopStart).utilization;
-		} finally {
-			eventLoop = probe.stop();
-		}
+	}
+	function reportMeasurement<A>(
+		measured: Effect.Success<ReturnType<typeof timeBenchmarkEffect<A, never, never>>>,
+		summary: (value: A) => object
+	) {
 		sample();
+		const { value, ...timing } = measured;
 		const result = {
 			stage,
-			seconds: (finished - started) / 1000,
-			eventLoop: {
-				...eventLoop,
-				utilization
-			},
-			...(values.profile
-				? {
-						profileWindowMicros: {
-							start: profileStarted,
-							end: profileFinished
-						}
-					}
-				: undefined),
+			...timing,
 			peak,
 			...(trace ? { trace: trace.drain() } : undefined),
 			...summary(value)
@@ -140,6 +117,18 @@ if (values.worker) {
 		results.push(result);
 		process.send?.({ kind: "result", result });
 	}
+	async function measure<A>(name: string, run: () => Promise<A>, summary: (value: A) => object) {
+		beginMeasurement(name);
+		reportMeasurement(await timeBenchmarkPromise(run, Boolean(values.profile)), summary);
+	}
+	const measureEffect = Effect.fn("BenchmarkLocalization.measure")(function* <A, E, R>(
+		name: string,
+		work: Effect.Effect<A, E, R>,
+		summary: (value: A) => object
+	) {
+		beginMeasurement(name);
+		reportMeasurement(yield* timeBenchmarkEffect(work, Boolean(values.profile)), summary);
+	});
 	try {
 		const target = await Effect.runPromise(
 			Effect.gen(function* () {
@@ -163,7 +152,7 @@ if (values.worker) {
 			await measureSharedIndex(
 				project,
 				cache,
-				measure,
+				measureEffect,
 				values.select ?? "all",
 				changedPoByte
 			);
@@ -212,7 +201,7 @@ if (values.worker) {
 				values["force-changed-join"],
 				Schema.decodeUnknownSync(Schema.Literals(["native", "typescript"]))(values.builder),
 				trace?.tracer,
-				Schema.decodeUnknownSync(
+				Schema.decodeSync(
 					Schema.String.check(
 						Schema.isPattern(/^phase6-refresh(?:-[a-z0-9]+)?$/u),
 						Schema.isMaxLength(64)

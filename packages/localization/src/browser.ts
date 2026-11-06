@@ -79,11 +79,14 @@ export {
 } from "./change-sets.js";
 export {
 	currentLocalizationTranslation,
+	evidenceArchiveEntries,
+	type LocalizationChangeLine,
 	LocalizationChangeOutcome,
 	LocalizationChangeReview,
 	localizationChangeSetIsCurrent,
 	LocalizationChangeSetReview,
-	reviewLocalizationChangeSet
+	reviewLocalizationChangeSet,
+	shippedEvidenceTranslation
 } from "./change-set-review.js";
 export {
 	escapePOString,

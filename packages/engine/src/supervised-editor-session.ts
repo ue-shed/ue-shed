@@ -7,7 +7,17 @@ import {
 	type CompanionCapabilityManifest,
 	type ErrorNextStep
 } from "@ue-shed/protocol";
-import { Context, Duration, Effect, Exit, Layer, Option, Schema, type Scope } from "effect";
+import {
+	type Brand,
+	Context,
+	Duration,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Schema,
+	type Scope
+} from "effect";
 import {
 	EngineInstallationDiscovery,
 	type EngineInstallationError
@@ -81,10 +91,10 @@ export const SupervisedEditorSessionRequest = Schema.Struct({
 	),
 	terminationTimeoutMs: Schema.optional(Milliseconds)
 });
-export type SupervisedEditorSessionRequest = typeof SupervisedEditorSessionRequest.Type;
-const decodeSupervisedEditorSessionRequest = Schema.decodeUnknownEffect(
+const decodeSupervisedEditorSessionRequestEffect = Schema.decodeEffect(
 	SupervisedEditorSessionRequest
 );
+export type SupervisedEditorSessionRequest = typeof SupervisedEditorSessionRequest.Type;
 
 /**
  * Observed process-tree outcome. Exited records natural termination; Terminated additionally
@@ -119,34 +129,34 @@ export type OwnedProcessTerminationReason = Extract<
  * explicit lifecycle stage. Cause preserves the underlying error; failed termination requires
  * operator reconciliation.
  */
-export class SupervisedEditorSessionError extends Schema.TaggedError<SupervisedEditorSessionError>()(
-	"SupervisedEditorSessionError",
-	{
-		code: Schema.Literals([
-			"invalid_request",
-			"engine_discovery_failed",
-			"editor_missing",
-			"project_missing",
-			"plugin_missing",
-			"build_mismatch",
-			"invalid_module_manifest",
-			"plugin_unavailable",
-			"engine_plugins_stale",
-			"startup_map_missing",
-			"recovery_pending",
-			"process_tree_supervision_unavailable",
-			"spawn_failed",
-			"supervisor_failed",
-			"process_exited",
-			"readiness_failed",
-			"capability_unavailable",
-			"termination_failed"
-		]),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		stage: Schema.Literals(["validation", "launch", "readiness", "operation", "termination"])
-	}
-) {}
+export class SupervisedEditorSessionError extends Schema.TaggedError<
+	SupervisedEditorSessionError,
+	Brand.Brand<"packages/engine/src/supervised-editor-session/SupervisedEditorSessionError">
+>()("SupervisedEditorSessionError", {
+	code: Schema.Literals([
+		"invalid_request",
+		"engine_discovery_failed",
+		"editor_missing",
+		"project_missing",
+		"plugin_missing",
+		"build_mismatch",
+		"invalid_module_manifest",
+		"plugin_unavailable",
+		"engine_plugins_stale",
+		"startup_map_missing",
+		"recovery_pending",
+		"process_tree_supervision_unavailable",
+		"spawn_failed",
+		"supervisor_failed",
+		"process_exited",
+		"readiness_failed",
+		"capability_unavailable",
+		"termination_failed"
+	]),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	stage: Schema.Literals(["validation", "launch", "readiness", "operation", "termination"])
+}) {}
 const isSupervisedEditorSessionError = Schema.is(SupervisedEditorSessionError);
 
 /**
@@ -419,20 +429,20 @@ async function waitForProcessGroupExit(pid: number): Promise<void> {
 }
 
 function windowsSupervisorExecutable(): Effect.Effect<string, SupervisedEditorSessionError> {
+	const unavailable = (cause: unknown) =>
+		sessionError(
+			"process_tree_supervision_unavailable",
+			"launch",
+			"The Windows Job Object supervisor is unavailable.",
+			`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`,
+			undefined,
+			undefined,
+			cause
+		);
 	return processSupervisorExecutable.pipe(
+		Effect.mapError(unavailable),
 		Effect.tap((executable) =>
-			Effect.tryPromise({ try: () => access(executable), catch: (cause) => cause })
-		),
-		Effect.mapError((cause) =>
-			sessionError(
-				"process_tree_supervision_unavailable",
-				"launch",
-				`The Windows Job Object supervisor is unavailable.`,
-				`Install the matching optional ${WINDOWS_SUPERVISOR_PACKAGE} package and retry.`,
-				undefined,
-				undefined,
-				cause
-			)
+			Effect.tryPromise({ try: () => access(executable), catch: unavailable })
 		)
 	);
 }
@@ -771,7 +781,7 @@ export const SupervisedEditorSessionLive = Layer.effect(
 		const acquire = Effect.fn("SupervisedEditorSession.acquire")(function* (
 			input: SupervisedEditorSessionRequest
 		) {
-			const request = yield* decodeSupervisedEditorSessionRequest(input).pipe(
+			const request = yield* decodeSupervisedEditorSessionRequestEffect(input).pipe(
 				Effect.mapError((cause) =>
 					sessionError(
 						"invalid_request",

@@ -92,7 +92,7 @@ describe("persisted joined source cache", () => {
 				Effect.scoped(
 					Effect.gen(function* () {
 						const store = yield* SharedIndex,
-							writer = yield* store.writer();
+							writer = yield* store.writer;
 						const ids = yield* writer.intern("source", [
 							"",
 							"alpha",
@@ -114,7 +114,7 @@ describe("persisted joined source cache", () => {
 							},
 							writer.manifest().generation
 						);
-						const reader = yield* store.open(),
+						const reader = yield* store.open,
 							strings = new JoinStrings(reader, ids[0]!);
 						yield* strings.need([ids]);
 						expect(
@@ -143,7 +143,7 @@ describe("persisted joined source cache", () => {
 							writer.manifest().generation
 						);
 						yield* writer.compact(true);
-						const current = yield* store.open(),
+						const current = yield* store.open,
 							layer = yield* current.layer("joined");
 						const cacheIds = yield* layer.section("query.source.ids"),
 							starts = yield* layer.section("query.source.starts"),
@@ -199,7 +199,7 @@ describe("persisted joined source cache", () => {
 				Effect.scoped(
 					Effect.gen(function* () {
 						const store = yield* SharedIndex,
-							writer = yield* store.writer();
+							writer = yield* store.writer;
 						const values = ["", "alpha", "é"],
 							ids = yield* writer.intern("source", values);
 						yield* writer.publishIds(
@@ -218,7 +218,7 @@ describe("persisted joined source cache", () => {
 							writer.manifest().generation
 						);
 						// No strings.need() here: preparation must request published segments itself.
-						const strings = new JoinStrings(yield* store.open(), ids[0]!);
+						const strings = new JoinStrings(yield* store.open, ids[0]!);
 						const prepared = yield* prepareJoinedSourceCache(writer, strings, [ids], {
 							minimumEntries: 0
 						});

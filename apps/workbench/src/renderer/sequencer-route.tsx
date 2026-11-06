@@ -27,7 +27,7 @@ export function createSequencerRoute(
 	// This is the same saved_review candidate index used for references, not a filesystem scan.
 	const searchSequences = Effect.fn("Workbench.Sequencer.searchIndex")(
 		(request: SequenceAssetSearchRequest) =>
-			clients.reviewClient.inventory().pipe(
+			clients.reviewClient.inventory.pipe(
 				Effect.map((inventory): SequenceAssetSearchResult => {
 					if (inventory.status === "not_configured") return { status: "not_configured" };
 					if (inventory.status === "failed") return inventory;

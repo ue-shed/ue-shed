@@ -21,11 +21,11 @@ const validInput = {
 	}
 };
 
-test("accepts the formula-free MIT distribution boundary", () => {
+void test("accepts the formula-free MIT distribution boundary", () => {
 	assert.deepEqual(validateLicenseBoundary(validInput), []);
 });
 
-test("rejects a reintroduced formula engine on any production path", () => {
+void test("rejects a reintroduced formula engine on any production path", () => {
 	const failures = validateLicenseBoundary({
 		...validInput,
 		productionPaths: {
@@ -36,7 +36,7 @@ test("rejects a reintroduced formula engine on any production path", () => {
 	assert.deepEqual(failures, ["hyperformula: found a UE Shed production dependency path"]);
 });
 
-test("rejects license, version, and packed-core dependency drift", () => {
+void test("rejects license, version, and packed-core dependency drift", () => {
 	const failures = validateLicenseBoundary({
 		...validInput,
 		rootManifest: { license: "UNLICENSED" },
@@ -59,12 +59,12 @@ test("rejects license, version, and packed-core dependency drift", () => {
 const lockedNames = (names: readonly string[]) =>
 	names.map((name) => `[[package]]\nname = "${name}"\n`).join("\n");
 
-test("accepts a recorded permissive Rust dependency graph", () => {
+void test("accepts a recorded permissive Rust dependency graph", () => {
 	const lockfile = lockedNames(Object.keys(rustDependencyLicenses));
 	assert.deepEqual(validateRustDependencyLicenses({ lockfile }), []);
 });
 
-test("rejects an unrecorded Rust dependency and a copyleft license", () => {
+void test("rejects an unrecorded Rust dependency and a copyleft license", () => {
 	const failures = validateRustDependencyLicenses({
 		lockfile: lockedNames(["rusqlite", "diesel", "sled"]),
 		licenses: { rusqlite: "MIT", sled: "AGPL-3.0-only" }
@@ -75,7 +75,7 @@ test("rejects an unrecorded Rust dependency and a copyleft license", () => {
 	]);
 });
 
-test("rejects a recorded Rust dependency that is no longer linked", () => {
+void test("rejects a recorded Rust dependency that is no longer linked", () => {
 	assert.deepEqual(
 		validateRustDependencyLicenses({
 			lockfile: lockedNames(["rusqlite"]),
@@ -83,4 +83,15 @@ test("rejects a recorded Rust dependency that is no longer linked", () => {
 		}),
 		["Cargo.lock: libsqlite3-sys is recorded but no longer a Rust dependency"]
 	);
+});
+
+void test("rejects object-valued package metadata without coercing it to strings", () => {
+	const failures = validateLicenseBoundary({
+		...validInput,
+		peculiarManifest: { version: { unexpected: true }, license: ["MIT"] }
+	});
+	assert.deepEqual(failures, [
+		"peculiar-sheets: expected exact version 0.15.0, received invalid non-string version",
+		"peculiar-sheets: expected MIT metadata, received missing or non-string license"
+	]);
 });

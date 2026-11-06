@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { assertJsonSchemaEquivalent } from "./canonical-json-schema.ts";
 
-test("compares recursive definitions through renamed aliases and equivalent conjunctions", () => {
+void test("compares recursive definitions through renamed aliases and equivalent conjunctions", () => {
 	const first = {
 		$ref: "#/$defs/Alias",
 		$defs: {
@@ -33,7 +33,7 @@ test("compares recursive definitions through renamed aliases and equivalent conj
 	assertJsonSchemaEquivalent(first, second);
 });
 
-test("still detects changed bounds, required fields, patterns and object closure", () => {
+void test("still detects changed bounds, required fields, patterns and object closure", () => {
 	const original = {
 		type: "object",
 		properties: { path: { type: "string", allOf: [{ minLength: 7 }, { pattern: "^/Game/" }] } },
@@ -59,7 +59,7 @@ test("still detects changed bounds, required fields, patterns and object closure
 		assert.throws(() => assertJsonSchemaEquivalent(original, changed));
 });
 
-test("rejects missing definitions and cyclic aliases", () => {
+void test("rejects missing definitions and cyclic aliases", () => {
 	assert.throws(
 		() => assertJsonSchemaEquivalent({ $ref: "#/$defs/Missing" }, {}),
 		/Missing JSON Schema definition/

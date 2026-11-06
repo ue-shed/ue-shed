@@ -21,7 +21,11 @@ import { Effect, Layer, Ref, Stream } from "effect";
 import { resolve } from "node:path";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
-import { ElectronIpcTest, makeElectronIpcTestLayer } from "../adapters/electron-ipc.js";
+import {
+	ElectronIpcTest,
+	makeElectronIpcTestLayer,
+	type ElectronIpcTestApi
+} from "../adapters/electron-ipc.js";
 import { makeWorkbenchWindowTestLayer } from "../adapters/electron-window.js";
 import { invokeChannelNames } from "../ipc-contracts.js";
 import { makeWorkbenchAssetAuditsTestLayer } from "../services/asset-audits.js";
@@ -118,35 +122,31 @@ interface RegistrationOptions {
 /** Builds the full fake feature-service graph that `register.ts` depends on. */
 function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions = {}) {
 	const assetReader = makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readSavedWorld: () =>
 			Effect.die(new Error("Unexpected readSavedWorld in this reader fixture")),
 		scanProject: () => Effect.die(new Error("Unexpected scanProject in this reader fixture")),
@@ -189,11 +189,11 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 				})
 			),
 		readTable: () => Effect.die("not used"),
-		source: () => Effect.succeed("configured")
+		source: Effect.succeed("configured")
 	});
 	const dialog = makeElectronDialogTestLayer.pipe(Layer.provide(makeWorkbenchWindowTestLayer()));
 	const showcase = makeShowcaseTestLayer({
-		context: () =>
+		context: Effect.suspend(() =>
 			recorder.record("showcase.context").pipe(
 				Effect.as({
 					fixtureConfigured: false,
@@ -202,13 +202,15 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 					reader: "configured" as const
 				})
 			)
+		)
 	});
 
 	const assetAudits = makeWorkbenchAssetAuditsTestLayer({
-		configuredScan: () =>
+		configuredScan: Effect.suspend(() =>
 			recorder
 				.record("assetAudits.configuredScan")
-				.pipe(Effect.as({ status: "not_configured" } satisfies TextureAuditRunResult)),
+				.pipe(Effect.as({ status: "not_configured" } satisfies TextureAuditRunResult))
+		),
 		preview: (objectPath) =>
 			recorder.record(`assetAudits.preview:${objectPath}`).pipe(
 				Effect.as({
@@ -270,7 +272,9 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	});
 
 	const gameText = makeWorkbenchGameTextTestLayer({
-		configuredScan: () => Effect.die("Full corpus reads must remain in the host"),
+		configuredScan: Effect.suspend(() =>
+			Effect.die("Full corpus reads must remain in the host")
+		),
 		configuredRefresh: () =>
 			recorder
 				.record("gameText.configuredRefresh")
@@ -278,26 +282,29 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	});
 
 	const contentObservatory = makeWorkbenchContentObservatoryTestLayer({
-		cancel: () =>
+		cancel: Effect.suspend(() =>
 			recorder
 				.record("contentObservatory.cancel")
-				.pipe(Effect.as({ status: "not_configured" as const })),
+				.pipe(Effect.as({ status: "not_configured" as const }))
+		),
 		start: (request) =>
 			recorder
 				.record(`contentObservatory.start:${request.mapPath}`)
 				.pipe(Effect.as({ status: "not_configured" as const })),
-		status: () =>
+		status: Effect.suspend(() =>
 			recorder
 				.record("contentObservatory.status")
-				.pipe(Effect.as({ status: "not_configured" as const })),
+				.pipe(Effect.as({ status: "not_configured" as const }))
+		),
 		targets: () => Effect.die("target discovery is not used by this registration test")
 	});
 
 	const inputAtlas = makeWorkbenchInputAtlasTestLayer({
-		configuredScan: () =>
+		configuredScan: Effect.suspend(() =>
 			recorder
 				.record("inputAtlas.configuredScan")
 				.pipe(Effect.as({ status: "not_configured" } satisfies EnhancedInputRunResult))
+		)
 	});
 	const configExplorer = makeWorkbenchConfigExplorerTestLayer({
 		query: (request) =>
@@ -352,9 +359,10 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 					skippedAssets: 0
 				}
 			}),
-		choose: () =>
-			recorder.record("project.choose").pipe(Effect.as({ status: "cancelled" as const })),
-		current: () =>
+		choose: Effect.suspend(() =>
+			recorder.record("project.choose").pipe(Effect.as({ status: "cancelled" as const }))
+		),
+		current: Effect.suspend(() =>
 			recorder.record("project.current").pipe(
 				Effect.as(
 					options.blueprintProjectConfigured === true
@@ -370,13 +378,14 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 							}
 						: { status: "not_configured" as const }
 				)
-			),
-		inputAtlas: () => Effect.die("not used"),
+			)
+		),
+		inputAtlas: Effect.suspend(() => Effect.die("not used")),
 		openRecent: (projectRoot) =>
 			recorder
 				.record(`project.openRecent:${projectRoot}`)
 				.pipe(Effect.as({ status: "cancelled" as const })),
-		recent: () =>
+		recent: Effect.suspend(() =>
 			recorder.record("project.recent").pipe(
 				Effect.as([
 					{
@@ -384,15 +393,17 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 						projectRoot: "C:/Projects/Fixture"
 					}
 				])
-			),
-		savedTables: () => Effect.die("savedTables is not used"),
-		savedProject: () => Effect.die("not used")
+			)
+		),
+		savedTables: Effect.suspend(() => Effect.die("savedTables is not used")),
+		savedProject: Effect.suspend(() => Effect.die("not used"))
 	});
 	const custodian = makeWorkbenchCustodianTestLayer({
-		configuredScan: () =>
+		configuredScan: Effect.suspend(() =>
 			recorder
 				.record("projectCustodian.configuredScan")
-				.pipe(Effect.as({ status: "not_configured" as const })),
+				.pipe(Effect.as({ status: "not_configured" as const }))
+		),
 		prepare: (intent) =>
 			recorder.record(`projectCustodian.prepare:${intent.targetIds.length}`).pipe(
 				Effect.as({
@@ -440,26 +451,30 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 			recorder
 				.record(`authoring.discardSession:${sessionId}`)
 				.pipe(Effect.as({ diagnostics: [], sessions: [], status: "ready" as const })),
-		chooseTable: () =>
+		chooseTable: Effect.suspend(() =>
 			recorder
 				.record("authoring.chooseTable")
-				.pipe(Effect.as({ status: "not_configured" as const })),
-		configuredCatalog: () =>
+				.pipe(Effect.as({ status: "not_configured" as const }))
+		),
+		configuredCatalog: Effect.suspend(() =>
 			recorder
 				.record("authoring.configuredCatalog")
-				.pipe(Effect.as({ status: "not_configured" as const })),
-		configuredTable: () =>
+				.pipe(Effect.as({ status: "not_configured" as const }))
+		),
+		configuredTable: Effect.suspend(() =>
 			recorder
 				.record("authoring.configuredTable")
-				.pipe(Effect.as({ status: "not_configured" as const })),
+				.pipe(Effect.as({ status: "not_configured" as const }))
+		),
 		editSession: (intent) =>
 			recorder
 				.record(`authoring.editSession:${intent.sessionId}`)
 				.pipe(Effect.as(sessionFailure)),
-		listSessions: () =>
+		listSessions: Effect.suspend(() =>
 			recorder
 				.record("authoring.listSessions")
-				.pipe(Effect.as({ diagnostics: [], sessions: [], status: "ready" as const })),
+				.pipe(Effect.as({ diagnostics: [], sessions: [], status: "ready" as const }))
+		),
 		openCatalogTable: (objectPath) =>
 			recorder
 				.record(`authoring.openCatalogTable:${objectPath}`)
@@ -481,14 +496,15 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	});
 
 	const mapReview = makeWorkbenchMapReviewTestLayer({
-		worldSnapshot: () =>
+		worldSnapshot: Effect.suspend(() =>
 			recorder.record("mapReview.worldSnapshot").pipe(
 				Effect.as({
 					message: "offline",
 					recovery: "open Unreal",
 					status: "unavailable" as const
 				})
-			),
+			)
+		),
 		focusActor: (actorId) =>
 			recorder
 				.record(`mapReview.focusActor:${actorId}`)
@@ -540,10 +556,9 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 				.pipe(
 					Effect.as({ status: "failed" as const, error: { message: "m", recovery: "r" } })
 				),
-		load: () =>
-			recorder
-				.record("mapReview.load")
-				.pipe(Effect.as({ status: "not_configured" as const })),
+		load: Effect.suspend(() =>
+			recorder.record("mapReview.load").pipe(Effect.as({ status: "not_configured" as const }))
+		),
 		previewCandidate: (candidateId) =>
 			recorder
 				.record(`mapReview.previewCandidate:${candidateId}`)
@@ -566,12 +581,14 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 			recorder
 				.record(`mapReview.subscribeWorldObservations:${cadenceHz}`)
 				.pipe(Effect.asVoid),
-		unsubscribeWorldObservations: () =>
-			recorder.record("mapReview.unsubscribeWorldObservations").pipe(Effect.asVoid),
-		worldObservationPresentationReplacements: () => Effect.succeed(0),
+		unsubscribeWorldObservations: Effect.suspend(() =>
+			recorder.record("mapReview.unsubscribeWorldObservations").pipe(Effect.asVoid)
+		),
+		worldObservationPresentationReplacements: Effect.succeed(0),
 		// No map is configured, so saved worlds and Review Sets answer as an unconfigured host.
-		savedWorldMaps: () =>
-			recorder.record("mapReview.savedWorldMaps").pipe(Effect.as([] as const)),
+		savedWorldMaps: Effect.suspend(() =>
+			recorder.record("mapReview.savedWorldMaps").pipe(Effect.as([] as const))
+		),
 		savedWorld: (mapPath) =>
 			recorder.record(`mapReview.savedWorld:${mapPath}`).pipe(
 				Effect.andThen(
@@ -586,13 +603,12 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 					)
 				)
 			),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				actorsFound: 0,
-				phase: "idle" as const,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		savedWorldProgress: Effect.sync(() => ({
+			actorsFound: 0,
+			phase: "idle" as const,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		applyVisibilityPolicy: () =>
 			recorder
 				.record("mapReview.applyVisibilityPolicy")
@@ -601,10 +617,11 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 			recorder
 				.record("mapReview.replaceVisibilityPolicy")
 				.pipe(Effect.as({ status: "not_configured" as const })),
-		reviewSetLibrary: () =>
+		reviewSetLibrary: Effect.suspend(() =>
 			recorder
 				.record("mapReview.reviewSetLibrary")
-				.pipe(Effect.as({ status: "not_configured" as const })),
+				.pipe(Effect.as({ status: "not_configured" as const }))
+		),
 		createReviewSet: () =>
 			recorder
 				.record("mapReview.createReviewSet")
@@ -631,12 +648,14 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 					status: "failed" as const
 				})
 			),
-		choosePlan: () =>
+		choosePlan: Effect.suspend(() =>
 			recorder
 				.record("mapCapture.choosePlan")
-				.pipe(Effect.as({ status: "cancelled" as const })),
-		newPlan: () =>
-			recorder.record("mapCapture.newPlan").pipe(Effect.as({ status: "cancelled" as const })),
+				.pipe(Effect.as({ status: "cancelled" as const }))
+		),
+		newPlan: Effect.suspend(() =>
+			recorder.record("mapCapture.newPlan").pipe(Effect.as({ status: "cancelled" as const }))
+		),
 		openMap: () =>
 			recorder.record("mapCapture.openMap").pipe(
 				Effect.as({
@@ -667,7 +686,7 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 			)
 	});
 	const niagaraPreview = makeWorkbenchNiagaraPreviewTestLayer({
-		catalogue: () =>
+		catalogue: Effect.suspend(() =>
 			recorder.record("niagaraPreview.catalogue").pipe(
 				Effect.as({
 					entries: [
@@ -679,7 +698,8 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 					],
 					status: "ready" as const
 				})
-			),
+			)
+		),
 		frame: (intent) =>
 			recorder
 				.record(`niagaraPreview.frame:${intent.relativePath}`)
@@ -718,7 +738,7 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 			recorder
 				.record(`cameraPresentation.configure:${config.activeCameraCount}`)
 				.pipe(Effect.as(sampleCameraStatus)),
-		metrics: () =>
+		metrics: Effect.suspend(() =>
 			recorder.record("cameraPresentation.metrics").pipe(
 				Effect.as({
 					bytesReceived: 0,
@@ -734,13 +754,15 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 					startedMonotonicMs: 0,
 					transportErrors: 0
 				})
-			),
+			)
+		),
 		setPresentationBudget: (megabytesPerSecond) =>
 			recorder
 				.record(`cameraPresentation.setPresentationBudget:${megabytesPerSecond}`)
 				.pipe(Effect.as(megabytesPerSecond)),
-		status: () =>
+		status: Effect.suspend(() =>
 			recorder.record("cameraPresentation.status").pipe(Effect.as(sampleCameraStatus))
+		)
 	});
 	const editorSession = makeEditorPlaySessionTestLayer({
 		execute: (_endpoint, command) =>
@@ -875,14 +897,8 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	);
 }
 
-function runRegistered<A>(
-	body: (ipc: {
-		readonly handlers: () => Effect.Effect<ReadonlyArray<{ readonly channel: string }>>;
-		readonly invoke: (
-			channel: string,
-			...args: ReadonlyArray<unknown>
-		) => Effect.Effect<unknown, unknown>;
-	}) => Effect.Effect<A, unknown>,
+function runRegistered<A, E>(
+	body: (ipc: Pick<ElectronIpcTestApi, "handlers" | "invoke">) => Effect.Effect<A, E>,
 	options: RegistrationOptions = {}
 ) {
 	return Effect.gen(function* () {
@@ -901,7 +917,7 @@ function runRegistered<A>(
 
 it.effect("registers every schema-owned contract channel exactly once", () =>
 	Effect.gen(function* () {
-		const { result } = yield* runRegistered((ipc) => ipc.handlers());
+		const { result } = yield* runRegistered((ipc) => ipc.handlers);
 		expect(result.map((entry) => entry.channel).toSorted()).toEqual(
 			[...invokeChannelNames].toSorted()
 		);
@@ -1055,11 +1071,7 @@ it.effect("dispatches game-text channels to WorkbenchGameText", () =>
 it.effect("rejects malformed input instead of reaching the service", () =>
 	Effect.gen(function* () {
 		const { recorder, result } = yield* runRegistered((ipc) =>
-			Effect.gen(function* () {
-				return yield* Effect.exit(
-					ipc.invoke("asset-audits:textures:preview", "not-a-game-path")
-				);
-			})
+			Effect.exit(ipc.invoke("asset-audits:textures:preview", "not-a-game-path"))
 		);
 		expect(result._tag).toBe("Failure");
 		expect(yield* recorder.calls()).toEqual([]);
@@ -1102,10 +1114,10 @@ it.effect("maps a failed camera status request to actionable unavailable state",
 		const ipcLayer = makeElectronIpcTestLayer();
 		const presentation = makeCameraPresentationTestLayer({
 			configure: () => Effect.die("unused"),
-			metrics: () => Effect.die("unused"),
+			metrics: Effect.suspend(() => Effect.die("unused")),
 			setPresentationBudget: () => Effect.die("unused"),
-			status: () =>
-				Effect.fail(
+			status: Effect.failSync(
+				() =>
 					new CameraControlError({
 						endpoint: "http://editor",
 						operation: "status",
@@ -1114,7 +1126,7 @@ it.effect("maps a failed camera status request to actionable unavailable state",
 						retrySafe: true,
 						nextStep: "retry"
 					})
-				)
+			)
 		});
 		yield* Effect.gen(function* () {
 			yield* registerCameras;

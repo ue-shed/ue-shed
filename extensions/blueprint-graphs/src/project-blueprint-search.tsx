@@ -14,12 +14,12 @@ import type {
 } from "./blueprint-graph-viewer.js";
 import { styles } from "./blueprint-graph-styles.js";
 
-export interface ProjectBlueprintSearchProps {
+export interface ProjectBlueprintSearchProps<E = never, SearchError = never> {
 	readonly controls: BlueprintGraphOpenerControls;
 	readonly searchBlueprints: (
 		request: BlueprintAssetSearchRequest
-	) => Effect.Effect<BlueprintAssetSearchResult, unknown>;
-	readonly readBlueprint: (path: string) => BlueprintGraphReadEffect;
+	) => Effect.Effect<BlueprintAssetSearchResult, SearchError>;
+	readonly readBlueprint: (path: string) => BlueprintGraphReadEffect<E>;
 	readonly noProjectHint?: string;
 }
 
@@ -35,7 +35,9 @@ function plural(count: number, noun: string): string {
 	return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-export function ProjectBlueprintSearch(props: ProjectBlueprintSearchProps) {
+export function ProjectBlueprintSearch<E = never, SearchError = never>(
+	props: ProjectBlueprintSearchProps<E, SearchError>
+) {
 	// Capture host operations during setup so callbacks cannot materialize lazy prop memos.
 	const searchBlueprints = props.searchBlueprints;
 	const readBlueprint = props.readBlueprint;

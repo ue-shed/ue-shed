@@ -7,8 +7,7 @@ import {
 	makeRowReferenceReport,
 	rowReferenceDiagnostics
 } from "./relationships.js";
-
-const decodeRowReferenceReport = Schema.decodeUnknownSync(RowReferenceReport);
+const decodeRowReferenceReport = Schema.decodeSync(RowReferenceReport);
 
 function snapshot(objectPath: string, rows: readonly AuthoringRow[]): AuthoringTableSnapshotV1 {
 	const packageName = objectPath.slice(0, objectPath.lastIndexOf("."));

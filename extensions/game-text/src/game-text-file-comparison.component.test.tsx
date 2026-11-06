@@ -3,7 +3,6 @@ import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-libra
 import { userEvent } from "@testing-library/user-event";
 import type {
 	LocalizationFileChange,
-	LocalizationFileChoiceRequest,
 	LocalizationFileComparisonRequest
 } from "@ue-shed/game-text/schema";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
@@ -65,7 +64,7 @@ const counts = {
 	unchanged: 40
 };
 
-const notUsed = () => Effect.die("Not used");
+const notUsed = Effect.suspend(() => Effect.die("Not used"));
 
 function client(
 	choices: string[],
@@ -79,18 +78,18 @@ function client(
 	} = {}
 ): GameTextClientApi {
 	return {
-		focus: notUsed,
-		loadConfiguredProject: notUsed,
-		locateAsset: notUsed,
+		focus: () => notUsed,
+		loadConfiguredProject: () => notUsed,
+		locateAsset: () => notUsed,
 		progress: Stream.empty,
-		search: notUsed,
-		searchRows: notUsed,
+		search: () => notUsed,
+		searchRows: () => notUsed,
 		chooseQualityRules: notUsed,
-		qualityFocus: notUsed,
-		qualitySearch: notUsed,
-		previewQualityRules: notUsed,
-		saveQualityRules: notUsed,
-		chooseLocalizationFile: (_: LocalizationFileChoiceRequest) => {
+		qualityFocus: () => notUsed,
+		qualitySearch: () => notUsed,
+		previewQualityRules: () => notUsed,
+		saveQualityRules: () => notUsed,
+		chooseLocalizationFile: () => {
 			const path = choices.shift();
 			if (path === undefined) return Effect.succeed({ status: "cancelled" });
 			const format = path.endsWith(".po") ? "po" : "archive";

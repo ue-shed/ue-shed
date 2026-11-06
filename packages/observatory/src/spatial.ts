@@ -1,19 +1,19 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import type { ObservedActor as ObservedActorType } from "./actor-models.js";
 import { WorldScoutResult, WorldScoutFocusResult } from "./scout-contracts.js";
 /**
  * A value that does not match the World Scout contract: the two sides disagree about the contract, so
  * repeating the same call returns the same mismatch.
  */
-export class WorldScoutContractError extends Schema.TaggedError<WorldScoutContractError>()(
-	"WorldScoutContractError",
-	{
-		code: Schema.Literal("invalid_contract"),
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class WorldScoutContractError extends Schema.TaggedError<
+	WorldScoutContractError,
+	Brand.Brand<"packages/observatory/src/spatial/WorldScoutContractError">
+>()("WorldScoutContractError", {
+	code: Schema.Literal("invalid_contract"),
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A unary parser for one World Scout contract value: it decodes the encoded value and fails with

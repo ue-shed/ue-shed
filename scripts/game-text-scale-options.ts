@@ -22,7 +22,7 @@ export function positiveNumber(value: string, name: string): number {
 }
 
 const Recipe = Schema.Struct({
-	scale: Schema.Number.check(Schema.isGreaterThan(0)),
+	scale: Schema.Finite.check(Schema.isGreaterThan(0)),
 	keys: Schema.Int.check(Schema.isGreaterThan(0)),
 	packages: Schema.Int.check(Schema.isGreaterThan(0)),
 	partialPackages: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -36,7 +36,7 @@ const ScaleDescriptor = Schema.Struct({
 	["shape"]: Schema.optionalKey(Recipe)
 });
 const ScaleDescriptorJson = Schema.fromJsonString(ScaleDescriptor);
-const decodeScaleDescriptorJson = Schema.decodeUnknownSync(ScaleDescriptorJson);
+const decodeScaleDescriptorJson = Schema.decodeSync(ScaleDescriptorJson);
 
 /** The pre-crash 1× descriptor called its recipe "shape". Never load an unbounded descriptor. */
 export async function readScaleRecipe(root: string) {

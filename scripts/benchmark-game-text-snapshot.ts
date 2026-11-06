@@ -71,10 +71,10 @@ const WorkerMessage = Schema.Struct({
 	error: Schema.optionalKey(Schema.String),
 	result: Schema.optionalKey(WorkerResult),
 	peak: Schema.optionalKey(
-		Schema.Struct({ heapUsed: Schema.Number, arrayBuffers: Schema.Number, rss: Schema.Number })
+		Schema.Struct({ heapUsed: Schema.Finite, arrayBuffers: Schema.Finite, rss: Schema.Finite })
 	),
-	nativePeakRss: Schema.optionalKey(Schema.Number),
-	seconds: Schema.optionalKey(Schema.Number)
+	nativePeakRss: Schema.optionalKey(Schema.Finite),
+	seconds: Schema.optionalKey(Schema.Finite)
 });
 type WorkerMessage = typeof WorkerMessage.Type;
 const decodeWorkerMessage = Schema.decodeUnknownSync(WorkerMessage);
@@ -219,7 +219,7 @@ if (values.worker) {
 					Effect.scoped(
 						Effect.gen(function* () {
 							const store = yield* SnapshotStore;
-							const writer = yield* store.writer();
+							const writer = yield* store.writer;
 							return yield* writer.publish(snapshotFileSource(raw), {
 								recipe: "phase2",
 								layout: "joined-target-probe-v3"
@@ -278,7 +278,7 @@ if (values.worker) {
 												Effect.promise(() => fileReader.domain(domain))
 										}))
 									)
-								: yield* store.open();
+								: yield* store.open;
 						yield* Effect.promise(() => checkpoint("directory", begin));
 						mark("hot-open");
 						begin = performance.now();

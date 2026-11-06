@@ -8,7 +8,7 @@ import { WorkbenchConfiguration } from "../workbench-config.js";
 import { WorkbenchProject } from "./project-workspace.js";
 
 export interface ShowcaseApi {
-	readonly context: () => Effect.Effect<ShowcaseContext>;
+	readonly context: Effect.Effect<ShowcaseContext>;
 }
 
 export class Showcase extends Context.Service<Showcase, ShowcaseApi>()(
@@ -25,7 +25,7 @@ export const ShowcaseLive = Layer.effect(
 		const project = yield* WorkbenchProject;
 
 		const projectEvidence = Effect.fn("Workbench.Showcase.projectEvidence")(function* () {
-			const current = yield* project.current();
+			const current = yield* project.current;
 			if (current.status === "not_configured" || current.status === "cancelled") {
 				return { status: "not_configured" as const };
 			}
@@ -53,7 +53,7 @@ export const ShowcaseLive = Layer.effect(
 					status: "ready" as const,
 					texturePackages: textures
 				})),
-				Effect.catch((error) =>
+				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 					Effect.succeed({
 						message: error.message,
 						recovery: error.recovery,
@@ -71,9 +71,9 @@ export const ShowcaseLive = Layer.effect(
 			};
 		});
 
-		const context = Effect.fn("Workbench.Showcase.context")(function* () {
+		const context = Effect.gen(function* () {
 			const [runtimeHealth, reader, evidence] = yield* Effect.all(
-				[health.snapshot(), assetReader.source(), projectEvidence()] as const,
+				[health.snapshot, assetReader.source, projectEvidence()] as const,
 				{ concurrency: 3 }
 			);
 			const projectRoot =
@@ -107,7 +107,7 @@ export const ShowcaseLive = Layer.effect(
 				reader,
 				...(ruleFile ? { ruleFile } : undefined)
 			} satisfies ShowcaseContext;
-		});
+		}).pipe(Effect.withSpan("Workbench.Showcase.context"));
 
 		return Showcase.of({ context });
 	})

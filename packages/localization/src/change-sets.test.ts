@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { decodeLocalizationChangeSet, LocalizationChangeSet } from "./change-sets.js";
 
 const LocalizationChangeSetJson = Schema.fromJsonString(LocalizationChangeSet);
-const encodeLocalizationChangeSetJson = Schema.encodeSync(LocalizationChangeSetJson);
+const encodeChangeSetJson = Schema.encodeSync(LocalizationChangeSetJson);
 
-const document = Schema.decodeUnknownSync(LocalizationChangeSet)({
+const document = Schema.decodeSync(LocalizationChangeSet)({
 	schemaVersion: 1,
 	provenance: {
 		producer: "test",
@@ -38,7 +38,7 @@ describe("localization change sets", () => {
 				...document,
 				changes: document.changes.map((change) => ({ ...change, previousTranslation }))
 			};
-			const json = encodeLocalizationChangeSetJson(value);
+			const json = encodeChangeSetJson(value);
 			const decoded = decodeLocalizationChangeSet(json);
 			expect(Result.isSuccess(decoded)).toBe(true);
 			if (Result.isSuccess(decoded)) expect(decoded.success).toEqual(value);

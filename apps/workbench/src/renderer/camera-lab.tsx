@@ -237,9 +237,9 @@ export function CameraLab() {
 		setFixtureLaunch({ status: "launching" });
 		launchAction.run(
 			Effect.gen(function* () {
-				const launch = yield* workbenchRendererClient.launchFixture();
+				const launch = yield* workbenchRendererClient.launchFixture;
 				if (launch.status === "failed") return { launch, status: "launch_failed" as const };
-				const camera = yield* workbenchRendererClient.getStatus();
+				const camera = yield* workbenchRendererClient.getStatus;
 				return { camera, status: "ready" as const };
 			}),
 			{
@@ -315,7 +315,7 @@ export function CameraLab() {
 						<button
 							type="button"
 							disabled={fixtureLaunch().status === "launching"}
-							onClick={() => void launchFixture()}
+							onClick={() => launchFixture()}
 							{...stylex.attrs(styles.launchButton)}
 						>
 							{fixtureLaunch().status === "launching"
@@ -411,7 +411,7 @@ export function CameraLab() {
 										focused={config().focusedCameraIndex === index}
 										pipelineMode={config().pipelineMode}
 										onFocus={() =>
-											void applyConfig({
+											applyConfig({
 												...config(),
 												focusedCameraIndex: index
 											})
@@ -448,7 +448,7 @@ export function CameraLab() {
 						max={status()?.cameras.length ?? 32}
 						suffix=""
 						onInput={(value) =>
-							void applyConfig({
+							applyConfig({
 								...config(),
 								activeCameraCount: value,
 								focusedCameraIndex:
@@ -473,9 +473,7 @@ export function CameraLab() {
 								{([pipelineMode, label]) => (
 									<button
 										type="button"
-										onClick={() =>
-											void applyConfig({ ...config(), pipelineMode })
-										}
+										onClick={() => applyConfig({ ...config(), pipelineMode })}
 										{...stylex.attrs(
 											styles.pipelineButton,
 											config().pipelineMode === pipelineMode &&
@@ -494,7 +492,7 @@ export function CameraLab() {
 						min={1}
 						max={30}
 						suffix="fps"
-						onInput={(value) => void applyConfig({ ...config(), focusedFps: value })}
+						onInput={(value) => applyConfig({ ...config(), focusedFps: value })}
 					/>
 					<Slider
 						label="Background rate"
@@ -503,7 +501,7 @@ export function CameraLab() {
 						max={30}
 						step={0.5}
 						suffix="fps"
-						onInput={(value) => void applyConfig({ ...config(), backgroundFps: value })}
+						onInput={(value) => applyConfig({ ...config(), backgroundFps: value })}
 					/>
 					<Slider
 						label="Captures per tick"
@@ -512,7 +510,7 @@ export function CameraLab() {
 						max={32}
 						suffix=""
 						onInput={(value) =>
-							void applyConfig({ ...config(), captureBudgetPerTick: value })
+							applyConfig({ ...config(), captureBudgetPerTick: value })
 						}
 					/>
 					<Slider
@@ -536,9 +534,7 @@ export function CameraLab() {
 								{(resolution) => (
 									<button
 										type="button"
-										onClick={() =>
-											void applyConfig({ ...config(), resolution })
-										}
+										onClick={() => applyConfig({ ...config(), resolution })}
 										{...stylex.attrs(
 											styles.resolutionButton,
 											config().resolution === resolution &&
@@ -557,7 +553,7 @@ export function CameraLab() {
 							<button
 								type="button"
 								onClick={() =>
-									void applyConfig({
+									applyConfig({
 										...config(),
 										renderProfile: "full_fidelity"
 									})
@@ -573,7 +569,7 @@ export function CameraLab() {
 							<button
 								type="button"
 								onClick={() =>
-									void applyConfig({ ...config(), renderProfile: "observation" })
+									applyConfig({ ...config(), renderProfile: "observation" })
 								}
 								{...stylex.attrs(
 									styles.modeButton,
@@ -590,9 +586,7 @@ export function CameraLab() {
 						<div>
 							<button
 								type="button"
-								onClick={() =>
-									void applyConfig({ ...config(), viewMode: "overview" })
-								}
+								onClick={() => applyConfig({ ...config(), viewMode: "overview" })}
 								{...stylex.attrs(
 									styles.modeButton,
 									config().viewMode === "overview" && styles.modeButtonActive
@@ -602,9 +596,7 @@ export function CameraLab() {
 							</button>
 							<button
 								type="button"
-								onClick={() =>
-									void applyConfig({ ...config(), viewMode: "actor_pov" })
-								}
+								onClick={() => applyConfig({ ...config(), viewMode: "actor_pov" })}
 								{...stylex.attrs(
 									styles.modeButton,
 									config().viewMode === "actor_pov" && styles.modeButtonActive
@@ -616,7 +608,7 @@ export function CameraLab() {
 					</div>
 					<button
 						type="button"
-						onClick={() => void applyConfig({ ...config(), paused: !config().paused })}
+						onClick={() => applyConfig({ ...config(), paused: !config().paused })}
 						{...stylex.attrs(styles.pause)}
 					>
 						{config().paused ? "Resume capture" : "Pause capture"}

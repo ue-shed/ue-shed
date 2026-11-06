@@ -11,12 +11,12 @@ import type {
 import type { SequenceOpenerControls, SequenceReadEffect } from "./sequence-viewer.js";
 import { styles } from "./search-styles.js";
 
-export interface ProjectSequenceSearchProps {
+export interface ProjectSequenceSearchProps<E = never, SearchError = never> {
 	readonly controls: SequenceOpenerControls;
 	readonly searchSequences: (
 		request: SequenceAssetSearchRequest
-	) => Effect.Effect<SequenceAssetSearchResult, unknown>;
-	readonly readSequence: (path: string) => SequenceReadEffect;
+	) => Effect.Effect<SequenceAssetSearchResult, SearchError>;
+	readonly readSequence: (path: string) => SequenceReadEffect<E>;
 	readonly noProjectHint?: string;
 }
 
@@ -32,7 +32,9 @@ function plural(count: number, noun: string): string {
 	return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-export function ProjectSequenceSearch(props: ProjectSequenceSearchProps) {
+export function ProjectSequenceSearch<E = never, SearchError = never>(
+	props: ProjectSequenceSearchProps<E, SearchError>
+) {
 	// Capture host operations during setup so callbacks cannot materialize lazy prop memos.
 	const searchSequences = props.searchSequences;
 	const readSequence = props.readSequence;

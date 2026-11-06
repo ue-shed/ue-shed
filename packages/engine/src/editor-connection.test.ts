@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from "node:http";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Ref, Schema } from "effect";
+import { Effect, Layer, Ref } from "effect";
 import { expect, it as httpIt } from "vitest";
 import {
 	makeRemoteControlClient,
@@ -8,8 +8,6 @@ import {
 } from "@ue-shed/unreal-connection";
 import { EditorConnection, EditorConnectionLive } from "./editor-connection.js";
 
-const ServerAddress = Schema.Struct({ port: Schema.Number });
-const decodeServerAddress = Schema.decodeUnknownSync(ServerAddress);
 const manifest = {
 	capabilities: ["editor.play-session.v1"],
 	producerKind: "unreal_editor" as const,
@@ -28,7 +26,9 @@ async function withEditorHttp(
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	try {
-		const address = decodeServerAddress(server.address());
+		const address = server.address();
+		if (!(address instanceof Object))
+			throw new Error("The fixture TCP server did not expose its address.");
 		await run(`http://127.0.0.1:${address.port}`, () => requests);
 	} finally {
 		await new Promise<void>((resolve, reject) =>

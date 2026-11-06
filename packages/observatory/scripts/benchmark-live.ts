@@ -1,3 +1,4 @@
+import { BenchmarkMeasurementError } from "../../../scripts/benchmark-errors.js";
 /** Live Unreal -> USOT pipe -> Observatory host benchmark. Requires the fixture editor in PIE. */
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -136,9 +137,14 @@ const benchmark = Effect.scoped(
 		yield* Fiber.interrupt(fiber);
 
 		if (diagnostics.length === 0) {
-			return yield* Effect.fail(
-				new Error("The live Observatory stream produced no packets during measurement.")
-			);
+			return yield* new BenchmarkMeasurementError({
+				code: "no_packets",
+				message: "The live Observatory stream produced no packets during measurement.",
+				recovery:
+					"Check the editor observation capability and stream connection, then measure again.",
+				retrySafe: true,
+				nextStep: "retry"
+			});
 		}
 
 		const decodeApply = distribution(diagnostics.map((sample) => sample.decodeApplyMs));
@@ -155,7 +161,13 @@ const benchmark = Effect.scoped(
 		const first = diagnostics[0];
 		const last = diagnostics.at(-1);
 		if (first === undefined || last === undefined) {
-			return yield* Effect.fail(new Error("Missing live Observatory diagnostic bounds."));
+			return yield* new BenchmarkMeasurementError({
+				code: "packet_bounds_missing",
+				message: "Missing live Observatory diagnostic bounds.",
+				recovery: "Retain a complete packet sample before computing the measurement.",
+				retrySafe: true,
+				nextStep: "retry"
+			});
 		}
 
 		return {

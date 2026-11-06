@@ -164,34 +164,33 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 			});
 		})
 	).pipe(Layer.provide(fixture.layer()));
-	const current = () =>
-		Effect.gen(function* () {
-			const root = yield* Ref.get(selectedRoot);
-			if (!root) return { status: "not_configured" as const };
-			return {
-				status: "ready" as const,
-				project: {
-					generation: yield* Ref.get(generation),
-					inputAtlas: "ready" as const,
-					mapCount: 0,
-					packageCount: 1,
-					projectName: "Fixture",
-					projectRoot: root
-				}
-			};
-		});
+	const current = Effect.gen(function* () {
+		const root = yield* Ref.get(selectedRoot);
+		if (!root) return { status: "not_configured" as const };
+		return {
+			status: "ready" as const,
+			project: {
+				generation: yield* Ref.get(generation),
+				inputAtlas: "ready" as const,
+				mapCount: 0,
+				packageCount: 1,
+				projectName: "Fixture",
+				projectRoot: root
+			}
+		};
+	});
 	const project = makeWorkbenchProjectTestLayer({
 		current,
 		...(mode.startsWith("cached")
 			? {
 					refresh: () =>
-						Ref.update(generation, (value) => value + 1).pipe(Effect.andThen(current()))
+						Ref.update(generation, (value) => value + 1).pipe(Effect.andThen(current))
 				}
 			: undefined),
 		choose: current,
-		inputAtlas: () => Effect.die("Not used"),
-		savedTables: () => Effect.die("Not used"),
-		savedProject: () => Effect.succeed({ maps: [], projectRoot: fixture.projectRoot }),
+		inputAtlas: Effect.suspend(() => Effect.die("Not used")),
+		savedTables: Effect.suspend(() => Effect.die("Not used")),
+		savedProject: Effect.sync(() => ({ maps: [], projectRoot: fixture.projectRoot })),
 		candidates: () =>
 			Ref.get(generation).pipe(
 				Effect.map((generation) => ({

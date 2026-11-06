@@ -27,7 +27,7 @@ function projectIndexLayer(command: TargetCommand) {
 	return Layer.unwrap(
 		Effect.gen(function* () {
 			const reader = yield* AssetReader;
-			const configuration = yield* reader.configuration();
+			const configuration = yield* reader.configuration;
 			return projectIndexProcessLayerFromReader({
 				...configuration,
 				cacheRoot: command.cacheRoot

@@ -2,12 +2,12 @@ import { Schema } from "effect";
 import { expect, it } from "vitest";
 import { UAssetIoRequest } from "./uasset-io.js";
 import { encodeGameTextJoinInput, GameTextIndexBuildRequest } from "./game-text-index.js";
+const decodeGameTextIndexBuildRequest = Schema.decodeSync(GameTextIndexBuildRequest);
 
 const EncodedJoinInput = Schema.Struct({
 	stringCodeUnits: Schema.Record(Schema.String, Schema.Array(Schema.Int))
 });
 const decodeIoRequest = Schema.decodeUnknownSync(UAssetIoRequest);
-const decodeBuildRequest = Schema.decodeUnknownSync(GameTextIndexBuildRequest);
 const decodeEncodedJoinInput = Schema.decodeUnknownSync(EncodedJoinInput);
 
 it("negotiates native builds without changing older operation versions", () => {
@@ -25,7 +25,7 @@ it("negotiates native builds without changing older operation versions", () => {
 		})
 	).toThrow();
 	expect(() =>
-		decodeBuildRequest({
+		decodeGameTextIndexBuildRequest({
 			action: "strings",
 			configuration: {
 				cacheRoot: "cache",

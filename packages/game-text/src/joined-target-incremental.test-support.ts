@@ -13,7 +13,7 @@ import type { JoinedSourcePatches } from "./joined-source-patches.js";
 import { longestSource } from "./source-metrics.js";
 
 const JoinedTargetMetaJson = Schema.fromJsonString(JoinedTargetMeta);
-const decodeJoinedTargetMetaJson = Schema.decodeUnknownEffect(JoinedTargetMetaJson);
+const decodeJoinedTargetMetaJson = Schema.decodeEffect(JoinedTargetMetaJson);
 
 const same = (a: Uint32Array, b: Uint32Array) =>
 	a.length === b.length &&

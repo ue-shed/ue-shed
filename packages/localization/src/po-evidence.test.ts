@@ -2,8 +2,7 @@ import { Result, Schema } from "effect";
 import { expect, it } from "vitest";
 import { parsePO, projectPOEvidence } from "./po.js";
 import { POEvidence } from "./schema.js";
-
-const decodePOEvidence = Schema.decodeUnknownSync(POEvidence);
+const decodePOEvidence = Schema.decodeSync(POEvidence);
 
 it("preserves every decoded entry and comment while omitting serialization data", () => {
 	const parsed = parsePO(

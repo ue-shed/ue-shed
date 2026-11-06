@@ -20,7 +20,7 @@ const OracleEntry = Schema.Struct({
 });
 const Oracle = Schema.Struct({ entries: Schema.Array(OracleEntry) });
 const OracleJson = Schema.fromJsonString(Oracle);
-const decodeOracleJson = Schema.decodeUnknownSync(OracleJson);
+const decodeOracleJson = Schema.decodeSync(OracleJson);
 const oracle = (version: string) =>
 	decodeOracleJson(
 		readFileSync(

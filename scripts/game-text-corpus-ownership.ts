@@ -13,7 +13,7 @@ const OwnershipReceipt = Schema.Struct({
 	)
 });
 const OwnershipReceiptJson = Schema.fromJsonString(OwnershipReceipt);
-const decodeOwnershipReceiptJson = Schema.decodeUnknownSync(OwnershipReceiptJson);
+const decodeOwnershipReceiptJson = Schema.decodeSync(OwnershipReceiptJson);
 
 export const corpusOwnershipName = "UEShedGameTextCorpus.ownership.json";
 export function filesUnder(root: string): string[] {

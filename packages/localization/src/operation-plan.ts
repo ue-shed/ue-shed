@@ -10,8 +10,7 @@ import {
 	type LocalizationStepKind,
 	isLocalizationOperationError
 } from "./operation-schema.js";
-
-const decodePlanningRequest = Schema.decodeUnknownResult(LocalizationPlanningRequest);
+const decodeLocalizationPlanningRequest = Schema.decodeResult(LocalizationPlanningRequest);
 
 /**
  * Unreal may have written partial output once a commandlet ran or the project changed underneath
@@ -209,7 +208,7 @@ const suffixes = {
 export function planLocalizationOperation(
 	input: LocalizationPlanningRequest
 ): LocalizationOperationPlan {
-	const decoded = decodePlanningRequest(input);
+	const decoded = decodeLocalizationPlanningRequest(input);
 	if (decoded._tag === "Failure") throw localizationOperationError("invalid_request");
 	const request = decoded.success;
 	const { target, operation } = request;

@@ -1,7 +1,7 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
-import { Effect, Option, Schema, Semaphore } from "effect";
+import { type Brand, Effect, Option, Schema, Semaphore } from "effect";
 import { inspectUnrealProducer, RemoteControlClient } from "@ue-shed/unreal-connection";
 import { AssetReader, extractProjectTextPackages } from "@ue-shed/unreal-assets";
 import { Stream } from "effect";
@@ -20,18 +20,20 @@ import {
 } from "./text-actions.js";
 import { prepareTextIdTableRepair, applyTextIdTableRepair } from "./id-repair-tables.js";
 import { stripPackageNamespace } from "@ue-shed/localization";
-import { MAX_TEXT_SECTION_ROWS } from "./schema.js";
+import { MAX_TEXT_SECTION_ROWS, type TextOccurrence } from "./schema.js";
 import type { GameTextWorkspaceApi } from "./workspace.js";
 import type {
 	GameTextWorkspaceFileHooks,
 	GameTextWorkspaceProjectState
 } from "./workspace-host.js";
+const decodeTextIdRepairRequest = Schema.decodeEffect(TextIdRepairRequest);
+const decodeTextIdRepairId = Schema.decodeEffect(TextIdRepairId);
 
 /** Host authority for ID repairs. Storage, project selection and endpoint selection stay explicit. */
 export interface GameTextIdRepairsHost {
 	readonly workspace: Pick<GameTextWorkspaceApi, "focus" | "beginOperation" | "endOperation">;
-	readonly current: () => Effect.Effect<GameTextWorkspaceProjectState>;
-	readonly endpoint: () => Effect.Effect<string>;
+	readonly current: Effect.Effect<GameTextWorkspaceProjectState>;
+	readonly endpoint: Effect.Effect<string>;
 	/** Resolve the endpoint's actual project directory through the host's editor connection. */
 	readonly editorProject: (
 		endpoint: string
@@ -40,7 +42,10 @@ export interface GameTextIdRepairsHost {
 }
 
 /** Domain failure returned as reviewable recovery information, including indeterminate writes. */
-class RepairError extends Schema.TaggedError<RepairError>()("TextIdRepairError", {
+class RepairError extends Schema.TaggedError<
+	RepairError,
+	Brand.Brand<"packages/game-text/src/workspace-id-repairs/RepairError">
+>()("TextIdRepairError", {
 	cause: Schema.optionalKey(Schema.Defect()),
 	message: Schema.String,
 	recovery: Schema.String,
@@ -53,6 +58,7 @@ const Guidance = Schema.Struct({
 	retrySafe: Schema.Boolean,
 	nextStep: ErrorNextStep
 });
+const decodeGuidanceOption = Schema.decodeUnknownOption(Guidance);
 
 const unavailable = (error: {
 	readonly message: string;
@@ -72,10 +78,7 @@ const Artifact = Schema.Struct({
 	plan: TextIdRepairPlan,
 	result: Schema.optionalKey(TextIdRepairResult)
 });
-const decodeArtifactJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Artifact));
-const decodeGuidance = Schema.decodeUnknownOption(Guidance);
-const decodeRepairRequest = Schema.decodeUnknownEffect(TextIdRepairRequest);
-const decodeRepairId = Schema.decodeUnknownEffect(TextIdRepairId);
+const decodeArtifactJson = Schema.decodeEffect(Schema.fromJsonString(Artifact));
 
 const folder = "Saved/UEShed/GameTextActions";
 
@@ -91,9 +94,25 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 	const reader = yield* AssetReader;
 	const editorProject = Effect.fn("GameText.idRepairs.editorProject")(function* (
 		endpoint: string,
-		root: string
+		root: string,
+		mutation = false
 	) {
-		const actual = yield* host.editorProject(endpoint);
+		const actual = yield* host.editorProject(endpoint).pipe(
+			Effect.mapError((cause) => {
+				const guidance = decodeGuidanceOption(cause);
+				return new RepairError({
+					cause,
+					message: cause.message,
+					recovery: cause.recovery,
+					retrySafe: Option.isSome(guidance) ? guidance.value.retrySafe : false,
+					nextStep: Option.isSome(guidance)
+						? guidance.value.nextStep
+						: mutation
+							? "reconcile"
+							: "fix_input"
+				});
+			})
+		);
 		if (!actual || relative(resolve(actual), resolve(root)) !== "")
 			return yield* new RepairError({
 				message: "The connected editor is running a different project.",
@@ -103,7 +122,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			});
 	});
 	const selected = Effect.fn("GameText.idRepairs.selected")(function* (expected?: string) {
-		const state = yield* host.current();
+		const state = yield* host.current;
 		if (
 			state.status !== "ready" ||
 			(expected !== undefined && state.project.projectRoot !== expected)
@@ -116,11 +135,68 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			});
 		return state.project.projectRoot;
 	});
+	const stale = () =>
+		new RepairError({
+			message: "A reviewed place is no longer in the current scan.",
+			recovery: "Rescan and review the fix again.",
+			retrySafe: true,
+			nextStep: "fix_input"
+		});
+	/**
+	 * Every place of a unit, a page at a time. The engine answers an unknown cursor with the first
+	 * page again, so a unit that changes between pages, or a page that adds nothing, is stale
+	 * rather than read forever; the pages are capped at what the first page's total needs.
+	 */
+	const unitPlaces = Effect.fn("GameText.idRepairs.unitPlaces")(function* (
+		unitId: TextIdRepairRequest["changes"][number]["unitId"]
+	) {
+		const places: TextOccurrence[] = [];
+		const ids = new Set<string>();
+		let cursor: TextOccurrence["id"] | undefined;
+		let total: number | undefined;
+		let pages = 0;
+		do {
+			const found = yield* host.workspace.focus({
+				id: unitId,
+				pageSize: MAX_TEXT_SECTION_ROWS,
+				...(cursor === undefined ? undefined : { occurrenceCursor: cursor })
+			});
+			if (found.status !== "found") return yield* stale();
+			const { focus } = found;
+			total ??= focus.totalOccurrences;
+			pages += 1;
+			// A page that repeats a place, or adds none while promising more, did not move on.
+			const repeated = focus.occurrences.some((item) => ids.has(item.id));
+			const stalled =
+				focus.occurrences.length === 0 && focus.nextOccurrenceCursor !== undefined;
+			if (
+				focus.totalOccurrences !== total ||
+				repeated ||
+				stalled ||
+				places.length + focus.occurrences.length > total ||
+				pages > Math.ceil(total / MAX_TEXT_SECTION_ROWS) + 1
+			)
+				return yield* stale();
+			for (const item of focus.occurrences) {
+				ids.add(item.id);
+				places.push(item);
+			}
+			cursor = focus.nextOccurrenceCursor;
+		} while (cursor !== undefined);
+		if (places.length !== total) return yield* stale();
+		yield* Effect.annotateCurrentSpan({
+			"idRepair.places": places.length,
+			"idRepair.pages": pages
+		});
+		return places;
+	});
 	const actions = Effect.fn("GameText.idRepairs.resolve")(function* (
 		request: TextIdRepairRequest
 	) {
 		const root = yield* selected(request.projectKey);
 		const seen = new Set<string>();
+		// Each unit is read once, however many of its places the proposal edits.
+		const units = new Map<string, readonly TextOccurrence[]>();
 		const output = [];
 		for (const change of request.changes) {
 			const expected = change.occurrence;
@@ -133,21 +209,9 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 					nextStep: "fix_input"
 				});
 			seen.add(key);
-			// The unit's first 500 places, in one read.
-			const found = yield* host.workspace.focus({
-				id: change.unitId,
-				pageSize: MAX_TEXT_SECTION_ROWS
-			});
-			if (
-				found.status !== "found" ||
-				!found.focus.occurrences.some((item) => sameRepairOccurrence(item, expected))
-			)
-				return yield* new RepairError({
-					message: "A reviewed place is no longer in the current scan.",
-					recovery: "Rescan and review the fix again.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				});
+			const places = units.get(change.unitId) ?? (yield* unitPlaces(change.unitId));
+			units.set(change.unitId, places);
+			if (!places.some((item) => sameRepairOccurrence(item, expected))) return yield* stale();
 			const unsupported = textIdRepairSupport(expected, change.edit);
 			if (unsupported !== undefined || expected.identity.status !== "resolved")
 				return yield* new RepairError({
@@ -193,7 +257,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			{ exclusive }
 		);
 	const prepare = Effect.fn("GameText.idRepairs.prepare")(function* (input: TextIdRepairRequest) {
-		const request = yield* decodeRepairRequest(input).pipe(
+		const request = yield* decodeTextIdRepairRequest(input).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -206,7 +270,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			)
 		);
 		const root = yield* selected(request.projectKey);
-		const endpoint = yield* host.endpoint();
+		const endpoint = yield* host.endpoint;
 		yield* editorProject(endpoint, root);
 		const producer = yield* inspectUnrealProducer(endpoint);
 		if (producer.producerKind !== "unreal_editor" || !producer.identity)
@@ -276,7 +340,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			nextStep: "reconcile"
 		});
 	const apply = Effect.fn("GameText.idRepairs.apply")(function* (input: TextIdRepairId) {
-		const id = yield* decodeRepairId(input).pipe(
+		const id = yield* decodeTextIdRepairId(input).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -317,8 +381,8 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 				message: "This proposal is not ready to apply.",
 				recovery: "Resolve the preview errors and prepare a new fix."
 			});
-		const endpoint = yield* host.endpoint();
-		yield* editorProject(endpoint, root);
+		const endpoint = yield* host.endpoint;
+		yield* editorProject(endpoint, root, true);
 		const producer = yield* inspectUnrealProducer(endpoint);
 		if (endpoint !== plan.endpoint || producer.identity?.sessionId !== plan.sessionId)
 			return unavailable({
@@ -326,7 +390,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 				recovery: "Review the fix against the current editor again."
 			});
 		const resolved = yield* actions(plan.request);
-		const admitted = yield* host.workspace.beginOperation();
+		const admitted = yield* host.workspace.beginOperation;
 		if (!admitted)
 			return unavailable({
 				message: "Another Game Text operation is running.",
@@ -335,7 +399,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			});
 		return yield* Effect.gen(function* () {
 			yield* selected(root);
-			yield* editorProject(endpoint, root);
+			yield* editorProject(endpoint, root, true);
 			// An exclusive claim also prevents two host processes from applying the same proposal.
 			yield* host.files.writeFile(
 				resolve(root, folder, `${id}.started.json`),
@@ -437,39 +501,41 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 				yield* write(root, id, { state: "finished", plan, result: receipt });
 				return receipt;
 			}).pipe(Effect.mapError(claimed));
-		}).pipe(Effect.ensuring(host.workspace.endOperation()));
+		}).pipe(Effect.ensuring(host.workspace.endOperation));
 	});
-	const failure = (
-		error: Effect.Error<ReturnType<typeof apply>> | Effect.Error<ReturnType<typeof prepare>>,
-		mutation: boolean
-	) => {
-		// Keep each failure's own guidance; only unguided failures fall back to the phase default.
-		const guidance = decodeGuidance(error);
-		return unavailable({
-			message: error.message,
-			recovery:
-				"recovery" in error
-					? error.recovery
-					: "Inspect the editor and saved repair receipt before retrying.",
-			retrySafe: Option.isSome(guidance) ? guidance.value.retrySafe : false,
-			nextStep: Option.isSome(guidance)
-				? guidance.value.nextStep
-				: mutation
-					? "reconcile"
-					: "fix_input"
-		});
-	};
+
 	return {
 		prepare: (request: TextIdRepairRequest) =>
 			gate.withPermit(prepare(request)).pipe(
 				Effect.provideService(RemoteControlClient, remote),
-				Effect.catch((error) => Effect.succeed(failure(error, false)))
+				Effect.catchTag(
+					[
+						"TextIdRepairError",
+						"ContractParseError",
+						"RemoteControlClientError",
+						"TextIdTableRepairError",
+						"TextIdTableColumnError",
+						"UnrealConnectionError",
+						"UnrealCapabilityError",
+						"GameTextActionsError",
+						"GameTextWorkspaceHostFailure"
+					],
+					(error) => Effect.succeed(unavailable(error))
+				)
 			),
 		apply: (id: TextIdRepairId) =>
 			gate.withPermit(apply(id)).pipe(
 				Effect.provideService(RemoteControlClient, remote),
 				Effect.provideService(AssetReader, reader),
-				Effect.catch((error) => Effect.succeed(failure(error, true)))
+				Effect.catchTag(
+					[
+						"TextIdRepairError",
+						"ContractParseError",
+						"RemoteControlClientError",
+						"GameTextWorkspaceHostFailure"
+					],
+					(error) => Effect.succeed(unavailable(error))
+				)
 			)
 	};
 });

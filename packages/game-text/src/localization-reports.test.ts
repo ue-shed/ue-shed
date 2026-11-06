@@ -22,15 +22,11 @@ import { localizationWordCount } from "./localization-words.js";
 import { canonicalLocalizationJson, localizationFingerprint } from "./localization-fingerprint.js";
 import { LocalizationError } from "@ue-shed/localization/browser";
 
+const decodeTarget = Schema.decodeSync(LocalizationProgressReport.fields.target);
 const JsonText = Schema.fromJsonString(Schema.Json);
-const decodeJsonText = Schema.decodeUnknownSync(JsonText);
+const decodeJsonText = Schema.decodeSync(JsonText);
 const LocalizationProgressReportJson = Schema.fromJsonString(LocalizationProgressReport);
-const decodeLocalizationProgressReportJson = Schema.decodeUnknownSync(
-	LocalizationProgressReportJson
-);
-const decodeProgressReportTarget = Schema.decodeUnknownSync(
-	LocalizationProgressReport.fields.target
-);
+const decodeLocalizationProgressReportJson = Schema.decodeSync(LocalizationProgressReportJson);
 
 describe("localization progress and manifest baselines", () => {
 	it("retains schema issues when a baseline JSON document is invalid", () => {
@@ -318,7 +314,7 @@ describe("localization progress and manifest baselines", () => {
 		expect(() =>
 			diffLocalizationBaselines(before, {
 				...after,
-				target: decodeProgressReportTarget("Other")
+				target: decodeTarget("Other")
 			})
 		).toThrowError(expect.objectContaining({ code: "baseline_target_mismatch" }));
 		expect(

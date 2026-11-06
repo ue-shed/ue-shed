@@ -13,12 +13,11 @@ import {
 	RecordingManifest,
 	type SiteMedia
 } from "./site-media-model.ts";
-
-const decodeRecordingManifest = Schema.decodeUnknownSync(RecordingManifest);
+const decodeRecordingManifest = Schema.decodeSync(RecordingManifest);
 
 const png = readFileSync(new URL("../apps/site/public/media/authoring.png", import.meta.url));
 
-test("media promotion requires passed, complete, contained recording evidence", (t) => {
+void test("media promotion requires passed, complete, contained recording evidence", (t) => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-site-media-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const bundle = join(root, "bundle");
@@ -86,7 +85,7 @@ test("media promotion requires passed, complete, contained recording evidence", 
 	assert.throws(() => prepareCaptures(bundle, manifest, "site-saved"), /PNG/);
 });
 
-test("site check detects missing images and edits outside the promotion workflow", (t) => {
+void test("site check detects missing images and edits outside the promotion workflow", (t) => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-site-check-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const captures: Record<string, SiteMedia["captures"][string]> = {};

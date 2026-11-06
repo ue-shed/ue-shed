@@ -28,9 +28,9 @@ import {
 import { LocalizationQualityReport } from "./localization-quality-schema.js";
 
 const LocalizationQualityReportJson = Schema.fromJsonString(LocalizationQualityReport);
-const decodeLocalizationQualityReportJson = Schema.decodeUnknownSync(LocalizationQualityReportJson);
+const decodeLocalizationQualityReportJson = Schema.decodeEffect(LocalizationQualityReportJson);
 const GameTextRuleDocumentJson = Schema.fromJsonString(GameTextRuleDocument);
-const decodeGameTextRuleDocumentJsonSync = Schema.decodeUnknownSync(GameTextRuleDocumentJson);
+const decodeGameTextRuleDocumentJsonSync = Schema.decodeSync(GameTextRuleDocumentJson);
 
 const menu = {
 	id: "menu",
@@ -158,7 +158,11 @@ it.effect(
 			expect(
 				report.findings.some((finding) => finding.kind === "missing_translator_notes")
 			).toBe(false);
-			expect(decodeLocalizationQualityReportJson(JSON.stringify(report))).toEqual(report);
+			expect(
+				yield* decodeLocalizationQualityReportJson(JSON.stringify(report)).pipe(
+					Effect.orDie
+				)
+			).toEqual(report);
 			expect(report.coverage).toEqual(text.coverage);
 		})
 );

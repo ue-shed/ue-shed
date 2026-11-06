@@ -87,6 +87,17 @@ describe("project-index benchmark evidence", () => {
 		expect(validateProjectIndexBenchmarkEvidence(evidence())).toEqual(evidence());
 	});
 
+	it.each([NaN, Infinity, -Infinity])(
+		"refuses a non-finite phase measurement (%s)",
+		(duration) => {
+			const invalid = evidence();
+			const first = invalid.scenarios["project_index.cold_build"].samples[0];
+			if (!first) throw new Error("The benchmark fixture has no first sample.");
+			first.timings.native.enumeratingMs = duration;
+			expect(() => validateProjectIndexBenchmarkEvidence(invalid)).toThrow();
+		}
+	);
+
 	it("rejects unknown fields and supplied paths", () => {
 		const withPath = { ...evidence(), projectRoot: "C:/Studio/SecretProject" };
 		expect(() => validateProjectIndexBenchmarkEvidence(withPath)).toThrow("outside");

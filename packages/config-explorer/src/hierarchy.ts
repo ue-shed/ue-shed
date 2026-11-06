@@ -31,10 +31,12 @@ export const resolveConfigProject = Effect.fn("ConfigHierarchy.resolveProject")(
 ): Effect.fn.Return<ConfigProject, ConfigFileAccessError, ConfigFileAccess> {
 	const files = yield* ConfigFileAccess;
 	const selected = resolve(project);
-	const isFile = yield* files.isFile(selected).pipe(Effect.catch(() => Effect.succeed(false)));
+	const isFile = yield* files
+		.isFile(selected)
+		.pipe(Effect.catchTag("ConfigFileAccessError", () => Effect.succeed(false)));
 	if (isFile) {
 		if (extname(selected).toLocaleLowerCase() !== ".uproject") {
-			return yield* Effect.fail(invalidProject("Project selection is not a .uproject file."));
+			return yield* invalidProject("Project selection is not a .uproject file.");
 		}
 		return {
 			root: dirname(selected),
@@ -47,12 +49,10 @@ export const resolveConfigProject = Effect.fn("ConfigHierarchy.resolveProject")(
 		(entry) => entry.kind === "file" && extname(entry.name).toLocaleLowerCase() === ".uproject"
 	);
 	if (descriptors.length !== 1) {
-		return yield* Effect.fail(
-			invalidProject(
-				descriptors.length === 0
-					? "Project root contains no .uproject descriptor."
-					: "Project root contains more than one .uproject descriptor."
-			)
+		return yield* invalidProject(
+			descriptors.length === 0
+				? "Project root contains no .uproject descriptor."
+				: "Project root contains more than one .uproject descriptor."
 		);
 	}
 	const descriptor = join(selected, descriptors[0]!.name);
@@ -284,9 +284,7 @@ export const resolvePlatformChain = Effect.fn("ConfigHierarchy.resolvePlatformCh
 		while (current !== undefined && current !== "") {
 			const normalized = current.toLocaleLowerCase();
 			if (visiting.has(normalized)) {
-				return yield* Effect.fail(
-					invalidProject("Platform IniParent chain contains a cycle.")
-				);
+				return yield* invalidProject("Platform IniParent chain contains a cycle.");
 			}
 			visiting.add(normalized);
 			let found = false;
@@ -299,10 +297,8 @@ export const resolvePlatformChain = Effect.fn("ConfigHierarchy.resolvePlatformCh
 				if (candidate !== undefined) parent = candidate;
 			}
 			if (!found) {
-				return yield* Effect.fail(
-					invalidProject(
-						"The selected platform has no DataDrivenPlatformInfo.ini evidence."
-					)
+				return yield* invalidProject(
+					"The selected platform has no DataDrivenPlatformInfo.ini evidence."
 				);
 			}
 			chain.unshift(current);

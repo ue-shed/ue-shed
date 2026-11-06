@@ -46,9 +46,49 @@ const LocalizationImport: Schema.Codec<GameTextContract.LocalizationImportReques
 			limits: LocalizationLimits
 		})
 	),
-	maximumInFlightBytes: Positive,
-	cold: Schema.Boolean
+	maximumInFlightBytes: Positive
 });
+const LocalizationImportOutcome: Schema.Codec<GameTextContract.LocalizationImportOutcome> =
+	Schema.Struct({
+		lookupStrings: Natural,
+		reusedStrings: Natural,
+		files: Schema.Array(
+			Schema.Union([
+				Schema.Struct({
+					outcome: Schema.Literal("imported"),
+					file: Schema.Struct({
+						key: Schema.String,
+						contentHash: Schema.String,
+						provenance: Schema.Struct({
+							relativePath: Schema.String,
+							size: Natural,
+							modifiedTime: Schema.String,
+							contentHash: Schema.String
+						}),
+						relativePath: Schema.String,
+						format: LocalizationFormat,
+						inputBytes: Natural,
+						parsed: Schema.Boolean,
+						snapshotBytes: Natural
+					})
+				}),
+				Schema.Struct({
+					outcome: Schema.Literal("failed"),
+					error: Schema.Struct({
+						code: Schema.String,
+						message: Schema.String,
+						recovery: Schema.String,
+						retrySafe: Schema.Boolean,
+						nextStep: Schema.String
+					})
+				})
+			])
+		),
+		workerCount: Natural,
+		parseMs: Schema.Number,
+		parseCpuMs: Schema.Number,
+		publishMs: Schema.Number
+	});
 /** One native index operation; begin/end own its session, and publish/join mutate cached state. */
 export const GameTextIndexPreviousBuildRequest = Schema.Union([
 	Schema.Struct({
@@ -100,7 +140,10 @@ export const GameTextIndexPreviousBuildRequest = Schema.Union([
 	})
 ]);
 const PackageLayerName = Name.check(Schema.isPattern(/^package-text\./u));
-/** Added in uasset-io 1.16; input snapshots contain only changed authored records. */
+/**
+ * Added in uasset-io 1.16; input snapshots contain only changed authored records. All inputs are
+ * published in one root publication.
+ */
 export const GameTextIndexPackageReplacement = Schema.Struct({
 	action: Schema.Literal("publish_packages"),
 	...Configuration,
@@ -108,16 +151,37 @@ export const GameTextIndexPackageReplacement = Schema.Struct({
 		Schema.Struct({
 			name: PackageLayerName,
 			key: Name,
-			previousKey: Name,
+			/** The shard's active key; omitted for a shard the index doesn't hold yet (1.22). */
+			previousKey: Schema.optionalKey(Name),
 			file: Text,
-			rows: Schema.Array(
-				Schema.Int.check(Schema.isGreaterThanOrEqualTo(-64000000)).check(
-					Schema.isLessThanOrEqualTo(63999999)
-				)
-			).check(Schema.isMaxLength(64000000))
+			/** Nonnegative rows retain previous records; -1-row selects a record of `file`. */
+			rows: Schema.optionalKey(
+				Schema.Array(
+					Schema.Int.check(Schema.isGreaterThanOrEqualTo(-64000000)).check(
+						Schema.isLessThanOrEqualTo(63999999)
+					)
+				).check(Schema.isMaxLength(64000000))
+			),
+			/** The same rows as little-endian 32-bit integers, in place of `rows` (1.22). */
+			rowsFile: Schema.optionalKey(Text)
 		})
 	).check(Schema.isMaxLength(256)),
 	removedNames: Schema.optionalKey(Schema.Array(PackageLayerName).check(Schema.isMaxLength(256)))
+});
+/**
+ * Added in uasset-io 1.22: compares a package-text refresh's changed shards with the index and
+ * writes each shard's rows and the changed entries to `outputDirectory`.
+ */
+export const GameTextIndexPackageComparison = Schema.Struct({
+	action: Schema.Literal("compare_packages"),
+	...Configuration,
+	request: Schema.Struct({
+		format: Text,
+		policyJson: Schema.String,
+		planFile: Text,
+		groups: Schema.Array(Natural).check(Schema.isMaxLength(256)),
+		outputDirectory: Text
+	})
 });
 /**
  * The reader plans a package-text refresh from a Project Index Catalog generation and writes the
@@ -220,13 +284,35 @@ export const GameTextIndexReadPoint = Schema.Struct({
 		)
 	})
 });
+const DiskChangesRequest: Schema.Codec<GameTextContract.DiskChangesRequest> = Schema.Struct({
+	projectRoot: Text,
+	target: Schema.optionalKey(Name),
+	paths: Schema.optionalKey(
+		Schema.Array(Schema.NonEmptyString.check(Schema.isMaxLength(1024))).check(
+			Schema.isMaxLength(4096)
+		)
+	),
+	after: Schema.optionalKey(Text),
+	limit: Positive.check(Schema.isLessThanOrEqualTo(1000))
+});
+/**
+ * The reader compares the disk with the view's index, read-only: without `paths` it walks the
+ * project's `Content` as the Project Index does; with `paths` it checks only those.
+ */
+export const GameTextIndexDiskChanges = Schema.Struct({
+	action: Schema.Literal("disk_changes"),
+	...Configuration,
+	request: DiskChangesRequest
+});
 /** Validated builder commands; package replacements require protocol minor 16 or later. */
 export const GameTextIndexBuildRequest = Schema.Union([
 	...GameTextIndexPreviousBuildRequest.members,
 	GameTextIndexPackageReplacement,
+	GameTextIndexPackageComparison,
 	GameTextIndexPackagePlan,
 	GameTextIndexCodeLayer,
-	GameTextIndexReadPoint
+	GameTextIndexReadPoint,
+	GameTextIndexDiskChanges
 ]).annotate({ identifier: "GameTextIndexBuildRequest" });
 export type GameTextIndexBuildRequest = typeof GameTextIndexBuildRequest.Type;
 
@@ -327,6 +413,24 @@ export const CodeLayerOutcome = Schema.Struct({
 	)
 });
 
+const ChangeCounts = Schema.Struct({ added: Natural, changed: Natural, removed: Natural });
+/** What a `disk_changes` request found: a page of paths that differ, with every count. */
+export const DiskChangesAnswer: Schema.Codec<GameTextContract.DiskChangesAnswer> = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("not_indexed") }),
+	Schema.Struct({
+		status: Schema.Literal("ready"),
+		counts: Schema.Struct({ packages: ChangeCounts, localization: ChangeCounts }),
+		items: Schema.Array(
+			Schema.Struct({
+				kind: Schema.Literals(["package", "localization"]),
+				change: Schema.Literals(["added", "changed", "removed"]),
+				path: Schema.String
+			})
+		).check(Schema.isMaxLength(1000)),
+		nextCursor: Schema.optionalKey(Schema.String)
+	})
+]);
+
 /** Snapshot contents stay private to the paired builder/reader; their domain decoder verifies them. */
 export const GameTextIndexBuildOutcome = Schema.Struct({
 	action: Schema.Literals([
@@ -337,9 +441,11 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 		"status",
 		"publish",
 		"publish_packages",
+		"compare_packages",
 		"plan_packages",
 		"publish_code",
 		"read_point",
+		"disk_changes",
 		"publish_ids",
 		"intern",
 		"strings",
@@ -370,6 +476,7 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 	),
 	code: Schema.optionalKey(CodeLayerOutcome),
 	point: Schema.optionalKey(PointOutcome),
+	diskChanges: Schema.optionalKey(DiskChangesAnswer),
 	plan: Schema.optionalKey(
 		Schema.Struct({
 			changed: Schema.Array(
@@ -380,51 +487,26 @@ export const GameTextIndexBuildOutcome = Schema.Struct({
 			firstKey: Name
 		})
 	),
-	localization: Schema.optionalKey(
+	comparison: Schema.optionalKey(
 		Schema.Struct({
-			lookupStrings: Natural,
-			reusedStrings: Natural,
-			files: Schema.Array(
+			shards: Schema.Array(
 				Schema.Struct({
-					file: Schema.NullOr(
-						Schema.Struct({
-							key: Schema.String,
-							contentHash: Schema.String,
-							provenance: Schema.Struct({
-								relativePath: Schema.String,
-								size: Natural,
-								modifiedTime: Schema.String,
-								contentHash: Schema.String
-							}),
-							relativePath: Schema.String,
-							format: LocalizationFormat,
-							inputBytes: Natural,
-							parsed: Schema.Boolean,
-							snapshotBytes: Natural
-						})
-					),
-					error: Schema.NullOr(
-						Schema.Struct({
-							code: Schema.String,
-							message: Schema.String,
-							recovery: Schema.String,
-							retrySafe: Schema.Boolean,
-							nextStep: Schema.String
-						})
-					)
+					group: Natural,
+					previousKey: Schema.optionalKey(Name),
+					current: Schema.Boolean,
+					retained: Natural,
+					changed: Natural,
+					selected: Natural
 				})
-			),
-			workerCount: Natural,
-			parseMs: Schema.Number,
-			parseCpuMs: Schema.Number,
-			publishMs: Schema.Number
+			)
 		})
-	)
+	),
+	localization: Schema.optionalKey(LocalizationImportOutcome)
 }).annotate({ identifier: "GameTextIndexBuildOutcome" });
 export type GameTextIndexBuildOutcome = typeof GameTextIndexBuildOutcome.Type;
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Json);
-const decodeJsonRecordString = Schema.decodeUnknownSync(Schema.fromJsonString(JsonRecord));
+const decodeJsonRecordString = Schema.decodeSync(Schema.fromJsonString(JsonRecord));
 
 /** Keep lone UTF-16 code units out of serde_json's scalar-only string decoder. */
 export function encodeGameTextJoinInput(serialized: string) {
@@ -447,7 +529,7 @@ export function encodeGameTextJoinInput(serialized: string) {
 		stringCodeUnits[key] = Array.from({ length: text.length }, (_, i) => text.charCodeAt(i));
 		return key;
 	};
-	const visit = (value: typeof Schema.Json.Type): typeof Schema.Json.Type => {
+	const visit = (value: Schema.Json): Schema.Json => {
 		// This traverses already-decoded JSON primitives to encode code units, not domain validation.
 		// oxlint-disable-next-line anti-slop/no-runtime-typeof
 		if (typeof value === "string") return encode(value);

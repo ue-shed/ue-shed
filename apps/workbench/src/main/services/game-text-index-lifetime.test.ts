@@ -74,14 +74,14 @@ it.live(
 				yield* host.localizationTarget(test.fixture.target.name);
 				test.fixture.setTargets([]);
 				expect((yield* host.configuredRefresh({})).status).toBe("completed");
-				expect(yield* host.localizationTargets()).toEqual({ status: "ready", targets: [] });
+				expect(yield* host.localizationTargets).toEqual({ status: "ready", targets: [] });
 				expect(yield* host.search(request)).toMatchObject({
 					status: "ready",
 					page: { total: 1 }
 				});
 				for (let index = 0; index < 51; index++) test.fixture.addTarget(`Target${index}`);
 				expect((yield* host.configuredRefresh({})).status).toBe("completed");
-				expect(yield* host.localizationTargets()).toMatchObject({
+				expect(yield* host.localizationTargets).toMatchObject({
 					status: "failed",
 					code: "bounds_exceeded"
 				});

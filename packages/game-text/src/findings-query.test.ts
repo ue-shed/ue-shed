@@ -30,11 +30,11 @@ import {
 import { TextQualityFindingId } from "./quality-query.js";
 import { type BuiltInCheckEntry, GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES, STARTER_CHECKS } from "./starter-rules.js";
-
-const decodeLocalizationReviewFile = Schema.decodeUnknownSync(LocalizationReviewFile);
-const decodeGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
-const LocalizationQualityReportJson = Schema.fromJsonString(LocalizationQualityReport);
-const decodeLocalizationQualityReportJson = Schema.decodeUnknownSync(LocalizationQualityReportJson);
+const decodeLocalizationReviewFile = Schema.decodeEffect(LocalizationReviewFile);
+const decodeGameTextRuleDocument = Schema.decodeUnknownEffect(GameTextRuleDocument);
+const decodeLocalizationQualityReportJson = Schema.decodeEffect(
+	Schema.fromJsonString(LocalizationQualityReport)
+);
 
 /**
  * A quality scan's progress in rules: nothing run first, every rule run last with the findings,
@@ -145,7 +145,7 @@ const checkParams: CheckParams = {
 	rich_text_tags: { optionalTags, optionalArguments },
 	rich_text_tags_added: { optionalTags, optionalArguments }
 };
-const document = decodeGameTextRuleDocument({
+const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
 	schemaVersion: 1,
 	roles: [
 		{
@@ -292,7 +292,7 @@ it.live(
 				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 				const join = yield* result.localizationJoin;
 				const line = join.lines.find((item) => item.identity?.key === "K02")!;
-				const review = decodeLocalizationReviewFile({
+				const review = yield* decodeLocalizationReviewFile({
 					schemaVersion: 1,
 					target: join.target,
 					records: [],
@@ -319,7 +319,7 @@ it.live(
 							at: "2026-10-14T00:00:00Z"
 						}
 					]
-				});
+				}).pipe(Effect.orDie);
 				const whitespace: number[] = [];
 				for (const options of [{}, { review }]) {
 					const source = yield* (yield* result.sourceQuality(document)).export("all");
@@ -380,7 +380,7 @@ it.live(
 							.export({ target: join.target, filter: "culture_invariant_text" })
 							.findings.map(({ source }) => source)
 					).toEqual(["Invariant"]);
-					// The forbidden term in menu text is the terminology rule's finding, not placeholder_text's.
+					// Terminology, not placeholder_text, reports the forbidden term in menu text.
 					const contexts = (filter: WorkspaceQualityFilter) =>
 						legacy
 							.export({ target: join.target, filter })
@@ -569,7 +569,7 @@ const expectReportBytes = Effect.fn("Test.GameText.reportBytes")(function* (
 		if (page.findings.length < 5000) break;
 	}
 	expect(prepared.findings).toBe(findings.length);
-	const written = decodeLocalizationQualityReportJson(text);
+	const written = yield* decodeLocalizationQualityReportJson(text).pipe(Effect.orDie);
 	expect(text).toBe(
 		`${JSON.stringify(LocalizationQualityReport.make({ ...written, findings }), null, "\t")}\n`
 	);
@@ -752,7 +752,7 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 					at: "2026-10-14T00:00:00Z"
 				};
 			};
-			const review = decodeLocalizationReviewFile({
+			const review = yield* decodeLocalizationReviewFile({
 				schemaVersion: 1,
 				target: join.target,
 				records: [],
@@ -761,7 +761,7 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 					// Source-level findings are reported under the native culture.
 					accept("e\u0301", "localization.duplicate_source", join.nativeCulture!)
 				]
-			});
+			}).pipe(Effect.orDie);
 			const total = (options: LocalizationCheckOptions) =>
 				Effect.gen(function* () {
 					return localizationQualityWorkspace(
@@ -851,7 +851,7 @@ it.live("queried quality rates each finding as the rule file does", () =>
 		const fixture = yield* makeIndexRegressionFixture();
 		yield* Effect.promise(() => writeLocalization(fixture.projectRoot, keys));
 		fixture.update(gathered.map(({ key, source }, index) => occurrence(key, source, index)));
-		const rated = decodeGameTextRuleDocument({
+		const rated = yield* decodeGameTextRuleDocument({
 			...document,
 			rules: document.rules.map((entry) =>
 				"id" in entry && entry.id === "translation.limit"
@@ -865,7 +865,7 @@ it.live("queried quality rates each finding as the rule file does", () =>
 								? { ...entry, scope: { cultures: ["fr"] } }
 								: entry
 			)
-		});
+		}).pipe(Effect.orDie);
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const join = yield* result.localizationJoin;
@@ -919,7 +919,7 @@ it.live("custom checks query as the in-memory checks do, past the old filter and
 			recovery: "Shorten it.",
 			...(index % 5 === 0 ? { scope: { roles: ["menu"] } } : undefined)
 		}));
-		const custom = decodeGameTextRuleDocument({
+		const custom = yield* decodeGameTextRuleDocument({
 			...document,
 			rules: [
 				...document.rules,
@@ -942,7 +942,7 @@ it.live("custom checks query as the in-memory checks do, past the old filter and
 					recovery: "Check the argument."
 				}
 			]
-		});
+		}).pipe(Effect.orDie);
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const join = yield* result.localizationJoin;
@@ -991,7 +991,7 @@ it.live("custom regex checks preserve whitespace and zero-width truth in queried
 		];
 		yield* Effect.promise(() => writeLocalization(fixture.projectRoot, entries));
 		fixture.update(entries.map(({ key, source }, index) => occurrence(key, source, index)));
-		const checks = decodeGameTextRuleDocument({
+		const checks = yield* decodeGameTextRuleDocument({
 			schemaVersion: 1,
 			roles: [],
 			rules: [
@@ -1010,7 +1010,7 @@ it.live("custom regex checks preserve whitespace and zero-width truth in queried
 					}))
 				)
 			]
-		});
+		}).pipe(Effect.orDie);
 		yield* Effect.gen(function* () {
 			const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 			const join = yield* result.localizationJoin;

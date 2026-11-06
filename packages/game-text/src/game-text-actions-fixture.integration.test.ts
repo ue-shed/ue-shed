@@ -73,9 +73,9 @@ const ReadTextJson = Schema.fromJsonString(
 );
 const CasesJson = Schema.fromJsonString(Cases);
 const EvidenceJson = Schema.fromJsonString(Evidence);
-const decodeCasesJson = Schema.decodeUnknownSync(CasesJson);
-const decodeEvidenceJson = Schema.decodeUnknownSync(EvidenceJson);
-const decodeReadTextJson = Schema.decodeUnknownSync(ReadTextJson);
+const decodeCasesJson = Schema.decodeSync(CasesJson);
+const decodeEvidenceJson = Schema.decodeSync(EvidenceJson);
+const decodeReadTextJson = Schema.decodeSync(ReadTextJson);
 
 const generatedRoot = process.env.UE_SHED_GAME_TEXT_ACTIONS_FIXTURE_ROOT;
 const fixture = generatedRoot === undefined ? useSavedFixtureProject() : { root: generatedRoot };
@@ -396,7 +396,17 @@ describe("Game Text identity cases in the saved fixture", () => {
 					.map((unit) =>
 						unit.identity.status === "resolved" ? unit.identity.namespace : undefined
 					)
-					.sort()
+					.sort((left, right) =>
+						left === right
+							? 0
+							: left === undefined
+								? 1
+								: right === undefined
+									? -1
+									: left < right
+										? -1
+										: 1
+					)
 			).toEqual([`[${packageNamespace}]`, `[${packageNamespace}]`]);
 			for (const match of matches) {
 				expect(match.occurrences).toHaveLength(1);

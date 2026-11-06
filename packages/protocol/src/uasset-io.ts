@@ -6,9 +6,11 @@ import {
 	GameTextIndexBuildOutcome,
 	GameTextIndexPreviousBuildRequest,
 	GameTextIndexPackageReplacement,
+	GameTextIndexPackageComparison,
 	GameTextIndexPackagePlan,
 	GameTextIndexCodeLayer,
 	GameTextIndexReadPoint,
+	GameTextIndexDiskChanges,
 	PackageTextAudienceRule
 } from "./game-text-index.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
@@ -506,8 +508,24 @@ export const UAssetIoRequest = Schema.Union([
 				GameTextIndexPackageReplacement,
 				GameTextIndexPackagePlan,
 				GameTextIndexCodeLayer,
-				GameTextIndexReadPoint
+				GameTextIndexReadPoint,
+				GameTextIndexDiskChanges
 			])
+		})
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(22))
+				})
+			})
+		).annotate({ identifier: "UAssetIoPackageComparisonContract" }),
+		operation: Schema.Struct({
+			...GameTextIndexOperation.fields,
+			request: GameTextIndexPackageComparison
 		})
 	}),
 	Schema.Struct({ ...RequestFields, contract: UAssetIoContract, operation: ExistingOperation }),

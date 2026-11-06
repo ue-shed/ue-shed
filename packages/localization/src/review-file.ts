@@ -1,5 +1,5 @@
-import { Result, Schema } from "effect";
-import { currentLocalizationTranslation } from "./change-set-review.js";
+import { type Brand, Result, Schema } from "effect";
+import { evidenceArchiveEntries, shippedEvidenceTranslation } from "./change-set-review.js";
 import {
 	CultureCode,
 	LocalizationErrorGuidanceFields as ErrorGuidanceFields,
@@ -10,8 +10,10 @@ import {
 import { sha256Hex } from "./sha256.js";
 
 /**
- * Fingerprint of a line and culture straight from target evidence: the manifest source and the
- * translation that ships next. Undefined when the line is not gathered or the culture is missing.
+ * Fingerprint of a line and culture from target evidence: manifest source plus the translation
+ * `shippedEvidenceTranslation` ships next; undefined if the line or culture is missing. Hosts with
+ * a Game Text index use its native `review_lines` fingerprint, which differs only for lines with
+ * several manifest entries and `IdenticalNamespaceAndSource` POs.
  */
 export function localizationEvidenceFingerprint(
 	evidence: LocalizationTargetEvidence,
@@ -26,17 +28,16 @@ export function localizationEvidenceFingerprint(
 			: undefined;
 	const files = evidence.cultures.find((item) => item.culture === culture);
 	if (source === undefined || files === undefined) return undefined;
-	const archive =
-		files.archive.status === "read"
-			? (files.archive.value.entries.find(same)?.translation.Text ?? null)
-			: null;
 	const po =
 		files.po.status === "read"
-			? files.po.value.entries.find(
+			? files.po.value.entries.filter(
 					(entry) => entry.identity !== null && same(entry.identity)
 				)
-			: undefined;
-	return localizationReviewFingerprint(source, currentLocalizationTranslation(archive, po));
+			: [];
+	return localizationReviewFingerprint(
+		source,
+		shippedEvidenceTranslation(evidenceArchiveEntries(files.archive, identity), po)
+	);
 }
 
 /** Review progress Unreal does not store. `machine_translated` records how the text was made. */
@@ -92,19 +93,19 @@ export const LocalizationReviewFile = Schema.Struct({
 });
 export type LocalizationReviewFile = typeof LocalizationReviewFile.Type;
 const LocalizationReviewFileJson = Schema.fromJsonString(LocalizationReviewFile);
-const decodeReviewFileJson = Schema.decodeUnknownResult(LocalizationReviewFileJson);
+const decodeReviewFileJson = Schema.decodeResult(LocalizationReviewFileJson);
 
 /**
  * Malformed, duplicate or wrong-target review metadata. Correct or reconcile the review
  * document before retrying; errors do not expose authored text payloads.
  */
-export class LocalizationReviewFileError extends Schema.TaggedError<LocalizationReviewFileError>()(
-	"LocalizationReviewFileError",
-	{
-		code: Schema.Literals(["invalid_review_file", "duplicate_review_record", "wrong_target"]),
-		...ErrorGuidanceFields
-	}
-) {}
+export class LocalizationReviewFileError extends Schema.TaggedError<
+	LocalizationReviewFileError,
+	Brand.Brand<"packages/localization/src/review-file/LocalizationReviewFileError">
+>()("LocalizationReviewFileError", {
+	code: Schema.Literals(["invalid_review_file", "duplicate_review_record", "wrong_target"]),
+	...ErrorGuidanceFields
+}) {}
 
 /** The project-relative default location, kept beside Unreal's own localization configs. */
 export function defaultLocalizationReviewPath(target: LocalizationTargetName): string {

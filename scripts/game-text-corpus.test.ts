@@ -9,8 +9,8 @@ import {
 	summarizeCorpusManifest
 } from "./game-text-corpus.ts";
 
-describe("parseCorpusArguments", () => {
-	it("defaults to 10000 lines, seed 1 and the user's developer folder", () => {
+void describe("parseCorpusArguments", () => {
+	void it("defaults to 10000 lines, seed 1 and the user's developer folder", () => {
 		assert.deepEqual(parseCorpusArguments(["--project", "Game/Game.uproject"], "jane.doe"), {
 			project: resolve("Game/Game.uproject"),
 			lines: 10_000,
@@ -24,7 +24,7 @@ describe("parseCorpusArguments", () => {
 		});
 	});
 
-	it("reads every option", () => {
+	void it("reads every option", () => {
 		const parsed = parseCorpusArguments(
 			[
 				"--project",
@@ -72,23 +72,23 @@ describe("parseCorpusArguments", () => {
 		[["--project", "Game.uproject", "--root", "/Engine/A/B"], /two levels/u],
 		[["--project", "Game.uproject", "--root", "/Game/A/../B"], /two levels/u]
 	] as const)
-		it(`rejects ${argv.join(" ")}`, () => {
+		void it(`rejects ${argv.join(" ")}`, () => {
 			assert.throws(() => parseCorpusArguments(argv, "user"), message);
 		});
 
-	it("rejects unknown options", () => {
+	void it("rejects unknown options", () => {
 		assert.throws(() =>
 			parseCorpusArguments(["--project", "Game.uproject", "--force"], "user")
 		);
 	});
 });
 
-it("keeps only package-name characters in the developer folder", () => {
+void it("keeps only package-name characters in the developer folder", () => {
 	assert.equal(developerFolderName("DOMAIN\\Jane Doe"), "DOMAINJaneDoe");
 	assert.equal(developerFolderName("..."), "User");
 });
 
-it("maps a /Game root to the project's Content folder", () => {
+void it("maps a /Game root to the project's Content folder", () => {
 	assert.equal(
 		corpusContentFolder(join("D:", "Game", "Game.uproject"), "/Game/Developers/me/Corpus"),
 		join("D:", "Game", "Content", "Developers", "me", "Corpus")
@@ -137,7 +137,7 @@ const manifestJson = JSON.stringify({
 	]
 });
 
-it("decodes a manifest and summarizes it by kind", () => {
+void it("decodes a manifest and summarizes it by kind", () => {
 	assert.equal(
 		summarizeCorpusManifest(decodeCorpusManifest(manifestJson)),
 		[
@@ -155,7 +155,7 @@ it("decodes a manifest and summarizes it by kind", () => {
 	);
 });
 
-it("rejects a file that is not a corpus manifest", () => {
+void it("rejects a file that is not a corpus manifest", () => {
 	assert.throws(() =>
 		decodeCorpusManifest(JSON.stringify({ ...JSON.parse(manifestJson), format: "other" }))
 	);

@@ -211,7 +211,7 @@ if (values.worker) {
 			maximumStageSeconds
 		},
 		mix,
-		qualityRules: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(
+		qualityRules: Schema.decodeSync(Schema.fromJsonString(Schema.Json))(
 			await readFile(new URL("./game-text-engine-rules.json", import.meta.url), "utf8")
 		),
 		results

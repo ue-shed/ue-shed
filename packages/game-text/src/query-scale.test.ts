@@ -16,9 +16,9 @@ import {
 	success
 } from "./localization.test-support.js";
 import { TextUnit } from "./schema.js";
+const decodeTextUnit = Schema.decodeSync(TextUnit);
 
 const decodeTarget = Schema.decodeUnknownSync(LocalizationTarget);
-const decodeTextUnit = Schema.decodeUnknownSync(TextUnit);
 
 const scaleLane = process.env.UE_SHED_GAME_TEXT_SCALE === "1";
 const LINES = scaleLane ? 50_000 : 5_000;

@@ -1,3 +1,4 @@
+import { GameTextWorkspaceHostFailure } from "./workspace-host.js";
 import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { AssetReader, AssetReaderLive } from "@ue-shed/unreal-assets";
@@ -17,10 +18,8 @@ import {
 	type GameTextWorkspaceContractMismatch
 } from "./workspace-contract.js";
 import type { GameTextWorkspaceFileHooks } from "./workspace-host.js";
-
-const ProgressEvent = GameTextWorkspaceContract.progressChanges.events;
-const decodeProgressEvent = Schema.decodeUnknownEffect(ProgressEvent);
-const encodeProgressEvent = Schema.encodeUnknownEffect(ProgressEvent);
+const decodeEvents = Schema.decodeEffect(GameTextWorkspaceContract.progressChanges.events);
+const encodeEvents = Schema.encodeUnknownEffect(GameTextWorkspaceContract.progressChanges.events);
 
 /** Files kept in memory; dialogs are cancelled, as a headless host answers them. */
 function memoryFiles(): GameTextWorkspaceFileHooks {
@@ -29,7 +28,12 @@ function memoryFiles(): GameTextWorkspaceFileHooks {
 		Effect.suspend(() => {
 			const bytes = contents.get(path);
 			return bytes === undefined
-				? Effect.fail({ message: "Missing file.", recovery: "Create it." })
+				? new GameTextWorkspaceHostFailure({
+						message: "Missing file.",
+						recovery: "Create it.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					})
 				: Effect.succeed(bytes);
 		});
 	return {
@@ -77,7 +81,7 @@ describe("GameTextWorkspaceContract", () => {
 			GameTextWorkspaceContractMismatch<
 				Omit<GameTextWorkspaceApi, "localizationTargets"> & {
 					readonly localizationTargets: () => Effect.Effect<
-						Effect.Success<ReturnType<GameTextWorkspaceApi["localizationTargets"]>>,
+						Effect.Success<GameTextWorkspaceApi["localizationTargets"]>,
 						Error
 					>;
 				}
@@ -95,7 +99,7 @@ describe("GameTextWorkspaceContract", () => {
 			Effect.gen(function* () {
 				const fixture = yield* makeIndexRegressionFixture();
 				const nativeQuery = Layer.unwrap(
-					Effect.flatMap(AssetReader, (reader) => reader.configuration()).pipe(
+					Effect.flatMap(AssetReader, (reader) => reader.configuration).pipe(
 						Effect.map(nativeIndexQueryLayer),
 						Effect.provide(AssetReaderLive),
 						Effect.orDie
@@ -117,15 +121,13 @@ describe("GameTextWorkspaceContract", () => {
 				yield* Effect.gen(function* () {
 					const workspace = yield* makeGameTextWorkspace({
 						project: {
-							current: () => Effect.succeed(ready),
-							refresh: () => Effect.succeed(ready),
-							candidates: () =>
-								Effect.succeed({
-									generation: 3,
-									summary: { projectRoot: fixture.projectRoot }
-								}),
-							progress: () =>
-								Effect.succeed({ completed: 0, total: 0, phase: "idle" })
+							current: Effect.succeed(ready),
+							refresh: Effect.succeed(ready),
+							candidates: Effect.sync(() => ({
+								generation: 3,
+								summary: { projectRoot: fixture.projectRoot }
+							})),
+							progress: Effect.sync(() => ({ completed: 0, total: 0, phase: "idle" }))
 						},
 						files: memoryFiles()
 					});
@@ -136,7 +138,9 @@ describe("GameTextWorkspaceContract", () => {
 							readonly params: Schema.Codec<A, I>;
 							readonly success: Schema.Codec<B, J>;
 						},
-						method: (params: NoInfer<A>) => Effect.Effect<NoInfer<B>>,
+						method:
+							| Effect.Effect<NoInfer<B>>
+							| ((params: NoInfer<A>) => Effect.Effect<NoInfer<B>>),
 						params: NoInfer<I>
 					) =>
 						Effect.gen(function* () {
@@ -149,30 +153,35 @@ describe("GameTextWorkspaceContract", () => {
 							expect(overJson(yield* encodeParams(decoded))).toEqual(
 								overJson(params)
 							);
-							const result = yield* method(decoded);
+							const result = yield* Effect.isEffect(method)
+								? method
+								: method(decoded);
 							const wire = overJson(yield* encodeSuccess(result));
 							expect(yield* decodeSuccess(wire)).toEqual(result);
 							served.add(entry);
 							return result;
 						});
 
-					expect(
-						(yield* serve(
-							GameTextWorkspaceContract.configuredRefresh,
-							workspace.configuredRefresh,
-							{}
-						)).status
-					).toBe("completed");
+					const refreshed = yield* serve(
+						GameTextWorkspaceContract.configuredRefresh,
+						workspace.configuredRefresh,
+						{}
+					);
+					expect(refreshed.status).toBe("completed");
+					const generation =
+						refreshed.status === "completed" ? refreshed.generation : undefined;
+					// The target's joined key: opaque to hosts.
+					expect(generation).toEqual(expect.any(String));
 					expect(
 						(yield* serve(GameTextWorkspaceContract.progress, workspace.progress, {}))
 							.phase
 					).toBe("idle");
 					const [first] = yield* Stream.runCollect(
-						workspace.progressChanges().pipe(Stream.take(1))
+						workspace.progressChanges.pipe(Stream.take(1))
 					);
-					expect(
-						yield* decodeProgressEvent(overJson(yield* encodeProgressEvent(first)))
-					).toEqual(first);
+					expect(yield* decodeEvents(overJson(yield* encodeEvents(first)))).toEqual(
+						first
+					);
 
 					const search = { capability: "all", pageSize: 10, query: "" } as const;
 					const found = yield* serve(
@@ -197,6 +206,17 @@ describe("GameTextWorkspaceContract", () => {
 						selection: { kind: "unit", id },
 						pageSize: 10
 					});
+					expect(
+						yield* serve(
+							GameTextWorkspaceContract.changedSince,
+							workspace.changedSince,
+							{
+								since: generation!,
+								kind: "lines",
+								limit: 10
+							}
+						)
+					).toEqual({ status: "same" });
 
 					expect(
 						(yield* serve(
@@ -248,13 +268,28 @@ describe("GameTextWorkspaceContract", () => {
 							{}
 						)).status
 					).toBe("ready");
+					const selected = yield* serve(
+						GameTextWorkspaceContract.localizationTarget,
+						workspace.localizationTarget,
+						target
+					);
+					expect(selected.status).toBe("ready");
+					// The selected target's generation: the scan's, since the scan read this target.
+					expect(selected.status === "ready" ? selected.generation : undefined).toBe(
+						generation
+					);
 					expect(
-						(yield* serve(
-							GameTextWorkspaceContract.localizationTarget,
-							workspace.localizationTarget,
-							target
-						)).status
-					).toBe("ready");
+						yield* serve(
+							GameTextWorkspaceContract.changedSince,
+							workspace.changedSince,
+							{
+								target,
+								since: "not a generation",
+								kind: "packages",
+								limit: 10
+							}
+						)
+					).toEqual({ status: "too_old", reason: "unknown" });
 					const quality = { target, filter: "all", offset: 0 } as const;
 					const checked = yield* serve(
 						GameTextWorkspaceContract.localizationQualitySearch,

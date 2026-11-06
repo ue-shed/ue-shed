@@ -275,7 +275,7 @@ for (const [fixtureIndex, fixtureRoot] of fixtureRoots.entries()) {
 	const evidence = resolve(
 		values["evidence-root"]?.[fixtureIndex] ?? join(root, "FixtureExpected/parser-targets")
 	);
-	const oracle = Schema.decodeUnknownSync(Schema.fromJsonString(LoadedBlueprint))(
+	const oracle = Schema.decodeSync(Schema.fromJsonString(LoadedBlueprint))(
 		readFileSync(join(evidence, "blueprint-review.json"), "utf8")
 	);
 	for (const asset of ["BP_ReviewFixture", "BP_GraphFixture"]) {

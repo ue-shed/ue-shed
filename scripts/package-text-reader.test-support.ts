@@ -9,7 +9,7 @@ import {
 } from "../packages/protocol/dist/index.js";
 
 const UAssetIoEventJson = Schema.fromJsonString(UAssetIoEvent);
-const decodeUAssetIoEventJson = Schema.decodeUnknownSync(UAssetIoEventJson);
+const decodeUAssetIoEventJson = Schema.decodeSync(UAssetIoEventJson);
 
 export const packageTextFixtureProjects = [
 	"fixtures/unreal-project",

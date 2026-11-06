@@ -14,6 +14,7 @@ import {
 } from "./camera-arrangement.js";
 import { ApprovedPose } from "./review-schema.js";
 import type { CameraAuthoringStore } from "./camera-authoring-store.js";
+const decodeCameraBridgeSnapshotEffect = Schema.decodeEffect(CameraBridgeSnapshot);
 
 const isCameraArrangementError = Schema.is(CameraArrangementError);
 
@@ -31,30 +32,27 @@ export const CameraRecoveryProposal = Schema.Struct({
 		Schema.isMaxLength(256)
 	)
 });
+const decodeCameraRecoveryProposalEffect = Schema.decodeEffect(CameraRecoveryProposal);
 export type CameraRecoveryProposal = typeof CameraRecoveryProposal.Type;
 /**
  * Explicit saved or native authority choice for reconciling divergent camera edits. No
  * default silently overwrites one side's customization.
  */
 export const CameraRecoveryChoice = Schema.Literals(["saved", "native"]);
+const decodeCameraRecoveryChoiceEffect = Schema.decodeEffect(CameraRecoveryChoice);
 export type CameraRecoveryChoice = typeof CameraRecoveryChoice.Type;
-const decodeCameraBridgeSnapshot = Schema.decodeUnknownEffect(CameraBridgeSnapshot);
-const decodeCameraRecoveryProposal = Schema.decodeUnknownEffect(CameraRecoveryProposal);
-const decodeCameraRecoveryChoice = Schema.decodeUnknownEffect(CameraRecoveryChoice);
 
 /** Inspect a preserved recovery file without reconnecting or replaying it. */
 export const prepareCameraRecovery = Effect.fn("CameraAuthoring.prepareRecovery")(function* (
 	store: CameraAuthoringStore,
 	input: CameraBridgeSnapshot
 ) {
-	const native = yield* decodeCameraBridgeSnapshot(input);
-	const document = yield* store.load();
+	const native = yield* decodeCameraBridgeSnapshotEffect(input);
+	const document = yield* store.load;
 	if (document.arrangement.id !== native.sessionId)
-		return yield* Effect.fail(
-			arrangementFailure(
-				"scope_mismatch",
-				"The recovery session belongs to another arrangement."
-			)
+		return yield* arrangementFailure(
+			"scope_mismatch",
+			"The recovery session belongs to another arrangement."
 		);
 	const committed = document.outcomes.find(
 		(entry) => entry.operationId === `native-${native.producerId}-${native.sequence}`
@@ -92,8 +90,8 @@ export const resolveCameraRecovery = Effect.fn("CameraAuthoring.resolveRecovery"
 	input: CameraRecoveryProposal,
 	inputChoice: CameraRecoveryChoice
 ) {
-	const proposal = yield* decodeCameraRecoveryProposal(input);
-	const choice = yield* decodeCameraRecoveryChoice(inputChoice);
+	const proposal = yield* decodeCameraRecoveryProposalEffect(input);
+	const choice = yield* decodeCameraRecoveryChoiceEffect(inputChoice);
 	const inspected = yield* inspectCameraRecovery(store, bridge, proposal.native);
 	const native = inspected.native;
 	if (
@@ -103,11 +101,9 @@ export const resolveCameraRecovery = Effect.fn("CameraAuthoring.resolveRecovery"
 		native.revision !== proposal.native.revision ||
 		native.pending !== proposal.native.pending
 	)
-		return yield* Effect.fail(
-			arrangementFailure(
-				"stale",
-				"The saved draft or native camera changed. Inspect recovery again before choosing."
-			)
+		return yield* arrangementFailure(
+			"stale",
+			"The saved draft or native camera changed. Inspect recovery again before choosing."
 		);
 	const document = yield* restoreCameraRecovery(store, proposal, choice);
 	const cameraId = document.arrangement.cameras.some((camera) => camera.id === native.cameraId)
@@ -135,23 +131,19 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 	input: CameraRecoveryProposal,
 	inputChoice: CameraRecoveryChoice
 ) {
-	const proposal = yield* decodeCameraRecoveryProposal(input);
-	const choice = yield* decodeCameraRecoveryChoice(inputChoice);
+	const proposal = yield* decodeCameraRecoveryProposalEffect(input);
+	const choice = yield* decodeCameraRecoveryChoiceEffect(inputChoice);
 	const native = proposal.native;
 	if (!native.pending || native.panelEvent)
-		return yield* Effect.fail(
-			arrangementFailure(
-				"invalid",
-				"Recovery requires pending native camera edits without a queued panel action."
-			)
+		return yield* arrangementFailure(
+			"invalid",
+			"Recovery requires pending native camera edits without a queued panel action."
 		);
-	let document = yield* store.load();
+	let document = yield* store.load;
 	if (document.arrangement.id !== native.sessionId)
-		return yield* Effect.fail(
-			arrangementFailure(
-				"scope_mismatch",
-				"The recovery session belongs to another arrangement."
-			)
+		return yield* arrangementFailure(
+			"scope_mismatch",
+			"The recovery session belongs to another arrangement."
 		);
 	const edits = native.edits ?? [{ cameraId: native.cameraId, pose: native.pose }];
 	let operationId = CameraOperationId.make(`native-${native.producerId}-${native.sequence}`);
@@ -169,11 +161,9 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 					: `recover-saved-${native.producerId}-${native.sequence}`)
 		);
 		if (completed?.revision === document.arrangement.revision) return document;
-		return yield* Effect.fail(
-			arrangementFailure(
-				"stale",
-				"The saved draft changed. Inspect recovery again before choosing."
-			)
+		return yield* arrangementFailure(
+			"stale",
+			"The saved draft changed. Inspect recovery again before choosing."
 		);
 	}
 	if (choice === "native" && proposal.nativeCommitRevision !== undefined) {
@@ -184,11 +174,9 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 					entry.revision === proposal.nativeCommitRevision
 			)
 		)
-			return yield* Effect.fail(
-				arrangementFailure(
-					"stale",
-					"The retained native commit changed. Inspect recovery again."
-				)
+			return yield* arrangementFailure(
+				"stale",
+				"The retained native commit changed. Inspect recovery again."
 			);
 		if (document.arrangement.revision === proposal.nativeCommitRevision) return document;
 		operationId = recoveryOperationId;

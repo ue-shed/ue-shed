@@ -17,10 +17,10 @@ import {
 	SavedReviewComparison
 } from "./saved-review.js";
 import { SavedReviewOutput } from "./saved-review.js";
+const decodeSavedReviewComparison = Schema.decodeSync(SavedReviewComparison);
 
 const decodeUAssetIoEvent = Schema.decodeUnknownSync(UAssetIoEvent);
 const decodeBlueprintGraphRead = Schema.decodeUnknownSync(BlueprintGraphRead);
-const decodeSavedReviewComparison = Schema.decodeUnknownSync(SavedReviewComparison);
 
 function blueprint(): BlueprintGraphRead {
 	const event = decodeUAssetIoEvent(

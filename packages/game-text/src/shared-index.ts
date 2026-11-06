@@ -61,13 +61,11 @@ export const SharedIndexManifestSchema = Schema.Struct({
 	segments: Schema.Array(SharedSegment).check(Schema.isMaxLength(maximumSharedSegments)),
 	layers: Schema.Record(Schema.String, LayerRecord)
 });
+const decodeSharedIndexManifestSchema = Schema.decodeEffect(SharedIndexManifestSchema);
 export type SharedIndexManifest = typeof SharedIndexManifestSchema.Type;
-const decodeManifest = Schema.decodeUnknownEffect(SharedIndexManifestSchema);
-const decodeManifestJson = Schema.decodeUnknownEffect(
-	Schema.fromJsonString(SharedIndexManifestSchema)
-);
-const decodeLayerRecordJson = Schema.decodeUnknownSync(Schema.fromJsonString(LayerRecord));
-const decodeFileReuseJson = Schema.decodeUnknownSync(Schema.fromJsonString(FileReuse));
+const decodeManifestJson = Schema.decodeEffect(Schema.fromJsonString(SharedIndexManifestSchema));
+const decodeLayerRecordJson = Schema.decodeSync(Schema.fromJsonString(LayerRecord));
+const decodeFileReuseJson = Schema.decodeSync(Schema.fromJsonString(FileReuse));
 type Failure = SnapshotStoreError | SnapshotFormatError;
 const boundary = <A>(operation: string, run: () => Promise<A>) =>
 	Effect.tryPromise({
@@ -169,14 +167,26 @@ export interface SharedIndexWriter {
 		GameTextContract.PointOutcome & { readonly stageSeconds: Readonly<Record<string, number>> },
 		Failure
 	>;
-	/** Native record replacement: nonnegative rows retain old records; -1-row selects a changed record. */
+	/**
+	 * Compares a refresh's changed shards with the index (`compare_packages`): each shard's rows
+	 * and its changed entries, so unchanged entries never cross into the host.
+	 */
+	readonly comparePackages?: (
+		request: GameTextContract.PackageTextCompareRequest
+	) => Effect.Effect<GameTextContract.PackageTextComparison, Failure>;
+	/**
+	 * Native record replacement in one root publication. Each entry's staged snapshot holds its
+	 * changed records in path order; its rows file lists the next shard's records as little-endian
+	 * i32s: a nonnegative row keeps a previous-shard record, -1-row selects a staged one. An entry
+	 * without `previousKey` is a shard the index doesn't hold yet.
+	 */
 	readonly replacePackages?: (
 		entries: readonly {
 			readonly name: string;
 			readonly key: string;
-			readonly previousKey: string;
-			readonly source: SnapshotSource;
-			readonly rows: readonly number[];
+			readonly previousKey?: string;
+			readonly stagedFile: string;
+			readonly rowsFile: string;
 		}[],
 		removedNames?: readonly string[]
 	) => Effect.Effect<readonly SharedLayerRecord[], Failure>;
@@ -249,10 +259,10 @@ export interface SharedIndexWriter {
 export class SharedIndex extends Context.Service<
 	SharedIndex,
 	{
-		readonly inspect: () => Effect.Effect<SharedIndexManifest, Failure, Scope.Scope>;
+		readonly inspect: Effect.Effect<SharedIndexManifest, Failure, Scope.Scope>;
 		readonly cached: (key: string) => Effect.Effect<SharedLayerRecord, Failure, Scope.Scope>;
-		readonly open: () => Effect.Effect<SharedIndexReader, Failure, Scope.Scope>;
-		readonly writer: () => Effect.Effect<SharedIndexWriter, Failure, Scope.Scope>;
+		readonly open: Effect.Effect<SharedIndexReader, Failure, Scope.Scope>;
+		readonly writer: Effect.Effect<SharedIndexWriter, Failure, Scope.Scope>;
 	}
 >()("@ue-shed/game-text/SharedIndex") {}
 
@@ -338,18 +348,18 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 		SharedIndex,
 		Effect.gen(function* () {
 			const store = yield* SnapshotStore;
-			const read = Effect.fn("SharedIndex.read")(function* () {
-				const root = yield* store.open();
+			const read = Effect.gen(function* () {
+				const root = yield* store.open;
 				return yield* readIndex(root);
-			});
+			}).pipe(Effect.withSpan("SharedIndex.read"));
 			const cached = Effect.fn("SharedIndex.cached")(function* (key: string) {
-				const manifest = yield* read();
+				const manifest = yield* read;
 				return yield* boundary("cached", () =>
 					validateCachedLayer(directory, manifest, key, options.onRead)
 				);
 			});
 			const openOnce = Effect.fn("SharedIndex.open")(function* () {
-				const manifest = yield* read();
+				const manifest = yield* read;
 				const files = yield* Effect.acquireRelease(
 					boundary("segments", () =>
 						new SharedStringFiles(directory, manifest.segments).open()
@@ -380,16 +390,14 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 							? manifest.layers[key]
 							: undefined;
 					if (!record)
-						return yield* Effect.fail(
-							new SnapshotStoreError({
-								retrySafe: snapshotStoreGuidance("missing").retrySafe,
-								nextStep: snapshotStoreGuidance("missing").nextStep,
-								operation: "layer",
-								code: "missing",
-								message: `Layer ${name} (${key}) is absent.`,
-								recovery: "Import this input."
-							})
-						);
+						return yield* new SnapshotStoreError({
+							retrySafe: snapshotStoreGuidance("missing").retrySafe,
+							nextStep: snapshotStoreGuidance("missing").nextStep,
+							operation: "layer",
+							code: "missing",
+							message: `Layer ${name} (${key}) is absent.`,
+							recovery: "Import this input."
+						});
 					const file = layers.get(key)!;
 					const end = manifest.segments[record.segmentCount - 1];
 					const maximumId = end ? end.start + end.count : 0;
@@ -496,7 +504,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					)
 				};
 			});
-			const open = Effect.fn("SharedIndex.openRetained")(function* () {
+			const open = Effect.gen(function* () {
 				for (let attempt = 0; ; attempt++) {
 					const result = yield* openOnce().pipe(Effect.result);
 					if (Result.isSuccess(result)) return result.success;
@@ -506,17 +514,17 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 						!isSnapshotStoreError(result.failure) ||
 						result.failure.code !== "missing"
 					)
-						return yield* Effect.fail(result.failure);
+						return yield* result.failure;
 				}
-			});
-			const writer = Effect.fn("SharedIndex.writer")(function* () {
-				const rootWriter = yield* store.writer();
-				const opened = yield* read().pipe(Effect.result);
+			}).pipe(Effect.withSpan("SharedIndex.openRetained"));
+			const writer = Effect.gen(function* () {
+				const rootWriter = yield* store.writer;
+				const opened = yield* read.pipe(Effect.result);
 				if (
 					Result.isFailure(opened) &&
 					(!isSnapshotStoreError(opened.failure) || opened.failure.code !== "missing")
 				)
-					return yield* Effect.fail(opened.failure);
+					return yield* opened.failure;
 				let manifest = Result.isSuccess(opened) ? opened.success : initial();
 				let files: SharedStringFiles = yield* Effect.acquireRelease(
 					boundary("segments", () =>
@@ -544,7 +552,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					next: SharedIndexManifest
 				) {
 					const started = performance.now();
-					yield* decodeManifest(next).pipe(
+					yield* decodeSharedIndexManifestSchema(next).pipe(
 						Effect.mapError((cause) =>
 							snapshotFailure(
 								"index.meta",
@@ -555,9 +563,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					);
 					const bytes = new TextEncoder().encode(JSON.stringify(next));
 					if (bytes.length > 16 * 1024 ** 2)
-						return yield* Effect.fail(
-							snapshotFailure("index.meta", "Shared root exceeds 16 MiB")
-						);
+						return yield* snapshotFailure("index.meta", "Shared root exceeds 16 MiB");
 					uncertain = true;
 					yield* rootWriter.publish(
 						{
@@ -917,11 +923,9 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 										files.segments.length + domains.size >
 										maximumSharedSegments
 									)
-										return yield* Effect.fail(
-											snapshotFailure(
-												"batch",
-												"Batch exceeds segment cap; use cold publication"
-											)
+										return yield* snapshotFailure(
+											"batch",
+											"Batch exceeds segment cap; use cold publication"
 										);
 									const old = layers[active[entry.name] ?? ""];
 									const record = yield* boundary("batch.layer", () =>
@@ -1066,7 +1070,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 						timings: { ...files.timings }
 					})
 				};
-			});
+			}).pipe(Effect.withSpan("SharedIndex.writer"));
 
 			async function obsoleteBytes(
 				directory: string,

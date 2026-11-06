@@ -14,8 +14,7 @@ import {
 	fixtureSet
 } from "../../../packages/cameras/src/camera-arrangement.test-support.js";
 import { CameraWorkspace } from "./camera-workspace.js";
-
-const decodeProvisionedCameraBinding = Schema.decodeUnknownSync(ProvisionedCameraBinding);
+const decodeProvisionedCameraBinding = Schema.decodeSync(ProvisionedCameraBinding);
 
 it("displays only frames belonging to the provisioned active camera", async () => {
 	const runtime = ManagedRuntime.make(Layer.empty);

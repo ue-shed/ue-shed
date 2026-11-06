@@ -12,11 +12,11 @@ const typeScriptIndexBuildSession = <A, E, R>(
 	Effect.scoped(
 		Effect.gen(function* () {
 			const index = yield* SharedIndex;
-			const writer = yield* index.writer();
+			const writer = yield* index.writer;
 			const leasedIndex = SharedIndex.of({
 				...index,
-				inspect: () => Effect.succeed(writer.manifest()),
-				writer: () => Effect.succeed(writer)
+				inspect: Effect.sync(() => writer.manifest()),
+				writer: Effect.succeed(writer)
 			});
 			const session = LocalizationImportSession.of({
 				configuration: request.configuration,
@@ -44,11 +44,11 @@ export const typeScriptIndexBuilderLayer = Layer.effect(
 			refreshJoinedTarget,
 			intern: Effect.fn("GameTextIndexBuilder.intern")(function* (domain, values) {
 				const index = yield* SharedIndex;
-				return yield* (yield* index.writer()).intern(domain, values);
+				return yield* (yield* index.writer).intern(domain, values);
 			}),
 			compact: Effect.fn("GameTextIndexBuilder.compact")(function* (force) {
 				const index = yield* SharedIndex;
-				return yield* (yield* index.writer()).compact(force);
+				return yield* (yield* index.writer).compact(force);
 			})
 		})
 	)

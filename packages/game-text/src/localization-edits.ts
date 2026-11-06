@@ -89,13 +89,20 @@ export const LocalizationEditResult = Schema.Union([
 ]);
 export type LocalizationEditResult = typeof LocalizationEditResult.Type;
 
-/** Builds a change set whose sources come from the manifest the edits are checked against. */
+/**
+ * Builds a change set whose sources come from the manifest the edits are checked against: from
+ * `source` when the host has already read each edit's line, else from the evidence's manifest.
+ */
 export function localizationEditChangeSet(
 	evidence: LocalizationTargetEvidence,
 	edits: readonly LocalizationEdit[],
-	producer: string
+	producer: string,
+	source?: (edit: LocalizationEdit) => string | undefined
 ): LocalizationChangeSet {
-	const manifest = evidence.manifest.status === "read" ? evidence.manifest.value.entries : [];
+	const manifest =
+		source !== undefined || evidence.manifest.status !== "read"
+			? []
+			: evidence.manifest.value.entries;
 	return LocalizationChangeSet.make({
 		schemaVersion: 1,
 		provenance: { producer, files: [] },
@@ -107,9 +114,12 @@ export function localizationEditChangeSet(
 				key: edit.key,
 				// An unknown identity keeps an empty source; review reports it as not in the manifest.
 				source:
-					manifest.find(
-						(entry) => entry.namespace === edit.namespace && entry.key === edit.key
-					)?.source.Text ?? "",
+					(source
+						? source(edit)
+						: manifest.find(
+								(entry) =>
+									entry.namespace === edit.namespace && entry.key === edit.key
+							)?.source.Text) ?? "",
 				previousTranslation: edit.seenTranslation,
 				translation: edit.translation
 			})

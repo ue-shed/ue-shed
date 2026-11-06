@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { parseRecord, runInProcessCli } from "./cli-in-process.test-support.js";
+const isString = Schema.is(Schema.String);
+const decodeWorldRequest = Schema.decodeUnknownSync(WorldRequest);
 
 const RemoteControlCall = Schema.Struct({
 	functionName: Schema.String,
@@ -13,7 +15,6 @@ const RemoteControlCall = Schema.Struct({
 });
 const ServerAddress = Schema.Struct({ port: Schema.Int });
 const decodeRemoteControlCall = Schema.decodeUnknownSync(RemoteControlCall);
-const decodeWorldRequest = Schema.decodeUnknownSync(WorldRequest);
 const decodeServerAddress = Schema.decodeUnknownSync(ServerAddress);
 
 it("negotiates world preparation and prints native evidence through the CLI commands", async () => {
@@ -41,9 +42,9 @@ it("negotiates world preparation and prints native evidence through the CLI comm
 						"/Script/UEShedWorldEditor.Default__UEShedWorldLibrary"
 				};
 			else {
-				const operation = decodeWorldRequest(
-					JSON.parse(String(call.parameters.RequestJson))
-				);
+				const raw = call.parameters.RequestJson;
+				if (!isString(raw)) throw new Error("RequestJson must be a JSON string");
+				const operation = decodeWorldRequest(JSON.parse(raw));
 				expect(operation.action).toBe("describe");
 				result = { status: "described", world };
 			}

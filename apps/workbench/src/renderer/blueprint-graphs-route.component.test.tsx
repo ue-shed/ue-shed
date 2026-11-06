@@ -14,7 +14,7 @@ const runtime = ManagedRuntime.make(Layer.empty);
 const Route = createBlueprintGraphsRoute(extension, {
 	client: host,
 	reviewClient: {
-		inventory: () => Effect.never,
+		inventory: Effect.suspend(() => Effect.never),
 		readSequence: () => Effect.never
 	}
 });

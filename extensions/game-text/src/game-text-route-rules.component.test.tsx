@@ -168,16 +168,15 @@ it("offers to load an existing starter rules file and labels invalid rules", asy
 				const focus = loaded.focus(request);
 				return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 			},
-			chooseQualityRules: () =>
-				Effect.succeed({
-					status: "failed",
-					error: {
-						code: "invalid_rules",
-						message: "Invalid rules.",
-						recovery: "Correct the file.",
-						retrySafe: true
-					}
-				})
+			chooseQualityRules: Effect.sync(() => ({
+				status: "failed",
+				error: {
+					code: "invalid_rules",
+					message: "Invalid rules.",
+					recovery: "Correct the file.",
+					retrySafe: true
+				}
+			}))
 		})
 	);
 	await screen.findByText("2 matches");
@@ -212,14 +211,13 @@ it("lists the file's complete rules, says to edit them there, and saves them as 
 	const saves: GameTextRuleDocument[] = [];
 	mount({
 		...client,
-		chooseQualityRules: () =>
-			client
-				.chooseQualityRules()
-				.pipe(
-					Effect.map((result) =>
-						result.status === "completed" ? { ...result, document } : result
-					)
-				),
+		chooseQualityRules: Effect.suspend(() =>
+			client.chooseQualityRules.pipe(
+				Effect.map((result) =>
+					result.status === "completed" ? { ...result, document } : result
+				)
+			)
+		),
 		saveQualityRules: (draft) => {
 			saves.push(draft);
 			return client.saveQualityRules(draft);

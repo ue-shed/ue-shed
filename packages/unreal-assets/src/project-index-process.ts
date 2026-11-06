@@ -285,7 +285,7 @@ async function* refreshEventStream(
 	target: ProjectIndexTarget,
 	operation: "refresh" | "rebuild",
 	signal: AbortSignal | undefined
-): AsyncGenerator<typeof ProjectIndexRefreshEvent.Type, void, void> {
+): AsyncGenerator<ProjectIndexRefreshEvent, void, void> {
 	yield ProjectIndexRefreshEvent.cases.Started.make({ operation });
 	const request = makeRequest(
 		{
@@ -603,7 +603,7 @@ function refreshStream(
 	cacheRoot: ProjectIndexCacheRoot,
 	target: ProjectIndexTarget,
 	operation: "refresh" | "rebuild"
-): Stream.Stream<typeof ProjectIndexRefreshEvent.Type, ProjectIndexError> {
+): Stream.Stream<ProjectIndexRefreshEvent, ProjectIndexError> {
 	const controller = new AbortController();
 	const events = refreshEventStream(
 		configuration,

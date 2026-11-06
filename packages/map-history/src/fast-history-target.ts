@@ -19,7 +19,9 @@ import type {
 } from "./schema.js";
 import { PerforceDepotPath } from "./schema.js";
 
-const isMapHistoryError = Schema.is(MapHistoryError);
+const isMapHistoryError: (
+	input: MapHistoryError | ProvenFastHistoryActorTarget | readonly ProvenFastHistoryActorTarget[]
+) => input is MapHistoryError = Schema.is(MapHistoryError);
 
 const ZERO_GUID = /^0{8}-0{8}-0{8}-0{8}$/;
 
@@ -273,14 +275,14 @@ export function fastHistoryActorClassTargetedCoverage(options: {
  * Resolves Fast History acquisition to the selected map plus proven Investigation Target packages.
  * Unrelated external-actor packages never enter the Perforce file specs or allowlist.
  */
-export function resolvePerforceFastMapScope(
-	query: PerforceFastMapHistoryQuery
-): Effect.Effect<
-	ResolvedPerforceFastMapScope,
-	MapHistoryError,
-	AssetReader | PerforceHistorySource
-> {
-	return Effect.fn("MapHistory.resolvePerforceFastMapScope")(function* () {
+export const resolvePerforceFastMapScope = Effect.fn("MapHistory.resolvePerforceFastMapScope")(
+	function* (
+		query: PerforceFastMapHistoryQuery
+	): Effect.fn.Return<
+		ResolvedPerforceFastMapScope,
+		MapHistoryError,
+		AssetReader | PerforceHistorySource
+	> {
 		const perforce = yield* PerforceHistorySource;
 		const { scope: mapScope, world } = yield* resolvePresentDayMapScope(query);
 		const provenTargets =
@@ -298,14 +300,12 @@ export function resolvePerforceFastMapScope(
 						target: query.target,
 						world
 					});
-		if (isMapHistoryError(provenTargets)) return yield* Effect.fail(provenTargets);
+		if (isMapHistoryError(provenTargets)) return yield* provenTargets;
 		const proven = provenTargets[0];
 		if (proven === undefined) {
-			return yield* Effect.fail(
-				targetError(
-					"Fast History could not prove any current Investigation Target package.",
-					"Choose a current actor or class, then retry."
-				)
+			return yield* targetError(
+				"Fast History could not prove any current Investigation Target package.",
+				"Choose a current actor or class, then retry."
 			);
 		}
 
@@ -366,5 +366,5 @@ export function resolvePerforceFastMapScope(
 				fileSpecs
 			}
 		};
-	})();
-}
+	}
+);

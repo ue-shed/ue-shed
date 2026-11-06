@@ -19,9 +19,9 @@ import {
 } from "./localization-quality-schema.js";
 import { STARTER_CHECK_RULES, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
+const decodeGameTextRuleDocument = Schema.decodeSync(GameTextRuleDocument);
 
 const decodeLocalizationQualityReport = Schema.decodeUnknownSync(LocalizationQualityReport);
-const decodeGameTextRuleDocument = Schema.decodeUnknownSync(GameTextRuleDocument);
 
 function checked(
 	source: string,

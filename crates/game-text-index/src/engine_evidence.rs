@@ -43,7 +43,15 @@ impl EngineQuery {
             },
             self.entry_text(name, "path", row)?
         );
-        let mut result = if format == "po" {
+        let mut result = if format == "locres" {
+            // A compiled entry: the text the game shows and the hash of its source.
+            let hashes = self.reader.input_column(name, "entry.source-hash")?;
+            json!({"namespace":namespace,"key":key,"text":if flags & 128 != 0 {
+                source
+            } else {
+                self.entry_text(name, "translation", row)?
+            },"sourceHash":*hashes.get(row).ok_or("Evidence row outside hashes.")?})
+        } else if format == "po" {
             let extra = self.entry_json(name, "po-extra", row)?;
             let mut msgstr = extra.get("msgstr").cloned().unwrap_or(json!({}));
             require(msgstr.is_object(), "Invalid stored PO translations.")?;
@@ -118,6 +126,17 @@ impl EngineQuery {
         require(result.is_object(), "Invalid evidence object.")?;
         Ok(std::mem::take(&mut result))
     }
+    /// The compiled-resource entry a culture without an archive reads for a line, or null.
+    pub(crate) fn resource_entry(&self, ci: usize, row: usize) -> Result<Value> {
+        let entry = self.reader.value(&format!("c{ci}.locres"), row)?;
+        match self.resource_path(ci) {
+            Some(name) if entry != 0 => {
+                let mut value = self.evidence_entry(&name, (entry - 1) as usize)?;
+                Ok(json!({"text":value["text"].take(),"sourceHash":value["sourceHash"].take()}))
+            }
+            _ => Ok(Value::Null),
+        }
+    }
     pub fn localization_line(&self, row: usize, cancelled: &AtomicBool) -> Result<Value> {
         checkpoint(cancelled)?;
         let p = Projection::open(self, cancelled)?;
@@ -185,6 +204,7 @@ impl EngineQuery {
                     self.evidence_entry(&name, (entry - 1) as usize)?
                 };
             }
+            mark["locres"] = self.resource_entry(ci, row)?;
             mark.as_object_mut()
                 .ok_or("Invalid culture mark.")?
                 .remove("translation");

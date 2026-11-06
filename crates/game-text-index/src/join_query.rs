@@ -81,11 +81,12 @@ fn arena(
     Ok(())
 }
 
-/// The translation strings search reads: each archive entry's, and each PO entry's that has one,
-/// as `EngineQuery::translation` chooses between an entry's source and translation.
+/// The translation strings search reads: each archive and compiled-resource entry's, and each PO
+/// entry's that has one, as `EngineQuery::translation` chooses between an entry's source and
+/// translation.
 pub(crate) fn translation_ids(j: &Joined) -> BTreeSet<u32> {
     let mut ids = BTreeSet::new();
-    for (files, po) in [(&j.archives, false), (&j.pos, true)] {
+    for (files, po) in [(&j.archives, false), (&j.resources, false), (&j.pos, true)] {
         for file in files {
             let c = &file.columns;
             for (index, options) in c[OPTIONS].iter().enumerate() {

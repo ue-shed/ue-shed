@@ -48,6 +48,8 @@ mod join_marks;
 mod join_places;
 mod join_policy;
 mod join_query;
+#[cfg(test)]
+mod join_resource_tests;
 mod json_value;
 mod layer_reuse;
 mod line_break;

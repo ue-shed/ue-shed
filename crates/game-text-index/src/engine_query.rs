@@ -644,8 +644,16 @@ impl EngineQuery {
         )?))
     }
 
+    /// The compiled resource culture `ci` reads its translations from, when it has no archive.
+    pub(crate) fn resource_path(&self, ci: usize) -> Option<String> {
+        self.reader.meta["resources"][ci]
+            .as_str()
+            .map(str::to_owned)
+    }
+
     /// The translation of a line the next sync ships in a culture, as the join chose it: the
-    /// PO's pending edit when the line is not synced, else the archive's; none without an entry.
+    /// PO's pending edit when the line is not synced, else the archive's, else the compiled
+    /// resource's for a culture without an archive; none without an entry.
     pub(crate) fn shipped_translation(
         &self,
         ci: usize,
@@ -657,6 +665,12 @@ impl EngineQuery {
             row,
         )?;
         if entry == 0 {
+            if !not_synced && let Some(path) = self.resource_path(ci) {
+                let entry = self.reader.value(&format!("c{ci}.locres"), row)?;
+                if entry != 0 {
+                    return self.translation(&path, entry as usize - 1, false);
+                }
+            }
             return Ok(None);
         }
         let culture = self.cultures.get(ci).ok_or("Culture outside target.")?;
@@ -949,15 +963,17 @@ impl EngineQuery {
             return Ok(Arc::clone(value));
         }
         let culture = self.cultures.get(ci).ok_or("Unknown culture.")?.clone();
-        let mut texts = Vec::with_capacity(2);
-        for po in [false, true] {
-            let entries = self
-                .reader
-                .column(&format!("c{ci}.{}", if po { "po" } else { "archive" }))?;
-            let path = self.target["outputPaths"][if po { "portableObjects" } else { "archives" }]
-                .get(&culture)
-                .and_then(Value::as_str)
-                .map(str::to_owned);
+        let mut texts = Vec::with_capacity(3);
+        for stage in ["archive", "locres", "po"] {
+            let po = stage == "po";
+            let entries = self.reader.column(&format!("c{ci}.{stage}"))?;
+            let path = match stage {
+                "locres" => self.resource_path(ci),
+                _ => self.target["outputPaths"][if po { "portableObjects" } else { "archives" }]
+                    .get(&culture)
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            };
             let mut ids = vec![0; entries.len()];
             if let Some(path) = path.filter(|_| entries.iter().any(|entry| *entry != 0)) {
                 let options = self.reader.input_column(&path, "entry.options")?;
@@ -985,7 +1001,14 @@ impl EngineQuery {
             texts.push(ids);
         }
         let po = texts.pop().ok_or("Missing PO translations.")?;
-        let archive = texts.pop().ok_or("Missing archive translations.")?;
+        let resource = texts.pop().ok_or("Missing resource translations.")?;
+        let mut archive = texts.pop().ok_or("Missing archive translations.")?;
+        // A culture without an archive ships its compiled resource's text.
+        for (archived, compiled) in archive.iter_mut().zip(resource) {
+            if *archived == 0 {
+                *archived = compiled;
+            }
+        }
         let value = Arc::new((archive, po));
         let mut cache = self.culture_translations.lock();
         if cache.len() >= 8 {

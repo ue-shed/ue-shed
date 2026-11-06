@@ -224,14 +224,16 @@ impl<'a> NativeSubjects<'a> {
         if entry == 0 {
             return Ok(Value::Null);
         }
-        let path = self.query.target["outputPaths"][if stage == "po" {
-            "portableObjects"
-        } else {
-            "archives"
-        }][&self.query.cultures[ci]]
-            .as_str()
-            .ok_or("Missing translation input.")?
-            .to_owned();
+        let path = match stage {
+            "locres" => self.query.resource_path(ci),
+            "po" => self.query.target["outputPaths"]["portableObjects"][&self.query.cultures[ci]]
+                .as_str()
+                .map(str::to_owned),
+            _ => self.query.target["outputPaths"]["archives"][&self.query.cultures[ci]]
+                .as_str()
+                .map(str::to_owned),
+        }
+        .ok_or("Missing translation input.")?;
         Ok(self
             .query
             .translation(&path, entry as usize - 1, stage == "po")?
@@ -245,6 +247,10 @@ impl<'a> NativeSubjects<'a> {
                 "po"
             } else if self.query.reader.meta["input"]["target"].is_null() {
                 "absent"
+            } else if self.query.reader.value(&format!("c{ci}.archive"), line)? == 0
+                && self.query.reader.value(&format!("c{ci}.locres"), line)? != 0
+            {
+                "locres"
             } else {
                 "archive"
             },
@@ -274,14 +280,14 @@ impl<'a> NativeSubjects<'a> {
                 if origin == "absent" {
                     Value::Null
                 } else {
-                    self.translation(line, ci, if origin == "po" { "po" } else { "archive" })?
+                    self.translation(line, ci, origin)?
                 }
             }
             "latestOrigin" => {
                 let origin = self.latest_origin(line, ci)?;
                 let exists = self.query.reader.value(&format!("c{ci}.archive"), line)? != 0;
-                json!(if origin == "po" {
-                    "po"
+                json!(if origin == "po" || origin == "locres" {
+                    origin
                 } else if exists {
                     "archive"
                 } else {

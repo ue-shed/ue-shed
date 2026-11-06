@@ -128,28 +128,38 @@ impl EngineQuery {
                 }
             }
             let [archive, po] = evidence;
+            // A culture without an archive shows its compiled resource's text, whatever its state.
+            let compiled = self.resource_entry(ci, row)?["text"].take();
             let state = mark["state"]
                 .as_str()
                 .ok_or("Missing culture state.")?
                 .to_owned();
             let facts = mark["facts"].as_array().ok_or("Missing culture facts.")?;
             let fact = |state: &str| facts.iter().any(|value| value == state);
-            let (game, kind) =
-                if state == "needs_update" || (state == "not_synced" && fact("needs_update")) {
-                    (source.clone(), "source_outdated")
-                } else if state == "not_translated"
-                    || (state == "not_synced"
-                        && archive["translation"]["Text"]
-                            .as_str()
-                            .unwrap_or("")
-                            .is_empty())
-                {
-                    (source.clone(), "source_untranslated")
-                } else if state == "translated" || state == "not_synced" {
-                    (archive["translation"]["Text"].clone(), "translation")
-                } else {
-                    (Value::Null, "unavailable")
-                };
+            let (game, kind) = if !compiled.is_null() && state != "not_synced" {
+                (
+                    compiled.clone(),
+                    match state.as_str() {
+                        "needs_update" => "source_outdated",
+                        "not_translated" => "source_untranslated",
+                        _ => "translation",
+                    },
+                )
+            } else if state == "needs_update" || (state == "not_synced" && fact("needs_update")) {
+                (source.clone(), "source_outdated")
+            } else if state == "not_translated"
+                || (state == "not_synced"
+                    && archive["translation"]["Text"]
+                        .as_str()
+                        .unwrap_or("")
+                        .is_empty())
+            {
+                (source.clone(), "source_untranslated")
+            } else if state == "translated" || state == "not_synced" {
+                (archive["translation"]["Text"].clone(), "translation")
+            } else {
+                (Value::Null, "unavailable")
+            };
             let culture_state = [
                 "unknown",
                 "not_synced",

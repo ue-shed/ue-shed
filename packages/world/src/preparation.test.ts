@@ -505,9 +505,7 @@ it.effect("gives callback finalizers the real work exit", () =>
 							observed = exit;
 						})
 					);
-					return kind === "typed"
-						? yield* Effect.fail(workError)
-						: yield* Effect.die(defect);
+					return kind === "typed" ? yield* workError : yield* Effect.die(defect);
 				})
 			).pipe(Effect.provideService(WorldPreparation, service), Effect.exit);
 			if (Exit.isSuccess(result)) throw new Error("Expected work failure");

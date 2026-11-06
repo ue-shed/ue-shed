@@ -1,5 +1,6 @@
 import type { LocalizationFileAccess } from "@ue-shed/localization";
-import type { Effect, Layer, Stream } from "effect";
+import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
+import { type Brand, type Effect, type Layer, Schema, type Stream } from "effect";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import type { GameTextCodeSource } from "./index-contract.js";
 import type { GameTextWorkspaceChangeRevisions } from "./workspace-change.js";
@@ -33,13 +34,16 @@ export interface GameTextWorkspaceProjectProgress {
 	readonly total: number;
 }
 
-/** A failure a host reports from one of its hooks, in words a user can act on. */
-export interface GameTextWorkspaceHostFailure {
+/** A host hook failed; retains its original error and the host's recovery decision. */
+export class GameTextWorkspaceHostFailure extends Schema.TaggedError<
+	GameTextWorkspaceHostFailure,
+	Brand.Brand<"packages/game-text/src/workspace-host/GameTextWorkspaceHostFailure">
+>()("GameTextWorkspaceHostFailure", {
+	...ErrorGuidanceFields,
 	/** Use `already_exists` when an exclusive create refuses to replace existing bytes. */
-	readonly code?: string;
-	readonly message: string;
-	readonly recovery: string;
-}
+	code: Schema.optionalKey(Schema.String),
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * Host-owned selected-project port. Workspace reads and refreshes this selection, checks its
@@ -48,21 +52,21 @@ export interface GameTextWorkspaceHostFailure {
  */
 export interface GameTextWorkspaceProject {
 	/** The selected project, as the host last published it. */
-	readonly current: () => Effect.Effect<GameTextWorkspaceProjectState>;
+	readonly current: Effect.Effect<GameTextWorkspaceProjectState>;
 	/** Re-reads the selected project from disk before a scan. */
-	readonly refresh: () => Effect.Effect<GameTextWorkspaceProjectState>;
+	readonly refresh: Effect.Effect<GameTextWorkspaceProjectState>;
 	/** The committed package inventory a scan reads, with the generation it belongs to. */
-	readonly candidates: () => Effect.Effect<
+	readonly candidates: Effect.Effect<
 		{ readonly generation: number; readonly summary: { readonly projectRoot: string } },
 		GameTextWorkspaceHostFailure
 	>;
 	/** The host's own project progress, shown while the host enumerates or scans the project. */
-	readonly progress: () => Effect.Effect<GameTextWorkspaceProjectProgress>;
+	readonly progress: Effect.Effect<GameTextWorkspaceProjectProgress>;
 	/**
 	 * Each change to the host's project progress, so the workspace's progress follows it without
 	 * polling. A host without one is read when Game Text's own progress changes.
 	 */
-	readonly progressChanges?: () => Stream.Stream<unknown>;
+	readonly progressChanges?: Stream.Stream<unknown>;
 }
 
 /**

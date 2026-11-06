@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 
 export const MapHistoryErrorKind = Schema.Literals([
 	"invalid_target",
@@ -20,7 +20,10 @@ export const MapHistoryErrorKind = Schema.Literals([
 ]);
 export type MapHistoryErrorKind = Schema.Schema.Type<typeof MapHistoryErrorKind>;
 
-export class MapHistoryError extends Schema.TaggedError<MapHistoryError>()("MapHistoryError", {
+export class MapHistoryError extends Schema.TaggedError<
+	MapHistoryError,
+	Brand.Brand<"packages/map-history/src/errors/MapHistoryError">
+>()("MapHistoryError", {
 	kind: MapHistoryErrorKind,
 	...ErrorGuidanceFields,
 	message: Schema.NonEmptyString,

@@ -17,7 +17,7 @@ const decodeTargetMapPath = Schema.decodeUnknownEffect(ProjectRelativeMapPath);
 function request<HostValue>(
 	operation: string,
 	invoke: () => Promise<HostValue>
-): ReturnType<ContentObservatoryClientApi["status"]> {
+): ContentObservatoryClientApi["status"] {
 	return Effect.tryPromise({
 		try: invoke,
 		catch: (cause) =>
@@ -81,9 +81,9 @@ function targetRequest<HostValue>(
 }
 
 export const contentObservatoryClient: ContentObservatoryClientApi = ContentObservatoryClient.of({
-	cancel: Effect.fn("ContentObservatoryClient.cancel")(() =>
+	cancel: Effect.suspend(() =>
 		request("contentObservatory.cancel", () => window.ueShed.contentObservatory.cancel())
-	),
+	).pipe(Effect.withSpan("ContentObservatoryClient.cancel")),
 	start: Effect.fn("ContentObservatoryClient.start")(
 		(requestValue: ContentObservatoryHistoryRequest) =>
 			encodeHistoryRequest(requestValue).pipe(
@@ -106,9 +106,9 @@ export const contentObservatoryClient: ContentObservatoryClientApi = ContentObse
 				)
 			)
 	),
-	status: Effect.fn("ContentObservatoryClient.status")(() =>
+	status: Effect.suspend(() =>
 		request("contentObservatory.status", () => window.ueShed.contentObservatory.status())
-	),
+	).pipe(Effect.withSpan("ContentObservatoryClient.status")),
 	targets: Effect.fn("ContentObservatoryClient.targets")((mapPath: string) =>
 		decodeTargetMapPath(mapPath).pipe(
 			Effect.mapError(

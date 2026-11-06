@@ -142,7 +142,7 @@ function harness(
 											restoration: "restored"
 										}
 									: captured;
-				return Schema.decodeUnknownSync(Schema.Json)(value);
+				return yield* Schema.decodeUnknownEffect(Schema.Json)(value).pipe(Effect.orDie);
 			})
 	};
 	const renderer = makeCameraRenderer(client, "http://fixture");
@@ -239,7 +239,7 @@ describe("shared renderer lifecycle", () => {
 			renderReadiness: "not_assessed"
 		};
 		const service = WorldPreparation.of({
-			describe: () => Effect.succeed(preparation.world),
+			describe: Effect.sync(() => preparation.world),
 			plan: () => Effect.succeed(snapshot),
 			execute: () => Effect.succeed(snapshot),
 			acquire: (requirements) =>
@@ -254,8 +254,8 @@ describe("shared renderer lifecycle", () => {
 					return {
 						id: snapshot.leaseId,
 						progress: Stream.empty,
-						inspect: () => Effect.succeed(snapshot),
-						checkReady: () => Effect.succeed(snapshot),
+						inspect: Effect.succeed(snapshot),
+						checkReady: Effect.succeed(snapshot),
 						replace: () => Effect.succeed(snapshot),
 						guard: (work) => work
 					};
@@ -354,7 +354,7 @@ describe("shared renderer lifecycle", () => {
 					? Effect.succeed(failed("restoration_failed"))
 					: undefined
 		);
-		const exit = await Effect.runPromise(Effect.exit(h.run()));
+		const exit = await Effect.runPromiseExit(h.run());
 		if (Exit.isSuccess(exit)) throw new Error("Expected both failures");
 		const failure = Cause.squash(exit.cause);
 		expect(failure).toMatchObject({
@@ -524,9 +524,9 @@ describe("native screenshot warmup", () => {
 	});
 	it("uses unchanged v1 discovery and rendering when extended discovery is absent", async () => {
 		const h = harness();
-		const response = await Effect.runPromise(h.renderer.capabilities());
+		const response = await Effect.runPromise(h.renderer.capabilities);
 		expect(
-			Schema.decodeUnknownResult(CameraRenderCapabilitiesV1)(response, {
+			Schema.decodeResult(CameraRenderCapabilitiesV1)(response, {
 				onExcessProperty: "error"
 			})._tag
 		).toBe("Success");
@@ -546,7 +546,7 @@ describe("native screenshot warmup", () => {
 					: undefined,
 			true
 		);
-		const response = await Effect.runPromise(h.renderer.capabilities());
+		const response = await Effect.runPromise(h.renderer.capabilities);
 		expect(response.highResolutionScreenshot?.maximumWarmupFrames).toBe(256);
 		expect(h.calls).toContain("GetCameraRenderCapabilitiesV2");
 		expect(h.calls).not.toContain("GetCameraRenderCapabilities");
@@ -706,7 +706,7 @@ describe("editor ownership rejections", () => {
 		restoration: "not_acquired"
 	});
 	const reviewRequest = (minor: 6 | 7) =>
-		Schema.decodeUnknownSync(ReviewCaptureRequestCurrent)({
+		Schema.decodeSync(ReviewCaptureRequestCurrent)({
 			contract: { name: "ue-shed-review-capture", version: { major: 1, minor } },
 			operationId: "0b6f1c1e-3c3a-4d7e-9a43-6f3f0e8d2a11",
 			viewId: "front",
@@ -831,7 +831,7 @@ for (const functionName of [
 			Effect.flip(
 				functionName === "PreflightCameraRender"
 					? renderer.preflight(request).pipe(Effect.as(undefined))
-					: renderer.capabilities().pipe(Effect.as(undefined))
+					: renderer.capabilities.pipe(Effect.as(undefined))
 			)
 		);
 		expect(error.nextStep).toBe("escalate");
@@ -855,7 +855,7 @@ for (const nextStep of ["escalate", "fix_input", "retry"] as const) {
 		const { renderer } = harness((name) =>
 			name === "GetCapabilityManifest" ? Effect.fail(cause) : undefined
 		);
-		const error = await Effect.runPromise(Effect.flip(renderer.capabilities()));
+		const error = await Effect.runPromise(Effect.flip(renderer.capabilities));
 		expect(error.nextStep).toBe(nextStep);
 		expect(error.retrySafe).toBe(true);
 		expect(error.recovery).toBe(cause.recovery);

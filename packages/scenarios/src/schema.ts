@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
@@ -305,14 +305,14 @@ export type ScenarioRun = Schema.Schema.Type<typeof ScenarioRun>;
  * A value that does not match the scenario contract: the two sides disagree about the contract, so
  * repeating the same call returns the same mismatch.
  */
-export class ScenarioContractError extends Schema.TaggedError<ScenarioContractError>()(
-	"ScenarioContractError",
-	{
-		code: Schema.Literal("invalid_contract"),
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class ScenarioContractError extends Schema.TaggedError<
+	ScenarioContractError,
+	Brand.Brand<"packages/scenarios/src/schema/ScenarioContractError">
+>()("ScenarioContractError", {
+	code: Schema.Literal("invalid_contract"),
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A unary parser for one scenario contract value: it decodes the encoded value and fails with

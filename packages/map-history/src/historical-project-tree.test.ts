@@ -22,7 +22,7 @@ describe("HistoricalProjectTree", () => {
 	it.effect("folds add, edit, and delete revisions into one owned tree", () =>
 		Effect.scoped(
 			Effect.gen(function* () {
-				const tree = yield* acquireHistoricalProjectTree();
+				const tree = yield* acquireHistoricalProjectTree;
 				const baseline = yield* temporarySource("baseline");
 				const edited = yield* temporarySource("edited");
 				const relativePath = "Content/Maps/L_History.umap";
@@ -57,7 +57,7 @@ describe("HistoricalProjectTree", () => {
 	it.effect("rejects path traversal before changing the tree", () =>
 		Effect.scoped(
 			Effect.gen(function* () {
-				const tree = yield* acquireHistoricalProjectTree();
+				const tree = yield* acquireHistoricalProjectTree;
 				const source = yield* temporarySource("outside");
 				const error = yield* tree
 					.applyRevision([
@@ -78,7 +78,7 @@ describe("HistoricalProjectTree", () => {
 	it.effect("validates an entire revision before applying any file", () =>
 		Effect.scoped(
 			Effect.gen(function* () {
-				const tree = yield* acquireHistoricalProjectTree();
+				const tree = yield* acquireHistoricalProjectTree;
 				const source = yield* temporarySource("valid");
 				const target = resolve(tree.projectRoot, "Content/Maps/L_History.umap");
 
@@ -107,7 +107,7 @@ describe("HistoricalProjectTree", () => {
 			const observedRoot = yield* Ref.make("");
 			yield* Effect.scoped(
 				Effect.gen(function* () {
-					const tree = yield* acquireHistoricalProjectTree();
+					const tree = yield* acquireHistoricalProjectTree;
 					yield* Ref.set(observedRoot, tree.projectRoot);
 					expect(existsSync(tree.projectRoot)).toBe(true);
 				})

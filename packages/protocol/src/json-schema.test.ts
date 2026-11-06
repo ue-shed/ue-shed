@@ -30,9 +30,7 @@ describe("wire JSON Schema generation", () => {
 			allOf: [{ minimum: 0 }, { maximum: Number.MAX_SAFE_INTEGER }]
 		});
 		expect(Schema.toJsonSchemaDocument(schema)).toEqual(before);
-		expect(Schema.decodeUnknownResult(schema)(Number.MAX_SAFE_INTEGER + 1)._tag).toBe(
-			"Failure"
-		);
+		expect(Schema.decodeResult(schema)(Number.MAX_SAFE_INTEGER + 1)._tag).toBe("Failure");
 	});
 	it("retains wire patterns, length bounds and non-finite number alternatives", () => {
 		const text = Schema.String.check(Schema.isMinCodePoints(7), Schema.isPattern(/^\/Game\//u));

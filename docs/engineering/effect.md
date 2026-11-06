@@ -3,6 +3,22 @@
 Effect is the application core and the canonical public workflow type. It owns composition for
 stateful and effectful modules, not only code at external boundaries.
 
+## Compiler and lint tooling
+
+`pnpm run lint` and `pnpm run lint:fix` use the Effect-patched Oxlint through
+`@effect/tsgo`, with the recommended Effect preset alongside our custom rules.
+Use `pnpm run lint:fix --fix-suggestions` to apply suggested simplifications.
+The simplification diagnostics are warnings; correctness errors fail the existing
+static and repository gates. The lint commands build the TypeScript packages
+first so type-aware lint can resolve their declarations in a fresh checkout.
+
+`pnpm run tsrs --noEmit -p packages/protocol/tsconfig.json` runs the installed
+Rust compiler for a selected project. Builds and the existing typecheck commands
+retain their current compilers. Both wrappers use bundled binaries without
+rewriting the package store. Upgrade `@effect/tsgo`, `tsrs`, `oxlint`, and
+`oxlint-tsgolint` together against the
+[upstream compatibility table](https://github.com/Effect-TS/tsgo#supported-package-versions).
+
 ## Use it for
 
 - services and dependency wiring;
@@ -18,7 +34,9 @@ Keep pure calculations as plain functions. Effect is not part of the wire protoc
 
 - Give each external library one adapter service.
 - Expose every stateful or effectful module through `Context.Service` and layers.
-- Name public and non-trivial internal operations with `Effect.fn("Domain.operation")`.
+- Name callable public and non-trivial internal operations with `Effect.fn("Domain.operation")`.
+  Parameterless service operation properties attach the same per-execution name with
+  `Effect.withSpan("Domain.operation")`; see [the source migration](effect-operation-properties.md).
 - Use Effect Schema for TypeScript-owned domain values and boundary validation.
 - Expose domain actions, not raw library clients.
 - Use Layers for setup and tests, not hidden global access.

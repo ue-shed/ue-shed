@@ -6,7 +6,7 @@ import {
 	VisibilityPolicyId
 } from "./review-schema.js";
 export function fixtureArrangement() {
-	return Schema.decodeUnknownSync(CameraArrangement)({
+	return Schema.decodeSync(CameraArrangement)({
 		version: 1,
 		id: "arrangement-a",
 		revision: 0,

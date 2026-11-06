@@ -14,7 +14,7 @@ import {
 	inspectUnrealProducer,
 	type RemoteControlClientError
 } from "@ue-shed/unreal-connection";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 
 /** The capability a running editor advertises when `UEShedGameText` is loaded. */
 export const LOCALIZATION_TEXT_ACTIONS_CAPABILITY = "game-text.actions.v1";
@@ -28,7 +28,10 @@ const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
  * Why a Game Text actions call produced no result. A request the plugin rejected or that failed in
  * Unreal is not this error: it is a result with `status` and typed `errors`.
  */
-export class LocalizationTextActionsError extends Schema.TaggedError<LocalizationTextActionsError>()(
+export class LocalizationTextActionsError extends Schema.TaggedError<
+	LocalizationTextActionsError,
+	Brand.Brand<"packages/localization/src/asset-text-actions/LocalizationTextActionsError">
+>()(
 	// Retain the established tag for consumers of the Game Text compatibility export.
 	"GameTextActionsError",
 	{
@@ -213,9 +216,7 @@ export const runLocalizationTextActions = Effect.fn("game_text.actions.run")(fun
 export const verifyLocalizationStringTableRedirect = Effect.fn(
 	"Localization.stringTable.verifyRedirect"
 )(function* (options: { readonly endpoint: string; readonly request: StringTableRedirectRequest }) {
-	const request = yield* Schema.decodeUnknownEffect(StringTableRedirectRequest)(
-		options.request
-	).pipe(
+	const request = yield* Schema.decodeEffect(StringTableRedirectRequest)(options.request).pipe(
 		Effect.mapError(
 			(cause) =>
 				new LocalizationTextActionsError({

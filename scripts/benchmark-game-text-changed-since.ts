@@ -206,7 +206,7 @@ if (Result.isFailure(discovered)) throw discovered.failure;
 const recipe = discovered.success.targets[0];
 if (recipe === undefined) throw new Error("The generated recipe produced no target.");
 const folder = "Content/Localization/Generated";
-const target = Schema.decodeUnknownSync(LocalizationTarget)({
+const target = Schema.decodeSync(LocalizationTarget)({
 	...recipe,
 	outputPaths: {
 		...recipe.outputPaths,
@@ -456,7 +456,7 @@ const measure = async (kind: "lines" | "packages", since: string | undefined) =>
 	return Effect.runPromise(
 		Effect.scoped(
 			Effect.gen(function* () {
-				const manifest = yield* (yield* SharedIndex).inspect();
+				const manifest = yield* (yield* SharedIndex).inspect;
 				const joinedKey = manifest.active.joined;
 				if (joinedKey === undefined) throw new Error("No joined target is published.");
 				const openStarted = performance.now();
@@ -560,7 +560,7 @@ const measureSimilar = async () => {
 	return Effect.runPromise(
 		Effect.scoped(
 			Effect.gen(function* () {
-				const manifest = yield* (yield* SharedIndex).inspect();
+				const manifest = yield* (yield* SharedIndex).inspect;
 				const joinedKey = manifest.active.joined;
 				if (joinedKey === undefined) throw new Error("No joined target is published.");
 				const query = yield* (yield* GameTextIndexQuery).open({
@@ -576,7 +576,7 @@ const measureSimilar = async () => {
 						target: target.name,
 						selection: {
 							kind: "line",
-							id: Schema.decodeUnknownSync(LocalizationLineId)(lineId(key))
+							id: Schema.decodeSync(LocalizationLineId)(lineId(key))
 						},
 						pageSize: 10,
 						...(withSimilar ? { similarKeys: { limit: 20 } } : undefined)

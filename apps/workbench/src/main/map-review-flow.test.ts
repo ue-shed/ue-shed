@@ -16,48 +16,44 @@ import type {
 } from "./map-review-flow.js";
 import { MapReviewFlowExecutionError, runMapReviewAuthoringRoundtrip } from "./map-review-flow.js";
 
-const noEvidence = (): Effect.Effect<MapReviewFlowStepEvidence, MapReviewFlowExecutionError> =>
+const noEvidence: Effect.Effect<MapReviewFlowStepEvidence, MapReviewFlowExecutionError> =
 	Effect.succeed({});
 
 function makeDriver(
 	overrides: Partial<MapReviewAuthoringRoundtripDriver> = {}
 ): MapReviewAuthoringRoundtripDriver {
 	return {
-		approveView: () =>
-			Effect.succeed({ identity: { viewId: ReviewViewId.make("fixture-view") } }),
-		captureView: () =>
-			Effect.succeed({
-				identity: {
-					artifactId: ArtifactId.make("artifact-1"),
-					runId: CaptureRunId.make("run-1")
-				}
-			}),
-		cleanup: () =>
-			Effect.succeed({
-				mapDirtyAfter: false,
-				provisionedCameraCountAfter: 0,
-				status: "verified" as const
-			}),
-		generateRig: () =>
-			Effect.succeed({
-				identity: {
-					candidateId: FramingCandidateId.make("preset/context-three-quarter/0")
-				}
-			}),
+		approveView: Effect.sync(() => ({
+			identity: { viewId: ReviewViewId.make("fixture-view") }
+		})),
+		captureView: Effect.sync(() => ({
+			identity: {
+				artifactId: ArtifactId.make("artifact-1"),
+				runId: CaptureRunId.make("run-1")
+			}
+		})),
+		cleanup: Effect.sync(() => ({
+			mapDirtyAfter: false,
+			provisionedCameraCountAfter: 0,
+			status: "verified" as const
+		})),
+		generateRig: Effect.sync(() => ({
+			identity: {
+				candidateId: FramingCandidateId.make("preset/context-three-quarter/0")
+			}
+		})),
 		inspectEvidence: noEvidence,
-		loadView: () =>
-			Effect.succeed({
-				identity: { viewRevisionId: ReviewViewRevisionId.make("fixture-view-r1") }
-			}),
+		loadView: Effect.sync(() => ({
+			identity: { viewRevisionId: ReviewViewRevisionId.make("fixture-view-r1") }
+		})),
 		prepareFixture: noEvidence,
 		previewCandidate: noEvidence,
 		relaunchWorkbench: noEvidence,
 		selectSubject: noEvidence,
 		tuneRig: noEvidence,
-		verifyPersistence: () =>
-			Effect.succeed({
-				identity: { sessionId: ReviewAuthoringSessionId.make("fixture-session") }
-			}),
+		verifyPersistence: Effect.sync(() => ({
+			identity: { sessionId: ReviewAuthoringSessionId.make("fixture-session") }
+		})),
 		...overrides
 	};
 }
@@ -107,8 +103,8 @@ describe("Map Review authoring round-trip flow", () => {
 			const result = yield* Effect.exit(
 				runMapReviewAuthoringRoundtrip({
 					driver: makeDriver({
-						previewCandidate: () =>
-							Effect.fail(
+						previewCandidate: Effect.failSync(
+							() =>
 								new MapReviewFlowExecutionError({
 									recovery:
 										"Inspect the recording checkpoints and cleanup evidence before starting another editor run.",
@@ -118,7 +114,7 @@ describe("Map Review authoring round-trip flow", () => {
 									message: "Preview failed",
 									operation: "previewCandidate"
 								})
-							)
+						)
 					}),
 					sink: {
 						checkpoint: (checkpoint) =>

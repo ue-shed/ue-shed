@@ -56,8 +56,9 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:localization:report-file"], (request) =>
 		gameText.localizationReportFile(request)
 	);
-	yield* ipc.register(invokeContracts["game-text:localization:targets"], () =>
-		gameText.localizationTargets()
+	yield* ipc.register(
+		invokeContracts["game-text:localization:targets"],
+		() => gameText.localizationTargets
 	);
 	yield* ipc.register(invokeContracts["game-text:localization:target"], (target) =>
 		gameText.localizationTarget(target)
@@ -68,8 +69,9 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:related"], (request) =>
 		gameText.related(request)
 	);
-	yield* ipc.register(invokeContracts["game-text:quality:reload-rules"], () =>
-		gameText.reloadQualityRules()
+	yield* ipc.register(
+		invokeContracts["game-text:quality:reload-rules"],
+		() => gameText.reloadQualityRules
 	);
 	yield* ipc.register(invokeContracts["game-text:quality:create-starter-rules"], (request) =>
 		gameText.createStarterRules(request)
@@ -81,15 +83,16 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["game-text:configured-refresh"], (request) =>
 		gameText.configuredRefresh(request)
 	);
-	yield* ipc.register(invokeContracts["game-text:progress"], () => gameText.progress());
+	yield* ipc.register(invokeContracts["game-text:progress"], () => gameText.progress);
 	yield* ipc.register(invokeContracts["game-text:investigation-export"], (...args) =>
 		gameText.investigationExport(...args)
 	);
 	yield* ipc.register(invokeContracts["game-text:investigation-save"], (...args) =>
 		gameText.investigationSave(...args)
 	);
-	yield* ipc.register(invokeContracts["game-text:investigation-open"], (...args) =>
-		gameText.investigationOpen(...args)
+	yield* ipc.register(
+		invokeContracts["game-text:investigation-open"],
+		() => gameText.investigationOpen
 	);
 	yield* ipc.register(invokeContracts["game-text:search"], (...args) => {
 		const [request] = args;
@@ -103,8 +106,9 @@ export const register = Effect.gen(function* () {
 		const [request] = args;
 		return gameText.focus(request);
 	});
-	yield* ipc.register(invokeContracts["game-text:quality:choose-rules"], () =>
-		gameText.chooseQualityRules()
+	yield* ipc.register(
+		invokeContracts["game-text:quality:choose-rules"],
+		() => gameText.chooseQualityRules
 	);
 	yield* ipc.register(invokeContracts["game-text:quality:preview-rules"], (...args) => {
 		const [document] = args;

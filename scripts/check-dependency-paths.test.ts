@@ -6,7 +6,7 @@ import test from "node:test";
 import { validateDependencyPaths } from "./check-dependency-paths.ts";
 import type { WorkspaceManifest } from "./workspace-manifests.ts";
 
-test("dependency checks catch the missing temporary tarball before installation", () => {
+void test("dependency checks catch the missing temporary tarball before installation", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-ci-dependencies-"));
 	try {
 		const workspaces: readonly WorkspaceManifest[] = [
@@ -35,7 +35,7 @@ test("dependency checks catch the missing temporary tarball before installation"
 	}
 });
 
-test("registry/workspace dependencies and checked-in local files remain supported", () => {
+void test("registry/workspace dependencies and checked-in local files remain supported", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-ci-dependencies-"));
 	try {
 		mkdirSync(join(root, "packages/fixture"), { recursive: true });
@@ -88,7 +88,7 @@ test("registry/workspace dependencies and checked-in local files remain supporte
 	}
 });
 
-test("a local dependency cannot escape the checkout through a directory link", () => {
+void test("a local dependency cannot escape the checkout through a directory link", () => {
 	const parent = mkdtempSync(join(tmpdir(), "ue-shed-ci-dependencies-"));
 	const root = join(parent, "checkout");
 	const outside = join(parent, "outside");

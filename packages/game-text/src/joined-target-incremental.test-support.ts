@@ -43,7 +43,7 @@ export const incrementJoinedTarget = Effect.fn("JoinedTarget.increment")(functio
 		"join.meta",
 		"Metadata exceeds bound"
 	);
-	const candidate = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(JoinedTargetMeta))(
+	const candidate = yield* Schema.decodeEffect(Schema.fromJsonString(JoinedTargetMeta))(
 		new TextDecoder().decode(yield* raw.section("join.meta"))
 	);
 	if (

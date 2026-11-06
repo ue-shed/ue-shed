@@ -1,5 +1,5 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { CultureCode } from "@ue-shed/localization/browser";
 import { BuiltInCheckId, CheckSeverity } from "./localization-check-ids.js";
@@ -309,27 +309,27 @@ export function customLocalizationChecks(
  * correction; the original JSON/schema cause remains available when parsing failed. The engine
  * finds `invalid_expression` and `rule_cycle` in a complete rule, named by `ruleId`.
  */
-export class GameTextRuleDocumentError extends Schema.TaggedError<GameTextRuleDocumentError>()(
-	"GameTextRuleDocumentError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"invalid_json",
-			"invalid_structure",
-			"duplicate_culture_key",
-			"duplicate_role_id",
-			"duplicate_rule_id",
-			"unknown_role_id",
-			"invalid_expression",
-			"rule_cycle"
-		]),
-		ruleId: Schema.optionalKey(Schema.String),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class GameTextRuleDocumentError extends Schema.TaggedError<
+	GameTextRuleDocumentError,
+	Brand.Brand<"packages/game-text/src/game-text-rules/GameTextRuleDocumentError">
+>()("GameTextRuleDocumentError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"invalid_json",
+		"invalid_structure",
+		"duplicate_culture_key",
+		"duplicate_role_id",
+		"duplicate_rule_id",
+		"unknown_role_id",
+		"invalid_expression",
+		"rule_cycle"
+	]),
+	ruleId: Schema.optionalKey(Schema.String),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 /** What a rule file error tells the user, by code. */
 function ruleDocumentErrorText(code: GameTextRuleDocumentError["code"]) {
@@ -377,7 +377,7 @@ function duplicateCultureKey(input: string): boolean {
 			let next = index + 1;
 			while (/\s/u.test(input[next] ?? "") && next < input.length) next++;
 			if (input[next] === ":") {
-				pendingKey = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.String))(
+				pendingKey = Schema.decodeSync(Schema.fromJsonString(Schema.String))(
 					input.slice(start, index + 1)
 				);
 				const current = stack.at(-1);
@@ -476,11 +476,11 @@ export function decodeGameTextRuleDocumentJson(
 	input: string
 ): Effect.Effect<GameTextRuleDocument, GameTextRuleDocumentError> {
 	return Effect.gen(function* () {
-		const json = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(
-			input
-		).pipe(Effect.mapError((cause) => invalid("invalid_json", cause)));
+		const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Json))(input).pipe(
+			Effect.mapError((cause) => invalid("invalid_json", cause))
+		);
 		const document = yield* decodeGameTextRuleDocument(json);
-		if (duplicateCultureKey(input)) return yield* Effect.fail(invalid("duplicate_culture_key"));
+		if (duplicateCultureKey(input)) return yield* invalid("duplicate_culture_key");
 		return document;
 	});
 }

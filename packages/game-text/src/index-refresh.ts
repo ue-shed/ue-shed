@@ -28,9 +28,7 @@ export const gameTextIndexRefreshLayer = (
 			const refresh = Effect.fn("GameTextIndex.refresh")(function* (
 				input: GameTextIndexRefreshRequest
 			) {
-				const request = yield* Schema.decodeUnknownEffect(GameTextIndexRefreshRequest)(
-					input
-				).pipe(
+				const request = yield* Schema.decodeEffect(GameTextIndexRefreshRequest)(input).pipe(
 					Effect.mapError(
 						(cause) =>
 							new GameTextIndexError({

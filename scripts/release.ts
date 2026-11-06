@@ -142,7 +142,7 @@ export function verifyPackedRelease(directory: string, version: string, commit: 
 	if (!existsSync(evidencePath)) {
 		throw new Error(`${directory} has no ${PACK_EVIDENCE_FILE}; rerun pnpm release:prepare.`);
 	}
-	const evidence = Schema.decodeUnknownSync(Schema.fromJsonString(PackEvidence))(
+	const evidence = Schema.decodeSync(Schema.fromJsonString(PackEvidence))(
 		readFileSync(evidencePath, "utf8")
 	);
 	if (evidence.version !== version || evidence.commit !== commit) {
@@ -150,7 +150,7 @@ export function verifyPackedRelease(directory: string, version: string, commit: 
 			`${directory} holds ${evidence.version} packed from ${evidence.commit}, not ${version} from ${commit}.`
 		);
 	}
-	const manifest = Schema.decodeUnknownSync(Schema.fromJsonString(PublicationManifestFile))(
+	const manifest = Schema.decodeSync(Schema.fromJsonString(PublicationManifestFile))(
 		readFileSync(join(directory, "packages-manifest.json"), "utf8")
 	);
 	const entries = validatePublicationManifest({ manifest, expectedVersion: version });
@@ -383,7 +383,7 @@ export function validatedIntegrity(directory: string, entry: PublicationEntry) {
 function publish(verification: Verification, env: NodeJS.ProcessEnv) {
 	const planPath = join(verification.packDirectory, "changesets-plan.json");
 	runPnpm(["exec", "changeset", "publish-plan", "--output", planPath], env);
-	const plan = Schema.decodeUnknownSync(Schema.fromJsonString(ChangesetsPublishPlan))(
+	const plan = Schema.decodeSync(Schema.fromJsonString(ChangesetsPublishPlan))(
 		readFileSync(planPath, "utf8")
 	);
 	const packed = packedPublishPlan(plan, verification.entries, (entry) =>

@@ -1,20 +1,20 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { spawn, type ChildProcess } from "node:child_process";
-import { Context, Effect, Exit, Layer, Ref, Schema, type Scope } from "effect";
+import { type Brand, Context, Effect, Exit, Layer, Ref, Schema, type Scope } from "effect";
 
-export class FixtureProcessError extends Schema.TaggedError<FixtureProcessError>()(
-	"Workbench.FixtureProcessError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("fixture_process_failed"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		causeText: Schema.String,
-		message: Schema.String,
-		operation: Schema.Literals(["spawn", "wait", "terminate"]),
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean
-	}
-) {}
+export class FixtureProcessError extends Schema.TaggedError<
+	FixtureProcessError,
+	Brand.Brand<"apps/workbench/src/main/adapters/fixture-process/FixtureProcessError">
+>()("Workbench.FixtureProcessError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("fixture_process_failed"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	causeText: Schema.String,
+	message: Schema.String,
+	operation: Schema.Literals(["spawn", "wait", "terminate"]),
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean
+}) {}
 
 export interface FixtureProcessLaunchOptions {
 	readonly args: ReadonlyArray<string>;
@@ -42,7 +42,7 @@ export class FixtureProcess extends Context.Service<FixtureProcess, FixtureProce
 ) {}
 
 export interface FixtureProcessTestApi extends FixtureProcessApi {
-	readonly launches: () => Effect.Effect<ReadonlyArray<FixtureProcessLaunchOptions>>;
+	readonly launches: Effect.Effect<ReadonlyArray<FixtureProcessLaunchOptions>>;
 }
 
 export class FixtureProcessTest extends Context.Service<
@@ -177,7 +177,7 @@ export const makeFixtureProcessTestLayer = (
 					yield* Ref.update(launches, (current) => [...current, options]);
 					return yield* behavior(options);
 				}),
-				launches: () => Ref.get(launches)
+				launches: Ref.get(launches)
 			});
 			return Context.empty().pipe(
 				Context.add(FixtureProcess, service),

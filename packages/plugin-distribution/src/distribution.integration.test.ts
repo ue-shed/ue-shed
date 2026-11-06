@@ -14,7 +14,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { crc32, deflateRawSync, gzipSync } from "node:zlib";
 import { it } from "@effect/vitest";
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
 import { expect, vi } from "vitest";
@@ -60,6 +60,10 @@ function writeOctal(block: Buffer, offset: number, length: number, value: number
 }
 
 function tarArchive(entries: readonly TarEntry[]): Buffer {
+	return gzipSync(tarBytes(entries), { level: 1 });
+}
+
+function tarBytes(entries: readonly TarEntry[]): Buffer {
 	const blocks: Buffer[] = [];
 	for (const entry of entries) {
 		const body = Buffer.from(entry.body ?? new Uint8Array());
@@ -82,7 +86,32 @@ function tarArchive(entries: readonly TarEntry[]): Buffer {
 		if (padding > 0) blocks.push(Buffer.alloc(padding));
 	}
 	blocks.push(Buffer.alloc(1024));
-	return gzipSync(Buffer.concat(blocks), { level: 1 });
+	return Buffer.concat(blocks);
+}
+
+/**
+ * Gzips the tar as two members split at byte `splitAt`, the second behind a header comment of
+ * `commentBytes`. Gunzip yields nothing while it reads the comment, so a reader that needs bytes
+ * past the split waits on the stream, not on a write, until the whole comment is read.
+ */
+function stalledTarArchive(
+	entries: readonly TarEntry[],
+	stall: { readonly splitAt: number; readonly commentBytes: number }
+): Buffer {
+	const tar = tarBytes(entries);
+	const tail = tar.subarray(stall.splitAt);
+	const trailer = Buffer.alloc(8);
+	trailer.writeUInt32LE(crc32(tail), 0);
+	trailer.writeUInt32LE(tail.byteLength, 4);
+	return Buffer.concat([
+		gzipSync(tar.subarray(0, stall.splitAt), { level: 1 }),
+		// ID1 ID2, deflate, FCOMMENT, no mtime, no extra flags, unknown OS.
+		Buffer.from([0x1f, 0x8b, 8, 0x10, 0, 0, 0, 0, 0, 255]),
+		Buffer.alloc(stall.commentBytes, "a"),
+		Buffer.from([0]),
+		deflateRawSync(tail, { level: 1 }),
+		trailer
+	]);
 }
 
 function digest(bytes: Uint8Array) {
@@ -93,28 +122,32 @@ async function fixture(
 	options: {
 		readonly entries?: readonly TarEntry[];
 		readonly releaseVersion?: string;
+		/** Stalls gunzip at a byte of the tar; see `stalledTarArchive`. */
+		readonly stall?: { readonly splitAt: number; readonly commentBytes: number };
 	} = {}
 ) {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-plugin-distribution-"));
 	roots.push(root);
 	const releaseVersion = options.releaseVersion ?? "0.3.1";
 	const names = pluginReleaseAssetNames(releaseVersion);
-	const archive = tarArchive(
-		options.entries ?? [
-			{
-				body: Buffer.from('{"FileVersion":3}\n'),
-				name: "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"
-			},
-			{
-				body: Buffer.from("core source\n"),
-				name: "UEShed/Plugins/UEShedCore/Source/Core.cpp"
-			},
-			{
-				body: Buffer.from('{"FileVersion":3}\n'),
-				name: "UEShed/Plugins/UEShedCameras/UEShedCameras.uplugin"
-			}
-		]
-	);
+	const entries = options.entries ?? [
+		{
+			body: Buffer.from('{"FileVersion":3}\n'),
+			name: "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"
+		},
+		{
+			body: Buffer.from("core source\n"),
+			name: "UEShed/Plugins/UEShedCore/Source/Core.cpp"
+		},
+		{
+			body: Buffer.from('{"FileVersion":3}\n'),
+			name: "UEShed/Plugins/UEShedCameras/UEShedCameras.uplugin"
+		}
+	];
+	const archive =
+		options.stall === undefined
+			? tarArchive(entries)
+			: stalledTarArchive(entries, options.stall);
 	const archivePath = join(root, names.artifact);
 	await writeFile(archivePath, archive);
 	const manifest = {
@@ -196,7 +229,7 @@ async function compiledFixture(
 		target: "UnrealEditor",
 		unrealVersion: "5.7"
 	} as const;
-	const artifact = Schema.decodeUnknownSync(CompiledPluginVariantRequest)(
+	const artifact = Schema.decodeSync(CompiledPluginVariantRequest)(
 		options.engineSourceCommit === undefined
 			? artifactWithoutCommit
 			: { ...artifactWithoutCommit, engineSourceCommit: options.engineSourceCommit }
@@ -378,7 +411,10 @@ function liveLayer(
 }
 
 function listeningPort(server: ReturnType<typeof createServer>): number {
-	return Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(server.address()).port;
+	const address = server.address();
+	if (!(address instanceof Object))
+		throw new Error("The fixture TCP server did not expose its address.");
+	return address.port;
 }
 
 it.effect("stores source and multiple exact compiled variants for one release", () =>
@@ -432,8 +468,9 @@ it.effect("stores source and multiple exact compiled variants for one release", 
 		).toBe(3);
 		expect(first.resolvedPluginIds).toEqual(["UEShedCore", "UEShedCameras"]);
 		expect(first.artifactKind).toBe("compiled");
-		const cached = yield* Effect.flatMap(PluginDistribution, (distribution) =>
-			distribution.listCached()
+		const cached = yield* Effect.flatMap(
+			PluginDistribution,
+			(distribution) => distribution.listCached
 		).pipe(Effect.provide(layer));
 		expect(cached).toHaveLength(3);
 		expect(cached.map(({ artifactKind }) => artifactKind).sort()).toEqual([
@@ -484,20 +521,25 @@ it.effect("prunes only the matching legacy reference after recoverable content c
 		yield* Effect.promise(async () => {
 			await mkdir(join(cacheRoot, "releases"), { recursive: true });
 			await rename(acquired.cachePath, legacyRoot);
-			const metadataPath = join(legacyRoot, ".ue-shed-distribution.json");
-			const metadata = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
-				JSON.parse(await readFile(metadataPath, "utf8"))
-			);
-			const {
-				artifactKind: _artifactKind,
-				variantIdentity: _variantIdentity,
-				...legacy
-			} = metadata;
-			await writeFile(
+		});
+		const metadataPath = join(legacyRoot, ".ue-shed-distribution.json");
+		const input = yield* Effect.promise(async () =>
+			JSON.parse(await readFile(metadataPath, "utf8"))
+		);
+		const metadata = yield* Schema.decodeUnknownEffect(
+			Schema.Record(Schema.String, Schema.Json)
+		)(input).pipe(Effect.orDie);
+		const {
+			artifactKind: _artifactKind,
+			variantIdentity: _variantIdentity,
+			...legacy
+		} = metadata;
+		yield* Effect.promise(() =>
+			writeFile(
 				metadataPath,
 				`${JSON.stringify({ ...legacy, schemaVersion: 1 }, null, "\t")}\n`
-			);
-		});
+			)
+		);
 
 		const exactReference: PluginVariantReference = {
 			releaseVersion: acquired.releaseVersion,
@@ -1577,6 +1619,60 @@ it.effect("cancels during extraction and removes staging", () =>
 	)
 );
 
+it.effect("interrupting the install mid-extraction settles and removes staging", () =>
+	Effect.gen(function* () {
+		// The first file's first chunk is in the first gzip member and the rest of it is behind a
+		// 64 MiB comment, so right after the first progress event extraction waits on gunzip.
+		const source = yield* Effect.promise(() =>
+			fixture({
+				entries: [
+					{
+						body: randomBytes(256 * 1024),
+						name: "UEShed/Plugins/UEShedCameras/Content.bin"
+					},
+					{
+						body: Buffer.from('{"FileVersion":3}\n'),
+						name: "UEShed/Plugins/UEShedCore/UEShedCore.uplugin"
+					},
+					{
+						body: Buffer.from('{"FileVersion":3}\n'),
+						name: "UEShed/Plugins/UEShedCameras/UEShedCameras.uplugin"
+					}
+				],
+				stall: { splitAt: 512 + 96 * 1024, commentBytes: 64 * 1024 * 1024 }
+			})
+		);
+		const cacheRoot = join(source.root, "interrupt-cache");
+		const layer = liveLayer(
+			localPluginReleaseSourceLayer({ directory: source.root }),
+			cacheRoot
+		);
+		const extracting = yield* Deferred.make<void>();
+		const install = yield* Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install(request(source.releaseVersion), {
+					onProgress: (progress) => {
+						if (progress.phase === "extracting")
+							Deferred.doneUnsafe(extracting, Effect.void);
+					}
+				})
+			)
+		).pipe(Effect.provide(layer), Effect.forkChild);
+		yield* Deferred.await(extracting);
+		// Interruption waits for the extraction Promise and its staging cleanup to settle.
+		yield* Fiber.interrupt(install);
+		const entries = yield* Effect.promise(() => readdir(cacheRoot));
+		expect(entries.some((entry) => entry.startsWith(".publish-"))).toBe(false);
+		expect(entries.some((entry) => entry.startsWith(".download-"))).toBe(false);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
 it.effect("cancels during download and removes the partial artifact", () =>
 	Effect.gen(function* () {
 		const source = yield* Effect.promise(() =>
@@ -1771,8 +1867,9 @@ it.effect("keeps different releases side by side and deterministically replays a
 				distribution.install(request(secondSource.releaseVersion))
 			)
 		).pipe(Effect.provide(layer));
-		const releases = yield* Effect.flatMap(PluginDistribution, (distribution) =>
-			distribution.listCached()
+		const releases = yield* Effect.flatMap(
+			PluginDistribution,
+			(distribution) => distribution.listCached
 		).pipe(Effect.provide(layer));
 		expect(releases.map(({ releaseVersion }) => releaseVersion)).toEqual(["0.3.1", "0.3.2"]);
 		yield* Effect.flatMap(PluginDistribution, (distribution) =>

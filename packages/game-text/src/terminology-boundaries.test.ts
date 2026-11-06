@@ -68,7 +68,7 @@ effectIt.live(
 				})),
 				{ kind: "preferred", term: "approved term", alternatives: ["draft term"] }
 			];
-			const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
+			const document = yield* Schema.decodeUnknownEffect(GameTextRuleDocument)({
 				schemaVersion: 1,
 				roles: [
 					{
@@ -94,7 +94,7 @@ effectIt.live(
 						cultures: { de: terms }
 					}
 				]
-			});
+			}).pipe(Effect.orDie);
 			yield* Effect.gen(function* () {
 				const indexed = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 				const source = yield* expectSameSourceQuality(indexed, document);

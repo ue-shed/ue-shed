@@ -12,7 +12,7 @@ import {
 	type SavedProperty
 } from "@ue-shed/unreal-assets";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Predicate, Ref, Schema, Stream } from "effect";
+import { type Brand, Context, Effect, Layer, Predicate, Ref, Schema, Stream } from "effect";
 import { maximumDimensionKey } from "./report.js";
 import {
 	AuditRuleId,
@@ -38,10 +38,14 @@ export interface TextureAuditProgress {
 	readonly totalAssets: number;
 }
 
-export class TextureAuditScanError extends Schema.TaggedError<TextureAuditScanError>()(
-	"TextureAuditScanError",
-	{ code: TextureAuditPublicError.fields.code, ...ErrorGuidanceFields, ...ErrorCauseFields }
-) {}
+export class TextureAuditScanError extends Schema.TaggedError<
+	TextureAuditScanError,
+	Brand.Brand<"packages/asset-audits/src/texture/TextureAuditScanError">
+>()("TextureAuditScanError", {
+	code: TextureAuditPublicError.fields.code,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 const TextureAuditScanFields = {
 	concurrency: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
@@ -354,35 +358,51 @@ function readRuleSet(path: string): Effect.Effect<TextureAuditRuleSet, TextureAu
 		}
 	}).pipe(
 		Effect.flatMap((json) =>
-			Effect.try({
-				try: () => Schema.decodeUnknownSync(Schema.Json)(JSON.parse(json)),
-				catch: (cause) =>
-					new TextureAuditScanError({
-						code: "invalid_rules",
-						message: `Texture audit rule file ${path} is not valid JSON.`,
-						recovery: "Choose a schema-version-1 rule file with supported rule kinds.",
-						retrySafe: false,
-						nextStep: "fix_input",
-						cause
-					})
-			}).pipe(
-				Effect.flatMap((input) =>
-					decodeTextureAuditRuleSet(input).pipe(
-						Effect.mapError(
-							(cause) =>
-								new TextureAuditScanError({
-									code: "invalid_rules",
-									message: `Texture audit rule file ${path} does not match the schema-version-1 rule set.`,
-									recovery:
-										"Choose a schema-version-1 rule file with supported rule kinds.",
-									retrySafe: false,
-									nextStep: "fix_input",
-									cause
-								})
-						)
+			Effect.gen(function* () {
+				const sourceValue = yield* Effect.try({
+					try: () => JSON.parse(json),
+					catch: (cause) =>
+						new TextureAuditScanError({
+							code: "invalid_rules",
+							message: `Texture audit rule file ${path} is not valid JSON.`,
+							recovery:
+								"Choose a schema-version-1 rule file with supported rule kinds.",
+							retrySafe: false,
+							nextStep: "fix_input",
+							cause
+						})
+				});
+				const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(
+					sourceValue
+				).pipe(
+					Effect.mapError(
+						(cause) =>
+							new TextureAuditScanError({
+								code: "invalid_rules",
+								message: `Texture audit rule file ${path} is not valid JSON.`,
+								recovery:
+									"Choose a schema-version-1 rule file with supported rule kinds.",
+								retrySafe: false,
+								nextStep: "fix_input",
+								cause
+							})
 					)
-				)
-			)
+				);
+				return yield* decodeTextureAuditRuleSet(decodedValue0).pipe(
+					Effect.mapError(
+						(cause) =>
+							new TextureAuditScanError({
+								code: "invalid_rules",
+								message: `Texture audit rule file ${path} does not match the schema-version-1 rule set.`,
+								recovery:
+									"Choose a schema-version-1 rule file with supported rule kinds.",
+								retrySafe: false,
+								nextStep: "fix_input",
+								cause
+							})
+					)
+				);
+			})
 		)
 	);
 }
@@ -644,7 +664,7 @@ function scanTextureAuditFromProjectIndexWith(
 }
 
 export interface TextureAuditApi {
-	readonly progress: () => Effect.Effect<TextureAuditProgress>;
+	readonly progress: Effect.Effect<TextureAuditProgress>;
 	readonly scan: (
 		options: TextureAuditScanOptions
 	) => Effect.Effect<TextureAuditReport, TextureAuditScanError>;
@@ -668,7 +688,7 @@ export const TextureAuditLive = Layer.effect(
 			totalAssets: 0
 		});
 		const reportProgress = (progress: TextureAuditProgress) => Ref.set(progressState, progress);
-		const progress = Effect.fn("TextureAudit.progress")(() => Ref.get(progressState));
+		const progress = Ref.get(progressState).pipe(Effect.withSpan("TextureAudit.progress"));
 		const scan = Effect.fn("TextureAudit.scan")(function* (options: TextureAuditScanOptions) {
 			const validated = yield* decodeScanOptions(options).pipe(
 				Effect.mapError(
@@ -727,7 +747,7 @@ export function makeTextureAuditTestLayer(service: TextureAuditTestApi): Layer.L
 			...service,
 			progress:
 				service.progress ??
-				(() => Effect.succeed({ phase: "idle", processedAssets: 0, totalAssets: 0 })),
+				Effect.sync(() => ({ phase: "idle", processedAssets: 0, totalAssets: 0 })),
 			scanFromProjectIndex:
 				service.scanFromProjectIndex ?? ((_index, options) => service.scan(options))
 		})

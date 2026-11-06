@@ -532,6 +532,32 @@ export async function checkCatalogUsage(root: string) {
 	return failures;
 }
 
+function hasNamedOperation(text: string, path: string): boolean {
+	const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+	let found = false;
+	function visit(node: ts.Node): void {
+		if (found) return;
+		if (ts.isCallExpression(node)) {
+			const name = node.arguments[0];
+			if (name && ts.isStringLiteralLike(name) && name.text.length > 0) {
+				const method = node.expression.getText(source);
+				if (method === "Effect.fn" && ts.isCallExpression(node.parent)) found = true;
+				if (
+					method === "Effect.withSpan" &&
+					ts.isCallExpression(node.parent) &&
+					ts.isPropertyAccessExpression(node.parent.expression) &&
+					node.parent.expression.name.text === "pipe" &&
+					node.parent.arguments.includes(node)
+				)
+					found = true;
+			}
+		}
+		ts.forEachChild(node, visit);
+	}
+	visit(source);
+	return found;
+}
+
 export async function checkServiceStrategies(root: string = repositoryRoot) {
 	const failures: string[] = [];
 	const sourceFiles = (
@@ -556,8 +582,10 @@ export async function checkServiceStrategies(root: string = repositoryRoot) {
 		if (!text.includes("Layer.")) {
 			failures.push(`${path}: service declaration has no live or test layer strategy`);
 		}
-		if (!operationlessServices.has(path) && !text.includes("Effect.fn(")) {
-			failures.push(`${path}: service operations must use Effect.fn`);
+		if (!operationlessServices.has(path) && !hasNamedOperation(text, path)) {
+			failures.push(
+				`${path}: service operations must use named Effect.fn or Effect.withSpan`
+			);
 		}
 	}
 	return failures;
@@ -581,8 +609,10 @@ export async function checkDomainServices(root: string = repositoryRoot) {
 		if (!text.includes("Context.Service")) {
 			failures.push(`${path}: domain service file must use Context.Service`);
 		}
-		if (!text.includes("Effect.fn(")) {
-			failures.push(`${path}: domain service operations must use Effect.fn`);
+		if (!hasNamedOperation(text, path)) {
+			failures.push(
+				`${path}: domain service operations must use named Effect.fn or Effect.withSpan`
+			);
 		}
 	}
 
@@ -959,7 +989,7 @@ function sourcesGuardedElsewhere(root: string) {
 
 /** The source behind a `.js` module path: its TypeScript form, else the JavaScript file itself. */
 async function moduleSource(path: string) {
-	for (const candidate of /\.js$/u.test(path) ? [path.replace(/\.js$/u, ".ts"), path] : [path]) {
+	for (const candidate of path.endsWith(".js") ? [path.replace(/\.js$/u, ".ts"), path] : [path]) {
 		try {
 			await readFile(candidate, "utf8");
 			return candidate;

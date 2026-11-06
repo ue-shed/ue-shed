@@ -217,7 +217,7 @@ describe("CameraFeed", () => {
 				Effect.gen(function* () {
 					const context = yield* Layer.build(cameraFeedLayer({ pipeName: name }));
 					yield* Deferred.succeed(acquired, Context.get(context, CameraFeed));
-					yield* Effect.never;
+					return yield* Effect.never;
 				})
 			)
 		);

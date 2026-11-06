@@ -10,7 +10,7 @@ import {
 } from "./columnar-join-fuzz.test-support.ts";
 
 const directory = resolve("test-results/codex/phase6-fuzz");
-const report = Schema.decodeUnknownSync(
+const report = Schema.decodeSync(
 	Schema.fromJsonString(
 		Schema.Struct({
 			count: Schema.Int,
@@ -29,7 +29,7 @@ for (const [field, { seed }] of report.failures) {
 	const family = `${seed}:${field.split(".").slice(0, 3).join(".")}`;
 	if (reproduced.has(family)) continue;
 	reproduced.add(family);
-	const input = Schema.decodeUnknownSync(Schema.fromJsonString(JoinFuzzInput))(
+	const input = Schema.decodeSync(Schema.fromJsonString(JoinFuzzInput))(
 		await readFile(resolve(directory, `seed-${seed}.json`), "utf8")
 	);
 	const reduced = await shrinkJoinFuzzInput(input, async (candidate) => {

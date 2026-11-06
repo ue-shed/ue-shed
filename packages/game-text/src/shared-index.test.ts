@@ -58,14 +58,14 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish(
 						"a",
 						"a",
 						source(["/Game/B/2", "/Game/A/1", "/Game/A/2", "é"])
 					);
 					yield* writer.publish("b", "b", source(["/Game/A/1", "/Game/A/3", "😀"]));
-					const index = yield* store.open(),
+					const index = yield* store.open,
 						a = yield* index.layer("a");
 					expect(Array.from(yield* a.section("entry.source"))).toEqual([2, 0, 1, 3]);
 					const ranges = yield* index.range("/Game/A/");
@@ -87,7 +87,7 @@ describe("shared project string index", () => {
 						"/Game/B/2",
 						"é"
 					]);
-					const compacted = yield* store.open(),
+					const compacted = yield* store.open,
 						b = yield* compacted.layer("b");
 					expect(
 						yield* b.strings("source", Array.from(yield* b.section("entry.source")))
@@ -109,7 +109,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer(),
+						writer = yield* store.writer,
 						generation = writer.manifest().generation;
 					yield* writer.publish("file-0", "key-0", source(["value-0"]));
 					// Interning fills real segments without rewriting a manifest and layer 256 times.
@@ -119,7 +119,7 @@ describe("shared project string index", () => {
 					yield* writer.publish("next", "next", source(["next"]));
 					expect(writer.manifest().generation).not.toBe(generation);
 					expect(writer.manifest().segments).toHaveLength(2);
-					const index = yield* store.open(),
+					const index = yield* store.open,
 						layer = yield* index.layer("file-0");
 					expect(
 						yield* layer.strings(
@@ -136,14 +136,14 @@ describe("shared project string index", () => {
 		await run(
 			Effect.scoped(
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					yield* writer.publish("same-path", "v1", source(["alpha", "beta", "gamma"]));
 					const before = writer.metrics();
 					yield* writer.publish("same-path", "v2", source(["gamma", "beta!", "alpha"]));
 					expect(writer.metrics().lookupStrings - before.lookupStrings).toBe(1);
 					expect(writer.metrics().reusedStrings - before.reusedStrings).toBe(2);
 					const store = yield* SharedIndex,
-						index = yield* store.open(),
+						index = yield* store.open,
 						layer = yield* index.layer("same-path");
 					expect(
 						yield* layer.strings(
@@ -165,14 +165,14 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					for (const culture of ["fil", "es-419", "sr-Latn-RS"]) {
 						yield* writer.publish(
 							`localization/${culture}/text.po`,
 							culture,
 							source([`${culture} text`], "translation")
 						);
-						const index = yield* store.open();
+						const index = yield* store.open;
 						const owned = yield* index.domain(`culture.${culture}`);
 						expect(
 							owned.flatMap((domain) =>
@@ -227,7 +227,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					const manifest = yield* writer.publish(
 						"manifest",
 						"manifest",
@@ -266,13 +266,13 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("a", "first", source([values[0]!]));
 					yield* writer.publish("b", "second", source(values));
 					expect(
 						writer.manifest().segments.reduce((n, segment) => n + segment.count, 0)
 					).toBe(2);
-					const index = yield* store.open(),
+					const index = yield* store.open,
 						layer = yield* index.layer("b");
 					expect(
 						yield* index.strings(Array.from(yield* layer.section("entry.source")))
@@ -291,7 +291,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("po", "old", source(values));
 					const generation = writer.manifest().generation;
 					const before = writer.metrics();
@@ -316,7 +316,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("archive", "archive", source(values));
 					yield* writer.publish("po", "po", source(values));
 					const generation = writer.manifest().generation;
@@ -334,7 +334,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("po", "a", source(["original"]));
 					return writer.manifest().generation;
 				})
@@ -364,8 +364,8 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex;
-					expect((yield* store.inspect()).generation).toBe(generation);
-					const writer = yield* store.writer();
+					expect((yield* store.inspect).generation).toBe(generation);
+					const writer = yield* store.writer;
 					expect((yield* writer.compact(true)).compacted).toBe(true);
 				})
 			)
@@ -377,7 +377,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("manifest", "a", source(["", "same", "first"]));
 					const before = writer.manifest().segments;
 					yield* writer.publish(
@@ -387,7 +387,7 @@ describe("shared project string index", () => {
 					);
 					expect(writer.manifest().segments.slice(0, before.length)).toEqual(before);
 					expect(writer.manifest().segments.reduce((n, s) => n + s.count, 0)).toBe(4);
-					const index = yield* store.open();
+					const index = yield* store.open;
 					const a = yield* index.layer("manifest"),
 						b = yield* index.layer("po");
 					const aid = yield* a.section("entry.source"),
@@ -409,9 +409,9 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("po", "old", source(["unused", "survives"]));
-					const old = yield* store.open();
+					const old = yield* store.open;
 					yield* writer.publish("po", "new", source(["survives", "fresh"]));
 					const before = writer.manifest().generation;
 					const result = yield* writer.compact(true);
@@ -422,7 +422,7 @@ describe("shared project string index", () => {
 					const oldLayer = yield* old.layer("po"),
 						ids = yield* oldLayer.section("entry.source");
 					expect(yield* old.strings(Array.from(ids))).toEqual(["unused", "survives"]);
-					const current = yield* store.open(),
+					const current = yield* store.open,
 						layer = yield* current.layer("po");
 					expect(
 						yield* current.strings(Array.from(yield* layer.section("entry.source")))
@@ -437,7 +437,7 @@ describe("shared project string index", () => {
 		const manifest = await run(
 			Effect.scoped(
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					for (const [index, key] of keys.entries())
 						yield* writer.publish(`l${index}`, key, source([`text ${index}`]));
 					return writer.manifest();
@@ -446,7 +446,7 @@ describe("shared project string index", () => {
 		);
 		const read = Effect.scoped(
 			Effect.gen(function* () {
-				const reader = yield* (yield* SharedIndex).open();
+				const reader = yield* (yield* SharedIndex).open;
 				const values: string[] = [];
 				for (const index of keys.keys()) {
 					const layer = yield* reader.layer(`l${index}`);
@@ -477,7 +477,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("po", "a", source(["one", "two"]));
 					return writer.manifest().generation;
 				})
@@ -488,7 +488,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					return yield* writer.compact(true).pipe(Effect.result);
 				})
 			)
@@ -499,8 +499,8 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex;
-					expect((yield* store.inspect()).generation).toBe(generation);
-					const writer = yield* store.writer();
+					expect((yield* store.inspect).generation).toBe(generation);
+					const writer = yield* store.writer;
 					expect((yield* writer.compact(true)).compacted).toBe(true);
 				})
 			)
@@ -516,7 +516,7 @@ describe("shared project string index", () => {
 		await run(
 			Effect.scoped(
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					yield* writer.publish("po", "original", source(["one", "two"]));
 				})
 			)
@@ -528,7 +528,7 @@ describe("shared project string index", () => {
 			const result = await run(
 				Effect.scoped(
 					Effect.gen(function* () {
-						const writer = yield* (yield* SharedIndex).writer();
+						const writer = yield* (yield* SharedIndex).writer;
 						return yield* writer.compact(true).pipe(Effect.result);
 					})
 				)
@@ -556,7 +556,7 @@ describe("shared project string index", () => {
 		await run(
 			Effect.scoped(
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					yield* writer.publish("po", "original", source(["one", "two"]));
 				})
 			)
@@ -565,7 +565,7 @@ describe("shared project string index", () => {
 		const result = await run(
 			Effect.scoped(
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					return yield* writer
 						.publishCold([
 							{ name: "changed", key: "candidate", source: source(["changed"]) }
@@ -587,7 +587,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish(
 						"manifest",
 						"manifest-old",
@@ -601,7 +601,7 @@ describe("shared project string index", () => {
 					const record = yield* writer.publish("other-po", "hash", { columns: [] });
 					expect(record.key).toBe("hash");
 					expect(writer.metrics().appendedBytes).toBe(before);
-					expect((yield* store.writer().pipe(Effect.result))._tag).toBe("Failure");
+					expect((yield* store.writer.pipe(Effect.result))._tag).toBe("Failure");
 					expect((yield* writer.compact()).compacted).toBe(false);
 				})
 			)
@@ -614,7 +614,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("po", "a", source(values));
 				})
 			)
@@ -623,7 +623,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("po", "b", source([values[113]!, "changed"]));
 					expect(writer.manifest().segments.at(-1)?.count).toBe(1);
 					expect(writer.metrics().indexReadBytes).toBeLessThan(20000 * 8);
@@ -637,9 +637,9 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					yield* writer.publish("po", "a", source(["hello"]));
-					const escaped = yield* store.open();
+					const escaped = yield* store.open;
 					return { manifest: writer.manifest(), escaped };
 				})
 			)
@@ -655,7 +655,7 @@ describe("shared project string index", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SharedIndex,
-						writer = yield* store.writer();
+						writer = yield* store.writer;
 					return yield* writer.publish("po", "b", source(["hello"])).pipe(Effect.result);
 				})
 			)

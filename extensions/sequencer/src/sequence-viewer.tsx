@@ -10,17 +10,17 @@ import { sequenceStats, sectionFrames, displayFrameScale } from "./sequence-summ
 import { SequenceTimeline } from "./sequence-timeline.js";
 import { frameRateLabel, frameRateTooltip, playbackLabel } from "./sequence-presentation.js";
 
-export type SequenceReadEffect = Effect.Effect<SequenceReadResult, unknown>;
+export type SequenceReadEffect<E = never> = Effect.Effect<SequenceReadResult, E>;
 export type ReadySequenceRead = Extract<SequenceReadResult, { readonly status: "ready" }>;
 
 export interface SequenceOpenerControls {
-	readonly open: (read: SequenceReadEffect) => void;
+	readonly open: <E>(read: SequenceReadEffect<E>) => void;
 	readonly loading: boolean;
 	readonly hasSequence: boolean;
 	readonly observeSourceBusy: (read: () => boolean) => void;
 }
 export interface SequenceFooterControls {
-	readonly open: (read: SequenceReadEffect) => void;
+	readonly open: <E>(read: SequenceReadEffect<E>) => void;
 	readonly reveal: (objectPath: string) => void;
 }
 export interface SequenceTransportFailureCopy {
@@ -28,9 +28,9 @@ export interface SequenceTransportFailureCopy {
 	readonly message: string;
 	readonly recovery: string;
 }
-export interface SequenceViewerProps {
+export interface SequenceViewerProps<E = never> {
 	readonly opener: (controls: SequenceOpenerControls) => JSX.Element;
-	readonly initialRead?: SequenceReadEffect | undefined;
+	readonly initialRead?: SequenceReadEffect<E> | undefined;
 	readonly footer?: (read: ReadySequenceRead, controls: SequenceFooterControls) => JSX.Element;
 	readonly failureActions?: (failure: SequenceReadFailure) => JSX.Element;
 	readonly transportFailureCopy?: SequenceTransportFailureCopy;
@@ -38,7 +38,7 @@ export interface SequenceViewerProps {
 
 const leaf = (path: string) => path.split(/[.:]/).at(-1) ?? path;
 
-export function SequenceViewer(props: SequenceViewerProps) {
+export function SequenceViewer<E = never>(props: SequenceViewerProps<E>) {
 	const initialRead = props.initialRead;
 	const action = createEffectAction();
 	const [result, setResult] = createSignal<SequenceReadResult>();
@@ -152,7 +152,7 @@ export function SequenceViewer(props: SequenceViewerProps) {
 		const value = ready()?.sequence;
 		return value === undefined ? "" : playbackLabel(value);
 	});
-	const open = (read: SequenceReadEffect) => {
+	const open = <ReadError,>(read: SequenceReadEffect<ReadError>) => {
 		setLoading(true);
 		setTransportFailed(false);
 		setMessage("");

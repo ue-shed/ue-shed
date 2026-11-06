@@ -17,12 +17,14 @@ export const register = Effect.gen(function* () {
 			const document = yield* readScenarioDocumentFile(choice.path);
 			return { status: "completed" as const, path: choice.path, document };
 		}).pipe(
-			Effect.catch((error) =>
-				Effect.succeed({
-					status: "failed" as const,
-					message: error.message,
-					recovery: error.recovery
-				})
+			Effect.catchTag(
+				["Workbench.WorkbenchWindowError", "ScenarioDocumentFileError"],
+				(error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						message: error.message,
+						recovery: error.recovery
+					})
 			)
 		)
 	);
@@ -37,12 +39,14 @@ export const register = Effect.gen(function* () {
 			const saved = yield* writeScenarioDocumentFile(choice.path, document);
 			return { status: "completed" as const, path: choice.path, document: saved };
 		}).pipe(
-			Effect.catch((error) =>
-				Effect.succeed({
-					status: "failed" as const,
-					message: error.message,
-					recovery: error.recovery
-				})
+			Effect.catchTag(
+				["Workbench.WorkbenchWindowError", "ScenarioDocumentFileError"],
+				(error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						message: error.message,
+						recovery: error.recovery
+					})
 			)
 		)
 	);

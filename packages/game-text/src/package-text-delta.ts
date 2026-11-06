@@ -31,9 +31,7 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 			paths.length !== signatures.length ||
 			paths.length !== statuses.length
 		)
-			return yield* Effect.fail(
-				snapshotFailure(shard.name, "Invalid package identity columns")
-			);
+			return yield* snapshotFailure(shard.name, "Invalid package identity columns");
 		const pathValues = yield* layer.strings("paths", [...paths]);
 		const signatureValues = yield* layer.strings("identity", [...signatures]);
 		const byPath = new Map(pathValues.map((path, row) => [path, row]));
@@ -76,11 +74,9 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 							row === undefined ||
 							received.has(event.path)
 						)
-							return yield* Effect.fail(
-								snapshotFailure(
-									"package-text.read",
-									"Unexpected or duplicate package"
-								)
+							return yield* snapshotFailure(
+								"package-text.read",
+								"Unexpected or duplicate package"
 							);
 						received.add(event.path);
 						rows[row] = -1 - records.length;
@@ -90,14 +86,10 @@ export const replacePackageTextRecords = Effect.fn("PackageText.replaceRecords")
 				)
 			);
 		if (received.size !== requests.size)
-			return yield* Effect.fail(
-				snapshotFailure("package-text.read", "Reader omitted requested packages")
-			);
+			return yield* snapshotFailure("package-text.read", "Reader omitted requested packages");
 		const previousKey = reader.manifest.active[shard.name];
 		if (!previousKey)
-			return yield* Effect.fail(
-				snapshotFailure(shard.name, "Previous package shard disappeared")
-			);
+			return yield* snapshotFailure(shard.name, "Previous package shard disappeared");
 		const original = records.map((record) => record.path);
 		records.sort((a, b) => Buffer.compare(encodeWtf8(a.path), encodeWtf8(b.path)));
 		const convertedRows = new Map(records.map((record, row) => [record.path, row]));

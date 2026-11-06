@@ -30,9 +30,9 @@ export const renderPreparedCamera = Effect.fn("CameraRenderer.renderPreparedCame
 		}
 		return yield* withPreparedWorld(args.preparation, (lease) =>
 			Effect.gen(function* () {
-				const preparation = yield* lease.checkReady();
+				const preparation = yield* lease.checkReady;
 				const frame = yield* renderCamera(args);
-				const afterCapture = yield* lease.checkReady();
+				const afterCapture = yield* lease.checkReady;
 				return { frame, preparation, afterCapture };
 			})
 		);

@@ -105,7 +105,7 @@ const CorpusText = Schema.Struct({
 const CorpusPackage = Schema.Struct({
 	path: Schema.String,
 	kind: Schema.String,
-	lines: Schema.Number,
+	lines: Schema.Finite,
 	texts: Schema.Array(CorpusText)
 });
 
@@ -113,18 +113,18 @@ const CorpusPackage = Schema.Struct({
 export const CorpusManifest = Schema.Struct({
 	format: Schema.Literal(corpusManifestFormat),
 	version: Schema.Literal(1),
-	seed: Schema.Number,
-	lines: Schema.Number,
+	seed: Schema.Finite,
+	lines: Schema.Finite,
 	root: Schema.String,
 	/** Absent in corpora written before the row struct became an asset; --clean still accepts them. */
 	rowStruct: Schema.optionalKey(Schema.String),
 	engineVersion: Schema.String,
-	counts: Schema.Record(Schema.String, Schema.Number),
+	counts: Schema.Record(Schema.String, Schema.Finite),
 	duplicates: Schema.Struct({
-		sharedSource: Schema.Number,
-		keyConflicts: Schema.Number,
-		empty: Schema.Number,
-		whitespace: Schema.Number
+		sharedSource: Schema.Finite,
+		keyConflicts: Schema.Finite,
+		empty: Schema.Finite,
+		whitespace: Schema.Finite
 	}),
 	packages: Schema.Array(CorpusPackage)
 });
@@ -132,7 +132,7 @@ export type CorpusManifest = typeof CorpusManifest.Type;
 
 /** Decodes manifest JSON text, failing on anything the commandlet would not write. */
 export function decodeCorpusManifest(contents: string): CorpusManifest {
-	return Schema.decodeUnknownSync(Schema.fromJsonString(CorpusManifest))(contents);
+	return Schema.decodeSync(Schema.fromJsonString(CorpusManifest))(contents);
 }
 
 /** Human summary of a manifest: totals, lines per text kind, packages per kind, duplicates. */

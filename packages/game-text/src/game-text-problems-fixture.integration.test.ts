@@ -130,7 +130,7 @@ const search = (target: LocalizationJoin["target"]): TextCorpusSearchRequest => 
 });
 describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () => {
 	it("reports every authored case, in memory and from the index, with pinned counts", async () => {
-		const cases = Schema.decodeUnknownSync(Schema.fromJsonString(Cases))(
+		const cases = Schema.decodeSync(Schema.fromJsonString(Cases))(
 			await readFile(
 				join(fixture.root, "FixtureSource/GameTextProblems/expected-cases.json"),
 				"utf8"
@@ -363,16 +363,18 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 					})
 				).pipe(
 					Effect.provide(
-						Layer.mergeAll(
-							gameTextIndexRefreshLayer(cacheRoot).pipe(
-								Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
-								Layer.provide(typeScriptIndexBuilderLayer),
-								Layer.provide(LocalizationEvidenceNodeLive)
+						Layer.provideMerge(
+							Layer.mergeAll(
+								gameTextIndexRefreshLayer(cacheRoot).pipe(
+									Layer.provide(gameTextIndexSourceNodeLayer(cacheRoot)),
+									Layer.provide(typeScriptIndexBuilderLayer),
+									Layer.provide(LocalizationEvidenceNodeLive)
+								),
+								LocalizationEvidenceNodeLive
 							),
-							LocalizationEvidenceNodeLive
+							assetReaderLayer({ executable: executable! })
 						)
-					),
-					Effect.provide(assetReaderLayer({ executable: executable! }))
+					)
 				)
 			);
 		} finally {
@@ -380,7 +382,7 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 		}
 	}, 180000);
 	it("matches Unreal's own conflict report for keys with several texts", async () => {
-		const cases = Schema.decodeUnknownSync(Schema.fromJsonString(Cases))(
+		const cases = Schema.decodeSync(Schema.fromJsonString(Cases))(
 			await readFile(
 				join(fixture.root, "FixtureSource/GameTextProblems/expected-cases.json"),
 				"utf8"

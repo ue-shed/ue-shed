@@ -103,8 +103,8 @@ export const adaptWasmSequenceResult = Effect.fn("Sequencer.adaptWasmResult")(fu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<SequenceReadResult> {
-	const path = yield* Schema.decodeUnknownEffect(SequenceAssetPath)(assetPath).pipe(
-		Effect.catch(() => Effect.succeed(undefined))
+	const path = yield* Schema.decodeEffect(SequenceAssetPath)(assetPath).pipe(
+		Effect.catchTag("SchemaError", () => Effect.undefined)
 	);
 	if (path === undefined) {
 		return {
@@ -142,7 +142,7 @@ export const adaptWasmSequenceResult = Effect.fn("Sequencer.adaptWasmResult")(fu
 				status: "ready"
 			};
 		}),
-		Effect.catch(() =>
+		Effect.catchTag("SchemaError", () =>
 			Effect.succeed(
 				failed(
 					path,
@@ -159,11 +159,8 @@ export const readWasmSequence = Effect.fn("Sequencer.readWasm")(function* (
 	assetPath: string,
 	bytes: Uint8Array
 ) {
-	const output = yield* Effect.try({
-		try: () => runtime.extractLevelSequences(assetPath, bytes),
-		catch: (cause) => cause
-	}).pipe(
-		Effect.catch(() =>
+	const output = yield* Effect.try(() => runtime.extractLevelSequences(assetPath, bytes)).pipe(
+		Effect.catchTag("UnknownError", () =>
 			Effect.succeed({
 				schema_version: 1,
 				status: "error",

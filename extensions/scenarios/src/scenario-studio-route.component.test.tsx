@@ -43,7 +43,7 @@ const liveHandle = ScenarioRunHandle.make({
 function clientWith(overrides: Partial<ScenarioStudioClient> = {}): ScenarioStudioClient {
 	return {
 		cancel: () => Effect.succeed({ ...movementGymRuns[1]!, status: "cancelled" as const }),
-		settings: () => Effect.succeed({ endpoint: liveHandle.endpoint }),
+		settings: Effect.sync(() => ({ endpoint: liveHandle.endpoint })),
 		start: () => Effect.succeed(liveHandle),
 		watch: () =>
 			Stream.make({
@@ -55,7 +55,7 @@ function clientWith(overrides: Partial<ScenarioStudioClient> = {}): ScenarioStud
 	};
 }
 
-const customScenario = Schema.decodeUnknownSync(ScenarioDocument)({
+const customScenario = Schema.decodeSync(ScenarioDocument)({
 	...movementGymScenario,
 	id: "scenario_custom",
 	title: "Custom patrol",
@@ -128,12 +128,11 @@ describe("ScenarioStudioRoute", () => {
 		renderRoute(
 			clientWith({
 				saveDocument: () => Effect.succeed({ status: "cancelled" }),
-				openDocument: () =>
-					Effect.succeed({
-						status: "completed",
-						path: "C:/Drafts/custom.json",
-						document: customScenario
-					})
+				openDocument: Effect.sync(() => ({
+					status: "completed",
+					path: "C:/Drafts/custom.json",
+					document: customScenario
+				}))
 			})
 		);
 		await screen.findByDisplayValue(liveHandle.endpoint);

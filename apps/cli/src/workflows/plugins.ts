@@ -149,7 +149,7 @@ export const runPluginsCacheList = Effect.fn("Cli.workflow.plugins_cache_list")(
 	(command: PluginsCacheListCommand) =>
 		observeCliOperation(
 			command._tag,
-			Effect.flatMap(PluginDistribution, (distribution) => distribution.listCached()).pipe(
+			Effect.flatMap(PluginDistribution, (distribution) => distribution.listCached).pipe(
 				Effect.flatMap(printJson),
 				Effect.provide(distributionLayer(command.cacheRoot, "."))
 			)

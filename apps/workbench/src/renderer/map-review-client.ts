@@ -287,11 +287,15 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 	readSavedWorld: Effect.fn("MapReviewClient.readSavedWorld")((mapPath) =>
 		loadSavedWorld(mapPath)
 	),
-	savedWorldMaps: Effect.fn("MapReviewClient.savedWorldMaps")(() => loadSavedWorldMaps()),
-	savedWorldProgress: Effect.fn("MapReviewClient.savedWorldProgress")(() =>
-		loadSavedWorldProgress()
+	savedWorldMaps: Effect.suspend(() => loadSavedWorldMaps()).pipe(
+		Effect.withSpan("MapReviewClient.savedWorldMaps")
 	),
-	connectWorld: Effect.fn("MapReviewClient.connectWorld")(() => loadWorldSnapshot()),
+	savedWorldProgress: Effect.suspend(() => loadSavedWorldProgress()).pipe(
+		Effect.withSpan("MapReviewClient.savedWorldProgress")
+	),
+	connectWorld: Effect.suspend(() => loadWorldSnapshot()).pipe(
+		Effect.withSpan("MapReviewClient.connectWorld")
+	),
 	focusActor: Effect.fn("MapReviewClient.focusActor")((actorId: ActorId, bringToFront: boolean) =>
 		request({
 			decode: parseWorldScoutFocusResult,
@@ -388,16 +392,16 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 			),
 		{ bufferSize: 32, strategy: "sliding" }
 	),
-	livePreviewAvailable: Effect.fn("MapReviewClient.livePreviewAvailable")(() =>
+	livePreviewAvailable: Effect.suspend(() =>
 		request({
 			decode: Schema.decodeUnknownEffect(CameraStatusResult),
 			invoke: () => window.ueShed.getStatus(),
 			operation: "mapReview.livePreviewAvailable"
 		}).pipe(
 			Effect.map((result) => result.status === "ready" && result.camera.stats.pipeConnected),
-			Effect.orElseSucceed(() => false)
+			Effect.catchTag("MapReviewClientError", () => Effect.succeed(false))
 		)
-	),
+	).pipe(Effect.withSpan("MapReviewClient.livePreviewAvailable")),
 	setLivePreviewFps: Effect.fn("MapReviewClient.setLivePreviewFps")((fps) =>
 		request({
 			decode: (value) => Effect.succeed(value),
@@ -420,13 +424,13 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 			operation: "mapReview.authorFromSelection"
 		})
 	),
-	authoringResume: Effect.fn("MapReviewClient.authoringResume")(() =>
+	authoringResume: Effect.suspend(() =>
 		request({
 			decode: decodeMapReviewAuthoringResult,
 			invoke: () => window.ueShed.mapReview.authoringResume(),
 			operation: "mapReview.authoringResume"
 		})
-	),
+	).pipe(Effect.withSpan("MapReviewClient.authoringResume")),
 	authoringPatch: Effect.fn("MapReviewClient.authoringPatch")(
 		(intent: MapReviewAuthoringPatchIntent) =>
 			request({
@@ -477,21 +481,21 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 				operation: "mapReview.capture"
 			})
 	),
-	load: Effect.fn("MapReviewClient.load")(
+	load: Effect.suspend(
 		(): Effect.Effect<MapReviewResult, MapReviewClientError> =>
 			request({
 				decode: decodeMapReviewResult,
 				invoke: () => window.ueShed.mapReview.load(),
 				operation: "mapReview.load"
 			})
-	),
-	reviewSetLibrary: Effect.fn("MapReviewClient.reviewSetLibrary")(() =>
+	).pipe(Effect.withSpan("MapReviewClient.load")),
+	reviewSetLibrary: Effect.suspend(() =>
 		request({
 			decode: decodeMapReviewSetLibraryResult,
 			invoke: () => window.ueShed.mapReview.reviewSets(),
 			operation: "mapReview.reviewSetLibrary"
 		})
-	),
+	).pipe(Effect.withSpan("MapReviewClient.reviewSetLibrary")),
 	previewCandidate: Effect.fn("MapReviewClient.previewCandidate")(
 		(candidateId): Effect.Effect<MapReviewCandidatePreviewResult, MapReviewClientError> =>
 			request({
@@ -514,13 +518,13 @@ export const mapReviewClient: MapReviewClientApi = MapReviewClient.of({
 			invoke: () => window.ueShed.mapReview.openMapInUnreal(mapPath),
 			operation: "mapReview.openMapInUnreal"
 		}),
-	editorWorld: Effect.fn("MapReviewClient.editorWorld")(() =>
+	editorWorld: Effect.suspend(() =>
 		request({
 			decode: Schema.decodeUnknownEffect(MapReviewEditorState),
 			invoke: () => window.ueShed.mapReview.editorWorld(),
 			operation: "mapReview.editorWorld"
 		})
-	),
+	).pipe(Effect.withSpan("MapReviewClient.editorWorld")),
 	cameraWorkspace: (intent) =>
 		request({
 			decode: Schema.decodeUnknownEffect(CameraWorkspaceResult),

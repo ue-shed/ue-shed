@@ -76,10 +76,10 @@ describe.skipIf(!executable)("what on disk differs from the index", () => {
 									catalogTimeoutMs: 120_000
 								})
 							),
-							Layer.provide(LocalizationEvidenceNodeLive)
+							Layer.provide(LocalizationEvidenceNodeLive),
+							Layer.provideMerge(assetReaderLayer({ executable }))
 						)
-					),
-					Effect.provide(assetReaderLayer({ executable }))
+					)
 				)
 			);
 			const none = { added: 0, changed: 0, removed: 0 };

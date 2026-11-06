@@ -302,7 +302,7 @@ export function localizationColumnsBuilder(
 		}
 		column[field][count] = tables[domains[field]]!.add(value);
 	}
-	const extra = ({ Text: _text, ...rest }: typeof LocalizationText.Type) =>
+	const extra = ({ Text: _text, ...rest }: LocalizationText) =>
 		Object.keys(rest).length ? JSON.stringify(rest) : "";
 	function jsonChild(value: Schema.Json, node: number, offset: number) {
 		if (options.format === "manifest") {
@@ -585,7 +585,7 @@ export const decodeLocalizationSnapshot = Effect.fn("LocalizationSnapshot.decode
 	maximum = 50
 ) {
 	const metaBytes = yield* reader.section("file.meta");
-	const meta = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Meta))(
+	const meta = yield* Schema.decodeEffect(Schema.fromJsonString(Meta))(
 		new TextDecoder().decode(metaBytes)
 	);
 	if (
@@ -595,7 +595,7 @@ export const decodeLocalizationSnapshot = Effect.fn("LocalizationSnapshot.decode
 		maximum < 0 ||
 		maximum > 10000
 	)
-		return yield* Effect.fail(importFailure("snapshot", "limit_exceeded"));
+		return yield* importFailure("snapshot", "limit_exceeded");
 	const end = Math.min(meta.count, start + maximum);
 	const values: Partial<Record<Field, number[]>> = {};
 	const decoded: Partial<Record<Field, string[]>> = {};

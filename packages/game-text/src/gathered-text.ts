@@ -8,7 +8,7 @@ const decodeLocalizationIdentity = Schema.decodeUnknownSync(LocalizationIdentity
 
 export function gatheredTextOccurrenceIdentity(
 	occurrence: TextOccurrence
-): typeof LocalizationIdentity.Type | null {
+): LocalizationIdentity | null {
 	if (occurrence.identity.status !== "resolved") return null;
 	return gatheredIdentity(
 		occurrence.identity.namespace,
@@ -43,7 +43,7 @@ export function gatheredIdentity(
 	namespace: string,
 	key: string,
 	stringTableEntry: boolean
-): typeof LocalizationIdentity.Type {
+): LocalizationIdentity {
 	return decodeLocalizationIdentity({
 		namespace: gatheredNamespace(namespace, stringTableEntry),
 		key
@@ -55,7 +55,7 @@ export function gatheredIdentity(
  * suffix and a `translation_key` filter value. Pass `gatheredTextIdentity(unit)` or a line's
  * identity, never a saved namespace that may still carry a package marker.
  */
-export function gatheredIdentityKey(identity: typeof LocalizationIdentity.Type): string {
+export function gatheredIdentityKey(identity: LocalizationIdentity): string {
 	return JSON.stringify([identity.namespace, identity.key]);
 }
 
@@ -74,7 +74,7 @@ function sliceTextUnit(unit: TextUnit, occurrences: readonly TextOccurrence[]): 
 
 /** Internal occurrence slices retain the corpus unit ID and its full saved identity. */
 export function gatheredTextGroups(corpus: TextCorpus) {
-	const tables = new Map<string, typeof LocalizationIdentity.Type>();
+	const tables = new Map<string, LocalizationIdentity>();
 	for (const unit of corpus.units) {
 		for (const occurrence of unit.occurrences) {
 			if (occurrence.location.kind !== "string_table_entry") continue;
@@ -86,14 +86,11 @@ export function gatheredTextGroups(corpus: TextCorpus) {
 				);
 		}
 	}
-	const rows = new Map<
-		string,
-		{ identity: typeof LocalizationIdentity.Type | null; units: TextUnit[] }
-	>();
+	const rows = new Map<string, { identity: LocalizationIdentity | null; units: TextUnit[] }>();
 	for (const unit of corpus.units) {
 		const slices = new Map<
 			string,
-			{ identity: typeof LocalizationIdentity.Type | null; occurrences: TextOccurrence[] }
+			{ identity: LocalizationIdentity | null; occurrences: TextOccurrence[] }
 		>();
 		for (const occurrence of unit.occurrences) {
 			const identity =

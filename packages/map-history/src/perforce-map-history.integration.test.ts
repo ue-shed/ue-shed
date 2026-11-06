@@ -80,7 +80,7 @@ function p4Environment(value: HarnessConfig): NodeJS.ProcessEnv {
 }
 
 function query(value: HarnessConfig, mapPath: string, range: { since: string; until: string }) {
-	return Schema.decodeUnknownSync(PerforceMapHistoryQuery)({
+	return Schema.decodeSync(PerforceMapHistoryQuery)({
 		limits: {
 			maxChangelists: 16,
 			maxConcurrency: 2,

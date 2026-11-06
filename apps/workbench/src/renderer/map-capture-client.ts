@@ -63,18 +63,20 @@ export const mapCaptureClient: MapCaptureClientApi = {
 			invoke: () => window.ueShed.mapCapture.capture(intent),
 			operation: "mapCapture.capture"
 		}),
-	choosePlan: () =>
+	choosePlan: Effect.suspend(() =>
 		request({
 			decode: parseMapCaptureSelectionResult,
 			invoke: () => window.ueShed.mapCapture.choosePlan(),
 			operation: "mapCapture.choosePlan"
-		}),
-	newPlan: () =>
+		})
+	),
+	newPlan: Effect.suspend(() =>
 		request({
 			decode: parseMapCaptureSelectionResult,
 			invoke: () => window.ueShed.mapCapture.newPlan(),
 			operation: "mapCapture.newPlan"
-		}),
+		})
+	),
 	openMap: (plan) =>
 		request({
 			decode: parseMapCaptureOpenResult,

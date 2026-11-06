@@ -134,7 +134,7 @@ describe("gather coverage", () => {
 									Stream.fromIterable(paths.map((path) => records.get(path)!))
 							})
 						);
-						const reader = yield* (yield* SharedIndex).open();
+						const reader = yield* (yield* SharedIndex).open;
 						const result = [];
 						for (const name of Object.keys(reader.manifest.active))
 							if (name.startsWith("package-text."))
@@ -222,7 +222,7 @@ describe("gather coverage", () => {
 							const index = yield* SharedIndex;
 							yield* Effect.scoped(
 								Effect.gen(function* () {
-									const writer = yield* index.writer();
+									const writer = yield* index.writer;
 									yield* writer.publishCold([
 										{
 											name: `package-text.${packageTextShard(path)}`,
@@ -243,7 +243,7 @@ describe("gather coverage", () => {
 									}
 								})
 							);
-							const reader = yield* index.open();
+							const reader = yield* index.open;
 							return yield* decodePackageTextColumns(
 								yield* reader.layer(`package-text.${packageTextShard(path)}`)
 							);

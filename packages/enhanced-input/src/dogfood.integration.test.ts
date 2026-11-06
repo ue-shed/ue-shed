@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { assetReaderLayer } from "@ue-shed/unreal-assets";
-import { Effect } from "effect";
+import { Layer, Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	EnhancedInputService,
@@ -25,7 +25,7 @@ describe.skipIf(!dogfoodRoot || !executable)("Enhanced Input local dogfood", () 
 						join(dogfoodRoot!, "IMC_MinigameInput.uasset")
 					)
 				};
-			}).pipe(Effect.provide(EnhancedInputServiceLive), Effect.provide(readerLayer))
+			}).pipe(Effect.provide(Layer.provideMerge(EnhancedInputServiceLive, readerLayer)))
 		);
 
 		expect(report.submit.coverage.inputActions).toBe(1);

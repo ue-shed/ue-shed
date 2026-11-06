@@ -39,7 +39,7 @@ async function fixture(mixed: boolean) {
 	return root;
 }
 
-test("validates the complete accumulated plan without Git metadata or a main ref", async () => {
+void test("validates the complete accumulated plan without Git metadata or a main ref", async () => {
 	const root = await fixture(false);
 	try {
 		assert.equal(existsSync(join(root, ".git")), false);
@@ -53,7 +53,7 @@ test("validates the complete accumulated plan without Git metadata or a main ref
 	}
 });
 
-test("rejects accumulated notes mixing private and public releases without Git metadata", async () => {
+void test("rejects accumulated notes mixing private and public releases without Git metadata", async () => {
 	const root = await fixture(true);
 	try {
 		await assert.rejects(checkReleasePlan(root), /mixed changeset[\s\S]*@fixture\/private/iu);

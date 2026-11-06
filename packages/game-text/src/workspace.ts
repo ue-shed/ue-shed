@@ -187,9 +187,9 @@ export interface GameTextWorkspaceApi {
 	readonly operationTarget: (
 		name: LocalizationJoin["target"]
 	) => Effect.Effect<LocalizationTarget | undefined>;
-	readonly operationBusyReason: () => Effect.Effect<string | undefined>;
-	readonly beginOperation: () => Effect.Effect<boolean>;
-	readonly endOperation: () => Effect.Effect<void>;
+	readonly operationBusyReason: Effect.Effect<string | undefined>;
+	readonly beginOperation: Effect.Effect<boolean>;
+	readonly endOperation: Effect.Effect<void>;
 	readonly refreshAfterOperation: (
 		target: LocalizationJoin["target"],
 		gather: boolean
@@ -222,7 +222,7 @@ export interface GameTextWorkspaceApi {
 	readonly localizationLinesFile: (
 		request: TextCorpusSearchRequest
 	) => Effect.Effect<LocalizationLinesFileResult>;
-	readonly localizationTargets: () => Effect.Effect<LocalizationTargetsResult>;
+	readonly localizationTargets: Effect.Effect<LocalizationTargetsResult>;
 	readonly localizationTarget: (
 		target: LocalizationJoin["target"]
 	) => Effect.Effect<LocalizationTargetResult>;
@@ -268,24 +268,24 @@ export interface GameTextWorkspaceApi {
 	readonly investigationSave: (
 		query: GameTextInvestigationQuery
 	) => Effect.Effect<InvestigationFileResult>;
-	readonly investigationOpen: () => Effect.Effect<GameTextInvestigationPresetResult>;
+	readonly investigationOpen: Effect.Effect<GameTextInvestigationPresetResult>;
 	/** Scans the selected project, unless `refresh` is false: then opens its committed index. */
 	readonly configuredRefresh: (
 		request: GameTextWorkspaceRefreshRequest
 	) => Effect.Effect<TextCorpusQueryRunResult>;
-	readonly configuredScan: () => Effect.Effect<TextCorpusRunResult>;
-	readonly progress: () => Effect.Effect<GameTextWorkspaceProgress>;
+	readonly configuredScan: Effect.Effect<TextCorpusRunResult>;
+	readonly progress: Effect.Effect<GameTextWorkspaceProgress>;
 	/**
 	 * The workspace's progress, then each change to it: the host's project progress while it
 	 * enumerates or scans, then Game Text's own stages. Consecutive equal values are sent once.
 	 */
-	readonly progressChanges: () => Stream.Stream<GameTextWorkspaceProgress>;
+	readonly progressChanges: Stream.Stream<GameTextWorkspaceProgress>;
 	readonly focus: (request: TextCorpusFocusRequest) => Effect.Effect<TextCorpusFocusResult>;
 	readonly search: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusSearchResult>;
 	/** The request's rows, or its open groups' first rows, without the aggregates `search` adds. */
 	readonly searchRows: (request: TextCorpusSearchRequest) => Effect.Effect<TextCorpusRowsResult>;
-	readonly chooseQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
-	readonly reloadQualityRules: () => Effect.Effect<TextQualityQueryRunResult>;
+	readonly chooseQualityRules: Effect.Effect<TextQualityQueryRunResult>;
+	readonly reloadQualityRules: Effect.Effect<TextQualityQueryRunResult>;
 	readonly createStarterRules: (
 		request: GameTextStarterRulesRequest
 	) => Effect.Effect<TextQualityQueryRunResult>;
@@ -358,7 +358,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		signalProgress();
 	};
 	if (host.project.progressChanges)
-		yield* Stream.runForEach(host.project.progressChanges(), () =>
+		yield* Stream.runForEach(host.project.progressChanges, () =>
 			Effect.sync(signalProgress)
 		).pipe(Effect.forkIn(workspaceScope));
 	const steps = yield* GameTextIndexSteps;
@@ -366,7 +366,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const { chooseLocalizationFile, compareLocalizationFiles } =
 		yield* makeWorkspaceFileComparison(host);
 	const codeSource = (projectRoot: string) =>
-		host.codeSource ? host.codeSource(projectRoot) : Effect.succeed(undefined);
+		host.codeSource ? host.codeSource(projectRoot) : Effect.undefined;
 	const refreshIndex = yield* makeRetainedGameTextIndexWith(
 		Effect.fn("GameText.workspace.prepareWorkspace")(function* (request) {
 			const preferred = yield* localization
@@ -391,16 +391,14 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			if (Option.isNone(opened) && preferred?.targetName !== undefined)
 				opened = yield* steps.openCommitted({ projectRoot: request.projectRoot });
 			if (Option.isSome(opened)) return opened.value;
-			return yield* Effect.fail(
-				new GameTextIndexError({
-					code: "index_failed",
-					operation: "cache",
-					message: "No usable committed Game Text index exists.",
-					recovery: "Scan the project.",
-					nextStep: "reconcile",
-					retrySafe: true
-				})
-			);
+			return yield* new GameTextIndexError({
+				code: "index_failed",
+				operation: "cache",
+				message: "No usable committed Game Text index exists.",
+				recovery: "Scan the project.",
+				nextStep: "reconcile",
+				retrySafe: true
+			});
 		})
 	);
 	const dialog = host.files;
@@ -408,7 +406,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const activity = yield* Ref.make({ scans: 0, operation: false });
 	/** Whether a scan or an operation runs is part of progress. */
 	const activityChanged = Effect.sync(signalProgress);
-	const operationBusyReason = () =>
+	const operationBusyReason = Effect.suspend(() =>
 		Ref.get(activity).pipe(
 			Effect.map((value) =>
 				value.operation
@@ -417,7 +415,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						? "A project scan is running. Wait before running Unreal steps."
 						: undefined
 			)
-		);
+		)
+	);
 	const guardScan = <A, B, R>(scan: Effect.Effect<A, never, R>, unavailable: () => B) =>
 		Effect.uninterruptibleMask((restore) =>
 			Effect.gen(function* () {
@@ -459,7 +458,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	>(undefined);
 	const progress = Effect.fn("GameText.workspace.progress")(
 		function* (): Effect.fn.Return<GameTextWorkspaceProgress> {
-			const projectProgress = yield* project.progress();
+			const projectProgress = yield* project.progress;
 			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
 				return {
 					phase: `project_${projectProgress.phase}`,
@@ -495,11 +494,13 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const runScan = (projectRoot: string) =>
 		scanCorpus(projectRoot).pipe(
 			Effect.map((corpus) => ({ corpus, status: "completed" as const })),
-			Effect.catch((error) =>
-				Effect.succeed({
-					error: indexPublicFailure(error),
-					status: "failed" as const
-				})
+			Effect.catchTag(
+				["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
+				(error) =>
+					Effect.succeed({
+						error: indexPublicFailure(error),
+						status: "failed" as const
+					})
 			)
 		);
 	const investigationSnapshot = yield* Ref.make<
@@ -523,7 +524,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		| undefined
 	>(undefined);
 	const currentIndex = Effect.fn("GameText.workspace.currentIndex")(function* () {
-		const selected = yield* project.current();
+		const selected = yield* project.current;
 		const owner = yield* Ref.get(modelSelection);
 		if (selected.status !== "ready" || selected.project.projectRoot !== owner?.projectRoot)
 			return undefined;
@@ -533,9 +534,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const currentModel = <A>(read: (index: RetainedGameTextIndexResult) => A) =>
 		currentIndex().pipe(Effect.map((index) => (index ? read(index) : undefined)));
 	const currentValue = <A>(ref: Ref.Ref<A | undefined>) =>
-		currentIndex().pipe(
-			Effect.flatMap((index) => (index ? Ref.get(ref) : Effect.succeed(undefined)))
-		);
+		currentIndex().pipe(Effect.flatMap((index) => (index ? Ref.get(ref) : Effect.undefined)));
 	// Review records name who set them; the host's policy decides who that is.
 	const reviewer = host.reviewer ?? (() => "game-text");
 	const localization = yield* makeGameTextWorkspaceLocalization(
@@ -552,7 +551,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	).pipe(Effect.provideService(GameTextIndexProgressReporter, reportProgress));
 	// The host has no selection event port. Retire on the next workspace call that observes a switch.
 	const unselected = Effect.fn("GameText.workspace.unselected")(function* () {
-		const selected = yield* project.current();
+		const selected = yield* project.current;
 		const owner = yield* Ref.get(modelSelection);
 		return (
 			owner !== undefined &&
@@ -581,13 +580,15 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		Effect.uninterruptible
 	);
 	/** Every host read pins its model for the complete operation and observes project switches. */
+	const scopedRead = <A, E, R>(operation: Effect.Effect<A, E, R>) =>
+		Effect.scoped(retireUnselected().pipe(Effect.andThen(operation)));
 	const scoped =
 		<Args extends unknown[], A, E, R>(operation: (...args: Args) => Effect.Effect<A, E, R>) =>
 		(...args: Args) =>
-			Effect.scoped(retireUnselected().pipe(Effect.andThen(operation(...args))));
+			scopedRead(operation(...args));
 	const consistentIndex = Effect.fn("GameText.workspace.consistentIndex")(function* () {
 		const index = yield* currentIndex();
-		const selected = yield* project.current();
+		const selected = yield* project.current;
 		const owner = yield* Ref.get(modelSelection);
 		// A cached model is searchable but unverified, so it never counts as the current generation.
 		return selected.status === "ready" &&
@@ -602,7 +603,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		return yield* cachedIndex.refresh({ projectRoot }).pipe(
 			Effect.flatMap((indexed) =>
 				Effect.gen(function* () {
-					const selected = yield* project.current();
+					const selected = yield* project.current;
 					if (
 						selected.status !== "ready" ||
 						selected.project.projectRoot !== projectRoot ||
@@ -629,13 +630,16 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				}).pipe(publication.withPermit, Effect.uninterruptible)
 			),
 			// oxlint-disable-next-line anti-slop/no-effect-catch-all -- Cache open always falls back to Scan project.
-			Effect.catch(() => Effect.succeed({ status: "not_scanned" as const }))
+			Effect.catchTag(
+				["SnapshotFormatError", "SnapshotStoreError", "GameTextIndexError"],
+				() => Effect.succeed({ status: "not_scanned" as const })
+			)
 		);
 	});
 	const runRefresh = (projectRoot: string, index: ProjectCandidates) =>
 		Effect.gen(function* () {
 			const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
-			const selected = yield* project.current();
+			const selected = yield* project.current;
 			if (
 				selected.status !== "ready" ||
 				selected.project.projectRoot !== projectRoot ||
@@ -652,7 +656,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						const modelRevision = indexed.revision;
 						/** This scan is still the latest for the selected project generation. */
 						const owned = Effect.gen(function* () {
-							const latest = yield* project.current();
+							const latest = yield* project.current;
 							return (
 								(yield* Ref.get(scanRevision)) === revision &&
 								latest.status === "ready" &&
@@ -769,11 +773,13 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						}
 					})
 				),
-				Effect.catch((error) =>
-					Effect.succeed({
-						error: indexPublicFailure(error),
-						status: "failed" as const
-					})
+				Effect.catchTag(
+					["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
+					(error) =>
+						Effect.succeed({
+							error: indexPublicFailure(error),
+							status: "failed" as const
+						})
 				)
 			);
 		});
@@ -782,16 +788,16 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		refreshProject: typeof project.refresh = project.refresh
 	) {
 		yield* retireUnselected();
-		const current = yield* refreshProject();
+		const current = yield* refreshProject;
 		if (current.status === "not_configured" || current.status === "cancelled") {
 			return { status: "not_configured" as const };
 		}
 		if (current.status === "failed") {
 			return unavailableProject(current.error.message, current.error.recovery);
 		}
-		return yield* project.candidates().pipe(
+		return yield* project.candidates.pipe(
 			Effect.flatMap(() => runScan(current.project.projectRoot)),
-			Effect.catch((error) =>
+			Effect.catchTag(["GameTextWorkspaceHostFailure"], (error) =>
 				Effect.succeed(unavailableProject(error.message, error.recovery))
 			)
 		);
@@ -805,7 +811,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const refreshes = yield* Cache.makeWith(
 		(key: QueryKey) =>
 			Effect.gen(function* () {
-				const index = yield* project.candidates();
+				const index = yield* project.candidates;
 				if (
 					index.summary.projectRoot !== key.projectRoot ||
 					index.generation !== key.generation
@@ -816,7 +822,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					);
 				return yield* runRefresh(key.projectRoot, index);
 			}).pipe(
-				Effect.catch((error) =>
+				Effect.catchTag(["GameTextWorkspaceHostFailure"], (error) =>
 					Effect.succeed(unavailableQueryProject(error.message, error.recovery))
 				)
 			),
@@ -827,7 +833,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		refreshProject: typeof project.refresh = project.refresh
 	) {
 		yield* retireUnselected();
-		const current = yield* refresh ? refreshProject() : project.current();
+		const current = yield* refresh ? refreshProject : project.current;
 		if (current.status === "not_configured" || current.status === "cancelled") {
 			return { status: "not_configured" as const };
 		}
@@ -1132,7 +1138,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					retrySafe: true
 				}
 			};
-		const current = yield* project.current();
+		const current = yield* project.current;
 		if (current.status !== "ready" || !(yield* currentModel(retainedRevision)))
 			return { status: "not_ready" as const };
 		const root = current.project.projectRoot;
@@ -1171,7 +1177,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			});
 			const document = yield* decodeGameTextRuleDocumentJson(new TextDecoder().decode(bytes));
 			const prepared = yield* prepareQualityRules(document);
-			const latest = yield* project.current();
+			const latest = yield* project.current;
 			if (
 				latest.status !== "ready" ||
 				latest.project.projectRoot !== root ||
@@ -1182,19 +1188,21 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			yield* Ref.set(qualityRulePath, { path, projectRoot: root });
 			return yield* publishQualityRules(prepared);
 		}).pipe(
-			Effect.catch((error) =>
-				Effect.succeed({
-					status: "failed" as const,
-					error: {
-						code:
-							"_tag" in error && error._tag === "GameTextRuleDocumentError"
-								? ("invalid_rules" as const)
-								: ("read_failed" as const),
-						message: error.message,
-						recovery: error.recovery,
-						retrySafe: true
-					}
-				})
+			Effect.catchTag(
+				["GameTextWorkspaceHostFailure", "GameTextRuleDocumentError"],
+				(error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						error: {
+							code:
+								"_tag" in error && error._tag === "GameTextRuleDocumentError"
+									? ("invalid_rules" as const)
+									: ("read_failed" as const),
+							message: error.message,
+							recovery: error.recovery,
+							retrySafe: true
+						}
+					})
 			)
 		);
 	});
@@ -1207,7 +1215,11 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				filters: [{ extensions: ["json"], name: "Game Text quality rules" }],
 				title: "Choose Game Text quality rules"
 			})
-			.pipe(Effect.catch(() => Effect.succeed({ status: "cancelled" as const })));
+			.pipe(
+				Effect.catchTag(["GameTextWorkspaceHostFailure"], () =>
+					Effect.succeed({ status: "cancelled" as const })
+				)
+			);
 		if (choice.status === "cancelled") return choice;
 		const bytes = yield* files.readFile(choice.path, { maxBytes: 1_048_576 }).pipe(
 			Effect.match({
@@ -1282,19 +1294,21 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				return { status: "not_ready" as const };
 			return yield* previewQualityRules(document);
 		}).pipe(
-			Effect.catch((error) =>
-				Effect.succeed({
-					status: "failed" as const,
-					error: {
-						code:
-							"_tag" in error && error._tag === "GameTextRuleDocumentError"
-								? ("invalid_rules" as const)
-								: ("read_failed" as const),
-						message: error.message,
-						recovery: error.recovery,
-						retrySafe: true
-					}
-				})
+			Effect.catchTag(
+				["GameTextWorkspaceHostFailure", "GameTextRuleDocumentError"],
+				(error) =>
+					Effect.succeed({
+						status: "failed" as const,
+						error: {
+							code:
+								"_tag" in error && error._tag === "GameTextRuleDocumentError"
+									? ("invalid_rules" as const)
+									: ("read_failed" as const),
+							message: error.message,
+							recovery: error.recovery,
+							retrySafe: true
+						}
+					})
 			)
 		);
 	});
@@ -1367,7 +1381,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 
 	// Reads hydrate asynchronously; a model replaced meanwhile (project switch, rescan, new rules)
 	// answers not ready rather than publishing the retired model's result.
-	const qualityRead = <A>(read: (model: AsyncTextQualityQuery) => Effect.Effect<A, unknown>) =>
+	const qualityRead = <A, E>(read: (model: AsyncTextQualityQuery) => Effect.Effect<A, E>) =>
 		Effect.gen(function* () {
 			const model = yield* currentValue(qualityModel);
 			if (!model) return undefined;
@@ -1402,7 +1416,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const currentInvestigationSnapshot = Effect.fn("GameText.workspace.investigationSnapshot")(
 		function* () {
 			const snapshot = yield* Ref.get(investigationSnapshot);
-			const current = yield* project.current();
+			const current = yield* project.current;
 			if (
 				!snapshot ||
 				(yield* currentModel(retainedRevision)) !== snapshot.revision ||
@@ -1410,14 +1424,12 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				current.project.projectRoot !== snapshot.source.projectRoot ||
 				(current.project.generation ?? 0) !== snapshot.source.generation
 			)
-				return yield* Effect.fail(
-					new InvestigationError({
-						retrySafe: true,
-						nextStep: "fix_input",
-						message: "No current scan is available.",
-						recovery: "Refresh this workspace before saving or exporting."
-					})
-				);
+				return yield* new InvestigationError({
+					retrySafe: true,
+					nextStep: "fix_input",
+					message: "No current scan is available.",
+					recovery: "Refresh this workspace before saving or exporting."
+				});
 			return snapshot;
 		}
 	);
@@ -1490,7 +1502,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		function* (query: GameTextInvestigationQuery) {
 			yield* currentInvestigationSnapshot();
 			const { localized, withFindings } = yield* investigationCorpus(query);
-			if (localized === undefined) return yield* Effect.fail(targetNotLoaded(query));
+			if (localized === undefined) return yield* targetNotLoaded(query);
 			return yield* saveInvestigation(dialog, {
 				extension: "csv",
 				write: (path) =>
@@ -1500,7 +1512,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					)
 			});
 		},
-		Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+		Effect.catchTag("InvestigationError", (error) =>
+			Effect.succeed(investigationFailure(error))
+		)
 	);
 	/**
 	 * A corpus query's investigation JSON. The host writes the document around its units, made
@@ -1510,10 +1524,10 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		function* (query: GameTextInvestigationQuery) {
 			const snapshot = yield* currentInvestigationSnapshot();
 			const { localized, request } = yield* investigationCorpus(query);
-			if (localized === undefined) return yield* Effect.fail(targetNotLoaded(query));
-			const header = yield* localized
-				.readCorpusHeader()
-				.pipe(Effect.mapError(investigationIndexFailure));
+			if (localized === undefined) return yield* targetNotLoaded(query);
+			const header = yield* localized.readCorpusHeader.pipe(
+				Effect.mapError(investigationIndexFailure)
+			);
 			const document = yield* exportGameTextInvestigation(
 				{
 					sourceQuality: () =>
@@ -1533,7 +1547,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					)
 			});
 		},
-		Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+		Effect.catchTag("InvestigationError", (error) =>
+			Effect.succeed(investigationFailure(error))
+		)
 	);
 	const investigationExport = Effect.fn("GameText.workspace.investigationExport")(
 		(query: GameTextInvestigationQuery, format: InvestigationFormat) =>
@@ -1565,7 +1581,15 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 										: result.report.findings.length
 							});
 						}),
-						Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+						Effect.catchTag(
+							[
+								"SnapshotStoreError",
+								"SnapshotFormatError",
+								"GameTextIndexError",
+								"InvestigationError"
+							],
+							(error) => Effect.succeed(investigationFailure(error))
+						)
 					)
 	);
 	/** Saves a query and the scan's rules as a preset; checking it reads nothing of the scan. */
@@ -1573,7 +1597,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		function* (query: GameTextInvestigationQuery) {
 			const snapshot = yield* currentInvestigationSnapshot();
 			const preset = investigationPreset(query, snapshot.rules);
-			yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)(preset).pipe(
+			yield* Schema.decodeEffect(GameTextInvestigationPreset)(preset).pipe(
 				Effect.mapError(
 					(cause) =>
 						new InvestigationError({
@@ -1593,7 +1617,9 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				projectRoot: snapshot.source.projectRoot
 			});
 		},
-		Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+		Effect.catchTag("InvestigationError", (error) =>
+			Effect.succeed(investigationFailure(error))
+		)
 	);
 	const investigationOpen = Effect.fn("GameText.workspace.investigationOpen")(() =>
 		Effect.gen(function* () {
@@ -1615,7 +1641,11 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			}
 			yield* Ref.set(qualityRulePath, undefined);
 			return opened;
-		}).pipe(Effect.catch((error) => Effect.succeed(investigationFailure(error))))
+		}).pipe(
+			Effect.catchTag("InvestigationError", (error) =>
+				Effect.succeed(investigationFailure(error))
+			)
+		)
 	);
 
 	// A scan owns both host refresh and text preparation. Admission and the generation handoff
@@ -1637,21 +1667,20 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 						Effect.uninterruptibleMask((restore) =>
 							Effect.gen(function* () {
 								// Host reads can suspend before a producer exists; cancellation must release admission.
-								const key = scanKey(yield* restore(project.current()));
+								const key = scanKey(yield* restore(project.current));
 								const current = yield* Ref.get(running);
 								if (current?.key === key) return current.done;
 								const next = yield* Deferred.make<A>();
 								yield* Ref.set(running, { key, done: next });
-								const refreshProject = () =>
-									Effect.gen(function* () {
-										const state = yield* project.refresh();
-										yield* Ref.update(running, (value) =>
-											value?.done === next
-												? { key: scanKey(state), done: next }
-												: value
-										);
-										return state;
-									}).pipe(start.withPermit);
+								const refreshProject = Effect.gen(function* () {
+									const state = yield* project.refresh;
+									yield* Ref.update(running, (value) =>
+										value?.done === next
+											? { key: scanKey(state), done: next }
+											: value
+									);
+									return state;
+								}).pipe(start.withPermit);
 								yield* scan(refreshProject).pipe(
 									Effect.exit,
 									Effect.flatMap((exit) =>
@@ -1690,7 +1719,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	return {
 		operationStateTarget: (name) =>
 			Effect.gen(function* () {
-				const current = yield* project.current();
+				const current = yield* project.current;
 				const owner = yield* Ref.get(modelSelection);
 				if (
 					current.status !== "ready" ||
@@ -1703,21 +1732,23 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		operationTarget: scoped((name) =>
 			consistentIndex().pipe(
 				Effect.flatMap((index) =>
-					index ? localization.operationTarget(name) : Effect.succeed(undefined)
+					index ? localization.operationTarget(name) : Effect.undefined
 				)
 			)
 		),
 		operationBusyReason,
-		beginOperation: () =>
+		beginOperation: Effect.suspend(() =>
 			Ref.modify(activity, (value) =>
 				value.operation || value.scans > 0
 					? [false, value]
 					: [true, { ...value, operation: true }]
-			).pipe(Effect.tap(() => activityChanged)),
-		endOperation: () =>
+			).pipe(Effect.tap(() => activityChanged))
+		),
+		endOperation: Effect.suspend(() =>
 			Ref.update(activity, (value) => ({ ...value, operation: false })).pipe(
 				Effect.andThen(activityChanged)
-			),
+			)
+		),
 		refreshAfterOperation: (target, gather) =>
 			Effect.scoped(
 				Effect.gen(function* () {
@@ -1742,7 +1773,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				Effect.flatMap((request) => localization.linesFile(request, dialog))
 			)
 		),
-		localizationTargets: scoped(localization.targets),
+		localizationTargets: scopedRead(Effect.suspend(localization.targets)),
 		localizationTarget: scoped(localization.select),
 		localizationFocus: scoped((request: LocalizationFocusRequest) =>
 			localization
@@ -1764,37 +1795,33 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			investigationExport(request.query, request.format)
 		),
 		investigationSave: scoped(investigationSave),
-		investigationOpen: scoped(investigationOpen),
+		investigationOpen: scopedRead(Effect.suspend(investigationOpen)),
 		configuredRefresh: ({ refresh = true }: GameTextWorkspaceRefreshRequest) =>
 			refresh ? sharedRefresh(refreshScan) : Effect.scoped(configuredRefresh(false)),
-		configuredScan: () => sharedScan(fullScan),
+		configuredScan: Effect.suspend(() => sharedScan(fullScan)),
 		focus: scoped(focus),
-		progress: scoped(progress),
-		progressChanges: () =>
-			Stream.unwrap(
-				Effect.gen(function* () {
-					// Subscribed before the first read, so no change between them is missed.
-					const changes = yield* PubSub.subscribe(progressChanged);
-					return Stream.concat(
-						Stream.make(undefined),
-						Stream.fromSubscription(changes)
-					).pipe(
-						Stream.mapEffect(() => progress()),
-						Stream.changesWith(
-							(left, right) =>
-								left.phase === right.phase &&
-								left.completed === right.completed &&
-								left.total === right.total &&
-								left.findings === right.findings &&
-								left.step === right.step
-						)
-					);
-				})
-			),
+		progress: scopedRead(Effect.suspend(progress)),
+		progressChanges: Stream.unwrap(
+			Effect.gen(function* () {
+				// Subscribed before the first read, so no change between them is missed.
+				const changes = yield* PubSub.subscribe(progressChanged);
+				return Stream.concat(Stream.make(undefined), Stream.fromSubscription(changes)).pipe(
+					Stream.mapEffect(() => progress()),
+					Stream.changesWith(
+						(left, right) =>
+							left.phase === right.phase &&
+							left.completed === right.completed &&
+							left.total === right.total &&
+							left.findings === right.findings &&
+							left.step === right.step
+					)
+				);
+			})
+		),
 		search: scoped(search),
 		searchRows: scoped(searchRows),
-		chooseQualityRules: scoped(chooseQualityRules),
-		reloadQualityRules: scoped(reloadQualityRules),
+		chooseQualityRules: scopedRead(Effect.suspend(chooseQualityRules)),
+		reloadQualityRules: scopedRead(Effect.suspend(reloadQualityRules)),
 		createStarterRules: scoped((request: GameTextStarterRulesRequest) =>
 			createStarterRules(request.loadExisting)
 		),

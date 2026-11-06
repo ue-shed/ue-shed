@@ -56,7 +56,7 @@ export class GameTextIndexSource extends Context.Service<
 		readonly read: (
 			projectRoot: string,
 			entries: readonly PackageTextInventoryEntry[]
-		) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, GameTextIndexError>;
+		) => Stream.Stream<SavedAssetPackageTextEvent, GameTextIndexError>;
 		/**
 		 * Verified native preparation. With `snapshots`, each complete shard stays in one
 		 * request and the reader writes `<directory>/<group>.snapshot`. Completion events name

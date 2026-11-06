@@ -7,7 +7,7 @@ import {
 	unrealRemoteControlLaunchArguments
 } from "./workbench-tools.ts";
 
-test("enables every discovered plugin with Unreal's plural plugin switch", () => {
+void test("enables every discovered plugin with Unreal's plural plugin switch", () => {
 	assert.deepEqual(unrealRemoteControlLaunchArguments(["UEShedCore", "UEShedCameras"], 30_001), [
 		"-EnablePlugins=UEShedCore,UEShedCameras,RemoteControl",
 		"-RCWebControlEnable",
@@ -19,7 +19,7 @@ test("enables every discovered plugin with Unreal's plural plugin switch", () =>
 	]);
 });
 
-test("prefers a live Remote Control server over the next free port", async () => {
+void test("prefers a live Remote Control server over the next free port", async () => {
 	const endpoint = await resolveRemoteControlEndpoint(
 		{},
 		{
@@ -34,7 +34,7 @@ test("prefers a live Remote Control server over the next free port", async () =>
 	assert.equal(endpoint, "http://127.0.0.1:30001");
 });
 
-test("falls back to a free port pair when nothing answers", async () => {
+void test("falls back to a free port pair when nothing answers", async () => {
 	const endpoint = await resolveRemoteControlEndpoint(
 		{},
 		{
@@ -44,7 +44,7 @@ test("falls back to a free port pair when nothing answers", async () => {
 	assert.match(endpoint, /^http:\/\/127\.0\.0\.1:300\d\d$/);
 });
 
-test("offers both offline fixture maps only for the fixture preset", async () => {
+void test("offers both offline fixture maps only for the fixture preset", async () => {
 	const options = { fetch: async () => ({ ok: false }) };
 	const fixtureEnvironment = await createWorkbenchEnvironment(
 		{ ...process.env, UE_SHED_UASSET_EXECUTABLE: "uasset-test" },
@@ -67,7 +67,7 @@ test("offers both offline fixture maps only for the fixture preset", async () =>
 	assert.equal(projectEnvironment.UE_SHED_SAVED_WORLD_MAPS, undefined);
 });
 
-test("leaves interactive showcase project selection to local history", async () => {
+void test("leaves interactive showcase project selection to local history", async () => {
 	const environment = await createWorkbenchEnvironment(
 		{
 			UE_SHED_REMOTE_CONTROL_ENDPOINT: "http://127.0.0.1:30001",

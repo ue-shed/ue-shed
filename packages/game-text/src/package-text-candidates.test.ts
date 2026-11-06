@@ -28,7 +28,7 @@ it("uses the saved gather flag and summary without a class whitelist", () => {
 	expect(isPackageTextCandidate({ ...header, hasTextProperty: true })).toBe(false);
 });
 it.live("keeps old corpus decoding and makes exclusions visible in loc status coverage", () => {
-	const corpus = Schema.decodeUnknownSync(TextCorpus)({
+	const corpus = Schema.decodeSync(TextCorpus)({
 		schemaVersion: 1,
 		status: "complete",
 		units: [],
@@ -46,7 +46,7 @@ it.live("keeps old corpus decoding and makes exclusions visible in loc status co
 		}
 	});
 	const mapped = textCorpusWithExcludedPackages(corpus, ["Content/Native.uasset"]);
-	expect(Schema.decodeUnknownSync(TextCorpus)(mapped)).toEqual(mapped);
+	expect(Schema.decodeSync(TextCorpus)(mapped)).toEqual(mapped);
 	expect(textPackageCoverageSummary(mapped.packageCoverage ?? [])).toEqual({
 		counts: { complete: 0, partial: 0, failed: 0, not_gatherable: 1 },
 		packages: [{ packageFile: "Content/Native.uasset", status: "not_gatherable" }],
@@ -58,9 +58,9 @@ it.live("keeps old corpus decoding and makes exclusions visible in loc status co
 		{ units: [] },
 		{ notGatherable: ["Content/Native.uasset"] },
 		({ query }) =>
-			Effect.map(query.summary(), (summary) =>
+			Effect.map(query.summary, (summary) =>
 				expect(
-					Schema.decodeUnknownSync(TextCorpusQuerySummary)(summary).notGatherablePackages
+					Schema.decodeSync(TextCorpusQuerySummary)(summary).notGatherablePackages
 				).toBe(1)
 			)
 	);

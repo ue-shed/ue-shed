@@ -5,7 +5,7 @@ import {
 } from "@ue-shed/engine";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Context, Effect, Layer, Schema, type Stream } from "effect";
+import { type Brand, Context, Effect, Layer, Schema, type Stream } from "effect";
 import { WorldActorSnapshot, type ActorId as ActorIdType } from "./actor-models.js";
 import {
 	ActorObservationRecoveryExhaustedError,
@@ -42,16 +42,16 @@ const ObservationCadenceResponse = Schema.Union([
 	})
 ]);
 
-export class ObservatoryConnectionError extends Schema.TaggedError<ObservatoryConnectionError>()(
-	"ObservatoryConnectionError",
-	{
-		operation: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		/** Stable native category, when the Observatory plugin supplies one. */
-		code: Schema.optionalKey(Schema.String)
-	}
-) {}
+export class ObservatoryConnectionError extends Schema.TaggedError<
+	ObservatoryConnectionError,
+	Brand.Brand<"packages/observatory/src/index/ObservatoryConnectionError">
+>()("ObservatoryConnectionError", {
+	operation: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	/** Stable native category, when the Observatory plugin supplies one. */
+	code: Schema.optionalKey(Schema.String)
+}) {}
 
 export interface ObservatoryApi {
 	/** Retunes an active named-pipe producer without replacing its session or writer. */
@@ -93,7 +93,7 @@ const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 
 function connectionError(
 	operation: string,
-	cause: RemoteControlClientError | unknown
+	cause: RemoteControlClientError | Schema.SchemaError
 ): ObservatoryConnectionError {
 	return new ObservatoryConnectionError({
 		message: isRemoteControlClientError(cause)
@@ -134,15 +134,13 @@ export const observatoryLayer = Layer.effect(
 				Effect.mapError((cause) => connectionError("actor_snapshot.decode", cause))
 			);
 			if (response.status === "failed") {
-				return yield* Effect.fail(
-					new ObservatoryConnectionError({
-						message: response.message,
-						operation: "actor_snapshot",
-						recovery: response.recovery,
-						retrySafe: true,
-						nextStep: "retry"
-					})
-				);
+				return yield* new ObservatoryConnectionError({
+					message: response.message,
+					operation: "actor_snapshot",
+					recovery: response.recovery,
+					retrySafe: true,
+					nextStep: "retry"
+				});
 			}
 			return response.snapshot;
 		});
@@ -166,7 +164,7 @@ export const observatoryLayer = Layer.effect(
 			);
 			if (focused.status !== "focused" || !bringToFront) return focused;
 			const activation = yield* windowActivation.activate(endpoint).pipe(
-				Effect.catch((cause) =>
+				Effect.catchTag("EditorWindowActivationError", (cause) =>
 					Effect.succeed({
 						status: "unavailable" as const,
 						message: cause.message,
@@ -203,16 +201,14 @@ export const observatoryLayer = Layer.effect(
 			);
 			if (response.status === "ready") return response.cadenceHz;
 			const retrySafe = response.retrySafe ?? true;
-			return yield* Effect.fail(
-				new ObservatoryConnectionError({
-					message: response.message,
-					operation: "set_actor_observation_cadence",
-					recovery: response.recovery,
-					retrySafe,
-					nextStep: retrySafe ? "retry" : "fix_input",
-					...(response.code === undefined ? undefined : { code: response.code })
-				})
-			);
+			return yield* new ObservatoryConnectionError({
+				message: response.message,
+				operation: "set_actor_observation_cadence",
+				recovery: response.recovery,
+				retrySafe,
+				nextStep: retrySafe ? "retry" : "fix_input",
+				...(response.code === undefined ? undefined : { code: response.code })
+			});
 		});
 
 		const observe = (endpoint: string, options: ObserveActorFeedOptions) =>

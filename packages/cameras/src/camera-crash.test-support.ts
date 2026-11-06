@@ -35,7 +35,7 @@ fs.promises.rename = async (from, to) => {
 syncBuiltinESMExports();
 const { makeCameraAuthoringStore } = await import("./camera-authoring-store.js");
 const store = makeCameraAuthoringStore(draft);
-const doc = await Effect.runPromise(store.load());
+const doc = await Effect.runPromise(store.load);
 await Effect.runPromise(
 	boundary === "before-export"
 		? store.approve({

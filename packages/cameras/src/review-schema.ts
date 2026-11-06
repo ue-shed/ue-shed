@@ -1,5 +1,5 @@
 import { contractParseError, contractParser } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Predicate } from "effect";
 import { CameraAuthoredVisibility } from "./camera-visibility.js";
 import {
 	CameraRenderPolicy,
@@ -832,7 +832,7 @@ function boundedJsonIssue(value: Schema.Json, depth = 0): string | undefined {
 	if (
 		value === null ||
 		Schema.is(Schema.Boolean)(value) ||
-		(Schema.is(Schema.Number)(value) && Number.isFinite(value))
+		(Predicate.isNumber(value) && Number.isFinite(value))
 	) {
 		return undefined;
 	}
@@ -1839,7 +1839,7 @@ const StagedCaptureArtifact = Schema.Struct({
 
 function stagedArtifactVariantIssue(response: {
 	readonly stagedArtifacts: ReadonlyArray<Schema.Schema.Type<typeof StagedCaptureArtifact>>;
-	readonly authoredVisibility?: typeof CameraAuthoredVisibility.Type;
+	readonly authoredVisibility?: CameraAuthoredVisibility;
 }) {
 	const variants = new Set<string>();
 	for (const artifact of response.stagedArtifacts) {
@@ -2319,8 +2319,8 @@ const CaptureRealizationPrevious = Schema.Union([
 
 function capturedArtifactVariantIssue(result: {
 	readonly artifacts: ReadonlyArray<CaptureArtifact>;
-	readonly authoredVisibility?: typeof CameraAuthoredVisibility.Type;
-	readonly authoredEvidence?: typeof CameraFrameEvidence.Type;
+	readonly authoredVisibility?: CameraAuthoredVisibility;
+	readonly authoredEvidence?: CameraFrameEvidence;
 }) {
 	if (
 		result.authoredVisibility &&

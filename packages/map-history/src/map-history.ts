@@ -40,7 +40,7 @@ import {
 import { selectSubmittedChanges } from "./submitted-change-selection.js";
 
 export interface MapHistoryApi {
-	readonly progress: () => Effect.Effect<MapHistoryProgress>;
+	readonly progress: Effect.Effect<MapHistoryProgress>;
 	readonly readPerforceMapHistory: (
 		query: PerforceMapHistoryQuery
 	) => Effect.Effect<PerforceMapHistory, MapHistoryError>;
@@ -212,29 +212,25 @@ function deduplicateDiagnostics(
 	);
 }
 
-function readHistoricalWorld(options: {
+const readHistoricalWorld = Effect.fn("MapHistory.readHistoricalWorld")(function* (options: {
 	readonly limits: PerforceMapHistoryQuery["limits"];
 	readonly scope: ResolvedPerforceMapScope;
 	readonly treeProjectRoot: string;
-}): Effect.Effect<SavedWorld, MapHistoryError, AssetReader> {
-	return Effect.fn("MapHistory.readHistoricalWorld")(function* () {
-		const reader = yield* AssetReader;
-		const world = yield* reader
-			.readSavedWorld({
-				concurrency: options.limits.maxConcurrency,
-				mapPath: options.scope.mapProjectRelativePath,
-				maximumAssets: options.limits.maxPackages,
-				projectRoot: options.treeProjectRoot
-			})
-			.pipe(
-				Effect.mapError((error) => savedWorldError("Could not read historical map", error))
-			);
-		if (world.sourceKind !== options.scope.sourceKind) {
-			return yield* Effect.fail(historicalLayoutError(options.scope, world));
-		}
-		return world;
-	})();
-}
+}): Effect.fn.Return<SavedWorld, MapHistoryError, AssetReader> {
+	const reader = yield* AssetReader;
+	const world = yield* reader
+		.readSavedWorld({
+			concurrency: options.limits.maxConcurrency,
+			mapPath: options.scope.mapProjectRelativePath,
+			maximumAssets: options.limits.maxPackages,
+			projectRoot: options.treeProjectRoot
+		})
+		.pipe(Effect.mapError((error) => savedWorldError("Could not read historical map", error)));
+	if (world.sourceKind !== options.scope.sourceKind) {
+		return yield* historicalLayoutError(options.scope, world);
+	}
+	return world;
+});
 
 function snapshotOf(world: SavedWorld, scope: ResolvedPerforceMapScope): MapHistorySnapshot {
 	return {
@@ -259,18 +255,18 @@ interface ReconstructedMapHistoryBody {
 	readonly revisions: readonly PerforceMapRevision[];
 }
 
-function reconstructScopedMapHistory(options: {
-	readonly limits: PerforceMapHistoryQuery["limits"];
-	readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
-	readonly range: PerforceMapHistoryQuery["range"];
-	readonly reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>;
-	readonly scope: ResolvedPerforceMapScope;
-}): Effect.Effect<
-	ReconstructedMapHistoryBody,
-	MapHistoryError,
-	AssetReader | PerforceHistorySource | import("effect").Scope.Scope
-> {
-	return Effect.fn("MapHistory.reconstructScopedMapHistory")(function* () {
+const reconstructScopedMapHistory = Effect.fn("MapHistory.reconstructScopedMapHistory")(
+	function* (options: {
+		readonly limits: PerforceMapHistoryQuery["limits"];
+		readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
+		readonly range: PerforceMapHistoryQuery["range"];
+		readonly reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>;
+		readonly scope: ResolvedPerforceMapScope;
+	}): Effect.fn.Return<
+		ReconstructedMapHistoryBody,
+		MapHistoryError,
+		AssetReader | PerforceHistorySource | import("effect").Scope.Scope
+	> {
 		const { limits, range, reportProgress, scope } = options;
 		yield* reportProgress(progress("listing_changes", 0, 0));
 		const lineage = yield* resolvePerforceMapLineage({
@@ -284,7 +280,7 @@ function reconstructScopedMapHistory(options: {
 			range
 		});
 		const totalChangelists = selection.revisions.length;
-		const tree = yield* acquireHistoricalProjectTree();
+		const tree = yield* acquireHistoricalProjectTree;
 		const diagnostics: MapHistoryDiagnostic[] = [];
 		let complete = true;
 		let materializedFiles = 0;
@@ -320,15 +316,13 @@ function reconstructScopedMapHistory(options: {
 			yield* reportProgress(progress("applying_revision", index, totalChangelists));
 			const described = yield* source.describeChangelist(selected.change);
 			if (described.status !== "submitted") {
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "perforce_command",
-						message: `Changelist ${selected.change} is not submitted.`,
-						recovery: "Select submitted Perforce history and retry.",
-						retrySafe: false,
-						nextStep: "escalate"
-					})
-				);
+				return yield* new MapHistoryError({
+					kind: "perforce_command",
+					message: `Changelist ${selected.change} is not submitted.`,
+					recovery: "Select submitted Perforce history and retry.",
+					retrySafe: false,
+					nextStep: "escalate"
+				});
 			}
 			const beforeScope = lineageScopeAtChange(lineage, selected.change - 1);
 			const afterScope = lineageScopeAtChange(lineage, selected.change);
@@ -413,44 +407,42 @@ function reconstructScopedMapHistory(options: {
 				: { rangeEndSnapshot: snapshotOf(previous, previousScope) }),
 			revisions
 		};
-	})();
-}
+	}
+);
 
-function readPerforceMapHistoryWorkflow(
+const readPerforceMapHistoryWorkflow = Effect.fn("MapHistory.readPerforceMapHistory")(function* (
 	query: PerforceMapHistoryQuery,
 	reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>
-): Effect.Effect<
+): Effect.fn.Return<
 	PerforceMapHistory,
 	MapHistoryError,
 	AssetReader | PerforceHistorySource | import("effect").Scope.Scope
 > {
-	return Effect.fn("MapHistory.readPerforceMapHistory")(function* () {
-		yield* reportProgress(progress("resolving_scope", 0, 0));
-		const scope = yield* resolvePerforceMapScope(query);
-		const body = yield* reconstructScopedMapHistory({
-			limits: query.limits,
-			projectRoot: query.projectRoot,
-			range: query.range,
-			reportProgress,
-			scope
-		});
-		return {
-			...body,
-			query,
-			schemaVersion: 2 as const
-		};
-	})();
-}
+	yield* reportProgress(progress("resolving_scope", 0, 0));
+	const scope = yield* resolvePerforceMapScope(query);
+	const body = yield* reconstructScopedMapHistory({
+		limits: query.limits,
+		projectRoot: query.projectRoot,
+		range: query.range,
+		reportProgress,
+		scope
+	});
+	return {
+		...body,
+		query,
+		schemaVersion: 2 as const
+	};
+});
 
-function readPerforceFastMapHistoryWorkflow(
-	query: PerforceFastMapHistoryQuery,
-	reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>
-): Effect.Effect<
-	PerforceFastMapHistory,
-	MapHistoryError,
-	AssetReader | PerforceHistorySource | import("effect").Scope.Scope
-> {
-	return Effect.fn("MapHistory.readPerforceFastMapHistory")(function* () {
+const readPerforceFastMapHistoryWorkflow = Effect.fn("MapHistory.readPerforceFastMapHistory")(
+	function* (
+		query: PerforceFastMapHistoryQuery,
+		reportProgress: (value: MapHistoryProgress) => Effect.Effect<void>
+	): Effect.fn.Return<
+		PerforceFastMapHistory,
+		MapHistoryError,
+		AssetReader | PerforceHistorySource | import("effect").Scope.Scope
+	> {
 		yield* reportProgress(progress("resolving_scope", 0, 0));
 		const resolved = yield* resolvePerforceFastMapScope(query);
 		const body = yield* reconstructScopedMapHistory({
@@ -467,8 +459,8 @@ function readPerforceFastMapHistoryWorkflow(
 			query,
 			schemaVersion: 2 as const
 		};
-	})();
-}
+	}
+);
 
 function durationError(maxDurationMs: number): MapHistoryError {
 	return new MapHistoryError({
@@ -490,7 +482,7 @@ export const mapHistoryLayer: Layer.Layer<MapHistory, never, AssetReader | Perfo
 			const latestProgress = yield* Ref.make(progress("idle", 0, 0));
 			const reportProgress = (value: MapHistoryProgress) => Ref.set(latestProgress, value);
 			return MapHistory.of({
-				progress: () => Ref.get(latestProgress),
+				progress: Ref.get(latestProgress),
 				readPerforceFastMapHistory: (query) =>
 					Effect.scoped(readPerforceFastMapHistoryWorkflow(query, reportProgress)).pipe(
 						Effect.provideService(AssetReader, reader),
@@ -549,6 +541,5 @@ export function readPerforceFastMapHistory(
 	return Effect.flatMap(MapHistory, (history) => history.readPerforceFastMapHistory(query));
 }
 
-export function mapHistoryProgress(): Effect.Effect<MapHistoryProgress, never, MapHistory> {
-	return Effect.flatMap(MapHistory, (history) => history.progress());
-}
+export const mapHistoryProgress: Effect.Effect<MapHistoryProgress, never, MapHistory> =
+	Effect.flatMap(MapHistory, (history) => history.progress);

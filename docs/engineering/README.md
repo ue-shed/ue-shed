@@ -20,6 +20,8 @@ UE Shed code should be functional, typed, observable, and well tested.
 ## Guides
 
 - [Website and illustrated guides](website.md) — asserted screenshot refresh, provenance, and browser checks.
+- [Saved map keys](saved-map-key-projection.md) — metadata sufficiency, host projection refusals and native round trips.
+- [Parameterless service operations](effect-operation-properties.md) — source migration and host compatibility.
 
 | Guide                                                                 | Use it for                                                            |
 | --------------------------------------------------------------------- | --------------------------------------------------------------------- |

@@ -28,7 +28,7 @@ import {
 } from "@ue-shed/enhanced-input";
 import { resolveScanTarget } from "@ue-shed/unreal-assets";
 import { writeInvestigationFile } from "@ue-shed/unreal-assets/investigation-files";
-import { Effect } from "effect";
+import { Layer, Effect } from "effect";
 import { observeCliOperation, readerLayer } from "../cli-operation.js";
 import { CliCommandError, CliRuntime, isCliCommandError, json, printJson } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
@@ -74,8 +74,7 @@ const scanReport = Effect.fn("Cli.input.scan")(
 	},
 	(effect, _projectRoot, reader) =>
 		effect.pipe(
-			Effect.provide(EnhancedInputServiceLive),
-			Effect.provide(readerLayer(reader)),
+			Effect.provide(Layer.provideMerge(EnhancedInputServiceLive, readerLayer(reader))),
 			Effect.mapError(cliFailure)
 		)
 );
@@ -264,8 +263,9 @@ export const runInputPlatforms = Effect.fn("Cli.workflow.input_platforms")(
 						? undefined
 						: { engineRoot: command.engineRoot })
 				}).pipe(
-					Effect.provide(ConfigExplorerNodeLive),
-					Effect.provide(readerLayer(command.reader))
+					Effect.provide(
+						Layer.provideMerge(ConfigExplorerNodeLive, readerLayer(command.reader))
+					)
 				);
 				const deviceSets =
 					command.deviceSets === undefined

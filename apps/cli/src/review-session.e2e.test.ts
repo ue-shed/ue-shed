@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { parseRecord, runInProcessCli, runSuccessfulCli } from "./cli-in-process.test-support.js";
 
@@ -87,7 +88,7 @@ describe("ue-shed Review session CLI commands", () => {
 			]);
 			expect(bootstrapProcess.status, bootstrapProcess.stderr).toBe(0);
 			const session = parseRecord(bootstrapProcess.stdout);
-			const sessionId = String(session.id);
+			const sessionId = Schema.decodeUnknownSync(Schema.String)(session.id);
 			await writeFile(
 				patchPath,
 				JSON.stringify({

@@ -334,8 +334,7 @@ export const decodePackageTextColumns = Effect.fn("PackageText.decodeColumns")(f
 	const strings = new Map<string, Map<number, string>>();
 	for (const name of [...Object.keys(stringFields), ...numberFields]) {
 		const values = yield* reader.section(name);
-		if (!(values instanceof Uint32Array))
-			return yield* Effect.fail(snapshotFailure(name, "Expected u32"));
+		if (!(values instanceof Uint32Array)) return yield* snapshotFailure(name, "Expected u32");
 		columns.set(name, values);
 		const domain = fieldDomains.get(name);
 		if (domain !== undefined) {
@@ -344,199 +343,203 @@ export const decodePackageTextColumns = Effect.fn("PackageText.decodeColumns")(f
 			strings.set(name, new Map(ids.map((id, row) => [id, decoded[row]!])));
 		}
 	}
-	return yield* Effect.try({
-		try: () => {
-			const value = (name: string, row: number) => {
-				const result = columns.get(name)?.[row];
-				snapshotCheck(result !== undefined, name, "Row outside column");
-				return result;
-			};
-			const string = (name: string, row: number) => {
-				const result = strings.get(name)?.get(value(name, row));
-				snapshotCheck(result !== undefined, name, "Missing string ID");
-				return result;
-			};
-			const records: PackageTextStored[] = [];
-			const copyCount = columns.get("copy.kind")!.length;
-			let copyRow = 0;
-			for (let row = 0; row < columns.get("package.path")!.length; row++) {
-				const path = string("package.path", row),
-					signature = string("package.signature", row);
-				const status = statuses[value("package.status", row)];
-				snapshotCheck(status !== undefined, "package.status", "Invalid status");
-				if (status === "not_gatherable") {
-					records.push({ path, signature, evidence: { event: "not_gatherable", path } });
-					continue;
-				}
-				if (status === "error") {
-					const evidence = Schema.decodeUnknownSync(
-						Schema.fromJsonString(SavedAssetPackageTextEvent)
-					)(string("package.error", row));
-					snapshotCheck(evidence.event === "error", "package.error", "Invalid failure");
-					records.push({ path, signature, evidence });
-					continue;
-				}
-				const occurrences: PackageTextOccurrence[] = [],
-					gapSamples: SavedAssetTextCoverageGap[] = [];
-				const start = value("package.occurrence_start", row),
-					end = value("package.occurrence_start", row + 1);
+	return yield* Effect.gen(function* () {
+		const value = (name: string, row: number) => {
+			const result = columns.get(name)?.[row];
+			snapshotCheck(result !== undefined, name, "Row outside column");
+			return result;
+		};
+		const string = (name: string, row: number) => {
+			const result = strings.get(name)?.get(value(name, row));
+			snapshotCheck(result !== undefined, name, "Missing string ID");
+			return result;
+		};
+		const records: PackageTextStored[] = [];
+		const copyCount = columns.get("copy.kind")!.length;
+		let copyRow = 0;
+		for (let row = 0; row < columns.get("package.path")!.length; row++) {
+			const path = string("package.path", row),
+				signature = string("package.signature", row);
+			const status = statuses[value("package.status", row)];
+			snapshotCheck(status !== undefined, "package.status", "Invalid status");
+			if (status === "not_gatherable") {
+				records.push({ path, signature, evidence: { event: "not_gatherable", path } });
+				continue;
+			}
+			if (status === "error") {
+				const evidence = yield* Schema.decodeEffect(
+					Schema.fromJsonString(SavedAssetPackageTextEvent)
+				)(string("package.error", row));
+				snapshotCheck(evidence.event === "error", "package.error", "Invalid failure");
+				records.push({ path, signature, evidence });
+				continue;
+			}
+			const occurrences: PackageTextOccurrence[] = [],
+				gapSamples: SavedAssetTextCoverageGap[] = [];
+			const start = value("package.occurrence_start", row),
+				end = value("package.occurrence_start", row + 1);
+			snapshotCheck(
+				start <= end && end <= columns.get("occurrence.source")!.length,
+				"occurrence",
+				"Invalid range"
+			);
+			for (let index = start; index < end; index++) {
+				const identity = identities[value("occurrence.identity", index)];
+				const location = locations[value("occurrence.location", index)];
 				snapshotCheck(
-					start <= end && end <= columns.get("occurrence.source")!.length,
+					identity !== undefined && location !== undefined,
 					"occurrence",
-					"Invalid range"
+					"Invalid discriminator"
 				);
-				for (let index = start; index < end; index++) {
-					const identity = identities[value("occurrence.identity", index)];
-					const location = locations[value("occurrence.location", index)];
-					snapshotCheck(
-						identity !== undefined && location !== undefined,
-						"occurrence",
-						"Invalid discriminator"
+				const namespace = string("occurrence.namespace", index),
+					key = string("occurrence.key", index);
+				const copies: SavedTextRepresentationCopy[] = [];
+				const flags = value("occurrence.copies", index),
+					copyEnd = copyRow + occurrenceCopyCount(flags);
+				snapshotCheck(
+					copyEnd <= copyCount && (flags === 0) === (copyEnd === copyRow),
+					"copy",
+					"Invalid copy count"
+				);
+				for (; copyRow < copyEnd; copyRow++)
+					copies.push(
+						decodeStoredCopy(
+							value("copy.kind", copyRow),
+							string("copy.object", copyRow),
+							string("copy.source", copyRow),
+							string("copy.class", copyRow),
+							{
+								source: string("occurrence.source", index),
+								classPath:
+									location === "asset_property"
+										? string("occurrence.class", index)
+										: undefined
+							}
+						)
 					);
-					const namespace = string("occurrence.namespace", index),
-						key = string("occurrence.key", index);
-					const copies: SavedTextRepresentationCopy[] = [];
-					const flags = value("occurrence.copies", index),
-						copyEnd = copyRow + occurrenceCopyCount(flags);
-					snapshotCheck(
-						copyEnd <= copyCount && (flags === 0) === (copyEnd === copyRow),
-						"copy",
-						"Invalid copy count"
-					);
-					for (; copyRow < copyEnd; copyRow++)
-						copies.push(
-							decodeStoredCopy(
-								value("copy.kind", copyRow),
-								string("copy.object", copyRow),
-								string("copy.source", copyRow),
-								string("copy.class", copyRow),
-								{
-									source: string("occurrence.source", index),
-									classPath:
-										location === "asset_property"
-											? string("occurrence.class", index)
-											: undefined
+				const object_path = string("occurrence.object", index),
+					property_path = string("occurrence.property", index);
+				occurrences.push({
+					source: string("occurrence.source", index),
+					dev_notes: string("occurrence.notes", index),
+					identity:
+						identity === "resolved"
+							? { status: identity, namespace, key }
+							: identity === "string_table"
+								? { status: identity, table_id: namespace, key }
+								: { status: "unresolved", reason: identity },
+					location:
+						location === "asset_property"
+							? {
+									kind: location,
+									object_path,
+									property_path,
+									class_path: string("occurrence.class", index)
 								}
-							)
-						);
-					const object_path = string("occurrence.object", index),
-						property_path = string("occurrence.property", index);
-					occurrences.push({
-						source: string("occurrence.source", index),
-						dev_notes: string("occurrence.notes", index),
-						identity:
-							identity === "resolved"
-								? { status: identity, namespace, key }
-								: identity === "string_table"
-									? { status: identity, table_id: namespace, key }
-									: { status: "unresolved", reason: identity },
-						location:
-							location === "asset_property"
+							: location === "data_table_cell"
 								? {
 										kind: location,
 										object_path,
 										property_path,
-										class_path: string("occurrence.class", index)
+										row: string("occurrence.row", index)
 									}
-								: location === "data_table_cell"
-									? {
-											kind: location,
-											object_path,
-											property_path,
-											row: string("occurrence.row", index)
-										}
-									: {
-											kind: location,
-											object_path,
-											entry_key: string("occurrence.row", index)
-										},
-						edit_capability: value("occurrence.editable", index)
-							? "source_editable"
-							: "read_only",
-						...(value("occurrence.gather", index) === 0
-							? undefined
-							: { gather_editor_only: value("occurrence.gather", index) === 2 }),
-						...(copies.length ? { copies } : undefined)
-					});
-				}
-				const gapStart = value("package.gap_start", row),
-					gapEnd = value("package.gap_start", row + 1);
-				snapshotCheck(
-					gapStart <= gapEnd && gapEnd - gapStart <= 3,
-					"gap",
-					"Invalid sample range"
-				);
-				for (let index = gapStart; index < gapEnd; index++) {
-					const reason = packageTextGapReasons[value("gap.reason", index)];
-					snapshotCheck(reason !== undefined, "gap", "Invalid reason");
-					gapSamples.push({
-						object_path: string("gap.object", index),
-						property_path: string("gap.property", index),
-						reason
-					});
-				}
-				const missingStart = value("package.missing_start", row),
-					missingEnd = value("package.missing_start", row + 1);
-				snapshotCheck(
-					missingStart <= missingEnd && missingEnd - missingStart <= 3,
-					"missing",
-					"Invalid sample range"
-				);
-				const missingSamples: SavedAssetMissingGatherableText[] = [];
-				for (let index = missingStart; index < missingEnd; index++)
-					missingSamples.push({
-						namespace: string("missing.namespace", index),
-						key: string("missing.key", index),
-						source: string("missing.source", index),
-						site: string("missing.site", index)
-					});
-				const blueprints = string("package.blueprints", row);
-				const packageName = string("package.name", row);
-				const assetClass = string("package.asset_class", row);
-				const blueprintClasses =
-					blueprints === "" ? [] : decodeBlueprintClasses(blueprints);
-				records.push({
-					path,
-					signature,
-					evidence: {
-						event: "text_package_record",
-						schema_version: 1,
-						path,
-						status,
-						fileBytes:
-							value("package.bytes_low", row) +
-							value("package.bytes_high", row) * 2 ** 32,
-						decodeErrors: value("package.decode_errors", row),
-						occurrences,
-						gapSamples,
-						gapCounts: {
-							unsupported_text_history: value("package.gap0", row),
-							legacy_container_element_without_type_information: value(
-								"package.gap1",
-								row
-							),
-							feature_unavailable_for_engine_version: value("package.gap2", row),
-							property_decoder_rejected: value("package.gap3", row)
-						},
-						...(value("package.gather", row) === 1
-							? {
-									gatherCoverage: {
-										runtimeSites: value("package.gather_sites", row),
-										missing: value("package.gather_missing", row),
-										missingSamples
-									}
-								}
-							: undefined),
-						...(blueprintClasses.length ? { blueprintClasses } : undefined),
-						...(packageName === "" ? undefined : { packageName }),
-						...(assetClass === "" ? undefined : { assetClass })
-					}
+								: {
+										kind: location,
+										object_path,
+										entry_key: string("occurrence.row", index)
+									},
+					edit_capability: value("occurrence.editable", index)
+						? "source_editable"
+						: "read_only",
+					...(value("occurrence.gather", index) === 0
+						? undefined
+						: { gather_editor_only: value("occurrence.gather", index) === 2 }),
+					...(copies.length ? { copies } : undefined)
 				});
 			}
-			snapshotCheck(copyRow === copyCount, "copy", "Copy outside its place");
-			return records;
-		},
-		catch: (cause) =>
+			const gapStart = value("package.gap_start", row),
+				gapEnd = value("package.gap_start", row + 1);
+			snapshotCheck(
+				gapStart <= gapEnd && gapEnd - gapStart <= 3,
+				"gap",
+				"Invalid sample range"
+			);
+			for (let index = gapStart; index < gapEnd; index++) {
+				const reason = packageTextGapReasons[value("gap.reason", index)];
+				snapshotCheck(reason !== undefined, "gap", "Invalid reason");
+				gapSamples.push({
+					object_path: string("gap.object", index),
+					property_path: string("gap.property", index),
+					reason
+				});
+			}
+			const missingStart = value("package.missing_start", row),
+				missingEnd = value("package.missing_start", row + 1);
+			snapshotCheck(
+				missingStart <= missingEnd && missingEnd - missingStart <= 3,
+				"missing",
+				"Invalid sample range"
+			);
+			const missingSamples: SavedAssetMissingGatherableText[] = [];
+			for (let index = missingStart; index < missingEnd; index++)
+				missingSamples.push({
+					namespace: string("missing.namespace", index),
+					key: string("missing.key", index),
+					source: string("missing.source", index),
+					site: string("missing.site", index)
+				});
+			const blueprints = string("package.blueprints", row);
+			const packageName = string("package.name", row);
+			const assetClass = string("package.asset_class", row);
+			const blueprintClasses = blueprints === "" ? [] : decodeBlueprintClasses(blueprints);
+			records.push({
+				path,
+				signature,
+				evidence: {
+					event: "text_package_record",
+					schema_version: 1,
+					path,
+					status,
+					fileBytes:
+						value("package.bytes_low", row) +
+						value("package.bytes_high", row) * 2 ** 32,
+					decodeErrors: value("package.decode_errors", row),
+					occurrences,
+					gapSamples,
+					gapCounts: {
+						unsupported_text_history: value("package.gap0", row),
+						legacy_container_element_without_type_information: value(
+							"package.gap1",
+							row
+						),
+						feature_unavailable_for_engine_version: value("package.gap2", row),
+						property_decoder_rejected: value("package.gap3", row)
+					},
+					...(value("package.gather", row) === 1
+						? {
+								gatherCoverage: {
+									runtimeSites: value("package.gather_sites", row),
+									missing: value("package.gather_missing", row),
+									missingSamples
+								}
+							}
+						: undefined),
+					...(blueprintClasses.length ? { blueprintClasses } : undefined),
+					...(packageName === "" ? undefined : { packageName }),
+					...(assetClass === "" ? undefined : { assetClass })
+				}
+			});
+		}
+		snapshotCheck(copyRow === copyCount, "copy", "Copy outside its place");
+		return records;
+	}).pipe(
+		Effect.catchTag("SchemaError", (cause) =>
 			snapshotFailure("package-text", "The saved package text columns are invalid.", cause)
-	});
+		),
+		// The former synchronous reconstruction boundary translated thrown format checks and
+		// decoder exceptions alike. Preserve that contract and the exact original cause.
+		Effect.catchDefect((cause) =>
+			snapshotFailure("package-text", "The saved package text columns are invalid.", cause)
+		)
+	);
 });

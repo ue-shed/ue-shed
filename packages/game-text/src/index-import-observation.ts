@@ -21,7 +21,7 @@ const ordered = <A>(values: Readonly<Record<string, A>>) =>
 /** Partial imports may reuse historical evidence only while its shared observations still match. */
 export const checkRetainedImportObservations = Effect.fn("GameTextIndex.checkRetainedImport")(
 	function* (previous: JoinedTargetMeta, changedFiles: readonly string[]) {
-		const writer = yield* (yield* SharedIndex).writer();
+		const writer = yield* (yield* SharedIndex).writer;
 		const active = writer.manifest().active;
 		const changed = new Set(changedFiles);
 		const stale = () =>
@@ -68,7 +68,7 @@ export const observeGameTextImport = Effect.fn("GameTextIndex.observeImport")(fu
 	>
 ) {
 	const index = yield* SharedIndex;
-	const writer = yield* index.writer();
+	const writer = yield* index.writer;
 	const active = writer.manifest().active;
 	const observations: Record<string, string> = {};
 	for (const file of input.imported.files) {

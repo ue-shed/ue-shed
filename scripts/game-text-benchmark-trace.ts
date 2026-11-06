@@ -12,7 +12,7 @@ const TraceRecord = Schema.Struct({
 	parentSpanId: Schema.optionalKey(Schema.String),
 	startTimeNs: Schema.String,
 	endTimeNs: Schema.String,
-	elapsedMs: Schema.Number,
+	elapsedMs: Schema.Finite,
 	failed: Schema.Boolean,
 	attributes: Schema.Record(Schema.String, Schema.Json),
 	native: Schema.optionalKey(NativeOperation)
@@ -20,7 +20,7 @@ const TraceRecord = Schema.Struct({
 interface TraceRecord extends Schema.Schema.Type<typeof TraceRecord> {}
 const isAttribute = Schema.is(
 	Schema.NullOr(
-		Schema.Union([Schema.String, Schema.Boolean, Schema.Number.check(Schema.isFinite())])
+		Schema.Union([Schema.String, Schema.Boolean, Schema.Finite.check(Schema.isFinite())])
 	)
 );
 

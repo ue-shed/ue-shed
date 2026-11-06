@@ -200,22 +200,24 @@ export function scopedPerforceFile(
 }
 
 /** Resolves the selected saved map and its present-day World Partition actor subtree to P4 scopes. */
-export function resolvePerforceMapScope(
+export const resolvePerforceMapScope = Effect.fn("MapHistory.resolvePerforceMapScope")(function* (
 	query: PerforceMapHistoryQuery
-): Effect.Effect<ResolvedPerforceMapScope, MapHistoryError, AssetReader | PerforceHistorySource> {
-	return Effect.fn("MapHistory.resolvePerforceMapScope")(function* () {
-		const { scope } = yield* resolvePresentDayMapScope(query);
-		return scope;
-	})();
-}
+): Effect.fn.Return<
+	ResolvedPerforceMapScope,
+	MapHistoryError,
+	AssetReader | PerforceHistorySource
+> {
+	const { scope } = yield* resolvePresentDayMapScope(query);
+	return scope;
+});
 
 /** Resolves only direct map moves and keeps every resulting location inside the selected project. */
-export function resolvePerforceMapLineage(options: {
-	readonly limits: PerforceMapHistoryQuery["limits"];
-	readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
-	readonly scope: ResolvedPerforceMapScope;
-}): Effect.Effect<ResolvedPerforceMapLineage, MapHistoryError, PerforceHistorySource> {
-	return Effect.fn("MapHistory.resolvePerforceMapLineage")(function* () {
+export const resolvePerforceMapLineage = Effect.fn("MapHistory.resolvePerforceMapLineage")(
+	function* (options: {
+		readonly limits: PerforceMapHistoryQuery["limits"];
+		readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
+		readonly scope: ResolvedPerforceMapScope;
+	}): Effect.fn.Return<ResolvedPerforceMapLineage, MapHistoryError, PerforceHistorySource> {
 		const source = yield* PerforceHistorySource;
 		if (source.resolveMapLineage === undefined) {
 			return { locations: [options.scope], moves: [] };
@@ -226,45 +228,39 @@ export function resolvePerforceMapLineage(options: {
 			maxRevisionRecords: options.limits.maxChangelists + MAX_DIRECT_MAP_MOVES + 2
 		});
 		if (lineage.locations.length === 0) {
-			return yield* Effect.fail(
-				new MapHistoryError({
-					kind: "ambiguous_map_lineage",
-					message: `Perforce returned no direct lineage location for ${options.scope.mapDepotPath}.`,
-					recovery: "Inspect the selected map's Perforce filelog and retry.",
-					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new MapHistoryError({
+				kind: "ambiguous_map_lineage",
+				message: `Perforce returned no direct lineage location for ${options.scope.mapDepotPath}.`,
+				recovery: "Inspect the selected map's Perforce filelog and retry.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
 		}
 		if (lineage.moves.length === 0) {
 			if (
 				lineage.locations.length !== 1 ||
 				lineage.locations[0]?.depotPath !== options.scope.mapDepotPath
 			) {
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "ambiguous_map_lineage",
-						message: `Perforce returned an inconsistent direct lineage for ${options.scope.mapDepotPath}.`,
-						recovery: "Inspect the selected map's Perforce filelog and retry.",
-						retrySafe: false,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new MapHistoryError({
+					kind: "ambiguous_map_lineage",
+					message: `Perforce returned an inconsistent direct lineage for ${options.scope.mapDepotPath}.`,
+					recovery: "Inspect the selected map's Perforce filelog and retry.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				});
 			}
 			return { locations: [options.scope], moves: [] };
 		}
 		if (lineage.moves.length > 0 && options.scope.sourceKind === "world_partition") {
-			return yield* Effect.fail(
-				new MapHistoryError({
-					kind: "unsupported_history_layout",
-					message:
-						"Direct map relocation currently cannot prove the matching historical World Partition external-actor roots.",
-					recovery:
-						"Choose a range after the World Partition map move, or use a conventional saved map.",
-					retrySafe: false,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new MapHistoryError({
+				kind: "unsupported_history_layout",
+				message:
+					"Direct map relocation currently cannot prove the matching historical World Partition external-actor roots.",
+				recovery:
+					"Choose a range after the World Partition map move, or use a conventional saved map.",
+				retrySafe: false,
+				nextStep: "fix_input"
+			});
 		}
 
 		const locations: ResolvedPerforceMapScope[] = [];
@@ -280,16 +276,13 @@ export function resolvePerforceMapLineage(options: {
 			});
 			const mapPackageName = packageNameForProjectPath(mapProjectRelativePath);
 			if (mapPackageName === undefined || !/\.umap$/iu.test(mapProjectRelativePath)) {
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "ambiguous_map_lineage",
-						message: `Direct map move destination ${location.depotPath} is not a supported project .umap path.`,
-						recovery:
-							"Inspect the selected map's direct Perforce move records and retry.",
-						retrySafe: false,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new MapHistoryError({
+					kind: "ambiguous_map_lineage",
+					message: `Direct map move destination ${location.depotPath} is not a supported project .umap path.`,
+					recovery: "Inspect the selected map's direct Perforce move records and retry.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				});
 			}
 			locations.push({
 				fileSpecs: [depotPackageFileSpec(location.depotPath)],
@@ -310,32 +303,29 @@ export function resolvePerforceMapLineage(options: {
 				move.toDepotPath !== to.mapDepotPath ||
 				(previous !== undefined && previous.change >= move.change)
 			) {
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "ambiguous_map_lineage",
-						message: `Perforce returned an unordered direct move lineage for ${options.scope.mapDepotPath}.`,
-						recovery:
-							"Inspect the selected map's direct Perforce move records and retry.",
-						retrySafe: false,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new MapHistoryError({
+					kind: "ambiguous_map_lineage",
+					message: `Perforce returned an unordered direct move lineage for ${options.scope.mapDepotPath}.`,
+					recovery: "Inspect the selected map's direct Perforce move records and retry.",
+					retrySafe: false,
+					nextStep: "fix_input"
+				});
 			}
 		}
 		return { locations, moves: lineage.moves };
-	})();
-}
+	}
+);
 
-export function resolvePresentDayMapScope(query: {
-	readonly limits: PerforceMapHistoryQuery["limits"];
-	readonly mapPath: PerforceMapHistoryQuery["mapPath"];
-	readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
-}): Effect.Effect<
-	{ readonly scope: ResolvedPerforceMapScope; readonly world: SavedWorld },
-	MapHistoryError,
-	AssetReader | PerforceHistorySource
-> {
-	return Effect.fn("MapHistory.resolvePresentDayMapScope")(function* () {
+export const resolvePresentDayMapScope = Effect.fn("MapHistory.resolvePresentDayMapScope")(
+	function* (query: {
+		readonly limits: PerforceMapHistoryQuery["limits"];
+		readonly mapPath: PerforceMapHistoryQuery["mapPath"];
+		readonly projectRoot: PerforceMapHistoryQuery["projectRoot"];
+	}): Effect.fn.Return<
+		{ readonly scope: ResolvedPerforceMapScope; readonly world: SavedWorld },
+		MapHistoryError,
+		AssetReader | PerforceHistorySource
+	> {
 		const reader = yield* AssetReader;
 		const perforce = yield* PerforceHistorySource;
 		const world = yield* reader
@@ -359,17 +349,15 @@ export function resolvePresentDayMapScope(query: {
 		const mapMapping = yield* perforce.resolveLocalPath(mapLocalPath);
 		if (world.externalActorRoot === undefined) {
 			if (world.sourceKind === "world_partition") {
-				return yield* Effect.fail(
-					new MapHistoryError({
-						kind: "saved_world_decode",
-						message:
-							"The World Partition map did not report its external-actor root, so its actor history cannot be scoped safely.",
-						recovery:
-							"Confirm the map's saved external-actor layout can be read, then retry.",
-						retrySafe: false,
-						nextStep: "escalate"
-					})
-				);
+				return yield* new MapHistoryError({
+					kind: "saved_world_decode",
+					message:
+						"The World Partition map did not report its external-actor root, so its actor history cannot be scoped safely.",
+					recovery:
+						"Confirm the map's saved external-actor layout can be read, then retry.",
+					retrySafe: false,
+					nextStep: "escalate"
+				});
 			}
 			return {
 				scope: {
@@ -406,7 +394,7 @@ export function resolvePresentDayMapScope(query: {
 			},
 			world
 		};
-	})();
-}
+	}
+);
 
 export { depotPackageFileSpec };

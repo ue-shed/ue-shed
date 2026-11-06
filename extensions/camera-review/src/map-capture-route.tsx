@@ -309,7 +309,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 
 	function newPlan() {
 		setNotice({ tone: "info", text: "Creating a plan from the selected project…" });
-		newAction.run(props.client.newPlan(), {
+		newAction.run(props.client.newPlan, {
 			onFailure: (cause) =>
 				setNotice({
 					text: "Couldn't create a plan.",
@@ -322,7 +322,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 
 	function choosePlan() {
 		setNotice({ tone: "info", text: "Reading plan file…" });
-		chooseAction.run(props.client.choosePlan(), {
+		chooseAction.run(props.client.choosePlan, {
 			onFailure: (cause) =>
 				setNotice({
 					text: "Couldn't read the plan file.",
@@ -1208,11 +1208,7 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 												Effect.flatMap((result) =>
 													result.status === "ready"
 														? Effect.succeed(result.bytes)
-														: Effect.fail(
-																new Error(
-																	`${result.message} ${result.recovery}`
-																)
-															)
+														: Effect.fail(result)
 												)
 											)
 									}

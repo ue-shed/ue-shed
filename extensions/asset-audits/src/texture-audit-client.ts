@@ -16,7 +16,7 @@ import type {
 } from "@ue-shed/asset-audits/browser";
 import type { EditorAssetLocateResult } from "@ue-shed/protocol";
 import type { TaskProgress } from "@ue-shed/ui/task-progress";
-import { Context, type Effect, Schema } from "effect";
+import { type Brand, Context, type Effect, Schema } from "effect";
 
 export const TextureAuditLaunchResult = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("ready") }),
@@ -28,18 +28,18 @@ export const TextureAuditLaunchResult = Schema.Union([
 ]);
 export type TextureAuditLaunchResult = Schema.Schema.Type<typeof TextureAuditLaunchResult>;
 
-export class TextureAuditClientError extends Schema.TaggedError<TextureAuditClientError>()(
-	"TextureAuditClientError",
-	{
-		message: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("texture_audit_client_failed"),
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class TextureAuditClientError extends Schema.TaggedError<
+	TextureAuditClientError,
+	Brand.Brand<"extensions/asset-audits/src/texture-audit-client/TextureAuditClientError">
+>()("TextureAuditClientError", {
+	message: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("texture_audit_client_failed"),
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 export interface TextureAuditClientApi {
 	readonly investigations?: {
@@ -50,10 +50,7 @@ export interface TextureAuditClientApi {
 		readonly save: (
 			query: TextureInvestigationQuery
 		) => Effect.Effect<InvestigationFileResult, TextureAuditClientError>;
-		readonly open: () => Effect.Effect<
-			TextureInvestigationPresetResult,
-			TextureAuditClientError
-		>;
+		readonly open: Effect.Effect<TextureInvestigationPresetResult, TextureAuditClientError>;
 	};
 	readonly locateAsset: (
 		objectPath: string
@@ -61,7 +58,7 @@ export interface TextureAuditClientApi {
 	readonly loadConfiguredProject: (
 		refresh?: boolean
 	) => Effect.Effect<TextureAuditQueryRunResult, TextureAuditClientError>;
-	readonly progress: () => Effect.Effect<TaskProgress, TextureAuditClientError>;
+	readonly progress: Effect.Effect<TaskProgress, TextureAuditClientError>;
 	readonly search: (
 		request: TextureAuditSearchRequest
 	) => Effect.Effect<TextureAuditSearchResult, TextureAuditClientError>;
@@ -77,7 +74,7 @@ export interface TextureAuditClientApi {
 	readonly loadOfflinePreviews: (
 		request: TexturePreviewBatchRequest
 	) => Effect.Effect<TexturePreviewBatchResult, TextureAuditClientError>;
-	readonly launchUnreal: () => Effect.Effect<TextureAuditLaunchResult, TextureAuditClientError>;
+	readonly launchUnreal: Effect.Effect<TextureAuditLaunchResult, TextureAuditClientError>;
 }
 
 export class TextureAuditClient extends Context.Service<

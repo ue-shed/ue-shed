@@ -36,9 +36,7 @@ export function assertCorpusScratch(project: string) {
 			);
 		return;
 	}
-	const owned = Schema.decodeUnknownSync(Schema.fromJsonString(Marker))(
-		readFileSync(marker, "utf8")
-	);
+	const owned = Schema.decodeSync(Schema.fromJsonString(Marker))(readFileSync(marker, "utf8"));
 	if (
 		owned.project !== basename(path) ||
 		!existsSync(path) ||

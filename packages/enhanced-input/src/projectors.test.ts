@@ -392,7 +392,7 @@ describe("schema 2 projection", () => {
 		expect(report.status).toBe("complete");
 		expect(report.diagnostics).toEqual([]);
 		expect(report.coverage.playerMappableConfigs).toBe(1);
-		expect(Schema.decodeUnknownSync(EnhancedInputReport)(report)).toEqual(report);
+		expect(Schema.decodeSync(EnhancedInputReport)(report)).toEqual(report);
 	});
 
 	it("turns a chord into an action-to-action edge and shows parameters on claims", () => {

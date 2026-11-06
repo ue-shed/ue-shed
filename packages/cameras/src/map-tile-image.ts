@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Result, Schema } from "effect";
+import { type Brand, Result, Schema } from "effect";
 import { MapTilePixelRect, type MapTilePixelRect as PixelRect } from "./map-tile-source.js";
 
 const Dimension = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 16384 }));
@@ -32,14 +32,14 @@ export type MapTileParentImages = typeof MapTileParentImages.Type;
  * Map source PNG decode/crop/encode failure with actionable recovery guidance. A failed image
  * must not be published as a valid tile artifact.
  */
-export class MapTileImageError extends Schema.TaggedError<MapTileImageError>()(
-	"MapTileImageError",
-	{
-		code: Schema.Literals(["invalid_image", "invalid_crop", "invalid_children"]),
-		cause: Schema.optionalKey(Schema.Defect()),
-		...ErrorGuidanceFields
-	}
-) {}
+export class MapTileImageError extends Schema.TaggedError<
+	MapTileImageError,
+	Brand.Brand<"packages/cameras/src/map-tile-image/MapTileImageError">
+>()("MapTileImageError", {
+	code: Schema.Literals(["invalid_image", "invalid_crop", "invalid_children"]),
+	cause: Schema.optionalKey(Schema.Defect()),
+	...ErrorGuidanceFields
+}) {}
 
 const decodeImage = Schema.decodeUnknownResult(MapTileImage, { onExcessProperty: "error" });
 const decodeRect = Schema.decodeUnknownResult(MapTilePixelRect, { onExcessProperty: "error" });

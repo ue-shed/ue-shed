@@ -82,7 +82,7 @@ export function LiveReviewMapPicker(props: {
 	);
 	onSettled(() => {
 		if (props.client.savedWorldMaps)
-			action.run(props.client.savedWorldMaps(), {
+			action.run(props.client.savedWorldMaps, {
 				onSuccess: setMaps,
 				onFailure: (cause) => setError(Cause.pretty(cause))
 			});

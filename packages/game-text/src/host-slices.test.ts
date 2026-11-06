@@ -10,13 +10,13 @@ const busy = (ms: number) => {
 /** Mirrors an index build: synchronous batches behind promises that settle without I/O. */
 const batches = Effect.gen(function* () {
 	for (let batch = 0; batch < 12; batch++) {
-		yield* Effect.tryPromise({ try: async () => batch, catch: (cause) => cause });
+		yield* Effect.tryPromise(async () => batch);
 		busy(10);
 	}
 });
 
 /** Runs `effect` and returns the longest stretch in which no `setImmediate` callback ran. */
-const longestEventLoopGap = async (effect: Effect.Effect<void, unknown>) => {
+const longestEventLoopGap = async <E>(effect: Effect.Effect<void, E>) => {
 	let last = performance.now(),
 		longest = 0,
 		probing = true;

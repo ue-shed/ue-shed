@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe("authoring Sheet operation boundary", () => {
-	it("pins read-only names and maps physical field columns through the real handler", () => {
+	it("pins read-only names and maps physical field columns through the real handler", async () => {
 		const sheet = captureAuthoringSheet();
 		const onGesture = vi.fn();
 		const onSelection = vi.fn();
@@ -91,7 +91,7 @@ describe("authoring Sheet operation boundary", () => {
 			fieldName: "Count",
 			rowId: "row:Scalar_Alpha"
 		});
-		sheet.emit({ type: "cell-edit", mutation: countEdit });
+		await sheet.emit({ type: "cell-edit", mutation: countEdit });
 		expect(onGesture).toHaveBeenCalledOnce();
 		expect(onGesture).toHaveBeenCalledWith({
 			kind: "set_cells",
@@ -105,7 +105,7 @@ describe("authoring Sheet operation boundary", () => {
 		});
 	});
 
-	it("forwards a rejected name-column paste to onEditFailure", () => {
+	it("forwards a rejected name-column paste to onEditFailure", async () => {
 		const sheet = captureAuthoringSheet();
 		const onGesture = vi.fn();
 		const onEditFailure = vi.fn();
@@ -117,7 +117,7 @@ describe("authoring Sheet operation boundary", () => {
 				onEditFailure={onEditFailure}
 			/>
 		));
-		sheet.emit({
+		await sheet.emit({
 			type: "batch-edit",
 			mutations: [
 				{
@@ -136,7 +136,7 @@ describe("authoring Sheet operation boundary", () => {
 		expect(onEditFailure).toHaveBeenCalledWith("Row names are read-only in the grid.");
 	});
 
-	it.each(["readOnly", "disabled"] as const)("blocks operations when %s", (guard) => {
+	it.each(["readOnly", "disabled"] as const)("blocks operations when %s", async (guard) => {
 		const sheet = captureAuthoringSheet();
 		const onGesture = vi.fn();
 		const onEditFailure = vi.fn();
@@ -151,7 +151,7 @@ describe("authoring Sheet operation boundary", () => {
 			/>
 		));
 		expect(sheet.props().readOnly).toBe(true);
-		sheet.emit({ type: "cell-edit", mutation: countEdit });
+		await sheet.emit({ type: "cell-edit", mutation: countEdit });
 		expect(onGesture).not.toHaveBeenCalled();
 		expect(onEditFailure).not.toHaveBeenCalled();
 	});
@@ -215,7 +215,7 @@ describe("authoring Sheet operation boundary", () => {
 			fieldName: "Count",
 			rowId: "row:Scalar_Beta"
 		});
-		sheet.emit({
+		await sheet.emit({
 			type: "cell-edit",
 			mutation: {
 				...countEdit,

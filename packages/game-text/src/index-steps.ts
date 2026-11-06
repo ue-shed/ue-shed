@@ -320,7 +320,7 @@ const normalizeFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 					)
 		)
 	);
-const savedTarget = Schema.decodeUnknownSync(LocalizationTarget)({
+const savedTarget = Schema.decodeSync(LocalizationTarget)({
 	name: "SavedText",
 	source: "config_only",
 	nativeCulture: null,
@@ -417,7 +417,7 @@ export const makeGameTextIndexSteps = (
 		const openProject = Effect.fn("GameTextIndex.openProject")(function* (input: {
 			readonly projectRoot: string;
 		}) {
-			const request = yield* Schema.decodeUnknownEffect(
+			const request = yield* Schema.decodeEffect(
 				Schema.Struct({ projectRoot: GameTextIndexRefreshRequest.fields.projectRoot })
 			)(input).pipe(
 				Effect.mapError((cause) =>
@@ -447,9 +447,7 @@ export const makeGameTextIndexSteps = (
 			concurrent?: ConcurrentPrepareOptions
 		) {
 			const reportProgress = yield* GameTextIndexProgressReporter;
-			const request = yield* Schema.decodeUnknownEffect(GameTextProjectRefreshRequest)(
-				input
-			).pipe(
+			const request = yield* Schema.decodeEffect(GameTextProjectRefreshRequest)(input).pipe(
 				Effect.mapError((cause) =>
 					failure(
 						"request",
@@ -479,7 +477,7 @@ export const makeGameTextIndexSteps = (
 					const byPath = new Map(inventory.map((entry) => [entry.path, entry]));
 					const retainedPackages =
 						request.savedPackages === false &&
-						Object.keys((yield* index.inspect()).active).some((name) =>
+						Object.keys((yield* index.inspect).active).some((name) =>
 							name.startsWith("package-text.")
 						);
 					const packageRequest = {
@@ -536,10 +534,10 @@ export const makeGameTextIndexSteps = (
 								changedShards: 0,
 								removedShards: 0,
 								published: false,
-								profile: (yield* index.writer()).metrics()
+								profile: (yield* index.writer).metrics()
 							}
 						: yield* Effect.scoped(builder.refreshPackageTextLayer(packageRequest));
-					const manifest = yield* index.inspect();
+					const manifest = yield* index.inspect;
 					const result: GameTextProjectIndex = {
 						projectRoot,
 						cacheRoot,
@@ -568,9 +566,7 @@ export const makeGameTextIndexSteps = (
 					.pipe(Effect.mapError(manifestIndexFailure));
 				const target = discovery.targets.find((item) => item.name === request.targetName);
 				if (!target)
-					return yield* Effect.fail(
-						manifestIndexFailure(localizationError("target_not_found"))
-					);
+					return yield* manifestIndexFailure(localizationError("target_not_found"));
 				const path = target.outputPaths.manifest;
 				const present =
 					path !== null &&
@@ -581,10 +577,7 @@ export const makeGameTextIndexSteps = (
 						Effect.provide(LocalizationFileAccessLive),
 						Effect.mapError(manifestIndexFailure)
 					));
-				if (!present)
-					return yield* Effect.fail(
-						manifestIndexFailure(localizationError("file_missing"))
-					);
+				if (!present) return yield* manifestIndexFailure(localizationError("file_missing"));
 			}
 		});
 
@@ -593,9 +586,7 @@ export const makeGameTextIndexSteps = (
 			input: GameTextTargetImportRequest = {},
 			concurrent?: ConcurrentPrepareOptions
 		) {
-			const request = yield* Schema.decodeUnknownEffect(GameTextTargetImportRequest)(
-				input
-			).pipe(
+			const request = yield* Schema.decodeEffect(GameTextTargetImportRequest)(input).pipe(
 				Effect.mapError((cause) =>
 					failure(
 						"request",
@@ -605,7 +596,7 @@ export const makeGameTextIndexSteps = (
 					)
 				)
 			);
-			if (project.cacheRoot !== cacheRoot) return yield* Effect.fail(stale("project"));
+			if (project.cacheRoot !== cacheRoot) return yield* stale("project");
 			yield* checkRequiredManifest(project, request);
 			if (concurrent?.planGate) yield* concurrent.planGate;
 			return yield* withSession(
@@ -617,11 +608,11 @@ export const makeGameTextIndexSteps = (
 					let fileDiagnostics: MutableFileDiagnostics = {};
 					if (
 						request.changedFiles !== undefined &&
-						(yield* index.inspect()).active.joined
+						(yield* index.inspect).active.joined
 					) {
 						const previous = yield* Effect.scoped(
 							Effect.gen(function* () {
-								return yield* readJoinedTarget(yield* index.open(), true);
+								return yield* readJoinedTarget(yield* index.open, true);
 							})
 						);
 						yield* checkRetainedImportObservations(previous.meta, request.changedFiles);
@@ -654,7 +645,7 @@ export const makeGameTextIndexSteps = (
 						(item) => item.relativePath === imported.target.outputPaths.manifest
 					);
 					if (request.requireManifest && manifestFailure)
-						return yield* Effect.fail(manifestIndexFailure(manifestFailure.error));
+						return yield* manifestIndexFailure(manifestFailure.error);
 					for (const file of imported.files) {
 						delete fileErrors[file.relativePath];
 						delete fileDiagnostics[file.relativePath];
@@ -735,14 +726,12 @@ export const makeGameTextIndexSteps = (
 			return yield* withSession(
 				configurationFor(cacheRoot, projectRoot),
 				Effect.gen(function* () {
-					const writer = yield* (yield* SharedIndex).writer();
+					const writer = yield* (yield* SharedIndex).writer;
 					if (!writer.readPoint)
-						return yield* Effect.fail(
-							failure(
-								"point",
-								"This index cannot read points.",
-								"Use the native reader."
-							)
+						return yield* failure(
+							"point",
+							"This index cannot read points.",
+							"Use the native reader."
 						);
 					const outcome = yield* writer.readPoint({
 						point: request.point,
@@ -790,8 +779,10 @@ export const makeGameTextIndexSteps = (
 		}) {
 			const { projectRoot } = yield* openProject(request);
 			if (!queries.comparePoints)
-				return yield* Effect.fail(
-					failure("point", "This index cannot compare points.", "Use the native reader.")
+				return yield* failure(
+					"point",
+					"This index cannot compare points.",
+					"Use the native reader."
 				);
 			const target =
 				request.targetName === undefined
@@ -836,12 +827,10 @@ export const makeGameTextIndexSteps = (
 			request: GameTextContract.CompareTextFilesRequest
 		) {
 			if (!queries.compareTextFiles)
-				return yield* Effect.fail(
-					failure(
-						"text_files",
-						"This index cannot compare localization files.",
-						"Use the native reader."
-					)
+				return yield* failure(
+					"text_files",
+					"This index cannot compare localization files.",
+					"Use the native reader."
 				);
 			const comparison = yield* queries.compareTextFiles(request);
 			yield* Effect.annotateCurrentSpan({
@@ -867,7 +856,7 @@ export const makeGameTextIndexSteps = (
 			source: GameTextCodeSource | undefined
 		) {
 			const index = yield* SharedIndex;
-			const writer = yield* index.writer();
+			const writer = yield* index.writer;
 			if (!writer.publishCode) return undefined;
 			const steps = sourceGatherSteps(target);
 			const scan =
@@ -881,7 +870,7 @@ export const makeGameTextIndexSteps = (
 							cacheRoot,
 							refreshEngineWrappers: source.refreshEngineWrappers === true
 						};
-			if (scan === undefined && !(yield* index.inspect()).active[codeLayerName(target.name)])
+			if (scan === undefined && !(yield* index.inspect).active[codeLayerName(target.name)])
 				return undefined;
 			const outcome = yield* writer.publishCode({
 				target: target.name,
@@ -913,9 +902,7 @@ export const makeGameTextIndexSteps = (
 			target: GameTextTargetImport,
 			input: GameTextTargetBuildRequest = {}
 		): Effect.fn.Return<GameTextTargetIndex, IndexFailure> {
-			const request = yield* Schema.decodeUnknownEffect(GameTextTargetBuildRequest)(
-				input
-			).pipe(
+			const request = yield* Schema.decodeEffect(GameTextTargetBuildRequest)(input).pipe(
 				Effect.mapError((cause) =>
 					failure(
 						"request",
@@ -930,7 +917,7 @@ export const makeGameTextIndexSteps = (
 				project.cacheRoot !== cacheRoot ||
 				project.projectRoot !== target.project.projectRoot
 			)
-				return yield* Effect.fail(stale("project"));
+				return yield* stale("project");
 			return yield* withSession(
 				configurationFor(
 					cacheRoot,
@@ -940,29 +927,31 @@ export const makeGameTextIndexSteps = (
 				Effect.gen(function* () {
 					const reportProgress = yield* GameTextIndexProgressReporter;
 					const index = yield* SharedIndex;
-					const manifest = yield* index.inspect();
+					const manifest = yield* index.inspect;
 					yield* checkProject(project, manifest);
 					if (
 						Object.entries(target.fileKeys).some(
 							([path, key]) => manifest.active[path] !== key
 						)
 					)
-						return yield* Effect.fail(stale("localization"));
+						return yield* stale("localization");
 					const review = yield* readLocalizationReview({
 						projectRoot: project.projectRoot,
 						target: imported.target.name
 					}).pipe(
 						Effect.provide(LocalizationFileAccessLive),
-						Effect.catch((cause) =>
-							request.tolerateReviewErrors
-								? Effect.succeed({
-										file: emptyLocalizationReviewFile(imported.target.name),
-										relativePath: defaultLocalizationReviewPath(
-											imported.target.name
-										),
-										contentHash: null
-									})
-								: Effect.fail(cause)
+						Effect.catchTag(
+							["LocalizationError", "LocalizationReviewFileError"],
+							(cause) =>
+								request.tolerateReviewErrors
+									? Effect.succeed({
+											file: emptyLocalizationReviewFile(imported.target.name),
+											relativePath: defaultLocalizationReviewPath(
+												imported.target.name
+											),
+											contentHash: null
+										})
+									: Effect.fail(cause)
 						)
 					);
 					const joinInput: JoinedTargetInput = {
@@ -991,9 +980,9 @@ export const makeGameTextIndexSteps = (
 						});
 					reportProgress({ phase: "joining", completed: 0, total: 0 });
 					const join = yield* Effect.scoped(builder.refreshJoinedTarget(joinInput));
-					if ((yield* index.inspect()).active["joined.invalidated"])
-						yield* (yield* index.writer()).publishBatch([], ["joined.invalidated"]);
-					const storeEpoch = (yield* index.inspect()).generation;
+					if ((yield* index.inspect).active["joined.invalidated"])
+						yield* (yield* index.writer).publishBatch([], ["joined.invalidated"]);
+					const storeEpoch = (yield* index.inspect).generation;
 					return {
 						project,
 						view: target.view,
@@ -1074,12 +1063,12 @@ export const makeGameTextIndexSteps = (
 			const result = yield* prepare(request);
 			if (result.kind === "prepared") return result.target;
 			if (!options.fallbackToSource || request.targetName === undefined)
-				return yield* Effect.fail(result.cause);
+				return yield* result.cause;
 			// Release the failed target session before attempting a different view. Native failures
 			// close their session; they must never be swallowed inside a still-leased writer.
 			const { targetName: _target, requireManifest: _manifest, ...sourceRequest } = request;
 			const source = yield* prepare(sourceRequest);
-			if (source.kind === "import-failed") return yield* Effect.fail(source.cause);
+			if (source.kind === "import-failed") return yield* source.cause;
 			return source.target;
 		});
 
@@ -1110,13 +1099,13 @@ export const makeGameTextIndexSteps = (
 					([name, key]) => joined.reader.manifest.active[name] !== key
 				)
 			)
-				return yield* Effect.fail(stale("localization"));
+				return yield* stale("localization");
 			if (
 				joined.reader.manifest.generation !== target.storeEpoch ||
 				joined.reader.manifest.active.joined !== target.join.key ||
 				joined.reader.manifest.active["joined.invalidated"]
 			)
-				return yield* Effect.fail(stale("target"));
+				return yield* stale("target");
 			yield* Effect.annotateCurrentSpan({
 				"game_text.index.packages_read": result.packages.readPackages,
 				"game_text.index.join_rebuilt": result.join.rebuilt,
@@ -1140,11 +1129,11 @@ export const makeGameTextIndexSteps = (
 				joinedKey: target.join.key
 			});
 			const query = native;
-			const summary = yield* query.summary();
+			const summary = yield* query.summary;
 			const search = query.search;
 			const searchRows = query.searchRows;
 			reportProgress({ phase: "ready", completed: 0, total: 0 });
-			const corpus = query.readCorpus();
+			const corpus = query.readCorpus;
 			const localization = {
 				schemaVersion: 1 as const,
 				target: joined.meta.input.target.name,
@@ -1313,7 +1302,7 @@ export const makeGameTextIndexSteps = (
 							effectiveRuleDocument(ruleDocument),
 							(rule) => rule.subject === "unit_source"
 						);
-						const header = yield* query.readCorpusReportHeader();
+						const header = yield* query.readCorpusReportHeader;
 						return yield* queriedTextQualityQuery({
 							findings: query,
 							evaluation,
@@ -1331,11 +1320,11 @@ export const makeGameTextIndexSteps = (
 					}),
 				// The engine writes the report's findings; the host never reads the corpus or join.
 				prepareLocalizationCheck: (document, options) =>
-					Effect.flatMap(query.readCorpusReportHeader(), (header) =>
+					Effect.flatMap(query.readCorpusReportHeader, (header) =>
 						prepareLocalizationCheck(...checkInput(header), options, document)
 					),
 				localizationCheck: (document, options) =>
-					Effect.flatMap(query.readCorpusReportHeader(), (header) =>
+					Effect.flatMap(query.readCorpusReportHeader, (header) =>
 						indexedLocalizationCheckReport(...checkInput(header), options, document)
 					)
 			};
@@ -1349,7 +1338,7 @@ export const makeGameTextIndexSteps = (
 			readonly targetName?: string;
 		}): Effect.fn.Return<Option.Option<GameTextIndexModel>, never, Scope.Scope> {
 			const attempt = Effect.gen(function* () {
-				const request = yield* Schema.decodeUnknownEffect(
+				const request = yield* Schema.decodeEffect(
 					Schema.Struct({
 						projectRoot: GameTextIndexRefreshRequest.fields.projectRoot,
 						targetName: GameTextTargetImportRequest.fields.targetName
@@ -1359,17 +1348,17 @@ export const makeGameTextIndexSteps = (
 				const target = yield* Effect.scoped(
 					Effect.gen(function* () {
 						const index = yield* SharedIndex;
-						const manifest = yield* index.inspect();
+						const manifest = yield* index.inspect;
 						const key = manifest.active.joined;
 						if (!key || manifest.active["joined.invalidated"])
-							return yield* Effect.fail(stale("committed_join"));
-						const joined = yield* readJoinedTarget(yield* index.open());
+							return yield* stale("committed_join");
+						const joined = yield* readJoinedTarget(yield* index.open);
 						const meta = joined.meta;
 						if (
 							meta.input.projectRoot !== project.projectRoot ||
 							meta.input.target.name !== (request.targetName ?? savedTarget.name)
 						)
-							return yield* Effect.fail(stale("committed_identity"));
+							return yield* stale("committed_identity");
 						const indexed: GameTextProjectIndex = {
 							...project,
 							storeEpoch: manifest.generation,
@@ -1445,7 +1434,7 @@ export const makeGameTextIndexSteps = (
 			const scope = yield* Scope.fork(yield* Effect.scope);
 			return yield* attempt.pipe(
 				Effect.provideService(Scope.Scope, scope),
-				Effect.map(Option.some),
+				Effect.asSome,
 				// Disposable cache reads may throw format defects; cancellation must still propagate.
 				// oxlint-disable-next-line anti-slop/no-effect-catch-all -- Every unusable cache is a miss.
 				Effect.catchCause((cause) =>
@@ -1462,7 +1451,7 @@ export const makeGameTextIndexSteps = (
 			);
 		});
 		const invalidate = Effect.fn("GameTextIndex.invalidate")(function* (
-			request: typeof GameTextIndexRefreshRequest.Type
+			request: GameTextIndexRefreshRequest
 		) {
 			const projectRoot = yield* Effect.tryPromise({
 				try: () => realpath(request.projectRoot),
@@ -1478,7 +1467,7 @@ export const makeGameTextIndexSteps = (
 				configurationFor(cacheRoot, projectRoot, request.targetName),
 				Effect.gen(function* () {
 					const index = yield* SharedIndex,
-						writer = yield* index.writer();
+						writer = yield* index.writer;
 					const active = writer.manifest().active;
 					const removed = [...(request.changedFiles ?? [])].filter(
 						(name) => active[name] !== undefined
@@ -1504,7 +1493,7 @@ export const makeGameTextIndexSteps = (
 		const diskChanges = Effect.fn("GameText.diskChanges")(function* (
 			input: DiskChangesRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(DiskChangesRequest)(input).pipe(
+			const request = yield* Schema.decodeEffect(DiskChangesRequest)(input).pipe(
 				Effect.mapError((cause) =>
 					failure(
 						"request",
@@ -1515,12 +1504,10 @@ export const makeGameTextIndexSteps = (
 				)
 			);
 			if (!builder.diskChanges)
-				return yield* Effect.fail(
-					failure(
-						"disk",
-						"This Game Text index backend can't check the disk.",
-						"Use the native index builder."
-					)
+				return yield* failure(
+					"disk",
+					"This Game Text index backend can't check the disk.",
+					"Use the native index builder."
 				);
 			const { projectRoot } = yield* openProject(request);
 			const { target, ...page } = request;

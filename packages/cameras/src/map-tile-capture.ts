@@ -2,15 +2,18 @@ import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import {
 	decodeCompanionCapabilityManifest,
+	type ContractParseError,
 	ErrorCauseFields,
 	ErrorGuidanceFields
 } from "@ue-shed/protocol";
 import {
 	makeRemoteControlClient,
 	RemoteControlClient,
-	type RemoteControlClientApi
+	type RemoteControlClientApi,
+	type RemoteControlClientError
 } from "@ue-shed/unreal-connection";
 import {
+	type Brand,
 	Cause,
 	Clock,
 	Context,
@@ -67,15 +70,47 @@ const maximumEnumeratedTiles = 1_000_000;
  * Map plan inspection, preparation, capture or publication failure with run context and
  * original cause. Recovery must account for editor state and retained partial output.
  */
-export class MapCaptureRunError extends Schema.TaggedError<MapCaptureRunError>()(
-	"MapCaptureRunError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		operation: Schema.Literals(["inspect", "prepare", "capture", "publish"]),
-		runId: Schema.optionalKey(Schema.String)
-	}
-) {}
+export class MapCaptureRunError extends Schema.TaggedError<
+	MapCaptureRunError,
+	Brand.Brand<"packages/cameras/src/map-tile-capture/MapCaptureRunError">
+>()("MapCaptureRunError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	operation: Schema.Literals(["inspect", "prepare", "capture", "publish"]),
+	runId: Schema.optionalKey(Schema.String)
+}) {}
+
+/**
+ * The editor answered a release request without proving restoration. Keep the run owned and
+ * reconcile editor state before capturing again; cause retains the decoded release evidence.
+ */
+export class MapTileCaptureRestorationError extends Schema.TaggedError<
+	MapTileCaptureRestorationError,
+	Brand.Brand<"packages/cameras/src/map-tile-capture/MapTileCaptureRestorationError">
+>()("MapTileCaptureRestorationError", {
+	runId: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
+
+/**
+ * Capture transport, protocol, correlation or timeout failures. UnknownError is the tagged
+ * boundary error from Effect.try/tryPromise for a host adapter whose foreign API throws.
+ */
+export type MapTileCaptureError =
+	| RemoteControlClientError
+	| ContractParseError
+	| Schema.SchemaError
+	| MapCaptureRunError
+	| Cause.TimeoutError
+	| Cause.UnknownError;
+
+/** Release transport/decoding failures or an editor response that does not prove restoration. */
+export type MapTileCaptureReleaseError =
+	| RemoteControlClientError
+	| Schema.SchemaError
+	| MapTileCaptureRestorationError
+	| Cause.UnknownError;
 
 /**
  * Editor tile-batch capture port with optional progress and release. Implementations that
@@ -83,11 +118,11 @@ export class MapCaptureRunError extends Schema.TaggedError<MapCaptureRunError>()
  */
 export interface MapTileCapturePortApi {
 	/** Release a run's viewport, camera and scene freeze on completion or interruption. */
-	readonly release?: (runId: string) => Effect.Effect<void, unknown>;
+	readonly release?: (runId: string) => Effect.Effect<void, MapTileCaptureReleaseError>;
 	readonly capture: (
 		request: MapTileCaptureRequestValue,
 		onProgress?: (progress: MapTileCaptureProgress) => Effect.Effect<void>
-	) => Effect.Effect<MapTileCaptureResponse, unknown>;
+	) => Effect.Effect<MapTileCaptureResponse, MapTileCaptureError>;
 }
 
 /** @deprecated Use `MapTileCapturePortApi`. */
@@ -138,9 +173,15 @@ export function makeMapTileCaptureRemotePort(
 					(result.restoration === undefined && result.released)
 				)
 			)
-				return yield* Effect.fail(
-					new Error("Native map capture could not restore owned editor state.")
-				);
+				return yield* new MapTileCaptureRestorationError({
+					runId,
+					message: "Native map capture could not restore owned editor state.",
+					recovery:
+						"Reconcile the owned camera, viewport and scene state before capturing again.",
+					retrySafe: false,
+					nextStep: "reconcile",
+					cause: result
+				});
 			startedRuns.delete(runId);
 		}),
 		capture: Effect.fn("MapCapture.remoteCapture")(function* (request, onProgress) {
@@ -177,17 +218,15 @@ export function makeMapTileCaptureRemotePort(
 					.pipe(Effect.flatMap(decodeMapTileCaptureResponse));
 			}
 			if (!manifest.capabilities.includes("cameras.lit-map-tile-capture.v1")) {
-				return yield* Effect.fail(
-					new MapCaptureRunError({
-						operation: "prepare",
-						runId: request.runId,
-						message: "The connected editor does not support Lit camera tile capture.",
-						recovery:
-							"Update the UE Shed Cameras and Core plugins, or explicitly select scene_capture_tiles with a compatible plan.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-				);
+				return yield* new MapCaptureRunError({
+					operation: "prepare",
+					runId: request.runId,
+					message: "The connected editor does not support Lit camera tile capture.",
+					recovery:
+						"Update the UE Shed Cameras and Core plugins, or explicitly select scene_capture_tiles with a compatible plan.",
+					retrySafe: true,
+					nextStep: "fix_input"
+				});
 			}
 			const decode = (value: Schema.Json) =>
 				Schema.decodeUnknownEffect(MapTileCaptureOperation)(value).pipe(
@@ -593,7 +632,7 @@ function runMapCaptureWith(args: {
 					: { levels: args.options.levels }),
 				...(args.options.tiles === undefined ? undefined : { tiles: args.options.tiles })
 			});
-			const runId = yield* Schema.decodeUnknownEffect(MapCaptureRunId)(
+			const runId = yield* Schema.decodeEffect(MapCaptureRunId)(
 				args.options.runId ?? randomUUID()
 			).pipe(
 				Effect.mapError(
@@ -608,7 +647,7 @@ function runMapCaptureWith(args: {
 						})
 				)
 			);
-			const correlationId = yield* Schema.decodeUnknownEffect(MapCaptureOperationId)(
+			const correlationId = yield* Schema.decodeEffect(MapCaptureOperationId)(
 				args.options.correlationId ?? runId
 			).pipe(
 				Effect.mapError(
@@ -655,7 +694,9 @@ function runMapCaptureWith(args: {
 			const unrealStagingRoot = resolve(projectRoot, "Saved", "UEShed", "MapTileStaging");
 			const attempt = yield* destination.prepare({ planId: plan.id, runId });
 			yield* Effect.addFinalizer(() =>
-				attempt.discard().pipe(Effect.orElseSucceed(() => undefined))
+				attempt.discard.pipe(
+					Effect.catchTag("MapCaptureStorageError", () => Effect.undefined)
+				)
 			);
 			const startedAt = isoNow(yield* Clock.currentTimeMillis);
 
@@ -1051,10 +1092,15 @@ export function runMapCapture(
 		makeRemoteControlClient({ defaultTimeout: "5 minutes" })
 	);
 	return Effect.flatMap(MapCapture, (service) => service.run(options)).pipe(
-		Effect.provide(MapCaptureLive),
-		Effect.provide(MapCaptureRepositoryLive),
-		Effect.provide(mapTileCaptureRemotePortLayer(options.endpoint)),
-		Effect.provide(remoteClient)
+		Effect.provide(
+			Layer.provideMerge(
+				Layer.provideMerge(
+					Layer.provideMerge(MapCaptureLive, MapCaptureRepositoryLive),
+					mapTileCaptureRemotePortLayer(options.endpoint)
+				),
+				remoteClient
+			)
+		)
 	);
 }
 
@@ -1069,9 +1115,14 @@ export function runMapCapturePlan(
 		makeRemoteControlClient({ defaultTimeout: "5 minutes" })
 	);
 	return Effect.flatMap(MapCapture, (service) => service.run(options)).pipe(
-		Effect.provide(MapCaptureLive),
-		Effect.provide(MapCaptureRepositoryLive),
-		Effect.provide(mapTileCaptureRemotePortLayer(options.endpoint)),
-		Effect.provide(remoteClient)
+		Effect.provide(
+			Layer.provideMerge(
+				Layer.provideMerge(
+					Layer.provideMerge(MapCaptureLive, MapCaptureRepositoryLive),
+					mapTileCaptureRemotePortLayer(options.endpoint)
+				),
+				remoteClient
+			)
+		)
 	);
 }

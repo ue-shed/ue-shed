@@ -20,7 +20,7 @@ import {
 
 let root = "";
 
-test("error translation retains the original failure in mapError and IO catches", async () => {
+void test("error translation retains the original failure in mapError and IO catches", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-error-causes-"));
 	try {
 		const source = join(fixtureRoot, "packages/example/src");
@@ -58,7 +58,7 @@ test("error translation retains the original failure in mapError and IO catches"
 	}
 });
 
-test("package browser entries reach no Node authority or unreviewed dependency", async () => {
+void test("package browser entries reach no Node authority or unreviewed dependency", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-"));
 	try {
 		const demo = join(fixtureRoot, "packages/demo");
@@ -97,7 +97,7 @@ test("package browser entries reach no Node authority or unreviewed dependency",
 	}
 });
 
-test("browser closures follow JavaScript sources and Node-only subpaths of guarded packages", async () => {
+void test("browser closures follow JavaScript sources and Node-only subpaths of guarded packages", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-js-"));
 	try {
 		const wasm = join(fixtureRoot, "packages/wasm");
@@ -150,7 +150,7 @@ test("browser closures follow JavaScript sources and Node-only subpaths of guard
 	}
 });
 
-test("browser closures skip erased type-only imports but follow inline type imports", async () => {
+void test("browser closures skip erased type-only imports but follow inline type imports", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-browser-closures-types-"));
 	try {
 		const demo = join(fixtureRoot, "packages/demo");
@@ -189,7 +189,7 @@ test("browser closures skip erased type-only imports but follow inline type impo
 	}
 });
 
-test("Game Text entry points are named and first-party code rejects removed aggregate entry points", async () => {
+void test("Game Text entry points are named and first-party code rejects removed aggregate entry points", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-game-text-entries-"));
 	try {
 		const source = join(fixtureRoot, "packages/game-text/src");
@@ -233,7 +233,7 @@ test("Game Text entry points are named and first-party code rejects removed aggr
 	}
 });
 
-test("tagged errors are matched by tag, not instanceof", async () => {
+void test("tagged errors are matched by tag, not instanceof", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-tagged-matching-"));
 	try {
 		const source = join(fixtureRoot, "packages/example/src");
@@ -264,7 +264,7 @@ test("tagged errors are matched by tag, not instanceof", async () => {
 	}
 });
 
-test("browser import scanning distinguishes module syntax from strings and comments", async () => {
+void test("browser import scanning distinguishes module syntax from strings and comments", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-localization-import-syntax-"));
 	try {
 		const source = join(fixtureRoot, "packages/localization/src");
@@ -313,7 +313,7 @@ test("browser import scanning distinguishes module syntax from strings and comme
 	}
 });
 
-test("checks the Game Text browser closure and its localization dependency", async () => {
+void test("checks the Game Text browser closure and its localization dependency", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-localization-join-boundary-"));
 	try {
 		const formats = join(fixtureRoot, "packages/localization");
@@ -389,7 +389,7 @@ test("checks the Game Text browser closure and its localization dependency", asy
 	}
 });
 
-test("rejects corpus dependencies and Node authority in the localization browser closure", async () => {
+void test("rejects corpus dependencies and Node authority in the localization browser closure", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-localization-boundary-"));
 	try {
 		const source = join(fixtureRoot, "packages/localization/src");
@@ -427,7 +427,7 @@ after(async () => {
 	await rm(root, { force: true, recursive: true });
 });
 
-test("rejects a runtime exit outside an approved adapter with a line diagnostic", async () => {
+void test("rejects a runtime exit outside an approved adapter with a line diagnostic", async () => {
 	await writeFile(join(root, "apps/example/src/index.ts"), "Effect.runPromise(program);\n");
 	const failures = await checkSourcePolicy(root);
 	assert.deepEqual(failures, [
@@ -435,7 +435,7 @@ test("rejects a runtime exit outside an approved adapter with a line diagnostic"
 	]);
 });
 
-test("rejects Promise services, environment reads, raw fetch, and unmanaged resources", async () => {
+void test("rejects Promise services, environment reads, raw fetch, and unmanaged resources", async () => {
 	await writeFile(
 		join(root, "apps/example/src/index.ts"),
 		"interface Bad { run(): Promise<void> }\nprocess.env.BAD\nfetch('x')\nsetInterval(work, 1)\n"
@@ -448,7 +448,7 @@ test("rejects Promise services, environment reads, raw fetch, and unmanaged reso
 	]);
 });
 
-test("keeps test subprocess helpers outside production source policy", async () => {
+void test("keeps test subprocess helpers outside production source policy", async () => {
 	const helper = join(root, "apps/example/src/process.test-support.ts");
 	await writeFile(join(root, "apps/example/src/index.ts"), "export {};\n");
 	await writeFile(helper, "function run(): Promise<void> { return process.env.TEST; }\n");
@@ -459,18 +459,43 @@ test("keeps test subprocess helpers outside production source policy", async () 
 	}
 });
 
-test("requires every Context service to name operations and provide a layer strategy", async () => {
+void test("requires every Context service to name operations and provide a layer strategy", async () => {
 	await writeFile(
 		join(root, "apps/example/src/index.ts"),
 		"export class Bad extends Context.Service<Bad, {}>()('Bad') {}\n"
 	);
 	assert.deepEqual(await checkServiceStrategies(root), [
 		"apps/example/src/index.ts: service declaration has no live or test layer strategy",
-		"apps/example/src/index.ts: service operations must use Effect.fn"
+		"apps/example/src/index.ts: service operations must use named Effect.fn or Effect.withSpan"
 	]);
 });
 
-test("requires catalog-owned dependencies to use catalog protocol", async () => {
+void test("requires a real named span for an effect-valued service operation", async () => {
+	const file = join(root, "apps/example/src/index.ts");
+	const declaration =
+		"export class Example extends Context.Service<Example, {}>()('Example') {}\n";
+	await writeFile(
+		file,
+		`${declaration}const live = Layer.succeed(Example, { snapshot: Effect.void });\n`
+	);
+	assert.deepEqual(await checkServiceStrategies(root), [
+		"apps/example/src/index.ts: service operations must use named Effect.fn or Effect.withSpan"
+	]);
+	await writeFile(
+		file,
+		`${declaration}const live = Layer.succeed(Example, { snapshot: Effect.void.pipe(Effect.withSpan("Example.snapshot")) });\n`
+	);
+	assert.deepEqual(await checkServiceStrategies(root), []);
+	await writeFile(
+		file,
+		`${declaration}const live = Layer.succeed(Example, {}); const unattached = Effect.withSpan("unused");\n`
+	);
+	assert.deepEqual(await checkServiceStrategies(root), [
+		"apps/example/src/index.ts: service operations must use named Effect.fn or Effect.withSpan"
+	]);
+});
+
+void test("requires catalog-owned dependencies to use catalog protocol", async () => {
 	await writeFile(
 		join(root, "pnpm-workspace.yaml"),
 		`catalog:\n  "@effect/opentelemetry": "4.0.4"\n  "@effect/vitest": "4.0.4"\n  "@opentelemetry/api": "^1.9.0"\n  "@opentelemetry/api-logs": "^0.205.0"\n  "@opentelemetry/resources": "^2.2.0"\n  "@opentelemetry/sdk-logs": "^0.205.0"\n  "@opentelemetry/sdk-metrics": "^2.2.0"\n  "@opentelemetry/sdk-trace-base": "^2.2.0"\n  "@opentelemetry/sdk-trace-node": "^2.2.0"\n  "@opentelemetry/sdk-trace-web": "^2.2.0"\n  "@opentelemetry/semantic-conventions": "^1.38.0"\n  "@stylexjs/rollup-plugin": "^0.19.0"\n  "@stylexjs/stylex": "^0.19.0"\n  effect: "4.0.4"\n  solid-js: "^1.9.14"\n  vite-plugin-solid: "^2.11.12"\n`
@@ -528,7 +553,7 @@ async function withWorkbenchFixture(
 	}
 }
 
-test("rejects Workbench main Effect.runPromise and Effect.runSync", async () => {
+void test("rejects Workbench main Effect.runPromise and Effect.runSync", async () => {
 	await withWorkbenchFixture(
 		"apps/workbench/src/main/services/bad-exit.ts",
 		'import { Effect } from "effect";\nEffect.runPromise(Effect.void);\nEffect.runSync(Effect.void);\n',
@@ -541,7 +566,7 @@ test("rejects Workbench main Effect.runPromise and Effect.runSync", async () => 
 	);
 });
 
-test("rejects Workbench main process.env outside the Electron bootstrap", async () => {
+void test("rejects Workbench main process.env outside the Electron bootstrap", async () => {
 	await withWorkbenchFixture(
 		"apps/workbench/src/main/services/bad-env.ts",
 		"export const value = process.env.UE_SHED_PROJECT_ROOT;\n",
@@ -554,7 +579,7 @@ test("rejects Workbench main process.env outside the Electron bootstrap", async 
 	);
 });
 
-test("rejects hidden Workbench service layer builds", async () => {
+void test("rejects hidden Workbench service layer builds", async () => {
 	await withWorkbenchFixture(
 		"apps/workbench/src/main/services/bad-layer.ts",
 		'import { Layer } from "effect";\nexport const hidden = Layer.build(layer);\n',
@@ -567,7 +592,7 @@ test("rejects hidden Workbench service layer builds", async () => {
 	);
 });
 
-test("rejects Workbench main raw fetch", async () => {
+void test("rejects Workbench main raw fetch", async () => {
 	await withWorkbenchFixture(
 		"apps/workbench/src/main/services/bad-fetch.ts",
 		'export const load = () => fetch("http://127.0.0.1:30001");\n',
@@ -580,7 +605,7 @@ test("rejects Workbench main raw fetch", async () => {
 	);
 });
 
-test("rejects ipcMain.handle outside bootstrap or adapters", async () => {
+void test("rejects ipcMain.handle outside bootstrap or adapters", async () => {
 	await withWorkbenchFixture(
 		"apps/workbench/src/main/services/bad-ipc.ts",
 		'export const register = (ipcMain) => {\n\tipcMain.handle("x", async () => null);\n};\n',
@@ -593,7 +618,7 @@ test("rejects ipcMain.handle outside bootstrap or adapters", async () => {
 	);
 });
 
-test("rejects electron/main imports outside bootstrap or adapters", async () => {
+void test("rejects electron/main imports outside bootstrap or adapters", async () => {
 	await withWorkbenchFixture(
 		"apps/workbench/src/main/services/bad-electron.ts",
 		'import { app } from "electron/main";\nexport const ready = app.whenReady;\n',
@@ -606,7 +631,7 @@ test("rejects electron/main imports outside bootstrap or adapters", async () => 
 	);
 });
 
-test("rejects packages importing apps/workbench", async () => {
+void test("rejects packages importing apps/workbench", async () => {
 	await withWorkbenchFixture(
 		"packages/example/src/index.ts",
 		'import { WorkbenchLive } from "../../../apps/workbench/src/main/workbench-live.js";\n',
@@ -619,7 +644,7 @@ test("rejects packages importing apps/workbench", async () => {
 	);
 });
 
-test("rejects renderer IPC access outside transport adapters", async () => {
+void test("rejects renderer IPC access outside transport adapters", async () => {
 	await withWorkbenchFixture(
 		"apps/workbench/src/renderer/bad-component.tsx",
 		"export const Bad = () => window.ueShed.getStatus();\n",
@@ -632,7 +657,7 @@ test("rejects renderer IPC access outside transport adapters", async () => {
 	);
 });
 
-test("rejects new exported raw Schema decoders outside the baseline", async () => {
+void test("rejects new exported raw Schema decoders outside the baseline", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-raw-decoders-"));
 	try {
 		const source = join(fixtureRoot, "packages/example/src");
@@ -668,7 +693,7 @@ test("rejects new exported raw Schema decoders outside the baseline", async () =
 	}
 });
 
-test("checks named, renamed and default decoder exports through their local bindings", async () => {
+void test("checks named, renamed and default decoder exports through their local bindings", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-decoder-bindings-"));
 	try {
 		const source = join(fixtureRoot, "packages/example/src");
@@ -723,7 +748,7 @@ test("checks named, renamed and default decoder exports through their local bind
 	}
 });
 
-test("rejects layer factories taking a Layer and make* exports only their module uses", async () => {
+void test("rejects layer factories taking a Layer and make* exports only their module uses", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-composition-"));
 	try {
 		const source = join(fixtureRoot, "packages/example/src");
@@ -761,7 +786,7 @@ test("rejects layer factories taking a Layer and make* exports only their module
 	}
 });
 
-test("tagged errors in migrated packages carry the guidance fields", async () => {
+void test("tagged errors in migrated packages carry the guidance fields", async () => {
 	const fixtureRoot = await mkdtemp(join(tmpdir(), "ue-shed-error-shape-"));
 	try {
 		const source = join(fixtureRoot, "packages/unreal-connection/src");

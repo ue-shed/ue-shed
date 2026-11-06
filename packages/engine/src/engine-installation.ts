@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Config, Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Config, Context, Effect, Layer, Schema } from "effect";
 import {
 	installedEngineRoots,
 	queryWindowsRegistry,
@@ -66,20 +66,20 @@ export interface EngineInstallationRequest {
  * Invalid descriptor/root, missing installation or ambiguous engine selection. Candidate
  * labels and original parse/IO causes support recovery; ambiguity requires an explicit root.
  */
-export class EngineInstallationError extends Schema.TaggedError<EngineInstallationError>()(
-	"EngineInstallationError",
-	{
-		code: Schema.Literals([
-			"invalid_project_descriptor",
-			"invalid_engine_root",
-			"engine_not_found",
-			"engine_ambiguous"
-		]),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		candidates: Schema.optionalKey(Schema.Array(Schema.String))
-	}
-) {}
+export class EngineInstallationError extends Schema.TaggedError<
+	EngineInstallationError,
+	Brand.Brand<"packages/engine/src/engine-installation/EngineInstallationError">
+>()("EngineInstallationError", {
+	code: Schema.Literals([
+		"invalid_project_descriptor",
+		"invalid_engine_root",
+		"engine_not_found",
+		"engine_ambiguous"
+	]),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	candidates: Schema.optionalKey(Schema.Array(Schema.String))
+}) {}
 
 /**
  * Resolves one engine installation from an explicit root or project association. Multiple

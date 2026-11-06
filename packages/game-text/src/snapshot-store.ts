@@ -283,7 +283,7 @@ async function acquireLock(directory: string) {
 			const ownerPath = join(lock, names[0]!);
 			let owner;
 			try {
-				owner = Schema.decodeUnknownSync(Schema.fromJsonString(Owner))(
+				owner = Schema.decodeSync(Schema.fromJsonString(Owner))(
 					new TextDecoder().decode(await readBounded(ownerPath, 4096, "lock"))
 				);
 			} catch {
@@ -332,8 +332,8 @@ export interface SnapshotWriter {
 	) => Effect.Effect<SnapshotManifest, StoreFailure>;
 }
 export interface SnapshotStoreApi {
-	readonly open: () => Effect.Effect<SnapshotReader, StoreFailure, Scope.Scope>;
-	readonly writer: () => Effect.Effect<SnapshotWriter, StoreFailure, Scope.Scope>;
+	readonly open: Effect.Effect<SnapshotReader, StoreFailure, Scope.Scope>;
+	readonly writer: Effect.Effect<SnapshotWriter, StoreFailure, Scope.Scope>;
 }
 export class SnapshotStore extends Context.Service<SnapshotStore, SnapshotStoreApi>()(
 	"@ue-shed/game-text/SnapshotStore"
@@ -361,7 +361,7 @@ export function snapshotStoreNodeLayer(
 	options: SnapshotStoreOptions
 ): Layer.Layer<SnapshotStore, SnapshotStoreError> {
 	return Layer.unwrap(
-		Schema.decodeUnknownEffect(StoreConfiguration)(options).pipe(
+		Schema.decodeEffect(StoreConfiguration)(options).pipe(
 			Effect.mapError(
 				(cause) =>
 					new SnapshotStoreError({
@@ -413,7 +413,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 			throw cause;
 		}
 		try {
-			const value = Schema.decodeUnknownSync(Schema.fromJsonString(Manifest))(
+			const value = Schema.decodeSync(Schema.fromJsonString(Manifest))(
 				new TextDecoder("utf-8", { fatal: true }).decode(bytes)
 			);
 			if (value.identity !== identity)
@@ -465,7 +465,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 	return Layer.effect(
 		SnapshotStore,
 		Effect.sync(() => {
-			const openReaderEffect = Effect.fn("GameTextSnapshot.open")(function* () {
+			const openReaderEffect = Effect.gen(function* () {
 				const mutex = yield* Semaphore.make(1);
 				let active = true;
 				const columns = new Map<string, Uint8Array | Uint32Array>();
@@ -530,8 +530,8 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 					section,
 					strings
 				};
-			});
-			const writer = Effect.fn("GameTextSnapshot.writer")(function* () {
+			}).pipe(Effect.withSpan("GameTextSnapshot.open"));
+			const writer = Effect.gen(function* () {
 				let active = true;
 				const release = yield* Effect.acquireRelease(
 					boundary("lock", async () => {
@@ -601,7 +601,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 										});
 									let keys;
 									try {
-										keys = Schema.decodeUnknownSync(InputKeys)(inputKeys);
+										keys = Schema.decodeSync(InputKeys)(inputKeys);
 									} catch (cause) {
 										throw new SnapshotStoreError({
 											retrySafe:
@@ -686,7 +686,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 							)
 				);
 				return { publish };
-			});
+			}).pipe(Effect.withSpan("GameTextSnapshot.writer"));
 			return SnapshotStore.of({ open: openReaderEffect, writer });
 		})
 	);

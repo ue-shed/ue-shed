@@ -2,7 +2,7 @@ import { open, type FileHandle } from "node:fs/promises";
 import { readSync } from "node:fs";
 import { isUtf8 } from "node:buffer";
 import * as zlib from "node:zlib";
-import { Schema } from "effect";
+import { Predicate } from "effect";
 import { decodeWtf8 } from "./wtf8.js";
 import {
 	decodeSnapshotDirectory,
@@ -183,7 +183,7 @@ export async function writeSnapshotFile(
 		} else {
 			const values = await loadColumn(column, signal),
 				raw = snapshotPayload({ ...column, values });
-			const compressionLevel = Schema.is(Schema.Number)(level) ? level : level(column);
+			const compressionLevel = Predicate.isNumber(level) ? level : level(column);
 			const compressed =
 				compressionLevel === 0
 					? raw

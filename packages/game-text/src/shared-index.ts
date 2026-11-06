@@ -243,10 +243,10 @@ export interface SharedIndexWriter {
 export class SharedIndex extends Context.Service<
 	SharedIndex,
 	{
-		readonly inspect: () => Effect.Effect<SharedIndexManifest, Failure, Scope.Scope>;
+		readonly inspect: Effect.Effect<SharedIndexManifest, Failure, Scope.Scope>;
 		readonly cached: (key: string) => Effect.Effect<SharedLayerRecord, Failure, Scope.Scope>;
-		readonly open: () => Effect.Effect<SharedIndexReader, Failure, Scope.Scope>;
-		readonly writer: () => Effect.Effect<SharedIndexWriter, Failure, Scope.Scope>;
+		readonly open: Effect.Effect<SharedIndexReader, Failure, Scope.Scope>;
+		readonly writer: Effect.Effect<SharedIndexWriter, Failure, Scope.Scope>;
 	}
 >()("@ue-shed/game-text/SharedIndex") {}
 
@@ -257,7 +257,7 @@ function readIndex(reader: SnapshotReader) {
 		.section("index.meta")
 		.pipe(
 			Effect.flatMap((bytes) =>
-				Schema.decodeUnknownEffect(Schema.fromJsonString(SharedIndexManifestSchema))(
+				Schema.decodeEffect(Schema.fromJsonString(SharedIndexManifestSchema))(
 					new TextDecoder().decode(bytes)
 				).pipe(
 					Effect.mapError((cause) =>
@@ -334,18 +334,18 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 		SharedIndex,
 		Effect.gen(function* () {
 			const store = yield* SnapshotStore;
-			const read = Effect.fn("SharedIndex.read")(function* () {
-				const root = yield* store.open();
+			const read = Effect.gen(function* () {
+				const root = yield* store.open;
 				return yield* readIndex(root);
-			});
+			}).pipe(Effect.withSpan("SharedIndex.read"));
 			const cached = Effect.fn("SharedIndex.cached")(function* (key: string) {
-				const manifest = yield* read();
+				const manifest = yield* read;
 				return yield* boundary("cached", () =>
 					validateCachedLayer(directory, manifest, key, options.onRead)
 				);
 			});
 			const openOnce = Effect.fn("SharedIndex.open")(function* () {
-				const manifest = yield* read();
+				const manifest = yield* read;
 				const files = yield* Effect.acquireRelease(
 					boundary("segments", () =>
 						new SharedStringFiles(directory, manifest.segments).open()
@@ -376,16 +376,14 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 							? manifest.layers[key]
 							: undefined;
 					if (!record)
-						return yield* Effect.fail(
-							new SnapshotStoreError({
-								retrySafe: snapshotStoreGuidance("missing").retrySafe,
-								nextStep: snapshotStoreGuidance("missing").nextStep,
-								operation: "layer",
-								code: "missing",
-								message: `Layer ${name} (${key}) is absent.`,
-								recovery: "Import this input."
-							})
-						);
+						return yield* new SnapshotStoreError({
+							retrySafe: snapshotStoreGuidance("missing").retrySafe,
+							nextStep: snapshotStoreGuidance("missing").nextStep,
+							operation: "layer",
+							code: "missing",
+							message: `Layer ${name} (${key}) is absent.`,
+							recovery: "Import this input."
+						});
 					const file = layers.get(key)!;
 					const end = manifest.segments[record.segmentCount - 1];
 					const maximumId = end ? end.start + end.count : 0;
@@ -492,7 +490,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					)
 				};
 			});
-			const open = Effect.fn("SharedIndex.openRetained")(function* () {
+			const open = Effect.gen(function* () {
 				for (let attempt = 0; ; attempt++) {
 					const result = yield* openOnce().pipe(Effect.result);
 					if (Result.isSuccess(result)) return result.success;
@@ -502,17 +500,17 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 						!isSnapshotStoreError(result.failure) ||
 						result.failure.code !== "missing"
 					)
-						return yield* Effect.fail(result.failure);
+						return yield* result.failure;
 				}
-			});
-			const writer = Effect.fn("SharedIndex.writer")(function* () {
-				const rootWriter = yield* store.writer();
-				const opened = yield* read().pipe(Effect.result);
+			}).pipe(Effect.withSpan("SharedIndex.openRetained"));
+			const writer = Effect.gen(function* () {
+				const rootWriter = yield* store.writer;
+				const opened = yield* read.pipe(Effect.result);
 				if (
 					Result.isFailure(opened) &&
 					(!isSnapshotStoreError(opened.failure) || opened.failure.code !== "missing")
 				)
-					return yield* Effect.fail(opened.failure);
+					return yield* opened.failure;
 				let manifest = Result.isSuccess(opened) ? opened.success : initial();
 				let files: SharedStringFiles = yield* Effect.acquireRelease(
 					boundary("segments", () =>
@@ -540,7 +538,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					next: SharedIndexManifest
 				) {
 					const started = performance.now();
-					yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(next).pipe(
+					yield* Schema.decodeEffect(SharedIndexManifestSchema)(next).pipe(
 						Effect.mapError((cause) =>
 							snapshotFailure(
 								"index.meta",
@@ -551,9 +549,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					);
 					const bytes = new TextEncoder().encode(JSON.stringify(next));
 					if (bytes.length > 16 * 1024 ** 2)
-						return yield* Effect.fail(
-							snapshotFailure("index.meta", "Shared root exceeds 16 MiB")
-						);
+						return yield* snapshotFailure("index.meta", "Shared root exceeds 16 MiB");
 					uncertain = true;
 					yield* rootWriter.publish(
 						{
@@ -913,11 +909,9 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 										files.segments.length + domains.size >
 										maximumSharedSegments
 									)
-										return yield* Effect.fail(
-											snapshotFailure(
-												"batch",
-												"Batch exceeds segment cap; use cold publication"
-											)
+										return yield* snapshotFailure(
+											"batch",
+											"Batch exceeds segment cap; use cold publication"
 										);
 									const old = layers[active[entry.name] ?? ""];
 									const record = yield* boundary("batch.layer", () =>
@@ -1062,7 +1056,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 						timings: { ...files.timings }
 					})
 				};
-			});
+			}).pipe(Effect.withSpan("SharedIndex.writer"));
 
 			async function obsoleteBytes(
 				directory: string,
@@ -1227,7 +1221,7 @@ async function convertLayer(
 					"reuse",
 					"Reuse metadata exceeds cap"
 				);
-				const oldBlocks = Schema.decodeUnknownSync(Schema.fromJsonString(FileReuse))(
+				const oldBlocks = Schema.decodeSync(Schema.fromJsonString(FileReuse))(
 					new TextDecoder().decode(await reader.load("reuse.meta"))
 				);
 				let total = 0,
@@ -1663,7 +1657,7 @@ async function validateCachedLayer(
 			"Layer metadata or size differs"
 		);
 		const bytes = await reader.load("shared.meta");
-		const metadata = Schema.decodeUnknownSync(Schema.fromJsonString(LayerRecord))(
+		const metadata = Schema.decodeSync(Schema.fromJsonString(LayerRecord))(
 			new TextDecoder().decode(bytes)
 		);
 		snapshotCheck(

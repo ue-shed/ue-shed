@@ -160,7 +160,7 @@ describe("Project Index public contract", () => {
 	);
 	it("rejects a query above the package-enforced page limit", async () => {
 		const result = await Effect.runPromiseExit(
-			Schema.decodeUnknownEffect(ProjectIndexQuery)({
+			Schema.decodeEffect(ProjectIndexQuery)({
 				_tag: "Maps",
 				expectedGeneration: ProjectIndexGeneration.make(1),
 				limit: PROJECT_INDEX_MAX_PAGE_SIZE + 1,
@@ -281,16 +281,16 @@ effectIt.effect("loads cache-root policy from configuration without Electron imp
 		expect(root).toBe("D:/Caches/from-config");
 	}).pipe(
 		Effect.provide(
-			Layer.merge(
-				projectIndexMemoryLayer({ cacheRoot: "D:/Caches/from-config" }),
-				ProjectIndexConfigLive
-			)
-		),
-		Effect.provide(
-			ConfigProvider.layer(
-				ConfigProvider.fromUnknown({
-					[PROJECT_INDEX_CACHE_ROOT_ENV]: "D:/Caches/from-config"
-				})
+			Layer.provideMerge(
+				Layer.merge(
+					projectIndexMemoryLayer({ cacheRoot: "D:/Caches/from-config" }),
+					ProjectIndexConfigLive
+				),
+				ConfigProvider.layer(
+					ConfigProvider.fromUnknown({
+						[PROJECT_INDEX_CACHE_ROOT_ENV]: "D:/Caches/from-config"
+					})
+				)
 			)
 		)
 	)

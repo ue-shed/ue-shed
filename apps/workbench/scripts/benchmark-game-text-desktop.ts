@@ -323,9 +323,9 @@ async function launch(app: AppUnderTest, projectRoot: string, sessionRoot: strin
 }
 
 const StallReport = Schema.Struct({
-	maxStallMs: Schema.Number,
-	over50Ms: Schema.Number,
-	over50TotalMs: Schema.Number
+	maxStallMs: Schema.Finite,
+	over50Ms: Schema.Finite,
+	over50TotalMs: Schema.Finite
 });
 const decodeStallReport = Schema.decodeUnknownSync(StallReport);
 
@@ -427,7 +427,7 @@ const ipcRecorderStart = `(() => {
 	}
 })()`;
 const IpcCalls = Schema.Array(
-	Schema.Struct({ call: Schema.String, start: Schema.Number, end: Schema.Number })
+	Schema.Struct({ call: Schema.String, start: Schema.Finite, end: Schema.Finite })
 );
 
 /** Starts main and renderer CPU profiles; the returned function writes `<prefix>-*.cpuprofile`. */
@@ -530,9 +530,9 @@ const rescanUsableInPage = `(() => {
 	if (!usable) rescan.busy = true;
 	return rescan.busy && usable ? { clickedAt: rescan.clickedAt, usableAt: usable } : false;
 })()`;
-const Epoch = Schema.Number;
-const WarmState = Schema.Union([Schema.Number, Schema.Literal("scan")]);
-const RescanTiming = Schema.Struct({ clickedAt: Schema.Number, usableAt: Schema.Number });
+const Epoch = Schema.Finite;
+const WarmState = Schema.Union([Schema.Finite, Schema.Literal("scan")]);
+const RescanTiming = Schema.Struct({ clickedAt: Schema.Finite, usableAt: Schema.Finite });
 
 /** Polls `script` in the page every 10 ms until it is truthy, and decodes that value. */
 async function inPage<A>(
@@ -573,7 +573,7 @@ async function countText(page: Page) {
 		.innerText({ timeout: 1_000 });
 }
 
-const SearchDone = Schema.Struct({ pressedAt: Schema.Number, doneAt: Schema.Number });
+const SearchDone = Schema.Struct({ pressedAt: Schema.Finite, doneAt: Schema.Finite });
 
 async function timedSearch(page: Page, query: string): Promise<SearchTiming> {
 	const search = page.getByRole("searchbox", { name: "Search game text" });
@@ -665,7 +665,7 @@ const hashScript = `(async () => {
 })()`;
 
 const decodeHash = Schema.decodeUnknownSync(
-	Schema.Struct({ hash: Schema.String, rows: Schema.Number })
+	Schema.Struct({ hash: Schema.String, rows: Schema.Finite })
 );
 
 async function hashResults(page: Page) {
@@ -793,11 +793,11 @@ async function measure(app: AppUnderTest, options: Options, run: number): Promis
 			// When each process's clock started, and the page's own load events.
 			milestones.set(
 				"warmMainOrigin",
-				Schema.decodeUnknownSync(Schema.Number)(
+				Schema.decodeUnknownSync(Schema.Finite)(
 					await warm.application.evaluate("performance.timeOrigin")
 				)
 			);
-			const page = Schema.decodeUnknownSync(Schema.Array(Schema.Number))(
+			const page = Schema.decodeUnknownSync(Schema.Array(Schema.Finite))(
 				await warm.page.evaluate(`(() => {
 					const navigation = performance.getEntriesByType("navigation")[0];
 					return [

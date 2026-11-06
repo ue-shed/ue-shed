@@ -204,7 +204,7 @@ describe("Remote Control authoring adapter", () => {
 		});
 
 		const connection = await runRemoteControl(connectUnrealAuthoring(endpoint));
-		expect(await Effect.runPromise(connection.listTableObjectPaths())).toEqual([
+		expect(await Effect.runPromise(connection.listTableObjectPaths)).toEqual([
 			"/Game/Fixture/DT_Test.DT_Test"
 		]);
 		const snapshot = await Effect.runPromise(
@@ -240,6 +240,33 @@ describe("Remote Control authoring adapter", () => {
 		expect(Schema.isSchemaError(error.cause)).toBe(true);
 		expect(error.retrySafe).toBe(false);
 	});
+
+	it.each(["{", '{"value":1e999}'])(
+		"keeps invalid ResultJson %s in the typed channel with its original parser category",
+		async (resultJson) => {
+			const endpoint = await listen((_request, response) => {
+				response.setHeader("content-type", "application/json");
+				response.end(JSON.stringify({ ResultJson: resultJson }));
+			});
+			const client = makeRemoteControlClient({ defaultTimeout: "1 second" });
+			const error = await Effect.runPromise(
+				client
+					.request({
+						endpoint,
+						functionName: "GetCapabilityManifest",
+						objectPath: "/Script/UEShedCore.Default__UEShedCoreLibrary",
+						parameters: {},
+						idempotent: true
+					})
+					.pipe(Effect.flip)
+			);
+			expect(error.code).toBe("invalid_result_json");
+			expect(error.retrySafe).toBe(true);
+			expect(error.nextStep).toBe("escalate");
+			if (resultJson === "{") expect(error.cause).toBeInstanceOf(SyntaxError);
+			else expect(Schema.isSchemaError(error.cause)).toBe(true);
+		}
+	);
 
 	it("sends the host's Remote Control passphrase and extra headers", async () => {
 		const seen: Array<{

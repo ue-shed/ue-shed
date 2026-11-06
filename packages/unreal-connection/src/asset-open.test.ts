@@ -69,7 +69,7 @@ describe("asset-open capability adapter", () => {
 	}
 
 	for (const capabilities of [[], ["editor.asset-navigation.v1"]]) {
-		it(`rejects missing open capability even with locate: ${capabilities}`, async () => {
+		it(`rejects missing open capability even with locate: ${capabilities.join(", ")}`, async () => {
 			const { calls, result } = runOpen({ capabilities });
 			const error = await Effect.runPromise(Effect.flip(result));
 			expect(error).toBeInstanceOf(UnrealCapabilityError);

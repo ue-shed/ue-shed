@@ -60,29 +60,28 @@ function project(
 	}
 ) {
 	return makeWorkbenchProjectTestLayer({
-		choose: () => Effect.die("not used"),
-		current: () =>
-			Effect.succeed(
-				options?.currentStatus === "not_configured"
-					? { status: "not_configured" as const }
-					: {
-							project: {
-								inputAtlas: "deferred" as const,
-								mapCount: 0,
-								packageCount: 0,
-								projectName: "Fixture",
-								projectRoot
-							},
-							status: "ready" as const
-						}
-			),
+		choose: Effect.suspend(() => Effect.die("not used")),
+		current: Effect.sync(() =>
+			options?.currentStatus === "not_configured"
+				? { status: "not_configured" as const }
+				: {
+						project: {
+							inputAtlas: "deferred" as const,
+							mapCount: 0,
+							packageCount: 0,
+							projectName: "Fixture",
+							projectRoot
+						},
+						status: "ready" as const
+					}
+		),
 		candidates:
 			options?.candidates ??
 			(() => Effect.die("project candidates are not used by this test")),
-		inputAtlas: () => Effect.die("not used"),
-		savedProject: () => Effect.die("not used"),
-		savedTables: () => Effect.die("not used"),
-		selectedProject: () => Effect.succeed({ projectName: "Fixture", projectRoot })
+		inputAtlas: Effect.suspend(() => Effect.die("not used")),
+		savedProject: Effect.suspend(() => Effect.die("not used")),
+		savedTables: Effect.suspend(() => Effect.die("not used")),
+		selectedProject: Effect.sync(() => ({ projectName: "Fixture", projectRoot }))
 	});
 }
 
@@ -105,35 +104,31 @@ function serviceLayer(options: {
 	readonly currentStatus?: "ready" | "not_configured";
 }) {
 	const reader: AssetReaderTestApi = {
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -153,7 +148,7 @@ function serviceLayer(options: {
 		scanProject:
 			options.scanProject ??
 			(() => Effect.die(new Error("Unexpected AssetReader scanProject call"))),
-		source: () => Effect.succeed("configured")
+		source: Effect.succeed("configured")
 	};
 	return WorkbenchNiagaraPreviewLive.pipe(
 		Layer.provide(
@@ -258,7 +253,7 @@ it.effect("returns a frame only while its bytes match the immutable manifest", (
 			const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 			const artifact = fixture.artifacts[0];
 			if (artifact === undefined) return yield* Effect.die("fixture has no artifact");
-			const manifest = yield* Schema.decodeUnknownEffect(NiagaraPreviewRunManifest)({
+			const manifest = yield* Schema.decodeEffect(NiagaraPreviewRunManifest)({
 				...fixture,
 				artifacts: [
 					{
@@ -410,8 +405,9 @@ it.effect("catalogues every saved Niagara System in the selected project", () =>
 				});
 			}
 		});
-		const result = yield* Effect.flatMap(WorkbenchNiagaraPreview, (service) =>
-			service.catalogue()
+		const result = yield* Effect.flatMap(
+			WorkbenchNiagaraPreview,
+			(service) => service.catalogue
 		).pipe(Effect.provide(layer));
 		expect(result.status).toBe("ready");
 		if (result.status !== "ready") return;
@@ -437,8 +433,9 @@ it.effect("reports a missing project instead of listing systems", () =>
 			projectRoot: "C:/Projects/Fixture",
 			run: () => Effect.die("run is not used")
 		});
-		const result = yield* Effect.flatMap(WorkbenchNiagaraPreview, (service) =>
-			service.catalogue()
+		const result = yield* Effect.flatMap(
+			WorkbenchNiagaraPreview,
+			(service) => service.catalogue
 		).pipe(Effect.provide(layer));
 		expect(result).toEqual({ status: "not_configured" });
 	})
@@ -460,8 +457,9 @@ it.effect("maps candidate failures to typed catalogue failures", () =>
 			projectRoot: "C:/Projects/Fixture",
 			run: () => Effect.die("run is not used")
 		});
-		const result = yield* Effect.flatMap(WorkbenchNiagaraPreview, (service) =>
-			service.catalogue()
+		const result = yield* Effect.flatMap(
+			WorkbenchNiagaraPreview,
+			(service) => service.catalogue
 		).pipe(Effect.provide(layer));
 		expect(result).toEqual({
 			error: {

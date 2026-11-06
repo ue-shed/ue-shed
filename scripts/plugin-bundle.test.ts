@@ -85,7 +85,7 @@ function archiveEntries(path: string) {
 	return result.stdout.split(/\r?\n/u).filter(Boolean);
 }
 
-test("source bundles support 5.6 through 5.8.2 while preserving an explicit engine range", async () => {
+void test("source bundles support 5.6 through 5.8.2 while preserving an explicit engine range", async () => {
 	const fixture = await createFixture();
 	try {
 		for (const [name, unreal, expected] of [
@@ -111,7 +111,7 @@ test("source bundles support 5.6 through 5.8.2 while preserving an explicit engi
 	}
 });
 
-test("builds deterministic source archive and excludes local Unreal output", async () => {
+void test("builds deterministic source archive and excludes local Unreal output", async () => {
 	const fixture = await createFixture();
 	const candidatePath = join(fixture.root, "candidate-manifest.json");
 	await writeFile(
@@ -217,7 +217,7 @@ test("builds deterministic source archive and excludes local Unreal output", asy
 	}
 });
 
-test("rejects local, unpinned, inconsistent, corrupt, or missing public plugin assets", async () => {
+void test("rejects local, unpinned, inconsistent, corrupt, or missing public plugin assets", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-public-plugin-negative-"));
 	try {
 		const archivePath = join(output, "built.tar.gz");
@@ -246,7 +246,7 @@ test("rejects local, unpinned, inconsistent, corrupt, or missing public plugin a
 	}
 });
 
-test("fails the integrity check when the archive cannot be hashed", async () => {
+void test("fails the integrity check when the archive cannot be hashed", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-public-plugin-unhashable-"));
 	try {
 		// A directory where the archive should be: hashing it fails.
@@ -275,7 +275,7 @@ test("fails the integrity check when the archive cannot be hashed", async () => 
 	}
 });
 
-test("camera authoring preset includes the complete native dependency graph", async () => {
+void test("camera authoring preset includes the complete native dependency graph", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-camera-authoring-plugins-"));
 	try {
 		const result = await buildPluginBundle({
@@ -294,7 +294,7 @@ test("camera authoring preset includes the complete native dependency graph", as
 	}
 });
 
-test("editor host preset adds DataTable authoring and text key fixes to camera authoring", async () => {
+void test("editor host preset adds DataTable authoring and text key fixes to camera authoring", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-editor-host-plugins-"));
 	try {
 		const result = await buildPluginBundle({
@@ -313,7 +313,7 @@ test("editor host preset adds DataTable authoring and text key fixes to camera a
 	}
 });
 
-test("every plugin belongs to a preset or is explicitly full-bundle-only", async () => {
+void test("every plugin belongs to a preset or is explicitly full-bundle-only", async () => {
 	const presets = new Set([
 		...MAP_REVIEW_PLUGIN_IDS,
 		...CAMERA_AUTHORING_PLUGIN_IDS,
@@ -331,7 +331,7 @@ test("every plugin belongs to a preset or is explicitly full-bundle-only", async
 	for (const id of FULL_BUNDLE_ONLY_PLUGIN_IDS) assert.ok(!presets.has(id));
 });
 
-test("authoring automation source closure attests its contracts and passes release validation", async () => {
+void test("authoring automation source closure attests its contracts and passes release validation", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-authoring-automation-plugins-"));
 	try {
 		const pluginRoot = join(output, "Plugins");
@@ -405,7 +405,7 @@ test("authoring automation source closure attests its contracts and passes relea
 	}
 });
 
-test("an explicit plugin selection rejects missing requested sources", async () => {
+void test("an explicit plugin selection rejects missing requested sources", async () => {
 	const fixture = await createFixture();
 	try {
 		await assert.rejects(
@@ -422,7 +422,7 @@ test("an explicit plugin selection rejects missing requested sources", async () 
 	}
 });
 
-test("selects the Map Review Core+World+Cameras graph without Observatory or UI plugins", async () => {
+void test("selects the Map Review Core+World+Cameras graph without Observatory or UI plugins", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-map-review-plugins-"));
 	try {
 		const pluginRoot = join(output, "Plugins");
@@ -472,7 +472,7 @@ test("selects the Map Review Core+World+Cameras graph without Observatory or UI 
 	}
 });
 
-test("separates Niagara's stock engine dependency from the bundle graph", async () => {
+void test("separates Niagara's stock engine dependency from the bundle graph", async () => {
 	const fixture = await createFixture();
 	const output = join(fixture.root, "output");
 	try {
@@ -500,7 +500,7 @@ test("separates Niagara's stock engine dependency from the bundle graph", async 
 	}
 });
 
-test("selects headless Observatory with its Core dependency and without UI packages", async () => {
+void test("selects headless Observatory with its Core dependency and without UI packages", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-observatory-plugin-"));
 	try {
 		const result = await buildPluginBundle({
@@ -525,7 +525,7 @@ test("selects headless Observatory with its Core dependency and without UI packa
 	}
 });
 
-test("rejects a descriptor dependency that is absent from the bundle", async () => {
+void test("rejects a descriptor dependency that is absent from the bundle", async () => {
 	const fixture = await createFixture();
 	const descriptorPath = join(fixture.pluginRoot, "UEShedBeta", "UEShedBeta.uplugin");
 	await writeFile(
@@ -552,7 +552,7 @@ test("rejects a descriptor dependency that is absent from the bundle", async () 
 	}
 });
 
-test("Game Text bundle stages legacy Core with asset navigation and the separate legacy range", async () => {
+void test("Game Text bundle stages legacy Core with asset navigation and the separate legacy range", async () => {
 	const output = await mkdtemp(join(tmpdir(), "ue-shed-game-text-bundle-"));
 	try {
 		const pluginRoot = join(output, "Plugins");

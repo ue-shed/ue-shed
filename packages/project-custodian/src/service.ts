@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
-import { Context, Effect, Layer, Ref, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Ref, Schema } from "effect";
 import {
 	custodianProposalStorageIsValid,
 	executeCustodianProposal,
@@ -25,7 +25,10 @@ import {
  * `@ue-shed/protocol`. `retry` is only valid when `retrySafe` is true.
  */
 
-export class CustodianError extends Schema.TaggedError<CustodianError>()("ProjectCustodian.Error", {
+export class CustodianError extends Schema.TaggedError<
+	CustodianError,
+	Brand.Brand<"packages/project-custodian/src/service/CustodianError">
+>()("ProjectCustodian.Error", {
 	code: Schema.Literals([
 		"invalid_request",
 		"scan_failed",
@@ -80,7 +83,7 @@ export const CustodianNodeLive = Layer.effect(
 		);
 
 		const scan = Effect.fn("ProjectCustodian.scan")(function* (input: CustodianScanRequest) {
-			const request = yield* Schema.decodeUnknownEffect(CustodianScanRequest)(input).pipe(
+			const request = yield* Schema.decodeEffect(CustodianScanRequest)(input).pipe(
 				Effect.mapError((cause) => invalidRequest("scan", cause))
 			);
 			const report = yield* Effect.tryPromise({
@@ -113,7 +116,7 @@ export const CustodianNodeLive = Layer.effect(
 		const prepare = Effect.fn("ProjectCustodian.prepare")(function* (
 			input: CustodianPrepareRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(CustodianPrepareRequest)(input).pipe(
+			const request = yield* Schema.decodeEffect(CustodianPrepareRequest)(input).pipe(
 				Effect.mapError((cause) => invalidRequest("prepare", cause))
 			);
 			return yield* Effect.tryPromise({
@@ -134,7 +137,7 @@ export const CustodianNodeLive = Layer.effect(
 		const execute = Effect.fn("ProjectCustodian.execute")(function* (
 			input: CustodianExecuteRequest
 		) {
-			const request = yield* Schema.decodeUnknownEffect(CustodianExecuteRequest)(input).pipe(
+			const request = yield* Schema.decodeEffect(CustodianExecuteRequest)(input).pipe(
 				Effect.mapError((cause) => invalidRequest("execute", cause))
 			);
 			const document = yield* Effect.tryPromise({
@@ -164,17 +167,14 @@ export const CustodianNodeLive = Layer.effect(
 				)
 			);
 			if (!custodianProposalStorageIsValid(proposal, request.proposalPath)) {
-				return yield* Effect.fail(
-					new CustodianError({
-						code: "invalid_proposal",
-						message: "Project Custodian rejected unsafe proposal storage paths.",
-						recovery:
-							"Prepare a fresh proposal and do not move or edit its JSON document.",
-						retrySafe: false,
-						nextStep: "fix_input",
-						cause: proposal
-					})
-				);
+				return yield* new CustodianError({
+					code: "invalid_proposal",
+					message: "Project Custodian rejected unsafe proposal storage paths.",
+					recovery: "Prepare a fresh proposal and do not move or edit its JSON document.",
+					retrySafe: false,
+					nextStep: "fix_input",
+					cause: proposal
+				});
 			}
 			const controller = new AbortController();
 			const acquired = yield* Ref.modify(activeExecutions, (current) => {
@@ -184,16 +184,14 @@ export const CustodianNodeLive = Layer.effect(
 				return [true, next] as const;
 			});
 			if (!acquired) {
-				return yield* Effect.fail(
-					new CustodianError({
-						code: "execution_in_progress",
-						message: "This cleanup proposal is already executing.",
-						recovery: "Wait for the active run or cancel its remaining targets.",
-						retrySafe: true,
-						nextStep: "retry",
-						cause: proposal.id
-					})
-				);
+				return yield* new CustodianError({
+					code: "execution_in_progress",
+					message: "This cleanup proposal is already executing.",
+					recovery: "Wait for the active run or cancel its remaining targets.",
+					retrySafe: true,
+					nextStep: "retry",
+					cause: proposal.id
+				});
 			}
 
 			const cleanup = Effect.tryPromise({
@@ -242,9 +240,9 @@ export const CustodianNodeLive = Layer.effect(
 		const cancel = Effect.fn("ProjectCustodian.cancel")(function* (
 			proposalId: CustodianProposalId
 		) {
-			const decodedId = yield* Schema.decodeUnknownEffect(CustodianProposalId)(
-				proposalId
-			).pipe(Effect.mapError((cause) => invalidRequest("execute", cause)));
+			const decodedId = yield* Schema.decodeEffect(CustodianProposalId)(proposalId).pipe(
+				Effect.mapError((cause) => invalidRequest("execute", cause))
+			);
 			const active = (yield* Ref.get(activeExecutions)).get(decodedId);
 			if (active === undefined) {
 				return { proposalId: decodedId, status: "not_running" as const };

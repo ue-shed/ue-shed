@@ -68,17 +68,16 @@ const loadFilesGate = Effect.fn("Cli.localization.gate")(function* (
 	);
 	const named = command.targets.length > 0 ? ungathered[0] : undefined;
 	if (named !== undefined || ungathered.length === evidence.length)
-		return yield* Effect.fail(
-			ungatheredFailure(
-				(named ?? ungathered[0])?.target.name ?? "The target",
-				"Unreal has not gathered it."
-			)
+		return yield* ungatheredFailure(
+			(named ?? ungathered[0])?.target.name ?? "The target",
+			"Unreal has not gathered it."
 		);
 	const checked = evidence.filter((item) => !ungathered.includes(item));
 	for (const item of checked) {
 		if (item.manifest.status === "failed")
-			return yield* Effect.fail(
-				localizationManifestFailure(item.manifest.error, item.manifest.relativePath)
+			return yield* localizationManifestFailure(
+				item.manifest.error,
+				item.manifest.relativePath
 			);
 	}
 	// Files that exist but cannot be read make translations unknown, never absent.
@@ -93,15 +92,13 @@ const loadFilesGate = Effect.fn("Cli.localization.gate")(function* (
 				)
 			)
 		);
-		return yield* Effect.fail(
-			new LocalizationGateError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "unreadable_evidence",
-				message: `Localization files could not be read: ${unread.join(", ")}. ${errors.map((error) => error.message).join(" ")}`,
-				recovery: [...new Set(errors.map((error) => error.recovery))].join(" ")
-			})
-		);
+		return yield* new LocalizationGateError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "unreadable_evidence",
+			message: `Localization files could not be read: ${unread.join(", ")}. ${errors.map((error) => error.message).join(" ")}`,
+			recovery: [...new Set(errors.map((error) => error.recovery))].join(" ")
+		});
 	}
 	const skipped = ungathered.map((item) => ({
 		target: item.target.name,
@@ -111,16 +108,14 @@ const loadFilesGate = Effect.fn("Cli.localization.gate")(function* (
 	const header = yield* indexed[0]!.query.readFileCoverage(files);
 	const unscanned = localizationGateUnreadPackages(header, files);
 	if (unscanned.length > 0)
-		return yield* Effect.fail(
-			new LocalizationGateError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "unreadable_package",
-				message: `Changed packages could not be read: ${unscanned.slice(0, 200).join(", ")}.${unscanned.length > 200 ? ` ${unscanned.length - 200} more packages omitted.` : ""}`,
-				recovery:
-					"Check that the packages are saved and not damaged, and that the reader supports their engine version, then check again."
-			})
-		);
+		return yield* new LocalizationGateError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "unreadable_package",
+			message: `Changed packages could not be read: ${unscanned.slice(0, 200).join(", ")}.${unscanned.length > 200 ? ` ${unscanned.length - 200} more packages omitted.` : ""}`,
+			recovery:
+				"Check that the packages are saved and not damaged, and that the reader supports their engine version, then check again."
+		});
 	const partial = localizationGatePartialPackages(header, files);
 	const results = yield* Effect.forEach(checked, (item) =>
 		Effect.gen(function* () {
@@ -159,11 +154,9 @@ const loadChangeGate = Effect.fn("Cli.localization.gate_change")(function* (
 	const ungathered = read.targets.filter((target) => !target.localized);
 	const named = command.targets.length > 0 ? ungathered[0] : undefined;
 	if (named !== undefined || ungathered.length === read.targets.length)
-		return yield* Effect.fail(
-			ungatheredFailure(
-				(named ?? ungathered[0])?.target ?? "The target",
-				"it had none when the change was made, so Unreal had not gathered it."
-			)
+		return yield* ungatheredFailure(
+			(named ?? ungathered[0])?.target ?? "The target",
+			"it had none when the change was made, so Unreal had not gathered it."
 		);
 	const results = read.targets.flatMap((target) =>
 		target.localized && target.target !== undefined
@@ -188,10 +181,8 @@ const loadGate = Effect.fn("Cli.localization.load_gate")(function* (
 ) {
 	const both = command.failOn.filter((check) => command.warnOn.includes(check));
 	if (both.length > 0)
-		return yield* Effect.fail(
-			usageError(
-				`${both.join(", ")} cannot both fail and warn. Pass each check to --fail-on or --warn-on, not both.`
-			)
+		return yield* usageError(
+			`${both.join(", ")} cannot both fail and warn. Pass each check to --fail-on or --warn-on, not both.`
 		);
 	const selection = yield* changeSelection(command);
 	const failOn = localizationGateFailures(command.failOn, command.warnOn);

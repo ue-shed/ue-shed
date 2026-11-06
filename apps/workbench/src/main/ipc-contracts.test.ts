@@ -1204,7 +1204,7 @@ it("bounds localization details and rejects filesystem requests", () => {
 	const target = invokeContracts["game-text:localization:target"];
 	expect(
 		Result.isFailure(
-			Schema.decodeUnknownResult(target.result)({
+			Schema.decodeResult(target.result)({
 				status: "ready",
 				target: {
 					name: "FixtureGame",
@@ -1220,7 +1220,7 @@ it("bounds localization details and rejects filesystem requests", () => {
 
 it("decodes valid arguments for every invoke channel", () => {
 	for (const channel of invokeChannelNames) {
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].args)(
+		const decoded = Schema.decodeResult(invokeContracts[channel].args)(
 			validArgsByChannel[channel]
 		);
 		expect(Result.isSuccess(decoded)).toBe(true);
@@ -1233,7 +1233,7 @@ it("decodes valid arguments for every invoke channel", () => {
 it("preserves optional localization selection in corpus focus requests", () => {
 	const args = invokeContracts["game-text:focus"].args;
 	const selected = validArgsByChannel["game-text:focus"];
-	expect(Schema.decodeUnknownSync(args)(selected)).toEqual(selected);
+	expect(Schema.decodeSync(args)(selected)).toEqual(selected);
 	const plain = [{ id: "unreal:UI:Example", pageSize: 50 }];
 	expect(Schema.decodeUnknownSync(args)(plain)).toEqual(plain);
 	expect(
@@ -1298,7 +1298,7 @@ it("rejects no-input channels that receive unexpected values", () => {
 	for (const channel of invokeChannelNames) {
 		// SAFETY: validArgsByChannel is exhaustive and each value is an encoded argument tuple.
 		if ((validArgsByChannel[channel] as ReadonlyArray<unknown>).length !== 0) continue;
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].args)(["unexpected"]);
+		const decoded = Schema.decodeResult(invokeContracts[channel].args)(["unexpected"]);
 		expect(Result.isFailure(decoded)).toBe(true);
 	}
 });
@@ -1315,7 +1315,7 @@ it("rejects malformed input for every input-bearing channel", () => {
 
 it("validates representative outputs for every invoke channel", () => {
 	for (const channel of invokeChannelNames) {
-		const decoded = Schema.decodeUnknownResult(invokeContracts[channel].result)(
+		const decoded = Schema.decodeResult(invokeContracts[channel].result)(
 			validResultByChannel[channel]
 		);
 		expect(Result.isSuccess(decoded)).toBe(true);
@@ -1333,10 +1333,10 @@ it("rejects malformed outputs for every invoke channel", () => {
 
 it.effect("clamps finite presentation budgets into 25–500 MB/s", () =>
 	Effect.gen(function* () {
-		expect(yield* Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond)(10)).toBe(25);
-		expect(yield* Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond)(80)).toBe(80);
-		expect(yield* Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond)(900)).toBe(500);
-		const invalid = yield* Schema.decodeUnknownEffect(PresentationBudgetMbPerSecond)(
+		expect(yield* Schema.decodeEffect(PresentationBudgetMbPerSecond)(10)).toBe(25);
+		expect(yield* Schema.decodeEffect(PresentationBudgetMbPerSecond)(80)).toBe(80);
+		expect(yield* Schema.decodeEffect(PresentationBudgetMbPerSecond)(900)).toBe(500);
+		const invalid = yield* Schema.decodeEffect(PresentationBudgetMbPerSecond)(
 			Number.POSITIVE_INFINITY
 		).pipe(Effect.exit);
 		expect(Exit.isFailure(invalid)).toBe(true);
@@ -1345,27 +1345,25 @@ it.effect("clamps finite presentation budgets into 25–500 MB/s", () =>
 
 it.effect("constrains game object paths, session ids, and candidate ids", () =>
 	Effect.gen(function* () {
-		expect(yield* Schema.decodeUnknownEffect(GameObjectPath)("/Game/Data/Table")).toBe(
+		expect(yield* Schema.decodeEffect(GameObjectPath)("/Game/Data/Table")).toBe(
 			"/Game/Data/Table"
 		);
-		const badPath = yield* Schema.decodeUnknownEffect(GameObjectPath)("/Engine/Foo").pipe(
-			Effect.exit
-		);
+		const badPath = yield* Schema.decodeEffect(GameObjectPath)("/Engine/Foo").pipe(Effect.exit);
 		expect(Exit.isFailure(badPath)).toBe(true);
 
-		expect(yield* Schema.decodeUnknownEffect(CandidateId)("candidate-1")).toBe("candidate-1");
-		const emptyCandidate = yield* Schema.decodeUnknownEffect(CandidateId)("").pipe(Effect.exit);
+		expect(yield* Schema.decodeEffect(CandidateId)("candidate-1")).toBe("candidate-1");
+		const emptyCandidate = yield* Schema.decodeEffect(CandidateId)("").pipe(Effect.exit);
 		expect(Exit.isFailure(emptyCandidate)).toBe(true);
 
-		expect(yield* Schema.decodeUnknownEffect(SessionId)("session-1")).toBe("session-1");
-		const emptySession = yield* Schema.decodeUnknownEffect(SessionId)("").pipe(Effect.exit);
+		expect(yield* Schema.decodeEffect(SessionId)("session-1")).toBe("session-1");
+		const emptySession = yield* Schema.decodeEffect(SessionId)("").pipe(Effect.exit);
 		expect(Exit.isFailure(emptySession)).toBe(true);
 	})
 );
 
 it.effect("accepts only valid Remote Control ports", () =>
 	Effect.gen(function* () {
-		expect(yield* Schema.decodeUnknownEffect(RemoteControlPort)(30001)).toBe(30001);
+		expect(yield* Schema.decodeEffect(RemoteControlPort)(30001)).toBe(30001);
 		for (const value of [0, 65_536, 30001.5, "30001"]) {
 			const result = yield* Schema.decodeUnknownEffect(RemoteControlPort)(value).pipe(
 				Effect.exit

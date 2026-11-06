@@ -242,7 +242,7 @@ describe.skipIf(!endpoint || !projectRoot)(
 						Effect.gen(function* () {
 							yield* renderer.open(request("editor_viewport"));
 							yield* Deferred.succeed(opened, undefined);
-							yield* Effect.never;
+							return yield* Effect.never;
 						})
 					).pipe(Effect.forkChild);
 					yield* Deferred.await(opened);

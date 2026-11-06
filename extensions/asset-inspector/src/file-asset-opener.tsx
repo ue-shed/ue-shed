@@ -3,16 +3,16 @@ import type { AssetInspectorControls, AssetInspectionReadEffect } from "./asset-
 
 export const MAX_ASSET_FILE_BYTES = MAX_FILE_BYTES;
 
-export interface AssetSample {
+export interface AssetSample<E = never> {
 	readonly label: string;
-	readonly load: () => AssetInspectionReadEffect;
+	readonly load: () => AssetInspectionReadEffect<E>;
 }
-export interface FileAssetOpenerProps {
+export interface FileAssetOpenerProps<E = never> {
 	readonly controls: AssetInspectorControls;
-	readonly readFile: (file: File) => AssetInspectionReadEffect;
-	readonly samples?: readonly AssetSample[];
+	readonly readFile: (file: File) => AssetInspectionReadEffect<E>;
+	readonly samples?: readonly AssetSample<E>[];
 }
-export function FileAssetOpener(props: FileAssetOpenerProps) {
+export function FileAssetOpener<E = never>(props: FileAssetOpenerProps<E>) {
 	const controls = props.controls;
 	const readFile = props.readFile;
 	const samples = props.samples ?? [];

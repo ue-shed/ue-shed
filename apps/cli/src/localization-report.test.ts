@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { NodeServices } from "@effect/platform-node";
 import { it } from "@effect/vitest";
-import { Effect, FileSystem, Result } from "effect";
+import { Effect, FileSystem, Result, Schema } from "effect";
 import { expect } from "vitest";
-import { createLocalizationBaseline } from "@ue-shed/game-text/corpus";
+import { createLocalizationBaseline, LocalizationReportError } from "@ue-shed/game-text/corpus";
 import { corpus, evidence } from "../../../packages/game-text/src/localization.test-support.js";
 import {
 	readLocalizationBaseline,
@@ -46,6 +46,11 @@ it.effect("saves and reads a baseline exclusively, with typed safe IO and schema
 		const decoded = yield* readLocalizationBaseline(invalid).pipe(Effect.result);
 		if (Result.isSuccess(decoded)) throw new Error("An invalid baseline was accepted.");
 		expect(decoded.failure.code).toBe("invalid_baseline");
+		expect(Schema.is(LocalizationReportError)(decoded.failure.cause)).toBe(true);
+		if (!Schema.is(LocalizationReportError)(decoded.failure.cause))
+			throw new Error("Baseline translation lost the original report failure.");
+		expect(Schema.isSchemaError(decoded.failure.cause.cause)).toBe(true);
+		expect(decoded.failure.recovery).toContain("loc report --save-baseline");
 		const missing = yield* readLocalizationBaseline(join(directory, "missing.json")).pipe(
 			Effect.result
 		);

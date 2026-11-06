@@ -61,7 +61,7 @@ describe("joined authoring views", () => {
 			snapshots: [left, right]
 		});
 
-		expect(Schema.decodeUnknownSync(JoinedView)(view)).toEqual(view);
+		expect(Schema.decodeSync(JoinedView)(view)).toEqual(view);
 		expect(view).toMatchObject({
 			editability: { kind: "read_only" },
 			rows: [

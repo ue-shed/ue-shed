@@ -32,7 +32,7 @@ export const runCodeText = Effect.fn("Cli.workflow.code_text")((command: CodeTex
 					Layer.unwrap(
 						Effect.gen(function* () {
 							const reader = yield* AssetReader;
-							return nativeGameTextEngineClientLayer(yield* reader.configuration());
+							return nativeGameTextEngineClientLayer(yield* reader.configuration);
 						})
 					).pipe(Layer.provide(readerLayer(command.reader)))
 				)

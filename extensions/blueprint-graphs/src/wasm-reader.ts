@@ -105,8 +105,8 @@ export const adaptWasmBlueprintResult = Effect.fn("BlueprintGraphs.adaptWasmResu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<BlueprintGraphReadResult> {
-	const path = yield* Schema.decodeUnknownEffect(BlueprintAssetPath)(assetPath).pipe(
-		Effect.catch(() => Effect.succeed(undefined))
+	const path = yield* Schema.decodeEffect(BlueprintAssetPath)(assetPath).pipe(
+		Effect.catchTag("SchemaError", () => Effect.undefined)
 	);
 	if (path === undefined) {
 		return {
@@ -144,7 +144,7 @@ export const adaptWasmBlueprintResult = Effect.fn("BlueprintGraphs.adaptWasmResu
 				status: "ready"
 			};
 		}),
-		Effect.catch(() =>
+		Effect.catchTag("SchemaError", () =>
 			Effect.succeed(
 				failed(
 					path,
@@ -161,11 +161,8 @@ export const readWasmBlueprint = Effect.fn("BlueprintGraphs.readWasm")(function*
 	assetPath: string,
 	bytes: Uint8Array
 ) {
-	const output = yield* Effect.try({
-		try: () => runtime.extractBlueprints(assetPath, bytes),
-		catch: (cause) => cause
-	}).pipe(
-		Effect.catch(() =>
+	const output = yield* Effect.try(() => runtime.extractBlueprints(assetPath, bytes)).pipe(
+		Effect.catchTag("UnknownError", () =>
 			Effect.succeed({
 				schema_version: 1,
 				status: "error",

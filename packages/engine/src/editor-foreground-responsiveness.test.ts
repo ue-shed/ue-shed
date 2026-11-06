@@ -74,7 +74,9 @@ function fakeEditor() {
 			});
 		}
 		expect(request.objectPath).toBe(objectPath);
-		const body = JSON.parse(String(request.parameters.RequestJson));
+		const raw = request.parameters.RequestJson;
+		if (!Schema.is(Schema.String)(raw)) throw new Error("RequestJson must be a JSON string");
+		const body = JSON.parse(raw);
 		if (request.functionName === "GetForegroundResponsivenessState") {
 			editor.calls.push("state");
 			return Effect.succeed(

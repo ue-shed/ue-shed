@@ -2,7 +2,7 @@ import { Result, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { decodeLocalizationChangeSet, LocalizationChangeSet } from "./change-sets.js";
 
-const document = Schema.decodeUnknownSync(LocalizationChangeSet)({
+const document = Schema.decodeSync(LocalizationChangeSet)({
 	schemaVersion: 1,
 	provenance: {
 		producer: "test",

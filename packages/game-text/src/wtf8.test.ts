@@ -17,14 +17,16 @@ const Golden = Schema.Struct({
 	cases: Schema.Array(
 		Schema.Struct({
 			name: Schema.String,
-			units: Schema.Array(Schema.Number),
+			units: Schema.Array(
+				Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffff }))
+			),
 			hex: Schema.String,
 			valid: Schema.Boolean
 		})
 	)
 });
 const directory = new URL("../../../fixtures/game-text-wtf8/", import.meta.url);
-const golden = Schema.decodeUnknownSync(Schema.fromJsonString(Golden))(
+const golden = Schema.decodeSync(Schema.fromJsonString(Golden))(
 	await readFile(new URL("golden.json", directory), "utf8")
 );
 const values = golden.cases

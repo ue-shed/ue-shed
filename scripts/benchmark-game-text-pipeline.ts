@@ -48,22 +48,22 @@ const runs = Number(values.runs);
 if (!Number.isSafeInteger(runs) || runs < 1 || runs > 20) throw new Error("--runs must be 1–20.");
 const Stage = Schema.Struct({
 	name: Schema.Literals(["localization", "packages", "join"]),
-	ms: Schema.Number,
-	sortMs: Schema.optionalKey(Schema.Number)
+	ms: Schema.Finite,
+	sortMs: Schema.optionalKey(Schema.Finite)
 });
 const Result = Schema.Struct({
 	variant: Schema.Literals(["before", "after"]),
 	round: Schema.Int,
-	prepareMs: Schema.Number,
-	firstPageMs: Schema.Number,
-	readyMs: Schema.Number,
-	rssBytes: Schema.Number,
-	heapBytes: Schema.Number,
-	arrayBufferBytes: Schema.Number,
-	readPackages: Schema.Number,
-	parsedFiles: Schema.Number,
-	total: Schema.Number,
-	rows: Schema.Number,
+	prepareMs: Schema.Finite,
+	firstPageMs: Schema.Finite,
+	readyMs: Schema.Finite,
+	rssBytes: Schema.Finite,
+	heapBytes: Schema.Finite,
+	arrayBufferBytes: Schema.Finite,
+	readPackages: Schema.Finite,
+	parsedFiles: Schema.Finite,
+	total: Schema.Finite,
+	rows: Schema.Finite,
 	sha256: Schema.String,
 	stages: Schema.Array(Stage)
 });
@@ -226,7 +226,9 @@ if (values.worker) {
 				});
 				const page = Effect.isEffect(searched)
 					? yield* searched
-					: Schema.decodeUnknownSync(module.TextCorpusSearchPage)(searched);
+					: yield* Schema.decodeEffect(module.TextCorpusSearchPage)(searched).pipe(
+							Effect.orDie
+						);
 				const firstPageMs = performance.now() - queryStarted;
 				const readyMs = performance.now() - started;
 				globalThis.gc?.();

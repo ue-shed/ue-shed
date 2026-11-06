@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Stream, Effect, Ref } from "effect";
+import { Layer, Stream, Effect, Ref } from "effect";
 import { expect } from "vitest";
 import { makeAssetReaderTestLayer, type SavedAssetScan } from "@ue-shed/unreal-assets";
 import {
@@ -224,35 +224,31 @@ function shortNameForTest(objectPath: string): string {
 it.effect("does not scan Content when the shared index has no texture candidates", () =>
 	Effect.gen(function* () {
 		const reader = makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 50 * 60_000
-				}),
-			catalogProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
-			scanProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					emittedAssets: 0,
-					processedAssets: 0,
-					totalAssets: 0
-				}),
-			savedWorldProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					actorsFound: 0,
-					processedPackages: 0,
-					totalPackages: 0
-				}),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			})),
+			catalogProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
+			scanProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			})),
+			savedWorldProgress: Effect.sync(() => ({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			})),
 			readBlueprint: () =>
 				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 			readLevelSequence: () =>
@@ -272,7 +268,7 @@ it.effect("does not scan Content when the shared index has no texture candidates
 			readAsset: () => unexpected("readAsset"),
 			readTable: () => unexpected("readTable"),
 			scanProject: () => unexpected("scanProject"),
-			source: () => Effect.succeed("configured")
+			source: Effect.succeed("configured")
 		});
 		const index: SavedAssetScan = {
 			assets: [],
@@ -298,8 +294,8 @@ it.effect("does not scan Content when the shared index has no texture candidates
 				projectRoot: "C:/Fixture",
 				ruleFile: "fixtures/unreal-project/FixtureSource/Audits/texture-rules.json"
 			});
-			return [report, yield* service.progress()] as const;
-		}).pipe(Effect.provide(TextureAuditLive), Effect.provide(reader));
+			return [report, yield* service.progress] as const;
+		}).pipe(Effect.provide(Layer.provideMerge(TextureAuditLive, reader)));
 
 		expect(report.coverage.discoveredPackages).toBe(30);
 		expect(report.coverage.inspectedPackages).toBe(0);
@@ -311,35 +307,31 @@ it.effect("TextureAuditLive obtains AssetReader from context", () =>
 	Effect.gen(function* () {
 		const roots = yield* Ref.make<readonly string[]>([]);
 		const reader = makeAssetReaderTestLayer({
-			configuration: () =>
-				Effect.succeed({
-					executable: "uasset",
-					timeoutMs: 30_000,
-					catalogTimeoutMs: 50 * 60_000
-				}),
-			catalogProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
-			scanProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					cacheHits: 0,
-					emittedAssets: 0,
-					processedAssets: 0,
-					totalAssets: 0
-				}),
-			savedWorldProgress: () =>
-				Effect.succeed({
-					phase: "idle",
-					actorsFound: 0,
-					processedPackages: 0,
-					totalPackages: 0
-				}),
+			configuration: Effect.sync(() => ({
+				executable: "uasset",
+				timeoutMs: 30_000,
+				catalogTimeoutMs: 50 * 60_000
+			})),
+			catalogProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
+			scanProgress: Effect.sync(() => ({
+				phase: "idle",
+				cacheHits: 0,
+				emittedAssets: 0,
+				processedAssets: 0,
+				totalAssets: 0
+			})),
+			savedWorldProgress: Effect.sync(() => ({
+				phase: "idle",
+				actorsFound: 0,
+				processedPackages: 0,
+				totalPackages: 0
+			})),
 			readBlueprint: () =>
 				Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 			readLevelSequence: () =>
@@ -363,7 +355,7 @@ it.effect("TextureAuditLive obtains AssetReader from context", () =>
 			discoverTables: () => unexpected("discoverTables"),
 			readAsset: () => unexpected("readAsset"),
 			readTable: () => unexpected("readTable"),
-			source: () => Effect.succeed("configured")
+			source: Effect.succeed("configured")
 		});
 
 		const error = yield* Effect.flatMap(TextureAudit, (service) =>
@@ -371,7 +363,7 @@ it.effect("TextureAuditLive obtains AssetReader from context", () =>
 				projectRoot: "C:/Fixture",
 				ruleFile: "C:/missing-rules.json"
 			})
-		).pipe(Effect.flip, Effect.provide(TextureAuditLive), Effect.provide(reader));
+		).pipe(Effect.flip, Effect.provide(Layer.provideMerge(TextureAuditLive, reader)));
 
 		expect(error).toBeInstanceOf(TextureAuditScanError);
 		expect(error.code).toBe("invalid_rules");

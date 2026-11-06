@@ -1,5 +1,5 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 
 export const BlueprintWorkerRequest = Schema.Struct({
 	path: Schema.NonEmptyString.check(Schema.isMaxLength(32_768)),
@@ -25,15 +25,15 @@ export const BlueprintWorkerResponse = Schema.Union([
 ]);
 export type BlueprintWorkerResponse = Schema.Schema.Type<typeof BlueprintWorkerResponse>;
 
-export class BlueprintBrowserError extends Schema.TaggedError<BlueprintBrowserError>()(
-	"BlueprintBrowserError",
-	{
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("blueprint_browser_failed"),
-		cause: Schema.optionalKey(Schema.Defect()),
-		operation: Schema.String,
-		message: Schema.String
-	}
-) {}
+export class BlueprintBrowserError extends Schema.TaggedError<
+	BlueprintBrowserError,
+	Brand.Brand<"apps/site/src/blueprints/worker-contract/BlueprintBrowserError">
+>()("BlueprintBrowserError", {
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("blueprint_browser_failed"),
+	cause: Schema.optionalKey(Schema.Defect()),
+	operation: Schema.String,
+	message: Schema.String
+}) {}

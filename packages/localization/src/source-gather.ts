@@ -45,10 +45,9 @@ export const projectSourceGatherEngine = Effect.fn("Localization.sourceGatherEng
 	explicitRoot?: string
 ) {
 	const discovery = yield* EngineInstallationDiscovery;
-	const descriptor = yield* Effect.tryPromise({
-		try: () => localizationProjectDescriptor(projectRoot),
-		catch: (cause) => cause
-	}).pipe(Effect.option);
+	const descriptor = yield* Effect.tryPromise(() =>
+		localizationProjectDescriptor(projectRoot)
+	).pipe(Effect.option);
 	if (Option.isNone(descriptor)) {
 		yield* Effect.annotateCurrentSpan({ "code.unavailable": "no single .uproject" });
 		return undefined;

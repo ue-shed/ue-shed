@@ -23,9 +23,7 @@ import {
 import { CustodianReport } from "./schema.js";
 import { Custodian, CustodianNodeLive } from "./service.js";
 
-function withWorkspace<A>(
-	use: (root: string) => Effect.Effect<A, unknown>
-): Effect.Effect<A, unknown> {
+function withWorkspace<A, E>(use: (root: string) => Effect.Effect<A, E>) {
 	return Effect.acquireUseRelease(
 		Effect.tryPromise(() => mkdtemp(join(tmpdir(), "ue-shed-custodian-"))),
 		use,
@@ -82,7 +80,7 @@ function scan(root: string, ignorePressure = true) {
 function exists(path: string) {
 	return Effect.tryPromise(() => access(path)).pipe(
 		Effect.as(true),
-		Effect.catch(() => Effect.succeed(false))
+		Effect.catchTag("UnknownError", () => Effect.succeed(false))
 	);
 }
 
@@ -117,7 +115,7 @@ it.effect("inventories only known regeneratable project targets", () =>
 			expect(project?.eligibility.kind).toBe("candidate");
 			expect(report.plan.items.map(({ name }) => name)).toEqual(["FixtureProject"]);
 			expect(report.destructiveOperationsAvailable).toBe(true);
-			yield* Schema.decodeUnknownEffect(CustodianReport)(report);
+			yield* Schema.decodeEffect(CustodianReport)(report);
 		})
 	)
 );

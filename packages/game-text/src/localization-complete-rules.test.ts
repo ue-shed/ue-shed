@@ -25,7 +25,7 @@ import {
 const noPO = () => success(parsePO(new TextEncoder().encode("")));
 type Entry = typeof CompleteRule.Encoded;
 const document = (rules: ReadonlyArray<Entry>) =>
-	Schema.decodeUnknownSync(GameTextRuleDocument)({ schemaVersion: 1, roles: [], rules });
+	Schema.decodeSync(GameTextRuleDocument)({ schemaVersion: 1, roles: [], rules });
 const failure = (rules: ReadonlyArray<unknown>) => {
 	const result = Effect.runSync(
 		Effect.result(
@@ -113,7 +113,11 @@ describe("complete rules", () => {
 					culture,
 					severity
 				])
-				.sort()
+				.sort((left, right) => {
+					const leftText = left.join(",");
+					const rightText = right.join(",");
+					return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+				})
 		).toEqual([
 			["source.gate", "rule", "source", "en", "normal"],
 			["ui.exclamation", "rule", "translation", "de", "low"],
@@ -158,11 +162,15 @@ describe("complete rules", () => {
 			document([rule("all", { lit: true }, "line"), rule("every", { lit: true })]),
 			{}
 		);
-		expect(() => Schema.decodeUnknownSync(LocalizationQualityReport)(report)).not.toThrow();
+		expect(() => Schema.decodeSync(LocalizationQualityReport)(report)).not.toThrow();
 		expect(
 			custom(report)
 				.map(({ ruleId, identity }) => [ruleId, identity.key])
-				.sort()
+				.sort((left, right) => {
+					const leftText = left.join(",");
+					const rightText = right.join(",");
+					return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+				})
 		).toEqual([
 			["all", "A"],
 			["every", "A"],

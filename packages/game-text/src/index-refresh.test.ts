@@ -26,7 +26,7 @@ it("retains readers across refresh steps updating selected inputs and review", a
 	const directory = await mkdtemp(join(tmpdir(), "ue-shed-game-text-index-"));
 	try {
 		const projectRoot = await realpath(directory);
-		const authored = Schema.decodeUnknownSync(LocalizationTarget)({
+		const authored = Schema.decodeSync(LocalizationTarget)({
 			...target,
 			name: "Refresh",
 			outputPaths: {
@@ -159,7 +159,7 @@ it("retains readers across refresh steps updating selected inputs and review", a
 							localization: { target: authored.name, culture: "de" },
 							facets: { folder: "", assets: true, origins: true, cultures: true }
 						}
-					].map((request) => Schema.decodeUnknownSync(TextCorpusSearchRequest)(request));
+					].map((request) => Schema.decodeSync(TextCorpusSearchRequest)(request));
 					for (const search of searches)
 						expect(yield* first.search(search)).toEqual(
 							yield* first.query.search(search)
@@ -172,12 +172,12 @@ it("retains readers across refresh steps updating selected inputs and review", a
 						})
 					);
 					expect(
-						yield* Effect.all(groupRequests.map(first.search), {
+						yield* Effect.forEach(groupRequests, first.search, {
 							concurrency: "unbounded"
 						})
 					).toEqual(
-						yield* Effect.all(
-							groupRequests.map((request) => first.query.search(request))
+						yield* Effect.forEach(groupRequests, (request) =>
+							first.query.search(request)
 						)
 					);
 					expect(

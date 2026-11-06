@@ -236,7 +236,7 @@ export async function measurePackageTextLayer(
 		async () => {
 			const manifest = await run(
 				Effect.gen(function* () {
-					return yield* (yield* SharedIndex).inspect();
+					return yield* (yield* SharedIndex).inspect;
 				})
 			);
 			const active = Object.entries(manifest.active);

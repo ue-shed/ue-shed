@@ -92,7 +92,7 @@ it.effect("explains ordered source contributions and preserves missing-layer cov
 				.map((layer) => layer.source.path)
 		).toContain("Config/PlatformA/PlatformAGame.ini");
 		expect(JSON.stringify(result)).not.toContain(fixture);
-		yield* Schema.decodeUnknownEffect(ConfigExplanation)(result);
+		yield* Schema.decodeEffect(ConfigExplanation)(result);
 	}).pipe(Effect.provide(ConfigExplorerNodeLive))
 );
 

@@ -1709,7 +1709,7 @@ function instantiate(batch: CorpusPlan, instance: number, seed: number) {
 				: output;
 	};
 
-	const transform = (value: typeof Schema.Json.Type): typeof Schema.Json.Type =>
+	const transform = (value: Schema.Json): Schema.Json =>
 		Array.isArray(value)
 			? value.map(transform)
 			: Schema.is(Schema.Record(Schema.String, Schema.Json))(value)
@@ -1891,15 +1891,19 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		plan.edits.operations.push({ kind, subject: `${owner.path}:${text.key}`, value });
 		if (!plan.edits.packages.includes(owner.path)) plan.edits.packages.push(owner.path);
 	};
-	const newSource = `Reef ${sourceEdit.text.parameters.token}`;
+	const tokenOf = (text: PlannedText) => {
+		const token = text.parameters.token;
+		if (!Schema.is(Schema.String)(token))
+			throw new Error("A background edit requires a string token.");
+		return token;
+	};
+	const sourceToken = tokenOf(sourceEdit.text);
+	const poToken = tokenOf(poEdit.text);
+	const archiveToken = tokenOf(archiveEdit.text);
+	const newSource = `Reef ${sourceToken}`;
 	register("source", sourceEdit.owner, sourceEdit.text, newSource);
-	register("po", poEdit.owner, poEdit.text, `Import ${poEdit.text.parameters.token}`);
-	register(
-		"archive",
-		archiveEdit.owner,
-		archiveEdit.text,
-		`Archiv ${archiveEdit.text.parameters.token}`
-	);
+	register("po", poEdit.owner, poEdit.text, `Import ${poToken}`);
+	register("archive", archiveEdit.owner, archiveEdit.text, `Archiv ${archiveToken}`);
 	if (plan.phase === "after") {
 		sourceEdit.text.case = "edit-source";
 		sourceEdit.text.source = newSource;
@@ -1910,7 +1914,7 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		}
 		poEdit.text.case = "edit-po";
 		const po = poEdit.text.cultures[culture]!;
-		po.po = `Import ${poEdit.text.parameters.token}`;
+		po.po = `Import ${poToken}`;
 		po.importPending = true;
 		po.state = "not_synced";
 		po.facts = ["translated", "not_synced"];
@@ -1918,7 +1922,7 @@ function editPlan(plan: CorpusPlan, random: ReturnType<typeof draws>) {
 		archiveEdit.text.case = "edit-archive";
 		const archive = archiveEdit.text.cultures[culture]!;
 		archive.resourceTranslation = archive.translation;
-		archive.translation = `Archiv ${archiveEdit.text.parameters.token}`;
+		archive.translation = `Archiv ${archiveToken}`;
 		archive.importPending = true;
 		archive.compilePending = true;
 		archive.state = "not_synced";
@@ -2065,8 +2069,7 @@ export function planCorpus({
 		rules: Schema.Array(Schema.Json)
 	});
 	// Built-in checks are listed once; project rules and roles have IDs, renamed per batch.
-	const hasId = (item: typeof Schema.Json.Type) =>
-		Schema.is(Schema.Struct({ id: Schema.String }))(item);
+	const hasId = (item: Schema.Json) => Schema.is(Schema.Struct({ id: Schema.String }))(item);
 	const documents = batches.map((batch, i) => {
 		const data = Schema.decodeUnknownSync(Rules)(batch.rules);
 		const names = new Map<string, string>();
@@ -2077,7 +2080,7 @@ export function planCorpus({
 				);
 				if (Schema.is(Schema.String)(record.id)) names.set(record.id, `${record.id}.i${i}`);
 			}
-		const replace = (value: typeof Schema.Json.Type): typeof Schema.Json.Type =>
+		const replace = (value: Schema.Json): Schema.Json =>
 			Array.isArray(value)
 				? value.map(replace)
 				: Schema.is(Schema.Record(Schema.String, Schema.Json))(value)
@@ -2096,9 +2099,7 @@ export function planCorpus({
 					}));
 				text.absent = text.absent.map((id) => names.get(id) ?? id);
 			}
-		return Schema.decodeUnknownSync(Rules)(
-			replace(Schema.decodeUnknownSync(Schema.Json)(data))
-		);
+		return Schema.decodeUnknownSync(Rules)(replace(Schema.decodeSync(Schema.Json)(data)));
 	});
 	plan.rules = {
 		schemaVersion: 1,

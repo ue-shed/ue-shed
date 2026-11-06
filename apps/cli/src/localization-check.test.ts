@@ -8,7 +8,7 @@ import { CliRuntime } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 import { writeLocalizationCheckChanges } from "./workflows/localization-check.js";
 
-const document = Schema.decodeUnknownSync(LocalizationChangeSet)({
+const document = Schema.decodeSync(LocalizationChangeSet)({
 	schemaVersion: 1,
 	provenance: { producer: "fixture", files: [] },
 	changes: [
@@ -37,7 +37,9 @@ it.effect("exclusively creates a change-set JSON and preserves an existing propo
 		yield* writeLocalizationCheckChanges(destination, document);
 		const initial = yield* fs.readFileString(destination);
 		expect(
-			Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationChangeSet))(initial)
+			yield* Schema.decodeEffect(Schema.fromJsonString(LocalizationChangeSet))(initial).pipe(
+				Effect.orDie
+			)
 		).toEqual(document);
 		const existing = yield* writeLocalizationCheckChanges(destination, {
 			...document,
@@ -92,9 +94,9 @@ it.effect("loc check rejects unsupported cultures with safe actionable failures"
 			"--culture",
 			"zz-PrivateCulture"
 		]).pipe(Effect.provide(runtime));
-		const report = Schema.decodeUnknownSync(Schema.fromJsonString(Failure))(
+		const report = yield* Schema.decodeEffect(Schema.fromJsonString(Failure))(
 			yield* Ref.get(output)
-		);
+		).pipe(Effect.orDie);
 		expect(report.error.code).toBe("invalid_selection");
 		expect(report.error.message).not.toContain("Private");
 		expect(report.error.recovery.length).toBeGreaterThan(0);
@@ -146,7 +148,9 @@ it.effect("loc check runs the file --rules names, and says when no rules file ra
 		const given = yield* run([...base, "--rules", rules]);
 		expect(given.exit).toBe(0);
 		expect(given.errors).not.toContain("No rules file");
-		const report = Schema.decodeUnknownSync(Schema.fromJsonString(Report))(given.output);
+		const report = yield* Schema.decodeEffect(Schema.fromJsonString(Report))(given.output).pipe(
+			Effect.orDie
+		);
 		expect(report.rules.map((rule) => rule.ruleId)).toEqual([
 			"localization.missing_translator_notes"
 		]);
@@ -156,13 +160,17 @@ it.effect("loc check runs the file --rules names, and says when no rules file ra
 		// The fixture has no rules file of its own: nothing runs, and stderr says why.
 		const none = yield* run(base);
 		expect(none.exit).toBe(0);
-		expect(Schema.decodeUnknownSync(Schema.fromJsonString(Report))(none.output).rules).toEqual(
-			[]
-		);
+		expect(
+			(yield* Schema.decodeEffect(Schema.fromJsonString(Report))(none.output).pipe(
+				Effect.orDie
+			)).rules
+		).toEqual([]);
 		expect(none.errors).toContain("No rules file: no checks ran.");
 		const missing = yield* run([...base, "--rules", join(directory, "missing.json")]);
 		expect(missing.exit).toBe(2);
-		const failure = Schema.decodeUnknownSync(Schema.fromJsonString(Failure))(missing.output);
+		const failure = yield* Schema.decodeEffect(Schema.fromJsonString(Failure))(
+			missing.output
+		).pipe(Effect.orDie);
 		expect(failure.error.code).toBe("rules_unreadable");
 		expect(failure.error.message).not.toContain(directory);
 	}).pipe(Effect.provide(NodeServices.layer))

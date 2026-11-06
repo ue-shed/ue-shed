@@ -14,11 +14,11 @@ export const register = Effect.gen(function* () {
 	const handoff = yield* WorkbenchEditorHandoff;
 	const responsiveness = yield* WorkbenchEditorResponsiveness;
 	yield* ipc.register(invokeContracts["editor-window:activate"], () =>
-		connection.endpoint().pipe(Effect.flatMap(handoff.activate))
+		connection.endpoint.pipe(Effect.flatMap(handoff.activate))
 	);
 
 	yield* ipc.register(invokeContracts["editor-session:status"], () =>
-		connection.endpoint().pipe(
+		connection.endpoint.pipe(
 			Effect.flatMap((endpoint) => editorSession.status(endpoint)),
 			Effect.match({
 				onFailure: (error) => ({
@@ -38,7 +38,7 @@ export const register = Effect.gen(function* () {
 	);
 	yield* ipc.register(invokeContracts["editor-session:execute"], (...args) => {
 		const [command] = args;
-		return connection.endpoint().pipe(
+		return connection.endpoint.pipe(
 			Effect.flatMap((endpoint) =>
 				editorSession
 					.execute(endpoint, command)
@@ -54,9 +54,10 @@ export const register = Effect.gen(function* () {
 			Effect.orDie
 		);
 	});
-	yield* ipc.register(invokeContracts["editor-session:settings"], () => connection.settings());
-	yield* ipc.register(invokeContracts["editor-responsiveness:settings"], () =>
-		responsiveness.settings()
+	yield* ipc.register(invokeContracts["editor-session:settings"], () => connection.settings);
+	yield* ipc.register(
+		invokeContracts["editor-responsiveness:settings"],
+		() => responsiveness.settings
 	);
 	yield* ipc.register(invokeContracts["editor-responsiveness:set-enabled"], (...args) => {
 		const [enabled] = args;
@@ -65,9 +66,9 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["editor-session:set-port"], (...args) => {
 		const [port] = args;
 		return Effect.gen(function* () {
-			if ((yield* connection.settings()).port !== port) {
+			if ((yield* connection.settings).port !== port) {
 				const review = yield* Effect.serviceOption(WorkbenchMapReview);
-				if (Option.isSome(review)) yield* review.value.resetLiveTarget?.() ?? Effect.void;
+				if (Option.isSome(review)) yield* review.value.resetLiveTarget ?? Effect.void;
 			}
 			return yield* connection.setPort(port);
 		});

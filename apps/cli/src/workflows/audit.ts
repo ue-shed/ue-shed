@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Layer, Effect } from "effect";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation, readerLayer } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
@@ -20,8 +20,9 @@ export const runAuditTextures = Effect.fn("Cli.workflow.audit_textures")(
 						ruleFile: command.ruleFile
 					});
 				}).pipe(
-					Effect.provide(TextureAuditLive),
-					Effect.provide(readerLayer(command.reader))
+					Effect.provide(
+						Layer.provideMerge(TextureAuditLive, readerLayer(command.reader))
+					)
 				);
 				return yield* printJson(report);
 			})

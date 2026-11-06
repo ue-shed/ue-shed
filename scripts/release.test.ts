@@ -24,7 +24,7 @@ import {
 	verifyPackedRelease
 } from "./release.ts";
 
-test("release puts the running Node first in one normalized PATH without mutating the shell", () => {
+void test("release puts the running Node first in one normalized PATH without mutating the shell", () => {
 	const environment = { Path: "existing-tools", OTHER: "kept" };
 	const result = releaseEnvironment(environment);
 	assert.deepEqual(
@@ -36,7 +36,7 @@ test("release puts the running Node first in one normalized PATH without mutatin
 	assert.deepEqual(environment, { Path: "existing-tools", OTHER: "kept" });
 });
 
-test("requires the exact versioned publication phrase", () => {
+void test("requires the exact versioned publication phrase", () => {
 	assert.equal(publicationConfirmationPhrase("0.5.2"), "publish 0.5.2");
 	assert.doesNotThrow(() => assertPublicationConfirmation("publish 0.5.2", "0.5.2"));
 	assert.throws(
@@ -73,7 +73,7 @@ function steps(events: string[], commits: readonly string[] = ["a".repeat(40)]) 
 	};
 }
 
-test("verifies evidence, then waits for confirmation before publication", async () => {
+void test("verifies evidence, then waits for confirmation before publication", async () => {
 	const events: string[] = [];
 	await runRelease(steps(events));
 	assert.deepEqual(events, [
@@ -86,7 +86,7 @@ test("verifies evidence, then waits for confirmation before publication", async 
 	]);
 });
 
-test("does not verify or publish when the release source is dirty", async () => {
+void test("does not verify or publish when the release source is dirty", async () => {
 	const events: string[] = [];
 	await assert.rejects(
 		() =>
@@ -102,7 +102,7 @@ test("does not verify or publish when the release source is dirty", async () => 
 	assert.deepEqual(events, ["validate-source"]);
 });
 
-test("does not publish when the source changes before publication", async () => {
+void test("does not publish when the source changes before publication", async () => {
 	const events: string[] = [];
 	await assert.rejects(
 		() => runRelease(steps(events, ["a".repeat(40), "b".repeat(40)])),
@@ -117,7 +117,7 @@ test("does not publish when the source changes before publication", async () => 
 	]);
 });
 
-test("does not request confirmation or publish when the evidence does not cover the release", async () => {
+void test("does not request confirmation or publish when the evidence does not cover the release", async () => {
 	const events: string[] = [];
 	await assert.rejects(
 		() =>
@@ -133,7 +133,7 @@ test("does not request confirmation or publish when the evidence does not cover 
 	assert.deepEqual(events, ["validate-source", "verify"]);
 });
 
-test("does not publish when confirmation is blank or interrupted", async () => {
+void test("does not publish when confirmation is blank or interrupted", async () => {
 	const events: string[] = [];
 	await assert.rejects(
 		() =>
@@ -175,11 +175,11 @@ function passedOn(entries: readonly TreeEntry[]): ReleaseEvidence {
 	return { schemaVersion: 1, version: "0.5.2", gates };
 }
 
-test("evidence for the same inputs covers every required gate, including an unavailable engine", () => {
+void test("evidence for the same inputs covers every required gate, including an unavailable engine", () => {
 	assert.deepEqual(releaseGateCoverage(passedOn(tree), tree).problems, []);
 });
 
-test("a changelog edit only invalidates the gates that read changelogs", () => {
+void test("a changelog edit only invalidates the gates that read changelogs", () => {
 	const { problems } = releaseGateCoverage(
 		passedOn(tree),
 		edited("packages/game-text/CHANGELOG.md")
@@ -190,14 +190,14 @@ test("a changelog edit only invalidates the gates that read changelogs", () => {
 	]);
 });
 
-test("a release-notes edit only invalidates the release-text gate", () => {
+void test("a release-notes edit only invalidates the release-text gate", () => {
 	const { problems } = releaseGateCoverage(passedOn(tree), edited("docs/releases/0.5.2.md"));
 	assert.deepEqual(problems, [
 		`release-text: inputs changed since it passed on ${"c".repeat(10)}`
 	]);
 });
 
-test("a source edit invalidates every gate", () => {
+void test("a source edit invalidates every gate", () => {
 	const { problems } = releaseGateCoverage(
 		passedOn(tree),
 		edited("packages/game-text/src/entry-schema.ts")
@@ -206,7 +206,7 @@ test("a source edit invalidates every gate", () => {
 	assert.equal(problems.length, RELEASE_GATES.length);
 });
 
-test("missing and failed gates block the release; --without-unreal drops only Unreal gates", () => {
+void test("missing and failed gates block the release; --without-unreal drops only Unreal gates", () => {
 	const evidence = passedOn(tree);
 	const { check: _check, ...withoutCheck } = evidence.gates;
 	const failedMatrix: ReleaseEvidence = {
@@ -226,7 +226,7 @@ test("missing and failed gates block the release; --without-unreal drops only Un
 	);
 });
 
-test("parses --without-unreal and rejects unknown release arguments", () => {
+void test("parses --without-unreal and rejects unknown release arguments", () => {
 	assert.deepEqual(parseReleaseArguments([]), { withoutUnreal: undefined, checked: false });
 	assert.deepEqual(parseReleaseArguments(["--without-unreal", "docs-only release"]), {
 		withoutUnreal: "docs-only release",
@@ -276,7 +276,7 @@ function writePack(directory: string, version: string, commit: string) {
 	return packages;
 }
 
-test("publishes only an untouched pack of the evidence commit", (context) => {
+void test("publishes only an untouched pack of the evidence commit", (context) => {
 	const directory = mkdtempSync(join(tmpdir(), "ue-shed-release-pack-"));
 	context.after(() => rmSync(directory, { recursive: true, force: true }));
 	const packages = writePack(directory, "0.5.2", "c".repeat(40));
@@ -301,7 +301,7 @@ test("publishes only an untouched pack of the evidence commit", (context) => {
 	assert.throws(() => validatedIntegrity(directory, before), /changed after it was validated/);
 });
 
-test("points every planned publication at its validated tarball", () => {
+void test("points every planned publication at its validated tarball", () => {
 	const entries = PUBLIC_PACKAGES.slice(0, 2).map(({ name }, index) => ({
 		name,
 		version: "0.5.2",

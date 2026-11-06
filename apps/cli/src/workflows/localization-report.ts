@@ -1,5 +1,5 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Effect, FileSystem, Metric, Result, Schema } from "effect";
+import { type Brand, Effect, FileSystem, Metric, Result, Schema } from "effect";
 import { LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import {
 	LocalizationBaseline,
@@ -13,23 +13,23 @@ import { CliRuntime, printJson } from "../cli-runtime.js";
 import type { CliCommand } from "../command-model.js";
 import { loadLocalizationContext } from "./localization.js";
 
-export class LocalizationBaselineIOError extends Schema.TaggedError<LocalizationBaselineIOError>()(
-	"LocalizationBaselineIOError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"baseline_exists",
-			"baseline_unreadable",
-			"baseline_unwritable",
-			"invalid_baseline_destination",
-			"baseline_limit"
-		]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class LocalizationBaselineIOError extends Schema.TaggedError<
+	LocalizationBaselineIOError,
+	Brand.Brand<"apps/cli/src/workflows/localization-report/LocalizationBaselineIOError">
+>()("LocalizationBaselineIOError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"baseline_exists",
+		"baseline_unreadable",
+		"baseline_unwritable",
+		"invalid_baseline_destination",
+		"baseline_limit"
+	]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 function ioError(
 	code: LocalizationBaselineIOError["code"],
 	cause?: unknown
@@ -49,13 +49,13 @@ export const writeLocalizationBaseline = Effect.fn("Cli.localization.write_basel
 	baseline: LocalizationBaseline
 ) {
 	if (!destination.toLowerCase().endsWith(".json"))
-		return yield* Effect.fail(ioError("invalid_baseline_destination"));
+		return yield* ioError("invalid_baseline_destination");
 	const fs = yield* FileSystem.FileSystem;
 	const json = yield* Schema.encodeEffect(Schema.fromJsonString(LocalizationBaseline))(
 		baseline
 	).pipe(Effect.mapError((cause) => ioError("baseline_unwritable", cause)));
 	if (new TextEncoder().encode(json).length > 32 * 1024 * 1024)
-		return yield* Effect.fail(ioError("baseline_limit"));
+		return yield* ioError("baseline_limit");
 	yield* fs
 		.writeFileString(destination, `${json}\n`, { flag: "wx" })
 		.pipe(
@@ -76,11 +76,11 @@ export const readLocalizationBaseline = Effect.fn("Cli.localization.read_baselin
 	const stat = yield* fs
 		.stat(path)
 		.pipe(Effect.mapError((cause) => ioError("baseline_unreadable", cause)));
-	if (stat.size > 32 * 1024 * 1024) return yield* Effect.fail(ioError("baseline_limit"));
+	if (stat.size > 32 * 1024 * 1024) return yield* ioError("baseline_limit");
 	const bytes = yield* fs
 		.readFile(path)
 		.pipe(Effect.mapError((cause) => ioError("baseline_unreadable", cause)));
-	if (bytes.length > 32 * 1024 * 1024) return yield* Effect.fail(ioError("baseline_limit"));
+	if (bytes.length > 32 * 1024 * 1024) return yield* ioError("baseline_limit");
 	const text = yield* Effect.try({
 		try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
 		catch: (cause) =>
@@ -95,13 +95,14 @@ export const readLocalizationBaseline = Effect.fn("Cli.localization.read_baselin
 	});
 	const decoded = decodeLocalizationBaselineJson(text);
 	if (Result.isFailure(decoded))
-		return yield* Effect.fail(
-			new LocalizationReportError({
-				...decoded.failure,
-				message: decoded.failure.message,
-				recovery: `${decoded.failure.recovery} Run loc report --save-baseline with a new JSON destination.`
-			})
-		);
+		return yield* new LocalizationReportError({
+			code: decoded.failure.code,
+			message: decoded.failure.message,
+			recovery: `${decoded.failure.recovery} Run loc report --save-baseline with a new JSON destination.`,
+			retrySafe: decoded.failure.retrySafe,
+			nextStep: decoded.failure.nextStep,
+			cause: decoded.failure
+		});
 	return decoded.success;
 });
 export const runLocalizationReport = Effect.fn("Cli.workflow.localization_report")(

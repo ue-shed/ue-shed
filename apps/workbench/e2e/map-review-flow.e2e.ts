@@ -127,24 +127,24 @@ test("recovers persisted tuning after live subject bounds change", async ({
 		artifactRoot: testInfo.outputDir,
 		endpoint
 	});
-	const run = <A>(effect: Effect.Effect<A, unknown>) => Effect.runPromise(effect);
+	const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 	const changedScale = {
 		x: harness.subjectScale.x * 1.6,
 		y: harness.subjectScale.y * 1.6,
 		z: harness.subjectScale.z * 1.6
 	};
 	try {
-		await run(harness.driver.prepareFixture());
-		await run(harness.driver.selectSubject());
-		await run(harness.driver.generateRig());
-		await run(harness.driver.tuneRig());
-		await run(harness.driver.previewCandidate());
+		await run(harness.driver.prepareFixture);
+		await run(harness.driver.selectSubject);
+		await run(harness.driver.generateRig);
+		await run(harness.driver.tuneRig);
+		await run(harness.driver.previewCandidate);
 		const authoringPage = harness.page();
 		await authoringPage.getByRole("button", { exact: true, name: "Stop" }).click();
 		await expect(authoringPage.getByRole("button", { exact: true, name: "Play" })).toBeVisible({
 			timeout: 30_000
 		});
-		await run(harness.driver.relaunchWorkbench());
+		await run(harness.driver.relaunchWorkbench);
 		await setActorScale(harness.subjectActorPath, changedScale);
 
 		const page = harness.page();
@@ -169,14 +169,14 @@ test("recovers persisted tuning after live subject bounds change", async ({
 		await expect(
 			page.getByRole("region", { name: "Framing candidates" }).locator("canvas, img").first()
 		).toBeVisible({ timeout: 60_000 });
-		await run(harness.driver.approveView());
-		await run(harness.driver.verifyPersistence());
-		await run(harness.driver.loadView());
-		await run(harness.driver.captureView());
-		await run(harness.driver.inspectEvidence());
+		await run(harness.driver.approveView);
+		await run(harness.driver.verifyPersistence);
+		await run(harness.driver.loadView);
+		await run(harness.driver.captureView);
+		await run(harness.driver.inspectEvidence);
 	} finally {
 		await setActorScale(harness.subjectActorPath, harness.subjectScale).catch(() => undefined);
-		const cleanup = await run(harness.driver.cleanup());
+		const cleanup = await run(harness.driver.cleanup);
 		expect(cleanup).toMatchObject({
 			mapDirtyAfter: false,
 			provisionedCameraCountAfter: 0,

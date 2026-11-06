@@ -54,7 +54,7 @@ describe("actor-scoped camera arrangements", () => {
 		};
 		const candidates = generateFramingCandidates(subject);
 		const draftPose = { ...candidates[0]!.approvedPose, fieldOfViewDegrees: 43 };
-		const session = Schema.decodeUnknownSync(ReviewAuthoringSession)({
+		const session = Schema.decodeSync(ReviewAuthoringSession)({
 			contract: { name: "ue-shed-review-authoring-session", version: { major: 1, minor: 0 } },
 			id: "legacy",
 			viewId: "legacy-view",
@@ -279,7 +279,7 @@ describe("durable camera coordination", () => {
 			)
 		);
 		expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-		expect((await Effect.runPromise(store.load())).arrangement.revision).toBe(1);
+		expect((await Effect.runPromise(store.load)).arrangement.revision).toBe(1);
 	});
 	it("restarts with exact state, rejects stale writers, and deduplicates committed operations", async () => {
 		const p = await paths(),
@@ -356,7 +356,7 @@ describe("durable camera coordination", () => {
 	it("prevents another arrangement on the same actor from replacing an owned View", () => {
 		const a = fixtureArrangement();
 		const set = approveArrangementCamera(a, "camera-0", fixtureSet());
-		const other = Schema.decodeUnknownSync(CameraArrangement)({
+		const other = Schema.decodeSync(CameraArrangement)({
 			...a,
 			id: "another-arrangement"
 		});
@@ -364,7 +364,7 @@ describe("durable camera coordination", () => {
 			"another camera arrangement"
 		);
 		expect(() =>
-			Schema.decodeUnknownSync(ReviewSet)({
+			Schema.decodeSync(ReviewSet)({
 				...set,
 				contract: { name: "ue-shed-review-set", version: { major: 1, minor: 3 } }
 			})

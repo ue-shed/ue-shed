@@ -7,7 +7,8 @@ export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const inputAtlas = yield* WorkbenchInputAtlas;
 
-	yield* ipc.register(invokeContracts["input-atlas:configured-scan"], () =>
-		inputAtlas.configuredScan()
+	yield* ipc.register(
+		invokeContracts["input-atlas:configured-scan"],
+		() => inputAtlas.configuredScan
 	);
 }).pipe(Effect.withSpan("Workbench.Ipc.registerInputAtlas"));

@@ -8,7 +8,7 @@ import { localizationFixtureSteps } from "./localization-fixture-steps.ts";
 
 const fixture = new URL("../fixtures/unreal-project/", import.meta.url);
 
-test("batched localization tasks never write the same word-count report concurrently", () => {
+void test("batched localization tasks never write the same word-count report concurrently", () => {
 	const project = fileURLToPath(new URL("UEShedFixture.uproject", fixture));
 	for (const step of localizationFixtureSteps(project, "evidence")) {
 		const config = step.find((argument) => argument.startsWith("-config="));
@@ -30,7 +30,7 @@ const intent = parseJsonObject(
 );
 
 for (const version of ["5.7", "5.8"]) {
-	test(`Unreal ${version} localization evidence covers the authored states`, () => {
+	void test(`Unreal ${version} localization evidence covers the authored states`, () => {
 		const evidence = parseJsonObject(
 			readFileSync(
 				new URL(`FixtureExpected/localization/evidence.ue${version}.json`, fixture),
@@ -42,7 +42,7 @@ for (const version of ["5.7", "5.8"]) {
 	});
 }
 
-test("localization evidence rejects malformed fields before evaluating states", () => {
+void test("localization evidence rejects malformed fields before evaluating states", () => {
 	const contents = readFileSync(
 		new URL("FixtureExpected/localization/evidence.ue5.8.json", fixture),
 		"utf8"

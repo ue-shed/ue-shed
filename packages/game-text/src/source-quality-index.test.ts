@@ -484,7 +484,13 @@ it.live("roles match a folded place by its authored path, never by its copies' p
 			]);
 			// The title's place has the new text; its stale compiled copy's "old" is not checked.
 			expect(
-				report.findings.map((finding) => [finding.ruleId, finding.actual.source]).sort()
+				report.findings
+					.map((finding) => [finding.ruleId, finding.actual.source])
+					.sort((left, right) => {
+						const leftText = left.join(",");
+						const rightText = right.join(",");
+						return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+					})
 			).toEqual([
 				["authored.old", "Old options"],
 				["compiled.old", "Old category"]

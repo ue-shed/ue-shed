@@ -1,7 +1,8 @@
+import { GameTextWorkspaceHostFailure } from "./workspace-host.js";
 import { resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { expect } from "vitest";
-import { Effect, Schema, Stream } from "effect";
+import { Layer, Effect, Schema, Stream } from "effect";
 import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import {
 	RemoteControlClientError,
@@ -98,7 +99,7 @@ function setup(dataTable = false, authoring = false) {
 		Effect.gen(function* () {
 			calls.push(call.functionName);
 			if (call.functionName === "GetCapabilityManifest")
-				return Schema.decodeUnknownSync(Schema.Json)({
+				return yield* Schema.decodeEffect(Schema.Json)({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
 					capabilities: [
@@ -119,10 +120,10 @@ function setup(dataTable = false, authoring = false) {
 						sessionId: session,
 						plugins: []
 					}
-				});
-			const input = Schema.decodeUnknownSync(Schema.fromJsonString(GameTextActionsRequest))(
-				call.parameters.RequestJson
-			);
+				}).pipe(Effect.orDie);
+			const input = yield* Schema.decodeUnknownEffect(
+				Schema.fromJsonString(GameTextActionsRequest)
+			)(call.parameters.RequestJson).pipe(Effect.orDie);
 			if (input.mode === "apply") mutations++;
 			if (input.mode === "apply" && lostReply)
 				return yield* new RemoteControlClientError({
@@ -170,22 +171,22 @@ function setup(dataTable = false, authoring = false) {
 							]
 						: []
 			};
-			return Schema.decodeUnknownSync(Schema.Json)(result);
+			return yield* Schema.decodeEffect(Schema.Json)(result).pipe(Effect.orDie);
 		})
 	);
-	const unused = () => Effect.die("Unexpected reader operation");
+	const unused = Effect.suspend(() => Effect.die("Unexpected reader operation"));
 	const reader = makeAssetReaderTestLayer({
 		configuration: unused,
-		discoverAssets: unused,
-		discoverTables: unused,
+		discoverAssets: () => unused,
+		discoverTables: () => unused,
 		extractProjectText: () => Stream.die("Unused"),
 		extractProjectTextures: () => Stream.die("Unused"),
-		readAsset: unused,
-		readBlueprint: unused,
-		readLevelSequence: unused,
-		readTable: unused,
-		readSavedWorld: unused,
-		scanProject: unused,
+		readAsset: () => unused,
+		readBlueprint: () => unused,
+		readLevelSequence: () => unused,
+		readTable: () => unused,
+		readSavedWorld: () => unused,
+		scanProject: () => unused,
 		scanProgress: unused,
 		savedWorldProgress: unused,
 		source: unused,
@@ -235,11 +236,11 @@ function setup(dataTable = false, authoring = false) {
 					afterFirstPage = undefined;
 					return { status: "found" as const, focus: page };
 				}),
-			beginOperation: () => Effect.succeed(true),
-			endOperation: () => Effect.void
+			beginOperation: Effect.succeed(true),
+			endOperation: Effect.void
 		},
-		current: () => Effect.succeed({ status: "ready", project: { projectRoot: currentRoot } }),
-		endpoint: () => Effect.succeed("http://127.0.0.1:30010"),
+		current: Effect.sync(() => ({ status: "ready", project: { projectRoot: currentRoot } })),
+		endpoint: Effect.succeed("http://127.0.0.1:30010"),
 		editorProject: () => Effect.succeed(editorRoot),
 		files: {
 			readFileWithin: (directory, path) =>
@@ -249,10 +250,14 @@ function setup(dataTable = false, authoring = false) {
 						if (!bytes) throw new Error("Missing artifact");
 						return bytes;
 					},
-					catch: () => ({
-						message: "Missing artifact",
-						recovery: "Choose the original project and review again."
-					})
+					catch: (cause) =>
+						new GameTextWorkspaceHostFailure({
+							message: "Missing artifact",
+							recovery: "Choose the original project and review again.",
+							cause,
+							retrySafe: false,
+							nextStep: "reconcile"
+						})
 				}),
 			writeFile: (path, bytes, options) =>
 				Effect.try({
@@ -261,13 +266,17 @@ function setup(dataTable = false, authoring = false) {
 						if (options?.exclusive && files.has(key)) throw new Error("Already exists");
 						files.set(key, bytes);
 					},
-					catch: () => ({
-						message: "Already claimed",
-						recovery: "Inspect the saved receipt."
-					})
+					catch: (cause) =>
+						new GameTextWorkspaceHostFailure({
+							message: "Already claimed",
+							recovery: "Inspect the saved receipt.",
+							cause,
+							retrySafe: false,
+							nextStep: "reconcile"
+						})
 				})
 		}
-	}).pipe(Effect.provide(native), Effect.provide(reader));
+	}).pipe(Effect.provide(Layer.provideMerge(native, reader)));
 	return {
 		make,
 		calls,

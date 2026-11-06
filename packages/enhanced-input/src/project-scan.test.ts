@@ -6,7 +6,7 @@ import {
 	type SavedAssetScan,
 	type SavedAssetScanOptions
 } from "@ue-shed/unreal-assets";
-import { Stream, Effect, Ref } from "effect";
+import { Layer, Stream, Effect, Ref } from "effect";
 import { expect } from "vitest";
 import {
 	EnhancedInputScanError,
@@ -24,8 +24,12 @@ it.effect("classifies malformed scan options separately from exhausted scan limi
 			service.scan({ projectRoot: "C:/Fixture", maximumAssets: 0 })
 		).pipe(
 			Effect.flip,
-			Effect.provide(EnhancedInputServiceLive),
-			Effect.provide(readerOffering(() => unexpected("scanProject")))
+			Effect.provide(
+				Layer.provideMerge(
+					EnhancedInputServiceLive,
+					readerOffering(() => unexpected("scanProject"))
+				)
+			)
 		);
 		expect(error.code).toBe("invalid_options");
 		expect(error.nextStep).toBe("fix_input");
@@ -48,8 +52,12 @@ it.effect("preserves reader failures without blaming the selected project", () =
 			service.scan({ projectRoot: "C:/Fixture" })
 		).pipe(
 			Effect.flip,
-			Effect.provide(EnhancedInputServiceLive),
-			Effect.provide(readerOffering(() => Effect.fail(original)))
+			Effect.provide(
+				Layer.provideMerge(
+					EnhancedInputServiceLive,
+					readerOffering(() => Effect.fail(original))
+				)
+			)
 		);
 		expect(failure.code).toBe("reader_failed");
 		expect(failure.recovery).toBe(original.recovery);
@@ -90,35 +98,31 @@ const readerOffering = (
 	scanProject: (options: SavedAssetScanOptions) => Effect.Effect<SavedAssetScan, AssetReaderError>
 ) =>
 	makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -136,7 +140,7 @@ const readerOffering = (
 		readAsset: () => unexpected("readAsset"),
 		readTable: () => unexpected("readTable"),
 		scanProject,
-		source: () => Effect.succeed("configured")
+		source: Effect.succeed("configured")
 	});
 
 it.effect("selects Enhanced Input packages by class prefix in one batched pass", () =>
@@ -169,7 +173,7 @@ it.effect("selects Enhanced Input packages by class prefix in one batched pass",
 
 		const report = yield* Effect.flatMap(EnhancedInputService, (service) =>
 			service.scan({ projectRoot: "C:/Fixture" })
-		).pipe(Effect.provide(EnhancedInputServiceLive), Effect.provide(reader));
+		).pipe(Effect.provide(Layer.provideMerge(EnhancedInputServiceLive, reader)));
 
 		const [options] = yield* Ref.get(seen);
 		expect(options?.classPrefixes).toEqual([ENHANCED_INPUT_CLASS_PREFIX]);
@@ -216,7 +220,7 @@ it.effect("forwards scoped roots to the reader, and omits them when unscoped", (
 				projectRoot: "C:/Fixture"
 			});
 			yield* service.scan({ projectRoot: "C:/Fixture" });
-		}).pipe(Effect.provide(EnhancedInputServiceLive), Effect.provide(reader));
+		}).pipe(Effect.provide(Layer.provideMerge(EnhancedInputServiceLive, reader)));
 
 		const [scoped, unscoped] = yield* Ref.get(seen);
 		expect(scoped?.paths).toEqual(["C:/Fixture/Content/Input"]);
@@ -335,7 +339,7 @@ it.effect("maps a reader asset limit onto scan_limit_exceeded", () =>
 
 		const error = yield* Effect.flatMap(EnhancedInputService, (service) =>
 			service.scan({ maximumAssets: 2, projectRoot: "C:/Fixture" })
-		).pipe(Effect.flip, Effect.provide(EnhancedInputServiceLive), Effect.provide(reader));
+		).pipe(Effect.flip, Effect.provide(Layer.provideMerge(EnhancedInputServiceLive, reader)));
 
 		expect(error).toBeInstanceOf(EnhancedInputScanError);
 		expect(error.code).toBe("scan_limit_exceeded");

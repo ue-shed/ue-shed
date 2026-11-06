@@ -106,23 +106,21 @@ const sessionListRequest = <HostValue>(
 	request({ decode: decodeAuthoringSessionListResult, invoke, operation });
 
 export const authoringClient: AuthoringClientApi = AuthoringClient.of({
-	getCatalogProgress: Effect.fn("AuthoringClient.getCatalogProgress")(() =>
-		Effect.succeed({
-			cacheHits: 0,
-			phase: "idle" as const,
-			processedAssets: 0,
-			tablesFound: 0,
-			totalAssets: 0
-		})
-	),
+	getCatalogProgress: Effect.sync(() => ({
+		cacheHits: 0,
+		phase: "idle" as const,
+		processedAssets: 0,
+		tablesFound: 0,
+		totalAssets: 0
+	})).pipe(Effect.withSpan("AuthoringClient.getCatalogProgress")),
 	beginSession: Effect.fn("AuthoringClient.beginSession")((objectPath) =>
 		sessionRequest("authoring.beginSession", () =>
 			window.ueShed.authoring.beginSession(objectPath)
 		)
 	),
-	listSessions: Effect.fn("AuthoringClient.listSessions")(() =>
+	listSessions: Effect.suspend(() =>
 		sessionListRequest("authoring.listSessions", () => window.ueShed.authoring.listSessions())
-	),
+	).pipe(Effect.withSpan("AuthoringClient.listSessions")),
 	openSession: Effect.fn("AuthoringClient.openSession")((sessionId) =>
 		sessionRequest("authoring.openSession", () =>
 			window.ueShed.authoring.openSession(sessionId)
@@ -141,18 +139,18 @@ export const authoringClient: AuthoringClientApi = AuthoringClient.of({
 	editSession: Effect.fn("AuthoringClient.editSession")((intent) =>
 		sessionRequest("authoring.editSession", () => window.ueShed.authoring.editSession(intent))
 	),
-	loadConfiguredCatalog: Effect.fn("AuthoringClient.loadConfiguredCatalog")(() =>
+	loadConfiguredCatalog: Effect.suspend(() =>
 		request({
 			decode: decodeAuthoringCatalogResult,
 			invoke: () => window.ueShed.authoring.loadConfiguredCatalog(),
 			operation: "authoring.loadConfiguredCatalog"
 		})
-	),
-	loadConfiguredTable: Effect.fn("AuthoringClient.loadConfiguredTable")(() =>
+	).pipe(Effect.withSpan("AuthoringClient.loadConfiguredCatalog")),
+	loadConfiguredTable: Effect.suspend(() =>
 		loadRequest("authoring.loadConfiguredTable", () =>
 			window.ueShed.authoring.loadConfiguredTable()
 		)
-	),
+	).pipe(Effect.withSpan("AuthoringClient.loadConfiguredTable")),
 	openCatalogTable: Effect.fn("AuthoringClient.openCatalogTable")((objectPath, authority) =>
 		loadRequest("authoring.openCatalogTable", () =>
 			window.ueShed.authoring.openCatalogTable(objectPath, authority)
@@ -183,7 +181,7 @@ export const authoringClient: AuthoringClientApi = AuthoringClient.of({
 			window.ueShed.authoring.undoSession(sessionId)
 		)
 	),
-	chooseTable: Effect.fn("AuthoringClient.chooseTable")(() =>
+	chooseTable: Effect.suspend(() =>
 		loadRequest("authoring.chooseTable", () => window.ueShed.authoring.chooseTable())
-	)
+	).pipe(Effect.withSpan("AuthoringClient.chooseTable"))
 });

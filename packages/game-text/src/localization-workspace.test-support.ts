@@ -35,7 +35,7 @@ export function qualityFixture(count = 1) {
 		po
 	);
 	const join = joinLocalizationTarget(text, files);
-	const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
+	const document = Schema.decodeSync(GameTextRuleDocument)({
 		schemaVersion: 1,
 		roles: [
 			{

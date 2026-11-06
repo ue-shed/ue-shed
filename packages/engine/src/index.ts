@@ -123,6 +123,7 @@ export {
 } from "./supervised-editor-session.js";
 export {
 	ProcessSupervisorExecutable,
+	ProcessSupervisorUnavailable,
 	processSupervisorExecutable,
 	processSupervisorExecutableLayer,
 	WINDOWS_SUPERVISOR_PACKAGE

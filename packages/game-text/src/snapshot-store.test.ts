@@ -55,7 +55,7 @@ function publish(text: string) {
 	return Effect.scoped(
 		Effect.gen(function* () {
 			const store = yield* SnapshotStore;
-			const writer = yield* store.writer();
+			const writer = yield* store.writer;
 			return yield* writer.publish(raw(text), { source: text });
 		})
 	);
@@ -63,7 +63,7 @@ function publish(text: string) {
 const reader = () =>
 	Effect.gen(function* () {
 		const store = yield* SnapshotStore;
-		const value = yield* store.open();
+		const value = yield* store.open;
 		return (yield* value.strings("hot", [0]))[0]!;
 	});
 describe("snapshot store", () => {
@@ -72,7 +72,7 @@ describe("snapshot store", () => {
 		await run(
 			Effect.gen(function* () {
 				const store = yield* SnapshotStore;
-				const old = yield* store.open(); // No blocks loaded before retirement.
+				const old = yield* store.open; // No blocks loaded before retirement.
 				const second = yield* publish("new");
 				expect(second.previousSnapshot).toBe(first.physicalSnapshot);
 				yield* publish("newest");
@@ -92,8 +92,8 @@ describe("snapshot store", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SnapshotStore;
-					const writer = yield* store.writer();
-					const second = yield* Effect.result(Effect.scoped(store.writer()));
+					const writer = yield* store.writer;
+					const second = yield* Effect.result(Effect.scoped(store.writer));
 					expect(Result.isFailure(second)).toBe(true);
 					if (Result.isFailure(second)) {
 						expect(second.failure).toBeInstanceOf(SnapshotStoreError);
@@ -108,7 +108,7 @@ describe("snapshot store", () => {
 	});
 	it("does not let an escaped writer publish after its scope closes", async () => {
 		const writer = await run(
-			Effect.scoped(Effect.flatMap(SnapshotStore, (store) => store.writer()))
+			Effect.scoped(Effect.flatMap(SnapshotStore, (store) => store.writer))
 		);
 		const result = await Effect.runPromise(Effect.result(writer.publish(raw("escaped"), {})));
 		expect(Result.isFailure(result)).toBe(true);
@@ -118,7 +118,7 @@ describe("snapshot store", () => {
 		const escaped = await run(
 			Effect.gen(function* () {
 				const store = yield* SnapshotStore;
-				const value = yield* store.open();
+				const value = yield* store.open;
 				yield* value.section("line.source");
 				return value;
 			})
@@ -147,7 +147,7 @@ describe("snapshot store", () => {
 		await run(
 			Effect.gen(function* () {
 				const store = yield* SnapshotStore;
-				const value = yield* store.open();
+				const value = yield* store.open;
 				expect(yield* value.section("line.source")).toEqual(new Uint32Array([0]));
 				const result = yield* Effect.result(value.strings("hot", [0]));
 				expect(Result.isFailure(result)).toBe(true);
@@ -172,11 +172,11 @@ describe("snapshot store", () => {
 					const publishing = yield* Effect.forkScoped(publish("candidate"));
 					yield* Deferred.await(ready);
 					const interrupting = yield* Effect.forkScoped(Fiber.interrupt(publishing));
-					const second = yield* Effect.result(Effect.scoped(store.writer()));
+					const second = yield* Effect.result(Effect.scoped(store.writer));
 					expect(Result.isFailure(second)).toBe(true);
 					yield* Deferred.succeed(proceed, undefined);
 					yield* Fiber.join(interrupting);
-					const writer = yield* store.writer();
+					const writer = yield* store.writer;
 					yield* writer.publish(raw("after interruption"), {});
 					expect(yield* reader()).toBe("after interruption");
 				})
@@ -201,7 +201,7 @@ describe("snapshot store", () => {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const store = yield* SnapshotStore;
-					const writer = yield* store.writer();
+					const writer = yield* store.writer;
 					const first = yield* Effect.result(writer.publish(raw("candidate"), {}));
 					expect(Result.isFailure(first)).toBe(true);
 					const next = yield* Effect.result(writer.publish(raw("retry"), {}));
@@ -272,9 +272,7 @@ describe("snapshot store", () => {
 			});
 			expect(await run(reader())).toBe("old");
 			const locked = await run(
-				Effect.result(
-					Effect.scoped(Effect.flatMap(SnapshotStore, (store) => store.writer()))
-				)
+				Effect.result(Effect.scoped(Effect.flatMap(SnapshotStore, (store) => store.writer)))
 			);
 			expect(Result.isFailure(locked)).toBe(true);
 			if (Result.isFailure(locked) && locked.failure instanceof SnapshotStoreError)

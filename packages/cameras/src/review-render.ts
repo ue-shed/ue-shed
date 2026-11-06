@@ -101,7 +101,7 @@ export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(fun
 	readonly request: typeof ReviewCaptureRequestCurrent.Type;
 }) {
 	const client = yield* RemoteControlClient;
-	const request = yield* Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent)(args.request, {
+	const request = yield* Schema.decodeEffect(ReviewCaptureRequestCurrent)(args.request, {
 		onExcessProperty: "error"
 	});
 	if (request.authoredVisibility)
@@ -152,7 +152,7 @@ export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(fun
 								Effect.flatMap(Schema.decodeUnknownEffect(ReviewRealizationResult))
 							);
 				if (realization.status === "failed") return fail(realization);
-				const capabilities = yield* renderer.capabilities();
+				const capabilities = yield* renderer.capabilities;
 				const sessionId = CameraRenderSessionId.make(randomUUID());
 				const session = yield* renderer.open({
 					contract: cameraRenderContract,

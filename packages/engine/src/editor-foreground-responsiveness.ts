@@ -9,7 +9,18 @@ import {
 	type ErrorNextStep
 } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
-import { Clock, Context, Duration, Effect, Layer, Metric, Ref, Schema, Scope } from "effect";
+import {
+	type Brand,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Metric,
+	Ref,
+	Schema,
+	Scope
+} from "effect";
 import { isLoopbackEndpoint } from "./loopback-endpoint.js";
 
 /**
@@ -37,16 +48,16 @@ export type EditorForegroundResponsivenessFailure =
  * Foreground lease failure with endpoint, operation, reason and recovery guidance. Initial
  * acquisition can fail the caller; later renewal failures are reflected by the lease state.
  */
-export class EditorForegroundResponsivenessError extends Schema.TaggedError<EditorForegroundResponsivenessError>()(
-	"EditorForegroundResponsivenessError",
-	{
-		cause: Schema.optionalKey(Schema.Defect()),
-		reason: EditorForegroundResponsivenessFailure,
-		operation: Schema.String,
-		endpoint: Schema.String,
-		...ErrorGuidanceFields
-	}
-) {}
+export class EditorForegroundResponsivenessError extends Schema.TaggedError<
+	EditorForegroundResponsivenessError,
+	Brand.Brand<"packages/engine/src/editor-foreground-responsiveness/EditorForegroundResponsivenessError">
+>()("EditorForegroundResponsivenessError", {
+	cause: Schema.optionalKey(Schema.Defect()),
+	reason: EditorForegroundResponsivenessFailure,
+	operation: Schema.String,
+	endpoint: Schema.String,
+	...ErrorGuidanceFields
+}) {}
 
 /** What a held lease is doing now. Only `Held` keeps Unreal responsive. */
 export const EditorForegroundLeaseState = Schema.Union([
@@ -286,7 +297,7 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 				yield* Metric.update(leaseOutcomes, `${request.operation}:${result.status}`);
 				return result;
 			}).pipe(
-				Effect.tapError(() => Metric.update(leaseOutcomes, `${request.operation}:failed`)),
+				Effect.trackErrors(leaseOutcomes, () => `${request.operation}:failed`),
 				Effect.withSpan(`EditorForegroundResponsiveness.${request.operation}`, {
 					attributes: { "unreal.endpoint": target.endpoint }
 				})
@@ -383,7 +394,7 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 						});
 					})
 				),
-				Effect.catch((error) =>
+				Effect.catchTag("EditorForegroundResponsivenessError", (error) =>
 					Effect.gen(function* () {
 						failures += 1;
 						yield* lapse(error.message, error.recovery);
@@ -419,7 +430,7 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 							yield* reacquire;
 						})
 					),
-					Effect.catch((error) =>
+					Effect.catchTag("EditorForegroundResponsivenessError", (error) =>
 						Effect.gen(function* () {
 							failures += 1;
 							yield* Effect.logDebug("Foreground lease renewal failed", {
@@ -462,7 +473,7 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 						},
 						Duration.seconds(2)
 					).pipe(
-						Effect.catch((error) =>
+						Effect.catchTag("EditorForegroundResponsivenessError", (error) =>
 							Effect.logDebug(
 								"Foreground lease release failed; it expires on its own",
 								{

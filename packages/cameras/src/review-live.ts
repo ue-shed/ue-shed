@@ -1,9 +1,9 @@
-import { ContractParseError } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import type { ContractParseError } from "@ue-shed/protocol";
+import { type Brand, Effect, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { recordReviewAssessment } from "@ue-shed/observability";
-import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { CameraRenderError } from "./camera-render.js";
+import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
+import type { CameraRenderError } from "./camera-render.js";
 import { captureRenderedReviewView } from "./review-render.js";
 import { ReviewCaptureRequestCurrent } from "./review-schema.js";
 import {
@@ -14,8 +14,6 @@ import {
 	type ReviewCaptureResponse
 } from "./review-schema.js";
 
-const isCameraRenderError = Schema.is(CameraRenderError);
-const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
 
 /**
@@ -23,17 +21,21 @@ const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraRevi
  * uncertain mutation may have applied; honor recovery guidance before issuing another
  * capture.
  */
-export class ReviewCaptureConnectionError extends Schema.TaggedError<ReviewCaptureConnectionError>()(
-	"ReviewCaptureConnectionError",
-	{ ...ErrorGuidanceFields, ...ErrorCauseFields, endpoint: Schema.String }
-) {}
+export class ReviewCaptureConnectionError extends Schema.TaggedError<
+	ReviewCaptureConnectionError,
+	Brand.Brand<"packages/cameras/src/review-live/ReviewCaptureConnectionError">
+>()("ReviewCaptureConnectionError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	endpoint: Schema.String
+}) {}
 
 function connectionError(
 	endpoint: string,
-	cause: RemoteControlClientError | unknown
+	cause: RemoteControlClientError | CameraRenderError | Schema.SchemaError | ContractParseError
 ): ReviewCaptureConnectionError {
 	// These already carry a classified message and truthful guidance; keep both.
-	if (isRemoteControlClientError(cause) || isCameraRenderError(cause)) {
+	if (cause._tag === "RemoteControlClientError" || cause._tag === "CameraRenderError") {
 		return new ReviewCaptureConnectionError({
 			endpoint,
 			message: cause.message,
@@ -45,18 +47,9 @@ function connectionError(
 	}
 	const recovery =
 		"Update the Core and Cameras plugins together so the capture response matches this UE Shed version.";
-	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
-		return new ReviewCaptureConnectionError({
-			endpoint,
-			message: `A review capture request or response at ${endpoint} does not match the review capture contract.`,
-			nextStep: "escalate",
-			recovery,
-			retrySafe: false,
-			cause
-		});
 	return new ReviewCaptureConnectionError({
 		endpoint,
-		message: `Review capture at ${endpoint} failed unexpectedly.`,
+		message: `A review capture request or response at ${endpoint} does not match the review capture contract.`,
 		nextStep: "escalate",
 		recovery,
 		retrySafe: false,

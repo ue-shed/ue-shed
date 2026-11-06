@@ -225,21 +225,25 @@ describe("AuthoringRoute", () => {
 		const client: AuthoringClientApi = {
 			applySession: () => Effect.die("unused"),
 			beginSession: () => Effect.succeed({ status: "ready", view: cleanSession(snapshot) }),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: () => Effect.die("unused"),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "ready",
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
-			listSessions: () => Effect.succeed({ diagnostics: [], sessions: [], status: "ready" }),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({ diagnostics: [], tables: [], status: "ready" }),
-			loadConfiguredTable: () => Effect.die("Must open the selected saved table"),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "ready",
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
+			listSessions: Effect.sync(() => ({ diagnostics: [], sessions: [], status: "ready" })),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				tables: [],
+				status: "ready"
+			})),
+			loadConfiguredTable: Effect.suspend(() =>
+				Effect.die("Must open the selected saved table")
+			),
 			openCatalogTable: (objectPath, authority) =>
 				Effect.sync(() => {
 					requests.push({ objectPath, authority });
@@ -293,34 +297,35 @@ describe("AuthoringRoute", () => {
 			applySession: () => Effect.die("unused"),
 			beginSession: () =>
 				Effect.succeed({ status: "ready" as const, view: cleanSession(opened) }),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: () => Effect.die("unused"),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "ready" as const,
-					processedAssets: 2,
-					tablesFound: 2,
-					totalAssets: 2
-				}),
-			listSessions: () =>
-				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({
-					diagnostics: [],
-					status: "ready" as const,
-					tables: [snapshot.table.objectPath, secondPath].map((objectPath) => ({
-						authorities: ["saved" as const, "live" as const],
-						completeness: "complete" as const,
-						divergence: [],
-						kind: "data_table" as const,
-						objectPath,
-						parentTables: [],
-						rowStruct: snapshot.table.rowStruct
-					}))
-				}),
-			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "ready" as const,
+				processedAssets: 2,
+				tablesFound: 2,
+				totalAssets: 2
+			})),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				status: "ready" as const,
+				tables: [snapshot.table.objectPath, secondPath].map((objectPath) => ({
+					authorities: ["saved" as const, "live" as const],
+					completeness: "complete" as const,
+					divergence: [],
+					kind: "data_table" as const,
+					objectPath,
+					parentTables: [],
+					rowStruct: snapshot.table.rowStruct
+				}))
+			})),
+			loadConfiguredTable: Effect.sync(() => ({ snapshot, status: "ready" as const })),
 			openCatalogTable: (objectPath, authority) =>
 				Effect.sync(() => {
 					requests.push({ authority, objectPath });
@@ -384,37 +389,34 @@ describe("AuthoringRoute", () => {
 						status: "ready" as const,
 						view: { ...cleanSession(opened), canUndo: true }
 					}),
-				chooseTable: () => Effect.die("unused"),
+				chooseTable: Effect.suspend(() => Effect.die("unused")),
 				discardSession: () => Effect.die("unused"),
 				editSession: () => Effect.die("unused"),
-				getCatalogProgress: () =>
-					Effect.succeed({
-						cacheHits: 0,
-						phase: "ready" as const,
-						processedAssets: 2,
-						tablesFound: 2,
-						totalAssets: 2
-					}),
-				listSessions: () =>
-					Effect.sync(() => {
-						sessionLists += 1;
-						return { diagnostics: [], sessions: [], status: "ready" as const };
-					}),
-				loadConfiguredCatalog: () =>
-					Effect.succeed({
-						diagnostics: [],
-						status: "ready" as const,
-						tables: [snapshot.table.objectPath, secondPath].map((objectPath) => ({
-							authorities: ["saved" as const, "live" as const],
-							completeness: "complete" as const,
-							divergence: [],
-							kind: "data_table" as const,
-							objectPath,
-							parentTables: [],
-							rowStruct: snapshot.table.rowStruct
-						}))
-					}),
-				loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+				getCatalogProgress: Effect.sync(() => ({
+					cacheHits: 0,
+					phase: "ready" as const,
+					processedAssets: 2,
+					tablesFound: 2,
+					totalAssets: 2
+				})),
+				listSessions: Effect.sync(() => {
+					sessionLists += 1;
+					return { diagnostics: [], sessions: [], status: "ready" as const };
+				}),
+				loadConfiguredCatalog: Effect.sync(() => ({
+					diagnostics: [],
+					status: "ready" as const,
+					tables: [snapshot.table.objectPath, secondPath].map((objectPath) => ({
+						authorities: ["saved" as const, "live" as const],
+						completeness: "complete" as const,
+						divergence: [],
+						kind: "data_table" as const,
+						objectPath,
+						parentTables: [],
+						rowStruct: snapshot.table.rowStruct
+					}))
+				})),
+				loadConfiguredTable: Effect.sync(() => ({ snapshot, status: "ready" as const })),
 				openCatalogTable: (objectPath, authority) =>
 					Effect.sync(() => {
 						requests.push({ authority, objectPath });
@@ -483,57 +485,58 @@ describe("AuthoringRoute", () => {
 			applySession: () => Effect.die("unused"),
 			beginSession: () =>
 				Effect.succeed({ status: "ready" as const, view: cleanSession(snapshot) }),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: () => Effect.die("unused"),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "ready" as const,
-					processedAssets: 1,
-					tablesFound: 1,
-					totalAssets: 1
-				}),
-			listSessions: () =>
-				Effect.succeed({
-					diagnostics: [],
-					sessions: [
-						{
-							commandCount: 0,
-							createdAt: sessionView.updatedAt,
-							id: "inert",
-							lifecycle: "open" as const,
-							needsSave: false,
-							tableObjectPaths: ["/Game/Fixture/DT_Inert.DT_Inert"],
-							undoPointer: 0,
-							updatedAt: sessionView.updatedAt
-						},
-						{
-							commandCount: 1,
-							createdAt: sessionView.updatedAt,
-							id: "draft",
-							lifecycle: "open" as const,
-							needsSave: false,
-							tableObjectPaths: [snapshot.table.objectPath],
-							undoPointer: 1,
-							updatedAt: sessionView.updatedAt
-						},
-						{
-							commandCount: 0,
-							createdAt: sessionView.updatedAt,
-							id: "pending-save",
-							lifecycle: "open" as const,
-							needsSave: true,
-							tableObjectPaths: [pendingSavePath],
-							undoPointer: 0,
-							updatedAt: sessionView.updatedAt
-						}
-					],
-					status: "ready" as const
-				}),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({ diagnostics: [], status: "ready" as const, tables: [] }),
-			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "ready" as const,
+				processedAssets: 1,
+				tablesFound: 1,
+				totalAssets: 1
+			})),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [
+					{
+						commandCount: 0,
+						createdAt: sessionView.updatedAt,
+						id: "inert",
+						lifecycle: "open" as const,
+						needsSave: false,
+						tableObjectPaths: ["/Game/Fixture/DT_Inert.DT_Inert"],
+						undoPointer: 0,
+						updatedAt: sessionView.updatedAt
+					},
+					{
+						commandCount: 1,
+						createdAt: sessionView.updatedAt,
+						id: "draft",
+						lifecycle: "open" as const,
+						needsSave: false,
+						tableObjectPaths: [snapshot.table.objectPath],
+						undoPointer: 1,
+						updatedAt: sessionView.updatedAt
+					},
+					{
+						commandCount: 0,
+						createdAt: sessionView.updatedAt,
+						id: "pending-save",
+						lifecycle: "open" as const,
+						needsSave: true,
+						tableObjectPaths: [pendingSavePath],
+						undoPointer: 0,
+						updatedAt: sessionView.updatedAt
+					}
+				],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				status: "ready" as const,
+				tables: []
+			})),
+			loadConfiguredTable: Effect.sync(() => ({ snapshot, status: "ready" as const })),
 			openCatalogTable: () => Effect.die("unused"),
 			openSession: () => Effect.die("unused"),
 			reconcileSession: () => Effect.die("unused"),
@@ -563,36 +566,37 @@ describe("AuthoringRoute", () => {
 			applySession: () => Effect.die("unused"),
 			beginSession: () =>
 				Effect.succeed({ status: "ready" as const, view: cleanSession(snapshot) }),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: () => Effect.die("unused"),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "ready" as const,
-					processedAssets: 1,
-					tablesFound: 1,
-					totalAssets: 1
-				}),
-			listSessions: () =>
-				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({
-					diagnostics: [],
-					status: "ready" as const,
-					tables: [
-						{
-							authorities: ["saved" as const],
-							completeness: "complete" as const,
-							divergence: [],
-							kind: "data_table" as const,
-							objectPath: snapshot.table.objectPath,
-							parentTables: [],
-							rowStruct: snapshot.table.rowStruct
-						}
-					]
-				}),
-			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "ready" as const,
+				processedAssets: 1,
+				tablesFound: 1,
+				totalAssets: 1
+			})),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				status: "ready" as const,
+				tables: [
+					{
+						authorities: ["saved" as const],
+						completeness: "complete" as const,
+						divergence: [],
+						kind: "data_table" as const,
+						objectPath: snapshot.table.objectPath,
+						parentTables: [],
+						rowStruct: snapshot.table.rowStruct
+					}
+				]
+			})),
+			loadConfiguredTable: Effect.sync(() => ({ snapshot, status: "ready" as const })),
 			openCatalogTable: () => Effect.die("unused"),
 			openSession: () => Effect.die("unused"),
 			reconcileSession: () => Effect.die("unused"),
@@ -653,22 +657,27 @@ describe("AuthoringRoute", () => {
 		const client: AuthoringClientApi = {
 			applySession: () => Effect.succeed({ status: "ready" as const, view: rejectedView }),
 			beginSession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: () => Effect.die("unused"),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "ready" as const,
-					processedAssets: 1,
-					tablesFound: 1,
-					totalAssets: 1
-				}),
-			listSessions: () =>
-				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({ diagnostics: [], status: "ready", tables: [] }),
-			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "ready" as const,
+				processedAssets: 1,
+				tablesFound: 1,
+				totalAssets: 1
+			})),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				status: "ready",
+				tables: []
+			})),
+			loadConfiguredTable: Effect.sync(() => ({ snapshot, status: "ready" as const })),
 			openCatalogTable: () => Effect.die("unused"),
 			openSession: () => Effect.die("unused"),
 			reconcileSession: () => Effect.die("unused"),
@@ -704,21 +713,23 @@ describe("AuthoringRoute", () => {
 		const client: AuthoringClientApi = {
 			applySession: () => Effect.die("unused"),
 			beginSession: () => Effect.succeed({ status: "ready" as const, view }),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: () => Effect.die("unused"),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "ready",
-					processedAssets: 1,
-					tablesFound: 1,
-					totalAssets: 1
-				}),
-			listSessions: () => Effect.succeed({ diagnostics: [], sessions: [], status: "ready" }),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({ diagnostics: [], status: "ready", tables: [] }),
-			loadConfiguredTable: () => Effect.succeed({ snapshot: composite, status: "ready" }),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "ready",
+				processedAssets: 1,
+				tablesFound: 1,
+				totalAssets: 1
+			})),
+			listSessions: Effect.sync(() => ({ diagnostics: [], sessions: [], status: "ready" })),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				status: "ready",
+				tables: []
+			})),
+			loadConfiguredTable: Effect.sync(() => ({ snapshot: composite, status: "ready" })),
 			openCatalogTable: () => Effect.die("unused"),
 			openSession: () => Effect.die("unused"),
 			reconcileSession: () => Effect.die("unused"),
@@ -738,27 +749,28 @@ describe("AuthoringRoute", () => {
 	it("keeps the expandable route responsive when table selection is cancelled", async () => {
 		let selections = 0;
 		const client: AuthoringClientApi = {
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "idle" as const,
-					processedAssets: 0,
-					tablesFound: 0,
-					totalAssets: 0
-				}),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "idle" as const,
+				processedAssets: 0,
+				tablesFound: 0,
+				totalAssets: 0
+			})),
 			applySession: () => Effect.die("unused"),
 			beginSession: () => Effect.die("unused"),
-			chooseTable: () =>
-				Effect.sync(() => {
-					selections += 1;
-					return { status: "cancelled" as const };
-				}),
+			chooseTable: Effect.sync(() => {
+				selections += 1;
+				return { status: "cancelled" as const };
+			}),
 			editSession: () => Effect.die("unused"),
 			discardSession: () => Effect.die("unused"),
-			listSessions: () =>
-				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
-			loadConfiguredCatalog: () => Effect.succeed({ status: "not_configured" as const }),
-			loadConfiguredTable: () => Effect.succeed({ status: "not_configured" as const }),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.sync(() => ({ status: "not_configured" as const })),
+			loadConfiguredTable: Effect.sync(() => ({ status: "not_configured" as const })),
 			openCatalogTable: () => Effect.die("unused"),
 			openSession: () => Effect.die("unused"),
 			reconcileSession: () => Effect.die("unused"),
@@ -786,21 +798,23 @@ describe("AuthoringRoute", () => {
 		const client: AuthoringClientApi = {
 			applySession: () => Effect.die("unused"),
 			beginSession: () => Effect.die("unused"),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: () => Effect.die("unused"),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 1500,
-					phase: "scanning" as const,
-					processedAssets: 2000,
-					tablesFound: 12,
-					totalAssets: 10000
-				}),
-			listSessions: () =>
-				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
-			loadConfiguredCatalog: () => Effect.never,
-			loadConfiguredTable: () => Effect.succeed({ status: "not_configured" as const }),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 1500,
+				phase: "scanning" as const,
+				processedAssets: 2000,
+				tablesFound: 12,
+				totalAssets: 10000
+			})),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.suspend(() => Effect.never),
+			loadConfiguredTable: Effect.sync(() => ({ status: "not_configured" as const })),
 			openCatalogTable: () => Effect.die("unused"),
 			openSession: () => Effect.die("unused"),
 			reconcileSession: () => Effect.die("unused"),
@@ -823,17 +837,16 @@ describe("AuthoringRoute", () => {
 	it("stages row intents and presents semantic Session Review", async () => {
 		const intents: AuthoringSessionIntent[] = [];
 		const client: AuthoringClientApi = {
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "ready" as const,
-					processedAssets: 19,
-					tablesFound: 12,
-					totalAssets: 19
-				}),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "ready" as const,
+				processedAssets: 19,
+				tablesFound: 12,
+				totalAssets: 19
+			})),
 			applySession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
 			beginSession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
-			chooseTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			chooseTable: Effect.sync(() => ({ snapshot, status: "ready" as const })),
 			discardSession: () =>
 				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
 			editSession: (intent) =>
@@ -841,39 +854,37 @@ describe("AuthoringRoute", () => {
 					intents.push(intent);
 					return { status: "ready" as const, view: sessionView };
 				}),
-			listSessions: () =>
-				Effect.succeed({
-					diagnostics: [],
-					sessions: [
-						{
-							commandCount: 1,
-							createdAt: sessionView.review.createdAt,
-							id: sessionView.sessionId,
-							lifecycle: "open" as const,
-							tableObjectPaths: [snapshot.table.objectPath],
-							undoPointer: 1,
-							updatedAt: sessionView.updatedAt
-						}
-					],
-					status: "ready" as const
-				}),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({
-					diagnostics: [],
-					status: "ready" as const,
-					tables: [
-						{
-							authorities: ["saved" as const],
-							completeness: "complete" as const,
-							divergence: [],
-							kind: "data_table" as const,
-							objectPath: snapshot.table.objectPath,
-							parentTables: [],
-							rowStruct: snapshot.table.rowStruct
-						}
-					]
-				}),
-			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [
+					{
+						commandCount: 1,
+						createdAt: sessionView.review.createdAt,
+						id: sessionView.sessionId,
+						lifecycle: "open" as const,
+						tableObjectPaths: [snapshot.table.objectPath],
+						undoPointer: 1,
+						updatedAt: sessionView.updatedAt
+					}
+				],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				status: "ready" as const,
+				tables: [
+					{
+						authorities: ["saved" as const],
+						completeness: "complete" as const,
+						divergence: [],
+						kind: "data_table" as const,
+						objectPath: snapshot.table.objectPath,
+						parentTables: [],
+						rowStruct: snapshot.table.rowStruct
+					}
+				]
+			})),
+			loadConfiguredTable: Effect.sync(() => ({ snapshot, status: "ready" as const })),
 			openCatalogTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
 			openSession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
 			reconcileSession: () => Effect.succeed({ status: "ready" as const, view: sessionView }),
@@ -994,26 +1005,31 @@ describe("AuthoringRoute", () => {
 			applySession: () => Effect.die("unused"),
 			beginSession: () =>
 				Effect.succeed({ status: "ready" as const, view: cleanSession(snapshot) }),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: (intent) =>
 				Effect.sync(() => {
 					intents.push(intent);
 					return { status: "ready" as const, view: stagedView };
 				}),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 0,
-					phase: "ready" as const,
-					processedAssets: 1,
-					tablesFound: 1,
-					totalAssets: 1
-				}),
-			listSessions: () =>
-				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({ diagnostics: [], status: "ready" as const, tables: [] }),
-			loadConfiguredTable: () => Effect.succeed({ snapshot, status: "ready" as const }),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 0,
+				phase: "ready" as const,
+				processedAssets: 1,
+				tablesFound: 1,
+				totalAssets: 1
+			})),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				status: "ready" as const,
+				tables: []
+			})),
+			loadConfiguredTable: Effect.sync(() => ({ snapshot, status: "ready" as const })),
 			openCatalogTable: () => Effect.die("unused"),
 			openSession: () => Effect.die("unused"),
 			reconcileSession: () => Effect.die("unused"),
@@ -1031,7 +1047,7 @@ describe("AuthoringRoute", () => {
 		await waitFor(() => expect(sheet.props().readOnly).toBe(false));
 		expect(sheet.props().columns[0]?.editable).toBe(false);
 		expect(sheet.props().columns[1]?.editable).toBe(true);
-		sheet.emit({
+		await sheet.emit({
 			type: "cell-edit",
 			mutation: {
 				address: { row: physicalRow(0), col: columnIdx(1) },
@@ -1072,39 +1088,42 @@ describe("AuthoringRoute", () => {
 			applySession: () => Effect.die("unused"),
 			beginSession: () =>
 				Effect.succeed({ status: "ready" as const, view: rowReferenceSession }),
-			chooseTable: () => Effect.die("unused"),
+			chooseTable: Effect.suspend(() => Effect.die("unused")),
 			discardSession: () => Effect.die("unused"),
 			editSession: (intent) =>
 				Effect.sync(() => {
 					intents.push(intent);
 					return { status: "ready" as const, view: rowReferenceSession };
 				}),
-			getCatalogProgress: () =>
-				Effect.succeed({
-					cacheHits: 2,
-					phase: "ready" as const,
-					processedAssets: 2,
-					tablesFound: 2,
-					totalAssets: 2
-				}),
-			listSessions: () =>
-				Effect.succeed({ diagnostics: [], sessions: [], status: "ready" as const }),
-			loadConfiguredCatalog: () =>
-				Effect.succeed({
-					diagnostics: [],
-					status: "ready" as const,
-					tables: [rowReferenceSnapshot, referenceTargetSnapshot].map((entry) => ({
-						authorities: ["saved" as const],
-						completeness: "complete" as const,
-						divergence: [],
-						kind: "data_table" as const,
-						objectPath: entry.table.objectPath,
-						parentTables: [],
-						rowStruct: entry.table.rowStruct
-					}))
-				}),
-			loadConfiguredTable: () =>
-				Effect.succeed({ snapshot: rowReferenceSnapshot, status: "ready" as const }),
+			getCatalogProgress: Effect.sync(() => ({
+				cacheHits: 2,
+				phase: "ready" as const,
+				processedAssets: 2,
+				tablesFound: 2,
+				totalAssets: 2
+			})),
+			listSessions: Effect.sync(() => ({
+				diagnostics: [],
+				sessions: [],
+				status: "ready" as const
+			})),
+			loadConfiguredCatalog: Effect.sync(() => ({
+				diagnostics: [],
+				status: "ready" as const,
+				tables: [rowReferenceSnapshot, referenceTargetSnapshot].map((entry) => ({
+					authorities: ["saved" as const],
+					completeness: "complete" as const,
+					divergence: [],
+					kind: "data_table" as const,
+					objectPath: entry.table.objectPath,
+					parentTables: [],
+					rowStruct: entry.table.rowStruct
+				}))
+			})),
+			loadConfiguredTable: Effect.sync(() => ({
+				snapshot: rowReferenceSnapshot,
+				status: "ready" as const
+			})),
 			openCatalogTable: (objectPath) =>
 				Effect.sync(() => {
 					opened.push(objectPath);

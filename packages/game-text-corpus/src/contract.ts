@@ -109,7 +109,7 @@ export function findingCounts(subjects: readonly CorpusSubject[]) {
 }
 
 export function decodeCorpusExpectations(contents: string): CorpusExpectations {
-	const result = Schema.decodeUnknownSync(Schema.fromJsonString(CorpusExpectations))(contents);
+	const result = Schema.decodeSync(Schema.fromJsonString(CorpusExpectations))(contents);
 	const keys = result.subjects.map(subjectKey);
 	if (new Set(keys).size !== keys.length) throw new Error("Duplicate corpus subject identity.");
 	if (!isDeepStrictEqual(findingCounts(result.subjects), result.counts))

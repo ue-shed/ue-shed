@@ -72,8 +72,8 @@ export const adaptWasmInspectionResult = Effect.fn("AssetInspector.adaptWasmResu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<AssetInspectionReadResult> {
-	const identity = yield* Schema.decodeUnknownEffect(FileIdentity)({ fileName, fileBytes }).pipe(
-		Effect.catch(() => Effect.succeed(undefined))
+	const identity = yield* Schema.decodeEffect(FileIdentity)({ fileName, fileBytes }).pipe(
+		Effect.catchTag("SchemaError", () => Effect.undefined)
 	);
 	if (identity === undefined) {
 		return {
@@ -98,7 +98,7 @@ export const adaptWasmInspectionResult = Effect.fn("AssetInspector.adaptWasmResu
 				recovery: recovery(reason)
 			};
 		}),
-		Effect.catch(() =>
+		Effect.catchTag("SchemaError", () =>
 			Effect.succeed<AssetInspectionReadResult>({
 				status: "failed",
 				fileName,
@@ -115,11 +115,8 @@ export const readWasmInspection = Effect.fn("AssetInspector.readWasm")(function*
 	fileName: string,
 	bytes: Uint8Array
 ) {
-	const output = yield* Effect.try({
-		try: () => runtime.inspect(fileName, bytes),
-		catch: (cause) => cause
-	}).pipe(
-		Effect.catch(() =>
+	const output = yield* Effect.try(() => runtime.inspect(fileName, bytes)).pipe(
+		Effect.catchTag("UnknownError", () =>
 			Effect.succeed({
 				schema_version: 8,
 				status: "error",

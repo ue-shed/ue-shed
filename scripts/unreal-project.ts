@@ -72,7 +72,7 @@ await Effect.runPromise(
 		if (mode === "ue_shed")
 			yield* validateUnrealRemoteControlBuild(engineRoot, process.platform, engineVersion);
 	}).pipe(
-		Effect.catch((error) =>
+		Effect.catchTag("UnrealProjectLaunchError", (error) =>
 			Effect.sync(() => {
 				console.error(
 					"UE_SHED_LAUNCH_FAILURE_V1 " +

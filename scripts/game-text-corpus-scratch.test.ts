@@ -9,7 +9,7 @@ import {
 	corpusScratchMarker
 } from "./game-text-corpus-scratch.ts";
 
-test("only generator-created scratch projects can be reused", () => {
+void test("only generator-created scratch projects can be reused", () => {
 	const folder = mkdtempSync(join(tmpdir(), "corpus-scratch-test-")),
 		project = join(folder, "Corpus.uproject");
 	try {
@@ -27,7 +27,7 @@ test("only generator-created scratch projects can be reused", () => {
 		rmSync(folder, { recursive: true, force: true });
 	}
 });
-test("a minimal real project, a nonempty folder, and a repository are all refused", () => {
+void test("a minimal real project, a nonempty folder, and a repository are all refused", () => {
 	const folder = mkdtempSync(join(tmpdir(), "corpus-real-project-test-")),
 		project = join(folder, "Game.uproject");
 	try {

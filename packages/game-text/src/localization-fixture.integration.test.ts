@@ -42,7 +42,7 @@ describe.skipIf(!executable)("real saved-reader localization states", () => {
 				return yield* service.read({ projectRoot: fixture.root, target });
 			}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 		);
-		const expected = Schema.decodeUnknownSync(Schema.fromJsonString(ExpectedStates))(
+		const expected = Schema.decodeSync(Schema.fromJsonString(ExpectedStates))(
 			await readFile(
 				resolve(fixture.root, "FixtureSource/Localization/expected-states.json"),
 				"utf8"

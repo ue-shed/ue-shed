@@ -14,7 +14,7 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import { fileFailureReason } from "./file-failure.js";
 import {
 	decodeCaptureRun,
@@ -39,40 +39,40 @@ function hasErrorCode(cause: unknown, code: string): boolean {
  * Partial publication/cleanup failures must be reconciled before claiming a run was
  * finalized.
  */
-export class ReviewStorageError extends Schema.TaggedError<ReviewStorageError>()(
-	"ReviewStorageError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		operation: Schema.Literals([
-			"create_set",
-			"discard_staging",
-			"finalize_run",
-			"list_runs",
-			"list_sets",
-			"load_run",
-			"load_set",
-			"prepare_run",
-			"save_set",
-			"store_artifact",
-			"write_run"
-		]),
-		path: Schema.String
-	}
-) {}
+export class ReviewStorageError extends Schema.TaggedError<
+	ReviewStorageError,
+	Brand.Brand<"packages/cameras/src/review-repository/ReviewStorageError">
+>()("ReviewStorageError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	operation: Schema.Literals([
+		"create_set",
+		"discard_staging",
+		"finalize_run",
+		"list_runs",
+		"list_sets",
+		"load_run",
+		"load_set",
+		"prepare_run",
+		"save_set",
+		"store_artifact",
+		"write_run"
+	]),
+	path: Schema.String
+}) {}
 
 /**
  * Capture source is not authorized beneath the declared artifact root. Reject arbitrary
  * producer paths rather than copying them into trusted run history.
  */
-export class ReviewArtifactSourceRejected extends Schema.TaggedError<ReviewArtifactSourceRejected>()(
-	"ReviewArtifactSourceRejected",
-	{
-		...ErrorGuidanceFields,
-		path: Schema.String,
-		root: Schema.String
-	}
-) {}
+export class ReviewArtifactSourceRejected extends Schema.TaggedError<
+	ReviewArtifactSourceRejected,
+	Brand.Brand<"packages/cameras/src/review-repository/ReviewArtifactSourceRejected">
+>()("ReviewArtifactSourceRejected", {
+	...ErrorGuidanceFields,
+	path: Schema.String,
+	root: Schema.String
+}) {}
 
 async function writeJsonAtomically<Value>(path: string, value: Value): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
@@ -93,38 +93,49 @@ async function writeJsonAtomically<Value>(path: string, value: Value): Promise<v
 }
 
 function loadReviewSetWithNode(path: string): Effect.Effect<ReviewSet, ReviewStorageError> {
-	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
-		catch: (cause) =>
-			new ReviewStorageError({
-				message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
-				operation: "load_set",
-				path,
-				recovery: "Validate or repair the Review Set document, then retry.",
-				retrySafe: true,
-				nextStep: "fix_input",
-				cause
-			})
-	}).pipe(
-		Effect.flatMap((input) =>
-			decodeReviewSet(input).pipe(
-				Effect.mapError(
-					(cause) =>
-						new ReviewStorageError({
-							message: `Review Set ${path} does not match the Review Set contract.`,
-							operation: "load_set",
-							path,
-							recovery: "Validate or repair the Review Set document, then retry.",
-							retrySafe: true,
-							nextStep: "fix_input",
-							cause
-						})
-				)
+	return Effect.gen(function* () {
+		const sourceValue = yield* Effect.tryPromise({
+			try: async () => JSON.parse(await readFile(path, "utf8")),
+			catch: (cause) =>
+				new ReviewStorageError({
+					message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
+					operation: "load_set",
+					path,
+					recovery: "Validate or repair the Review Set document, then retry.",
+					retrySafe: true,
+					nextStep: "fix_input",
+					cause
+				})
+		});
+		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ReviewStorageError({
+						message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
+						operation: "load_set",
+						path,
+						recovery: "Validate or repair the Review Set document, then retry.",
+						retrySafe: true,
+						nextStep: "fix_input",
+						cause
+					})
 			)
-		),
-		Effect.withSpan("camera.review.set.load", { attributes: { path } })
-	);
+		);
+		return yield* decodeReviewSet(decodedValue0).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ReviewStorageError({
+						message: `Review Set ${path} does not match the Review Set contract.`,
+						operation: "load_set",
+						path,
+						recovery: "Validate or repair the Review Set document, then retry.",
+						retrySafe: true,
+						nextStep: "fix_input",
+						cause
+					})
+			)
+		);
+	}).pipe(Effect.withSpan("camera.review.set.load", { attributes: { path } }));
 }
 
 function findReviewSetWithNode(
@@ -151,9 +162,7 @@ function findReviewSetWithNode(
 				cause
 			})
 	}).pipe(
-		Effect.flatMap((exists) =>
-			exists ? loadReviewSetWithNode(path) : Effect.succeed(undefined)
-		),
+		Effect.flatMap((exists) => (exists ? loadReviewSetWithNode(path) : Effect.undefined)),
 		Effect.withSpan("camera.review.set.find", { attributes: { path } })
 	);
 }
@@ -268,16 +277,14 @@ function listReviewSetsWithNode(
 			return false;
 		});
 		if (duplicate !== undefined)
-			return yield* Effect.fail(
-				new ReviewStorageError({
-					message: `Review Set ID ${duplicate.id} is used by more than one document.`,
-					operation: "list_sets",
-					path: root,
-					recovery: "Give every Review Set a unique ID, then reopen the set library.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new ReviewStorageError({
+				message: `Review Set ID ${duplicate.id} is used by more than one document.`,
+				operation: "list_sets",
+				path: root,
+				recovery: "Give every Review Set a unique ID, then reopen the set library.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		return sets.toSorted(
 			(left, right) =>
 				left.mapPath.localeCompare(right.mapPath) ||
@@ -312,16 +319,14 @@ export function createReviewSetFromTemplate(args: {
 		const template = yield* repository.loadSet(args.templatePath);
 		const displayName = args.displayName.trim();
 		if (displayName.length === 0) {
-			return yield* Effect.fail(
-				new ReviewStorageError({
-					message: "A Review Set display name is required.",
-					operation: "create_set",
-					path: reviewSetsRoot(args.projectRoot),
-					recovery: "Enter a name for the new Review Set.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new ReviewStorageError({
+				message: "A Review Set display name is required.",
+				operation: "create_set",
+				path: reviewSetsRoot(args.projectRoot),
+				recovery: "Enter a name for the new Review Set.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		}
 		const id = ReviewSetId.make(`${reviewSetSlug(displayName)}-${randomUUID()}`);
 		const path = join(reviewSetsRoot(args.projectRoot), `${id}.json`);
@@ -354,7 +359,7 @@ export function captureRunsRoot(projectRoot: string): string {
  * discard. A run is trusted history only after verified artifacts and finalization succeed.
  */
 export interface ReviewCaptureAttempt {
-	readonly discard: () => Effect.Effect<void, ReviewStorageError>;
+	readonly discard: Effect.Effect<void, ReviewStorageError>;
 	readonly finalize: (run: CaptureRun) => Effect.Effect<void, ReviewStorageError>;
 	readonly storeArtifact: (args: {
 		readonly relativePath: string;
@@ -562,20 +567,18 @@ function filesystemReviewCaptureDestination(
 				})
 		});
 
-		const discard = Effect.fn("ReviewCaptureAttempt.discard")(function* () {
-			yield* Effect.tryPromise({
-				try: () => rm(stagingRoot, { force: true, recursive: true }),
-				catch: (cause) =>
-					destinationStorageError({
-						cause,
-						operation: "discard_staging",
-						path: stagingRoot,
-						recovery: "Remove the owned .staging-* attempt manually if it remains.",
-						retrySafe: true,
-						nextStep: "retry"
-					})
-			});
-		});
+		const discard = Effect.tryPromise({
+			try: () => rm(stagingRoot, { force: true, recursive: true }),
+			catch: (cause) =>
+				destinationStorageError({
+					cause,
+					operation: "discard_staging",
+					path: stagingRoot,
+					recovery: "Remove the owned .staging-* attempt manually if it remains.",
+					retrySafe: true,
+					nextStep: "retry"
+				})
+		}).pipe(Effect.asVoid, Effect.withSpan("ReviewCaptureAttempt.discard"));
 		const writeDocument = Effect.fn("ReviewCaptureAttempt.writeDocument")(function* (args: {
 			readonly relativePath: string;
 			readonly value: unknown;
@@ -618,17 +621,15 @@ function filesystemReviewCaptureDestination(
 					})
 			});
 			if (sourcePath === undefined) {
-				return yield* Effect.fail(
-					new ReviewArtifactSourceRejected({
-						message: "Unreal returned an artifact outside its authorized staging root.",
-						nextStep: "escalate",
-						path: args.sourcePath,
-						recovery:
-							"Do not trust this capture; update the Core and Cameras plugins together and report the artifact path if it recurs.",
-						retrySafe: false,
-						root: args.sourceRoot
-					})
-				);
+				return yield* new ReviewArtifactSourceRejected({
+					message: "Unreal returned an artifact outside its authorized staging root.",
+					nextStep: "escalate",
+					path: args.sourcePath,
+					recovery:
+						"Do not trust this capture; update the Core and Cameras plugins together and report the artifact path if it recurs.",
+					retrySafe: false,
+					root: args.sourceRoot
+				});
 			}
 			return yield* Effect.tryPromise({
 				try: async () => {
@@ -713,39 +714,52 @@ export function callerOwnedReviewCaptureDestination(root: string): ReviewCapture
 }
 
 function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewStorageError> {
-	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
-		catch: (cause) =>
-			new ReviewStorageError({
-				message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
-				operation: "load_run",
-				path,
-				recovery:
-					"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
-				retrySafe: true,
-				nextStep: "fix_input",
-				cause
-			})
-	}).pipe(
-		Effect.flatMap((input) =>
-			decodeCaptureRun(input).pipe(
-				Effect.mapError(
-					(cause) =>
-						new ReviewStorageError({
-							message: `Capture Run ${path} does not match the Capture Run contract.`,
-							operation: "load_run",
-							path,
-							recovery:
-								"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
-							retrySafe: true,
-							nextStep: "escalate",
-							cause
-						})
-				)
+	return Effect.gen(function* () {
+		const sourceValue = yield* Effect.tryPromise({
+			try: async () => JSON.parse(await readFile(path, "utf8")),
+			catch: (cause) =>
+				new ReviewStorageError({
+					message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
+					operation: "load_run",
+					path,
+					recovery:
+						"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
+					retrySafe: true,
+					nextStep: "fix_input",
+					cause
+				})
+		});
+		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ReviewStorageError({
+						message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
+						operation: "load_run",
+						path,
+						recovery:
+							"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
+						retrySafe: true,
+						nextStep: "fix_input",
+						cause
+					})
 			)
-		)
-	);
+		);
+		return yield* decodeCaptureRun(decodedValue0).pipe(
+			Effect.mapError(
+				(cause) =>
+					new ReviewStorageError({
+						message: `Capture Run ${path} does not match the Capture Run contract.`,
+						operation: "load_run",
+						path,
+						recovery:
+							"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
+						retrySafe: true,
+						nextStep: "escalate",
+						cause
+					})
+			)
+		);
+	});
 }
 
 /**

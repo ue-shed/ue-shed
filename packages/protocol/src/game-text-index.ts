@@ -467,7 +467,7 @@ export type GameTextIndexBuildOutcome = typeof GameTextIndexBuildOutcome.Type;
 
 /** Keep lone UTF-16 code units out of serde_json's scalar-only string decoder. */
 export function encodeGameTextJoinInput(serialized: string) {
-	const input = Schema.decodeUnknownSync(
+	const input = Schema.decodeSync(
 		Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json))
 	)(serialized);
 	let prefix = "__ue_shed_join_utf16_";
@@ -488,7 +488,7 @@ export function encodeGameTextJoinInput(serialized: string) {
 		stringCodeUnits[key] = Array.from({ length: text.length }, (_, i) => text.charCodeAt(i));
 		return key;
 	};
-	const visit = (value: typeof Schema.Json.Type): typeof Schema.Json.Type => {
+	const visit = (value: Schema.Json): Schema.Json => {
 		// This traverses already-decoded JSON primitives to encode code units, not domain validation.
 		// oxlint-disable-next-line anti-slop/no-runtime-typeof
 		if (typeof value === "string") return encode(value);

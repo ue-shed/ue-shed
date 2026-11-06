@@ -14,14 +14,14 @@ export function coldLayerReply() {
 		Schema.Struct({
 			ok: Schema.Literal(true),
 			record: LayerRecord,
-			readBytes: Schema.Number,
+			readBytes: Schema.Finite,
 			timings: Schema.Struct({
-				collectMs: Schema.Number,
-				reuseMs: Schema.Number,
-				layerEncodeMs: Schema.Number,
-				layerVerifyMs: Schema.Number,
-				garbageMs: Schema.Number,
-				rootPublishMs: Schema.Number
+				collectMs: Schema.Finite,
+				reuseMs: Schema.Finite,
+				layerEncodeMs: Schema.Finite,
+				layerVerifyMs: Schema.Finite,
+				garbageMs: Schema.Finite,
+				rootPublishMs: Schema.Finite
 			})
 		}),
 		Schema.Struct({
@@ -97,7 +97,7 @@ export async function prepareColdLayers(
 					const message = (input: typeof Reply.Encoded) => {
 						clean();
 						try {
-							const reply = Schema.decodeUnknownSync(Reply)(input);
+							const reply = Schema.decodeSync(Reply)(input);
 							if (reply.ok) resolve(reply);
 							else reject(reply.error);
 						} catch (cause) {

@@ -56,7 +56,7 @@ function setup(useCallback = false) {
 	const fail = (message: string) => ({ message, recovery: "Inspect the journal." });
 	const host: StringTableKeyMigrationHostApi = {
 		...(useCallback ? { editorProject: () => Effect.succeed(callbackRoot) } : undefined),
-		current: () => Effect.succeed({ projectRoot: selected, endpoint: "http://fixture" }),
+		current: Effect.sync(() => ({ projectRoot: selected, endpoint: "http://fixture" })),
 		store: {
 			create: (value) =>
 				Effect.sync(() => {
@@ -94,7 +94,7 @@ function setup(useCallback = false) {
 	const transport = makeRemoteControlClientTestLayer((call) =>
 		Effect.gen(function* () {
 			if (call.functionName === "GetCapabilityManifest")
-				return Schema.decodeUnknownSync(Schema.Json)({
+				return yield* Schema.decodeEffect(Schema.Json)({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
 					...(editorRoot ? { projectRoot: editorRoot } : undefined),
@@ -106,9 +106,9 @@ function setup(useCallback = false) {
 						sessionId: session,
 						plugins: []
 					}
-				});
+				}).pipe(Effect.orDie);
 			if (call.functionName === "VerifyStringTableRedirect")
-				return Schema.decodeUnknownSync(Schema.Json)({
+				return yield* Schema.decodeEffect(Schema.Json)({
 					contract: "ue-shed-string-table-redirect",
 					version: "1.0",
 					status: redirectActive ? "active" : "inactive",
@@ -116,10 +116,10 @@ function setup(useCallback = false) {
 					key: input.newKey,
 					source: input.source,
 					message: "Redirect not active"
-				});
-			const request = Schema.decodeUnknownSync(Schema.fromJsonString(GameTextActionsRequest))(
-				call.parameters.RequestJson
-			);
+				}).pipe(Effect.orDie);
+			const request = yield* Schema.decodeUnknownEffect(
+				Schema.fromJsonString(GameTextActionsRequest)
+			)(call.parameters.RequestJson).pipe(Effect.orDie);
 			const kind = request.actions[0]!.edit.kind;
 			if (request.mode === "apply") writes.push(kind);
 			if (request.mode === "apply" && kind === "remove_string_table_entry" && lostDeleteReply)
@@ -157,7 +157,7 @@ function setup(useCallback = false) {
 				blueprints: [],
 				errors: []
 			};
-			return Schema.decodeUnknownSync(Schema.Json)(result);
+			return yield* Schema.decodeEffect(Schema.Json)(result).pipe(Effect.orDie);
 		})
 	);
 	return {

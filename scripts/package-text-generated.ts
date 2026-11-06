@@ -70,7 +70,7 @@ export async function convertGeneratedPackageText(
 	try {
 		for await (const line of packageTextJsonLines(join(project, "saved-text.ndjson"))) {
 			// This streaming census reads 20 GB at 10×. Validate occurrence payloads in bounded workers.
-			const event: typeof SavedAssetTextExtractionEvent.Type = JSON.parse(line);
+			const event: SavedAssetTextExtractionEvent = JSON.parse(line);
 			if (event.event === "text_summary") continue;
 			if (event.event === "error")
 				throw new Error("Generated saved-text input contains a failure");

@@ -149,7 +149,7 @@ export function SavedWorldScout(props: {
 		const readProgress = props.client.savedWorldProgress;
 		if (readProgress === undefined) return;
 		progressSubscription.subscribe(
-			Stream.fromEffectSchedule(readProgress(), Schedule.spaced("250 millis")),
+			Stream.fromEffectSchedule(readProgress, Schedule.spaced("250 millis")),
 			{ onValue: setProgress }
 		);
 	};
@@ -188,7 +188,7 @@ export function SavedWorldScout(props: {
 			return;
 		}
 		setError(undefined);
-		mapsAction.run(readSavedWorldMaps(), {
+		mapsAction.run(readSavedWorldMaps, {
 			onFailure: (cause) => setError(Cause.pretty(cause)),
 			onSuccess: (nextMaps) => {
 				setMaps(nextMaps);

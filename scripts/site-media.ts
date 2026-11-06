@@ -48,12 +48,12 @@ for (let index = 0; index < args.length; index += 1) {
 
 if (check) {
 	if (args.length !== 1) throw new Error("--check cannot be combined with export options");
-	checkSiteMedia(Schema.decodeUnknownSync(SiteMedia)(siteMedia), mediaDir);
+	checkSiteMedia(Schema.decodeSync(SiteMedia)(siteMedia), mediaDir);
 	process.stdout.write("Site screenshots and recording provenance verified.\n");
 } else {
 	if (selected.size === 0)
 		for (const name of Object.keys(exportPlan)) selected.add(journeyName(name));
-	const previous = Schema.decodeUnknownSync(SiteMedia)(siteMedia);
+	const previous = Schema.decodeSync(SiteMedia)(siteMedia);
 	const captures = { ...previous.captures };
 	const journeys = { ...previous.journeys };
 	const prepared: ReturnType<typeof prepareCaptures> = [];
@@ -95,7 +95,7 @@ if (check) {
 	}
 	const updated = { exportedAt: new Date().toISOString(), captures, journeys };
 	checkSiteMedia(
-		Schema.decodeUnknownSync(SiteMedia)(updated),
+		Schema.decodeSync(SiteMedia)(updated),
 		mediaDir,
 		new Map(prepared.map(({ bytes, capture }) => [capture.file, bytes]))
 	);
@@ -116,7 +116,7 @@ if (check) {
 		}
 	);
 	if (formatted.status !== 0) process.exit(formatted.status ?? 1);
-	checkSiteMedia(Schema.decodeUnknownSync(SiteMedia)(updated), mediaDir);
+	checkSiteMedia(Schema.decodeSync(SiteMedia)(updated), mediaDir);
 	process.stdout.write(
 		`Exported ${prepared.length} screenshots. Review the images and commit them with the manifest.\n`
 	);

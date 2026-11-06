@@ -25,7 +25,7 @@ async function fixture() {
 	const arrangement = fixtureArrangement();
 	const store = makeCameraAuthoringStore(join(root, "draft.json"));
 	await Effect.runPromise(store.create(arrangement, fixtureSet()));
-	const approval = Schema.decodeUnknownSync(CameraApproval)({
+	const approval = Schema.decodeSync(CameraApproval)({
 		operationId: "save",
 		expectedRevision: 0,
 		cameraId: "camera-0",
@@ -40,7 +40,7 @@ it("does not commit approval intent when the destination is locked", async () =>
 	await expect(Effect.runPromise(store.approve(approval))).rejects.toMatchObject({
 		code: "busy"
 	});
-	const untouched = await Effect.runPromise(store.load());
+	const untouched = await Effect.runPromise(store.load);
 	expect(untouched.projection).toBeUndefined();
 	expect(untouched.outcomes).toEqual([]);
 	await rm(`${approval.destination}.lock`);
@@ -51,7 +51,7 @@ it("allows disjoint concurrent approval losers to retry and keep editing", async
 	const { root, approval } = await fixture();
 	const stores = await Promise.all(
 		Array.from({ length: 8 }, async (_, index) => {
-			const arrangement = Schema.decodeUnknownSync(CameraArrangement)({
+			const arrangement = Schema.decodeSync(CameraArrangement)({
 				...fixtureArrangement(),
 				id: `set-${index}`,
 				cameras: fixtureArrangement().cameras.map((camera) => ({
@@ -70,7 +70,7 @@ it("allows disjoint concurrent approval losers to retry and keep editing", async
 		expect(saved.projection).toBeUndefined();
 		await Effect.runPromise(
 			store.mutate(
-				Schema.decodeUnknownSync(CameraArrangementCommand)({
+				Schema.decodeSync(CameraArrangementCommand)({
 					kind: "tune",
 					arrangementId: saved.arrangement.id,
 					expectedRevision: 0,
@@ -85,7 +85,7 @@ it("allows disjoint concurrent approval losers to retry and keep editing", async
 
 it("honors native recovery after a committed gesture was subsequently edited on the host", async () => {
 	const { arrangement, store } = await fixture();
-	const native = Schema.decodeUnknownSync(CameraBridgeSnapshot)({
+	const native = Schema.decodeSync(CameraBridgeSnapshot)({
 		version: 1,
 		status: "ready",
 		message: "",
@@ -103,7 +103,7 @@ it("honors native recovery after a committed gesture was subsequently edited on 
 	await Effect.runPromise(restoreCameraRecovery(store, initial, "native"));
 	await Effect.runPromise(
 		store.mutate(
-			Schema.decodeUnknownSync(CameraArrangementCommand)({
+			Schema.decodeSync(CameraArrangementCommand)({
 				kind: "override",
 				arrangementId: arrangement.id,
 				expectedRevision: 1,

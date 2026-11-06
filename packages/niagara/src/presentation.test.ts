@@ -167,7 +167,7 @@ describe("preview presentation", () => {
 		expect(settings.renderMode).toBe("scene");
 		expect(() => niagaraPreviewProfile("aura", { cameraPadding: 0 })).toThrow();
 		expect(() =>
-			Schema.decodeUnknownSync(NiagaraPreviewSettings)({ exposureCompensation: Infinity })
+			Schema.decodeSync(NiagaraPreviewSettings)({ exposureCompensation: Infinity })
 		).toThrow();
 	});
 	it("trims blank tails with padding and chooses a sustained visible poster", () => {

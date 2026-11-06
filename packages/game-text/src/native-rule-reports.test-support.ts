@@ -82,7 +82,7 @@ function evaluateV4(
 			`Native rule unit-test driver failed. Build with cargo build -p game-text-index --example rule_test_driver. ${result.stderr}`,
 			{ cause: result.error }
 		);
-	const decoded = Schema.decodeUnknownSync(Schema.fromJsonString(Result))(result.stdout);
+	const decoded = Schema.decodeSync(Schema.fromJsonString(Result))(result.stdout);
 	return {
 		...decoded,
 		// A finding's rule is its ordinal in the document this driver evaluated.
@@ -150,12 +150,12 @@ export function nativeVisibleLength(text: string): number {
 
 /** Custom-kind unit assertions with one explicit source row, evaluated in Rust. */
 export function nativeDetectCustom(check: CustomLocalizationCheck, text: string) {
-	const document = Schema.decodeUnknownSync(importGameTextRuleDocument)({
+	const document = Schema.decodeSync(importGameTextRuleDocument)({
 		schemaVersion: 1,
 		roles: [],
 		rules: [{ ...check, subject: "source" }]
 	});
-	const row = Schema.decodeUnknownSync(Row)({
+	const row = Schema.decodeSync(Row)({
 		fields: {
 			lineId: "line",
 			identity: { namespace: "", key: "K" },

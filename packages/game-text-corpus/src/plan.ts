@@ -27,7 +27,7 @@ export interface PlannedCulture {
 export interface PlannedText {
 	case: string;
 	instance: number;
-	parameters: Record<string, typeof Schema.Json.Type>;
+	parameters: Record<string, Schema.Json>;
 	kind: CorpusSourceKind;
 	field: string;
 	namespace: string;
@@ -79,7 +79,7 @@ export interface CorpusPlan {
 	packages: PlannedPackage[];
 	rules: object;
 	/** Without a culture, a probe reads every culture. */
-	probes: { case: string; kind: string; culture?: string; expected: typeof Schema.Json.Type }[];
+	probes: { case: string; kind: string; culture?: string; expected: Schema.Json }[];
 	expectations: CorpusExpectations;
 }
 
@@ -172,7 +172,7 @@ export const CorpusPlanSchema = Schema.Struct({
 	)
 });
 export function decodeCorpusPlan(contents: string) {
-	const plan = Schema.decodeUnknownSync(Schema.fromJsonString(CorpusPlanSchema))(contents);
+	const plan = Schema.decodeSync(Schema.fromJsonString(CorpusPlanSchema))(contents);
 	if (plan.packages.reduce((total, item) => total + item.texts.length, 0) !== plan.lines)
 		throw new Error("Plan line count differs from its placements.");
 	decodeCorpusExpectations(JSON.stringify(plan.expectations));

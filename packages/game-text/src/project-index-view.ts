@@ -77,9 +77,9 @@ export function projectIndexViewLayer(
 			const backing = yield* SharedIndex;
 			return SharedIndex.of({
 				cached: backing.cached,
-				inspect: () => backing.inspect().pipe(Effect.map(manifest)),
-				open: () => backing.open().pipe(Effect.map(reader)),
-				writer: () => backing.writer().pipe(Effect.map(writer))
+				inspect: Effect.suspend(() => backing.inspect.pipe(Effect.map(manifest))),
+				open: Effect.suspend(() => backing.open.pipe(Effect.map(reader))),
+				writer: Effect.suspend(() => backing.writer.pipe(Effect.map(writer)))
 			});
 		})
 	);

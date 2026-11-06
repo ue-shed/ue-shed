@@ -19,7 +19,7 @@ it.live(
 			fixture.pauseReads(
 				Effect.gen(function* () {
 					yield* Deferred.succeed(readEntered, undefined);
-					yield* Effect.never;
+					return yield* Effect.never;
 				}).pipe(Effect.ensuring(Effect.sync(() => events.push("read-finalized"))))
 			);
 			const underlying = yield* GameTextIndexBuilder.pipe(
@@ -38,11 +38,10 @@ it.live(
 							.pipe(
 								Effect.ensuring(Effect.sync(() => events.push("session-released")))
 							),
-					importLocalizationTarget: (input) =>
+					importLocalizationTarget: () =>
 						Effect.gen(function* () {
 							yield* Deferred.succeed(importEntered, undefined);
-							yield* Effect.never;
-							return yield* underlying.importLocalizationTarget(input);
+							return yield* Effect.never;
 						}).pipe(Effect.ensuring(Effect.sync(() => events.push("import-finalized"))))
 				})
 			).pipe(Layer.merge(Layer.succeed(GameTextIndexQuery, queries)));
@@ -148,7 +147,7 @@ it.live(
 				Effect.provide(typeScriptIndexBuilderLayer)
 			);
 			const queryLayer = Layer.unwrap(
-				Effect.flatMap(AssetReader, (reader) => reader.configuration()).pipe(
+				Effect.flatMap(AssetReader, (reader) => reader.configuration).pipe(
 					Effect.map(nativeIndexQueryLayer),
 					Effect.provide(AssetReaderLive),
 					Effect.orDie

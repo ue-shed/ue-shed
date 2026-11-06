@@ -128,7 +128,7 @@ describe("ConfigExplorerShowcase", () => {
 	});
 
 	it("switches to the selected project and surfaces typed recovery", async () => {
-		const failed = Schema.decodeUnknownSync(ConfigExplorerQueryResult)({
+		const failed = Schema.decodeSync(ConfigExplorerQueryResult)({
 			error: {
 				code: "project_unavailable",
 				message: "No Workbench project is selected.",

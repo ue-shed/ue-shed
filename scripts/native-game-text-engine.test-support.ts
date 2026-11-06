@@ -19,7 +19,7 @@ export function nativeEngineLines(executable: string) {
 			Effect.scoped(
 				Effect.gen(function* () {
 					const root = yield* Effect.gen(function* () {
-						return yield* (yield* SharedIndex).inspect();
+						return yield* (yield* SharedIndex).inspect;
 					}).pipe(Effect.provide(sharedIndexNodeLayer(configuration)));
 					const query = yield* openNativeTextQuery({
 						configuration: { ...configuration, sharedProject: false },
@@ -27,7 +27,7 @@ export function nativeEngineLines(executable: string) {
 						joinedKey: root.active.joined ?? "missing-test-join"
 					});
 					return {
-						lines: yield* query.readLocalizationLines(),
+						lines: yield* query.readLocalizationLines,
 						exported: yield* query.selectLocalizationLines(request, [
 							"identity",
 							"source",
@@ -73,7 +73,7 @@ export function nativeEngineFindings(executable: string) {
 				Effect.scoped(
 					Effect.gen(function* () {
 						const root = yield* Effect.gen(function* () {
-							return yield* (yield* SharedIndex).inspect();
+							return yield* (yield* SharedIndex).inspect;
 						}).pipe(Effect.provide(sharedIndexNodeLayer(configuration)));
 						const query = yield* openNativeTextQuery({
 							configuration: { ...configuration, sharedProject: false },

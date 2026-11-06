@@ -53,7 +53,7 @@ export const FixtureHealthLive = Layer.effect(
 		const remoteControl = yield* RemoteControlClient;
 
 		const probe = (functionName: string, objectPath: string, parameters: Schema.JsonObject) =>
-			connection.endpoint().pipe(
+			connection.endpoint.pipe(
 				Effect.flatMap((endpoint) =>
 					remoteControl.request({
 						endpoint: endpoint,
@@ -150,7 +150,7 @@ export const FixtureLauncherLive = Layer.effect(
 				}),
 				Effect.timeoutOrElse({
 					duration: "3 minutes",
-					orElse: () => Effect.succeed(undefined)
+					orElse: () => Effect.undefined
 				})
 			);
 			if (outcome?.status === "ready") return { status: "ready" as const };
@@ -179,7 +179,7 @@ export const FixtureLauncherLive = Layer.effect(
 							executable: process.execPath
 						})
 						.pipe(
-							Effect.catch((error) =>
+							Effect.catchTag("Workbench.FixtureProcessError", (error) =>
 								Effect.succeed({
 									status: "failed" as const,
 									message: error.message,

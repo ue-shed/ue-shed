@@ -37,14 +37,14 @@ import {
 
 function mark(textCorpus = corpus(), files = evidence()) {
 	const join = joinLocalizationTarget(textCorpus, files);
-	Schema.decodeUnknownSync(LocalizationJoin)(join);
+	Schema.decodeSync(LocalizationJoin)(join);
 	const result = join.lines[0]?.cultures[0];
 	if (!result) throw new Error("Expected one localization state.");
 	return result;
 }
 
 function configureGather(includes: readonly string[], excludes: readonly string[]) {
-	return Schema.decodeUnknownSync(LocalizationTarget)({
+	return Schema.decodeSync(LocalizationTarget)({
 		...target,
 		configs: target.configs.map((config) => ({
 			...config,
@@ -253,7 +253,7 @@ describe("localization identity join and precedence", () => {
 				}
 			);
 			const joined = joinLocalizationTarget(text, files);
-			Schema.decodeUnknownSync(LocalizationJoin)(joined);
+			Schema.decodeSync(LocalizationJoin)(joined);
 			expect(joined.lines).toHaveLength(2);
 			const units = new Map(text.units.map((unit) => [unit.id, unit]));
 			for (const line of joined.lines) {
@@ -295,7 +295,7 @@ describe("localization identity join and precedence", () => {
 			return withIndexedCorpus(text, { files }, ({ query }) =>
 				Effect.gen(function* () {
 					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 0 });
-					const lines = yield* query.readLocalizationLines();
+					const lines = yield* query.readLocalizationLines;
 					expect(lines.map((line) => line.identity)).toEqual(
 						joined.lines.map((line) => line.identity)
 					);
@@ -422,14 +422,25 @@ describe("localization identity join and precedence", () => {
 					// Saved, the package variant gathers as UI/K beside the asset text: one unit
 					// with both sources.
 					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 1 });
-					const lines = (yield* query.readLocalizationLines()).filter(
+					const lines = (yield* query.readLocalizationLines).filter(
 						(line) => line.origin.kind === "corpus"
 					);
 					// The String Table line and the asset line both have saved text.
-					expect(lines.map((line) => line.identity?.namespace).sort()).toEqual([
-						"UI",
-						"UI [Beta]"
-					]);
+					expect(
+						lines
+							.map((line) => line.identity?.namespace)
+							.sort((left, right) =>
+								left === right
+									? 0
+									: left === undefined
+										? 1
+										: right === undefined
+											? -1
+											: left < right
+												? -1
+												: 1
+							)
+					).toEqual(["UI", "UI [Beta]"]);
 					for (const line of lines) {
 						const page = yield* query.search({
 							...request,
@@ -621,7 +632,7 @@ describe("localization identity join and precedence", () => {
 		expect(mark(corpus([conflicted])).unknownReasons).toContain("conflicting_source");
 		const unavailable = { ...evidence(), target: { ...target, configs: [] } };
 		expect(mark(corpus(), unavailable).unknownReasons).toContain("gather_settings_unavailable");
-		const collapsed = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const collapsed = Schema.decodeSync(LocalizationTargetEvidence)({
 			...evidence(),
 			target: { ...target, collapseMode: "IdenticalNamespaceAndSource" }
 		});
@@ -635,7 +646,7 @@ describe("localization identity join and precedence", () => {
 			key: "K"
 		};
 		const saved = ftextUnit("K", "", "Content/Text/Reference.uasset");
-		const reference = Schema.decodeUnknownSync(TextUnit)({
+		const reference = Schema.decodeSync(TextUnit)({
 			...saved,
 			id: "reference",
 			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity })),
@@ -665,7 +676,7 @@ describe("localization identity join and precedence", () => {
 			tableId: "/Game/Text/Table.Table",
 			key: "Absent"
 		};
-		const reference = Schema.decodeUnknownSync(TextUnit)({
+		const reference = Schema.decodeSync(TextUnit)({
 			...saved,
 			identity,
 			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity }))
@@ -800,13 +811,13 @@ describe("Unreal gather wildcard coverage", () => {
 		const occurrence = unit("K", "Source", "Content/Fixture/Localization/Table.uasset")
 			.occurrences[0];
 		if (!dashboard || !occurrence) throw new Error("Missing test Dashboard or occurrence.");
-		const configured = Schema.decodeUnknownSync(LocalizationTarget)({
+		const configured = Schema.decodeSync(LocalizationTarget)({
 			...target,
 			configs: [],
 			dashboard
 		});
 		expect(localizationGatherCoverage(configured, occurrence)).toEqual({ status: "inside" });
-		const engineRoot = Schema.decodeUnknownSync(LocalizationTarget)({
+		const engineRoot = Schema.decodeSync(LocalizationTarget)({
 			...configured,
 			dashboard: {
 				...dashboard,
@@ -864,7 +875,7 @@ describe("Unreal gather wildcard coverage", () => {
 			}).status
 		).toBe("outside");
 		const excluded = (name: string, derived: boolean) =>
-			Schema.decodeUnknownSync(LocalizationTarget)({
+			Schema.decodeSync(LocalizationTarget)({
 				...target,
 				configs: target.configs.map((config) => ({
 					...config,

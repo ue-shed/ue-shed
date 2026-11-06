@@ -18,7 +18,8 @@ export class GameTextIndexQuery extends Context.Service<
 	{
 		readonly open: (input: {
 			readonly configuration: SharedIndexOptions;
-			readonly generation: string;
+			/** The store's dictionary epoch the joined layer was built in. */
+			readonly storeEpoch: string;
 			readonly joinedKey: string;
 		}) => Effect.Effect<
 			Effect.Success<ReturnType<typeof openNativeTextQuery>>,
@@ -141,7 +142,7 @@ export const nativeIndexQueryLayer = (configuration: AssetReaderConfiguration) =
 						readers,
 						JSON.stringify({
 							configuration: nativeIndexConfiguration(input.configuration),
-							generation: input.generation,
+							generation: input.storeEpoch,
 							joinedKey: input.joinedKey,
 							audienceRules: TEXT_AUDIENCE_POLICY.map((rule) => rule.id)
 						})

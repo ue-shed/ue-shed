@@ -12,7 +12,10 @@ use std::sync::OnceLock;
 /// and outcomes, the findings' fields (still JSON objects), and the JSON and UTF-16 encoders.
 /// Hashing whole files over-approximates: an unrelated edit to one also changes the hash, and
 /// the drift test then asks for the generated file to be regenerated.
-const SOURCES: [&str; 20] = [
+const SOURCES: [&str; 23] = [
+    include_str!("engine_changes.rs"),
+    include_str!("engine_similar.rs"),
+    include_str!("disk_changes.rs"),
     include_str!("package_text_contract.rs"),
     include_str!("text_file_compare.rs"),
     include_str!("localization/import.rs"),
@@ -72,7 +75,8 @@ mod tests {
     use crate::engine_types::{
         DetailSection, Facets, FindingsSelection, GroupBy, GroupKey, GroupsPart, LineAnswer,
         LineRequest, OpenGroupAnswer, OpenGroupsPart, PlacesSection, Query, QueryAnswer,
-        QueryParts, RelatedSection, RowKind, RowSelection, RowsPart, Selection, TextSearch,
+        QueryParts, RelatedSection, ReviewIdentity, ReviewLine, ReviewLinesAnswer,
+        ReviewLinesRequest, ReviewPoEntry, RowKind, RowSelection, RowsPart, Selection, TextSearch,
     };
     use crate::engine_where::Facet;
     use crate::package_text_contract::{
@@ -119,6 +123,13 @@ mod tests {
             "/** The engine build and contract this host was built against. */\n\
              export const gameTextEngineContract = {{\n\tbuildId: \"{}\",\n\tcontractHash: \"{}\"\n}} as const;\n\n",
             identity.build_id, identity.contract_hash
+        ));
+        text.push_str(&format!(
+            "/**\n * The localization import: the version of its semantics in every content key it returns, and\n \
+             * the most files one request may name.\n */\n\
+             export const localizationImport = {{\n\tversion: {},\n\tmaximumFiles: {}\n}} as const;\n\n",
+            crate::localization::import::VERSION,
+            crate::localization::import::MAXIMUM_FILES
         ));
         text.push_str(
             "/**\n * The Game Text engine's message types: the v4 rule IR, the findings replies and the\n\
@@ -214,6 +225,24 @@ mod tests {
             QueryAnswer::decl(&config),
             OpenGroupAnswer::decl(&config),
             LineRequest::decl(&config),
+            ReviewLinesRequest::decl(&config),
+            ReviewIdentity::decl(&config),
+            ReviewLine::decl(&config),
+            ReviewPoEntry::decl(&config),
+            ReviewLinesAnswer::decl(&config),
+            crate::engine_changes::ChangedSinceRequest::decl(&config),
+            crate::engine_changes::ChangeKind::decl(&config),
+            crate::engine_changes::ChangedSinceAnswer::decl(&config),
+            crate::engine_changes::TooOldReason::decl(&config),
+            crate::engine_changes::ChangeCounts::decl(&config),
+            crate::engine_changes::ChangeItem::decl(&config),
+            crate::engine_changes::Change::decl(&config),
+            crate::disk_changes::DiskChangesRequest::decl(&config),
+            crate::disk_changes::DiskChangeKind::decl(&config),
+            crate::disk_changes::DiskChangeItem::decl(&config),
+            crate::disk_changes::DiskChangeCounts::decl(&config),
+            crate::disk_changes::DiskChangesAnswer::decl(&config),
+            crate::disk_changes::ReviewFile::decl(&config),
             RowSelection::decl(&config),
             RowKind::decl(&config),
             PlacesSection::decl(&config),
@@ -265,6 +294,14 @@ mod tests {
             PackageTextObjectPosition::decl(&config),
             DetailSection::decl(&config),
             RelatedSection::decl(&config),
+            crate::engine_similar::SimilarKeysSection::decl(&config),
+            crate::engine_similar::SimilarKeysAnswer::decl(&config),
+            crate::engine_similar::SimilarKeyState::decl(&config),
+            crate::engine_similar::SimilarKeyScope::decl(&config),
+            crate::engine_similar::SimilarKeyLine::decl(&config),
+            crate::engine_similar::SimilarKeyPair::decl(&config),
+            crate::engine_similar::SimilarKeyCandidate::decl(&config),
+            crate::engine_similar::SimilarKeyTranslation::decl(&config),
             LineAnswer::decl(&config),
             Sink::decl(&config),
             Envelope::decl(&config),

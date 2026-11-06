@@ -834,6 +834,19 @@ fn judge(
     Ok(findings.rows)
 }
 
+/// Failing checks first, then the checks' order, then the path, so a page never holds a warning
+/// before a failure on a later page.
+fn order_findings(rows: &mut [PointFinding], fail_on: &[GateCheck]) {
+    let failing = fail_on.iter().copied().collect::<HashSet<_>>();
+    rows.sort_by(|left, right| {
+        (!failing.contains(&left.check), left.check, &left.path).cmp(&(
+            !failing.contains(&right.check),
+            right.check,
+            &right.path,
+        ))
+    });
+}
+
 fn page<T: Clone>(rows: &[T], request: PageRequest) -> Vec<T> {
     rows.iter()
         .skip(request.offset as usize)
@@ -989,11 +1002,7 @@ pub fn compare(
                     earlier: None,
                 });
             }
-            rows.sort_by(|left, right| {
-                left.check
-                    .cmp(&right.check)
-                    .then(left.path.cmp(&right.path))
-            });
+            order_findings(&mut rows, &request.fail_on);
             let mut counts = PointFindingCounts::default();
             for row in &rows {
                 *match row.check {
@@ -1365,5 +1374,54 @@ mod tests {
             Some("L3")
         );
         assert_eq!(counts.unchanged, 1);
+    }
+
+    #[test]
+    fn a_failing_check_after_a_page_of_warnings_comes_first() {
+        let finding = |check: GateCheck, path: String| PointFinding {
+            check,
+            path,
+            namespace: None,
+            key: None,
+            source: String::new(),
+            cultures: Vec::new(),
+            earlier: None,
+        };
+        let over = MAX_PAGE as usize + 5;
+        let mut rows = (0..over)
+            .map(|index| {
+                finding(
+                    GateCheck::TextChanged,
+                    format!("Content/W_{index:04}.uasset"),
+                )
+            })
+            .collect::<Vec<_>>();
+        rows.push(finding(GateCheck::Removed, "Content/A.uasset".into()));
+        rows.push(finding(GateCheck::KeyChanged, "Content/Z.uasset".into()));
+        let first = PageRequest {
+            offset: 0,
+            limit: MAX_PAGE,
+        };
+        let mut warned = rows.clone();
+        order_findings(&mut warned, &[]);
+        assert_eq!(warned[0].check, GateCheck::KeyChanged);
+        assert!(
+            !page(&warned, first)
+                .iter()
+                .any(|row| row.check == GateCheck::Removed)
+        );
+
+        order_findings(&mut rows, &[GateCheck::Removed]);
+        let page = page(&rows, first);
+        assert_eq!(
+            page.iter().take(3).map(|row| row.check).collect::<Vec<_>>(),
+            [
+                GateCheck::Removed,
+                GateCheck::KeyChanged,
+                GateCheck::TextChanged
+            ]
+        );
+        assert_eq!(page[2].path, "Content/W_0000.uasset");
+        assert_eq!(page.len(), MAX_PAGE as usize);
     }
 }

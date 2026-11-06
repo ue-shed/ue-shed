@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { indexedTestReports } from "../../../../../packages/game-text/src/indexed-reports.test-support.js";
-import { Effect, Layer, Option, Result, type Scope } from "effect";
+import { Effect, Layer, Option, Result, Stream, type Scope } from "effect";
 import {
 	GameTextIndexRefresh,
 	GameTextIndexSteps,
@@ -16,6 +16,7 @@ import {
 	joinLocalizationTarget,
 	applyLocalizationReview,
 	applyLocalizationKeyChanges,
+	evidenceReviewLines,
 	localizationKeyChanges,
 	mergeLocalizationKeyChanges,
 	localizationQuality,
@@ -53,9 +54,14 @@ export type CannedQuery = (inputs: CannedQueryInputs) => Partial<NativeTextQuery
 
 /**
  * The query a host test reads: its planted answers, and every other member dies naming itself.
- * Hosts read a refresh's summary at once, so an unplanted summary is `emptySummary`.
+ * Hosts read a refresh's summary at once, so an unplanted summary is `emptySummary`, and an
+ * unplanted `reviewLines` reads the target's files as a host without an index would.
  */
-function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>): NativeTextQuery {
+function cannedTextQuery(
+	corpus: TextCorpus,
+	answers: Partial<NativeTextQuery>,
+	evidence?: LocalizationTargetEvidence
+): NativeTextQuery {
 	const unplanted = (member: string) => () =>
 		Effect.die(`This test planted no answer for ${member}.`);
 	return {
@@ -85,6 +91,10 @@ function cannedTextQuery(corpus: TextCorpus, answers: Partial<NativeTextQuery>):
 		readFileCoverage: unplanted("readFileCoverage"),
 		readCorpusReportHeader: unplanted("readCorpusReportHeader"),
 		corpusFingerprint: unplanted("corpusFingerprint"),
+		reviewLines: evidence
+			? (request) => Effect.sync(() => evidenceReviewLines(evidence, request))
+			: unplanted("reviewLines"),
+		changedSince: unplanted("changedSince"),
 		export: unplanted("export"),
 		...answers
 	};
@@ -276,7 +286,8 @@ export function cannedGameTextIndexLayer<E>(
 							corpus,
 							evidence: files,
 							review: review?.contentHash ? review.file : undefined
-						})
+						}),
+						files
 					);
 					return {
 						project: testProjectIndex(request.projectRoot),
@@ -425,7 +436,7 @@ export function testProjectIndex(projectRoot: string): GameTextProjectIndex {
 	return {
 		projectRoot,
 		cacheRoot: "test",
-		generation: "test",
+		storeEpoch: "test",
 		packageKey: "test",
 		get packages(): GameTextProjectIndex["packages"] {
 			throw new Error("Unused compact-store evidence in test index");
@@ -519,6 +530,7 @@ const testIndexStepsLayer = Layer.effect(
 						project,
 						view: imported.view,
 						imported: imported.imported,
+						storeEpoch: "test",
 						generation: "test",
 						fileKeys: {},
 						get join(): GameTextTargetIndex["join"] {
@@ -552,6 +564,8 @@ const testIndexStepsLayer = Layer.effect(
 			readPoint: () => Effect.die("This test reads no points."),
 			comparePoints: () => Effect.die("This test compares no points."),
 			compareTextFiles: () => Effect.die("This test compares no files."),
+			diskChanges: () => Effect.die("This test checks no disk."),
+			watchDiskChanges: () => Stream.die("This test watches no disk."),
 			invalidate: legacy.invalidate
 		});
 		return steps;

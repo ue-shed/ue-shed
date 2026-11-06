@@ -14,7 +14,7 @@ pub use project_index_dictionary::{ProjectIndexDictionaryItem, ProjectIndexDicti
 pub enum ResultFrame {
     #[serde(rename = "game_text_index")]
     GameTextIndex {
-        outcome: game_text_index::builder::BuildOutcome,
+        outcome: Box<game_text_index::builder::BuildOutcome>,
     },
     #[serde(rename = "project_index_count")]
     ProjectIndexCount { result: ProjectIndexCountResult },

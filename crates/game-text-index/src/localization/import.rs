@@ -27,15 +27,24 @@ pub struct Input {
     pub options: Options,
     pub limits: Limits,
 }
+/// Version of the retained import semantics in every content key. Changing it invalidates every
+/// retained parsed layer and every host stat hint that records a key.
+pub const VERSION: u32 = 6;
+/// The most files one request may name.
+pub const MAXIMUM_FILES: usize = 2560;
+
+/// Files to import into the leased store in one publication. Each file whose name is not active
+/// takes the cold route (a store with nothing active is built in one external merge); each file
+/// whose name is active takes the warm route, which reuses the previous layer's IDs.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(rename = "LocalizationImportRequest"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Request {
     pub files: Vec<Input>,
+    /// Bound on the bytes of the files being read and parsed at once.
     #[cfg_attr(test, ts(type = "number"))]
     pub maximum_in_flight_bytes: u64,
-    pub cold: bool,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -64,20 +73,24 @@ pub struct PreparedFile {
     #[cfg_attr(test, ts(type = "number"))]
     pub snapshot_bytes: u64,
 }
+/// One requested file: published, or not imported for the reason given. A failed file keeps its
+/// previously active layer, if it had one.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(rename = "LocalizationFileResult"))]
-#[serde(rename_all = "camelCase")]
-pub struct FileResult {
-    pub file: Option<PreparedFile>,
-    pub error: Option<Diagnostic>,
+#[serde(tag = "outcome", rename_all = "camelCase")]
+pub enum FileResult {
+    Imported { file: PreparedFile },
+    Failed { error: Diagnostic },
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(rename = "LocalizationImportOutcome"))]
 #[serde(rename_all = "camelCase")]
 pub struct Outcome {
+    /// Dictionary lookups made while publishing.
     pub lookup_strings: usize,
+    /// Strings of warm-route files kept without a dictionary lookup.
     pub reused_strings: usize,
     pub files: Vec<FileResult>,
     pub worker_count: usize,
@@ -88,8 +101,19 @@ pub struct Outcome {
 impl Request {
     pub fn validate(&self) -> Result<()> {
         require(
-            !self.files.is_empty() && self.files.len() <= 2560 && self.maximum_in_flight_bytes > 0,
+            !self.files.is_empty()
+                && self.files.len() <= MAXIMUM_FILES
+                && self.maximum_in_flight_bytes > 0,
             "localization file or byte bound",
+        )?;
+        let names = self
+            .files
+            .iter()
+            .map(|input| input.relative_path.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        require(
+            names.len() == self.files.len(),
+            "localization file named twice",
         )?;
         for input in &self.files {
             require(
@@ -144,7 +168,7 @@ fn changed(a: &Metadata, b: &Metadata) -> bool {
             || a.ctime_nsec() != b.ctime_nsec()
     }
 }
-fn timestamp(metadata: &Metadata) -> String {
+pub(crate) fn timestamp(metadata: &Metadata) -> String {
     let ms = metadata
         .modified()
         .ok()
@@ -167,6 +191,36 @@ fn timestamp(metadata: &Metadata) -> String {
         seconds % 60,
         ms % 1000
     )
+}
+/// The retained layer's identity: import semantics, importer options and authored bytes. Hosts
+/// keep the key an import returns; they never derive it.
+pub(crate) fn content_key(options: &Options, content_hash: &str) -> Result<String> {
+    Ok(digest(&serde_json::to_vec(&json!([
+        VERSION,
+        options,
+        content_hash
+    ]))?))
+}
+/// Strings the layers hold, counted per domain, for the warm route's reuse count.
+fn layer_strings(layers: &[&SourceLayer]) -> Result<usize> {
+    let mut total = 0;
+    for layer in layers {
+        let reader = layer.source.open()?;
+        let domains = reader
+            .entries
+            .iter()
+            .filter(|e| e.kind == 4)
+            .map(|e| &e.domain)
+            .collect::<std::collections::BTreeSet<_>>();
+        for domain in domains {
+            total += reader
+                .entries
+                .iter()
+                .find(|e| &e.domain == domain && e.kind == 4)
+                .map_or(0, |e| e.strings as usize);
+        }
+    }
+    Ok(total)
 }
 fn read(
     input: &Input,
@@ -220,11 +274,8 @@ fn read(
         return Err(failure(file, "file_changed", ""));
     }
     let content_hash = digest(&bytes);
-    // packages/game-text/src/localization-import.ts:316-320: options order is part of the key.
-    let key = digest(
-        &serde_json::to_vec(&json!([6, input.options, content_hash]))
-            .map_err(|_| failure(file, "invalid_schema", ""))?,
-    );
+    let key = content_key(&input.options, &content_hash)
+        .map_err(|_| failure(file, "invalid_schema", ""))?;
     let existing = cached.get(&key);
     let layer = if existing.is_none() {
         Some(Arc::new(parse_bytes_with_chunk(
@@ -383,7 +434,7 @@ pub(crate) fn import(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .peak;
-    let mut files = Vec::new();
+    let mut files = Vec::with_capacity(prepared.len());
     let mut layers = Vec::new();
     for result in prepared {
         match result.ok_or("missing localization result")? {
@@ -395,45 +446,22 @@ pub(crate) fn import(
                         source: LayerSource::Memory(layer),
                     });
                 }
-                files.push(FileResult {
-                    file: Some(file),
-                    error: None,
-                });
+                files.push(FileResult::Imported { file });
             }
-            Err(error) => files.push(FileResult {
-                file: None,
-                error: Some(error),
-            }),
+            Err(error) => files.push(FileResult::Failed { error }),
         }
     }
     let publish_started = Instant::now();
     let lookup_before = store.localization_lookups;
-    let local_strings = layers
+    let mut reused_strings = 0;
+    // Failed files publish nothing; the rest publish together in one root.
+    if files
         .iter()
-        .map(|layer| layer.source.open())
-        .collect::<Result<Vec<_>>>()?
-        .iter()
-        .map(|reader| {
-            reader
-                .entries
-                .iter()
-                .filter(|e| e.kind == 4)
-                .map(|e| &e.domain)
-                .collect::<std::collections::BTreeSet<_>>()
-                .iter()
-                .map(|domain| {
-                    reader
-                        .entries
-                        .iter()
-                        .find(|e| &e.domain == *domain && e.kind == 4)
-                        .map_or(0, |e| e.strings as usize)
-                })
-                .sum::<usize>()
-        })
-        .sum::<usize>();
-    if !files.iter().any(|file| file.error.is_some()) {
+        .any(|entry| matches!(entry, FileResult::Imported { .. }))
+    {
+        // Content the store already holds only changes which layer is active.
         for entry in &files {
-            if let Some(file) = &entry.file
+            if let FileResult::Imported { file } = entry
                 && !file.parsed
             {
                 let record = &store.root["layers"][&file.key];
@@ -448,34 +476,36 @@ pub(crate) fn import(
                 )?;
             }
         }
-        if request.cold
-            && store.root["active"]
-                .as_object()
-                .is_some_and(|active| active.is_empty())
+        if store.root["active"]
+            .as_object()
+            .is_some_and(serde_json::Map::is_empty)
         {
+            // Nothing is active, so every file is cold: one merge builds the store and
+            // publishes its root.
             store.publish_cold_sources(&layers)?;
         } else {
-            if request.cold {
-                store.prepare_batch_cold_sources(&layers)?;
-            } else {
-                for layer in layers {
-                    store.prepare_local_reader(
-                        &layer.name,
-                        &layer.key,
-                        layer.source.open()?,
-                        true,
-                    )?;
-                }
+            let (warm, cold): (Vec<_>, Vec<_>) = layers
+                .into_iter()
+                .partition(|layer| store.root["active"].get(&layer.name).is_some());
+            if !cold.is_empty() {
+                store.prepare_batch_cold_sources(&cold)?;
             }
-            for file in &files {
-                if let Some(file) = &file.file {
+            let strings = layer_strings(&warm.iter().collect::<Vec<_>>())?;
+            let lookups = store.localization_lookups;
+            for layer in warm {
+                store.prepare_local_reader(&layer.name, &layer.key, layer.source.open()?, true)?;
+            }
+            reused_strings =
+                strings.saturating_sub(store.localization_lookups.saturating_sub(lookups) as usize);
+            for entry in &files {
+                if let FileResult::Imported { file } = entry {
                     store.root["active"][&file.relative_path] = json!(file.key);
                 }
             }
+            store.publish_root()?;
         }
-        store.publish_root()?;
-        for file in &mut files {
-            if let Some(file) = &mut file.file {
+        for entry in &mut files {
+            if let FileResult::Imported { file } = entry {
                 file.snapshot_bytes = store.root["layers"][&file.key]["bytes"]
                     .as_u64()
                     .ok_or("layer bytes")?;
@@ -484,16 +514,189 @@ pub(crate) fn import(
     }
     Ok(Outcome {
         lookup_strings: store.localization_lookups.saturating_sub(lookup_before) as usize,
-        reused_strings: if request.cold {
-            0
-        } else {
-            local_strings
-                .saturating_sub(store.localization_lookups.saturating_sub(lookup_before) as usize)
-        },
+        reused_strings,
         files,
         worker_count,
         parse_ms,
         parse_cpu_ms,
         publish_ms: publish_started.elapsed().as_secs_f64() * 1000.0,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::{Configuration, open_root};
+
+    const SOURCE: &str = "msgctxt \"N,K\"\nmsgid \"source\"\nmsgstr \"translation\"\n";
+
+    struct Fixture {
+        project: PathBuf,
+        configuration: Configuration,
+    }
+    impl Fixture {
+        fn new(kind: &str) -> Result<Self> {
+            let root = crate::test_directory(kind);
+            let project = root.join("project");
+            fs::create_dir_all(&project)?;
+            Ok(Self {
+                project,
+                configuration: Configuration {
+                    cache_root: root.join("cache"),
+                    project_key: "fixture".into(),
+                    target_key: "Game".into(),
+                    shared_project: false,
+                    view_prefix: None,
+                },
+            })
+        }
+        fn write(&self, name: &str, text: &str) -> Result<()> {
+            Ok(fs::write(self.project.join(name), text)?)
+        }
+        fn input(&self, name: &str, po_format: Option<&str>) -> Input {
+            Input {
+                chunk_bytes: None,
+                project_root: self.project.clone(),
+                file: self.project.join(name),
+                relative_path: name.into(),
+                options: Options {
+                    format: Format::Po,
+                    po_format: po_format.map(Into::into),
+                    collapse_mode: None,
+                },
+                limits: Limits::default(),
+            }
+        }
+        fn import(&self, store: &mut Store, names: &[&str]) -> Result<Outcome> {
+            let request = Request {
+                files: names.iter().map(|name| self.input(name, None)).collect(),
+                maximum_in_flight_bytes: 1,
+            };
+            request.validate()?;
+            import(store, &request, &mut |_, _| Ok(()))
+        }
+        /// The active names and keys a new reader sees.
+        fn published(&self) -> Result<BTreeMap<String, String>> {
+            let (_, root) = open_root(&self.configuration)?;
+            Ok(root["active"]
+                .as_object()
+                .ok_or("active")?
+                .iter()
+                .map(|(name, key)| (name.clone(), key.as_str().unwrap_or_default().to_owned()))
+                .collect())
+        }
+    }
+    fn imported(result: &FileResult) -> Result<&PreparedFile> {
+        match result {
+            FileResult::Imported { file } => Ok(file),
+            FileResult::Failed { error } => Err(error.message.clone().into()),
+        }
+    }
+    fn failed(result: &FileResult) -> Option<&Diagnostic> {
+        match result {
+            FileResult::Failed { error } => Some(error),
+            FileResult::Imported { .. } => None,
+        }
+    }
+
+    #[test]
+    fn a_mixed_batch_publishes_the_files_that_imported_and_reports_the_rest() -> Result<()> {
+        let fixture = Fixture::new("localization-import-mixed")?;
+        fixture.write("good.po", SOURCE)?;
+        fixture.write("bad.po", "msgid \"unterminated")?;
+        let mut store = Store::writer(fixture.configuration.clone())?;
+        let outcome = fixture.import(&mut store, &["good.po", "missing.po", "bad.po"])?;
+        let good = imported(&outcome.files[0])?;
+        assert!(good.parsed);
+        let missing = failed(&outcome.files[1]).ok_or("missing.po imported")?;
+        assert_eq!(missing.code, "file_missing");
+        assert!(missing.message.starts_with("missing.po"));
+        let bad = failed(&outcome.files[2]).ok_or("bad.po imported")?;
+        assert_eq!(bad.code, "malformed_po");
+        assert_eq!(
+            bad.recovery,
+            "Repair the PO syntax with the translation tool, then read the file again."
+        );
+        assert_eq!(
+            fixture.published()?,
+            BTreeMap::from([("good.po".to_owned(), good.key.clone())])
+        );
+        // A batch where nothing imports publishes nothing and keeps the active layers.
+        let outcome = fixture.import(&mut store, &["missing.po", "bad.po"])?;
+        assert!(outcome.files.iter().all(|file| failed(file).is_some()));
+        assert_eq!(fixture.published()?.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn a_warm_subset_replaces_only_its_files() -> Result<()> {
+        let fixture = Fixture::new("localization-import-warm")?;
+        fixture.write("a.po", SOURCE)?;
+        fixture.write("b.po", &SOURCE.replace('K', "L"))?;
+        let mut store = Store::writer(fixture.configuration.clone())?;
+        let first = fixture.import(&mut store, &["a.po", "b.po"])?;
+        let before = fixture.published()?;
+        assert_eq!(before.len(), 2);
+        fixture.write("a.po", &SOURCE.replace("translation", "changed"))?;
+        fixture.write("c.po", &SOURCE.replace('K', "M"))?;
+        let warm = fixture.import(&mut store, &["a.po", "c.po"])?;
+        let changed = imported(&warm.files[0])?;
+        assert!(changed.parsed);
+        assert_ne!(changed.key, imported(&first.files[0])?.key);
+        // The warm file's unchanged identity and source keep the previous layer's IDs.
+        assert!(warm.reused_strings > 0);
+        let after = fixture.published()?;
+        assert_eq!(after["a.po"], changed.key);
+        assert_eq!(after["b.po"], before["b.po"]);
+        assert_eq!(after["c.po"], imported(&warm.files[1])?.key);
+        // Reverting reactivates the retained layer without parsing.
+        fixture.write("a.po", SOURCE)?;
+        let reverted = fixture.import(&mut store, &["a.po"])?;
+        assert!(!imported(&reverted.files[0])?.parsed);
+        assert_eq!(fixture.published()?["a.po"], before["a.po"]);
+        Ok(())
+    }
+
+    #[test]
+    fn each_file_returns_its_content_key() -> Result<()> {
+        let fixture = Fixture::new("localization-import-key")?;
+        fixture.write("a.po", SOURCE)?;
+        let mut store = Store::writer(fixture.configuration.clone())?;
+        let request = Request {
+            files: vec![
+                fixture.input("a.po", Some("Unreal")),
+                Input {
+                    relative_path: "b.po".into(),
+                    ..fixture.input("a.po", Some("Crowdin"))
+                },
+            ],
+            maximum_in_flight_bytes: 1 << 20,
+        };
+        let outcome = import(&mut store, &request, &mut |_, _| Ok(()))?;
+        let (unreal, crowdin) = (imported(&outcome.files[0])?, imported(&outcome.files[1])?);
+        let hash = digest(SOURCE.as_bytes());
+        assert_eq!(unreal.content_hash, hash);
+        assert_eq!(crowdin.content_hash, hash);
+        assert_eq!(
+            unreal.key,
+            digest(&serde_json::to_vec(&json!([
+                VERSION,
+                {"format": "po", "poFormat": "Unreal"},
+                hash
+            ]))?)
+        );
+        assert_ne!(unreal.key, crowdin.key);
+        Ok(())
+    }
+
+    #[test]
+    fn a_request_names_each_file_once() -> Result<()> {
+        let fixture = Fixture::new("localization-import-names")?;
+        let request = Request {
+            files: vec![fixture.input("a.po", None), fixture.input("a.po", None)],
+            maximum_in_flight_bytes: 1,
+        };
+        assert!(request.validate().is_err());
+        Ok(())
+    }
 }

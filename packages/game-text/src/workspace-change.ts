@@ -60,6 +60,7 @@ export const makeWorkspaceChangeComparison = Effect.fn("GameText.workspace.chang
 						"Choose one of the project's localization targets."
 					);
 				const code = host.codeSource ? yield* host.codeSource(projectRoot) : undefined;
+				const failing = localizationGateFailures(request.failOn, request.warnOn);
 				const points = yield* readGameTextChangePoints({
 					projectRoot,
 					change: request.change,
@@ -67,6 +68,7 @@ export const makeWorkspaceChangeComparison = Effect.fn("GameText.workspace.chang
 					targetNames: request.target === undefined ? names : named,
 					changes: request.changes,
 					findings: request.findings,
+					failOn: failing,
 					...(code === undefined ? undefined : { code })
 				}).pipe(lock.withPermits(1));
 				const unreadable = unreadableChangePaths(points.targets);
@@ -79,12 +81,7 @@ export const makeWorkspaceChangeComparison = Effect.fn("GameText.workspace.chang
 				return {
 					status: "ready",
 					change: points.change,
-					targets: points.targets.map((target) =>
-						changeComparisonTarget(
-							target,
-							localizationGateFailures(request.failOn, request.warnOn)
-						)
-					)
+					targets: points.targets.map((target) => changeComparisonTarget(target, failing))
 				} satisfies ChangeComparisonResult;
 			}).pipe(
 				Effect.provideService(GameTextIndexSteps, steps),

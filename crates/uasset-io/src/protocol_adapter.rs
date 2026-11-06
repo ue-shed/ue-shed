@@ -534,6 +534,20 @@ fn execute_direct(
             ) = (query_session.as_deref_mut(), build)
             {
                 crate::point_reader::read(configuration, request)
+            } else if let (
+                Some(session),
+                game_text_index::builder::BuildRequest::DiskChanges {
+                    configuration,
+                    request,
+                },
+            ) = (query_session.as_deref_mut(), build)
+            {
+                direct_executor::check_disk(
+                    &mut session.disk_checks,
+                    configuration,
+                    request,
+                    cancellation,
+                )
             } else if let Some(session) = query_session {
                 session
                     .game_text
@@ -577,7 +591,12 @@ fn execute_direct(
                     })).map_err(emission_failure)?;
                 }
             }
-            emit_typed_result(emitter, &ResultFrame::GameTextIndex { outcome })?;
+            emit_typed_result(
+                emitter,
+                &ResultFrame::GameTextIndex {
+                    outcome: Box::new(outcome),
+                },
+            )?;
             Ok(false)
         }
         Operation::Inspect { asset_path } => {

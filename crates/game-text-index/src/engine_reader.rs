@@ -104,6 +104,39 @@ fn open_layer(directory: &Path, root: &Value, key: &str) -> Result<Layer> {
     Ok(Layer { reader, record })
 }
 
+/// A joined layer and its bounded metadata.
+fn open_joined(directory: &Path, root: &Value, key: &str) -> Result<(Layer, Value)> {
+    let joined = open_layer(directory, root, key)?;
+    require(
+        joined
+            .reader
+            .entries
+            .iter()
+            .find(|entry| entry.name == "join.meta")
+            .is_some_and(|entry| entry.raw <= 16 * 1024 * 1024),
+        "Joined metadata exceeds its bound.",
+    )?;
+    let meta = parse(&section(&joined.reader, "join.meta")?)?;
+    Ok((joined, meta))
+}
+
+/// A joined layer the store retains, opened with the root that lists it, before its inputs are.
+pub(crate) struct Retained {
+    directory: std::path::PathBuf,
+    /// The store's root when the layer was opened: the layers it lists and its dictionary.
+    pub root: Value,
+    key: String,
+    joined: Layer,
+    pub meta: Value,
+}
+
+impl Retained {
+    /// The joined layer's own record in the root.
+    pub fn record(&self) -> &Value {
+        &self.joined.record
+    }
+}
+
 impl EngineReader {
     /// Read-only opens never create or repair caches. A publication racing acquisition retries
     /// the entire acquisition; a returned reader never reopens inputs by mutable filesystem names.
@@ -165,17 +198,7 @@ impl EngineReader {
         )?;
         let generation = text(&root, "generation")?;
         let directory = configuration.directory()?;
-        let joined = open_layer(&directory, &root, &joined_key)?;
-        require(
-            joined
-                .reader
-                .entries
-                .iter()
-                .find(|entry| entry.name == "join.meta")
-                .is_some_and(|entry| entry.raw <= 16 * 1024 * 1024),
-            "Joined metadata exceeds its bound.",
-        )?;
-        let meta = parse(&section(&joined.reader, "join.meta")?)?;
+        let (joined, meta) = open_joined(&directory, &root, &joined_key)?;
         require(
             meta["generation"] == generation,
             Error::new(
@@ -183,6 +206,56 @@ impl EngineReader {
                 "Joined target dictionary generation differs.",
             ),
         )?;
+        Self::assemble(
+            &directory, &root, joined_key, joined, meta, generation, true,
+        )
+    }
+
+    /// A joined layer the store still retains, by key, with the root that lists it; `None` when
+    /// the store no longer lists it. Neither it nor its inputs need be active: it is an earlier
+    /// generation of a target, opened to compare with the current one.
+    pub(crate) fn retained(configuration: &Configuration, key: &str) -> Result<Option<Retained>> {
+        let (_, root) = open_root(configuration)?;
+        if root["layers"].get(key).is_none() {
+            return Ok(None);
+        }
+        let directory = configuration.directory()?;
+        let (joined, meta) = open_joined(&directory, &root, key)?;
+        Ok(Some(Retained {
+            directory,
+            root,
+            key: key.to_owned(),
+            joined,
+            meta,
+        }))
+    }
+
+    /// Opens a retained joined layer's base and inputs, which the caller checked the store
+    /// still lists, and the dictionary the store lists now.
+    pub(crate) fn open_retained(retained: Retained) -> Result<Self> {
+        let generation = text(&retained.root, "generation")?;
+        Self::assemble(
+            &retained.directory,
+            &retained.root,
+            retained.key,
+            retained.joined,
+            retained.meta,
+            generation,
+            false,
+        )
+    }
+
+    /// A reader of an opened joined layer. An `active` view's base and inputs must be the ones
+    /// the root names active; a retained one's need only be listed.
+    fn assemble(
+        directory: &Path,
+        root: &Value,
+        joined_key: String,
+        joined: Layer,
+        meta: Value,
+        generation: String,
+        active: bool,
+    ) -> Result<Self> {
         require(
             matches!(meta["version"].as_u64(), Some(3 | 4)),
             "Unsupported joined metadata version.",
@@ -204,7 +277,7 @@ impl EngineReader {
             }
         }
         let base = meta["base"].as_str().unwrap_or(&joined_key).to_owned();
-        if meta["base"].is_string() {
+        if active && meta["base"].is_string() {
             require(
                 root["active"]["joined-base"] == base,
                 Error::new(
@@ -219,7 +292,7 @@ impl EngineReader {
             .ok_or("Invalid joined dependencies.")?
         {
             require(
-                root["active"].get(name) == Some(key),
+                !active || root["active"].get(name) == Some(key),
                 Error::new(
                     ErrorCode::StaleGeneration,
                     "Joined inputs changed; refresh the target before opening a reader.",
@@ -230,7 +303,7 @@ impl EngineReader {
         let mut layers = HashMap::from([(joined_key.clone(), joined)]);
         for key in wanted {
             if !layers.contains_key(&key) {
-                layers.insert(key.clone(), open_layer(&directory, &root, &key)?);
+                layers.insert(key.clone(), open_layer(directory, root, &key)?);
             }
         }
         let mut segments = Vec::new();

@@ -195,7 +195,11 @@ impl Class {
             | EngineRequest::Close { .. }
             | EngineRequest::Summary { .. }
             | EngineRequest::Line { .. }
+            | EngineRequest::ReviewLines { .. }
             | EngineRequest::RulesCheck { .. } => Self::Interactive,
+            // A diff reads whole line and package columns of two generations, however small its
+            // page; later pages read its cached changes.
+            EngineRequest::ChangedSince { .. } => Self::Bulk,
             // A query listing more than 500 rows reads like an export.
             EngineRequest::Query { request, .. } => {
                 if crate::engine_types::Query::listed_rows(request) > 500 {

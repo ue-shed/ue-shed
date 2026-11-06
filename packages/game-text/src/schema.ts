@@ -737,6 +737,15 @@ export const TextCorpusQueryRunResult = Schema.Union([
 	Schema.Struct({
 		status: Schema.Literal("completed"),
 		summary: TextCorpusQuerySummary,
+		/**
+		 * The scanned target's generation: opaque, and the same for every host and process reading
+		 * one store. It changes whenever something the target shows changes (packages, imported
+		 * localization files, the review file, code or policy) and stays equal across refreshes
+		 * that change nothing, so it is safe to persist and compare across processes. It also
+		 * changes after the store is compacted, and `changedSince` then answers `too_old`. Pass
+		 * it to `changedSince` to list what changed after a later refresh.
+		 */
+		generation: Schema.optionalKey(Schema.String),
 		cached: Schema.optionalKey(Schema.Literal(true))
 	}),
 	Schema.Struct({ status: Schema.Literal("not_configured") }),

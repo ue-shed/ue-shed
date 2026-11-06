@@ -558,7 +558,49 @@ export const nativeIndexBuilderLayer = (configuration: AssetReaderConfiguration)
 				timeToLive: WRITER_PROCESS_IDLE,
 				timeToLiveStrategy: "usage"
 			});
+			// Disk checks take no writer lease, so they never wait on a build. One process serves
+			// them, so a check's later pages read the differences its first page kept.
+			const checkers = yield* Pool.makeWithTTL({
+				acquire: Layer.build(nativeGameTextIndexClientLayer(configuration)).pipe(
+					Effect.map((services) => Context.get(services, NativeGameTextIndexClient))
+				),
+				min: 0,
+				max: 1,
+				timeToLive: WRITER_PROCESS_IDLE,
+				timeToLiveStrategy: "usage"
+			});
 			return GameTextIndexBuilder.of({
+				diskChanges: Effect.fn("NativeIndexBuilder.diskChanges")(
+					function* (options, request) {
+						const result = yield* Effect.scoped(
+							Effect.gen(function* () {
+								const client = yield* Pool.get(checkers);
+								return yield* client
+									.execute({
+										action: "disk_changes",
+										configuration: nativeIndexConfiguration(options),
+										request
+									})
+									.pipe(Effect.tapError(() => Pool.invalidate(checkers, client)));
+							})
+						).pipe(
+							Effect.mapError((cause) =>
+								nativeFailure(cause, "native-index-disk_changes")
+							)
+						);
+						if (!result.diskChanges)
+							return yield* Effect.fail(
+								unavailable(
+									"native-disk-changes",
+									new Error("The reader returned no disk check.")
+								)
+							);
+						return {
+							answer: result.diskChanges,
+							engineSeconds: result.stageSeconds["disk_changes"] ?? 0
+						};
+					}
+				),
 				importLocalizationFile,
 				importLocalizationTarget,
 				refreshPackageTextLayer,

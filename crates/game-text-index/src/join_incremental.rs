@@ -5,7 +5,7 @@ use crate::join::{JoinInput, JoinOutcome};
 use crate::join_columns::{column, layer};
 use crate::join_policy::words;
 use crate::snapshot::Reader;
-use crate::store::{Store, dictionary_selected_strings, digest, section};
+use crate::store::{Store, dictionary_selected_strings, section};
 use crate::{Result, require};
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -711,25 +711,15 @@ pub(crate) fn refresh(
             .collect();
         let values = dictionary_selected_strings(&store.directory, &store.root, &ids)?;
         for (row, ci, source, translation, expected) in reviews {
-            let source = String::from_utf16_lossy(
-                &crate::wtf8::Wtf8Buf::from_view(&values[&source]).to_utf16(),
+            let fingerprint = crate::join_marks::review_fingerprint(
+                &values[&source],
+                translation.map(|id| values[&id].as_str()),
             );
-            let translation = translation
-                .map(|id| {
-                    String::from_utf16_lossy(
-                        &crate::wtf8::Wtf8Buf::from_view(&values[&id]).to_utf16(),
-                    )
-                })
-                .unwrap_or_else(|| "\0absent".into());
             set(
                 &mut hot,
                 &format!("c{ci}.review"),
                 row,
-                if digest(format!("{source}\0{translation}").as_bytes()) == expected {
-                    2
-                } else {
-                    3
-                },
+                if fingerprint == expected { 2 } else { 3 },
             );
         }
     }

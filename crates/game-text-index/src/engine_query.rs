@@ -66,6 +66,8 @@ pub struct EngineQuery {
     unit_lines: Once<Arc<[u32]>>,
     /// Units and lines by exact source, for related lines, built on the first request.
     pub(crate) related_index: Once<Arc<crate::engine_related::RelatedIndex>>,
+    /// Similar-key pairs and candidates under one policy, built on the first request for them.
+    pub(crate) similar_keys: crate::engine_similar::SimilarKeysCache,
     /// Unreal word counts by source text ID, filled by aggregates.
     pub(crate) line_break_words: Lock<HashMap<u32, u32>>,
     /// The corpus fingerprint, computed once per reader.
@@ -74,6 +76,9 @@ pub struct EngineQuery {
     pub(crate) package_lists: Once<Arc<(Vec<Value>, Vec<Value>)>>,
     /// Each evidence input's file metadata, read once per reader.
     pub(crate) evidence_meta: Memo<String, Arc<Value>>,
+    /// Each kind's changes since the generation a host last asked about, so its pages are cheap.
+    pub(crate) changes:
+        Lock<HashMap<crate::engine_changes::ChangeKind, Arc<crate::engine_changes::ChangeSet>>>,
 }
 
 /// An open-addressed hash of one packed-ID arena: each slot holds a row plus one, zero when
@@ -248,10 +253,12 @@ impl EngineQuery {
             id_indexes: Memo::default(),
             unit_lines: Once::default(),
             related_index: Once::default(),
+            similar_keys: Lock::default(),
             line_break_words: Lock::default(),
             fingerprint: Once::default(),
             package_lists: Once::default(),
             evidence_meta: Memo::default(),
+            changes: Lock::default(),
         })
     }
 
@@ -637,6 +644,118 @@ impl EngineQuery {
         )?))
     }
 
+    /// The translation of a line the next sync ships in a culture, as the join chose it: the
+    /// PO's pending edit when the line is not synced, else the archive's; none without an entry.
+    pub(crate) fn shipped_translation(
+        &self,
+        ci: usize,
+        row: usize,
+        not_synced: bool,
+    ) -> Result<Option<String>> {
+        let entry = self.reader.value(
+            &format!("c{ci}.{}", if not_synced { "po" } else { "archive" }),
+            row,
+        )?;
+        if entry == 0 {
+            return Ok(None);
+        }
+        let culture = self.cultures.get(ci).ok_or("Culture outside target.")?;
+        let path = self.target["outputPaths"][if not_synced {
+            "portableObjects"
+        } else {
+            "archives"
+        }][culture]
+            .as_str()
+            .ok_or("Translation input is absent.")?;
+        self.translation(path, entry as usize - 1, not_synced)
+    }
+
+    /// The culture's PO entry the join matched to a line, when it has the line's own key: a
+    /// collapsed entry it matched by source is not one an edit of the line writes.
+    fn review_po(&self, ci: usize, row: usize) -> Result<Option<ReviewPoEntry>> {
+        let entry = self.reader.value(&format!("c{ci}.po"), row)?;
+        if entry == 0 {
+            return Ok(None);
+        }
+        let entry = entry as usize - 1;
+        let culture = self.cultures.get(ci).ok_or("Culture outside target.")?;
+        let path = self.target["outputPaths"]["portableObjects"][culture]
+            .as_str()
+            .ok_or("PO input is absent.")?;
+        let keys = self.reader.input_column(path, "entry.key")?;
+        let key = self
+            .reader
+            .string(*keys.get(entry).ok_or("PO key outside input.")?)?;
+        if key != self.reader.string(self.reader.value("line.key", row)?)? {
+            return Ok(None);
+        }
+        let sources = self.reader.input_column(path, "entry.source")?;
+        Ok(Some(ReviewPoEntry {
+            msgid: self
+                .reader
+                .string(*sources.get(entry).ok_or("PO msgid outside input.")?)?,
+        }))
+    }
+
+    /// For one culture of the open target, each identity's line as a review fingerprints it, in
+    /// request order. The fingerprint is the one the join compares stored reviews with.
+    pub fn review_lines(
+        &self,
+        request: &ReviewLinesRequest,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<ReviewLinesAnswer> {
+        require(
+            self.target["name"] == *request.target,
+            invalid("The selected localization target is not open."),
+        )?;
+        let Some(ci) = self.cultures.iter().position(|c| *c == request.culture) else {
+            return Ok(ReviewLinesAnswer {
+                lines: vec![ReviewLine::NotGathered; request.identities.len()],
+            });
+        };
+        let manifest = self.target["outputPaths"]["manifest"].as_str();
+        let rows = self.reader.column("manifest.rows")?;
+        let mut lines = Vec::with_capacity(request.identities.len());
+        for (index, identity) in request.identities.iter().enumerate() {
+            if index & 255 == 0 {
+                crate::engine_match::checkpoint(cancelled)?;
+            }
+            let id = format!(
+                "{}:{}",
+                request.target,
+                crate::wtf8::view_json(&json!([identity.namespace, identity.key]))?
+            );
+            let Some(row) = self.find_id("line", &id)? else {
+                lines.push(ReviewLine::NotGathered);
+                continue;
+            };
+            let begin = self.reader.value("line.manifest_start", row)? as usize;
+            let end = self.reader.value("line.manifest_end", row)? as usize;
+            if begin == end {
+                lines.push(ReviewLine::NotGathered);
+                continue;
+            }
+            // The first entry of the line's manifest group, as the join's `manifest_source`.
+            let name = manifest.ok_or("Manifest path is absent.")?;
+            let entry = *rows.get(begin).ok_or("Invalid manifest range.")? as usize;
+            let sources = self.reader.input_column(name, "entry.source")?;
+            let source = self
+                .reader
+                .string(*sources.get(entry).ok_or("Manifest source outside input.")?)?;
+            let not_synced = self.reader.value(&format!("c{ci}.facts"), row)? & 8 != 0;
+            let translation = self.shipped_translation(ci, row, not_synced)?;
+            let fingerprint =
+                crate::join_marks::review_fingerprint(&source, translation.as_deref());
+            lines.push(ReviewLine::Found {
+                source,
+                translation,
+                fingerprint,
+                po: self.review_po(ci, row)?,
+            });
+        }
+        Ok(ReviewLinesAnswer { lines })
+    }
+
     pub fn culture_mark(&self, ci: usize, row: usize) -> Result<Value> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("previewCulture");
@@ -648,31 +767,12 @@ impl EngineQuery {
             .reader
             .value(&(prefix.clone() + "review_record"), row)? as usize;
         let not_synced = facts & 8 != 0;
-        let entry = self.reader.value(
-            &(prefix.clone() + if not_synced { "po" } else { "archive" }),
-            row,
-        )?;
         let culture = self
             .cultures
             .get(ci)
             .ok_or("Culture outside target.")?
             .clone();
-        let path = self.target["outputPaths"][if not_synced {
-            "portableObjects"
-        } else {
-            "archives"
-        }][&culture]
-            .as_str()
-            .map(str::to_owned);
-        let translation = if entry != 0 {
-            self.translation(
-                &path.ok_or("Translation input is absent.")?,
-                entry as usize - 1,
-                not_synced,
-            )?
-        } else {
-            None
-        };
+        let translation = self.shipped_translation(ci, row, not_synced)?;
         let mut result = json!({"culture":culture,"state":STATES.get(state).ok_or("Invalid localization state.")?,"facts":selected_bits(&STATES,facts),"unknownReasons":selected_bits(&REASONS,self.reader.value(&(prefix+"reasons"),row)?),"reducedSourceChecking":self.reader.meta["reducedSourceChecking"][ci].as_bool().unwrap_or(false),"translation":translation.map(Value::String).unwrap_or(if not_synced { json!("") } else { Value::Null })});
         if review != 0 {
             result["review"] = if review == 1 {

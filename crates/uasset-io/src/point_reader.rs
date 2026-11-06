@@ -717,6 +717,7 @@ mod tests {
                 localization: Some(localization),
                 changes: page,
                 findings: page,
+                fail_on: Vec::new(),
             },
         )?;
         let kinds = compared

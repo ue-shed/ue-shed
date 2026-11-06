@@ -1429,6 +1429,7 @@ mod game_text_contract_tests {
         assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-index-capabilities-request.json")).is_ok());
         assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/game-text-index-request-old-minor.json")).is_err());
         assert!(super::decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-index-result-event.json")).is_ok());
+        assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-disk-changes-request.json")).is_ok());
     }
 
     #[test]

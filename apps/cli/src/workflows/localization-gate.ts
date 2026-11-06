@@ -147,6 +147,7 @@ const loadChangeGate = Effect.fn("Cli.localization.gate_change")(function* (
 		projectRoot: command.projectRoot,
 		selection,
 		targetNames: targets.map((target) => target.name),
+		failOn,
 		...(command.reader === undefined ? undefined : { reader: command.reader })
 	});
 	yield* unreadableFiles(read.targets);

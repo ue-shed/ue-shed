@@ -1,6 +1,7 @@
 import { Schema, type Effect, type Stream } from "effect";
 import { InvestigationFileResult, InvestigationFormat } from "@ue-shed/unreal-assets/investigation";
 import { ChangeComparisonRequest, ChangeComparisonResult } from "./change-comparison.js";
+import { ChangedSinceRequest, ChangedSinceResult } from "./changed-since.js";
 import {
 	LocalizationFileChoiceRequest,
 	LocalizationFileChoiceResult,
@@ -125,6 +126,8 @@ export type GameTextWorkspaceContractMethod<Entry extends GameTextWorkspaceContr
  *   localization operations, and `localizationBeforeGather` runs before its gather; the first two
  *   also return a `LocalizationTarget` with its file paths.
  * - `configuredScan` returns the whole corpus; serve `configuredRefresh` instead.
+ * - `diskChanges` and `watchDiskChanges` name a project root, which only the host's own project
+ *   selection may choose; a host serves their results for its selected project.
  */
 export const GameTextWorkspaceContract = {
 	localizationQualitySearch: { params: WorkspaceQualityRequest, success: WorkspaceQualityResult },
@@ -163,6 +166,8 @@ export const GameTextWorkspaceContract = {
 		success: LocalizationFileComparisonResult
 	},
 	related: { params: RelatedLinesRequest, success: RelatedLinesResult },
+	/** What changed in the scanned or selected target since an earlier generation of it. */
+	changedSince: { params: ChangedSinceRequest, success: ChangedSinceResult },
 	investigationExport: {
 		params: GameTextInvestigationExportRequest,
 		success: InvestigationFileResult
@@ -204,7 +209,9 @@ export type GameTextWorkspaceHostOnlyMethod =
 	| "endOperation"
 	| "refreshAfterOperation"
 	| "localizationBeforeGather"
-	| "configuredScan";
+	| "configuredScan"
+	| "diskChanges"
+	| "watchDiskChanges";
 
 /** A workspace method the contract describes. */
 export type GameTextWorkspaceContractName = keyof GameTextWorkspaceContract;

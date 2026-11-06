@@ -59,6 +59,14 @@ const isManifestEntry = (entry: Entry): entry is ManifestEntry => "path" in entr
 const isArchiveEntry = (entry: Entry): entry is ArchiveEntry => "translation" in entry;
 const isPOEntry = (entry: Entry): entry is POEntry => "msgid" in entry;
 
+/**
+ * Whether a target's PO files carry each line's source text, as the index reads them: all but
+ * keyed Crowdin files, whose msgid is the key.
+ */
+export function localizationPoHasSourceText(target: LocalizationTargetEvidence["target"]) {
+	return target.poFormat !== "Crowdin" || target.collapseMode !== "IdenticalTextIdAndSource";
+}
+
 /** The query whose lines are the indexed join's lines: every visible line of the target. */
 export function indexedLocalizationLinesRequest(joined: JoinedTargetReader) {
 	return {
@@ -197,8 +205,7 @@ export const readIndexedLocalizationEvidence = Effect.fn("GameTextIndex.evidence
 		),
 		po: file(target.outputPaths.portableObjects[culture], () => ({
 			format: target.poFormat,
-			hasSourceText:
-				target.poFormat !== "Crowdin" || target.collapseMode !== "IdenticalTextIdAndSource",
+			hasSourceText: localizationPoHasSourceText(target),
 			entries: entries(target.outputPaths.portableObjects[culture]!, "po", isPOEntry)
 		}))
 	}));

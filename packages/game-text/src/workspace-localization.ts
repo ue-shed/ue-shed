@@ -60,7 +60,6 @@ import {
 	LocalizationChangeSetError,
 	LocalizationEvidence,
 	LocalizationFileAccessLive,
-	localizationEvidenceFingerprint,
 	updateLocalizationReview,
 	type LocalizationReviewSnapshot,
 	type LocalizationReviewUpdate,
@@ -78,6 +77,60 @@ import type {
 } from "./workspace-host.js";
 import type { LocalizationLineView } from "./index-reads.js";
 import { effectiveRuleDocument } from "./rules/effective.js";
+import type { GameTextContract } from "@ue-shed/protocol";
+import { localizationPoHasSourceText } from "./index-context.js";
+import type { NativeTextQuery } from "./native-query-contract.js";
+
+/** A line wanted in one culture of a target. */
+interface WantedLine {
+	readonly culture: string;
+	readonly namespace: string;
+	readonly key: string;
+}
+
+const wantedKey = (line: WantedLine) => JSON.stringify([line.culture, line.namespace, line.key]);
+
+/**
+ * Each wanted line as a review reads it: one engine call per culture, however many lines, so no
+ * localization file is decoded in the host. The lookup answers each line by culture and identity.
+ */
+const readReviewLines = Effect.fn("GameText.workspace.localization.reviewLines")(function* (
+	model: Pick<NativeTextQuery, "reviewLines">,
+	target: string,
+	wanted: readonly WantedLine[]
+) {
+	const byCulture = new Map<string, Map<string, GameTextContract.ReviewIdentity>>();
+	for (const line of wanted) {
+		const identities = byCulture.get(line.culture) ?? new Map();
+		identities.set(wantedKey(line), { namespace: line.namespace, key: line.key });
+		byCulture.set(line.culture, identities);
+	}
+	const lines = new Map<string, GameTextContract.ReviewLine>();
+	for (const [culture, identities] of byCulture) {
+		const answered = yield* model.reviewLines({
+			target,
+			culture,
+			identities: [...identities.values()]
+		});
+		[...identities.keys()].forEach((key, index) => {
+			const line = answered[index];
+			if (line !== undefined) lines.set(key, line);
+		});
+	}
+	yield* Effect.annotateCurrentSpan({ lines: wanted.length, cultures: byCulture.size });
+	return (line: WantedLine) => {
+		const answer = lines.get(wantedKey(line));
+		return answer?.status === "found" ? answer : undefined;
+	};
+});
+
+/** A review that could not read its lines: the index's own failure and way forward. */
+const unreadLines = (error: GameTextIndexError) => ({
+	status: "failed" as const,
+	code: error.code,
+	message: error.message,
+	recovery: error.recovery
+});
 
 /** Every line of a target's join: the lines reports and key pairing read. */
 const indexedLines = (target: LocalizationJoin["target"]) => ({
@@ -463,7 +516,10 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				},
 				lines: textCounts.total,
 				notSynced: textCounts.localization?.notSynced ?? 0,
-				...localizationTargetFiles(localizationEvidenceFileStatuses(evidence))
+				...localizationTargetFiles(localizationEvidenceFileStatuses(evidence)),
+				...(indexed.success.generation === undefined
+					? undefined
+					: { generation: indexed.success.generation })
 			};
 			return yield* Effect.uninterruptible(
 				Effect.gen(function* () {
@@ -932,13 +988,34 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			const retained = yield* current(request.target);
 			const root = yield* currentRoot();
 			if (!retained || !root) return { status: "not_ready" as const };
+			// Each edited line's source and shipped translation, read natively in one call per
+			// culture rather than by decoding the manifest, archives and PO files.
+			const read = yield* readReviewLines(retained.model, request.target, request.edits).pipe(
+				Effect.result
+			);
+			if (Result.isFailure(read)) return unreadLines(read.failure);
+			const line = read.success;
 			const changeSet = localizationEditChangeSet(
 				retained.evidence,
 				request.edits,
-				options.author
+				options.author,
+				(edit) => line(edit)?.source
 			);
 			if (request.mode === "review") {
-				const review = reviewLocalizationChangeSet(retained.evidence, changeSet);
+				const poHasSourceText = localizationPoHasSourceText(retained.evidence.target);
+				const review = reviewLocalizationChangeSet(
+					retained.evidence,
+					changeSet,
+					(change) => {
+						const found = line(change);
+						return {
+							source: found?.source,
+							currentTranslation: found?.translation ?? null,
+							po: found?.po ?? undefined,
+							poHasSourceText
+						};
+					}
+				);
 				return {
 					status: "reviewed" as const,
 					edits: localizationEditOutcomes(review),
@@ -1039,8 +1116,16 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			const root = yield* currentRoot();
 			if (!retained || !root) return { status: "not_ready" as const };
 			const updates: LocalizationReviewUpdate[] = [];
+			// Every fingerprint the request needs, read natively in one call per culture.
+			const read = yield* readReviewLines(
+				retained.model,
+				request.target,
+				request.changes.filter(
+					(change) => change.kind !== "clear" && change.kind !== "unaccept"
+				)
+			).pipe(Effect.result);
+			if (Result.isFailure(read)) return unreadLines(read.failure);
 			for (const change of request.changes) {
-				const identity = { namespace: change.namespace, key: change.key };
 				if (change.kind === "clear") {
 					updates.push({ ...change, kind: "clear" });
 					continue;
@@ -1049,11 +1134,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					updates.push({ ...change, kind: "unaccept" });
 					continue;
 				}
-				const fingerprint = localizationEvidenceFingerprint(
-					retained.evidence,
-					change.culture,
-					identity
-				);
+				const fingerprint = read.success(change)?.fingerprint;
 				if (fingerprint === undefined)
 					return {
 						status: "failed" as const,
@@ -1157,6 +1238,15 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			select,
 			search,
 			searchRows,
+			/** The selected target and its generation, read without borrowing its model. */
+			selectedGeneration: () =>
+				Ref.get(selected).pipe(
+					Effect.map((cached) =>
+						cached?.result.status === "ready"
+							? `${cached.join.target}\0${cached.result.generation ?? ""}`
+							: undefined
+					)
+				),
 			/** The selected target's query; absent when not loaded. */
 			targetQuery: (target: LocalizationJoin["target"]) =>
 				current(target).pipe(Effect.map((cached) => cached?.model)),

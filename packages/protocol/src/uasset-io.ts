@@ -9,6 +9,7 @@ import {
 	GameTextIndexPackagePlan,
 	GameTextIndexCodeLayer,
 	GameTextIndexReadPoint,
+	GameTextIndexDiskChanges,
 	PackageTextAudienceRule
 } from "./game-text-index.js";
 import { makeWireJsonSchemaDocument } from "./json-schema.js";
@@ -510,7 +511,8 @@ export const UAssetIoRequest = Schema.Union([
 				GameTextIndexPackageReplacement,
 				GameTextIndexPackagePlan,
 				GameTextIndexCodeLayer,
-				GameTextIndexReadPoint
+				GameTextIndexReadPoint,
+				GameTextIndexDiskChanges
 			])
 		})
 	}),

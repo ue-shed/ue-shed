@@ -299,6 +299,26 @@ describe("localization identity join and precedence", () => {
 					expect(lines.map((line) => line.identity)).toEqual(
 						joined.lines.map((line) => line.identity)
 					);
+					// The engine's review fingerprints are the parsed files' fingerprints.
+					for (const culture of target.cultures) {
+						const identities = joined.lines.flatMap((line) =>
+							line.identity ? [line.identity] : []
+						);
+						const native = yield* query.reviewLines({
+							target: target.name,
+							culture,
+							identities
+						});
+						expect(
+							native.map((line) =>
+								line.status === "found" ? line.fingerprint : undefined
+							)
+						).toEqual(
+							identities.map((identity) =>
+								localizationEvidenceFingerprint(files, culture, identity)
+							)
+						);
+					}
 					for (const line of lines) {
 						const page = yield* query.search({
 							...request,

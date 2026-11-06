@@ -36,7 +36,14 @@ export const JoinedTargetMeta = Schema.Struct({
 		keyChangePairs: Schema.optionalKey(Schema.Array(LocalizationKeyChangePair)),
 		fileErrors: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 		fileProvenances: Schema.optionalKey(Schema.Record(Schema.String, FileProvenance)),
-		fileDiagnostics: Schema.optionalKey(Schema.Record(Schema.String, LocalizationError))
+		fileDiagnostics: Schema.optionalKey(Schema.Record(Schema.String, LocalizationError)),
+		reviewFile: Schema.optionalKey(
+			Schema.Struct({
+				relativePath: Schema.String,
+				size: Schema.optionalKey(Schema.Int),
+				modifiedTime: Schema.optionalKey(Schema.String)
+			})
+		)
 	}),
 	dependencies: Schema.Record(Schema.String, Schema.String),
 	packageNames: Schema.Array(Schema.String),

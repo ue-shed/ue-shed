@@ -9,11 +9,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-struct Fixture {
+pub(crate) struct Fixture {
     /// The writer, released while an evaluation takes its own.
     store: Option<Store>,
-    configuration: Configuration,
-    target: Value,
+    pub(crate) configuration: Configuration,
+    pub(crate) target: Value,
 }
 
 /// A persisted reader for column cancellation tests, with additional dictionary entries.
@@ -41,7 +41,7 @@ pub(crate) fn query_with_dictionary(strings: &[String]) -> Result<(EngineQuery, 
 }
 
 impl Fixture {
-    fn new() -> Result<Self> {
+    pub(crate) fn new() -> Result<Self> {
         let configuration = Configuration {
             cache_root: crate::test_directory("join-facts"),
             project_key: "fixture".into(),
@@ -69,7 +69,7 @@ impl Fixture {
         })
     }
 
-    fn store(&mut self) -> Result<&mut Store> {
+    pub(crate) fn store(&mut self) -> Result<&mut Store> {
         if self.store.is_none() {
             self.store = Some(Store::writer(self.configuration.clone())?);
         }
@@ -79,6 +79,15 @@ impl Fixture {
         self.store = None;
     }
 
+    /// Joins into the shared project store's view `view` (a digit) from now on: every view shares
+    /// the project's package shards and has its own joined layer.
+    pub(crate) fn view(&mut self, view: char) {
+        self.release();
+        self.configuration.shared_project = true;
+        self.configuration.view_prefix =
+            Some(format!("target-join.{}.", view.to_string().repeat(64)));
+    }
+
     fn ids(&mut self, values: &[&str]) -> Result<Vec<u32>> {
         self.store()?.intern(
             "source",
@@ -86,7 +95,7 @@ impl Fixture {
         )
     }
 
-    fn file(&mut self, name: &str, format: &str, rows: &[Value]) -> Result<()> {
+    pub(crate) fn file(&mut self, name: &str, format: &str, rows: &[Value]) -> Result<()> {
         self.ids(&[""])?;
         let fields = [
             "namespace",
@@ -166,7 +175,7 @@ impl Fixture {
         Ok(())
     }
 
-    fn packages(&mut self, rows: &[Value]) -> Result<()> {
+    pub(crate) fn packages(&mut self, rows: &[Value]) -> Result<()> {
         self.packages_with_status(rows, 0)
     }
 
@@ -266,9 +275,92 @@ impl Fixture {
         Ok(())
     }
 
-    fn join(&mut self) -> Result<crate::join::JoinOutcome> {
-        let input: JoinInput =
-            serde_json::from_value(json!({"projectRoot":"/project","target":self.target}))?;
+    /// A package-text shard of several packages, each with a signature and its occurrences; a
+    /// package without text has none.
+    pub(crate) fn shard(
+        &mut self,
+        name: &str,
+        packages: &[(&str, &str, Vec<Value>)],
+    ) -> Result<()> {
+        const TEXT: [&str; 8] = [
+            "source",
+            "notes",
+            "namespace",
+            "key",
+            "object",
+            "property",
+            "class",
+            "row",
+        ];
+        let rows = packages
+            .iter()
+            .flat_map(|(_, _, rows)| rows.iter().cloned())
+            .collect::<Vec<_>>();
+        let mut columns = Vec::new();
+        for field in OCCURRENCE_FIELDS {
+            let values = if TEXT.contains(&field) {
+                self.ids(
+                    &rows
+                        .iter()
+                        .map(|row| row[field].as_str().unwrap_or(""))
+                        .collect::<Vec<_>>(),
+                )?
+            } else {
+                rows.iter()
+                    .map(|row| row[field].as_u64().unwrap_or(0) as u32)
+                    .collect()
+            };
+            let domain = if TEXT.contains(&field) { "source" } else { "" };
+            columns.push((format!("occurrence.{field}"), domain.into(), values));
+        }
+        let paths = packages.iter().map(|package| package.0).collect::<Vec<_>>();
+        let signatures = packages.iter().map(|package| package.1).collect::<Vec<_>>();
+        columns.push(("package.path".into(), "source".into(), self.ids(&paths)?));
+        columns.push((
+            "package.signature".into(),
+            "source".into(),
+            self.ids(&signatures)?,
+        ));
+        let count = packages.len();
+        columns.push(("package.status".into(), String::new(), vec![0; count]));
+        let mut starts = vec![0];
+        for (_, _, rows) in packages {
+            starts.push(starts[starts.len() - 1] + rows.len() as u32);
+        }
+        columns.push(("package.occurrence_start".into(), String::new(), starts));
+        for field in ["gap0", "gather_missing"] {
+            columns.push((format!("package.{field}"), String::new(), vec![0; count]));
+        }
+        for field in ["gap_start", "missing_start"] {
+            columns.push((
+                format!("package.{field}"),
+                String::new(),
+                vec![0; count + 1],
+            ));
+        }
+        columns.push(("gap.reason".into(), String::new(), vec![]));
+        self.store()?.publish_global(
+            name,
+            &format!("test:packages:{}", crate::store::token()),
+            &columns,
+            b"",
+            &BTreeMap::new(),
+            &[],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn join(&mut self) -> Result<crate::join::JoinOutcome> {
+        self.join_with(json!({}))
+    }
+
+    /// A join whose input also has `fields`, such as file provenances or a review file.
+    pub(crate) fn join_with(&mut self, fields: Value) -> Result<crate::join::JoinOutcome> {
+        let mut input = json!({"projectRoot":"/project","target":self.target});
+        for (name, value) in fields.as_object().ok_or("Join input fields.")? {
+            input[name] = value.clone();
+        }
+        let input: JoinInput = serde_json::from_value(input)?;
         refresh(self.store()?, &input)
     }
 
@@ -2231,5 +2323,142 @@ fn a_truncated_snapshot_fails_its_reads_with_a_typed_error_and_the_session_goes_
     );
     session.execute(&EngineRequest::Capabilities, &cancelled)?;
     session.execute(&EngineRequest::Close { reader }, &cancelled)?;
+    Ok(())
+}
+
+#[test]
+fn review_lines_read_the_fingerprint_the_join_compares_reviews_with() -> Result<()> {
+    use crate::engine_types::{ReviewIdentity, ReviewLine, ReviewLinesRequest};
+    let mut fixture = Fixture::new()?;
+    let rows = [("A", "Amber"), ("B", "Birch"), ("D", "Dune")];
+    fixture.file("Game.manifest", "manifest", &rows.iter().map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"path":"/Game/Text/Example.Example.Label"})).collect::<Vec<_>>())?;
+    fixture.file("en.archive", "archive", &rows.iter().map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"translation":source})).collect::<Vec<_>>())?;
+    // D has no German archive entry; A has a pending PO edit the next sync ships.
+    fixture.file(
+        "de.archive",
+        "archive",
+        &[
+            json!({"namespace":"UI","key":"A","source":"Amber","translation":"Bernstein"}),
+            json!({"namespace":"UI","key":"B","source":"Birch","translation":"Birke"}),
+        ],
+    )?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[
+        json!({"namespace":"UI","key":"A","source":"Amber","translation":"Neuer Bernstein","options":64}),
+    ])?;
+    // C is saved text the manifest does not have.
+    let mut saved = rows
+        .iter()
+        .map(|(key, source)| json!({"namespace":"UI","key":key,"source":source,"object":"/Game/Text/Example.Example","property":key}))
+        .collect::<Vec<_>>();
+    saved.push(json!({"namespace":"UI","key":"C","source":"Cedar","object":"/Game/Text/Example.Example","property":"C"}));
+    fixture.packages(&saved)?;
+    fixture.join()?;
+    let request = |culture: &str, keys: &[&str]| ReviewLinesRequest {
+        target: "Game".into(),
+        culture: culture.into(),
+        identities: keys
+            .iter()
+            .map(|key| ReviewIdentity {
+                namespace: "UI".into(),
+                key: (*key).into(),
+            })
+            .collect(),
+    };
+    let cancelled = AtomicBool::new(false);
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let answer =
+        query.review_lines(&request("de", &["A", "Missing", "B", "C", "D"]), &cancelled)?;
+    let found = |line: &ReviewLine| match line {
+        ReviewLine::Found {
+            source,
+            translation,
+            fingerprint,
+            ..
+        } => Some((source.clone(), translation.clone(), fingerprint.clone())),
+        ReviewLine::NotGathered => None,
+    };
+    let lines = answer.lines.iter().map(found).collect::<Vec<_>>();
+    let text = |line: &Option<(String, Option<String>, String)>| {
+        line.as_ref()
+            .map(|(source, translation, _)| (source.clone(), translation.clone()))
+    };
+    assert_eq!(
+        lines.iter().map(text).collect::<Vec<_>>(),
+        [
+            Some(("Amber".into(), Some("Neuer Bernstein".into()))),
+            None,
+            Some(("Birch".into(), Some("Birke".into()))),
+            None,
+            Some(("Dune".into(), None)),
+        ]
+    );
+    let fingerprint =
+        |index: usize| -> Result<String> { Ok(lines[index].as_ref().ok_or("found")?.2.clone()) };
+    assert_eq!(
+        fingerprint(0)?,
+        crate::store::digest("Amber\0Neuer Bernstein".as_bytes())
+    );
+    assert_eq!(
+        fingerprint(4)?,
+        crate::store::digest("Dune\0\0absent".as_bytes())
+    );
+    // An edit of A writes its PO entry; B has none.
+    let po = |index: usize| match &answer.lines[index] {
+        ReviewLine::Found { po, .. } => po.as_ref().map(|entry| entry.msgid.clone()),
+        ReviewLine::NotGathered => None,
+    };
+    assert_eq!((po(0), po(2)), (Some("Amber".into()), None));
+    // A culture the target does not have gathers nothing.
+    assert!(
+        query
+            .review_lines(&request("fr", &["A"]), &cancelled)?
+            .lines
+            .iter()
+            .all(|line| *line == ReviewLine::NotGathered)
+    );
+    assert!(
+        query
+            .review_lines(
+                &ReviewLinesRequest {
+                    target: "Other".into(),
+                    ..request("de", &["A"])
+                },
+                &cancelled
+            )
+            .is_err()
+    );
+    // Reviews stamped with these fingerprints are current to the join; a changed one is not.
+    let mut stamped = Vec::new();
+    for (index, key) in [(0, "A"), (2, "B"), (4, "D")] {
+        stamped.push(json!({"culture":"de","namespace":"UI","key":key,"flags":["reviewed"],"by":"Reviewer","at":"2026-01-01T00:00:00Z","fingerprint":if key == "B" { "0".repeat(64) } else { fingerprint(index)? }}));
+    }
+    drop(query);
+    let input: JoinInput = serde_json::from_value(json!({
+        "projectRoot":"/project","target":fixture.target,
+        "review":{"schemaVersion":1,"target":"Game","records":stamped,"acceptedFindings":[]}
+    }))?;
+    refresh(fixture.store()?, &input)?;
+    fixture.release();
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let count = query.reader.meta["count"].as_u64().ok_or("line count")? as usize;
+    let mut statuses = BTreeMap::new();
+    for row in 0..count {
+        let line = query.localization_line(row, &cancelled)?;
+        let de = line["cultures"]
+            .as_array()
+            .ok_or("cultures")?
+            .iter()
+            .find(|mark| mark["culture"] == "de")
+            .ok_or("de")?
+            .clone();
+        statuses.insert(
+            line["identity"]["key"].as_str().unwrap_or("").to_owned(),
+            de["review"]["status"].clone(),
+        );
+    }
+    assert_eq!(statuses["A"], json!("current"));
+    assert_eq!(statuses["B"], json!("changed"));
+    assert_eq!(statuses["D"], json!("current"));
     Ok(())
 }

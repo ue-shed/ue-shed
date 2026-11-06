@@ -22,6 +22,8 @@ pub struct RelatedRequest {
     pub selection: DetailSelection,
     /// Places each unit member lists.
     pub page_size: usize,
+    /// With a target, the selection's line's similar keys.
+    pub similar_keys: Option<crate::engine_similar::SimilarKeysSection>,
 }
 
 /// Units and lines by exact source, built once per reader.
@@ -200,6 +202,10 @@ impl EngineQuery {
                 });
             }
             result[name] = json!({"members":members,"complete":complete});
+        }
+        if let (Some(_), Some(section)) = (&target, &request.similar_keys) {
+            result["similarKeys"] =
+                serde_json::to_value(self.similar_keys(line, section, cancelled)?)?;
         }
         Ok(result)
     }

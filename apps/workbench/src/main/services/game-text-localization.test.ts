@@ -9,7 +9,7 @@ import {
 	TextNamespace
 } from "@ue-shed/localization";
 import { Deferred, Effect, Fiber, Ref } from "effect";
-import type { LocalizationKeyChangePair } from "@ue-shed/game-text/corpus";
+import { evidenceReviewLines, type LocalizationKeyChangePair } from "@ue-shed/game-text/corpus";
 import { LocalizationLineId, type LocalizationLineMark } from "@ue-shed/game-text/schema";
 import { existsSync } from "node:fs";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -523,6 +523,84 @@ it.live("prepares the review file before creating or replacing it", () =>
 		refuse = false;
 		expect(yield* cleared).toMatchObject({ status: "written" });
 		expect(prepared).toEqual([[reviewPath], [reviewPath], [reviewPath], [reviewPath]]);
+	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
+);
+
+it.live("reads every line a review or an edit review names in one engine call per culture", () =>
+	Effect.gen(function* () {
+		const root = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "ue-shed-wb-batch-")));
+		yield* Effect.addFinalizer(() =>
+			Effect.promise(() => rm(root, { recursive: true, force: true }))
+		);
+		for (const path of [
+			"Config/DefaultEditor.ini",
+			"Config/Localization/FixtureGame_Export.ini",
+			"Content/Localization/FixtureGame"
+		])
+			yield* Effect.promise(() =>
+				cp(join(resolve("fixtures/unreal-project"), path), join(root, path), {
+					recursive: true
+				})
+			);
+		const calls: string[] = [];
+		const counted: CannedQuery = (inputs) => ({
+			...fixtureAnswers(inputs),
+			reviewLines: (request) =>
+				Effect.sync(() => {
+					calls.push(`${request.culture}:${request.identities.length}`);
+					if (inputs.evidence === undefined) throw new Error("No target evidence.");
+					return evidenceReviewLines(inputs.evidence, request);
+				})
+		});
+		const saved = corpus([]);
+		const localization = yield* makeCannedGameTextLocalization(
+			counted,
+			() => Effect.succeed(saved),
+			() => Effect.succeed(testProjectIndex(root))
+		);
+		yield* localization.select(fixtureTarget);
+		const keys = ["RichText", "OrderedArgument", "LineBreak", "Whitespace", "NamedArgument"];
+		const lines = keys.map((key) => ({
+			culture: cultureCode("de"),
+			namespace: TextNamespace.make("Fixture.Localization.Table"),
+			key: TextKey.make(key)
+		}));
+		const french = { ...lines[0]!, culture: cultureCode("fr") };
+		const written = yield* localization.review(
+			{
+				target: fixtureTarget,
+				changes: [
+					...lines.map((line) => ({
+						kind: "set" as const,
+						...line,
+						flags: ["reviewed" as const]
+					})),
+					{ kind: "set", ...french, flags: ["reviewed"] },
+					// Clearing needs no fingerprint, so it reads nothing.
+					{ kind: "clear", ...lines[0]!, culture: cultureCode("en"), flags: [] }
+				]
+			},
+			"tester"
+		);
+		expect(written).toMatchObject({ status: "written" });
+		expect(calls).toEqual(["de:5", "fr:1"]);
+		calls.length = 0;
+		const reviewed = yield* localization.edits({
+			target: fixtureTarget,
+			mode: "review",
+			edits: lines.map((line) => ({ ...line, seenTranslation: null, translation: "Neu" }))
+		});
+		expect(reviewed).toMatchObject({ status: "reviewed" });
+		expect(calls).toEqual(["de:5"]);
+		// A line the target never gathered fails the review rather than writing a guess.
+		const missing = yield* localization.review(
+			{
+				target: fixtureTarget,
+				changes: [{ kind: "set", ...lines[0]!, key: TextKey.make("Missing"), flags: [] }]
+			},
+			"tester"
+		);
+		expect(missing).toMatchObject({ status: "failed", code: "not_gathered" });
 	}).pipe(Effect.scoped, Effect.provide(LocalizationEvidenceNodeLive))
 );
 

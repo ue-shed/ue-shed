@@ -35,6 +35,8 @@ pub(crate) struct ProjectIndexRefreshOutput {
 #[derive(Default)]
 pub(crate) struct ProjectIndexQuerySession {
     pub(crate) game_text: game_text_index::builder::BuildSession,
+    /// The last `disk_changes` check, for its later pages.
+    pub(crate) disk_checks: super::DiskChecks,
     active: Option<ActiveQueryCatalog>,
 }
 

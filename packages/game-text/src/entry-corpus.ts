@@ -80,6 +80,7 @@ export {
 	LocalizationReviewResult,
 	acceptedFindingFilter,
 	applyLocalizationReview,
+	evidenceReviewLines,
 	localizationLineFingerprint,
 	matchesLocalizationReview,
 	withoutAcceptedFindings
@@ -100,13 +101,23 @@ export {
 } from "./localization-status.js";
 
 export {
+	ChangedItem,
+	ChangedSinceAnswer,
+	ChangedSinceRequest,
+	ChangedSinceResult,
+	MAX_CHANGES_PAGE
+} from "./changed-since.js";
+
+export {
 	RelatedLine,
 	RelatedLines,
 	RelatedLinesRequest,
 	RelatedLinesResult,
 	RelatedMember,
 	RelatedSection,
-	RelatedUnit
+	RelatedUnit,
+	SimilarKeys,
+	SimilarKeysRequest
 } from "./related-lines.js";
 
 export {

@@ -71,6 +71,7 @@ impl EngineQuery {
                     target: request.target.clone(),
                     selection,
                     page_size: related.limit as usize,
+                    similar_keys: related.similar_keys.clone(),
                 },
                 cancelled,
             )?);

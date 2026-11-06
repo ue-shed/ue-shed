@@ -135,6 +135,15 @@ export interface GameTextIndexRefreshResult {
 	 * model always has one.
 	 */
 	readonly revision?: string | undefined;
+	/**
+	 * The target's generation: an opaque string, the same for every host and process reading
+	 * one store. It changes whenever something the target shows changes (its packages, imported
+	 * localization files, review file, code or policy) and stays equal across refreshes that
+	 * change nothing, so it is safe to persist and compare across processes. It also changes after
+	 * the store is compacted; `query.changedSince` then answers `too_old`. Absent on legacy
+	 * adapters.
+	 */
+	readonly generation?: string | undefined;
 	readonly joined: JoinedTargetReader;
 	readonly query: NativeTextQuery;
 	readonly summary: import("./schema.js").TextCorpusQuerySummary;

@@ -266,6 +266,12 @@ pub struct ComparePointsRequest {
     pub localization: Option<BaseLocalization>,
     pub changes: PageRequest,
     pub findings: PageRequest,
+    /// The checks that fail the change, which the findings list first so that every page before
+    /// the first warning holds only failures. The order within each group is the checks' order,
+    /// then the path.
+    #[serde(default)]
+    #[cfg_attr(test, ts(as = "Option<Vec<GateCheck>>", optional))]
+    pub fail_on: Vec<GateCheck>,
 }
 
 /// Which rows of a list to return; the total is always counted.

@@ -81,6 +81,11 @@ pub enum BuildRequest {
         configuration: Configuration,
         request: crate::package_text_contract::PointRequest,
     },
+    /// Checked by the reader, which walks the project as its Project Index does.
+    DiskChanges {
+        configuration: Configuration,
+        request: crate::disk_changes::DiskChangesRequest,
+    },
     PublishPackages {
         configuration: Configuration,
         inputs: Vec<PackageInput>,
@@ -129,6 +134,8 @@ pub struct BuildOutcome {
     pub code: Option<Box<crate::package_text_contract::CodeLayerOutcome>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub point: Option<Box<crate::package_text_contract::PointOutcome>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_changes: Option<Box<crate::disk_changes::DiskChangesAnswer>>,
 }
 
 impl BuildOutcome {
@@ -148,6 +155,7 @@ impl BuildOutcome {
             plan: None,
             code: None,
             point: None,
+            disk_changes: None,
         }
     }
 }
@@ -166,6 +174,7 @@ impl BuildRequest {
             | Self::PlanPackages { configuration, .. }
             | Self::PublishCode { configuration, .. }
             | Self::ReadPoint { configuration, .. }
+            | Self::DiskChanges { configuration, .. }
             | Self::Intern { configuration, .. }
             | Self::Strings { configuration, .. }
             | Self::Join { configuration, .. }
@@ -277,6 +286,7 @@ impl BuildRequest {
                         .all(|file| !file.path.is_empty() && file.path.len() <= 4096),
                 crate::Error::new(crate::ErrorCode::InvalidInput, "an invalid point"),
             )?,
+            Self::DiskChanges { request, .. } => request.validate()?,
             Self::Strings { ids, .. } => require(
                 ids.len() <= 8192,
                 crate::Error::new(crate::ErrorCode::InvalidInput, "string request limit"),
@@ -471,6 +481,9 @@ fn execute(
         }
         BuildRequest::ReadPoint { .. } => {
             return Err("The reader parses a point's packages.".into());
+        }
+        BuildRequest::DiskChanges { .. } => {
+            return Err("The reader checks the disk.".into());
         }
         BuildRequest::Publish {
             inputs,

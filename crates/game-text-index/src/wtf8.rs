@@ -220,30 +220,75 @@ pub fn validate(bytes: &[u8]) -> Result<()> {
 }
 /// Serialize values whose strings are reversible scalar views, with exact JSON UTF-16 escapes.
 pub fn view_json(value: &serde_json::Value) -> Result<String> {
-    Ok(match value {
-        serde_json::Value::String(text) => Wtf8Buf::from_view(text).json_string(),
-        serde_json::Value::Array(values) => format!(
-            "[{}]",
-            values
-                .iter()
-                .map(view_json)
-                .collect::<Result<Vec<_>>>()?
-                .join(",")
-        ),
-        serde_json::Value::Object(values) => format!(
-            "{{{}}}",
-            values
-                .iter()
-                .map(|(key, value)| Ok(format!(
-                    "{}:{}",
-                    Wtf8Buf::from_view(key).json_string(),
-                    view_json(value)?
-                )))
-                .collect::<Result<Vec<_>>>()?
-                .join(",")
-        ),
-        _ => serde_json::to_string(value)?,
-    })
+    let mut out = String::new();
+    write_view_json(value, &mut out)?;
+    Ok(out)
+}
+/// Appends `view_json` of a value to one buffer, so nested values build no strings of their own.
+fn write_view_json(value: &serde_json::Value, out: &mut String) -> Result<()> {
+    match value {
+        serde_json::Value::String(text) => write_view_string(text, out),
+        serde_json::Value::Array(values) => {
+            out.push('[');
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_view_json(value, out)?;
+            }
+            out.push(']');
+        }
+        serde_json::Value::Object(values) => {
+            out.push('{');
+            for (index, (key, value)) in values.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_view_string(key, out);
+                out.push(':');
+                write_view_json(value, out)?;
+            }
+            out.push('}');
+        }
+        serde_json::Value::Null => out.push_str("null"),
+        serde_json::Value::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
+        serde_json::Value::Number(_) => out.push_str(&serde_json::to_string(value)?),
+    }
+    Ok(())
+}
+/// Appends a view string's `json_string`. A view without an escaped scalar (no 0xf3 lead byte)
+/// is its own UTF-8, so only quotes, backslashes and controls need escapes and the rest copies.
+fn write_view_string(text: &str, out: &mut String) {
+    if text.as_bytes().contains(&0xf3) {
+        out.push_str(&Wtf8Buf::from_view(text).json_string());
+        return;
+    }
+    out.reserve(text.len() + 2);
+    out.push('"');
+    let mut copied = 0;
+    for (at, byte) in text.bytes().enumerate() {
+        let escape = match byte {
+            b'"' => "\\\"",
+            b'\\' => "\\\\",
+            8 => "\\b",
+            9 => "\\t",
+            10 => "\\n",
+            12 => "\\f",
+            13 => "\\r",
+            0..=31 => "",
+            _ => continue,
+        };
+        out.push_str(&text[copied..at]);
+        if escape.is_empty() {
+            use std::fmt::Write;
+            let _ = write!(out, "\\u{byte:04x}");
+        } else {
+            out.push_str(escape);
+        }
+        copied = at + 1;
+    }
+    out.push_str(&text[copied..]);
+    out.push('"');
 }
 pub(crate) fn expand_utf16(
     value: &str,
@@ -276,6 +321,39 @@ pub(crate) fn expand_utf16(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn view_json_writes_each_string_as_its_wtf8_json_string() -> Result<()> {
+        let lone = Wtf8Buf::from_utf16(&[0x61, 0xd800, 0x62]).into_view();
+        let strings = [
+            String::new(),
+            "plain".into(),
+            "quote \" backslash \\ slash /".into(),
+            "\u{0}\u{1}\u{8}\t\n\u{b}\u{c}\r\u{1f}\u{7f}".into(),
+            "Öffnen 日本語 😀".into(),
+            "\u{f0000}\u{f0001}".into(),
+            "\u{f0001}x\u{f0800}".into(),
+            lone.clone(),
+        ];
+        for text in &strings {
+            let expected = Wtf8Buf::from_view(text).json_string();
+            assert_eq!(view_json(&serde_json::json!(text))?, expected, "{text:?}");
+        }
+        let value = serde_json::json!({"a":[1,-2.5,true,null,{"b":"x\"y"}],lone.clone():{},"c":[],"d":1e300});
+        let mut keys = Vec::new();
+        for (key, value) in value.as_object().ok_or("object")? {
+            keys.push(format!(
+                "{}:{}",
+                Wtf8Buf::from_view(key).json_string(),
+                view_json(value)?
+            ));
+        }
+        assert_eq!(view_json(&value)?, format!("{{{}}}", keys.join(",")));
+        assert_eq!(
+            view_json(&serde_json::json!([1, -2.5, true, null, {"b":"x\"y"}]))?,
+            r#"[1,-2.5,true,null,{"b":"x\"y"}]"#
+        );
+        Ok(())
+    }
     #[test]
     fn canonical_utf16_golden_bytes() {
         for (units, expected) in [

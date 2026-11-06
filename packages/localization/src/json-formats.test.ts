@@ -19,8 +19,10 @@ const OracleEntry = Schema.Struct({
 	manifestDevNotes: Schema.optionalKey(Schema.Array(Schema.String))
 });
 const Oracle = Schema.Struct({ entries: Schema.Array(OracleEntry) });
+const OracleJson = Schema.fromJsonString(Oracle);
+const decodeOracleJson = Schema.decodeSync(OracleJson);
 const oracle = (version: string) =>
-	Schema.decodeSync(Schema.fromJsonString(Oracle))(
+	decodeOracleJson(
 		readFileSync(
 			resolve(project, `FixtureExpected/localization/evidence.ue${version}.json`),
 			"utf8"

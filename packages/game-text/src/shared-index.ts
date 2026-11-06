@@ -61,7 +61,11 @@ export const SharedIndexManifestSchema = Schema.Struct({
 	segments: Schema.Array(SharedSegment).check(Schema.isMaxLength(maximumSharedSegments)),
 	layers: Schema.Record(Schema.String, LayerRecord)
 });
+const decodeSharedIndexManifestSchema = Schema.decodeEffect(SharedIndexManifestSchema);
 export type SharedIndexManifest = typeof SharedIndexManifestSchema.Type;
+const decodeManifestJson = Schema.decodeEffect(Schema.fromJsonString(SharedIndexManifestSchema));
+const decodeLayerRecordJson = Schema.decodeSync(Schema.fromJsonString(LayerRecord));
+const decodeFileReuseJson = Schema.decodeSync(Schema.fromJsonString(FileReuse));
 type Failure = SnapshotStoreError | SnapshotFormatError;
 const boundary = <A>(operation: string, run: () => Promise<A>) =>
 	Effect.tryPromise({
@@ -171,11 +175,10 @@ export interface SharedIndexWriter {
 		request: GameTextContract.PackageTextCompareRequest
 	) => Effect.Effect<GameTextContract.PackageTextComparison, Failure>;
 	/**
-	 * Native record replacement, all entries and removals in one root publication. Each entry's
-	 * staged snapshot holds its changed records in path order; its rows file gives the next
-	 * shard's records as little-endian 32-bit integers: a nonnegative row retains a record of the
-	 * previous shard, -1-row selects a staged record. An entry without `previousKey` is a shard the
-	 * index doesn't hold yet.
+	 * Native record replacement in one root publication. Each entry's staged snapshot holds its
+	 * changed records in path order; its rows file lists the next shard's records as little-endian
+	 * i32s: a nonnegative row keeps a previous-shard record, -1-row selects a staged one. An entry
+	 * without `previousKey` is a shard the index doesn't hold yet.
 	 */
 	readonly replacePackages?: (
 		entries: readonly {
@@ -270,9 +273,7 @@ function readIndex(reader: SnapshotReader) {
 		.section("index.meta")
 		.pipe(
 			Effect.flatMap((bytes) =>
-				Schema.decodeEffect(Schema.fromJsonString(SharedIndexManifestSchema))(
-					new TextDecoder().decode(bytes)
-				).pipe(
+				decodeManifestJson(new TextDecoder().decode(bytes)).pipe(
 					Effect.mapError((cause) =>
 						snapshotFailure(
 							"index.meta",
@@ -551,7 +552,7 @@ function makeSharedIndexNodeLayer(options: SharedIndexOptions) {
 					next: SharedIndexManifest
 				) {
 					const started = performance.now();
-					yield* Schema.decodeEffect(SharedIndexManifestSchema)(next).pipe(
+					yield* decodeSharedIndexManifestSchema(next).pipe(
 						Effect.mapError((cause) =>
 							snapshotFailure(
 								"index.meta",
@@ -1234,7 +1235,7 @@ async function convertLayer(
 					"reuse",
 					"Reuse metadata exceeds cap"
 				);
-				const oldBlocks = Schema.decodeSync(Schema.fromJsonString(FileReuse))(
+				const oldBlocks = decodeFileReuseJson(
 					new TextDecoder().decode(await reader.load("reuse.meta"))
 				);
 				let total = 0,
@@ -1670,9 +1671,7 @@ async function validateCachedLayer(
 			"Layer metadata or size differs"
 		);
 		const bytes = await reader.load("shared.meta");
-		const metadata = Schema.decodeSync(Schema.fromJsonString(LayerRecord))(
-			new TextDecoder().decode(bytes)
-		);
+		const metadata = decodeLayerRecordJson(new TextDecoder().decode(bytes));
 		snapshotCheck(
 			JSON.stringify({ ...metadata, bytes: record.bytes }) === JSON.stringify(record),
 			"cached",

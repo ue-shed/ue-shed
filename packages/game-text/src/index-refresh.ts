@@ -10,6 +10,8 @@ import {
 	makeGameTextIndexSteps,
 	type GameTextIndexStepsOptions
 } from "./index-steps.js";
+const decodeGameTextIndexRefreshRequestEffect = Schema.decodeEffect(GameTextIndexRefreshRequest);
+
 export * from "./index-contract.js";
 
 const refreshes = Metric.counter("game_text.index.refreshes");
@@ -28,7 +30,7 @@ export const gameTextIndexRefreshLayer = (
 			const refresh = Effect.fn("GameTextIndex.refresh")(function* (
 				input: GameTextIndexRefreshRequest
 			) {
-				const request = yield* Schema.decodeEffect(GameTextIndexRefreshRequest)(input).pipe(
+				const request = yield* decodeGameTextIndexRefreshRequestEffect(input).pipe(
 					Effect.mapError(
 						(cause) =>
 							new GameTextIndexError({

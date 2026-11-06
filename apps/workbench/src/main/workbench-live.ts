@@ -259,18 +259,10 @@ function featureLayer(hosts: WorkbenchHosts) {
 }
 
 /**
- * The complete, topologically sorted Workbench runtime graph. Optional project, review,
- * audit, authoring-asset, and launcher configuration produce usable not-configured feature
- * services rather than failing acquisition. Malformed explicit configuration, an unavailable
- * `BrowserWindow`, a camera pipe bind failure, or an IPC registration defect may still fail
- * startup with a typed error.
- *
- * Acquiring this layer never launches Unreal and never polls fixture health; it only builds
- * services, forks scoped presentation/camera workers, and registers IPC handlers. The one
- * exception to "no Unreal traffic" is the foreground responsiveness lease: while its preference
- * is on, it tries the selected local endpoint with backoff and releases the lease on dispose.
- * Observatory named-pipe observation starts only when Map Review subscribes and stops when that
- * subscription scope closes — Workbench never begins actor sampling at layer acquisition.
+ * The complete Workbench runtime graph. Missing optional configuration yields not-configured
+ * services; malformed configuration, no `BrowserWindow`, a camera pipe bind or IPC registration
+ * failure fail startup. Acquiring it never launches Unreal, polls fixture health or samples
+ * actors; only the responsiveness lease contacts the selected endpoint while it is on.
  */
 export function WorkbenchLive(hosts: WorkbenchHosts) {
 	return Layer.effectDiscard(registerWorkbenchIpc).pipe(Layer.provideMerge(featureLayer(hosts)));

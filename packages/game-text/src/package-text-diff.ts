@@ -17,16 +17,10 @@ export const PackageTextPlace = Schema.Struct({
 export type PackageTextPlace = typeof PackageTextPlace.Type;
 
 /**
- * One difference between two copies of a package's text, place by place:
- *
- * - `added` / `removed`: a place only one copy has text at;
- * - `rekeyed`: the same place with a different identity (namespace and key, String Table
- *   reference, or a key that became or stopped being culture invariant); `sourceChanged` says
- *   whether its text changed too;
- * - `edited`: the same place and identity with different source text or translator notes.
- *
- * Text that moved to another place is reported as removed and added; pairing moves is a policy
- * the caller owns (see `localization-key-changes.ts`).
+ * One difference between two copies of a package's text, place by place: `added` or `removed`
+ * (text at one copy only), `rekeyed` (another key, String Table reference or culture invariance;
+ * `sourceChanged` says if the text changed too) or `edited` (other source text or notes). Moved
+ * text is removed and added; pairing moves is the caller's policy (`localization-key-changes.ts`).
  */
 export const PackageTextChange = Schema.Union([
 	Schema.Struct({
@@ -168,15 +162,10 @@ function placesOf(record: SavedAssetPackageTextRecord): Map<string, Occurrence[]
 }
 
 /**
- * Compares the text of two copies of one package, for example the depot's head revision and the
- * local file, read by the same reader. Places match by their position inside the package, not by
- * the package's saved name, so a copy saved under another name still lines up.
- *
- * A place normally holds one text. When a copy holds several at one place, identical texts pair
- * first, then the rest pair in saved order, and any surplus is added or removed.
- *
- * Changes come in the `after` copy's order, then removed places in the `before` copy's order. The
- * function is pure; reading the two copies and getting the earlier revision stay with the caller.
+ * Compares the text of two copies of one package read by the same reader, such as the depot head
+ * and the local file. Places match by position in the package, not by saved name. Identical texts
+ * at one place pair first, then the rest in saved order; surplus is added or removed. Changes
+ * follow the `after` copy's order, then removed places in `before` order. Pure: the caller reads.
  */
 export function diffPackageText(
 	before: SavedAssetPackageTextRecord,

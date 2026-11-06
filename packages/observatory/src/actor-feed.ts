@@ -42,14 +42,6 @@ import {
 
 const objectPath = "/Script/UEShedObservatoryEditor.Default__UEShedObservatoryLibrary";
 
-// ---------------------------------------------------------------------------
-// Transport-level feed: owns the named-pipe server and decodes USOT packets.
-// A dedicated Unreal process names its pipe from its own PID (see
-// `StartActorObservation`), so callers typically acquire this feed through
-// `observeActorFeed` once the pipe name is known, rather than through the
-// static `actorFeedLayer` below (kept for direct/standalone use and tests).
-// ---------------------------------------------------------------------------
-
 export interface ActorFeedMetrics {
 	readonly bytesReceived: number;
 	readonly decodeLimitDrops: number;
@@ -164,19 +156,19 @@ function listen(server: Server, pipeName: string): Effect.Effect<void, ActorFeed
 	});
 }
 
-function closeActorFeed(resource: AcquiredActorFeed): Effect.Effect<void> {
-	return Effect.gen(function* () {
-		for (const socket of resource.sockets) socket.destroy();
-		yield* Effect.callback<void>((resume) => {
-			if (!resource.server.listening) {
-				resume(Effect.void);
-				return;
-			}
-			resource.server.close(() => resume(Effect.void));
-		});
-		yield* PubSub.shutdown(resource.pubsub);
+const closeActorFeed = Effect.fn("ActorFeed.close")(function* (
+	resource: AcquiredActorFeed
+): Effect.fn.Return<void> {
+	for (const socket of resource.sockets) socket.destroy();
+	yield* Effect.callback<void>((resume) => {
+		if (!resource.server.listening) {
+			resume(Effect.void);
+			return;
+		}
+		resource.server.close(() => resume(Effect.void));
 	});
-}
+	yield* PubSub.shutdown(resource.pubsub);
+});
 
 function acquireActorFeedResource(
 	options: ActorFeedOptions
@@ -292,6 +284,10 @@ export function acquireActorFeedScoped(
 	);
 }
 
+/**
+ * A feed on a fixed pipe, for direct use and tests. A dedicated Unreal process names its pipe from
+ * its own PID, so callers usually acquire the feed through `observeActorFeed` instead.
+ */
 export function actorFeedLayer(options: ActorFeedOptions): Layer.Layer<ActorFeed, ActorFeedError> {
 	return Layer.effect(ActorFeed, acquireActorFeedScoped(options));
 }
@@ -313,12 +309,6 @@ export function makeActorFeedTestLayer(feed: Partial<ActorFeedApi> = {}): Layer.
 		packets: feed.packets ?? Stream.empty
 	});
 }
-
-// ---------------------------------------------------------------------------
-// Control-plane negotiation: StartActorObservation / StopActorObservation /
-// GetActorSnapshot, plus the typed errors for control negotiation, session
-// mismatch, and bounded recovery exhaustion.
-// ---------------------------------------------------------------------------
 
 export class ActorObservationControlError extends Schema.TaggedError<
 	ActorObservationControlError,
@@ -414,6 +404,10 @@ const SnapshotResponse = Schema.Union([
 ]);
 
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+const decodeStartActorObservationResponse = Schema.decodeUnknownEffect(
+	StartActorObservationResponse
+);
+const decodeSnapshotResponse = Schema.decodeUnknownEffect(SnapshotResponse);
 
 function controlError(
 	endpoint: string,
@@ -457,7 +451,7 @@ const callStartActorObservation = Effect.fn("ActorObservation.start")(function* 
 			parameters: { RequestJson: JSON.stringify({ cadenceHz }) }
 		})
 		.pipe(Effect.mapError((cause) => controlError(endpoint, "start", cause)));
-	return yield* Schema.decodeUnknownEffect(StartActorObservationResponse)(value).pipe(
+	return yield* decodeStartActorObservationResponse(value).pipe(
 		Effect.mapError((cause) => controlError(endpoint, "start", cause))
 	);
 });
@@ -491,7 +485,7 @@ const requestActorSnapshotForFallback = Effect.fn("ActorObservation.snapshotFall
 			parameters: {}
 		})
 		.pipe(Effect.mapError((cause) => controlError(endpoint, "status", cause)));
-	const response = yield* Schema.decodeUnknownEffect(SnapshotResponse)(value).pipe(
+	const response = yield* decodeSnapshotResponse(value).pipe(
 		Effect.mapError((cause) => controlError(endpoint, "status", cause))
 	);
 	if (response.status === "ready") return response.snapshot;
@@ -543,11 +537,6 @@ function buildCatalogFromReady(
 	});
 }
 
-// ---------------------------------------------------------------------------
-// Observation driver: negotiates, installs catalogs, consumes packets, and
-// recovers from reset/session/decode failures with a bounded attempt budget.
-// ---------------------------------------------------------------------------
-
 type AttemptOutcome =
 	| { readonly _tag: "reset" }
 	| {
@@ -557,105 +546,102 @@ type AttemptOutcome =
 			readonly receivedSessionId: string | undefined;
 	  };
 
-function runLiveAttempt(args: {
+const runLiveAttempt = Effect.fn("ActorObservation.runLiveAttempt")(function* (args: {
 	readonly feed: ActorFeedApi;
 	readonly getState: () => WorldObservationState;
 	readonly maxConsecutiveRejectedBatches: number;
 	readonly onDiagnostic?: (diagnostic: ActorObservationDiagnostic) => Effect.Effect<void>;
 	readonly publish: (state: WorldObservationState) => Effect.Effect<void>;
-}): Effect.Effect<AttemptOutcome> {
-	return Effect.gen(function* () {
-		let outcome: AttemptOutcome = {
-			_tag: "rejected_exhausted",
-			expectedSessionId: undefined,
-			reason: "no_catalog",
-			receivedSessionId: undefined
-		};
-		let consecutiveRejected = 0;
-		let previousProducerReplacements = 0;
-		yield* Stream.runForEachWhile(args.feed.packets, (packet) =>
-			Effect.gen(function* () {
-				const applyStarted = performance.now();
-				const stateBefore = args.getState();
-				const event: WorldObservationEvent = packet.reset
-					? {
-							_tag: "reset",
-							message: "The Unreal actor catalog was invalidated.",
-							recovery: "Reacquiring a fresh catalog over Remote Control."
-						}
-					: { _tag: "transforms", batch: actorStreamPacketToTransformBatch(packet) };
-				const result = applyWorldObservationEvent(stateBefore, event);
-				const decodeApplyMs = packet.decodeDurationMs + performance.now() - applyStarted;
-				const priorSequence =
-					stateBefore.status === "live" || stateBefore.status === "stale"
-						? stateBefore.sample.lastSequence
-						: undefined;
-				const missingSequences =
-					priorSequence === undefined || packet.sequence <= priorSequence + 1n
-						? 0
-						: Number(packet.sequence - priorSequence - 1n);
-				const feedMetrics = yield* args.feed.metrics;
-				yield* args.publish(result.state);
-				yield* recordObservatoryPacket({
+}): Effect.fn.Return<AttemptOutcome> {
+	let outcome: AttemptOutcome = {
+		_tag: "rejected_exhausted",
+		expectedSessionId: undefined,
+		reason: "no_catalog",
+		receivedSessionId: undefined
+	};
+	let consecutiveRejected = 0;
+	let previousProducerReplacements = 0;
+	yield* Stream.runForEachWhile(args.feed.packets, (packet) =>
+		Effect.gen(function* () {
+			const applyStarted = performance.now();
+			const stateBefore = args.getState();
+			const event: WorldObservationEvent = packet.reset
+				? {
+						_tag: "reset",
+						message: "The Unreal actor catalog was invalidated.",
+						recovery: "Reacquiring a fresh catalog over Remote Control."
+					}
+				: { _tag: "transforms", batch: actorStreamPacketToTransformBatch(packet) };
+			const result = applyWorldObservationEvent(stateBefore, event);
+			const decodeApplyMs = packet.decodeDurationMs + performance.now() - applyStarted;
+			const priorSequence =
+				stateBefore.status === "live" || stateBefore.status === "stale"
+					? stateBefore.sample.lastSequence
+					: undefined;
+			const missingSequences =
+				priorSequence === undefined || packet.sequence <= priorSequence + 1n
+					? 0
+					: Number(packet.sequence - priorSequence - 1n);
+			const feedMetrics = yield* args.feed.metrics;
+			yield* args.publish(result.state);
+			yield* recordObservatoryPacket({
+				actorsChanged: packet.actorsChanged,
+				actorsSampled: packet.actorsSampled,
+				bytes:
+					ACTOR_STREAM_HEADER_BYTES + packet.records.length * ACTOR_STREAM_RECORD_BYTES,
+				decodeApplyMs,
+				producerReplacements: Math.max(
+					0,
+					packet.producerReplacements - previousProducerReplacements
+				),
+				sequenceGap: result.sequenceGap
+			});
+			previousProducerReplacements = Math.max(
+				previousProducerReplacements,
+				packet.producerReplacements
+			);
+			if (args.onDiagnostic !== undefined && result.accepted && !packet.reset) {
+				yield* args.onDiagnostic({
 					actorsChanged: packet.actorsChanged,
 					actorsSampled: packet.actorsSampled,
-					bytes:
-						ACTOR_STREAM_HEADER_BYTES +
-						packet.records.length * ACTOR_STREAM_RECORD_BYTES,
 					decodeApplyMs,
-					producerReplacements: Math.max(
-						0,
-						packet.producerReplacements - previousProducerReplacements
-					),
-					sequenceGap: result.sequenceGap
+					missingSequences,
+					producerReplacements: packet.producerReplacements,
+					receiverReplacements: feedMetrics.deliveryReplacements,
+					samplingDurationMicros: packet.samplingDurationMicros,
+					sequence: packet.sequence
 				});
-				previousProducerReplacements = Math.max(
-					previousProducerReplacements,
-					packet.producerReplacements
-				);
-				if (args.onDiagnostic !== undefined && result.accepted && !packet.reset) {
-					yield* args.onDiagnostic({
-						actorsChanged: packet.actorsChanged,
-						actorsSampled: packet.actorsSampled,
-						decodeApplyMs,
-						missingSequences,
-						producerReplacements: packet.producerReplacements,
-						receiverReplacements: feedMetrics.deliveryReplacements,
-						samplingDurationMicros: packet.samplingDurationMicros,
-						sequence: packet.sequence
-					});
-				}
-				if (packet.reset) {
-					outcome = { _tag: "reset" };
-					return false;
-				}
-				if (result.accepted) {
-					consecutiveRejected = 0;
-					return true;
-				}
-				consecutiveRejected += 1;
-				if (consecutiveRejected >= args.maxConsecutiveRejectedBatches) {
-					const reason = result.reason ?? "no_catalog";
-					const expectedSessionId =
-						stateBefore.status === "live" || stateBefore.status === "stale"
-							? stateBefore.sample.catalog.sessionId
-							: undefined;
-					const receivedSessionId =
-						event._tag === "transforms" ? event.batch.sessionId : undefined;
-					outcome = {
-						_tag: "rejected_exhausted",
-						expectedSessionId,
-						receivedSessionId,
-						reason
-					};
-					return false;
-				}
+			}
+			if (packet.reset) {
+				outcome = { _tag: "reset" };
+				return false;
+			}
+			if (result.accepted) {
+				consecutiveRejected = 0;
 				return true;
-			})
-		);
-		return outcome;
-	});
-}
+			}
+			consecutiveRejected += 1;
+			if (consecutiveRejected >= args.maxConsecutiveRejectedBatches) {
+				const reason = result.reason ?? "no_catalog";
+				const expectedSessionId =
+					stateBefore.status === "live" || stateBefore.status === "stale"
+						? stateBefore.sample.catalog.sessionId
+						: undefined;
+				const receivedSessionId =
+					event._tag === "transforms" ? event.batch.sessionId : undefined;
+				outcome = {
+					_tag: "rejected_exhausted",
+					expectedSessionId,
+					receivedSessionId,
+					reason
+				};
+				return false;
+			}
+			return true;
+		})
+	);
+	return outcome;
+});
 
 function runPollingFallback(args: {
 	readonly cadenceHz: number;
@@ -739,23 +725,24 @@ function driveObservation(
 					.state
 			);
 
-		const attemptFailed = (message: string) =>
-			Effect.gen(function* () {
-				attempts += 1;
-				if (attempts > maxRecoveryAttempts) {
-					return yield* new ActorObservationRecoveryExhaustedError({
-						attempts: attempts - 1,
-						endpoint,
-						message,
-						recovery:
-							"Check that the editor is running with UEShedObservatory enabled, then start observation again.",
-						retrySafe: true,
-						nextStep: "retry"
-					});
-				}
-				yield* publishUnavailable(message, "Retrying actor observation negotiation.");
-				yield* backoff(attempts);
-			});
+		const attemptFailed = Effect.fn("ActorObservation.attemptFailed")(function* (
+			message: string
+		) {
+			attempts += 1;
+			if (attempts > maxRecoveryAttempts) {
+				return yield* new ActorObservationRecoveryExhaustedError({
+					attempts: attempts - 1,
+					endpoint,
+					message,
+					recovery:
+						"Check that the editor is running with UEShedObservatory enabled, then start observation again.",
+					retrySafe: true,
+					nextStep: "retry"
+				});
+			}
+			yield* publishUnavailable(message, "Retrying actor observation negotiation.");
+			yield* backoff(attempts);
+		});
 
 		while (true) {
 			const startOutcome = yield* Effect.result(

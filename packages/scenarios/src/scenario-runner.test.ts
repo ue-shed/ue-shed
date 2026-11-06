@@ -9,6 +9,8 @@ import { movementGymRuns } from "./demo.js";
 import { SCENARIO_EXECUTION_CAPABILITIES, scenarioWireContract } from "./live.js";
 import { ScenarioRunner, ScenarioRunnerError, ScenarioRunnerLive } from "./scenario-runner.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 const pieState = {
 	contract: { name: "unreal-editor-play-session", version: { major: 1, minor: 0 } },
 	state: { mode: "play", sessionId: EditorPlaySessionId.make("pie-session-1"), status: "running" }
@@ -75,7 +77,7 @@ it.effect("returns a schema-validated terminal ScenarioRun through the public se
 			if (request.functionName === "GetScenarioRunStatus") {
 				return Ref.getAndUpdate(statusReads, (value) => value + 1).pipe(
 					Effect.map((read) =>
-						Schema.decodeUnknownSync(Schema.Json)(
+						decodeJson(
 							read === 0
 								? {
 										_tag: "Active",

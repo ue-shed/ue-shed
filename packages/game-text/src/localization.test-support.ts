@@ -12,6 +12,9 @@ import {
 	type PODocument
 } from "@ue-shed/localization/browser";
 import { TextCorpus, TextUnit, makeTextOccurrenceId } from "./schema.js";
+const decodeManifestEntry = Schema.decodeSync(ManifestEntry);
+const decodeArchiveEntry = Schema.decodeSync(ArchiveEntry);
+const decodeTextUnit = Schema.decodeSync(TextUnit);
 
 export function success<A, E>(result: Result.Result<A, E>): A {
 	if (Result.isFailure(result)) throw result.failure;
@@ -40,7 +43,7 @@ export function manifestEntry(
 	path = "/Game/Text/Table.Table",
 	namespace = "NS"
 ): ManifestEntry {
-	return Schema.decodeSync(ManifestEntry)({
+	return decodeManifestEntry({
 		namespace,
 		key,
 		source: { Text: text },
@@ -54,7 +57,7 @@ export function archiveEntry(
 	translation = "Translation",
 	namespace = "NS"
 ): ArchiveEntry {
-	return Schema.decodeSync(ArchiveEntry)({
+	return decodeArchiveEntry({
 		namespace,
 		key,
 		source: { Text: source },
@@ -136,7 +139,7 @@ export function unit(
 	packageFile = "Content/Text/Table.uasset",
 	namespace = "NS"
 ): TextUnit {
-	return Schema.decodeSync(TextUnit)({
+	return decodeTextUnit({
 		id: `unit:${key}`,
 		source: { status: "consistent", value: source },
 		identity: { status: "resolved", namespace, key },

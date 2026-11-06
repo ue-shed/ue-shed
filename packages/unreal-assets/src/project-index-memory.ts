@@ -113,26 +113,25 @@ const parseCursor = (
 	return Effect.succeed(Number.parseInt(cursor, 10));
 };
 
-const pageItems = (
+const pageItems = Effect.fn("ProjectIndex.Memory.pageItems")(function* (
 	items: readonly ProjectIndexItem[],
 	request: ProjectIndexQuery,
 	generation: ProjectIndexGeneration,
 	projectId: ProjectIdentity
-): Effect.Effect<ProjectIndexPage, ProjectIndexInvalidRequest> =>
-	Effect.gen(function* () {
-		const offset = yield* parseCursor(request.cursor);
-		const limit = Math.min(request.limit, PROJECT_INDEX_MAX_PAGE_SIZE);
-		const slice = items.slice(offset, offset + limit);
-		const nextOffset = offset + slice.length;
-		return {
-			generation,
-			items: slice,
-			projectId,
-			...(nextOffset < items.length
-				? { nextCursor: CursorSchema.make(String(nextOffset)) }
-				: undefined)
-		};
-	});
+): Effect.fn.Return<ProjectIndexPage, ProjectIndexInvalidRequest> {
+	const offset = yield* parseCursor(request.cursor);
+	const limit = Math.min(request.limit, PROJECT_INDEX_MAX_PAGE_SIZE);
+	const slice = items.slice(offset, offset + limit);
+	const nextOffset = offset + slice.length;
+	return {
+		generation,
+		items: slice,
+		projectId,
+		...(nextOffset < items.length
+			? { nextCursor: CursorSchema.make(String(nextOffset)) }
+			: undefined)
+	};
+});
 
 const identityFromRoot = (projectRoot: string, seed: ProjectIndexMemorySeed | undefined) =>
 	seed?.projectId ?? IdentitySchema.make(projectRoot.replaceAll("\\", "/").slice(0, 256));

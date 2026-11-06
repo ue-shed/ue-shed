@@ -13,70 +13,69 @@ import { completeRulesOf, ruleProblemError, type GameTextRuleDocument } from "./
 import { effectiveRuleDocument } from "./rules/effective.js";
 
 /** Profiles contain only bounded operation names and numbers from this call. */
-export const annotateFindingsProfile = (
+export const annotateFindingsProfile = Effect.fnUntraced(function* (
 	profile: GameTextContract.EvaluationProfile | GameTextContract.ReadProfile,
 	requestStart?: bigint
-) =>
-	Effect.gen(function* () {
-		const prefix = "game_text.findings.";
-		if (!("cached" in profile)) {
-			yield* Effect.annotateCurrentSpan({
-				[`${prefix}rows_requested`]: profile.rowsRequested,
-				[`${prefix}findings`]: profile.findingsReturned
-			});
-			return;
-		}
-		yield* Effect.annotateCurrentSpan(`${prefix}cached`, profile.cached);
-		if (profile.cached) return;
+) {
+	const prefix = "game_text.findings.";
+	if (!("cached" in profile)) {
 		yield* Effect.annotateCurrentSpan({
-			[`${prefix}rules`]: profile.rules,
-			[`${prefix}findings`]: profile.findings,
-			[`${prefix}diagnostics`]: profile.diagnostics,
-			[`${prefix}wall_ms`]: profile.wallMs,
-			// Steps inside a stage, such as a closure's groups and an aggregate's parts.
-			...Object.fromEntries(
-				Object.entries(profile.subStages).map(([name, sample]) => [
-					`${prefix}stage_ms.${name}`,
-					sample.wallMs
-				])
-			)
+			[`${prefix}rows_requested`]: profile.rowsRequested,
+			[`${prefix}findings`]: profile.findingsReturned
 		});
-		const parent = yield* Effect.option(Effect.currentSpan);
-		if (Option.isNone(parent)) return;
-		const tracer = yield* Effect.tracer;
-		const origin =
-			requestStart ??
-			(yield* Clock.currentTimeNanos) - BigInt(Math.round(profile.wallMs * 1_000_000));
-		for (const [name, sample] of Object.entries(profile.stages)) {
-			const span = tracer.span({
-				name: `GameText.native.findingsEvaluate.${name}`,
-				parent,
-				annotations: Context.empty(),
-				links: [],
-				startTime: origin + BigInt(Math.round(sample.startOffsetMs * 1_000_000)),
-				kind: "internal",
-				root: false,
-				sampled: parent.value.sampled
-			});
-			span.attribute(`${prefix}stage.wall_ms`, sample.wallMs);
-			span.attribute(`${prefix}stage.busy_ms`, sample.busyMs);
-			span.attribute(`${prefix}stage.rows`, sample.rows);
-			for (const [field, value] of Object.entries(sample.memory)) {
-				if (value !== null && value !== undefined)
-					span.attribute(`${prefix}memory.${field}`, value);
-			}
-			const kernels = Object.entries(sample.kernels)
-				.sort((a, b) => b[1].busyMs - a[1].busyMs)
-				.slice(0, 24);
-			for (const [op, kernel] of kernels) {
-				span.attribute(`${prefix}kernel.${op}.wall_ms`, kernel.wallMs);
-				span.attribute(`${prefix}kernel.${op}.busy_ms`, kernel.busyMs);
-				span.attribute(`${prefix}kernel.${op}.rows`, kernel.rows);
-				span.attribute(`${prefix}kernel.${op}.inputs`, kernel.inputs);
-			}
-			span.end(origin + BigInt(Math.round(sample.endOffsetMs * 1_000_000)), Exit.void);
-		}
+		return;
+	}
+	yield* Effect.annotateCurrentSpan(`${prefix}cached`, profile.cached);
+	if (profile.cached) return;
+	yield* Effect.annotateCurrentSpan({
+		[`${prefix}rules`]: profile.rules,
+		[`${prefix}findings`]: profile.findings,
+		[`${prefix}diagnostics`]: profile.diagnostics,
+		[`${prefix}wall_ms`]: profile.wallMs,
+		// Steps inside a stage, such as a closure's groups and an aggregate's parts.
+		...Object.fromEntries(
+			Object.entries(profile.subStages).map(([name, sample]) => [
+				`${prefix}stage_ms.${name}`,
+				sample.wallMs
+			])
+		)
 	});
+	const parent = yield* Effect.option(Effect.currentSpan);
+	if (Option.isNone(parent)) return;
+	const tracer = yield* Effect.tracer;
+	const origin =
+		requestStart ??
+		(yield* Clock.currentTimeNanos) - BigInt(Math.round(profile.wallMs * 1_000_000));
+	for (const [name, sample] of Object.entries(profile.stages)) {
+		const span = tracer.span({
+			name: `GameText.native.findingsEvaluate.${name}`,
+			parent,
+			annotations: Context.empty(),
+			links: [],
+			startTime: origin + BigInt(Math.round(sample.startOffsetMs * 1_000_000)),
+			kind: "internal",
+			root: false,
+			sampled: parent.value.sampled
+		});
+		span.attribute(`${prefix}stage.wall_ms`, sample.wallMs);
+		span.attribute(`${prefix}stage.busy_ms`, sample.busyMs);
+		span.attribute(`${prefix}stage.rows`, sample.rows);
+		for (const [field, value] of Object.entries(sample.memory)) {
+			if (value !== null && value !== undefined)
+				span.attribute(`${prefix}memory.${field}`, value);
+		}
+		const kernels = Object.entries(sample.kernels)
+			.sort((a, b) => b[1].busyMs - a[1].busyMs)
+			.slice(0, 24);
+		for (const [op, kernel] of kernels) {
+			span.attribute(`${prefix}kernel.${op}.wall_ms`, kernel.wallMs);
+			span.attribute(`${prefix}kernel.${op}.busy_ms`, kernel.busyMs);
+			span.attribute(`${prefix}kernel.${op}.rows`, kernel.rows);
+			span.attribute(`${prefix}kernel.${op}.inputs`, kernel.inputs);
+		}
+		span.end(origin + BigInt(Math.round(sample.endOffsetMs * 1_000_000)), Exit.void);
+	}
+});
 /** A line finding as `findings_query` returns it: the host shape and what a list reads of its line. */
 export type QueriedLineFinding = (
 	| LocalizationQualityFinding
@@ -114,9 +113,8 @@ export const inflateFindingsPage = ({ page, findings, sets }: FindingsRead) =>
 			findings: findings.map((finding) => {
 				// SAFETY: the engine writes each finding in its family's host shape, with the
 				// fields its query adds and `places` naming its place set; the handshake checked
-				// the shared contract.
-				// Verified by: findings-query.test.ts compares queried pages with the in-memory
-				// workspace's.
+				// the shared contract. Verified by: findings-query.test.ts compares queried pages
+				// with the in-memory workspace's.
 				const { places: id, ...evidence } = finding as GameTextContract.Finding;
 				const inflated = {
 					...evidence,

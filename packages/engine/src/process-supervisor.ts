@@ -20,11 +20,10 @@ export class ProcessSupervisorUnavailable extends Schema.TaggedError<
 }) {}
 
 /**
- * Where the Windows process supervisor (`ue-shed-process-supervisor.exe`) is. Unset, it is
- * resolved from the installed `@ue-shed/engine-win32-x64` package. A host that ships the
- * executable elsewhere, such as an Electron app's resources or a bundled build without
- * `node_modules`, provides its path with `processSupervisorExecutableLayer` or
- * `Effect.provideService`. Editor launches and foreground permission both use it.
+ * Where the Windows process supervisor (`ue-shed-process-supervisor.exe`) is; unset, it comes
+ * from the installed `@ue-shed/engine-win32-x64` package. A host that ships it elsewhere (an
+ * Electron app's resources, a bundle without `node_modules`) provides the path with
+ * `processSupervisorExecutableLayer` or `Effect.provideService`.
  */
 export const ProcessSupervisorExecutable = Context.Reference<string | undefined>(
 	"@ue-shed/engine/ProcessSupervisorExecutable",

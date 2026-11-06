@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { type Brand, Effect, Predicate, Schema } from "effect";
 import { ScenarioDocument } from "./schema.js";
+const decodeScenarioDocumentEffect = Schema.decodeEffect(ScenarioDocument);
 
 /** Largest scenario document file, in bytes, that is read or written: 4 MiB. */
 export const MAX_SCENARIO_DOCUMENT_BYTES = 4 * 1024 * 1024;
@@ -95,7 +96,7 @@ export const readScenarioDocumentFile = Effect.fn("ScenarioDocumentFile.read")((
 /** Write a validated document beside its destination, then atomically replace the file. */
 export const writeScenarioDocumentFile = Effect.fn("ScenarioDocumentFile.write")(
 	(path: string, document: ScenarioDocument) =>
-		Schema.decodeEffect(ScenarioDocument)(document).pipe(
+		decodeScenarioDocumentEffect(document).pipe(
 			Effect.flatMap((decoded) =>
 				Effect.tryPromise({
 					try: async () => {

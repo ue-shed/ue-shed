@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 import { NiagaraPreviewProgress, readNiagaraPreviewProgress } from "./progress.js";
+
+const isNiagaraPreviewProgress = Schema.is(NiagaraPreviewProgress);
 it("validates bounded progress identity and permits a missing older-producer file", async () => {
 	const root = await mkdtemp(join(tmpdir(), "niagara-progress-"));
 	const path = join(root, "progress.json");
@@ -22,7 +24,7 @@ it("validates bounded progress identity and permits a missing older-producer fil
 		await expect(Effect.runPromise(readNiagaraPreviewProgress(path, "other"))).rejects.toThrow(
 			"another run"
 		);
-		expect(Schema.is(NiagaraPreviewProgress)({ ...progress, completedFrames: 11 })).toBe(false);
+		expect(isNiagaraPreviewProgress({ ...progress, completedFrames: 11 })).toBe(false);
 		await writeFile(path, " ".repeat(4097));
 		await expect(Effect.runPromise(readNiagaraPreviewProgress(path, "run"))).rejects.toThrow(
 			"bounded"

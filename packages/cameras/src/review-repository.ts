@@ -23,6 +23,8 @@ import {
 	ReviewSetId,
 	type CaptureRun
 } from "./review-schema.js";
+const decodeJson = Schema.decodeUnknownEffect(Schema.Json);
+const decodeUnknownJson = Schema.decodeUnknownSync(Schema.Json);
 
 /**
  * Default project-relative .ue-shed/review storage for review sets and immutable runs.
@@ -92,11 +94,26 @@ async function writeJsonAtomically<Value>(path: string, value: Value): Promise<v
 	}
 }
 
-function loadReviewSetWithNode(path: string): Effect.Effect<ReviewSet, ReviewStorageError> {
-	return Effect.gen(function* () {
-		const sourceValue = yield* Effect.tryPromise({
-			try: async () => JSON.parse(await readFile(path, "utf8")),
-			catch: (cause) =>
+const loadReviewSetWithNode = Effect.fn("camera.review.set.load")(function* (
+	path: string
+): Effect.fn.Return<ReviewSet, ReviewStorageError> {
+	yield* Effect.annotateCurrentSpan({ path });
+	const sourceValue = yield* Effect.tryPromise({
+		try: async () => JSON.parse(await readFile(path, "utf8")),
+		catch: (cause) =>
+			new ReviewStorageError({
+				message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
+				operation: "load_set",
+				path,
+				recovery: "Validate or repair the Review Set document, then retry.",
+				retrySafe: true,
+				nextStep: "fix_input",
+				cause
+			})
+	});
+	const decodedValue0 = yield* decodeJson(sourceValue).pipe(
+		Effect.mapError(
+			(cause) =>
 				new ReviewStorageError({
 					message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
 					operation: "load_set",
@@ -106,37 +123,23 @@ function loadReviewSetWithNode(path: string): Effect.Effect<ReviewSet, ReviewSto
 					nextStep: "fix_input",
 					cause
 				})
-		});
-		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
-			Effect.mapError(
-				(cause) =>
-					new ReviewStorageError({
-						message: `Could not load Review Set ${path} because ${fileFailureReason(cause)}.`,
-						operation: "load_set",
-						path,
-						recovery: "Validate or repair the Review Set document, then retry.",
-						retrySafe: true,
-						nextStep: "fix_input",
-						cause
-					})
-			)
-		);
-		return yield* decodeReviewSet(decodedValue0).pipe(
-			Effect.mapError(
-				(cause) =>
-					new ReviewStorageError({
-						message: `Review Set ${path} does not match the Review Set contract.`,
-						operation: "load_set",
-						path,
-						recovery: "Validate or repair the Review Set document, then retry.",
-						retrySafe: true,
-						nextStep: "fix_input",
-						cause
-					})
-			)
-		);
-	}).pipe(Effect.withSpan("camera.review.set.load", { attributes: { path } }));
-}
+		)
+	);
+	return yield* decodeReviewSet(decodedValue0).pipe(
+		Effect.mapError(
+			(cause) =>
+				new ReviewStorageError({
+					message: `Review Set ${path} does not match the Review Set contract.`,
+					operation: "load_set",
+					path,
+					recovery: "Validate or repair the Review Set document, then retry.",
+					retrySafe: true,
+					nextStep: "fix_input",
+					cause
+				})
+		)
+	);
+});
 
 function findReviewSetWithNode(
 	path: string
@@ -233,9 +236,7 @@ function listReviewSetsWithNode(
 					files.map(async (entry) => {
 						const path = join(root, entry.name);
 						return {
-							input: Schema.decodeUnknownSync(Schema.Json)(
-								JSON.parse(await readFile(path, "utf8"))
-							),
+							input: decodeUnknownJson(JSON.parse(await readFile(path, "utf8"))),
 							path
 						};
 					})
@@ -309,42 +310,40 @@ function reviewSetSlug(displayName: string): string {
  * under the explicit project. Does not change the host's active project or review-set
  * selection automatically.
  */
-export function createReviewSetFromTemplate(args: {
+export const createReviewSetFromTemplate = Effect.fn("camera.review.set.create")(function* (args: {
 	readonly displayName: string;
 	readonly projectRoot: string;
 	readonly templatePath: string;
-}): Effect.Effect<ReviewSetSummary, ReviewStorageError, ReviewRepository> {
-	return Effect.gen(function* () {
-		const repository = yield* ReviewRepository;
-		const template = yield* repository.loadSet(args.templatePath);
-		const displayName = args.displayName.trim();
-		if (displayName.length === 0) {
-			return yield* new ReviewStorageError({
-				message: "A Review Set display name is required.",
-				operation: "create_set",
-				path: reviewSetsRoot(args.projectRoot),
-				recovery: "Enter a name for the new Review Set.",
-				retrySafe: true,
-				nextStep: "fix_input"
-			});
-		}
-		const id = ReviewSetId.make(`${reviewSetSlug(displayName)}-${randomUUID()}`);
-		const path = join(reviewSetsRoot(args.projectRoot), `${id}.json`);
-		const reviewSet = ReviewSet.make({
-			...template,
-			description: `Created from ${template.displayName} capture and visibility settings.`,
-			displayName,
-			id,
-			views: []
+}): Effect.fn.Return<ReviewSetSummary, ReviewStorageError, ReviewRepository> {
+	yield* Effect.annotateCurrentSpan({
+		projectRoot: args.projectRoot,
+		templatePath: args.templatePath
+	});
+	const repository = yield* ReviewRepository;
+	const template = yield* repository.loadSet(args.templatePath);
+	const displayName = args.displayName.trim();
+	if (displayName.length === 0) {
+		return yield* new ReviewStorageError({
+			message: "A Review Set display name is required.",
+			operation: "create_set",
+			path: reviewSetsRoot(args.projectRoot),
+			recovery: "Enter a name for the new Review Set.",
+			retrySafe: true,
+			nextStep: "fix_input"
 		});
-		yield* repository.saveSet({ path, reviewSet });
-		return summarizeReviewSet(path, reviewSet);
-	}).pipe(
-		Effect.withSpan("camera.review.set.create", {
-			attributes: { projectRoot: args.projectRoot, templatePath: args.templatePath }
-		})
-	);
-}
+	}
+	const id = ReviewSetId.make(`${reviewSetSlug(displayName)}-${randomUUID()}`);
+	const path = join(reviewSetsRoot(args.projectRoot), `${id}.json`);
+	const reviewSet = ReviewSet.make({
+		...template,
+		description: `Created from ${template.displayName} capture and visibility settings.`,
+		displayName,
+		id,
+		views: []
+	});
+	yield* repository.saveSet({ path, reviewSet });
+	return summarizeReviewSet(path, reviewSet);
+});
 
 /**
  * Resolves the immutable capture-run root beneath an explicit project. Does not create a run
@@ -713,11 +712,26 @@ export function callerOwnedReviewCaptureDestination(root: string): ReviewCapture
 	});
 }
 
-function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewStorageError> {
-	return Effect.gen(function* () {
-		const sourceValue = yield* Effect.tryPromise({
-			try: async () => JSON.parse(await readFile(path, "utf8")),
-			catch: (cause) =>
+const loadCaptureRunWithNode = Effect.fnUntraced(function* (
+	path: string
+): Effect.fn.Return<CaptureRun, ReviewStorageError> {
+	const sourceValue = yield* Effect.tryPromise({
+		try: async () => JSON.parse(await readFile(path, "utf8")),
+		catch: (cause) =>
+			new ReviewStorageError({
+				message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
+				operation: "load_run",
+				path,
+				recovery:
+					"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
+				retrySafe: true,
+				nextStep: "fix_input",
+				cause
+			})
+	});
+	const decodedValue0 = yield* decodeJson(sourceValue).pipe(
+		Effect.mapError(
+			(cause) =>
 				new ReviewStorageError({
 					message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
 					operation: "load_run",
@@ -728,39 +742,24 @@ function loadCaptureRunWithNode(path: string): Effect.Effect<CaptureRun, ReviewS
 					nextStep: "fix_input",
 					cause
 				})
-		});
-		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
-			Effect.mapError(
-				(cause) =>
-					new ReviewStorageError({
-						message: `Could not load Capture Run ${path} because ${fileFailureReason(cause)}.`,
-						operation: "load_run",
-						path,
-						recovery:
-							"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
-						retrySafe: true,
-						nextStep: "fix_input",
-						cause
-					})
-			)
-		);
-		return yield* decodeCaptureRun(decodedValue0).pipe(
-			Effect.mapError(
-				(cause) =>
-					new ReviewStorageError({
-						message: `Capture Run ${path} does not match the Capture Run contract.`,
-						operation: "load_run",
-						path,
-						recovery:
-							"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
-						retrySafe: true,
-						nextStep: "escalate",
-						cause
-					})
-			)
-		);
-	});
-}
+		)
+	);
+	return yield* decodeCaptureRun(decodedValue0).pipe(
+		Effect.mapError(
+			(cause) =>
+				new ReviewStorageError({
+					message: `Capture Run ${path} does not match the Capture Run contract.`,
+					operation: "load_run",
+					path,
+					recovery:
+						"Inspect the immutable Capture Run bundle or restore it from evidence storage.",
+					retrySafe: true,
+					nextStep: "escalate",
+					cause
+				})
+		)
+	);
+});
 
 /**
  * Saved run listing with set/run identity, completion/status and success/failure counts. A
@@ -790,9 +789,7 @@ function listCaptureRunsWithNode(
 				directories.map(async (entry) => {
 					const path = join(root, entry.name, "run.json");
 					return {
-						input: Schema.decodeUnknownSync(Schema.Json)(
-							JSON.parse(await readFile(path, "utf8"))
-						),
+						input: decodeUnknownJson(JSON.parse(await readFile(path, "utf8"))),
 						path
 					};
 				})

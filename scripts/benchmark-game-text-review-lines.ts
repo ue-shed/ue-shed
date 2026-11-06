@@ -1,9 +1,6 @@
 /**
- * Times review fingerprints over a generated target: the host's evidence fingerprint, which
- * decodes the manifest, archive and PO it reads in the host, against the engine's `review_lines`.
- * The target is built by the native writer in a temporary directory, which is removed after; the
- * script writes nothing else and prints its measurements as JSON.
- *
+ * Times the host's evidence fingerprint against the engine's `review_lines` over a generated
+ * target, built by the native writer in a temporary directory that is removed after. Prints JSON.
  * UE_SHED_UASSET_EXECUTABLE=<uasset> node --import tsx scripts/benchmark-game-text-review-lines.ts
  *   [--lines 130000] [--cultures 10] [--evidence 3] [--native 500]
  */
@@ -21,6 +18,8 @@ import {
 import { GameTextIndexRefresh } from "../packages/game-text/src/index-contract.ts";
 import { makeIndexRegressionFixture } from "../packages/game-text/src/index-refresh-regressions.test-support.ts";
 import { nativeIndexBuilderLayer } from "../packages/game-text/src/native-index-builder.ts";
+
+const decodeLocalizationTarget = Schema.decodeEffect(LocalizationTarget);
 
 const { values } = parseArgs({
 	options: {
@@ -58,7 +57,7 @@ await Effect.runPromise(
 	Effect.scoped(
 		Effect.gen(function* () {
 			const fixture = yield* makeIndexRegressionFixture();
-			const target = yield* Schema.decodeEffect(LocalizationTarget)({
+			const target = yield* decodeLocalizationTarget({
 				...fixture.target,
 				cultures,
 				outputPaths: {

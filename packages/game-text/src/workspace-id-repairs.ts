@@ -26,6 +26,8 @@ import type {
 	GameTextWorkspaceFileHooks,
 	GameTextWorkspaceProjectState
 } from "./workspace-host.js";
+const decodeTextIdRepairRequest = Schema.decodeEffect(TextIdRepairRequest);
+const decodeTextIdRepairId = Schema.decodeEffect(TextIdRepairId);
 
 /** Host authority for ID repairs. Storage, project selection and endpoint selection stay explicit. */
 export interface GameTextIdRepairsHost {
@@ -56,6 +58,7 @@ const Guidance = Schema.Struct({
 	retrySafe: Schema.Boolean,
 	nextStep: ErrorNextStep
 });
+const decodeGuidanceOption = Schema.decodeUnknownOption(Guidance);
 
 const unavailable = (error: {
 	readonly message: string;
@@ -75,6 +78,7 @@ const Artifact = Schema.Struct({
 	plan: TextIdRepairPlan,
 	result: Schema.optionalKey(TextIdRepairResult)
 });
+const decodeArtifactJson = Schema.decodeEffect(Schema.fromJsonString(Artifact));
 
 const folder = "Saved/UEShed/GameTextActions";
 
@@ -95,7 +99,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 	) {
 		const actual = yield* host.editorProject(endpoint).pipe(
 			Effect.mapError((cause) => {
-				const guidance = Schema.decodeUnknownOption(Guidance)(cause);
+				const guidance = decodeGuidanceOption(cause);
 				return new RepairError({
 					cause,
 					message: cause.message,
@@ -253,7 +257,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			{ exclusive }
 		);
 	const prepare = Effect.fn("GameText.idRepairs.prepare")(function* (input: TextIdRepairRequest) {
-		const request = yield* Schema.decodeEffect(TextIdRepairRequest)(input).pipe(
+		const request = yield* decodeTextIdRepairRequest(input).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -336,7 +340,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 			nextStep: "reconcile"
 		});
 	const apply = Effect.fn("GameText.idRepairs.apply")(function* (input: TextIdRepairId) {
-		const id = yield* Schema.decodeEffect(TextIdRepairId)(input).pipe(
+		const id = yield* decodeTextIdRepairId(input).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({
@@ -352,9 +356,7 @@ export const makeGameTextIdRepairs = Effect.fn("GameText.idRepairs.make")(functi
 		const bytes = yield* host.files.readFileWithin(root, `${folder}/${id}.json`, {
 			maxBytes: 4 * 1024 * 1024
 		});
-		const artifact = yield* Schema.decodeEffect(Schema.fromJsonString(Artifact))(
-			new TextDecoder().decode(bytes)
-		).pipe(
+		const artifact = yield* decodeArtifactJson(new TextDecoder().decode(bytes)).pipe(
 			Effect.mapError(
 				(cause) =>
 					new RepairError({

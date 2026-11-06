@@ -27,6 +27,9 @@ import {
 	type CameraRenderSessionRequest
 } from "./camera-render-schema.js";
 
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const decodeJsonRecord = Schema.decodeUnknownSync(JsonRecord);
+const decodeString = Schema.decodeUnknownSync(Schema.String);
 const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT;
 const projectRoot = process.env.UE_SHED_RENDER_FIXTURE_ROOT;
 const mapPath = "/Game/Fixture/Cameras/L_CameraLoad";
@@ -80,9 +83,7 @@ async function actorCall(functionName: string, parameters: Schema.JsonObject) {
 		})
 	});
 	expect(response.ok).toBe(true);
-	return Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
-		await response.json()
-	);
+	return decodeJsonRecord(await response.json());
 }
 function reviewRequest(
 	kind: "scene_capture" | "editor_viewport",
@@ -116,7 +117,7 @@ describe.skipIf(!endpoint || !projectRoot)(
 					Rotation: { Pitch: 0, Yaw: 0, Roll: 0 },
 					bTransient: true
 				});
-				const actorPath = Schema.decodeUnknownSync(Schema.String)(spawned.ReturnValue);
+				const actorPath = decodeString(spawned.ReturnValue);
 				const pose: ApprovedPose = {
 					aspectRatio: "16:9",
 					projection: "perspective",

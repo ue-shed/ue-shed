@@ -15,6 +15,7 @@ import {
 	type RemoteControlClientError
 } from "@ue-shed/unreal-connection";
 import { type Brand, Effect, Schema } from "effect";
+const decodeStringTableRedirectRequest = Schema.decodeEffect(StringTableRedirectRequest);
 
 /** The capability a running editor advertises when `UEShedGameText` is loaded. */
 export const LOCALIZATION_TEXT_ACTIONS_CAPABILITY = "game-text.actions.v1";
@@ -80,6 +81,7 @@ export function localizationTextActionsRequest(options: {
 
 const decodeRequest = Schema.decodeUnknownEffect(GameTextActionsRequest);
 const decodeResult = Schema.decodeUnknownEffect(GameTextActionsResult);
+const decodeRedirectResult = Schema.decodeUnknownEffect(StringTableRedirectResult);
 
 function connectionFailed(endpoint: string, error: RemoteControlClientError, mutation = false) {
 	const retrySafe = !mutation && error.retrySafe;
@@ -216,7 +218,7 @@ export const runLocalizationTextActions = Effect.fn("game_text.actions.run")(fun
 export const verifyLocalizationStringTableRedirect = Effect.fn(
 	"Localization.stringTable.verifyRedirect"
 )(function* (options: { readonly endpoint: string; readonly request: StringTableRedirectRequest }) {
-	const request = yield* Schema.decodeEffect(StringTableRedirectRequest)(options.request).pipe(
+	const request = yield* decodeStringTableRedirectRequest(options.request).pipe(
 		Effect.mapError(
 			(cause) =>
 				new LocalizationTextActionsError({
@@ -266,7 +268,7 @@ export const verifyLocalizationStringTableRedirect = Effect.fn(
 		.pipe(
 			Effect.mapError((error) => connectionFailed(options.endpoint, error, request.activate))
 		);
-	return yield* Schema.decodeUnknownEffect(StringTableRedirectResult)(value).pipe(
+	return yield* decodeRedirectResult(value).pipe(
 		Effect.mapError(
 			(cause) =>
 				new LocalizationTextActionsError({

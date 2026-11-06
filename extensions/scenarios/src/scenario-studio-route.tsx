@@ -31,6 +31,8 @@ import {
 } from "solid-js";
 import type { ScenarioStudioClient } from "./client.js";
 
+const isString = Schema.is(Schema.String);
+
 type TransportState = "paused" | "playing" | "recording";
 type LiveRunState =
 	| { readonly status: "preview" }
@@ -346,11 +348,9 @@ export function ScenarioStudioRoute(
 		const error = Cause.findErrorOption(cause);
 		if (Option.isSome(error) && error.value instanceof Object) {
 			const value = error.value;
-			if ("message" in value && Schema.is(Schema.String)(value.message)) {
+			if ("message" in value && isString(value.message)) {
 				const recovery =
-					"recovery" in value && Schema.is(Schema.String)(value.recovery)
-						? ` ${value.recovery}`
-						: "";
+					"recovery" in value && isString(value.recovery) ? ` ${value.recovery}` : "";
 				return `${value.message}${recovery}`;
 			}
 		}

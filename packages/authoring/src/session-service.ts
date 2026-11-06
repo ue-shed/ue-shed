@@ -47,6 +47,8 @@ import {
 	type AuthoringTableChange
 } from "./review.js";
 
+const decodeJson = Schema.decodeUnknownEffect(Schema.Json);
+
 const isDraftIntentError = Schema.is(DraftIntentError);
 const SessionIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -92,15 +94,15 @@ const PersistedAuthoringSessionDocument = Schema.Struct({
 const decodePersistedDocument = Schema.decodeUnknownEffect(PersistedAuthoringSessionDocument);
 const decodeCurrentDocument = Schema.decodeUnknownEffect(AuthoringSessionDocument);
 
-function decodeDocument<Input>(input: Input) {
-	return Effect.gen(function* () {
-		const persisted = yield* decodePersistedDocument(input);
-		const decodedDraft = yield* decodeDraftSessionWithMigration(persisted.draft);
-		const draft = decodedDraft.draft;
-		const document = yield* decodeCurrentDocument({ ...persisted, draft });
-		return { document, migrated: decodedDraft.migrated };
-	});
-}
+const decodeDocument = Effect.fn("AuthoringSessions.decodeDocument")(function* <Input>(
+	input: Input
+) {
+	const persisted = yield* decodePersistedDocument(input);
+	const decodedDraft = yield* decodeDraftSessionWithMigration(persisted.draft);
+	const draft = decodedDraft.draft;
+	const document = yield* decodeCurrentDocument({ ...persisted, draft });
+	return { document, migrated: decodedDraft.migrated };
+});
 
 export class InvalidSessionIdError extends Schema.TaggedError<
 	InvalidSessionIdError,
@@ -741,12 +743,12 @@ function summary(document: AuthoringSessionDocument): AuthoringSessionSummary {
 	};
 }
 
-function makeAuthoringSessionServiceEffect(): Effect.Effect<
-	AuthoringSessionService,
-	never,
-	AuthoringSessionRepository | AuthoringIdGenerator
-> {
-	return Effect.gen(function* () {
+const makeAuthoringSessionServiceEffect = Effect.fn("AuthoringSessions.make")(
+	function* (): Effect.fn.Return<
+		AuthoringSessionService,
+		never,
+		AuthoringSessionRepository | AuthoringIdGenerator
+	> {
 		const mutex = yield* Semaphore.make(1);
 		const repository = yield* AuthoringSessionRepository;
 		const ids = yield* AuthoringIdGenerator;
@@ -754,38 +756,34 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			Effect.map((milliseconds) => new Date(milliseconds).toISOString())
 		);
 
-		const load = (
+		const load = Effect.fn("authoring.session.open")(function* (
 			sessionId: string
-		): Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError> =>
-			Effect.gen(function* () {
-				const validId = yield* validateSessionId(sessionId);
-				const contents = yield* repository.read(validId);
-				const { document, migrated } = yield* Effect.gen(function* () {
-					const json = yield* Effect.try(() => JSON.parse(contents));
-					const value = yield* Schema.decodeUnknownEffect(Schema.Json)(json);
-					return yield* decodeDocument(value);
-				}).pipe(
-					Effect.catchTags({
-						UnknownError: (error) => repository.quarantine(validId, error.cause),
-						SchemaError: (error) => repository.quarantine(validId, error)
-					})
-				);
-				if (document.project.id !== repository.project.id)
-					return yield* new AuthoringSessionStorageError({
-						message: `Session ${validId} belongs to project ${document.project.id}`,
-						operation: "verify_project",
-						recovery: "Open the session through its owning project.",
-						retrySafe: false,
-						nextStep: "fix_input",
-						sessionId: validId
-					});
-				if (migrated) yield* repository.persist(document);
-				return document;
+		): Effect.fn.Return<AuthoringSessionDocument, AuthoringSessionServiceError> {
+			yield* Effect.annotateCurrentSpan("authoring.session.id", sessionId);
+			const validId = yield* validateSessionId(sessionId);
+			const contents = yield* repository.read(validId);
+			const { document, migrated } = yield* Effect.gen(function* () {
+				const json = yield* Effect.try(() => JSON.parse(contents));
+				const value = yield* decodeJson(json);
+				return yield* decodeDocument(value);
 			}).pipe(
-				Effect.withSpan("authoring.session.open", {
-					attributes: { "authoring.session.id": sessionId }
+				Effect.catchTags({
+					UnknownError: (error) => repository.quarantine(validId, error.cause),
+					SchemaError: (error) => repository.quarantine(validId, error)
 				})
 			);
+			if (document.project.id !== repository.project.id)
+				return yield* new AuthoringSessionStorageError({
+					message: `Session ${validId} belongs to project ${document.project.id}`,
+					operation: "verify_project",
+					recovery: "Open the session through its owning project.",
+					retrySafe: false,
+					nextStep: "fix_input",
+					sessionId: validId
+				});
+			if (migrated) yield* repository.persist(document);
+			return document;
+		});
 
 		const update = (
 			sessionId: string,
@@ -1397,8 +1395,8 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 				)
 			)
 		};
-	});
-}
+	}
+);
 
 export class AuthoringSessions extends Context.Service<
 	AuthoringSessions,

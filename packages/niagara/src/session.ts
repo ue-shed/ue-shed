@@ -42,6 +42,10 @@ const resultSchema = Schema.Struct({
 	runId: Schema.String,
 	exitCode: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }))
 });
+const SessionReadyJson = Schema.fromJsonString(
+	Schema.Struct({ protocol: Schema.Literal("ue-shed-niagara-session.v1") })
+);
+const decodeSessionReadyJson = Schema.decodeUnknownEffect(SessionReadyJson);
 const readOptional = (path: string, guidance: SessionGuidance) =>
 	Effect.tryPromise({
 		try: async () => {
@@ -79,13 +83,7 @@ export const submitNiagaraSessionRequest = Effect.fn("NiagaraSession.submit")(fu
 			nextStep: "fix_input"
 		});
 	const ready = yield* readOptional(join(input.directory, "ready.json"), beforeSubmit);
-	yield* Schema.decodeUnknownEffect(
-		Schema.fromJsonString(
-			Schema.Struct({
-				protocol: Schema.Literal("ue-shed-niagara-session.v1")
-			})
-		)
-	)(ready).pipe(
+	yield* decodeSessionReadyJson(ready).pipe(
 		Effect.mapError((cause) =>
 			failure(
 				"Session is not ready.",

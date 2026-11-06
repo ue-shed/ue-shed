@@ -1,16 +1,8 @@
 /**
- * Publishes the committed release from the evidence `pnpm release:prepare` recorded: every
- * required gate must have passed on inputs matching the release commit, and the tarballs published
- * are the ones the clean-pack gate validated, byte for byte, handed to `changeset publish
- * --from-pack-dir` (which runs `pnpm publish <tarball>`: no lifecycle scripts, no repacking).
- *
- *   pnpm release
- *   pnpm release --checked
- *   pnpm release --without-unreal "portable-only documentation fix"
- *
- * `--checked` runs no checks. On a machine with no evidence for the version, such as one that only
- * holds the npm login, it first fetches the handoff `pnpm release:handoff` uploaded from the
- * machine that ran the gates (see release-handoff.ts), then verifies it like local evidence.
+ * Publishes the committed release from `pnpm release:prepare` evidence: every required gate passed
+ * on the commit's inputs, and the clean-pack gate's tarballs go byte for byte to `changeset publish
+ * --from-pack-dir` (no lifecycle scripts or repacking). `--checked` runs no checks; without local
+ * evidence it fetches and verifies the `release:handoff` upload. Also `--without-unreal "<why>"`.
  */
 
 import { spawnSync } from "node:child_process";
@@ -112,6 +104,8 @@ const PackEvidence = Schema.Struct({
 	version: Schema.String,
 	commit: Schema.String
 });
+const PackEvidenceJson = Schema.fromJsonString(PackEvidence);
+const decodePackEvidenceJson = Schema.decodeSync(PackEvidenceJson);
 
 const PublicationManifestFile = Schema.Struct({
 	schemaVersion: Schema.Number,
@@ -127,6 +121,8 @@ const PublicationManifestFile = Schema.Struct({
 		})
 	)
 });
+const PublicationManifestFileJson = Schema.fromJsonString(PublicationManifestFile);
+const decodePublicationManifestFileJson = Schema.decodeSync(PublicationManifestFileJson);
 
 function sha256(bytes: Buffer) {
 	return createHash("sha256").update(bytes).digest();
@@ -142,15 +138,13 @@ export function verifyPackedRelease(directory: string, version: string, commit: 
 	if (!existsSync(evidencePath)) {
 		throw new Error(`${directory} has no ${PACK_EVIDENCE_FILE}; rerun pnpm release:prepare.`);
 	}
-	const evidence = Schema.decodeSync(Schema.fromJsonString(PackEvidence))(
-		readFileSync(evidencePath, "utf8")
-	);
+	const evidence = decodePackEvidenceJson(readFileSync(evidencePath, "utf8"));
 	if (evidence.version !== version || evidence.commit !== commit) {
 		throw new Error(
 			`${directory} holds ${evidence.version} packed from ${evidence.commit}, not ${version} from ${commit}.`
 		);
 	}
-	const manifest = Schema.decodeSync(Schema.fromJsonString(PublicationManifestFile))(
+	const manifest = decodePublicationManifestFileJson(
 		readFileSync(join(directory, "packages-manifest.json"), "utf8")
 	);
 	const entries = validatePublicationManifest({ manifest, expectedVersion: version });
@@ -179,6 +173,8 @@ const ChangesetsPublishPlan = Schema.Struct({
 	version: Schema.Literal(1),
 	plan: Schema.Array(Schema.Array(Schema.Union([PublishRelease, TagRelease])))
 });
+const ChangesetsPublishPlanJson = Schema.fromJsonString(ChangesetsPublishPlan);
+const decodeChangesetsPublishPlanJson = Schema.decodeSync(ChangesetsPublishPlanJson);
 type ChangesetsPublishPlan = typeof ChangesetsPublishPlan.Type;
 
 /**
@@ -383,9 +379,7 @@ export function validatedIntegrity(directory: string, entry: PublicationEntry) {
 function publish(verification: Verification, env: NodeJS.ProcessEnv) {
 	const planPath = join(verification.packDirectory, "changesets-plan.json");
 	runPnpm(["exec", "changeset", "publish-plan", "--output", planPath], env);
-	const plan = Schema.decodeSync(Schema.fromJsonString(ChangesetsPublishPlan))(
-		readFileSync(planPath, "utf8")
-	);
+	const plan = decodeChangesetsPublishPlanJson(readFileSync(planPath, "utf8"));
 	const packed = packedPublishPlan(plan, verification.entries, (entry) =>
 		validatedIntegrity(verification.packDirectory, entry)
 	);

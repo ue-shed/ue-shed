@@ -44,6 +44,9 @@ import { WorkbenchConfiguration } from "../workbench-config.js";
 import { OfflineTexturePreview } from "./offline-texture-preview.js";
 import { WorkbenchProject, type WorkbenchProjectCandidates } from "./project-workspace.js";
 
+const isString = Schema.is(Schema.String);
+const decodeTextureObjectPath = Schema.decodeEffect(TextureObjectPath);
+
 export interface WorkbenchAssetAuditsApi {
 	readonly investigationExport: (
 		query: TextureInvestigationQuery,
@@ -133,7 +136,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		) =>
 			textureAudit.scanFromProjectIndex(index, {
 				projectRoot,
-				...(Schema.is(Schema.String)(rules) ? { ruleFile: rules } : { rules })
+				...(isString(rules) ? { ruleFile: rules } : { rules })
 			});
 
 		const runScan = (projectRoot: string, ruleFile: string, index: SavedAssetScan) =>
@@ -161,86 +164,84 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const modelSelection = yield* Ref.make<
 			{ readonly projectRoot: string; readonly generation: number } | undefined
 		>(undefined);
-		const currentModel = <A>(ref: Ref.Ref<A | undefined>) =>
-			Effect.gen(function* () {
-				const selected = yield* project.current;
-				const owner = yield* Ref.get(modelSelection);
-				if (
-					selected.status !== "ready" ||
-					selected.project.projectRoot !== owner?.projectRoot ||
-					(selected.project.generation ?? 0) !== owner.generation
-				)
-					return undefined;
-				return yield* Ref.get(ref);
-			});
-		const runRefresh = (
+		const currentModel = Effect.fn("Workbench.WorkbenchAssetAudits.currentModel")(function* <A>(
+			ref: Ref.Ref<A | undefined>
+		) {
+			const selected = yield* project.current;
+			const owner = yield* Ref.get(modelSelection);
+			if (
+				selected.status !== "ready" ||
+				selected.project.projectRoot !== owner?.projectRoot ||
+				(selected.project.generation ?? 0) !== owner.generation
+			)
+				return undefined;
+			return yield* Ref.get(ref);
+		});
+		const runRefresh = Effect.fn("Workbench.WorkbenchAssetAudits.runRefresh")(function* (
 			projectRoot: string,
 			ruleFile: string | TextureAuditRuleSet,
 			index: WorkbenchProjectCandidates
-		) =>
-			Effect.gen(function* () {
-				const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
-				const selected = yield* project.current;
-				if (
-					selected.status !== "ready" ||
-					selected.project.projectRoot !== projectRoot ||
-					(selected.project.generation ?? 0) !== index.generation ||
-					index.summary.projectRoot !== projectRoot
-				)
-					return unavailableQueryProject(
-						"The selected project changed.",
-						"Retry in the selected project."
-					);
-				return yield* scanAudit(projectRoot, ruleFile, index).pipe(
-					Effect.flatMap((report) =>
-						Effect.gen(function* () {
-							const latest = yield* project.current;
-							if (
-								(yield* Ref.get(scanRevision)) !== revision ||
-								latest.status !== "ready" ||
-								latest.project.projectRoot !== projectRoot ||
-								(latest.project.generation ?? 0) !== index.generation
-							)
-								return unavailableQueryProject(
-									"The project changed during the scan.",
-									"Refresh to read the current project generation."
-								);
-							const next = textureAuditQuery(report);
-							yield* Ref.set(
-								importedRules,
-								Schema.is(Schema.String)(ruleFile)
-									? undefined
-									: { projectRoot, rules: ruleFile }
-							);
-							yield* Ref.set(investigationSnapshot, {
-								source: {
-									projectRoot,
-									generation: index.generation,
-									authority: "project_files"
-								},
-								model: next
-							});
-							yield* Ref.set(queryModel, next);
-							yield* Ref.set(modelSelection, {
-								projectRoot,
-								generation: index.generation
-							});
-							return { summary: next.summary(), status: "completed" as const };
-						})
-					),
-					Effect.catchTag("TextureAuditScanError", (error) =>
-						Effect.succeed({
-							error: {
-								code: error.code,
-								message: error.message,
-								recovery: error.recovery,
-								retrySafe: error.retrySafe
-							},
-							status: "failed" as const
-						})
-					)
+		) {
+			const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
+			const selected = yield* project.current;
+			if (
+				selected.status !== "ready" ||
+				selected.project.projectRoot !== projectRoot ||
+				(selected.project.generation ?? 0) !== index.generation ||
+				index.summary.projectRoot !== projectRoot
+			)
+				return unavailableQueryProject(
+					"The selected project changed.",
+					"Retry in the selected project."
 				);
-			});
+			return yield* scanAudit(projectRoot, ruleFile, index).pipe(
+				Effect.flatMap((report) =>
+					Effect.gen(function* () {
+						const latest = yield* project.current;
+						if (
+							(yield* Ref.get(scanRevision)) !== revision ||
+							latest.status !== "ready" ||
+							latest.project.projectRoot !== projectRoot ||
+							(latest.project.generation ?? 0) !== index.generation
+						)
+							return unavailableQueryProject(
+								"The project changed during the scan.",
+								"Refresh to read the current project generation."
+							);
+						const next = textureAuditQuery(report);
+						yield* Ref.set(
+							importedRules,
+							isString(ruleFile) ? undefined : { projectRoot, rules: ruleFile }
+						);
+						yield* Ref.set(investigationSnapshot, {
+							source: {
+								projectRoot,
+								generation: index.generation,
+								authority: "project_files"
+							},
+							model: next
+						});
+						yield* Ref.set(queryModel, next);
+						yield* Ref.set(modelSelection, {
+							projectRoot,
+							generation: index.generation
+						});
+						return { summary: next.summary(), status: "completed" as const };
+					})
+				),
+				Effect.catchTag("TextureAuditScanError", (error) =>
+					Effect.succeed({
+						error: {
+							code: error.code,
+							message: error.message,
+							recovery: error.recovery,
+							retrySafe: error.retrySafe
+						},
+						status: "failed" as const
+					})
+				)
+			);
+		});
 
 		const configuredScan = Effect.gen(function* () {
 			if (configuration.textureAuditRules.status !== "configured") {
@@ -482,9 +483,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 
 		const previewOffline = Effect.fn("Workbench.WorkbenchAssetAudits.previewOffline")(
 			function* (objectPath: string) {
-				const decodedPath = yield* Schema.decodeEffect(TextureObjectPath)(objectPath).pipe(
-					Effect.orDie
-				);
+				const decodedPath = yield* decodeTextureObjectPath(objectPath).pipe(Effect.orDie);
 				const batch = yield* previewOfflineBatch({ objectPaths: [decodedPath] });
 				return (
 					batch.previews[0] ??

@@ -1,8 +1,7 @@
 /**
  * The one definition of which localization states, facts and unknown reasons put a line under
- * which problem. `textProblems` reads it, and
- * `scripts/generate-text-problem-rules.ts` writes it into the native engine as
- * `crates/game-text-index/src/text_problem_rules.rs`; a test fails when that file is stale. Keep
+ * which problem. `textProblems` reads it; `scripts/generate-text-problem-rules.ts` writes it into
+ * `crates/game-text-index/src/text_problem_rules.rs`, and a test fails when that is stale. Keep
  * this module free of runtime imports so the generator can load it directly.
  */
 import type { LocalizationState, LocalizationUnknownReason } from "./localization-schema.js";

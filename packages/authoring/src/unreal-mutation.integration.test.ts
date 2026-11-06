@@ -21,6 +21,8 @@ import { Effect, Schema } from "effect";
 import { AuthoringIdGeneratorLive, makeAuthoringSessionService } from "./session-service.js";
 import { fingerprintTable } from "./fingerprint.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 const sessionService = (config: Parameters<typeof makeAuthoringSessionService>[0]) =>
 	makeAuthoringSessionService(config).pipe(Effect.provide(AuthoringIdGeneratorLive));
 
@@ -76,7 +78,7 @@ async function restoreAuthoringPackages(packages: ReadonlyMap<string, Uint8Array
 }
 
 function readDiskSnapshot(path = assetPath): Schema.Json {
-	return Schema.decodeUnknownSync(Schema.Json)(
+	return decodeJson(
 		JSON.parse(
 			execFileSync(executable!, ["authoring", path, "--format", "json"], {
 				encoding: "utf8",

@@ -127,6 +127,8 @@ export class CameraRenderError extends Schema.TaggedError<
 	nativeFailure: Schema.optionalKey(CameraRenderFailure)
 }) {}
 const isCameraRenderError = Schema.is(CameraRenderError);
+const isContractParseError = Schema.is(ContractParseError);
+const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 
 /**
  * Open was refused because another owner holds the editor: a camera set (`authoring_open`) or
@@ -145,7 +147,7 @@ function renderError(
 	if (isCameraRenderError(cause)) return cause;
 	// Capability and preflight reads hold no editor state; later operations may have acquired it.
 	const readOnly = operation === "capabilities" || operation === "preflight";
-	if (Schema.isSchemaError(cause) || Schema.is(ContractParseError)(cause))
+	if (Schema.isSchemaError(cause) || isContractParseError(cause))
 		return new CameraRenderError({
 			code: "render_response_invalid",
 			operation,
@@ -164,12 +166,12 @@ function renderError(
 		sessionId,
 		message: `The camera render ${operation} request for session ${sessionId} did not complete against the editor.`,
 		nextStep: readOnly
-			? Schema.is(RemoteControlClientError)(cause)
+			? isRemoteControlClientError(cause)
 				? cause.nextStep
 				: "escalate"
 			: "reconcile",
 		recovery: readOnly
-			? Schema.is(RemoteControlClientError)(cause)
+			? isRemoteControlClientError(cause)
 				? cause.recovery
 				: "The editor returned an invalid camera rendering response. Install matching host/plugin versions or report the protocol failure."
 			: "Inspect the existing native operation before retrying. The native lease bounds abandoned ownership.",

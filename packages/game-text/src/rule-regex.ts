@@ -10,14 +10,10 @@ type Node =
 	| { readonly kind: "backreference" };
 
 /**
- * Whether a pattern that `new RegExp(pattern, "u")` accepted is in the rule language's regex
- * dialect: JavaScript, with every lookbehind fixed-width in characters. A lookbehind's body is
- * fixed-width, or an alternation whose branches each are; empty non-capturing groups are ignored
- * and non-capturing groups around the whole body are transparent. Inside a lookbehind, repeats
- * are exact (`{n}` or `{n,n}`, lazy or not) of something at least one character wide, nested
- * alternations have branches of equal width, and there are no backreferences; anchors and
- * lookarounds take no width. The native engine runs every pattern in the dialect with
- * JavaScript semantics; its tests check that on listed and on generated patterns.
+ * Whether a pattern `new RegExp(pattern, "u")` accepted is in the rule dialect: JavaScript with
+ * fixed-width lookbehinds. In a lookbehind, alternation branches have equal width, repeats are
+ * exact (`{n}`, `{n,n}`) over something at least one character wide, and backreferences are
+ * rejected; anchors and lookarounds take no width. The native engine runs it with JS semantics.
  */
 export function engineRunsPattern(pattern: string): boolean {
 	return supported(new Parser(pattern).parse());

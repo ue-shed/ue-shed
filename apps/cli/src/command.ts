@@ -87,35 +87,35 @@ function normalizeArgs(args: readonly string[]): ReadonlyArray<string> {
 	return args.length === 0 || args[0] === "help" ? ["--help"] : args;
 }
 
-export function runCli(args: readonly string[]): Effect.Effect<void, CliCommandError, CliRuntime> {
-	return Effect.gen(function* () {
-		const runtime = yield* CliRuntime;
-		const help: string[] = [];
-		const errors: string[] = [];
-		const consoleLayer = Layer.succeed(Console.Console, makeBufferedConsole(help, errors));
-		const result = yield* Effect.exit(
-			Command.runWith(cliCommand, { version })(normalizeArgs(args)).pipe(
-				Effect.provide(Layer.provideMerge(cliFormatter, consoleLayer)),
-				Effect.provideService(Logger.LogToStderr, true),
-				Effect.provide(NodeServices.layer)
-			)
-		);
-		if (errors.length > 0) yield* runtime.printError(`${errors.join("\n")}\n`);
-		if (Exit.isSuccess(result)) {
-			for (const message of help) yield* runtime.print(`${message}\n`);
-			return;
+export const runCli = Effect.fn("Cli.run")(function* (
+	args: readonly string[]
+): Effect.fn.Return<void, CliCommandError, CliRuntime> {
+	const runtime = yield* CliRuntime;
+	const help: string[] = [];
+	const errors: string[] = [];
+	const consoleLayer = Layer.succeed(Console.Console, makeBufferedConsole(help, errors));
+	const result = yield* Effect.exit(
+		Command.runWith(cliCommand, { version })(normalizeArgs(args)).pipe(
+			Effect.provide(Layer.provideMerge(cliFormatter, consoleLayer)),
+			Effect.provideService(Logger.LogToStderr, true),
+			Effect.provide(NodeServices.layer)
+		)
+	);
+	if (errors.length > 0) yield* runtime.printError(`${errors.join("\n")}\n`);
+	if (Exit.isSuccess(result)) {
+		for (const message of help) yield* runtime.print(`${message}\n`);
+		return;
+	}
+	const error = Cause.findErrorOption(result.cause);
+	if (Option.isSome(error) && CliError.isCliError(error.value)) {
+		if (errors.length === 0) {
+			yield* runtime.printError(`ue-shed: ${error.value.message}\n`);
 		}
-		const error = Cause.findErrorOption(result.cause);
-		if (Option.isSome(error) && CliError.isCliError(error.value)) {
-			if (errors.length === 0) {
-				yield* runtime.printError(`ue-shed: ${error.value.message}\n`);
-			}
-			yield* runtime.setExitCode(2);
-			return;
-		}
-		if (Option.isSome(error) && isCliCommandError(error.value)) {
-			return yield* error.value;
-		}
-		return yield* Effect.die(Cause.squash(result.cause));
-	});
-}
+		yield* runtime.setExitCode(2);
+		return;
+	}
+	if (Option.isSome(error) && isCliCommandError(error.value)) {
+		return yield* error.value;
+	}
+	return yield* Effect.die(Cause.squash(result.cause));
+});

@@ -26,6 +26,8 @@ import { packageTextSnapshotBatches } from "./package-text-native.js";
 
 const FileStamp = Schema.Struct({ size: Schema.Finite, modifiedMs: Schema.Finite });
 const Signature = Schema.Array(Schema.NullOr(FileStamp));
+const SignatureJson = Schema.fromJsonString(Signature);
+const decodeSignatureJson = Schema.decodeEffect(SignatureJson);
 const bundlePaths = (path: string) => [
 	path,
 	...["uexp", "ubulk", "uptnl"].map((extension) => path.replace(/\.[^.]+$/u, `.${extension}`))
@@ -248,9 +250,7 @@ export function gameTextIndexSourceNodeLayer(
 						entries,
 						(entry) =>
 							Effect.gen(function* () {
-								const expected = yield* Schema.decodeEffect(
-									Schema.fromJsonString(Signature)
-								)(entry.signature).pipe(
+								const expected = yield* decodeSignatureJson(entry.signature).pipe(
 									Effect.mapError((cause) =>
 										failure(
 											"signature",

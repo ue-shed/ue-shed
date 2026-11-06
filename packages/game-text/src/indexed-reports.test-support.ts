@@ -40,6 +40,7 @@ const Reply = Schema.Struct({
 	stdout: Schema.optionalKey(Schema.String),
 	stderr: Schema.optionalKey(Schema.String)
 });
+const decodeReply = Schema.decodeUnknownSync(Reply);
 afterAll(async () => {
 	if (worker) terminations.push(worker.terminate());
 	await Promise.all(terminations);
@@ -85,7 +86,7 @@ function reportInWorker(input: string, timing: ReportTiming): string {
 		}
 		const reply = receiveMessageOnPort(port1);
 		if (!reply) throw new Error("The indexed report worker completed without a response.");
-		const result = Schema.decodeUnknownSync(Reply)(reply.message);
+		const result = decodeReply(reply.message);
 		if (result.stderr !== undefined)
 			throw new Error(`Indexed report fixture failed: ${result.stderr}`);
 		if (result.stdout === undefined)

@@ -9,6 +9,8 @@ import {
 	type WorldVector as WorldVectorType
 } from "./actor-models.js";
 
+const encodeActorMetadata = Schema.encodeSync(ActorMetadata);
+
 /** Session-local alias into a catalog; never durable actor identity. */
 export const StreamActorIndex = Schema.Int.check(
 	Schema.isGreaterThanOrEqualTo(0),
@@ -207,7 +209,7 @@ export function materializeObservedActor(
 	transform: WorldTransform
 ): ObservedActorType {
 	return ObservedActor.make({
-		...Schema.encodeSync(ActorMetadata)(entry),
+		...encodeActorMetadata(entry),
 		bounds: entry.bounds,
 		className: entry.className,
 		displayName: entry.displayName,
@@ -232,7 +234,7 @@ export function catalogFromSnapshot(
 		const streamIndex = StreamActorIndex.make(index);
 		entries.push(
 			WorldActorCatalogEntry.make({
-				...Schema.encodeSync(ActorMetadata)(actor),
+				...encodeActorMetadata(actor),
 				bounds: actor.bounds,
 				className: actor.className,
 				displayName: actor.displayName,
@@ -480,7 +482,7 @@ export function catalogFromWireEntries(args: {
 		const streamIndex = StreamActorIndex.make(actor.streamIndex);
 		entries.push(
 			WorldActorCatalogEntry.make({
-				...Schema.encodeSync(ActorMetadata)(actor),
+				...encodeActorMetadata(actor),
 				bounds: actor.bounds,
 				className: actor.className,
 				displayName: actor.displayName,

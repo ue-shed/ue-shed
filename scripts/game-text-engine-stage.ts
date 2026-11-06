@@ -26,6 +26,28 @@ import {
 	type EngineSample
 } from "./game-text-engine-results.ts";
 
+const Timing = Schema.Struct({
+	stage: Schema.String,
+	ms: Schema.Finite,
+	requestId: Schema.optionalKey(Schema.String),
+	action: Schema.optionalKey(Schema.String)
+});
+const decodeTiming = Schema.decodeUnknownSync(Timing);
+const Boundary = Schema.Struct({
+	transport: Schema.String,
+	operation: Schema.String,
+	requestBytes: Schema.Finite,
+	responseBytes: Schema.Finite
+});
+const decodeBoundary = Schema.decodeUnknownSync(Boundary);
+const AnswerCounts = Schema.Struct({
+	total: Schema.optionalKey(Schema.Finite),
+	page: Schema.optionalKey(Schema.Struct({ total: Schema.Finite })),
+	rowCount: Schema.optionalKey(Schema.Finite),
+	status: Schema.optionalKey(Schema.String)
+});
+const decodeAnswerCounts = Schema.decodeUnknownResult(AnswerCounts);
+
 export interface EngineStageOptions {
 	readonly project: string;
 	readonly cache: string;
@@ -72,6 +94,9 @@ export async function runEngineStage(options: EngineStageOptions) {
 		"game-text/dist/entry-schema.js",
 		currentSchema
 	);
+	// The schema comes from the revision loaded above, so its compilers are built once per run.
+	const decodeSearchRequest = Schema.decodeUnknownSync(TextCorpusSearchRequest);
+	const decodeSearchRequestSync = Schema.decodeSync(TextCorpusSearchRequest);
 	const { AssetReader, AssetReaderLive, projectIndexProcessLayerFromReader } = await load(
 		"unreal-assets/dist/index.js",
 		currentAssets
@@ -90,31 +115,19 @@ export async function runEngineStage(options: EngineStageOptions) {
 	const timings: unknown[] = [];
 	let activeSample: string | undefined;
 	const topic = channel("ue-shed.game-text-benchmark");
-	const Timing = Schema.Struct({
-		stage: Schema.String,
-		ms: Schema.Finite,
-		requestId: Schema.optionalKey(Schema.String),
-		action: Schema.optionalKey(Schema.String)
-	});
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- diagnostics_channel owns this boundary; decode it immediately.
 	const listener = (message: unknown) =>
-		timings.push({ sampleId: activeSample, ...Schema.decodeUnknownSync(Timing)(message) });
+		timings.push({ sampleId: activeSample, ...decodeTiming(message) });
 	if (process.env.UE_SHED_GAME_TEXT_MEASURE_DIR) topic.subscribe(listener);
 	// What each measured sample moved between the host and the native processes, per operation.
 	const boundaries = new Map<
 		string,
 		Record<string, { requests: number; requestBytes: number; responseBytes: number }>
 	>();
-	const Boundary = Schema.Struct({
-		transport: Schema.String,
-		operation: Schema.String,
-		requestBytes: Schema.Finite,
-		responseBytes: Schema.Finite
-	});
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- diagnostics_channel owns this boundary; decode it immediately.
 	const boundaryListener = (message: unknown) => {
 		if (activeSample === undefined) return;
-		const event = Schema.decodeUnknownSync(Boundary)(message);
+		const event = decodeBoundary(message);
 		const totals = boundaries.get(activeSample) ?? {};
 		const key = `${event.transport}:${event.operation}`;
 		const total = (totals[key] ??= { requests: 0, requestBytes: 0, responseBytes: 0 });
@@ -170,14 +183,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 			sample();
 		}
 		const used = process.threadCpuUsage(cpu);
-		const counted = Schema.decodeUnknownResult(
-			Schema.Struct({
-				total: Schema.optionalKey(Schema.Finite),
-				page: Schema.optionalKey(Schema.Struct({ total: Schema.Finite })),
-				rowCount: Schema.optionalKey(Schema.Finite),
-				status: Schema.optionalKey(Schema.String)
-			})
-		)(answer);
+		const counted = decodeAnswerCounts(answer);
 		const total = Result.isSuccess(counted)
 			? (counted.success.total ?? counted.success.page?.total)
 			: undefined;
@@ -343,7 +349,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 		if (!targetName) throw new Error("The project has no localization target.");
 		const target = LocalizationTargetName.make(targetName);
 		const { lens: _lens, ...list } = mix.list;
-		const base = Schema.decodeSync(TextCorpusSearchRequest)({
+		const base = decodeSearchRequestSync({
 			...list,
 			localization: { target }
 		});
@@ -583,7 +589,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				);
 				const header = (prefix: string) =>
 					search(
-						Schema.decodeSync(TextCorpusSearchRequest)({
+						decodeSearchRequestSync({
 							...base,
 							query: prefix
 						})
@@ -670,7 +676,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				}
 				await run(
 					query.selectLocalizationLines(
-						Schema.decodeSync(TextCorpusSearchRequest)({
+						decodeSearchRequestSync({
 							...plain,
 							lines: lines.slice(0, 5000)
 						}),
@@ -743,7 +749,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 						for (let length = 1; length <= query.length; length++) {
 							const prefix = query.slice(0, length);
 							const id = `${host.name}:${host.openGroups}:${query}:${length}`;
-							const request = Schema.decodeUnknownSync(TextCorpusSearchRequest)(
+							const request = decodeSearchRequest(
 								host.excludeEditor
 									? {
 											...base,
@@ -835,7 +841,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 									: undefined;
 								causePages.push(
 									await search(
-										Schema.decodeSync(TextCorpusSearchRequest)({
+										decodeSearchRequestSync({
 											query: "",
 											capability: "all",
 											pageSize: selection.pageSize,
@@ -880,7 +886,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 									? gatheredIdentityKey(identity)
 									: JSON.stringify(["", ""]);
 								const page = await search(
-									Schema.decodeSync(TextCorpusSearchRequest)({
+									decodeSearchRequestSync({
 										query: "",
 										capability: "all",
 										pageSize: selection.keySearchPageSize,

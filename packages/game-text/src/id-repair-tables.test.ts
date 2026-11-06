@@ -12,6 +12,10 @@ import type {
 } from "@ue-shed/protocol";
 import { applyTextIdTableRepair, prepareTextIdTableRepair } from "./id-repair-tables.js";
 import { TextIdRepairRequest } from "./id-repair-schema.js";
+const decodeTextIdRepairRequest = Schema.decodeSync(TextIdRepairRequest);
+const decodeJsonEffect = Schema.decodeEffect(Schema.Json);
+const decodeUnknownJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
+const decodeTextIdRepairRequestEffect = Schema.decodeEffect(TextIdRepairRequest);
 
 const contract = { name: "unreal-authoring-apply", version: { major: 1, minor: 2 } } as const;
 const authoring: AuthoringApplyRequest = {
@@ -123,7 +127,7 @@ function tableSnapshot(column: { name: string; propertyName?: string }, key = be
 
 /** A key fix for the saved reader's cell `Lamp.<propertyPath>` in DT_Items. */
 function tableRequest(propertyPath: string) {
-	return Schema.decodeSync(TextIdRepairRequest)({
+	return decodeTextIdRepairRequest({
 		projectKey: "C:/Fixture",
 		title: "Fix table key",
 		changes: [
@@ -157,7 +161,7 @@ function connection(snapshot?: ReturnType<typeof tableSnapshot>) {
 			Effect.gen(function* () {
 				calls.push(call.functionName);
 				if (call.functionName === "GetCapabilityManifest")
-					return yield* Schema.decodeEffect(Schema.Json)({
+					return yield* decodeJsonEffect({
 						schemaVersion: 1,
 						producerKind: "unreal_editor",
 						authoringObjectPath:
@@ -176,11 +180,9 @@ function connection(snapshot?: ReturnType<typeof tableSnapshot>) {
 						]
 					}).pipe(Effect.orDie);
 				if (call.functionName === "GetTableSnapshot" && snapshot)
-					return yield* Schema.decodeUnknownEffect(Schema.Json)(snapshot).pipe(
-						Effect.orDie
-					);
+					return yield* decodeUnknownJsonEffect(snapshot).pipe(Effect.orDie);
 				if (call.functionName === "Apply")
-					return yield* Schema.decodeEffect(Schema.Json)({
+					return yield* decodeJsonEffect({
 						contract,
 						operationId: "repair",
 						errors: [],
@@ -221,7 +223,7 @@ it.effect("retains committed table edits before a save reply is lost", () =>
 it.effect("refuses copied table paths that still point at another physical package", () =>
 	Effect.gen(function* () {
 		const remote = connection();
-		const request = yield* Schema.decodeEffect(TextIdRepairRequest)({
+		const request = yield* decodeTextIdRepairRequestEffect({
 			projectKey: "C:/Fixture",
 			title: "Fix copied table",
 			changes: [

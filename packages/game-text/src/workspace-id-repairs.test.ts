@@ -15,6 +15,10 @@ import { makeTextOccurrenceId, makeTextUnitId } from "./identifiers.js";
 import { textOccurrenceFromExtraction } from "./corpus.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import type { TextCorpusFocus } from "./schema.js";
+const decodeJsonEffect = Schema.decodeEffect(Schema.Json);
+const decodeActionsRequestJson = Schema.decodeUnknownEffect(
+	Schema.fromJsonString(GameTextActionsRequest)
+);
 
 // A rooted path on every platform, so artifact paths resolve the same on Windows and Linux.
 const root = resolve("/Fixture").replaceAll("\\", "/");
@@ -99,7 +103,7 @@ function setup(dataTable = false, authoring = false) {
 		Effect.gen(function* () {
 			calls.push(call.functionName);
 			if (call.functionName === "GetCapabilityManifest")
-				return yield* Schema.decodeEffect(Schema.Json)({
+				return yield* decodeJsonEffect({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
 					capabilities: [
@@ -121,9 +125,9 @@ function setup(dataTable = false, authoring = false) {
 						plugins: []
 					}
 				}).pipe(Effect.orDie);
-			const input = yield* Schema.decodeUnknownEffect(
-				Schema.fromJsonString(GameTextActionsRequest)
-			)(call.parameters.RequestJson).pipe(Effect.orDie);
+			const input = yield* decodeActionsRequestJson(call.parameters.RequestJson).pipe(
+				Effect.orDie
+			);
 			if (input.mode === "apply") mutations++;
 			if (input.mode === "apply" && lostReply)
 				return yield* new RemoteControlClientError({
@@ -171,7 +175,7 @@ function setup(dataTable = false, authoring = false) {
 							]
 						: []
 			};
-			return yield* Schema.decodeEffect(Schema.Json)(result).pipe(Effect.orDie);
+			return yield* decodeJsonEffect(result).pipe(Effect.orDie);
 		})
 	);
 	const unused = Effect.suspend(() => Effect.die("Unexpected reader operation"));

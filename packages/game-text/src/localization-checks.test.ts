@@ -19,6 +19,10 @@ import {
 } from "./localization-quality-schema.js";
 import { STARTER_CHECK_RULES, STARTER_GAME_TEXT_RULES } from "./starter-rules.js";
 import { GameTextRuleDocument } from "./game-text-rules.js";
+const decodeGameTextRuleDocument = Schema.decodeSync(GameTextRuleDocument);
+
+const decodeLocalizationQualityReport = Schema.decodeUnknownSync(LocalizationQualityReport);
+
 function checked(
 	source: string,
 	translation: string,
@@ -75,9 +79,7 @@ describe("built-in localization quality checks", () => {
 		expect(report.coverage).toEqual(text.coverage);
 		expect(report.diagnostics).toEqual(text.diagnostics);
 		expect(files.cultures[1]?.archive.status).toBe("read");
-		expect(
-			Schema.decodeUnknownSync(LocalizationQualityReport)(JSON.parse(JSON.stringify(report)))
-		).toEqual(report);
+		expect(decodeLocalizationQualityReport(JSON.parse(JSON.stringify(report)))).toEqual(report);
 	});
 	it("checks pending PO text even when another fact has primary state, and never fixes several renames", () => {
 		const pending = checked("Hello {Name}", "Hallo {Name}", undefined, "Hallo {Wrong}").report;
@@ -143,7 +145,7 @@ describe("built-in localization quality checks", () => {
 		);
 		expect(selected.length).toBeGreaterThan(0);
 		expect(selected.every((finding) => finding.kind === "format_argument_renamed")).toBe(true);
-		const doc = Schema.decodeSync(GameTextRuleDocument)({
+		const doc = decodeGameTextRuleDocument({
 			...STARTER_GAME_TEXT_RULES,
 			rules: STARTER_GAME_TEXT_RULES.rules.map((entry) =>
 				entry.kind === "format_argument_renamed" ? { ...entry, enabled: false } : entry

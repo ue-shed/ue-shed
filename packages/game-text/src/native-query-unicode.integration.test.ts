@@ -6,6 +6,7 @@ import { GameTextIndexRefresh, GameTextIndexSource } from "./index-contract.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
 import { LocalizationFocusRequest, localizationFocusPage } from "./localization-view.js";
+const decodeLocalizationFocusRequest = Schema.decodeEffect(LocalizationFocusRequest);
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
@@ -176,7 +177,7 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 						expect(yield* model.query.localizationFocus(lines[0]!.id)).toEqual(
 							lines[0]
 						);
-						const detail = yield* Schema.decodeEffect(LocalizationFocusRequest)({
+						const detail = yield* decodeLocalizationFocusRequest({
 							target: fixture.target.name,
 							selection: { kind: "line", id: lines[0]!.id }
 						}).pipe(Effect.orDie);

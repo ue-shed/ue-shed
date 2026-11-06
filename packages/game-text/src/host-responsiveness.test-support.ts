@@ -21,6 +21,7 @@ import { target } from "./localization.test-support.js";
 import { gameTextIndexRefreshLayer } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { GameTextIndexBuilderLive } from "./native-index-builder.js";
+const decodeLocalizationTargetEffect = Schema.decodeEffect(LocalizationTarget);
 
 /** A synthetic project shaped like a large server-hosted scan: most inventory rows are packages
  * without text, a minority carry many occurrences, and a two-culture target localizes them.
@@ -57,7 +58,7 @@ export const makeSyntheticHostFixture = Effect.fn("Test.GameText.hostFixture")(f
 		(path) => Effect.promise(() => rm(path, { recursive: true, force: true }))
 	);
 	const projectRoot = yield* Effect.promise(() => realpath(directory));
-	const authored = yield* Schema.decodeEffect(LocalizationTarget)({
+	const authored = yield* decodeLocalizationTargetEffect({
 		...target,
 		name: "Synthetic",
 		outputPaths: {

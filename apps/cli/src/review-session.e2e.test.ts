@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { parseRecord, runInProcessCli, runSuccessfulCli } from "./cli-in-process.test-support.js";
+const decodeString = Schema.decodeUnknownSync(Schema.String);
 
 describe("ue-shed Review session CLI commands", () => {
 	it("generates a permissive rig and tunes its durable session from separate CLI calls", async () => {
@@ -88,7 +89,7 @@ describe("ue-shed Review session CLI commands", () => {
 			]);
 			expect(bootstrapProcess.status, bootstrapProcess.stderr).toBe(0);
 			const session = parseRecord(bootstrapProcess.stdout);
-			const sessionId = Schema.decodeUnknownSync(Schema.String)(session.id);
+			const sessionId = decodeString(session.id);
 			await writeFile(
 				patchPath,
 				JSON.stringify({

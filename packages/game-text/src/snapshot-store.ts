@@ -62,6 +62,10 @@ const StoreConfiguration = Schema.Struct({
 	projectKey: Schema.NonEmptyString.check(Schema.isMaxLength(4096)),
 	targetKey: Schema.NonEmptyString.check(Schema.isMaxLength(4096))
 });
+const decodeInputKeys = Schema.decodeSync(InputKeys);
+const decodeManifestJson = Schema.decodeSync(Schema.fromJsonString(Manifest));
+const decodeOwnerJson = Schema.decodeSync(Schema.fromJsonString(Owner));
+const decodeStoreConfiguration = Schema.decodeEffect(StoreConfiguration);
 export { SnapshotStoreError, isSnapshotStoreError } from "./snapshot-store-error.js";
 import { SnapshotStoreError, isSnapshotStoreError } from "./snapshot-store-error.js";
 
@@ -283,7 +287,7 @@ async function acquireLock(directory: string) {
 			const ownerPath = join(lock, names[0]!);
 			let owner;
 			try {
-				owner = Schema.decodeSync(Schema.fromJsonString(Owner))(
+				owner = decodeOwnerJson(
 					new TextDecoder().decode(await readBounded(ownerPath, 4096, "lock"))
 				);
 			} catch {
@@ -361,7 +365,7 @@ export function snapshotStoreNodeLayer(
 	options: SnapshotStoreOptions
 ): Layer.Layer<SnapshotStore, SnapshotStoreError> {
 	return Layer.unwrap(
-		Schema.decodeEffect(StoreConfiguration)(options).pipe(
+		decodeStoreConfiguration(options).pipe(
 			Effect.mapError(
 				(cause) =>
 					new SnapshotStoreError({
@@ -413,7 +417,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 			throw cause;
 		}
 		try {
-			const value = Schema.decodeSync(Schema.fromJsonString(Manifest))(
+			const value = decodeManifestJson(
 				new TextDecoder("utf-8", { fatal: true }).decode(bytes)
 			);
 			if (value.identity !== identity)
@@ -601,7 +605,7 @@ function makeNodeLayer(options: SnapshotStoreOptions): Layer.Layer<SnapshotStore
 										});
 									let keys;
 									try {
-										keys = Schema.decodeSync(InputKeys)(inputKeys);
+										keys = decodeInputKeys(inputKeys);
 									} catch (cause) {
 										throw new SnapshotStoreError({
 											retrySafe:

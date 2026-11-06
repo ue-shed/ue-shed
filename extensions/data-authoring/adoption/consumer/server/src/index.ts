@@ -15,6 +15,7 @@ import { Config, Effect, Layer, ManagedRuntime, Option, Schema } from "effect";
 
 const maxRequestBytes = 1024 * 1024;
 const staticRoot = resolve(import.meta.dirname, "../../app/dist");
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 
 const configurationLive = Layer.unwrap(
 	Effect.gen(function* () {
@@ -77,9 +78,7 @@ async function readJson(request: IncomingMessage): Promise<Schema.Json> {
 		if (bytes > maxRequestBytes) throw new Error("Authoring request exceeds 1 MiB");
 		chunks.push(buffer);
 	}
-	return Schema.decodeUnknownSync(Schema.Json)(
-		JSON.parse(Buffer.concat(chunks).toString("utf8"))
-	);
+	return decodeJson(JSON.parse(Buffer.concat(chunks).toString("utf8")));
 }
 
 async function handleAuthoring(request: IncomingMessage, response: ServerResponse): Promise<void> {

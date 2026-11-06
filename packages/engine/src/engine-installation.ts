@@ -100,6 +100,9 @@ export class EngineInstallationDiscovery extends Context.Service<
 	EngineInstallationDiscoveryApi
 >()("@ue-shed/engine/EngineInstallationDiscovery") {}
 
+const decodeProjectDescriptor = Schema.decodeUnknownSync(ProjectDescriptor);
+const isEngineInstallationError = Schema.is(EngineInstallationError);
+
 function failure(
 	code: EngineInstallationError["code"],
 	message: string,
@@ -217,7 +220,7 @@ function withoutTrailingCommas(contents: string): string {
  */
 export function parseUnrealProjectDescriptor(contents: string): ProjectDescriptor {
 	const withoutBom = contents.charCodeAt(0) === 0xfeff ? contents.slice(1) : contents;
-	return Schema.decodeUnknownSync(ProjectDescriptor)(
+	return decodeProjectDescriptor(
 		JSON.parse(withoutTrailingCommas(withoutJsonComments(withoutBom)))
 	);
 }
@@ -239,7 +242,7 @@ export function readEngineInstallation(
 		).pipe(
 			Effect.flatMap(Schema.decodeUnknownEffect(EngineBuildVersion)),
 			Effect.mapError((cause) =>
-				Schema.is(EngineInstallationError)(cause)
+				isEngineInstallationError(cause)
 					? cause
 					: failure(
 							"invalid_engine_root",
@@ -262,36 +265,34 @@ export function readEngineInstallation(
 	});
 }
 
-function associationOf(
+const associationOf = Effect.fn("EngineInstallationDiscovery.associationOf")(function* (
 	projectDescriptor: string
-): Effect.Effect<string | undefined, EngineInstallationError> {
-	return Effect.gen(function* () {
-		if (extname(projectDescriptor).toLocaleLowerCase() !== ".uproject") {
-			return yield* failure(
+): Effect.fn.Return<string | undefined, EngineInstallationError> {
+	if (extname(projectDescriptor).toLocaleLowerCase() !== ".uproject") {
+		return yield* failure(
+			"invalid_project_descriptor",
+			"Engine discovery requires an explicit .uproject descriptor.",
+			"Choose the project descriptor rather than an ambient directory.",
+			false
+		);
+	}
+	const value = yield* Effect.tryPromise({
+		try: (signal) =>
+			readFile(projectDescriptor, { encoding: "utf8", signal }).then(
+				parseUnrealProjectDescriptor
+			),
+		catch: (cause) =>
+			failure(
 				"invalid_project_descriptor",
-				"Engine discovery requires an explicit .uproject descriptor.",
-				"Choose the project descriptor rather than an ambient directory.",
-				false
-			);
-		}
-		const value = yield* Effect.tryPromise({
-			try: (signal) =>
-				readFile(projectDescriptor, { encoding: "utf8", signal }).then(
-					parseUnrealProjectDescriptor
-				),
-			catch: (cause) =>
-				failure(
-					"invalid_project_descriptor",
-					"The selected .uproject descriptor is unreadable or invalid JSON.",
-					"Choose a readable Unreal .uproject descriptor.",
-					false,
-					undefined,
-					cause
-				)
-		});
-		return value.EngineAssociation?.trim() || undefined;
+				"The selected .uproject descriptor is unreadable or invalid JSON.",
+				"Choose a readable Unreal .uproject descriptor.",
+				false,
+				undefined,
+				cause
+			)
 	});
-}
+	return value.EngineAssociation?.trim() || undefined;
+});
 
 function versionLabel(version: EngineVersion): string {
 	return `${version.major}.${version.minor}`;

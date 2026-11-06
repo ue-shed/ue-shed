@@ -19,9 +19,15 @@ import {
 	editAuthoringText,
 	makeAuthoringJsonSchema
 } from "./authoring.js";
+const decodeAuthoringTableSnapshotV = Schema.decodeSync(AuthoringTableSnapshotV2);
+const decodeAuthoringValue = Schema.decodeSync(AuthoringValue);
 
 const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
+const decodeUnknownAuthoringValue = Schema.decodeUnknownSync(AuthoringValue);
+const encodeAuthoringValue = Schema.encodeUnknownSync(AuthoringValue);
+const decodeEndpointError = Schema.decodeUnknownSync(AuthoringEndpointError);
+const isApplyResult = Schema.is(AuthoringApplyResult);
 
 describe("authoring wire contract", () => {
 	it("accepts recursive typed values and explicit unsupported evidence", () => {
@@ -136,7 +142,7 @@ describe("authoring wire contract", () => {
 			type,
 			typeName: "TextProperty"
 		});
-		const snapshot = Schema.decodeSync(AuthoringTableSnapshotV2)({
+		const snapshot = decodeAuthoringTableSnapshotV({
 			authority: { kind: "live_editor", producerId: "producer", sessionId: "session" },
 			completeness: "complete",
 			contract: { name: "unreal-authoring", version: { major: 2, minor: 4 } },
@@ -209,8 +215,8 @@ describe("authoring wire contract", () => {
 				}
 			]
 		};
-		const decoded = Schema.decodeSync(AuthoringValue)(nested);
-		expect(Schema.encodeUnknownSync(AuthoringValue)(decoded)).toEqual(nested);
+		const decoded = decodeAuthoringValue(nested);
+		expect(encodeAuthoringValue(decoded)).toEqual(nested);
 	});
 
 	it("keeps the runtime schemas conformant with the language-neutral contracts", async () => {
@@ -264,11 +270,11 @@ describe("authoring wire contract", () => {
 			{ kind: "text", value: "legacy" }
 		];
 		for (const value of values) {
-			const decoded = Schema.decodeUnknownSync(AuthoringValue)(value);
-			expect(Schema.encodeUnknownSync(AuthoringValue)(decoded)).toEqual(value);
+			const decoded = decodeUnknownAuthoringValue(value);
+			expect(encodeAuthoringValue(decoded)).toEqual(value);
 		}
 		expect(() =>
-			Schema.decodeUnknownSync(AuthoringValue)({
+			decodeUnknownAuthoringValue({
 				identity: { kind: "string_table", tableId: "/Game/ST_Menu.ST_Menu" },
 				kind: "text",
 				value: "Main Menu"
@@ -323,8 +329,8 @@ describe("authoring wire contract", () => {
 
 	it("decodes producer refusals separately from operation results", () => {
 		const refusal = { code: "operation_not_found", message: "op-1", status: "error" };
-		expect(Schema.decodeUnknownSync(AuthoringEndpointError)(refusal)).toEqual(refusal);
-		expect(Schema.is(AuthoringApplyResult)(refusal)).toBe(false);
+		expect(decodeEndpointError(refusal)).toEqual(refusal);
+		expect(isApplyResult(refusal)).toBe(false);
 	});
 });
 

@@ -49,6 +49,8 @@ export function runSuccessfulCli(args: readonly string[]): string {
 
 export const JsonObject = Schema.Record(Schema.String, Schema.Json);
 
+const decodeJsonObject = Schema.decodeUnknownSync(JsonObject);
+
 export function parseRecord(output: string): Schema.JsonObject {
-	return Schema.decodeUnknownSync(JsonObject)(JSON.parse(output));
+	return decodeJsonObject(JSON.parse(output));
 }

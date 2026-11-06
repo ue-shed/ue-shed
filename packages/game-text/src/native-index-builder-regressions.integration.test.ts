@@ -17,6 +17,7 @@ import { hydrateJoinedTarget } from "./joined-target-hydrate.test-support.js";
 import { sharedIndexNodeLayer } from "./shared-index.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import { target } from "./localization.test-support.js";
+const decodeLocalizationReviewFile = Schema.decodeSync(LocalizationReviewFile);
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const files = [
@@ -65,7 +66,7 @@ describe.skipIf(!executable)("native join current evidence", () => {
 					}),
 					`msgctxt ${JSON.stringify(`${identity},${key}`)}\nmsgid ${JSON.stringify(source)}\nmsgstr "Shipped"\n`
 				];
-				const review = Schema.decodeSync(LocalizationReviewFile)({
+				const review = decodeLocalizationReviewFile({
 					schemaVersion: 1,
 					target: authored.name,
 					acceptedFindings: [],

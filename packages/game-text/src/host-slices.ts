@@ -8,13 +8,9 @@ const nextTurn = (callback: () => void) => {
 };
 
 /**
- * Yields whenever the host's event loop has gone `budgetMs` without a turn.
- *
- * Effect's default scheduler yields after 2,048 operations in one run of the fiber loop, and every
- * promise resume starts a new run. An index build that alternates synchronous work with promises
- * that settle from memory (cached string frames, cached segment indexes) therefore never reaches a
- * macrotask: a server host stops answering HTTP and IPC for the whole build. This scheduler watches
- * real event-loop turns instead of operation counts.
+ * Yields whenever the host's event loop has gone `budgetMs` without a turn. Effect's default
+ * scheduler counts operations per run, and every promise resume starts a new run, so a build whose
+ * promises settle from memory never reaches a macrotask and the host stops answering HTTP and IPC.
  */
 export class HostSliceScheduler implements Scheduler.Scheduler {
 	readonly executionMode = "async" as const;
@@ -82,28 +78,26 @@ export class HostSliceClock {
 export type HostSteps<A> = Generator<void, A, void>;
 
 /** Runs host steps in the Effect scheduler, letting the event loop run between slices. */
-export const runHostSteps = <A>(steps: HostSteps<A>) =>
-	Effect.gen(function* () {
-		for (;;) {
-			const next = steps.next();
-			if (next.done) return next.value;
-			yield* Effect.yieldNow;
-		}
-	});
+export const runHostSteps = Effect.fnUntraced(function* <A>(steps: HostSteps<A>) {
+	for (;;) {
+		const next = steps.next();
+		if (next.done) return next.value;
+		yield* Effect.yieldNow;
+	}
+});
 
 /** Runs host steps like `runHostSteps`, mapping a throw from any step to a typed failure. */
-export const tryHostSteps = <A, E>(
+export const tryHostSteps = Effect.fnUntraced(function* <A, E>(
 	steps: () => HostSteps<A>,
 	onThrow: (cause: unknown) => E
-): Effect.Effect<A, E> =>
-	Effect.gen(function* () {
-		const running = yield* Effect.try({ try: steps, catch: onThrow });
-		for (;;) {
-			const next = yield* Effect.try({ try: () => running.next(), catch: onThrow });
-			if (next.done) return next.value;
-			yield* Effect.yieldNow;
-		}
-	});
+): Effect.fn.Return<A, E> {
+	const running = yield* Effect.try({ try: steps, catch: onThrow });
+	for (;;) {
+		const next = yield* Effect.try({ try: () => running.next(), catch: onThrow });
+		if (next.done) return next.value;
+		yield* Effect.yieldNow;
+	}
+});
 
 /** Runs host steps to completion on the current call stack, for synchronous callers. */
 export function runHostStepsSync<A>(steps: HostSteps<A>): A {

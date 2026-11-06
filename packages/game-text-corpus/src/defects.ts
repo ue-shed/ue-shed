@@ -19,7 +19,10 @@ export interface CorpusKnownDefect {
 export const corpusKnownDefects: readonly CorpusKnownDefect[] = [];
 
 const Dictionary = Schema.Record(Schema.String, Schema.Json);
+const decodeDictionary = Schema.decodeSync(Dictionary);
 const isStringArray = Schema.is(Schema.Array(Schema.String));
+const decodeUnknownDictionary = Schema.decodeUnknownSync(Dictionary);
+const isCorpusSubject = Schema.is(CorpusSubject);
 // These fields are sets in the portable diff; finding evidence and problem priority remain ordered.
 type CorpusDefectValue = Schema.Json | undefined;
 function sameDefectField(key: string, left: CorpusDefectValue, right: CorpusDefectValue) {
@@ -65,18 +68,18 @@ export function corpusDefectsFor(
 				if (!subject.findings.some((finding) => finding.check === template.withCheck))
 					continue;
 			} else if (template.culture !== subject.culture) continue;
-			const right = Schema.decodeUnknownSync(Dictionary)(template.rightAnswer),
-				value = Schema.decodeSync(Dictionary)(subject);
+			const right = decodeUnknownDictionary(template.rightAnswer),
+				value = decodeDictionary(subject);
 			if (!Object.keys(right).every((key) => sameDefectField(key, right[key], value[key])))
 				throw new Error(`Known defect no longer describes the recipe: ${subject.case}`);
-			Object.assign(predicted, Schema.decodeUnknownSync(Dictionary)(template.actual));
+			Object.assign(predicted, decodeUnknownDictionary(template.actual));
 			explanations.push(template.why);
 			defectIds.push(...template.defects);
 		}
 
 		if (explanations.length) {
-			const actual = Schema.decodeSync(Dictionary)(predicted),
-				wanted = Schema.decodeSync(Dictionary)(subject);
+			const actual = decodeDictionary(predicted),
+				wanted = decodeDictionary(subject);
 			const fields = Object.keys(actual).filter(
 				(key) => !sameDefectField(key, actual[key], wanted[key])
 			);
@@ -122,18 +125,15 @@ export function triageCorpusDifferences(
 		const found = bySubject.get(`${difference.case}\0${difference.subject}`);
 		// Each pinned defect excuses one result only.
 		const candidates = found && !matched.has(found) ? [found] : [];
-		if (
-			Schema.is(CorpusSubject)(difference.expected) &&
-			Schema.is(CorpusSubject)(difference.actual)
-		) {
+		if (isCorpusSubject(difference.expected) && isCorpusSubject(difference.actual)) {
 			const expected = difference.expected,
 				actual = difference.actual,
 				repaired = { ...actual };
 			for (const defect of candidates) {
-				const right = Schema.decodeUnknownSync(Dictionary)(defect.rightAnswer),
-					today = Schema.decodeUnknownSync(Dictionary)(defect.actual);
-				const e = Schema.decodeSync(Dictionary)(expected),
-					a = Schema.decodeSync(Dictionary)(actual);
+				const right = decodeUnknownDictionary(defect.rightAnswer),
+					today = decodeUnknownDictionary(defect.actual);
+				const e = decodeDictionary(expected),
+					a = decodeDictionary(actual);
 				if (
 					!Object.keys(right).every(
 						(key) =>

@@ -5,6 +5,7 @@ export const AuthoringAssetPath = Schema.Trim.check(
 	Schema.isNonEmpty(),
 	Schema.isMaxLength(32_768)
 );
+const decodeAuthoringAssetPathEffect = Schema.decodeEffect(AuthoringAssetPath);
 export const AuthoringFailureReason = Schema.Literals([
 	"malformed_package",
 	"reader_failure",
@@ -60,6 +61,7 @@ const WasmAuthoringOutput = Schema.Union([
 		message: Schema.NonEmptyString
 	})
 ]);
+const decodeWasmAuthoringOutput = Schema.decodeUnknownEffect(WasmAuthoringOutput);
 
 function diagnosticCode(code: string): string {
 	switch (code) {
@@ -95,7 +97,7 @@ export const adaptWasmAuthoringTable = Effect.fn("DataAuthoring.adaptWasmTable")
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<AuthoringReadResult> {
-	const path = yield* Schema.decodeEffect(AuthoringAssetPath)(assetPath).pipe(
+	const path = yield* decodeAuthoringAssetPathEffect(assetPath).pipe(
 		Effect.catchTag("SchemaError", () => Effect.undefined)
 	);
 	if (path === undefined) {
@@ -106,7 +108,7 @@ export const adaptWasmAuthoringTable = Effect.fn("DataAuthoring.adaptWasmTable")
 			recovery: "Rename the file and choose it again."
 		};
 	}
-	return yield* Schema.decodeUnknownEffect(WasmAuthoringOutput)(output).pipe(
+	return yield* decodeWasmAuthoringOutput(output).pipe(
 		Effect.map((read): AuthoringReadResult => {
 			if (read.status === "error") {
 				const reason =

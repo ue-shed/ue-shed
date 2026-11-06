@@ -7,55 +7,59 @@ import {
 	NiagaraPreviewProducerRequest,
 	NiagaraPreviewRunManifest
 } from "./schema.js";
+const decodeNiagaraPreviewProducerRequestResult = Schema.decodeResult(
+	NiagaraPreviewProducerRequest
+);
+const decodeNiagaraPreviewProducerRequest = Schema.decodeSync(NiagaraPreviewProducerRequest);
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeUnknownNiagaraPreviewProducerRequest = Schema.decodeUnknownSync(
+	NiagaraPreviewProducerRequest
+);
+const decodeNiagaraPreviewProducerReceipt = Schema.decodeUnknownSync(NiagaraPreviewProducerReceipt);
+const decodeNiagaraPreviewRunManifest = Schema.decodeUnknownSync(NiagaraPreviewRunManifest);
 const fixtures = fileURLToPath(
 	new URL("../../protocol/contracts/niagara/preview/v1/fixtures/", import.meta.url)
 );
 
 async function fixture(name: string): Promise<Schema.Json> {
-	return Schema.decodeUnknownSync(Schema.Json)(
-		JSON.parse(await readFile(`${fixtures}/${name}`, "utf8"))
-	);
+	return decodeJson(JSON.parse(await readFile(`${fixtures}/${name}`, "utf8")));
 }
 
 describe("Niagara preview wire contracts", () => {
 	it("decodes the authoritative fixtures", async () => {
 		expect(
-			Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(await fixture("request.json"))
-		).toMatchObject({ systemObjectPath: "/Game/Fixture/Niagara/NS_Preview.NS_Preview" });
-		expect(
-			Schema.decodeUnknownSync(NiagaraPreviewProducerReceipt)(await fixture("receipt.json"))
-		).toMatchObject({ status: "complete" });
-		expect(
-			Schema.decodeUnknownSync(NiagaraPreviewRunManifest)(await fixture("manifest.json"))
-		).toMatchObject({ status: "complete" });
+			decodeUnknownNiagaraPreviewProducerRequest(await fixture("request.json"))
+		).toMatchObject({
+			systemObjectPath: "/Game/Fixture/Niagara/NS_Preview.NS_Preview"
+		});
+		expect(decodeNiagaraPreviewProducerReceipt(await fixture("receipt.json"))).toMatchObject({
+			status: "complete"
+		});
+		expect(decodeNiagaraPreviewRunManifest(await fixture("manifest.json"))).toMatchObject({
+			status: "complete"
+		});
 	});
 
 	it("rejects a request whose total shape has invalid bounds", async () => {
-		const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(
-			await fixture("request.json")
-		);
+		const request = decodeUnknownNiagaraPreviewProducerRequest(await fixture("request.json"));
 		const invalid = { ...request, settings: { width: 16_384 } };
-		expect(Schema.decodeResult(NiagaraPreviewProducerRequest)(invalid)._tag).toBe("Failure");
+		expect(decodeNiagaraPreviewProducerRequestResult(invalid)._tag).toBe("Failure");
 	});
 
 	it("accepts hyphenated Unreal object names in the system object path", async () => {
-		const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(
-			await fixture("request.json")
-		);
+		const request = decodeUnknownNiagaraPreviewProducerRequest(await fixture("request.json"));
 		const hyphenated = {
 			...request,
 			systemObjectPath: "/Game/VFX/Combat/Blockout_Element.NS_GrassHit_Lv2-3"
 		};
-		expect(Schema.decodeSync(NiagaraPreviewProducerRequest)(hyphenated).systemObjectPath).toBe(
+		expect(decodeNiagaraPreviewProducerRequest(hyphenated).systemObjectPath).toBe(
 			"/Game/VFX/Combat/Blockout_Element.NS_GrassHit_Lv2-3"
 		);
 		const missingObject = {
 			...request,
 			systemObjectPath: "/Game/VFX/Combat/Blockout_Element"
 		};
-		expect(Schema.decodeResult(NiagaraPreviewProducerRequest)(missingObject)._tag).toBe(
-			"Failure"
-		);
+		expect(decodeNiagaraPreviewProducerRequestResult(missingObject)._tag).toBe("Failure");
 	});
 });

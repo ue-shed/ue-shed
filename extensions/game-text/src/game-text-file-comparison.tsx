@@ -262,11 +262,9 @@ const overview = (view: ComparisonView) =>
 	view.filter.kind === undefined && view.filter.query.trim() === "" && view.asset === "";
 
 /**
- * Compare two localization files: choose an older and a newer `.po`, `.archive` or `.manifest`,
- * and see which keys came, went, moved to a new key or changed, grouped by what that means for
- * their translations. The engine filters and pages over every change; unfiltered, each group shows
- * a few changes and the assets most of them come from.
- *
+ * Compare two localization files (`.po`, `.archive` or `.manifest`): keys that came, went, moved
+ * or changed, grouped by what that means for their translations. The engine filters and pages
+ * over every change; unfiltered, each group shows a few changes and their most common assets.
  * `hidden` keeps the chosen files and the comparison while another view is shown.
  */
 export function GameTextFileComparison(props: {

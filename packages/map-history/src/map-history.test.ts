@@ -15,6 +15,11 @@ import {
 } from "./map-history.js";
 import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 import { PerforceFastMapHistoryQuery, PerforceMapHistoryQuery } from "./schema.js";
+const decodePerforceMapHistoryQuery = Schema.decodeSync(PerforceMapHistoryQuery);
+const decodePerforceFastMapHistoryQuery = Schema.decodeSync(PerforceFastMapHistoryQuery);
+const encodePerforceFastMapHistoryQuery = Schema.encodeSync(PerforceFastMapHistoryQuery);
+const decodePerforceFastMapHistoryQueryEffect = Schema.decodeEffect(PerforceFastMapHistoryQuery);
+const encodePerforceFastMapHistoryQueryEffect = Schema.encodeEffect(PerforceFastMapHistoryQuery);
 
 const projectRoot = "C:/Project";
 const mapPath = "Content/Maps/L_Example.umap";
@@ -26,7 +31,7 @@ const externalActorDepotPath =
 const externalActorRoot = "C:/Project/Content/__ExternalActors__/Maps/L_Example";
 
 function query(maxMaterializedFiles = 10, maxDurationMs = 60_000) {
-	return Schema.decodeSync(PerforceMapHistoryQuery)({
+	return decodePerforceMapHistoryQuery({
 		limits: {
 			maxChangelists: 10,
 			maxConcurrency: 2,
@@ -587,7 +592,7 @@ describe("readPerforceMapHistory", () => {
 });
 
 function fastQuery() {
-	return Schema.decodeSync(PerforceFastMapHistoryQuery)({
+	return decodePerforceFastMapHistoryQuery({
 		limits: {
 			maxChangelists: 10,
 			maxConcurrency: 2,
@@ -610,8 +615,8 @@ function fastQuery() {
 }
 
 function fastClassQuery() {
-	return Schema.decodeSync(PerforceFastMapHistoryQuery)({
-		...Schema.encodeSync(PerforceFastMapHistoryQuery)(fastQuery()),
+	return decodePerforceFastMapHistoryQuery({
+		...encodePerforceFastMapHistoryQuery(fastQuery()),
 		target: { classPath: actor.classPath, kind: "actor_class" }
 	});
 }
@@ -718,10 +723,8 @@ describe("readPerforceFastMapHistory", () => {
 			)
 		);
 		return Effect.gen(function* () {
-			const missing = yield* Schema.decodeEffect(PerforceFastMapHistoryQuery)({
-				...(yield* Schema.encodeEffect(PerforceFastMapHistoryQuery)(fastQuery()).pipe(
-					Effect.orDie
-				)),
+			const missing = yield* decodePerforceFastMapHistoryQueryEffect({
+				...(yield* encodePerforceFastMapHistoryQueryEffect(fastQuery()).pipe(Effect.orDie)),
 				target: {
 					identity: {
 						actorGuid: "00000000-0000-0000-0000-000000000099",

@@ -26,6 +26,8 @@ import {
 } from "./localization-check.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
+const decodeLocalizationTargetName = Schema.decodeEffect(LocalizationTargetName);
+const decodeLocalizationRunRequest = Schema.decodeEffect(LocalizationRunRequest);
 
 type LocalizationRunCommand = Extract<CliCommand, { readonly _tag: "LocalizationRun" }>;
 class LocalizationRunConfigurationError extends Schema.TaggedError<
@@ -47,6 +49,7 @@ const LocalizationRunFailure = Schema.Union([
 	LocalizationRunConfigurationError,
 	LocalizationCheckOutputError
 ]);
+const encodeLocalizationRunFailure = Schema.encodeEffect(LocalizationRunFailure);
 function discoveryFailure(error: LocalizationError): LocalizationOperationError {
 	switch (error.code) {
 		case "file_missing":
@@ -70,9 +73,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 			Effect.gen(function* () {
 				const runtime = yield* CliRuntime;
 				const work = Effect.gen(function* () {
-					const name = yield* Schema.decodeEffect(LocalizationTargetName)(
-						command.target
-					).pipe(
+					const name = yield* decodeLocalizationTargetName(command.target).pipe(
 						Effect.mapError((cause) =>
 							localizationOperationError("invalid_request", cause)
 						)
@@ -91,7 +92,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 					};
 					if (command.engineRoot !== undefined)
 						Object.assign(input, { explicitEngineRoot: command.engineRoot });
-					const request = yield* Schema.decodeEffect(LocalizationRunRequest)(input).pipe(
+					const request = yield* decodeLocalizationRunRequest(input).pipe(
 						Effect.mapError((cause) =>
 							localizationOperationError("invalid_request", cause)
 						)
@@ -257,7 +258,7 @@ export const runLocalizationOperation = Effect.fn("Cli.workflow.localization_run
 								const output = {
 									schemaVersion: 1,
 									type: "failure",
-									error: yield* Schema.encodeEffect(LocalizationRunFailure)(
+									error: yield* encodeLocalizationRunFailure(
 										error.code === "target_not_found"
 											? new LocalizationOperationError({
 													cause: error,

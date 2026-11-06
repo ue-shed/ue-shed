@@ -28,6 +28,10 @@ const Failure = Schema.Struct({
 	status: Schema.Literal("failed"),
 	error: Schema.Struct({ code: Schema.String, message: Schema.String, recovery: Schema.String })
 });
+const ChangeSetJson = Schema.fromJsonString(LocalizationChangeSet);
+const FailureJson = Schema.fromJsonString(Failure);
+const decodeChangeSetJson = Schema.decodeEffect(ChangeSetJson);
+const decodeFailureJson = Schema.decodeEffect(FailureJson);
 
 it.effect("exclusively creates a change-set JSON and preserves an existing proposal", () =>
 	Effect.gen(function* () {
@@ -36,11 +40,7 @@ it.effect("exclusively creates a change-set JSON and preserves an existing propo
 		const destination = join(directory, "changes.json");
 		yield* writeLocalizationCheckChanges(destination, document);
 		const initial = yield* fs.readFileString(destination);
-		expect(
-			yield* Schema.decodeEffect(Schema.fromJsonString(LocalizationChangeSet))(initial).pipe(
-				Effect.orDie
-			)
-		).toEqual(document);
+		expect(yield* decodeChangeSetJson(initial).pipe(Effect.orDie)).toEqual(document);
 		const existing = yield* writeLocalizationCheckChanges(destination, {
 			...document,
 			changes: []
@@ -94,9 +94,7 @@ it.effect("loc check rejects unsupported cultures with safe actionable failures"
 			"--culture",
 			"zz-PrivateCulture"
 		]).pipe(Effect.provide(runtime));
-		const report = yield* Schema.decodeEffect(Schema.fromJsonString(Failure))(
-			yield* Ref.get(output)
-		).pipe(Effect.orDie);
+		const report = yield* decodeFailureJson(yield* Ref.get(output)).pipe(Effect.orDie);
 		expect(report.error.code).toBe("invalid_selection");
 		expect(report.error.message).not.toContain("Private");
 		expect(report.error.recovery.length).toBeGreaterThan(0);
@@ -129,6 +127,8 @@ const Report = Schema.Struct({
 	findings: Schema.Array(Schema.Struct({ kind: Schema.String })),
 	rules: Schema.Array(Schema.Struct({ ruleId: Schema.String }))
 });
+const ReportJson = Schema.fromJsonString(Report);
+const decodeReportJson = Schema.decodeEffect(ReportJson);
 
 it.effect("loc check runs the file --rules names, and says when no rules file ran", () =>
 	Effect.gen(function* () {
@@ -148,9 +148,7 @@ it.effect("loc check runs the file --rules names, and says when no rules file ra
 		const given = yield* run([...base, "--rules", rules]);
 		expect(given.exit).toBe(0);
 		expect(given.errors).not.toContain("No rules file");
-		const report = yield* Schema.decodeEffect(Schema.fromJsonString(Report))(given.output).pipe(
-			Effect.orDie
-		);
+		const report = yield* decodeReportJson(given.output).pipe(Effect.orDie);
 		expect(report.rules.map((rule) => rule.ruleId)).toEqual([
 			"localization.missing_translator_notes"
 		]);
@@ -160,17 +158,11 @@ it.effect("loc check runs the file --rules names, and says when no rules file ra
 		// The fixture has no rules file of its own: nothing runs, and stderr says why.
 		const none = yield* run(base);
 		expect(none.exit).toBe(0);
-		expect(
-			(yield* Schema.decodeEffect(Schema.fromJsonString(Report))(none.output).pipe(
-				Effect.orDie
-			)).rules
-		).toEqual([]);
+		expect((yield* decodeReportJson(none.output).pipe(Effect.orDie)).rules).toEqual([]);
 		expect(none.errors).toContain("No rules file: no checks ran.");
 		const missing = yield* run([...base, "--rules", join(directory, "missing.json")]);
 		expect(missing.exit).toBe(2);
-		const failure = yield* Schema.decodeEffect(Schema.fromJsonString(Failure))(
-			missing.output
-		).pipe(Effect.orDie);
+		const failure = yield* decodeFailureJson(missing.output).pipe(Effect.orDie);
 		expect(failure.error.code).toBe("rules_unreadable");
 		expect(failure.error.message).not.toContain(directory);
 	}).pipe(Effect.provide(NodeServices.layer))

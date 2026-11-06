@@ -401,12 +401,12 @@ function unknownOutcomeGuidance(read: boolean): AuthoringRequestGuidance {
 }
 
 export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): AuthoringClientApi {
-	const request = <A, DecodeError>(args: {
-		readonly decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>;
-		readonly operation: string;
-		readonly payload: AuthoringTransportRequest;
-	}) =>
-		Effect.gen(function* () {
+	const request = Effect.fnUntraced(
+		function* <A, DecodeError>(args: {
+			readonly decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>;
+			readonly operation: string;
+			readonly payload: AuthoringTransportRequest;
+		}): Effect.fn.Return<A, AuthoringClientError> {
 			const read = authoringReadRequests.has(args.payload.operation);
 			const contractMismatch: AuthoringRequestGuidance = {
 				retrySafe: read,
@@ -491,7 +491,9 @@ export function makeAuthoringHttpClient(options: AuthoringHttpClientOptions): Au
 						})
 				)
 			);
-		}).pipe(Effect.withSpan(args.operation));
+		},
+		(effect, args) => Effect.withSpan(effect, args.operation)
+	);
 
 	return AuthoringClient.of({
 		getCatalogProgress: Effect.suspend(() =>

@@ -44,9 +44,8 @@ export type SimilarKeysRequest = typeof SimilarKeysRequest.Type;
  * comparison budget truncated the matcher. It is engine output, so it passes through unchecked.
  */
 export const SimilarKeys =
-	// SAFETY: only the engine writes this value, as its generated `SimilarKeysAnswer`, and the
-	// host checked the engine's contract hash at the handshake; after that no message is
-	// validated (ADR 0012). Hosts relay it between their own processes unchanged.
+	// SAFETY: only the engine writes this value, as its generated `SimilarKeysAnswer`; the host
+	// checked the contract hash at the handshake and validates no message after (ADR 0012).
 	// Verified by: `similar-keys.integration.test.ts` (the answer through the native reader) and
 	// `contract.rs`'s generated-TypeScript drift test.
 	Schema.Any as Schema.Codec<GameTextContract.SimilarKeysAnswer>;
@@ -112,23 +111,24 @@ export const RelatedSection = Schema.Struct({
 });
 export type RelatedSection = typeof RelatedSection.Type;
 
-/**
- * The selection and its related members.
- * - `sameKey`: a unit's other units with its gathered identity; empty for a line, which holds
- *   them all.
- * - `sameText`: other resolved units with another identity whose one source is the unit's exactly,
- *   or other lines whose source is the line's.
- * - `conflict`, with a target: the units of the line's key whose source differs from the line's.
- * - `keyChange`, with a target: the line its key change pairs with this one.
- * - `similarKeys`, when requested with a target: a key change the exact pairing could not match,
- *   whose text is nearly the same, ranked by the engine.
- */
+/** The selection and its related members. */
 export const RelatedLines = Schema.Struct({
 	self: RelatedMember,
+	/** A unit's other units with its gathered identity; empty for a line, which holds them all. */
 	sameKey: RelatedSection,
+	/**
+	 * Other resolved units with another identity whose one source is the unit's exactly, or other
+	 * lines whose source is the line's.
+	 */
 	sameText: RelatedSection,
+	/** With a target: the units of the line's key whose source differs from the line's. */
 	conflict: Schema.optionalKey(RelatedSection),
+	/** With a target: the line its key change pairs with this one. */
 	keyChange: Schema.optionalKey(RelatedSection),
+	/**
+	 * When requested with a target: a key change the exact pairing could not match, whose text is
+	 * nearly the same, ranked by the engine.
+	 */
 	similarKeys: Schema.optionalKey(SimilarKeys)
 });
 export type RelatedLines = typeof RelatedLines.Type;

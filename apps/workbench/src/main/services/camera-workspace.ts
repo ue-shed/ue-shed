@@ -30,6 +30,7 @@ import {
 import { WorkbenchEditorHandoff } from "./editor-handoff.js";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { ErrorNextStep, ErrorCauseFields } from "@ue-shed/protocol";
+const decodeCameraWorkspaceRequest = Schema.decodeEffect(CameraWorkspaceRequest);
 
 export class CameraWorkspaceError extends Schema.TaggedError<
 	CameraWorkspaceError,
@@ -203,7 +204,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			context: { projectRoot: string; reviewSetPath: string; endpoint: string },
 			input: CameraWorkspaceRequest
 		) {
-			const intent = yield* Schema.decodeEffect(CameraWorkspaceRequest)(input);
+			const intent = yield* decodeCameraWorkspaceRequest(input);
 			const owner = JSON.stringify(context);
 			if (active && active.owner !== owner) yield* close();
 			const set = yield* repository.loadSet(context.reviewSetPath);

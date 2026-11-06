@@ -42,6 +42,9 @@ import {
 } from "./unreal-plugin-host.ts";
 import { unrealRemoteControlLaunchArguments } from "./workbench-tools.ts";
 
+const ProjectRootManifest = Schema.Struct({ projectRoot: Schema.String });
+const decodeProjectRootManifest = Schema.decodeUnknownSync(ProjectRootManifest);
+
 const [engineArgument, outputArgument] = process.argv.slice(2);
 assert.ok(engineArgument && outputArgument);
 const engineRoot = resolve(engineArgument);
@@ -333,14 +336,7 @@ const program = Effect.scoped(
 					parameters: {},
 					idempotent: true
 				})
-				.pipe(
-					Effect.map(
-						(value) =>
-							Schema.decodeUnknownSync(Schema.Struct({ projectRoot: Schema.String }))(
-								value
-							).projectRoot
-					)
-				);
+				.pipe(Effect.map((value) => decodeProjectRootManifest(value).projectRoot));
 		assert.equal(resolve(yield* editorProject(endpoint)), project);
 		if (legacy)
 			assert.deepEqual(producer.capabilities, [

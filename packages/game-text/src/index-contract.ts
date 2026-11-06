@@ -109,17 +109,10 @@ export type GameTextIndexRefreshRequest = typeof GameTextIndexRefreshRequest.Typ
 
 type ImportedTarget = Effect.Success<ReturnType<typeof importLocalizationTarget>>;
 /**
- * Pinned corpus, localization and query views from one validated revision. Keep its scope open
- * while executing asynchronous reads.
- *
- * The quality reads take `(ruleDocument, options)`: the rule document first, which only
- * `sourceQuality` requires, then the localization reads' check options. `sourceQuality` and
- * `localizationQuality` are interruptible and report progress through
- * `GameTextIndexProgressReporter`, counted in rules: a `source_quality` or
- * `localization_quality` event with no rules evaluated and no findings, one as each rule
- * finishes, and a last one with every rule evaluated and the findings; then `ready`, or the
- * latest event of another evaluation still running.
- * `prepareLocalizationCheck` and `localizationCheck` report none.
+ * Pinned corpus, localization and query views from one validated revision; keep its scope open
+ * while executing asynchronous reads. `sourceQuality` and `localizationQuality` are interruptible
+ * and report progress in rules (none run, each finished, all run with the findings, then `ready`
+ * or another running evaluation's latest event); the localization check reads report none.
  */
 export interface GameTextIndexRefreshResult {
 	/** Present on the steps implementation; optional for existing host-provided refresh adapters. */
@@ -136,12 +129,10 @@ export interface GameTextIndexRefreshResult {
 	 */
 	readonly revision?: string | undefined;
 	/**
-	 * The target's generation: an opaque string, the same for every host and process reading
-	 * one store. It changes whenever something the target shows changes (its packages, imported
-	 * localization files, review file, code or policy) and stays equal across refreshes that
-	 * change nothing, so it is safe to persist and compare across processes. It also changes after
-	 * the store is compacted; `query.changedSince` then answers `too_old`. Absent on legacy
-	 * adapters.
+	 * An opaque string, the same for every process reading one store and safe to persist. It
+	 * changes when anything the target shows changes (packages, localization files, review file,
+	 * code or policy) or the store is compacted (`query.changedSince` then answers `too_old`), and
+	 * not across refreshes that change nothing. Absent on legacy adapters.
 	 */
 	readonly generation?: string | undefined;
 	readonly joined: JoinedTargetReader;

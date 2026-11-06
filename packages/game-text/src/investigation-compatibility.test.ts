@@ -8,6 +8,13 @@ import {
 	investigationRequest
 } from "./investigation.js";
 import { qualityFixture } from "./localization-workspace.test-support.js";
+const decodeGameTextInvestigationExport = Schema.decodeSync(GameTextInvestigationExport);
+const decodeGameTextInvestigationExportResult = Schema.decodeResult(GameTextInvestigationExport);
+
+const decodeGameTextInvestigationPreset = Schema.decodeUnknownSync(GameTextInvestigationPreset);
+const decodeGameTextInvestigationPresetResult = Schema.decodeUnknownResult(
+	GameTextInvestigationPreset
+);
 
 // Freeze the fields and version check shipped in 0.11.0. Its decoder ignores unknown fields.
 const legacyPreset = Schema.Struct({
@@ -54,10 +61,10 @@ describe("investigation format compatibility", () => {
 		};
 		for (const rules of [undefined, document]) {
 			const encoded = { ...input, ...(rules ? { rules } : undefined) };
-			const preset = Schema.decodeUnknownSync(GameTextInvestigationPreset)(encoded);
+			const preset = decodeGameTextInvestigationPreset(encoded);
 			expect(Schema.decodeUnknownResult(legacyPreset)(encoded)._tag).toBe("Failure");
 			expect(
-				Schema.decodeUnknownResult(GameTextInvestigationPreset)({
+				decodeGameTextInvestigationPresetResult({
 					...encoded,
 					schemaVersion: 1
 				})._tag
@@ -76,9 +83,9 @@ describe("investigation format compatibility", () => {
 				preset: { schemaVersion: 2 },
 				result: { mode: "localization_quality" }
 			});
-			expect(Schema.decodeSync(GameTextInvestigationExport)(exported)).toEqual(exported);
+			expect(decodeGameTextInvestigationExport(exported)).toEqual(exported);
 			expect(
-				Schema.decodeResult(GameTextInvestigationExport)({
+				decodeGameTextInvestigationExportResult({
 					...exported,
 					schemaVersion: 1
 				})._tag
@@ -115,7 +122,7 @@ describe("investigation format compatibility", () => {
 				query: { mode, query: "", capability: "all", qualityFilter: "all" },
 				...(mode === "quality" ? { rules: document } : undefined)
 			};
-			const preset = Schema.decodeUnknownSync(GameTextInvestigationPreset)(encoded);
+			const preset = decodeGameTextInvestigationPreset(encoded);
 			expect(Schema.decodeUnknownSync(legacyPreset)(encoded)).toEqual(preset);
 			const exported = await Effect.runPromise(
 				exportGameTextInvestigation(
@@ -128,9 +135,9 @@ describe("investigation format compatibility", () => {
 			);
 			expect(exported.schemaVersion).toBe(1);
 			expect(exported.result.mode).toBe(mode);
-			expect(Schema.decodeSync(GameTextInvestigationExport)(exported)).toEqual(exported);
+			expect(decodeGameTextInvestigationExport(exported)).toEqual(exported);
 			expect(
-				Schema.decodeResult(GameTextInvestigationExport)({
+				decodeGameTextInvestigationExportResult({
 					...exported,
 					schemaVersion: 2
 				})._tag
@@ -141,7 +148,7 @@ describe("investigation format compatibility", () => {
 	it("reads a saved lens as the filter clause it stands for", () => {
 		const open = (lens: string) =>
 			investigationRequest(
-				Schema.decodeUnknownSync(GameTextInvestigationPreset)({
+				decodeGameTextInvestigationPreset({
 					schemaVersion: 1,
 					kind: "game_text",
 					sort: "domain_order",

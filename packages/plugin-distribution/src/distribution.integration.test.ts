@@ -45,6 +45,10 @@ import {
 	variantPluginReleaseAssetNames
 } from "./index.js";
 
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const decodeCompiledPluginVariantRequest = Schema.decodeSync(CompiledPluginVariantRequest);
+const decodeJsonRecord = Schema.decodeUnknownEffect(JsonRecord);
+
 interface TarEntry {
 	readonly body?: Uint8Array;
 	readonly name: string;
@@ -229,7 +233,7 @@ async function compiledFixture(
 		target: "UnrealEditor",
 		unrealVersion: "5.7"
 	} as const;
-	const artifact = Schema.decodeSync(CompiledPluginVariantRequest)(
+	const artifact = decodeCompiledPluginVariantRequest(
 		options.engineSourceCommit === undefined
 			? artifactWithoutCommit
 			: { ...artifactWithoutCommit, engineSourceCommit: options.engineSourceCommit }
@@ -526,9 +530,7 @@ it.effect("prunes only the matching legacy reference after recoverable content c
 		const input = yield* Effect.promise(async () =>
 			JSON.parse(await readFile(metadataPath, "utf8"))
 		);
-		const metadata = yield* Schema.decodeUnknownEffect(
-			Schema.Record(Schema.String, Schema.Json)
-		)(input).pipe(Effect.orDie);
+		const metadata = yield* decodeJsonRecord(input).pipe(Effect.orDie);
 		const {
 			artifactKind: _artifactKind,
 			variantIdentity: _variantIdentity,

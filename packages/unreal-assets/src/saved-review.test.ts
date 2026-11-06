@@ -17,9 +17,13 @@ import {
 	SavedReviewComparison
 } from "./saved-review.js";
 import { SavedReviewOutput } from "./saved-review.js";
+const decodeSavedReviewComparison = Schema.decodeSync(SavedReviewComparison);
+
+const decodeUAssetIoEvent = Schema.decodeUnknownSync(UAssetIoEvent);
+const decodeBlueprintGraphRead = Schema.decodeUnknownSync(BlueprintGraphRead);
 
 function blueprint(): BlueprintGraphRead {
-	const event = Schema.decodeUnknownSync(UAssetIoEvent)(
+	const event = decodeUAssetIoEvent(
 		JSON.parse(
 			readFileSync(
 				new URL(
@@ -316,7 +320,7 @@ describe("saved review", () => {
 			propertyPath: "Target",
 			targetPath: "/Game/Other.Other"
 		});
-		const renamed = Schema.decodeUnknownSync(BlueprintGraphRead)(
+		const renamed = decodeBlueprintGraphRead(
 			JSON.parse(
 				JSON.stringify(left)
 					.replaceAll("/Game/BP.BP", "/Game/Renamed.Renamed")
@@ -484,7 +488,7 @@ describe("saved review", () => {
 			)
 		).toBe(true);
 		expect(comparison.changes.some((change) => change.kind !== "changed")).toBe(false);
-		expect(Schema.decodeSync(SavedReviewComparison)(comparison)).toEqual(comparison);
+		expect(decodeSavedReviewComparison(comparison)).toEqual(comparison);
 	});
 	it("does not claim equality when a read has missing evidence", () => {
 		const read = { ...blueprint(), outcome: "partial" as const };

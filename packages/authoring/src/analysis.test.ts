@@ -6,6 +6,7 @@ import type {
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { AnalysisPlan, buildAnalysisPlan } from "./analysis.js";
+const decodeAnalysisPlan = Schema.decodeSync(AnalysisPlan);
 
 function descriptor(
 	name: string,
@@ -92,7 +93,7 @@ describe("buildAnalysisPlan", () => {
 	it("suggests categorical, distribution, comparison, and relationship charts", () => {
 		const plan = buildAnalysisPlan({ snapshot: items });
 
-		expect(Schema.decodeSync(AnalysisPlan)(plan)).toEqual(plan);
+		expect(decodeAnalysisPlan(plan)).toEqual(plan);
 		expect(plan.rowCount).toBe(3);
 		expect(plan.profiledColumnCount).toBe(3);
 		expect(plan.tableObjectPath).toBe("/Game/Fixture/DT_Items.DT_Items");

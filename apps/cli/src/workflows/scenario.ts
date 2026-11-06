@@ -7,29 +7,27 @@ import type { CliCommand } from "../command-model.js";
 
 type ScenarioRunCommand = Extract<CliCommand, { readonly _tag: "ScenarioRun" }>;
 
-export function executeScenarioCommand(
+export const executeScenarioCommand = Effect.fn("Cli.scenario.execute")(function* (
 	command: ScenarioRunCommand,
 	runner: Pick<ScenarioRunnerApi, "run">
 ) {
-	return Effect.gen(function* () {
-		const document =
-			command.document === undefined
-				? undefined
-				: yield* readScenarioDocumentFile(command.document);
-		const result = yield* runner.run({
-			...(document === undefined ? undefined : { document }),
-			endpoint: command.endpoint,
-			...(command.evidenceLimit === undefined
-				? undefined
-				: { evidenceLimit: command.evidenceLimit })
-		});
-		yield* printJson(result);
-		if (result.status === "failed" || result.status === "cancelled") {
-			const runtime = yield* CliRuntime;
-			yield* runtime.setExitCode(1);
-		}
+	const document =
+		command.document === undefined
+			? undefined
+			: yield* readScenarioDocumentFile(command.document);
+	const result = yield* runner.run({
+		...(document === undefined ? undefined : { document }),
+		endpoint: command.endpoint,
+		...(command.evidenceLimit === undefined
+			? undefined
+			: { evidenceLimit: command.evidenceLimit })
 	});
-}
+	yield* printJson(result);
+	if (result.status === "failed" || result.status === "cancelled") {
+		const runtime = yield* CliRuntime;
+		yield* runtime.setExitCode(1);
+	}
+});
 
 export const runScenario = Effect.fn("Cli.workflow.scenario_run")((command: ScenarioRunCommand) =>
 	observeCliOperation(

@@ -6,10 +6,12 @@ import {
 	type BlueprintWorkerResponse
 } from "./worker-contract.js";
 
+const decodeWorkerRequest = Schema.decodeUnknownEffect(BlueprintWorkerRequest);
+
 const decode = Effect.fn("Website.Blueprints.workerDecode")(function* (
 	event: MessageEvent<unknown>
 ) {
-	const request = yield* Schema.decodeUnknownEffect(BlueprintWorkerRequest)(event.data).pipe(
+	const request = yield* decodeWorkerRequest(event.data).pipe(
 		Effect.mapError(
 			(cause) =>
 				new BlueprintBrowserError({

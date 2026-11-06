@@ -1,13 +1,8 @@
 /**
- * Reads changes' two points through Game Text's change reader, with Map History's Perforce reads,
- * and prints each read's wall time and counts as a JSON line. Run it twice over one cache root:
- * the first run prints and parses everything, the second finds every revision and record cached.
- *
+ * Reads changes' two points through Game Text's change reader (Perforce reads only) and prints
+ * each read's wall time and counts as a JSON line; a second run over one cache root hits the cache.
  *   node --import tsx scripts/changelist-points-measure.ts <project> <cache-root> <reader> <change>...
- *
- * A change is `1200` (submitted), `1200s` (a shelf), `1100..1200` (the submitted changelists after
- * 1100 up to 1200) or `local=<list>` (the workspace's points for a file list, one project-relative
- * path a line). It only reads Perforce.
+ * A change is `1200`, `1200s` (shelf), `1100..1200` (after 1100 up to 1200) or `local=<path list>`.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

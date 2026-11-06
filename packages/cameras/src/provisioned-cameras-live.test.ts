@@ -11,6 +11,7 @@ import {
 	provisionedCameraRequest,
 	ProvisionedCameraSpec
 } from "./provisioned-cameras-live.js";
+const isString = Schema.is(Schema.String);
 
 const camera = Schema.decodeSync(ProvisionedCameraSpec)({
 	correlation: { reviewViewId: "overview", type: "review_view" },
@@ -40,8 +41,7 @@ function provisionWith(respond: () => Schema.Json) {
 				Effect.provideService(RemoteControlClient, {
 					request: (request) => {
 						const raw = request.parameters.RequestJson;
-						if (!Schema.is(Schema.String)(raw))
-							throw new Error("RequestJson must be a JSON string");
+						if (!isString(raw)) throw new Error("RequestJson must be a JSON string");
 						requests.push(decodeWireRequest(JSON.parse(raw)));
 						return Effect.succeed(respond());
 					}

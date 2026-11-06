@@ -378,9 +378,8 @@ export type TextReviewSignal = Schema.Schema.Type<typeof TextReviewSignal>;
 /**
  * What stands between a line and shipping, worst first. Key problems lose or mix up translations;
  * not gathered and changed since gather wait on Unreal; translation work waits on a culture in
- * scope; findings are worth a look but block nothing; unchecked lines have a culture whose state
- * the evidence could not prove. A line with none is up to date. `TEXT_PROBLEM_RULES` says what
- * raises each.
+ * scope; findings block nothing; unchecked lines have a culture whose state the evidence could not
+ * prove. A line with none is up to date. `TEXT_PROBLEM_RULES` says what raises each.
  */
 export const TextProblem = Schema.Literals(TEXT_PROBLEMS);
 export type TextProblem = Schema.Schema.Type<typeof TextProblem>;
@@ -415,10 +414,9 @@ const isTranslationKey = (value: string) =>
 
 /**
  * A translation key: the namespace and key Unreal translates a line by, spelled
- * `JSON.stringify([namespace, key])` (`gatheredIdentityKey`). Text keeps its saved namespace
- * without the package marker, so saved `UI [029AE834...]` is `UI` and a bare marker is `""`;
- * String Table entries keep their table namespace. Copies whose saved namespaces differ only by
- * package marker share one translation key.
+ * `JSON.stringify([namespace, key])` (`gatheredIdentityKey`). Text keeps its saved namespace minus
+ * the package marker (saved `UI [029AE834...]` is `UI`, a bare marker `""`); String Table entries
+ * keep their table namespace, and copies differing only by package marker share one key.
  */
 export const TextTranslationKey = Schema.String.check(
 	Schema.isMaxLength(4096),
@@ -468,13 +466,10 @@ const clause = <const Field extends string, Value extends Schema.Top>(
 	});
 
 /**
- * One filter pill: a line matches `is` when it has any of the values, and `is_not` when it has
- * none of them. Folders match by path prefix. A translation key selects the lines Unreal
- * translates by that key; without a target, a saved unit has the keys its occurrences gather to.
- * `finding` names rules of the request's findings layer: without one no row has a finding, nor
- * one of a rule outside it. `fact` takes the four facts. `source` matches exact source text: a line's source, or any
- * of a unit's sources. `asset_type` matches a line when any of its saved places is in a package
- * of that type, and `is_not` when none is; text outside saved packages has no type.
+ * One filter pill: `is` matches a line with any of the values, `is_not` one with none. Folders
+ * match by path prefix; a translation key, the lines Unreal translates by it (a unit without a
+ * target: its occurrences' keys); `finding`, rules of the request's findings layer (none without
+ * one); `source`, exact source text (any of a unit's); `asset_type`, any place's package type.
  */
 export const TextFilterClause = Schema.Union([
 	clause("problem", TextProblem, TextProblem.literals.length),
@@ -738,12 +733,10 @@ export const TextCorpusQueryRunResult = Schema.Union([
 		status: Schema.Literal("completed"),
 		summary: TextCorpusQuerySummary,
 		/**
-		 * The scanned target's generation: opaque, and the same for every host and process reading
-		 * one store. It changes whenever something the target shows changes (packages, imported
-		 * localization files, the review file, code or policy) and stays equal across refreshes
-		 * that change nothing, so it is safe to persist and compare across processes. It also
-		 * changes after the store is compacted, and `changedSince` then answers `too_old`. Pass
-		 * it to `changedSince` to list what changed after a later refresh.
+		 * The scanned target's generation, opaque and safe to persist across processes. It
+		 * changes when anything the target shows changes or the store is compacted, and not across
+		 * refreshes that change nothing. Pass it to `changedSince` to list what changed later;
+		 * after a compaction that answers `too_old`.
 		 */
 		generation: Schema.optionalKey(Schema.String),
 		cached: Schema.optionalKey(Schema.Literal(true))

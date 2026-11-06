@@ -22,6 +22,7 @@ import {
 } from "./node-executor.js";
 import { CustodianReport } from "./schema.js";
 import { Custodian, CustodianNodeLive } from "./service.js";
+const decodeCustodianReport = Schema.decodeEffect(CustodianReport);
 
 function withWorkspace<A, E>(use: (root: string) => Effect.Effect<A, E>) {
 	return Effect.acquireUseRelease(
@@ -115,7 +116,7 @@ it.effect("inventories only known regeneratable project targets", () =>
 			expect(project?.eligibility.kind).toBe("candidate");
 			expect(report.plan.items.map(({ name }) => name)).toEqual(["FixtureProject"]);
 			expect(report.destructiveOperationsAvailable).toBe(true);
-			yield* Schema.decodeEffect(CustodianReport)(report);
+			yield* decodeCustodianReport(report);
 		})
 	)
 );

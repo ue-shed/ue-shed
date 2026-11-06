@@ -43,15 +43,14 @@ const makeOccurrenceId = TextOccurrenceId.make;
 const makeUnitId = TextUnitId.make;
 
 /** A scan's progress, as `corpus` (or `failed`) events to the caller's reporter. */
-const reportExtraction = (
+const reportExtraction = Effect.fnUntraced(function* (
 	phase: "corpus" | "failed",
 	completed: number,
 	total: number
-): Effect.Effect<void> =>
-	Effect.gen(function* () {
-		const report = yield* GameTextIndexProgressReporter;
-		report({ phase, completed, total });
-	});
+): Effect.fn.Return<void> {
+	const report = yield* GameTextIndexProgressReporter;
+	report({ phase, completed, total });
+});
 
 /**
  * A reader, project, scan-option or asset-limit failure before a complete corpus can be returned. The

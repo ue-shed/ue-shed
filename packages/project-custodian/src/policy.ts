@@ -148,9 +148,13 @@ export interface PolicyResolution {
 }
 
 const JsonObject = Schema.Record(Schema.String, Schema.Json);
+const isJsonObject = Schema.is(JsonObject);
+const isBoolean = Schema.is(Schema.Boolean);
+const TargetNames = Schema.Array(Schema.String);
+const isTargetNames = Schema.is(TargetNames);
 
 function isRecord(value: Schema.Json): value is Schema.JsonObject {
-	return Schema.is(JsonObject)(value);
+	return isJsonObject(value);
 }
 
 function nonNegativeNumber(value: Schema.Json): value is number {
@@ -183,7 +187,7 @@ export function resolvePolicyDocument(value: Schema.Json): PolicyResolution {
 			error: `Unknown policy field(s): ${unknownFields.sort().join(", ")}.`
 		};
 	}
-	if (value.enabled !== undefined && !Schema.is(Schema.Boolean)(value.enabled)) {
+	if (value.enabled !== undefined && !isBoolean(value.enabled)) {
 		return {
 			policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
 			error: "enabled must be boolean."
@@ -201,10 +205,7 @@ export function resolvePolicyDocument(value: Schema.Json): PolicyResolution {
 			error: "min_free_gb must be a non-negative number."
 		};
 	}
-	if (
-		value.keep_binaries_for_cpp !== undefined &&
-		!Schema.is(Schema.Boolean)(value.keep_binaries_for_cpp)
-	) {
+	if (value.keep_binaries_for_cpp !== undefined && !isBoolean(value.keep_binaries_for_cpp)) {
 		return {
 			policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
 			error: "keep_binaries_for_cpp must be boolean."
@@ -213,7 +214,7 @@ export function resolvePolicyDocument(value: Schema.Json): PolicyResolution {
 	let targets = defaultCustodianPolicy.targets;
 	if (value.targets !== undefined) {
 		const targetNames = value.targets;
-		if (!Schema.is(Schema.Array(Schema.String))(targetNames)) {
+		if (!isTargetNames(targetNames)) {
 			return {
 				policy: { ...defaultCustodianPolicy, enabled: false, targets: [] },
 				error: "targets must be an array of known target keys."

@@ -1,21 +1,8 @@
 /**
- * `diskChanges` over a generated project of about 707k packages written as real, tiny files.
- *
- * The check reads only directory-listing metadata, never content, so each package is one to four
- * bytes; one in eight has a `.uexp` sidecar and one in fifty is a `.umap`. Run, in order:
- *
- *   --mode generate   writes the project's files under `<root>/project` (slow on NTFS);
- *   --mode index      publishes a warm package-text index of them under `<root>/cache`, with each
- *                     package's real signature, stated from its files as the Catalog signs them;
- *   --mode measure    times full walks and named-path checks in fresh reader processes;
- *                     `--case touched` first saves 1,000 packages again and adds 1,000;
- *   --mode host       times a host's own check of the same tree: a recursive `readdir` with file
- *                     types, then `stat` in batches of 64.
- *
- *   node --import tsx scripts/benchmark-game-text-disk-changes.ts --mode <mode> --root <dir>
- *     [--executable <uasset>] [--case unchanged|touched] [--runs 3]
- *
- * Each run prints JSON: wall time, the engine's own seconds and the reader's peak working set.
+ * `diskChanges` over a generated ~707k-package project of tiny real files (it reads metadata only).
+ * In order: `--mode generate`, `index` (warm index), then `measure` in fresh readers (`--case
+ * touched` first saves and adds 1,000 packages) or `host` (recursive `readdir`, then `stat`).
+ * Args: `--root <dir> [--executable <uasset>] [--case unchanged|touched] [--runs 3]`; prints JSON.
  */
 import { spawn } from "node:child_process";
 import { mkdir, readdir, realpath, stat, utimes, writeFile } from "node:fs/promises";

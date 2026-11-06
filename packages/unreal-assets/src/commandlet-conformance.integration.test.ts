@@ -13,6 +13,10 @@ import {
 	readSavedTable
 } from "./index.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const decodeJsonRecord = Schema.decodeUnknownSync(JsonRecord);
+
 const decodeAuthoringTableSnapshot = <Input>(input: Input) =>
 	Effect.runSync(decodeAuthoringTableSnapshotEffect(input));
 
@@ -78,7 +82,7 @@ const runReader = <A, E>(effect: Effect.Effect<A, E, AssetReader>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(assetReaderLayer({ executable: executable! }))));
 
 async function json(path: string): Promise<Schema.Json> {
-	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
+	return decodeJson(JSON.parse(await readFile(path, "utf8")));
 }
 
 /**
@@ -92,7 +96,7 @@ function withoutCoverageBatch(evidence: Schema.Json): Schema.Json {
 		coverage_batch: _batch,
 		landscape_constraint: _landscape,
 		...rest
-	} = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(evidence);
+	} = decodeJsonRecord(evidence);
 	return rest;
 }
 

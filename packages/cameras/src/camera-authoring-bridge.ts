@@ -158,6 +158,7 @@ export const CameraBridgeRequest = Schema.Union([
 	CameraSetupRequest.mapMembers(Tuple.map(withCodedFailures)),
 	...CameraSessionRequest.members
 ]);
+const decodeCameraBridgeRequestEffect = Schema.decodeEffect(CameraBridgeRequest);
 export type CameraBridgeRequest = typeof CameraBridgeRequest.Type;
 /**
  * Ready editor-session snapshot with producer, revision/sequence, pending/piloting state and
@@ -233,6 +234,7 @@ export const CameraBridgeResponse = Schema.Union([
 	})
 ]);
 export type CameraBridgeResponse = typeof CameraBridgeResponse.Type;
+const decodeCameraBridgeResponse = Schema.decodeUnknownEffect(CameraBridgeResponse);
 /**
  * Missing plugin, connection, contract or editor refusal with stable code and original cause.
  * Stale/busy states require session reconciliation rather than treating a parsed reply as
@@ -273,7 +275,7 @@ export function makeCameraAuthoringBridge(
 ): CameraAuthoringBridge {
 	return {
 		call: Effect.fn("CameraAuthoringBridge.call")(function* (input) {
-			const request = yield* Schema.decodeEffect(CameraBridgeRequest)(input, {
+			const request = yield* decodeCameraBridgeRequestEffect(input, {
 				onExcessProperty: "error"
 			}).pipe(
 				Effect.mapError(
@@ -368,7 +370,7 @@ export function makeCameraAuthoringBridge(
 							})
 					)
 				);
-			return yield* Schema.decodeUnknownEffect(CameraBridgeResponse)(response, {
+			return yield* decodeCameraBridgeResponse(response, {
 				onExcessProperty: "error"
 			}).pipe(
 				Effect.mapError(

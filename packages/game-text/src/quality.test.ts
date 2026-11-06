@@ -396,6 +396,8 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 			gameTextInvestigationCsv
 		} = yield* Effect.promise(() => import("./investigation.js"));
 		const { Schema } = yield* Effect.promise(() => import("effect"));
+		const decodePreset = Schema.decodeUnknownEffect(GameTextInvestigationPreset);
+		const decodeTypedPreset = Schema.decodeEffect(GameTextInvestigationPreset);
 		const rules = yield* decodeGameTextRuleDocumentJson(
 			yield* Effect.promise(() => readFile(fixtureRules, "utf8"))
 		);
@@ -412,9 +414,7 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 			},
 			rules
 		};
-		const decoded = yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)(
-			JSON.parse(JSON.stringify(preset))
-		);
+		const decoded = yield* decodePreset(JSON.parse(JSON.stringify(preset)));
 		const source = {
 			projectRoot: "/project",
 			generation: 7,
@@ -445,7 +445,7 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 		expect(gameTextInvestigationCsv(exported)).toContain('"metadata"');
 		expect(gameTextInvestigationCsv(exported)).toContain('"record"');
 		expect(
-			yield* Schema.decodeUnknownEffect(GameTextInvestigationPreset)({
+			yield* decodePreset({
 				...preset,
 				schemaVersion: 3
 			}).pipe(Effect.result)
@@ -462,10 +462,8 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 			).pipe(Effect.result)
 		).toMatchObject({ _tag: "Failure" });
 		const { rules: _rules, ...withoutRules } = preset;
-		expect(
-			yield* Schema.decodeEffect(GameTextInvestigationPreset)(withoutRules).pipe(
-				Effect.result
-			)
-		).toMatchObject({ _tag: "Failure" });
+		expect(yield* decodeTypedPreset(withoutRules).pipe(Effect.result)).toMatchObject({
+			_tag: "Failure"
+		});
 	})
 );

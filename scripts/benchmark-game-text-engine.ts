@@ -28,6 +28,14 @@ import {
 } from "./game-text-scale-safety.ts";
 import { readScaleRecipe } from "./game-text-scale-options.ts";
 
+const decodeEngineBenchmarkResult = Schema.decodeUnknownSync(EngineBenchmarkResult);
+const decodeEngineTsTiming = Schema.decodeUnknownSync(EngineTsTiming);
+const StageWorkerMessage = Schema.Struct({
+	kind: Schema.String,
+	result: Schema.optionalKey(EngineStageResult)
+});
+const decodeStageWorkerMessage = Schema.decodeUnknownSync(StageWorkerMessage);
+
 const { values } = parseArgs({
 	options: {
 		project: { type: "string" },
@@ -215,7 +223,7 @@ if (values.worker) {
 				const key = `${result.stage}:${sample.id}`;
 				grouped.set(key, [...(grouped.get(key) ?? []), sample.ms]);
 			}
-		const report = Schema.decodeUnknownSync(EngineBenchmarkResult)({
+		const report = decodeEngineBenchmarkResult({
 			...metadata,
 			statistics: Object.fromEntries(
 				[...grouped].map(([key, times]) => [key, engineStatistics(times)])
@@ -392,12 +400,7 @@ if (values.worker) {
 					});
 					child.stderr?.pipe(log, { end: false });
 					child.on("message", (raw) => {
-						const message = Schema.decodeUnknownSync(
-							Schema.Struct({
-								kind: Schema.String,
-								result: Schema.optionalKey(EngineStageResult)
-							})
-						)(raw);
+						const message = decodeStageWorkerMessage(raw);
 						if (message.kind === "done") result = message.result;
 						if (message.kind === "start") {
 							measuring = true;
@@ -456,11 +459,7 @@ if (values.worker) {
 									.filter(Boolean);
 								for (const line of lines) {
 									if (file.startsWith("ts-"))
-										ts.push(
-											Schema.decodeUnknownSync(EngineTsTiming)(
-												JSON.parse(line)
-											)
-										);
+										ts.push(decodeEngineTsTiming(JSON.parse(line)));
 									if (file.startsWith("rust-"))
 										rust.push(decodeEngineRustTiming(JSON.parse(line)));
 								}

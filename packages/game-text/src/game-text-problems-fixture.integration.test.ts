@@ -70,6 +70,8 @@ const Cases = Schema.Struct({
 		with: Schema.Record(Schema.String, Schema.Int)
 	})
 });
+const CasesJson = Schema.fromJsonString(Cases);
+const decodeCasesJson = Schema.decodeSync(CasesJson);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 const NAMESPACE_PREFIX = "Fixture.GameTextProblems.";
@@ -130,7 +132,7 @@ const search = (target: LocalizationJoin["target"]): TextCorpusSearchRequest => 
 });
 describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () => {
 	it("reports every authored case, in memory and from the index, with pinned counts", async () => {
-		const cases = Schema.decodeSync(Schema.fromJsonString(Cases))(
+		const cases = decodeCasesJson(
 			await readFile(
 				join(fixture.root, "FixtureSource/GameTextProblems/expected-cases.json"),
 				"utf8"
@@ -382,7 +384,7 @@ describe.skipIf(!executable)("Game Text problem cases in the saved fixture", () 
 		}
 	}, 180000);
 	it("matches Unreal's own conflict report for keys with several texts", async () => {
-		const cases = Schema.decodeSync(Schema.fromJsonString(Cases))(
+		const cases = decodeCasesJson(
 			await readFile(
 				join(fixture.root, "FixtureSource/GameTextProblems/expected-cases.json"),
 				"utf8"

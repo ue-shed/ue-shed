@@ -11,6 +11,7 @@ import { parseWordCountCSV } from "@ue-shed/localization/browser";
 import { corpus, success } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { createLocalizationBaseline, localizationProgressReport } from "./localization-reports.js";
+const decodeLocalizationTargetEffect = Schema.decodeEffect(LocalizationTarget);
 
 describe("word-count reports against Unreal's committed CSVs", () => {
 	for (const version of ["5.7", "5.8"])
@@ -28,7 +29,7 @@ describe("word-count reports against Unreal's committed CSVs", () => {
 						(target) => target.name === "FixtureGame"
 					);
 					if (!original) throw new Error("The fixture target is missing.");
-					const target = yield* Schema.decodeEffect(LocalizationTarget)({
+					const target = yield* decodeLocalizationTargetEffect({
 						...original,
 						outputPaths: {
 							...original.outputPaths,

@@ -22,6 +22,12 @@ import { localizationWordCount } from "./localization-words.js";
 import { canonicalLocalizationJson, localizationFingerprint } from "./localization-fingerprint.js";
 import { LocalizationError } from "@ue-shed/localization/browser";
 
+const decodeTarget = Schema.decodeSync(LocalizationProgressReport.fields.target);
+const JsonText = Schema.fromJsonString(Schema.Json);
+const decodeJsonText = Schema.decodeSync(JsonText);
+const LocalizationProgressReportJson = Schema.fromJsonString(LocalizationProgressReport);
+const decodeLocalizationProgressReportJson = Schema.decodeSync(LocalizationProgressReportJson);
+
 describe("localization progress and manifest baselines", () => {
 	it("retains schema issues when a baseline JSON document is invalid", () => {
 		const result = decodeLocalizationBaselineJson('{"schemaVersion":1,"target":42}');
@@ -80,7 +86,7 @@ describe("localization progress and manifest baselines", () => {
 				}
 			]
 		} satisfies ReturnType<typeof corpus>;
-		const encoded = Schema.decodeSync(Schema.fromJsonString(Schema.Json))(JSON.stringify(text));
+		const encoded = decodeJsonText(JSON.stringify(text));
 		const baseline = createLocalizationBaseline(text, evidence(), "2026-10-07T00:00:00Z");
 		expect(baseline.provenance.corpusGeneration).toBe(
 			localizationFingerprint(canonicalLocalizationJson(encoded))
@@ -184,11 +190,7 @@ describe("localization progress and manifest baselines", () => {
 			packages: [],
 			omitted: 0
 		});
-		expect(
-			Schema.decodeSync(Schema.fromJsonString(LocalizationProgressReport))(
-				JSON.stringify(report)
-			)
-		).toEqual(report);
+		expect(decodeLocalizationProgressReportJson(JSON.stringify(report))).toEqual(report);
 	});
 	it("excludes optional manifest contexts, deduplicates paths, and reports missing archive coverage", () => {
 		const text = corpus([]);
@@ -312,7 +314,7 @@ describe("localization progress and manifest baselines", () => {
 		expect(() =>
 			diffLocalizationBaselines(before, {
 				...after,
-				target: Schema.decodeSync(LocalizationProgressReport.fields.target)("Other")
+				target: decodeTarget("Other")
 			})
 		).toThrowError(expect.objectContaining({ code: "baseline_target_mismatch" }));
 		expect(

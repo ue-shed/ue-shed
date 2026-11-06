@@ -55,6 +55,14 @@ import { defaultLocalizationImportLimits } from "../packages/game-text/src/local
 import { SharedIndex } from "../packages/game-text/src/shared-index.ts";
 import { snapshotColumnsSource } from "../packages/game-text/src/snapshot-file.ts";
 
+const decodeReviewFile = Schema.decodeUnknownSync(LocalizationReviewFile);
+const decodeTarget = Schema.decodeSync(LocalizationTarget);
+const TaggedFailure = Schema.Struct({
+	_tag: Schema.optionalKey(Schema.String),
+	section: Schema.optionalKey(Schema.String),
+	code: Schema.optionalKey(Schema.String)
+});
+const decodeTaggedFailure = Schema.decodeUnknownOption(TaggedFailure);
 const isStringArray = Schema.is(Schema.Array(Schema.String));
 
 /** Main asset classes the fuzz's packages take in turn; the last package of each six has none. */
@@ -95,13 +103,7 @@ export type JoinFuzzInput = typeof JoinFuzzInput.Type;
 
 /** Keep independent structural/parser failures separate in the discovery ledger. */
 export function joinFuzzException(cause: unknown) {
-	const parsed = Schema.decodeUnknownOption(
-		Schema.Struct({
-			_tag: Schema.optionalKey(Schema.String),
-			section: Schema.optionalKey(Schema.String),
-			code: Schema.optionalKey(Schema.String)
-		})
-	)(cause);
+	const parsed = decodeTaggedFailure(cause);
 	const section = Option.isSome(parsed)
 		? (parsed.value.section ?? parsed.value.code ?? "unclassified")
 		: "unclassified";
@@ -243,7 +245,7 @@ export function joinFuzzInput(seed: number): JoinFuzzInput {
 	const review =
 		int(3) === 0
 			? undefined
-			: Schema.decodeUnknownSync(LocalizationReviewFile)({
+			: decodeReviewFile({
 					schemaVersion: 1,
 					target: "Fuzz",
 					acceptedFindings: [],
@@ -545,7 +547,7 @@ export async function compareJoinFuzzInput(
 			await unlink(spill);
 		}
 	};
-	const authored = Schema.decodeSync(LocalizationTarget)({
+	const authored = decodeTarget({
 		...target,
 		name: "Fuzz",
 		cultures: input.cultures,

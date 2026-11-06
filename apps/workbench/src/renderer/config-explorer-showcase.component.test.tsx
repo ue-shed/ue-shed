@@ -6,6 +6,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { ConfigExplorerQuery } from "../shared/ipc-contracts.js";
 import { ConfigExplorerQueryResult } from "../shared/ipc-contracts.js";
 import { ConfigExplorerShowcase } from "./config-explorer-showcase.js";
+const decodeConfigExplorerQueryResult = Schema.decodeSync(ConfigExplorerQueryResult);
 
 const runtime = ManagedRuntime.make(Layer.empty);
 
@@ -50,7 +51,8 @@ const platformB = explanation({
 	value: { kind: "array", values: ["PlatformB", "PlatformB"] }
 });
 
-const ready = Schema.decodeUnknownSync(ConfigExplorerQueryResult)({
+const decodeUnknownConfigExplorerQueryResult = Schema.decodeUnknownSync(ConfigExplorerQueryResult);
+const ready = decodeUnknownConfigExplorerQueryResult({
 	evidence: {
 		schemaVersion: 1,
 		status: "different",
@@ -128,7 +130,7 @@ describe("ConfigExplorerShowcase", () => {
 	});
 
 	it("switches to the selected project and surfaces typed recovery", async () => {
-		const failed = Schema.decodeSync(ConfigExplorerQueryResult)({
+		const failed = decodeConfigExplorerQueryResult({
 			error: {
 				code: "project_unavailable",
 				message: "No Workbench project is selected.",

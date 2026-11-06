@@ -25,7 +25,8 @@ import { type WorkbenchConfigurationApi } from "../workbench-config.js";
 import { CameraWorkspaceError, makeWorkbenchCameraWorkspaceTestLayer } from "./camera-workspace.js";
 import { WorkbenchMapCapture, WorkbenchMapCaptureLive } from "./map-capture.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
-
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
+const decodeString = Schema.decodeUnknownEffect(Schema.String);
 const roots: string[] = [];
 
 it.effect("focuses explicit map opening but never the map opened as capture preparation", () =>
@@ -519,7 +520,7 @@ it.effect("loads only manifest-owned capture proof tiles and verifies their hash
 					)
 				)
 			);
-			const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue);
+			const decodedValue0 = yield* decodeJsonEffect(sourceValue);
 			return yield* decodeMapTilePyramidManifest(decodedValue0);
 		});
 		const fixtureArtifact = fixture.tiles[0]!;
@@ -562,7 +563,7 @@ it.effect("provisions the snapped bounds as one orthographic live camera", () =>
 		let provisionRequest: unknown;
 		const remoteControl = makeRemoteControlClientTestLayer((request) => {
 			if (request.functionName !== "EnsureProvisionedCameras") return Effect.die("not used");
-			return Schema.decodeUnknownEffect(Schema.String)(request.parameters.RequestJson).pipe(
+			return decodeString(request.parameters.RequestJson).pipe(
 				Effect.orDie,
 				Effect.map((json) => {
 					provisionRequest = JSON.parse(json);

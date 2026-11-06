@@ -5,6 +5,7 @@ import {
 	type SequenceFailureReason,
 	type SequenceReadResult
 } from "./contract.js";
+const decodeSequenceAssetPathEffect = Schema.decodeEffect(SequenceAssetPath);
 
 /** The host supplies its initialized runtime; this extension never imports the WASM package. */
 export interface WasmSequenceRuntime {
@@ -43,6 +44,7 @@ const WasmSequenceOutput = Schema.Union([
 		message: Schema.NonEmptyString
 	})
 ]);
+const decodeWasmSequenceOutput = Schema.decodeUnknownEffect(WasmSequenceOutput);
 
 function diagnosticCode(code: string): string {
 	switch (code) {
@@ -103,7 +105,7 @@ export const adaptWasmSequenceResult = Effect.fn("Sequencer.adaptWasmResult")(fu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<SequenceReadResult> {
-	const path = yield* Schema.decodeEffect(SequenceAssetPath)(assetPath).pipe(
+	const path = yield* decodeSequenceAssetPathEffect(assetPath).pipe(
 		Effect.catchTag("SchemaError", () => Effect.undefined)
 	);
 	if (path === undefined) {
@@ -114,7 +116,7 @@ export const adaptWasmSequenceResult = Effect.fn("Sequencer.adaptWasmResult")(fu
 			status: "failed"
 		};
 	}
-	return yield* Schema.decodeUnknownEffect(WasmSequenceOutput)(output).pipe(
+	return yield* decodeWasmSequenceOutput(output).pipe(
 		Effect.map((read): SequenceReadResult => {
 			if (read.status === "error") {
 				return failed(path, failureReason(read.kind), read.message);

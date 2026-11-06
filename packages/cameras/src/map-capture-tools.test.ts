@@ -8,6 +8,8 @@ import {
 	MapCaptureReadiness
 } from "./map-capture-tools.js";
 import { fitMapCapturePlanToSelection, makeDefaultMapCapturePlan } from "./map-tile-authoring.js";
+const isMapCaptureReadiness = Schema.is(MapCaptureReadiness);
+const isMapCaptureSelection = Schema.is(MapCaptureSelection);
 const selection = {
 	schemaVersion: 1 as const,
 	status: "ready" as const,
@@ -27,7 +29,7 @@ describe("capture inspection tools", () => {
 	});
 	it("rejects contradictory readiness and reversed bounds", () => {
 		expect(
-			Schema.is(MapCaptureReadiness)({
+			isMapCaptureReadiness({
 				schemaVersion: 1,
 				backend: "lit_camera_tiles",
 				ready: true,
@@ -35,7 +37,7 @@ describe("capture inspection tools", () => {
 			})
 		).toBe(false);
 		expect(
-			Schema.is(MapCaptureSelection)({
+			isMapCaptureSelection({
 				...selection,
 				bounds: { ...selection.bounds, minX: 200 }
 			})

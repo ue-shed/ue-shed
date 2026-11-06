@@ -14,7 +14,11 @@ import {
 	NiagaraPreviewProducerReceipt
 } from "./schema.js";
 import { validateReceipt } from "./preview.js";
+const decodeNiagaraPreviewSettings = Schema.decodeSync(NiagaraPreviewSettings);
 
+const decodeNiagaraPreviewProducerRequest = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest);
+const decodeNiagaraPreviewProducerReceipt = Schema.decodeUnknownSync(NiagaraPreviewProducerReceipt);
+const decodeUnknownNiagaraPreviewSettings = Schema.decodeUnknownSync(NiagaraPreviewSettings);
 const fixture = Schema.decodeUnknownSync(NiagaraPreviewRunManifest)(
 	JSON.parse(
 		readFileSync(
@@ -59,8 +63,8 @@ describe("preview presentation", () => {
 					"utf8"
 				)
 			);
-		const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)(read("request"));
-		const receipt = Schema.decodeUnknownSync(NiagaraPreviewProducerReceipt)(read("receipt"));
+		const request = decodeNiagaraPreviewProducerRequest(read("request"));
+		const receipt = decodeNiagaraPreviewProducerReceipt(read("receipt"));
 		Effect.runSync(validateReceipt(receipt, request));
 		const fractionalCamera = { ...request.settings.cameraOverride!, fieldOfViewDegrees: 45.1 };
 		const fractionalSettings = { ...request.settings, cameraOverride: fractionalCamera };
@@ -109,7 +113,7 @@ describe("preview presentation", () => {
 		expect(selected.frameCount).toBe(selectNiagaraPresentation(reference).frameCount);
 		expect(() => selectNiagaraVariantPresentation(sequence([0.1]), reference)).toThrow();
 		expect(() =>
-			Schema.decodeUnknownSync(NiagaraPreviewSettings)({
+			decodeUnknownNiagaraPreviewSettings({
 				cameraOverride: { ...light.cameraOverride, location: { x: Infinity, y: 0, z: 0 } }
 			})
 		).toThrow();
@@ -135,11 +139,11 @@ describe("preview presentation", () => {
 			cameraMode: "auto_fit" as const,
 			captureMode: "full_scene" as const
 		};
-		const request = Schema.decodeUnknownSync(NiagaraPreviewProducerRequest)({
+		const request = decodeNiagaraPreviewProducerRequest({
 			...load("request"),
 			settings
 		});
-		const receipt = Schema.decodeUnknownSync(NiagaraPreviewProducerReceipt)({
+		const receipt = decodeNiagaraPreviewProducerReceipt({
 			...load("receipt"),
 			requestedSettings: settings
 		});
@@ -166,9 +170,7 @@ describe("preview presentation", () => {
 		expect(settings.exposureCompensation).toBe(-1);
 		expect(settings.renderMode).toBe("scene");
 		expect(() => niagaraPreviewProfile("aura", { cameraPadding: 0 })).toThrow();
-		expect(() =>
-			Schema.decodeSync(NiagaraPreviewSettings)({ exposureCompensation: Infinity })
-		).toThrow();
+		expect(() => decodeNiagaraPreviewSettings({ exposureCompensation: Infinity })).toThrow();
 	});
 	it("trims blank tails with padding and chooses a sustained visible poster", () => {
 		const scores = [...Array(20).fill(0), ...Array(10).fill(0.2), ...Array(30).fill(0)];

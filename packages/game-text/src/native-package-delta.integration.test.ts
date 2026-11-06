@@ -21,6 +21,7 @@ import { target } from "./localization.test-support.js";
 import { TextCorpusSearchRequest } from "./schema.js";
 import { encodeStringBlock } from "./snapshot-format.js";
 import { snapshotColumnsSource } from "./snapshot-file.js";
+const decodeTextCorpusSearchRequest = Schema.decodeEffect(TextCorpusSearchRequest);
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const sourceTarget = { ...target, cultures: [] };
@@ -455,9 +456,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										})
 									});
 									if (backend === "native" && step === states.length - 1) {
-										const invalid = yield* Schema.decodeEffect(
-											TextCorpusSearchRequest
-										)({
+										const invalid = yield* decodeTextCorpusSearchRequest({
 											query: "",
 											capability: "all",
 											pageSize: 1,

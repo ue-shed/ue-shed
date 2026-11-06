@@ -27,7 +27,9 @@ import {
 	makeWorkbenchProjectTestLayer,
 	type WorkbenchProjectCandidates
 } from "./project-workspace.js";
+const decodeNiagaraPreviewRunManifestEffect = Schema.decodeEffect(NiagaraPreviewRunManifest);
 
+const decodeNiagaraPreviewRunManifest = Schema.decodeUnknownEffect(NiagaraPreviewRunManifest);
 const fixtureManifestUrl = new URL(
 	"../../../../../packages/protocol/contracts/niagara/preview/v1/fixtures/manifest.json",
 	import.meta.url
@@ -248,12 +250,11 @@ it.effect("returns a frame only while its bytes match the immutable manifest", (
 			const fixtureUnknown: unknown = JSON.parse(
 				yield* Effect.promise(() => readFile(fixtureManifestUrl, "utf8"))
 			);
-			const fixture =
-				yield* Schema.decodeUnknownEffect(NiagaraPreviewRunManifest)(fixtureUnknown);
+			const fixture = yield* decodeNiagaraPreviewRunManifest(fixtureUnknown);
 			const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 			const artifact = fixture.artifacts[0];
 			if (artifact === undefined) return yield* Effect.die("fixture has no artifact");
-			const manifest = yield* Schema.decodeEffect(NiagaraPreviewRunManifest)({
+			const manifest = yield* decodeNiagaraPreviewRunManifestEffect({
 				...fixture,
 				artifacts: [
 					{

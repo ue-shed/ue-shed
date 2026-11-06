@@ -13,6 +13,7 @@ import {
 	OfflineTexturePreviewError,
 	OfflineTexturePreviewLive
 } from "./offline-texture-preview.js";
+const isOfflineTexturePreviewError = Schema.is(OfflineTexturePreviewError);
 
 const stages = [
 	["list_project_files", "project_unavailable"],
@@ -81,8 +82,8 @@ for (const [operation, code] of stages) {
 				),
 				Effect.flip
 			);
-			expect(Schema.is(OfflineTexturePreviewError)(error)).toBe(true);
-			if (Schema.is(OfflineTexturePreviewError)(error)) {
+			expect(isOfflineTexturePreviewError(error)).toBe(true);
+			if (isOfflineTexturePreviewError(error)) {
 				expect(error.code).toBe(code);
 				expect(error.cause).toBe(failure);
 				expect(failure.cause).toBe(original);

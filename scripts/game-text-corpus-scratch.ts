@@ -16,6 +16,8 @@ const Marker = Schema.Struct({
 	project: Schema.String,
 	descriptor: Schema.String
 });
+const MarkerJson = Schema.fromJsonString(Marker);
+const decodeMarkerJson = Schema.decodeSync(MarkerJson);
 
 /** Refuse real projects before building or launching Unreal. Existing empty directories are safe. */
 export function assertCorpusScratch(project: string) {
@@ -36,7 +38,7 @@ export function assertCorpusScratch(project: string) {
 			);
 		return;
 	}
-	const owned = Schema.decodeSync(Schema.fromJsonString(Marker))(readFileSync(marker, "utf8"));
+	const owned = decodeMarkerJson(readFileSync(marker, "utf8"));
 	if (
 		owned.project !== basename(path) ||
 		!existsSync(path) ||

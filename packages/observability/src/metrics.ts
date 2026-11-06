@@ -246,11 +246,9 @@ export function recordReviewAssessment(input: {
 	return Effect.all(updates).pipe(Effect.asVoid);
 }
 
-export function observeOperation<A, E, R>(
-	name: string,
-	effect: Effect.Effect<A, E, R>
-): Effect.Effect<A, E, R> {
-	return Effect.gen(function* () {
+// Untraced: the caller's operation name is the span, applied by the pipeable below.
+export const observeOperation = Effect.fnUntraced(
+	function* <A, E, R>(name: string, effect: Effect.Effect<A, E, R>): Effect.fn.Return<A, E, R> {
 		const started = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
 		const exit = yield* Effect.exit(effect);
 		const finished = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
@@ -258,5 +256,6 @@ export function observeOperation<A, E, R>(
 		yield* Metric.update(operationLatency, Math.max(0, finished - started));
 		if (Exit.isFailure(exit)) yield* Metric.update(operationErrors, 1);
 		return yield* exit;
-	}).pipe(Effect.withSpan(name), Effect.annotateSpans("operation", name));
-}
+	},
+	(effect, name) => effect.pipe(Effect.withSpan(name), Effect.annotateSpans("operation", name))
+);

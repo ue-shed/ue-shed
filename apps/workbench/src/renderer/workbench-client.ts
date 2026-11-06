@@ -61,6 +61,7 @@ import {
 	FixtureLaunchResult as FixtureLaunchResultSchema,
 	WorkbenchCameraMetrics as WorkbenchCameraMetricsSchema
 } from "../shared/ipc-contracts.js";
+const decodeEditorHandoffNotice = Schema.decodeOption(EditorHandoffNotice);
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
@@ -270,7 +271,7 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 		Effect.acquireRelease(
 			Effect.sync(() =>
 				window.ueShed.onEditorHandoff((notice) => {
-					const decoded = Schema.decodeOption(EditorHandoffNotice)(notice);
+					const decoded = decodeEditorHandoffNotice(notice);
 					if (Option.isSome(decoded)) Queue.offerUnsafe(queue, decoded.value);
 				})
 			),

@@ -35,9 +35,14 @@ Keep pure calculations as plain functions. Effect is not part of the wire protoc
 - Give each external library one adapter service.
 - Expose every stateful or effectful module through `Context.Service` and layers.
 - Name callable public and non-trivial internal operations with `Effect.fn("Domain.operation")`.
-  Parameterless service operation properties attach the same per-execution name with
-  `Effect.withSpan("Domain.operation")`; see [the source migration](effect-operation-properties.md).
-- Use Effect Schema for TypeScript-owned domain values and boundary validation.
+  A function whose body is only `Effect.gen` is an `Effect.fn` (`t3code/prefer-effect-fn`; tests are
+  exempt). The name creates a span: use `Effect.fnUntraced` for per-item functions in index, scan
+  and parse loops, and keep existing span names. Parameterless service operation properties attach
+  the same per-execution name with `Effect.withSpan("Domain.operation")`; see
+  [the source migration](effect-operation-properties.md).
+- Use Effect Schema for TypeScript-owned domain values and boundary validation. Compile decoders
+  and encoders (`Schema.decodeEffect(Foo)`, `Schema.is(Foo)`) once in a module-level const, not
+  inside a function body (`t3code/no-inline-schema-compile`).
 - Expose domain actions, not raw library clients.
 - Use Layers for setup and tests, not hidden global access.
 - Scope resources and release them on success, failure, and cancellation.

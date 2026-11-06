@@ -11,6 +11,11 @@ import { runSuccessfulCli } from "./cli-in-process.test-support.js";
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const cliIndex = join(repositoryRoot, "apps", "cli", "src", "index.ts");
 const releaseVersion = "0.3.1";
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const ReleaseManifestDigest = Schema.Struct({ artifact: Schema.Struct({ sha256: Schema.String }) });
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeJsonRecord = Schema.decodeUnknownSync(JsonRecord);
+const decodeReleaseManifestDigest = Schema.decodeUnknownSync(ReleaseManifestDigest);
 let root = "";
 let source = "";
 let cache = "";
@@ -33,11 +38,11 @@ function run(command: string, args: readonly string[], cwd = repositoryRoot) {
 }
 
 async function runCli(args: readonly string[]) {
-	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await runSuccessfulCli(args)));
+	return decodeJson(JSON.parse(await runSuccessfulCli(args)));
 }
 
 async function runCliRecord(args: readonly string[]) {
-	return Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(await runCli(args));
+	return decodeJsonRecord(await runCli(args));
 }
 
 beforeAll(async () => {
@@ -85,11 +90,9 @@ describe("plugin distribution CLI process", () => {
 	it("installs, inspects, verifies, reuses offline, and prunes an exact release", async () => {
 		const manifestPath = join(source, `ue-shed-plugins-${releaseVersion}.manifest.json`);
 		const manifestBytes = await readFile(manifestPath);
-		const manifest = Schema.decodeUnknownSync(
-			Schema.Struct({ artifact: Schema.Struct({ sha256: Schema.String }) })
-		)(JSON.parse(manifestBytes.toString("utf8")));
+		const manifest = decodeReleaseManifestDigest(JSON.parse(manifestBytes.toString("utf8")));
 		const manifestDigest = `sha256:${createHash("sha256").update(manifestBytes).digest("hex")}`;
-		const installed = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
+		const installed = decodeJsonRecord(
 			JSON.parse(
 				run(process.execPath, [
 					"--import",

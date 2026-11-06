@@ -128,11 +128,13 @@ export const CorpusManifest = Schema.Struct({
 	}),
 	packages: Schema.Array(CorpusPackage)
 });
+const CorpusManifestJson = Schema.fromJsonString(CorpusManifest);
+const decodeCorpusManifestJson = Schema.decodeSync(CorpusManifestJson);
 export type CorpusManifest = typeof CorpusManifest.Type;
 
 /** Decodes manifest JSON text, failing on anything the commandlet would not write. */
 export function decodeCorpusManifest(contents: string): CorpusManifest {
-	return Schema.decodeSync(Schema.fromJsonString(CorpusManifest))(contents);
+	return decodeCorpusManifestJson(contents);
 }
 
 /** Human summary of a manifest: totals, lines per text kind, packages per kind, duplicates. */

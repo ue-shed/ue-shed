@@ -32,6 +32,11 @@ import { writeSnapshotFile, type SnapshotSource } from "./snapshot-file.js";
 import { snapshotCheck } from "./snapshot-format.js";
 import { decodeWtf8, encodeWtf8 } from "./wtf8.js";
 
+const decodeManifest = Schema.decodeUnknownEffect(SharedIndexManifestSchema);
+const LayerRecords = Schema.Array(LayerRecord);
+const decodeLayerRecords = Schema.decodeUnknownEffect(LayerRecords);
+const decodeLayerRecord = Schema.decodeUnknownEffect(LayerRecord);
+
 const unavailable = (operation: string, cause: unknown) =>
 	new SnapshotStoreError({
 		operation,
@@ -147,7 +152,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 	let lookupStrings = 0,
 		reusedStrings = 0;
 	const stageTimes: Record<string, number> = {};
-	let manifest = yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(begin.root).pipe(
+	let manifest = yield* decodeManifest(begin.root).pipe(
 		Effect.mapError((cause) => unavailable("native-index-root", cause))
 	);
 	const command = Effect.fn("NativeIndexBuilder.execute")(
@@ -168,9 +173,9 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 			for (const [name, seconds] of Object.entries(result.stageSeconds))
 				stageTimes[name] = (stageTimes[name] ?? 0) + seconds * 1000;
 			if (result.root !== null)
-				manifest = yield* Schema.decodeUnknownEffect(SharedIndexManifestSchema)(
-					result.root
-				).pipe(Effect.mapError((cause) => unavailable("native-index-root", cause)));
+				manifest = yield* decodeManifest(result.root).pipe(
+					Effect.mapError((cause) => unavailable("native-index-root", cause))
+				);
 			return result;
 		},
 		Effect.onExit((exit) =>
@@ -205,9 +210,9 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				inputs,
 				...(removedNames ? { removedNames } : undefined)
 			});
-			return yield* Schema.decodeUnknownEffect(Schema.Array(LayerRecord))(
-				result.records
-			).pipe(Effect.mapError((cause) => unavailable("native-index-layer", cause)));
+			return yield* decodeLayerRecords(result.records).pipe(
+				Effect.mapError((cause) => unavailable("native-index-layer", cause))
+			);
 		}
 	);
 	const writer: SharedIndexWriter = {
@@ -286,9 +291,9 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 					inputs,
 					...(removedNames ? { removedNames } : undefined)
 				});
-				return yield* Schema.decodeUnknownEffect(Schema.Array(LayerRecord))(
-					result.records
-				).pipe(Effect.mapError((cause) => unavailable("native-package-layer", cause)));
+				return yield* decodeLayerRecords(result.records).pipe(
+					Effect.mapError((cause) => unavailable("native-package-layer", cause))
+				);
 			}
 		),
 		manifest: () => manifest,
@@ -330,9 +335,9 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 					cold: true,
 					...(removedNames ? { removedNames } : undefined)
 				});
-				return yield* Schema.decodeUnknownEffect(Schema.Array(LayerRecord))(
-					result.records
-				).pipe(Effect.mapError((cause) => unavailable("native-index-layer", cause)));
+				return yield* decodeLayerRecords(result.records).pipe(
+					Effect.mapError((cause) => unavailable("native-index-layer", cause))
+				);
 			}
 		),
 		publishCold: Effect.fn("NativeIndexBuilder.publishCold")(function* (entries, removedNames) {
@@ -352,9 +357,9 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 				cold: true,
 				...(removedNames ? { removedNames } : undefined)
 			});
-			return yield* Schema.decodeUnknownEffect(Schema.Array(LayerRecord))(
-				result.records
-			).pipe(Effect.mapError((cause) => unavailable("native-index-layer", cause)));
+			return yield* decodeLayerRecords(result.records).pipe(
+				Effect.mapError((cause) => unavailable("native-index-layer", cause))
+			);
 		}),
 		publishIds: Effect.fn("NativeIndexBuilder.publishIds")(
 			function* (name, key, source, generation, retained, removed) {
@@ -381,7 +386,7 @@ const makeWriter = Effect.fn("NativeIndexBuilder.writer")(function* (
 					...(retained ? { retained } : undefined),
 					...(removed ? { removed } : undefined)
 				});
-				return yield* Schema.decodeUnknownEffect(LayerRecord)(result.records[0]).pipe(
+				return yield* decodeLayerRecord(result.records[0]).pipe(
 					Effect.mapError((cause) => unavailable("native-index-layer", cause))
 				);
 			}

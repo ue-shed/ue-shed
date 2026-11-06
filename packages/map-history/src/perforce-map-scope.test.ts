@@ -5,9 +5,10 @@ import { Stream, Effect, Layer, Schema } from "effect";
 import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
 import { PerforceMapHistoryQuery } from "./schema.js";
 import { resolvePerforceMapScope, scopedPerforceFile } from "./perforce-map-scope.js";
+const decodePerforceMapHistoryQuery = Schema.decodeSync(PerforceMapHistoryQuery);
 
 function query() {
-	return Schema.decodeSync(PerforceMapHistoryQuery)({
+	return decodePerforceMapHistoryQuery({
 		limits: {
 			maxChangelists: 100,
 			maxConcurrency: 4,

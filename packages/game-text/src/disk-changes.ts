@@ -184,11 +184,10 @@ export interface DiskChangesWatchOptions<E> {
 }
 
 /**
- * The paths that differ between the disk and the index, as they change. The stream runs one full
- * check, then watches `folders`. Changed packages and files are rechecked by path once a burst
- * settles; a folder-level event, an unnamed event or a watcher error schedules one full walk,
- * and so does every `published` signal, so a completed scan resets the state. It holds only the
- * set of differing paths: no snapshot of the disk.
+ * The paths that differ between the disk and the index: one full check, then changed packages
+ * and files are rechecked by path once a burst settles. A folder-level or unnamed event, a watcher
+ * error or a `published` signal schedules one full walk. It holds only the differing paths, no
+ * snapshot of the disk.
  */
 export const watchDiskChanges = <E>(
 	options: DiskChangesWatchOptions<E>
@@ -216,13 +215,13 @@ export const watchDiskChanges = <E>(
 						: stateOf(current, busy)
 				);
 			});
-			const schedule = (next: (current: Pending) => Pending) =>
-				Effect.gen(function* () {
-					yield* Ref.update(pending, next);
-					yield* Queue.offer(wake, undefined);
-					const idle = !(yield* Ref.getAndSet(checking, true));
-					if (idle && (yield* Ref.get(answered))) yield* emit;
-				});
+			// Untraced: it runs once per watcher event.
+			const schedule = Effect.fnUntraced(function* (next: (current: Pending) => Pending) {
+				yield* Ref.update(pending, next);
+				yield* Queue.offer(wake, undefined);
+				const idle = !(yield* Ref.getAndSet(checking, true));
+				if (idle && (yield* Ref.get(answered))) yield* emit;
+			});
 			const full = schedule(() => ({ full: true, paths: new Set() }));
 			const named = (path: string) =>
 				schedule((current) =>

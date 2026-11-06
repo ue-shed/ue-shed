@@ -5,6 +5,7 @@ import {
 	type MapTileGrid
 } from "@ue-shed/cameras/map-tiles";
 import { Schema } from "effect";
+const decodeMapCapturePlan = Schema.decodeSync(MapCapturePlan);
 
 export type MapCapturePlanDraft = Omit<MapCapturePlanValue, "id"> & { readonly id: string };
 
@@ -16,7 +17,6 @@ export interface MapCaptureDraftCenter {
 	readonly x: number;
 	readonly y: number;
 }
-
 const safeIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const gameMapPathPattern = /^\/Game\/[A-Za-z0-9_./-]+$/;
 
@@ -162,7 +162,7 @@ export function validateMapCapturePlanDraft(draft: MapCapturePlanDraft): MapCapt
 	}
 	if (errors.length > 0) return { errors, status: "invalid" };
 	try {
-		return { plan: Schema.decodeSync(MapCapturePlan)(draft), status: "valid" };
+		return { plan: decodeMapCapturePlan(draft), status: "valid" };
 	} catch {
 		return {
 			errors: ["The plan does not satisfy the Map Capture Plan v1 contract."],

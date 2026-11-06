@@ -34,17 +34,25 @@ import {
 	target,
 	unit
 } from "./localization.test-support.js";
+const decodeLocalizationJoin = Schema.decodeSync(LocalizationJoin);
+const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
+const decodeUnknownLocalizationTargetEvidence = Schema.decodeUnknownSync(
+	LocalizationTargetEvidence
+);
+const decodeUnknownTextUnit = Schema.decodeUnknownSync(TextUnit);
+const decodeLocalizationTargetEvidence = Schema.decodeSync(LocalizationTargetEvidence);
+const decodeTextUnit = Schema.decodeSync(TextUnit);
 
 function mark(textCorpus = corpus(), files = evidence()) {
 	const join = joinLocalizationTarget(textCorpus, files);
-	Schema.decodeSync(LocalizationJoin)(join);
+	decodeLocalizationJoin(join);
 	const result = join.lines[0]?.cultures[0];
 	if (!result) throw new Error("Expected one localization state.");
 	return result;
 }
 
 function configureGather(includes: readonly string[], excludes: readonly string[]) {
-	return Schema.decodeSync(LocalizationTarget)({
+	return decodeLocalizationTarget({
 		...target,
 		configs: target.configs.map((config) => ({
 			...config,
@@ -253,7 +261,7 @@ describe("localization identity join and precedence", () => {
 				}
 			);
 			const joined = joinLocalizationTarget(text, files);
-			Schema.decodeSync(LocalizationJoin)(joined);
+			decodeLocalizationJoin(joined);
 			expect(joined.lines).toHaveLength(2);
 			const units = new Map(text.units.map((unit) => [unit.id, unit]));
 			for (const line of joined.lines) {
@@ -572,7 +580,7 @@ describe("localization identity join and precedence", () => {
 	});
 	it("unavailable or duplicate evidence has typed reasons", () => {
 		const files = evidence();
-		const missing = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const missing = decodeUnknownLocalizationTargetEvidence({
 			...files,
 			manifest: { ...files.locmeta, status: "failed" }
 		});
@@ -601,7 +609,7 @@ describe("localization identity join and precedence", () => {
 				})
 			).unknownReasons
 		).toContain("duplicate_po_identity");
-		const unresolved = Schema.decodeUnknownSync(TextUnit)({
+		const unresolved = decodeUnknownTextUnit({
 			...unit(),
 			identity: { status: "unresolved", reason: "culture_invariant" },
 			occurrences: unit().occurrences.map((occurrence) => ({
@@ -613,7 +621,7 @@ describe("localization identity join and precedence", () => {
 			joinLocalizationTarget(corpus([unresolved]), evidence([])).lines[0]?.cultures[0]
 				?.unknownReasons
 		).toContain("unresolved_identity");
-		const reference = Schema.decodeUnknownSync(TextUnit)({
+		const reference = decodeUnknownTextUnit({
 			...unit(),
 			identity: { status: "string_table", tableId: "/Game/Missing.Missing", key: "K" },
 			occurrences: unit().occurrences.map((occurrence) => ({
@@ -632,7 +640,7 @@ describe("localization identity join and precedence", () => {
 		expect(mark(corpus([conflicted])).unknownReasons).toContain("conflicting_source");
 		const unavailable = { ...evidence(), target: { ...target, configs: [] } };
 		expect(mark(corpus(), unavailable).unknownReasons).toContain("gather_settings_unavailable");
-		const collapsed = Schema.decodeSync(LocalizationTargetEvidence)({
+		const collapsed = decodeLocalizationTargetEvidence({
 			...evidence(),
 			target: { ...target, collapseMode: "IdenticalNamespaceAndSource" }
 		});
@@ -646,7 +654,7 @@ describe("localization identity join and precedence", () => {
 			key: "K"
 		};
 		const saved = ftextUnit("K", "", "Content/Text/Reference.uasset");
-		const reference = Schema.decodeSync(TextUnit)({
+		const reference = decodeTextUnit({
 			...saved,
 			id: "reference",
 			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity })),
@@ -676,7 +684,7 @@ describe("localization identity join and precedence", () => {
 			tableId: "/Game/Text/Table.Table",
 			key: "Absent"
 		};
-		const reference = Schema.decodeSync(TextUnit)({
+		const reference = decodeTextUnit({
 			...saved,
 			identity,
 			occurrences: saved.occurrences.map((occurrence) => ({ ...occurrence, identity }))
@@ -689,17 +697,17 @@ describe("localization identity join and precedence", () => {
 	});
 	it("distinguishes confirmed file absence from unreadable evidence", () => {
 		const files = evidence();
-		const missingArchive = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const missingArchive = decodeUnknownLocalizationTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({ ...culture, archive: files.locmeta }))
 		});
 		expect(mark(corpus(), missingArchive).state).toBe("not_synced");
-		const missingPO = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const missingPO = decodeUnknownLocalizationTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({ ...culture, po: files.locmeta }))
 		});
 		expect(mark(corpus(), missingPO).state).toBe("translated");
-		const unreadable = Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+		const unreadable = decodeUnknownLocalizationTargetEvidence({
 			...files,
 			cultures: files.cultures.map((culture) => ({
 				...culture,
@@ -811,13 +819,13 @@ describe("Unreal gather wildcard coverage", () => {
 		const occurrence = unit("K", "Source", "Content/Fixture/Localization/Table.uasset")
 			.occurrences[0];
 		if (!dashboard || !occurrence) throw new Error("Missing test Dashboard or occurrence.");
-		const configured = Schema.decodeSync(LocalizationTarget)({
+		const configured = decodeLocalizationTarget({
 			...target,
 			configs: [],
 			dashboard
 		});
 		expect(localizationGatherCoverage(configured, occurrence)).toEqual({ status: "inside" });
-		const engineRoot = Schema.decodeSync(LocalizationTarget)({
+		const engineRoot = decodeLocalizationTarget({
 			...configured,
 			dashboard: {
 				...dashboard,
@@ -875,7 +883,7 @@ describe("Unreal gather wildcard coverage", () => {
 			}).status
 		).toBe("outside");
 		const excluded = (name: string, derived: boolean) =>
-			Schema.decodeSync(LocalizationTarget)({
+			decodeLocalizationTarget({
 				...target,
 				configs: target.configs.map((config) => ({
 					...config,

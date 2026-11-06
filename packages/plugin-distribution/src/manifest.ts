@@ -283,6 +283,7 @@ export const PluginBundleManifest = Schema.Union([
 	CompiledPluginBundleManifestV3
 ]);
 export type PluginBundleManifest = typeof PluginBundleManifest.Type;
+const decodePluginBundleManifestEffect = Schema.decodeUnknownEffect(PluginBundleManifest);
 
 /** Short aliases for consumers that refer to the release manifest as a plugin manifest. */
 export const PluginManifest = PluginBundleManifest;
@@ -517,11 +518,11 @@ function validateGraph(
 }
 
 /** Validates the graph and cross-field invariants of an already decoded manifest. */
-export const validatePluginBundleManifestValue = (
-	manifest: PluginBundleManifest,
-	options: PluginBundleManifestValidationOptions = {}
-): Effect.Effect<PluginBundleManifest, PluginBundleManifestValidationError> =>
-	Effect.gen(function* () {
+export const validatePluginBundleManifestValue = Effect.fn("PluginBundleManifest.validateValue")(
+	function* (
+		manifest: PluginBundleManifest,
+		options: PluginBundleManifestValidationOptions = {}
+	): Effect.fn.Return<PluginBundleManifest, PluginBundleManifestValidationError> {
 		if (isSourcePluginBundleManifest(manifest)) {
 			const range = sourceUnrealRange(manifest);
 			const rangeOrder = compareVersions(range.minimum, range.maximum);
@@ -659,14 +660,15 @@ export const validatePluginBundleManifestValue = (
 			yield* verifyPluginBundleArtifactChecksum(manifest, options.actualArtifactSha256);
 		}
 		return manifest;
-	});
+	}
+);
 
 /** Decodes and validates an unknown manifest at a CLI or release-artifact boundary. */
 export const validatePluginBundleManifest = <Input>(
 	input: Input,
 	options: PluginBundleManifestValidationOptions = {}
 ): Effect.Effect<PluginBundleManifest, PluginBundleManifestValidationError> =>
-	Schema.decodeUnknownEffect(PluginBundleManifest)(input, { onExcessProperty: "error" }).pipe(
+	decodePluginBundleManifestEffect(input, { onExcessProperty: "error" }).pipe(
 		Effect.mapError((cause) =>
 			validationError(
 				"schema_invalid",
@@ -682,7 +684,7 @@ export const validatePluginBundleManifest = <Input>(
 export const decodePluginBundleManifest = <Input>(
 	input: Input
 ): Effect.Effect<PluginBundleManifest, PluginBundleManifestValidationError> =>
-	Schema.decodeUnknownEffect(PluginBundleManifest)(input).pipe(
+	decodePluginBundleManifestEffect(input).pipe(
 		Effect.mapError((cause) =>
 			validationError(
 				"schema_invalid",
@@ -746,54 +748,55 @@ export class PluginDependencyResolutionError extends Schema.TaggedError<
 }) {}
 
 /** Resolves the requested plugin closure in deterministic dependency-first order. */
-export const resolvePluginBundleDependencies = (
+export const resolvePluginBundleDependencies = Effect.fn(
+	"PluginBundleManifest.resolveDependencies"
+)(function* (
 	manifest: PluginBundleManifest,
 	requestedPluginIds: readonly PluginId[]
-): Effect.Effect<ResolvedPluginGraph, PluginDependencyResolutionError> =>
-	Effect.gen(function* () {
-		const requested = [...requestedPluginIds];
-		const requestedSet = new Set<PluginId>();
-		for (const pluginId of requested) {
-			if (requestedSet.has(pluginId)) {
-				return yield* new PluginDependencyResolutionError({
-					code: "duplicate_requested_plugin",
-					message: `Plugin ${pluginId} was requested more than once.`,
-					recovery: "Request each plugin ID once.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				});
-			}
-			requestedSet.add(pluginId);
+): Effect.fn.Return<ResolvedPluginGraph, PluginDependencyResolutionError> {
+	const requested = [...requestedPluginIds];
+	const requestedSet = new Set<PluginId>();
+	for (const pluginId of requested) {
+		if (requestedSet.has(pluginId)) {
+			return yield* new PluginDependencyResolutionError({
+				code: "duplicate_requested_plugin",
+				message: `Plugin ${pluginId} was requested more than once.`,
+				recovery: "Request each plugin ID once.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		}
+		requestedSet.add(pluginId);
+	}
 
-		const pluginsById = new Map(manifest.plugins.map((plugin) => [plugin.id, plugin]));
-		for (const pluginId of requested) {
-			if (!pluginsById.has(pluginId)) {
-				return yield* new PluginDependencyResolutionError({
-					code: "requested_plugin_unavailable",
-					message: `Plugin ${pluginId} is not present in release ${manifest.releaseVersion}.`,
-					recovery: "Choose a plugin ID declared by the exact release manifest.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				});
-			}
+	const pluginsById = new Map(manifest.plugins.map((plugin) => [plugin.id, plugin]));
+	for (const pluginId of requested) {
+		if (!pluginsById.has(pluginId)) {
+			return yield* new PluginDependencyResolutionError({
+				code: "requested_plugin_unavailable",
+				message: `Plugin ${pluginId} is not present in release ${manifest.releaseVersion}.`,
+				recovery: "Choose a plugin ID declared by the exact release manifest.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		}
+	}
 
-		const visited = new Set<PluginId>();
-		const ordered: PluginBundlePlugin[] = [];
-		const visit = (pluginId: PluginId): void => {
-			if (visited.has(pluginId)) return;
-			const plugin = pluginsById.get(pluginId);
-			if (plugin === undefined) return;
-			for (const dependency of [...plugin.dependencies].sort()) visit(dependency);
-			visited.add(pluginId);
-			ordered.push(plugin);
-		};
-		for (const pluginId of [...requested].sort()) visit(pluginId);
+	const visited = new Set<PluginId>();
+	const ordered: PluginBundlePlugin[] = [];
+	const visit = (pluginId: PluginId): void => {
+		if (visited.has(pluginId)) return;
+		const plugin = pluginsById.get(pluginId);
+		if (plugin === undefined) return;
+		for (const dependency of [...plugin.dependencies].sort()) visit(dependency);
+		visited.add(pluginId);
+		ordered.push(plugin);
+	};
+	for (const pluginId of [...requested].sort()) visit(pluginId);
 
-		return ResolvedPluginGraph.make({
-			orderedPluginIds: ordered.map((plugin) => plugin.id),
-			plugins: ordered,
-			requestedPluginIds: requested
-		});
+	return ResolvedPluginGraph.make({
+		orderedPluginIds: ordered.map((plugin) => plugin.id),
+		plugins: ordered,
+		requestedPluginIds: requested
 	});
+});

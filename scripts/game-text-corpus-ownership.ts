@@ -3,6 +3,18 @@ import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "no
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Schema } from "effect";
 
+const OwnershipReceipt = Schema.Struct({
+	version: Schema.Literal(1),
+	files: Schema.Array(
+		Schema.Struct({
+			path: Schema.String,
+			sha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u))
+		})
+	)
+});
+const OwnershipReceiptJson = Schema.fromJsonString(OwnershipReceipt);
+const decodeOwnershipReceiptJson = Schema.decodeSync(OwnershipReceiptJson);
+
 export const corpusOwnershipName = "UEShedGameTextCorpus.ownership.json";
 export function filesUnder(root: string): string[] {
 	return existsSync(root)
@@ -36,19 +48,7 @@ export function prepareCorpusOutput(
 	if (existing.length === 0) return;
 	if (!clean) throw new Error("Corpus output exists; pass --clean to replace owned files.");
 	if (!existsSync(receipt)) throw new Error("Refusing --clean: no corpus ownership receipt.");
-	const value = Schema.decodeSync(
-		Schema.fromJsonString(
-			Schema.Struct({
-				version: Schema.Literal(1),
-				files: Schema.Array(
-					Schema.Struct({
-						path: Schema.String,
-						sha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u))
-					})
-				)
-			})
-		)
-	)(readFileSync(receipt, "utf8"));
+	const value = decodeOwnershipReceiptJson(readFileSync(receipt, "utf8"));
 	const owned = new Map<string, string>();
 	for (const entry of value.files) {
 		const path = resolve(projectRoot, entry.path);

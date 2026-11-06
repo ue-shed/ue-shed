@@ -4,6 +4,10 @@ import { Argument, Command, Flag } from "effect/cli";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 
+const decodeJson = Schema.decodeUnknownEffect(Schema.Json);
+// Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
+const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
+
 const request = Command.make(
 	"request",
 	{
@@ -24,12 +28,12 @@ const request = Command.make(
 					return JSON.parse(await readFile(args.requestPath, "utf8"));
 				}).pipe(
 					Effect.flatMap((input) =>
-						Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+						decodeJson(input).pipe(
 							Effect.mapError((cause) => new Cause.UnknownError(cause))
 						)
 					)
 				);
-				const decoded = yield* Schema.decodeUnknownEffect(world.WorldRequest)(input, {
+				const decoded = yield* decodeLazySchema(world.WorldRequest)(input, {
 					onExcessProperty: "error"
 				});
 				const result = yield* Effect.gen(function* () {

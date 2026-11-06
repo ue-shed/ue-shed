@@ -2,6 +2,7 @@ import type { AuthoringRow, AuthoringTableSnapshotV1 } from "@ue-shed/protocol";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { JoinedView, buildJoinedView } from "./joined-views.js";
+const decodeJoinedView = Schema.decodeSync(JoinedView);
 
 function snapshot(objectPath: string, rows: readonly AuthoringRow[]): AuthoringTableSnapshotV1 {
 	return {
@@ -61,7 +62,7 @@ describe("joined authoring views", () => {
 			snapshots: [left, right]
 		});
 
-		expect(Schema.decodeSync(JoinedView)(view)).toEqual(view);
+		expect(decodeJoinedView(view)).toEqual(view);
 		expect(view).toMatchObject({
 			editability: { kind: "read_only" },
 			rows: [

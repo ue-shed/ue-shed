@@ -65,7 +65,6 @@ export function platformPackageName(platform = process.platform, arch = process.
  *
  * @param {string} [platform]
  * @param {string} [arch]
- * @returns {string}
  */
 export function resolveUassetExecutable(platform = process.platform, arch = process.arch) {
 	const packageName = platformPackageName(platform, arch);

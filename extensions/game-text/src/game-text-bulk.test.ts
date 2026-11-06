@@ -6,6 +6,7 @@ import {
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { carryEdits, exportRequest, keysText, lineRange, reviewChanges } from "./game-text-bulk.js";
+const decodeLocalizationSelection = Schema.decodeSync(LocalizationSelection);
 
 type Encoded = typeof LocalizationLinePreview.Encoded;
 const preview = Schema.decodeUnknownSync(LocalizationLinePreview);
@@ -103,7 +104,7 @@ describe("bulk actions", () => {
 	});
 
 	it("exports the ticked lines without the list's state, review or key-change filters", () => {
-		const selection = Schema.decodeSync(LocalizationSelection)({
+		const selection = decodeLocalizationSelection({
 			target: "Game",
 			cultures: ["de", "fr"],
 			state: "not_translated",

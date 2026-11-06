@@ -501,39 +501,39 @@ export const resolvePlatformViews = Effect.fn("EnhancedInput.resolvePlatformView
 			| { readonly status: "read"; readonly redirects: readonly InputContextRedirect[] }
 			| { readonly status: "failed"; readonly message: string };
 		const redirectCache = new Map<string, RedirectRead>();
-		const redirectsOf = (inputData: string) =>
-			Effect.gen(function* () {
-				const cached = redirectCache.get(inputData);
-				if (cached !== undefined) return cached;
-				const file = files.get(contextIdentity(inputData));
-				const result: RedirectRead =
-					file === undefined
-						? {
-								status: "failed",
-								message:
-									inventoryFailure ??
-									`No saved Blueprint package was found for ${inputData}; a native class saves no redirects here.`
-							}
-						: yield* reader.readAsset(resolve(options.projectRoot, file)).pipe(
-								Effect.map(
-									(inspection): RedirectRead => ({
-										status: "read",
-										redirects: platformDataRedirectsFromInspection(
-											inspection,
-											inputData
-										)
-									})
-								),
-								Effect.catchTag("AssetReaderError", (error) =>
-									Effect.succeed<RedirectRead>({
-										status: "failed",
-										message: error.message
-									})
-								)
-							);
-				redirectCache.set(inputData, result);
-				return result;
-			});
+		// Untraced: runs once per platform input data asset.
+		const redirectsOf = Effect.fnUntraced(function* (inputData: string) {
+			const cached = redirectCache.get(inputData);
+			if (cached !== undefined) return cached;
+			const file = files.get(contextIdentity(inputData));
+			const result: RedirectRead =
+				file === undefined
+					? {
+							status: "failed",
+							message:
+								inventoryFailure ??
+								`No saved Blueprint package was found for ${inputData}; a native class saves no redirects here.`
+						}
+					: yield* reader.readAsset(resolve(options.projectRoot, file)).pipe(
+							Effect.map(
+								(inspection): RedirectRead => ({
+									status: "read",
+									redirects: platformDataRedirectsFromInspection(
+										inspection,
+										inputData
+									)
+								})
+							),
+							Effect.catchTag("AssetReaderError", (error) =>
+								Effect.succeed<RedirectRead>({
+									status: "failed",
+									message: error.message
+								})
+							)
+						);
+			redirectCache.set(inputData, result);
+			return result;
+		});
 		return yield* Effect.forEach(listed, (entry) =>
 			Effect.gen(function* () {
 				if (entry.status === "unavailable") {

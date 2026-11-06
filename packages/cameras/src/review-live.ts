@@ -13,6 +13,7 @@ import {
 	type ReviewCaptureRequest,
 	type ReviewCaptureResponse
 } from "./review-schema.js";
+const decodeReviewCaptureRequestCurrent = Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent);
 
 const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
 
@@ -83,7 +84,7 @@ export function captureReviewView(args: {
 	readonly request: ReviewCaptureRequest;
 }): Effect.Effect<ReviewCaptureResponse, ReviewCaptureConnectionError, RemoteControlClient> {
 	if (args.request.contract.version.minor >= 6) {
-		return Schema.decodeUnknownEffect(ReviewCaptureRequestCurrent)(args.request).pipe(
+		return decodeReviewCaptureRequestCurrent(args.request).pipe(
 			Effect.flatMap((request) =>
 				captureRenderedReviewView({ endpoint: args.endpoint, request })
 			),

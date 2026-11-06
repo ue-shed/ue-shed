@@ -17,7 +17,7 @@ import {
 	CameraPresentationLive,
 	type CameraPresentationApi
 } from "./camera-presentation.js";
-
+const decodeRendererCameraFrameEffect = Schema.decodeUnknownEffect(RendererCameraFrame);
 const configuration = makeWorkbenchConfigurationLayer({
 	authoringAsset: { status: "not_configured" },
 	expectedProject: { status: "not_configured" },
@@ -75,9 +75,7 @@ const makeGatedRecordingWindow = () =>
 			_channel: string,
 			payload: Payload
 		) {
-			const frame = yield* Schema.decodeUnknownEffect(RendererCameraFrame)(payload).pipe(
-				Effect.orDie
-			);
+			const frame = yield* decodeRendererCameraFrameEffect(payload).pipe(Effect.orDie);
 			yield* Queue.offer(started, undefined);
 			if (yield* Ref.get(destroyed)) {
 				return yield* new WorkbenchWindowError({

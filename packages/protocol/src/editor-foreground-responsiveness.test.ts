@@ -9,13 +9,17 @@ import {
 	EditorForegroundStateResult
 } from "./editor-foreground-responsiveness.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const tryDecodeLeaseRequest = Schema.decodeUnknownResult(EditorForegroundLeaseRequest);
+const tryDecodeLeaseResult = Schema.decodeUnknownResult(EditorForegroundLeaseResult);
+const tryDecodeStateResult = Schema.decodeUnknownResult(EditorForegroundStateResult);
+const decodeLeaseResult = Schema.decodeUnknownSync(EditorForegroundLeaseResult);
+
 const contract = new URL("../contracts/core/v1/", import.meta.url);
 const fixtures = new URL("fixtures/foreground-responsiveness/", contract);
 
 function fixture(name: string): Schema.Json {
-	return Schema.decodeUnknownSync(Schema.Json)(
-		JSON.parse(readFileSync(new URL(name, fixtures), "utf8"))
-	);
+	return decodeJson(JSON.parse(readFileSync(new URL(name, fixtures), "utf8")));
 }
 
 describe("editor foreground responsiveness contract", () => {
@@ -45,12 +49,9 @@ describe("editor foreground responsiveness contract", () => {
 			0
 		);
 		for (const name of names) {
-			const decoded = Schema.decodeUnknownResult(EditorForegroundLeaseRequest)(
-				fixture(name),
-				{
-					onExcessProperty: "error"
-				}
-			);
+			const decoded = tryDecodeLeaseRequest(fixture(name), {
+				onExcessProperty: "error"
+			});
 			expect([name, decoded._tag]).toEqual([
 				name,
 				name.startsWith("request-valid-") ? "Success" : "Failure"
@@ -60,27 +61,17 @@ describe("editor foreground responsiveness contract", () => {
 
 	it("decodes every result fixture", () => {
 		for (const name of readdirSync(fixtures).filter((entry) => entry.startsWith("result-")))
-			expect([
-				name,
-				Schema.decodeUnknownResult(EditorForegroundLeaseResult)(fixture(name))._tag
-			]).toEqual([name, "Success"]);
-		expect(
-			Schema.decodeUnknownResult(EditorForegroundStateResult)(fixture("state-reported.json"))
-				._tag
-		).toBe("Success");
+			expect([name, tryDecodeLeaseResult(fixture(name))._tag]).toEqual([name, "Success"]);
+		expect(tryDecodeStateResult(fixture("state-reported.json"))._tag).toBe("Success");
 	});
 
 	it("requires a lease ID and TTL on a grant", () => {
-		const granted = Schema.decodeUnknownSync(EditorForegroundLeaseResult)(
-			fixture("result-granted.json")
-		);
+		const granted = decodeLeaseResult(fixture("result-granted.json"));
 		expect(granted.status).toBe("granted");
 		if (granted.status !== "granted") return;
 		const { leaseId: _leaseId, ...withoutLease } = granted;
 		const { ttlMs: _ttlMs, ...withoutTtl } = granted;
 		for (const incomplete of [withoutLease, withoutTtl])
-			expect(Schema.decodeUnknownResult(EditorForegroundLeaseResult)(incomplete)._tag).toBe(
-				"Failure"
-			);
+			expect(tryDecodeLeaseResult(incomplete)._tag).toBe("Failure");
 	});
 });

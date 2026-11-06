@@ -18,6 +18,17 @@ import {
 	NiagaraPreviewProducerRequest
 } from "./schema.js";
 
+const decodeNiagaraPreviewProducerRequestEffect = Schema.decodeUnknownEffect(
+	NiagaraPreviewProducerRequest
+);
+const decodeEncodedNiagaraPreviewProducerRequest = Schema.decodeEffect(
+	NiagaraPreviewProducerRequest
+);
+const decodeNiagaraPreviewProducerReceiptEffect = Schema.decodeUnknownEffect(
+	NiagaraPreviewProducerReceipt
+);
+const NiagaraPreviewArtifacts = Schema.Array(NiagaraPreviewArtifact);
+const decodeNiagaraPreviewArtifactsEffect = Schema.decodeUnknownEffect(NiagaraPreviewArtifacts);
 const runId = "11111111-1111-4111-8111-111111111111";
 const systemObjectPath = "/Game/Fixture/Niagara/NS_Preview.NS_Preview";
 
@@ -158,9 +169,9 @@ it.effect("publishes a run with high-range binary32 timing through a supervised 
 					const unknown: unknown = JSON.parse(
 						yield* Effect.promise(() => readFile(requestPath(options), "utf8"))
 					);
-					const request = yield* Schema.decodeUnknownEffect(
-						NiagaraPreviewProducerRequest
-					)(unknown).pipe(Effect.orDie);
+					const request = yield* decodeNiagaraPreviewProducerRequestEffect(unknown).pipe(
+						Effect.orDie
+					);
 					const staging = join(
 						dirname(projectDescriptor),
 						"Saved",
@@ -243,9 +254,7 @@ it.effect("rejects a truncated PNG before publishing the run", () =>
 			),
 			makeOwnedProcessTreeTestLayer((options) =>
 				Effect.gen(function* () {
-					const request = yield* Schema.decodeUnknownEffect(
-						NiagaraPreviewProducerRequest
-					)(
+					const request = yield* decodeNiagaraPreviewProducerRequestEffect(
 						JSON.parse(
 							yield* Effect.promise(() => readFile(requestPath(options), "utf8"))
 						)
@@ -326,9 +335,7 @@ it.effect("rejects a producer that ignores a requested override", () =>
 			),
 			makeOwnedProcessTreeTestLayer((options) =>
 				Effect.gen(function* () {
-					const request = yield* Schema.decodeUnknownEffect(
-						NiagaraPreviewProducerRequest
-					)(
+					const request = yield* decodeNiagaraPreviewProducerRequestEffect(
 						JSON.parse(
 							yield* Effect.promise(() => readFile(requestPath(options), "utf8"))
 						)
@@ -444,7 +451,7 @@ it.effect("returns completion when staging cleanup fails after publication commi
 				writeFile(join(stagingRoot, "frames", "frame_0001.png"), image)
 			])
 		);
-		const request = yield* Schema.decodeEffect(NiagaraPreviewProducerRequest)({
+		const request = yield* decodeEncodedNiagaraPreviewProducerRequest({
 			contract: {
 				name: "ue-shed-niagara-preview-request",
 				version: { major: 1, minor: 0 }
@@ -461,10 +468,10 @@ it.effect("returns completion when staging cleanup fails after publication commi
 			},
 			systemObjectPath
 		}).pipe(Effect.orDie);
-		const receipt = yield* Schema.decodeUnknownEffect(NiagaraPreviewProducerReceipt)(
+		const receipt = yield* decodeNiagaraPreviewProducerReceiptEffect(
 			producerReceipt(request)
 		).pipe(Effect.orDie);
-		const artifacts = yield* Schema.decodeUnknownEffect(Schema.Array(NiagaraPreviewArtifact))(
+		const artifacts = yield* decodeNiagaraPreviewArtifactsEffect(
 			receipt.frames.map((frame) => ({
 				bytes: image.byteLength,
 				height: 64,

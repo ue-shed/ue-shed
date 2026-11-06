@@ -136,11 +136,10 @@ export interface GameTextWorkspaceHost {
 	/** Policy: the rules file **Create rules file** writes. Defaults to `STARTER_GAME_TEXT_RULES`. */
 	readonly starterRules?: GameTextRuleDocument;
 	/**
-	 * Writable-file hook for a batch: called with the absolute path of every PO file a
-	 * translation edit will replace, read fresh before the write, or of the review file a
-	 * review change will create or replace, before the first one is written, so a host can check
-	 * them all out first. A failure writes nothing. `localizationFiles` still checks each file as
-	 * it writes it.
+	 * Writable-file hook for a batch, called before the first write with the absolute path of every
+	 * PO file a translation edit will replace (read fresh before the write) or review file a review
+	 * change will create or replace, so a host can check them all out first. A failure writes
+	 * nothing; `localizationFiles` still checks each file as it writes it.
 	 */
 	readonly prepareWrites?: (
 		paths: readonly string[]

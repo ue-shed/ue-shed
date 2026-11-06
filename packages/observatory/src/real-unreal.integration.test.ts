@@ -47,6 +47,8 @@ const PlaySessionState = Schema.Struct({
 		status: Schema.Literals(["stopped", "running", "paused"])
 	})
 });
+const decodeObservationStatus = Schema.decodeUnknownEffect(ObservationStatus);
+const decodePlaySessionState = Schema.decodeUnknownEffect(PlaySessionState);
 
 const live = Layer.mergeAll(
 	ObservatoryLive.pipe(Layer.provide(RemoteControlClientLive)),
@@ -62,7 +64,7 @@ const getObservationStatus = Effect.fn("Observatory.real.getStatus")(function* (
 		operation: "observatory.status",
 		parameters: {}
 	});
-	return yield* Schema.decodeUnknownEffect(ObservationStatus)(value);
+	return yield* decodeObservationStatus(value);
 });
 
 const getPlaySessionState = Effect.fn("Observatory.real.getPlaySession")(function* () {
@@ -74,7 +76,7 @@ const getPlaySessionState = Effect.fn("Observatory.real.getPlaySession")(functio
 		operation: "editor.play_session.status",
 		parameters: {}
 	});
-	return yield* Schema.decodeUnknownEffect(PlaySessionState)(value);
+	return yield* decodePlaySessionState(value);
 });
 
 const executePlaySession = Effect.fn("Observatory.real.executePlaySession")(function* (

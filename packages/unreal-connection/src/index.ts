@@ -543,12 +543,10 @@ export function locateUnrealAsset(options: {
 }
 
 /**
- * Asks a connected editor advertising `editor.asset-open.v1` to load a top-level asset and open
- * its asset editor. Requires RemoteControlClient; missing or refused assets return `unavailable`,
- * while connection, capability and result-contract failures remain typed errors. `bringToFront`
- * requests focus of the asset editor, without guaranteeing OS foreground activation; newly opened
- * editors follow Unreal's normal focus behavior even when false. Does not launch an editor or
- * choose the host's project. Does not call LocateAsset or select assets in the Content Browser.
+ * Asks a connected editor advertising `editor.asset-open.v1` to open a top-level asset's editor
+ * (needs RemoteControlClient); missing or refused assets return `unavailable`, other failures
+ * stay typed. `bringToFront` asks for editor focus, not OS foreground; new editors take Unreal's
+ * usual focus anyway. Never launches an editor, picks a project or selects in the Content Browser.
  */
 export function openUnrealAsset(options: {
 	readonly bringToFront: boolean;

@@ -6,6 +6,7 @@ import {
 	EditorWindowActivation,
 	EditorWindowActivationLive
 } from "./editor-window-activation.js";
+const isString = Schema.is(Schema.String);
 
 function exercise(
 	options: { endpoint?: string; capability?: boolean; status?: string; responsePid?: number } = {}
@@ -33,8 +34,7 @@ function exercise(
 						return Effect.succeed(manifest);
 					expect(request.objectPath).toBe("/Script/Fixture.Window");
 					const raw = request.parameters.RequestJson;
-					if (!Schema.is(Schema.String)(raw))
-						throw new Error("RequestJson must be a JSON string");
+					if (!isString(raw)) throw new Error("RequestJson must be a JSON string");
 					expect(JSON.parse(raw)).toEqual({
 						expectedProcessId: 42
 					});

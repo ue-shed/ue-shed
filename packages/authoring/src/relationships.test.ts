@@ -7,6 +7,7 @@ import {
 	makeRowReferenceReport,
 	rowReferenceDiagnostics
 } from "./relationships.js";
+const decodeRowReferenceReport = Schema.decodeSync(RowReferenceReport);
 
 function snapshot(objectPath: string, rows: readonly AuthoringRow[]): AuthoringTableSnapshotV1 {
 	const packageName = objectPath.slice(0, objectPath.lastIndexOf("."));
@@ -153,7 +154,7 @@ describe("DataTable row relationships", () => {
 			snapshot(rightPath, [row("Right")])
 		]);
 
-		expect(Schema.decodeSync(RowReferenceReport)(report)).toEqual(report);
+		expect(decodeRowReferenceReport(report)).toEqual(report);
 		expect(report.summary).toEqual({
 			issueCount: 0,
 			referenceCount: 1,

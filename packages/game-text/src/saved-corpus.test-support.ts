@@ -6,6 +6,9 @@ import { assetReaderLayer, extractProjectTextPackages } from "@ue-shed/unreal-as
 import { scanTextCorpus, textCorpusFromExtractionEvents } from "./corpus.js";
 import { TextCorpus } from "./schema.js";
 
+const TextCorpusJson = Schema.fromJsonString(TextCorpus);
+const decodeTextCorpusJson = Schema.decodeEffect(TextCorpusJson);
+
 /** Only the identical copies made by useSavedFixtureProject may share this invocation's corpus.
  * Generated engine fixtures must use their own extraction. The current reader protocol retains
  * Blueprint classes, gather evidence and package names; the benchmark's legacy protocol does not.
@@ -30,10 +33,7 @@ export const savedFixtureCorpus = Effect.fn("Test.GameText.savedFixtureCorpus")(
 				throw cause;
 			}
 		});
-		if (cached !== undefined)
-			return yield* Schema.decodeEffect(Schema.fromJsonString(TextCorpus))(cached).pipe(
-				Effect.orDie
-			);
+		if (cached !== undefined) return yield* decodeTextCorpusJson(cached).pipe(Effect.orDie);
 	}
 	const corpus = yield* Effect.gen(function* () {
 		if (packages) {

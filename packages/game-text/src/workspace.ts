@@ -130,6 +130,7 @@ import type {
 	GameTextWorkspaceContractMismatch,
 	GameTextWorkspaceRefreshRequest
 } from "./workspace-contract.js";
+const decodeGameTextInvestigationPreset = Schema.decodeEffect(GameTextInvestigationPreset);
 
 /** A preset of the workspace's query, with the rules its scan used. */
 const investigationPreset = (
@@ -640,153 +641,154 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			)
 		);
 	});
-	const runRefresh = (projectRoot: string, index: ProjectCandidates) =>
-		Effect.gen(function* () {
-			const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
-			const selected = yield* project.current;
-			if (
-				selected.status !== "ready" ||
-				selected.project.projectRoot !== projectRoot ||
-				(selected.project.generation ?? 0) !== index.generation ||
-				index.summary.projectRoot !== projectRoot
-			)
-				return unavailableQueryProject(
-					"The selected project changed.",
-					"Retry in the selected project."
-				);
-			return yield* refreshIndex.refresh({ projectRoot }).pipe(
-				Effect.flatMap((indexed) =>
-					Effect.gen(function* () {
-						const modelRevision = indexed.revision;
-						/** This scan is still the latest for the selected project generation. */
-						const owned = Effect.gen(function* () {
-							const latest = yield* project.current;
-							return (
-								(yield* Ref.get(scanRevision)) === revision &&
-								latest.status === "ready" &&
-								latest.project.projectRoot === projectRoot &&
-								(latest.project.generation ?? 0) === index.generation
-							);
+	const runRefresh = Effect.fn("GameText.workspace.runRefresh")(function* (
+		projectRoot: string,
+		index: ProjectCandidates
+	) {
+		const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
+		const selected = yield* project.current;
+		if (
+			selected.status !== "ready" ||
+			selected.project.projectRoot !== projectRoot ||
+			(selected.project.generation ?? 0) !== index.generation ||
+			index.summary.projectRoot !== projectRoot
+		)
+			return unavailableQueryProject(
+				"The selected project changed.",
+				"Retry in the selected project."
+			);
+		return yield* refreshIndex.refresh({ projectRoot }).pipe(
+			Effect.flatMap((indexed) =>
+				Effect.gen(function* () {
+					const modelRevision = indexed.revision;
+					/** This scan is still the latest for the selected project generation. */
+					const owned = Effect.gen(function* () {
+						const latest = yield* project.current;
+						return (
+							(yield* Ref.get(scanRevision)) === revision &&
+							latest.status === "ready" &&
+							latest.project.projectRoot === projectRoot &&
+							(latest.project.generation ?? 0) === index.generation
+						);
+					});
+					const superseded = () =>
+						unavailableQueryProject(
+							"The project changed during the scan.",
+							"Refresh to read the current project generation."
+						);
+					/** The rules the published model of this project carries over to the new one. */
+					const carriedRules = Effect.gen(function* () {
+						const owner = yield* Ref.get(modelSelection);
+						return owner?.projectRoot === projectRoot
+							? yield* Ref.get(qualityDocument)
+							: undefined;
+					});
+					// Ends once the project, its generation or a newer scan supersedes this one.
+					const supersession = Effect.gen(function* () {
+						while (yield* owned) yield* Effect.sleep("100 millis");
+					});
+					// A scan that found the published model's inputs unchanged keeps that model, with
+					// its source quality, localization selection and quality scans; the new open closes.
+					// Only the discovered targets are read again: the scan covers one target's text.
+					const kept = yield* Effect.gen(function* () {
+						if (!(yield* owned)) return superseded();
+						const previous = yield* Ref.get(modelSelection);
+						if (
+							previous?.projectRoot !== projectRoot ||
+							previous.cached ||
+							indexed.queryRevision === undefined ||
+							previous.indexed.queryRevision !== indexed.queryRevision
+						)
+							return undefined;
+						yield* localization.rediscover();
+						yield* Ref.set(modelSelection, {
+							...previous,
+							generation: index.generation
 						});
-						const superseded = () =>
-							unavailableQueryProject(
-								"The project changed during the scan.",
-								"Refresh to read the current project generation."
-							);
-						/** The rules the published model of this project carries over to the new one. */
-						const carriedRules = Effect.gen(function* () {
-							const owner = yield* Ref.get(modelSelection);
-							return owner?.projectRoot === projectRoot
-								? yield* Ref.get(qualityDocument)
-								: undefined;
-						});
-						// Ends once the project, its generation or a newer scan supersedes this one.
-						const supersession = Effect.gen(function* () {
-							while (yield* owned) yield* Effect.sleep("100 millis");
-						});
-						// A scan that found the published model's inputs unchanged keeps that model, with
-						// its source quality, localization selection and quality scans; the new open closes.
-						// Only the discovered targets are read again: the scan covers one target's text.
-						const kept = yield* Effect.gen(function* () {
+						yield* Ref.update(
+							investigationSnapshot,
+							(snapshot) =>
+								snapshot && {
+									...snapshot,
+									source: { ...snapshot.source, generation: index.generation }
+								}
+						);
+						return completedQuery(previous.indexed);
+					}).pipe(publication.withPermit, Effect.uninterruptible);
+					if (kept) return kept;
+					while (true) {
+						if (!(yield* owned)) return superseded();
+						// Source rules are evaluated before anything is published, and interruptibly: a scan
+						// superseded meanwhile stops evaluating, publishes nothing and retains nothing.
+						const rules = yield* carriedRules;
+						const evaluated = rules
+							? yield* Effect.race(
+									sourceQualityModel(indexed, rules).pipe(
+										Effect.map((model) => ({ model }))
+									),
+									supersession.pipe(Effect.as(undefined))
+								)
+							: { model: undefined };
+						if (!evaluated) return superseded();
+						const published = yield* Effect.gen(function* () {
 							if (!(yield* owned)) return superseded();
+							// Rules previewed during the evaluation: evaluate those instead.
+							if ((yield* carriedRules) !== rules) return undefined;
 							const previous = yield* Ref.get(modelSelection);
-							if (
-								previous?.projectRoot !== projectRoot ||
-								previous.cached ||
-								indexed.queryRevision === undefined ||
-								previous.indexed.queryRevision !== indexed.queryRevision
-							)
-								return undefined;
-							yield* localization.rediscover();
-							yield* Ref.set(modelSelection, {
-								...previous,
-								generation: index.generation
-							});
-							yield* Ref.update(
-								investigationSnapshot,
-								(snapshot) =>
-									snapshot && {
-										...snapshot,
-										source: { ...snapshot.source, generation: index.generation }
-									}
-							);
-							return completedQuery(previous.indexed);
-						}).pipe(publication.withPermit, Effect.uninterruptible);
-						if (kept) return kept;
-						while (true) {
-							if (!(yield* owned)) return superseded();
-							// Source rules are evaluated before anything is published, and interruptibly: a scan
-							// superseded meanwhile stops evaluating, publishes nothing and retains nothing.
-							const rules = yield* carriedRules;
-							const evaluated = rules
-								? yield* Effect.race(
-										sourceQualityModel(indexed, rules).pipe(
-											Effect.map((model) => ({ model }))
-										),
-										supersession.pipe(Effect.as(undefined))
-									)
-								: { model: undefined };
-							if (!evaluated) return superseded();
-							const published = yield* Effect.gen(function* () {
+							const unchangedPackages =
+								previous?.projectRoot === projectRoot &&
+								indexed.project !== undefined &&
+								previous.indexed.project?.packageKey ===
+									indexed.project.packageKey &&
+								previous.indexed.project.storeEpoch === indexed.project.storeEpoch;
+							yield* localization.reset(unchangedPackages);
+							return yield* Effect.gen(function* () {
 								if (!(yield* owned)) return superseded();
-								// Rules previewed during the evaluation: evaluate those instead.
 								if ((yield* carriedRules) !== rules) return undefined;
-								const previous = yield* Ref.get(modelSelection);
-								const unchangedPackages =
-									previous?.projectRoot === projectRoot &&
-									indexed.project !== undefined &&
-									previous.indexed.project?.packageKey ===
-										indexed.project.packageKey &&
-									previous.indexed.project.storeEpoch ===
-										indexed.project.storeEpoch;
-								yield* localization.reset(unchangedPackages);
-								return yield* Effect.gen(function* () {
-									if (!(yield* owned)) return superseded();
-									if ((yield* carriedRules) !== rules) return undefined;
 
-									const owner = yield* Ref.get(modelSelection);
-									const rulePath =
-										owner?.projectRoot === projectRoot
-											? yield* Ref.get(qualityRulePath)
-											: undefined;
-									yield* Ref.set(investigationSnapshot, {
-										source: {
-											projectRoot,
-											generation: index.generation,
-											authority: "project_files"
-										},
-										revision: modelRevision,
-										...(rules ? { rules } : undefined)
-									});
-									yield* Effect.all([
-										Ref.set(qualityModel, evaluated.model),
-										Ref.set(qualityDocument, rules),
-										Ref.set(qualityRulePath, rulePath)
-									]);
-									yield* Ref.set(modelSelection, {
+								const owner = yield* Ref.get(modelSelection);
+								const rulePath =
+									owner?.projectRoot === projectRoot
+										? yield* Ref.get(qualityRulePath)
+										: undefined;
+								yield* Ref.set(investigationSnapshot, {
+									source: {
 										projectRoot,
 										generation: index.generation,
-										indexed
-									});
-									yield* indexed.retain;
-									yield* cachedIndex.release({ background: true });
-									return completedQuery(indexed);
-								}).pipe(publication.withPermit);
-							}).pipe(Effect.uninterruptible);
-							if (published) return published;
-						}
+										authority: "project_files"
+									},
+									revision: modelRevision,
+									...(rules ? { rules } : undefined)
+								});
+								yield* Effect.all([
+									Ref.set(qualityModel, evaluated.model),
+									Ref.set(qualityDocument, rules),
+									Ref.set(qualityRulePath, rulePath)
+								]);
+								yield* Ref.set(modelSelection, {
+									projectRoot,
+									generation: index.generation,
+									indexed
+								});
+								yield* indexed.retain;
+								yield* cachedIndex.release({ background: true });
+								return completedQuery(indexed);
+							}).pipe(publication.withPermit);
+						}).pipe(Effect.uninterruptible);
+						if (published) return published;
+					}
+				})
+			),
+			Effect.catchTag(
+				["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
+				(error) =>
+					Effect.succeed({
+						error: indexPublicFailure(error),
+						status: "failed" as const
 					})
-				),
-				Effect.catchTag(
-					["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"],
-					(error) =>
-						Effect.succeed({
-							error: indexPublicFailure(error),
-							status: "failed" as const
-						})
-				)
-			);
-		});
+			)
+		);
+	});
 
 	const configuredScan = Effect.fn("GameText.workspace.configuredScan")(function* (
 		refreshProject: typeof project.refresh = project.refresh
@@ -1385,19 +1387,20 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 
 	// Reads hydrate asynchronously; a model replaced meanwhile (project switch, rescan, new rules)
 	// answers not ready rather than publishing the retired model's result.
-	const qualityRead = <A, E>(read: (model: AsyncTextQualityQuery) => Effect.Effect<A, E>) =>
-		Effect.gen(function* () {
-			const model = yield* currentValue(qualityModel);
-			if (!model) return undefined;
-			const outcome = yield* read(model).pipe(Effect.result);
-			if (Result.isFailure(outcome)) {
-				yield* Effect.logWarning("Source quality read failed", { cause: outcome.failure });
-				return undefined;
-			}
-			return (yield* currentValue(qualityModel)) === model
-				? { value: outcome.success }
-				: undefined;
-		});
+	const qualityRead = Effect.fn("GameText.workspace.qualityRead")(function* <A, E>(
+		read: (model: AsyncTextQualityQuery) => Effect.Effect<A, E>
+	) {
+		const model = yield* currentValue(qualityModel);
+		if (!model) return undefined;
+		const outcome = yield* read(model).pipe(Effect.result);
+		if (Result.isFailure(outcome)) {
+			yield* Effect.logWarning("Source quality read failed", { cause: outcome.failure });
+			return undefined;
+		}
+		return (yield* currentValue(qualityModel)) === model
+			? { value: outcome.success }
+			: undefined;
+	});
 	const qualitySearch = Effect.fn("GameText.workspace.qualitySearch")(function* (
 		request: TextQualitySearchRequest
 	) {
@@ -1601,7 +1604,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		function* (query: GameTextInvestigationQuery) {
 			const snapshot = yield* currentInvestigationSnapshot();
 			const preset = investigationPreset(query, snapshot.rules);
-			yield* Schema.decodeEffect(GameTextInvestigationPreset)(preset).pipe(
+			yield* decodeGameTextInvestigationPreset(preset).pipe(
 				Effect.mapError(
 					(cause) =>
 						new InvestigationError({
@@ -1659,48 +1662,47 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		state.status === "ready"
 			? JSON.stringify([state.project.projectRoot, state.project.generation ?? 0])
 			: state.status;
-	const sharedScans = <A>() =>
-		Effect.gen(function* () {
-			const running = yield* Ref.make<
-				{ readonly key: string; readonly done: Deferred.Deferred<A> } | undefined
-			>(undefined);
-			const start = yield* Semaphore.make(1);
-			return (scan: (refreshProject: typeof project.refresh) => Effect.Effect<A>) =>
-				Effect.gen(function* () {
-					const done = yield* start.withPermit(
-						Effect.uninterruptibleMask((restore) =>
-							Effect.gen(function* () {
-								// Host reads can suspend before a producer exists; cancellation must release admission.
-								const key = scanKey(yield* restore(project.current));
-								const current = yield* Ref.get(running);
-								if (current?.key === key) return current.done;
-								const next = yield* Deferred.make<A>();
-								yield* Ref.set(running, { key, done: next });
-								const refreshProject = Effect.gen(function* () {
-									const state = yield* project.refresh;
-									yield* Ref.update(running, (value) =>
-										value?.done === next
-											? { key: scanKey(state), done: next }
-											: value
-									);
-									return state;
-								}).pipe(start.withPermit);
-								yield* scan(refreshProject).pipe(
-									Effect.exit,
-									Effect.flatMap((exit) =>
-										Ref.update(running, (value) =>
-											value?.done === next ? undefined : value
-										).pipe(Effect.andThen(Deferred.done(next, exit)))
-									),
-									Effect.forkIn(workspaceScope)
+	const sharedScans = Effect.fn("GameText.workspace.sharedScans")(function* <A>() {
+		const running = yield* Ref.make<
+			{ readonly key: string; readonly done: Deferred.Deferred<A> } | undefined
+		>(undefined);
+		const start = yield* Semaphore.make(1);
+		return (scan: (refreshProject: typeof project.refresh) => Effect.Effect<A>) =>
+			Effect.gen(function* () {
+				const done = yield* start.withPermit(
+					Effect.uninterruptibleMask((restore) =>
+						Effect.gen(function* () {
+							// Host reads can suspend before a producer exists; cancellation must release admission.
+							const key = scanKey(yield* restore(project.current));
+							const current = yield* Ref.get(running);
+							if (current?.key === key) return current.done;
+							const next = yield* Deferred.make<A>();
+							yield* Ref.set(running, { key, done: next });
+							const refreshProject = Effect.gen(function* () {
+								const state = yield* project.refresh;
+								yield* Ref.update(running, (value) =>
+									value?.done === next
+										? { key: scanKey(state), done: next }
+										: value
 								);
-								return next;
-							})
-						)
-					);
-					return yield* Deferred.await(done);
-				});
-		});
+								return state;
+							}).pipe(start.withPermit);
+							yield* scan(refreshProject).pipe(
+								Effect.exit,
+								Effect.flatMap((exit) =>
+									Ref.update(running, (value) =>
+										value?.done === next ? undefined : value
+									).pipe(Effect.andThen(Deferred.done(next, exit)))
+								),
+								Effect.forkIn(workspaceScope)
+							);
+							return next;
+						})
+					)
+				);
+				return yield* Deferred.await(done);
+			});
+	});
 	const refreshScan = (refreshProject: typeof project.refresh) =>
 		Effect.scoped(
 			guardScan(configuredRefresh(true, refreshProject), () =>
@@ -1721,18 +1723,19 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const sharedScan = yield* sharedScans<Effect.Success<ReturnType<typeof fullScan>>>();
 
 	return {
-		operationStateTarget: (name) =>
-			Effect.gen(function* () {
-				const current = yield* project.current;
-				const owner = yield* Ref.get(modelSelection);
-				if (
-					current.status !== "ready" ||
-					current.project.projectRoot !== owner?.projectRoot ||
-					(current.project.generation ?? 0) !== owner.generation
-				)
-					return undefined;
-				return yield* localization.operationStateTarget(name, owner.indexed.revision);
-			}),
+		operationStateTarget: Effect.fn("GameText.workspace.operationStateTarget")(function* (
+			name: LocalizationJoin["target"]
+		) {
+			const current = yield* project.current;
+			const owner = yield* Ref.get(modelSelection);
+			if (
+				current.status !== "ready" ||
+				current.project.projectRoot !== owner?.projectRoot ||
+				(current.project.generation ?? 0) !== owner.generation
+			)
+				return undefined;
+			return yield* localization.operationStateTarget(name, owner.indexed.revision);
+		}),
 		operationTarget: scoped((name) =>
 			consistentIndex().pipe(
 				Effect.flatMap((index) =>

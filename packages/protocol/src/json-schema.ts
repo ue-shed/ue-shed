@@ -2,10 +2,11 @@ import { Schema, SchemaRepresentation, type JsonSchema } from "effect";
 
 const WireJsonObject = Schema.Record(Schema.String, Schema.Json);
 const isSchemaObject = Schema.is(WireJsonObject);
+const decodeWireJsonObject = Schema.decodeUnknownSync(WireJsonObject);
 const isString: (value: Schema.Json | undefined) => value is string = Schema.is(Schema.String);
 
 function normalizeWireJsonSchema(schema: JsonSchema.JsonSchema): Schema.JsonObject {
-	const parsed = Schema.decodeUnknownSync(WireJsonObject)(schema);
+	const parsed = decodeWireJsonObject(schema);
 	const visit = (value: Schema.Json): Schema.Json => {
 		if (Array.isArray(value)) return value.map(visit);
 		return isSchemaObject(value) ? normalizeWireJsonSchema(value) : value;
@@ -162,10 +163,11 @@ export function makeWireJsonSchemaDocument(
 
 const JsonObject = Schema.Record(Schema.String, Schema.Json);
 const isObject = Schema.is(JsonObject);
+const decodeJsonObject = Schema.decodeUnknownSync(JsonObject);
 
 /** Compare reachable schemas independently of definition names and redundant reference aliases. */
 export function canonicalJsonSchemaReferences(input: JsonSchema.JsonSchema): Schema.Json {
-	const document = Schema.decodeUnknownSync(JsonObject)(input);
+	const document = decodeJsonObject(input);
 	const definitions = isObject(document.$defs) ? document.$defs : {};
 	const names = new Map<string, string>();
 	const canonical: Record<string, Schema.Json> = {};
@@ -235,6 +237,6 @@ export function canonicalJsonSchemaReferences(input: JsonSchema.JsonSchema): Sch
 	};
 	const root = { ...document };
 	delete root.$defs;
-	const schema = Schema.decodeUnknownSync(JsonObject)(visit(root));
+	const schema = decodeJsonObject(visit(root));
 	return { ...schema, $defs: canonical };
 }

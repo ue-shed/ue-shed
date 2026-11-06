@@ -35,6 +35,10 @@ import {
 	type SubjectLocator,
 	type VisibilityPolicyId
 } from "./review-schema.js";
+const decodeReviewAuthoringSessionId = Schema.decodeEffect(ReviewAuthoringSessionId);
+const decodeJson = Schema.decodeUnknownEffect(Schema.Json);
+const decodeReviewAuthoringSessionEffect = Schema.decodeUnknownEffect(ReviewAuthoringSession);
+const decodeViewId = Schema.decodeEffect(ReviewAuthoringSession.fields.viewId);
 
 /**
  * Project review-root subdirectory for persisted candidate authoring sessions. Sessions are
@@ -193,7 +197,7 @@ function decodeSessionId(
 	operation: ReviewAuthoringSessionError["operation"],
 	projectRoot: string
 ): Effect.Effect<ReviewAuthoringSessionId, ReviewAuthoringSessionError> {
-	return Schema.decodeEffect(ReviewAuthoringSessionId)(id).pipe(
+	return decodeReviewAuthoringSessionId(id).pipe(
 		Effect.mapError((cause) =>
 			sessionError({
 				cause,
@@ -207,54 +211,52 @@ function decodeSessionId(
 	);
 }
 
-function loadDocument(args: {
+const loadDocument = Effect.fn("camera.review.authoring-session.load")(function* (args: {
 	readonly id: string;
 	readonly projectRoot: string;
-}): Effect.Effect<ReviewAuthoringSessionDocument, ReviewAuthoringSessionError> {
-	return Effect.gen(function* () {
-		const id = yield* decodeSessionId(args.id, "load", args.projectRoot);
-		const path = reviewAuthoringSessionPath({ id, projectRoot: args.projectRoot });
-		const input = yield* Effect.tryPromise({
-			try: async () => JSON.parse(await readFile(path, "utf8")),
-			catch: (cause) =>
-				sessionError({
-					cause,
-					operation: "load",
-					path,
-					recovery: "Repair the authoring-session document or discard it.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-		}).pipe(
-			Effect.flatMap((input) =>
-				Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
-					Effect.mapError((cause) =>
-						sessionError({
-							cause,
-							operation: "load",
-							path,
-							recovery: "Repair the authoring-session document or discard it.",
-							retrySafe: true,
-							nextStep: "fix_input"
-						})
-					)
+}): Effect.fn.Return<ReviewAuthoringSessionDocument, ReviewAuthoringSessionError> {
+	const id = yield* decodeSessionId(args.id, "load", args.projectRoot);
+	const path = reviewAuthoringSessionPath({ id, projectRoot: args.projectRoot });
+	const input = yield* Effect.tryPromise({
+		try: async () => JSON.parse(await readFile(path, "utf8")),
+		catch: (cause) =>
+			sessionError({
+				cause,
+				operation: "load",
+				path,
+				recovery: "Repair the authoring-session document or discard it.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			})
+	}).pipe(
+		Effect.flatMap((input) =>
+			decodeJson(input).pipe(
+				Effect.mapError((cause) =>
+					sessionError({
+						cause,
+						operation: "load",
+						path,
+						recovery: "Repair the authoring-session document or discard it.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					})
 				)
 			)
-		);
-		return yield* Schema.decodeUnknownEffect(ReviewAuthoringSession)(input).pipe(
-			Effect.mapError((cause) =>
-				sessionError({
-					cause,
-					operation: "load",
-					path,
-					recovery: "Repair the malformed authoring-session document or discard it.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			)
-		);
-	}).pipe(Effect.withSpan("camera.review.authoring-session.load"));
-}
+		)
+	);
+	return yield* decodeReviewAuthoringSessionEffect(input).pipe(
+		Effect.mapError((cause) =>
+			sessionError({
+				cause,
+				operation: "load",
+				path,
+				recovery: "Repair the malformed authoring-session document or discard it.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			})
+		)
+	);
+});
 
 function saveDocument(args: {
 	readonly projectRoot: string;
@@ -564,9 +566,7 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					mapPath: args.selection.mapPath
 				},
 				updatedAt: now,
-				viewId: yield* Schema.decodeEffect(ReviewAuthoringSession.fields.viewId)(
-					args.viewId
-				).pipe(
+				viewId: yield* decodeViewId(args.viewId).pipe(
 					Effect.mapError((cause) =>
 						sessionError({
 							cause,

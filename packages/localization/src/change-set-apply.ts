@@ -27,6 +27,9 @@ export const ApplyLocalizationChangeSetRequest = Schema.Struct({
 	skipStale: Schema.optionalKey(Schema.Boolean),
 	limits: Schema.optionalKey(LocalizationLimits)
 });
+const decodeApplyLocalizationChangeSetRequest = Schema.decodeEffect(
+	ApplyLocalizationChangeSetRequest
+);
 export type ApplyLocalizationChangeSetRequest = typeof ApplyLocalizationChangeSetRequest.Type;
 
 /**
@@ -90,7 +93,7 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 	input: ApplyLocalizationChangeSetRequest,
 	options: ApplyLocalizationChangeSetOptions = {}
 ) {
-	const request = yield* Schema.decodeEffect(ApplyLocalizationChangeSetRequest)(input).pipe(
+	const request = yield* decodeApplyLocalizationChangeSetRequest(input).pipe(
 		Effect.mapError(
 			(cause) =>
 				new LocalizationChangeSetError({

@@ -5,8 +5,10 @@ import {
 	defaultNaturalOnlyVisibilityPolicy,
 	VisibilityPolicyId
 } from "./review-schema.js";
+const decodeCameraArrangement = Schema.decodeSync(CameraArrangement);
+
 export function fixtureArrangement() {
-	return Schema.decodeSync(CameraArrangement)({
+	return decodeCameraArrangement({
 		version: 1,
 		id: "arrangement-a",
 		revision: 0,

@@ -20,6 +20,8 @@ import {
 import { CliRuntime, printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
+const encodeLocalizationChangeSetReceipt = Schema.encodeEffect(LocalizationChangeSetReceipt);
+const decodeLocalizationRunRequest = Schema.decodeEffect(LocalizationRunRequest);
 
 type LocalizationApplyCommand = Extract<CliCommand, { readonly _tag: "LocalizationApply" }>;
 
@@ -43,6 +45,7 @@ const LocalizationApplyFailure = Schema.Union([
 	LocalizationError,
 	LocalizationOperationError
 ]);
+const encodeLocalizationApplyFailure = Schema.encodeEffect(LocalizationApplyFailure);
 
 const readChangeSet = Effect.fn("Cli.localization.read_change_set")(function* (path: string) {
 	const fs = yield* FileSystem.FileSystem;
@@ -122,9 +125,9 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 					const output = {
 						schemaVersion: 1,
 						type: "receipt",
-						receipt: yield* Schema.encodeEffect(LocalizationChangeSetReceipt)(
-							receipt
-						).pipe(Effect.orDie)
+						receipt: yield* encodeLocalizationChangeSetReceipt(receipt).pipe(
+							Effect.orDie
+						)
 					};
 					if (command.json) yield* runtime.print(`${JSON.stringify(output)}\n`);
 					else yield* printJson(output);
@@ -165,9 +168,9 @@ export const applyLocalizationChanges = Effect.fn("Cli.workflow.localization_app
 								const output = {
 									schemaVersion: 1,
 									type: "failure",
-									error: yield* Schema.encodeEffect(LocalizationApplyFailure)(
-										error
-									).pipe(Effect.orDie)
+									error: yield* encodeLocalizationApplyFailure(error).pipe(
+										Effect.orDie
+									)
 								};
 								if (command.json)
 									yield* runtime.print(`${JSON.stringify(output)}\n`);
@@ -193,7 +196,7 @@ const syncAfterWrite = Effect.fn("Cli.localization.sync_after_write")(function* 
 	};
 	if (command.engineRoot !== undefined)
 		Object.assign(input, { explicitEngineRoot: command.engineRoot });
-	const request = yield* Schema.decodeEffect(LocalizationRunRequest)(input).pipe(
+	const request = yield* decodeLocalizationRunRequest(input).pipe(
 		Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
 	);
 	const operations = yield* LocalizationOperations;

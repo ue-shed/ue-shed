@@ -41,6 +41,9 @@ import {
 import { defaultPluginDistributionLimits, type PluginDistributionLimits } from "./model.js";
 import { variantPluginReleaseAssetNames } from "./source.js";
 import { CompiledPluginVariantRequest } from "./variant.js";
+const decodeCompiledPluginBundleManifestV3Effect = Schema.decodeEffect(
+	CompiledPluginBundleManifestV3
+);
 
 const BoundedPath = Schema.NonEmptyString.check(Schema.isMaxLength(32_767));
 const PositiveSeconds = Schema.Int.check(
@@ -154,6 +157,7 @@ const UnrealBuildVersion = Schema.Struct({
 	MinorVersion: Schema.Int,
 	PatchVersion: Schema.Int
 });
+const decodeUnrealBuildVersionEffect = Schema.decodeUnknownEffect(UnrealBuildVersion);
 
 const ModuleDescriptor = Schema.Struct({ Name: Schema.NonEmptyString });
 const UnrealPluginDescriptor = Schema.Struct({
@@ -167,6 +171,13 @@ const UnrealModules = Schema.Struct({
 	BuildId: Schema.String,
 	Modules: Schema.Record(Schema.String, Schema.String)
 });
+const decodeUnrealModulesEffect = Schema.decodeUnknownEffect(UnrealModules);
+const EnginePluginReference = Schema.Struct({ Name: PluginId });
+const decodeModuleDescriptor = Schema.decodeUnknownSync(ModuleDescriptor);
+const decodeUnrealPluginDescriptor = Schema.decodeUnknownSync(UnrealPluginDescriptor);
+const decodeUnrealModules = Schema.decodeUnknownSync(UnrealModules);
+const decodeEnginePluginReference = Schema.decodeUnknownSync(EnginePluginReference);
+const decodeCompiledPluginBuildRequest = Schema.decodeUnknownEffect(CompiledPluginBuildRequest);
 
 function sha256(bytes: Uint8Array) {
 	return Sha256Checksum.make(`sha256:${createHash("sha256").update(bytes).digest("hex")}`);
@@ -427,7 +438,7 @@ async function compiledModuleAttestations(options: {
 		const binaryRoot = `Plugins/${plugin.directory}/Binaries/${options.platform}/`;
 		for (const file of options.files) {
 			if (!file.path.startsWith(binaryRoot) || !file.path.endsWith(".modules")) continue;
-			const evidence = Schema.decodeUnknownSync(UnrealModules)(
+			const evidence = decodeUnrealModules(
 				JSON.parse(await readFile(join(options.graphRoot, ...file.path.split("/")), "utf8"))
 			);
 			if (evidence.BuildId !== options.buildId) {
@@ -456,11 +467,11 @@ async function prepareAggregatePlugin(options: {
 	const enginePlugins = new Map<string, Record<string, Schema.Json>>();
 	for (const plugin of options.plugins) {
 		const pluginRoot = join(options.pluginsRoot, plugin.directory);
-		const descriptor = Schema.decodeUnknownSync(UnrealPluginDescriptor)(
+		const descriptor = decodeUnrealPluginDescriptor(
 			JSON.parse(await readFile(join(pluginRoot, `${plugin.directory}.uplugin`), "utf8"))
 		);
 		for (const module of descriptor.Modules ?? []) {
-			const decoded = Schema.decodeUnknownSync(ModuleDescriptor)(module);
+			const decoded = decodeModuleDescriptor(module);
 			const source = join(pluginRoot, "Source", decoded.Name);
 			await regularFile(join(source, `${decoded.Name}.Build.cs`), `Module ${decoded.Name}`);
 			await cp(source, join(aggregateRoot, "Source", decoded.Name), {
@@ -470,9 +481,7 @@ async function prepareAggregatePlugin(options: {
 			modules.push(module);
 		}
 		for (const enginePlugin of descriptor.Plugins ?? []) {
-			const reference = Schema.decodeUnknownSync(Schema.Struct({ Name: PluginId }))(
-				enginePlugin
-			);
+			const reference = decodeEnginePluginReference(enginePlugin);
 			if (plugin.engineDependencies.includes(reference.Name)) {
 				enginePlugins.set(reference.Name, enginePlugin);
 			}
@@ -511,7 +520,7 @@ async function composeCompiledGraph(options: {
 	const packageBinaries = join(options.packageRoot, "Binaries", options.platform);
 	const moduleFile = (await readdir(packageBinaries)).find((name) => name.endsWith(".modules"));
 	if (moduleFile === undefined) throw new Error("RunUAT package has no .modules file.");
-	const moduleEvidence = Schema.decodeUnknownSync(UnrealModules)(
+	const moduleEvidence = decodeUnrealModules(
 		JSON.parse(await readFile(join(packageBinaries, moduleFile), "utf8"))
 	);
 	if (moduleEvidence.BuildId !== options.buildId) {
@@ -526,11 +535,11 @@ async function composeCompiledGraph(options: {
 		await cp(source, destination, { errorOnExist: true, recursive: true });
 		await rm(join(destination, "Binaries"), { force: true, recursive: true });
 		await rm(join(destination, "Intermediate"), { force: true, recursive: true });
-		const descriptor = Schema.decodeUnknownSync(UnrealPluginDescriptor)(
+		const descriptor = decodeUnrealPluginDescriptor(
 			JSON.parse(await readFile(join(destination, `${plugin.directory}.uplugin`), "utf8"))
 		);
 		const moduleNames = (descriptor.Modules ?? []).map(
-			(module) => Schema.decodeUnknownSync(ModuleDescriptor)(module).Name
+			(module) => decodeModuleDescriptor(module).Name
 		);
 		const modules = Object.fromEntries(
 			Object.entries(moduleEvidence.Modules).filter(([name]) => moduleNames.includes(name))
@@ -597,12 +606,9 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 				input: unknown,
 				options: CompiledPluginBuildOptions = {}
 			) {
-				const request = yield* Schema.decodeUnknownEffect(CompiledPluginBuildRequest)(
-					input,
-					{
-						onExcessProperty: "error"
-					}
-				).pipe(
+				const request = yield* decodeCompiledPluginBuildRequest(input, {
+					onExcessProperty: "error"
+				}).pipe(
 					Effect.mapError((cause) =>
 						invalid(
 							"validation",
@@ -711,7 +717,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 								catch: onValidationError
 							}).pipe(
 								Effect.flatMap((input) =>
-									Schema.decodeUnknownEffect(UnrealBuildVersion)(input).pipe(
+									decodeUnrealBuildVersionEffect(input).pipe(
 										Effect.mapError(onValidationError)
 									)
 								)
@@ -722,7 +728,7 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 								catch: onValidationError
 							}).pipe(
 								Effect.flatMap((input) =>
-									Schema.decodeUnknownEffect(UnrealModules)(input).pipe(
+									decodeUnrealModulesEffect(input).pipe(
 										Effect.mapError(onValidationError)
 									)
 								)
@@ -1048,69 +1054,71 @@ export const compiledPluginBuilderLayer = (): Layer.Layer<
 											"Build the source bundle from the matching release candidate."
 										);
 									}
-									const manifest = yield* Schema.decodeEffect(
-										CompiledPluginBundleManifestV3
-									)({
-										artifact: {
-											bytes: artifact.bytes,
-											id: `ue-shed-plugin-compiled-${state.sourceManifest.releaseVersion}`,
-											kind: "unreal-editor-plugin-binary",
-											path: names.artifact,
-											sha256: artifact.digest
-										},
-										build: {
-											builder: "@ue-shed/plugin-distribution",
-											builderVersion: "1",
-											compiler: request.compiler,
-											invocationSha256: sha256(
-												Buffer.from(
-													canonicalInvocation(
-														request,
-														state.graph.orderedPluginIds
+									const manifest =
+										yield* decodeCompiledPluginBundleManifestV3Effect({
+											artifact: {
+												bytes: artifact.bytes,
+												id: `ue-shed-plugin-compiled-${state.sourceManifest.releaseVersion}`,
+												kind: "unreal-editor-plugin-binary",
+												path: names.artifact,
+												sha256: artifact.digest
+											},
+											build: {
+												builder: "@ue-shed/plugin-distribution",
+												builderVersion: "1",
+												compiler: request.compiler,
+												invocationSha256: sha256(
+													Buffer.from(
+														canonicalInvocation(
+															request,
+															state.graph.orderedPluginIds
+														)
 													)
+												),
+												requestedPluginIds: request.pluginIds,
+												resolvedPluginIds: state.graph.orderedPluginIds,
+												sourceArtifactSha256:
+													request.expectedSourceArtifactSha256,
+												sourceManifestSha256:
+													request.expectedSourceManifestSha256
+											},
+											buildRecipe: [
+												"ue-shed plugins build",
+												`--plugin ${request.pluginIds.join(" --plugin ")}`,
+												`--unreal ${request.artifact.unrealVersion}`,
+												`--build-id ${request.artifact.engineBuildId}`,
+												`--platform ${request.artifact.platform}`,
+												`--architecture ${request.artifact.architecture}`,
+												`--compiler ${request.compiler.compiler}`,
+												`--compiler-version ${request.compiler.compilerVersion}`,
+												`--toolchain "${request.compiler.toolchain}"`,
+												`--toolchain-version ${request.compiler.toolchainVersion}`,
+												`--source-manifest-digest ${request.expectedSourceManifestSha256}`,
+												`--source-artifact-digest ${request.expectedSourceArtifactSha256}`
+											].join(" "),
+											compatibility: {
+												...request.artifact,
+												kind: "compiled"
+											},
+											contracts: state.sourceManifest.contracts,
+											modules,
+											nativeFiles,
+											packages: state.sourceManifest.packages,
+											plugins: state.graph.plugins,
+											provenance: state.sourceManifest.provenance,
+											releaseVersion: state.sourceManifest.releaseVersion,
+											schemaVersion: 3
+										}).pipe(
+											Effect.mapError((cause) =>
+												invalid(
+													"manifest",
+													"Generated compiled manifest is invalid.",
+													"Inspect the validated build inputs and retry.",
+													"escalate",
+													cause
 												)
-											),
-											requestedPluginIds: request.pluginIds,
-											resolvedPluginIds: state.graph.orderedPluginIds,
-											sourceArtifactSha256:
-												request.expectedSourceArtifactSha256,
-											sourceManifestSha256:
-												request.expectedSourceManifestSha256
-										},
-										buildRecipe: [
-											"ue-shed plugins build",
-											`--plugin ${request.pluginIds.join(" --plugin ")}`,
-											`--unreal ${request.artifact.unrealVersion}`,
-											`--build-id ${request.artifact.engineBuildId}`,
-											`--platform ${request.artifact.platform}`,
-											`--architecture ${request.artifact.architecture}`,
-											`--compiler ${request.compiler.compiler}`,
-											`--compiler-version ${request.compiler.compilerVersion}`,
-											`--toolchain "${request.compiler.toolchain}"`,
-											`--toolchain-version ${request.compiler.toolchainVersion}`,
-											`--source-manifest-digest ${request.expectedSourceManifestSha256}`,
-											`--source-artifact-digest ${request.expectedSourceArtifactSha256}`
-										].join(" "),
-										compatibility: { ...request.artifact, kind: "compiled" },
-										contracts: state.sourceManifest.contracts,
-										modules,
-										nativeFiles,
-										packages: state.sourceManifest.packages,
-										plugins: state.graph.plugins,
-										provenance: state.sourceManifest.provenance,
-										releaseVersion: state.sourceManifest.releaseVersion,
-										schemaVersion: 3
-									}).pipe(
-										Effect.mapError((cause) =>
-											invalid(
-												"manifest",
-												"Generated compiled manifest is invalid.",
-												"Inspect the validated build inputs and retry.",
-												"escalate",
-												cause
 											)
-										)
-									);
+										);
 									const manifestPath = join(publishStage, names.manifest);
 									const manifestBytes = Buffer.from(
 										`${JSON.stringify(manifest, null, "\t")}\n`

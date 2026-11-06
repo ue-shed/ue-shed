@@ -5,6 +5,7 @@ import {
 	type BlueprintGraphFailureReason,
 	type BlueprintGraphReadResult
 } from "./contract.js";
+const decodeBlueprintAssetPathEffect = Schema.decodeEffect(BlueprintAssetPath);
 
 /** The host supplies its initialized runtime; this extension never imports the WASM package. */
 export interface WasmBlueprintRuntime {
@@ -43,6 +44,7 @@ const WasmBlueprintOutput = Schema.Union([
 		message: Schema.NonEmptyString
 	})
 ]);
+const decodeWasmBlueprintOutput = Schema.decodeUnknownEffect(WasmBlueprintOutput);
 
 function diagnosticCode(code: string): string {
 	switch (code) {
@@ -105,7 +107,7 @@ export const adaptWasmBlueprintResult = Effect.fn("BlueprintGraphs.adaptWasmResu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This is the runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<BlueprintGraphReadResult> {
-	const path = yield* Schema.decodeEffect(BlueprintAssetPath)(assetPath).pipe(
+	const path = yield* decodeBlueprintAssetPathEffect(assetPath).pipe(
 		Effect.catchTag("SchemaError", () => Effect.undefined)
 	);
 	if (path === undefined) {
@@ -116,7 +118,7 @@ export const adaptWasmBlueprintResult = Effect.fn("BlueprintGraphs.adaptWasmResu
 			status: "failed"
 		};
 	}
-	return yield* Schema.decodeUnknownEffect(WasmBlueprintOutput)(output).pipe(
+	return yield* decodeWasmBlueprintOutput(output).pipe(
 		Effect.map((read): BlueprintGraphReadResult => {
 			if (read.status === "error") {
 				return failed(path, failureReason(read.kind), read.message);

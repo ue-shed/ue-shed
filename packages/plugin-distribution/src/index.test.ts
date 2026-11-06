@@ -15,12 +15,14 @@ import {
 	verifyPluginBundleArtifactChecksum
 } from "./index.js";
 
+const isPluginBundleManifestValidationError = Schema.is(PluginBundleManifestValidationError);
+
 const digest = `sha256:${"a".repeat(64)}`;
 
 it.effect("the schema-only manifest parser retains domain guidance and schema issues", () =>
 	Effect.gen(function* () {
 		const error = yield* decodePluginBundleManifest({ schemaVersion: 3 }).pipe(Effect.flip);
-		expect(Schema.is(PluginBundleManifestValidationError)(error)).toBe(true);
+		expect(isPluginBundleManifestValidationError(error)).toBe(true);
 		expect(error.code).toBe("schema_invalid");
 		expect(Schema.isSchemaError(error.cause)).toBe(true);
 	})

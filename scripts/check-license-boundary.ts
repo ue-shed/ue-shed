@@ -11,6 +11,7 @@ import {
 	type JsonObject,
 	type JsonValue
 } from "./json.ts";
+const isString = Schema.is(Schema.String);
 
 const forbiddenFormulaPackages = ["hyperformula", "peculiar-sheets-ironcalc", "@ironcalc/wasm"];
 
@@ -152,12 +153,12 @@ export function validateLicenseBoundary({
 	}
 	if (peculiarManifest.version !== "0.15.0") {
 		failures.push(
-			`peculiar-sheets: expected exact version 0.15.0, received ${Schema.is(Schema.String)(peculiarManifest.version) ? peculiarManifest.version : "invalid non-string version"}`
+			`peculiar-sheets: expected exact version 0.15.0, received ${isString(peculiarManifest.version) ? peculiarManifest.version : "invalid non-string version"}`
 		);
 	}
 	if (peculiarManifest.license !== "MIT") {
 		failures.push(
-			`peculiar-sheets: expected MIT metadata, received ${Schema.is(Schema.String)(peculiarManifest.license) ? peculiarManifest.license : "missing or non-string license"}`
+			`peculiar-sheets: expected MIT metadata, received ${isString(peculiarManifest.license) ? peculiarManifest.license : "missing or non-string license"}`
 		);
 	}
 	const dependencies = peculiarManifest.dependencies;

@@ -13,6 +13,7 @@ import {
 } from "./world-log-actors.js";
 
 const decodeHistory = Schema.decodeUnknownSync(PerforceMapHistory);
+const decodeSavedWorld = Schema.decodeUnknownSync(SavedWorld);
 
 function actor(input: {
 	readonly classPath?: string;
@@ -56,7 +57,7 @@ function snapshot(actors: readonly ReturnType<typeof actor>[]) {
 describe("World Log actor projection", () => {
 	it("uses the current saved map as the initial actor projection", () => {
 		const lamp = actor({ guid: "lamp", label: "Key lamp", x: 10, y: 20 });
-		const world = Schema.decodeUnknownSync(SavedWorld)({
+		const world = decodeSavedWorld({
 			actors: [lamp],
 			authority: { kind: "project_files", mapPackage: "/Game/Maps/L_Example" },
 			completeness: "complete",

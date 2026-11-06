@@ -23,6 +23,7 @@ import {
 	validateUnrealRemoteControlBuild,
 	type UnrealProjectProcessLaunchOptions
 } from "./project-launcher.js";
+const decodeRemoteControlAllowedClass = Schema.decodeExit(RemoteControlAllowedClass);
 
 it.effect("keeps discovery identity and its nested IO cause through launch translation", () => {
 	const original = new Error("fixture IO failure");
@@ -258,9 +259,9 @@ it("adds a host's own Remote Control classes beside the UE Shed plugin classes",
 			projectDescriptor: "D:/Projects/Hex/Hex.uproject"
 		})
 	).toContain(rule("StudioToolsEditor.StudioToolsLibrary"));
-	expect(
-		Schema.decodeExit(RemoteControlAllowedClass)("Studio.Tools,bAllowChildClasses=True")._tag
-	).toBe("Failure");
+	expect(decodeRemoteControlAllowedClass("Studio.Tools,bAllowChildClasses=True")._tag).toBe(
+		"Failure"
+	);
 });
 
 it("builds normal and plugin launch arguments without a shell", () => {

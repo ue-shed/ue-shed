@@ -19,6 +19,10 @@ import {
 	type CustodianReceipt,
 	type CustodianReport
 } from "./schema.js";
+const decodeCustodianScanRequest = Schema.decodeEffect(CustodianScanRequest);
+const decodeCustodianPrepareRequest = Schema.decodeEffect(CustodianPrepareRequest);
+const decodeCustodianExecuteRequest = Schema.decodeEffect(CustodianExecuteRequest);
+const decodeCustodianProposalId = Schema.decodeEffect(CustodianProposalId);
 
 /**
  * The UE Shed error guidance shape, kept local because this package does not depend on
@@ -41,6 +45,7 @@ export class CustodianError extends Schema.TaggedError<
 	cause: Schema.Defect()
 }) {}
 const isCustodianError = Schema.is(CustodianError);
+const decodeProposal = Schema.decodeUnknownEffect(CustodianProposal);
 
 export interface CustodianApi {
 	readonly scan: (
@@ -83,7 +88,7 @@ export const CustodianNodeLive = Layer.effect(
 		);
 
 		const scan = Effect.fn("ProjectCustodian.scan")(function* (input: CustodianScanRequest) {
-			const request = yield* Schema.decodeEffect(CustodianScanRequest)(input).pipe(
+			const request = yield* decodeCustodianScanRequest(input).pipe(
 				Effect.mapError((cause) => invalidRequest("scan", cause))
 			);
 			const report = yield* Effect.tryPromise({
@@ -116,7 +121,7 @@ export const CustodianNodeLive = Layer.effect(
 		const prepare = Effect.fn("ProjectCustodian.prepare")(function* (
 			input: CustodianPrepareRequest
 		) {
-			const request = yield* Schema.decodeEffect(CustodianPrepareRequest)(input).pipe(
+			const request = yield* decodeCustodianPrepareRequest(input).pipe(
 				Effect.mapError((cause) => invalidRequest("prepare", cause))
 			);
 			return yield* Effect.tryPromise({
@@ -137,7 +142,7 @@ export const CustodianNodeLive = Layer.effect(
 		const execute = Effect.fn("ProjectCustodian.execute")(function* (
 			input: CustodianExecuteRequest
 		) {
-			const request = yield* Schema.decodeEffect(CustodianExecuteRequest)(input).pipe(
+			const request = yield* decodeCustodianExecuteRequest(input).pipe(
 				Effect.mapError((cause) => invalidRequest("execute", cause))
 			);
 			const document = yield* Effect.tryPromise({
@@ -153,7 +158,7 @@ export const CustodianNodeLive = Layer.effect(
 						cause
 					})
 			});
-			const proposal = yield* Schema.decodeUnknownEffect(CustodianProposal)(document).pipe(
+			const proposal = yield* decodeProposal(document).pipe(
 				Effect.mapError(
 					(cause) =>
 						new CustodianError({
@@ -240,7 +245,7 @@ export const CustodianNodeLive = Layer.effect(
 		const cancel = Effect.fn("ProjectCustodian.cancel")(function* (
 			proposalId: CustodianProposalId
 		) {
-			const decodedId = yield* Schema.decodeEffect(CustodianProposalId)(proposalId).pipe(
+			const decodedId = yield* decodeCustodianProposalId(proposalId).pipe(
 				Effect.mapError((cause) => invalidRequest("execute", cause))
 			);
 			const active = (yield* Ref.get(activeExecutions)).get(decodedId);

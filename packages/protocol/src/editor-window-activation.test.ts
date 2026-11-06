@@ -7,6 +7,8 @@ import {
 	EditorWindowActivationResult
 } from "./editor-window-activation.js";
 
+const tryDecodeActivationRequest = Schema.decodeUnknownResult(EditorWindowActivationRequest);
+
 it("keeps TypeScript aligned with the shared Core window contract", () => {
 	for (const [name, schema] of [
 		["request", EditorWindowActivationRequest],
@@ -34,8 +36,6 @@ it("keeps TypeScript aligned with the shared Core window contract", () => {
 
 it("rejects wildcard and invalid process targets", () => {
 	for (const expectedProcessId of [0, -1, 1.5, 4_294_967_295, "42"]) {
-		expect(
-			Schema.decodeUnknownResult(EditorWindowActivationRequest)({ expectedProcessId })._tag
-		).toBe("Failure");
+		expect(tryDecodeActivationRequest({ expectedProcessId })._tag).toBe("Failure");
 	}
 });

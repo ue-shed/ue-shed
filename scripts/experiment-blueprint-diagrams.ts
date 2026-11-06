@@ -69,10 +69,11 @@ const PeleApi = Schema.Struct({
 	supports: Schema.declare((value): value is Pele["supports"] => Predicate.isFunction(value)),
 	render: Schema.declare((value): value is Pele["render"] => Predicate.isFunction(value))
 });
+const decodePeleApi = Schema.decodeUnknownSync(PeleApi);
 async function loadPele(root: string): Promise<Pele> {
 	const module = await import(pathToFileURL(join(root, "dist/esm/core.js")).href);
 	// Check foreign exports at entry; smoke calls below verify the pinned library's behavior.
-	return Schema.decodeUnknownSync(PeleApi)(module);
+	return decodePeleApi(module);
 }
 
 const stock = await loadPele(peleRoot);

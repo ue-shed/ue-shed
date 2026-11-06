@@ -10,6 +10,10 @@ import { CliRuntime, json } from "../cli-runtime.js";
 import { observeCliOperation, readerLayer } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
 
+/** Decoder for a schema from a lazily imported module, built once per command run. */
+// Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
+const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
+
 export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 	(command: Extract<CliCommand, { readonly _tag: "InvestigationRun" }>) =>
 		observeCliOperation(
@@ -18,7 +22,7 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 				const text = yield* Effect.promise(() => import("@ue-shed/game-text/corpus"));
 				const textures = yield* Effect.promise(() => import("@ue-shed/asset-audits"));
 				const input = yield* readInvestigationPresetJson(command.preset);
-				const preset = yield* Schema.decodeUnknownEffect(
+				const preset = yield* decodeLazySchema(
 					Schema.Union([
 						text.GameTextInvestigationPreset,
 						textures.TextureInvestigationPreset

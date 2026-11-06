@@ -6,6 +6,7 @@ import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-sup
 import { GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { localizationQualityWorkspaceOf } from "./localization-workspace.js";
+const decodeGameTextRuleDocument = Schema.decodeEffect(GameTextRuleDocument);
 
 it.effect("reads native findings through both compact indexes and the CLI report", () =>
 	Effect.scoped(
@@ -17,7 +18,7 @@ it.effect("reads native findings through both compact indexes and the CLI report
 					projectRoot: fixture.projectRoot,
 					targetName: fixture.target.name
 				});
-				const document = yield* Schema.decodeEffect(GameTextRuleDocument)({
+				const document = yield* decodeGameTextRuleDocument({
 					schemaVersion: 1,
 					roles: [
 						{

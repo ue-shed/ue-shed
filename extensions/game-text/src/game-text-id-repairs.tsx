@@ -30,6 +30,7 @@ import { failureText } from "./game-text-failure.js";
 import { ShowInUnrealButton } from "./game-text-locate-button.js";
 import { seenTranslation, type GameTextEdits } from "./game-text-translation-edits.js";
 import { identityLabel, locationDetail, savedObjectPath } from "./game-text-view.js";
+const decodeLocalizationEdit = Schema.decodeSync(LocalizationEdit);
 
 interface TranslationMove {
 	readonly culture: string;
@@ -209,7 +210,7 @@ export function GameTextIdRepairs(props: {
 					if (ok && fix.translations.length > 0) {
 						props.edits.stageAll(
 							fix.translations.map((item) => ({
-								edit: Schema.decodeSync(LocalizationEdit)(item),
+								edit: decodeLocalizationEdit(item),
 								source: item.source
 							}))
 						);

@@ -17,26 +17,10 @@ describe.skipIf(!executable)("game text fixture corpus", () => {
 		// One Game Text problem case is a package the reader only partly decodes.
 		expect(corpus.status).toBe("partial");
 		expect(corpus.coverage).toEqual({
-			// The maps, World Partition external actors, animation fixture, and nested-only timeline
-			// carry no text of their own. Every InputAction and InputMappingContext carries one FText
-			// description, the text timeline contributes three localized keys, and the Blueprint graph
-			// fixture contributes one localized pin label, while the richer review Blueprint adds
-			// saved variable/component categories, including Review|Settings. The StringTable reference contributes
-			// one additional unit and occurrence with its table/key identity. The localization target's
-			// String Table, DataTable and data asset add twenty-two localized units and occurrences, and
-			// the user-defined enum adds its two display names. The ten Game Text problem packages add
-			// 46 units and 53 occurrences: this scan does not fold the three Widget Blueprints'
-			// compiled copies (eight occurrences of three keys), and one row is culture invariant. The twelve
-			// Game Text identity packages add 16 units and 35 occurrences. Compiled Blueprint bytecode adds
-			// seven Print Text literals in five new ids: two in the sign Blueprint, which its branch copy
-			// shares, and three in its Content Browser duplicate, whose new keys split the shared one.
-			// Identity slice 2 adds nine packages (eight under Slice2/ and one World Partition
-			// external actor), 17 occurrences and 12 units; two occurrences are culture invariant.
-			// Native graph pins add 39 occurrences: 12 defaults (ten localized, one culture invariant,
-			// one String Table reference) and 27 friendly names. They add ten units: six localized
-			// identities retaining their package namespaces, the invariant default, and three shared
-			// K2Node friendly-name identities. Reconciliation merges six compiled units into these
-			// pin identities without removing occurrences. The String Table pin joins its existing unit.
+			// Each text-bearing fixture group adds its own units and occurrences (maps, actors and the
+			// animation carry none). This scan does not fold Widget Blueprints' compiled copies, so they
+			// count as extra occurrences; reconciliation merges compiled units into native pin identities
+			// without removing occurrences. Update these totals whenever a fixture package changes.
 			discoveredPackages: 115,
 			inspectedPackages: 115,
 			partialPackages: 1,

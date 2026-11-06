@@ -18,6 +18,7 @@ import {
 	type LocalizationLimits,
 	type LocalizationOutputPaths
 } from "./schema.js";
+const decodeRecipeFields = Schema.decodeUnknownResult(RecipeFields);
 
 type StructValue = Schema.Json;
 
@@ -233,7 +234,7 @@ function recipeFields(text: string, section: string) {
 					: last;
 		}
 	}
-	const decoded = Schema.decodeUnknownResult(RecipeFields)(fields);
+	const decoded = decodeRecipeFields(fields);
 	if (Result.isFailure(decoded)) throw localizationError("malformed_ini");
 	return decoded.success;
 }

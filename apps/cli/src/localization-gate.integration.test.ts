@@ -10,6 +10,9 @@ import { CliRuntime } from "./cli-runtime.js";
 import { runCli } from "./command.js";
 import { cliGameTextIndexLayer } from "./workflows/game-text-index.js";
 
+const GateResultJson = Schema.fromJsonString(LocalizationGateResult);
+const decodeGateResultJson = Schema.decodeEffect(GateResultJson);
+
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 const fixture = useSavedFixtureProject();
 const TABLE = "Content/Fixture/Localization/DT_Localization.uasset";
@@ -98,8 +101,7 @@ describe.skipIf(!executable)("loc gate with the real reader", () => {
 							]).pipe(Effect.provide(runtime), Effect.provide(indexContext));
 							return { text: yield* Ref.get(output), exit: yield* Ref.get(exitCode) };
 						});
-					const verdict = (text: string) =>
-						Schema.decodeEffect(Schema.fromJsonString(LocalizationGateResult))(text);
+					const verdict = (text: string) => decodeGateResultJson(text);
 					let table = yield* list("table.txt", "# changed in this change", TABLE);
 
 					const before = yield* gate("--files", table);

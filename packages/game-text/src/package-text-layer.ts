@@ -37,6 +37,7 @@ import {
 	spoolPackageReads,
 	stagePlannedPackageText
 } from "./package-text-delta.js";
+const decodePackageTextPlanLine = Schema.decodeEffect(PackageTextPlanLine);
 
 /** The caller supplies the Project Index's opaque package-and-sidecar signature, never a layer hash.
  * Header evidence and signatures must come from the same complete inventory generation.
@@ -47,25 +48,11 @@ export const PackageTextInventoryEntry = Schema.Struct({
 	headerData: ProjectIndexHeader.fields.headerData
 });
 export type PackageTextInventoryEntry = typeof PackageTextInventoryEntry.Type;
-/** Bump when package text columns change; older shards are read again instead of decoded.
- * v3: object paths are completed with the package name; v2 shards from UE 4.27 projects held
- * package-relative names.
- * v4: occurrences keep the reader's gather-table editor-only bit and their audience
- * (`text-audience.ts`). The audience policy table and matcher version are part of every shard key,
- * so a policy or matcher change re-encodes each shard from its stored evidence without reading
- * packages again.
- * v5: records keep the reader's Blueprint classes (uasset-io 1.12) and are stored with their
- * representation copies folded into the authored sites (`representation-copies.ts`); copies keep
- * their raw paths and text in `copy.*` columns.
- * v6: re-extract saved packages so caches built before graph pin extraction cannot retain
- * silently incomplete Blueprint text.
- * v7: re-extract bytecode identities reconciled with saved pin package namespaces.
- * v8: re-extract so a package moved or copied outside Unreal stores its object paths under the
- * file's package instead of the name its summary serializes, which records keep as `packageName`
- * (uasset-io 1.17), and so every package records its main asset's class as `assetClass`.
- * v9: re-extract with the UE 4.27 decoders and the reader's text-capable gap status (uasset-io
- * 1.18), so cached records do not keep packages partial for text-free gaps.
- * v10: reconcile stale bytecode identities and fold uniquely attributable pin runtime copies. */
+/**
+ * Bump when package text columns or extraction change; older shards are read again instead of
+ * decoded. The audience policy table and matcher version are part of every shard key, so a policy
+ * or matcher change re-encodes each shard from its stored evidence without reading packages again.
+ */
 export const PACKAGE_TEXT_FORMAT = "package-text-v10";
 export const PACKAGE_TEXT_SHARDS = 256;
 export function packageTextShard(path: string) {
@@ -220,7 +207,7 @@ const shardEntries = Effect.fn("PackageText.planEntries")(function* (plan: Packa
 		});
 		for (const line of text.split("\n")) {
 			if (!line) continue;
-			const { group, expected } = yield* Schema.decodeEffect(PackageTextPlanLine)(line).pipe(
+			const { group, expected } = yield* decodePackageTextPlanLine(line).pipe(
 				Effect.mapError((cause) =>
 					snapshotFailure("package-text.plan", "Invalid package text plan.", cause)
 				)

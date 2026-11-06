@@ -55,12 +55,10 @@ export const UAssetIoContract = Schema.Struct({
 export type UAssetIoContract = Schema.Schema.Type<typeof UAssetIoContract>;
 
 /**
- * Optional per-request limits; an omitted key uses the worker's default. `maximumOutputBytes`
- * caps the cumulative bytes of every emitted NDJSON frame including its newline, `maximumAssets`
- * caps discovered packages (exceeding it fails with code `resource_limit`), and `timeoutMs` is in
- * milliseconds. Every limit except `maximumAssets` must be greater than zero.
- * `maximumInFlightPackageBytes` bounds active projection inputs by file size (default 256 MiB);
- * an input larger than the limit runs alone. It does not cap decoded heap or buffered output.
+ * Optional per-request limits; an omitted key uses the worker's default. All but `maximumAssets`
+ * must be positive. `maximumOutputBytes` caps all NDJSON frame bytes with newlines, `maximumAssets`
+ * caps discovered packages (`resource_limit`), `timeoutMs` is in ms. `maximumInFlightPackageBytes`
+ * bounds active input file sizes (default 256 MiB; a larger input runs alone), not heap or output.
  */
 export const UAssetIoResourceLimits = Schema.Struct({
 	concurrency: Schema.optionalKey(PositiveInt),
@@ -352,12 +350,10 @@ export const UAssetIoPackageTextSnapshots: Schema.Codec<GameTextContract.Package
 	});
 export type UAssetIoPackageTextSnapshots = GameTextContract.PackageTextSnapshotRequest;
 /**
- * v1.19 package-text staging. The worker writes each requested package's `extract_text_packages`
- * record or package error as one JSON line to `<directory>/<group>.ndjson`, where `groups[i]` is
- * the group of `paths[i]`, and streams a `staged_text_package` result in its place. The directory
- * must exist; the worker creates each group's file and fails if one already exists.
- * v1.20 `snapshots` supplies complete shard inventories and writes uncompressed shard snapshots
- * directly. Retained record files or explicit serialized records replace package extraction.
+ * v1.19 package-text staging: each requested package's record or error is one JSON line in
+ * `<directory>/<group>.ndjson` (`groups[i]` is `paths[i]`'s group), streamed as a
+ * `staged_text_package` result. The directory must exist; an existing group file fails. v1.20
+ * `snapshots` takes complete shard inventories and writes uncompressed snapshots from the records.
  */
 export const UAssetIoPackageTextStaging = Schema.Struct({
 	directory: NonEmptyString,

@@ -23,6 +23,7 @@ import {
 	type ReviewSubjectProjection,
 	type ReviewSelectionResponse
 } from "./review-schema.js";
+const decodeSubjectLocator = Schema.decodeEffect(SubjectLocator);
 
 const reviewLibraryPath = "/Script/UEShedCamerasEditor.Default__UEShedCameraReviewLibrary";
 
@@ -181,7 +182,7 @@ export const ReviewAuthoringLive = Layer.effect(
 			readonly endpoint: string;
 			readonly subject: SubjectLocator;
 		}) {
-			const subject = yield* Schema.decodeEffect(SubjectLocator)(args.subject).pipe(
+			const subject = yield* decodeSubjectLocator(args.subject).pipe(
 				Effect.mapError(
 					(cause) =>
 						new ReviewAuthoringConnectionError({

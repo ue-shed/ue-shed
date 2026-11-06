@@ -12,6 +12,9 @@ import {
 	type RecipeFields
 } from "./browser.js";
 import { parseLocalizationProgress, localizationExitFailure } from "./operation-progress.js";
+const decodeCultureCode = Schema.decodeSync(CultureCode);
+
+const decodeEngine = Schema.decodeUnknownSync(LocalizationOperationPlan.fields.engine);
 
 function targetAt(fixture: string, name: string): LocalizationTarget {
 	const root = resolve("fixtures", fixture);
@@ -70,9 +73,7 @@ describe("localization operation plans", () => {
 	it.each(["4.27", "5.7", "5.8"])(
 		"uses only shared switches for %s and orders sync import before compile",
 		(engine) => {
-			const supported = Schema.decodeUnknownSync(LocalizationOperationPlan.fields.engine)(
-				engine
-			);
+			const supported = decodeEngine(engine);
 			const plan = planLocalizationOperation({
 				...base,
 				target: dashboard,
@@ -148,7 +149,7 @@ describe("localization operation plans", () => {
 					fields: {
 						...step.fields,
 						DestinationPath: "Translations",
-						CulturesToGenerate: [Schema.decodeSync(CultureCode)("de")],
+						CulturesToGenerate: [decodeCultureCode("de")],
 						bUseCultureDirectory: false,
 						ResourceName: "Nested/Runtime.bin",
 						bConflictReport: false,
@@ -179,7 +180,7 @@ describe("localization operation plans", () => {
 				...recipe,
 				common: {
 					...recipe.common,
-					CulturesToGenerate: [Schema.decodeSync(CultureCode)("de")]
+					CulturesToGenerate: [decodeCultureCode("de")]
 				}
 			}))
 		};

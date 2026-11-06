@@ -11,8 +11,9 @@ import {
 } from "./operation-schema.js";
 
 const FileError = Schema.Struct({ code: Schema.String });
+const decodeFileError = Schema.decodeUnknownResult(FileError);
 export function isLocalizationFileMissing(cause: unknown): boolean {
-	const result = Schema.decodeUnknownResult(FileError)(cause);
+	const result = decodeFileError(cause);
 	return Result.isSuccess(result) && result.success.code === "ENOENT";
 }
 export function localizationIOFailure(cause: unknown): LocalizationOperationError {

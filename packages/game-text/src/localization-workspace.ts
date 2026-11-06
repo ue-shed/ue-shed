@@ -195,7 +195,9 @@ export const WorkspaceQualityPage = Schema.Struct({
 	unsupportedRuleCultures: Count,
 	rules: Schema.Array(TextQualityRuleSummary).check(Schema.isMaxLength(1032))
 });
+const decodeCounts = Schema.decodeUnknownEffect(WorkspaceQualityPage.fields.counts);
 export type WorkspaceQualityPage = typeof WorkspaceQualityPage.Type;
+const decodeQualityCounts = Schema.decodeUnknownSync(WorkspaceQualityPage.fields.counts);
 /** File reports keep every matching finding; renderer pages remain bounded. */
 export const WorkspaceQualityReport = WorkspaceQualityPage.mapFields(
 	({ nextOffset: _offset, ...fields }) => ({
@@ -232,6 +234,7 @@ const BoundedChange = LocalizationChange.mapFields((fields) => ({
 	translation: Schema.String.check(Schema.isMaxLength(16384)),
 	previousTranslation: Schema.NullOr(Schema.String.check(Schema.isMaxLength(16384)))
 }));
+const isBoundedChange = Schema.is(BoundedChange);
 const Changes = LocalizationChangeSet.mapFields((fields) => ({
 	...fields,
 	provenance: fields.provenance.mapFields((provenance) => ({
@@ -556,7 +559,7 @@ export function localizationFindingId([first, second]: readonly [number, number]
 export function eligibleLocalizationChange(finding: Finding | SourceFinding) {
 	return "suggestedChange" in finding &&
 		finding.suggestedChange &&
-		Schema.is(BoundedChange)(finding.suggestedChange)
+		isBoundedChange(finding.suggestedChange)
 		? finding.suggestedChange
 		: undefined;
 }
@@ -1049,7 +1052,7 @@ function localizationQualityReads(
 					positions: Uint32Array.from(matchedBySeverity[severity]),
 					base: 0
 				});
-		const counts = Schema.decodeUnknownSync(WorkspaceQualityPage.fields.counts)(
+		const counts = decodeQualityCounts(
 			Object.fromEntries([
 				...BuiltInQualityFilter.literals.map((filter) => [
 					filter,
@@ -1352,6 +1355,7 @@ export const WorkspaceReportPage = Schema.Struct({
 	)
 });
 export type WorkspaceReportPage = typeof WorkspaceReportPage.Type;
+const decodeUnknownReasons = Schema.decodeUnknownSync(WorkspaceReportPage.fields.unknownReasons);
 /**
  * Progress report outcome with ready page, unavailable state or failure. Unavailable evidence
  * must not be rendered as a complete zero-line report.
@@ -1399,7 +1403,7 @@ export function localizationReportPage(
 	const offset = request.offset ?? 0;
 	const problems = localizationFileProblems(report.gatherEvidence);
 	const folder = localizationEvidenceFolder(report.gatherEvidence);
-	const reasons = Schema.decodeUnknownSync(WorkspaceReportPage.fields.unknownReasons)(
+	const reasons = decodeUnknownReasons(
 		Object.fromEntries(
 			LocalizationUnknownReason.literals.map((reason) => [
 				reason,
@@ -1658,7 +1662,7 @@ export function queriedLocalizationQualityWorkspace(options: {
 		const result: WorkspaceQualityPage = {
 			findings: page.findings.map(summaryOf),
 			total: page.total,
-			counts: yield* Schema.decodeUnknownEffect(WorkspaceQualityPage.fields.counts)(
+			counts: yield* decodeCounts(
 				Object.fromEntries([
 					...BuiltInQualityFilter.literals.map((filter) => [
 						filter,

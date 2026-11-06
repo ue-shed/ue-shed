@@ -22,6 +22,7 @@ const noSelectedProject: ProjectLaunchResult = {
 	recovery: "Choose a project first. Project selection and indexing remain offline."
 };
 
+const decodeProjectLaunchFailure = Schema.decodeUnknownSync(ProjectLaunchFailure);
 const noLauncher: ProjectLaunchResult = {
 	status: "failed",
 	message: "This Workbench build has no selected-project launcher.",
@@ -33,9 +34,7 @@ export function projectLaunchFailure(stderr: string): typeof ProjectLaunchFailur
 	const line = stderr.split(/\r?\n/u).find((value) => value.startsWith(prefix));
 	if (line) {
 		try {
-			return Schema.decodeUnknownSync(ProjectLaunchFailure)(
-				JSON.parse(line.slice(prefix.length))
-			);
+			return decodeProjectLaunchFailure(JSON.parse(line.slice(prefix.length)));
 		} catch {
 			/* Retain malformed diagnostics for troubleshooting. */
 		}

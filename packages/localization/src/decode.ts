@@ -101,6 +101,8 @@ export function decodeText(bytes: Uint8Array, limits = defaultLocalizationLimits
 
 const JsonFromString = Schema.fromJsonString(Schema.Json);
 const FormatVersion = Schema.Struct({ FormatVersion: Schema.Int });
+const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
+const decodeJsonSyntax = Schema.decodeResult(UnknownFromJsonString);
 
 /** Bound nesting before recursive schema validation, ignoring brackets inside JSON strings. */
 function checkJsonNesting(text: string, limits: LocalizationLimits): void {
@@ -119,7 +121,7 @@ function checkJsonNesting(text: string, limits: LocalizationLimits): void {
 		else if (character === "{" || character === "[") {
 			if (++depth > limits.maxDepth + 1) {
 				// Preserve malformed-JSON precedence without traversing an unbounded value.
-				const syntax = Schema.decodeResult(Schema.fromJsonString(Schema.Unknown))(text);
+				const syntax = decodeJsonSyntax(text);
 				if (Result.isFailure(syntax)) throw localizationError("malformed_json");
 				throw localizationError("limit_exceeded");
 			}

@@ -7,8 +7,13 @@ import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { makeMapTileCaptureRemotePort } from "./map-tile-capture.js";
 import { MapTileCaptureRequest } from "./map-tile-schema.js";
+const isString = Schema.is(Schema.String);
 
-const fixture = Schema.decodeUnknownSync(MapTileCaptureRequest)(
+const ResponseEnvelope = Schema.Struct({ response: Schema.Json });
+const decodeMapTileCaptureRequest = Schema.decodeUnknownSync(MapTileCaptureRequest);
+const decodeResponseEnvelope = Schema.decodeUnknownEffect(ResponseEnvelope);
+
+const fixture = decodeMapTileCaptureRequest(
 	JSON.parse(
 		readFileSync(
 			new URL(
@@ -56,11 +61,9 @@ for (const sharedRenderer of [false, true]) {
 						request: (call) => {
 							if (call.functionName === "BeginMapTileCapture") {
 								const raw = call.parameters.RequestJson;
-								if (!Schema.is(Schema.String)(raw))
+								if (!isString(raw))
 									throw new Error("RequestJson must be a JSON string");
-								const wire = Schema.decodeUnknownSync(MapTileCaptureRequest)(
-									JSON.parse(raw)
-								);
+								const wire = decodeMapTileCaptureRequest(JSON.parse(raw));
 								expect(wire.contract.version.minor).toBe(sharedRenderer ? 1 : 0);
 							}
 							return Effect.succeed(
@@ -236,9 +239,7 @@ it.effect("classifies restoration refusal and retains the run for a subsequent r
 it.effect("keeps the explicitly selected legacy backend synchronous", () =>
 	Effect.gen(function* () {
 		const calls: string[] = [];
-		const response = (yield* Schema.decodeUnknownEffect(
-			Schema.Struct({ response: Schema.Json })
-		)(terminal).pipe(Effect.orDie)).response;
+		const response = (yield* decodeResponseEnvelope(terminal).pipe(Effect.orDie)).response;
 		const client: RemoteControlClientApi = {
 			request: (call) =>
 				Effect.sync(() => {

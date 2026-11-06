@@ -16,6 +16,8 @@ import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
 import { LocalizationImportSource } from "./localization-import.js";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { textCorpusFromExtractionEvents } from "./corpus.js";
+const decodeLocalizationTargetEffect = Schema.decodeEffect(LocalizationTarget);
+const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
 
 export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture")(function* (
 	parentDirectory = tmpdir()
@@ -25,7 +27,7 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 		(directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
 	);
 	const projectRoot = yield* Effect.promise(() => realpath(directory));
-	const authored = yield* Schema.decodeEffect(LocalizationTarget)({
+	const authored = yield* decodeLocalizationTargetEffect({
 		...target,
 		name: "Review",
 		outputPaths: {
@@ -163,7 +165,7 @@ export const makeIndexRegressionFixture = Effect.fn("Test.GameText.indexFixture"
 			targets = available;
 		},
 		addTarget: (name: string) => {
-			const next = Schema.decodeSync(LocalizationTarget)({ ...authored, name });
+			const next = decodeLocalizationTarget({ ...authored, name });
 			targets = [...targets, next];
 			return next;
 		},

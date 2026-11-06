@@ -38,6 +38,9 @@ import {
 	type CameraFrameResult,
 	type CameraRenderSessionRequest
 } from "./camera-render-schema.js";
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
+const decodeCameraRenderCapabilitiesV = Schema.decodeResult(CameraRenderCapabilitiesV1);
+const decodeReviewCaptureRequestCurrent = Schema.decodeSync(ReviewCaptureRequestCurrent);
 
 const request: CameraRenderSessionRequest = {
 	contract: cameraRenderContract,
@@ -142,7 +145,7 @@ function harness(
 											restoration: "restored"
 										}
 									: captured;
-				return yield* Schema.decodeUnknownEffect(Schema.Json)(value).pipe(Effect.orDie);
+				return yield* decodeJsonEffect(value).pipe(Effect.orDie);
 			})
 	};
 	const renderer = makeCameraRenderer(client, "http://fixture");
@@ -526,7 +529,7 @@ describe("native screenshot warmup", () => {
 		const h = harness();
 		const response = await Effect.runPromise(h.renderer.capabilities);
 		expect(
-			Schema.decodeResult(CameraRenderCapabilitiesV1)(response, {
+			decodeCameraRenderCapabilitiesV(response, {
 				onExcessProperty: "error"
 			})._tag
 		).toBe("Success");
@@ -706,7 +709,7 @@ describe("editor ownership rejections", () => {
 		restoration: "not_acquired"
 	});
 	const reviewRequest = (minor: 6 | 7) =>
-		Schema.decodeSync(ReviewCaptureRequestCurrent)({
+		decodeReviewCaptureRequestCurrent({
 			contract: { name: "ue-shed-review-capture", version: { major: 1, minor } },
 			operationId: "0b6f1c1e-3c3a-4d7e-9a43-6f3f0e8d2a11",
 			viewId: "front",

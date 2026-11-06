@@ -27,6 +27,7 @@ import {
 	type TextureDistributions,
 	type TextureRecord
 } from "./schema.js";
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
 
 const makeTextureObjectPath = TextureObjectPath.make;
 const makeAuditRuleId = AuditRuleId.make;
@@ -372,9 +373,7 @@ function readRuleSet(path: string): Effect.Effect<TextureAuditRuleSet, TextureAu
 							cause
 						})
 				});
-				const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(
-					sourceValue
-				).pipe(
+				const decodedValue0 = yield* decodeJsonEffect(sourceValue).pipe(
 					Effect.mapError(
 						(cause) =>
 							new TextureAuditScanError({
@@ -604,64 +603,62 @@ function extractTextureAuditWith(
 	);
 }
 
-function scanTextureAuditWith(
+const scanTextureAuditWith = Effect.fn("asset-audits.scan-textures")(function* (
 	reader: AssetReaderApi,
 	options: TextureAuditScanOptions,
 	reportProgress: (progress: TextureAuditProgress) => Effect.Effect<void>
-): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
-	return Effect.gen(function* () {
-		const rules = options.rules ?? (yield* readRuleSet(options.ruleFile!));
-		return yield* extractTextureAuditWith(
-			reader,
-			{
-				discoveredPackages: 0,
-				...(options.concurrency === undefined
-					? undefined
-					: { concurrency: options.concurrency }),
-				...(options.maximumAssets === undefined
-					? undefined
-					: { maximumAssets: options.maximumAssets }),
-				projectRoot: options.projectRoot,
-				rules
-			},
-			[],
-			reportProgress
-		);
-	}).pipe(Effect.withSpan("asset-audits.scan-textures"));
-}
+): Effect.fn.Return<TextureAuditReport, TextureAuditScanError> {
+	const rules = options.rules ?? (yield* readRuleSet(options.ruleFile!));
+	return yield* extractTextureAuditWith(
+		reader,
+		{
+			discoveredPackages: 0,
+			...(options.concurrency === undefined
+				? undefined
+				: { concurrency: options.concurrency }),
+			...(options.maximumAssets === undefined
+				? undefined
+				: { maximumAssets: options.maximumAssets }),
+			projectRoot: options.projectRoot,
+			rules
+		},
+		[],
+		reportProgress
+	);
+});
 
-function scanTextureAuditFromProjectIndexWith(
+const scanTextureAuditFromProjectIndexWith = Effect.fn(
+	"asset-audits.scan-textures-from-project-index"
+)(function* (
 	reader: AssetReaderApi,
 	index: SavedAssetScan,
 	options: TextureAuditScanOptions,
 	reportProgress: (progress: TextureAuditProgress) => Effect.Effect<void>
-): Effect.Effect<TextureAuditReport, TextureAuditScanError> {
-	return Effect.gen(function* () {
-		const rules = options.rules ?? (yield* readRuleSet(options.ruleFile!));
-		const paths = texturePackagePathsFromProjectIndex(index);
-		return yield* extractTextureAuditWith(
-			reader,
-			{
-				discoveredPackages: index.summary.scannedAssets,
-				...(options.concurrency === undefined
-					? undefined
-					: { concurrency: options.concurrency }),
-				...(options.maximumAssets === undefined
-					? undefined
-					: { maximumAssets: options.maximumAssets }),
-				paths,
-				projectRoot: options.projectRoot,
-				rules
-			},
-			index.failures.map((failure) => ({
-				code: "package_inspection_failed",
-				message: failure.message,
-				filePath: relative(options.projectRoot, failure.path)
-			})),
-			reportProgress
-		);
-	}).pipe(Effect.withSpan("asset-audits.scan-textures-from-project-index"));
-}
+): Effect.fn.Return<TextureAuditReport, TextureAuditScanError> {
+	const rules = options.rules ?? (yield* readRuleSet(options.ruleFile!));
+	const paths = texturePackagePathsFromProjectIndex(index);
+	return yield* extractTextureAuditWith(
+		reader,
+		{
+			discoveredPackages: index.summary.scannedAssets,
+			...(options.concurrency === undefined
+				? undefined
+				: { concurrency: options.concurrency }),
+			...(options.maximumAssets === undefined
+				? undefined
+				: { maximumAssets: options.maximumAssets }),
+			paths,
+			projectRoot: options.projectRoot,
+			rules
+		},
+		index.failures.map((failure) => ({
+			code: "package_inspection_failed",
+			message: failure.message,
+			filePath: relative(options.projectRoot, failure.path)
+		})),
+		reportProgress
+	);
+});
 
 export interface TextureAuditApi {
 	readonly progress: Effect.Effect<TextureAuditProgress>;

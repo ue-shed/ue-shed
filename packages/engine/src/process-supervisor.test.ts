@@ -17,6 +17,15 @@ import {
 } from "./index.js";
 
 const bundled = join(process.cwd(), "missing-bundle", "ue-shed-process-supervisor.exe");
+const ResolutionProbeReport = Schema.Struct({
+	tag: Schema.Literal("ProcessSupervisorUnavailable"),
+	packageName: Schema.Literal("@ue-shed/engine-win32-x64"),
+	retrySafe: Schema.Literal(true),
+	nextStep: Schema.Literal("fix_input"),
+	causeCode: Schema.Literal("MODULE_NOT_FOUND"),
+	explicitPath: Schema.Literal("missing-explicit-supervisor.exe")
+});
+const decodeResolutionProbeReport = Schema.decodeUnknownSync(ResolutionProbeReport);
 
 test("classifies an absent optional supervisor package and retains the resolution cause", async () => {
 	expectTypeOf<
@@ -63,16 +72,7 @@ process.stdout.write(JSON.stringify({
 		});
 		expect(result.error).toBeUndefined();
 		expect(result.status, result.stderr).toBe(0);
-		const report = Schema.decodeUnknownSync(
-			Schema.Struct({
-				tag: Schema.Literal("ProcessSupervisorUnavailable"),
-				packageName: Schema.Literal("@ue-shed/engine-win32-x64"),
-				retrySafe: Schema.Literal(true),
-				nextStep: Schema.Literal("fix_input"),
-				causeCode: Schema.Literal("MODULE_NOT_FOUND"),
-				explicitPath: Schema.Literal("missing-explicit-supervisor.exe")
-			})
-		)(JSON.parse(result.stdout));
+		const report = decodeResolutionProbeReport(JSON.parse(result.stdout));
 		expect(report.causeCode).toBe("MODULE_NOT_FOUND");
 	} finally {
 		await rm(root, { recursive: true, force: true });

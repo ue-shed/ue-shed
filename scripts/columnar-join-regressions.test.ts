@@ -7,10 +7,13 @@ import { expect, it } from "vitest";
 import { JoinFuzzInput, compareJoinFuzzInput } from "./columnar-join-fuzz.test-support.ts";
 import { withJoinCache } from "./columnar-join.test-support.ts";
 
+const JoinFuzzInputJson = Schema.fromJsonString(JoinFuzzInput);
+const decodeJoinFuzzInputJson = Schema.decodeSync(JoinFuzzInputJson);
+
 it.each(["lone-utf16-source"])(
 	"%s preserves a source containing a lone UTF-16 code unit",
 	async (name) => {
-		const input = Schema.decodeSync(Schema.fromJsonString(JoinFuzzInput))(
+		const input = decodeJoinFuzzInputJson(
 			await readFile(
 				new URL(`./test-fixtures/columnar-join/${name}.json`, import.meta.url),
 				"utf8"
@@ -24,7 +27,7 @@ it.each(["lone-utf16-source"])(
 );
 
 it("lone-utf16-localization: both parsers reject the escaped surrogate as Unreal does", async () => {
-	const input = Schema.decodeSync(Schema.fromJsonString(JoinFuzzInput))(
+	const input = decodeJoinFuzzInputJson(
 		await readFile(
 			new URL("./test-fixtures/columnar-join/lone-utf16-localization.json", import.meta.url),
 			"utf8"

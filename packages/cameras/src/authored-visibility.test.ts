@@ -5,8 +5,16 @@ import { decodeReviewCaptureResponse, ReviewCaptureRequestCurrent } from "./revi
 import { mapCaptureVisibilityVariants } from "./map-capture-visibility.js";
 import { MapCapturePlan } from "./map-tile-schema.js";
 import { CameraFrameEvidence, legacyReviewRenderPolicy } from "./camera-render-schema.js";
+
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const AuthoredEvidenceCarrier = Schema.Struct({ authoredEvidence: CameraFrameEvidence });
+const decodeJsonRecord = Schema.decodeUnknownSync(JsonRecord);
+const decodeAuthoredEvidenceCarrier = Schema.decodeUnknownSync(AuthoredEvidenceCarrier);
+const decodeReviewCaptureRequestCurrent = Schema.decodeUnknownSync(ReviewCaptureRequestCurrent);
+const decodeMapCapturePlan = Schema.decodeUnknownSync(MapCapturePlan);
+
 const response = () =>
-	Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
+	decodeJsonRecord(
 		JSON.parse(
 			readFileSync(
 				new URL(
@@ -21,9 +29,7 @@ describe("authored capture wire and persistence boundaries", () => {
 	it("accepts actual native paired evidence and rejects missing authored evidence or policy", () => {
 		const input = response();
 		expect(Effect.runSync(decodeReviewCaptureResponse(input)).status).toBe("captured");
-		const evidence = Schema.decodeUnknownSync(
-			Schema.Struct({ authoredEvidence: CameraFrameEvidence })
-		)(input).authoredEvidence;
+		const evidence = decodeAuthoredEvidenceCarrier(input).authoredEvidence;
 		expect(() =>
 			Effect.runSync(
 				decodeReviewCaptureResponse({
@@ -79,18 +85,16 @@ describe("authored capture wire and persistence boundaries", () => {
 			clearCompanion: { status: "not_requested" },
 			renderPolicy: legacyReviewRenderPolicy
 		};
-		expect(
-			Schema.decodeUnknownSync(ReviewCaptureRequestCurrent)(request).contract.version.minor
-		).toBe(7);
+		expect(decodeReviewCaptureRequestCurrent(request).contract.version.minor).toBe(7);
 		expect(() =>
-			Schema.decodeUnknownSync(ReviewCaptureRequestCurrent)({
+			decodeReviewCaptureRequestCurrent({
 				...request,
 				renderPolicy: { ...legacyReviewRenderPolicy, visibility: { hide: [], protect: [] } }
 			})
 		).toThrow();
 	});
 	it("creates independent labeled map plans with shared exposure and explicit version negotiation", () => {
-		const original = Schema.decodeUnknownSync(MapCapturePlan)(
+		const original = decodeMapCapturePlan(
 			JSON.parse(
 				readFileSync(
 					new URL(

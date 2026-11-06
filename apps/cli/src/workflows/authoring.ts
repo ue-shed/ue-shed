@@ -28,8 +28,8 @@ type SessionCommand = Command<
 	| "SessionsSave"
 >;
 
-function loadCatalog(args: { readonly projectRoot?: string; readonly reader?: string }) {
-	return Effect.gen(function* () {
+const loadCatalog = Effect.fn("Cli.authoring.load_catalog")(
+	function* (args: { readonly projectRoot?: string; readonly reader?: string }) {
 		const { AuthoringCatalog, AuthoringCatalogLive } = yield* Effect.promise(
 			() => import("@ue-shed/authoring-catalog")
 		);
@@ -40,38 +40,37 @@ function loadCatalog(args: { readonly projectRoot?: string; readonly reader?: st
 			);
 		});
 		return yield* program.pipe(Effect.provide(AuthoringCatalogLive));
-	}).pipe(Effect.provide(readerLayer(args.reader)));
-}
+	},
+	(effect, args) => Effect.provide(effect, readerLayer(args.reader))
+);
 
-function catalogWithLive(args: {
+const catalogWithLive = Effect.fn("Cli.authoring.catalog_with_live")(function* (args: {
 	readonly endpoint: string;
 	readonly projectRoot?: string;
 	readonly reader?: string;
 }) {
-	return Effect.gen(function* () {
-		const { AuthoringLiveConnection, AuthoringCatalog, AuthoringCatalogLive } =
-			yield* Effect.promise(() => import("@ue-shed/authoring-catalog"));
-		const { connectUnrealAuthoring, RemoteControlClientLive } = yield* Effect.promise(
-			() => import("@ue-shed/unreal-connection")
-		);
-		const program = Effect.gen(function* () {
-			const connection = yield* connectUnrealAuthoring(args.endpoint);
-			const inner = Effect.gen(function* () {
-				const catalog = yield* AuthoringCatalog;
-				return yield* catalog.discover(
-					args.projectRoot === undefined ? {} : { projectRoot: args.projectRoot }
-				);
-			});
-			return yield* inner.pipe(
-				Effect.provide(AuthoringCatalogLive),
-				Effect.provideService(AuthoringLiveConnection, connection)
+	const { AuthoringLiveConnection, AuthoringCatalog, AuthoringCatalogLive } =
+		yield* Effect.promise(() => import("@ue-shed/authoring-catalog"));
+	const { connectUnrealAuthoring, RemoteControlClientLive } = yield* Effect.promise(
+		() => import("@ue-shed/unreal-connection")
+	);
+	const program = Effect.gen(function* () {
+		const connection = yield* connectUnrealAuthoring(args.endpoint);
+		const inner = Effect.gen(function* () {
+			const catalog = yield* AuthoringCatalog;
+			return yield* catalog.discover(
+				args.projectRoot === undefined ? {} : { projectRoot: args.projectRoot }
 			);
 		});
-		return yield* program.pipe(
-			Effect.provide(Layer.provideMerge(RemoteControlClientLive, readerLayer(args.reader)))
+		return yield* inner.pipe(
+			Effect.provide(AuthoringCatalogLive),
+			Effect.provideService(AuthoringLiveConnection, connection)
 		);
 	});
-}
+	return yield* program.pipe(
+		Effect.provide(Layer.provideMerge(RemoteControlClientLive, readerLayer(args.reader)))
+	);
+});
 
 export const runAuthoringTables = Effect.fn("Cli.workflow.authoring_tables")(
 	(command: Command<"AuthoringTables">) =>

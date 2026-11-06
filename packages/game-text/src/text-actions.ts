@@ -18,12 +18,10 @@ export {
 } from "@ue-shed/localization";
 
 /**
- * One action for a text the saved-package reader found, expecting the id and source it read. The
- * reader reports the namespace as saved, with the package namespace marker (`[...]`); actions use
- * the namespace Gather reports, without it. Only
- * resolved text is mapped here, including table entries/cells and graph pin selectors. References
- * and unkeyed conversions require an explicit localization action. Keep the owning reader record's
- * packageFile with the occurrence; serialized object paths alone cannot identify copied assets.
+ * One action for a text the saved-package reader found, expecting its id and source, under the
+ * namespace Gather reports (without the `[...]` package marker). Only resolved text maps, with
+ * table entries/cells and pin selectors; references and unkeyed conversions need explicit actions.
+ * Keep the reader record's packageFile with the occurrence: object paths can't identify copies.
  */
 export function gameTextActionForOccurrence(
 	id: string,

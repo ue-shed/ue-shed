@@ -74,15 +74,10 @@ export function currentLocalizationTranslation(
 }
 
 /**
- * The translation the next sync ships from all of a line's archive and PO entries, decided as the
- * Game Text join decides it, so a review fingerprint from parsed files equals the engine's. The
- * PO's pending edit counts only when the PO has exactly one entry for the line, the archive at
- * most one, and the archive was read or is missing; `archive` is undefined for one that exists
- * but could not be read, whose translations are unknown. Otherwise the first archive entry ships.
- *
- * One difference remains: a PO collapsed by `IdenticalNamespaceAndSource` names its entries by
- * namespace and source, which the join matches to the line and parsed evidence does not, so here
- * such a pending edit does not count.
+ * The translation the next sync ships, decided as the Game Text join decides it so review
+ * fingerprints match the engine's. A pending PO edit counts only with one PO entry, at most one
+ * archive entry and a read or missing archive (`undefined`: unreadable); else the first archive
+ * entry ships. Unlike the join, an `IdenticalNamespaceAndSource` PO's pending edit never counts.
  */
 export function shippedEvidenceTranslation(
 	archive: readonly ArchiveEntry[] | undefined,

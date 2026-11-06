@@ -47,6 +47,8 @@ import {
 	type LocalizationRunEvent,
 	isLocalizationOperationError
 } from "./operation-schema.js";
+const decodeLocalizationRunRequest = Schema.decodeEffect(LocalizationRunRequest);
+const decodeEngine = Schema.decodeUnknownEffect(LocalizationEngine);
 
 /**
  * Plans and explicitly runs GatherText operations as an event stream. Execution revalidates
@@ -105,7 +107,7 @@ export const makeLocalizationOperationsLayer = (
 			const prepare = Effect.fn("LocalizationOperations.plan")(function* (
 				input: LocalizationRunRequest
 			) {
-				const request = yield* Schema.decodeEffect(LocalizationRunRequest)(input).pipe(
+				const request = yield* decodeLocalizationRunRequest(input).pipe(
 					Effect.mapError((cause) => localizationOperationError("invalid_request", cause))
 				);
 				const projectRoot = resolve(request.projectRoot);
@@ -128,7 +130,7 @@ export const makeLocalizationOperationsLayer = (
 						)
 					)
 				);
-				const engine = yield* Schema.decodeUnknownEffect(LocalizationEngine)(
+				const engine = yield* decodeEngine(
 					`${installation.version.major}.${installation.version.minor}`
 				).pipe(
 					Effect.mapError((cause) =>

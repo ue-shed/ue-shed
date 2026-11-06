@@ -9,7 +9,9 @@ import {
 	playerMappableConfigFromInspection
 } from "./projectors.js";
 import { EnhancedInputReport } from "./schema.js";
+const decodeEnhancedInputReport = Schema.decodeSync(EnhancedInputReport);
 
+const decodeUnknownEnhancedInputReport = Schema.decodeUnknownSync(EnhancedInputReport);
 const version = { legacy_file: -9, legacy_ue3: 0, ue4: 522, ue5: 1018, licensee: 0 };
 
 function inspection(name: string, assets: SavedAssetInspection["assets"]): SavedAssetInspection {
@@ -392,7 +394,7 @@ describe("schema 2 projection", () => {
 		expect(report.status).toBe("complete");
 		expect(report.diagnostics).toEqual([]);
 		expect(report.coverage.playerMappableConfigs).toBe(1);
-		expect(Schema.decodeSync(EnhancedInputReport)(report)).toEqual(report);
+		expect(decodeEnhancedInputReport(report)).toEqual(report);
 	});
 
 	it("turns a chord into an action-to-action edge and shows parameters on claims", () => {
@@ -442,6 +444,6 @@ describe("schema 2 projection", () => {
 			mappingContexts: [],
 			diagnostics: []
 		};
-		expect(Schema.decodeUnknownSync(EnhancedInputReport)(legacy).schemaVersion).toBe(1);
+		expect(decodeUnknownEnhancedInputReport(legacy).schemaVersion).toBe(1);
 	});
 });

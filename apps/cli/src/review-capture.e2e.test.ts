@@ -17,6 +17,9 @@ import {
 	runInProcessCli
 } from "./cli-in-process.test-support.js";
 
+const decodeRenderSessionRequest = Schema.decodeUnknownSync(CameraRenderSessionRequest);
+const decodeFrameRequest = Schema.decodeUnknownSync(CameraFrameRequest);
+
 describe("ue-shed Review capture CLI commands", () => {
 	it("records two external-automation captures from separate CLI commandses", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-review-external-processes-"));
@@ -61,7 +64,7 @@ describe("ue-shed Review capture CLI commands", () => {
 					});
 				}
 				if (call.functionName === "BeginCameraRender") {
-					const session = Schema.decodeUnknownSync(CameraRenderSessionRequest)(
+					const session = decodeRenderSessionRequest(
 						JSON.parse(call.parameters.RequestJson)
 					);
 					sessions.set(session.sessionId, session);
@@ -82,9 +85,7 @@ describe("ue-shed Review capture CLI commands", () => {
 					});
 				}
 				if (call.functionName === "StartCameraFrame") {
-					const frame = Schema.decodeUnknownSync(CameraFrameRequest)(
-						JSON.parse(call.parameters.RequestJson)
-					);
+					const frame = decodeFrameRequest(JSON.parse(call.parameters.RequestJson));
 					const session = sessions.get(frame.sessionId);
 					if (!session) throw new Error("Unknown render session");
 					const relativePath = `${frame.sessionId}/${frame.operationId}.png`;

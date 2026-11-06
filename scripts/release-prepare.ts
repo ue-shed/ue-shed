@@ -1,25 +1,8 @@
 /**
- * Runs every release gate for the committed release under one trace and records the results as
- * release evidence (`release-evidence.ts`) for `pnpm release`:
- *
- * - portable lane, in this checkout: release text (formatting and release tests), then `pnpm check`;
- * - pack lane: `release:pack:clean-check`, keeping the validated tarballs for publication;
- * - Unreal lane, in a second worktree of the same commit: the UAsset engine matrix, `check:unreal`
- *   and plugin compatibility on UE 5.7, 5.8 and 4.27, one after another (UnrealBuildTool shares
- *   one log file across engines, and these gates rebuild package output `pnpm check` reads).
- *
- * The lanes run in parallel unless `--serial`. A lane stops at its first failed gate, since the fix
- * almost always changes the later gates' inputs and leaves their results stale; `--keep-going`
- * runs them anyway (and, as in `pnpm check:time`, a gate's later steps). A gate whose recorded
- * evidence still covers the
- * release commit's inputs is reused instead of rerun, so after a changelog-only edit only the
- * release-text and pack gates run again. Writes `out/release-prepare/<version>-<time>/` with the
- * trace, logs, `report.html` and `validation.md`.
- *
- *   pnpm release:prepare
- *   pnpm release:prepare --only check,pack
- *   pnpm release:prepare --serial --record
- *   pnpm release:prepare --keep-going
+ * Runs every release gate for the committed release under one trace, recording release evidence
+ * for `pnpm release`: portable (`pnpm check`), pack (kept tarballs) and Unreal (second worktree;
+ * UE 5.7, 5.8, 4.27 serially, sharing UBT's log) lanes, parallel unless `--serial`. Lanes stop at
+ * a failure unless `--keep-going`; gates whose evidence covers the commit's inputs are reused.
  */
 
 import { spawnSync } from "node:child_process";

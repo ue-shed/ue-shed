@@ -9,6 +9,8 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { InputAtlasClientApi } from "./input-atlas-client.js";
 import { InputAtlasRoute } from "./input-atlas-route.js";
 
+const decodeEnhancedInputReport = Schema.decodeUnknownSync(EnhancedInputReport);
+
 const available = (value: string) =>
 	({ status: "available", source: "serialized", value }) as const;
 
@@ -252,7 +254,7 @@ describe("InputAtlasRoute interactions", () => {
 	});
 
 	it("shows saved trigger parameters on a claim", async () => {
-		const withHold = Schema.decodeUnknownSync(EnhancedInputReport)({
+		const withHold = decodeEnhancedInputReport({
 			...report,
 			mappingContexts: [
 				{

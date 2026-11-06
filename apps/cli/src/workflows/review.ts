@@ -9,8 +9,13 @@ import {
 } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
 import type { CliCommand } from "../command-model.js";
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
 
 type Command<Tag extends CliCommand["_tag"]> = Extract<CliCommand, { readonly _tag: Tag }>;
+
+/** Decoder for a schema from the lazily imported cameras module, built once per command run. */
+// Schemas arrive through this command's lazy import, so they can't be compiled at module scope.
+const decodeLazySchema = <S extends Schema.Top>(schema: S) => Schema.decodeUnknownEffect(schema);
 type FramingCommand = Command<"ReviewFramingCandidates" | "ReviewFramingApprove">;
 type PoliciesCommand = Command<
 	"ReviewPoliciesList" | "ReviewPoliciesReplace" | "ReviewPoliciesApply"
@@ -66,7 +71,7 @@ function readJsonDocument(path: string): Effect.Effect<unknown, CliCommandError>
 			})
 	}).pipe(
 		Effect.flatMap((input) =>
-			Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+			decodeJsonEffect(input).pipe(
 				Effect.mapError(
 					(cause) =>
 						new CliCommandError({
@@ -136,9 +141,7 @@ export const runReviewPolicies = Effect.fn("Cli.workflow.review_policies")(
 						});
 					}
 					const policyInput = yield* readJsonDocument(command.policyPath);
-					const policy = yield* Schema.decodeUnknownEffect(VisibilityPolicy)(
-						policyInput
-					).pipe(
+					const policy = yield* decodeLazySchema(VisibilityPolicy)(policyInput).pipe(
 						Effect.mapError(invalidDocument("Visibility Policy", command.policyPath))
 					);
 					const overrides =
@@ -181,7 +184,7 @@ export const runReviewViewPut = Effect.fn("Cli.workflow.review_view_put")(
 				const { putReviewViewAtPath, ReviewRepositoryLive, ReviewView } =
 					yield* Effect.promise(() => import("@ue-shed/cameras"));
 				const input = yield* readJsonDocument(command.viewPath);
-				const view = yield* Schema.decodeUnknownEffect(ReviewView)(input).pipe(
+				const view = yield* decodeLazySchema(ReviewView)(input).pipe(
 					Effect.mapError(invalidDocument("Review View", command.viewPath))
 				);
 				const result = yield* putReviewViewAtPath({
@@ -337,9 +340,9 @@ export const runReviewAuthoring = Effect.fn("Cli.workflow.review_authoring")(
 					}
 					if (command._tag === "ReviewAuthoringTune") {
 						const patchInput = yield* readJsonDocument(command.patchPath);
-						const patch = yield* Schema.decodeUnknownEffect(
-							ReviewAuthoringSessionPatch
-						)(patchInput).pipe(
+						const patch = yield* decodeLazySchema(ReviewAuthoringSessionPatch)(
+							patchInput
+						).pipe(
 							Effect.mapError(
 								invalidDocument("Review Authoring Patch", command.patchPath)
 							)

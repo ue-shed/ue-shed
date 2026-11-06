@@ -18,9 +18,13 @@ export default defineConfig({
 		".roo/**",
 		".windsurf/**",
 		"tools/oxlint/anti-slop/**",
+		"tools/oxlint/t3code/**",
 		"**/*.generated.ts"
 	],
-	jsPlugins: [{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" }],
+	jsPlugins: [
+		{ name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" },
+		{ name: "t3code", specifier: "./tools/oxlint/t3code/index.ts" }
+	],
 	rules: {
 		"anti-slop/no-chained-effect-flat-map": "error",
 		"anti-slop/no-chained-type-assertions": "error",
@@ -42,9 +46,22 @@ export default defineConfig({
 		"anti-slop/no-widen-then-assert": "error",
 		"anti-slop/prefer-effect-fn-pipeables": "error",
 		"anti-slop/require-safety-comment-for-type-assertion": "error",
-		"anti-slop/require-safety-verification": "error"
+		"anti-slop/require-safety-verification": "error",
+		"t3code/no-inline-schema-compile": "error",
+		"t3code/no-low-value-comments": "error",
+		"t3code/prefer-effect-fn": "error",
+		"t3code/require-suppression-reason": "error"
 	},
 	overrides: [
+		{
+			// Tests build Effect programs inline; a span per test helper adds noise, not signal.
+			files: [
+				"**/*.{test,spec,testkit}.{ts,tsx}",
+				"**/*.test-support.{ts,tsx}",
+				"**/{test,tests,testkit,testing,fixtures,integration}/**"
+			],
+			rules: { "t3code/prefer-effect-fn": "off" }
+		},
 		{
 			files: [...effectCatchAllBaseline],
 			rules: { "anti-slop/no-effect-catch-all": "warn" }

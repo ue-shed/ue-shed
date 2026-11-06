@@ -1,14 +1,10 @@
 import { type Brand, Schema } from "effect";
 
 /**
- * What a caller can do next after an expected failure. Same names and literal set as
- * `ErrorNextStep` in `@ue-shed/protocol`, defined locally to keep protocol outside this package's
- * runtime dependency boundary:
- *
- * - `fix_input`: the request, configuration or release is wrong; change it and try again.
- * - `retry`: the same request may succeed later without changes. Only valid when `retrySafe` is true.
- * - `reconcile`: state changed underneath the caller; re-read it, then decide whether to retry.
- * - `escalate`: the caller cannot fix this; report it with the error's context.
+ * What a caller can do next after an expected failure. Mirrors `ErrorNextStep` in
+ * `@ue-shed/protocol` without the runtime dependency. `fix_input`: change the request; `retry`:
+ * may succeed unchanged later (only when `retrySafe`); `reconcile`: state changed, re-read it
+ * first; `escalate`: the caller cannot fix it, so report it with the error's context.
  */
 export const PluginErrorNextStep = Schema.Literals(["fix_input", "retry", "reconcile", "escalate"]);
 export type PluginErrorNextStep = typeof PluginErrorNextStep.Type;

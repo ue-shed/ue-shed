@@ -14,6 +14,7 @@ import {
 } from "./camera-arrangement.js";
 import { ApprovedPose } from "./review-schema.js";
 import type { CameraAuthoringStore } from "./camera-authoring-store.js";
+const decodeCameraBridgeSnapshotEffect = Schema.decodeEffect(CameraBridgeSnapshot);
 
 const isCameraArrangementError = Schema.is(CameraArrangementError);
 
@@ -31,12 +32,14 @@ export const CameraRecoveryProposal = Schema.Struct({
 		Schema.isMaxLength(256)
 	)
 });
+const decodeCameraRecoveryProposalEffect = Schema.decodeEffect(CameraRecoveryProposal);
 export type CameraRecoveryProposal = typeof CameraRecoveryProposal.Type;
 /**
  * Explicit saved or native authority choice for reconciling divergent camera edits. No
  * default silently overwrites one side's customization.
  */
 export const CameraRecoveryChoice = Schema.Literals(["saved", "native"]);
+const decodeCameraRecoveryChoiceEffect = Schema.decodeEffect(CameraRecoveryChoice);
 export type CameraRecoveryChoice = typeof CameraRecoveryChoice.Type;
 
 /** Inspect a preserved recovery file without reconnecting or replaying it. */
@@ -44,7 +47,7 @@ export const prepareCameraRecovery = Effect.fn("CameraAuthoring.prepareRecovery"
 	store: CameraAuthoringStore,
 	input: CameraBridgeSnapshot
 ) {
-	const native = yield* Schema.decodeEffect(CameraBridgeSnapshot)(input);
+	const native = yield* decodeCameraBridgeSnapshotEffect(input);
 	const document = yield* store.load;
 	if (document.arrangement.id !== native.sessionId)
 		return yield* arrangementFailure(
@@ -87,8 +90,8 @@ export const resolveCameraRecovery = Effect.fn("CameraAuthoring.resolveRecovery"
 	input: CameraRecoveryProposal,
 	inputChoice: CameraRecoveryChoice
 ) {
-	const proposal = yield* Schema.decodeEffect(CameraRecoveryProposal)(input);
-	const choice = yield* Schema.decodeEffect(CameraRecoveryChoice)(inputChoice);
+	const proposal = yield* decodeCameraRecoveryProposalEffect(input);
+	const choice = yield* decodeCameraRecoveryChoiceEffect(inputChoice);
 	const inspected = yield* inspectCameraRecovery(store, bridge, proposal.native);
 	const native = inspected.native;
 	if (
@@ -128,8 +131,8 @@ export const restoreCameraRecovery = Effect.fn("CameraAuthoring.restoreRecovery"
 	input: CameraRecoveryProposal,
 	inputChoice: CameraRecoveryChoice
 ) {
-	const proposal = yield* Schema.decodeEffect(CameraRecoveryProposal)(input);
-	const choice = yield* Schema.decodeEffect(CameraRecoveryChoice)(inputChoice);
+	const proposal = yield* decodeCameraRecoveryProposalEffect(input);
+	const choice = yield* decodeCameraRecoveryChoiceEffect(inputChoice);
 	const native = proposal.native;
 	if (!native.pending || native.panelEvent)
 		return yield* arrangementFailure(

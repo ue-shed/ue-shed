@@ -13,6 +13,7 @@ import {
 	projectActors,
 	remapObservedActorId
 } from "./index.js";
+const decodeWorldScoutRefreshRateEffect = Schema.decodeEffect(WorldScoutRefreshRate);
 
 function actor(id: string, x: number, y: number, path = `/Game/Fixture.${id}`): ObservedActor {
 	return {
@@ -96,7 +97,7 @@ describe("coded stream failures", () => {
 				const observatory = yield* Observatory;
 				return yield* observatory.setObservationCadence(
 					"http://127.0.0.1:30010",
-					yield* Schema.decodeEffect(WorldScoutRefreshRate)(10).pipe(Effect.orDie)
+					yield* decodeWorldScoutRefreshRateEffect(10).pipe(Effect.orDie)
 				);
 			}).pipe(
 				Effect.provide(

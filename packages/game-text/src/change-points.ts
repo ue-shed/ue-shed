@@ -206,15 +206,10 @@ export interface GameTextChangePoints {
 const WHOLE = { offset: 0, limit: 1000 } as const;
 
 /**
- * Reads a change's two points for each named target, or once without a target, and compares
- * them: a submitted changelist, a shelf or a range through the host's revisions, or listed
- * working-copy files on disk over the revisions the workspace has. With targets, each target's
- * localization as the change found it is read too, and its comparison judges the change by the
- * gate's checks; with a code source, each target's code files are read with that engine.
- *
- * The points share records, so a second target rereads nothing but its code. They are read one
- * target at a time because a point's id names the change, not the target; a host must not read
- * two changes with the same id at once.
+ * Reads a change's two points for each named target (or once without one) and compares them,
+ * judging each target's localization by the gate's checks. Targets are read one at a time
+ * because a point's id names the change, not the target: a host must not read two changes with
+ * the same id at once.
  */
 export const readGameTextChangePoints = Effect.fn("GameText.change_points")(function* <E>(input: {
 	readonly projectRoot: string;
@@ -295,7 +290,7 @@ export const readGameTextChangePoints = Effect.fn("GameText.change_points")(func
 });
 
 /** The change's files at both sides, and the targets' localization as the change found it. */
-function readSides<E>(
+const readSides = Effect.fn("GameText.change_points.read_sides")(function* <E>(
 	input: {
 		readonly projectRoot: string;
 		readonly change: GameTextChange;
@@ -303,65 +298,63 @@ function readSides<E>(
 	},
 	before: readonly string[] | undefined
 ) {
-	return Effect.gen(function* () {
-		const { change, projectRoot, revisions } = input;
-		if (change.kind === "local") {
-			const read = change.files.filter(changePointReads);
-			const had = yield* revisions.have({
-				projectRoot,
-				paths: [...read, ...(before ?? [])]
-			});
-			const byPath = new Map(had.files.map((file) => [file.path, file.file]));
-			const onDisk = yield* Effect.forEach(read, (path) =>
-				Effect.promise(() =>
-					stat(join(projectRoot, path)).then(
-						() => ({ path, file: join(projectRoot, path) }),
-						() => ({ path })
-					)
-				)
-			);
-			return {
-				before: read.map((path) => {
-					const file = byPath.get(path);
-					return file === undefined ? { path } : { path, file };
-				}),
-				after: onDisk,
-				localization: had.files,
-				files: change.files.length,
-				read: read.length,
-				outside: 0,
-				skipped: change.files.filter((path) => !changePointReads(path))
-			};
-		}
-		const common = {
+	const { change, projectRoot, revisions } = input;
+	if (change.kind === "local") {
+		const read = change.files.filter(changePointReads);
+		const had = yield* revisions.have({
 			projectRoot,
-			reads: changePointReads,
-			...(before === undefined ? undefined : { before })
-		};
-		const fetched =
-			change.kind === "range"
-				? yield* revisions.range({ ...common, from: change.from, to: change.to })
-				: yield* revisions.changelist({
-						...common,
-						change: change.change,
-						shelved: change.kind === "shelved"
-					});
-		const side = (pick: "base" | "head") =>
-			fetched.files.map((file) => {
-				const bytes = file[pick];
-				return bytes === undefined ? { path: file.path } : { path: file.path, file: bytes };
-			});
+			paths: [...read, ...(before ?? [])]
+		});
+		const byPath = new Map(had.files.map((file) => [file.path, file.file]));
+		const onDisk = yield* Effect.forEach(read, (path) =>
+			Effect.promise(() =>
+				stat(join(projectRoot, path)).then(
+					() => ({ path, file: join(projectRoot, path) }),
+					() => ({ path })
+				)
+			)
+		);
 		return {
-			before: side("base"),
-			after: side("head"),
-			localization: fetched.before?.files ?? [],
-			files: fetched.files.length + fetched.skipped.length,
-			read: fetched.files.length,
-			outside: fetched.outside,
-			skipped: fetched.skipped
+			before: read.map((path) => {
+				const file = byPath.get(path);
+				return file === undefined ? { path } : { path, file };
+			}),
+			after: onDisk,
+			localization: had.files,
+			files: change.files.length,
+			read: read.length,
+			outside: 0,
+			skipped: change.files.filter((path) => !changePointReads(path))
 		};
-	});
-}
+	}
+	const common = {
+		projectRoot,
+		reads: changePointReads,
+		...(before === undefined ? undefined : { before })
+	};
+	const fetched =
+		change.kind === "range"
+			? yield* revisions.range({ ...common, from: change.from, to: change.to })
+			: yield* revisions.changelist({
+					...common,
+					change: change.change,
+					shelved: change.kind === "shelved"
+				});
+	const side = (pick: "base" | "head") =>
+		fetched.files.map((file) => {
+			const bytes = file[pick];
+			return bytes === undefined ? { path: file.path } : { path: file.path, file: bytes };
+		});
+	return {
+		before: side("base"),
+		after: side("head"),
+		localization: fetched.before?.files ?? [],
+		files: fetched.files.length + fetched.skipped.length,
+		read: fetched.files.length,
+		outside: fetched.outside,
+		skipped: fetched.skipped
+	};
+});
 
 /**
  * A target's comparison as `compareChange` answers it, judged by `failing`: each finding's

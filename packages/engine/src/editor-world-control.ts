@@ -11,8 +11,11 @@ import {
 } from "@ue-shed/protocol";
 import { RemoteControlClient, RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { type Brand, Clock, Context, Duration, Effect, Layer, Schedule, Schema } from "effect";
+const decodeEditorWorldOpenRequestEffect = Schema.decodeEffect(EditorWorldOpenRequest);
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
+const decodeEditorWorldState = Schema.decodeUnknownEffect(EditorWorldState);
+const decodeEditorWorldOperation = Schema.decodeUnknownEffect(EditorWorldOperation);
 const capability = "editor.world-control.v1";
 
 /**
@@ -200,7 +203,7 @@ export const EditorWorldControlLive = Layer.effect(
 						})
 					)
 				);
-			return yield* Schema.decodeUnknownEffect(EditorWorldState)(value).pipe(
+			return yield* decodeEditorWorldState(value).pipe(
 				Effect.mapError((cause) =>
 					failure({
 						code: "contract_failure",
@@ -222,7 +225,7 @@ export const EditorWorldControlLive = Layer.effect(
 		) {
 			const endpoint = normalizedEndpoint(options.endpoint);
 			const operation = "editor.world_control.open";
-			const request = yield* Schema.decodeEffect(EditorWorldOpenRequest)({
+			const request = yield* decodeEditorWorldOpenRequestEffect({
 				contract: {
 					name: "unreal-editor-world-control",
 					version: { major: 1, minor: 0 }
@@ -287,9 +290,7 @@ export const EditorWorldControlLive = Layer.effect(
 							)
 						);
 					if (value === undefined) return undefined;
-					const status = yield* Schema.decodeUnknownEffect(EditorWorldOperation)(
-						value
-					).pipe(
+					const status = yield* decodeEditorWorldOperation(value).pipe(
 						Effect.mapError((cause) =>
 							indeterminate(
 								"The editor returned an invalid map-open operation status.",

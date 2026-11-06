@@ -54,6 +54,7 @@ const defaultReader = join(
 	"release",
 	process.platform === "win32" ? "uasset.exe" : "uasset"
 );
+const isString = Schema.is(Schema.String);
 
 interface BenchmarkOptions {
 	readonly buildReader: boolean;
@@ -480,7 +481,7 @@ class ResourceSampler {
 function failureKind(cause: unknown): string {
 	if (cause instanceof Object && "kind" in cause) {
 		const kind = cause.kind;
-		if (Schema.is(Schema.String)(kind)) return kind;
+		if (isString(kind)) return kind;
 	}
 	return cause instanceof Error ? cause.name : "unknown";
 }
@@ -491,26 +492,24 @@ interface QueryPages {
 	readonly queryMs: number;
 }
 
-function queryPages(
+const queryPages = Effect.fn("ProjectIndexBenchmark.queryPages")(function* (
 	makeRequest: (cursor: ProjectIndexCursor | undefined) => ProjectIndexQueryValue
-): Effect.Effect<QueryPages, ProjectIndexError, ProjectIndex> {
-	return Effect.gen(function* () {
-		let cursor: ProjectIndexCursor | undefined;
-		const items: ProjectIndexPage["items"][number][] = [];
-		let pages = 0;
-		let queryMs = 0;
-		while (true) {
-			const started = performance.now();
-			const page = yield* queryProjectIndex(makeRequest(cursor));
-			queryMs += performance.now() - started;
-			pages += 1;
-			items.push(...page.items);
-			if (page.nextCursor === undefined) break;
-			cursor = page.nextCursor;
-		}
-		return { items, pages, queryMs };
-	});
-}
+): Effect.fn.Return<QueryPages, ProjectIndexError, ProjectIndex> {
+	let cursor: ProjectIndexCursor | undefined;
+	const items: ProjectIndexPage["items"][number][] = [];
+	let pages = 0;
+	let queryMs = 0;
+	while (true) {
+		const started = performance.now();
+		const page = yield* queryProjectIndex(makeRequest(cursor));
+		queryMs += performance.now() - started;
+		pages += 1;
+		items.push(...page.items);
+		if (page.nextCursor === undefined) break;
+		cursor = page.nextCursor;
+	}
+	return { items, pages, queryMs };
+});
 
 async function runProjectIndex(
 	options: BenchmarkOptions,

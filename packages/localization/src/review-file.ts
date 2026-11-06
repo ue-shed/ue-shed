@@ -10,14 +10,10 @@ import {
 import { sha256Hex } from "./sha256.js";
 
 /**
- * Fingerprint of a line and culture straight from target evidence: the manifest source and the
- * translation that ships next, as `shippedEvidenceTranslation` decides it. Undefined when the
- * line is not gathered or the culture is missing.
- *
- * A Game Text index computes the same fingerprint natively (`review_lines`), which is the one its
- * join compares stored reviews with; hosts holding an index use that. The two differ only for a
- * line with several manifest entries, where each takes its first, and for a PO collapsed by
- * `IdenticalNamespaceAndSource` (see `shippedEvidenceTranslation`).
+ * Fingerprint of a line and culture from target evidence: manifest source plus the translation
+ * `shippedEvidenceTranslation` ships next; undefined if the line or culture is missing. Hosts with
+ * a Game Text index use its native `review_lines` fingerprint, which differs only for lines with
+ * several manifest entries and `IdenticalNamespaceAndSource` POs.
  */
 export function localizationEvidenceFingerprint(
 	evidence: LocalizationTargetEvidence,
@@ -96,6 +92,8 @@ export const LocalizationReviewFile = Schema.Struct({
 	acceptedFindings: Schema.Array(LocalizationAcceptedFinding)
 });
 export type LocalizationReviewFile = typeof LocalizationReviewFile.Type;
+const LocalizationReviewFileJson = Schema.fromJsonString(LocalizationReviewFile);
+const decodeReviewFileJson = Schema.decodeResult(LocalizationReviewFileJson);
 
 /**
  * Malformed, duplicate or wrong-target review metadata. Correct or reconcile the review
@@ -154,7 +152,7 @@ export function decodeLocalizationReviewFile(
 	text: string,
 	target: LocalizationTargetName
 ): Result.Result<LocalizationReviewFile, LocalizationReviewFileError> {
-	const decoded = Schema.decodeResult(Schema.fromJsonString(LocalizationReviewFile))(text);
+	const decoded = decodeReviewFileJson(text);
 	if (Result.isFailure(decoded))
 		return Result.fail(
 			new LocalizationReviewFileError({

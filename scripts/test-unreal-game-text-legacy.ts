@@ -155,6 +155,9 @@ const Place = Schema.Struct({
 	pinId: Schema.optionalKey(Schema.NonEmptyString),
 	pinIndex: Schema.optionalKey(Schema.Int)
 });
+const PlaceList = Schema.Struct({ places: Schema.Array(Place) });
+const decodePlaceList = Schema.decodeUnknownSync(PlaceList);
+const decodeGameTextActionsResult = Schema.decodeUnknownSync(GameTextActionsResult);
 const json = (path: string) => {
 	const bytes = readFileSync(path);
 	const content =
@@ -163,8 +166,7 @@ const json = (path: string) => {
 			: bytes.toString("utf8").replace(/^\uFEFF/u, "");
 	return parseJson(content);
 };
-const readPlaces = (path: string) =>
-	Schema.decodeUnknownSync(Schema.Struct({ places: Schema.Array(Place) }))(json(path)).places;
+const readPlaces = (path: string) => decodePlaceList(json(path)).places;
 const baselineFile = join(run, "baseline.json");
 commandlet("UEShedLegacyTextActions", ["-Create", `-Evidence=${baselineFile}`], "baseline");
 // SAFETY: the fixture-owned commandlet emits exactly these nine places, validated below.
@@ -269,7 +271,7 @@ function apply(mode: "dry_run" | "apply", label: string, selected = actions) {
 	writeFileSync(requestFile, JSON.stringify(request, null, 2));
 	commandlet("UEShedGameText", [`-Request=${requestFile}`, `-Result=${resultFile}`], label);
 	// SAFETY: receipt assertions validate the fixture commandlet's successful action outcomes.
-	const result = Schema.decodeUnknownSync(GameTextActionsResult)(json(resultFile));
+	const result = decodeGameTextActionsResult(json(resultFile));
 	assert.equal(result.status, "ok");
 	assert.equal(result.actions.length, selected.length);
 	assert.equal(result.errors.length, 0);

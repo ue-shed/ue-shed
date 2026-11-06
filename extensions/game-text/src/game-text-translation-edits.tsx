@@ -47,6 +47,8 @@ interface StagedEdit {
 	readonly source: string;
 }
 
+const isStageableTranslation = Schema.is(LocalizationEdit.fields.translation);
+
 const editKey = (edit: Pick<LocalizationEdit, "culture" | "namespace" | "key">) =>
 	JSON.stringify([edit.culture, edit.namespace, edit.key]);
 
@@ -114,7 +116,7 @@ export function createGameTextEdits(input: {
 	// Undo restores the last removal in the target it happened in; another target retires it.
 	createEffect(input.target, () => setUndo(undefined));
 	const stage = (edit: LocalizationEdit, source: string) => {
-		if (!Schema.is(LocalizationEdit.fields.translation)(edit.translation)) {
+		if (!isStageableTranslation(edit.translation)) {
 			setMessage(
 				"This draft is too long to stage. Shorten it to 65,536 characters or fewer. The typed draft is retained."
 			);

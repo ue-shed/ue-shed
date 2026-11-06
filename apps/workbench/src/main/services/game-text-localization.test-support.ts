@@ -12,6 +12,7 @@ import {
 	projectPOEvidence
 } from "@ue-shed/localization";
 import { Result, Schema } from "effect";
+const decodeLocalizationTargetEvidence = Schema.decodeUnknownSync(LocalizationTargetEvidence);
 
 export const cultureCode = Schema.decodeUnknownSync(CultureCode);
 export const target = Schema.decodeSync(LocalizationTarget)({
@@ -93,7 +94,7 @@ export function evidence(po = poDocument()): LocalizationTargetEvidence {
 		modifiedTime: "2026-01-01T00:00:00Z",
 		contentHash: "hash"
 	};
-	return Schema.decodeUnknownSync(LocalizationTargetEvidence)({
+	return decodeLocalizationTargetEvidence({
 		schemaVersion: 1,
 		target,
 		manifest: {

@@ -128,6 +128,9 @@ const leaseOutcomes = Metric.frequency("ue_shed_editor_foreground_lease_total", 
 	description: "Editor foreground lease operations by operation and outcome"
 });
 const maxBackoffMs = 30_000;
+const encodeEditorForegroundLeaseRequest = Schema.encodeEffect(EditorForegroundLeaseRequest);
+const decodeEditorForegroundLeaseResult = Schema.decodeUnknownEffect(EditorForegroundLeaseResult);
+const decodeEditorForegroundStateResult = Schema.decodeUnknownEffect(EditorForegroundStateResult);
 
 interface Target {
 	readonly endpoint: string;
@@ -246,16 +249,15 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 			} satisfies Target;
 		});
 
-		const update = (
-			target: Target,
-			request: EditorForegroundLeaseRequest,
-			timeout: Duration.Input
-		) =>
-			Effect.gen(function* () {
+		/** Untraced: the span below is named after each call's operation. */
+		const update = Effect.fnUntraced(
+			function* (
+				target: Target,
+				request: EditorForegroundLeaseRequest,
+				timeout: Duration.Input
+			) {
 				const json = yield* Effect.gen(function* () {
-					const encoded = yield* Schema.encodeEffect(EditorForegroundLeaseRequest)(
-						request
-					);
+					const encoded = yield* encodeEditorForegroundLeaseRequest(request);
 					return yield* remote.request({
 						endpoint: target.endpoint,
 						objectPath: target.objectPath,
@@ -278,9 +280,7 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 						)
 					)
 				);
-				const result = yield* Schema.decodeUnknownEffect(EditorForegroundLeaseResult)(
-					json
-				).pipe(
+				const result = yield* decodeEditorForegroundLeaseResult(json).pipe(
 					Effect.mapError((cause) =>
 						failure(
 							target.endpoint,
@@ -296,12 +296,15 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 				);
 				yield* Metric.update(leaseOutcomes, `${request.operation}:${result.status}`);
 				return result;
-			}).pipe(
-				Effect.trackErrors(leaseOutcomes, () => `${request.operation}:failed`),
-				Effect.withSpan(`EditorForegroundResponsiveness.${request.operation}`, {
-					attributes: { "unreal.endpoint": target.endpoint }
-				})
-			);
+			},
+			(effect, target, request) =>
+				effect.pipe(
+					Effect.trackErrors(leaseOutcomes, () => `${request.operation}:failed`),
+					Effect.withSpan(`EditorForegroundResponsiveness.${request.operation}`, {
+						attributes: { "unreal.endpoint": target.endpoint }
+					})
+				)
+		);
 
 		/** Negotiates and acquires; succeeds only with a granted lease. */
 		const acquire = Effect.fn("EditorForegroundResponsiveness.acquire")(function* (
@@ -519,7 +522,7 @@ export const EditorForegroundResponsivenessLive = Layer.effect(
 						)
 					),
 					Effect.flatMap((json) =>
-						Schema.decodeUnknownEffect(EditorForegroundStateResult)(json).pipe(
+						decodeEditorForegroundStateResult(json).pipe(
 							Effect.mapError((cause) =>
 								failure(
 									endpoint,

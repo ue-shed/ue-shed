@@ -1,12 +1,7 @@
 /**
- * Repeatable Observatory host + Canvas paint benchmark.
- *
- * Host path: real USOT encoder → incremental decoder → retained world-observation apply.
- * Paint path: production World Scout Canvas presenter via Playwright + Vite harness.
- *
- * Budgets (local reference machine; not portable CI assertions):
- * - 1,000 actors / 50% change / 60 Hz: decode+apply p95 ≤ 4 ms, paint p95 ≤ 8 ms
- * - 4,096 actors / 100% change / 60 Hz: decode+apply p95 ≤ 8 ms, paint p95 ≤ 16.7 ms
+ * Repeatable Observatory benchmark. Host path: real USOT encoder, incremental decoder and retained
+ * world-observation apply. Paint path: the production World Scout Canvas presenter in Playwright.
+ * The budgets in `evaluateBudgets` are for a local reference machine, not portable CI assertions.
  */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";

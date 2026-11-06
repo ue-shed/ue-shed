@@ -12,29 +12,20 @@
 /** @typedef {import("./types.d.ts").AuthoringTableResult} AuthoringTableResult */
 /** @typedef {import("./types.d.ts").PackageHandle} PackageHandle */
 
+/** @typedef {() => string} PackageCall */
+/** @typedef {(path: string, bytes: Uint8Array) => string} BytesCall */
 /**
- * @typedef WasmPackageBinding
- * @property {() => string} inspect
- * @property {() => string} extractText
- * @property {() => string} extractTextures
- * @property {() => string} extractLevelSequences
- * @property {() => string} extractBlueprints
- * @property {() => string} extractAnimations
- * @property {() => string} extractAuthoringTable
- * @property {() => void} free
+ * @typedef {{ inspect: PackageCall, extractText: PackageCall, extractTextures: PackageCall,
+ *   extractLevelSequences: PackageCall, extractBlueprints: PackageCall,
+ *   extractAnimations: PackageCall, extractAuthoringTable: PackageCall, free: () => void }}
+ *   WasmPackageBinding
  */
 
 /**
- * @typedef WasmBinding
- * @property {(path: string, bytes: Uint8Array) => string} inspect
- * @property {(path: string, bytes: Uint8Array) => string} extract_text
- * @property {(path: string, bytes: Uint8Array) => string} extract_textures
- * @property {(path: string, bytes: Uint8Array) => string} extract_level_sequences
- * @property {(path: string, bytes: Uint8Array) => string} extract_blueprints
- * @property {(path: string, bytes: Uint8Array) => string} extract_animations
- * @property {(path: string, bytes: Uint8Array) => string} extract_authoring_table
- * @property {new (path: string, bytes: Uint8Array) => WasmPackageBinding} ParsedPackage
- * @property {() => string} version
+ * @typedef {{ inspect: BytesCall, extract_text: BytesCall, extract_textures: BytesCall,
+ *   extract_level_sequences: BytesCall, extract_blueprints: BytesCall, version: () => string,
+ *   extract_animations: BytesCall, extract_authoring_table: BytesCall,
+ *   ParsedPackage: new (path: string, bytes: Uint8Array) => WasmPackageBinding }} WasmBinding
  */
 
 export const DEFAULT_LIMITS = Object.freeze({
@@ -195,11 +186,14 @@ function decodeResult(operation, raw, schemaVersion, maxOutputBytes) {
 /**
  * @param {WasmBinding} binding
  * @param {RuntimeLimits} limits
- * @param {string} path
- * @param {Uint8Array} bytes
  * @returns {PackageHandle}
  */
-function createPackageHandle(binding, limits, path, bytes) {
+function createPackageHandle(
+	binding,
+	limits,
+	/** @type {string} */ path,
+	/** @type {Uint8Array} */ bytes
+) {
 	const input = assertInputBytes(bytes, limits.maxInputBytes);
 	if (!isFunction(binding.ParsedPackage)) {
 		throw new WasmProtocolError(
@@ -217,12 +211,13 @@ function createPackageHandle(binding, limits, path, bytes) {
 	}
 	/**
 	 * @template T
-	 * @param {string} operation
-	 * @param {() => string} call
-	 * @param {number} schemaVersion
 	 * @returns {T}
 	 */
-	function invoke(operation, call, schemaVersion) {
+	function invoke(
+		/** @type {string} */ operation,
+		/** @type {() => string} */ call,
+		/** @type {number} */ schemaVersion
+	) {
 		if (freed) {
 			throw new Error("PackageHandle has been freed.");
 		}

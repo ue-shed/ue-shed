@@ -45,8 +45,11 @@ import {
 	reviewViewApprovedPose,
 	type ReviewSet
 } from "./review-schema.js";
+const decodeVisibilityResult = Schema.decodeSync(VisibilityResult);
+const decodeVisibilityMeasurement = Schema.decodeSync(VisibilityMeasurement);
 
 const decodeReviewSet = <Input>(input: Input) => Effect.runSync(decodeReviewSetEffect(input));
+const decodeUnknownVisibilityResult = Schema.decodeUnknownSync(VisibilityResult);
 
 function expectReviewSetIssue<Input>(input: Input, issue: RegExp): void {
 	const failure = Effect.runSync(Effect.flip(decodeReviewSetEffect(input)));
@@ -519,7 +522,7 @@ describe("Map Review contracts", () => {
 
 	it("requires bounded quantitative evidence before visibility can be assessed", () => {
 		expect(() =>
-			Schema.decodeUnknownSync(VisibilityResult)({
+			decodeUnknownVisibilityResult({
 				assessmentDurationMs: 1,
 				limitations: [],
 				method: { method: "ray_samples", version: 1 },
@@ -529,7 +532,7 @@ describe("Map Review contracts", () => {
 			})
 		).toThrow(/visibleFraction/);
 		expect(() =>
-			Schema.decodeSync(VisibilityResult)({
+			decodeVisibilityResult({
 				assessmentDurationMs: 1,
 				limitations: [],
 				method: { method: "ray_samples", version: 1 },
@@ -542,7 +545,7 @@ describe("Map Review contracts", () => {
 	});
 
 	it("classifies raw engine measurements only when a consumer asks", () => {
-		const measurement = Schema.decodeSync(VisibilityMeasurement)({
+		const measurement = decodeVisibilityMeasurement({
 			assessmentDurationMs: 1,
 			limitations: ["Collision rays are diagnostic."],
 			method: { method: "ray_samples", version: 1 },

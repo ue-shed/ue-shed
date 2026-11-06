@@ -6,6 +6,7 @@ import {
 	decodeAuthoringTransportRequest,
 	makeAuthoringHttpClient
 } from "./index.js";
+const isString = Schema.is(Schema.String);
 
 describe("authoring SDK contracts", () => {
 	for (const body of ["{invalid", "{}", JSON.stringify({ status: "success", value: {} })]) {
@@ -164,11 +165,7 @@ describe("authoring SDK contracts", () => {
 			endpoint: "https://host.example/api/authoring",
 			headers: { authorization: "Bearer studio" },
 			fetch: async (input, init) => {
-				const url = Schema.is(Schema.String)(input)
-					? input
-					: input instanceof URL
-						? input.href
-						: input.url;
+				const url = isString(input) ? input : input instanceof URL ? input.href : input.url;
 				seen.push({ url, headers: new Headers(init?.headers) });
 				return new Response(
 					JSON.stringify({

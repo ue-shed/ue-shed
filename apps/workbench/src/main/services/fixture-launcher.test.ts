@@ -55,8 +55,6 @@ function neverCalledFixtureProcess() {
 	});
 }
 
-// --- FixtureHealth -----------------------------------------------------------
-
 const manifestOf = (fields: Schema.JsonObject) => ({
 	capabilities: [],
 	producerKind: "unreal_editor" as const,
@@ -211,8 +209,6 @@ it.effect(
 			)
 		)
 );
-
-// --- FixtureLauncher -----------------------------------------------------------
 
 it.effect("launch returns ready without spawning when already healthy", () =>
 	Effect.gen(function* () {

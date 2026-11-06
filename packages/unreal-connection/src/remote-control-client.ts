@@ -1,6 +1,7 @@
 import { type Brand, Config, Context, Duration, Effect, Layer, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields, type ErrorNextStep } from "@ue-shed/protocol";
 import { TransportRequestError, UnrealRC } from "unreal-rc";
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
 
 const RemoteCallEnvelope = Schema.Struct({ ResultJson: Schema.String });
 const decodeRemoteCallEnvelope = Schema.decodeUnknownEffect(RemoteCallEnvelope);
@@ -176,16 +177,10 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 }
 
 /**
- * Creates the Effect HTTP adapter with an explicit default timeout. Each request scopes its
- * upstream client, validates both JSON boundaries, and disables upstream retries, including for
- * idempotent calls.
- *
- * `passphrase` is sent as Unreal's Remote Control `Passphrase` header. An editor that restricts
- * server access with configured passphrases checks it on every request, including requests from
- * the same machine, and answers a wrong or missing one with HTTP 401 (verified on UE 5.7 and 5.8).
- * Without `passphrase` the transport sends its own built-in phrase, which such an editor refuses.
- * `headers` are added to every request, for example for a proxy in front of the editor; a
- * `Passphrase` entry there wins over `passphrase`. Omit both to keep the transport's defaults.
+ * Creates the Effect HTTP adapter with a default timeout; each request scopes its client, checks
+ * both JSON boundaries and never retries. `passphrase` is sent as Unreal's `Passphrase` header; a
+ * restricted editor checks it on every request, local ones too, and answers 401 to a wrong one or
+ * the built-in default (UE 5.7, 5.8). `headers` go on every request; their `Passphrase` wins.
  */
 export function makeRemoteControlClient(options: {
 	readonly defaultTimeout: Duration.Input;
@@ -267,7 +262,7 @@ export function makeRemoteControlClient(options: {
 					})
 			}).pipe(
 				Effect.flatMap((input) =>
-					Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+					decodeJsonEffect(input).pipe(
 						Effect.mapError((cause) =>
 							clientError(request, {
 								code: "invalid_result_json",

@@ -112,6 +112,7 @@ export const ProjectIndexBenchmarkEvidence = Schema.Struct({
 export interface ProjectIndexBenchmarkEvidence extends Schema.Schema.Type<
 	typeof ProjectIndexBenchmarkEvidence
 > {}
+const decodeProjectIndexBenchmarkEvidence = Schema.decodeUnknownSync(ProjectIndexBenchmarkEvidence);
 
 function roundMilliseconds(value: number): number {
 	return Math.round(value * 1_000) / 1_000;
@@ -194,7 +195,7 @@ export function validateProjectIndexBenchmarkEvidence<Input>(
 	input: Input,
 	sensitiveValues: readonly string[] = []
 ): ProjectIndexBenchmarkEvidence {
-	const evidence = Schema.decodeUnknownSync(ProjectIndexBenchmarkEvidence)(input);
+	const evidence = decodeProjectIndexBenchmarkEvidence(input);
 	if (!isDeepStrictEqual(input, evidence)) {
 		throw new Error(
 			"Benchmark evidence contains fields outside the aggregate evidence contract."

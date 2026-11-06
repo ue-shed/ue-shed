@@ -12,6 +12,9 @@ import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unr
 import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import { isLoopbackEndpoint } from "./loopback-endpoint.js";
 import { processSupervisorExecutable } from "./process-supervisor.js";
+const decodeEditorWindowActivationRequestEffect = Schema.decodeEffect(
+	EditorWindowActivationRequest
+);
 
 /**
  * Foreground permission, negotiation or activation failure with operation context and
@@ -40,6 +43,7 @@ interface Guidance {
 	readonly nextStep: ErrorNextStep;
 }
 
+const isContractParseError = Schema.is(ContractParseError);
 const pluginMismatch: Guidance = {
 	recovery: "Install the UE Shed Core plugin version paired with this client, then reconnect.",
 	retrySafe: false,
@@ -50,7 +54,7 @@ const pluginMismatch: Guidance = {
 function requestGuidance(
 	cause: RemoteControlClientError | ContractParseError | Schema.SchemaError
 ): Guidance {
-	if (Schema.is(ContractParseError)(cause) || Schema.isSchemaError(cause)) return pluginMismatch;
+	if (isContractParseError(cause) || Schema.isSchemaError(cause)) return pluginMismatch;
 	return { recovery: cause.recovery, retrySafe: cause.retrySafe, nextStep: cause.nextStep };
 }
 
@@ -70,7 +74,7 @@ const failure = (operation: string, message: string, guidance: Guidance, cause?:
 export const EditorForegroundPermissionLive = Layer.succeed(EditorForegroundPermission, {
 	grant: Effect.fn("EditorForegroundPermission.grant")(function* (processId: number) {
 		if (process.platform !== "win32") return;
-		yield* Schema.decodeEffect(EditorWindowActivationRequest)({
+		yield* decodeEditorWindowActivationRequestEffect({
 			expectedProcessId: processId
 		}).pipe(
 			Effect.mapError((cause) =>
@@ -157,7 +161,7 @@ export const EditorWindowActivationLive = Layer.effect(
 						Effect.mapError((cause) =>
 							failure(
 								"negotiate",
-								Schema.is(ContractParseError)(cause)
+								isContractParseError(cause)
 									? `The editor at ${endpoint} returned a capability manifest that does not match the companion contract.`
 									: `Could not read the capability manifest from the editor at ${endpoint}.`,
 								requestGuidance(cause),

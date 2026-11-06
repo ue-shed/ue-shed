@@ -622,62 +622,51 @@ function refreshStream(
 	);
 }
 
-function makeProcessService(
+const makeProcessService = Effect.fn("ProjectIndexProcess.make")(function* (
 	configuration: ProjectIndexProcessConfiguration,
 	cacheRoot: ProjectIndexCacheRoot
-): Effect.Effect<ProjectIndexApi, never, Scope.Scope> {
-	return Effect.gen(function* () {
-		const mutex = yield* Semaphore.make(1);
-		const session = yield* Effect.acquireRelease(
-			Effect.sync(() => new UassetProtocolSession(configuration)),
-			(session) => Effect.promise(() => session.close())
+): Effect.fn.Return<ProjectIndexApi, never, Scope.Scope> {
+	const mutex = yield* Semaphore.make(1);
+	const session = yield* Effect.acquireRelease(
+		Effect.sync(() => new UassetProtocolSession(configuration)),
+		(session) => Effect.promise(() => session.close())
+	);
+	const refresh = (target: ProjectIndexTarget) =>
+		refreshStream(configuration, cacheRoot, target, "refresh");
+	const rebuild = (target: ProjectIndexTarget) =>
+		refreshStream(configuration, cacheRoot, target, "rebuild");
+
+	const query = Effect.fn("ProjectIndexProcess.query")(function* (request: ProjectIndexQuery) {
+		const page = yield* mutex.withPermits(1)(
+			Effect.tryPromise({
+				try: (signal) => collectQuery(configuration, session, cacheRoot, request, signal),
+				catch: (cause) => mapStreamFailure(cause, true)
+			}).pipe(Effect.withSpan("unreal_assets.project_index_query"))
 		);
-		const refresh = (target: ProjectIndexTarget) =>
-			refreshStream(configuration, cacheRoot, target, "refresh");
-		const rebuild = (target: ProjectIndexTarget) =>
-			refreshStream(configuration, cacheRoot, target, "rebuild");
-
-		const query = Effect.fn("ProjectIndexProcess.query")(function* (
-			request: ProjectIndexQuery
-		) {
-			const page = yield* mutex.withPermits(1)(
-				Effect.tryPromise({
-					try: (signal) =>
-						collectQuery(configuration, session, cacheRoot, request, signal),
-					catch: (cause) => mapStreamFailure(cause, true)
-				}).pipe(Effect.withSpan("unreal_assets.project_index_query"))
-			);
-			return yield* decodeProjectIndexPage(page);
-		});
-
-		const count = Effect.fn("ProjectIndexProcess.count")(function* (
-			request: ProjectIndexCount
-		) {
-			const decoded = yield* decodeProjectIndexCount(request);
-			return yield* mutex.withPermits(1)(
-				Effect.tryPromise({
-					try: (signal) =>
-						collectCount(configuration, session, cacheRoot, decoded, signal),
-					catch: (cause) => mapStreamFailure(cause, true)
-				}).pipe(Effect.withSpan("unreal_assets.project_index_count"))
-			);
-		});
-
-		const status = Effect.fn("ProjectIndexProcess.status")(function* (
-			target: ProjectIndexTarget
-		) {
-			return yield* mutex.withPermits(1)(
-				Effect.tryPromise({
-					try: (signal) =>
-						collectStatus(configuration, session, cacheRoot, target, signal),
-					catch: (cause) => mapStreamFailure(cause, true)
-				})
-			);
-		}, Effect.withSpan("unreal_assets.project_index_status"));
-
-		return { count, query, rebuild, refresh, status };
+		return yield* decodeProjectIndexPage(page);
 	});
-}
+
+	const count = Effect.fn("ProjectIndexProcess.count")(function* (request: ProjectIndexCount) {
+		const decoded = yield* decodeProjectIndexCount(request);
+		return yield* mutex.withPermits(1)(
+			Effect.tryPromise({
+				try: (signal) => collectCount(configuration, session, cacheRoot, decoded, signal),
+				catch: (cause) => mapStreamFailure(cause, true)
+			}).pipe(Effect.withSpan("unreal_assets.project_index_count"))
+		);
+	});
+
+	const status = Effect.fn("ProjectIndexProcess.status")(function* (target: ProjectIndexTarget) {
+		return yield* mutex.withPermits(1)(
+			Effect.tryPromise({
+				try: (signal) => collectStatus(configuration, session, cacheRoot, target, signal),
+				catch: (cause) => mapStreamFailure(cause, true)
+			})
+		);
+	}, Effect.withSpan("unreal_assets.project_index_status"));
+
+	return { count, query, rebuild, refresh, status };
+});
 
 /**
  * Production Project Index adapter. TypeScript supplies only the cache root and worker policy;

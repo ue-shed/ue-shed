@@ -1,10 +1,7 @@
 /**
- * Runs one cold Game Text refresh in-process and samples the whole process tree's
- * working set every 250 ms, classified by role (Node main, native one-shot reader,
- * native session). Phase changes from the index progress reporter are timestamped
- * on the same clock so the peak can be attributed to a stage and a process.
- * Process command lines are classified in the sampler and never recorded.
- *
+ * Runs one cold Game Text refresh in-process, sampling the process tree's working set by role every
+ * 250 ms on the progress phases' clock, so the peak maps to a stage and a process. Command lines
+ * are classified in the sampler and never recorded.
  * node --import tsx scripts/game-text-cold-memory-probe.ts --project <dir> --cache <new dir> --out <json>
  */
 import { execFile } from "node:child_process";

@@ -30,6 +30,11 @@ import {
 import { TextQualityFindingId } from "./quality-query.js";
 import { type BuiltInCheckEntry, GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES, STARTER_CHECKS } from "./starter-rules.js";
+const decodeLocalizationReviewFile = Schema.decodeEffect(LocalizationReviewFile);
+const decodeGameTextRuleDocument = Schema.decodeUnknownEffect(GameTextRuleDocument);
+const decodeLocalizationQualityReportJson = Schema.decodeEffect(
+	Schema.fromJsonString(LocalizationQualityReport)
+);
 
 /**
  * A quality scan's progress in rules: nothing run first, every rule run last with the findings,
@@ -162,7 +167,7 @@ const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
 			maximumCharacters: 8,
 			recovery: "Shorten the line."
 		},
-		// Reports TODO in menu text, where placeholder_text leaves it out.
+		// Reports the forbidden term in menu text, where placeholder_text leaves it out.
 		{
 			id: "source.terms",
 			kind: "terminology",
@@ -287,7 +292,7 @@ it.live(
 				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 				const join = yield* result.localizationJoin;
 				const line = join.lines.find((item) => item.identity?.key === "K02")!;
-				const review = yield* Schema.decodeEffect(LocalizationReviewFile)({
+				const review = yield* decodeLocalizationReviewFile({
 					schemaVersion: 1,
 					target: join.target,
 					records: [],
@@ -375,7 +380,7 @@ it.live(
 							.export({ target: join.target, filter: "culture_invariant_text" })
 							.findings.map(({ source }) => source)
 					).toEqual(["Invariant"]);
-					// TODO in menu text is the terminology rule's finding, not placeholder_text's.
+					// Terminology, not placeholder_text, reports the forbidden term in menu text.
 					const contexts = (filter: WorkspaceQualityFilter) =>
 						legacy
 							.export({ target: join.target, filter })
@@ -564,9 +569,7 @@ const expectReportBytes = Effect.fn("Test.GameText.reportBytes")(function* (
 		if (page.findings.length < 5000) break;
 	}
 	expect(prepared.findings).toBe(findings.length);
-	const written = yield* Schema.decodeEffect(Schema.fromJsonString(LocalizationQualityReport))(
-		text
-	).pipe(Effect.orDie);
+	const written = yield* decodeLocalizationQualityReportJson(text).pipe(Effect.orDie);
 	expect(text).toBe(
 		`${JSON.stringify(LocalizationQualityReport.make({ ...written, findings }), null, "\t")}\n`
 	);
@@ -749,7 +752,7 @@ it.live("lines whose IDs compare equal keep the in-memory report's order", () =>
 					at: "2026-10-14T00:00:00Z"
 				};
 			};
-			const review = yield* Schema.decodeEffect(LocalizationReviewFile)({
+			const review = yield* decodeLocalizationReviewFile({
 				schemaVersion: 1,
 				target: join.target,
 				records: [],
@@ -848,7 +851,7 @@ it.live("queried quality rates each finding as the rule file does", () =>
 		const fixture = yield* makeIndexRegressionFixture();
 		yield* Effect.promise(() => writeLocalization(fixture.projectRoot, keys));
 		fixture.update(gathered.map(({ key, source }, index) => occurrence(key, source, index)));
-		const rated = yield* Schema.decodeUnknownEffect(GameTextRuleDocument)({
+		const rated = yield* decodeGameTextRuleDocument({
 			...document,
 			rules: document.rules.map((entry) =>
 				"id" in entry && entry.id === "translation.limit"
@@ -916,7 +919,7 @@ it.live("custom checks query as the in-memory checks do, past the old filter and
 			recovery: "Shorten it.",
 			...(index % 5 === 0 ? { scope: { roles: ["menu"] } } : undefined)
 		}));
-		const custom = yield* Schema.decodeUnknownEffect(GameTextRuleDocument)({
+		const custom = yield* decodeGameTextRuleDocument({
 			...document,
 			rules: [
 				...document.rules,
@@ -988,7 +991,7 @@ it.live("custom regex checks preserve whitespace and zero-width truth in queried
 		];
 		yield* Effect.promise(() => writeLocalization(fixture.projectRoot, entries));
 		fixture.update(entries.map(({ key, source }, index) => occurrence(key, source, index)));
-		const checks = yield* Schema.decodeUnknownEffect(GameTextRuleDocument)({
+		const checks = yield* decodeGameTextRuleDocument({
 			schemaVersion: 1,
 			roles: [],
 			rules: [

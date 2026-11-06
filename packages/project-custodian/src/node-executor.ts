@@ -25,6 +25,8 @@ import {
 	type CustodianTarget
 } from "./schema.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 interface RunningProcess {
 	readonly pid: number;
 	readonly name: string;
@@ -162,7 +164,7 @@ async function appendLog(
 }
 
 export async function readCustodianProposalDocument(path: string): Promise<Schema.Json> {
-	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(resolve(path), "utf8")));
+	return decodeJson(JSON.parse(await readFile(resolve(path), "utf8")));
 }
 
 export function custodianProposalStorageIsValid(

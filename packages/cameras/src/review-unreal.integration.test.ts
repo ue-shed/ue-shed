@@ -33,6 +33,8 @@ import {
 } from "./review-schema.js";
 import { evaluateReviewCapturePolicy } from "./review-session-policy.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeReviewCaptureResponseSync = Schema.decodeUnknownSync(ReviewCaptureResponse);
 const runReviewRepository = <A, E>(effect: Effect.Effect<A, E, ReviewRepository>) =>
 	Effect.runPromise(effect.pipe(Effect.provide(ReviewRepositoryLive)));
 
@@ -703,9 +705,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 	});
 
 	it("serializes invalid capture requests as contract-shaped failures", async () => {
-		const request = Schema.decodeUnknownSync(Schema.Json)(
-			JSON.parse(await readFile(invalidCaptureRequestPath, "utf8"))
-		);
+		const request = decodeJson(JSON.parse(await readFile(invalidCaptureRequestPath, "utf8")));
 		const payload = await Effect.runPromise(
 			Effect.flatMap(RemoteControlClient, (client) =>
 				client.request({
@@ -717,7 +717,7 @@ describe.skipIf(!endpoint)("real Unreal Map Review capture", () => {
 				})
 			).pipe(Effect.provide(RemoteControlClientLive))
 		);
-		const decoded = Schema.decodeUnknownSync(ReviewCaptureResponse)(payload);
+		const decoded = decodeReviewCaptureResponseSync(payload);
 		expect(decoded).toMatchObject({
 			code: "invalid_pose",
 			status: "failed"

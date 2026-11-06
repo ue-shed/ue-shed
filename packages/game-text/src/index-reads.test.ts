@@ -40,6 +40,8 @@ import { hasSearchableSource } from "./search.js";
 import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import type { TextCorpusSearchRequest, TextFilterClause } from "./schema.js";
 
+const isLocalizationLineField = Schema.is(LocalizationLineField);
+
 type Occurrence = SavedAssetPackageTextRecord["occurrences"][number];
 type Matching = Omit<TextCorpusSearchRequest, "cursor" | "pageSize">;
 
@@ -202,12 +204,9 @@ const key = (namespace: string, name: string) => JSON.stringify([namespace, name
 
 /**
  * Each aggregate's groups as [key, lines, source words, line-break words, lines without a word
- * count]. Every language's archive holds `<culture>: <source>` for Title, Cap, Hyphen, Changed,
- * Synced and Gone: the native culture's translation differs from its source, so English counts
- * them translated and German's archive, written for the earlier English, needs an update. Lone,
- * Thai and New are not in the manifest; Gone is only there, and Stem's manifest entry names a
- * package the project lacks. Source words split on whitespace; line-break words are Unreal's, of
- * the gathered text: Changed counts "Old wording here", Cap "Red cap", and Thai text has none.
+ * count]. Archives hold `<culture>: <source>`, so English counts lines translated and German needs
+ * an update. Lone, Thai and New are not in the manifest; Gone is only there. Line-break words are
+ * of the gathered text (Changed counts "Old wording here"), and Thai text has none.
  */
 const aggregates: readonly {
 	readonly by: readonly TextAggregateDimension[];
@@ -629,8 +628,8 @@ describe("index reads", () => {
 		expect(valid({ ...base, by: ["translation_key"] })).toBe(false);
 		expect(valid({ ...base, localization, by: [] })).toBe(false);
 		expect(valid({ ...base, localization, by: ["source", "source"] })).toBe(false);
-		expect(Schema.is(LocalizationLineField)("places")).toBe(true);
-		expect(Schema.is(LocalizationLineField)("occurrences")).toBe(false);
+		expect(isLocalizationLineField("places")).toBe(true);
+		expect(isLocalizationLineField("occurrences")).toBe(false);
 	});
 
 	for (const [name, builder] of builders)

@@ -83,6 +83,7 @@ export const CorpusExpectations = Schema.Struct({
 	})
 });
 export type CorpusExpectations = typeof CorpusExpectations.Type;
+const decodeCorpusExpectationsJson = Schema.decodeSync(Schema.fromJsonString(CorpusExpectations));
 
 export function subjectKey(
 	subject: Pick<CorpusSubject, "packagePath" | "namespace" | "key" | "kind" | "field" | "culture">
@@ -109,7 +110,7 @@ export function findingCounts(subjects: readonly CorpusSubject[]) {
 }
 
 export function decodeCorpusExpectations(contents: string): CorpusExpectations {
-	const result = Schema.decodeSync(Schema.fromJsonString(CorpusExpectations))(contents);
+	const result = decodeCorpusExpectationsJson(contents);
 	const keys = result.subjects.map(subjectKey);
 	if (new Set(keys).size !== keys.length) throw new Error("Duplicate corpus subject identity.");
 	if (!isDeepStrictEqual(findingCounts(result.subjects), result.counts))

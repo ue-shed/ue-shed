@@ -58,6 +58,8 @@ import { Effect, Queue, Schema, Stream } from "effect";
 import type { RendererWorldObservationEvent } from "../shared/ipc-contracts.js";
 
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
+const decodeWorldActorCatalog = Schema.decodeUnknownSync(WorldActorCatalog);
+const decodeWorldObservationHealth = Schema.decodeUnknownSync(WorldObservationHealth);
 const CameraStatusResult = Schema.Union([
 	Schema.Struct({ camera: CameraStatus, status: Schema.Literal("ready") }),
 	Schema.Struct({ status: Schema.Literal("unavailable") })
@@ -138,8 +140,8 @@ function wireSampleToDomain(sample: {
 		};
 	}>;
 }): WorldObservationSample {
-	const catalog = Schema.decodeUnknownSync(WorldActorCatalog)(sample.catalog);
-	const health = Schema.decodeUnknownSync(WorldObservationHealth)(sample.health);
+	const catalog = decodeWorldActorCatalog(sample.catalog);
+	const health = decodeWorldObservationHealth(sample.health);
 	const transforms = new Map(
 		sample.transforms.map(
 			(entry) =>

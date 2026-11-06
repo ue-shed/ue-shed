@@ -26,45 +26,42 @@ function invalidProject(message: string): ConfigFileAccessError {
 	});
 }
 
-export function resolveConfigProject(
+export const resolveConfigProject = Effect.fn("ConfigHierarchy.resolveProject")(function* (
 	project: string
-): Effect.Effect<ConfigProject, ConfigFileAccessError, ConfigFileAccess> {
-	return Effect.gen(function* () {
-		const files = yield* ConfigFileAccess;
-		const selected = resolve(project);
-		const isFile = yield* files
-			.isFile(selected)
-			.pipe(Effect.catchTag("ConfigFileAccessError", () => Effect.succeed(false)));
-		if (isFile) {
-			if (extname(selected).toLocaleLowerCase() !== ".uproject") {
-				return yield* invalidProject("Project selection is not a .uproject file.");
-			}
-			return {
-				root: dirname(selected),
-				descriptor: selected,
-				label: basename(selected, extname(selected))
-			};
+): Effect.fn.Return<ConfigProject, ConfigFileAccessError, ConfigFileAccess> {
+	const files = yield* ConfigFileAccess;
+	const selected = resolve(project);
+	const isFile = yield* files
+		.isFile(selected)
+		.pipe(Effect.catchTag("ConfigFileAccessError", () => Effect.succeed(false)));
+	if (isFile) {
+		if (extname(selected).toLocaleLowerCase() !== ".uproject") {
+			return yield* invalidProject("Project selection is not a .uproject file.");
 		}
-		const entries = yield* files.list(selected);
-		const descriptors = entries.filter(
-			(entry) =>
-				entry.kind === "file" && extname(entry.name).toLocaleLowerCase() === ".uproject"
-		);
-		if (descriptors.length !== 1) {
-			return yield* invalidProject(
-				descriptors.length === 0
-					? "Project root contains no .uproject descriptor."
-					: "Project root contains more than one .uproject descriptor."
-			);
-		}
-		const descriptor = join(selected, descriptors[0]!.name);
 		return {
-			root: selected,
-			descriptor,
-			label: basename(descriptor, extname(descriptor))
+			root: dirname(selected),
+			descriptor: selected,
+			label: basename(selected, extname(selected))
 		};
-	});
-}
+	}
+	const entries = yield* files.list(selected);
+	const descriptors = entries.filter(
+		(entry) => entry.kind === "file" && extname(entry.name).toLocaleLowerCase() === ".uproject"
+	);
+	if (descriptors.length !== 1) {
+		return yield* invalidProject(
+			descriptors.length === 0
+				? "Project root contains no .uproject descriptor."
+				: "Project root contains more than one .uproject descriptor."
+		);
+	}
+	const descriptor = join(selected, descriptors[0]!.name);
+	return {
+		root: selected,
+		descriptor,
+		label: basename(descriptor, extname(descriptor))
+	};
+});
 
 function logicalPath(root: string, path: string): string {
 	return relative(root, path).split(sep).join("/");
@@ -274,12 +271,12 @@ function platformMetadataPaths(options: {
 	];
 }
 
-export function resolvePlatformChain(options: {
-	readonly engineRoot: string;
-	readonly projectRoot: string;
-	readonly platform: string;
-}): Effect.Effect<readonly string[], ConfigFileAccessError, ConfigFileAccess> {
-	return Effect.gen(function* () {
+export const resolvePlatformChain = Effect.fn("ConfigHierarchy.resolvePlatformChain")(
+	function* (options: {
+		readonly engineRoot: string;
+		readonly projectRoot: string;
+		readonly platform: string;
+	}): Effect.fn.Return<readonly string[], ConfigFileAccessError, ConfigFileAccess> {
 		const files = yield* ConfigFileAccess;
 		const visiting = new Set<string>();
 		const chain: string[] = [];
@@ -308,5 +305,5 @@ export function resolvePlatformChain(options: {
 			current = parent;
 		}
 		return chain;
-	});
-}
+	}
+);

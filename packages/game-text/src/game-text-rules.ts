@@ -128,17 +128,13 @@ const CustomCheckFields = {
 };
 const CustomTerm = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(1024));
 
-/**
- * A check the project defines. `pattern` reports text a JavaScript regular expression (Unicode
- * mode) matches, or with `report: "no_match"` text it does not match; a lookbehind in it must have a
- * fixed width, or be an alternation of fixed-width branches, without backreferences. `length` reports text
- * shorter than `minimum` or longer than `maximum`, in `visible` characters (rich text, modifiers
- * and arguments removed, wide characters counted twice, as `length_outlier` measures) or code
- * point `characters`; `forbidden_term` reports text that uses one of `terms`, matched as the
- * terminology rules match them. Each is scoped by culture, role and object path like the
- * built-in checks.
- */
+/** A check the project defines, scoped by culture, role and object path like the built-in checks. */
 export const CustomLocalizationCheck = Schema.Union([
+	/**
+	 * Reports text a JavaScript regular expression (Unicode mode) matches, or with
+	 * `report: "no_match"` text it does not match. A lookbehind must have a fixed width (or be an
+	 * alternation of fixed-width branches) without backreferences.
+	 */
 	Schema.Struct({
 		kind: Schema.Literal("pattern"),
 		...CustomCheckFields,
@@ -146,6 +142,11 @@ export const CustomLocalizationCheck = Schema.Union([
 		caseSensitive: Schema.optionalKey(Schema.Boolean),
 		report: Schema.optionalKey(Schema.Literals(["match", "no_match"]))
 	}),
+	/**
+	 * Reports text shorter than `minimum` or longer than `maximum`, in code point `characters` or
+	 * `visible` characters (as `length_outlier` measures: rich text, modifiers and arguments
+	 * removed, wide characters counted twice).
+	 */
 	Schema.Struct({
 		kind: Schema.Literal("length"),
 		...CustomCheckFields,
@@ -153,6 +154,7 @@ export const CustomLocalizationCheck = Schema.Union([
 		minimum: Schema.optionalKey(MaximumCharacters),
 		maximum: Schema.optionalKey(MaximumCharacters)
 	}),
+	/** Reports text that uses one of `terms`, matched as the terminology rules match them. */
 	Schema.Struct({
 		kind: Schema.Literal("forbidden_term"),
 		...CustomCheckFields,
@@ -165,26 +167,28 @@ export type CustomLocalizationCheck = typeof CustomLocalizationCheck.Type;
 /** An expression of the engine's rule language; the engine checks it when it loads the rules. */
 const RuleExpression = Schema.Json;
 /**
- * A whole rule in the engine's language. `subject` is `line`, each keyed line's source once, or
- * `line_culture`, each culture's translation. `when` holds where the rule has a finding, and
- * `actual` and `expectation` are objects of expressions, its evidence. Constants are
- * `{ "lit": … }`, and `{ "finding": "<rule ID>" }` reads another rule's findings. `let` names
- * expressions; `each` makes a finding per item, read through `eachAs` (`item`). `counts: false`
- * keeps its findings out of Browse's `finding` problem; `shadowed` hides a finding where source
- * findings list the same text. Its findings are custom findings with check `rule`.
+ * A whole rule in the engine's language; its findings are custom findings with check `rule`.
+ * Constants are `{ "lit": … }`, and `{ "finding": "<rule ID>" }` reads another rule's findings.
  */
 export const CompleteRule = Schema.Struct({
 	kind: Schema.Literal("rule"),
 	...CustomCheckFields,
+	/** `line`: each keyed line's source once; `line_culture`: each culture's translation. */
 	subject: Schema.Literals(["line", "line_culture"]),
 	params: Schema.optionalKey(Schema.Record(Schema.String, Schema.Json)),
+	/** Named expressions. */
 	let: Schema.optionalKey(Schema.Record(Schema.String, RuleExpression)),
+	/** Makes a finding per item, read through `eachAs` (`item`). */
 	each: Schema.optionalKey(RuleExpression),
 	eachAs: Schema.optionalKey(Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(64))),
+	/** Where the rule has a finding. */
 	when: RuleExpression,
+	/** `actual` and `expectation` are objects of expressions: the finding's evidence. */
 	actual: RuleExpression,
 	expectation: RuleExpression,
+	/** `false` keeps its findings out of Browse's `finding` problem. */
 	counts: Schema.optionalKey(Schema.Boolean),
+	/** Hides a finding where source findings list the same text. */
 	shadowed: Schema.optionalKey(RuleExpression)
 });
 export type CompleteRule = typeof CompleteRule.Type;
@@ -210,11 +214,18 @@ export const GameTextRuleDocument = Schema.Struct({
 	roles: Schema.Array(TextRole).check(Schema.isMaxLength(256)),
 	rules: Schema.Array(GameTextRuleEntry).check(Schema.isMaxLength(1024))
 });
+const encodeGameTextRuleDocument = Schema.encodeSync(GameTextRuleDocument);
+const decodeGameTextRuleDocumentEffect = Schema.decodeUnknownEffect(GameTextRuleDocument);
 export type GameTextRuleDocument = typeof GameTextRuleDocument.Type;
+/** A JSON string literal, quotes and escapes included. */
+const JsonStringLiteral = Schema.fromJsonString(Schema.String);
+const decodeJsonStringLiteral = Schema.decodeSync(JsonStringLiteral);
+const JsonText = Schema.fromJsonString(Schema.Json);
+const decodeJsonText = Schema.decodeEffect(JsonText);
 
 /** A decoded document's canonical JSON: equal documents encode alike, whatever object held them. */
 export function canonicalGameTextRuleDocumentJson(document: GameTextRuleDocument): string {
-	return JSON.stringify(Schema.encodeSync(GameTextRuleDocument)(document));
+	return JSON.stringify(encodeGameTextRuleDocument(document));
 }
 
 const isBuiltInCheck = Schema.is(BuiltInCheckId);
@@ -377,9 +388,7 @@ function duplicateCultureKey(input: string): boolean {
 			let next = index + 1;
 			while (/\s/u.test(input[next] ?? "") && next < input.length) next++;
 			if (input[next] === ":") {
-				pendingKey = Schema.decodeSync(Schema.fromJsonString(Schema.String))(
-					input.slice(start, index + 1)
-				);
+				pendingKey = decodeJsonStringLiteral(input.slice(start, index + 1));
 				const current = stack.at(-1);
 				if (current?.cultures && current.keys.has(pendingKey)) return true;
 				current?.keys.add(pendingKey);
@@ -459,7 +468,7 @@ function validateRuleDocument(
 export function decodeGameTextRuleDocument<Input>(
 	input: Input
 ): Effect.Effect<GameTextRuleDocument, GameTextRuleDocumentError> {
-	return Schema.decodeUnknownEffect(GameTextRuleDocument)(input, {
+	return decodeGameTextRuleDocumentEffect(input, {
 		onExcessProperty: "error"
 	}).pipe(
 		Effect.mapError((cause) => invalid("invalid_structure", cause)),
@@ -472,18 +481,16 @@ export function decodeGameTextRuleDocument<Input>(
  * role and rule IDs, declared roles and usable patterns. Failures retain
  * GameTextRuleDocumentError and the original parse issue.
  */
-export function decodeGameTextRuleDocumentJson(
+export const decodeGameTextRuleDocumentJson = Effect.fn("GameText.rules.decodeJson")(function* (
 	input: string
-): Effect.Effect<GameTextRuleDocument, GameTextRuleDocumentError> {
-	return Effect.gen(function* () {
-		const json = yield* Schema.decodeEffect(Schema.fromJsonString(Schema.Json))(input).pipe(
-			Effect.mapError((cause) => invalid("invalid_json", cause))
-		);
-		const document = yield* decodeGameTextRuleDocument(json);
-		if (duplicateCultureKey(input)) return yield* invalid("duplicate_culture_key");
-		return document;
-	});
-}
+): Effect.fn.Return<GameTextRuleDocument, GameTextRuleDocumentError> {
+	const json = yield* decodeJsonText(input).pipe(
+		Effect.mapError((cause) => invalid("invalid_json", cause))
+	);
+	const document = yield* decodeGameTextRuleDocument(json);
+	if (duplicateCultureKey(input)) return yield* invalid("duplicate_culture_key");
+	return document;
+});
 
 /**
  * The engine's problem with a rules file's program as a rules file error: what is wrong with which

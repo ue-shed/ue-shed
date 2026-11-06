@@ -16,6 +16,8 @@ import {
 } from "./live.js";
 import type { ScenarioDocument } from "./schema.js";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+
 function withSemanticTrack(
 	transform: (
 		track: Extract<ScenarioDocument["tracks"][number], { readonly kind: "semantic_actions" }>
@@ -33,7 +35,7 @@ async function fixture(name: string): Promise<Schema.Json> {
 	const path = fileURLToPath(
 		new URL(`../../protocol/contracts/scenarios/live/v1/fixtures/${name}.json`, import.meta.url)
 	);
-	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
+	return decodeJson(JSON.parse(await readFile(path, "utf8")));
 }
 
 async function expectFixtureRoundTrip<T, E>(

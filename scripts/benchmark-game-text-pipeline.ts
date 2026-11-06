@@ -67,6 +67,7 @@ const Result = Schema.Struct({
 	sha256: Schema.String,
 	stages: Schema.Array(Stage)
 });
+const decodeResult = Schema.decodeUnknownSync(Result);
 
 if (values.worker) {
 	const variant = Schema.decodeUnknownSync(Schema.Literals(["before", "after"]))(values.variant);
@@ -78,6 +79,7 @@ if (values.worker) {
 					...(await import("../packages/game-text/dist/entry-index.js")),
 					...(await import("../packages/game-text/dist/entry-schema.js"))
 				};
+	const decodeSearchPage = Schema.decodeEffect(module.TextCorpusSearchPage);
 	// The historical baseline is deliberately loaded from another checkout. Its synchronous
 	// query API and exported reference builder are not part of the current package.
 	// SAFETY: the explicit historical module supplies the legacy builder ABI; validate the
@@ -155,17 +157,16 @@ if (values.worker) {
 			)
 		: module.gameTextIndexSourceNodeLayer(cacheRoot);
 	const stages: (typeof Stage.Type)[] = [];
-	const measure = <A, E, R>(
+	const measure = Effect.fn("GameTextPipelineBenchmark.measure")(function* <A, E, R>(
 		name: typeof Stage.Type.name,
 		effect: Effect.Effect<A, E, R>,
 		summarize: (value: A) => { sortMs?: number }
-	) =>
-		Effect.gen(function* () {
-			const start = performance.now();
-			const value = yield* effect;
-			stages.push({ name, ms: performance.now() - start, ...summarize(value) });
-			return value;
-		});
+	): Effect.fn.Return<A, E, R> {
+		const start = performance.now();
+		const value = yield* effect;
+		stages.push({ name, ms: performance.now() - start, ...summarize(value) });
+		return value;
+	});
 	const builder = Layer.effect(
 		module.GameTextIndexBuilder,
 		Effect.gen(function* () {
@@ -226,9 +227,7 @@ if (values.worker) {
 				});
 				const page = Effect.isEffect(searched)
 					? yield* searched
-					: yield* Schema.decodeEffect(module.TextCorpusSearchPage)(searched).pipe(
-							Effect.orDie
-						);
+					: yield* decodeSearchPage(searched).pipe(Effect.orDie);
 				const firstPageMs = performance.now() - queryStarted;
 				const readyMs = performance.now() - started;
 				globalThis.gc?.();
@@ -287,7 +286,7 @@ if (values.worker) {
 				}, 600_000);
 				child.on("message", (raw) => {
 					try {
-						reply = Schema.decodeUnknownSync(Result)(raw);
+						reply = decodeResult(raw);
 					} catch (error) {
 						reject(error);
 					}

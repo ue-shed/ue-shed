@@ -6,6 +6,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { parseRecord, runInProcessCli } from "./cli-in-process.test-support.js";
+const isString = Schema.is(Schema.String);
+const decodeWorldRequest = Schema.decodeUnknownSync(WorldRequest);
+
+const RemoteControlCall = Schema.Struct({
+	functionName: Schema.String,
+	parameters: Schema.Record(Schema.String, Schema.Json)
+});
+const ServerAddress = Schema.Struct({ port: Schema.Int });
+const decodeRemoteControlCall = Schema.decodeUnknownSync(RemoteControlCall);
+const decodeServerAddress = Schema.decodeUnknownSync(ServerAddress);
 
 it("negotiates world preparation and prints native evidence through the CLI commands", async () => {
 	const calls: string[] = [];
@@ -20,12 +30,7 @@ it("negotiates world preparation and prints native evidence through the CLI comm
 		try {
 			let body = "";
 			for await (const chunk of request) body += String(chunk);
-			const call = Schema.decodeUnknownSync(
-				Schema.Struct({
-					functionName: Schema.String,
-					parameters: Schema.Record(Schema.String, Schema.Json)
-				})
-			)(JSON.parse(body));
+			const call = decodeRemoteControlCall(JSON.parse(body));
 			calls.push(call.functionName);
 			let result: Schema.Json;
 			if (call.functionName === "GetCapabilityManifest")
@@ -38,9 +43,8 @@ it("negotiates world preparation and prints native evidence through the CLI comm
 				};
 			else {
 				const raw = call.parameters.RequestJson;
-				if (!Schema.is(Schema.String)(raw))
-					throw new Error("RequestJson must be a JSON string");
-				const operation = Schema.decodeUnknownSync(WorldRequest)(JSON.parse(raw));
+				if (!isString(raw)) throw new Error("RequestJson must be a JSON string");
+				const operation = decodeWorldRequest(JSON.parse(raw));
 				expect(operation.action).toBe("describe");
 				result = { status: "described", world };
 			}
@@ -54,9 +58,7 @@ it("negotiates world preparation and prints native evidence through the CLI comm
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-world-cli-"));
 	try {
 		await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-		const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Int }))(
-			server.address()
-		);
+		const address = decodeServerAddress(server.address());
 		const path = join(root, "describe.json");
 		await writeFile(
 			path,

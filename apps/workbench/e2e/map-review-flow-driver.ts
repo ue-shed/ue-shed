@@ -69,6 +69,15 @@ const FixtureContract = Schema.Struct({
 		)
 	})
 });
+const decodeFixtureContract = Schema.decodeUnknownSync(FixtureContract);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeReviewSet = Schema.decodeUnknownSync(ReviewSet);
+const decodeCaptureRun = Schema.decodeUnknownSync(CaptureRun);
+const decodeReviewAuthoringSession = Schema.decodeUnknownSync(ReviewAuthoringSession);
+const CameraLibraryStatusJson = Schema.fromJsonString(
+	Schema.Struct({ cameras: Schema.optionalKey(Schema.Array(Schema.Unknown)) })
+);
+const decodeCameraLibraryStatusJson = Schema.decodeUnknownPromise(CameraLibraryStatusJson);
 
 export interface MapReviewFlowLifecycle {
 	readonly afterLaunch?: (args: {
@@ -169,7 +178,7 @@ function pngDimensions(bytes: Buffer) {
 }
 
 async function readOnlyJson(path: string): Promise<Schema.Json> {
-	return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")));
+	return decodeJson(JSON.parse(await readFile(path, "utf8")));
 }
 
 export async function createMapReviewFlowHarness(args: {
@@ -182,9 +191,7 @@ export async function createMapReviewFlowHarness(args: {
 	const flow = args.flow ?? "authoring-roundtrip";
 	const collection = args.collection ?? false;
 	const contextCameraCount = flow === "high-count-rig" ? 31 : 5;
-	const fixtureContract = Schema.decodeUnknownSync(FixtureContract)(
-		await readOnlyJson(fixtureContractPath)
-	);
+	const fixtureContract = decodeFixtureContract(await readOnlyJson(fixtureContractPath));
 	const galleryMap = fixtureContract.mapReviewGallery.map;
 	const subjectKey = "compound";
 	const compoundSubject = fixtureContract.mapReviewGallery.subjects[subjectKey];
@@ -290,7 +297,7 @@ export async function createMapReviewFlowHarness(args: {
 	};
 	const captureCurrentSet = async (): Promise<string> => {
 		const page = currentWorkbench().page;
-		const saved = Schema.decodeUnknownSync(ReviewSet)(await readOnlyJson(reviewSetPath));
+		const saved = decodeReviewSet(await readOnlyJson(reviewSetPath));
 		await page.getByRole("button", { name: "Capture set" }).click();
 		const dialog = page.getByRole("dialog", { name: "Capture review set" });
 		await dialog.getByRole("button", { name: /REVIEW CAPTURE PLAN/ }).click();
@@ -314,7 +321,7 @@ export async function createMapReviewFlowHarness(args: {
 				}
 			})
 			.toBe(true);
-		const run = Schema.decodeUnknownSync(CaptureRun)(await readOnlyJson(path));
+		const run = decodeCaptureRun(await readOnlyJson(path));
 		expect(run.results).toHaveLength(saved.views.length);
 		if (run.status !== "completed")
 			throw new Error(`Capture run failed: ${JSON.stringify(run)}`);
@@ -381,9 +388,7 @@ export async function createMapReviewFlowHarness(args: {
 					throw new Error("No authoring session was persisted.");
 				sessionPath = join(authoringRoot, sessionFile);
 				createdSessionPaths.add(sessionPath);
-				const session = Schema.decodeUnknownSync(ReviewAuthoringSession)(
-					await readOnlyJson(sessionPath)
-				);
+				const session = decodeReviewAuthoringSession(await readOnlyJson(sessionPath));
 				return { identity: { sessionId: session.id } };
 			})
 		),
@@ -421,7 +426,7 @@ export async function createMapReviewFlowHarness(args: {
 					.poll(
 						async () => {
 							if (sessionPath === undefined) return undefined;
-							const session = Schema.decodeUnknownSync(ReviewAuthoringSession)(
+							const session = decodeReviewAuthoringSession(
 								await readOnlyJson(sessionPath)
 							);
 							return session.candidateOverrides?.[0]?.overrides.fieldOfViewDegrees;
@@ -429,9 +434,7 @@ export async function createMapReviewFlowHarness(args: {
 						{ timeout: 30_000 }
 					)
 					.toBe(49);
-				const session = Schema.decodeUnknownSync(ReviewAuthoringSession)(
-					await readOnlyJson(sessionPath)
-				);
+				const session = decodeReviewAuthoringSession(await readOnlyJson(sessionPath));
 				if (session.selectedCandidateId === undefined) {
 					throw new Error("The tuned session has no selected candidate.");
 				}
@@ -476,7 +479,7 @@ export async function createMapReviewFlowHarness(args: {
 						retainedCount === 1 ? "VIEW SAVED" : `${retainedCount} VIEWS SAVED`
 					)
 				).toBeVisible({ timeout: 60_000 });
-				let saved = Schema.decodeUnknownSync(ReviewSet)(await readOnlyJson(reviewSetPath));
+				let saved = decodeReviewSet(await readOnlyJson(reviewSetPath));
 				expectedViewCount = retainedCount;
 				expect(saved.views).toHaveLength(expectedViewCount);
 				if (collection) {
@@ -512,15 +515,11 @@ export async function createMapReviewFlowHarness(args: {
 						await page.getByRole("button", { name: keepViewsName }).click();
 						await expect
 							.poll(async () => {
-								const current = Schema.decodeUnknownSync(ReviewSet)(
-									await readOnlyJson(reviewSetPath)
-								);
+								const current = decodeReviewSet(await readOnlyJson(reviewSetPath));
 								return current.views.length;
 							})
 							.toBe(expectedViewCount);
-						saved = Schema.decodeUnknownSync(ReviewSet)(
-							await readOnlyJson(reviewSetPath)
-						);
+						saved = decodeReviewSet(await readOnlyJson(reviewSetPath));
 						expect(saved.views).toHaveLength(expectedViewCount);
 					}
 					const newFiles = (await readdir(authoringRoot)).filter(
@@ -543,9 +542,7 @@ export async function createMapReviewFlowHarness(args: {
 				await mkdir(persistedRoot, { recursive: true });
 				await copyFile(sessionPath, join(persistedRoot, "authoring-session.json"));
 				await copyFile(reviewSetPath, join(persistedRoot, "review-set.json"));
-				const session = Schema.decodeUnknownSync(ReviewAuthoringSession)(
-					await readOnlyJson(sessionPath)
-				);
+				const session = decodeReviewAuthoringSession(await readOnlyJson(sessionPath));
 				expect(session.lifecycle).toBe("approved");
 				return {
 					attachments: [
@@ -569,9 +566,7 @@ export async function createMapReviewFlowHarness(args: {
 				const current = currentWorkbench();
 				await current.openRoute("Map Review");
 				await current.page.getByRole("tab", { name: "Live session" }).click();
-				const saved = Schema.decodeUnknownSync(ReviewSet)(
-					await readOnlyJson(reviewSetPath)
-				);
+				const saved = decodeReviewSet(await readOnlyJson(reviewSetPath));
 				const status = current.page.getByRole("region", { name: "Review set status" });
 				await expect(status).toContainText("Map Review Flow Gallery", { timeout: 60_000 });
 				await expect(status).toContainText(String(saved.views.length));
@@ -630,14 +625,14 @@ export async function createMapReviewFlowHarness(args: {
 				} else {
 					runPath = firstRunPath;
 				}
-				const run = Schema.decodeUnknownSync(CaptureRun)(await readOnlyJson(runPath));
+				const run = decodeCaptureRun(await readOnlyJson(runPath));
 				return { identity: { invocationId: run.invocation.id, runId: run.id } };
 			})
 		),
 		inspectEvidence: Effect.suspend(() =>
 			step("inspectEvidence", async () => {
 				if (runPath === undefined) throw new Error("The capture run path is unavailable.");
-				const run = Schema.decodeUnknownSync(CaptureRun)(await readOnlyJson(runPath));
+				const run = decodeCaptureRun(await readOnlyJson(runPath));
 				const result = run.results.find((candidate) => candidate.status === "captured");
 				if (result?.status !== "captured")
 					throw new Error("The flow has no captured result.");
@@ -673,9 +668,7 @@ export async function createMapReviewFlowHarness(args: {
 					}
 				];
 				if (collection && firstRunPath !== undefined) {
-					const first = Schema.decodeUnknownSync(CaptureRun)(
-						await readOnlyJson(firstRunPath)
-					);
+					const first = decodeCaptureRun(await readOnlyJson(firstRunPath));
 					const firstResult = first.results.find(
 						(candidate) => candidate.status === "captured"
 					);
@@ -736,13 +729,7 @@ export async function createMapReviewFlowHarness(args: {
 						functionName: "GetStatus",
 						objectPath: cameraLibrary
 					});
-					const status = await Schema.decodeUnknownPromise(
-						Schema.fromJsonString(
-							Schema.Struct({
-								cameras: Schema.optionalKey(Schema.Array(Schema.Unknown))
-							})
-						)
-					)(statusResponse.ResultJson);
+					const status = await decodeCameraLibraryStatusJson(statusResponse.ResultJson);
 					const dirtyResponse = await remoteCall({
 						endpoint: args.endpoint,
 						functionName: "GetDirtyMapPackages",

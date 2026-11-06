@@ -67,7 +67,8 @@ import {
 	GameTextOperationProgress,
 	GameTextWorkspaceProgress
 } from "@ue-shed/game-text/schema";
-
+const decodeGameTextOperationProgressEffect = Schema.decodeEffect(GameTextOperationProgress);
+const decodeGameTextWorkspaceProgress = Schema.decodeUnknownEffect(GameTextWorkspaceProgress);
 const recovery = "Restart Workbench. If the problem persists, verify package versions.";
 
 function invokeRequest<A, HostValue, DecodeError>(
@@ -162,9 +163,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 				),
 			{ bufferSize: 1, strategy: "sliding" }
 		).pipe(
-			Stream.mapEffect((progress) =>
-				Schema.decodeEffect(GameTextOperationProgress)(progress)
-			),
+			Stream.mapEffect((progress) => decodeGameTextOperationProgressEffect(progress)),
 			Stream.mapError(
 				(cause) =>
 					new GameTextClientError({
@@ -366,7 +365,7 @@ export const gameTextClient: GameTextClientApi = GameTextClient.of({
 		{ bufferSize: 1, strategy: "sliding" }
 	).pipe(
 		Stream.mapEffect((progress) =>
-			Schema.decodeUnknownEffect(GameTextWorkspaceProgress)(progress).pipe(
+			decodeGameTextWorkspaceProgress(progress).pipe(
 				Effect.mapError(
 					(cause) =>
 						new GameTextClientError({

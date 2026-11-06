@@ -35,6 +35,8 @@ import {
 	type ConfigExplanation,
 	type ConfigLayerCoverage
 } from "./schema.js";
+const decodeConfigExplainRequest = Schema.decodeEffect(ConfigExplainRequest);
+const decodeConfigCompareRequest = Schema.decodeEffect(ConfigCompareRequest);
 
 export class ConfigExplorerError extends Schema.TaggedError<
 	ConfigExplorerError,
@@ -166,38 +168,36 @@ function familyFromFilename(filename: string): string | undefined {
 	return match?.[1];
 }
 
-function discoverFamilies(options: {
+const discoverFamilies = Effect.fn("ConfigExplorer.discoverFamilies")(function* (options: {
 	readonly engineRoot: string;
 	readonly project: ConfigProject;
-}): Effect.Effect<readonly string[], ConfigExplorerError, ConfigFileAccess> {
-	return Effect.gen(function* () {
-		const files = yield* ConfigFileAccess;
-		const directories = [
-			join(options.engineRoot, "Engine", "Config"),
-			join(options.project.root, "Config")
-		];
-		const names = yield* Effect.forEach(directories, (directory) =>
-			files.list(directory).pipe(
-				Effect.map((entries) =>
-					entries.filter((entry) => entry.kind === "file").map((entry) => entry.name)
-				),
-				Effect.catchTag("ConfigFileAccessError", () => Effect.succeed([]))
-			)
-		);
-		return [
-			...new Map(
-				names
-					.flatMap((entries) => entries)
-					.flatMap((name) => {
-						const family = familyFromFilename(name);
-						return family === undefined
-							? []
-							: [[family.toLocaleLowerCase(), family] as const];
-					})
-			).values()
-		].sort((left, right) => left.localeCompare(right));
-	});
-}
+}): Effect.fn.Return<readonly string[], ConfigExplorerError, ConfigFileAccess> {
+	const files = yield* ConfigFileAccess;
+	const directories = [
+		join(options.engineRoot, "Engine", "Config"),
+		join(options.project.root, "Config")
+	];
+	const names = yield* Effect.forEach(directories, (directory) =>
+		files.list(directory).pipe(
+			Effect.map((entries) =>
+				entries.filter((entry) => entry.kind === "file").map((entry) => entry.name)
+			),
+			Effect.catchTag("ConfigFileAccessError", () => Effect.succeed([]))
+		)
+	);
+	return [
+		...new Map(
+			names
+				.flatMap((entries) => entries)
+				.flatMap((name) => {
+					const family = familyFromFilename(name);
+					return family === undefined
+						? []
+						: [[family.toLocaleLowerCase(), family] as const];
+				})
+		).values()
+	].sort((left, right) => left.localeCompare(right));
+});
 
 interface LoadedHierarchy {
 	readonly commands: readonly ParsedConfigCommand[];
@@ -205,13 +205,13 @@ interface LoadedHierarchy {
 	readonly coverage: readonly ConfigLayerCoverage[];
 }
 
-function loadConfigRedirectCoverage(options: {
-	readonly engineRoot: string;
-	readonly project: ConfigProject;
-	readonly section: ConfigExplainRequest["section"];
-	readonly key: ConfigExplainRequest["key"];
-}): Effect.Effect<LoadedHierarchy, never, ConfigFileAccess> {
-	return Effect.gen(function* () {
+const loadConfigRedirectCoverage = Effect.fn("ConfigExplorer.loadConfigRedirectCoverage")(
+	function* (options: {
+		readonly engineRoot: string;
+		readonly project: ConfigProject;
+		readonly section: ConfigExplainRequest["section"];
+		readonly key: ConfigExplainRequest["key"];
+	}): Effect.fn.Return<LoadedHierarchy, never, ConfigFileAccess> {
 		const files = yield* ConfigFileAccess;
 		const candidates = [
 			{
@@ -271,62 +271,61 @@ function loadConfigRedirectCoverage(options: {
 			}
 		}
 		return { commands: [], coverage, diagnostics };
-	});
-}
+	}
+);
 
-function loadHierarchy(options: {
+// Untraced: chooseFamily calls this once per discovered config family.
+const loadHierarchy = Effect.fnUntraced(function* (options: {
 	readonly layers: readonly ConfigHierarchyLayer[];
 	readonly section: ConfigExplainRequest["section"];
 	readonly key: ConfigExplainRequest["key"];
-}): Effect.Effect<LoadedHierarchy, never, ConfigFileAccess> {
-	return Effect.gen(function* () {
-		const files = yield* ConfigFileAccess;
-		const commands: ParsedConfigCommand[] = [];
-		const diagnostics: ConfigDiagnostic[] = [];
-		const coverage: ConfigLayerCoverage[] = [];
-		for (let order = 0; order < options.layers.length; order++) {
-			const candidate = options.layers[order]!;
-			if (!(yield* files.exists(candidate.path))) {
-				coverage.push({
-					order,
-					layer: candidate.name,
-					source: candidate.source,
-					status: "missing"
-				});
-				continue;
-			}
-			const loaded = yield* Effect.result(files.readText(candidate.path));
-			if (Result.isFailure(loaded)) {
-				coverage.push({
-					order,
-					layer: candidate.name,
-					source: candidate.source,
-					status: "unreadable",
-					detail: "The file exists but could not be read."
-				});
-				continue;
-			}
-			const parsed = parseConfigFile({
-				text: loaded.success,
-				source: candidate.source,
-				section: options.section,
-				key: options.key
-			});
-			commands.push(...parsed.commands);
-			diagnostics.push(...parsed.diagnostics);
+}): Effect.fn.Return<LoadedHierarchy, never, ConfigFileAccess> {
+	const files = yield* ConfigFileAccess;
+	const commands: ParsedConfigCommand[] = [];
+	const diagnostics: ConfigDiagnostic[] = [];
+	const coverage: ConfigLayerCoverage[] = [];
+	for (let order = 0; order < options.layers.length; order++) {
+		const candidate = options.layers[order]!;
+		if (!(yield* files.exists(candidate.path))) {
 			coverage.push({
 				order,
 				layer: candidate.name,
 				source: candidate.source,
-				status: parsed.diagnostics.length === 0 ? "read" : "unsupported",
-				...(parsed.diagnostics.length === 0
-					? undefined
-					: { detail: "Selected-key syntax is not fully supported in this layer." })
+				status: "missing"
 			});
+			continue;
 		}
-		return { commands, diagnostics, coverage };
-	});
-}
+		const loaded = yield* Effect.result(files.readText(candidate.path));
+		if (Result.isFailure(loaded)) {
+			coverage.push({
+				order,
+				layer: candidate.name,
+				source: candidate.source,
+				status: "unreadable",
+				detail: "The file exists but could not be read."
+			});
+			continue;
+		}
+		const parsed = parseConfigFile({
+			text: loaded.success,
+			source: candidate.source,
+			section: options.section,
+			key: options.key
+		});
+		commands.push(...parsed.commands);
+		diagnostics.push(...parsed.diagnostics);
+		coverage.push({
+			order,
+			layer: candidate.name,
+			source: candidate.source,
+			status: parsed.diagnostics.length === 0 ? "read" : "unsupported",
+			...(parsed.diagnostics.length === 0
+				? undefined
+				: { detail: "Selected-key syntax is not fully supported in this layer." })
+		});
+	}
+	return { commands, diagnostics, coverage };
+});
 
 function chooseFamily(options: {
 	readonly requested?: ConfigExplainRequest["family"];
@@ -371,7 +370,7 @@ export const ConfigExplorerLive = Layer.effect(
 		const explain = Effect.fn("ConfigExplorer.explain")(function* (
 			input: ConfigExplainRequest
 		) {
-			const request = yield* Schema.decodeEffect(ConfigExplainRequest)(input).pipe(
+			const request = yield* decodeConfigExplainRequest(input).pipe(
 				Effect.mapError((cause) =>
 					error(
 						"invalid_request",
@@ -460,7 +459,7 @@ export const ConfigExplorerLive = Layer.effect(
 		const compare = Effect.fn("ConfigExplorer.compare")(function* (
 			input: ConfigCompareRequest
 		) {
-			const request = yield* Schema.decodeEffect(ConfigCompareRequest)(input).pipe(
+			const request = yield* decodeConfigCompareRequest(input).pipe(
 				Effect.mapError((cause) =>
 					error(
 						"invalid_request",

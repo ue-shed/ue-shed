@@ -34,6 +34,8 @@ export const LocalizationChangeSet = Schema.Struct({
 	}),
 	changes: Schema.Array(LocalizationChange)
 });
+const LocalizationChangeSetJson = Schema.fromJsonString(LocalizationChangeSet);
+const decodeChangeSetJson = Schema.decodeResult(LocalizationChangeSetJson);
 export type LocalizationChangeSet = typeof LocalizationChangeSet.Type;
 
 /**
@@ -62,7 +64,7 @@ export class LocalizationChangeSetError extends Schema.TaggedError<
 export function decodeLocalizationChangeSet(
 	input: string
 ): Result.Result<LocalizationChangeSet, LocalizationChangeSetError> {
-	const result = Schema.decodeResult(Schema.fromJsonString(LocalizationChangeSet))(input);
+	const result = decodeChangeSetJson(input);
 	if (Result.isFailure(result))
 		return Result.fail(
 			new LocalizationChangeSetError({

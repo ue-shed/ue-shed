@@ -34,6 +34,8 @@ const FileIdentity = Schema.Struct({
 	fileName: Schema.NonEmptyString.check(Schema.isMaxLength(32_768)),
 	fileBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 });
+const decodeFileIdentityEffect = Schema.decodeEffect(FileIdentity);
+const decodeOutput = Schema.decodeUnknownEffect(Output);
 
 function failureReason(kind: Schema.Schema.Type<typeof FailureKind>): AssetInspectionFailureReason {
 	switch (kind) {
@@ -72,7 +74,7 @@ export const adaptWasmInspectionResult = Effect.fn("AssetInspector.adaptWasmResu
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Runtime decoding boundary.
 	output: unknown
 ): Effect.fn.Return<AssetInspectionReadResult> {
-	const identity = yield* Schema.decodeEffect(FileIdentity)({ fileName, fileBytes }).pipe(
+	const identity = yield* decodeFileIdentityEffect({ fileName, fileBytes }).pipe(
 		Effect.catchTag("SchemaError", () => Effect.undefined)
 	);
 	if (identity === undefined) {
@@ -84,7 +86,7 @@ export const adaptWasmInspectionResult = Effect.fn("AssetInspector.adaptWasmResu
 			recovery: "Rename the file and choose it again."
 		};
 	}
-	return yield* Schema.decodeUnknownEffect(Output)(output).pipe(
+	return yield* decodeOutput(output).pipe(
 		Effect.map((value): AssetInspectionReadResult => {
 			if (value.status !== "error") {
 				return { status: "ready", fileName, fileBytes, inspection: value };

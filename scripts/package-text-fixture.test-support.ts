@@ -16,6 +16,9 @@ const FixtureEvidence = Schema.Struct({
 	events: Schema.Array(SavedAssetTextExtractionEvent),
 	packageEvents: Schema.Array(SavedAssetPackageTextEvent)
 });
+const decodeFixtureEvidence = Schema.decodeSync(FixtureEvidence);
+const FixtureEvidenceJson = Schema.fromJsonString(FixtureEvidence);
+const decodeFixtureEvidenceJson = Schema.decodeSync(FixtureEvidenceJson);
 
 /** Read-only evidence is reusable; writable indexes remain private to each test. */
 export async function packageTextFixtureEvidence(executable: string, project: string) {
@@ -31,9 +34,7 @@ async function loadFixtureEvidence(executable: string, project: string, key: str
 	const file = directory ? join(directory, `${key}.json`) : undefined;
 	if (file) {
 		try {
-			return Schema.decodeSync(Schema.fromJsonString(FixtureEvidence))(
-				await readFile(file, "utf8")
-			);
+			return decodeFixtureEvidenceJson(await readFile(file, "utf8"));
 		} catch (error) {
 			if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
 				throw error;
@@ -67,7 +68,7 @@ async function loadFixtureEvidence(executable: string, project: string, key: str
 		.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 	const legacy = measureNativeText(executable, project, false, paths);
 	const compact = measureNativeText(executable, project, true, paths);
-	const evidence = Schema.decodeSync(FixtureEvidence)({
+	const evidence = decodeFixtureEvidence({
 		inventory,
 		events: legacy.events.filter((event) => event.event !== "text_package_record"),
 		packageEvents: compact.events.filter(

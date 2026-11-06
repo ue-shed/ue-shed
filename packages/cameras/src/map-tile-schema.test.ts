@@ -11,15 +11,21 @@ import {
 	decodeMapTilePyramidManifest
 } from "./map-tile-schema.js";
 
+const JsonRecord = Schema.Record(Schema.String, Schema.Json);
+const JsonArray = Schema.Array(Schema.Json);
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeJsonRecord = Schema.decodeUnknownSync(JsonRecord);
+const decodeJsonArray = Schema.decodeUnknownSync(JsonArray);
+const decodeMapTileCaptureRequestResult = Schema.decodeUnknownResult(MapTileCaptureRequest);
+const decodeMapCapturePlanResult = Schema.decodeUnknownResult(MapCapturePlan);
+const decodeMapCapturePlan = Schema.decodeUnknownSync(MapCapturePlan);
 const fixturesRoot = join(
 	process.cwd(),
 	"packages/protocol/contracts/cameras/map-tile/v1/fixtures"
 );
 
 function fixture(name: string): Schema.Json {
-	return Schema.decodeUnknownSync(Schema.Json)(
-		JSON.parse(readFileSync(join(fixturesRoot, name), "utf8"))
-	);
+	return decodeJson(JSON.parse(readFileSync(join(fixturesRoot, name), "utf8")));
 }
 
 describe("map tile contracts", () => {
@@ -40,12 +46,10 @@ describe("map tile contracts", () => {
 	}
 
 	it("rejects duplicate request tiles", () => {
-		const input = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
-			fixture("capture-request-valid.json")
-		);
-		const tiles = Schema.decodeUnknownSync(Schema.Array(Schema.Json))(input.tiles);
+		const input = decodeJsonRecord(fixture("capture-request-valid.json"));
+		const tiles = decodeJsonArray(input.tiles);
 		expect(
-			Schema.decodeUnknownResult(MapTileCaptureRequest)({
+			decodeMapTileCaptureRequestResult({
 				...input,
 				tiles: [...tiles, ...tiles]
 			})._tag
@@ -58,7 +62,7 @@ describe("map tile contracts", () => {
 			capture: { render: { lodDistanceScaleByZoom: number[] } };
 		};
 		input.capture.render.lodDistanceScaleByZoom = [1];
-		expect(Schema.decodeUnknownResult(MapCapturePlan)(input)._tag).toBe("Failure");
+		expect(decodeMapCapturePlanResult(input)._tag).toBe("Failure");
 	});
 
 	it.each(["seam_stable", "scene_capture_defaults"])("accepts renderer profile %s", (profile) => {
@@ -67,9 +71,7 @@ describe("map tile contracts", () => {
 			capture: { render: { profile: string } };
 		};
 		input.capture.render.profile = profile;
-		expect(Schema.decodeUnknownSync(MapCapturePlan)(input).capture.render.profile).toBe(
-			profile
-		);
+		expect(decodeMapCapturePlan(input).capture.render.profile).toBe(profile);
 	});
 
 	it("rejects invalid grids and incomplete complete manifests", () => {

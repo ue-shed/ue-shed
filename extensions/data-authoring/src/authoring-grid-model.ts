@@ -10,6 +10,9 @@ import { Schema, Predicate } from "effect";
 import type { AuthoringColumn } from "./authoring-view.js";
 import { fieldInRow, formatAuthoringValue } from "./authoring-view.js";
 
+const isBoolean = Schema.is(Schema.Boolean);
+const isString = Schema.is(Schema.String);
+
 export interface ReadOnlyAuthoringGridModel {
 	readonly columns: ColumnDef[];
 	readonly data: CellValue[][];
@@ -135,7 +138,7 @@ function isEditable(column: AuthoringColumn): boolean {
 }
 
 function parseEditorText(text: string, context: { readonly previousValue: CellValue }): CellValue {
-	if (Schema.is(Schema.Boolean)(context.previousValue)) {
+	if (isBoolean(context.previousValue)) {
 		if (text.toLocaleLowerCase() === "true") return true;
 		if (text.toLocaleLowerCase() === "false") return false;
 	}
@@ -145,8 +148,8 @@ function parseEditorText(text: string, context: { readonly previousValue: CellVa
 function decodeValue(current: AuthoringValue, input: CellValue): AuthoringValue | undefined {
 	switch (current.kind) {
 		case "bool":
-			if (Schema.is(Schema.Boolean)(input)) return { kind: "bool", value: input };
-			if (Schema.is(Schema.String)(input) && /^(true|false)$/i.test(input.trim())) {
+			if (isBoolean(input)) return { kind: "bool", value: input };
+			if (isString(input) && /^(true|false)$/i.test(input.trim())) {
 				return { kind: "bool", value: input.trim().toLocaleLowerCase() === "true" };
 			}
 			return undefined;
@@ -168,13 +171,11 @@ function decodeValue(current: AuthoringValue, input: CellValue): AuthoringValue 
 		case "string":
 		case "guid":
 		case "soft_object_path":
-			return Schema.is(Schema.String)(input)
-				? { kind: current.kind, value: input }
-				: undefined;
+			return isString(input) ? { kind: current.kind, value: input } : undefined;
 		case "object_ref":
 			return input === null || input === ""
 				? { kind: "object_ref", value: null }
-				: Schema.is(Schema.String)(input)
+				: isString(input)
 					? { kind: "object_ref", value: input }
 					: undefined;
 		default:

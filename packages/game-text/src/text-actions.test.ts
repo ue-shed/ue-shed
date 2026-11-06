@@ -15,6 +15,9 @@ import {
 	runGameTextActions,
 	verifyGameTextActions
 } from "./text-actions.js";
+const isString = Schema.is(Schema.String);
+
+const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 
 const ENDPOINT = "http://127.0.0.1:30010";
 const GAME_TEXT = "/Script/UEShedGameText.Default__UEShedGameTextLibrary";
@@ -153,7 +156,7 @@ describe("Game Text actions API", () => {
 			[ENDPOINT, GAME_TEXT, "ApplyTextActions"]
 		]);
 		const raw = calls[1]?.parameters.RequestJson;
-		if (!Schema.is(Schema.String)(raw)) throw new Error("RequestJson must be a JSON string");
+		if (!isString(raw)) throw new Error("RequestJson must be a JSON string");
 		expect(JSON.parse(raw)).toEqual(request());
 	});
 
@@ -392,9 +395,7 @@ describe("Game Text mutation recovery", () => {
 						calls.push(call.functionName);
 						if (call.functionName === "GetCapabilityManifest")
 							return Effect.succeed(
-								Schema.decodeUnknownSync(Schema.Json)(
-									manifest(["game-text.actions.v1"], GAME_TEXT)
-								)
+								decodeJson(manifest(["game-text.actions.v1"], GAME_TEXT))
 							);
 						return Effect.fail(
 							new RemoteControlClientError({

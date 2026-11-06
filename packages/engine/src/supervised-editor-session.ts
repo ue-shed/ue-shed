@@ -59,19 +59,14 @@ const SupervisorMessage = Schema.Union([
 	Schema.Struct({ exitCode: WindowsExitCode, type: Schema.Literal("exited") })
 ]);
 type SupervisorMessage = typeof SupervisorMessage.Type;
+const decodeSupervisorMessage = Schema.decodeUnknownSync(SupervisorMessage);
 const SUPERVISOR_OUTPUT_LIMIT = 16_384;
 
 /**
- * Bounded explicit project/plugin launch with readiness, capability and termination
- * requirements. The HTTP port determines the local endpoint; optional timeouts are
- * milliseconds, not Effect duration strings. Takes the launcher's per-run options
- * (`UnrealEditorLaunchOptionFields`), plus two for sessions no user watches:
- *
- * - `unattended`: the editor logs dialogs instead of showing them and exits instead of offering
- *   to rebuild (`-unattended`). It also deletes the project's unsaved-work recovery data, so the
- *   session is refused with `recovery_pending` while the project has some.
- * - `window: "offscreen"`: no editor window on the user's desktop (`-RenderOffscreen`). UE 5 only;
- *   UE 4.27 on Windows ignores the switch, so the request is refused there.
+ * Bounded project/plugin launch with readiness, capability and termination checks; timeouts are
+ * milliseconds. `unattended` (`-unattended`) deletes unsaved-work recovery data, so it is refused
+ * with `recovery_pending` while some exists; `window: "offscreen"` (`-RenderOffscreen`) is refused
+ * on UE 4.27, which ignores it.
  */
 export const SupervisedEditorSessionRequest = Schema.Struct({
 	explicitEngineRoot: Schema.optional(BoundedString),
@@ -96,6 +91,9 @@ export const SupervisedEditorSessionRequest = Schema.Struct({
 	),
 	terminationTimeoutMs: Schema.optional(Milliseconds)
 });
+const decodeSupervisedEditorSessionRequestEffect = Schema.decodeEffect(
+	SupervisedEditorSessionRequest
+);
 export type SupervisedEditorSessionRequest = typeof SupervisedEditorSessionRequest.Type;
 
 /**
@@ -361,9 +359,10 @@ function rawExit(
 }
 
 const ErrorWithCode = Schema.Struct({ code: Schema.String });
+const isErrorWithCode = Schema.is(ErrorWithCode);
 
 function errorCode(cause: unknown): string | undefined {
-	return Schema.is(ErrorWithCode)(cause) ? cause.code : undefined;
+	return isErrorWithCode(cause) ? cause.code : undefined;
 }
 
 function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
@@ -582,7 +581,7 @@ function launchWindowsProcessTree(
 				stdout = stdout.slice(newline + 1);
 				if (line.length === 0) continue;
 				try {
-					processMessage(Schema.decodeUnknownSync(SupervisorMessage)(JSON.parse(line)));
+					processMessage(decodeSupervisorMessage(JSON.parse(line)));
 				} catch (cause) {
 					fail("The Windows supervisor emitted an invalid protocol message.", cause);
 					helper.stdin?.end();
@@ -782,7 +781,7 @@ export const SupervisedEditorSessionLive = Layer.effect(
 		const acquire = Effect.fn("SupervisedEditorSession.acquire")(function* (
 			input: SupervisedEditorSessionRequest
 		) {
-			const request = yield* Schema.decodeEffect(SupervisedEditorSessionRequest)(input).pipe(
+			const request = yield* decodeSupervisedEditorSessionRequestEffect(input).pipe(
 				Effect.mapError((cause) =>
 					sessionError(
 						"invalid_request",

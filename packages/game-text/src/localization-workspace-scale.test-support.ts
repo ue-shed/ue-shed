@@ -8,6 +8,7 @@ import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import { GameTextIndexSource } from "./index-refresh.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
+const decodeLocalizationTarget = Schema.decodeEffect(LocalizationTarget);
 
 export const workspaceScaleRules = Schema.decodeSync(GameTextRuleDocument)({
 	schemaVersion: 1,
@@ -76,7 +77,7 @@ export const workspaceScaleFixture = Effect.fn("Test.GameText.workspaceScale")(f
 		"nl",
 		"sv"
 	].slice(0, cultureCount);
-	const target = yield* Schema.decodeEffect(LocalizationTarget)({
+	const target = yield* decodeLocalizationTarget({
 		...fixture.target,
 		cultures,
 		outputPaths: {

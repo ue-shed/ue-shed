@@ -5,6 +5,7 @@ import { scenarioContractParser } from "./schema.js";
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 const InputAxis = Schema.Finite.check(Schema.isBetween({ minimum: -1, maximum: 1 }));
+const isBoolean = Schema.is(Schema.Boolean);
 
 export const SCENARIO_EXECUTION_CAPABILITIES = [
 	"scenarios.execute.pie.v1",
@@ -163,7 +164,7 @@ const actionIdsByPath: ScenarioActionIdsByPath = {
 function inputValue(
 	value: SemanticActionClip["keyframes"][number]["value"]
 ): LiveScenarioInputValue {
-	if (Schema.is(Schema.Boolean)(value)) {
+	if (isBoolean(value)) {
 		return LiveScenarioInputValue.cases.Boolean.make({ value });
 	}
 	if (value instanceof Object) {

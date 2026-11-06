@@ -9,6 +9,9 @@ import { GameTextIndexRefresh } from "./index-contract.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import type { LocalizationCultureMark } from "./localization-schema.js";
 import { TextCorpusFocusRequest, makeTextUnitId } from "./schema.js";
+const decodeLocalizationTarget = Schema.decodeEffect(LocalizationTarget);
+const decodeLocalizationFocusRequest = Schema.decodeEffect(LocalizationFocusRequest);
+const decodeTextCorpusFocusRequest = Schema.decodeEffect(TextCorpusFocusRequest);
 
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
@@ -81,7 +84,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						...Array.from({ length: 54 }, (_, index) => `x-${index}`),
 						"en"
 					];
-					const target = yield* Schema.decodeEffect(LocalizationTarget)({
+					const target = yield* decodeLocalizationTarget({
 						...fixture.target,
 						cultures,
 						nativeCulture: "en",
@@ -158,9 +161,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 								{ cultureOffset: 50, locationOffset: 10000, poContextOffset: 50 },
 								{ cultureOffset: 99, locationOffset: 10100, poContextOffset: 150 }
 							]) {
-								const request = yield* Schema.decodeEffect(
-									LocalizationFocusRequest
-								)({
+								const request = yield* decodeLocalizationFocusRequest({
 									target: target.name,
 									selection,
 									...offsets
@@ -600,9 +601,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							for (const selected of [page, scoped])
 								for (const [position, unit] of selected.units.entries()) {
 									const line = selected.localization?.lines[position];
-									const focus = yield* Schema.decodeEffect(
-										TextCorpusFocusRequest
-									)({
+									const focus = yield* decodeTextCorpusFocusRequest({
 										id: unit.id,
 										pageSize: 1,
 										...(line

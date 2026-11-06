@@ -40,6 +40,16 @@ import {
 import { WorkbenchMapReview, WorkbenchMapReviewLive } from "./map-review.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
+const decodeString = Schema.decodeUnknownEffect(Schema.String);
+const ProvisioningRequestJson = Schema.fromJsonString(
+	Schema.Struct({
+		cameras: Schema.Array(
+			Schema.Struct({ location: Schema.Unknown, projection: Schema.Unknown })
+		)
+	})
+);
+const decodeProvisioningRequestJson = Schema.decodeUnknownEffect(ProvisioningRequestJson);
+
 // Map Review receives the app-wide project's cached map inventory from this focused test seam.
 const mapReviewProject = {
 	maps: [
@@ -167,9 +177,7 @@ const mapReviewRemoteControl = (editorProjectRoot: string | undefined) =>
 		}
 		if (request.functionName === "OpenMap") {
 			return Effect.gen(function* () {
-				const json = yield* Schema.decodeUnknownEffect(Schema.String)(
-					request.parameters.RequestJson
-				);
+				const json = yield* decodeString(request.parameters.RequestJson);
 				const intent = yield* decodeEditorWorldOpenRequest(JSON.parse(json));
 				expect(intent.targetMapPath).toBe("/Game/Maps/L_Alpha");
 				const snapshot = {
@@ -1983,18 +1991,7 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				makeWorkbenchWindowTestLayer(),
 				makeRemoteControlClientTestLayer((request) => {
 					if (request.functionName === "EnsureProvisionedCameras") {
-						return Schema.decodeUnknownEffect(
-							Schema.fromJsonString(
-								Schema.Struct({
-									cameras: Schema.Array(
-										Schema.Struct({
-											location: Schema.Unknown,
-											projection: Schema.Unknown
-										})
-									)
-								})
-							)
-						)(request.parameters.RequestJson).pipe(
+						return decodeProvisioningRequestJson(request.parameters.RequestJson).pipe(
 							Effect.orDie,
 							Effect.flatMap((provisioned) => {
 								expect(provisioned.cameras[0]).toMatchObject({

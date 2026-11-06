@@ -64,11 +64,10 @@ it("light-dismisses and returns focus after Escape", async () => {
 });
 
 /**
- * Dispatches a key press with the browser's real microtask ordering. A trusted key event runs a
- * microtask checkpoint after every listener callback, so a microtask queued by a document capture
- * listener runs before any target or bubble handler, including Solid's delegated handlers. A
- * synthetic `dispatchEvent` from a test defers every microtask until dispatch returns, which hides
- * that ordering; draining at the root's capture listener restores it.
+ * Dispatches a key press with the browser's microtask ordering: a trusted event runs microtasks
+ * after each listener, so one queued in a document capture listener runs before Solid's delegated
+ * handlers. A synthetic `dispatchEvent` defers them until dispatch returns; draining at the root's
+ * capture listener restores the order.
  */
 function pressWithBrowserOrdering(target: Element, key: string) {
 	const pending: Array<() => void> = [];

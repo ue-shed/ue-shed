@@ -328,13 +328,14 @@ export function localizationExpectedSource(
 }
 
 const CommentMetadata = Schema.Struct({ Comment: Schema.optionalKey(Schema.String) });
+const decodeCommentMetadata = Schema.decodeUnknownOption(CommentMetadata);
 
 /**
  * Collects manifest developer/translator note text for presentation. It reads retained manifest
  * evidence and does not mutate authored or gathered notes.
  */
 export function localizationManifestNotes(entry: ManifestEntry): readonly string[] {
-	const info = Schema.decodeUnknownOption(CommentMetadata)(entry.metadata?.Info);
+	const info = decodeCommentMetadata(entry.metadata?.Info);
 	const comment = Option.isSome(info) ? (info.value.Comment ?? "") : "";
 	return [...new Set([entry.devNotes ?? "", comment])].filter((notes) => notes.trim() !== "");
 }

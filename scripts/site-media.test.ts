@@ -13,6 +13,7 @@ import {
 	RecordingManifest,
 	type SiteMedia
 } from "./site-media-model.ts";
+const decodeRecordingManifest = Schema.decodeSync(RecordingManifest);
 
 const png = readFileSync(new URL("../apps/site/public/media/authoring.png", import.meta.url));
 
@@ -26,7 +27,7 @@ void test("media promotion requires passed, complete, contained recording eviden
 		title: slug
 	}));
 	for (const chapter of chapters) writeFileSync(join(bundle, chapter.screenshot), png);
-	const manifest = Schema.decodeSync(RecordingManifest)({
+	const manifest = decodeRecordingManifest({
 		contract: { name: "ue-shed-showcase-recording", version: 1 },
 		status: "passed",
 		journey: "site-saved",

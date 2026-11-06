@@ -25,6 +25,7 @@ import {
 	type MapCapturePlan,
 	type MapTilePyramidManifest as MapTilePyramidManifestValue
 } from "./map-tile-schema.js";
+const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
 
 const isCaptureArtifactSourceRejected = Schema.is(CaptureArtifactSourceRejected);
 
@@ -539,7 +540,7 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 						try: async () => JSON.parse(await readFile(manifestPath, "utf8")),
 						catch: onError
 					});
-					const manifest = yield* Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+					const manifest = yield* decodeJsonEffect(input).pipe(
 						Effect.flatMap(Schema.decodeUnknownEffect(MapTilePyramidManifest)),
 						Effect.mapError(onError)
 					);
@@ -576,7 +577,7 @@ const makeMapCaptureRepository = (): MapCaptureRepositoryApi => ({
 				})
 		}).pipe(
 			Effect.flatMap((input) =>
-				Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+				decodeJsonEffect(input).pipe(
 					Effect.mapError((cause) =>
 						storageError({
 							cause,

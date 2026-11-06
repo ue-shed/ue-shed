@@ -13,6 +13,17 @@ import {
 	type SnapshotSourceColumn
 } from "../packages/game-text/src/snapshot-file.ts";
 
+const RetainedRecipe = Schema.Struct({
+	recipe: Schema.Struct({
+		resolved: Schema.Int,
+		keyless: Schema.Int,
+		gatheredOnly: Schema.Int,
+		notFound: Schema.Int
+	})
+});
+const RetainedRecipeJson = Schema.fromJsonString(RetainedRecipe);
+const decodeRetainedRecipeJson = Schema.decodeSync(RetainedRecipeJson);
+
 /** Format-size probe only. Uses measured deduplicated 1× bytes, never PO widths or today's 10× join. */
 export async function syntheticScaleSnapshot(
 	project: string,
@@ -24,18 +35,9 @@ export async function syntheticScaleSnapshot(
 	const recipe = await readScaleRecipe(project);
 	if (recipe.scale !== 10 || recipe.cultures.length !== 20)
 		throw new Error("Expected retained 10× recipe");
-	const descriptor = Schema.decodeSync(
-		Schema.fromJsonString(
-			Schema.Struct({
-				recipe: Schema.Struct({
-					resolved: Schema.Int,
-					keyless: Schema.Int,
-					gatheredOnly: Schema.Int,
-					notFound: Schema.Int
-				})
-			})
-		)
-	)(await readFile(resolve(project, "scale.json"), "utf8"));
+	const descriptor = decodeRetainedRecipeJson(
+		await readFile(resolve(project, "scale.json"), "utf8")
+	);
 	const lines = Object.values(descriptor.recipe).reduce((sum, value) => sum + value, 0);
 	const reference = await openSnapshotFile(referencePath);
 	try {

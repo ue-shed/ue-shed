@@ -23,6 +23,7 @@ import {
 	VisibilityMeasurement,
 	decodeReviewCaptureResponse
 } from "./review-schema.js";
+const decodeReviewCaptureRequestCurrentEffect = Schema.decodeEffect(ReviewCaptureRequestCurrent);
 
 const isCameraRenderError = Schema.is(CameraRenderError);
 
@@ -101,7 +102,7 @@ export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(fun
 	readonly request: typeof ReviewCaptureRequestCurrent.Type;
 }) {
 	const client = yield* RemoteControlClient;
-	const request = yield* Schema.decodeEffect(ReviewCaptureRequestCurrent)(args.request, {
+	const request = yield* decodeReviewCaptureRequestCurrentEffect(args.request, {
 		onExcessProperty: "error"
 	});
 	if (request.authoredVisibility)

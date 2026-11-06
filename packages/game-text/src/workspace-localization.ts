@@ -132,6 +132,8 @@ const unreadLines = (error: GameTextIndexError) => ({
 	recovery: error.recovery
 });
 
+const isLocalizationReportError = Schema.is(LocalizationReportError);
+
 /** Every line of a target's join: the lines reports and key pairing read. */
 const indexedLines = (target: LocalizationJoin["target"]) => ({
 	query: "",
@@ -798,7 +800,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 							)
 						}),
 						catch: (cause) =>
-							Schema.is(LocalizationReportError)(cause)
+							isLocalizationReportError(cause)
 								? cause
 								: new LocalizationReportError({
 										cause: cause,
@@ -899,7 +901,7 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 						return localizationReportCsv(rows, previous !== undefined);
 					},
 					catch: (cause) =>
-						Schema.is(LocalizationReportError)(cause)
+						isLocalizationReportError(cause)
 							? cause
 							: new LocalizationReportError({
 									cause: cause,
@@ -933,10 +935,10 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 					(error) =>
 						Effect.succeed({
 							status: "failed" as const,
-							message: Schema.is(LocalizationReportError)(error)
+							message: isLocalizationReportError(error)
 								? error.message
 								: "The file operation failed.",
-							recovery: Schema.is(LocalizationReportError)(error)
+							recovery: isLocalizationReportError(error)
 								? error.recovery
 								: "Choose a new destination for a baseline; existing files are never overwritten. Check permissions and try again."
 						})

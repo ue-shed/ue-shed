@@ -7,6 +7,7 @@ import {
 	SavedPackageChangeEvidence,
 	type SavedPackageChangeEvidence as SavedPackageChangeEvidenceType
 } from "./schema.js";
+const decodeSavedPackageChangeEvidence = Schema.decodeSync(SavedPackageChangeEvidence);
 
 const MAP_PACKAGE = "/Game/Maps/L_Example";
 const MAP_DEPOT_PATH = "//Project/Main/Content/Maps/L_Example.umap";
@@ -58,7 +59,7 @@ function packageChange(
 		readonly packageName: string;
 	}> = {}
 ): SavedPackageChangeEvidenceType {
-	return Schema.decodeSync(SavedPackageChangeEvidence)({
+	return decodeSavedPackageChangeEvidence({
 		action: "edit",
 		afterRevision: 2,
 		beforeRevision: 1,

@@ -104,96 +104,92 @@ export function enhancedInputCandidatePaths(scan: SavedAssetScan): readonly stri
  * Reuses a project-wide header index, then fully decodes only the selected Enhanced Input packages.
  * The follow-up calls receive explicit package paths, so they do not recursively enumerate Content.
  */
-export function scanEnhancedInputFromProjectIndex(
+export const scanEnhancedInputFromProjectIndex = Effect.fn(
+	"enhanced-input.scan_from_project_index"
+)(function* (
 	index: SavedAssetScan,
 	options: EnhancedInputScanOptions
-): Effect.Effect<EnhancedInputReport, EnhancedInputScanError, AssetReader> {
-	return Effect.gen(function* () {
-		const reader = yield* AssetReader;
-		const candidates = enhancedInputCandidatePaths(index);
-		const batches = Array.from({ length: Math.ceil(candidates.length / 100) }, (_, batch) =>
-			candidates.slice(batch * 100, batch * 100 + 100)
-		);
-		const scans = yield* Effect.forEach(batches, (paths) =>
-			reader
-				.scanProject({
-					concurrency: Math.max(1, options.concurrency ?? 8),
-					paths,
-					projectRoot: options.projectRoot
-				})
-				.pipe(Effect.mapError(enhancedInputScanFailure))
-		);
-		const outcomes = [
-			...index.failures.map(
-				(failure): EnhancedInputPackageOutcome => ({
-					status: "failed",
-					packageFile: relative(options.projectRoot, failure.path),
-					message: failure.message
-				})
-			),
-			...scans.flatMap((scan) => outcomesFromScan(scan, options.projectRoot))
-		];
-		return buildEnhancedInputReport(outcomes, {
-			discoveredPackages: index.summary.scannedAssets,
-			inspectedPackages: scans.reduce((total, scan) => total + scan.summary.scannedAssets, 0)
-		});
-	}).pipe(Effect.withSpan("enhanced-input.scan_from_project_index"));
-}
-
-export function scanEnhancedInputWith(
-	reader: Pick<AssetReaderApi, "scanProject">,
-	options: EnhancedInputScanOptions
-): Effect.Effect<EnhancedInputReport, EnhancedInputScanError> {
-	return Effect.gen(function* () {
-		// One reader process classifies the whole project from package headers, decoding only
-		// packages that export Enhanced Input classes or conventionally named native subclasses.
-		const scan = yield* reader
+): Effect.fn.Return<EnhancedInputReport, EnhancedInputScanError, AssetReader> {
+	const reader = yield* AssetReader;
+	const candidates = enhancedInputCandidatePaths(index);
+	const batches = Array.from({ length: Math.ceil(candidates.length / 100) }, (_, batch) =>
+		candidates.slice(batch * 100, batch * 100 + 100)
+	);
+	const scans = yield* Effect.forEach(batches, (paths) =>
+		reader
 			.scanProject({
-				classPrefixes: [ENHANCED_INPUT_CLASS_PREFIX],
-				classNameSuffixes: ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
 				concurrency: Math.max(1, options.concurrency ?? 8),
-				...(options.maximumAssets === undefined
-					? undefined
-					: { maximumAssets: options.maximumAssets }),
-				...(options.paths === undefined ? undefined : { paths: options.paths }),
+				paths,
 				projectRoot: options.projectRoot
 			})
-			.pipe(Effect.mapError(enhancedInputScanFailure));
-		const outcomes = outcomesFromScan(scan, options.projectRoot);
-		return buildEnhancedInputReport(outcomes, {
-			discoveredPackages: scan.summary.scannedAssets,
-			inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets
-		});
-	}).pipe(Effect.withSpan("enhanced-input.scan"));
-}
+			.pipe(Effect.mapError(enhancedInputScanFailure))
+	);
+	const outcomes = [
+		...index.failures.map(
+			(failure): EnhancedInputPackageOutcome => ({
+				status: "failed",
+				packageFile: relative(options.projectRoot, failure.path),
+				message: failure.message
+			})
+		),
+		...scans.flatMap((scan) => outcomesFromScan(scan, options.projectRoot))
+	];
+	return buildEnhancedInputReport(outcomes, {
+		discoveredPackages: index.summary.scannedAssets,
+		inspectedPackages: scans.reduce((total, scan) => total + scan.summary.scannedAssets, 0)
+	});
+});
 
-function inspectEnhancedInputPathWith(
+export const scanEnhancedInputWith = Effect.fn("enhanced-input.scan")(function* (
+	reader: Pick<AssetReaderApi, "scanProject">,
+	options: EnhancedInputScanOptions
+): Effect.fn.Return<EnhancedInputReport, EnhancedInputScanError> {
+	// One reader process classifies the whole project from package headers, decoding only
+	// packages that export Enhanced Input classes or conventionally named native subclasses.
+	const scan = yield* reader
+		.scanProject({
+			classPrefixes: [ENHANCED_INPUT_CLASS_PREFIX],
+			classNameSuffixes: ENHANCED_INPUT_CLASS_NAME_SUFFIXES,
+			concurrency: Math.max(1, options.concurrency ?? 8),
+			...(options.maximumAssets === undefined
+				? undefined
+				: { maximumAssets: options.maximumAssets }),
+			...(options.paths === undefined ? undefined : { paths: options.paths }),
+			projectRoot: options.projectRoot
+		})
+		.pipe(Effect.mapError(enhancedInputScanFailure));
+	const outcomes = outcomesFromScan(scan, options.projectRoot);
+	return buildEnhancedInputReport(outcomes, {
+		discoveredPackages: scan.summary.scannedAssets,
+		inspectedPackages: scan.summary.emittedAssets + scan.summary.skippedAssets
+	});
+});
+
+const inspectEnhancedInputPathWith = Effect.fn("enhanced-input.inspect-path")(function* (
 	reader: AssetReaderApi,
 	path: string
-): Effect.Effect<EnhancedInputReport, EnhancedInputScanError> {
-	return Effect.gen(function* () {
-		const inspection = yield* reader.readAsset(path).pipe(
-			Effect.mapError(
-				(error) =>
-					new EnhancedInputScanError({
-						cause: error,
-						code: "invalid_path",
-						message: error.message,
-						recovery: "Provide a readable .uasset path or Unreal project root.",
-						retrySafe: true,
-						nextStep: "fix_input"
-					})
-			)
-		);
-		return buildEnhancedInputReport([
-			{
-				status: "inspected",
-				packageFile: path,
-				inspection
-			}
-		]);
-	}).pipe(Effect.withSpan("enhanced-input.inspect-path"));
-}
+): Effect.fn.Return<EnhancedInputReport, EnhancedInputScanError> {
+	const inspection = yield* reader.readAsset(path).pipe(
+		Effect.mapError(
+			(error) =>
+				new EnhancedInputScanError({
+					cause: error,
+					code: "invalid_path",
+					message: error.message,
+					recovery: "Provide a readable .uasset path or Unreal project root.",
+					retrySafe: true,
+					nextStep: "fix_input"
+				})
+		)
+	);
+	return buildEnhancedInputReport([
+		{
+			status: "inspected",
+			packageFile: path,
+			inspection
+		}
+	]);
+});
 
 export interface EnhancedInputServiceApi {
 	readonly inspectPath: (

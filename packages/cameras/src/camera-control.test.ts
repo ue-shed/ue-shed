@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 import { CameraStreamStats } from "@ue-shed/protocol";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import { configureCameras, getCameraStatus } from "./index.js";
+const isString = Schema.is(Schema.String);
 
 const config = {
 	activeCameraCount: 6,
@@ -32,8 +33,7 @@ describe("scoped editor ticking compatibility", () => {
 				Effect.provideService(RemoteControlClient, {
 					request: (request) => {
 						const raw = request.parameters.ConfigJson;
-						if (!Schema.is(Schema.String)(raw))
-							throw new Error("ConfigJson must be a JSON string");
+						if (!isString(raw)) throw new Error("ConfigJson must be a JSON string");
 						expect(JSON.parse(raw).editorBackgroundTicking).toBe("while_streaming");
 						return Effect.succeed({
 							cameras: [],

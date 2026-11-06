@@ -319,14 +319,10 @@ export const AuthoringTypeDescriptor: Schema.Codec<AuthoringTypeDescriptor> = Sc
 ).annotate({ identifier: "AuthoringTypeDescriptor" });
 
 /**
- * Schema evidence for one row-struct field: type, editability, presence, Unreal metadata
- * annotations (clamp, step, and unit kept as their metadata strings), and default value. A default
- * is `unknown` when the producer cannot know it, as with saved packages; never assume zero.
- *
- * `name` is the authored name that row values use. `propertyName` is Unreal's property FName, which
- * saved packages serialize and saved-reader property paths use. They differ for User Defined
- * Struct members (`DisplayName` and `DisplayName_2_<guid>`). Live producers report it from
- * snapshot 2.4; when it is absent, only a native property's name is known to equal its FName.
+ * One row-struct field: type, editability, presence, metadata annotations (clamp, step, unit as
+ * strings) and default, `unknown` when the producer cannot know it (never assume zero). `name` is
+ * what row values use; `propertyName` is the FName saved packages use, which differs for User
+ * Defined Struct members. Sent live from snapshot 2.4; if absent, only native names match FNames.
  */
 export const AuthoringFieldDescriptor: Schema.Codec<AuthoringFieldDescriptor> = Schema.Struct({
 	annotations: Schema.Struct({

@@ -1,10 +1,6 @@
 /**
- * Times the localization import through the native writer over a generated target: a manifest and,
- * per culture, an archive (both UTF-16, as Unreal writes them) and a PO file. It measures a cold
- * import, an unchanged warm refresh and a warm refresh after every file was rewritten. The target
- * and its cache live in a temporary directory, which is removed after; the script prints its
- * measurements as JSON.
- *
+ * Times the native-writer localization import over a generated UTF-16 target and POs: cold, warm
+ * unchanged, and warm after every file is rewritten. Its temporary directory is removed after.
  * UE_SHED_UASSET_EXECUTABLE=<uasset> node --import tsx scripts/benchmark-localization-refresh.ts
  *   [--lines 130000] [--cultures 10] [--directory <parent>]
  */

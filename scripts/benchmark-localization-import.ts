@@ -75,6 +75,7 @@ const Message = Schema.Struct({
 	memory: Schema.optionalKey(Memory),
 	error: Schema.optionalKey(Schema.String)
 });
+const decodeMessage = Schema.decodeUnknownResult(Message);
 const memory = () => {
 	const { heapUsed, arrayBuffers, rss } = process.memoryUsage();
 	return { heapUsed, arrayBuffers, rss };
@@ -502,7 +503,7 @@ if (values.worker) {
 			return;
 		}
 		if (outcome?.kind === "failed") return;
-		const decoded = Schema.decodeUnknownResult(Message)(input);
+		const decoded = decodeMessage(input);
 		if (decoded._tag === "Failure") {
 			stop("Invalid worker message.");
 			return;

@@ -42,9 +42,8 @@ const terms = (entries: readonly TextTerminologyEntry[]) =>
 /**
  * The program the engine runs for a rules file: the built-in checks it lists, with its settings,
  * then its source and localization rules by ID, then its custom checks and complete rules in file
- * order. Parameters
- * one rule takes from others are derived here, from the rules that run. Without a file, nothing
- * runs. `checks` and `disabledChecks` narrow the built-in checks further.
+ * order. Parameters one rule takes from others are derived here, from the rules that run. Without
+ * a file, nothing runs. `checks` and `disabledChecks` narrow the built-in checks further.
  */
 export function effectiveRuleDocument(
 	document: GameTextRuleDocument | undefined,

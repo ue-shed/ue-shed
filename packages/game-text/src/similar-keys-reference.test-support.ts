@@ -158,9 +158,6 @@ export function referenceSimilarKeyChanges(
 	return { pairs, truncated };
 }
 
-// ---------------------------------------------------------------------------------------------
-// A seeded random target
-
 /** mulberry32: a small seeded generator, so a failing corpus can be generated again. */
 function random(seed: number): () => number {
 	let state = seed >>> 0;

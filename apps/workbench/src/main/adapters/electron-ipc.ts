@@ -16,6 +16,7 @@ export class ElectronIpcError extends Schema.TaggedError<
 	recovery: Schema.String,
 	retrySafe: Schema.Boolean
 }) {}
+const isElectronIpcError = Schema.is(ElectronIpcError);
 
 export interface ElectronIpcEvent {}
 
@@ -100,10 +101,9 @@ const adaptHandler = <Contract extends InvokeContract, HandlerError, Requirement
 					)
 				)
 			);
-			// SAFETY: every InvokeContract is constructed with a tuple args schema; successful
-			// decoding therefore yields the exact argument tuple owned by this contract.
-			// Verified by: apps/workbench/src/main/ipc-contracts.test.ts ("decodes valid arguments
-			// for every invoke channel"); apps/workbench/src/main/ipc/register.test.ts ("dispatches
+			// SAFETY: every InvokeContract has a tuple args schema, so decoding yields this
+			// contract's exact argument tuple. Verified by: ../ipc-contracts.test.ts ("decodes
+			// valid arguments for every invoke channel"); ../ipc/register.test.ts ("dispatches
 			// Project Custodian scans and guarded cleanup through the service")
 			const decodedArgs = decoded as InvokeHandlerArguments<Contract>;
 			const result = yield* handler(...decodedArgs);
@@ -237,9 +237,7 @@ export const makeElectronIpcTestLayer = (): Layer.Layer<ElectronIpc | ElectronIp
 					return yield* Effect.tryPromise({
 						try: () => entry.invoke(...args),
 						catch: (cause) =>
-							Schema.is(ElectronIpcError)(cause)
-								? cause
-								: new Cause.UnknownError(cause)
+							isElectronIpcError(cause) ? cause : new Cause.UnknownError(cause)
 					});
 				})
 			});

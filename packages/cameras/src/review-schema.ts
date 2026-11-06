@@ -7,7 +7,8 @@ import {
 	CameraWorldVector,
 	CameraWorldRotation
 } from "./camera-render-schema.js";
-
+const isBoolean = Schema.is(Schema.Boolean);
+const isString = Schema.is(Schema.String);
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const SafeIdentifier = NonEmptyString.check(
 	Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u)
@@ -831,12 +832,12 @@ function boundedJsonIssue(value: Schema.Json, depth = 0): string | undefined {
 	if (depth > maxRuntimeTriggerDepth) return "Runtime trigger provenance is nested too deeply.";
 	if (
 		value === null ||
-		Schema.is(Schema.Boolean)(value) ||
+		isBoolean(value) ||
 		(Predicate.isNumber(value) && Number.isFinite(value))
 	) {
 		return undefined;
 	}
-	if (Schema.is(Schema.String)(value)) {
+	if (isString(value)) {
 		return value.length <= 1_024
 			? undefined
 			: "Runtime trigger strings are limited to 1024 characters.";
@@ -1511,21 +1512,26 @@ type DecodedReviewSet =
 	| { readonly migrated: false; readonly reviewSet: ReviewSet }
 	| { readonly migrated: true; readonly reviewSet: ReviewSet };
 
+const decodeReviewSetContractHeader = Schema.decodeUnknownEffect(ReviewSetContractHeader);
+const decodeReviewSetCurrent = Schema.decodeUnknownEffect(ReviewSetCurrent);
+const decodePreviousReviewSet = Schema.decodeUnknownEffect(PreviousReviewSet);
+const decodeLegacyReviewSet = Schema.decodeUnknownEffect(LegacyReviewSet);
+
 /**
  * Validates supported review-set versions and migrates legacy definitions to the current
  * model, returning an explicit migrated flag. Fails with ContractParseError on invalid/unsupported
  * evidence and performs no file write.
  */
 export function decodeReviewSetWithMigration<Input>(input: Input) {
-	return Schema.decodeUnknownEffect(ReviewSetContractHeader)(input).pipe(
+	return decodeReviewSetContractHeader(input).pipe(
 		Effect.flatMap(({ contract }) => {
 			if (contract.version.minor >= 2) {
-				return Schema.decodeUnknownEffect(ReviewSetCurrent)(input).pipe(
+				return decodeReviewSetCurrent(input).pipe(
 					Effect.map((reviewSet): DecodedReviewSet => ({ migrated: false, reviewSet }))
 				);
 			}
 			if (contract.version.minor === 1) {
-				return Schema.decodeUnknownEffect(PreviousReviewSet)(input).pipe(
+				return decodePreviousReviewSet(input).pipe(
 					Effect.map(
 						(reviewSet): DecodedReviewSet => ({
 							migrated: true as const,
@@ -1534,7 +1540,7 @@ export function decodeReviewSetWithMigration<Input>(input: Input) {
 					)
 				);
 			}
-			return Schema.decodeUnknownEffect(LegacyReviewSet)(input).pipe(
+			return decodeLegacyReviewSet(input).pipe(
 				Effect.map(
 					(reviewSet): DecodedReviewSet => ({
 						migrated: true as const,
@@ -2710,16 +2716,23 @@ function migrateLegacyCaptureRun(legacy: Schema.Schema.Type<typeof LegacyCapture
 export const CaptureRun = CaptureRunCurrent;
 export type CaptureRun = Schema.Schema.Type<typeof CaptureRun>;
 
+const decodeCaptureRunCurrent = Schema.decodeUnknownEffect(CaptureRunCurrent);
+const decodePreviousClearCaptureRun = Schema.decodeUnknownEffect(PreviousClearCaptureRun);
+const decodePreviousCurrentCaptureRun = Schema.decodeUnknownEffect(PreviousCurrentCaptureRun);
+const decodePreviousCaptureRun = Schema.decodeUnknownEffect(PreviousCaptureRun);
+const decodePreviousLegacyCaptureRun = Schema.decodeUnknownEffect(PreviousLegacyCaptureRun);
+const decodeLegacyCaptureRun = Schema.decodeUnknownEffect(LegacyCaptureRun);
+
 /**
  * Validates current or supported historical capture runs and returns the current model plus
  * migrated flag. Invalid evidence fails with ContractParseError; migration preserves unknown legacy
  * realization instead of inventing it.
  */
 export function decodeCaptureRunWithMigration<Input>(input: Input) {
-	return Schema.decodeUnknownEffect(CaptureRunCurrent)(input).pipe(
+	return decodeCaptureRunCurrent(input).pipe(
 		Effect.map((run) => ({ migrated: false as const, run })),
 		Effect.catchTag("SchemaError", () =>
-			Schema.decodeUnknownEffect(PreviousClearCaptureRun)(input).pipe(
+			decodePreviousClearCaptureRun(input).pipe(
 				Effect.map((run) => ({
 					migrated: true as const,
 					run: migratePreviousClearCaptureRun(run)
@@ -2727,7 +2740,7 @@ export function decodeCaptureRunWithMigration<Input>(input: Input) {
 			)
 		),
 		Effect.catchTag("SchemaError", () =>
-			Schema.decodeUnknownEffect(PreviousCurrentCaptureRun)(input).pipe(
+			decodePreviousCurrentCaptureRun(input).pipe(
 				Effect.map((run) => ({
 					migrated: true as const,
 					run: migratePreviousCurrentCaptureRun(run)
@@ -2735,7 +2748,7 @@ export function decodeCaptureRunWithMigration<Input>(input: Input) {
 			)
 		),
 		Effect.catchTag("SchemaError", () =>
-			Schema.decodeUnknownEffect(PreviousCaptureRun)(input).pipe(
+			decodePreviousCaptureRun(input).pipe(
 				Effect.map((run) => ({
 					migrated: true as const,
 					run: migratePreviousCaptureRun(run)
@@ -2743,7 +2756,7 @@ export function decodeCaptureRunWithMigration<Input>(input: Input) {
 			)
 		),
 		Effect.catchTag("SchemaError", () =>
-			Schema.decodeUnknownEffect(PreviousLegacyCaptureRun)(input).pipe(
+			decodePreviousLegacyCaptureRun(input).pipe(
 				Effect.map((run) => ({
 					migrated: true as const,
 					run: migratePreviousLegacyCaptureRun(run)
@@ -2751,7 +2764,7 @@ export function decodeCaptureRunWithMigration<Input>(input: Input) {
 			)
 		),
 		Effect.catchTag("SchemaError", () =>
-			Schema.decodeUnknownEffect(LegacyCaptureRun)(input).pipe(
+			decodeLegacyCaptureRun(input).pipe(
 				Effect.map((run) => ({
 					migrated: true as const,
 					run: migrateLegacyCaptureRun(run)
@@ -2785,12 +2798,14 @@ export function reviewViewApprovedPose(view: ReviewView): ApprovedPose | undefin
  */
 export const decodeReviewSet = <Input>(input: Input) =>
 	decodeReviewSetWithMigration(input).pipe(Effect.map(({ reviewSet }) => reviewSet));
+const decodeReviewCaptureRequestEffect = Schema.decodeUnknownEffect(ReviewCaptureRequest);
+const decodeReviewCaptureResponseEffect = Schema.decodeUnknownEffect(ReviewCaptureResponse);
 /**
  * Strictly validates a supported review-capture wire request, failing with ContractParseError.
  * Excess fields are rejected so incompatible version-specific policy is not silently ignored.
  */
 export const decodeReviewCaptureRequest = <Input>(input: Input) =>
-	Schema.decodeUnknownEffect(ReviewCaptureRequest)(input, { onExcessProperty: "error" }).pipe(
+	decodeReviewCaptureRequestEffect(input, { onExcessProperty: "error" }).pipe(
 		Effect.mapError((cause) => contractParseError("ReviewCaptureRequest", cause))
 	);
 /**
@@ -2798,7 +2813,7 @@ export const decodeReviewCaptureRequest = <Input>(input: Input) =>
  * successfully parsed failed response remains a domain outcome rather than a parser failure.
  */
 export const decodeReviewCaptureResponse = <Input>(input: Input) =>
-	Schema.decodeUnknownEffect(ReviewCaptureResponse)(input, { onExcessProperty: "error" }).pipe(
+	decodeReviewCaptureResponseEffect(input, { onExcessProperty: "error" }).pipe(
 		Effect.mapError((cause) => contractParseError("ReviewCaptureResponse", cause))
 	);
 /**

@@ -13,6 +13,7 @@ import {
 } from "./camera-authoring-bridge.js";
 import { ArrangementCameraId, resolveArrangementCamera } from "./camera-arrangement.js";
 import { fixtureArrangement, fixtureSet } from "./camera-arrangement.test-support.js";
+const decodeCameraPanelEvent = Schema.decodeSync(CameraPanelEvent);
 
 describe("replaceable native menu coordinator", () => {
 	it("reviews regeneration, recovers lost activation replies, and resumes the durable arrangement", async () => {
@@ -85,7 +86,7 @@ describe("replaceable native menu coordinator", () => {
 			const enqueue = (action: CameraPanelAction) => {
 				native = {
 					...native,
-					panelEvent: Schema.decodeSync(CameraPanelEvent)({
+					panelEvent: decodeCameraPanelEvent({
 						id: `menu-${serial++}`,
 						expectedRevision: native.revision,
 						action

@@ -33,6 +33,10 @@ const UnrealModuleManifestEvidence = Schema.Struct({
 const UnrealPluginDescriptorEvidence = Schema.Struct({
 	Modules: Schema.optionalKey(Schema.Array(Schema.Struct({ Name: PluginId })))
 });
+const decodeUnrealModuleManifestEvidence = Schema.decodeUnknownSync(UnrealModuleManifestEvidence);
+const decodeUnrealPluginDescriptorEvidence = Schema.decodeUnknownSync(
+	UnrealPluginDescriptorEvidence
+);
 
 export interface VerifiedPluginArtifact {
 	readonly bytes: number;
@@ -449,7 +453,7 @@ export async function extractPluginArchiveToDirectory(
 			>();
 			for (const plugin of options.manifest.plugins) {
 				const descriptorPath = `Plugins/${plugin.descriptorPath}`;
-				const descriptor = Schema.decodeUnknownSync(UnrealPluginDescriptorEvidence)(
+				const descriptor = decodeUnrealPluginDescriptorEvidence(
 					JSON.parse(await readFile(resolve(options.destination, descriptorPath), "utf8"))
 				);
 				const declaredModules = new Set(
@@ -468,7 +472,7 @@ export async function extractPluginArchiveToDirectory(
 					);
 				}
 				for (const modulePath of modulePaths) {
-					const evidence = Schema.decodeUnknownSync(UnrealModuleManifestEvidence)(
+					const evidence = decodeUnrealModuleManifestEvidence(
 						JSON.parse(await readFile(resolve(options.destination, modulePath), "utf8"))
 					);
 					if (evidence.BuildId !== options.manifest.compatibility.engineBuildId) {

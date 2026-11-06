@@ -1,10 +1,8 @@
 /**
- * Package identity as the native reader sees it. The reader joins each requested path onto the
- * project root without canonicalizing it, enumerates directories beneath it, and de-duplicates the
- * packages one request finds by Rust `Path` equality (`scanner::discover_paths`). That equality
- * compares path components: on Windows `/` and `\` both separate, the drive letter is
- * case-insensitive, empty and `.` segments vanish, and `..` stays a segment. Nothing else folds
- * case, so two spellings that differ in case are two packages to the reader, and to this key.
+ * Package identity as the native reader sees it: requested paths join the project root without
+ * canonicalizing and de-duplicate by Rust `Path` equality (`scanner::discover_paths`). On Windows
+ * `/` and `\` both separate, the drive letter is case-insensitive, empty and `.` segments vanish
+ * and `..` stays; nothing else folds case, so spellings differing in case are two packages.
  */
 
 const windows = process.platform === "win32";

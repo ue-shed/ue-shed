@@ -1,16 +1,8 @@
 /**
- * Moves a prepared release to the machine that publishes it. `pnpm release:prepare` runs the
- * gates where the engines and toolchains are; the machine with the npm login only needs the same
- * commit, the gate evidence and the validated tarballs.
- *
- *   pnpm release:handoff            # here: after release:prepare, upload the handoff
- *   pnpm release --checked          # there: fetches the handoff when it has no evidence of its own
- *
- * The handoff is a draft GitHub release named `release-handoff-<version>`: visible only to people
- * who can push to the repository, and never a tag. It holds the evidence file and the kept pack
- * (tarballs, publication manifest, pack evidence). Nothing in it is trusted on arrival: the
- * publishing machine checks the evidence against its own clean checkout's tree and every tarball
- * against the digest the pack recorded, exactly as for local evidence.
+ * Moves a prepared release to the machine with the npm login: `pnpm release:handoff` uploads a
+ * draft GitHub release `release-handoff-<version>` (push access only, no tag) with the evidence
+ * and kept pack; `pnpm release --checked` there fetches it. Nothing is trusted on arrival: evidence
+ * is checked against the clean checkout's tree and each tarball against its recorded digest.
  */
 
 import { spawnSync } from "node:child_process";
@@ -31,6 +23,9 @@ import { assertCleanReleaseSource } from "./release-source.ts";
 // release.ts imports this module back. Neither uses the other's bindings while it loads, so the
 // cycle resolves; a dynamic import here would wait on this module's own top-level `await main()`.
 import { releaseGateCoverage, verifyPackedRelease } from "./release.ts";
+
+const ReleaseEvidenceJson = Schema.fromJsonString(ReleaseEvidence);
+const decodeReleaseEvidenceJson = Schema.decodeSync(ReleaseEvidenceJson);
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 
@@ -59,7 +54,7 @@ export function handoffEvidence(evidence: ReleaseEvidence): ReleaseEvidence {
 
 /** Received evidence, pointed at the directory the handoff was unpacked into. */
 export function receivedEvidence(text: string, version: string, directory: string) {
-	const evidence = Schema.decodeSync(Schema.fromJsonString(ReleaseEvidence))(text);
+	const evidence = decodeReleaseEvidenceJson(text);
 	if (evidence.version !== version) {
 		throw new Error(`The handoff holds ${evidence.version}, not ${version}.`);
 	}

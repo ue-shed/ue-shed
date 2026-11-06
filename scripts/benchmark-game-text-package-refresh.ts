@@ -1,21 +1,8 @@
 /**
- * Package-text refresh over a generated warm index, through the native writer and the paired
- * reader's record conversion. One process runs one refresh, so revisions can be alternated.
- *
- * Prepare a warm index once (with either revision; both must share `PACKAGE_TEXT_FORMAT`):
- *   node --expose-gc --import tsx scripts/benchmark-game-text-package-refresh.ts --mode prepare
- *     --executable <uasset> --output test-results/package-refresh/template
- * Then run one change against a fresh copy of it:
- *   node --expose-gc --import tsx scripts/benchmark-game-text-package-refresh.ts --mode run
- *     --executable <uasset> --module <checkout>/packages/game-text/src
- *     --template test-results/package-refresh/template --case one|spread|shards|large [--files]
- *     --output test-results/package-refresh/<run>
- *
- * `--module` may name another checkout's `packages/game-text/src`, so a base revision runs with
- * its own packages and its own reader. Packages are generated and read through the refresh's
- * `read` stream, as `benchmark-game-text-incremental.ts` does. With `--files`, the changed text
- * packages are copies of a fixture package on disk, read or staged through the node source.
- * `large` gives one text package in every shard a distinct 256 KiB source.
+ * Package-text refresh over a generated warm index, one refresh per process (`--expose-gc`).
+ * `--mode prepare --executable <uasset> --output <dir>` builds the index once (revisions must share
+ * `PACKAGE_TEXT_FORMAT`); `--mode run --template <dir> --case one|spread|shards|large [--files]`
+ * refreshes a copy in a fresh `--output`. `--module` may name another checkout's game-text `src`.
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";

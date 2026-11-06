@@ -20,6 +20,8 @@ import {
 	LocalizationEvidenceLive,
 	LocalizationEvidenceNodeLive
 } from "./service.js";
+const decodeLocalizationTargetsReport = Schema.decodeEffect(LocalizationTargetsReport);
+const decodeLocalizationTargetEvidence = Schema.decodeEffect(LocalizationTargetEvidence);
 
 const projectRoot = resolve("fixtures/unreal-project");
 const legacyRoot = resolve("fixtures/unreal-427-localization");
@@ -28,11 +30,11 @@ it.effect("reads the real target and every culture with independent provenance",
 	Effect.gen(function* () {
 		const reader = yield* LocalizationEvidence;
 		const report = yield* reader.targets({ projectRoot });
-		yield* Schema.decodeEffect(LocalizationTargetsReport)(report);
+		yield* decodeLocalizationTargetsReport(report);
 		const target = report.targets.find((item) => item.name === "FixtureGame");
 		if (target === undefined) throw new Error("Fixture target missing.");
 		const evidence = yield* reader.read({ projectRoot, target });
-		yield* Schema.decodeEffect(LocalizationTargetEvidence)(evidence);
+		yield* decodeLocalizationTargetEvidence(evidence);
 		expect(evidence.manifest.status).toBe("read");
 		expect(
 			evidence.cultures.every(

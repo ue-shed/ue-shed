@@ -745,19 +745,19 @@ function listen(server: Server, pipeName: string): Effect.Effect<void, CameraFee
 	});
 }
 
-function closeCameraFeed(resource: AcquiredCameraFeed): Effect.Effect<void> {
-	return Effect.gen(function* () {
-		for (const socket of resource.sockets) socket.destroy();
-		yield* Effect.callback<void>((resume) => {
-			if (!resource.server.listening) {
-				resume(Effect.void);
-				return;
-			}
-			resource.server.close(() => resume(Effect.void));
-		});
-		yield* PubSub.shutdown(resource.pubsub);
+const closeCameraFeed = Effect.fn("CameraFeed.close")(function* (
+	resource: AcquiredCameraFeed
+): Effect.fn.Return<void> {
+	for (const socket of resource.sockets) socket.destroy();
+	yield* Effect.callback<void>((resume) => {
+		if (!resource.server.listening) {
+			resume(Effect.void);
+			return;
+		}
+		resource.server.close(() => resume(Effect.void));
 	});
-}
+	yield* PubSub.shutdown(resource.pubsub);
+});
 
 function acquireCameraFeed(
 	options: CameraFeedOptions
@@ -1007,11 +1007,8 @@ export function getCameraStatus(
  * Rejects unsupported requested background-ticking behavior instead of claiming the
  * configuration was honored.
  */
-export function configureCameras(
-	endpoint: string,
-	config: CameraScheduleConfig
-): Effect.Effect<CameraStatus, CameraControlError, RemoteControlClient> {
-	return Effect.gen(function* () {
+export const configureCameras = Effect.fn("CameraControl.configure")(
+	function* (endpoint: string, config: CameraScheduleConfig) {
 		const validConfig = yield* decodeCameraScheduleConfig(config).pipe(
 			Effect.mapError((error) => cameraControlError(endpoint, "configure", error))
 		);
@@ -1033,8 +1030,10 @@ export function configureCameras(
 					"This UEShedCameras plugin does not support scoped editor background ticking. Update the plugin before enabling interactive previews."
 			});
 		return status;
-	}).pipe(Effect.mapError((error) => cameraControlError(endpoint, "configure", error)));
-}
+	},
+	(effect, endpoint): Effect.Effect<CameraStatus, CameraControlError, RemoteControlClient> =>
+		Effect.mapError(effect, (error) => cameraControlError(endpoint, "configure", error))
+);
 
 export {
 	inspectMapCaptureReadiness,

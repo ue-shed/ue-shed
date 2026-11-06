@@ -27,6 +27,7 @@ import { GameTextIndexBuilder } from "./index-builder.js";
 import { GameTextIndexProgressReporter } from "./index-progress.js";
 import { LocalizationImportSource } from "./localization-import.js";
 import { emptyPackageTextRecord } from "./package-text-record.js";
+const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
 
 const Input = Schema.Struct({
 	directory: Schema.String,
@@ -36,19 +37,20 @@ const Input = Schema.Struct({
 	document: Schema.optionalKey(GameTextRuleDocument),
 	options: Schema.optionalKey(LocalizationCheckOptions)
 });
+const decodeInputJson = Schema.decodeSync(Schema.fromJsonString(Input));
 export async function indexedReport(
 	contents: string,
 	trace: (stage: string) => void = () => {}
 ): Promise<string> {
 	trace("decode input");
-	const input = Schema.decodeSync(Schema.fromJsonString(Input))(contents);
+	const input = decodeInputJson(contents);
 	// Evidence is already schema-owned test input; its actual files are parsed again by the builder.
 	const files = input.evidence;
 	const projectRoot = resolve(input.directory, "project");
 	mkdirSync(projectRoot, { recursive: true });
 	const target =
 		files &&
-		Schema.decodeSync(LocalizationTarget)({
+		decodeLocalizationTarget({
 			...files.target,
 			poFormat:
 				files.cultures.flatMap((culture) =>

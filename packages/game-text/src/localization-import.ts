@@ -46,6 +46,11 @@ import {
 	LocalizationImportSession,
 	localizationImportLayer
 } from "./localization-import-session.js";
+const isLocalizationError = Schema.is(LocalizationError);
+const isSnapshotStoreError = Schema.is(SnapshotStoreError);
+const isSnapshotFormatError = Schema.is(SnapshotFormatError);
+const decodeLocalizationErrorEffect = Schema.decodeUnknownEffect(LocalizationError);
+const decodeLocalizationTarget = Schema.decodeResult(LocalizationTarget);
 
 export {
 	decodeLocalizationSnapshot,
@@ -126,6 +131,7 @@ const Options = Schema.Struct({
 		])
 	)
 });
+const decodeOptions = Schema.decodeResult(Options);
 const FileRequest = Options.pipe(
 	Schema.fieldsAssign({
 		projectRoot: Schema.NonEmptyString,
@@ -137,18 +143,17 @@ const FileRequest = Options.pipe(
 		projectScoped: Schema.optionalKey(Schema.Boolean)
 	})
 );
+const decodeFileRequest = Schema.decodeResult(FileRequest);
 /**
  * One localization file's project/cache identity, format and import limits. Paths identify
  * authored evidence; derived snapshots remain disposable and must not replace those files.
  */
 export type LocalizationFileImportRequest = typeof FileRequest.Type;
 /**
- * Validated identity and provenance of a retained parsed localization file. It identifies reuse
- * evidence, not a durable authored-file ID or permission to mutate the source.
- *
- * One native call imports many files, so the call's dictionary and store counters
- * (`lookupStrings`, `reusedStrings`, `shared*`, `profile`, `stages`) are reported on the first
- * file it imported and are zero on the others.
+ * A retained parsed localization file's identity and provenance: reuse evidence, not a durable
+ * authored-file ID or permission to mutate the source. One native call imports many files, so its
+ * dictionary and store counters (`lookupStrings`, `reusedStrings`, `shared*`, `profile`,
+ * `stages`) are reported on the first file it imported and are zero on the others.
  */
 export interface LocalizationFileSnapshotKey {
 	readonly key: string;
@@ -210,11 +215,7 @@ function contained(root: string, path: string) {
 	return child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }
 function fileError(file: string, cause: unknown) {
-	if (
-		Schema.is(LocalizationError)(cause) ||
-		Schema.is(SnapshotStoreError)(cause) ||
-		Schema.is(SnapshotFormatError)(cause)
-	)
+	if (isLocalizationError(cause) || isSnapshotStoreError(cause) || isSnapshotFormatError(cause))
 		return cause;
 	return importFailure(
 		file,
@@ -238,6 +239,8 @@ const Stamp = Schema.Struct({
 const Digest = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
 /** A stat hint: the metadata observed before the file was read, and the key that read returned. */
 const StatHint = Schema.Struct({ stamp: Stamp, contentHash: Digest, key: Digest });
+const StatHintJson = Schema.fromJsonString(StatHint);
+const decodeStatHintJson = Schema.decodeResult(StatHintJson);
 function stamp(value: BigIntStats) {
 	return {
 		size: Number(value.size),
@@ -275,12 +278,12 @@ type ImportFailure = LocalizationError | SnapshotStoreError | SnapshotFormatErro
 const prepareFile = Effect.fn("LocalizationImport.prepareFile")(function* (
 	input: LocalizationFileImportRequest
 ): Effect.fn.Return<PreparedFile, ImportFailure> {
-	const boundary = Schema.decodeResult(FileRequest)(input);
+	const boundary = decodeFileRequest(input);
 	if (Result.isFailure(boundary)) return yield* importFailure("input", "invalid_schema");
 	const request = boundary.success;
 	const file = request.relativePath;
 	const limits = request.limits ?? defaultLocalizationImportLimits;
-	const optionsResult = Schema.decodeResult(Options)(request);
+	const optionsResult = decodeOptions(request);
 	if (Result.isFailure(optionsResult)) return yield* importFailure(file, "invalid_schema");
 	const options = optionsResult.success;
 	if (request.chunkBytes !== undefined && request.chunkBytes > 1024 * 1024)
@@ -326,7 +329,7 @@ const prepareFile = Effect.fn("LocalizationImport.prepareFile")(function* (
 			if ((await stat(hintPath)).size > 4096) return undefined;
 			const bytes = await readFile(hintPath, "utf8");
 			hintBytes = Buffer.byteLength(bytes);
-			const decoded = Schema.decodeResult(Schema.fromJsonString(StatHint))(bytes);
+			const decoded = decodeStatHintJson(bytes);
 			return Result.isSuccess(decoded) ? decoded.success : undefined;
 		} catch (cause) {
 			if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
@@ -383,8 +386,7 @@ const activateRetained = (file: string, key: string) =>
 			return record.bytes;
 		})
 	);
-const missingLayer = (cause: unknown) =>
-	Schema.is(SnapshotStoreError)(cause) && cause.code === "missing";
+const missingLayer = (cause: unknown) => isSnapshotStoreError(cause) && cause.code === "missing";
 
 type ImportCounters = Pick<
 	LocalizationFileSnapshotKey,
@@ -630,7 +632,7 @@ type FileOutcome =
 	  };
 /** A per-file localization failure becomes an outcome; store and format failures stop the import. */
 const failedOutcome = (relativePath: string, cause: ImportFailure) =>
-	Schema.is(LocalizationError)(cause)
+	isLocalizationError(cause)
 		? Effect.succeed<FileOutcome>({ _tag: "failed", relativePath, error: cause })
 		: Effect.fail(cause);
 interface Miss {
@@ -672,12 +674,10 @@ const annotateCounts = Effect.fn("LocalizationImport.annotateCounts")(function* 
 });
 
 /**
- * The one import path for any set of files in one store, cold or warm. A file whose metadata
- * matches its stat hint reuses the hinted layer without a read. The engine reads every other file
- * in as few calls as its file limit allows, decides per file whether it is cold or warm, and
- * publishes the files that imported in one root per call; a file that fails is reported and not
- * published. An interrupted call publishes nothing. Store, cache and format failures fail the
- * whole import.
+ * The one import path for any files in one store, cold or warm. A file matching its stat hint
+ * reuses the hinted layer unread; the engine reads the rest in as few calls as its file limit
+ * allows and publishes each call's imported files in one root. A failed file is reported, not
+ * published; an interrupted call publishes nothing; store, cache and format failures fail all.
  */
 const importFiles = Effect.fn("LocalizationImport.files")(function* (
 	configuration: SharedIndexOptions,
@@ -821,7 +821,7 @@ const importFiles = Effect.fn("LocalizationImport.files")(function* (
 						outcomes[row] = {
 							_tag: "failed",
 							relativePath: prepared.file,
-							error: yield* Schema.decodeUnknownEffect(LocalizationError)({
+							error: yield* decodeLocalizationErrorEffect({
 								_tag: "LocalizationError",
 								...entry.error
 							}).pipe(Effect.orDie)
@@ -895,7 +895,7 @@ export const importLocalizationFile = Effect.fn("LocalizationSnapshot.importFile
 	function* (
 		input: LocalizationFileImportRequest
 	): Effect.fn.Return<LocalizationFileSnapshotKey, ImportFailure> {
-		const boundary = Schema.decodeResult(FileRequest)(input);
+		const boundary = decodeFileRequest(input);
 		if (Result.isFailure(boundary)) return yield* importFailure("input", "invalid_schema");
 		const request = boundary.success;
 		const actualRoot = yield* Effect.tryPromise({
@@ -936,6 +936,7 @@ const TargetRequest = LocalizationProjectRequest.pipe(
 		memoryBudgetBytes: Schema.optionalKey(Schema.Finite)
 	})
 );
+const decodeTargetRequest = Schema.decodeResult(TargetRequest);
 /**
  * One discovered localization target and its import configuration. Import retains
  * manifest/archive/PO evidence and reports file failures instead of silently dropping
@@ -955,7 +956,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 ): Effect.fn.Return<TargetImportReply, ImportFailure, LocalizationEvidence> {
 	const reportProgress = yield* GameTextIndexProgressReporter;
 	reportProgress({ phase: "localization", completed: 0, total: 0 });
-	const boundary = Schema.decodeResult(TargetRequest)(input);
+	const boundary = decodeTargetRequest(input);
 	if (Result.isFailure(boundary)) return yield* importFailure("target", "invalid_schema");
 	const request = boundary.success;
 	const evidence = yield* LocalizationEvidence;
@@ -964,7 +965,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 	const discovery = yield* evidence.discover(discoveryRequest);
 	const target = discovery.targets.find((value) => value.name === request.targetName);
 	if (!target) return yield* importFailure(request.targetName, "target_not_found");
-	const validated = Schema.decodeResult(LocalizationTarget)(target);
+	const validated = decodeLocalizationTarget(target);
 	if (Result.isFailure(validated))
 		return yield* importFailure(request.targetName, "invalid_schema");
 	if (

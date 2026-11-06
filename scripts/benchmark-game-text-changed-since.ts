@@ -1,33 +1,8 @@
 /**
- * `changedSince` over a generated project: about 707k packages, one in sixteen with text whose
- * keys a generated manifest, archives and POs localize, so the target joins real lines.
- *
- * Build each generation with the native writer, one refresh per process, in order:
- *   node --import tsx scripts/benchmark-game-text-changed-since.ts --mode refresh --case initial
- *     --executable <uasset> --root test-results/changed-since
- * `--case packages` then adds 55k packages, 218 of them with text, as a version control sync
- * does; `--case localization` then changes the German translation of 1,000 lines. Each refresh
- * records the target's generation in `<root>/generations.json`.
- *
- * Measure the current generation against an earlier one, in a fresh process and reader:
- *   node --import tsx scripts/benchmark-game-text-changed-since.ts --mode measure
- *     --executable <uasset> --root test-results/changed-since --since initial --kind lines
- * `--since` names a recorded case, or `current` to measure `same`. The result is printed as
- * JSON: the first page's time, every page's, and the engine process's working set before,
- * during and after the read, sampled every 25 ms.
- *
- * `--case similar`, after `localization`, adds 5,000 keys only the manifest has (`not_found`) and
- * 5,000 keys only packages save (`not_gathered`), about 60% of them small edits of an earlier key's
- * text, for `related`'s similar keys. Measure them in a fresh process and reader:
- *   node --import tsx scripts/benchmark-game-text-changed-since.ts --mode similar
- *     --executable <uasset> --root test-results/changed-since
- * which times a plain `related` read, then the first one asking for similar keys (the index
- * build and the answer) and one for another line, with the engine's working set. `--mode
- * reference` times the test-only JavaScript reference matcher on the same keys instead.
- *
- * Packages are generated, never written as `.uasset` files: the refresh reads them through its
- * `read` stream. Localization files are written under `<root>/project`. Everything stays under
- * this worktree's `test-results`.
+ * `changedSince` over a generated ~707k-package project; packages are generated, not written.
+ * Refresh one case per process, in order: `--mode refresh --case initial|packages|localization`,
+ * then `similar`. Measure in a fresh process: `--mode measure --since <case|current> --kind lines`,
+ * `--mode similar` or `--mode reference`. Pass `--executable <uasset> --root test-results/<dir>`.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -60,6 +35,8 @@ import {
 	similarKeysCorpus,
 	similarKeysReferenceLines
 } from "../packages/game-text/src/similar-keys-reference.test-support.ts";
+
+const decodeLocalizationLineId = Schema.decodeSync(LocalizationLineId);
 
 const { values } = parseArgs({
 	options: {
@@ -576,7 +553,7 @@ const measureSimilar = async () => {
 						target: target.name,
 						selection: {
 							kind: "line",
-							id: Schema.decodeSync(LocalizationLineId)(lineId(key))
+							id: decodeLocalizationLineId(lineId(key))
 						},
 						pageSize: 10,
 						...(withSimilar ? { similarKeys: { limit: 20 } } : undefined)

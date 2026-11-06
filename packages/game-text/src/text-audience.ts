@@ -27,36 +27,39 @@ export type TextAudienceClassification = {
 	readonly rule?: TextAudienceRuleId;
 };
 
-/**
- * A match against one part of an occurrence. Names compare case-insensitively, as Unreal's do.
- *
- * - `namespace`: the text's namespace equals `value`.
- * - `folder`: the package path starts with `value` (a mounted path such as `/Game/Developers/`).
- * - `object`: a class name or an object name in the occurrence's outer chain starts with, ends
- *   with or equals `value`. Graph objects are named after their class (`K2Node_CallFunction_3`),
- *   so one pattern covers both.
- * - `module`: the class's script module equals `value`, or ends with it when `suffix` is set.
- * - `property`: the property path's last element equals `value` (array and map suffixes ignored),
- *   or the path ends with `value` when it holds a `.`. With `anywhere`, any element of the path
- *   equals `value`: the text sits somewhere inside that property.
- * - `location`: the occurrence's location kind.
- * - `macro`: a code place's macro equals `value`. Code places name a file, not an object, so
- *   only `namespace`, `location` and `macro` can hold for them.
- */
+/** A match against one part of an occurrence. Names compare case-insensitively, as Unreal's do. */
 export type TextAudienceMatch =
+	/** The text's namespace equals `value`. */
 	| { readonly kind: "namespace"; readonly value: string }
+	/** The package path starts with `value`, a mounted path such as `/Game/Developers/`. */
 	| { readonly kind: "folder"; readonly value: string }
+	/**
+	 * A class name or an object name in the occurrence's outer chain starts with, ends with or
+	 * equals `value`. Graph objects are named after their class (`K2Node_CallFunction_3`), so one
+	 * pattern covers both.
+	 */
 	| {
 			readonly kind: "object";
 			readonly value: string;
 			readonly position: "prefix" | "suffix" | "equals";
 	  }
+	/** The class's script module equals `value`, or ends with it when `suffix` is set. */
 	| { readonly kind: "module"; readonly value: string; readonly suffix?: boolean }
+	/**
+	 * The property path's last element equals `value` (array and map suffixes ignored), or the
+	 * path ends with `value` when it holds a `.`. With `anywhere`, any element of the path equals
+	 * `value`: the text sits somewhere inside that property.
+	 */
 	| { readonly kind: "property"; readonly value: string; readonly anywhere?: boolean }
+	/** The occurrence's location kind. */
 	| {
 			readonly kind: "location";
 			readonly value: "data_table_cell" | "string_table_entry";
 	  }
+	/**
+	 * A code place's macro equals `value`. Code places name a file, not an object, so only
+	 * `namespace`, `location` and `macro` can hold for them.
+	 */
 	| { readonly kind: "macro"; readonly value: string };
 
 /**
@@ -731,11 +734,10 @@ export function lineTextAudience(audiences: Iterable<TextAudience>): TextAudienc
 	return best ?? "unknown";
 }
 
-// Compact index encoding. One u32 per occurrence: the audience's index in TextAudience (2 bits),
-// the reason's index in TextAudienceReason (4 bits from bit 2) and the policy row's index plus one
-// (8 bits from bit 8; zero for no row). Line, unit and slice rows store a mask of the audiences
-// their occurrences have (one bit per TextAudience index), and lines the out-of-scope reason's
-// index plus one from bit 4.
+// Compact index encoding, one u32 per occurrence: audience index in TextAudience (2 bits), reason
+// index in TextAudienceReason (4 bits from bit 2), policy row index plus one (8 bits from bit 8; 0
+// for none). Line, unit and slice rows store a mask of their occurrences' audiences (one bit per
+// TextAudience index), and lines the out-of-scope reason's index plus one from bit 4.
 const AUDIENCES = TextAudienceSchema.literals;
 const REASONS = TextAudienceReasonSchema.literals;
 

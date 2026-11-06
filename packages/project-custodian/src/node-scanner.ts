@@ -68,9 +68,12 @@ function targetId(options: {
 const JsonObject = Schema.Record(Schema.String, Schema.Json);
 const decodeJson = Schema.decodeUnknownSync(Schema.Json);
 const NodeError = Schema.Struct({ code: Schema.optional(Schema.String) });
+const isJsonObject = Schema.is(JsonObject);
+const isNodeError = Schema.is(NodeError);
+const isString = Schema.is(Schema.String);
 
 function isRecord(value: Schema.Json): value is Schema.JsonObject {
-	return Schema.is(JsonObject)(value);
+	return isJsonObject(value);
 }
 
 interface EngineTargetDefinition {
@@ -571,7 +574,7 @@ async function loadPolicy(projectRoot: string): Promise<{
 					})
 		};
 	} catch (cause) {
-		if (Schema.is(NodeError)(cause) && cause.code === "ENOENT") {
+		if (isNodeError(cause) && cause.code === "ENOENT") {
 			return { policy: defaultCustodianPolicy };
 		}
 		return {
@@ -805,7 +808,7 @@ async function scanProject(options: {
 		const document = decodeJson(JSON.parse(await readFile(options.descriptor, "utf8")));
 		if (isRecord(document)) {
 			const association = document.EngineAssociation;
-			if (Schema.is(Schema.String)(association) && association.trim() !== "") {
+			if (isString(association) && association.trim() !== "") {
 				engineAssociation = association.trim();
 			}
 		}

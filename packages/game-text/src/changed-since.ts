@@ -36,12 +36,10 @@ export const ChangedItem = Schema.Struct({
 export type ChangedItem = typeof ChangedItem.Type;
 
 /**
- * The engine's answer, as the workspace serves it:
- * - `same`: `since` is the current generation;
- * - `too_old`: the store no longer holds that generation or one of its inputs (`compacted`),
- *   wrote it in another format (`format`), or never produced it for this target (`unknown`). The
- *   host decides what to do instead, such as reading everything again;
- * - `changes`: every change's counts, and a page of them in ID order.
+ * `same`: `since` is current. `too_old`: the store dropped that generation or an input
+ * (`compacted`), wrote it in another format (`format`), or never produced it for this target
+ * (`unknown`); the host decides what to do instead, such as reading everything again.
+ * `changes`: every change's counts, and a page of them in ID order.
  */
 export const ChangedSinceAnswer = Schema.Union([
 	Schema.Struct({ status: Schema.Literal("same") }),

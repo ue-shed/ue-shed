@@ -8,11 +8,13 @@ import {
 	runLocalizationTextActions
 } from "./asset-text-actions.js";
 
+const isGameTextActionsRequest = Schema.is(GameTextActionsRequest);
+
 it.each([0.5, -1, 2147483648, "0"])(
 	"rejects invalid graph pin index %s at the shared boundary",
 	(index) => {
 		expect(
-			Schema.is(GameTextActionsRequest)({
+			isGameTextActionsRequest({
 				contract: "ue-shed-game-text-actions",
 				version: "1.0",
 				mode: "apply",

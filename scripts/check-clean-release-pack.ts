@@ -10,11 +10,9 @@ import { PUBLIC_VERSION } from "./pack-public-packages.ts";
 import { releaseCargoTargetDirectory } from "./release-cargo.ts";
 
 /**
- * Proves that `release:pack` succeeds from a clean checkout with no prior build: packs the
- * committed HEAD in a temporary git worktree, where no package `dist` output exists yet.
- *
- * With `--output <empty-dir>` the tarballs, checksums and publication manifest are kept there with
- * a `pack-evidence.json` naming the commit they were packed from, so `pnpm release` can publish
+ * Proves `release:pack` succeeds from a clean checkout: packs committed HEAD in a temporary git
+ * worktree with no package `dist` yet. `--output <empty-dir>` keeps the tarballs, checksums,
+ * publication manifest and a `pack-evidence.json` naming the commit, so `pnpm release` publishes
  * exactly the tarballs this check validated.
  */
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");

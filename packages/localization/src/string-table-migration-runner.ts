@@ -20,6 +20,7 @@ import {
 	planStringTableKeyMigration,
 	prepareStringTableRedirectConfig
 } from "./string-table-migration.js";
+const decodeStringTableKeyMigrationId = Schema.decodeEffect(StringTableKeyMigrationId);
 
 const Step = Schema.Literals([
 	"copy_entry",
@@ -50,12 +51,16 @@ export const StringTableKeyMigrationRecord = Schema.Struct({
 		Schema.Struct({ step: Step, result: GameTextActionsResult, verified: Schema.Boolean })
 	)
 });
+const decodeStringTableKeyMigrationRecord = Schema.decodeUnknownEffect(
+	StringTableKeyMigrationRecord
+);
 export type StringTableKeyMigrationRecord = typeof StringTableKeyMigrationRecord.Type;
 
 /** Approves the saved proposal, including deletion only when selected during preparation. */
 export const StringTableKeyMigrationApproval = Schema.Struct({
 	id: StringTableKeyMigrationId
 });
+const isStringTableKeyMigrationApproval = Schema.is(StringTableKeyMigrationApproval);
 export type StringTableKeyMigrationApproval = typeof StringTableKeyMigrationApproval.Type;
 
 /** Typed workflow failure. Native results remain in the durable journal when recovery is required. */
@@ -66,6 +71,7 @@ export class StringTableKeyMigrationError extends Schema.TaggedError<
 	...ErrorGuidanceFields,
 	cause: Schema.optionalKey(Schema.Defect())
 }) {}
+const isStringTableKeyMigrationError = Schema.is(StringTableKeyMigrationError);
 type HostFailure = { readonly message: string; readonly recovery: string };
 
 /** Host-owned selection, durable atomic storage, config compare/replace and saved-reader authority. */
@@ -217,9 +223,9 @@ export const makeStringTableKeyMigrations = Effect.fn("Localization.stringTable.
 		const execute = Effect.fn("Localization.stringTable.migrations.execute")(function* (
 			input: StringTableKeyMigrationApproval
 		) {
-			if (!Schema.is(StringTableKeyMigrationApproval)(input))
+			if (!isStringTableKeyMigrationApproval(input))
 				return yield* failure("Approval must identify a reviewed migration proposal.");
-			let record = yield* Schema.decodeUnknownEffect(StringTableKeyMigrationRecord)(
+			let record = yield* decodeStringTableKeyMigrationRecord(
 				yield* host.store.read(input.id)
 			);
 			if (record.plan.request.id !== input.id || record.state.status !== "prepared")
@@ -408,18 +414,14 @@ export const makeStringTableKeyMigrations = Effect.fn("Localization.stringTable.
 			gate.withPermit(effect).pipe(
 				Effect.provideService(RemoteControlClient, client),
 				Effect.mapError((cause) =>
-					Schema.is(StringTableKeyMigrationError)(cause)
-						? cause
-						: failure(cause.message, cause)
+					isStringTableKeyMigrationError(cause) ? cause : failure(cause.message, cause)
 				)
 			);
 		const inspect = Effect.fn("Localization.stringTable.migrations.inspect")(function* (
 			id: StringTableKeyMigrationId
 		) {
-			const key = yield* Schema.decodeEffect(StringTableKeyMigrationId)(id);
-			return yield* Schema.decodeUnknownEffect(StringTableKeyMigrationRecord)(
-				yield* host.store.read(key)
-			);
+			const key = yield* decodeStringTableKeyMigrationId(id);
+			return yield* decodeStringTableKeyMigrationRecord(yield* host.store.read(key));
 		});
 		return {
 			prepare: (input: StringTableKeyMigrationRequest) => run(prepare(input)),

@@ -16,6 +16,7 @@ import {
 	ReviewCaptureRequestCurrent,
 	ReviewViewId
 } from "./index.js";
+const isContractParseError = Schema.is(ContractParseError);
 
 const request = ReviewCaptureRequestCurrent.make({
 	contract: { name: "ue-shed-review-capture", version: { major: 1, minor: 5 } },
@@ -120,7 +121,7 @@ describe("review capture port failures", () => {
 				nextStep: "escalate",
 				cause: { _tag: "ContractParseError", contract: "ReviewCaptureResponse" }
 			});
-			if (!Schema.is(ContractParseError)(failure.cause))
+			if (!isContractParseError(failure.cause))
 				throw new Error("Review capture lost its contract parse failure");
 			expect(Schema.isSchemaError(failure.cause.cause)).toBe(true);
 		})

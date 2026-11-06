@@ -16,6 +16,10 @@ import {
 	type StringTableKeyMigrationRequest
 } from "./string-table-migration.js";
 
+const decodeJsonEffect = Schema.decodeEffect(Schema.Json);
+const GameTextActionsRequestJson = Schema.fromJsonString(GameTextActionsRequest);
+const decodeGameTextActionsRequestJson = Schema.decodeUnknownEffect(GameTextActionsRequestJson);
+
 const input: StringTableKeyMigrationRequest = {
 	id: StringTableKeyMigrationId.make("migration"),
 	projectRoot: "C:/Fixture",
@@ -94,7 +98,7 @@ function setup(useCallback = false) {
 	const transport = makeRemoteControlClientTestLayer((call) =>
 		Effect.gen(function* () {
 			if (call.functionName === "GetCapabilityManifest")
-				return yield* Schema.decodeEffect(Schema.Json)({
+				return yield* decodeJsonEffect({
 					schemaVersion: 1,
 					producerKind: "unreal_editor",
 					...(editorRoot ? { projectRoot: editorRoot } : undefined),
@@ -108,7 +112,7 @@ function setup(useCallback = false) {
 					}
 				}).pipe(Effect.orDie);
 			if (call.functionName === "VerifyStringTableRedirect")
-				return yield* Schema.decodeEffect(Schema.Json)({
+				return yield* decodeJsonEffect({
 					contract: "ue-shed-string-table-redirect",
 					version: "1.0",
 					status: redirectActive ? "active" : "inactive",
@@ -117,9 +121,9 @@ function setup(useCallback = false) {
 					source: input.source,
 					message: "Redirect not active"
 				}).pipe(Effect.orDie);
-			const request = yield* Schema.decodeUnknownEffect(
-				Schema.fromJsonString(GameTextActionsRequest)
-			)(call.parameters.RequestJson).pipe(Effect.orDie);
+			const request = yield* decodeGameTextActionsRequestJson(
+				call.parameters.RequestJson
+			).pipe(Effect.orDie);
 			const kind = request.actions[0]!.edit.kind;
 			if (request.mode === "apply") writes.push(kind);
 			if (request.mode === "apply" && kind === "remove_string_table_entry" && lostDeleteReply)
@@ -157,7 +161,7 @@ function setup(useCallback = false) {
 				blueprints: [],
 				errors: []
 			};
-			return yield* Schema.decodeEffect(Schema.Json)(result).pipe(Effect.orDie);
+			return yield* decodeJsonEffect(result).pipe(Effect.orDie);
 		})
 	);
 	return {

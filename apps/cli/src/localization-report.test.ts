@@ -9,6 +9,7 @@ import {
 	readLocalizationBaseline,
 	writeLocalizationBaseline
 } from "./workflows/localization-report.js";
+const isLocalizationReportError = Schema.is(LocalizationReportError);
 
 it.effect("saves and reads a baseline exclusively, with typed safe IO and schema failures", () =>
 	Effect.gen(function* () {
@@ -46,8 +47,8 @@ it.effect("saves and reads a baseline exclusively, with typed safe IO and schema
 		const decoded = yield* readLocalizationBaseline(invalid).pipe(Effect.result);
 		if (Result.isSuccess(decoded)) throw new Error("An invalid baseline was accepted.");
 		expect(decoded.failure.code).toBe("invalid_baseline");
-		expect(Schema.is(LocalizationReportError)(decoded.failure.cause)).toBe(true);
-		if (!Schema.is(LocalizationReportError)(decoded.failure.cause))
+		expect(isLocalizationReportError(decoded.failure.cause)).toBe(true);
+		if (!isLocalizationReportError(decoded.failure.cause))
 			throw new Error("Baseline translation lost the original report failure.");
 		expect(Schema.isSchemaError(decoded.failure.cause.cause)).toBe(true);
 		expect(decoded.failure.recovery).toContain("loc report --save-baseline");

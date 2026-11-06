@@ -579,11 +579,10 @@ const fetchAt = Effect.fnUntraced(function* (options: {
 });
 
 /**
- * Fetches project files as they were at a submitted changelist, at the depot's head, or at the
- * revisions the workspace has, which compares a workspace's edits with what it synced. A file the
- * workspace holds at that revision is read where it is; any other revision is printed to the
- * revision cache once, straight to disk, so large files such as a target's manifest and archives
- * are never held in memory. It only reads: `where`, `files` and `print`.
+ * Fetches project files as of a submitted changelist, the depot's head, or the workspace's have
+ * revisions (to compare a workspace's edits with what it synced). Files the workspace holds at that
+ * revision are read in place; others are printed once to the revision cache, straight to disk, so
+ * large files are never held in memory. It only reads: `where`, `files` and `print`.
  */
 export const readRevisionFiles = Effect.fn("Perforce.revisionFiles")(function* (options: {
 	readonly projectRoot: string;

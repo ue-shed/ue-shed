@@ -81,7 +81,7 @@ describe("materializeBaseline", () => {
 				);
 				const materializedPath = resolve(sourceRoot, "asset.bin");
 				yield* Effect.promise(() => writeFile(materializedPath, "baseline bytes"));
-				const tree = yield* acquireHistoricalProjectTree();
+				const tree = yield* acquireHistoricalProjectTree;
 
 				yield* materializeBaseline({
 					change: 90,
@@ -116,7 +116,7 @@ describe("materializeBaseline", () => {
 	it.effect("refuses an incomplete Perforce baseline inventory", () =>
 		Effect.scoped(
 			Effect.gen(function* () {
-				const tree = yield* acquireHistoricalProjectTree();
+				const tree = yield* acquireHistoricalProjectTree;
 				const error = yield* materializeBaseline({
 					change: 90,
 					concurrency: 2,
@@ -164,7 +164,7 @@ describe("materializePlannedRevision", () => {
 				);
 				const materializedPath = resolve(sourceRoot, "L_Example.umap");
 				yield* Effect.promise(() => writeFile(materializedPath, "historical bytes"));
-				const tree = yield* acquireHistoricalProjectTree();
+				const tree = yield* acquireHistoricalProjectTree;
 				const plan = planScopedRevision({
 					files: [
 						{

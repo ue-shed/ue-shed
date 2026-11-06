@@ -68,7 +68,7 @@ it.live(
 				yield* Effect.scoped(
 					Effect.gen(function* () {
 						const store = yield* SharedIndex;
-						yield* (yield* store.writer()).compact(true);
+						yield* (yield* store.writer).compact(true);
 					})
 				).pipe(
 					Effect.provide(

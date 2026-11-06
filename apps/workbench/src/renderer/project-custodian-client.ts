@@ -50,7 +50,7 @@ function request<A, HostValue, DecodeError>(
 }
 
 export const projectCustodianClient: CustodianClientApi = {
-	configuredScan: Effect.fn("ProjectCustodianClient.configuredScan")(() =>
+	configuredScan: Effect.suspend(() =>
 		request(
 			{
 				invoke: () => window.ueShed.projectCustodian.configuredScan(),
@@ -58,7 +58,7 @@ export const projectCustodianClient: CustodianClientApi = {
 			},
 			parseCustodianRunResult
 		)
-	),
+	).pipe(Effect.withSpan("ProjectCustodianClient.configuredScan")),
 	prepare: Effect.fn("ProjectCustodianClient.prepare")((intent) =>
 		request(
 			{

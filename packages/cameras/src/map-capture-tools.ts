@@ -1,5 +1,5 @@
 import { ContractParseError } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import {
 	decodeCompanionCapabilityManifest,
 	ErrorCauseFields,
@@ -13,10 +13,10 @@ export * from "./map-capture-tools-schema.js";
  * selection/readiness. Carries original cause and guidance; inspection does not mutate or
  * launch an editor.
  */
-export class MapCaptureInspectionError extends Schema.TaggedError<MapCaptureInspectionError>()(
-	"MapCaptureInspectionError",
-	{ ...ErrorGuidanceFields, ...ErrorCauseFields }
-) {}
+export class MapCaptureInspectionError extends Schema.TaggedError<
+	MapCaptureInspectionError,
+	Brand.Brand<"packages/cameras/src/map-capture-tools/MapCaptureInspectionError">
+>()("MapCaptureInspectionError", { ...ErrorGuidanceFields, ...ErrorCauseFields }) {}
 const isMapCaptureInspectionError = Schema.is(MapCaptureInspectionError);
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
 const failure = (cause: unknown) =>
@@ -63,14 +63,12 @@ const negotiate = Effect.fn("MapCapture.inspect.negotiate")(function* (
 		})
 		.pipe(Effect.flatMap(decodeCompanionCapabilityManifest));
 	if (!manifest.capabilities.includes(capability))
-		return yield* Effect.fail(
-			new MapCaptureInspectionError({
-				message: `Editor does not advertise ${capability}.`,
-				nextStep: "fix_input",
-				recovery: "Update Core and Cameras plugins and restart the editor.",
-				retrySafe: true
-			})
-		);
+		return yield* new MapCaptureInspectionError({
+			message: `Editor does not advertise ${capability}.`,
+			nextStep: "fix_input",
+			recovery: "Update Core and Cameras plugins and restart the editor.",
+			retrySafe: true
+		});
 	return client;
 });
 /**
@@ -103,14 +101,12 @@ export const inspectMapCaptureReadiness = Effect.fn("MapCapture.inspect.readines
 ) {
 	const client = yield* negotiate(endpoint, "cameras.capture-readiness.v1");
 	if (!/^\/Game\/[A-Za-z0-9_/]+$/.test(expectedMapPath))
-		return yield* Effect.fail(
-			new MapCaptureInspectionError({
-				message: "Expected a /Game/ map package path.",
-				nextStep: "fix_input",
-				recovery: "Use the map package path from the capture plan.",
-				retrySafe: true
-			})
-		);
+		return yield* new MapCaptureInspectionError({
+			message: "Expected a /Game/ map package path.",
+			nextStep: "fix_input",
+			recovery: "Use the map package path from the capture plan.",
+			retrySafe: true
+		});
 	return yield* client
 		.request({
 			endpoint,

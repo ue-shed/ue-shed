@@ -207,7 +207,7 @@ const suffixes = {
 export function planLocalizationOperation(
 	input: LocalizationPlanningRequest
 ): LocalizationOperationPlan {
-	const decoded = Schema.decodeUnknownResult(LocalizationPlanningRequest)(input);
+	const decoded = Schema.decodeResult(LocalizationPlanningRequest)(input);
 	if (decoded._tag === "Failure") throw localizationOperationError("invalid_request");
 	const request = decoded.success;
 	const { target, operation } = request;

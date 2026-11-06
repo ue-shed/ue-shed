@@ -38,7 +38,7 @@ it("displays only frames belonging to the provisioned active camera", async () =
 		ArrangementCameraId.make("camera-0"),
 		{ draftPath: "draft", approvalPath: "views" }
 	);
-	const preview = Schema.decodeUnknownSync(ProvisionedCameraBinding)({
+	const preview = Schema.decodeSync(ProvisionedCameraBinding)({
 		cameraId: "expected-camera",
 		correlation: { type: "framing_candidate", candidateId: "camera-0" },
 		index: 0,

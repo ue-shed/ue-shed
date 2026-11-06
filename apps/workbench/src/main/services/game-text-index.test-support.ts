@@ -70,9 +70,9 @@ function cannedTextQuery(
 		findingsQuery: unplanted("findingsQuery"),
 		findingsWrite: unplanted("findingsWrite"),
 		rulesCheck: unplanted("rulesCheck"),
-		readCorpus: unplanted("readCorpus"),
-		readLocalizationLines: unplanted("readLocalizationLines"),
-		summary: () => Effect.succeed(emptySummary(corpus)),
+		readCorpus: Effect.die("This test planted no answer for readCorpus."),
+		readLocalizationLines: Effect.die("This test planted no answer for readLocalizationLines."),
+		summary: Effect.sync(() => emptySummary(corpus)),
 		search: unplanted("search"),
 		searchRows: unplanted("searchRows"),
 		focus: unplanted("focus"),
@@ -87,10 +87,12 @@ function cannedTextQuery(
 		writeCorpusCsv: unplanted("writeCorpusCsv"),
 		writeCorpusJson: unplanted("writeCorpusJson"),
 		readUnits: unplanted("readUnits"),
-		readCorpusHeader: unplanted("readCorpusHeader"),
+		readCorpusHeader: Effect.die("This test planted no answer for readCorpusHeader."),
 		readFileCoverage: unplanted("readFileCoverage"),
-		readCorpusReportHeader: unplanted("readCorpusReportHeader"),
-		corpusFingerprint: unplanted("corpusFingerprint"),
+		readCorpusReportHeader: Effect.die(
+			"This test planted no answer for readCorpusReportHeader."
+		),
+		corpusFingerprint: Effect.die("This test planted no answer for corpusFingerprint."),
 		reviewLines: evidence
 			? (request) => Effect.sync(() => evidenceReviewLines(evidence, request))
 			: unplanted("reviewLines"),
@@ -169,8 +171,8 @@ const emptySummary = (corpus: TextCorpus): TextCorpusQuerySummary => ({
 /** Answers over a corpus with no text: an empty page for every search, and no unit to focus. */
 const emptyCorpusAnswers: CannedQuery = ({ corpus: { units: _units, ...header } }) => ({
 	search: () => Effect.succeed(searchPage()),
-	focus: () => Effect.succeed(undefined),
-	readCorpusHeader: () => Effect.succeed(header),
+	focus: () => Effect.undefined,
+	readCorpusHeader: Effect.sync(() => header),
 	// The corpus export the engine writes when no unit matches.
 	writeCorpusJson: (_request, file, envelope) =>
 		Effect.sync(() => {
@@ -292,7 +294,7 @@ export function cannedGameTextIndexLayer<E>(
 					return {
 						project: testProjectIndex(request.projectRoot),
 						corpus: Effect.succeed(corpus),
-						summary: yield* query.summary(),
+						summary: yield* query.summary,
 						query,
 						search: query.search,
 						searchRows: query.searchRows,
@@ -420,10 +422,9 @@ export const makeCannedGameTextLocalization = (
 			cannedGameTextIndexLayer(
 				() =>
 					currentCorpus().pipe(
-						Effect.flatMap((corpus) =>
-							corpus
-								? Effect.succeed(corpus)
-								: Effect.die("No corpus in this test request")
+						Effect.filterOrElse(
+							(corpus) => corpus !== undefined,
+							() => Effect.die("No corpus in this test request")
 						)
 					),
 				answers
@@ -450,7 +451,7 @@ const testIndexStepsLayer = Layer.effect(
 		const evidence = yield* LocalizationEvidence;
 		const requests = new WeakMap<GameTextTargetIndex, GameTextIndexRefreshRequest>();
 		const steps: Effect.Success<typeof GameTextIndexSteps> = GameTextIndexSteps.of({
-			openCommitted: () => Effect.succeed(Option.none()),
+			openCommitted: () => Effect.succeedNone,
 			prepareTarget: (request, options) =>
 				Effect.gen(function* () {
 					const project = yield* steps.openProject(request);
@@ -458,7 +459,7 @@ const testIndexStepsLayer = Layer.effect(
 						.importTarget(project, request)
 						.pipe(Effect.result);
 					if (Result.isFailure(imported) && !options?.fallbackToSource)
-						return yield* Effect.fail(imported.failure);
+						return yield* imported.failure;
 					const input = Result.isFailure(imported)
 						? yield* steps.importTarget(project)
 						: imported.success;
@@ -477,16 +478,14 @@ const testIndexStepsLayer = Layer.effect(
 									projectRoot: project.projectRoot
 								})).targets.find((target) => target.name === request.targetName);
 					if (!target && request.targetName !== undefined)
-						return yield* Effect.fail(
-							new GameTextIndexError({
-								nextStep: "escalate",
-								retrySafe: false,
-								code: "index_failed",
-								operation: "target_not_found",
-								message: "Target not found",
-								recovery: "Select an available target."
-							})
-						);
+						return yield* new GameTextIndexError({
+							nextStep: "escalate",
+							retrySafe: false,
+							code: "index_failed",
+							operation: "target_not_found",
+							message: "Target not found",
+							recovery: "Select an available target."
+						});
 					return {
 						project,
 						view:

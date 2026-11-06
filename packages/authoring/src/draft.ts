@@ -12,7 +12,7 @@ import {
 	type AuthoringValue,
 	type ErrorNextStep
 } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 
 export type { AuthoringCommand } from "@ue-shed/protocol";
 
@@ -128,16 +128,25 @@ export function decodeDraftSessionWithMigration<Input>(input: Input) {
 }
 
 /** A recorded command no longer matches the draft it folds onto. */
-export class DraftFoldError extends Schema.TaggedError<DraftFoldError>()("DraftFoldError", {
+export class DraftFoldError extends Schema.TaggedError<
+	DraftFoldError,
+	Brand.Brand<"packages/authoring/src/draft/DraftFoldError">
+>()("DraftFoldError", {
 	commandId: Schema.String,
 	...ErrorGuidanceFields
 }) {}
 
-export class DraftBuildError extends Schema.TaggedError<DraftBuildError>()("DraftBuildError", {
+export class DraftBuildError extends Schema.TaggedError<
+	DraftBuildError,
+	Brand.Brand<"packages/authoring/src/draft/DraftBuildError">
+>()("DraftBuildError", {
 	...ErrorGuidanceFields
 }) {}
 
-export class DraftIntentError extends Schema.TaggedError<DraftIntentError>()("DraftIntentError", {
+export class DraftIntentError extends Schema.TaggedError<
+	DraftIntentError,
+	Brand.Brand<"packages/authoring/src/draft/DraftIntentError">
+>()("DraftIntentError", {
 	code: Schema.Literals([
 		"duplicate_row_name",
 		"incompatible_value",

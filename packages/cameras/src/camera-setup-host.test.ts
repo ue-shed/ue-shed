@@ -18,7 +18,7 @@ import {
 } from "./camera-setup-schema.js";
 import { makeCameraSetupHost } from "./camera-setup-host.js";
 
-const intent = Schema.decodeUnknownSync(CameraSetupIntent)({
+const intent = Schema.decodeSync(CameraSetupIntent)({
 	id: "setup-1",
 	actorPath: "/Game/Fixture.Fixture:PersistentLevel.Subject",
 	mapPath: "/Game/Fixture",
@@ -43,15 +43,13 @@ it.effect("does not recreate cameras after a lost setup acknowledgement", () =>
 					if (request.operation !== "setup_poll")
 						return yield* Effect.die("Unexpected operation");
 					if (request.outcome && ++acknowledgements === 1)
-						return yield* Effect.fail(
-							new CameraBridgeError({
-								code: "disconnected",
-								message: "Reply lost",
-								recovery: "Poll again",
-								retrySafe: true,
-								nextStep: "retry"
-							})
-						);
+						return yield* new CameraBridgeError({
+							code: "disconnected",
+							message: "Reply lost",
+							recovery: "Poll again",
+							retrySafe: true,
+							nextStep: "retry"
+						});
 					return {
 						version: 1 as const,
 						status: "setup" as const,
@@ -101,7 +99,7 @@ it.effect("reports creation failures to the native UI without replaying the muta
 
 it.effect("validates setup input before it crosses the bridge", () =>
 	Effect.gen(function* () {
-		const result = yield* Schema.decodeUnknownEffect(CameraBridgeRequest)({
+		const result = yield* Schema.decodeEffect(CameraBridgeRequest)({
 			version: 1,
 			operation: "setup_create",
 			intent: { ...intent, layout: { ...intent.layout, count: 0 } }
@@ -143,14 +141,14 @@ it.effect("releases only its own connection on graceful shutdown", () =>
 	})
 );
 
-const savedSet = Schema.decodeUnknownSync(CameraSetupSavedSet)({
+const savedSet = Schema.decodeSync(CameraSetupSavedSet)({
 	id: "arrangement-a",
 	name: "Four sides",
 	mapPath: "/Game/Fixture",
 	subject: { kind: "actor_path", actorPath: "/Game/Fixture.Fixture:PersistentLevel.Subject" },
 	cameras: 4
 });
-const openIntent = Schema.decodeUnknownSync(CameraSetupOpenIntent)({
+const openIntent = Schema.decodeSync(CameraSetupOpenIntent)({
 	id: "open-1",
 	arrangementId: "arrangement-a"
 });
@@ -179,15 +177,13 @@ it.effect("reopens a listed set once, even after a lost acknowledgement", () =>
 					if (request.operation !== "setup_poll")
 						return yield* Effect.die("Unexpected operation");
 					if (request.outcome && ++acknowledgements === 1)
-						return yield* Effect.fail(
-							new CameraBridgeError({
-								code: "disconnected",
-								message: "Reply lost",
-								recovery: "Poll again",
-								retrySafe: true,
-								nextStep: "retry"
-							})
-						);
+						return yield* new CameraBridgeError({
+							code: "disconnected",
+							message: "Reply lost",
+							recovery: "Poll again",
+							retrySafe: true,
+							nextStep: "retry"
+						});
 					return setupState({ canOpen: true, sets: [savedSet], open: openIntent });
 				})
 		};
@@ -302,12 +298,12 @@ it.effect("keeps the setup wire contract backward compatible", () =>
 	Effect.gen(function* () {
 		const strict = { onExcessProperty: "error" } as const;
 		// Older plugins reply without reopen fields, and older hosts poll without them.
-		yield* Schema.decodeUnknownEffect(CameraBridgeResponse)(setupState(), strict);
-		yield* Schema.decodeUnknownEffect(CameraBridgeRequest)(
+		yield* Schema.decodeEffect(CameraBridgeResponse)(setupState(), strict);
+		yield* Schema.decodeEffect(CameraBridgeRequest)(
 			{ version: 1, operation: "setup_poll", hostId: "host-1", projectName: "Fixture" },
 			strict
 		);
-		yield* Schema.decodeUnknownEffect(CameraBridgeResponse)(
+		yield* Schema.decodeEffect(CameraBridgeResponse)(
 			setupState({
 				canOpen: true,
 				sets: [savedSet],
@@ -321,11 +317,11 @@ it.effect("keeps the setup wire contract backward compatible", () =>
 			}),
 			strict
 		);
-		yield* Schema.decodeUnknownEffect(CameraBridgeRequest)(
+		yield* Schema.decodeEffect(CameraBridgeRequest)(
 			{ version: 1, operation: "setup_open", intent: openIntent },
 			strict
 		);
-		const tooMany = yield* Schema.decodeUnknownEffect(CameraBridgeRequest)({
+		const tooMany = yield* Schema.decodeEffect(CameraBridgeRequest)({
 			version: 1,
 			operation: "setup_poll",
 			hostId: "host-1",

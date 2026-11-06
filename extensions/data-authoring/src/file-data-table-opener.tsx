@@ -1,13 +1,13 @@
 import { FileDropZone } from "@ue-shed/ui";
 import type { AuthoringOpenerControls, AuthoringReadEffect } from "./data-table-viewer.js";
 
-export interface FileDataTableOpenerProps {
+export interface FileDataTableOpenerProps<E = never> {
 	readonly controls: AuthoringOpenerControls;
-	readonly readFile: (file: File) => AuthoringReadEffect;
-	readonly sample?: { readonly label: string; readonly load: () => AuthoringReadEffect };
+	readonly readFile: (file: File) => AuthoringReadEffect<E>;
+	readonly sample?: { readonly label: string; readonly load: () => AuthoringReadEffect<E> };
 }
 
-export function FileDataTableOpener(props: FileDataTableOpenerProps) {
+export function FileDataTableOpener<E = never>(props: FileDataTableOpenerProps<E>) {
 	const controls = props.controls;
 	const readFile = props.readFile;
 	const sample = props.sample;

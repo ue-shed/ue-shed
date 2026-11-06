@@ -22,7 +22,7 @@ export function positiveNumber(value: string, name: string): number {
 }
 
 const Recipe = Schema.Struct({
-	scale: Schema.Number.check(Schema.isGreaterThan(0)),
+	scale: Schema.Finite.check(Schema.isGreaterThan(0)),
 	keys: Schema.Int.check(Schema.isGreaterThan(0)),
 	packages: Schema.Int.check(Schema.isGreaterThan(0)),
 	partialPackages: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -35,7 +35,7 @@ const Recipe = Schema.Struct({
 export async function readScaleRecipe(root: string) {
 	const path = resolve(root, "scale.json");
 	if ((await stat(path)).size > 64 * 1024) throw new Error("Scale descriptor exceeds 64 KiB.");
-	const descriptor = Schema.decodeUnknownSync(
+	const descriptor = Schema.decodeSync(
 		Schema.fromJsonString(
 			Schema.Struct({
 				schemaVersion: Schema.Literal(1),

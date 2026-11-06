@@ -81,7 +81,7 @@ for (const seed of [1, 73139]) {
 		assert.ok(subjects.some((subject) => subject.case.startsWith("format-renamed@")));
 		for (const subject of subjects) {
 			const expected = subject.findings.find((finding) => finding.fix)!.fix!;
-			assert.deepEqual(Schema.decodeUnknownSync(LocalizationChange)(expected), expected);
+			assert.deepEqual(Schema.decodeSync(LocalizationChange)(expected), expected);
 			const text = corpus([
 				unit(expected.key, expected.source, "Content/Text/Table.uasset", expected.namespace)
 			]);

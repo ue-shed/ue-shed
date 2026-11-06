@@ -143,7 +143,7 @@ describe("built-in localization quality checks", () => {
 		);
 		expect(selected.length).toBeGreaterThan(0);
 		expect(selected.every((finding) => finding.kind === "format_argument_renamed")).toBe(true);
-		const doc = Schema.decodeUnknownSync(GameTextRuleDocument)({
+		const doc = Schema.decodeSync(GameTextRuleDocument)({
 			...STARTER_GAME_TEXT_RULES,
 			rules: STARTER_GAME_TEXT_RULES.rules.map((entry) =>
 				entry.kind === "format_argument_renamed" ? { ...entry, enabled: false } : entry

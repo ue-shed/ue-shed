@@ -1,4 +1,7 @@
-import { indexedTestReports } from "../../../packages/game-text/src/indexed-reports.test-support.js";
+import {
+	INDEXED_REPORT_FIXTURE_TIMEOUT_MS,
+	indexedTestReports
+} from "../../../packages/game-text/src/indexed-reports.test-support.js";
 import { cleanup, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { textQualityQuery } from "@ue-shed/game-text/corpus";
@@ -29,10 +32,13 @@ import {
 } from "./game-text-canned-search.test-support.js";
 import { type GameTextClientApi } from "./game-text-client.js";
 import { GameTextRoute, type GameTextPreferences } from "./game-text-query-route.js";
+import { installGameTextRouteDiagnostics } from "./game-text-route-diagnostics.test-support.js";
 
-// Quality reports come from the native engine, in one driver process per distinct rule
-// document, which can outlast the component suite's 5 s default under CI load.
-vi.setConfig({ testTimeout: 20_000 });
+installGameTextRouteDiagnostics();
+
+// Quality reports run through the native index in an owned fixture worker. Keep the existing
+// budget for native fixture preparation and the complete browser interaction under CI load.
+vi.setConfig({ testTimeout: INDEXED_REPORT_FIXTURE_TIMEOUT_MS });
 export const corpus: TextCorpus = {
 	coverage: {
 		discoveredPackages: 2,
@@ -314,7 +320,11 @@ export function makeClient(
 	text: PlantedText = planted,
 	overrides: Partial<GameTextClientApi> = {}
 ): GameTextClientApi {
-	let quality = textQualityQuery(indexedTestReports(text.corpus).source(rulesDocument));
+	let quality: ReturnType<typeof textQualityQuery> | undefined;
+	// Text browsing needs no quality report. Materialize the native fixture only when a quality
+	// operation asks for it, rather than starting a competing driver in every route test.
+	const currentQuality = () =>
+		(quality ??= textQualityQuery(indexedTestReports(text.corpus).source(rulesDocument)));
 	return {
 		loadConfiguredProject: () => Effect.succeed({ status: "completed", summary: text.summary }),
 		progress: Stream.make({ completed: 0, total: 0, phase: "idle" }),
@@ -329,16 +339,15 @@ export function makeClient(
 				objectPath,
 				status: "located"
 			}),
-		chooseQualityRules: () =>
-			Effect.succeed({
-				status: "completed",
-				document: rulesDocument,
-				summary: quality.summary()
-			}),
+		chooseQualityRules: Effect.sync(() => ({
+			status: "completed",
+			document: rulesDocument,
+			summary: currentQuality().summary()
+		})),
 		qualitySearch: (request) =>
-			Effect.succeed({ status: "ready", page: quality.search(request) }),
+			Effect.succeed({ status: "ready", page: currentQuality().search(request) }),
 		qualityFocus: (request) => {
-			const focus = quality.focus(request);
+			const focus = currentQuality().focus(request);
 			return Effect.succeed(focus ? { status: "found", focus } : { status: "not_found" });
 		},
 		previewQualityRules: (draft) => {

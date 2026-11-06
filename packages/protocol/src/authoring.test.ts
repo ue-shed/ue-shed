@@ -136,7 +136,7 @@ describe("authoring wire contract", () => {
 			type,
 			typeName: "TextProperty"
 		});
-		const snapshot = Schema.decodeUnknownSync(AuthoringTableSnapshotV2)({
+		const snapshot = Schema.decodeSync(AuthoringTableSnapshotV2)({
 			authority: { kind: "live_editor", producerId: "producer", sessionId: "session" },
 			completeness: "complete",
 			contract: { name: "unreal-authoring", version: { major: 2, minor: 4 } },
@@ -209,7 +209,7 @@ describe("authoring wire contract", () => {
 				}
 			]
 		};
-		const decoded = Schema.decodeUnknownSync(AuthoringValue)(nested);
+		const decoded = Schema.decodeSync(AuthoringValue)(nested);
 		expect(Schema.encodeUnknownSync(AuthoringValue)(decoded)).toEqual(nested);
 	});
 

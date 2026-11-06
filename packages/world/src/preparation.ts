@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+	type Brand,
 	Cause,
 	Context,
 	Deferred,
@@ -106,16 +107,16 @@ const worldPreparationRecovery = {
 		"Inspect the actors and Data Layers changed during the lease and report the restoration conflict before preparing again."
 } satisfies Record<typeof WorldPreparationErrorCode.Type, string>;
 
-export class WorldPreparationError extends Schema.TaggedError<WorldPreparationError>()(
-	"WorldPreparationError",
-	{
-		code: WorldPreparationErrorCode,
-		operation: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		snapshot: Schema.optionalKey(WorldSnapshot)
-	}
-) {}
+export class WorldPreparationError extends Schema.TaggedError<
+	WorldPreparationError,
+	Brand.Brand<"packages/world/src/preparation/WorldPreparationError">
+>()("WorldPreparationError", {
+	code: WorldPreparationErrorCode,
+	operation: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	snapshot: Schema.optionalKey(WorldSnapshot)
+}) {}
 // Effect finalizers cannot fail in the typed channel. Only this private carrier is
 // translated by withPreparedWorld; unrelated defects must retain their original cause.
 class WorldRestorationFailure extends Error {
@@ -213,9 +214,9 @@ const outcomes = Metric.frequency("ue_shed_world_preparation_outcomes", {
 export interface WorldLease {
 	readonly id: WorldLeaseId;
 	readonly progress: Stream.Stream<WorldSnapshot>;
-	readonly inspect: () => Effect.Effect<WorldSnapshot, WorldPreparationError>;
+	readonly inspect: Effect.Effect<WorldSnapshot, WorldPreparationError>;
 	/** Poll once, renew ownership, and fail with evidence if preparation is blocked. */
-	readonly checkReady: () => Effect.Effect<WorldSnapshot, WorldPreparationError>;
+	readonly checkReady: Effect.Effect<WorldSnapshot, WorldPreparationError>;
 	readonly replace: (
 		targets: ReadonlyArray<WorldTarget>
 	) => Effect.Effect<WorldSnapshot, WorldPreparationError>;
@@ -225,7 +226,7 @@ export interface WorldLease {
 	) => Effect.Effect<A, E | WorldPreparationError, R>;
 }
 export interface WorldPreparationApi {
-	readonly describe: () => Effect.Effect<WorldIdentity, WorldPreparationError>;
+	readonly describe: Effect.Effect<WorldIdentity, WorldPreparationError>;
 	readonly plan: (
 		requirements: WorldRequirements
 	) => Effect.Effect<WorldSnapshot, WorldPreparationError>;
@@ -343,19 +344,17 @@ export function makeWorldPreparation(
 	});
 	const snapshot = (request: WorldRequest) =>
 		execute(request).pipe(
-			Effect.flatMap((response) =>
-				response.status === "described"
-					? Effect.fail(
-							failure(
-								"invalid_contract",
-								request.action,
-								"Expected world preparation evidence."
-							)
-						)
-					: Effect.succeed(response)
+			Effect.filterOrFail(
+				(response) => !(response.status === "described"),
+				() =>
+					failure(
+						"invalid_contract",
+						request.action,
+						"Expected world preparation evidence."
+					)
 			)
 		);
-	const describe = Effect.fn("WorldPreparation.describe")(function* () {
+	const describe = Effect.gen(function* () {
 		const result = yield* execute({ contract: worldPreparationContract, action: "describe" });
 		if (result.status !== "described")
 			return yield* failure(
@@ -364,7 +363,7 @@ export function makeWorldPreparation(
 				"Expected editor world identity."
 			);
 		return result.world;
-	});
+	}).pipe(Effect.withSpan("WorldPreparation.describe"));
 	const plan = Effect.fn("WorldPreparation.plan")(function* (requirements: WorldRequirements) {
 		const result = yield* snapshot({
 			contract: worldPreparationContract,
@@ -500,17 +499,17 @@ export function makeWorldPreparation(
 						)
 					);
 		yield* ready(opened);
-		const inspect = Effect.fn("WorldLease.inspect")(function* () {
+		const inspect = Effect.gen(function* () {
 			if (closed)
 				return yield* failure("lease_released", "inspect", "The lease scope has ended.");
 			return yield* snapshot({ ...identity, action: "poll" }).pipe(
 				Effect.flatMap((value) => check(value, revision))
 			);
-		}, mutex.withPermits(1));
-		const checkReady = Effect.fn("WorldLease.checkReady")(function* () {
-			const value = yield* inspect();
+		}).pipe(mutex.withPermits(1), Effect.withSpan("WorldLease.inspect"));
+		const checkReady = Effect.gen(function* () {
+			const value = yield* inspect;
 			return yield* ready(value);
-		});
+		}).pipe(Effect.withSpan("WorldLease.checkReady"));
 		const replace = Effect.fn("WorldLease.replace")(function* (
 			targets: ReadonlyArray<WorldTarget>
 		) {
@@ -535,9 +534,9 @@ export function makeWorldPreparation(
 		}, mutex.withPermits(1));
 		const guard = <A, E, R>(work: Effect.Effect<A, E, R>) =>
 			Effect.raceFirst(work, Deferred.await(lost));
-		yield* checkReady().pipe(
+		yield* checkReady.pipe(
 			Effect.repeat(Schedule.spaced(leaseMs / 3)),
-			Effect.catch((error) => Deferred.fail(lost, error)),
+			Effect.catchTag("WorldPreparationError", (error) => Deferred.fail(lost, error)),
 			Effect.forkScoped
 		);
 		return {

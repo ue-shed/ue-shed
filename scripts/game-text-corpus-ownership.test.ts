@@ -25,7 +25,7 @@ function project() {
 }
 
 for (const where of ["content", "localization", "config"] as const)
-	test(`clean refuses edited ${where} before deleting any owned file`, () => {
+	void test(`clean refuses edited ${where} before deleting any owned file`, () => {
 		const value = project();
 		try {
 			const file =
@@ -44,7 +44,7 @@ for (const where of ["content", "localization", "config"] as const)
 			rmSync(value.root, { recursive: true, force: true });
 		}
 	});
-test("clean refuses a foreign package, a missing receipt, and a receipt path escaping ownership", () => {
+void test("clean refuses a foreign package, a missing receipt, and a receipt path escaping ownership", () => {
 	const value = project();
 	try {
 		const foreign = join(value.content, "Foreign.uasset");
@@ -73,7 +73,7 @@ test("clean refuses a foreign package, a missing receipt, and a receipt path esc
 		rmSync(value.root, { recursive: true, force: true });
 	}
 });
-test("patch validation preserves files; clean removes exactly the owned roots", () => {
+void test("patch validation preserves files; clean removes exactly the owned roots", () => {
 	const value = project();
 	try {
 		const unrelated = join(value.root, "Content", "Unrelated.uasset");

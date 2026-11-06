@@ -1,6 +1,6 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { join } from "node:path";
-import { Effect, FileSystem, Metric, Result, Schema } from "effect";
+import { type Brand, Effect, FileSystem, Metric, Result, Schema } from "effect";
 import { LocalizationChangeSet, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import {
 	decodeGameTextRuleDocumentJson,
@@ -14,22 +14,22 @@ import { loadLocalizationContext } from "./localization.js";
 
 const isGameTextRuleDocumentError = Schema.is(GameTextRuleDocumentError);
 
-export class LocalizationCheckOutputError extends Schema.TaggedError<LocalizationCheckOutputError>()(
-	"LocalizationCheckOutputError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"changes_exists",
-			"changes_unwritable",
-			"invalid_changes_destination",
-			"rules_unreadable"
-		]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class LocalizationCheckOutputError extends Schema.TaggedError<
+	LocalizationCheckOutputError,
+	Brand.Brand<"apps/cli/src/workflows/localization-check/LocalizationCheckOutputError">
+>()("LocalizationCheckOutputError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"changes_exists",
+		"changes_unwritable",
+		"invalid_changes_destination",
+		"rules_unreadable"
+	]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 /** Exclusive JSON proposal creation. This boundary has no localization-file write capability. */
 export const writeLocalizationCheckChanges = Effect.fn("Cli.localization.write_changes")(function* (
@@ -37,15 +37,13 @@ export const writeLocalizationCheckChanges = Effect.fn("Cli.localization.write_c
 	document: LocalizationChangeSet
 ) {
 	if (!destination.toLowerCase().endsWith(".json"))
-		return yield* Effect.fail(
-			new LocalizationCheckOutputError({
-				retrySafe: false,
-				nextStep: "fix_input",
-				code: "invalid_changes_destination",
-				message: "The change-set destination must be a JSON file.",
-				recovery: "Choose a new .json file for the proposal."
-			})
-		);
+		return yield* new LocalizationCheckOutputError({
+			retrySafe: false,
+			nextStep: "fix_input",
+			code: "invalid_changes_destination",
+			message: "The change-set destination must be a JSON file.",
+			recovery: "Choose a new .json file for the proposal."
+		});
 	const fs = yield* FileSystem.FileSystem;
 	const json = yield* Schema.encodeEffect(Schema.fromJsonString(LocalizationChangeSet))(
 		document

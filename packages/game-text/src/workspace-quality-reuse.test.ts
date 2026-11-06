@@ -1,3 +1,4 @@
+import { GameTextWorkspaceHostFailure } from "./workspace-host.js";
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
@@ -7,7 +8,7 @@ import { Effect, Layer } from "effect";
 import { expect } from "vitest";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { typeScriptIndexBuilderLayer } from "./index-builder-reference.test-support.js";
-import { GameTextIndexQuery, nativeIndexQueryLayer } from "./index-query-native.js";
+import { nativeIndexQueryLayer } from "./index-query-native.js";
 import { makeIndexRegressionFixture } from "./index-refresh-regressions.test-support.js";
 import { GameTextIndexSteps, gameTextIndexStepsLayer } from "./index-steps.js";
 import { LocalizationImportSource } from "./localization-import.js";
@@ -22,7 +23,12 @@ function memoryFiles() {
 		Effect.suspend(() => {
 			const bytes = contents.get(path);
 			return bytes === undefined
-				? Effect.fail({ message: "Missing file.", recovery: "Create it." })
+				? new GameTextWorkspaceHostFailure({
+						message: "Missing file.",
+						recovery: "Create it.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					})
 				: Effect.succeed(bytes);
 		});
 	const files: GameTextWorkspaceFileHooks = {
@@ -33,10 +39,12 @@ function memoryFiles() {
 		writeFile: (path, bytes, options) =>
 			Effect.gen(function* () {
 				if (options?.exclusive && contents.has(path))
-					return yield* Effect.fail({
+					return yield* new GameTextWorkspaceHostFailure({
 						code: "already_exists" as const,
 						message: "Exists.",
-						recovery: "Load it."
+						recovery: "Load it.",
+						retrySafe: false,
+						nextStep: "fix_input"
 					});
 				contents.set(path, bytes);
 			})
@@ -51,7 +59,7 @@ function countingLayer(
 	counts: Counts
 ) {
 	const nativeQuery = Layer.unwrap(
-		Effect.flatMap(AssetReader, (reader) => reader.configuration()).pipe(
+		Effect.flatMap(AssetReader, (reader) => reader.configuration).pipe(
 			Effect.map(nativeIndexQueryLayer),
 			Effect.provide(AssetReaderLive),
 			Effect.orDie
@@ -111,10 +119,10 @@ function projectFor(root: string): GameTextWorkspaceProject {
 		project: { projectRoot: root, generation: 3 }
 	};
 	return {
-		current: () => Effect.succeed(ready),
-		refresh: () => Effect.succeed(ready),
-		candidates: () => Effect.succeed({ generation: 3, summary: { projectRoot: root } }),
-		progress: () => Effect.succeed({ completed: 0, total: 0, phase: "idle" })
+		current: Effect.succeed(ready),
+		refresh: Effect.succeed(ready),
+		candidates: Effect.sync(() => ({ generation: 3, summary: { projectRoot: root } })),
+		progress: Effect.sync(() => ({ completed: 0, total: 0, phase: "idle" }))
 	};
 }
 
@@ -146,7 +154,7 @@ it.live(
 				expect(first.status).toBe("ready");
 				const afterFirst = counts.localization;
 				expect(afterFirst).toBeGreaterThan(0);
-				const listed = yield* workspace.localizationTargets();
+				const listed = yield* workspace.localizationTargets;
 				expect(listed.status === "ready" && listed.targets.map(({ name }) => name)).toEqual(
 					["Review"]
 				);
@@ -165,7 +173,7 @@ it.live(
 				});
 				expect(second).toEqual(first);
 				expect(counts.localization).toBe(afterFirst);
-				const relisted = yield* workspace.localizationTargets();
+				const relisted = yield* workspace.localizationTargets;
 				expect(
 					relisted.status === "ready" && relisted.targets.map(({ name }) => name)
 				).toEqual(["Review", "Added"]);
@@ -250,7 +258,7 @@ it.live(
 					"completed"
 				);
 				expect(counts.source).toBe(afterFirstQuality.source);
-				expect((yield* workspace.reloadQualityRules()).status).toBe("completed");
+				expect((yield* workspace.reloadQualityRules).status).toBe("completed");
 				expect(counts.source).toBe(afterFirstQuality.source);
 				const third = yield* workspace.localizationQualitySearch({
 					target,

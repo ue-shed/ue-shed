@@ -92,7 +92,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 	const topic = channel("ue-shed.game-text-benchmark");
 	const Timing = Schema.Struct({
 		stage: Schema.String,
-		ms: Schema.Number,
+		ms: Schema.Finite,
 		requestId: Schema.optionalKey(Schema.String),
 		action: Schema.optionalKey(Schema.String)
 	});
@@ -108,8 +108,8 @@ export async function runEngineStage(options: EngineStageOptions) {
 	const Boundary = Schema.Struct({
 		transport: Schema.String,
 		operation: Schema.String,
-		requestBytes: Schema.Number,
-		responseBytes: Schema.Number
+		requestBytes: Schema.Finite,
+		responseBytes: Schema.Finite
 	});
 	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- diagnostics_channel owns this boundary; decode it immediately.
 	const boundaryListener = (message: unknown) => {
@@ -172,9 +172,9 @@ export async function runEngineStage(options: EngineStageOptions) {
 		const used = process.threadCpuUsage(cpu);
 		const counted = Schema.decodeUnknownResult(
 			Schema.Struct({
-				total: Schema.optionalKey(Schema.Number),
-				page: Schema.optionalKey(Schema.Struct({ total: Schema.Number })),
-				rowCount: Schema.optionalKey(Schema.Number),
+				total: Schema.optionalKey(Schema.Finite),
+				page: Schema.optionalKey(Schema.Struct({ total: Schema.Finite })),
+				rowCount: Schema.optionalKey(Schema.Finite),
 				status: Schema.optionalKey(Schema.String)
 			})
 		)(answer);
@@ -219,9 +219,11 @@ export async function runEngineStage(options: EngineStageOptions) {
 		readFile: (path) => Effect.promise(() => readFile(path)),
 		readFileWithin: (root, path) => Effect.promise(() => readFile(join(root, path))),
 		writeFile: () =>
-			Effect.fail({
+			new currentWorkspace.GameTextWorkspaceHostFailure({
 				message: "Workspace file writes are disabled in the baseline.",
-				recovery: "Use the benchmark cache and output directories."
+				recovery: "Use the benchmark cache and output directories.",
+				nextStep: "fix_input",
+				retrySafe: false
 			})
 	};
 	if (stage === "records") {
@@ -255,7 +257,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 			Layer.unwrap(
 				Effect.gen(function* () {
 					const reader = yield* AssetReader;
-					const configuration = yield* reader.configuration();
+					const configuration = yield* reader.configuration;
 					return projectIndexProcessLayerFromReader({ ...configuration, cacheRoot });
 				})
 			);
@@ -312,15 +314,18 @@ export async function runEngineStage(options: EngineStageOptions) {
 		const workspace = await run(
 			makeGameTextWorkspace({
 				project: {
-					current: () => Effect.succeed(state),
-					refresh: () => Effect.succeed(state),
-					candidates: () =>
-						Effect.succeed({
-							generation: 0,
-							summary: { projectRoot: options.project }
-						}),
-					progress: () =>
-						Effect.succeed({ phase: "idle", completed: 0, total: 0, stage: "" })
+					current: Effect.succeed(state),
+					refresh: Effect.succeed(state),
+					candidates: Effect.sync(() => ({
+						generation: 0,
+						summary: { projectRoot: options.project }
+					})),
+					progress: Effect.sync(() => ({
+						phase: "idle",
+						completed: 0,
+						total: 0,
+						stage: ""
+					}))
 				},
 				files
 			}).pipe(
@@ -338,7 +343,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 		if (!targetName) throw new Error("The project has no localization target.");
 		const target = LocalizationTargetName.make(targetName);
 		const { lens: _lens, ...list } = mix.list;
-		const base = Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+		const base = Schema.decodeSync(TextCorpusSearchRequest)({
 			...list,
 			localization: { target }
 		});
@@ -370,9 +375,10 @@ export async function runEngineStage(options: EngineStageOptions) {
 						`rows-${chunk}`
 					);
 					return Promise.all(
-						(reply.openGroups ?? []).map(
-							(group) =>
+						(reply.openGroups ?? []).map((group) =>
+							Promise.resolve(
 								group.page ?? read({ ...request, openGroup: group.key }, group.key)
+							)
 						)
 					);
 				})
@@ -577,7 +583,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				);
 				const header = (prefix: string) =>
 					search(
-						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+						Schema.decodeSync(TextCorpusSearchRequest)({
 							...base,
 							query: prefix
 						})
@@ -612,7 +618,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				for (let repeat = 0; repeat < 5; repeat++)
 					await measure(`idle-free:${repeat}`, nothing);
 				// Interrupting an evaluation, and an export of every unit, a second into each.
-				const cancel = async (id: string, start: () => Effect.Effect<unknown, unknown>) => {
+				const cancel = async <A, E>(id: string, start: () => Effect.Effect<A, E>) => {
 					const fiber = Effect.runFork(start());
 					await new Promise((resolve) => setTimeout(resolve, 1000));
 					if (fiber.pollUnsafe() !== undefined) throw new Error(`${id} finished first.`);
@@ -664,7 +670,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				}
 				await run(
 					query.selectLocalizationLines(
-						Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+						Schema.decodeSync(TextCorpusSearchRequest)({
 							...plain,
 							lines: lines.slice(0, 5000)
 						}),
@@ -829,7 +835,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 									: undefined;
 								causePages.push(
 									await search(
-										Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+										Schema.decodeSync(TextCorpusSearchRequest)({
 											query: "",
 											capability: "all",
 											pageSize: selection.pageSize,
@@ -874,7 +880,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 									? gatheredIdentityKey(identity)
 									: JSON.stringify(["", ""]);
 								const page = await search(
-									Schema.decodeUnknownSync(TextCorpusSearchRequest)({
+									Schema.decodeSync(TextCorpusSearchRequest)({
 										query: "",
 										capability: "all",
 										pageSize: selection.keySearchPageSize,

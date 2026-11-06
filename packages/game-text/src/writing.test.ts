@@ -64,9 +64,11 @@ describe("writer counts", () => {
 						capability: "all",
 						pageSize: 50
 					});
-					expect(Schema.decodeUnknownSync(TextCorpusSearchPage)(page)).toEqual(page);
+					expect(
+						yield* Schema.decodeEffect(TextCorpusSearchPage)(page).pipe(Effect.orDie)
+					).toEqual(page);
 					expect(() =>
-						Schema.decodeUnknownSync(TextCorpusSearchPage)({
+						Schema.decodeSync(TextCorpusSearchPage)({
 							...page,
 							counts: { ...page.counts, all: -1 }
 						})
@@ -85,7 +87,7 @@ describe("writer counts", () => {
 					).toEqual(page.counts);
 					expect(page.total).toBe(2);
 					expect(page.counts.all).toBe(page.total);
-					const summary = yield* query.summary();
+					const summary = yield* query.summary;
 					expect(summary.counts).toEqual(page.counts);
 					expect(summary.review).toEqual({ all: 2, unresolved: 0, conflicting: 0 });
 					expect(summary.sources.dataTable).toBe(2);
@@ -286,6 +288,6 @@ describe("human CSV", () => {
 });
 it("decodes the neutral starter document through the existing decoder", async () => {
 	expect(await Effect.runPromise(decodeGameTextRuleDocument(STARTER_GAME_TEXT_RULES))).toEqual(
-		Schema.decodeUnknownSync(GameTextRuleDocument)(STARTER_GAME_TEXT_RULES)
+		Schema.decodeSync(GameTextRuleDocument)(STARTER_GAME_TEXT_RULES)
 	);
 });

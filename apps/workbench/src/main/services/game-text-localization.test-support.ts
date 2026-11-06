@@ -14,7 +14,7 @@ import {
 import { Result, Schema } from "effect";
 
 export const cultureCode = Schema.decodeUnknownSync(CultureCode);
-export const target = Schema.decodeUnknownSync(LocalizationTarget)({
+export const target = Schema.decodeSync(LocalizationTarget)({
 	name: "Test",
 	source: "config_only",
 	nativeCulture: "en",

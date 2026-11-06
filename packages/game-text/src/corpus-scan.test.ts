@@ -6,7 +6,7 @@ import {
 	type SavedAssetExtractionOptions,
 	type SavedAssetTextExtractionEvent
 } from "@ue-shed/unreal-assets";
-import { Effect, Ref, Stream } from "effect";
+import { Layer, Effect, Ref, Stream } from "effect";
 import { expect } from "vitest";
 import { GameTextIndexProgressReporter, type GameTextIndexProgress } from "./index-progress.js";
 import {
@@ -35,8 +35,12 @@ it.effect("keeps a failed reader distinct from an invalid project and retains it
 			service.scan({ projectRoot: "C:/Fixture" })
 		).pipe(
 			Effect.flip,
-			Effect.provide(TextCorpusServiceLive),
-			Effect.provide(readerOffering(() => Stream.fail(original)))
+			Effect.provide(
+				Layer.provideMerge(
+					TextCorpusServiceLive,
+					readerOffering(() => Stream.fail(original))
+				)
+			)
 		);
 		expect(failure.code).toBe("reader_failed");
 		expect(failure.recovery).toBe(original.recovery);
@@ -109,35 +113,31 @@ const readerOffering = (
 	) => Stream.Stream<SavedAssetTextExtractionEvent, AssetReaderError>
 ) =>
 	makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({
-				executable: "uasset",
-				timeoutMs: 30_000,
-				catalogTimeoutMs: 50 * 60_000
-			}),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 50 * 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () =>
 			Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 		readLevelSequence: () =>
@@ -154,7 +154,7 @@ const readerOffering = (
 		readAsset: () => unexpected("readAsset"),
 		readTable: () => unexpected("readTable"),
 		extractProjectText,
-		source: () => Effect.succeed("configured")
+		source: Effect.succeed("configured")
 	});
 
 it.effect("builds a corpus from compact text extraction events", () =>
@@ -177,7 +177,7 @@ it.effect("builds a corpus from compact text extraction events", () =>
 
 		const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
 			service.scan({ projectRoot: "C:/Fixture" })
-		).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+		).pipe(Effect.provide(Layer.provideMerge(TextCorpusServiceLive, reader)));
 
 		const [options] = yield* Ref.get(seen);
 		expect(options?.paths).toBeUndefined();
@@ -245,8 +245,7 @@ it.effect("decodes only candidates from an existing project header index", () =>
 			const service = yield* TextCorpusService;
 			return yield* service.scanFromProjectIndex(index, { projectRoot: "C:/Fixture" });
 		}).pipe(
-			Effect.provide(TextCorpusServiceLive),
-			Effect.provide(reader),
+			Effect.provide(Layer.provideMerge(TextCorpusServiceLive, reader)),
 			Effect.provideService(GameTextIndexProgressReporter, (event) => progress.push(event))
 		);
 
@@ -284,7 +283,7 @@ it.effect("does not scan Content when the existing project index has no text can
 
 		const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
 			service.scanFromProjectIndex(index, { projectRoot: "C:/Fixture" })
-		).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+		).pipe(Effect.provide(Layer.provideMerge(TextCorpusServiceLive, reader)));
 
 		expect(corpus.coverage.discoveredPackages).toBe(30);
 		expect(corpus.coverage.inspectedPackages).toBe(0);
@@ -309,7 +308,7 @@ it.effect("maps a reader asset limit onto scan_limit_exceeded", () =>
 
 		const error = yield* Effect.flatMap(TextCorpusService, (service) =>
 			service.scan({ maximumAssets: TextCorpusScanLimit.make(2), projectRoot: "C:/Fixture" })
-		).pipe(Effect.flip, Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+		).pipe(Effect.flip, Effect.provide(Layer.provideMerge(TextCorpusServiceLive, reader)));
 
 		expect(error).toBeInstanceOf(TextCorpusScanError);
 		expect(error.code).toBe("scan_limit_exceeded");
@@ -359,7 +358,7 @@ it.effect(
 			const reader = readerOffering(() => Stream.fromIterable(syntheticGaps()));
 			const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
 				service.scan({ projectRoot: "C:/Fixture" })
-			).pipe(Effect.provide(TextCorpusServiceLive), Effect.provide(reader));
+			).pipe(Effect.provide(Layer.provideMerge(TextCorpusServiceLive, reader)));
 			// Every package has gaps; only the reader's partial status makes them coverage problems.
 			expect(corpus.coverage.unsupportedTextProperties).toBe(20);
 			expect(corpus.coverage.partialPackages).toBe(20);
@@ -462,8 +461,12 @@ it.effect(
 			const corpus = yield* Effect.flatMap(TextCorpusService, (service) =>
 				service.scan({ projectRoot: "C:/Fixture" })
 			).pipe(
-				Effect.provide(TextCorpusServiceLive),
-				Effect.provide(readerOffering(() => Stream.fromIterable(events)))
+				Effect.provide(
+					Layer.provideMerge(
+						TextCorpusServiceLive,
+						readerOffering(() => Stream.fromIterable(events))
+					)
+				)
 			);
 			expect(
 				corpus.diagnostics.filter((item) => item.code === "unsupported_text_history")

@@ -134,7 +134,7 @@ function kind<K extends LocalizationQualityFinding["kind"]>(
 /** A second saved unit for an existing key, in another asset. */
 function another(key: string, source: string, objectPath: string): TextUnit {
 	const base = unit(key, source);
-	return Schema.decodeUnknownSync(TextUnit)({
+	return Schema.decodeSync(TextUnit)({
 		...base,
 		id: `unit:${key}:${objectPath}`,
 		occurrences: base.occurrences.map((occurrence) => ({
@@ -358,7 +358,7 @@ describe("built-in source checks", () => {
 			"en · Placeholder “TODO”"
 		]);
 		// A role that does not select the line's place leaves the placeholder to the built-in.
-		const elsewhere = Schema.decodeUnknownSync(GameTextRuleDocument)({
+		const elsewhere = Schema.decodeSync(GameTextRuleDocument)({
 			...STARTER_GAME_TEXT_RULES,
 			roles: [
 				...STARTER_GAME_TEXT_RULES.roles,
@@ -583,7 +583,7 @@ describe("severity", () => {
 			expect(finding.severity).toBe(localizationCheckCatalogue[finding.kind].severity);
 		const workspace = localizationQualityWorkspace(undefined, value, joined);
 		const page = workspace.search({ target: joined.target, filter: "all" });
-		expect(Schema.decodeUnknownSync(WorkspaceQualityPage)(page)).toEqual(page);
+		expect(Schema.decodeSync(WorkspaceQualityPage)(page)).toEqual(page);
 		const severities = page.findings.map((finding) => finding.severity);
 		expect(severities[0]).toBe("blocking");
 		const rank = { blocking: 0, normal: 1, low: 2 };

@@ -1,22 +1,22 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 
 /**
  * A result a host sent (over Workbench IPC, a CLI JSON file or another transport) that does not
  * match the Game Text contract. The client and host disagree about the contract, so repeating the
  * same call returns the same mismatch.
  */
-export class GameTextResponseError extends Schema.TaggedError<GameTextResponseError>()(
-	"GameTextResponseError",
-	{
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("invalid_response"),
-		message: Schema.String,
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class GameTextResponseError extends Schema.TaggedError<
+	GameTextResponseError,
+	Brand.Brand<"packages/game-text/src/response-parser/GameTextResponseError">
+>()("GameTextResponseError", {
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("invalid_response"),
+	message: Schema.String,
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A unary parser for one Game Text result: it decodes the host's encoded value and fails with a

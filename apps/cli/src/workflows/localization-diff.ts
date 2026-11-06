@@ -167,9 +167,7 @@ export const runLocalizationDiff = Effect.fn("Cli.workflow.localization_diff")(
 					command.limit < 1 ||
 					command.limit > 1000
 				)
-					return yield* Effect.fail(
-						usageError("--limit takes a number of lines from 1 to 1,000.")
-					);
+					return yield* usageError("--limit takes a number of lines from 1 to 1,000.");
 				const selection = yield* changeSelection(command);
 				const targets = yield* selectTargets(command.projectRoot, command.targets);
 				const read = yield* readChange({

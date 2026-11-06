@@ -71,13 +71,13 @@ function client(): AuthoringClientApi {
 	return {
 		applySession: () => Effect.die("unused"),
 		beginSession: () => Effect.die("unused"),
-		chooseTable: () => Effect.die("unused"),
+		chooseTable: Effect.suspend(() => Effect.die("unused")),
 		discardSession: () => Effect.die("unused"),
 		editSession: () => Effect.die("unused"),
-		getCatalogProgress: () => Effect.die("unused"),
-		listSessions: () => Effect.die("unused"),
-		loadConfiguredCatalog: () => Effect.die("unused"),
-		loadConfiguredTable: () => Effect.die("unused"),
+		getCatalogProgress: Effect.suspend(() => Effect.die("unused")),
+		listSessions: Effect.suspend(() => Effect.die("unused")),
+		loadConfiguredCatalog: Effect.suspend(() => Effect.die("unused")),
+		loadConfiguredTable: Effect.suspend(() => Effect.die("unused")),
 		openCatalogTable: (objectPath) =>
 			Effect.succeed(
 				objectPath === targetPath

@@ -34,19 +34,17 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 					? yield* DateTime.now
 					: Option.getOrElse(decodeUtcTimestamp(command.until), () => undefined);
 			if (until === undefined) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message: "--until must be an ISO-8601 UTC timestamp."
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: "--until must be an ISO-8601 UTC timestamp."
+				});
 			}
 			const asTimestamp = decodeUtcTimestamp(command.since);
-			const duration = Schema.decodeUnknownOption(Schema.DurationFromString)(command.since);
+			const duration = Schema.decodeOption(Schema.DurationFromString)(command.since);
 			const since = Option.isSome(asTimestamp)
 				? asTimestamp.value
 				: Option.isSome(duration) &&
@@ -55,17 +53,15 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 					? DateTime.subtractDuration(until, duration.value)
 					: undefined;
 			if (since === undefined) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message:
-							"--since must be an ISO-8601 UTC timestamp or a positive Effect duration such as '7 days'."
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message:
+						"--since must be an ISO-8601 UTC timestamp or a positive Effect duration such as '7 days'."
+				});
 			}
 			const limits = {
 				maxChangelists: command.maxChangelists ?? DEFAULT_MAP_HISTORY_LIMITS.maxChangelists,
@@ -96,7 +92,7 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 									},
 									kind: "actor" as const
 								};
-				const query = yield* Schema.decodeUnknownEffect(PerforceFastMapHistoryQuery)({
+				const query = yield* Schema.decodeEffect(PerforceFastMapHistoryQuery)({
 					limits,
 					mapPath: command.mapPath,
 					mode: "fast",
@@ -148,7 +144,7 @@ export const runMapHistory = Effect.fn("Cli.workflow.map_history")((command: Map
 				}
 				return;
 			}
-			const query = yield* Schema.decodeUnknownEffect(PerforceMapHistoryQuery)({
+			const query = yield* Schema.decodeEffect(PerforceMapHistoryQuery)({
 				limits,
 				mapPath: command.mapPath,
 				projectRoot: command.projectRoot,

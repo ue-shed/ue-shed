@@ -90,9 +90,7 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 	input: ApplyLocalizationChangeSetRequest,
 	options: ApplyLocalizationChangeSetOptions = {}
 ) {
-	const request = yield* Schema.decodeUnknownEffect(ApplyLocalizationChangeSetRequest)(
-		input
-	).pipe(
+	const request = yield* Schema.decodeEffect(ApplyLocalizationChangeSetRequest)(input).pipe(
 		Effect.mapError(
 			(cause) =>
 				new LocalizationChangeSetError({
@@ -110,29 +108,25 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 	const files = yield* LocalizationFileAccess;
 	const targetNames = [...new Set(request.changeSet.changes.map((change) => change.target))];
 	if (targetNames.length > 1)
-		return yield* Effect.fail(
-			new LocalizationChangeSetError({
-				code: "multiple_targets",
-				message: "The change set edits more than one localization target.",
-				recovery: "Split the change set so each one edits a single target.",
-				retrySafe: true,
-				nextStep: "fix_input"
-			})
-		);
+		return yield* new LocalizationChangeSetError({
+			code: "multiple_targets",
+			message: "The change set edits more than one localization target.",
+			recovery: "Split the change set so each one edits a single target.",
+			retrySafe: true,
+			nextStep: "fix_input"
+		});
 	const targetName = targetNames[0];
 	if (targetName === undefined)
-		return yield* Effect.fail(
-			new LocalizationChangeSetError({
-				code: "invalid_change_set",
-				message: "The change set contains no changes.",
-				recovery: "Stage at least one translation change before writing.",
-				retrySafe: true,
-				nextStep: "fix_input"
-			})
-		);
+		return yield* new LocalizationChangeSetError({
+			code: "invalid_change_set",
+			message: "The change set contains no changes.",
+			recovery: "Stage at least one translation change before writing.",
+			retrySafe: true,
+			nextStep: "fix_input"
+		});
 	const discovery = yield* evidenceService.discover({ projectRoot: request.projectRoot, limits });
 	const target = discovery.targets.find((candidate) => candidate.name === targetName);
-	if (target === undefined) return yield* Effect.fail(localizationError("target_not_found"));
+	if (target === undefined) return yield* localizationError("target_not_found");
 	const evidence = yield* evidenceService.read({
 		projectRoot: request.projectRoot,
 		target,
@@ -163,8 +157,7 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 	const written: LocalizationChangeSetReceipt["files"][number][] = [];
 	for (const file of review.files) {
 		const culture = evidence.cultures.find((item) => item.culture === file.culture);
-		if (culture?.po.status !== "read")
-			return yield* Effect.fail(localizationError("file_changed"));
+		if (culture?.po.status !== "read") return yield* localizationError("file_changed");
 		const edits = review.changes
 			.filter((item) => item.outcome === "ready" && item.change.culture === file.culture)
 			.map(({ change }) => ({
@@ -184,7 +177,7 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 						limits
 					});
 		if (Result.isFailure(document)) {
-			if (written.length === 0) return yield* Effect.fail(document.failure);
+			if (written.length === 0) return yield* document.failure;
 			written.push(failedFile(file, document.failure));
 			break;
 		}
@@ -194,7 +187,7 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 				written.push(failedFile(file, localizationError("file_unwritable")));
 				break;
 			}
-			return yield* Effect.fail(poEditFailure(rewritten.failure));
+			return yield* poEditFailure(rewritten.failure);
 		}
 		const result = yield* files
 			.replace(
@@ -206,7 +199,7 @@ export const applyLocalizationChangeSet = Effect.fn("Localization.applyChangeSet
 			)
 			.pipe(Effect.result);
 		if (Result.isFailure(result)) {
-			if (written.length === 0) return yield* Effect.fail(result.failure);
+			if (written.length === 0) return yield* result.failure;
 			written.push(failedFile(file, result.failure));
 			break;
 		}

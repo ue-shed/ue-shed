@@ -17,7 +17,7 @@ it.live(
 				const host = yield* WorkbenchGameText;
 				const result = yield* host.configuredRefresh({ refresh: false });
 				expect(result).toMatchObject({ status: "completed", cached: true });
-				expect(yield* Schema.decodeUnknownEffect(TextCorpusQueryRunResult)(result)).toEqual(
+				expect(yield* Schema.decodeEffect(TextCorpusQueryRunResult)(result)).toEqual(
 					result
 				);
 				expect(test.fixture.inventories()).toBe(1);

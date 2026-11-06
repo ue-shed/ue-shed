@@ -111,16 +111,14 @@ const pluginsListCommand = Command.make(
 	({ manifest, manifestFlag, artifact, project }) =>
 		Effect.gen(function* () {
 			if (optionalValue(artifact) !== undefined || optionalValue(project) !== undefined) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message: "plugins list only accepts a manifest path"
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: "plugins list only accepts a manifest path"
+				});
 			}
 			const manifestPath = yield* resolvePluginPath(
 				manifest,
@@ -144,16 +142,14 @@ const pluginsVerifyCommand = Command.make(
 			const projectValue = optionalValue(project);
 			const artifactValue = optionalValue(artifact);
 			if (projectValue !== undefined) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message: "plugins verify does not accept --project"
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: "plugins verify does not accept --project"
+				});
 			}
 			const manifestPath = yield* resolvePluginPath(
 				manifest,
@@ -293,41 +289,34 @@ const pluginsCacheInstallCommand = Command.make(
 				kind === "compiled" &&
 				(buildIdValue === undefined || unrealVersion === undefined)
 			) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message:
-							"compiled cache installs require exact --unreal and --build-id values"
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: "compiled cache installs require exact --unreal and --build-id values"
+				});
 			}
 			if (kind === "source" && buildIdValue !== undefined) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message: "source cache installs do not accept --build-id"
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: "source cache installs do not accept --build-id"
+				});
 			}
 			if (kind === "source" && engineSourceCommitValue !== undefined) {
-				return yield* Effect.fail(
-					new CliCommandError({
-						recovery:
-							"Inspect the command context and original cause before deciding whether to retry.",
-						retrySafe: false,
-						nextStep: "escalate",
-						code: "cli_command_failed",
-						message: "source cache installs do not accept --engine-source-commit"
-					})
-				);
+				return yield* new CliCommandError({
+					recovery:
+						"Inspect the command context and original cause before deciding whether to retry.",
+					retrySafe: false,
+					nextStep: "escalate",
+					code: "cli_command_failed",
+					message: "source cache installs do not accept --engine-source-commit"
+				});
 			}
 			return yield* runPluginsCacheInstall({
 				_tag: "PluginsCacheInstall",

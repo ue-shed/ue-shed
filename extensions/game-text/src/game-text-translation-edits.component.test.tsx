@@ -31,7 +31,7 @@ it("keeps 45 drafts available after closing the scrollable review", async () => 
 		const stage = () => {
 			model.stageAll(
 				Array.from({ length: 45 }, (_, index) => ({
-					edit: Schema.decodeUnknownSync(LocalizationEdit)({
+					edit: Schema.decodeSync(LocalizationEdit)({
 						culture: "fr",
 						namespace: "UI",
 						key: `Line${index}`,
@@ -79,7 +79,7 @@ it("retains unwritten PO edits after a partial write and requires a new check", 
 	const items = ["de", "fr"].map((culture) => ({
 		target,
 		source: "Source",
-		edit: Schema.decodeUnknownSync(LocalizationEdit)({
+		edit: Schema.decodeSync(LocalizationEdit)({
 			culture,
 			namespace: "UI",
 			key: "K",
@@ -149,7 +149,7 @@ it("retains unwritten PO edits after a partial write and requires a new check", 
 it("keeps staging separate by target and offers undo after unstage and discard", async () => {
 	const first = LocalizationSelection.fields.target.make("Game");
 	const second = LocalizationSelection.fields.target.make("Other");
-	const edit = Schema.decodeUnknownSync(LocalizationEdit)({
+	const edit = Schema.decodeSync(LocalizationEdit)({
 		culture: "fr",
 		namespace: "UI",
 		key: "K",
@@ -205,7 +205,7 @@ it("keeps staging separate by target and offers undo after unstage and discard",
 it("does not remove a newer staged draft when an earlier write finishes", async () => {
 	const pending = await Effect.runPromise(Deferred.make<LocalizationEditResult>());
 	const target = LocalizationSelection.fields.target.make("Game");
-	const edit = Schema.decodeUnknownSync(LocalizationEdit)({
+	const edit = Schema.decodeSync(LocalizationEdit)({
 		culture: "fr",
 		namespace: "UI",
 		key: "K",

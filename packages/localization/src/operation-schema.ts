@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 import {
 	LocalizationErrorGuidanceFields as ErrorGuidanceFields,
 	LocalizationTarget,
@@ -130,39 +130,39 @@ export type LocalizationRunRequest = typeof LocalizationRunRequest.Type;
  * optional original cause. Failures after execution may leave output; honor reconciliation
  * guidance before another run.
  */
-export class LocalizationOperationError extends Schema.TaggedError<LocalizationOperationError>()(
-	"LocalizationOperationError",
-	{
-		code: Schema.Literals([
-			"invalid_request",
-			"unsupported_engine",
-			"engine_not_found",
-			"engine_ambiguous",
-			"missing_config",
-			"unsupported_operation",
-			"unsupported_config",
-			"unsafe_path",
-			"project_missing",
-			"project_ambiguous",
-			"commandlet_missing",
-			"launch_failed",
-			"commandlet_failed",
-			"project_locked",
-			"timeout",
-			"cancelled",
-			"termination_failed",
-			"io_failed",
-			"limit_exceeded",
-			"config_changed",
-			"target_not_found"
-		]),
-		...ErrorGuidanceFields,
-		logExcerpt: Schema.Array(Schema.String).check(Schema.isMaxLength(40)),
-		logPath: Schema.optionalKey(Schema.String),
-		exitCode: Schema.optionalKey(Schema.NullOr(Schema.Int)),
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class LocalizationOperationError extends Schema.TaggedError<
+	LocalizationOperationError,
+	Brand.Brand<"packages/localization/src/operation-schema/LocalizationOperationError">
+>()("LocalizationOperationError", {
+	code: Schema.Literals([
+		"invalid_request",
+		"unsupported_engine",
+		"engine_not_found",
+		"engine_ambiguous",
+		"missing_config",
+		"unsupported_operation",
+		"unsupported_config",
+		"unsafe_path",
+		"project_missing",
+		"project_ambiguous",
+		"commandlet_missing",
+		"launch_failed",
+		"commandlet_failed",
+		"project_locked",
+		"timeout",
+		"cancelled",
+		"termination_failed",
+		"io_failed",
+		"limit_exceeded",
+		"config_changed",
+		"target_not_found"
+	]),
+	...ErrorGuidanceFields,
+	logExcerpt: Schema.Array(Schema.String).check(Schema.isMaxLength(40)),
+	logPath: Schema.optionalKey(Schema.String),
+	exitCode: Schema.optionalKey(Schema.NullOr(Schema.Int)),
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 /** Tag guard for localization operation failures; match by tag, not `instanceof`. */
 export const isLocalizationOperationError = Schema.is(LocalizationOperationError);
 /**

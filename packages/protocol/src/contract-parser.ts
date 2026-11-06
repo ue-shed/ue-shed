@@ -1,4 +1,4 @@
-import { Effect, Result, Schema } from "effect";
+import { type Brand, Effect, Result, Schema } from "effect";
 import { ErrorCauseFields, ErrorGuidanceFields } from "./error-guidance.js";
 
 /**
@@ -6,15 +6,15 @@ import { ErrorCauseFields, ErrorGuidanceFields } from "./error-guidance.js";
  * the boundary; `cause` retains the schema issue, including the failing field and expected value.
  * Repeating the same value cannot repair a version or shape mismatch.
  */
-export class ContractParseError extends Schema.TaggedError<ContractParseError>()(
-	"ContractParseError",
-	{
-		code: Schema.Literal("invalid_contract"),
-		contract: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class ContractParseError extends Schema.TaggedError<
+	ContractParseError,
+	Brand.Brand<"packages/protocol/src/contract-parser/ContractParseError">
+>()("ContractParseError", {
+	code: Schema.Literal("invalid_contract"),
+	contract: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /**
  * Classifies a failed composed or version-migrating schema parser without losing its original

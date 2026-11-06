@@ -1,3 +1,4 @@
+import { GameTextWorkspaceHostFailure } from "./workspace-host.js";
 import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { AssetReader, AssetReaderLive } from "@ue-shed/unreal-assets";
@@ -21,7 +22,12 @@ function memoryFiles() {
 		Effect.suspend(() => {
 			const bytes = contents.get(path);
 			return bytes === undefined
-				? Effect.fail({ message: "Missing file.", recovery: "Create it." })
+				? new GameTextWorkspaceHostFailure({
+						message: "Missing file.",
+						recovery: "Create it.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					})
 				: Effect.succeed(bytes);
 		});
 	const files: GameTextWorkspaceFileHooks = {
@@ -32,10 +38,12 @@ function memoryFiles() {
 		writeFile: (path, bytes, options) =>
 			Effect.gen(function* () {
 				if (options?.exclusive && contents.has(path))
-					return yield* Effect.fail({
+					return yield* new GameTextWorkspaceHostFailure({
 						code: "already_exists" as const,
 						message: "Exists.",
-						recovery: "Load it."
+						recovery: "Load it.",
+						retrySafe: false,
+						nextStep: "fix_input"
 					});
 				contents.set(path, bytes);
 			})
@@ -54,7 +62,7 @@ it.live(
 			let entered: Deferred.Deferred<void> | undefined;
 			let hold: Deferred.Deferred<void> | undefined;
 			const nativeQuery = Layer.unwrap(
-				Effect.flatMap(AssetReader, (reader) => reader.configuration()).pipe(
+				Effect.flatMap(AssetReader, (reader) => reader.configuration).pipe(
 					Effect.map(nativeIndexQueryLayer),
 					Effect.provide(AssetReaderLive),
 					Effect.orDie
@@ -115,10 +123,10 @@ it.live(
 				project: { projectRoot: root, generation: 3 }
 			};
 			const project: GameTextWorkspaceProject = {
-				current: () => Effect.succeed(ready),
-				refresh: () => Effect.succeed(ready),
-				candidates: () => Effect.succeed({ generation: 3, summary: { projectRoot: root } }),
-				progress: () => Effect.succeed({ completed: 0, total: 0, phase: "idle" })
+				current: Effect.succeed(ready),
+				refresh: Effect.succeed(ready),
+				candidates: Effect.sync(() => ({ generation: 3, summary: { projectRoot: root } })),
+				progress: Effect.sync(() => ({ completed: 0, total: 0, phase: "idle" }))
 			};
 			yield* Effect.gen(function* () {
 				const workspace = yield* makeGameTextWorkspace({
@@ -137,7 +145,7 @@ it.live(
 					.previewQualityRules(STARTER_CHECK_RULES)
 					.pipe(Effect.forkChild);
 				yield* Deferred.await(entered);
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: rules,
 					phase: "source_quality",
@@ -147,7 +155,7 @@ it.live(
 				expect((yield* Fiber.join(preview)).status).toBe("completed");
 				armed = false;
 				// A finished evaluation no longer shows as running.
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: 0,
 					phase: "idle"
@@ -162,7 +170,7 @@ it.live(
 					.localizationQualitySearch({ target, filter: "all", offset: 0 })
 					.pipe(Effect.forkChild);
 				yield* Deferred.await(entered);
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: rules,
 					phase: "localization_quality",
@@ -171,7 +179,7 @@ it.live(
 				yield* Deferred.succeed(hold, undefined);
 				expect((yield* Fiber.join(search)).status).toBe("ready");
 				armed = false;
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: 0,
 					phase: "idle"
@@ -188,10 +196,10 @@ it.live(
 					})
 					.pipe(Effect.forkChild);
 				yield* Deferred.await(entered);
-				expect((yield* workspace.progress()).phase).toBe("source_quality");
+				expect((yield* workspace.progress).phase).toBe("source_quality");
 				yield* Fiber.interrupt(interrupted);
 				armed = false;
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: 0,
 					phase: "idle"
@@ -218,7 +226,7 @@ it.live(
 				armed = false;
 				yield* Deferred.succeed(firstHold, undefined);
 				expect((yield* Fiber.join(first)).status).toBe("completed");
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: enabledRuleDocument(effectiveRuleDocument(fewer(3))).rules.length,
 					phase: "source_quality",
@@ -226,7 +234,7 @@ it.live(
 				});
 				yield* Deferred.succeed(secondHold, undefined);
 				expect((yield* Fiber.join(second)).status).toBe("completed");
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: 0,
 					phase: "idle"
@@ -256,7 +264,7 @@ it.live(
 				armed = false;
 				yield* Deferred.succeed(checkHold, undefined);
 				expect((yield* Fiber.join(checking)).status).toBe("ready");
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: enabledRuleDocument(effectiveRuleDocument(fewer(4))).rules.length,
 					phase: "source_quality",
@@ -264,7 +272,7 @@ it.live(
 				});
 				yield* Deferred.succeed(previewHold, undefined);
 				expect((yield* Fiber.join(previewing)).status).toBe("completed");
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: 0,
 					phase: "idle"
@@ -282,14 +290,14 @@ it.live(
 				fixture.setSource("Updated source");
 				expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
 				expect((yield* workspace.previewQualityRules(fewer(6))).status).toBe("completed");
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: 0,
 					phase: "idle"
 				});
 				yield* Deferred.succeed(staleHold, undefined);
 				yield* Fiber.await(stale);
-				expect(yield* workspace.progress()).toEqual({
+				expect(yield* workspace.progress).toEqual({
 					completed: 0,
 					total: 0,
 					phase: "idle"

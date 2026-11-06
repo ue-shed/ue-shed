@@ -23,7 +23,7 @@ it("confirms bulk review, reports progress and retains partial failure context",
 		target: LocalizationSelection.fields.target.make("Game")
 	});
 	const lines = Array.from({ length: 501 }, (_, index) =>
-		Schema.decodeUnknownSync(LocalizationLinePreview)({
+		Schema.decodeSync(LocalizationLinePreview)({
 			id: `line:${index}`,
 			identity: { namespace: "UI", key: `K${index}` },
 			source: `Line ${index}`,

@@ -13,7 +13,7 @@ import {
 } from "./review-repository.js";
 import { ReviewSelectionResponse } from "./review-schema.js";
 
-const selection = Schema.decodeUnknownSync(ReviewSelectionResponse)({
+const selection = Schema.decodeSync(ReviewSelectionResponse)({
 	actorPath: "/Game/Maps/City.City:PersistentLevel.Building_0",
 	bounds: {
 		center: { x: 0, y: 0, z: 100 },

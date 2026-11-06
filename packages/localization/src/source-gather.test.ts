@@ -11,7 +11,7 @@ const recipe = (text: string) => {
 };
 
 const target = (text: string): LocalizationTarget =>
-	Schema.decodeUnknownSync(LocalizationTarget)({
+	Schema.decodeSync(LocalizationTarget)({
 		name: "Game",
 		source: "config_only",
 		nativeCulture: "en",

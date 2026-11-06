@@ -44,7 +44,7 @@ const isRefreshPhase = (phase: ProtocolProgress["phase"]): phase is RefreshPhase
  */
 export function mapProjectIndexProgress(
 	event: ProtocolProgress
-): typeof ProjectIndexRefreshEvent.Type | undefined {
+): ProjectIndexRefreshEvent | undefined {
 	if (!isRefreshPhase(event.phase)) return undefined;
 	return ProjectIndexRefreshEvent.cases.Progress.make({
 		completedPackages: event.completedItems,

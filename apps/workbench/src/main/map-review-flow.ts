@@ -1,5 +1,5 @@
 import { ErrorNextStep, ErrorCauseFields } from "@ue-shed/protocol";
-import { Clock, Effect, Schema } from "effect";
+import { type Brand, Clock, Effect, Schema } from "effect";
 import type {
 	MapReviewFlowAttachment,
 	MapReviewFlowCheckpoint,
@@ -12,30 +12,30 @@ import type {
  * Workbench implementation authority and is not imported by the production composition root.
  */
 
-export class MapReviewFlowExecutionError extends Schema.TaggedError<MapReviewFlowExecutionError>()(
-	"MapReviewFlowExecutionError",
-	{
-		recovery: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("map_review_flow_execution_failed"),
-		message: Schema.NonEmptyString,
-		operation: Schema.NonEmptyString,
-		...ErrorCauseFields
-	}
-) {}
+export class MapReviewFlowExecutionError extends Schema.TaggedError<
+	MapReviewFlowExecutionError,
+	Brand.Brand<"apps/workbench/src/main/map-review-flow/MapReviewFlowExecutionError">
+>()("MapReviewFlowExecutionError", {
+	recovery: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("map_review_flow_execution_failed"),
+	message: Schema.NonEmptyString,
+	operation: Schema.NonEmptyString,
+	...ErrorCauseFields
+}) {}
 
 export interface MapReviewFlowStepEvidence {
 	readonly attachments?: ReadonlyArray<MapReviewFlowAttachment>;
 	readonly identity?: MapReviewFlowIdentity;
 }
 
-type FlowStep = () => Effect.Effect<MapReviewFlowStepEvidence, MapReviewFlowExecutionError>;
+type FlowStep = Effect.Effect<MapReviewFlowStepEvidence, MapReviewFlowExecutionError>;
 
 export interface MapReviewAuthoringRoundtripDriver {
 	readonly approveView: FlowStep;
 	readonly captureView: FlowStep;
-	readonly cleanup: () => Effect.Effect<MapReviewFlowCleanup>;
+	readonly cleanup: Effect.Effect<MapReviewFlowCleanup>;
 	readonly generateRig: FlowStep;
 	readonly inspectEvidence: FlowStep;
 	readonly loadView: FlowStep;
@@ -122,7 +122,7 @@ export const runMapReviewAuthoringRoundtrip = Effect.fn("MapReviewFlow.runAuthor
 			id: Exclude<keyof typeof checkpointDescriptions, "cleanup-verified">,
 			action: FlowStep
 		) {
-			const evidence = yield* action();
+			const evidence = yield* action;
 			identity = mergeIdentity(identity, evidence.identity);
 			const completedAt = new Date(yield* Clock.currentTimeMillis).toISOString();
 			const copy = checkpointDescriptions[id];
@@ -153,7 +153,7 @@ export const runMapReviewAuthoringRoundtrip = Effect.fn("MapReviewFlow.runAuthor
 		return yield* flow.pipe(
 			Effect.onExit(() =>
 				Effect.gen(function* () {
-					const cleanup = yield* args.driver.cleanup();
+					const cleanup = yield* args.driver.cleanup;
 					const copy = checkpointDescriptions["cleanup-verified"];
 					yield* args.sink.checkpoint({
 						attachments: [],
@@ -164,7 +164,7 @@ export const runMapReviewAuthoringRoundtrip = Effect.fn("MapReviewFlow.runAuthor
 						title: copy.title
 					});
 					if (cleanup.status === "failed") {
-						yield* new MapReviewFlowExecutionError({
+						return yield* new MapReviewFlowExecutionError({
 							recovery:
 								"Inspect the recording checkpoints and cleanup evidence before starting another editor run.",
 							retrySafe: false,

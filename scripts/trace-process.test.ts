@@ -12,7 +12,7 @@ import { describeSubprocess, parentedEnvironment } from "./trace-process.ts";
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const preload = pathToFileURL(join(repositoryRoot, "scripts", "trace-process.ts")).href;
 
-test("subprocess names look through cmd shims and skip Node, pnpm and build services", () => {
+void test("subprocess names look through cmd shims and skip Node, pnpm and build services", () => {
 	assert.deepEqual(describeSubprocess("git", ["worktree", "add", "x"]), {
 		name: "git worktree add x",
 		tool: "git"
@@ -59,7 +59,7 @@ test("subprocess names look through cmd shims and skip Node, pnpm and build serv
 	assert.equal(describeSubprocess("C:\\tools\\esbuild.exe", ["--service=0.25"]), undefined);
 });
 
-test("Cargo attributes separate compiling from the rest of the run", () => {
+void test("Cargo attributes separate compiling from the rest of the run", () => {
 	const output = [
 		"   Compiling serde v1.0.228",
 		"   Compiling uasset-io v0.20.0 (C:\\repo\\crates\\uasset-io)",
@@ -75,7 +75,7 @@ test("Cargo attributes separate compiling from the rest of the run", () => {
 	assert.deepEqual(cargoAttributes(""), {});
 });
 
-test("traced Node processes record spans for their non-Node subprocesses exactly once", () => {
+void test("traced Node processes record spans for their non-Node subprocesses exactly once", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-trace-process-"));
 	try {
 		const spansFile = join(root, "spans.jsonl");
@@ -136,7 +136,7 @@ test("traced Node processes record spans for their non-Node subprocesses exactly
 	}
 });
 
-test("explicit spans from another copy of the tracing modules still suppress automatic ones", () => {
+void test("explicit spans from another copy of the tracing modules still suppress automatic ones", () => {
 	// A clean-pack worktree runs its own copy of scripts/ under the preload from this checkout.
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-trace-copy-"));
 	try {
@@ -175,7 +175,7 @@ test("explicit spans from another copy of the tracing modules still suppress aut
 	}
 });
 
-test("children join the innermost active span even through an environment copied before it", () => {
+void test("children join the innermost active span even through an environment copied before it", () => {
 	const traceId = "a".repeat(32);
 	const stale = `00-${traceId}-${"1".repeat(16)}-01`;
 	const current = `00-${traceId}-${"2".repeat(16)}-01`;
@@ -233,7 +233,7 @@ test("children join the innermost active span even through an environment copied
 	}
 });
 
-test("an async child belongs to the span active when it was launched", () => {
+void test("an async child belongs to the span active when it was launched", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-trace-launch-"));
 	try {
 		const spansFile = join(root, "spans.jsonl");

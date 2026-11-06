@@ -187,17 +187,15 @@ export function exportGameTextInvestigation(
 ): Effect.Effect<GameTextInvestigationExport, InvestigationError> {
 	const corpusExport = Effect.gen(function* () {
 		if (localized === undefined)
-			return yield* Effect.fail(
-				new InvestigationError({
-					message: preset.query.localization
-						? `The localization target ${preset.query.localization.target} is not loaded.`
-						: "This export requires an open native Game Text snapshot.",
-					recovery:
-						"Refresh the Game Text workspace, select its localization target when filtering translations, and pass its native query to the export.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new InvestigationError({
+				message: preset.query.localization
+					? `The localization target ${preset.query.localization.target} is not loaded.`
+					: "This export requires an open native Game Text snapshot.",
+				recovery:
+					"Refresh the Game Text workspace, select its localization target when filtering translations, and pass its native query to the export.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		return yield* localized.export(investigationRequest(preset.query)).pipe(
 			Effect.mapError(
 				(cause) =>
@@ -213,37 +211,31 @@ export function exportGameTextInvestigation(
 	});
 	return Effect.gen(function* () {
 		if (preset.schemaVersion === 1 && preset.query.workspaceFilter !== undefined)
-			return yield* Effect.fail(
-				new InvestigationError({
-					message: "Localization quality presets require schemaVersion 2.",
-					recovery: "Save this localization quality selection as a version-2 preset.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new InvestigationError({
+				message: "Localization quality presets require schemaVersion 2.",
+				recovery: "Save this localization quality selection as a version-2 preset.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		if (
 			preset.query.mode === "quality" &&
 			preset.rules === undefined &&
 			preset.query.workspaceFilter === undefined
 		)
-			return yield* Effect.fail(
-				new InvestigationError({
-					message: "Quality exports require a rule document.",
-					recovery: "Load quality rules before exporting findings.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new InvestigationError({
+				message: "Quality exports require a rule document.",
+				recovery: "Load quality rules before exporting findings.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		if (preset.query.workspaceFilter !== undefined && !workspace)
-			return yield* Effect.fail(
-				new InvestigationError({
-					message: "The localization quality workspace is unavailable.",
-					recovery:
-						"Check that the preset's localization target is gathered in the project, then retry the export.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new InvestigationError({
+				message: "The localization quality workspace is unavailable.",
+				recovery:
+					"Check that the preset's localization target is gathered in the project, then retry the export.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		if (
 			workspace &&
 			preset.query.workspaceFilter !== undefined &&
@@ -251,14 +243,12 @@ export function exportGameTextInvestigation(
 				workspace.target !== preset.query.localization?.target ||
 				workspace.culture !== preset.query.localization?.culture)
 		)
-			return yield* Effect.fail(
-				new InvestigationError({
-					message: "The quality report does not match this preset's selection.",
-					recovery: "Reevaluate the target, culture and finding filter before exporting.",
-					retrySafe: true,
-					nextStep: "reconcile"
-				})
-			);
+			return yield* new InvestigationError({
+				message: "The quality report does not match this preset's selection.",
+				recovery: "Reevaluate the target, culture and finding filter before exporting.",
+				retrySafe: true,
+				nextStep: "reconcile"
+			});
 		const rules =
 			preset.rules === undefined
 				? undefined
@@ -280,16 +270,13 @@ export function exportGameTextInvestigation(
 			(preset.query.workspaceFilter === undefined || workspace === undefined)
 				? yield* Effect.gen(function* () {
 						if (!("sourceQuality" in corpus))
-							return yield* Effect.fail(
-								new InvestigationError({
-									message:
-										"Source quality requires an open native Game Text snapshot.",
-									recovery:
-										"Pass the index model that owns the selected snapshot.",
-									retrySafe: true,
-									nextStep: "fix_input"
-								})
-							);
+							return yield* new InvestigationError({
+								message:
+									"Source quality requires an open native Game Text snapshot.",
+								recovery: "Pass the index model that owns the selected snapshot.",
+								retrySafe: true,
+								nextStep: "fix_input"
+							});
 						const query = yield* corpus.sourceQuality(rules);
 						return yield* query.export(preset.query.qualityFilter);
 					}).pipe(

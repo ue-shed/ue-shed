@@ -674,7 +674,7 @@ export function AuthoringRoute(props: {
 	};
 
 	const refreshSessions = () => {
-		sessionListAction.run(props.client.listSessions(), {
+		sessionListAction.run(props.client.listSessions, {
 			onFailure: (cause) => setSessionNotice(Cause.pretty(cause)),
 			onSuccess: setSessions
 		});
@@ -736,7 +736,7 @@ export function AuthoringRoute(props: {
 		const preserveCurrent = state().status === "ready";
 		if (preserveCurrent) setIsReplacing(true);
 		else setState({ status: "loading" });
-		loadAction.run(choose ? props.client.chooseTable() : props.client.loadConfiguredTable(), {
+		loadAction.run(choose ? props.client.chooseTable : props.client.loadConfiguredTable, {
 			onFailure: (cause) => {
 				applyResult(
 					{
@@ -771,12 +771,12 @@ export function AuthoringRoute(props: {
 		});
 		catalogProgressSubscription.subscribe(
 			Stream.fromEffectSchedule(
-				props.client.getCatalogProgress(),
+				props.client.getCatalogProgress,
 				Schedule.spaced("250 millis")
 			),
 			{ onValue: setCatalogProgress }
 		);
-		catalogAction.run(props.client.loadConfiguredCatalog(), {
+		catalogAction.run(props.client.loadConfiguredCatalog, {
 			onFailure: (cause) => {
 				catalogProgressSubscription.cancel();
 				setCatalogState({
@@ -889,7 +889,7 @@ export function AuthoringRoute(props: {
 		}
 	);
 
-	const runSessionOperation = (effect: Effect.Effect<AuthoringSessionResult, unknown>): void => {
+	const runSessionOperation = <E,>(effect: Effect.Effect<AuthoringSessionResult, E>): void => {
 		if (isPersisting()) return;
 		const ownsView = captureSessionOwner();
 		setIsPersisting(true);
@@ -1145,7 +1145,7 @@ export function AuthoringRoute(props: {
 							disabled={isReplacing()}
 							onClick={() => {
 								setAuthorityPreference("saved");
-								void load(true);
+								load(true);
 							}}
 						>
 							{isReplacing() ? "Opening…" : "Open table"}
@@ -1156,7 +1156,7 @@ export function AuthoringRoute(props: {
 							disabled={isReplacing()}
 							onClick={() => {
 								setAuthorityPreference("saved");
-								void load(false);
+								load(false);
 							}}
 						>
 							Reload table
@@ -1234,7 +1234,7 @@ export function AuthoringRoute(props: {
 								type="button"
 								onClick={() => {
 									setAuthorityPreference("saved");
-									void load(true);
+									load(true);
 								}}
 								{...stylex.attrs(styles.inlineButton)}
 							>
@@ -1263,7 +1263,7 @@ export function AuthoringRoute(props: {
 								<Show when={current.error.retrySafe}>
 									<button
 										type="button"
-										onClick={() => void load(false)}
+										onClick={() => load(false)}
 										{...stylex.attrs(styles.inlineButton)}
 									>
 										Retry
@@ -1550,10 +1550,10 @@ export function AuthoringRoute(props: {
 												activeObjectPath={snapshot().table.objectPath}
 												disabled={isReplacing()}
 												onOpen={(objectPath) =>
-													void openCatalogTable(objectPath)
+													openCatalogTable(objectPath)
 												}
 												onQueryChange={setCatalogQuery}
-												onRefresh={() => void loadCatalog()}
+												onRefresh={() => loadCatalog()}
 												query={catalogQuery()}
 												progress={catalogProgress()}
 												state={catalogState()}

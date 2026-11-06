@@ -58,7 +58,7 @@ await Effect.runPromise(
 	Effect.scoped(
 		Effect.gen(function* () {
 			const fixture = yield* makeIndexRegressionFixture();
-			const target = Schema.decodeUnknownSync(LocalizationTarget)({
+			const target = yield* Schema.decodeEffect(LocalizationTarget)({
 				...fixture.target,
 				cultures,
 				outputPaths: {

@@ -681,7 +681,7 @@ it("keeps progress through translations and the first results query", async () =
 	const firstPage = await Effect.runPromise(Deferred.make<TextCorpusSearchResult>());
 	mount(
 		makeClient(planted, {
-			localizationTargets: () => Deferred.await(translations),
+			localizationTargets: Effect.suspend(() => Deferred.await(translations)),
 			localizationTarget: () => Effect.succeed({ status: "not_ready" }),
 			localizationFocus: () => Effect.succeed({ status: "not_ready" }),
 			progress: Stream.make({

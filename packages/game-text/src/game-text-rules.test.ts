@@ -154,9 +154,9 @@ it.effect(
 				report.findings.some((finding) => finding.kind === "missing_translator_notes")
 			).toBe(false);
 			expect(
-				Schema.decodeUnknownSync(Schema.fromJsonString(LocalizationQualityReport))(
+				yield* Schema.decodeEffect(Schema.fromJsonString(LocalizationQualityReport))(
 					JSON.stringify(report)
-				)
+				).pipe(Effect.orDie)
 			).toEqual(report);
 			expect(report.coverage).toEqual(text.coverage);
 		})
@@ -183,7 +183,7 @@ it.effect(
 		})
 );
 it("omits unlisted culture policies without a default and preserves case-sensitive offsets", () => {
-	const document = Schema.decodeUnknownSync(Schema.fromJsonString(GameTextRuleDocument))(
+	const document = Schema.decodeSync(Schema.fromJsonString(GameTextRuleDocument))(
 		JSON.stringify(authored)
 			.replace(',"defaultMaximumCharacters":6', "")
 			.replace('"caseSensitive":false', '"caseSensitive":true')

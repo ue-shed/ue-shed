@@ -171,7 +171,7 @@ describe("Game Text review state", () => {
 			investigations: {
 				export: () => Effect.succeed({ status: "cancelled" }),
 				save: () => Effect.succeed({ status: "cancelled" }),
-				open: () => Effect.succeed({ status: "cancelled" })
+				open: Effect.sync(() => ({ status: "cancelled" }))
 			},
 			localizationLinesFile: (request) => {
 				exports.push(request);

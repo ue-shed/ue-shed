@@ -15,19 +15,18 @@ afterAll(() => runtime.dispose());
 function setup(overrides: Partial<SavedReviewClient> = {}, initialAssetPath?: string) {
 	const client: SavedReviewClient = {
 		readSequence: vi.fn(() => Effect.succeed(read)),
-		inventory: () =>
-			Effect.succeed({
-				status: "ready",
-				generation: 1,
-				projectName: "Fixture",
-				assets: [
-					{
-						assetPath: "Child.uasset",
-						packageName: "/Game/Child",
-						kind: "level_sequence"
-					}
-				]
-			}),
+		inventory: Effect.sync(() => ({
+			status: "ready",
+			generation: 1,
+			projectName: "Fixture",
+			assets: [
+				{
+					assetPath: "Child.uasset",
+					packageName: "/Game/Child",
+					kind: "level_sequence"
+				}
+			]
+		})),
 		...overrides
 	};
 	const Route = createSequencerRoute(extension, {
@@ -75,12 +74,11 @@ describe("Workbench Sequencer route", () => {
 
 	it("shows project-selection copy and preserves real inventory failures", async () => {
 		const { view } = setup({
-			inventory: () =>
-				Effect.succeed({
-					status: "not_configured",
-					message: "Select a project",
-					recovery: "Choose a project"
-				})
+			inventory: Effect.sync(() => ({
+				status: "not_configured",
+				message: "Select a project",
+				recovery: "Choose a project"
+			}))
 		});
 		await screen.findByRole("heading", { name: "No project selected" });
 		expect(
@@ -88,12 +86,11 @@ describe("Workbench Sequencer route", () => {
 		).toBeTruthy();
 		view.unmount();
 		setup({
-			inventory: () =>
-				Effect.succeed({
-					status: "failed",
-					message: "Index unavailable",
-					recovery: "Refresh the project index"
-				})
+			inventory: Effect.sync(() => ({
+				status: "failed",
+				message: "Index unavailable",
+				recovery: "Refresh the project index"
+			}))
 		});
 		expect((await screen.findByRole("alert")).textContent).toContain(
 			"Refresh the project index"

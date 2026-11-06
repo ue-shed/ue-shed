@@ -1,5 +1,5 @@
 import { it as effectIt } from "@effect/vitest";
-import { ConfigProvider, Effect } from "effect";
+import { Layer, ConfigProvider, Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { installedUassetExecutable, resolveAssetReaderExecutable } from "./asset-reader.js";
 import {
@@ -55,7 +55,7 @@ describe("AssetReader executable resolution", () => {
 	});
 
 	effectIt.effect("reports an explicit layer executable as configured", () =>
-		getAssetReaderSource().pipe(
+		getAssetReaderSource.pipe(
 			Effect.provide(assetReaderLayer({ executable: "D:/reader/uasset.exe" })),
 			Effect.map((source) => expect(source).toBe("configured"))
 		)
@@ -64,20 +64,24 @@ describe("AssetReader executable resolution", () => {
 	effectIt.effect("reads UE_SHED_UASSET_EXECUTABLE before any installed package", () =>
 		Effect.gen(function* () {
 			const reader = yield* AssetReader;
-			expect(yield* reader.source()).toBe("configured");
-			expect((yield* reader.configuration()).executable).toBe("D:/env/uasset.exe");
+			expect(yield* reader.source).toBe("configured");
+			expect((yield* reader.configuration).executable).toBe("D:/env/uasset.exe");
 		}).pipe(
-			Effect.provide(AssetReaderLive),
 			Effect.provide(
-				ConfigProvider.layer(
-					ConfigProvider.fromUnknown({ UE_SHED_UASSET_EXECUTABLE: "D:/env/uasset.exe" })
+				Layer.provideMerge(
+					AssetReaderLive,
+					ConfigProvider.layer(
+						ConfigProvider.fromUnknown({
+							UE_SHED_UASSET_EXECUTABLE: "D:/env/uasset.exe"
+						})
+					)
 				)
 			)
 		)
 	);
 
 	effectIt.effect("falls back to the installed package or PATH without configuration", () =>
-		getAssetReaderSource().pipe(
+		getAssetReaderSource.pipe(
 			Effect.provide(assetReaderLayer()),
 			Effect.map((source) =>
 				expect(source).toBe(installedUassetExecutable() === undefined ? "path" : "package")

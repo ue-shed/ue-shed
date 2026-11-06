@@ -148,7 +148,7 @@ describe("localization operation plans", () => {
 					fields: {
 						...step.fields,
 						DestinationPath: "Translations",
-						CulturesToGenerate: [Schema.decodeUnknownSync(CultureCode)("de")],
+						CulturesToGenerate: [Schema.decodeSync(CultureCode)("de")],
 						bUseCultureDirectory: false,
 						ResourceName: "Nested/Runtime.bin",
 						bConflictReport: false,
@@ -179,7 +179,7 @@ describe("localization operation plans", () => {
 				...recipe,
 				common: {
 					...recipe.common,
-					CulturesToGenerate: [Schema.decodeUnknownSync(CultureCode)("de")]
+					CulturesToGenerate: [Schema.decodeSync(CultureCode)("de")]
 				}
 			}))
 		};

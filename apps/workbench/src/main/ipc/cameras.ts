@@ -8,14 +8,14 @@ export const register = Effect.gen(function* () {
 	const presentation = yield* CameraPresentation;
 
 	yield* ipc.register(invokeContracts["camera:metrics"], () =>
-		presentation.metrics().pipe(Effect.orDie)
+		presentation.metrics.pipe(Effect.orDie)
 	);
 	yield* ipc.register(invokeContracts["camera:presentation-budget"], (...args) => {
 		const [megabytesPerSecond] = args;
 		return presentation.setPresentationBudget(megabytesPerSecond);
 	});
 	yield* ipc.register(invokeContracts["camera:status"], () =>
-		presentation.status().pipe(
+		presentation.status.pipe(
 			Effect.match({
 				onFailure: () => ({
 					message: "Camera streaming is unavailable in the current editor state.",

@@ -6,6 +6,7 @@ import { assetReaderLayer } from "@ue-shed/unreal-assets";
 import { Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { GameTextIndexBuilder } from "./index-builder.js";
+import type { GameTextIndexError } from "./index-error.js";
 import { GameTextIndexSource } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
@@ -42,7 +43,7 @@ describe.skipIf(!executable)("in-place package refresh of real packages", () => 
 				const inventory = yield* source.inventory({ projectRoot });
 				const byPath = new Map(inventory.map((entry) => [entry.path, entry]));
 				let hostReads = 0;
-				const input: PackageTextRefreshInput<unknown, never> = {
+				const input: PackageTextRefreshInput<GameTextIndexError, never> = {
 					inventory,
 					coldMinimumPackages: 1,
 					read: (paths) =>
@@ -75,7 +76,7 @@ describe.skipIf(!executable)("in-place package refresh of real packages", () => 
 					Effect.scoped(builder.refreshPackageTextLayer(input))
 				);
 				const layers = yield* Effect.gen(function* () {
-					const reader = yield* (yield* SharedIndex).open();
+					const reader = yield* (yield* SharedIndex).open;
 					const layers: Record<
 						string,
 						{

@@ -37,31 +37,31 @@ const unexpected = (operation: string) => Effect.die(new Error(`Unexpected ${ope
 
 function reader(overrides: Partial<AssetReaderTestApi>) {
 	return makeAssetReaderTestLayer({
-		configuration: () =>
-			Effect.succeed({ executable: "uasset", timeoutMs: 30_000, catalogTimeoutMs: 60_000 }),
-		catalogProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				processedAssets: 0,
-				tablesFound: 0,
-				totalAssets: 0
-			}),
-		scanProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				cacheHits: 0,
-				emittedAssets: 0,
-				processedAssets: 0,
-				totalAssets: 0
-			}),
-		savedWorldProgress: () =>
-			Effect.succeed({
-				phase: "idle",
-				actorsFound: 0,
-				processedPackages: 0,
-				totalPackages: 0
-			}),
+		configuration: Effect.sync(() => ({
+			executable: "uasset",
+			timeoutMs: 30_000,
+			catalogTimeoutMs: 60_000
+		})),
+		catalogProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			processedAssets: 0,
+			tablesFound: 0,
+			totalAssets: 0
+		})),
+		scanProgress: Effect.sync(() => ({
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		})),
+		savedWorldProgress: Effect.sync(() => ({
+			phase: "idle",
+			actorsFound: 0,
+			processedPackages: 0,
+			totalPackages: 0
+		})),
 		readBlueprint: () => unexpected("readBlueprint"),
 		readLevelSequence: () => unexpected("readLevelSequence"),
 		readSavedWorld: () => unexpected("readSavedWorld"),
@@ -74,7 +74,7 @@ function reader(overrides: Partial<AssetReaderTestApi>) {
 		readAsset: () => unexpected("readAsset"),
 		readTable: () => unexpected("readTable"),
 		scanProject: () => unexpected("scanProject"),
-		source: () => Effect.succeed("configured"),
+		source: Effect.succeed("configured"),
 		...overrides
 	});
 }
@@ -489,43 +489,43 @@ it.effect("resolves platform views from config, header inventory and class defau
 			platforms: ["Switch", "Windows", "Android"]
 		}).pipe(
 			Effect.provide(
-				explorer((request) => {
-					if (request.platform === "Android") {
-						return Effect.fail(
-							new ConfigExplorerError({
-								code: "invalid_platform",
-								message: "Unknown platform Android.",
-								recovery: "Choose a platform the engine knows.",
-								retrySafe: false,
-								nextStep: "fix_input"
-							})
+				Layer.provideMerge(
+					explorer((request) => {
+						if (request.platform === "Android") {
+							return Effect.fail(
+								new ConfigExplorerError({
+									code: "invalid_platform",
+									message: "Unknown platform Android.",
+									recovery: "Choose a platform the engine knows.",
+									retrySafe: false,
+									nextStep: "fix_input"
+								})
+							);
+						}
+						expect(request.section).toBe(
+							`EnhancedInputPlatformSettings_${request.platform} EnhancedInputPlatformSettings`
 						);
-					}
-					expect(request.section).toBe(
-						`EnhancedInputPlatformSettings_${request.platform} EnhancedInputPlatformSettings`
-					);
-					return Effect.succeed(
-						explanation(
-							request,
-							request.platform === "Switch"
-								? {
-										kind: "array",
-										values: [
-											"/Script/Engine.BlueprintGeneratedClass'/Game/BP_SwitchData.BP_SwitchData_C'",
-											"/Game/BP_Missing.BP_Missing_C"
-										]
-									}
-								: { kind: "missing" }
-						)
-					);
-				})
-			),
-			Effect.provide(
-				reader({
-					scanProject: () =>
-						Effect.succeed(headerScan([header("/Game/BP_SwitchData", [])])),
-					readAsset: () => Effect.succeed(platformInspection)
-				})
+						return Effect.succeed(
+							explanation(
+								request,
+								request.platform === "Switch"
+									? {
+											kind: "array",
+											values: [
+												"/Script/Engine.BlueprintGeneratedClass'/Game/BP_SwitchData.BP_SwitchData_C'",
+												"/Game/BP_Missing.BP_Missing_C"
+											]
+										}
+									: { kind: "missing" }
+							)
+						);
+					}),
+					reader({
+						scanProject: () =>
+							Effect.succeed(headerScan([header("/Game/BP_SwitchData", [])])),
+						readAsset: () => Effect.succeed(platformInspection)
+					})
+				)
 			)
 		);
 		expect(views).toEqual([
@@ -596,10 +596,14 @@ it.effect("composes the requested co-activation sources through one service", ()
 			["project_default_contexts", "absent"]
 		]);
 	}).pipe(
-		Effect.provide(EnhancedInputAnalysisLive),
 		Effect.provide(
-			explorer((request) => Effect.succeed(explanation(request, { kind: "missing" })))
-		),
-		Effect.provide(reader({}))
+			Layer.provideMerge(
+				Layer.provideMerge(
+					EnhancedInputAnalysisLive,
+					explorer((request) => Effect.succeed(explanation(request, { kind: "missing" })))
+				),
+				reader({})
+			)
+		)
 	)
 );

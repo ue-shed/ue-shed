@@ -16,19 +16,19 @@ import {
 } from "./authoring-view.js";
 import type { AuthoringReadResult, AuthoringReadFailure } from "./wasm-reader.js";
 
-export type AuthoringReadEffect = Effect.Effect<AuthoringReadResult, unknown>;
+export type AuthoringReadEffect<E = never> = Effect.Effect<AuthoringReadResult, E>;
 export interface AuthoringOpenerControls {
-	readonly open: (read: AuthoringReadEffect) => void;
+	readonly open: <E>(read: AuthoringReadEffect<E>) => void;
 	readonly loading: boolean;
 	readonly hasTable: boolean;
 }
-export interface DataTableViewerProps {
+export interface DataTableViewerProps<E = never> {
 	readonly opener: (controls: AuthoringOpenerControls) => JSX.Element;
-	readonly initialRead?: AuthoringReadEffect | undefined;
+	readonly initialRead?: AuthoringReadEffect<E> | undefined;
 	readonly failureActions?: (failure: AuthoringReadFailure) => JSX.Element;
 }
 
-export function DataTableViewer(props: DataTableViewerProps) {
+export function DataTableViewer<E = never>(props: DataTableViewerProps<E>) {
 	const initialRead = props.initialRead;
 	const action = createEffectAction();
 	const [result, setResult] = createSignal<AuthoringReadResult>();
@@ -88,7 +88,7 @@ export function DataTableViewer(props: DataTableViewerProps) {
 			)
 		);
 	});
-	const open = (read: AuthoringReadEffect) => {
+	const open = <ReadError,>(read: AuthoringReadEffect<ReadError>) => {
 		setLoading(true);
 		setTransportFailed(false);
 		action.run(read, {

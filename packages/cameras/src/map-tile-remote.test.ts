@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { it } from "@effect/vitest";
 import type { RemoteControlClientApi, RemoteControlRequest } from "@ue-shed/unreal-connection";
+import { RemoteControlClientError } from "@ue-shed/unreal-connection";
 import { Deferred, Effect, Fiber, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
@@ -54,8 +55,11 @@ for (const sharedRenderer of [false, true]) {
 					const client: RemoteControlClientApi = {
 						request: (call) => {
 							if (call.functionName === "BeginMapTileCapture") {
+								const raw = call.parameters.RequestJson;
+								if (!Schema.is(Schema.String)(raw))
+									throw new Error("RequestJson must be a JSON string");
 								const wire = Schema.decodeUnknownSync(MapTileCaptureRequest)(
-									JSON.parse(String(call.parameters?.RequestJson))
+									JSON.parse(raw)
 								);
 								expect(wire.contract.version.minor).toBe(sharedRenderer ? 1 : 0);
 							}
@@ -173,12 +177,68 @@ it.effect("rejects another operation's running status without polling it", () =>
 	})
 );
 
+it.effect("retains the typed transport failure without changing its cause", () =>
+	Effect.gen(function* () {
+		const cause = new Error("connection lost");
+		const transport = new RemoteControlClientError({
+			code: "connection_failed",
+			endpoint: "http://editor",
+			functionName: "GetCapabilityManifest",
+			operation: "camera.map_tile.negotiate",
+			message: "The editor connection is unavailable.",
+			recovery: "Reconnect to the expected editor.",
+			retrySafe: true,
+			nextStep: "retry",
+			cause
+		});
+		const client: RemoteControlClientApi = { request: () => Effect.fail(transport) };
+		const error = yield* makeMapTileCaptureRemotePort(client, "http://editor")
+			.capture(request)
+			.pipe(Effect.flip);
+		expect(error).toBe(transport);
+		expect(transport.cause).toBe(cause);
+	})
+);
+
+it.effect("classifies restoration refusal and retains the run for a subsequent release", () =>
+	Effect.gen(function* () {
+		let releases = 0;
+		const refusal = { released: false, restoration: "failed" };
+		const client: RemoteControlClientApi = {
+			request: (call) => {
+				if (call.functionName === "GetCapabilityManifest") return Effect.succeed(manifest);
+				if (call.functionName === "EndMapTileCapture") {
+					releases++;
+					return Effect.succeed(
+						json(releases === 1 ? refusal : { released: true, restoration: "restored" })
+					);
+				}
+				return Effect.succeed(terminal);
+			}
+		};
+		const port = makeMapTileCaptureRemotePort(client, "http://editor");
+		yield* port.capture(request);
+		const error = yield* (port.release?.(request.runId) ?? Effect.void).pipe(Effect.flip);
+		expect(error).toMatchObject({
+			_tag: "MapTileCaptureRestorationError",
+			runId: request.runId,
+			message: "Native map capture could not restore owned editor state.",
+			retrySafe: false,
+			nextStep: "reconcile",
+			cause: refusal
+		});
+		yield* port.release?.(request.runId) ?? Effect.void;
+		yield* port.release?.(request.runId) ?? Effect.void;
+		expect(releases).toBe(2);
+	})
+);
+
 it.effect("keeps the explicitly selected legacy backend synchronous", () =>
 	Effect.gen(function* () {
 		const calls: string[] = [];
-		const response = Schema.decodeUnknownSync(Schema.Struct({ response: Schema.Json }))(
-			terminal
-		).response;
+		const response = (yield* Schema.decodeUnknownEffect(
+			Schema.Struct({ response: Schema.Json })
+		)(terminal).pipe(Effect.orDie)).response;
 		const client: RemoteControlClientApi = {
 			request: (call) =>
 				Effect.sync(() => {

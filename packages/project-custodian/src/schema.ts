@@ -1,5 +1,5 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol/errors";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 
 const Bytes = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const NonNegativeNumber = Schema.Number.check(Schema.isGreaterThanOrEqualTo(0));
@@ -275,14 +275,14 @@ export interface CustodianReceipt extends Schema.Schema.Type<typeof CustodianRec
  * A value that does not match the Project Custodian contract: the two sides disagree about the contract, so
  * repeating the same call returns the same mismatch.
  */
-export class CustodianContractError extends Schema.TaggedError<CustodianContractError>()(
-	"CustodianContractError",
-	{
-		code: Schema.Literal("invalid_contract"),
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class CustodianContractError extends Schema.TaggedError<
+	CustodianContractError,
+	Brand.Brand<"packages/project-custodian/src/schema/CustodianContractError">
+>()("CustodianContractError", {
+	code: Schema.Literal("invalid_contract"),
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A unary parser for one Project Custodian contract value: it decodes the encoded value and fails with

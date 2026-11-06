@@ -38,9 +38,9 @@ describe("editor world-control wire contract", () => {
 	});
 	it("requires completed map results and preserves dirty-world refusals", () => {
 		const base = { contract, operationId: "open", targetMapPath: "/Game/Fixture/Target" };
-		expect(
-			Schema.decodeUnknownResult(EditorWorldOperation)({ ...base, status: "pending" })._tag
-		).toBe("Success");
+		expect(Schema.decodeResult(EditorWorldOperation)({ ...base, status: "pending" })._tag).toBe(
+			"Success"
+		);
 		expect(
 			Schema.decodeUnknownResult(EditorWorldOperation)({ ...base, status: "completed" })._tag
 		).toBe("Failure");
@@ -79,7 +79,7 @@ describe("editor world-control wire contract", () => {
 
 	it("rejects filesystem paths as map identities", () => {
 		expect(
-			Schema.decodeUnknownResult(EditorWorldOpenRequest)({
+			Schema.decodeResult(EditorWorldOpenRequest)({
 				contract,
 				operationId: "open",
 				targetMapPath: "C:/Project/Content/Map.umap"
@@ -89,7 +89,7 @@ describe("editor world-control wire contract", () => {
 
 	it("rejects engine packages as project map targets", () => {
 		expect(
-			Schema.decodeUnknownResult(EditorWorldOpenRequest)({
+			Schema.decodeResult(EditorWorldOpenRequest)({
 				contract,
 				operationId: "open",
 				targetMapPath: "/Engine/Maps/Templates/OpenWorld"

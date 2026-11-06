@@ -60,12 +60,14 @@ it("asks before changing maps and only selects the review after a confirmed succ
 				onChanged={changed}
 				onClose={close}
 				client={{
-					editorWorld: () => Effect.succeed(editor),
+					editorWorld: Effect.succeed(editor),
 					openMapInUnreal: open,
 					selectReviewSet: select,
 					createReviewSet: () => Effect.die("not used"),
-					reviewSetLibrary: () =>
-						Effect.succeed({ status: "ready", sets: [review.reviewSet] })
+					reviewSetLibrary: Effect.sync(() => ({
+						status: "ready",
+						sets: [review.reviewSet]
+					}))
 				}}
 			/>
 		</EffectRuntimeProvider>
@@ -108,12 +110,14 @@ it("keeps a refused switch visible and offers an offline-only review choice", as
 				onChanged={() => undefined}
 				onClose={() => undefined}
 				client={{
-					editorWorld: () => Effect.succeed(editor),
+					editorWorld: Effect.succeed(editor),
 					openMapInUnreal: open,
 					selectReviewSet: select,
 					createReviewSet: () => Effect.die("not used"),
-					reviewSetLibrary: () =>
-						Effect.succeed({ status: "ready", sets: [review.reviewSet] })
+					reviewSetLibrary: Effect.sync(() => ({
+						status: "ready",
+						sets: [review.reviewSet]
+					}))
 				}}
 			/>
 		</EffectRuntimeProvider>
@@ -136,7 +140,7 @@ it("shows actual editor identity and follows only on explicit request", async ()
 		<EffectRuntimeProvider runtime={runtime}>
 			<EditorMapSync
 				mapPath={path()}
-				client={{ editorWorld: () => Effect.succeed(editor), openMapInUnreal: open }}
+				client={{ editorWorld: Effect.succeed(editor), openMapInUnreal: open }}
 				onFollow={(path) => {
 					follow(path);
 					setPath(path);
@@ -165,11 +169,10 @@ it("updates the live map picker when Unreal changes maps without sending a comma
 				onOpened={() => undefined}
 				client={{
 					openMapInUnreal: open,
-					savedWorldMaps: () =>
-						Effect.succeed([
-							{ label: "Alpha", mapPath: "Content/Fixture/Alpha.umap" },
-							{ label: "Beta", mapPath: "Content/Fixture/Beta.umap" }
-						])
+					savedWorldMaps: Effect.sync(() => [
+						{ label: "Alpha", mapPath: "Content/Fixture/Alpha.umap" },
+						{ label: "Beta", mapPath: "Content/Fixture/Beta.umap" }
+					])
 				}}
 			/>
 		</EffectRuntimeProvider>

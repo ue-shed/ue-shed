@@ -53,7 +53,7 @@ export function workspaceFileComparison(
 			return { status: "selected", path: choice.path, format } as const;
 		},
 		// oxlint-disable-next-line anti-slop/no-effect-catch-all -- The contract answers every failure as `failed`, with its code and recovery.
-		Effect.catch((error) =>
+		Effect.catchTag(["GameTextWorkspaceHostFailure"], (error) =>
 			Effect.succeed<LocalizationFileChoiceResult>(
 				failed(error.code ?? "choose_failed", error.message, error.recovery)
 			)
@@ -105,7 +105,7 @@ export function workspaceFileComparison(
 			} satisfies LocalizationFileComparisonResult;
 		},
 		// oxlint-disable-next-line anti-slop/no-effect-catch-all -- The contract answers every failure as `failed`, with its code and recovery.
-		Effect.catch((error) =>
+		Effect.catchTag(["GameTextIndexError"], (error) =>
 			Effect.succeed(
 				failed(
 					("code" in error ? error.code : undefined) ?? "compare_failed",

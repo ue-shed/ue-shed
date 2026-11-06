@@ -25,7 +25,7 @@ import {
 	OwnedProcessTreeLive,
 	unrealEditorCommandletExecutable
 } from "@ue-shed/engine";
-import { Clock, Context, Duration, Effect, Layer, Schema } from "effect";
+import { type Brand, Clock, Context, Duration, Effect, Layer, Schema } from "effect";
 import {
 	NiagaraPreviewProducerReceipt,
 	NiagaraPreviewProducerRequest,
@@ -63,16 +63,16 @@ export interface NiagaraPreviewRunOutcome {
 	readonly manifestPath: string;
 }
 
-export class NiagaraPreviewError extends Schema.TaggedError<NiagaraPreviewError>()(
-	"NiagaraPreviewError",
-	{
-		code: NiagaraPreviewFailure.fields.code,
-		...ErrorGuidanceFields,
-		runId: NiagaraPreviewFailure.fields.runId,
-		stage: NiagaraPreviewFailure.fields.stage,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class NiagaraPreviewError extends Schema.TaggedError<
+	NiagaraPreviewError,
+	Brand.Brand<"packages/niagara/src/preview/NiagaraPreviewError">
+>()("NiagaraPreviewError", {
+	code: NiagaraPreviewFailure.fields.code,
+	...ErrorGuidanceFields,
+	runId: NiagaraPreviewFailure.fields.runId,
+	stage: NiagaraPreviewFailure.fields.stage,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * The next step for a preview failure. Setup and request problems need changed input, a producer
@@ -146,8 +146,8 @@ const hasErrorGuidance = Schema.is(
 );
 
 /** @internal Keeps session recovery decisions when adapting failures to preview errors. */
-export function safeIo<A>(
-	operation: Effect.Effect<A, unknown>,
+export function safeIo<A, E>(
+	operation: Effect.Effect<A, E>,
 	error: NiagaraPreviewError
 ): Effect.Effect<A, NiagaraPreviewError> {
 	return operation.pipe(
@@ -632,19 +632,18 @@ function validateArtifacts(options: {
 							options.receipt.runId
 						)
 					);
-					let dimensions: { readonly height: number; readonly width: number };
-					try {
-						dimensions = pngDimensions(bytes);
-					} catch {
-						return yield* previewError(
-							"artifact_invalid",
-							"capture",
-							`Frame ${frame.index} is not a valid PNG header.`,
-							"Update the producer and retry.",
-							false,
-							options.receipt.runId
-						);
-					}
+					const dimensions = yield* Effect.try({
+						try: () => pngDimensions(bytes),
+						catch: () =>
+							previewError(
+								"artifact_invalid",
+								"capture",
+								`Frame ${frame.index} is not a valid PNG header.`,
+								"Update the producer and retry.",
+								false,
+								options.receipt.runId
+							)
+					});
 					if (
 						dimensions.width !== options.receipt.effectiveSettings.width ||
 						dimensions.height !== options.receipt.effectiveSettings.height
@@ -682,9 +681,9 @@ function validateArtifacts(options: {
 	});
 }
 
-interface PublishRunOptions {
+interface PublishRunOptions<CleanupError> {
 	readonly artifacts: NiagaraPreviewRunManifestValue["artifacts"];
-	readonly cleanupStaging?: ((path: string) => Effect.Effect<void, unknown>) | undefined;
+	readonly cleanupStaging?: ((path: string) => Effect.Effect<void, CleanupError>) | undefined;
 	readonly generatedAtUtc: string;
 	readonly outputRoot: string;
 	readonly receipt: NiagaraPreviewProducerReceipt;
@@ -692,11 +691,11 @@ interface PublishRunOptions {
 }
 
 /** @internal Exported from this module only for deterministic publication tests. */
-export function publishRun(
-	options: PublishRunOptions
+export function publishRun<CleanupError = never>(
+	options: PublishRunOptions<CleanupError>
 ): Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
 	return Effect.gen(function* () {
-		const manifest = yield* Schema.decodeUnknownEffect(NiagaraPreviewRunManifest)({
+		const manifest = yield* Schema.decodeEffect(NiagaraPreviewRunManifest)({
 			alphaPolicy: options.receipt.alphaPolicy,
 			artifacts: options.artifacts,
 			camera: options.receipt.camera,
@@ -1024,7 +1023,7 @@ export const NiagaraPreviewLive = Layer.effect(
 					last = key;
 					yield* publish(progress);
 				}).pipe(
-					Effect.catch((error) =>
+					Effect.catchTag("NiagaraProgressError", (error) =>
 						Effect.logWarning("Niagara progress unavailable", error)
 					)
 				);
@@ -1206,8 +1205,7 @@ export function runNiagaraPreview(
 	options: RunNiagaraPreviewOptions
 ): Effect.Effect<NiagaraPreviewRunOutcome, NiagaraPreviewError> {
 	return Effect.flatMap(NiagaraPreview, (preview) => preview.run(options)).pipe(
-		Effect.provide(NiagaraPreviewLive),
-		Effect.provide(NiagaraPreviewDependenciesLive)
+		Effect.provide(Layer.provideMerge(NiagaraPreviewLive, NiagaraPreviewDependenciesLive))
 	);
 }
 

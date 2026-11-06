@@ -6,7 +6,7 @@ import test from "node:test";
 import { setTimeout } from "node:timers/promises";
 import { withCorpusUnrealLock } from "./game-text-corpus-lock.ts";
 
-test("the corpus lease serializes jobs and records its owner", async () => {
+void test("the corpus lease serializes jobs and records its owner", async () => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-corpus-lock-"));
 	const path = join(root, "unreal.lock");
 	const order: string[] = [];
@@ -43,7 +43,7 @@ test("the corpus lease serializes jobs and records its owner", async () => {
 	}
 });
 
-test("a failed corpus operation releases its lease", async () => {
+void test("a failed corpus operation releases its lease", async () => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-corpus-lock-failure-"));
 	const path = join(root, "unreal.lock");
 	try {

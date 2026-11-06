@@ -82,9 +82,9 @@ export interface CameraPresentationApi {
 	readonly configure: (
 		config: CameraScheduleConfig
 	) => Effect.Effect<CameraStatus, CameraControlError>;
-	readonly metrics: () => Effect.Effect<WorkbenchCameraMetrics, ElectronAppError>;
+	readonly metrics: Effect.Effect<WorkbenchCameraMetrics, ElectronAppError>;
 	readonly setPresentationBudget: (megabytesPerSecond: number) => Effect.Effect<number>;
-	readonly status: () => Effect.Effect<CameraStatus, CameraControlError>;
+	readonly status: Effect.Effect<CameraStatus, CameraControlError>;
 }
 
 export class CameraPresentation extends Context.Service<
@@ -172,7 +172,7 @@ export const CameraPresentationLive = Layer.effect(
 		yield* feed.frames.pipe(Stream.runForEach(ingestFrame), Effect.forkScoped);
 		yield* drainWorker.pipe(Effect.forkScoped);
 
-		const metrics = Effect.fn("Workbench.CameraPresentation.metrics")(function* () {
+		const metrics = Effect.gen(function* () {
 			const feedMetrics = yield* feed.metrics;
 			const presentationReplacements = yield* Ref.get(replacements);
 			const currentPresentationState = yield* Ref.get(presentationState);
@@ -186,7 +186,7 @@ export const CameraPresentationLive = Layer.effect(
 				gaps: feedMetrics.malformedFrames,
 				queueDepth: HashMap.size(currentPresentationState.pending)
 			});
-			const processMetrics = yield* electronApp.getAppMetrics();
+			const processMetrics = yield* electronApp.getAppMetrics;
 			const electronPrivateMemoryMb =
 				processMetrics.reduce(
 					(sum, metric) =>
@@ -205,7 +205,7 @@ export const CameraPresentationLive = Layer.effect(
 				presentationFramesSent: yield* Ref.get(framesSent),
 				presentationReplacements
 			} satisfies WorkbenchCameraMetrics;
-		});
+		}).pipe(Effect.withSpan("Workbench.CameraPresentation.metrics"));
 
 		const setPresentationBudget = Effect.fn(
 			"Workbench.CameraPresentation.setPresentationBudget"
@@ -215,29 +215,25 @@ export const CameraPresentationLive = Layer.effect(
 			return clamped;
 		});
 
-		const status = Effect.fn("Workbench.CameraPresentation.status")(() =>
-			connection
-				.endpoint()
-				.pipe(
+		const status = Effect.suspend(() =>
+			connection.endpoint.pipe(
+				Effect.flatMap((endpoint) =>
+					getCameraStatus(endpoint).pipe(
+						Effect.provideService(RemoteControlClient, remoteControl)
+					)
+				)
+			)
+		).pipe(Effect.withSpan("Workbench.CameraPresentation.status"));
+
+		const configure = Effect.fn("Workbench.CameraPresentation.configure")(
+			(config: CameraScheduleConfig) =>
+				connection.endpoint.pipe(
 					Effect.flatMap((endpoint) =>
-						getCameraStatus(endpoint).pipe(
+						configureCameras(endpoint, config).pipe(
 							Effect.provideService(RemoteControlClient, remoteControl)
 						)
 					)
 				)
-		);
-
-		const configure = Effect.fn("Workbench.CameraPresentation.configure")(
-			(config: CameraScheduleConfig) =>
-				connection
-					.endpoint()
-					.pipe(
-						Effect.flatMap((endpoint) =>
-							configureCameras(endpoint, config).pipe(
-								Effect.provideService(RemoteControlClient, remoteControl)
-							)
-						)
-					)
 		);
 
 		return CameraPresentation.of({ configure, metrics, setPresentationBudget, status });

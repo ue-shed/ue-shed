@@ -68,22 +68,21 @@ function client(operations: NonNullable<GameTextClientApi["operations"]>): GameT
 		focus: text.focus,
 		progress: Stream.make({ phase: "idle", completed: 0, total: 0 }),
 		locateAsset: () => Effect.die("unused"),
-		chooseQualityRules: () => Effect.die("unused"),
+		chooseQualityRules: Effect.suspend(() => Effect.die("unused")),
 		qualityFocus: () => Effect.die("unused"),
 		qualitySearch: () => Effect.die("unused"),
 		previewQualityRules: () => Effect.die("unused"),
 		saveQualityRules: () => Effect.die("unused"),
-		localizationTargets: () =>
-			Effect.succeed({
-				status: "ready",
-				targets: [
-					{
-						name: fixture.join.target,
-						nativeCulture: fixture.join.nativeCulture,
-						cultures: fixture.join.cultures
-					}
-				]
-			}),
+		localizationTargets: Effect.sync(() => ({
+			status: "ready",
+			targets: [
+				{
+					name: fixture.join.target,
+					nativeCulture: fixture.join.nativeCulture,
+					cultures: fixture.join.cultures
+				}
+			]
+		})),
 		localizationTarget: () =>
 			Effect.succeed({
 				status: "ready",

@@ -30,7 +30,7 @@ source units as provenance; filtered exports retain their visibility rules. CSV 
 consumes native review signals rather than constructing another query engine.
 
 `model.localizationJoin` contains the visible lines used by policy/report views.
-`query.readLocalizationLines()` explicitly exports every joined line, including blank sources.
+`query.readLocalizationLines` explicitly exports every joined line, including blank sources.
 
 `query.localizationDetail` selects a line or unit and pages locations, cultures and PO context
 in Rust. Ordinary text focus carries a compact localization preview. `localizationFocus` and

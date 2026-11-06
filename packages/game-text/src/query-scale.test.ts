@@ -67,7 +67,7 @@ function largeProject() {
 		const table = `Text/Folder${index % 200}/Table${index % 1000}`;
 		const objectPath = `/Game/${table}.Table${index % 1000}`;
 		units.push(
-			Schema.decodeUnknownSync(TextUnit)({
+			Schema.decodeSync(TextUnit)({
 				id: `unit:${key}`,
 				source: { status: "consistent", value: source },
 				identity: { status: "resolved", namespace: "NS", key },

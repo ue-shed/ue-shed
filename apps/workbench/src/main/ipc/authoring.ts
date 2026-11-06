@@ -11,24 +11,24 @@ export const register = Effect.gen(function* () {
 	const authoring = yield* AuthoringClient;
 
 	yield* ipc.register(invokeContracts["authoring:configured-table"], () =>
-		hostRequest(authoring.loadConfiguredTable())
+		hostRequest(authoring.loadConfiguredTable)
 	);
 	yield* ipc.register(invokeContracts["authoring:configured-catalog"], () =>
-		hostRequest(authoring.loadConfiguredCatalog())
+		hostRequest(authoring.loadConfiguredCatalog)
 	);
 	yield* ipc.register(invokeContracts["authoring:open-catalog-table"], (...args) => {
 		const [objectPath, authority] = args;
 		return hostRequest(authoring.openCatalogTable(objectPath, authority));
 	});
 	yield* ipc.register(invokeContracts["authoring:choose-table"], () =>
-		hostRequest(authoring.chooseTable())
+		hostRequest(authoring.chooseTable)
 	);
 	yield* ipc.register(invokeContracts["authoring:session:begin"], (...args) => {
 		const [objectPath] = args;
 		return hostRequest(authoring.beginSession(objectPath));
 	});
 	yield* ipc.register(invokeContracts["authoring:session:list"], () =>
-		hostRequest(authoring.listSessions())
+		hostRequest(authoring.listSessions)
 	);
 	yield* ipc.register(invokeContracts["authoring:session:open"], (...args) => {
 		const [sessionId] = args;

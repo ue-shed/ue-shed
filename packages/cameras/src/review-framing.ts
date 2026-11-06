@@ -36,9 +36,7 @@ type ReviewQuaternion = {
 	readonly z: number;
 };
 
-function quaternionFromRotation(
-	rotation: (typeof ApprovedPose.Type)["rotation"]
-): ReviewQuaternion {
+function quaternionFromRotation(rotation: ApprovedPose["rotation"]): ReviewQuaternion {
 	const pitch = rotation.pitch * radians * 0.5;
 	const yaw = rotation.yaw * radians * 0.5;
 	const roll = rotation.roll * radians * 0.5;
@@ -71,8 +69,8 @@ function inverseQuaternion(value: ReviewQuaternion): ReviewQuaternion {
 
 function rotateVector(
 	rotation: ReviewQuaternion,
-	vector: (typeof ApprovedPose.Type)["location"]
-): (typeof ApprovedPose.Type)["location"] {
+	vector: ApprovedPose["location"]
+): ApprovedPose["location"] {
 	const cross = {
 		x: rotation.y * vector.z - rotation.z * vector.y,
 		y: rotation.z * vector.x - rotation.x * vector.z,
@@ -85,9 +83,7 @@ function rotateVector(
 	};
 }
 
-function rotationFromQuaternion(
-	quaternion: ReviewQuaternion
-): (typeof ApprovedPose.Type)["rotation"] {
+function rotationFromQuaternion(quaternion: ReviewQuaternion): ApprovedPose["rotation"] {
 	const singularity = quaternion.z * quaternion.x - quaternion.w * quaternion.y;
 	const yawY = 2 * (quaternion.w * quaternion.z + quaternion.x * quaternion.y);
 	const yawX = 1 - 2 * (quaternion.y ** 2 + quaternion.z ** 2);
@@ -121,9 +117,9 @@ function rotationFromQuaternion(
  * durable input; callers receive a newly derived world pose for a single realization only.
  */
 export function realizeTargetRelativePose(args: {
-	readonly relativePose: typeof ApprovedPose.Type;
+	readonly relativePose: ApprovedPose;
 	readonly targetTransform: ActorTransformSnapshot;
-}): typeof ApprovedPose.Type {
+}): ApprovedPose {
 	const targetRotation = quaternionFromRotation(args.targetTransform.rotation);
 	const relativeRotation = quaternionFromRotation(args.relativePose.rotation);
 	const rotatedLocation = rotateVector(targetRotation, args.relativePose.location);
@@ -141,8 +137,8 @@ export function realizeTargetRelativePose(args: {
 /** Converts an approved world pose into the durable pose relative to its actor target. */
 export function targetRelativePoseFromWorldPose(args: {
 	readonly targetTransform: ActorTransformSnapshot;
-	readonly worldPose: typeof ApprovedPose.Type;
-}): typeof ApprovedPose.Type {
+	readonly worldPose: ApprovedPose;
+}): ApprovedPose {
 	const targetRotation = quaternionFromRotation(args.targetTransform.rotation);
 	const inverseTargetRotation = inverseQuaternion(targetRotation);
 	return ApprovedPose.make({
@@ -168,7 +164,7 @@ export function targetRelativePoseFromWorldPose(args: {
  */
 export function targetRelativeViewpointFromWorldPose(args: {
 	readonly targetTransform: ActorTransformSnapshot;
-	readonly worldPose: typeof ApprovedPose.Type;
+	readonly worldPose: ApprovedPose;
 }) {
 	return {
 		kind: "target_relative" as const,
@@ -185,7 +181,7 @@ export interface ReviewSelection {
 	readonly actorPath: string;
 	readonly bounds: SubjectBounds;
 	readonly displayName: string;
-	readonly editorView?: typeof ApprovedPose.Type | undefined;
+	readonly editorView?: ApprovedPose | undefined;
 	readonly mapPath: string;
 }
 
@@ -362,7 +358,7 @@ function groupYaw(args: {
 export function generateFramingCandidateId(args: {
 	readonly groupId: FramingGroupId;
 	readonly index: number;
-}): typeof FramingCandidateId.Type {
+}): FramingCandidateId {
 	return FramingCandidateId.make(`preset/${args.groupId}/${args.index}`);
 }
 
@@ -372,7 +368,7 @@ function candidateFromGroup(args: {
 	readonly overrides?: FramingCandidateOverrides | undefined;
 	readonly parameters: FramingParametersDocument;
 	readonly selection: ReviewSelection;
-}): typeof FramingCandidate.Type {
+}): FramingCandidate {
 	const fieldOfViewDegrees =
 		args.overrides?.fieldOfViewDegrees ?? args.parameters.fieldOfViewDegrees;
 	const margin = args.overrides?.margin ?? args.parameters.margin;
@@ -432,7 +428,7 @@ function candidateFromGroup(args: {
 export function generateFramingCandidates(
 	selection: ReviewSelection,
 	parameters: FramingParametersDocument = defaultFramingParameters()
-): readonly (typeof FramingCandidate.Type)[] {
+): readonly FramingCandidate[] {
 	if (!finiteBounds(selection.bounds)) return [];
 	const generated = parameters.groups.flatMap((group) =>
 		group.enabled
@@ -477,9 +473,9 @@ export function generateFramingCandidates(
  * guessing lost provenance.
  */
 export function applyCandidateOverrides(
-	candidate: typeof FramingCandidate.Type,
+	candidate: FramingCandidate,
 	overrides: FramingCandidateOverrides
-): typeof FramingCandidate.Type {
+): FramingCandidate {
 	const recipe = candidate.recipe;
 	if (recipe.version !== 2 || !("groupId" in recipe)) return candidate;
 	const group = recipe.parameters.groups.find((item) => item.id === recipe.groupId);
@@ -685,10 +681,10 @@ export function createReviewViewFromCandidate(args: {
 				readonly mode: "target_relative";
 				readonly targetTransform: ActorTransformSnapshot;
 		  };
-	readonly candidate: typeof FramingCandidate.Type;
+	readonly candidate: FramingCandidate;
 	readonly captureProfileId: CaptureProfileId;
 	readonly displayName: string;
-	readonly manualPose?: typeof ApprovedPose.Type;
+	readonly manualPose?: ApprovedPose;
 	readonly manualReason?: string;
 	readonly purpose: string;
 	readonly subject: SubjectLocator;
@@ -743,7 +739,7 @@ export function createReviewViewFromCandidate(args: {
 
 /** Numeric/current-selection area authoring without requiring a persistent Unreal actor. */
 export function createAreaReviewView(args: {
-	readonly approvedPose: typeof ApprovedPose.Type;
+	readonly approvedPose: ApprovedPose;
 	readonly bounds: SubjectBounds;
 	readonly captureProfileId: CaptureProfileId;
 	readonly displayName: string;
@@ -778,8 +774,8 @@ export function createAreaReviewView(args: {
  * policies and revision semantics. Returns view_not_found when the target cannot be approved.
  */
 export function approveFramingCandidate(args: {
-	readonly candidate: typeof FramingCandidate.Type;
-	readonly manualPose?: typeof ApprovedPose.Type;
+	readonly candidate: FramingCandidate;
+	readonly manualPose?: ApprovedPose;
 	readonly manualReason?: string;
 	readonly reviewSet: ReviewSet;
 	readonly subject?: SubjectLocator;

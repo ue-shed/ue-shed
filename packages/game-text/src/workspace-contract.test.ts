@@ -1,3 +1,4 @@
+import { GameTextWorkspaceHostFailure } from "./workspace-host.js";
 import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { AssetReader, AssetReaderLive } from "@ue-shed/unreal-assets";
@@ -25,7 +26,12 @@ function memoryFiles(): GameTextWorkspaceFileHooks {
 		Effect.suspend(() => {
 			const bytes = contents.get(path);
 			return bytes === undefined
-				? Effect.fail({ message: "Missing file.", recovery: "Create it." })
+				? new GameTextWorkspaceHostFailure({
+						message: "Missing file.",
+						recovery: "Create it.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					})
 				: Effect.succeed(bytes);
 		});
 	return {
@@ -73,7 +79,7 @@ describe("GameTextWorkspaceContract", () => {
 			GameTextWorkspaceContractMismatch<
 				Omit<GameTextWorkspaceApi, "localizationTargets"> & {
 					readonly localizationTargets: () => Effect.Effect<
-						Effect.Success<ReturnType<GameTextWorkspaceApi["localizationTargets"]>>,
+						Effect.Success<GameTextWorkspaceApi["localizationTargets"]>,
 						Error
 					>;
 				}
@@ -91,7 +97,7 @@ describe("GameTextWorkspaceContract", () => {
 			Effect.gen(function* () {
 				const fixture = yield* makeIndexRegressionFixture();
 				const nativeQuery = Layer.unwrap(
-					Effect.flatMap(AssetReader, (reader) => reader.configuration()).pipe(
+					Effect.flatMap(AssetReader, (reader) => reader.configuration).pipe(
 						Effect.map(nativeIndexQueryLayer),
 						Effect.provide(AssetReaderLive),
 						Effect.orDie
@@ -113,15 +119,13 @@ describe("GameTextWorkspaceContract", () => {
 				yield* Effect.gen(function* () {
 					const workspace = yield* makeGameTextWorkspace({
 						project: {
-							current: () => Effect.succeed(ready),
-							refresh: () => Effect.succeed(ready),
-							candidates: () =>
-								Effect.succeed({
-									generation: 3,
-									summary: { projectRoot: fixture.projectRoot }
-								}),
-							progress: () =>
-								Effect.succeed({ completed: 0, total: 0, phase: "idle" })
+							current: Effect.succeed(ready),
+							refresh: Effect.succeed(ready),
+							candidates: Effect.sync(() => ({
+								generation: 3,
+								summary: { projectRoot: fixture.projectRoot }
+							})),
+							progress: Effect.sync(() => ({ completed: 0, total: 0, phase: "idle" }))
 						},
 						files: memoryFiles()
 					});
@@ -132,7 +136,9 @@ describe("GameTextWorkspaceContract", () => {
 							readonly params: Schema.Codec<A, I>;
 							readonly success: Schema.Codec<B, J>;
 						},
-						method: (params: NoInfer<A>) => Effect.Effect<NoInfer<B>>,
+						method:
+							| Effect.Effect<NoInfer<B>>
+							| ((params: NoInfer<A>) => Effect.Effect<NoInfer<B>>),
 						params: NoInfer<I>
 					) =>
 						Effect.gen(function* () {
@@ -142,7 +148,9 @@ describe("GameTextWorkspaceContract", () => {
 							expect(
 								overJson(yield* Schema.encodeEffect(entry.params)(decoded))
 							).toEqual(overJson(params));
-							const result = yield* method(decoded);
+							const result = yield* Effect.isEffect(method)
+								? method
+								: method(decoded);
 							const wire = overJson(
 								yield* Schema.encodeEffect(entry.success)(result)
 							);
@@ -166,10 +174,10 @@ describe("GameTextWorkspaceContract", () => {
 							.phase
 					).toBe("idle");
 					const [first] = yield* Stream.runCollect(
-						workspace.progressChanges().pipe(Stream.take(1))
+						workspace.progressChanges.pipe(Stream.take(1))
 					);
 					expect(
-						yield* Schema.decodeUnknownEffect(
+						yield* Schema.decodeEffect(
 							GameTextWorkspaceContract.progressChanges.events
 						)(
 							overJson(

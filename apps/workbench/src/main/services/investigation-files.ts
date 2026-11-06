@@ -31,14 +31,12 @@ export const saveInvestigation = Effect.fn("Workbench.Investigation.save")(
 		}
 	): Effect.fn.Return<InvestigationFileResult, InvestigationError | WorkbenchWindowError> {
 		if (options.projectRoot && Buffer.byteLength(options.contents, "utf8") > 4 * 1024 * 1024)
-			return yield* Effect.fail(
-				new InvestigationError({
-					message: "The preset exceeds 4 MiB.",
-					recovery: "Reduce the rule document before saving this preset.",
-					retrySafe: true,
-					nextStep: "fix_input"
-				})
-			);
+			return yield* new InvestigationError({
+				message: "The preset exceeds 4 MiB.",
+				recovery: "Reduce the rule document before saving this preset.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
 		const choice = yield* dialog.chooseSaveFile({
 			title: options.projectRoot ? "Save investigation preset" : "Export matching results",
 			defaultPath: options.projectRoot
@@ -58,7 +56,11 @@ export const saveInvestigation = Effect.fn("Workbench.Investigation.save")(
 		};
 	},
 	(effect): Effect.Effect<InvestigationFileResult> =>
-		effect.pipe(Effect.catch((error) => Effect.succeed(investigationFailure(error))))
+		effect.pipe(
+			Effect.catchTag(["InvestigationError", "Workbench.WorkbenchWindowError"], (error) =>
+				Effect.succeed(investigationFailure(error))
+			)
+		)
 );
 
 export const openInvestigation = Effect.fn("Workbench.Investigation.open")(function* <A, I>(

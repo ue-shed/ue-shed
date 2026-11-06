@@ -17,19 +17,19 @@ import {
 } from "./game-text-scale-safety.ts";
 
 const Memory = Schema.Struct({
-	heapUsed: Schema.Number,
-	rss: Schema.Number,
-	arrayBuffers: Schema.Number
+	heapUsed: Schema.Finite,
+	rss: Schema.Finite,
+	arrayBuffers: Schema.Finite
 });
 const Stage = Schema.Literals(["evidence", "corpus", "join", "open", "quality", "source_quality"]);
 const Message = Schema.Struct({
 	kind: Schema.Literals(["start", "sample", "complete", "failure", "done"]),
 	stage: Stage,
 	memory: Memory,
-	seconds: Schema.Number,
+	seconds: Schema.Finite,
 	retained: Schema.optionalKey(Memory),
 	error: Schema.optionalKey(Schema.String),
-	counts: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number))
+	counts: Schema.optionalKey(Schema.Record(Schema.String, Schema.Finite))
 });
 type Message = typeof Message.Type;
 type Memory = typeof Memory.Type;
@@ -141,13 +141,13 @@ if (values.worker) {
 				select === "quality"
 					? await measure("quality", () =>
 							scaleQuality(index.result, recorder?.tracer)
-						).then(({ quality: _, ...counts }) => counts)
+						).then(({ quality: _quality, ...counts }) => counts)
 					: await measure("source_quality", () =>
 							scaleSourceQuality(
 								index.result,
 								select === "source-quality" ? "indexed" : "memory"
 							)
-						).then(({ query: _, ...counts }) => counts);
+						).then(({ query: _query, ...counts }) => counts);
 			send("done", {
 				counts: {
 					heapLimitBytes: getHeapStatistics().heap_size_limit,

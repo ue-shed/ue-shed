@@ -17,8 +17,7 @@ export const absent = 0xffffffff;
 export type ColumnReader = Pick<SnapshotReader, "section" | "strings">;
 export const u32 = Effect.fn("JoinedTarget.u32")(function* (reader: ColumnReader, name: string) {
 	const value = yield* reader.section(name);
-	if (!(value instanceof Uint32Array))
-		return yield* Effect.fail(snapshotFailure(name, "Expected u32 column"));
+	if (!(value instanceof Uint32Array)) return yield* snapshotFailure(name, "Expected u32 column");
 	return value;
 });
 
@@ -121,7 +120,7 @@ export const loadJoinFile = Effect.fn("JoinedTarget.file")(function* (
 			order: new Uint32Array()
 		} satisfies JoinFile;
 	const file = yield* reader.layer(name);
-	const meta = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(FileMeta))(
+	const meta = yield* Schema.decodeEffect(Schema.fromJsonString(FileMeta))(
 		new TextDecoder().decode(yield* file.section("file.meta"))
 	);
 	for (const field of [

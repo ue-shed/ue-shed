@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { Effect, Exit } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	decodeAuthoringSessionReviewResult,
@@ -28,7 +28,7 @@ describe("authoring SDK contracts", () => {
 						endpoint: `http://127.0.0.1:${address.port}`
 					});
 					const call = read
-						? client.listSessions().pipe(Effect.asVoid)
+						? client.listSessions.pipe(Effect.asVoid)
 						: client.applySession("draft").pipe(Effect.asVoid);
 					const error = await Effect.runPromise(Effect.flip(call));
 					expect(error.retrySafe).toBe(read);
@@ -140,12 +140,12 @@ describe("authoring SDK contracts", () => {
 			const client = makeAuthoringHttpClient({
 				endpoint: `http://127.0.0.1:${address.port}/api/authoring`
 			});
-			expect(await Effect.runPromise(client.loadConfiguredCatalog())).toEqual({
+			expect(await Effect.runPromise(client.loadConfiguredCatalog)).toEqual({
 				diagnostics: [],
 				status: "ready",
 				tables: []
 			});
-			expect(await Effect.runPromise(client.getCatalogProgress())).toMatchObject({
+			expect(await Effect.runPromise(client.getCatalogProgress)).toMatchObject({
 				cacheHits: 170000,
 				phase: "scanning",
 				processedAssets: 171000
@@ -164,7 +164,12 @@ describe("authoring SDK contracts", () => {
 			endpoint: "https://host.example/api/authoring",
 			headers: { authorization: "Bearer studio" },
 			fetch: async (input, init) => {
-				seen.push({ url: String(input), headers: new Headers(init?.headers) });
+				const url = Schema.is(Schema.String)(input)
+					? input
+					: input instanceof URL
+						? input.href
+						: input.url;
+				seen.push({ url, headers: new Headers(init?.headers) });
 				return new Response(
 					JSON.stringify({
 						status: "success",
@@ -174,7 +179,7 @@ describe("authoring SDK contracts", () => {
 				);
 			}
 		});
-		expect(await Effect.runPromise(client.loadConfiguredCatalog())).toEqual({
+		expect(await Effect.runPromise(client.loadConfiguredCatalog)).toEqual({
 			diagnostics: [],
 			status: "ready",
 			tables: []

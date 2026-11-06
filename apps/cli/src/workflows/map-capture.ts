@@ -29,14 +29,16 @@ const ExplicitTiles = Schema.Array(
 ).check(Schema.isMinLength(1));
 
 function readExplicitTiles(path: string) {
-	return Effect.tryPromise({
-		try: async () =>
-			Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8"))),
-		catch: commandError
-	}).pipe(
-		Effect.flatMap(Schema.decodeUnknownEffect(ExplicitTiles)),
-		Effect.mapError(commandError)
-	);
+	return Effect.gen(function* () {
+		const sourceValue = yield* Effect.tryPromise({
+			try: async () => JSON.parse(await readFile(path, "utf8")),
+			catch: commandError
+		});
+		const decodedValue0 = yield* Schema.decodeUnknownEffect(Schema.Json)(sourceValue).pipe(
+			Effect.mapError(commandError)
+		);
+		return yield* Schema.decodeUnknownEffect(ExplicitTiles)(decodedValue0);
+	}).pipe(Effect.mapError(commandError));
 }
 
 export const runMapCapturePlanValidate = Effect.fn("Cli.workflow.map_capture.plan_validate")(
@@ -130,16 +132,14 @@ export const runMapCaptureRun = Effect.fn("Cli.workflow.map_capture.run")(
 						Effect.mapError(commandError)
 					);
 					if (opened.outcome === "rejected") {
-						return yield* Effect.fail(
-							new CliCommandError({
-								recovery:
-									"Inspect the command context and original cause before deciding whether to retry.",
-								retrySafe: false,
-								nextStep: "escalate",
-								code: "cli_command_failed",
-								message: `${opened.message} ${opened.recovery}`
-							})
-						);
+						return yield* new CliCommandError({
+							recovery:
+								"Inspect the command context and original cause before deciding whether to retry.",
+							retrySafe: false,
+							nextStep: "escalate",
+							code: "cli_command_failed",
+							message: `${opened.message} ${opened.recovery}`
+						});
 					}
 				}
 				const progressRuntime = yield* CliRuntime;
@@ -232,16 +232,14 @@ export const runMapCapturePlanFromSelection = Effect.fn("Cli.mapCapture.planFrom
 			.inspectMapCaptureSelection(endpoint)
 			.pipe(Effect.provide(RemoteControlClientLive), Effect.mapError(commandError));
 		if (selection.status !== "ready")
-			return yield* Effect.fail(
-				new CliCommandError({
-					recovery:
-						"Inspect the command context and original cause before deciding whether to retry.",
-					retrySafe: false,
-					nextStep: "escalate",
-					code: "cli_command_failed",
-					message: selection.message
-				})
-			);
+			return yield* new CliCommandError({
+				recovery:
+					"Inspect the command context and original cause before deciding whether to retry.",
+				retrySafe: false,
+				nextStep: "escalate",
+				code: "cli_command_failed",
+				message: selection.message
+			});
 		const plan = yield* Effect.try({
 			try: () =>
 				api.fitMapCapturePlanToSelection(

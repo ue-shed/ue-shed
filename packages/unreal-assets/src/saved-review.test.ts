@@ -484,7 +484,7 @@ describe("saved review", () => {
 			)
 		).toBe(true);
 		expect(comparison.changes.some((change) => change.kind !== "changed")).toBe(false);
-		expect(Schema.decodeUnknownSync(SavedReviewComparison)(comparison)).toEqual(comparison);
+		expect(Schema.decodeSync(SavedReviewComparison)(comparison)).toEqual(comparison);
 	});
 	it("does not claim equality when a read has missing evidence", () => {
 		const read = { ...blueprint(), outcome: "partial" as const };

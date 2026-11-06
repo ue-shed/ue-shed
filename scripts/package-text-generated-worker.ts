@@ -19,8 +19,8 @@ const decodeLine = Schema.decodeUnknownSync(
 );
 parentPort?.on("message", async (message: typeof Request.Encoded) => {
 	try {
-		const request = Schema.decodeUnknownSync(Request)(message);
-		const pending = new Map<string, (typeof SavedAssetTextOccurrence.Type)[]>();
+		const request = Schema.decodeSync(Request)(message);
+		const pending = new Map<string, SavedAssetTextOccurrence[]>();
 		const output = createWriteStream(request.output, { flags: "wx" });
 		try {
 			for await (const line of packageTextJsonLines(request.input)) {

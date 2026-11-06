@@ -320,7 +320,7 @@ function normalized(
 		if (Predicate.isString(record[key])) record[key] = path(record[key]);
 	}
 	if (
-		["object_ref", "soft_object_path"].includes(String(record.value_kind)) &&
+		(record.value_kind === "object_ref" || record.value_kind === "soft_object_path") &&
 		Predicate.isString(record.value)
 	)
 		record.value = path(record.value);

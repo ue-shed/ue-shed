@@ -1,6 +1,6 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
 import { SavedWorldActor, SavedWorldTransform, SavedWorldVector } from "@ue-shed/protocol";
-import { DateTime, Effect, Schema } from "effect";
+import { type Brand, DateTime, Effect, Schema } from "effect";
 
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
@@ -374,14 +374,14 @@ export type MapHistoryProgress = Schema.Schema.Type<typeof MapHistoryProgress>;
  * A value that does not match the map history contract: the two sides disagree about the contract, so
  * repeating the same call returns the same mismatch.
  */
-export class MapHistoryContractError extends Schema.TaggedError<MapHistoryContractError>()(
-	"MapHistoryContractError",
-	{
-		code: Schema.Literal("invalid_contract"),
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect())
-	}
-) {}
+export class MapHistoryContractError extends Schema.TaggedError<
+	MapHistoryContractError,
+	Brand.Brand<"packages/map-history/src/schema/MapHistoryContractError">
+>()("MapHistoryContractError", {
+	code: Schema.Literal("invalid_contract"),
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect())
+}) {}
 
 /**
  * A unary parser for one map history contract value: it decodes the encoded value and fails with

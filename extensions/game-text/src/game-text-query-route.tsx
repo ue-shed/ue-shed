@@ -787,7 +787,7 @@ export function GameTextRoute(props: {
 					setSummary(result.summary);
 					setScanRevision((revision) => revision + 1);
 					if (!untrack(projectKey) && props.client.projectKey) {
-						memoryAction.run(props.client.projectKey(), {
+						memoryAction.run(props.client.projectKey, {
 							onSuccess: setProjectKey
 						});
 					}
@@ -988,7 +988,7 @@ export function GameTextRoute(props: {
 			Effect.gen(function* () {
 				const key =
 					props.projectKey ??
-					(props.client.projectKey ? yield* props.client.projectKey() : undefined);
+					(props.client.projectKey ? yield* props.client.projectKey : undefined);
 				const preferences = key ? yield* readGameTextPreferences(key) : undefined;
 				return { key, preferences };
 			}),
@@ -1017,7 +1017,7 @@ export function GameTextRoute(props: {
 			setQualityFailure(undefined);
 			const operation =
 				create === undefined
-					? props.client.chooseQualityRules()
+					? props.client.chooseQualityRules
 					: props.client.createStarterRules?.(create);
 			if (!operation) return;
 			qualityAction.run(operation, {
@@ -1031,17 +1031,11 @@ export function GameTextRoute(props: {
 	const reloadRules = () =>
 		guardRules(() => {
 			setQualityFailure(undefined);
-			qualityAction.run(
-				props.client.reloadQualityRules?.() ?? props.client.chooseQualityRules(),
-				{
-					onSuccess: applyQuality,
-					onFailure: (cause) =>
-						showError(
-							failureText("Couldn’t reload the rules file.", cause),
-							reloadRules
-						)
-				}
-			);
+			qualityAction.run(props.client.reloadQualityRules ?? props.client.chooseQualityRules, {
+				onSuccess: applyQuality,
+				onFailure: (cause) =>
+					showError(failureText("Couldn’t reload the rules file.", cause), reloadRules)
+			});
 		});
 	const restorePreset = (preset: GameTextInvestigationPreset) => {
 		const { localization: selected, ...saved } = investigationRequest(preset.query);

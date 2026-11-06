@@ -9,7 +9,7 @@ import {
 	POEntry,
 	type LocalizationError
 } from "@ue-shed/localization/browser";
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 import { TextUnitId } from "./identifiers.js";
 import { TextAudience, TextOutOfScopeReason } from "./text-audience-schema.js";
 import { TextRowProblems, textRowFindingFields } from "./text-problem-schema.js";
@@ -299,23 +299,23 @@ export type LocalizationQueryPage = typeof LocalizationQueryPage.Type;
  * Typed target lookup, manifest read or selection failure. Stable code controls recovery; cause
  * preserves reader/decoder evidence for diagnostics.
  */
-export class GameTextLocalizationError extends Schema.TaggedError<GameTextLocalizationError>()(
-	"GameTextLocalizationError",
-	{
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		cause: Schema.optionalKey(Schema.Defect()),
-		code: Schema.Literals([
-			"target_not_found",
-			"missing_manifest",
-			"unreadable_manifest",
-			"reader_failure",
-			"invalid_selection"
-		]),
-		message: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class GameTextLocalizationError extends Schema.TaggedError<
+	GameTextLocalizationError,
+	Brand.Brand<"packages/game-text/src/localization-schema/GameTextLocalizationError">
+>()("GameTextLocalizationError", {
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	cause: Schema.optionalKey(Schema.Defect()),
+	code: Schema.Literals([
+		"target_not_found",
+		"missing_manifest",
+		"unreadable_manifest",
+		"reader_failure",
+		"invalid_selection"
+	]),
+	message: Schema.String,
+	recovery: Schema.String
+}) {}
 
 /** Only a missing manifest needs a gather; other failures keep the reader's cause and recovery. */
 export function localizationManifestFailure(

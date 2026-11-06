@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { buildUnlessUnchanged, moduleManifestOutputs } from "./build-stamp.ts";
 
-test("rebuilds when a module the manifest maps is missing", (context) => {
+void test("rebuilds when a module the manifest maps is missing", (context) => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-build-stamp-"));
 	context.after(() => rmSync(root, { force: true, recursive: true }));
 	const binaries = join(root, "Binaries", "Win64");
@@ -42,7 +42,7 @@ test("rebuilds when a module the manifest maps is missing", (context) => {
 	assert.equal(builds, 2);
 });
 
-test("lists only the manifest while it is missing or unreadable", (context) => {
+void test("lists only the manifest while it is missing or unreadable", (context) => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-build-stamp-"));
 	context.after(() => rmSync(root, { force: true, recursive: true }));
 	const manifest = join(root, "UnrealEditor.modules");

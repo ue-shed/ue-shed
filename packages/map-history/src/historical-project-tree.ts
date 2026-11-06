@@ -163,28 +163,24 @@ function isOwnedTemporaryProject(path: string): boolean {
 	);
 }
 
-export function acquireHistoricalProjectTree(): Effect.Effect<
+export const acquireHistoricalProjectTree: Effect.Effect<
 	HistoricalProjectTree,
 	MapHistoryError,
 	Scope.Scope
-> {
-	return Effect.acquireRelease(
-		Effect.tryPromise({
-			try: async () => {
-				const operationRoot = await mkdtemp(resolve(tmpdir(), TEMPORARY_PROJECT_PREFIX));
-				await Promise.all([
-					mkdir(resolve(operationRoot, "materialized")),
-					mkdir(resolve(operationRoot, "project"))
-				]);
-				return operationRoot;
-			},
-			catch: (cause) => temporaryStorageError("Create historical project", tmpdir(), cause)
-		}).pipe(Effect.map(makeHistoricalProjectTree)),
-		(tree) =>
-			isOwnedTemporaryProject(dirname(tree.projectRoot))
-				? Effect.promise(() =>
-						rm(dirname(tree.projectRoot), { force: true, recursive: true })
-					)
-				: Effect.void
-	);
-}
+> = Effect.acquireRelease(
+	Effect.tryPromise({
+		try: async () => {
+			const operationRoot = await mkdtemp(resolve(tmpdir(), TEMPORARY_PROJECT_PREFIX));
+			await Promise.all([
+				mkdir(resolve(operationRoot, "materialized")),
+				mkdir(resolve(operationRoot, "project"))
+			]);
+			return operationRoot;
+		},
+		catch: (cause) => temporaryStorageError("Create historical project", tmpdir(), cause)
+	}).pipe(Effect.map(makeHistoricalProjectTree)),
+	(tree) =>
+		isOwnedTemporaryProject(dirname(tree.projectRoot))
+			? Effect.promise(() => rm(dirname(tree.projectRoot), { force: true, recursive: true }))
+			: Effect.void
+);

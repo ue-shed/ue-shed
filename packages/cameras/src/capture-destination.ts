@@ -2,29 +2,29 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, rename, rm, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 
-export class CaptureFilesystemError extends Schema.TaggedError<CaptureFilesystemError>()(
-	"CaptureFilesystemError",
-	{
-		...ErrorGuidanceFields,
-		cause: Schema.optionalKey(Schema.Defect()),
-		operation: Schema.Literals(["discard", "prepare", "promote", "store", "write"]),
-		path: Schema.String
-	}
-) {}
+export class CaptureFilesystemError extends Schema.TaggedError<
+	CaptureFilesystemError,
+	Brand.Brand<"packages/cameras/src/capture-destination/CaptureFilesystemError">
+>()("CaptureFilesystemError", {
+	...ErrorGuidanceFields,
+	cause: Schema.optionalKey(Schema.Defect()),
+	operation: Schema.Literals(["discard", "prepare", "promote", "store", "write"]),
+	path: Schema.String
+}) {}
 
-export class CaptureArtifactSourceRejected extends Schema.TaggedError<CaptureArtifactSourceRejected>()(
-	"CaptureArtifactSourceRejected",
-	{
-		...ErrorGuidanceFields,
-		path: Schema.String,
-		root: Schema.String
-	}
-) {}
+export class CaptureArtifactSourceRejected extends Schema.TaggedError<
+	CaptureArtifactSourceRejected,
+	Brand.Brand<"packages/cameras/src/capture-destination/CaptureArtifactSourceRejected">
+>()("CaptureArtifactSourceRejected", {
+	...ErrorGuidanceFields,
+	path: Schema.String,
+	root: Schema.String
+}) {}
 
 export interface FilesystemCaptureAttempt {
-	readonly discard: () => Effect.Effect<void, CaptureFilesystemError>;
+	readonly discard: Effect.Effect<void, CaptureFilesystemError>;
 	readonly promote: (args: {
 		readonly documentName: string;
 		readonly documentValue: unknown;
@@ -279,20 +279,18 @@ export function makeFilesystemCaptureDestination(
 				})
 		});
 
-		const discard = Effect.fn("CaptureFilesystemAttempt.discard")(function* () {
-			yield* Effect.tryPromise({
-				try: () => rm(stagingRoot, { force: true, recursive: true }),
-				catch: (cause) =>
-					filesystemError({
-						cause,
-						operation: "discard",
-						path: stagingRoot,
-						recovery: "Remove the owned staging attempt manually if it remains.",
-						retrySafe: true,
-						nextStep: "retry"
-					})
-			});
-		});
+		const discard = Effect.tryPromise({
+			try: () => rm(stagingRoot, { force: true, recursive: true }),
+			catch: (cause) =>
+				filesystemError({
+					cause,
+					operation: "discard",
+					path: stagingRoot,
+					recovery: "Remove the owned staging attempt manually if it remains.",
+					retrySafe: true,
+					nextStep: "retry"
+				})
+		}).pipe(Effect.asVoid, Effect.withSpan("CaptureFilesystemAttempt.discard"));
 		const writeDocument = Effect.fn("CaptureFilesystemAttempt.writeDocument")(
 			function* (input: { readonly relativePath: string; readonly value: unknown }) {
 				yield* Effect.tryPromise({
@@ -337,18 +335,15 @@ export function makeFilesystemCaptureDestination(
 						})
 				});
 				if (sourcePath === undefined) {
-					return yield* Effect.fail(
-						new CaptureArtifactSourceRejected({
-							message:
-								"Unreal returned an artifact outside its authorized staging root.",
-							nextStep: "escalate",
-							path: input.sourcePath,
-							recovery:
-								"Do not trust this capture; update the Core and Cameras plugins together and report the artifact path if it recurs.",
-							retrySafe: false,
-							root: input.sourceRoot
-						})
-					);
+					return yield* new CaptureArtifactSourceRejected({
+						message: "Unreal returned an artifact outside its authorized staging root.",
+						nextStep: "escalate",
+						path: input.sourcePath,
+						recovery:
+							"Do not trust this capture; update the Core and Cameras plugins together and report the artifact path if it recurs.",
+						retrySafe: false,
+						root: input.sourceRoot
+					});
 				}
 				return yield* Effect.tryPromise({
 					try: async () => {

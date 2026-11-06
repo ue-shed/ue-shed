@@ -330,16 +330,15 @@ export function client(
 		cultures: joined.cultures
 	};
 	return {
-		projectKey: () => Effect.succeed("localization-project"),
+		projectKey: Effect.succeed("localization-project"),
 		localizationTargets:
 			options.targets ??
-			(() =>
-				Effect.succeed({
-					status: "ready",
-					targets: options.twoTargets
-						? [descriptor, { ...descriptor, name: second }]
-						: [descriptor]
-				})),
+			Effect.sync(() => ({
+				status: "ready",
+				targets: options.twoTargets
+					? [descriptor, { ...descriptor, name: second }]
+					: [descriptor]
+			})),
 		localizationTarget:
 			options.target ??
 			((name) =>
@@ -375,7 +374,7 @@ export function client(
 					version: { major: 1, minor: 0 }
 				}
 			}),
-		chooseQualityRules: () => Effect.succeed({ status: "not_ready" }),
+		chooseQualityRules: Effect.sync(() => ({ status: "not_ready" })),
 		qualitySearch: () => Effect.succeed({ status: "not_ready" }),
 		qualityFocus: () => Effect.succeed({ status: "not_ready" }),
 		previewQualityRules: () => Effect.succeed({ status: "not_ready" }),

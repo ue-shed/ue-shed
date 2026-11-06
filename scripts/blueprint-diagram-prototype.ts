@@ -109,7 +109,7 @@ export function parseBlueprintDiagram(source: string): BlueprintGraph {
 			ids.add(currentId);
 			const fields = Schema.decodeUnknownSync(BlueprintNode)({
 				...parseJsonObject(node[5]!),
-				title: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.String))(node[2]!),
+				title: Schema.decodeSync(Schema.fromJsonString(Schema.String))(node[2]!),
 				position: { x: Number(node[3]), y: Number(node[4]) },
 				pins: []
 			});
@@ -118,7 +118,7 @@ export function parseBlueprintDiagram(source: string): BlueprintGraph {
 		} else if (pin && current) {
 			const fields = Schema.decodeUnknownSync(BlueprintPin)({
 				...parseJsonObject(pin[4]!),
-				name: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.String))(pin[3]!),
+				name: Schema.decodeSync(Schema.fromJsonString(Schema.String))(pin[3]!),
 				direction: pin[1] === "in" ? "input" : "output"
 			});
 			const key = currentId + "." + pin[2];

@@ -10,7 +10,7 @@ import {
 	type EditorPlaySessionStateResponse
 } from "@ue-shed/protocol";
 
-import { Effect, Exit, Option, Queue, Schedule, Schema, Stream } from "effect";
+import { type Brand, Effect, Exit, Option, Queue, Schedule, Schema, Stream } from "effect";
 import type {
 	BlueprintGraphReadResult,
 	BlueprintAssetSearchRequest,
@@ -43,18 +43,18 @@ import {
 	type WorkbenchTaskProgress as WorkbenchTaskProgressValue
 } from "../shared/project-workspace-contract.js";
 
-export class WorkbenchRendererError extends Schema.TaggedError<WorkbenchRendererError>()(
-	"WorkbenchRendererError",
-	{
-		message: Schema.String,
-		retrySafe: Schema.Boolean,
-		nextStep: ErrorNextStep,
-		code: Schema.Literal("workbench_renderer_failed"),
-		cause: Schema.Defect(),
-		operation: Schema.String,
-		recovery: Schema.String
-	}
-) {}
+export class WorkbenchRendererError extends Schema.TaggedError<
+	WorkbenchRendererError,
+	Brand.Brand<"apps/workbench/src/renderer/workbench-client/WorkbenchRendererError">
+>()("WorkbenchRendererError", {
+	message: Schema.String,
+	retrySafe: Schema.Boolean,
+	nextStep: ErrorNextStep,
+	code: Schema.Literal("workbench_renderer_failed"),
+	cause: Schema.Defect(),
+	operation: Schema.String,
+	recovery: Schema.String
+}) {}
 
 import {
 	ShowcaseContext as ShowcaseContextSchema,
@@ -147,16 +147,16 @@ export function editorSessionStateFromResult(
 			);
 }
 
-const getEditorSessionStatus = Effect.fn("WorkbenchRenderer.editorSessionStatus")(
+const getEditorSessionStatus = Effect.suspend(
 	(): Effect.Effect<EditorPlaySessionStateResponse, WorkbenchRendererError> =>
 		request({
 			decode: decodeEditorSessionStatusResult,
 			invoke: () => window.ueShed.editorSession.status(),
 			operation: "editorSession.status"
 		}).pipe(Effect.flatMap(editorSessionStateFromResult))
-);
+).pipe(Effect.withSpan("WorkbenchRenderer.editorSessionStatus"));
 
-const getStatus = Effect.fn("WorkbenchRenderer.getStatus")(
+const getStatus = Effect.suspend(
 	(): Effect.Effect<CameraStatus, WorkbenchRendererError> =>
 		request({
 			decode: decodeCameraStatusResult,
@@ -179,19 +179,19 @@ const getStatus = Effect.fn("WorkbenchRenderer.getStatus")(
 						)
 			)
 		)
-);
+).pipe(Effect.withSpan("WorkbenchRenderer.getStatus"));
 
-const getMetrics = Effect.fn("WorkbenchRenderer.getMetrics")(
+const getMetrics = Effect.suspend(
 	(): Effect.Effect<WorkbenchCameraMetrics, WorkbenchRendererError> =>
 		request({
 			decode: decodeWorkbenchCameraMetrics,
 			invoke: () => window.ueShed.getMetrics(),
 			operation: "camera.getMetrics"
 		})
-);
+).pipe(Effect.withSpan("WorkbenchRenderer.getMetrics"));
 
 export interface WorkbenchRendererClient {
-	readonly activateEditorWindow: () => Effect.Effect<EditorHandoffNotice, WorkbenchRendererError>;
+	readonly activateEditorWindow: Effect.Effect<EditorHandoffNotice, WorkbenchRendererError>;
 	readonly editorHandoffs: Stream.Stream<EditorHandoffNotice>;
 	readonly searchBlueprints: (
 		request: BlueprintAssetSearchRequest
@@ -202,21 +202,21 @@ export interface WorkbenchRendererClient {
 	readonly configExplorerQuery: (
 		request: ConfigExplorerQuery
 	) => Effect.Effect<ConfigExplorerQueryResult, WorkbenchRendererError>;
-	readonly unrealConnectionSettings: () => Effect.Effect<
+	readonly unrealConnectionSettings: Effect.Effect<
 		UnrealConnectionSettings,
 		WorkbenchRendererError
 	>;
 	readonly setUnrealConnectionPort: (
 		port: number
 	) => Effect.Effect<UnrealConnectionSettings, WorkbenchRendererError>;
-	readonly editorResponsiveness: () => Effect.Effect<
+	readonly editorResponsiveness: Effect.Effect<
 		EditorResponsivenessSettings,
 		WorkbenchRendererError
 	>;
 	readonly setEditorResponsiveness: (
 		enabled: boolean
 	) => Effect.Effect<EditorResponsivenessSettings, WorkbenchRendererError>;
-	readonly editorSessionStatus: () => Effect.Effect<
+	readonly editorSessionStatus: Effect.Effect<
 		EditorPlaySessionStateResponse,
 		WorkbenchRendererError
 	>;
@@ -226,34 +226,31 @@ export interface WorkbenchRendererClient {
 	readonly editorSessionStatuses: Stream.Stream<
 		Exit.Exit<EditorPlaySessionStateResponse, WorkbenchRendererError>
 	>;
-	readonly showcaseContext: () => Effect.Effect<ShowcaseContext, WorkbenchRendererError>;
+	readonly showcaseContext: Effect.Effect<ShowcaseContext, WorkbenchRendererError>;
 	readonly configure: (
 		config: CameraScheduleConfig
 	) => Effect.Effect<CameraStatus, WorkbenchRendererError>;
 	readonly frames: Stream.Stream<RendererCameraFrame>;
-	readonly getMetrics: () => Effect.Effect<WorkbenchCameraMetrics, WorkbenchRendererError>;
-	readonly getStatus: () => Effect.Effect<CameraStatus, WorkbenchRendererError>;
-	readonly launchFixture: () => Effect.Effect<FixtureLaunchResult, WorkbenchRendererError>;
+	readonly getMetrics: Effect.Effect<WorkbenchCameraMetrics, WorkbenchRendererError>;
+	readonly getStatus: Effect.Effect<CameraStatus, WorkbenchRendererError>;
+	readonly launchFixture: Effect.Effect<FixtureLaunchResult, WorkbenchRendererError>;
 	readonly launchProject: (
 		mode: ProjectLaunchMode
 	) => Effect.Effect<ProjectLaunchResultValue, WorkbenchRendererError>;
 	readonly openRecentProject: (
 		projectRoot: string
 	) => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
-	readonly chooseProject: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
-	readonly sampleProject: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
-	readonly project: () => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
+	readonly chooseProject: Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
+	readonly sampleProject: Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
+	readonly project: Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
 	readonly refreshProject: (
 		mode?: "refresh" | "rebuild"
 	) => Effect.Effect<WorkbenchProjectStateValue, WorkbenchRendererError>;
-	readonly recentProjects: () => Effect.Effect<
+	readonly recentProjects: Effect.Effect<
 		readonly WorkbenchRecentProject[],
 		WorkbenchRendererError
 	>;
-	readonly projectProgress: () => Effect.Effect<
-		WorkbenchTaskProgressValue,
-		WorkbenchRendererError
-	>;
+	readonly projectProgress: Effect.Effect<WorkbenchTaskProgressValue, WorkbenchRendererError>;
 	readonly metrics: Stream.Stream<Exit.Exit<WorkbenchCameraMetrics, WorkbenchRendererError>>;
 	readonly setPresentationBudget: (
 		megabytesPerSecond: number
@@ -262,30 +259,31 @@ export interface WorkbenchRendererClient {
 }
 
 export const workbenchRendererClient: WorkbenchRendererClient = {
-	activateEditorWindow: () =>
+	activateEditorWindow: Effect.suspend(() =>
 		request({
 			decode: Schema.decodeUnknownEffect(EditorHandoffNotice),
 			invoke: () => window.ueShed.editorSession.activate(),
 			operation: "editorWindow.activate"
-		}),
+		})
+	),
 	editorHandoffs: Stream.callback<EditorHandoffNotice>((queue) =>
 		Effect.acquireRelease(
 			Effect.sync(() =>
 				window.ueShed.onEditorHandoff((notice) => {
-					const decoded = Schema.decodeUnknownOption(EditorHandoffNotice)(notice);
+					const decoded = Schema.decodeOption(EditorHandoffNotice)(notice);
 					if (Option.isSome(decoded)) Queue.offerUnsafe(queue, decoded.value);
 				})
 			),
 			(unsubscribe) => Effect.sync(unsubscribe)
 		)
 	),
-	sampleProject: Effect.fn("WorkbenchRenderer.sampleProject")(() =>
+	sampleProject: Effect.suspend(() =>
 		request({
 			decode: decodeWorkbenchProjectState,
 			invoke: () => window.ueShed.project.sample(),
 			operation: "project.sample"
 		})
-	),
+	).pipe(Effect.withSpan("WorkbenchRenderer.sampleProject")),
 	searchBlueprints: Effect.fn("WorkbenchRenderer.searchBlueprints")((searchRequest) =>
 		request({
 			decode: decodeBlueprintAssetSearchResult,
@@ -307,13 +305,13 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			operation: "configExplorer.query"
 		})
 	),
-	chooseProject: Effect.fn("WorkbenchRenderer.chooseProject")(() =>
+	chooseProject: Effect.suspend(() =>
 		request({
 			decode: decodeWorkbenchProjectState,
 			invoke: () => window.ueShed.project.choose(),
 			operation: "project.choose"
 		})
-	),
+	).pipe(Effect.withSpan("WorkbenchRenderer.chooseProject")),
 	editorSessionStatus: getEditorSessionStatus,
 	executeEditorSessionCommand: Effect.fn("WorkbenchRenderer.executeEditorSessionCommand")(
 		(command) =>
@@ -324,16 +322,16 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			})
 	),
 	editorSessionStatuses: Stream.fromEffectSchedule(
-		Effect.exit(getEditorSessionStatus()),
+		Effect.exit(getEditorSessionStatus),
 		Schedule.spaced("750 millis")
 	),
-	unrealConnectionSettings: Effect.fn("WorkbenchRenderer.unrealConnectionSettings")(() =>
+	unrealConnectionSettings: Effect.suspend(() =>
 		request({
 			decode: decodeUnrealConnectionSettings,
 			invoke: () => window.ueShed.editorSession.settings(),
 			operation: "editorSession.settings"
 		})
-	),
+	).pipe(Effect.withSpan("WorkbenchRenderer.unrealConnectionSettings")),
 	setUnrealConnectionPort: Effect.fn("WorkbenchRenderer.setUnrealConnectionPort")((port) =>
 		request({
 			decode: decodeUnrealConnectionSettings,
@@ -341,13 +339,13 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			operation: "editorSession.setPort"
 		})
 	),
-	editorResponsiveness: Effect.fn("WorkbenchRenderer.editorResponsiveness")(() =>
+	editorResponsiveness: Effect.suspend(() =>
 		request({
 			decode: decodeEditorResponsivenessSettings,
 			invoke: () => window.ueShed.editorSession.responsiveness(),
 			operation: "editorSession.responsiveness"
 		})
-	),
+	).pipe(Effect.withSpan("WorkbenchRenderer.editorResponsiveness")),
 	setEditorResponsiveness: Effect.fn("WorkbenchRenderer.setEditorResponsiveness")((enabled) =>
 		request({
 			decode: decodeEditorResponsivenessSettings,
@@ -355,13 +353,13 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			operation: "editorSession.setResponsiveness"
 		})
 	),
-	showcaseContext: Effect.fn("WorkbenchRenderer.showcaseContext")(() =>
+	showcaseContext: Effect.suspend(() =>
 		request({
 			decode: decodeShowcaseContext,
 			invoke: () => window.ueShed.showcase.context(),
 			operation: "showcase.context"
 		})
-	),
+	).pipe(Effect.withSpan("WorkbenchRenderer.showcaseContext")),
 	configure: Effect.fn("WorkbenchRenderer.configure")((config) =>
 		request({
 			decode: decodeCameraStatus,
@@ -381,13 +379,13 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 	),
 	getMetrics,
 	getStatus,
-	launchFixture: Effect.fn("WorkbenchRenderer.launchFixture")(() =>
+	launchFixture: Effect.suspend(() =>
 		request({
 			decode: decodeFixtureLaunchResult,
 			invoke: () => window.ueShed.fixture.launch(),
 			operation: "fixture.launch"
 		})
-	),
+	).pipe(Effect.withSpan("WorkbenchRenderer.launchFixture")),
 	launchProject: Effect.fn("WorkbenchRenderer.launchProject")((mode) =>
 		request({
 			decode: decodeProjectLaunchResult,
@@ -402,13 +400,13 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			operation: "project.openRecent"
 		})
 	),
-	project: Effect.fn("WorkbenchRenderer.project")(() =>
+	project: Effect.suspend(() =>
 		request({
 			decode: decodeWorkbenchProjectState,
 			invoke: () => window.ueShed.project.current(),
 			operation: "project.current"
 		})
-	),
+	).pipe(Effect.withSpan("WorkbenchRenderer.project")),
 	refreshProject: Effect.fn("WorkbenchRenderer.refreshProject")(
 		(mode: "refresh" | "rebuild" = "refresh") =>
 			request({
@@ -417,21 +415,21 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 				operation: "project.refresh"
 			})
 	),
-	recentProjects: Effect.fn("WorkbenchRenderer.recentProjects")(() =>
+	recentProjects: Effect.suspend(() =>
 		request({
 			decode: decodeWorkbenchRecentProjects,
 			invoke: () => window.ueShed.project.recent(),
 			operation: "project.recent"
 		})
-	),
-	projectProgress: Effect.fn("WorkbenchRenderer.projectProgress")(() =>
+	).pipe(Effect.withSpan("WorkbenchRenderer.recentProjects")),
+	projectProgress: Effect.suspend(() =>
 		request({
 			decode: decodeWorkbenchTaskProgress,
 			invoke: () => window.ueShed.project.progress(),
 			operation: "project.progress"
 		})
-	),
-	metrics: Stream.fromEffectSchedule(Effect.exit(getMetrics()), Schedule.spaced("750 millis")),
+	).pipe(Effect.withSpan("WorkbenchRenderer.projectProgress")),
+	metrics: Stream.fromEffectSchedule(Effect.exit(getMetrics), Schedule.spaced("750 millis")),
 	setPresentationBudget: Effect.fn("WorkbenchRenderer.setPresentationBudget")((value) =>
 		request({
 			decode: decodePresentationBudget,
@@ -439,5 +437,5 @@ export const workbenchRendererClient: WorkbenchRendererClient = {
 			operation: "camera.setPresentationBudget"
 		})
 	),
-	statuses: Stream.fromEffectSchedule(Effect.exit(getStatus()), Schedule.spaced("1 second"))
+	statuses: Stream.fromEffectSchedule(Effect.exit(getStatus), Schedule.spaced("1 second"))
 };

@@ -55,11 +55,11 @@ export const readLocalizationReview = Effect.fn("Localization.readReview")(funct
 				relativePath,
 				contentHash: null
 			} satisfies LocalizationReviewSnapshot;
-		return yield* Effect.fail(read.failure);
+		return yield* read.failure;
 	}
 	const text = decodeText(read.success.bytes, limits);
 	const file = decodeLocalizationReviewFile(text, location.target);
-	if (Result.isFailure(file)) return yield* Effect.fail(file.failure);
+	if (Result.isFailure(file)) return yield* file.failure;
 	return {
 		file: file.success,
 		relativePath,

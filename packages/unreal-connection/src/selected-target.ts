@@ -12,7 +12,7 @@ class OperationEndpoint extends Context.Service<
  * affects later work.
  */
 export interface SelectedUnrealTargetApi {
-	readonly endpoint: () => Effect.Effect<string>;
+	readonly endpoint: Effect.Effect<string>;
 	readonly select: (endpoint: string) => Effect.Effect<void>;
 	readonly withCurrent: <A, E, R>(operation: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
@@ -28,13 +28,13 @@ export const makeSelectedUnrealTarget = Effect.fn("SelectedUnrealTarget.make")(f
 	initialEndpoint: string
 ) {
 	const selected = yield* Ref.make(initialEndpoint);
-	const endpoint = Effect.fn("SelectedUnrealTarget.endpoint")(function* () {
+	const endpoint = Effect.gen(function* () {
 		const captured = yield* Effect.serviceOption(OperationEndpoint);
 		return (
 			(Option.isSome(captured) ? captured.value.get(selected) : undefined) ??
 			(yield* Ref.get(selected))
 		);
-	});
+	}).pipe(Effect.withSpan("SelectedUnrealTarget.endpoint"));
 	return SelectedUnrealTarget.of({
 		endpoint,
 		select: Effect.fn("SelectedUnrealTarget.select")((value) => Ref.set(selected, value)),
@@ -42,7 +42,7 @@ export const makeSelectedUnrealTarget = Effect.fn("SelectedUnrealTarget.make")(f
 			Effect.gen(function* () {
 				const captured = yield* Effect.serviceOption(OperationEndpoint);
 				const endpoints = new Map(Option.isSome(captured) ? captured.value : undefined);
-				endpoints.set(selected, yield* endpoint());
+				endpoints.set(selected, yield* endpoint);
 				return yield* operation.pipe(Effect.provideService(OperationEndpoint, endpoints));
 			})
 	});

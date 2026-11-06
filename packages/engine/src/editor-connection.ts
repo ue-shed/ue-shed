@@ -5,7 +5,7 @@ import {
 	type CompanionCapabilityManifest
 } from "@ue-shed/protocol";
 import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Context, Duration, Effect, Layer, Schedule, Schema } from "effect";
+import { type Brand, Context, Duration, Effect, Layer, Schedule, Schema } from "effect";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 
@@ -14,20 +14,20 @@ const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
  * Cause retains the underlying transport/parser error; retrySafe alone does not authorize a
  * readiness retry.
  */
-export class EditorConnectionError extends Schema.TaggedError<EditorConnectionError>()(
-	"EditorConnectionError",
-	{
-		code: Schema.Literals([
-			"transport_failure",
-			"contract_failure",
-			"project_mismatch",
-			"readiness_timeout"
-		]),
-		endpoint: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class EditorConnectionError extends Schema.TaggedError<
+	EditorConnectionError,
+	Brand.Brand<"packages/engine/src/editor-connection/EditorConnectionError">
+>()("EditorConnectionError", {
+	code: Schema.Literals([
+		"transport_failure",
+		"contract_failure",
+		"project_mismatch",
+		"readiness_timeout"
+	]),
+	endpoint: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /**
  * Remote Control endpoint to inspect, optionally bound to an expected project name. A name

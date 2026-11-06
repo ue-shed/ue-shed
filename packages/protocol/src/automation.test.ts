@@ -58,7 +58,7 @@ describe("automation and live reference wire contracts", () => {
 			).toThrow();
 		}
 		expect(() =>
-			Schema.decodeUnknownSync(AutomationInputRequest)({
+			Schema.decodeSync(AutomationInputRequest)({
 				...input,
 				worldObjectPath: ""
 			})
@@ -71,14 +71,14 @@ describe("automation and live reference wire contracts", () => {
 		);
 		for (const maxActors of [0, 1.5, 100001]) {
 			expect(() =>
-				Schema.decodeUnknownSync(AuthoringActorReferencesRequest)({
+				Schema.decodeSync(AuthoringActorReferencesRequest)({
 					...request,
 					maxActors
 				})
 			).toThrow();
 		}
 		expect(() =>
-			Schema.decodeUnknownSync(AuthoringActorReferencesRequest)({
+			Schema.decodeSync(AuthoringActorReferencesRequest)({
 				...request,
 				maxResults: 10001
 			})
@@ -108,7 +108,7 @@ describe("automation and live reference wire contracts", () => {
 
 	it("accepts an automation-only packaged runtime producer", () => {
 		expect(
-			Schema.decodeUnknownSync(CompanionCapabilityManifest)({
+			Schema.decodeSync(CompanionCapabilityManifest)({
 				producerKind: "unreal_runtime",
 				schemaVersion: 1,
 				automationObjectPath: "/Script/UEShedAutomation.Default__UEShedAutomationLibrary",

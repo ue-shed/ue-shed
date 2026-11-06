@@ -80,26 +80,31 @@ const emptyCatalog: AuthoringCatalogApi = {
 };
 
 const dyingReader: AssetReaderTestApi = {
-	configuration: () =>
-		Effect.succeed({ executable: "uasset", timeoutMs: 30_000, catalogTimeoutMs: 50 * 60_000 }),
-	catalogProgress: () =>
-		Effect.succeed({
-			phase: "idle",
-			cacheHits: 0,
-			processedAssets: 0,
-			tablesFound: 0,
-			totalAssets: 0
-		}),
-	scanProgress: () =>
-		Effect.succeed({
-			phase: "idle",
-			cacheHits: 0,
-			emittedAssets: 0,
-			processedAssets: 0,
-			totalAssets: 0
-		}),
-	savedWorldProgress: () =>
-		Effect.succeed({ phase: "idle", actorsFound: 0, processedPackages: 0, totalPackages: 0 }),
+	configuration: Effect.sync(() => ({
+		executable: "uasset",
+		timeoutMs: 30_000,
+		catalogTimeoutMs: 50 * 60_000
+	})),
+	catalogProgress: Effect.sync(() => ({
+		phase: "idle",
+		cacheHits: 0,
+		processedAssets: 0,
+		tablesFound: 0,
+		totalAssets: 0
+	})),
+	scanProgress: Effect.sync(() => ({
+		phase: "idle",
+		cacheHits: 0,
+		emittedAssets: 0,
+		processedAssets: 0,
+		totalAssets: 0
+	})),
+	savedWorldProgress: Effect.sync(() => ({
+		phase: "idle",
+		actorsFound: 0,
+		processedPackages: 0,
+		totalPackages: 0
+	})),
 	readBlueprint: () => Effect.die(new Error("Unexpected readBlueprint in this reader fixture")),
 	readLevelSequence: () =>
 		Effect.die(new Error("Unexpected readLevelSequence in this reader fixture")),
@@ -115,7 +120,7 @@ const dyingReader: AssetReaderTestApi = {
 	discoverTables: () => Effect.die("not used"),
 	readAsset: () => Effect.die("not used"),
 	readTable: () => Effect.die("not used"),
-	source: () => Effect.succeed("configured")
+	source: Effect.succeed("configured")
 };
 
 const dialogLayer = (openDialog: Parameters<typeof makeWorkbenchWindowTestLayer>[0]) =>
@@ -152,8 +157,8 @@ it.effect(
 			const results = yield* Effect.provide(
 				Effect.gen(function* () {
 					const service = yield* WorkbenchAuthoring;
-					const first = yield* service.configuredCatalog();
-					const second = yield* service.configuredCatalog();
+					const first = yield* service.configuredCatalog;
+					const second = yield* service.configuredCatalog;
 					return { first, second };
 				}),
 				WorkbenchAuthoringLive.pipe(
@@ -270,8 +275,8 @@ it.effect("invalidates negotiated authoring connections after live catalog failu
 		yield* Effect.provide(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchAuthoring;
-				yield* service.configuredCatalog();
-				yield* service.configuredCatalog();
+				yield* service.configuredCatalog;
+				yield* service.configuredCatalog;
 			}),
 			layer
 		);
@@ -334,7 +339,7 @@ it.effect("creates a session from a loaded snapshot, edits it, and undoes the ed
 		yield* Effect.provide(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchAuthoring;
-				yield* service.configuredTable();
+				yield* service.configuredTable;
 				const begun = yield* service.beginSession(objectPath);
 				if (begun.status !== "ready") throw new Error("expected a ready session");
 				const sessionId = begun.view.sessionId;
@@ -390,7 +395,7 @@ it.effect("creates a session from a loaded snapshot, edits it, and undoes the ed
 						row: expect.objectContaining({ name: "Beta" })
 					})
 				);
-				const listed = yield* service.listSessions();
+				const listed = yield* service.listSessions;
 				if (listed.status !== "ready") throw new Error("expected a ready session list");
 				expect(listed.sessions.map((candidate) => candidate.id)).toContain(sessionId);
 				const reopened = yield* service.openSession(sessionId);
@@ -531,7 +536,7 @@ it.effect("opens the requested authority and restores only matching non-inert dr
 		yield* Effect.provide(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchAuthoring;
-				yield* service.configuredCatalog();
+				yield* service.configuredCatalog;
 				const openedSaved = yield* service.openCatalogTable(objectPath, "saved");
 				expect(openedSaved.status).toBe("ready");
 				const savedSession = yield* service.beginSession(objectPath);
@@ -555,7 +560,7 @@ it.effect("opens the requested authority and restores only matching non-inert dr
 					kind: "int",
 					value: "2"
 				});
-				const listed = yield* service.listSessions();
+				const listed = yield* service.listSessions;
 				if (listed.status !== "ready") throw new Error("expected a session list");
 				expect(listed.sessions).toEqual([]);
 			}),
@@ -591,7 +596,7 @@ it.effect("fails to apply a session when the live connection is unavailable", ()
 		yield* Effect.provide(
 			Effect.gen(function* () {
 				const service = yield* WorkbenchAuthoring;
-				yield* service.configuredTable();
+				yield* service.configuredTable;
 				const begun = yield* service.beginSession(objectPath);
 				if (begun.status !== "ready") throw new Error("expected a ready session");
 

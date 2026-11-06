@@ -32,7 +32,7 @@ const noPO = () => success(parsePO(new TextEncoder().encode("")));
 type CustomChecks = ReadonlyArray<typeof CustomLocalizationCheck.Encoded>;
 /** The starter's checks, then these. */
 const document = (customChecks: CustomChecks) =>
-	Schema.decodeUnknownSync(GameTextRuleDocument)({
+	Schema.decodeSync(GameTextRuleDocument)({
 		schemaVersion: 1,
 		roles: [
 			{
@@ -279,7 +279,7 @@ describe("custom checks", () => {
 			}
 		]);
 		const { joined, report } = check(rules);
-		expect(Schema.decodeUnknownSync(ReportSchema)(report)).toEqual(report);
+		expect(Schema.decodeSync(ReportSchema)(report)).toEqual(report);
 		const found = custom(report).map((finding) => [
 			finding.ruleId,
 			finding.culture,

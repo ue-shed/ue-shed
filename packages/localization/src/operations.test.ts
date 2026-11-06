@@ -106,7 +106,7 @@ it.effect("streams bounded progress, audits planned/unplanned writes, and releas
 			const selected = yield* target(paths.project);
 			const terminated = yield* Ref.make(false);
 			const processes = makeOwnedProcessTreeTestLayer((options) =>
-				Effect.gen(function* () {
+				Effect.sync(() => {
 					const logPath = options.args
 						.find((arg) => arg.startsWith("-abslog="))
 						?.slice(8);

@@ -1,5 +1,5 @@
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
-import { Effect } from "effect";
+import { Layer, Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { ReviewAuthoring, ReviewAuthoringLive } from "./review-authoring-live.js";
 import { ReviewSubjectActorGuid } from "./review-schema.js";
@@ -47,7 +47,7 @@ describe("ReviewAuthoring live subject inspection", () => {
 						kind: "actor_guid"
 					}
 				})
-			).pipe(Effect.provide(ReviewAuthoringLive), Effect.provide(remote))
+			).pipe(Effect.provide(Layer.provideMerge(ReviewAuthoringLive, remote)))
 		);
 
 		expect(result).toMatchObject({ actorGuid: "00000001-00000002-00000003-00000004" });

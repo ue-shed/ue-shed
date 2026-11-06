@@ -11,7 +11,7 @@ import { nativeIndexQueryLayer } from "./index-query-native.js";
 export const typeScriptIndexBuilderLayer = Layer.merge(
 	builder,
 	Layer.unwrap(
-		Effect.flatMap(AssetReader, (reader) => reader.configuration()).pipe(
+		Effect.flatMap(AssetReader, (reader) => reader.configuration).pipe(
 			Effect.map(nativeIndexQueryLayer),
 			Effect.provide(AssetReaderLive),
 			Effect.orDie

@@ -480,7 +480,7 @@ export function WorldScout(props: {
 	});
 
 	const connect = () =>
-		connectAction.run(props.client.connectWorld(), { onSuccess: acceptConnectResult });
+		connectAction.run(props.client.connectWorld, { onSuccess: acceptConnectResult });
 	const updateRefreshRate = (value: string) => {
 		const parsed = Number(value);
 		const max = rateMax();

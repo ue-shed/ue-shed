@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { it } from "@effect/vitest";
-import { ConfigProvider, Effect } from "effect";
+import { Layer, ConfigProvider, Effect } from "effect";
 import { expect } from "vitest";
 import {
 	EngineInstallationDiscovery,
@@ -11,9 +11,7 @@ import {
 } from "./engine-installation.js";
 
 /** Discovery that sees only the engines a test creates, not this machine's registry. */
-const discoveryWithoutRegistry = makeEngineInstallationDiscoveryLayer(() =>
-	Effect.succeed(undefined)
-);
+const discoveryWithoutRegistry = makeEngineInstallationDiscoveryLayer(() => Effect.undefined);
 
 it.effect("preserves JSON and filesystem causes during explicit discovery", () =>
 	Effect.gen(function* () {
@@ -63,9 +61,11 @@ it.effect("resolves an explicitly selected engine without a machine default", ()
 		});
 		expect(installation.version).toEqual({ major: 5, minor: 7, patch: 1 });
 	}).pipe(
-		Effect.provide(EngineInstallationDiscoveryLive),
 		Effect.provide(
-			ConfigProvider.layer(ConfigProvider.fromUnknown({ ProgramFiles: "Z:\\NoEngines" }))
+			Layer.provideMerge(
+				EngineInstallationDiscoveryLive,
+				ConfigProvider.layer(ConfigProvider.fromUnknown({ ProgramFiles: "Z:\\NoEngines" }))
+			)
 		)
 	)
 );
@@ -115,13 +115,15 @@ it.effect.skipIf(process.platform !== "win32")(
 			const installation = yield* Effect.flatMap(EngineInstallationDiscovery, (discovery) =>
 				discovery.resolve({ projectDescriptor: descriptor })
 			).pipe(
-				Effect.provide(discoveryWithoutRegistry),
 				Effect.provide(
-					ConfigProvider.layer(
-						ConfigProvider.fromUnknown({
-							ProgramData: join(root, "ProgramData"),
-							ProgramFiles: join(root, "NoEngines")
-						})
+					Layer.provideMerge(
+						discoveryWithoutRegistry,
+						ConfigProvider.layer(
+							ConfigProvider.fromUnknown({
+								ProgramData: join(root, "ProgramData"),
+								ProgramFiles: join(root, "NoEngines")
+							})
+						)
 					)
 				)
 			);
@@ -149,13 +151,15 @@ it.effect.skipIf(process.platform !== "win32")(
 			const installation = yield* Effect.flatMap(EngineInstallationDiscovery, (discovery) =>
 				discovery.resolve({ projectDescriptor: descriptor })
 			).pipe(
-				Effect.provide(discoveryWithoutRegistry),
 				Effect.provide(
-					ConfigProvider.layer(
-						ConfigProvider.fromUnknown({
-							ProgramData: join(root, "ProgramData"),
-							ProgramFiles: programFiles
-						})
+					Layer.provideMerge(
+						discoveryWithoutRegistry,
+						ConfigProvider.layer(
+							ConfigProvider.fromUnknown({
+								ProgramData: join(root, "ProgramData"),
+								ProgramFiles: programFiles
+							})
+						)
 					)
 				)
 			);

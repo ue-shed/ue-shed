@@ -89,7 +89,10 @@ function run(handle: (request: RemoteControlRequest) => object, input = request(
 			Effect.provide(
 				makeRemoteControlClientTestLayer((call) => {
 					calls.push(call);
-					return Effect.sync(() => Schema.decodeUnknownSync(Schema.Json)(handle(call)));
+					return Effect.sync(() => handle(call)).pipe(
+						Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
+						Effect.orDie
+					);
 				})
 			)
 		)
@@ -149,7 +152,9 @@ describe("Game Text actions API", () => {
 			[ENDPOINT, "/Script/UEShedCore.Default__UEShedCoreLibrary", "GetCapabilityManifest"],
 			[ENDPOINT, GAME_TEXT, "ApplyTextActions"]
 		]);
-		expect(JSON.parse(String(calls[1]?.parameters.RequestJson))).toEqual(request());
+		const raw = calls[1]?.parameters.RequestJson;
+		if (!Schema.is(Schema.String)(raw)) throw new Error("RequestJson must be a JSON string");
+		expect(JSON.parse(raw)).toEqual(request());
 	});
 
 	it("returns a rejected request as a result with typed errors, not a failure", async () => {

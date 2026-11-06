@@ -29,7 +29,7 @@ const cleanFiles = [
 	...sourceFiles.flatMap(emitted)
 ];
 
-test("published Effect runtimes are required compatible peers", () => {
+void test("published Effect runtimes are required compatible peers", () => {
 	const manifest = {
 		name: "@ue-shed/observability",
 		version: PUBLIC_VERSION,
@@ -63,7 +63,7 @@ test("published Effect runtimes are required compatible peers", () => {
 	}
 });
 
-test("accepts dist files that the current sources emit", () => {
+void test("accepts dist files that the current sources emit", () => {
 	assert.deepEqual(findStrayTypeScriptOutput({ files: cleanFiles, sourceFiles }), []);
 	assert.deepEqual(
 		findStrayTypeScriptOutput({
@@ -75,7 +75,7 @@ test("accepts dist files that the current sources emit", () => {
 	);
 });
 
-test("rejects the stale cameras 0.9.1 build output", () => {
+void test("rejects the stale cameras 0.9.1 build output", () => {
 	// 0.9.1 shipped these from an uncleaned dist after their sources were renamed or removed.
 	const stale = ["json-file.ts", "review-preview-live.ts", "sha256.ts"].flatMap(emitted);
 	assert.deepEqual(
@@ -84,7 +84,7 @@ test("rejects the stale cameras 0.9.1 build output", () => {
 	);
 });
 
-test("rejects dist files with no TypeScript output shape", () => {
+void test("rejects dist files with no TypeScript output shape", () => {
 	assert.deepEqual(
 		findStrayTypeScriptOutput({
 			files: [...cleanFiles, "package/dist/index.tsbuildinfo", "package/dist/notes.txt"],
@@ -94,7 +94,7 @@ test("rejects dist files with no TypeScript output shape", () => {
 	);
 });
 
-test("fails pack validation with the stray files named", () => {
+void test("fails pack validation with the stray files named", () => {
 	const manifest = {
 		name: "@ue-shed/cameras",
 		version: PUBLIC_VERSION,
@@ -119,7 +119,7 @@ test("fails pack validation with the stray files named", () => {
 	assert.match(failures[0] ?? "", /no current source emits.*package\/dist\/sha256\.js/u);
 });
 
-test("package builds start from an empty dist", async () => {
+void test("package builds start from an empty dist", async () => {
 	const packageDirectory = await mkdtemp(join(tmpdir(), "ue-shed-clean-dist-"));
 	try {
 		await writeFile(join(packageDirectory, "package.json"), "{}\n");
@@ -138,7 +138,7 @@ test("package builds start from an empty dist", async () => {
 	}
 });
 
-test("public package builds follow the workspace dependency graph", async () => {
+void test("public package builds follow the workspace dependency graph", async () => {
 	const repositoryRoot = join(import.meta.dirname, "..");
 	const workDirectory = await mkdtemp(join(tmpdir(), "ue-shed-build-order-"));
 	const orderFile = join(workDirectory, "order.txt");
@@ -226,7 +226,7 @@ async function workspacePackageDirectories(repositoryRoot: string) {
 	return directories;
 }
 
-test("Game Text packs focused entry points without aggregate fallbacks", async () => {
+void test("Game Text packs focused entry points without aggregate fallbacks", async () => {
 	const manifest = JSON.parse(
 		await readFile(join(import.meta.dirname, "../packages/game-text/package.json"), "utf8")
 	);

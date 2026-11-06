@@ -28,7 +28,7 @@ describe("word-count reports against Unreal's committed CSVs", () => {
 						(target) => target.name === "FixtureGame"
 					);
 					if (!original) throw new Error("The fixture target is missing.");
-					const target = Schema.decodeUnknownSync(LocalizationTarget)({
+					const target = yield* Schema.decodeEffect(LocalizationTarget)({
 						...original,
 						outputPaths: {
 							...original.outputPaths,
@@ -48,7 +48,7 @@ describe("word-count reports against Unreal's committed CSVs", () => {
 							wordCount: `${directory}/FixtureGame.csv`,
 							locmeta: `${directory}/FixtureGame.locmeta`
 						}
-					});
+					}).pipe(Effect.orDie);
 					return yield* service.read({ projectRoot, target });
 				}).pipe(Effect.provide(LocalizationEvidenceNodeLive))
 			);
@@ -71,7 +71,11 @@ describe("word-count reports against Unreal's committed CSVs", () => {
 			expect(
 				report.cultures
 					.map((culture) => [culture.culture, culture.upToDateArchive.sourceWords])
-					.sort()
+					.sort((left, right) => {
+						const leftText = left.join(",");
+						const rightText = right.join(",");
+						return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+					})
 			).toEqual([
 				["de", 59],
 				["en", 62],

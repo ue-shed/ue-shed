@@ -116,11 +116,10 @@ describe("ProjectCustodianRoute", () => {
 		let scans = 0;
 		const client: CustodianClientApi = {
 			...inactiveCleanupClient(),
-			configuredScan: () =>
-				Effect.sync(() => {
-					scans += 1;
-					return { status: "not_configured" as const };
-				})
+			configuredScan: Effect.sync(() => {
+				scans += 1;
+				return { status: "not_configured" as const };
+			})
 		};
 
 		render(() => (
@@ -141,7 +140,7 @@ describe("ProjectCustodianRoute", () => {
 	it("shows measured inventory and exposes guarded cleanup review", async () => {
 		const client: CustodianClientApi = {
 			...inactiveCleanupClient(),
-			configuredScan: () => Effect.succeed({ status: "completed", report: sampleReport })
+			configuredScan: Effect.sync(() => ({ status: "completed", report: sampleReport }))
 		};
 
 		render(() => (
@@ -182,7 +181,7 @@ describe("ProjectCustodianRoute", () => {
 		let prepared = 0;
 		let executed = 0;
 		const client: CustodianClientApi = {
-			configuredScan: () => Effect.succeed({ status: "completed", report: sampleReport }),
+			configuredScan: Effect.sync(() => ({ status: "completed", report: sampleReport })),
 			prepare: () => {
 				prepared += 1;
 				return Effect.succeed({ status: "completed", proposal });

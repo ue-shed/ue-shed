@@ -1759,7 +1759,7 @@ export function invokeProtocolScan(
 						batching.maximumRequestBytes ?? MAX_PROTOCOL_REQUEST_BYTES
 					);
 		if (batches instanceof ProtocolStreamFailure)
-			return yield* Effect.fail(mapProtocolFailure(batches, "scan", projectRoot));
+			return yield* mapProtocolFailure(batches, "scan", projectRoot);
 		yield* Effect.annotateCurrentSpan({ [READER_BATCHES_ATTRIBUTE]: batches?.length ?? 1 });
 		if (paths === undefined || batches === undefined || batches.length === 1) {
 			// A list that only fit once its repeats were dropped is sent without them.
@@ -1802,12 +1802,10 @@ export function invokeProtocolScan(
 			const repeatedInventory = inventoryIdentities.finish();
 			counted += scan.summary.scannedAssets - repeated;
 			if (options.maximumAssets !== undefined && counted > options.maximumAssets)
-				return yield* Effect.fail(
-					mapProtocolFailure(
-						packageLimitFailure(counted, options.maximumAssets),
-						"scan",
-						projectRoot
-					)
+				return yield* mapProtocolFailure(
+					packageLimitFailure(counted, options.maximumAssets),
+					"scan",
+					projectRoot
 				);
 			scans.push({
 				...scan,

@@ -32,7 +32,7 @@ export const testTarget = success(
 ).targets[0];
 if (!testTarget) throw new Error("Test target recipe did not produce a target.");
 // A separately decoded value preserves narrowing for callers of test helpers.
-export const target = Schema.decodeUnknownSync(LocalizationTarget)(testTarget);
+export const target = Schema.decodeSync(LocalizationTarget)(testTarget);
 
 export function manifestEntry(
 	key = "K",
@@ -40,7 +40,7 @@ export function manifestEntry(
 	path = "/Game/Text/Table.Table",
 	namespace = "NS"
 ): ManifestEntry {
-	return Schema.decodeUnknownSync(ManifestEntry)({
+	return Schema.decodeSync(ManifestEntry)({
 		namespace,
 		key,
 		source: { Text: text },
@@ -54,7 +54,7 @@ export function archiveEntry(
 	translation = "Translation",
 	namespace = "NS"
 ): ArchiveEntry {
-	return Schema.decodeUnknownSync(ArchiveEntry)({
+	return Schema.decodeSync(ArchiveEntry)({
 		namespace,
 		key,
 		source: { Text: source },
@@ -136,7 +136,7 @@ export function unit(
 	packageFile = "Content/Text/Table.uasset",
 	namespace = "NS"
 ): TextUnit {
-	return Schema.decodeUnknownSync(TextUnit)({
+	return Schema.decodeSync(TextUnit)({
 		id: `unit:${key}`,
 		source: { status: "consistent", value: source },
 		identity: { status: "resolved", namespace, key },

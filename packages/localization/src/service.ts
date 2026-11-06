@@ -55,7 +55,7 @@ type FailedFileEvidence = Extract<typeof ManifestFileEvidence.Type, { status: "f
 
 function boundary<S extends Schema.ConstraintDecoder<unknown>>(schema: S, input: S["Encoded"]) {
 	const parsed = parseResult(() => validate(schema, input));
-	return Result.isFailure(parsed) ? Effect.fail(parsed.failure) : Effect.succeed(parsed.success);
+	return Effect.fromResult(parsed);
 }
 
 /**
@@ -76,7 +76,7 @@ export const LocalizationEvidenceLive = Layer.effect(
 				.read(request.projectRoot, "Config/DefaultEditor.ini", limits)
 				.pipe(Effect.result);
 			if (Result.isFailure(editor) && editor.failure.code !== "file_missing")
-				return yield* Effect.fail(editor.failure);
+				return yield* editor.failure;
 			const names = yield* files.listConfigs(request.projectRoot, limits);
 			const configs: { relativePath: string; text: string }[] = [];
 			const diagnostics: LocalizationTargetDiscovery["diagnostics"][number][] = [];
@@ -98,13 +98,13 @@ export const LocalizationEvidenceLive = Layer.effect(
 			const dashboard = Result.isSuccess(editor)
 				? parseResult(() => decodeText(editor.success.bytes, limits))
 				: Result.succeed("");
-			if (Result.isFailure(dashboard)) return yield* Effect.fail(dashboard.failure);
+			if (Result.isFailure(dashboard)) return yield* dashboard.failure;
 			const parsed = discoverLocalizationTargets({
 				dashboardText: dashboard.success,
 				configs,
 				limits
 			});
-			if (Result.isFailure(parsed)) return yield* Effect.fail(parsed.failure);
+			if (Result.isFailure(parsed)) return yield* parsed.failure;
 			yield* Effect.annotateCurrentSpan({
 				"localization.targets": parsed.success.targets.length,
 				"localization.configs": configs.length,
@@ -127,7 +127,7 @@ export const LocalizationEvidenceLive = Layer.effect(
 					0
 				) > limits.maxFiles
 			) {
-				return yield* Effect.fail(localizationError("limit_exceeded"));
+				return yield* localizationError("limit_exceeded");
 			}
 			const presence: LocalizationTargetsReport["presence"][number][] = [];
 			for (const target of discovery.targets) {
@@ -162,7 +162,7 @@ export const LocalizationEvidenceLive = Layer.effect(
 						: yield* files
 								.presence(request.projectRoot, target.outputPaths.manifest)
 								.pipe(Effect.result);
-				if (Result.isFailure(manifest)) return yield* Effect.fail(manifest.failure);
+				if (Result.isFailure(manifest)) return yield* manifest.failure;
 				presence.push({ target: target.name, manifest: manifest.success, cultures });
 			}
 			return immutable(validate(LocalizationTargetsReport, { ...discovery, presence }));
@@ -174,45 +174,43 @@ export const LocalizationEvidenceLive = Layer.effect(
 			const request = yield* boundary(LocalizationEvidenceRequest, input);
 			const limits = limitsFor(request.limits);
 			if (request.target.cultures.length * 2 + 3 > limits.maxFiles)
-				return yield* Effect.fail(localizationError("limit_exceeded"));
+				return yield* localizationError("limit_exceeded");
 			let readCount = 0;
 			let failedCount = 0;
 			let entryCount = 0;
-			function readEvidence<A>(
+			const readEvidence = Effect.fn("LocalizationEvidence.readFile")(function* <A>(
 				relativePath: string | null | undefined,
 				parse: (bytes: Uint8Array) => Result.Result<A, LocalizationError>,
 				count: (value: A) => number = () => 0
 			) {
-				return Effect.gen(function* () {
-					const failed = (error: LocalizationError, provenance?: FileProvenance) => {
-						failedCount++;
-						const evidence: FailedFileEvidence = {
-							status: "failed",
-							relativePath: relativePath ?? null,
-							error
-						};
-						if (provenance !== undefined) Object.assign(evidence, { provenance });
-						return evidence;
+				const failed = (error: LocalizationError, provenance?: FileProvenance) => {
+					failedCount++;
+					const evidence: FailedFileEvidence = {
+						status: "failed",
+						relativePath: relativePath ?? null,
+						error
 					};
-					if (relativePath === undefined || relativePath === null)
-						return failed(localizationError("file_missing"));
-					const file = yield* files
-						.read(request.projectRoot, relativePath, limits)
-						.pipe(Effect.result);
-					if (Result.isFailure(file)) return failed(file.failure);
-					readCount++;
-					const parsed = parse(file.success.bytes);
-					if (Result.isFailure(parsed))
-						return failed(parsed.failure, file.success.provenance);
-					const entries = count(parsed.success);
-					entryCount += entries;
-					return {
-						status: "read" as const,
-						provenance: file.success.provenance,
-						value: parsed.success
-					};
-				}).pipe(Effect.withSpan("LocalizationEvidence.readFile"));
-			}
+					if (provenance !== undefined) Object.assign(evidence, { provenance });
+					return evidence;
+				};
+				if (relativePath === undefined || relativePath === null)
+					return failed(localizationError("file_missing"));
+				const file = yield* files
+					.read(request.projectRoot, relativePath, limits)
+					.pipe(Effect.result);
+				if (Result.isFailure(file)) return failed(file.failure);
+				readCount++;
+				const parsed = parse(file.success.bytes);
+				if (Result.isFailure(parsed))
+					return failed(parsed.failure, file.success.provenance);
+				const entries = count(parsed.success);
+				entryCount += entries;
+				return {
+					status: "read" as const,
+					provenance: file.success.provenance,
+					value: parsed.success
+				};
+			});
 			const target = request.target;
 			const projection = makeEvidenceProjection();
 			const manifest = yield* readEvidence(

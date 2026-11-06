@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { assemble } from "./assemble.mts";
 
-test("copies a validated PE artifact to the requested package path", () => {
+void test("copies a validated PE artifact to the requested package path", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-uasset-assemble-"));
 	try {
 		const source = join(root, "release", "uasset.exe");
@@ -19,7 +19,7 @@ test("copies a validated PE artifact to the requested package path", () => {
 	}
 });
 
-test("rejects a non-PE input", () => {
+void test("rejects a non-PE input", () => {
 	const root = mkdtempSync(join(tmpdir(), "ue-shed-uasset-assemble-"));
 	try {
 		const source = join(root, "uasset.exe");

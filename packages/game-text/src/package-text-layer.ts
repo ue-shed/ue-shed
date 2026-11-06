@@ -109,7 +109,7 @@ export interface PackageTextRefreshInput<E, R> {
 	readonly read: (
 		paths: readonly string[],
 		signatures: ReadonlyMap<string, string>
-	) => Stream.Stream<typeof SavedAssetPackageTextEvent.Type, E, R>;
+	) => Stream.Stream<SavedAssetPackageTextEvent, E, R>;
 	/**
 	 * Native shard preparation (`GameTextIndexSource.stage`): workers mount and convert the
 	 * selected packages, and the coordinator writes each completed shard's snapshot.
@@ -220,9 +220,7 @@ const shardEntries = Effect.fn("PackageText.planEntries")(function* (plan: Packa
 		});
 		for (const line of text.split("\n")) {
 			if (!line) continue;
-			const { group, expected } = yield* Schema.decodeUnknownEffect(PackageTextPlanLine)(
-				line
-			).pipe(
+			const { group, expected } = yield* Schema.decodeEffect(PackageTextPlanLine)(line).pipe(
 				Effect.mapError((cause) =>
 					snapshotFailure("package-text.plan", "Invalid package text plan.", cause)
 				)
@@ -240,8 +238,9 @@ const shardEntries = Effect.fn("PackageText.planEntries")(function* (plan: Packa
 	for (const shard of plan.changed) {
 		const entries = shard.entries ?? byGroup.get(shard.name);
 		if (!entries)
-			return yield* Effect.fail(
-				snapshotFailure("package-text.plan", "The package text plan lacks a shard.")
+			return yield* snapshotFailure(
+				"package-text.plan",
+				"The package text plan lacks a shard."
 			);
 		shards.push({ name: shard.name, key: shard.key, entries });
 	}
@@ -326,7 +325,7 @@ export const refreshPackageTextLayer = Effect.fn("PackageText.refresh")(function
 	input: PackageTextRefreshInput<E, R>
 ) {
 	const store = yield* SharedIndex;
-	const leased = yield* store.writer();
+	const leased = yield* store.writer;
 	const initial = leased.metrics();
 	const writer = {
 		...leased,
@@ -480,7 +479,7 @@ const planHere = Effect.fn("PackageText.planHere")(function* (
 			})
 		);
 		const retained = new Map<string, PackageTextInventoryEntry>();
-		const reader = yield* store.open();
+		const reader = yield* store.open;
 		for (const name of Object.keys(manifest.active).filter((name) =>
 			name.startsWith("package-text.")
 		)) {
@@ -493,9 +492,7 @@ const planHere = Effect.fn("PackageText.planHere")(function* (
 				!(signatures instanceof Uint32Array) ||
 				!(statuses instanceof Uint32Array)
 			)
-				return yield* Effect.fail(
-					snapshotFailure(name, "Expected package inventory columns")
-				);
+				return yield* snapshotFailure(name, "Expected package inventory columns");
 			const pathValues = yield* layer.strings("paths", [...paths]),
 				signatureValues = yield* layer.strings("identity", [...signatures]);
 			for (let row = 0; row < paths.length; row++) {
@@ -637,11 +634,9 @@ const rebuildChangedShards = Effect.fn("PackageText.rebuildShards")(function* <E
 					Stream.runForEach((event) =>
 						Effect.gen(function* () {
 							if (!requested.has(event.path) || received.has(event.path))
-								return yield* Effect.fail(
-									snapshotFailure(
-										"package-text.read",
-										"Unexpected or duplicate package"
-									)
+								return yield* snapshotFailure(
+									"package-text.read",
+									"Unexpected or duplicate package"
 								);
 							received.add(event.path);
 							completed++;
@@ -682,9 +677,7 @@ const rebuildChangedShards = Effect.fn("PackageText.rebuildShards")(function* <E
 			for (const shard of changed) snapshots.set(shard.name, converted.get(group(shard))!);
 		}
 		if (received.size !== expected)
-			return yield* Effect.fail(
-				snapshotFailure("package-text.read", "Reader omitted requested packages")
-			);
+			return yield* snapshotFailure("package-text.read", "Reader omitted requested packages");
 		stages.mark("read");
 		if (input.publishGate) yield* input.publishGate;
 		stages.restart();
@@ -697,8 +690,8 @@ const rebuildChangedShards = Effect.fn("PackageText.rebuildShards")(function* <E
 				SharedIndex,
 				SharedIndex.of({
 					...store,
-					writer: () => Effect.succeed(writer),
-					inspect: () => Effect.succeed(writer.manifest())
+					writer: Effect.sync(() => writer),
+					inspect: Effect.sync(() => writer.manifest())
 				})
 			)
 		);
@@ -766,11 +759,9 @@ const rebuildChangedShards = Effect.fn("PackageText.rebuildShards")(function* <E
 						if (event.event === "text_summary") return;
 						const signature = signatures.get(event.path);
 						if (signature === undefined || received.has(event.path))
-							return yield* Effect.fail(
-								snapshotFailure(
-									"package-text.read",
-									"Unexpected or duplicate package"
-								)
+							return yield* snapshotFailure(
+								"package-text.read",
+								"Unexpected or duplicate package"
 							);
 						received.add(event.path);
 						next.push({ path: event.path, signature, evidence: event });
@@ -781,9 +772,7 @@ const rebuildChangedShards = Effect.fn("PackageText.rebuildShards")(function* <E
 				)
 			);
 		if (received.size !== requests.length)
-			return yield* Effect.fail(
-				snapshotFailure("package-text.read", "Reader omitted requested packages")
-			);
+			return yield* snapshotFailure("package-text.read", "Reader omitted requested packages");
 		next.sort((a, b) => Buffer.compare(encodeWtf8(a.path), encodeWtf8(b.path)));
 		const source = yield* nativePackageTextColumns(next);
 		if (staged) {
@@ -842,7 +831,7 @@ const rebuildChangedShards = Effect.fn("PackageText.rebuildShards")(function* <E
 export const textCorpusFromPackageTextLayer = Effect.fn("PackageText.oracleCorpus")(function* (
 	projectRoot: string
 ) {
-	const reader = yield* (yield* SharedIndex).open();
+	const reader = yield* (yield* SharedIndex).open;
 	const records: PackageTextStored[] = [];
 	for (const name of Object.keys(reader.manifest.active).filter((name) =>
 		name.startsWith("package-text.")

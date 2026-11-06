@@ -99,9 +99,7 @@ describe.skipIf(!executable)("loc gate with the real reader", () => {
 							return { text: yield* Ref.get(output), exit: yield* Ref.get(exitCode) };
 						});
 					const verdict = (text: string) =>
-						Schema.decodeUnknownEffect(Schema.fromJsonString(LocalizationGateResult))(
-							text
-						);
+						Schema.decodeEffect(Schema.fromJsonString(LocalizationGateResult))(text);
 					let table = yield* list("table.txt", "# changed in this change", TABLE);
 
 					const before = yield* gate("--files", table);

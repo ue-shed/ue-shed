@@ -44,7 +44,7 @@ export function ReviewSetLibrary(props: {
 
 	const load = () => {
 		setState({ status: "loading" });
-		loadAction.run(props.client.reviewSetLibrary(), {
+		loadAction.run(props.client.reviewSetLibrary, {
 			onFailure: (cause) =>
 				setState({
 					error: {
@@ -104,7 +104,7 @@ export function ReviewSetLibrary(props: {
 		}
 		setWorkingId(reviewSetId);
 		setOperationFailure(undefined);
-		mutationAction.run(inspect(), {
+		mutationAction.run(inspect, {
 			onFailure: (cause) => {
 				setWorkingId(undefined);
 				setOperationFailure({

@@ -47,10 +47,7 @@ export interface PluginDistributionApi {
 		request: unknown,
 		options?: PluginInstallOptions
 	) => Effect.Effect<PluginInstallResult, PluginDistributionError, Scope.Scope>;
-	readonly listCached: () => Effect.Effect<
-		ReadonlyArray<CachedPluginRelease>,
-		PluginDistributionError
-	>;
+	readonly listCached: Effect.Effect<ReadonlyArray<CachedPluginRelease>, PluginDistributionError>;
 	readonly prune: (
 		reference: string | PluginVariantReference
 	) => Effect.Effect<void, PluginDistributionError>;
@@ -496,7 +493,9 @@ export const pluginDistributionLayer = (
 				);
 			});
 
-			const listCached = Effect.fn("PluginDistribution.listCached")(() => store.list());
+			const listCached = Effect.suspend(() => store.list).pipe(
+				Effect.withSpan("PluginDistribution.listCached")
+			);
 			const verifyCached = Effect.fn("PluginDistribution.verifyCached")(
 				(reference: string | PluginVariantReference) =>
 					store.verify(reference).pipe(

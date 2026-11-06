@@ -2,7 +2,7 @@ import { access, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { it as effectIt } from "@effect/vitest";
-import { Deferred, Duration, Effect, Fiber, Layer } from "effect";
+import { Cause, Deferred, Duration, Effect, Fiber, Layer } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	MapCapture,
@@ -99,9 +99,12 @@ function runWithPort(
 			runId: "test-run"
 		})
 	).pipe(
-		Effect.provide(MapCaptureLive),
-		Effect.provide(repositoryLayer),
-		Effect.provide(mapTileCapturePortLayer(port))
+		Effect.provide(
+			Layer.provideMerge(
+				Layer.provideMerge(MapCaptureLive, repositoryLayer),
+				mapTileCapturePortLayer(port)
+			)
+		)
 	);
 }
 
@@ -539,7 +542,7 @@ describe("map capture orchestration", () => {
 			)
 		).rejects.toMatchObject({ operation: "store_tile" });
 		await expect(access(join(outsideRoot, "new"))).rejects.toThrow();
-		await Effect.runPromise(attempt.discard());
+		await Effect.runPromise(attempt.discard);
 	});
 
 	it("cleans a caller-owned attempt when host capture is interrupted", async () => {
@@ -623,7 +626,7 @@ describe("map capture orchestration", () => {
 
 	it("cleans project-local host staging when transport fails", async () => {
 		const project = await fixtureProject(1);
-		const transport = new Error("endpoint unavailable");
+		const transport = new Cause.UnknownError(new Error("endpoint unavailable"));
 		const port: MapTileCapturePortApi = {
 			capture: () => Effect.fail(transport)
 		};

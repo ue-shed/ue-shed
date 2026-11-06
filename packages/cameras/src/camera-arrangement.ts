@@ -1,6 +1,6 @@
 import { CameraRenderPolicy } from "./camera-render-schema.js";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Schema } from "effect";
+import { type Brand, Schema } from "effect";
 import {
 	CameraActorEntry,
 	CameraVisibilityList,
@@ -282,7 +282,7 @@ function applyArrangementEditing(
 		});
 	if (command.kind === "edit_visibility") {
 		const ids = new Set(cameraIdsInScope(current, command.scope));
-		const edit = (existing: typeof CameraVisibilityList.Type | undefined) => {
+		const edit = (existing: CameraVisibilityList | undefined) => {
 			const entries = new Map(
 				(existing?.[command.list] ?? []).map((entry) => [
 					cameraActorIdentity(entry.locator),
@@ -456,7 +456,7 @@ function applyArrangementEditing(
 export function proposeCameraLayout(
 	arrangement: CameraArrangement,
 	layout: CameraLayout,
-	identities: readonly { id: ArrangementCameraId; viewId: typeof ReviewViewId.Type }[]
+	identities: readonly { id: ArrangementCameraId; viewId: ReviewViewId }[]
 ) {
 	const count = layout.kind === "single" ? 1 : layout.count;
 	if (identities.length !== count)
@@ -550,7 +550,7 @@ export function exportCameraArrangementRecipe(
 export function importCameraArrangementRecipe(
 	arrangement: CameraArrangement,
 	recipe: CameraArrangementRecipe,
-	identities: readonly { id: ArrangementCameraId; viewId: typeof ReviewViewId.Type }[]
+	identities: readonly { id: ArrangementCameraId; viewId: ReviewViewId }[]
 ): CameraArrangement {
 	if (identities.length !== recipe.cameras.length)
 		throw arrangementFailure("invalid", "Supply fresh identities for every recipe camera.");
@@ -582,12 +582,12 @@ export function migrateLegacyCameraArrangement(args: {
 	readonly session: ReviewAuthoringSession;
 	readonly id: typeof CameraArrangementId.Type;
 	readonly projectName: string;
-	readonly captureProfileId: typeof CaptureProfileId.Type;
-	readonly visibilityPolicyId: typeof VisibilityPolicyId.Type;
+	readonly captureProfileId: CaptureProfileId;
+	readonly visibilityPolicyId: VisibilityPolicyId;
 	readonly identities: readonly {
 		readonly candidateId: string;
 		readonly cameraId: ArrangementCameraId;
-		readonly viewId: typeof ReviewViewId.Type;
+		readonly viewId: ReviewViewId;
 	}[];
 }): CameraArrangement {
 	const { session } = args;
@@ -813,30 +813,30 @@ export type CameraArrangementCommand = typeof CameraArrangementCommand.Type;
  * failure with original cause. Reconcile latest revision and explicit scope before replaying
  * uncertain edits.
  */
-export class CameraArrangementError extends Schema.TaggedError<CameraArrangementError>()(
-	"CameraArrangementError",
-	{
-		code: Schema.Literals([
-			"stale",
-			"scope_mismatch",
-			"camera_missing",
-			"customization_at_risk",
-			"invalid",
-			"busy",
-			"storage",
-			"operation_reused"
-		]),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class CameraArrangementError extends Schema.TaggedError<
+	CameraArrangementError,
+	Brand.Brand<"packages/cameras/src/camera-arrangement/CameraArrangementError">
+>()("CameraArrangementError", {
+	code: Schema.Literals([
+		"stale",
+		"scope_mismatch",
+		"camera_missing",
+		"customization_at_risk",
+		"invalid",
+		"busy",
+		"storage",
+		"operation_reused"
+	]),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 /**
  * Arrangement failures are rejected before any write, and committed writes are keyed by operation
  * ID, so repeating the same request never duplicates a change.
  */
 function arrangementNextStep(
-	code: (typeof CameraArrangementError.Type)["code"]
-): (typeof CameraArrangementError.Type)["nextStep"] {
+	code: CameraArrangementError["code"]
+): CameraArrangementError["nextStep"] {
 	switch (code) {
 		case "busy":
 		case "storage":
@@ -857,7 +857,7 @@ function arrangementNextStep(
  * attempt.
  */
 export function arrangementFailure(
-	code: (typeof CameraArrangementError.Type)["code"],
+	code: CameraArrangementError["code"],
 	message: string,
 	cause?: unknown
 ) {
@@ -874,7 +874,7 @@ export function arrangementFailure(
 
 /** Aspect-aware sphere fit uses the smaller horizontal/vertical FOV; values are Unreal centimetres. */
 export function arrangementFitDistance(
-	bounds: typeof SubjectBounds.Type,
+	bounds: SubjectBounds,
 	fieldOfViewDegrees: number,
 	aspect: number,
 	margin: number
@@ -895,7 +895,7 @@ export function arrangementFitDistance(
 export function resolveArrangementCamera(
 	arrangement: CameraArrangement,
 	cameraId: string
-): typeof ApprovedPose.Type {
+): ApprovedPose {
 	const camera = arrangement.cameras.find((entry) => entry.id === cameraId);
 	if (camera === undefined)
 		throw arrangementFailure(

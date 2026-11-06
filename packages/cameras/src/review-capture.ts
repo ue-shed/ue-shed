@@ -7,8 +7,8 @@ import {
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
-import { Clock, Context, Effect, Layer, Schema } from "effect";
-import { captureReviewView } from "./review-live.js";
+import { type Brand, type Cause, Clock, Context, Effect, Layer, Schema } from "effect";
+import { captureReviewView, type ReviewCaptureConnectionError } from "./review-live.js";
 import {
 	ReviewRepository,
 	projectLocalReviewCaptureDestination,
@@ -41,15 +41,15 @@ const isReviewArtifactSourceRejected = Schema.is(ReviewArtifactSourceRejected);
  * Review preparation, capture or finalization failure with run identity and original cause.
  * Partial view outcomes and cleanup/publication failures must remain visible.
  */
-export class ReviewCaptureRunError extends Schema.TaggedError<ReviewCaptureRunError>()(
-	"ReviewCaptureRunError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		operation: Schema.Literals(["prepare", "capture", "finalize"]),
-		runId: Schema.String
-	}
-) {}
+export class ReviewCaptureRunError extends Schema.TaggedError<
+	ReviewCaptureRunError,
+	Brand.Brand<"packages/cameras/src/review-capture/ReviewCaptureRunError">
+>()("ReviewCaptureRunError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	operation: Schema.Literals(["prepare", "capture", "finalize"]),
+	runId: Schema.String
+}) {}
 
 /**
  * Positive concurrency policy for a review run. Hosts choose parallelism explicitly; this
@@ -68,13 +68,19 @@ export const defaultReviewCaptureConcurrency = ReviewCaptureConcurrency.make(1);
 type SchemaReviewCaptureRequest = typeof ReviewCaptureRequestCurrent.Type;
 
 /**
+ * Classified review connection failures, or an unclassified throw/rejection at a host's
+ * foreign API boundary. Both retain the original failure in cause.
+ */
+export type ReviewCaptureError = ReviewCaptureConnectionError | Cause.UnknownError;
+
+/**
  * Editor-facing capture port for one correlated request. Implementations return validated
  * domain outcomes; orchestration owns repository publication and batch view accounting.
  */
 export interface ReviewCapturePortApi {
 	readonly capture: (
 		request: SchemaReviewCaptureRequest
-	) => Effect.Effect<ReviewCaptureResponse, unknown>;
+	) => Effect.Effect<ReviewCaptureResponse, ReviewCaptureError>;
 }
 
 /** @deprecated Use `ReviewCapturePortApi`. */
@@ -93,7 +99,7 @@ export class ReviewCapturePort extends Context.Service<ReviewCapturePort, Review
  * without replacing capture logic.
  */
 export interface ReviewIdGeneratorApi {
-	readonly generate: () => Effect.Effect<string>;
+	readonly generate: Effect.Effect<string>;
 }
 
 /** @deprecated Use `ReviewIdGeneratorApi`. */
@@ -114,7 +120,7 @@ export class ReviewIdGenerator extends Context.Service<ReviewIdGenerator, Review
 export const ReviewIdGeneratorLive = Layer.succeed(
 	ReviewIdGenerator,
 	ReviewIdGenerator.of({
-		generate: Effect.fn("ReviewIdGenerator.generate")(() => Effect.sync(randomUUID))
+		generate: Effect.sync(randomUUID).pipe(Effect.withSpan("ReviewIdGenerator.generate"))
 	})
 );
 
@@ -126,7 +132,7 @@ export function reviewIdGeneratorLayer(makeId: () => string): Layer.Layer<Review
 	return Layer.succeed(
 		ReviewIdGenerator,
 		ReviewIdGenerator.of({
-			generate: Effect.fn("ReviewIdGenerator.Test.generate")(() => Effect.sync(makeId))
+			generate: Effect.sync(makeId).pipe(Effect.withSpan("ReviewIdGenerator.Test.generate"))
 		})
 	);
 }
@@ -365,7 +371,7 @@ function captureOneView(args: {
 	readonly ids: ReviewIdGeneratorApi;
 	readonly projectRoot: string;
 	readonly reviewSet: ReviewSet;
-	readonly runId: typeof CaptureRunId.Type;
+	readonly runId: CaptureRunId;
 	readonly unrealStagingRoot: string;
 	readonly view: ReviewSet["views"][number];
 }): Effect.Effect<ViewResult, ReviewStorageError> {
@@ -398,7 +404,7 @@ function captureOneView(args: {
 				viewRevision: args.view.revision
 			};
 		}
-		const operationId = yield* args.ids.generate();
+		const operationId = yield* args.ids.generate;
 		const request = ReviewCaptureRequestCurrent.make({
 			...(args.view.authoredVisibility
 				? { authoredVisibility: args.view.authoredVisibility }
@@ -434,7 +440,7 @@ function captureOneView(args: {
 					viewId: args.view.id
 				})
 			),
-			Effect.catch(() =>
+			Effect.catchTag(["ReviewCaptureConnectionError", "UnknownError"], () =>
 				Effect.succeed({
 					code: "capture_connection_failed",
 					message: "The connected editor did not return a valid capture result.",
@@ -566,13 +572,11 @@ function captureReviewSetWith(args: {
 	const concurrency = args.options.concurrency ?? defaultReviewCaptureConcurrency;
 	return Effect.gen(function* () {
 		const reviewSet = yield* args.repository.loadSet(args.options.reviewSetPath);
-		const runId = CaptureRunId.make(yield* args.ids.generate());
+		const runId = CaptureRunId.make(yield* args.ids.generate);
 		const renderer =
 			args.options.renderer === undefined
 				? undefined
-				: yield* Schema.decodeUnknownEffect(CameraRendererPolicy)(
-						args.options.renderer
-					).pipe(
+				: yield* Schema.decodeEffect(CameraRendererPolicy)(args.options.renderer).pipe(
 						Effect.mapError(
 							(cause) =>
 								new ReviewCaptureRunError({
@@ -589,40 +593,36 @@ function captureReviewSetWith(args: {
 		const invocation =
 			args.options.invocation ??
 			manualCaptureInvocation({
-				id: CaptureInvocationId.make(yield* args.ids.generate()),
+				id: CaptureInvocationId.make(yield* args.ids.generate),
 				reviewSetId: reviewSet.id,
 				...(args.options.viewIds === undefined
 					? undefined
 					: { viewIds: args.options.viewIds })
 			});
 		if (invocation.reviewSetId !== reviewSet.id) {
-			return yield* Effect.fail(
-				new ReviewCaptureRunError({
-					message: "The Capture Invocation belongs to a different Review Set.",
-					operation: "prepare",
-					recovery: "Create an invocation for the Review Set being captured.",
-					retrySafe: true,
-					nextStep: "fix_input",
-					runId
-				})
-			);
+			return yield* new ReviewCaptureRunError({
+				message: "The Capture Invocation belongs to a different Review Set.",
+				operation: "prepare",
+				recovery: "Create an invocation for the Review Set being captured.",
+				retrySafe: true,
+				nextStep: "fix_input",
+				runId
+			});
 		}
 		const requestedViewIds = invocation.viewIds ?? args.options.viewIds;
 		const views = requestedViewIds
 			? reviewSet.views.filter((view) => requestedViewIds.includes(view.id))
 			: reviewSet.views;
 		if (views.length === 0 || views.length !== (requestedViewIds?.length ?? views.length)) {
-			return yield* Effect.fail(
-				new ReviewCaptureRunError({
-					message:
-						"The requested capture plan contains missing or duplicate Review View IDs.",
-					operation: "prepare",
-					recovery: "Reload the Review Set, review the capture plan, and retry.",
-					retrySafe: true,
-					nextStep: "reconcile",
-					runId
-				})
-			);
+			return yield* new ReviewCaptureRunError({
+				message:
+					"The requested capture plan contains missing or duplicate Review View IDs.",
+				operation: "prepare",
+				recovery: "Reload the Review Set, review the capture plan, and retry.",
+				retrySafe: true,
+				nextStep: "reconcile",
+				runId
+			});
 		}
 		const destination =
 			args.options.destination ??
@@ -700,7 +700,7 @@ function captureReviewSetWith(args: {
 					const finalized = attempt.finalize(run).pipe(Effect.uninterruptible);
 					return yield* finalized.pipe(Effect.as(run));
 				}),
-			(attempt) => attempt.discard().pipe(Effect.ignore)
+			(attempt) => attempt.discard.pipe(Effect.ignore)
 		);
 	}).pipe(
 		Effect.withSpan("camera.review.run.capture", {
@@ -774,9 +774,17 @@ export function captureReviewSet(
 		makeRemoteControlClient({ defaultTimeout: "10 seconds" })
 	);
 	return Effect.flatMap(ReviewCapture, (service) => service.captureSet(options)).pipe(
-		Effect.provide(ReviewCaptureLive),
-		Effect.provide(reviewCaptureRemotePortLayer(options.endpoint)),
-		Effect.provide(ReviewIdGeneratorLive),
-		Effect.provide(remoteClient)
+		Effect.provide(
+			Layer.provideMerge(
+				Layer.provideMerge(
+					Layer.provideMerge(
+						ReviewCaptureLive,
+						reviewCaptureRemotePortLayer(options.endpoint)
+					),
+					ReviewIdGeneratorLive
+				),
+				remoteClient
+			)
+		)
 	);
 }

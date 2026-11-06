@@ -125,7 +125,7 @@ export function registeredBuildRoot(
 	sources: Pick<EngineRootSources, "platform" | "queryRegistry">
 ): Effect.Effect<string | undefined> {
 	if (sources.platform !== "win32" || association === undefined) {
-		return Effect.succeed(undefined);
+		return Effect.undefined;
 	}
 	return sources.queryRegistry(["query", registeredBuildsKey, "/v", association]).pipe(
 		Effect.map((output) => {

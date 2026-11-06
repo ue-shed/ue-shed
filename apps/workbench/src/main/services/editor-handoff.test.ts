@@ -14,7 +14,7 @@ it.effect("publishes focus failure separately and clears it after a successful h
 		);
 		expect((yield* handoff.activate("http://old:30001")).message).toContain("Update Core");
 		expect((yield* handoff.activate("http://ready:30001")).message).toBeNull();
-		const sent = yield* window.sent();
+		const sent = yield* window.sent;
 		expect(sent.map((event) => event.channel)).toEqual(Array(3).fill("editor-window:handoff"));
 		expect(sent[2]?.payload).toEqual({ endpoint: "http://ready:30001", message: null });
 	}).pipe(

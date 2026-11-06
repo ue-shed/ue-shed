@@ -280,10 +280,9 @@ export function storedGameTextPreferences(key: string): GameTextPreferences {
 }
 
 export const readGameTextPreferences = Effect.fn("GameText.preferences.read")((key: string) =>
-	Effect.try({
-		try: () => storedGameTextPreferences(key),
-		catch: () => undefined
-	}).pipe(Effect.catch(() => Effect.succeed(decodeGameTextPreferences("{}"))))
+	Effect.try(() => storedGameTextPreferences(key)).pipe(
+		Effect.catchTag("UnknownError", () => Effect.succeed(decodeGameTextPreferences("{}")))
+	)
 );
 
 function sameDocument(

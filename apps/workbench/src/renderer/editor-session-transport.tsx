@@ -57,7 +57,7 @@ export function EditorSessionTransport(props: {
 	const [responsivenessPending, setResponsivenessPending] = createSignal(false);
 	const refreshResponsiveness = () => {
 		if (responsivenessPending()) return;
-		responsivenessRead.run(props.client.editorResponsiveness(), {
+		responsivenessRead.run(props.client.editorResponsiveness, {
 			onSuccess: setResponsiveness
 		});
 	};
@@ -128,7 +128,7 @@ export function EditorSessionTransport(props: {
 			}
 		});
 		subscribeStatus();
-		settingsAction.run(props.client.unrealConnectionSettings(), {
+		settingsAction.run(props.client.unrealConnectionSettings, {
 			onSuccess: (settings) => {
 				setPort(settings.port);
 				setEndpoint(settings.endpoint);
@@ -175,7 +175,7 @@ export function EditorSessionTransport(props: {
 	const showEditor = () => {
 		setHandoffPending(true);
 		setHandoffMessage(null);
-		handoffAction.run(props.client.activateEditorWindow(), {
+		handoffAction.run(props.client.activateEditorWindow, {
 			onSuccess: (notice) => {
 				setHandoffPending(false);
 				if (notice.endpoint.replace(/\/$/, "") === endpoint()?.replace(/\/$/, ""))

@@ -6,16 +6,16 @@ import type {
 
 export const MAX_BLUEPRINT_FILE_BYTES = MAX_ASSET_FILE_BYTES;
 
-export interface FileBlueprintSample {
+export interface FileBlueprintSample<E = never> {
 	readonly label: string;
-	readonly load: () => BlueprintGraphReadEffect;
+	readonly load: () => BlueprintGraphReadEffect<E>;
 }
-export interface FileBlueprintOpenerProps {
+export interface FileBlueprintOpenerProps<E = never> {
 	readonly controls: BlueprintGraphOpenerControls;
-	readonly readFile: (file: File) => BlueprintGraphReadEffect;
-	readonly sample?: FileBlueprintSample;
+	readonly readFile: (file: File) => BlueprintGraphReadEffect<E>;
+	readonly sample?: FileBlueprintSample<E>;
 }
-export function FileBlueprintOpener(props: FileBlueprintOpenerProps) {
+export function FileBlueprintOpener<E = never>(props: FileBlueprintOpenerProps<E>) {
 	const controls = props.controls;
 	const readFile = props.readFile;
 	const sample = props.sample;

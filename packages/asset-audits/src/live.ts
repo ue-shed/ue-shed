@@ -5,22 +5,22 @@ import {
 	type CompanionCapabilityManifest
 } from "@ue-shed/protocol";
 import { RemoteControlClient, type RemoteControlClientError } from "@ue-shed/unreal-connection";
-import { Effect, Schema } from "effect";
+import { type Brand, Effect, Schema } from "effect";
 import { decodeTexturePreviewResult, type TexturePreviewResult } from "./schema.js";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
 const previewCapability = "asset-audits.texture-preview.v1";
 
-export class LiveTexturePreviewError extends Schema.TaggedError<LiveTexturePreviewError>()(
-	"LiveTexturePreviewError",
-	{
-		endpoint: Schema.String,
-		operation: Schema.Literals(["manifest", "preview"]),
-		status: Schema.optional(Schema.Number),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class LiveTexturePreviewError extends Schema.TaggedError<
+	LiveTexturePreviewError,
+	Brand.Brand<"packages/asset-audits/src/live/LiveTexturePreviewError">
+>()("LiveTexturePreviewError", {
+	endpoint: Schema.String,
+	operation: Schema.Literals(["manifest", "preview"]),
+	status: Schema.optional(Schema.Number),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 export interface LiveTexturePreviewOptions {
 	readonly endpoint: string;

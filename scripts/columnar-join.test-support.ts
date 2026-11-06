@@ -154,7 +154,7 @@ export async function tinyJoinInput(cache: string, scale: number, seed = 57) {
 	const recipe = gameTextScaleRecipe(scale),
 		projectRoot = join(cache, "tiny");
 	await mkdir(projectRoot);
-	const generatedTarget = Schema.decodeUnknownSync(LocalizationTarget)({
+	const generatedTarget = Schema.decodeSync(LocalizationTarget)({
 		...target,
 		name: "Generated",
 		cultures: recipe.cultures,
@@ -331,7 +331,7 @@ export async function semanticJoinInput(cache: string) {
 		["A1", "Ambiguous", "/Game/Text/Other.Other.A1", "UI"],
 		["A2", "Ambiguous", "/Game/Text/Other.Other.A2", "UI"]
 	] as const;
-	const authored = Schema.decodeUnknownSync(LocalizationTarget)({
+	const authored = Schema.decodeSync(LocalizationTarget)({
 		...target,
 		name: "Cases",
 		configs: target.configs.map((config) => ({

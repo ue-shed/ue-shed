@@ -203,7 +203,7 @@ function mount(
 }
 
 function translationsFor(item: TextCorpusFocus, translation: string): LocalizationFocus {
-	return Schema.decodeUnknownSync(LocalizationFocus)({
+	return Schema.decodeSync(LocalizationFocus)({
 		id: `loc:${item.unit.id}`,
 		origin: { kind: "corpus", unitIds: [item.unit.id] },
 		identity: item.unit.identity.status === "resolved" ? item.unit.identity : null,

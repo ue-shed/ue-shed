@@ -281,7 +281,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 		} else setState({ status: result.status });
 	};
 
-	const run = (effect: () => ReturnType<InputAtlasClientApi["loadConfiguredProject"]>) => {
+	const run = (effect: () => InputAtlasClientApi["loadConfiguredProject"]) => {
 		setState({ status: "loading" });
 		scanAction.run(effect(), {
 			onSuccess: applyResult,
@@ -299,7 +299,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 		});
 	};
 
-	onSettled(() => run(() => props.client.loadConfiguredProject()));
+	onSettled(() => run(() => props.client.loadConfiguredProject));
 
 	const atlasKey = (key: string) => {
 		const current = atlas();
@@ -359,7 +359,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 					<Button
 						tone="quiet"
 						disabled={state().status === "loading"}
-						onClick={() => run(() => props.client.loadConfiguredProject())}
+						onClick={() => run(() => props.client.loadConfiguredProject)}
 					>
 						Rescan
 					</Button>
@@ -413,7 +413,7 @@ export function InputAtlasRoute(props: { readonly client: InputAtlasClientApi })
 									<Button
 										tone="secondary"
 										onClick={() =>
-											run(() => props.client.loadConfiguredProject())
+											run(() => props.client.loadConfiguredProject)
 										}
 									>
 										Retry

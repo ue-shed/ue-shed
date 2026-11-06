@@ -35,7 +35,7 @@ import { TextUnit, type TextCorpus } from "./schema.js";
 const MENU = "Content/Text/DT_Menu.uasset";
 
 function cell(key: string, source: string, id = `unit:${key}`): TextUnit {
-	return Schema.decodeUnknownSync(TextUnit)({
+	return Schema.decodeSync(TextUnit)({
 		id,
 		source: { status: "consistent", value: source },
 		identity: { status: "resolved", namespace: "NS", key },
@@ -270,17 +270,23 @@ describe("checking a change's text", () => {
 
 	it.live("names the listed file when a line lives in several", () =>
 		Effect.gen(function* () {
-			const shared = Schema.decodeUnknownSync(TextUnit)({
-				...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")),
+			const shared = yield* Schema.decodeUnknownEffect(TextUnit)({
+				...(yield* Schema.encodeEffect(TextUnit)(cell("Hello", "Hello there")).pipe(
+					Effect.orDie
+				)),
 				occurrences: [
-					...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")).occurrences,
+					...(yield* Schema.encodeEffect(TextUnit)(cell("Hello", "Hello there")).pipe(
+						Effect.orDie
+					)).occurrences,
 					{
-						...Schema.encodeSync(TextUnit)(cell("Hello", "Hello there")).occurrences[0],
+						...(yield* Schema.encodeEffect(TextUnit)(cell("Hello", "Hello there")).pipe(
+							Effect.orDie
+						)).occurrences[0],
 						id: "occurrence:other",
 						packageFile: "Content/Text/Other.uasset"
 					}
 				]
-			});
+			}).pipe(Effect.orDie);
 			const result = yield* gate(
 				scanned([shared]),
 				evidence(
@@ -409,7 +415,7 @@ describe("checking a change's text", () => {
 			const target = localizationGateTarget({
 				lines: [],
 				join: {
-					target: Schema.decodeUnknownSync(LocalizationTargetName)("Test"),
+					target: Schema.decodeSync(LocalizationTargetName)("Test"),
 					nativeCulture: cultureCode("en")
 				},
 				files: listed,

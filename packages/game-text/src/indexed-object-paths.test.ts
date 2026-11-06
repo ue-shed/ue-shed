@@ -324,7 +324,11 @@ it.live("object path, class path and row roles match through the index and in me
 						? [[finding.ruleId, finding.identity.key, finding.culture]]
 						: []
 				)
-				.sort();
+				.sort((left, right) => {
+					const leftText = left.join(",");
+					const rightText = right.join(",");
+					return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+				});
 			expect(translated).toEqual([
 				["translation.first_row", "Cell", "de"],
 				["translation.widget_class", "Title", "de"]

@@ -69,7 +69,7 @@ export const importColdPackageTextShards = Effect.fn("PackageText.importCold")(f
 	shards: readonly ColdPackageTextShard[],
 	packages: number
 ) {
-	const writer = yield* (yield* SharedIndex).writer();
+	const writer = yield* (yield* SharedIndex).writer;
 	const report = yield* GameTextIndexProgressReporter;
 	const selection = shards.filter((shard) => shard.packages);
 	const total = selection.reduce((sum, shard) => sum + shard.packages, 0);

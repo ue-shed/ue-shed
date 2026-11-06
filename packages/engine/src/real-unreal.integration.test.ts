@@ -1,5 +1,5 @@
 import { RemoteControlClientLive } from "@ue-shed/unreal-connection";
-import { Effect, Layer, Schedule, Schema } from "effect";
+import { Data, Effect, Layer, Schedule, Schema } from "effect";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EditorConnectionLive } from "./editor-connection.js";
@@ -15,6 +15,10 @@ const endpoint = process.env.UE_SHED_REMOTE_CONTROL_ENDPOINT ?? "";
 const enabled = process.env.UE_SHED_UNREAL_PLAY_SESSION_INTEGRATION === "1" && endpoint.length > 0;
 const live = EditorPlaySessionLive.pipe(Layer.provide(RemoteControlClientLive));
 
+class PlaySessionStatePending extends Data.TaggedError("PlaySessionStatePending")<{
+	readonly expected: "stopped" | "running" | "paused";
+}> {}
+
 describe.skipIf(!enabled)("real Unreal editor play-session lifecycle", () => {
 	it("covers idempotent PIE control and a complete SIE session", async () => {
 		const program = Effect.gen(function* () {
@@ -23,7 +27,7 @@ describe.skipIf(!enabled)("real Unreal editor play-session lifecycle", () => {
 				session.status(endpoint).pipe(
 					Effect.filterOrFail(
 						(response) => response.state.status === status,
-						() => new Error(`Play session did not reach ${status}`)
+						() => new PlaySessionStatePending({ expected: status })
 					),
 					Effect.retry(
 						Schedule.spaced("100 millis").pipe(

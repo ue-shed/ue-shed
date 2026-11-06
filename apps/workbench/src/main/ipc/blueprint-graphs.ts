@@ -163,7 +163,7 @@ export const register = Effect.gen(function* () {
 	yield* ipc.register(invokeContracts["blueprint-graphs:search"], (...args) =>
 		Effect.gen(function* () {
 			const [request] = args;
-			const state = yield* project.current();
+			const state = yield* project.current;
 			if (state.status === "not_configured" || state.status === "cancelled") {
 				return { status: "not_configured" as const };
 			}

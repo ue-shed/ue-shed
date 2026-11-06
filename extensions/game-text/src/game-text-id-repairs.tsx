@@ -209,7 +209,7 @@ export function GameTextIdRepairs(props: {
 					if (ok && fix.translations.length > 0) {
 						props.edits.stageAll(
 							fix.translations.map((item) => ({
-								edit: Schema.decodeUnknownSync(LocalizationEdit)(item),
+								edit: Schema.decodeSync(LocalizationEdit)(item),
 								source: item.source
 							}))
 						);

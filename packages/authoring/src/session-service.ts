@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { Clock, Context, Effect, Exit, Layer, Option, Schema, Semaphore } from "effect";
+import { type Brand, Clock, Context, Effect, Exit, Layer, Option, Schema, Semaphore } from "effect";
 import { recordAuthoringTransition } from "@ue-shed/observability";
 import {
 	DraftSessionSchema,
@@ -102,44 +102,48 @@ function decodeDocument<Input>(input: Input) {
 	});
 }
 
-export class InvalidSessionIdError extends Schema.TaggedError<InvalidSessionIdError>()(
-	"InvalidSessionIdError",
-	{ sessionId: Schema.String, ...ErrorGuidanceFields }
-) {}
+export class InvalidSessionIdError extends Schema.TaggedError<
+	InvalidSessionIdError,
+	Brand.Brand<"packages/authoring/src/session-service/InvalidSessionIdError">
+>()("InvalidSessionIdError", { sessionId: Schema.String, ...ErrorGuidanceFields }) {}
 
-export class SessionNotFoundError extends Schema.TaggedError<SessionNotFoundError>()(
-	"SessionNotFoundError",
-	{ sessionId: Schema.String, ...ErrorGuidanceFields, ...ErrorCauseFields }
-) {}
+export class SessionNotFoundError extends Schema.TaggedError<
+	SessionNotFoundError,
+	Brand.Brand<"packages/authoring/src/session-service/SessionNotFoundError">
+>()("SessionNotFoundError", {
+	sessionId: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
-export class SessionCorruptError extends Schema.TaggedError<SessionCorruptError>()(
-	"SessionCorruptError",
-	{
-		sessionId: Schema.String,
-		quarantinePath: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class SessionCorruptError extends Schema.TaggedError<
+	SessionCorruptError,
+	Brand.Brand<"packages/authoring/src/session-service/SessionCorruptError">
+>()("SessionCorruptError", {
+	sessionId: Schema.String,
+	quarantinePath: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
-export class AuthoringSessionStorageError extends Schema.TaggedError<AuthoringSessionStorageError>()(
-	"AuthoringSessionStorageError",
-	{
-		operation: Schema.String,
-		sessionId: Schema.optional(Schema.String),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class AuthoringSessionStorageError extends Schema.TaggedError<
+	AuthoringSessionStorageError,
+	Brand.Brand<"packages/authoring/src/session-service/AuthoringSessionStorageError">
+>()("AuthoringSessionStorageError", {
+	operation: Schema.String,
+	sessionId: Schema.optional(Schema.String),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
-export class AuthoringSessionTransitionError extends Schema.TaggedError<AuthoringSessionTransitionError>()(
-	"AuthoringSessionTransitionError",
-	{
-		sessionId: Schema.String,
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class AuthoringSessionTransitionError extends Schema.TaggedError<
+	AuthoringSessionTransitionError,
+	Brand.Brand<"packages/authoring/src/session-service/AuthoringSessionTransitionError">
+>()("AuthoringSessionTransitionError", {
+	sessionId: Schema.String,
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 /** An authored refusal from a session transition; its message is classified, not a raw cause. */
 class SessionTransitionRejected extends Error {}
@@ -152,14 +156,14 @@ export type AuthoringSessionServiceError =
 	| AuthoringSessionTransitionError
 	| DraftIntentError;
 
-export class AuthoringSessionLiveError extends Schema.TaggedError<AuthoringSessionLiveError>()(
-	"AuthoringSessionLiveError",
-	{
-		operation: Schema.Literals(["apply", "lookup_apply", "save"]),
-		...ErrorGuidanceFields,
-		...ErrorCauseFields
-	}
-) {}
+export class AuthoringSessionLiveError extends Schema.TaggedError<
+	AuthoringSessionLiveError,
+	Brand.Brand<"packages/authoring/src/session-service/AuthoringSessionLiveError">
+>()("AuthoringSessionLiveError", {
+	operation: Schema.Literals(["apply", "lookup_apply", "save"]),
+	...ErrorGuidanceFields,
+	...ErrorCauseFields
+}) {}
 
 export type AuthoringSessionLivePortApi = AuthoringLivePort<AuthoringSessionLiveError>;
 
@@ -302,7 +306,7 @@ export interface AuthoringSessionService {
 	readonly resume: (
 		sessionId: string
 	) => Effect.Effect<AuthoringSessionDocument, AuthoringSessionServiceError>;
-	readonly list: () => Effect.Effect<AuthoringSessionList, AuthoringSessionStorageError>;
+	readonly list: Effect.Effect<AuthoringSessionList, AuthoringSessionStorageError>;
 	readonly review: (
 		sessionId: string
 	) => Effect.Effect<AuthoringSessionReview, AuthoringSessionServiceError>;
@@ -436,7 +440,7 @@ export interface AuthoringSessionServiceConfig {
 }
 
 export interface AuthoringIdGeneratorApi {
-	readonly generate: () => Effect.Effect<string>;
+	readonly generate: Effect.Effect<string>;
 }
 
 export class AuthoringIdGenerator extends Context.Service<
@@ -447,7 +451,7 @@ export class AuthoringIdGenerator extends Context.Service<
 export const AuthoringIdGeneratorLive = Layer.succeed(
 	AuthoringIdGenerator,
 	AuthoringIdGenerator.of({
-		generate: Effect.fn("AuthoringIdGenerator.generate")(() => Effect.sync(randomUUID))
+		generate: Effect.sync(randomUUID).pipe(Effect.withSpan("AuthoringIdGenerator.generate"))
 	})
 );
 
@@ -455,7 +459,9 @@ export function authoringIdGeneratorLayer(makeId: () => string): Layer.Layer<Aut
 	return Layer.succeed(
 		AuthoringIdGenerator,
 		AuthoringIdGenerator.of({
-			generate: Effect.fn("AuthoringIdGenerator.Test.generate")(() => Effect.sync(makeId))
+			generate: Effect.sync(makeId).pipe(
+				Effect.withSpan("AuthoringIdGenerator.Test.generate")
+			)
 		})
 	);
 }
@@ -465,7 +471,7 @@ export interface AuthoringSessionRepositoryApi {
 	readonly storageRoot: string;
 	readonly discard: (sessionId: string) => Effect.Effect<void, AuthoringSessionServiceError>;
 	readonly exists: (sessionId: string) => Effect.Effect<boolean, AuthoringSessionStorageError>;
-	readonly listIds: () => Effect.Effect<readonly string[], AuthoringSessionStorageError>;
+	readonly listIds: Effect.Effect<readonly string[], AuthoringSessionStorageError>;
 	readonly persist: (
 		document: AuthoringSessionDocument
 	) => Effect.Effect<void, AuthoringSessionStorageError>;
@@ -501,7 +507,7 @@ export function authoringSessionRepositoryLayer(
 				document: AuthoringSessionDocument
 			) {
 				const target = pathFor(document.draft.id);
-				const temporary = `${target}.${yield* ids.generate()}.tmp`;
+				const temporary = `${target}.${yield* ids.generate}.tmp`;
 				yield* Effect.tryPromise({
 					try: async () => {
 						await mkdir(storageRoot, { recursive: true });
@@ -600,7 +606,7 @@ export function authoringSessionRepositoryLayer(
 				});
 			});
 
-			const listIds = Effect.fn("AuthoringSessionRepository.listIds")(function* () {
+			const listIds = Effect.gen(function* () {
 				const names = yield* Effect.tryPromise({
 					try: async () => {
 						await mkdir(storageRoot, { recursive: true });
@@ -623,7 +629,7 @@ export function authoringSessionRepositoryLayer(
 				return names
 					.filter((name) => name.endsWith(".json"))
 					.map((name) => basename(name, ".json"));
-			});
+			}).pipe(Effect.withSpan("AuthoringSessionRepository.listIds"));
 
 			const quarantine = Effect.fn("AuthoringSessionRepository.quarantine")(function* (
 				sessionId: string,
@@ -755,24 +761,24 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 				const validId = yield* validateSessionId(sessionId);
 				const contents = yield* repository.read(validId);
 				const { document, migrated } = yield* Effect.gen(function* () {
-					const json = yield* Effect.try({
-						try: () => JSON.parse(contents),
-						catch: (cause) => cause
-					});
+					const json = yield* Effect.try(() => JSON.parse(contents));
 					const value = yield* Schema.decodeUnknownEffect(Schema.Json)(json);
 					return yield* decodeDocument(value);
-				}).pipe(Effect.catch((cause) => repository.quarantine(validId, cause)));
+				}).pipe(
+					Effect.catchTags({
+						UnknownError: (error) => repository.quarantine(validId, error.cause),
+						SchemaError: (error) => repository.quarantine(validId, error)
+					})
+				);
 				if (document.project.id !== repository.project.id)
-					return yield* Effect.fail(
-						new AuthoringSessionStorageError({
-							message: `Session ${validId} belongs to project ${document.project.id}`,
-							operation: "verify_project",
-							recovery: "Open the session through its owning project.",
-							retrySafe: false,
-							nextStep: "fix_input",
-							sessionId: validId
-						})
-					);
+					return yield* new AuthoringSessionStorageError({
+						message: `Session ${validId} belongs to project ${document.project.id}`,
+						operation: "verify_project",
+						recovery: "Open the session through its owning project.",
+						retrySafe: false,
+						nextStep: "fix_input",
+						sessionId: validId
+					});
 				if (migrated) yield* repository.persist(document);
 				return document;
 			}).pipe(
@@ -846,7 +852,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 		const prepareApply = Effect.fn("AuthoringSessions.prepareApply")(
 			(sessionId: string, limits: AuthoringMutationLimits, operationId?: string) =>
 				Effect.gen(function* () {
-					const requestId = operationId ?? (yield* ids.generate());
+					const requestId = operationId ?? (yield* ids.generate);
 					return yield* update(sessionId, (document, timestamp) => {
 						requireIdle(document);
 						const review = reviewAuthoringSession(document);
@@ -919,7 +925,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 		const prepareSave = Effect.fn("AuthoringSessions.prepareSave")(
 			(sessionId: string, requestId?: string) =>
 				Effect.gen(function* () {
-					const operationId = requestId ?? (yield* ids.generate());
+					const operationId = requestId ?? (yield* ids.generate);
 					return yield* update(sessionId, (document, timestamp) => {
 						requireIdle(document);
 						const request = buildSaveRequest(document.draft, operationId);
@@ -982,7 +988,7 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			create: Effect.fn("AuthoringSessions.create")((snapshots, options) =>
 				mutex.withPermits(1)(
 					Effect.gen(function* () {
-						const id = yield* validateSessionId(options?.id ?? (yield* ids.generate()));
+						const id = yield* validateSessionId(options?.id ?? (yield* ids.generate));
 						const exists = yield* repository.exists(id);
 						if (exists) {
 							return yield* new AuthoringSessionStorageError({
@@ -1021,20 +1027,31 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 					updatedAt: timestamp
 				}))
 			),
-			list: Effect.fn("AuthoringSessions.list")(() =>
-				repository.listIds().pipe(
-					Effect.flatMap((sessionIds) =>
-						Effect.forEach(
-							sessionIds,
-							(sessionId) =>
-								load(sessionId).pipe(
-									Effect.map((document) => ({
-										document,
-										kind: "document" as const
-									})),
-									Effect.catch((error) =>
+			list: repository.listIds.pipe(
+				Effect.flatMap((sessionIds) =>
+					Effect.forEach(
+						sessionIds,
+						(sessionId) =>
+							load(sessionId).pipe(
+								Effect.map((document) => ({
+									document,
+									kind: "document" as const
+								})),
+								Effect.catchTag(
+									[
+										"InvalidSessionIdError",
+										"SessionNotFoundError",
+										"AuthoringSessionStorageError",
+										"SessionCorruptError",
+										"AuthoringSessionTransitionError",
+										"DraftIntentError"
+									],
+									(error) =>
 										error._tag === "SessionCorruptError"
-											? Effect.succeed({ error, kind: "diagnostic" as const })
+											? Effect.succeed({
+													error,
+													kind: "diagnostic" as const
+												})
 											: Effect.fail(
 													new AuthoringSessionStorageError({
 														cause: error,
@@ -1046,27 +1063,25 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 														sessionId
 													})
 												)
-									)
-								),
-							{ concurrency: 4 }
-						)
-					),
-					Effect.map((results) => ({
-						diagnostics: results
-							.filter((result) => result.kind === "diagnostic")
-							.map(({ error }) => ({
-								code: "session_quarantined" as const,
-								message: error.message,
-								quarantinePath: error.quarantinePath
-							})),
-						sessions: results
-							.filter((result) => result.kind === "document")
-							.map(({ document }) => summary(document))
-							.toSorted((left, right) =>
-								right.updatedAt.localeCompare(left.updatedAt)
-							)
-					}))
-				)
+								)
+							),
+						{ concurrency: 4 }
+					)
+				),
+				Effect.map((results) => ({
+					diagnostics: results
+						.filter((result) => result.kind === "diagnostic")
+						.map(({ error }) => ({
+							code: "session_quarantined" as const,
+							message: error.message,
+							quarantinePath: error.quarantinePath
+						})),
+					sessions: results
+						.filter((result) => result.kind === "document")
+						.map(({ document }) => summary(document))
+						.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+				})),
+				Effect.withSpan("AuthoringSessions.list")
 			),
 			review: Effect.fn("AuthoringSessions.review")((sessionId) =>
 				load(sessionId).pipe(Effect.flatMap(deriveReview))
@@ -1097,8 +1112,8 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			),
 			setCells: Effect.fn("AuthoringSessions.setCells")((args) =>
 				Effect.gen(function* () {
-					const commandIds = yield* Effect.forEach(args.edits, () => ids.generate());
-					const groupId = yield* ids.generate();
+					const commandIds = yield* Effect.forEach(args.edits, () => ids.generate);
+					const groupId = yield* ids.generate;
 					return yield* update(args.sessionId, (document, timestamp) => {
 						requireIdle(document);
 						const commands = buildSetCellCommandGroup({
@@ -1118,9 +1133,9 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			),
 			addRow: Effect.fn("AuthoringSessions.addRow")((args) =>
 				Effect.gen(function* () {
-					const rowId = `draft-row:${yield* ids.generate()}`;
-					const commandId = yield* ids.generate();
-					const groupId = yield* ids.generate();
+					const rowId = `draft-row:${yield* ids.generate}`;
+					const commandId = yield* ids.generate;
+					const groupId = yield* ids.generate;
 					return yield* update(args.sessionId, (document, timestamp) => {
 						requireIdle(document);
 						const command = buildAddRowCommand({
@@ -1142,9 +1157,9 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			),
 			duplicateRow: Effect.fn("AuthoringSessions.duplicateRow")((args) =>
 				Effect.gen(function* () {
-					const rowId = `draft-row:${yield* ids.generate()}`;
-					const commandId = yield* ids.generate();
-					const groupId = yield* ids.generate();
+					const rowId = `draft-row:${yield* ids.generate}`;
+					const commandId = yield* ids.generate;
+					const groupId = yield* ids.generate;
 					return yield* update(args.sessionId, (document, timestamp) => {
 						requireIdle(document);
 						const command = buildDuplicateRowCommand({
@@ -1167,8 +1182,8 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			),
 			removeRow: Effect.fn("AuthoringSessions.removeRow")((args) =>
 				Effect.gen(function* () {
-					const commandId = yield* ids.generate();
-					const groupId = yield* ids.generate();
+					const commandId = yield* ids.generate;
+					const groupId = yield* ids.generate;
 					return yield* update(args.sessionId, (document, timestamp) => {
 						requireIdle(document);
 						const command = buildRemoveRowCommand({
@@ -1188,8 +1203,8 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			),
 			renameRow: Effect.fn("AuthoringSessions.renameRow")((args) =>
 				Effect.gen(function* () {
-					const commandId = yield* ids.generate();
-					const groupId = yield* ids.generate();
+					const commandId = yield* ids.generate;
+					const groupId = yield* ids.generate;
 					return yield* update(args.sessionId, (document, timestamp) => {
 						requireIdle(document);
 						const command = buildRenameRowCommand({
@@ -1210,8 +1225,8 @@ function makeAuthoringSessionServiceEffect(): Effect.Effect<
 			),
 			reorderRows: Effect.fn("AuthoringSessions.reorderRows")((args) =>
 				Effect.gen(function* () {
-					const commandId = yield* ids.generate();
-					const groupId = yield* ids.generate();
+					const commandId = yield* ids.generate;
+					const groupId = yield* ids.generate;
 					return yield* update(args.sessionId, (document, timestamp) => {
 						requireIdle(document);
 						const command = buildReorderRowsCommand({

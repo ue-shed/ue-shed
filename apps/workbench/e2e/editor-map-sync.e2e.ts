@@ -102,9 +102,9 @@ test("confirms cross-map review, waits for a slow editor and follows external ma
 		}
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-	const address = Schema.decodeUnknownSync(Schema.Struct({ port: Schema.Number }))(
-		server.address()
-	);
+	const address = server.address();
+	if (!(address instanceof Object))
+		throw new Error("The fixture TCP server did not expose its address.");
 	let app: ElectronApplication | undefined;
 	try {
 		await copyFile(

@@ -162,7 +162,7 @@ export function validateMapCapturePlanDraft(draft: MapCapturePlanDraft): MapCapt
 	}
 	if (errors.length > 0) return { errors, status: "invalid" };
 	try {
-		return { plan: Schema.decodeUnknownSync(MapCapturePlan)(draft), status: "valid" };
+		return { plan: Schema.decodeSync(MapCapturePlan)(draft), status: "valid" };
 	} catch {
 		return {
 			errors: ["The plan does not satisfy the Map Capture Plan v1 contract."],

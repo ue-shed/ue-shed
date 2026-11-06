@@ -31,7 +31,7 @@ async function loadFixtureEvidence(executable: string, project: string, key: str
 	const file = directory ? join(directory, `${key}.json`) : undefined;
 	if (file) {
 		try {
-			return Schema.decodeUnknownSync(Schema.fromJsonString(FixtureEvidence))(
+			return Schema.decodeSync(Schema.fromJsonString(FixtureEvidence))(
 				await readFile(file, "utf8")
 			);
 		} catch (error) {
@@ -67,7 +67,7 @@ async function loadFixtureEvidence(executable: string, project: string, key: str
 		.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 	const legacy = measureNativeText(executable, project, false, paths);
 	const compact = measureNativeText(executable, project, true, paths);
-	const evidence = Schema.decodeUnknownSync(FixtureEvidence)({
+	const evidence = Schema.decodeSync(FixtureEvidence)({
 		inventory,
 		events: legacy.events.filter((event) => event.event !== "text_package_record"),
 		packageEvents: compact.events.filter(

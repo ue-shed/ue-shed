@@ -4,7 +4,7 @@ import {
 	RemoteControlClient,
 	RemoteControlClientLive
 } from "@ue-shed/unreal-connection";
-import { Deferred, Duration, Effect, Fiber, Layer, Schedule, Schema, Stream } from "effect";
+import { Data, Deferred, Duration, Effect, Fiber, Layer, Schedule, Schema, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	Observatory,
@@ -90,11 +90,15 @@ const executePlaySession = Effect.fn("Observatory.real.executePlaySession")(func
 	});
 });
 
+class PlaySessionStatePending extends Data.TaggedError("PlaySessionStatePending")<{
+	readonly expected: "stopped" | "running";
+}> {}
+
 const waitForPlayStatus = (status: "stopped" | "running") =>
 	getPlaySessionState().pipe(
 		Effect.filterOrFail(
 			(response) => response.state.status === status,
-			() => new Error(`Play session did not reach ${status}`)
+			() => new PlaySessionStatePending({ expected: status })
 		),
 		Effect.retry(Schedule.spaced("100 millis").pipe(Schedule.upTo({ duration: "15 seconds" })))
 	);

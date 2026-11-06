@@ -3,12 +3,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
 import {
 	RemoteControlClient,
-	RemoteControlClientError,
+	type RemoteControlClientError,
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
 import { ErrorCauseFields, ErrorGuidanceFields } from "@ue-shed/protocol";
 import { fileFailureReason } from "./file-failure.js";
-import { Context, Effect, Layer, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Schema } from "effect";
 import { captureReviewView } from "./review-live.js";
 import {
 	ReviewCaptureRequest,
@@ -42,41 +42,28 @@ function pureStagingPath(
  * original cause. Correct capability/connection state before treating a candidate as
  * realized.
  */
-export class ReviewAuthoringConnectionError extends Schema.TaggedError<ReviewAuthoringConnectionError>()(
-	"ReviewAuthoringConnectionError",
-	{
-		...ErrorGuidanceFields,
-		...ErrorCauseFields,
-		endpoint: Schema.String,
-		operation: Schema.Literals(["inspect_selection", "inspect_subject", "preview_candidate"])
-	}
-) {}
-
-const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+export class ReviewAuthoringConnectionError extends Schema.TaggedError<
+	ReviewAuthoringConnectionError,
+	Brand.Brand<"packages/cameras/src/review-authoring-live/ReviewAuthoringConnectionError">
+>()("ReviewAuthoringConnectionError", {
+	...ErrorGuidanceFields,
+	...ErrorCauseFields,
+	endpoint: Schema.String,
+	operation: Schema.Literals(["inspect_selection", "inspect_subject", "preview_candidate"])
+}) {}
 
 function reviewConnectionError(
 	endpoint: string,
 	operation: "inspect_selection" | "inspect_subject" | "preview_candidate",
-	cause: RemoteControlClientError | unknown
+	cause: RemoteControlClientError
 ): ReviewAuthoringConnectionError {
-	if (isRemoteControlClientError(cause)) {
-		return new ReviewAuthoringConnectionError({
-			endpoint,
-			message: cause.message,
-			nextStep: cause.nextStep,
-			operation,
-			recovery: cause.recovery,
-			retrySafe: cause.retrySafe,
-			cause
-		});
-	}
 	return new ReviewAuthoringConnectionError({
 		endpoint,
-		message: `Map Review ${operation} at ${endpoint} failed unexpectedly.`,
-		nextStep: "escalate",
+		message: cause.message,
+		nextStep: cause.nextStep,
 		operation,
-		recovery: "Verify the Map Review editor capability and retry the operation.",
-		retrySafe: false,
+		recovery: cause.recovery,
+		retrySafe: cause.retrySafe,
 		cause
 	});
 }
@@ -124,7 +111,7 @@ export interface PreviewReviewCandidateArgs {
 	readonly endpoint: string;
 	readonly mapPath: string;
 	readonly profile: CaptureProfile;
-	readonly subject: typeof SubjectLocator.Type;
+	readonly subject: SubjectLocator;
 }
 
 /**
@@ -137,7 +124,7 @@ export interface ReviewAuthoringApi {
 	) => Effect.Effect<ReviewSelectionResponse, ReviewAuthoringConnectionError>;
 	readonly inspectSubject: (args: {
 		readonly endpoint: string;
-		readonly subject: typeof SubjectLocator.Type;
+		readonly subject: SubjectLocator;
 	}) => Effect.Effect<ReviewSubjectInspectionResponse, ReviewAuthoringConnectionError>;
 	readonly previewCandidate: (
 		args: PreviewReviewCandidateArgs
@@ -192,9 +179,9 @@ export const ReviewAuthoringLive = Layer.effect(
 
 		const inspectSubject = Effect.fn("ReviewAuthoring.inspectSubject")(function* (args: {
 			readonly endpoint: string;
-			readonly subject: typeof SubjectLocator.Type;
+			readonly subject: SubjectLocator;
 		}) {
-			const subject = yield* Schema.decodeUnknownEffect(SubjectLocator)(args.subject).pipe(
+			const subject = yield* Schema.decodeEffect(SubjectLocator)(args.subject).pipe(
 				Effect.mapError(
 					(cause) =>
 						new ReviewAuthoringConnectionError({

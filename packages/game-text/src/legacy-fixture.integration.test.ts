@@ -93,7 +93,7 @@ for (const version of legacyVersions) {
 		});
 		it("indexes the same object paths, which object path roles then match", async () => {
 			const cacheRoot = await mkdtemp(join(tmpdir(), "ue-shed-legacy-index-"));
-			const document = Schema.decodeUnknownSync(GameTextRuleDocument)({
+			const document = Schema.decodeSync(GameTextRuleDocument)({
 				schemaVersion: 1,
 				roles: [
 					{

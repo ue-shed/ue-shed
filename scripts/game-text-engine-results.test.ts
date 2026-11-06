@@ -20,7 +20,7 @@ import {
 const mix: unknown = JSON.parse(
 	readFileSync(new URL("./game-text-engine-mix.json", import.meta.url), "utf8")
 );
-test("native timing decoding refuses combined spans that would be mislabelled as pipe time", () => {
+void test("native timing decoding refuses combined spans that would be mislabelled as pipe time", () => {
 	assert.equal(
 		decodeEngineRustTiming({ requestId: "r", ms: { bulkEncode: 5 } }).ms.bulkEncode,
 		5
@@ -31,7 +31,7 @@ test("native timing decoding refuses combined spans that would be mislabelled as
 	);
 	assert.throws(() => decodeEngineRustTiming({ requestId: "r", ms: { engineTotal: -1 } }));
 });
-test("overhead correlates requests, excludes setup and keeps write callbacks separate", () => {
+void test("overhead correlates requests, excludes setup and keeps write callbacks separate", () => {
 	const result = engineRequestOverhead(
 		"small:0",
 		20,
@@ -57,7 +57,7 @@ test("overhead correlates requests, excludes setup and keeps write callbacks sep
 		1
 	);
 });
-test("the replay data decodes and preserves host fan-out bounds", () => {
+void test("the replay data decodes and preserves host fan-out bounds", () => {
 	const decoded = decodeEngineRequestMix(mix);
 	assert.equal(decoded.selection.relatedLines, 20);
 	assert.deepEqual(decoded.transportRows, [50, 5000, "all"]);
@@ -66,14 +66,14 @@ test("the replay data decodes and preserves host fan-out bounds", () => {
 	assert.throws(() => decodeEngineRequestMix({ ...decoded, sources: [] }));
 	assert.throws(() => decodeEngineRequestMix({ ...decoded, transportRows: [50, 5001, "all"] }));
 });
-test("nearest-rank statistics handle outliers, duplicates and invalid input", () => {
+void test("nearest-rank statistics handle outliers, duplicates and invalid input", () => {
 	assert.deepEqual(engineStatistics([50, 1, 2]), { n: 3, p50: 2, p95: 50, p99: 50 });
 	assert.deepEqual(engineStatistics([7]), { n: 1, p50: 7, p95: 7, p99: 7 });
 	assert.equal(engineStatistics(Array.from({ length: 100 }, (_, i) => i + 1)).p95, 95);
 	for (const invalid of [[], [-1], [NaN], [Infinity]])
 		assert.throws(() => engineStatistics(invalid));
 });
-test("answer hashing ignores key insertion order, preserves row order and UTF-16", () => {
+void test("answer hashing ignores key insertion order, preserves row order and UTF-16", () => {
 	assert.equal(
 		engineAnswerHash({ b: 2, a: [{ y: 1, x: 2 }] }),
 		engineAnswerHash({ a: [{ x: 2, y: 1 }], b: 2 })
@@ -81,7 +81,7 @@ test("answer hashing ignores key insertion order, preserves row order and UTF-16
 	assert.notEqual(engineAnswerHash([1, 2]), engineAnswerHash([2, 1]));
 	assert.notEqual(engineAnswerHash("\ud800"), engineAnswerHash("\ufffd"));
 });
-test("streamed answer digests match canonical JSON across escaped UTF-16 chunk boundaries", () => {
+void test("streamed answer digests match canonical JSON across escaped UTF-16 chunk boundaries", () => {
 	for (const value of [
 		null,
 		[],
@@ -97,7 +97,7 @@ test("streamed answer digests match canonical JSON across escaped UTF-16 chunk b
 		});
 	}
 });
-test("result schema rejects invalid measurements and mismatches stop comparisons", () => {
+void test("result schema rejects invalid measurements and mismatches stop comparisons", () => {
 	const decode = Schema.decodeUnknownSync(EngineStageResult);
 	const result = decode({
 		schemaVersion: 1,
@@ -150,7 +150,7 @@ test("result schema rejects invalid measurements and mismatches stop comparisons
 	assert.throws(() => decodeReport({ ...report, caps: { ...report.caps, rayonThreads: 32 } }));
 });
 
-test("selection replies must be found", () => {
+void test("selection replies must be found", () => {
 	const found = { status: "found", focus: { id: "unit" } } as const;
 	assert.equal(expectFound(found, "focus").focus.id, "unit");
 	for (const status of ["failed", "not_found", "not_ready"])

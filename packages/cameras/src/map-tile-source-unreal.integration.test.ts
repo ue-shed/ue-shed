@@ -57,7 +57,7 @@ describe.skipIf(!endpoint || !projectRoot)("composable map sources in a renderin
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const renderer = yield* CameraRenderer;
-				const capabilities = yield* renderer.capabilities();
+				const capabilities = yield* renderer.capabilities;
 				expect(capabilities.highResolutionScreenshot?.maximumWarmupFrames).toBe(256);
 				const client = yield* RemoteControlClient;
 				const previousSdkCapabilities = yield* client

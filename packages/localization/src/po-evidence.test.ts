@@ -16,7 +16,7 @@ it("preserves every decoded entry and comment while omitting serialization data"
 		hasSourceText: parsed.success.hasSourceText,
 		entries: [parsed.success.blocks.find((block) => block.kind === "entry")?.entry]
 	});
-	expect(Schema.decodeUnknownSync(POEvidence)(evidence)).toEqual(evidence);
+	expect(Schema.decodeSync(POEvidence)(evidence)).toEqual(evidence);
 	expect(Object.isFrozen(evidence.entries[0]?.extractedComments)).toBe(true);
 	expect(evidence.entries[0]).not.toBe(
 		parsed.success.blocks.find((block) => block.kind === "entry")?.entry

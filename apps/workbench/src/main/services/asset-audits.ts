@@ -52,10 +52,10 @@ export interface WorkbenchAssetAuditsApi {
 	readonly investigationSave: (
 		query: TextureInvestigationQuery
 	) => Effect.Effect<InvestigationFileResult>;
-	readonly investigationOpen: () => Effect.Effect<TextureInvestigationPresetResult>;
+	readonly investigationOpen: Effect.Effect<TextureInvestigationPresetResult>;
 	readonly configuredRefresh: (refresh?: boolean) => Effect.Effect<TextureAuditQueryRunResult>;
-	readonly configuredScan: () => Effect.Effect<TextureAuditRunResult>;
-	readonly progress: () => Effect.Effect<WorkbenchTaskProgress>;
+	readonly configuredScan: Effect.Effect<TextureAuditRunResult>;
+	readonly progress: Effect.Effect<WorkbenchTaskProgress>;
 	readonly preview: (objectPath: string) => Effect.Effect<TexturePreviewResult>;
 	readonly previewOffline: (objectPath: string) => Effect.Effect<TexturePreviewResult>;
 	readonly previewOfflineBatch: (
@@ -113,19 +113,19 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const textureAudit = yield* TextureAudit;
 		const remoteControl = yield* RemoteControlClient;
 		const queryModel = yield* Ref.make<TextureAuditQuery | undefined>(undefined);
-		const progress = Effect.fn("Workbench.WorkbenchAssetAudits.progress")(function* () {
-			const projectProgress = yield* project.progress();
+		const progress = Effect.gen(function* () {
+			const projectProgress = yield* project.progress;
 			if (projectProgress.phase === "enumerating" || projectProgress.phase === "scanning") {
 				return projectProgress;
 			}
-			const auditProgress = yield* textureAudit.progress();
+			const auditProgress = yield* textureAudit.progress;
 			return {
 				completed: auditProgress.processedAssets,
 				phase: auditProgress.phase,
 				stage: "texture_audit" as const,
 				total: auditProgress.totalAssets
 			};
-		});
+		}).pipe(Effect.withSpan("Workbench.WorkbenchAssetAudits.progress"));
 		const scanAudit = (
 			projectRoot: string,
 			rules: string | TextureAuditRuleSet,
@@ -139,7 +139,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const runScan = (projectRoot: string, ruleFile: string, index: SavedAssetScan) =>
 			scanAudit(projectRoot, ruleFile, index).pipe(
 				Effect.map((report) => ({ report, status: "completed" as const })),
-				Effect.catch((error) =>
+				Effect.catchTag("TextureAuditScanError", (error) =>
 					Effect.succeed({
 						error: {
 							code: error.code,
@@ -163,7 +163,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		>(undefined);
 		const currentModel = <A>(ref: Ref.Ref<A | undefined>) =>
 			Effect.gen(function* () {
-				const selected = yield* project.current();
+				const selected = yield* project.current;
 				const owner = yield* Ref.get(modelSelection);
 				if (
 					selected.status !== "ready" ||
@@ -180,7 +180,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		) =>
 			Effect.gen(function* () {
 				const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
-				const selected = yield* project.current();
+				const selected = yield* project.current;
 				if (
 					selected.status !== "ready" ||
 					selected.project.projectRoot !== projectRoot ||
@@ -194,7 +194,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 				return yield* scanAudit(projectRoot, ruleFile, index).pipe(
 					Effect.flatMap((report) =>
 						Effect.gen(function* () {
-							const latest = yield* project.current();
+							const latest = yield* project.current;
 							if (
 								(yield* Ref.get(scanRevision)) !== revision ||
 								latest.status !== "ready" ||
@@ -228,7 +228,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 							return { summary: next.summary(), status: "completed" as const };
 						})
 					),
-					Effect.catch((error) =>
+					Effect.catchTag("TextureAuditScanError", (error) =>
 						Effect.succeed({
 							error: {
 								code: error.code,
@@ -242,29 +242,25 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 				);
 			});
 
-		const configuredScan = Effect.fn("Workbench.WorkbenchAssetAudits.configuredScan")(
-			function* () {
-				if (configuration.textureAuditRules.status !== "configured") {
-					return { status: "not_configured" as const };
-				}
-				const ruleFile = configuration.textureAuditRules.path;
-				const current = yield* project.refresh();
-				if (current.status === "not_configured" || current.status === "cancelled") {
-					return { status: "not_configured" as const };
-				}
-				if (current.status === "failed") {
-					return unavailableProject(current.error.message, current.error.recovery);
-				}
-				return yield* project.candidates("texture").pipe(
-					Effect.flatMap((index) =>
-						runScan(current.project.projectRoot, ruleFile, index)
-					),
-					Effect.catch((error) =>
-						Effect.succeed(unavailableProject(error.message, error.recovery))
-					)
-				);
+		const configuredScan = Effect.gen(function* () {
+			if (configuration.textureAuditRules.status !== "configured") {
+				return { status: "not_configured" as const };
 			}
-		);
+			const ruleFile = configuration.textureAuditRules.path;
+			const current = yield* project.refresh();
+			if (current.status === "not_configured" || current.status === "cancelled") {
+				return { status: "not_configured" as const };
+			}
+			if (current.status === "failed") {
+				return unavailableProject(current.error.message, current.error.recovery);
+			}
+			return yield* project.candidates("texture").pipe(
+				Effect.flatMap((index) => runScan(current.project.projectRoot, ruleFile, index)),
+				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
+					Effect.succeed(unavailableProject(error.message, error.recovery))
+				)
+			);
+		}).pipe(Effect.withSpan("Workbench.WorkbenchAssetAudits.configuredScan"));
 
 		class QueryKey extends Data.Class<{
 			readonly projectRoot: string;
@@ -288,7 +284,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					if (result.status === "completed") yield* Ref.set(activeKey, key);
 					return result;
 				}).pipe(
-					Effect.catch((error) =>
+					Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 						Effect.succeed(unavailableQueryProject(error.message, error.recovery))
 					)
 				),
@@ -296,7 +292,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		);
 		const configuredRefresh = Effect.fn("Workbench.WorkbenchAssetAudits.configuredRefresh")(
 			function* (refresh = true) {
-				const current = yield* refresh ? project.refresh() : project.current();
+				const current = yield* refresh ? project.refresh() : project.current;
 				if (current.status === "not_configured" || current.status === "cancelled") {
 					return { status: "not_configured" as const };
 				}
@@ -312,7 +308,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 						Effect.flatMap((index) =>
 							runRefresh(current.project.projectRoot, imported.rules, index)
 						),
-						Effect.catch((error) =>
+						Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
 							Effect.succeed(unavailableQueryProject(error.message, error.recovery))
 						)
 					);
@@ -366,14 +362,14 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const preview = Effect.fn("Workbench.WorkbenchAssetAudits.preview")(function* (
 			objectPath: string
 		) {
-			const endpoint = yield* connection.endpoint();
+			const endpoint = yield* connection.endpoint;
 
 			return yield* readLiveTexturePreview({
 				endpoint: endpoint,
 				objectPath
 			}).pipe(
 				Effect.provideService(RemoteControlClient, remoteControl),
-				Effect.catch((error) =>
+				Effect.catchTag("LiveTexturePreviewError", (error) =>
 					Effect.succeed(
 						unavailablePreview(
 							objectPath,
@@ -387,7 +383,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 
 		const previewOfflineBatch = Effect.fn("Workbench.WorkbenchAssetAudits.previewOfflineBatch")(
 			function* (request: TexturePreviewBatchRequest) {
-				const currentProject = yield* project.current();
+				const currentProject = yield* project.current;
 				if (currentProject.status !== "ready") {
 					return {
 						cached: 0,
@@ -451,7 +447,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					};
 				}
 				const batch = yield* offlinePreview.previewBatch(inputs).pipe(
-					Effect.catch((error) =>
+					Effect.catchTag("Workbench.OfflineTexturePreviewError", (error) =>
 						Effect.succeed({
 							cached: 0,
 							generated: 0,
@@ -486,9 +482,9 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 
 		const previewOffline = Effect.fn("Workbench.WorkbenchAssetAudits.previewOffline")(
 			function* (objectPath: string) {
-				const decodedPath = yield* Schema.decodeUnknownEffect(TextureObjectPath)(
-					objectPath
-				).pipe(Effect.orDie);
+				const decodedPath = yield* Schema.decodeEffect(TextureObjectPath)(objectPath).pipe(
+					Effect.orDie
+				);
 				const batch = yield* previewOfflineBatch({ objectPaths: [decodedPath] });
 				return (
 					batch.previews[0] ??
@@ -505,21 +501,19 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 		const captureInvestigation = Effect.fn("Workbench.AssetAudits.captureInvestigation")(
 			function* (query: TextureInvestigationQuery) {
 				const snapshot = yield* Ref.get(investigationSnapshot);
-				const current = yield* project.current();
+				const current = yield* project.current;
 				if (
 					!snapshot ||
 					current.status !== "ready" ||
 					current.project.projectRoot !== snapshot.source.projectRoot ||
 					(current.project.generation ?? 0) !== snapshot.source.generation
 				)
-					return yield* Effect.fail(
-						new InvestigationError({
-							message: "No current scan is available.",
-							recovery: "Refresh this workspace before saving or exporting.",
-							retrySafe: true,
-							nextStep: "fix_input"
-						})
-					);
+					return yield* new InvestigationError({
+						message: "No current scan is available.",
+						recovery: "Refresh this workspace before saving or exporting.",
+						retrySafe: true,
+						nextStep: "fix_input"
+					});
 				const preset = yield* textureInvestigationPreset(snapshot.model, query);
 				return exportTextureInvestigation(snapshot.model, preset, snapshot.source);
 			}
@@ -537,7 +531,9 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 							rowCount: document.result.records.length
 						})
 					),
-					Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+					Effect.catchTag("InvestigationError", (error) =>
+						Effect.succeed(investigationFailure(error))
+					)
 				)
 		);
 		const investigationSave = Effect.fn("Workbench.AssetAudits.investigationSave")(
@@ -551,14 +547,16 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 							projectRoot: document.source.projectRoot
 						})
 					),
-					Effect.catch((error) => Effect.succeed(investigationFailure(error)))
+					Effect.catchTag("InvestigationError", (error) =>
+						Effect.succeed(investigationFailure(error))
+					)
 				)
 		);
-		const investigationOpen = Effect.fn("Workbench.AssetAudits.investigationOpen")(() =>
+		const investigationOpen = Effect.suspend(() =>
 			Effect.gen(function* () {
 				const opened = yield* openInvestigation(dialog, TextureInvestigationPreset);
 				if (opened.status !== "opened") return opened;
-				const current = yield* project.current();
+				const current = yield* project.current;
 				if (current.status !== "ready")
 					return investigationFailure({
 						message: "Select a project first.",
@@ -580,8 +578,12 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 								}
 					);
 				return opened;
-			}).pipe(Effect.catch((error) => Effect.succeed(investigationFailure(error))))
-		);
+			}).pipe(
+				Effect.catchTag(["InvestigationError", "WorkbenchProjectUnavailable"], (error) =>
+					Effect.succeed(investigationFailure(error))
+				)
+			)
+		).pipe(Effect.withSpan("Workbench.AssetAudits.investigationOpen"));
 
 		return WorkbenchAssetAudits.of({
 			investigationExport,
@@ -608,15 +610,14 @@ export function makeWorkbenchAssetAuditsTestLayer(
 		WorkbenchAssetAudits.of({
 			investigationExport: () => Effect.succeed({ status: "cancelled" }),
 			investigationSave: () => Effect.succeed({ status: "cancelled" }),
-			investigationOpen: () => Effect.succeed({ status: "cancelled" }),
+			investigationOpen: Effect.sync(() => ({ status: "cancelled" })),
 			configuredRefresh: () => Effect.succeed({ status: "not_configured" }),
-			progress: () =>
-				Effect.succeed({
-					completed: 0,
-					phase: "idle",
-					stage: "texture_audit",
-					total: 0
-				}),
+			progress: Effect.sync(() => ({
+				completed: 0,
+				phase: "idle",
+				stage: "texture_audit",
+				total: 0
+			})),
 			record: () => Effect.succeed({ status: "not_ready" }),
 			previewOffline: (objectPath) =>
 				Effect.succeed(

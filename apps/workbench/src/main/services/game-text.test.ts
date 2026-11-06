@@ -190,22 +190,22 @@ const noProblems = {
 	up_to_date: 0
 };
 const selectedProject = makeWorkbenchProjectTestLayer({
-	choose: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
-	current: () => Effect.succeed({ project: projectSummary, status: "ready" as const }),
-	inputAtlas: () => Effect.die("not used"),
+	choose: Effect.sync(() => ({ project: projectSummary, status: "ready" as const })),
+	current: Effect.sync(() => ({ project: projectSummary, status: "ready" as const })),
+	inputAtlas: Effect.suspend(() => Effect.die("not used")),
 	candidates: (kind) => {
 		expect(kind).toBe("game_text");
 		return Effect.succeed(projectIndex);
 	},
-	savedTables: () => Effect.die("savedTables is not used"),
-	savedProject: () => Effect.succeed({ maps: [], projectRoot: "C:/FixtureProject" })
+	savedTables: Effect.suspend(() => Effect.die("savedTables is not used")),
+	savedProject: Effect.sync(() => ({ maps: [], projectRoot: "C:/FixtureProject" }))
 });
 const unselectedProject = makeWorkbenchProjectTestLayer({
-	choose: () => Effect.succeed({ status: "cancelled" as const }),
-	current: () => Effect.succeed({ status: "not_configured" as const }),
-	inputAtlas: () => Effect.die("not used"),
-	savedTables: () => Effect.die("savedTables is not used"),
-	savedProject: () => Effect.die("not used")
+	choose: Effect.sync(() => ({ status: "cancelled" as const })),
+	current: Effect.sync(() => ({ status: "not_configured" as const })),
+	inputAtlas: Effect.suspend(() => Effect.die("not used")),
+	savedTables: Effect.suspend(() => Effect.die("savedTables is not used")),
+	savedProject: Effect.suspend(() => Effect.die("not used"))
 });
 
 it.effect(
@@ -219,17 +219,17 @@ it.effect(
 				const service = yield* WorkbenchGameText;
 				const scan = yield* service.configuredRefresh({}).pipe(Effect.forkChild);
 				yield* Deferred.await(started);
-				expect(yield* service.beginOperation()).toBe(false);
-				expect(yield* service.operationBusyReason()).toContain("scan");
+				expect(yield* service.beginOperation).toBe(false);
+				expect(yield* service.operationBusyReason).toContain("scan");
 				yield* Deferred.succeed(finish, undefined);
 				expect((yield* Fiber.join(scan)).status).toBe("completed");
-				expect(yield* service.beginOperation()).toBe(true);
-				expect(yield* service.beginOperation()).toBe(false);
+				expect(yield* service.beginOperation).toBe(true);
+				expect(yield* service.beginOperation).toBe(false);
 				expect((yield* service.configuredRefresh({ refresh: false })).status).toBe(
 					"completed"
 				);
 				expect((yield* service.configuredRefresh({})).status).toBe("failed");
-				expect((yield* service.configuredScan()).status).toBe("failed");
+				expect((yield* service.configuredScan).status).toBe("failed");
 				expect(yield* service.saveQualityRules(STARTER_GAME_TEXT_RULES)).toMatchObject({
 					status: "failed",
 					error: { code: "write_failed" }
@@ -239,8 +239,8 @@ it.effect(
 					error: { code: "write_failed" }
 				});
 				expect(yield* Ref.get(scans)).toBe(1);
-				yield* service.endOperation();
-				expect(yield* service.operationBusyReason()).toBeUndefined();
+				yield* service.endOperation;
+				expect(yield* service.operationBusyReason).toBeUndefined();
 				expect((yield* service.configuredRefresh({})).status).toBe("completed");
 				expect(yield* Ref.get(scans)).toBe(2);
 			}).pipe(
@@ -467,7 +467,7 @@ it.effect("operation refresh reloads evidence and gathers also rescan the retain
 			expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
 				notSynced: 2
 			});
-			expect(yield* service.beginOperation()).toBe(true);
+			expect(yield* service.beginOperation).toBe(true);
 			translation = "Translation";
 			expect(yield* service.refreshAfterOperation(localizationTarget.name, false)).toBe(true);
 			expect(yield* service.localizationTarget(localizationTarget.name)).toMatchObject({
@@ -479,7 +479,7 @@ it.effect("operation refresh reloads evidence and gathers also rescan the retain
 			expect(yield* service.refreshAfterOperation(localizationTarget.name, true)).toBe(true);
 			expect(yield* Ref.get(reads)).toBe(4);
 			expect(yield* Ref.get(scans)).toBe(2);
-			yield* service.endOperation();
+			yield* service.endOperation;
 		}).pipe(
 			Effect.provide(
 				workbenchGameTextLive(localizationAnswers).pipe(
@@ -525,9 +525,9 @@ it.effect(
 			});
 			yield* Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
-				expect(yield* service.localizationTargets()).toEqual({ status: "not_ready" });
+				expect(yield* service.localizationTargets).toEqual({ status: "not_ready" });
 				yield* service.configuredRefresh({});
-				expect(yield* service.localizationTargets()).toMatchObject({
+				expect(yield* service.localizationTargets).toMatchObject({
 					status: "ready",
 					targets: [{ name: localizationTarget.name }]
 				});
@@ -547,7 +547,7 @@ it.effect(
 				expect(reads).toBe(2);
 				available = false;
 				yield* service.configuredRefresh({});
-				expect(yield* service.localizationTargets()).toEqual({
+				expect(yield* service.localizationTargets).toEqual({
 					status: "ready",
 					targets: []
 				});
@@ -610,23 +610,22 @@ it.effect("reuses navigation results and refreshes only when requested", () =>
 it("creates starter rules exclusively, reloads the file and retains it through rescans", async () => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-starter-rules-"));
 	const path = join(root, GAME_TEXT_RULES_RELATIVE_PATH);
-	const current = () =>
-		Effect.succeed({
-			status: "ready" as const,
-			project: { ...projectSummary, projectRoot: root }
-		});
+	const current = Effect.sync(() => ({
+		status: "ready" as const,
+		project: { ...projectSummary, projectRoot: root }
+	}));
 	const project = makeWorkbenchProjectTestLayer({
 		current,
 		choose: current,
-		refresh: current,
+		refresh: () => current,
 		candidates: () =>
 			Effect.succeed({
 				...projectIndex,
 				summary: { ...projectIndex.summary, projectRoot: root }
 			}),
-		inputAtlas: () => Effect.die("unused"),
-		savedTables: () => Effect.die("unused"),
-		savedProject: () => Effect.die("unused")
+		inputAtlas: Effect.suspend(() => Effect.die("unused")),
+		savedTables: Effect.suspend(() => Effect.die("unused")),
+		savedProject: Effect.suspend(() => Effect.die("unused"))
 	});
 	const live = WorkbenchGameTextLive.pipe(
 		Layer.provide(noLocalization),
@@ -678,7 +677,7 @@ it("creates starter rules exclusively, reloads the file and retains it through r
 					)
 				};
 				yield* Effect.promise(() => writeFile(path, JSON.stringify(revised)));
-				expect(yield* service.reloadQualityRules()).toMatchObject({
+				expect(yield* service.reloadQualityRules).toMatchObject({
 					status: "completed",
 					document: revised
 				});
@@ -691,7 +690,7 @@ it("creates starter rules exclusively, reloads the file and retains it through r
 					revised
 				);
 				yield* Effect.promise(() => writeFile(path, "{"));
-				expect(yield* service.reloadQualityRules()).toMatchObject({
+				expect(yield* service.reloadQualityRules).toMatchObject({
 					status: "failed",
 					error: { code: "invalid_rules" }
 				});
@@ -711,13 +710,14 @@ it.effect("an old project's scan cannot overwrite a newer project's result", () 
 		const root = yield* Ref.make("C:/A");
 		const started = yield* Deferred.make<void>();
 		const release = yield* Deferred.make<void>();
-		const current = () =>
+		const current = Effect.suspend(() =>
 			Ref.get(root).pipe(
 				Effect.map((projectRoot) => ({
 					status: "ready" as const,
 					project: { ...projectSummary, projectRoot }
 				}))
-			);
+			)
+		);
 		const project = makeWorkbenchProjectTestLayer({
 			current,
 			choose: current,
@@ -728,9 +728,9 @@ it.effect("an old project's scan cannot overwrite a newer project's result", () 
 						summary: { ...projectIndex.summary, projectRoot }
 					}))
 				),
-			inputAtlas: () => Effect.die("unused"),
-			savedProject: () => Effect.die("unused"),
-			savedTables: () => Effect.die("unused")
+			inputAtlas: Effect.suspend(() => Effect.die("unused")),
+			savedProject: Effect.suspend(() => Effect.die("unused")),
+			savedTables: Effect.suspend(() => Effect.die("unused"))
 		});
 		const corpus = makeTextCorpusServiceTestLayer({
 			scan: () => Effect.die("unused"),
@@ -768,13 +768,14 @@ for (const phase of ["candidates", "scan"] as const) {
 				const pause = Deferred.succeed(started, undefined).pipe(
 					Effect.andThen(Deferred.await(release))
 				);
-				const current = () =>
+				const current = Effect.suspend(() =>
 					Ref.get(generation).pipe(
 						Effect.map((generation) => ({
 							status: "ready" as const,
 							project: { ...projectSummary, generation }
 						}))
-					);
+					)
+				);
 				const project = makeWorkbenchProjectTestLayer({
 					current,
 					choose: current,
@@ -784,9 +785,9 @@ for (const phase of ["candidates", "scan"] as const) {
 							if (phase === "candidates" && captured === 1) yield* pause;
 							return { ...projectIndex, generation: captured };
 						}),
-					inputAtlas: () => Effect.die("unused"),
-					savedProject: () => Effect.die("unused"),
-					savedTables: () => Effect.die("unused")
+					inputAtlas: Effect.suspend(() => Effect.die("unused")),
+					savedProject: Effect.suspend(() => Effect.die("unused")),
+					savedTables: Effect.suspend(() => Effect.die("unused"))
 				});
 				const scanner = makeTextCorpusServiceTestLayer({
 					scan: () => Effect.die("unused"),
@@ -843,7 +844,7 @@ for (const phase of ["candidates", "scan"] as const) {
 it.effect("returns not_configured without a project root", () =>
 	Effect.gen(function* () {
 		const service = yield* WorkbenchGameText;
-		const result = yield* service.configuredScan();
+		const result = yield* service.configuredScan;
 		expect(result).toEqual({ status: "not_configured" });
 	}).pipe(
 		Effect.provide(
@@ -893,7 +894,7 @@ const validQualityDocument = GameTextRuleDocument.make({
 const runScan = (
 	service: WorkbenchGameTextApi,
 	operation: "configuredScan" | "configuredRefresh"
-) => (operation === "configuredScan" ? service.configuredScan() : service.configuredRefresh({}));
+) => (operation === "configuredScan" ? service.configuredScan : service.configuredRefresh({}));
 
 for (const code of ["reader_failed"] as const) {
 	for (const operation of ["configuredScan", "configuredRefresh"] as const) {
@@ -944,7 +945,7 @@ it.effect(
 	() =>
 		Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
-			expect(yield* service.chooseQualityRules()).toEqual({ status: "not_ready" });
+			expect(yield* service.chooseQualityRules).toEqual({ status: "not_ready" });
 			const refreshed = yield* service.configuredRefresh({});
 			expect(refreshed).toMatchObject({
 				status: "completed",
@@ -967,7 +968,7 @@ it.effect(
 			).toEqual({
 				status: "not_found"
 			});
-			const reviewed = yield* service.chooseQualityRules();
+			const reviewed = yield* service.chooseQualityRules;
 			expect(reviewed).toEqual({
 				error: {
 					code: "invalid_rules",
@@ -1061,7 +1062,7 @@ it.effect(
 		return Effect.gen(function* () {
 			const service = yield* WorkbenchGameText;
 			expect((yield* service.configuredRefresh({})).status).toBe("completed");
-			const loaded = yield* service.chooseQualityRules();
+			const loaded = yield* service.chooseQualityRules;
 			expect(loaded.status).toBe("completed");
 			if (loaded.status !== "completed") return;
 			expect(loaded.document).toEqual(validQualityDocument);
@@ -1110,18 +1111,17 @@ it("exports one captured generation when the project changes during the save dia
 	let activeRoot = projectSummary.projectRoot;
 	let dialogs = 0;
 	try {
-		const current = () =>
-			Effect.sync(() => ({
-				status: "ready" as const,
-				project: { ...projectSummary, projectRoot: activeRoot, generation: 7 }
-			}));
+		const current = Effect.sync(() => ({
+			status: "ready" as const,
+			project: { ...projectSummary, projectRoot: activeRoot, generation: 7 }
+		}));
 		const project = makeWorkbenchProjectTestLayer({
 			current,
 			choose: current,
 			candidates: () => Effect.succeed({ ...projectIndex, generation: 7 }),
-			inputAtlas: () => Effect.die("unused"),
-			savedTables: () => Effect.die("unused"),
-			savedProject: () => Effect.die("unused")
+			inputAtlas: Effect.suspend(() => Effect.die("unused")),
+			savedTables: Effect.suspend(() => Effect.die("unused")),
+			savedProject: Effect.suspend(() => Effect.die("unused"))
 		});
 		const dialog = Layer.succeed(
 			ElectronDialog,
@@ -1340,9 +1340,9 @@ it("restores embedded rules without retaining another rule file's write destinat
 			Effect.gen(function* () {
 				const service = yield* WorkbenchGameText;
 				expect((yield* service.configuredRefresh({})).status).toBe("completed");
-				expect((yield* service.chooseQualityRules()).status).toBe("completed");
+				expect((yield* service.chooseQualityRules).status).toBe("completed");
 				openPath = presetPath;
-				expect((yield* service.investigationOpen()).status).toBe("opened");
+				expect((yield* service.investigationOpen).status).toBe("opened");
 				// Embedded preset rules have no file, so a remounted editor offers Save preset.
 				expect(yield* service.previewQualityRules(validQualityDocument)).toMatchObject({
 					status: "completed",
@@ -1355,7 +1355,7 @@ it("restores embedded rules without retaining another rule file's write destinat
 				expect(new TextDecoder().decode(files.get(qualityRulesPath))).toBe(original);
 				const { rules: _rules, ...withoutRules } = preset;
 				files.set(presetPath, new TextEncoder().encode(JSON.stringify(withoutRules)));
-				expect((yield* service.investigationOpen()).status).toBe("opened");
+				expect((yield* service.investigationOpen).status).toBe("opened");
 				expect(yield* service.qualitySearch({ filter: "all", pageSize: 50 })).toEqual({
 					status: "not_ready"
 				});

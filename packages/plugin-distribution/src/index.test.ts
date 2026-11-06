@@ -26,7 +26,7 @@ it.effect("the schema-only manifest parser retains domain guidance and schema is
 	})
 );
 
-const validManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
+const validManifest = Schema.decodeSync(PluginBundleManifest)({
 	artifact: {
 		bytes: 2_048,
 		id: "ue-shed-plugins-0.1.0-rc.1",
@@ -69,7 +69,7 @@ const validManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
 	unreal: { maximum: "5.7", minimum: "5.6" }
 });
 
-const validCompiledManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
+const validCompiledManifest = Schema.decodeSync(PluginBundleManifest)({
 	artifact: {
 		bytes: 4_096,
 		id: "ue-shed-plugins-compiled-0.1.0-rc.1",
@@ -107,7 +107,7 @@ const validCompiledManifest = Schema.decodeUnknownSync(PluginBundleManifest)({
 	schemaVersion: 2
 });
 
-const exactCompiledRequest = Schema.decodeUnknownSync(CompiledPluginVariantRequest)({
+const exactCompiledRequest = Schema.decodeSync(CompiledPluginVariantRequest)({
 	architecture: "x64",
 	configuration: "Development",
 	engineBuildId: "47537391",

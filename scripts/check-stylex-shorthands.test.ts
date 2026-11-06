@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { findDroppedShorthands } from "./check-stylex-shorthands.ts";
 
-test("flags a border shorthand inside stylex.create", () => {
+void test("flags a border shorthand inside stylex.create", () => {
 	const source = [
 		"const styles = stylex.create({",
 		"\tcard: {",
@@ -23,7 +23,7 @@ test("flags a border shorthand inside stylex.create", () => {
 	assert.equal(findings[0]?.line, 3);
 });
 
-test("flags a compact shorthand declaration", () => {
+void test("flags a compact shorthand declaration", () => {
 	const source =
 		"const styles = stylex.create({ card: { border: '1px solid red', color: 'white' } });";
 	assert.deepEqual(findDroppedShorthands("compact.tsx", source), [
@@ -36,7 +36,7 @@ test("flags a compact shorthand declaration", () => {
 	]);
 });
 
-test("ignores StyleX call decoys in strings and comments", () => {
+void test("ignores StyleX call decoys in strings and comments", () => {
 	const source = [
 		"const styles = stylex.create({ card: { color: 'white' } });",
 		"const decoy = \"stylex.create({ card: { border: '1px solid red' } })\";",
@@ -45,12 +45,12 @@ test("ignores StyleX call decoys in strings and comments", () => {
 	assert.deepEqual(findDroppedShorthands("decoy.tsx", source), []);
 });
 
-test("flags compact shorthands in stylex.keyframes", () => {
+void test("flags compact shorthands in stylex.keyframes", () => {
 	const source = "const pulse = stylex.keyframes({ from: { borderTop: '1px solid red' } });";
 	assert.equal(findDroppedShorthands("motion.ts", source)[0]?.property, "borderTop");
 });
 
-test("accepts the longhands that StyleX does emit", () => {
+void test("accepts the longhands that StyleX does emit", () => {
 	const source = [
 		"const styles = stylex.create({",
 		"\tcard: {",
@@ -67,7 +67,7 @@ test("accepts the longhands that StyleX does emit", () => {
 	assert.deepEqual(findDroppedShorthands("card.tsx", source), []);
 });
 
-test("ignores a shorthand in an inline style prop, where it is real CSS", () => {
+void test("ignores a shorthand in an inline style prop, where it is real CSS", () => {
 	const source = [
 		"const styles = stylex.create({ frame: { padding: 4 } });",
 		"export function Cell() {",
@@ -77,6 +77,6 @@ test("ignores a shorthand in an inline style prop, where it is real CSS", () => 
 	assert.deepEqual(findDroppedShorthands("cell.tsx", source), []);
 });
 
-test("ignores files with no StyleX call at all", () => {
+void test("ignores files with no StyleX call at all", () => {
 	assert.deepEqual(findDroppedShorthands("plain.ts", "const border = '1px solid red';"), []);
 });

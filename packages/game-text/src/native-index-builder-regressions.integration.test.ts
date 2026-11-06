@@ -65,7 +65,7 @@ describe.skipIf(!executable)("native join current evidence", () => {
 					}),
 					`msgctxt ${JSON.stringify(`${identity},${key}`)}\nmsgid ${JSON.stringify(source)}\nmsgstr "Shipped"\n`
 				];
-				const review = Schema.decodeUnknownSync(LocalizationReviewFile)({
+				const review = Schema.decodeSync(LocalizationReviewFile)({
 					schemaVersion: 1,
 					target: authored.name,
 					acceptedFindings: [],
@@ -138,9 +138,7 @@ describe.skipIf(!executable)("native join current evidence", () => {
 															result.failure._tag !==
 																"LocalizationError"
 														)
-															return yield* Effect.fail(
-																result.failure
-															);
+															return yield* result.failure;
 														expect(relativePath).toBe(failed);
 														fileErrors[relativePath] =
 															result.failure._tag ===

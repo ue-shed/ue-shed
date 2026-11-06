@@ -32,7 +32,7 @@ function property(
 	namespace = "NS"
 ): TextOccurrence {
 	const packagePath = objectPath.slice(0, objectPath.indexOf(".", objectPath.lastIndexOf("/")));
-	return Schema.decodeUnknownSync(TextOccurrence)({
+	return Schema.decodeSync(TextOccurrence)({
 		id: `occurrence:${objectPath}:${propertyPath}`,
 		packageFile: `Content/${packagePath.slice("/Game/".length)}.uasset`,
 		source: "Text",
@@ -44,7 +44,7 @@ function property(
 
 function cell(objectPath: string): TextOccurrence {
 	const packagePath = objectPath.slice(0, objectPath.lastIndexOf("."));
-	return Schema.decodeUnknownSync(TextOccurrence)({
+	return Schema.decodeSync(TextOccurrence)({
 		id: `occurrence:${objectPath}`,
 		packageFile: `Content/${packagePath.slice("/Game/".length)}.uasset`,
 		source: "Sword",

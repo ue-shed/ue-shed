@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
-import { Effect, Stream, Scope, Exit, Schema, Result } from "effect";
+import { Layer, Effect, Stream, Scope, Exit, Schema, Result } from "effect";
 import { describe, expect, it } from "vitest";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
 import { GameTextIndexBuilder } from "./index-builder.js";
@@ -134,7 +134,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 								Effect.scoped(
 									Effect.gen(function* () {
 										const store = yield* SharedIndex;
-										const writer = yield* store.writer();
+										const writer = yield* store.writer;
 										if (round === 1)
 											yield* writer.publish(
 												"large",
@@ -187,7 +187,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 											projectRoot: root,
 											target: sourceTarget
 										});
-										const current = yield* store.open();
+										const current = yield* store.open;
 										generations.add(current.manifest.generation);
 										expect(
 											current.manifest.segments.length
@@ -233,7 +233,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 								Effect.scoped(
 									Effect.gen(function* () {
 										const store = yield* SharedIndex;
-										const writer = yield* store.writer();
+										const writer = yield* store.writer;
 										yield* writer.publish(
 											"probe.po",
 											`only-po-${round}`,
@@ -246,7 +246,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 											)
 										);
 										localizationGenerations.add(writer.manifest().generation);
-										const reader = yield* store.open();
+										const reader = yield* store.open;
 										const layer = yield* reader.layer("probe.po");
 										const ids = yield* layer.section("entry.source");
 										if (!(ids instanceof Uint32Array))
@@ -266,7 +266,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 						yield* builder.withSession(
 							{ configuration },
 							Effect.gen(function* () {
-								const manifest = (yield* (yield* SharedIndex).writer()).manifest();
+								const manifest = (yield* (yield* SharedIndex).writer).manifest();
 								expect(manifest.active.large).toBe("large");
 								expect(manifest.active.after).toBe("after-4");
 							})
@@ -436,10 +436,10 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										yield* Scope.close(owner, Exit.void);
 									}
 									expect(
-										yield* native.summary(),
+										yield* native.summary,
 										`${backend} step ${step}`
 									).toEqual(summaries[step]);
-									const reader = yield* (yield* SharedIndex).open();
+									const reader = yield* (yield* SharedIndex).open;
 									const records = yield* decodePackageTextColumns(
 										yield* reader.layer(
 											`package-text.${packageTextShard(first.path)}`
@@ -447,7 +447,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 									);
 									snapshots.push({
 										records,
-										summary: yield* native.summary(),
+										summary: yield* native.summary,
 										page: yield* native.search({
 											query: "",
 											capability: "all",
@@ -455,14 +455,14 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										})
 									});
 									if (backend === "native" && step === states.length - 1) {
-										const invalid = Schema.decodeUnknownSync(
+										const invalid = yield* Schema.decodeEffect(
 											TextCorpusSearchRequest
 										)({
 											query: "",
 											capability: "all",
 											pageSize: 1,
 											localization: { target: "OtherTarget" }
-										});
+										}).pipe(Effect.orDie);
 										expect(
 											Result.isFailure(
 												yield* native.search(invalid).pipe(Effect.result)
@@ -477,21 +477,23 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										expect(recovered).not.toBe(native);
 										yield* native.search(invalid).pipe(Effect.result);
 										expect(yield* queries.open(request)).toBe(recovered);
-										expect(yield* recovered.summary()).toEqual(summaries[step]);
+										expect(yield* recovered.summary).toEqual(summaries[step]);
 									}
 								}
 								return snapshots;
 							})
 						).pipe(
-							Effect.provide(sharedIndexNodeLayer(configuration)),
 							Effect.provide(
-								backend === "native"
-									? nativeIndexBuilderLayer({
-											executable,
-											timeoutMs: 30000,
-											catalogTimeoutMs: 120000
-										})
-									: typeScriptIndexBuilderLayer
+								Layer.provideMerge(
+									sharedIndexNodeLayer(configuration),
+									backend === "native"
+										? nativeIndexBuilderLayer({
+												executable,
+												timeoutMs: 30000,
+												catalogTimeoutMs: 120000
+											})
+										: typeScriptIndexBuilderLayer
+								)
 							)
 						)
 					)
@@ -565,7 +567,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 						)
 					);
 					const layers = yield* Effect.gen(function* () {
-						const reader = yield* (yield* SharedIndex).open();
+						const reader = yield* (yield* SharedIndex).open;
 						const layers: Record<
 							string,
 							{
@@ -709,7 +711,7 @@ describe.skipIf(!executable)("native package record deltas", () => {
 			expect(sample.end - sample.start).toBeLessThan(16 * 1024 * 1024);
 			const stored = await Effect.runPromise(
 				Effect.gen(function* () {
-					const reader = yield* (yield* SharedIndex).open();
+					const reader = yield* (yield* SharedIndex).open;
 					return yield* decodePackageTextColumns(
 						yield* reader.layer(`package-text.${packageTextShard(changed[0]!)}`)
 					);

@@ -18,7 +18,7 @@ import type { StageClock } from "./stage-clock.js";
 /** One shard's entries in a plan file, as the writer's planner and comparison write them. */
 export const PackageTextPlanLine = Schema.fromJsonString(
 	Schema.Struct({
-		group: Schema.Number,
+		group: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 		expected: Schema.Array(
 			Schema.Struct({
 				path: Schema.String,
@@ -28,7 +28,7 @@ export const PackageTextPlanLine = Schema.fromJsonString(
 		)
 	})
 );
-const decodePlanLine = Schema.decodeUnknownEffect(PackageTextPlanLine);
+const decodePlanLine = Schema.decodeEffect(PackageTextPlanLine);
 
 const stagingFailure = (cause: unknown) =>
 	snapshotFailure("package-text.stage", "The package text staging operation failed.", cause);
@@ -176,8 +176,9 @@ export const spoolPackageReads = Effect.fn("PackageText.spoolReads")(function* <
 					if (event.event === "text_summary") return;
 					const request = requests.get(event.path);
 					if (request === undefined || received.has(event.path))
-						return yield* Effect.fail(
-							snapshotFailure("package-text.read", "Unexpected or duplicate package")
+						return yield* snapshotFailure(
+							"package-text.read",
+							"Unexpected or duplicate package"
 						);
 					received.add(event.path);
 					const line = `${JSON.stringify({
@@ -196,9 +197,7 @@ export const spoolPackageReads = Effect.fn("PackageText.spoolReads")(function* <
 		);
 	yield* flush;
 	if (received.size !== requests.size)
-		return yield* Effect.fail(
-			snapshotFailure("package-text.read", "Reader omitted requested packages")
-		);
+		return yield* snapshotFailure("package-text.read", "Reader omitted requested packages");
 	const spooled: ReadonlyMap<number, string> = files;
 	return spooled;
 });
@@ -280,11 +279,9 @@ export const stagePlannedPackageText = Effect.fn("PackageText.stagePlanned")(fun
 				Stream.runForEach(
 					Effect.fnUntraced(function* (event) {
 						if (received.has(event.path))
-							return yield* Effect.fail(
-								snapshotFailure(
-									"package-text.read",
-									"Unexpected or duplicate package"
-								)
+							return yield* snapshotFailure(
+								"package-text.read",
+								"Unexpected or duplicate package"
 							);
 						received.add(event.path);
 						onRead(event.path);
@@ -292,9 +289,7 @@ export const stagePlannedPackageText = Effect.fn("PackageText.stagePlanned")(fun
 				)
 			);
 	if (received.size !== plan.selected)
-		return yield* Effect.fail(
-			snapshotFailure("package-text.read", "Reader omitted requested packages")
-		);
+		return yield* snapshotFailure("package-text.read", "Reader omitted requested packages");
 	const staged: ReadonlyMap<number, string> = new Map(
 		plan.groups.map((group) => [group, join(directory, `${group}.snapshot`)])
 	);

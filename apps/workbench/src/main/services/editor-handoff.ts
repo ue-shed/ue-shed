@@ -22,13 +22,15 @@ export const WorkbenchEditorHandoffLive = Layer.effect(
 							? null
 							: `${result.message} ${result.recovery}`
 					),
-					Effect.catch((error) => Effect.succeed(`${error.message} ${error.recovery}`))
+					Effect.catchTag("EditorWindowActivationError", (error) =>
+						Effect.succeed(`${error.message} ${error.recovery}`)
+					)
 				);
 				const notice = { endpoint, message };
 				yield* window
 					.send("editor-window:handoff", notice)
 					.pipe(
-						Effect.catch((error) =>
+						Effect.catchTag("Workbench.WorkbenchWindowError", (error) =>
 							Effect.logWarning("Editor handoff feedback unavailable", error)
 						)
 					);

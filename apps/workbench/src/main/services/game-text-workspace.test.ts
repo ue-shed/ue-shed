@@ -1,3 +1,4 @@
+import { GameTextWorkspaceHostFailure } from "@ue-shed/game-text/workspace";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -10,7 +11,7 @@ import {
 import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_GAME_TEXT_RULES } from "@ue-shed/game-text/rules";
 import { LocalizationTargetName, makeLocalizationEvidenceTestLayer } from "@ue-shed/localization";
 import type { TextCorpus } from "@ue-shed/game-text/schema";
-import { Deferred, Effect, Fiber, Ref } from "effect";
+import { Layer, Deferred, Effect, Fiber, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { cannedGameTextIndexLayer } from "./game-text-index.test-support.js";
@@ -43,10 +44,10 @@ const ready = (projectRoot: string, generation: number) => ({
 });
 function selected(projectRoot: string): GameTextWorkspaceProject {
 	return {
-		current: () => Effect.succeed(ready(projectRoot, 3)),
-		refresh: () => Effect.succeed(ready(projectRoot, 3)),
-		candidates: () => Effect.succeed({ generation: 3, summary: { projectRoot } }),
-		progress: () => Effect.succeed({ completed: 0, total: 0, phase: "idle" })
+		current: Effect.sync(() => ready(projectRoot, 3)),
+		refresh: Effect.sync(() => ready(projectRoot, 3)),
+		candidates: Effect.sync(() => ({ generation: 3, summary: { projectRoot } })),
+		progress: Effect.sync(() => ({ completed: 0, total: 0, phase: "idle" }))
 	};
 }
 function memoryFiles() {
@@ -56,7 +57,12 @@ function memoryFiles() {
 		Effect.suspend(() => {
 			const bytes = contents.get(path);
 			return bytes === undefined
-				? Effect.fail({ message: "Missing file.", recovery: "Create it." })
+				? new GameTextWorkspaceHostFailure({
+						message: "Missing file.",
+						recovery: "Create it.",
+						retrySafe: false,
+						nextStep: "fix_input"
+					})
 				: Effect.succeed(bytes);
 		});
 	const files: GameTextWorkspaceFileHooks = {
@@ -67,10 +73,12 @@ function memoryFiles() {
 		writeFile: (path, bytes, options) =>
 			Effect.gen(function* () {
 				if (options?.exclusive && contents.has(path))
-					return yield* Effect.fail({
+					return yield* new GameTextWorkspaceHostFailure({
 						code: "already_exists" as const,
 						message: "Exists.",
-						recovery: "Load it."
+						recovery: "Load it.",
+						retrySafe: false,
+						nextStep: "fix_input"
 					});
 				writes.push(path);
 				contents.set(path, bytes);
@@ -81,8 +89,12 @@ function memoryFiles() {
 const provideWorkspace = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	effect.pipe(
 		Effect.scoped,
-		Effect.provide(cannedGameTextIndexLayer(() => Effect.succeed(emptyCorpus))),
-		Effect.provide(noLocalization)
+		Effect.provide(
+			Layer.provideMerge(
+				cannedGameTextIndexLayer(() => Effect.succeed(emptyCorpus)),
+				noLocalization
+			)
+		)
 	);
 
 for (const full of [false, true]) {
@@ -108,28 +120,24 @@ for (const full of [false, true]) {
 					});
 					const project: GameTextWorkspaceProject = {
 						...selected(root),
-						current: () =>
-							Effect.gen(function* () {
-								const value = yield* Ref.get(generation);
-								if (reconnecting) yield* Deferred.succeed(rejoining, undefined);
-								return ready(root, value);
-							}),
-						refresh: () =>
-							Effect.gen(function* () {
-								yield* Deferred.succeed(hostStarted, undefined);
-								if (disconnectDuringRefresh) yield* Deferred.await(hostFinish);
-								return ready(
-									root,
-									yield* Ref.updateAndGet(generation, (n) => n + 1)
-								);
-							}),
-						candidates: () =>
+						current: Effect.gen(function* () {
+							const value = yield* Ref.get(generation);
+							if (reconnecting) yield* Deferred.succeed(rejoining, undefined);
+							return ready(root, value);
+						}),
+						refresh: Effect.gen(function* () {
+							yield* Deferred.succeed(hostStarted, undefined);
+							if (disconnectDuringRefresh) yield* Deferred.await(hostFinish);
+							return ready(root, yield* Ref.updateAndGet(generation, (n) => n + 1));
+						}),
+						candidates: Effect.suspend(() =>
 							Ref.get(generation).pipe(
 								Effect.map((generation) => ({
 									generation,
 									summary: { projectRoot: root }
 								}))
 							)
+						)
 					};
 					yield* Effect.gen(function* () {
 						const workspace = yield* makeGameTextWorkspace({
@@ -137,7 +145,7 @@ for (const full of [false, true]) {
 							files: memoryFiles().files
 						});
 						const run = () =>
-							full ? workspace.configuredScan() : workspace.configuredRefresh({});
+							full ? workspace.configuredScan : workspace.configuredRefresh({});
 						const first = yield* run().pipe(Effect.forkChild);
 						yield* Deferred.await(disconnectDuringRefresh ? hostStarted : started);
 						yield* Fiber.interrupt(first);
@@ -156,8 +164,12 @@ for (const full of [false, true]) {
 						expect(yield* Ref.get(scans)).toBe(1);
 					}).pipe(
 						Effect.scoped,
-						Effect.provide(cannedGameTextIndexLayer(() => scan)),
-						Effect.provide(noLocalization)
+						Effect.provide(
+							Layer.provideMerge(
+								cannedGameTextIndexLayer(() => scan),
+								noLocalization
+							)
+						)
 					);
 				})
 		);
@@ -180,24 +192,22 @@ for (const full of [false, true]) {
 						files: memoryFiles().files,
 						project: {
 							...selected(root),
-							current: () =>
-								Effect.gen(function* () {
-									reads += 1;
-									if (reads === 1) {
-										yield* Deferred.succeed(entered, undefined);
-										yield* Deferred.await(release);
-									}
-									return ready(root, 3);
-								}),
-							refresh: () =>
-								Effect.sync(() => {
-									refreshes += 1;
-									return ready(root, 3);
-								})
+							current: Effect.gen(function* () {
+								reads += 1;
+								if (reads === 1) {
+									yield* Deferred.succeed(entered, undefined);
+									yield* Deferred.await(release);
+								}
+								return ready(root, 3);
+							}),
+							refresh: Effect.sync(() => {
+								refreshes += 1;
+								return ready(root, 3);
+							})
 						}
 					});
 					const run = () =>
-						full ? workspace.configuredScan() : workspace.configuredRefresh({});
+						full ? workspace.configuredScan : workspace.configuredRefresh({});
 					const request = yield* run().pipe(Effect.forkChild);
 					yield* Deferred.await(entered);
 					yield* Fiber.interrupt(request).pipe(
@@ -289,17 +299,19 @@ it.effect("answers an operation state poll from the published scan, without disc
 			expect(discoveries).toBe(scanned);
 		}).pipe(
 			Effect.scoped,
-			Effect.provide(cannedGameTextIndexLayer(() => Effect.succeed(emptyCorpus))),
 			Effect.provide(
-				makeLocalizationEvidenceTestLayer({
-					discover: () =>
-						Effect.sync(() => {
-							discoveries += 1;
-							return { schemaVersion: 1, targets: [], diagnostics: [] };
-						}),
-					read: () => Effect.die("No targets"),
-					targets: () => Effect.die("Not used")
-				})
+				Layer.provideMerge(
+					cannedGameTextIndexLayer(() => Effect.succeed(emptyCorpus)),
+					makeLocalizationEvidenceTestLayer({
+						discover: () =>
+							Effect.sync(() => {
+								discoveries += 1;
+								return { schemaVersion: 1, targets: [], diagnostics: [] };
+							}),
+						read: () => Effect.die("No targets"),
+						targets: () => Effect.die("Not used")
+					})
+				)
 			)
 		);
 	})
@@ -311,17 +323,16 @@ it.effect("counts the host's project scan as the first of a scan's steps", () =>
 		const workspace = yield* makeGameTextWorkspace({
 			project: {
 				...selected(root),
-				progress: () =>
-					Effect.succeed({
-						completed: 2,
-						total: 5,
-						phase: "scanning" as const,
-						stage: "project_index"
-					})
+				progress: Effect.sync(() => ({
+					completed: 2,
+					total: 5,
+					phase: "scanning" as const,
+					stage: "project_index"
+				}))
 			},
 			files: memoryFiles().files
 		});
-		expect(yield* workspace.progress()).toEqual({
+		expect(yield* workspace.progress).toEqual({
 			completed: 2,
 			total: 5,
 			phase: "project_scanning",
@@ -343,9 +354,11 @@ it.effect("never falls back to disk when the host refuses starter creation", () 
 			files: {
 				...store.files,
 				writeFile: () =>
-					Effect.fail({
+					new GameTextWorkspaceHostFailure({
 						message: "Host denied write.",
-						recovery: "Request writable access."
+						recovery: "Request writable access.",
+						retrySafe: false,
+						nextStep: "fix_input"
 					})
 			}
 		});
@@ -378,18 +391,22 @@ for (const failedHook of ["read", "recovery"] as const) {
 					...store.files,
 					readFile: () =>
 						failedHook === "read"
-							? Effect.fail({
+							? new GameTextWorkspaceHostFailure({
 									message: "Read refused.",
-									recovery: "Restore readable access."
+									recovery: "Restore readable access.",
+									retrySafe: false,
+									nextStep: "fix_input"
 								})
 							: store.files.readFile(path)
 				},
 				recoveryCopy: () =>
 					Effect.gen(function* () {
 						copies += 1;
-						return yield* Effect.fail({
+						return yield* new GameTextWorkspaceHostFailure({
 							message: "Recovery refused.",
-							recovery: "Restore backup access."
+							recovery: "Restore backup access.",
+							retrySafe: false,
+							nextStep: "fix_input"
 						});
 					})
 			});

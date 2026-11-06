@@ -7,8 +7,9 @@ export const register = Effect.gen(function* () {
 	const ipc = yield* ElectronIpc;
 	const custodian = yield* WorkbenchCustodian;
 
-	yield* ipc.register(invokeContracts["project-custodian:configured-scan"], () =>
-		custodian.configuredScan()
+	yield* ipc.register(
+		invokeContracts["project-custodian:configured-scan"],
+		() => custodian.configuredScan
 	);
 	yield* ipc.register(invokeContracts["project-custodian:prepare"], (...args) => {
 		const [intent] = args;

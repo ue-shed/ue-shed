@@ -4,6 +4,30 @@ import { expect } from "vitest";
 import { makeHost, request } from "./game-text-index-lifetime.test-support.js";
 import { WorkbenchGameText } from "./game-text.js";
 it.live(
+	"retires the previous project's native reader through parameterless workspace reads",
+	() =>
+		Effect.gen(function* () {
+			for (const operation of [
+				"localizationTargets",
+				"investigationOpen",
+				"progress",
+				"chooseQualityRules",
+				"reloadQualityRules"
+			] as const) {
+				const test = yield* makeHost("pipeline");
+				yield* Effect.gen(function* () {
+					const host = yield* WorkbenchGameText;
+					expect((yield* host.configuredRefresh({})).status).toBe("completed");
+					expect(yield* Deferred.isDone(test.retiring)).toBe(false);
+					yield* Ref.set(test.selectedRoot, undefined);
+					yield* host[operation];
+					yield* Deferred.await(test.retiring);
+				}).pipe(Effect.provide(test.layer));
+			}
+		}),
+	15000
+);
+it.live(
 	"publishes the replacement before old native reader finalization completes",
 	() =>
 		Effect.gen(function* () {

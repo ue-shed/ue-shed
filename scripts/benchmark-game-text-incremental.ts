@@ -65,7 +65,7 @@ if (!Number.isSafeInteger(count) || count < 100 || count > 300000)
 const projectRoot = join(output, "project");
 await mkdir(projectRoot);
 const cultures = ["en", "de", "fr", "es", "it", "ja", "ko", "pl", "pt", "zh"];
-const target = Schema.decodeUnknownSync(LocalizationTarget)({
+const target = Schema.decodeSync(LocalizationTarget)({
 	...template,
 	name: "Generated",
 	cultures,
@@ -160,7 +160,10 @@ interface Measurement {
 const measurements: Partial<Record<"full" | "incremental", Measurement>> = {};
 let signalsSha256 = "";
 let fullSignalsSha256 = "";
-async function measure(name: "full" | "incremental", run: () => Promise<JoinResult>) {
+const measure = Effect.fn("BenchmarkIncremental.measure")(function* <E, R>(
+	name: "full" | "incremental",
+	work: Effect.Effect<JoinResult, E, R>
+) {
 	globalThis.gc?.();
 	let tick = performance.now();
 	let maxGapMs = 0;
@@ -172,12 +175,20 @@ async function measure(name: "full" | "incremental", run: () => Promise<JoinResu
 		tick = now;
 		heapPeak = Math.max(heapPeak, process.memoryUsage().heapUsed);
 	};
-	const timer = setInterval(sample, 1);
+
 	const started = performance.now();
-	const result = await run();
-	const wallMs = performance.now() - started;
-	sample();
-	clearInterval(timer);
+	const { result, wallMs } = yield* Effect.acquireUseRelease(
+		Effect.sync(() => setInterval(sample, 1)),
+		() => work.pipe(Effect.map((result) => ({ result, wallMs: performance.now() - started }))),
+		(timer) =>
+			Effect.sync(() => {
+				try {
+					sample();
+				} finally {
+					clearInterval(timer);
+				}
+			})
+	);
 	globalThis.gc?.();
 	measurements[name] = {
 		wallMs,
@@ -189,7 +200,7 @@ async function measure(name: "full" | "incremental", run: () => Promise<JoinResu
 	};
 	console.log(name, JSON.stringify(measurements[name]));
 	return result;
-}
+});
 await Effect.runPromise(
 	Effect.scoped(
 		Effect.gen(function* () {
@@ -201,14 +212,11 @@ await Effect.runPromise(
 						Stream.fromIterable(records.filter((r) => paths.includes(r.path)))
 				});
 			yield* refresh().pipe(Effect.scoped);
-			yield* Effect.promise(() =>
-				measure("full", () =>
-					Effect.runPromise(
-						Effect.scoped(
-							refreshJoinedTarget({ projectRoot, target }).pipe(
-								Effect.provideService(SharedIndex, store)
-							)
-						)
+			yield* measure(
+				"full",
+				Effect.scoped(
+					refreshJoinedTarget({ projectRoot, target }).pipe(
+						Effect.provideService(SharedIndex, store)
 					)
 				)
 			);
@@ -228,25 +236,22 @@ await Effect.runPromise(
 				i === 0 ? { ...entry, signature: "edited" } : entry
 			);
 			yield* refresh().pipe(Effect.scoped);
-			yield* Effect.promise(() =>
-				measure("incremental", () =>
-					Effect.runPromise(
-						Effect.scoped(
-							refreshJoinedTarget({ projectRoot, target }).pipe(
-								Effect.provideService(SharedIndex, store)
-							)
-						)
+			yield* measure(
+				"incremental",
+				Effect.scoped(
+					refreshJoinedTarget({ projectRoot, target }).pipe(
+						Effect.provideService(SharedIndex, store)
 					)
 				)
 			);
-			const reader = yield* store.open();
+			const reader = yield* store.open;
 			const joined = yield* readJoinedTarget(reader);
 			const hash = createHash("sha256");
 			for (const field of ["query.raw.signals", "query.slice.signals"])
 				hash.update(yield* joined.layer.section(field));
 			signalsSha256 = hash.digest("hex");
 			yield* refreshJoinedTarget({ projectRoot, target, force: true }).pipe(Effect.scoped);
-			const full = yield* readJoinedTarget(yield* store.open());
+			const full = yield* readJoinedTarget(yield* store.open);
 			const fullHash = createHash("sha256");
 			for (const field of ["query.raw.signals", "query.slice.signals"])
 				fullHash.update(yield* full.layer.section(field));

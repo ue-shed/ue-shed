@@ -36,7 +36,7 @@ export function prepareCorpusOutput(
 	if (existing.length === 0) return;
 	if (!clean) throw new Error("Corpus output exists; pass --clean to replace owned files.");
 	if (!existsSync(receipt)) throw new Error("Refusing --clean: no corpus ownership receipt.");
-	const value = Schema.decodeUnknownSync(
+	const value = Schema.decodeSync(
 		Schema.fromJsonString(
 			Schema.Struct({
 				version: Schema.Literal(1),

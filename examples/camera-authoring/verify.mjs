@@ -61,7 +61,7 @@ const command = Schema.decodeUnknownSync(Cameras.CameraArrangementCommand)({
 });
 await Effect.runPromise(store.mutate(command));
 await Effect.runPromise(Cameras.makeCameraAuthoringStore(draft).mutate(command));
-const doc = await Effect.runPromise(store.load());
+const doc = await Effect.runPromise(store.load);
 assert.equal(doc.arrangement.revision, 1);
 const approval = Schema.decodeUnknownSync(Cameras.CameraApproval)({
 	operationId: "approve",

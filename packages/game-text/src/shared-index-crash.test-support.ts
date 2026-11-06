@@ -5,7 +5,7 @@ await Effect.runPromise(
 	Effect.scoped(
 		Effect.gen(function* () {
 			const index = yield* SharedIndex;
-			const writer = yield* index.writer();
+			const writer = yield* index.writer;
 			yield* writer.compact(true);
 		})
 	).pipe(

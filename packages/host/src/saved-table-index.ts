@@ -10,7 +10,7 @@ import { ShedHostConfiguration } from "./configuration.js";
  * serves tables from it; a headless host has no such inventory and reads through the asset reader.
  */
 export interface SavedTableIndexApi {
-	readonly savedTables: () => Effect.Effect<SavedTableCatalog, AssetReaderError>;
+	readonly savedTables: Effect.Effect<SavedTableCatalog, AssetReaderError>;
 }
 
 /**
@@ -31,8 +31,8 @@ export const SavedTableIndexLive = Layer.effect(
 		const configuration = yield* ShedHostConfiguration;
 		const assetReader = yield* AssetReader;
 		return SavedTableIndex.of({
-			savedTables: Effect.fn("SavedTableIndex.savedTables")(function* () {
-				const project = yield* configuration.project();
+			savedTables: Effect.gen(function* () {
+				const project = yield* configuration.project;
 				if (project.status !== "configured") {
 					return { diagnostics: [], projectRoot: "", scannedAssets: 0, tables: [] };
 				}
@@ -42,7 +42,7 @@ export const SavedTableIndexLive = Layer.effect(
 						: { cachePath: project.catalogCachePath }),
 					projectRoot: project.projectRoot
 				});
-			})
+			}).pipe(Effect.withSpan("SavedTableIndex.savedTables"))
 		});
 	})
 );

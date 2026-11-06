@@ -42,7 +42,7 @@ describe.skipIf(!executable)("similar keys through related", () => {
 					yield* Effect.gen(function* () {
 						const indexes = yield* GameTextIndexRefresh;
 						const model = yield* indexes.refresh(fixture.request);
-						const lines = yield* model.query.readLocalizationLines();
+						const lines = yield* model.query.readLocalizationLines;
 						const inState = (line: LocalizationLine, state: string) =>
 							line.cultures.some((mark) => mark.state === state);
 						// The reference's inputs, chosen as a host chooses them: earlier lines are

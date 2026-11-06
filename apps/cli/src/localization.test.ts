@@ -45,7 +45,7 @@ it.effect("loc status provides safe recovery for missing manifests and reader fa
 			"--reader",
 			"missing-private-reader"
 		]).pipe(Effect.provide(runtime));
-		const missing = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
+		const missing = yield* Schema.decodeEffect(Schema.fromJsonString(Failure))(
 			yield* Ref.get(output)
 		);
 		expect(missing.error.code).toBe("missing_manifest");
@@ -62,7 +62,7 @@ it.effect("loc status provides safe recovery for missing manifests and reader fa
 			"--reader",
 			"missing-private-reader"
 		]).pipe(Effect.provide(runtime));
-		const failed = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
+		const failed = yield* Schema.decodeEffect(Schema.fromJsonString(Failure))(
 			yield* Ref.get(output)
 		);
 		expect(failed.error.code).toBe("reader_failure");
@@ -139,7 +139,7 @@ it.effect.each(["status", "report", "check"])(
 				"--target",
 				"PrivateTargetName"
 			]).pipe(Effect.provide(runtime));
-			const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
+			const report = yield* Schema.decodeEffect(Schema.fromJsonString(Failure))(
 				yield* Ref.get(output)
 			);
 			expect(report.error.code).toBe("target_not_found");
@@ -171,7 +171,7 @@ it.effect("loc status rejects an unsupported culture before scanning", () =>
 			"--culture",
 			"es"
 		]).pipe(Effect.provide(runtime));
-		const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Failure))(
+		const report = yield* Schema.decodeEffect(Schema.fromJsonString(Failure))(
 			yield* Ref.get(output)
 		);
 		expect(report.error.code).toBe("invalid_selection");

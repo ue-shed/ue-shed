@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -151,12 +152,12 @@ export function validateLicenseBoundary({
 	}
 	if (peculiarManifest.version !== "0.15.0") {
 		failures.push(
-			`peculiar-sheets: expected exact version 0.15.0, received ${peculiarManifest.version}`
+			`peculiar-sheets: expected exact version 0.15.0, received ${Schema.is(Schema.String)(peculiarManifest.version) ? peculiarManifest.version : "invalid non-string version"}`
 		);
 	}
 	if (peculiarManifest.license !== "MIT") {
 		failures.push(
-			`peculiar-sheets: expected MIT metadata, received ${peculiarManifest.license ?? "none"}`
+			`peculiar-sheets: expected MIT metadata, received ${Schema.is(Schema.String)(peculiarManifest.license) ? peculiarManifest.license : "missing or non-string license"}`
 		);
 	}
 	const dependencies = peculiarManifest.dependencies;

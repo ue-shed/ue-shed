@@ -2,7 +2,7 @@ import { makeGameTextIdRepairs, type GameTextIdRepairsApi } from "@ue-shed/game-
 import { Context, Effect, Layer } from "effect";
 import { EditorWorldControl } from "@ue-shed/engine";
 import { LocalFiles } from "../adapters/local-files.js";
-import { WorkbenchGameText } from "./game-text.js";
+import { gameTextFileHooks, WorkbenchGameText } from "./game-text.js";
 import { WorkbenchProject } from "./project-workspace.js";
 import { WorkbenchUnrealConnection } from "./unreal-connection.js";
 
@@ -24,7 +24,7 @@ export const WorkbenchGameTextIdRepairsLive = Layer.effect(
 			workspace,
 			current: project.current,
 			endpoint: connection.endpoint,
-			files,
+			files: gameTextFileHooks(files),
 			editorProject: Effect.fn("Workbench.GameTextIdRepairs.editorProject")(
 				function* (endpoint) {
 					return (yield* worlds.snapshot(endpoint)).projectRoot;

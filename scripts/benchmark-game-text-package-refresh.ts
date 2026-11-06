@@ -239,7 +239,7 @@ const atReadEnd = <A, E, R>(stream: Stream.Stream<A, E, R>) =>
 	stream.pipe(Stream.onEnd(Effect.sync(() => heapAtReadEnd.push(retainedHeap()))));
 type RefreshInput =
 	import("../packages/game-text/src/package-text-layer.js").PackageTextRefreshInput<
-		unknown,
+		import("../packages/game-text/src/index-error.js").GameTextIndexError,
 		never
 	>;
 let readCount = 0;
@@ -415,7 +415,7 @@ const spans = trace.drain();
 const content = await Effect.runPromise(
 	Effect.scoped(
 		Effect.gen(function* () {
-			const reader = yield* (yield* SharedIndex).open();
+			const reader = yield* (yield* SharedIndex).open;
 			const names = Object.keys(reader.manifest.active)
 				.filter((name) => name.startsWith("package-text."))
 				.sort((a, b) => Number(a.slice(13)) - Number(b.slice(13)));

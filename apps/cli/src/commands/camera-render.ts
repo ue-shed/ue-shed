@@ -1,6 +1,6 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Effect, Layer, Schema } from "effect";
+import { Cause, Effect, Layer, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import { printJson } from "../cli-runtime.js";
 import { observeCliOperation } from "../cli-operation.js";
@@ -25,10 +25,14 @@ const render = Command.make(
 				const input = yield* Effect.tryPromise(async () => {
 					if ((await stat(args.requestPath)).size > 131072)
 						throw new Error("Camera render request exceeds 128 KiB.");
-					return Schema.decodeUnknownSync(Schema.Json)(
-						JSON.parse(await readFile(args.requestPath, "utf8"))
-					);
-				});
+					return JSON.parse(await readFile(args.requestPath, "utf8"));
+				}).pipe(
+					Effect.flatMap((input) =>
+						Schema.decodeUnknownEffect(Schema.Json)(input).pipe(
+							Effect.mapError((cause) => new Cause.UnknownError(cause))
+						)
+					)
+				);
 				const request = yield* Schema.decodeUnknownEffect(
 					Schema.Struct({
 						session: cameras.CameraRenderSessionRequest,

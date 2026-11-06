@@ -384,7 +384,6 @@ function collapsedPOEntries(file: LocalizationTargetEvidence["cultures"][number]
 	return groups;
 }
 
-/** Join gathered namespace/key, stripping package markers only from saved FText occurrences. */
 /** One decoded compiled-resource entry, as the native reader produces it. */
 export interface LocalizationReferenceResourceEntry {
 	readonly namespace: string;
@@ -418,6 +417,10 @@ export function localizationResourceSourceHash(text: string): number {
 	return (crc ^ 0xffffffff) >>> 0;
 }
 
+/**
+ * Join gathered namespace/key, stripping package markers only from saved FText occurrences. A
+ * culture with no archive takes its translations from `options.resources` when given.
+ */
 export function joinLocalizationTarget(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,

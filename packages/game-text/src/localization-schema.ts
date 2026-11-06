@@ -121,10 +121,6 @@ export const LocalizationCultureMark = Schema.Struct({
 });
 export type LocalizationCultureMark = typeof LocalizationCultureMark.Type;
 /**
- * Culture mark expanded with archive and PO evidence. Null fields preserve missing evidence; a
- * present empty translation is different from an absent entry.
- */
-/**
  * A compiled `.locres` entry, read for a culture that has no archive: the text the game shows
  * and the hash of the manifest source it was compiled from.
  */
@@ -133,6 +129,10 @@ export const LocalizationResourceEntry = Schema.Struct({
 	sourceHash: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 });
 export type LocalizationResourceEntry = typeof LocalizationResourceEntry.Type;
+/**
+ * Culture mark expanded with archive, PO and compiled-resource evidence. Null fields preserve
+ * missing evidence; a present empty translation is different from an absent entry.
+ */
 export const LocalizationCultureState = LocalizationCultureMark.pipe(
 	Schema.fieldsAssign({
 		archive: Schema.NullOr(ArchiveEntry),

@@ -33,6 +33,19 @@ void test("compares recursive definitions through renamed aliases and equivalent
 	assertJsonSchemaEquivalent(first, second);
 });
 
+void test("compares equivalent alternatives through nested anyOf wrappers", () => {
+	const nested = {
+		anyOf: [{ anyOf: [{ type: "string" }, { type: "null" }] }, { type: "number" }]
+	};
+	const flat = { anyOf: [{ type: "string" }, { type: "null" }, { type: "number" }] };
+	assertJsonSchemaEquivalent(nested, flat);
+	assert.throws(() =>
+		assertJsonSchemaEquivalent(nested, {
+			anyOf: [{ type: "string" }, { type: "boolean" }, { type: "number" }]
+		})
+	);
+});
+
 void test("still detects changed bounds, required fields, patterns and object closure", () => {
 	const original = {
 		type: "object",

@@ -229,10 +229,17 @@ export function canonicalJsonSchemaReferences(input: JsonSchema.JsonSchema): Sch
 					return Object.entries(clause).map(([key, item]) => ({ [key]: item }));
 				return [clause];
 			});
+		const alternatives = (items: readonly Schema.Json[]): Schema.Json[] =>
+			items.flatMap((clause) =>
+				isObject(clause) && Object.keys(clause).length === 1 && Array.isArray(clause.anyOf)
+					? alternatives(clause.anyOf)
+					: [clause]
+			);
 		if (Array.isArray(output.allOf))
 			output.allOf = clauses(output.allOf).sort((a, b) =>
 				JSON.stringify(a).localeCompare(JSON.stringify(b))
 			);
+		if (Array.isArray(output.anyOf)) output.anyOf = alternatives(output.anyOf);
 		return output;
 	};
 	const root = { ...document };

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+	Array,
 	type Brand,
 	Cause,
 	Context,
@@ -564,28 +565,71 @@ export const withPreparedWorld = Effect.fn("WorldPreparation.withPreparedWorld")
 	use: (lease: WorldLease) => Effect.Effect<A, E, R>,
 	leaseOptions: { readonly leaseId?: WorldLeaseId; readonly leaseMs?: number } = {}
 ) {
-	const outcome = yield* Effect.exit(
-		Effect.scoped(
-			Effect.gen(function* () {
-				const service = yield* WorldPreparation;
-				const lease = yield* service.acquire(requirements, leaseOptions);
-				return yield* lease.guard(use(lease));
-			})
-		)
+	return yield* Effect.uninterruptibleMask((restore) =>
+		Effect.gen(function* () {
+			const scope = yield* Scope.make();
+			const work = yield* Effect.exit(
+				restore(
+					Effect.gen(function* () {
+						const service = yield* WorldPreparation;
+						const lease = yield* service.acquire(requirements, leaseOptions);
+						return yield* lease.guard(use(lease));
+					})
+				).pipe(Scope.provide(scope))
+			);
+			const cleanup = yield* Effect.exit(Scope.close(scope, work));
+			const pending = yield* Effect.exit(restore(Effect.void));
+			if (Exit.isFailure(pending)) {
+				const workReasons = Exit.isFailure(work) ? work.cause.reasons : [];
+				const workFailReasons = Array.dedupe(workReasons.filter(Cause.isFailReason));
+				const workDefectReasons = Array.dedupe(
+					workReasons.filter((reason) => !Cause.isFailReason(reason))
+				);
+				const cleanupReasons = Exit.isFailure(cleanup) ? cleanup.cause.reasons : [];
+				const missingWorkDefects = workDefectReasons.filter(
+					(reason) => !cleanupReasons.includes(reason)
+				);
+				return yield* Effect.failCause(
+					Cause.fromReasons([
+						...missingWorkDefects,
+						...workFailReasons,
+						...cleanupReasons,
+						...pending.cause.reasons
+					])
+				);
+			}
+			if (Exit.isSuccess(cleanup)) return yield* work;
+			const workReasons = Exit.isFailure(work) ? work.cause.reasons : [];
+			const workFailReasons = Array.dedupe(workReasons.filter(Cause.isFailReason));
+			const workDefectReasons = Array.dedupe(
+				workReasons.filter((reason) => !Cause.isFailReason(reason))
+			);
+			const carriers = cleanup.cause.reasons.filter(
+				(reason): reason is Cause.Die & { readonly defect: WorldRestorationFailure } =>
+					Cause.isDieReason(reason) && reason.defect instanceof WorldRestorationFailure
+			);
+			const carrierSet = new Set<unknown>(carriers);
+			const workDefectSet = new Set<unknown>(workDefectReasons);
+			const otherReasons = cleanup.cause.reasons.filter((reason) => !carrierSet.has(reason));
+			if (
+				!Cause.hasInterrupts(cleanup.cause) &&
+				carriers.length > 0 &&
+				otherReasons.every((reason) => workDefectSet.has(reason)) &&
+				workDefectReasons.length === 0
+			)
+				return yield* failure(
+					"restoration_failed",
+					"scope",
+					"The owned world lease could not restore editor state.",
+					undefined,
+					Cause.fromReasons([...workFailReasons, ...carriers])
+				);
+			const missingWorkDefects = workDefectReasons.filter(
+				(reason) => !cleanup.cause.reasons.includes(reason)
+			);
+			return yield* Effect.failCause(
+				Cause.fromReasons([...missingWorkDefects, ...cleanup.cause.reasons])
+			);
+		})
 	);
-	if (Exit.isSuccess(outcome)) return outcome.value;
-	const defects = outcome.cause.reasons.filter(Cause.isDieReason);
-	if (
-		!Cause.hasInterrupts(outcome.cause) &&
-		defects.length > 0 &&
-		defects.every((reason) => reason.defect instanceof WorldRestorationFailure)
-	)
-		return yield* failure(
-			"restoration_failed",
-			"scope",
-			"The owned world lease could not restore editor state.",
-			undefined,
-			outcome.cause
-		);
-	return yield* Effect.failCause(outcome.cause);
 });

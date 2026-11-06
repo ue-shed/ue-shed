@@ -43,6 +43,7 @@ for (const path of controls) {
 		bundle: relative(process.cwd(), resolve(path)).replaceAll("\\", "/"),
 		cases: value.samples.length,
 		passed: true,
+		workload: (await read(resolve(path, "expected.json"))).workload,
 		samples: value.samples
 	});
 }
@@ -155,6 +156,7 @@ await writeFile(
 			conformance: {
 				passed: true,
 				cases: parity.samples.length,
+				workload: original.workload,
 				samples: parity.samples,
 				corpusFingerprint: await read(resolve(root, `expected-${fingerprintIndex}.json`))
 			},
@@ -173,7 +175,11 @@ await writeFile(
 					),
 					configuredSkips: gateText
 						.split(/\r?\n/u)
-						.filter((line) => line.trimStart().startsWith("SKIP "))
+						.filter((line) => line.trimStart().startsWith("SKIP ")),
+					ignoredOrSkippedTests: gateText
+						.split(/\r?\n/u)
+						.filter((line) => /\.\.\. ignored\b/u.test(line) || line.includes("↓"))
+						.map((line) => line.replace(/(\.\.\. ignored).*/u, "$1"))
 				}
 			},
 			provenance: {

@@ -93,6 +93,10 @@ should follow [Website and illustrated guides](engineering/website.md).
 
 ## Research
 
+- [Complete retained Game Text in Bun SQLite (2026-11-06)](research/sqlite-full-evidence-pilot-2026-11-06.md) —
+  full-size evidence retention, 1,066 complete query comparisons, generation recovery, repeated
+  direct Bun/Rust measurements and the full local gate, with remaining product scope explicit.
+
 - [SQLite query-engine spike (2026-11-06)](research/sqlite-query-engine-spike-2026-11-06.md) —
   Rust/SQLite, direct Node/Bun, production-frame costs, projection and SQL aggregate controls,
   independent consumer reads, and explicit limits of the retained-fact comparison.

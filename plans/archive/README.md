@@ -4,6 +4,11 @@ Completed implementation plans. Kept as execution history (intent, STOP conditio
 paths). They are not living guidance — prefer product docs, ADRs, and active plans under
 [`../`](../README.md).
 
+- [Complete retained Game Text queries in Bun SQLite](065-sqlite-retained-query-pilot.md) — DONE;
+  every-record fidelity, 1,066 query comparisons, complete-generation recovery, full-size repeated
+  Bun/Rust measurements and the full local gate. Retained-read research, with remaining product
+  capabilities disclosed; no backend migration.
+
 - [SQLite query-engine spike](064-sqlite-query-engine-spike.md) — DONE; isolated Rust/SQLite,
   direct Node/Bun, production-frame costs, projection/SQL controls, independent reads and lifecycle
   evidence. This is query research, not a production backend migration.

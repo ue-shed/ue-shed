@@ -23,17 +23,19 @@ td,th{text-align:right;padding:8px 4px;border-bottom:1px solid var(--border)}td:
 summary{cursor:pointer;margin:14px 0}button{font:inherit}details{margin-top:12px}
 </style></head><body>
 <p><strong>583,507 localization lines · 583,798 units · 10 cultures.</strong> Complete response payloads from the shipping Rust host and direct Bun SQLite. Lower latency is better.</p>
-<div class="controls"><label>Show <select id="group"><option value="representative">Representative operations</option><option value="rows">Pages and continuation</option><option value="search">Search, facets and groups</option><option value="bulk">Bulk reads and aggregate</option></select></label></div>
+<div class="controls"><label>Show <select id="group"><option value="representative">Representative operations</option><option value="rows">Pages and continuation</option><option value="search">Search, counts and groups</option><option value="bulk">Bulk reads and aggregate</option></select></label></div>
 <div class="legend"><span><i class="key rust"></i>Rust public host</span><span><i class="key bun"></i>Bun SQLite</span><span>Median milliseconds · logarithmic axis</span></div>
 <svg id="plot" viewBox="0 0 720 365" role="img" aria-label="Query latency comparison"></svg>
 <p class="note">${evidence.measurements.methodology.independentProcessesPerLane * evidence.measurements.methodology.repetitions} timed observations per operation and path: ${evidence.measurements.methodology.independentProcessesPerLane} fresh processes × ${evidence.measurements.methodology.repetitions} repetitions, after one checked warmup per case. Whiskers show the observed minimum and maximum. OS caches were not flushed. Each timed answer matched its native expected hash.</p>
 <p class="note">These are complete application paths. Rust includes its current TypeScript response decoding; Bun hydrates sealed relational records. Common native preparation is outside the comparison. The SQLite pilot covers retained reads, with product capabilities still missing.</p>
 <details><summary>All ${evidence.measurements.summary.length / 2} measured operations and ranges</summary><table><thead><tr><th>Operation</th><th>Rust ms<br>median [min–max]</th><th>Bun ms<br>median [min–max]</th></tr></thead><tbody id="all"></tbody></table></details>
 <script>
+// System-color fallbacks keep the saved file usable outside the themed thread.
+for(const [name,value] of Object.entries({'--foreground':'CanvasText','--secondary':'ButtonFace','--border':'GrayText','--chart-1':'LinkText','--chart-2':'VisitedText','--muted-foreground':'GrayText'}))if(!getComputedStyle(document.documentElement).getPropertyValue(name).trim())document.documentElement.style.setProperty(name,value);
 const data=${data};
 const names=[...new Set(data.map(x=>x.name))];
 const representative=['source/rows/first50','target/rows/first50','target/search/first50','target/rows/first5000','target/search/selective-text','target/all-fields-picked-1000','target/identity-source','aggregate/culture+state'];
-const labels={'source/rows/first50':'Source page · 50','target/rows/first50':'Target page · 50','target/search/first50':'Target page + facets · 50','target/rows/first5000':'Target page · 5,000','target/search/selective-text':'Selective target search','target/all-fields-picked-1000':'All fields · 1,000 lines','target/identity-source':'Identity/source · all lines','aggregate/culture+state':'Culture × state aggregate'};
+const labels={'source/rows/first50':'Source page · 50','target/rows/first50':'Target page · 50','target/search/first50':'Target page + counts · 50','target/rows/first5000':'Target page · 5,000','target/search/selective-text':'Selective target search','target/all-fields-picked-1000':'All fields · 1,000 lines','target/identity-source':'Identity/source · all lines','aggregate/culture+state':'Culture × state aggregate'};
 const fmt=n=>n<1?n.toFixed(2):n<100?n.toFixed(1):Math.round(n).toLocaleString();
 const svg=document.getElementById('plot'),ns='http://www.w3.org/2000/svg';
 function add(tag,attrs,text){const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,v);if(text!==undefined)el.textContent=text;svg.append(el);return el}
@@ -46,7 +48,7 @@ function draw(){
  const width=svg.clientWidth;svg.setAttribute('viewBox','0 0 '+width+' 365');
  const left=Math.min(240,width*.48),right=width-24,top=20,step=310/rows.length,x=n=>left+(Math.log10(Math.max(.001,n))-lo)/(hi-lo||1)*(right-left);
  svg.replaceChildren();
- for(let p=lo;p<=hi;p++){const at=x(10**p);add('line',{x1:at,x2:at,y1:8,y2:330,stroke:'var(--border)'});add('text',{x:at,y:353,'text-anchor':'middle',class:'axis'},fmt(10**p));}
+ for(let p=lo;p<=hi;p++){const at=x(10**p);add('line',{x1:at,x2:at,y1:8,y2:330,stroke:'var(--border)'});add('text',{x:at,y:353,'text-anchor':'middle',class:'axis'},p>=3?(10**(p-3))+'k':fmt(10**p));}
  rows.forEach((r,i)=>{const y=top+i*step+step/2,label=labels[r.name]||r.name.replace('source/','S · ').replace('target/','T · '),limit=Math.floor((left-12)/6);add('text',{x:0,y:y+4},label.length>limit?label.slice(0,limit-1)+'…':label);
  for(const [lane,dy,color] of [['rust',-4,'var(--chart-1)'],['bun',4,'var(--chart-2)']]){const d=r[lane];add('line',{x1:x(d.minMs),x2:x(d.maxMs),y1:y+dy,y2:y+dy,stroke:color,'stroke-width':2});const dot=add('circle',{cx:x(d.medianMs),cy:y+dy,r:4,fill:color});const title=document.createElementNS(ns,'title');title.textContent=lane+': '+fmt(d.medianMs)+' ms ['+fmt(d.minMs)+'–'+fmt(d.maxMs)+'], n='+d.n;dot.append(title);}
  });

@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>Complete retained Game Text: Bun SQLite and Rust</title>
+		<style>
+			:root {
+				font-family: var(--font-sans, system-ui);
+				color: var(--foreground);
+				font-size: 14px;
+			}
+			html,
+			body {
+				margin: 0;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			p {
+				line-height: 1.5;
+				margin: 0 0 14px;
+			}
+			.controls {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				flex-wrap: wrap;
+				margin-bottom: 12px;
+			}
+			select {
+				font: inherit;
+				color: var(--foreground);
+				background: var(--secondary);
+				border: 1px solid var(--border);
+				border-radius: var(--radius, 6px);
+				padding: 6px;
+			}
+			.legend {
+				display: flex;
+				gap: 16px;
+				flex-wrap: wrap;
+				font-size: 12px;
+			}
+			.key {
+				display: inline-block;
+				width: 9px;
+				height: 9px;
+				border-radius: 50%;
+				margin-right: 5px;
+			}
+			.rust {
+				background: var(--chart-1);
+			}
+			.bun {
+				background: var(--chart-2);
+			}
+			svg {
+				display: block;
+				width: 100%;
+				height: 365px;
+				overflow: visible;
+			}
+			svg text {
+				font-family: var(--font-sans, system-ui);
+				fill: var(--foreground);
+				font-size: 12px;
+			}
+			.axis {
+				fill: var(--muted-foreground);
+			}
+			.note {
+				font-size: 12px;
+				color: var(--muted-foreground);
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				font-variant-numeric: tabular-nums;
+				font-size: 12px;
+			}
+			td,
+			th {
+				text-align: right;
+				padding: 8px 4px;
+				border-bottom: 1px solid var(--border);
+			}
+			td:first-child,
+			th:first-child {
+				text-align: left;
+				overflow-wrap: anywhere;
+			}
+			summary {
+				cursor: pointer;
+				margin: 14px 0;
+			}
+			button {
+				font: inherit;
+			}
+			details {
+				margin-top: 12px;
+			}
+		</style>
+	</head>
+	<body>
+		<p>
+			<strong>583,507 localization lines · 583,798 units · 10 cultures.</strong> Complete
+			response payloads from the shipping Rust host and direct Bun SQLite. Lower latency is
+			better.
+		</p>
+		<div class="controls">
+			<label
+				>Show
+				<select id="group">
+					<option value="representative">Representative operations</option>
+					<option value="rows">Pages and continuation</option>
+					<option value="search">Search, counts and groups</option>
+					<option value="bulk">Bulk reads and aggregate</option>
+				</select></label
+			>
+		</div>
+		<div class="legend">
+			<span><i class="key rust"></i>Rust public host</span
+			><span><i class="key bun"></i>Bun SQLite</span
+			><span>Median milliseconds · logarithmic axis</span>
+		</div>
+		<svg id="plot" viewBox="0 0 720 365" role="img" aria-label="Query latency comparison"></svg>
+		<p class="note">
+			9 timed observations per operation and path: 3 fresh processes × 3 repetitions, after
+			one checked warmup per case. Whiskers show the observed minimum and maximum. OS caches
+			were not flushed. Each timed answer matched its native expected hash.
+		</p>
+		<p class="note">
+			These are complete application paths. Rust includes its current TypeScript response
+			decoding; Bun hydrates sealed relational records. Common native preparation is outside
+			the comparison. The SQLite pilot covers retained reads, with product capabilities still
+			missing.
+		</p>
+		<details>
+			<summary>All 27 measured operations and ranges</summary>
+			<table>
+				<thead>
+					<tr>
+						<th>Operation</th>
+						<th>Rust ms<br />median [min–max]</th>
+						<th>Bun ms<br />median [min–max]</th>
+					</tr>
+				</thead>
+				<tbody id="all"></tbody>
+			</table>
+		</details>
+		<script>
+			// System-color fallbacks keep the saved file usable outside the themed thread.
+			for (const [name, value] of Object.entries({
+				"--foreground": "CanvasText",
+				"--secondary": "ButtonFace",
+				"--border": "GrayText",
+				"--chart-1": "LinkText",
+				"--chart-2": "VisitedText",
+				"--muted-foreground": "GrayText"
+			}))
+				if (!getComputedStyle(document.documentElement).getPropertyValue(name).trim())
+					document.documentElement.style.setProperty(name, value);
+			const data = [
+				{
+					name: "source/rows/first50",
+					lane: "rust",
+					n: 9,
+					medianMs: 4.0843000000022585,
+					minMs: 3.801900000005844,
+					maxMs: 5.5396999999939,
+					medianCallbackGapMs: 4.087400000003981
+				},
+				{
+					name: "source/rows/first50",
+					lane: "bun",
+					n: 9,
+					medianMs: 2.353300000017043,
+					minMs: 2.1603999999933876,
+					maxMs: 3.952899999974761,
+					medianCallbackGapMs: 2.354300000006333
+				},
+				{
+					name: "source/search/first50",
+					lane: "rust",
+					n: 9,
+					medianMs: 17.49409999999625,
+					minMs: 14.115399999995134,
+					maxMs: 19.244800000000396,
+					medianCallbackGapMs: 15.31359999999404
+				},
+				{
+					name: "source/search/first50",
+					lane: "bun",
+					n: 9,
+					medianMs: 748.3485000000801,
+					minMs: 716.1615000000456,
+					maxMs: 1231.0587999999989,
+					medianCallbackGapMs: 748.3413000000874
+				},
+				{
+					name: "source/rows/first5000",
+					lane: "rust",
+					n: 9,
+					medianMs: 137.79579999999987,
+					minMs: 129.2300000000032,
+					maxMs: 170.7795000000042,
+					medianCallbackGapMs: 57.55909999999858
+				},
+				{
+					name: "source/rows/first5000",
+					lane: "bun",
+					n: 9,
+					medianMs: 94.4309999999823,
+					minMs: 87.18349999998463,
+					maxMs: 155.41180000000168,
+					medianCallbackGapMs: 94.42600000003586
+				},
+				{
+					name: "source/search/first5000",
+					lane: "rust",
+					n: 9,
+					medianMs: 146.1684000000023,
+					minMs: 137.5405000000028,
+					maxMs: 177.1881999999896,
+					medianCallbackGapMs: 50.70150000000285
+				},
+				{
+					name: "source/search/first5000",
+					lane: "bun",
+					n: 9,
+					medianMs: 810.6032999999588,
+					minMs: 788.5388000000094,
+					maxMs: 1416.357799999998,
+					medianCallbackGapMs: 810.6027999999933
+				},
+				{
+					name: "source/rows/dense-text",
+					lane: "rust",
+					n: 9,
+					medianMs: 3.82209999999759,
+					minMs: 3.6634999999987485,
+					maxMs: 7.2018000000098255,
+					medianCallbackGapMs: 3.8383000000030734
+				},
+				{
+					name: "source/rows/dense-text",
+					lane: "bun",
+					n: 9,
+					medianMs: 1.6240000000107102,
+					minMs: 1.2593999999808148,
+					maxMs: 2.8211000000010245,
+					medianCallbackGapMs: 1.6270999999833293
+				},
+				{
+					name: "source/search/dense-text",
+					lane: "rust",
+					n: 9,
+					medianMs: 13.858699999997043,
+					minMs: 12.507400000002235,
+					maxMs: 22.148800000009942,
+					medianCallbackGapMs: 13.31260000000475
+				},
+				{
+					name: "source/search/dense-text",
+					lane: "bun",
+					n: 9,
+					medianMs: 1071.4691000000457,
+					minMs: 1056.6152999999467,
+					maxMs: 2029.6079000000027,
+					medianCallbackGapMs: 1071.4627000000328
+				},
+				{
+					name: "source/rows/selective-text",
+					lane: "rust",
+					n: 9,
+					medianMs: 2.6818999999995867,
+					minMs: 2.4277000000001863,
+					maxMs: 3.571299999995972,
+					medianCallbackGapMs: 2.6912999999985914
+				},
+				{
+					name: "source/rows/selective-text",
+					lane: "bun",
+					n: 9,
+					medianMs: 31.550600000016857,
+					minMs: 31.303599999984726,
+					maxMs: 70.0688000000082,
+					medianCallbackGapMs: 31.548800000047777
+				},
+				{
+					name: "source/search/selective-text",
+					lane: "rust",
+					n: 9,
+					medianMs: 5.370699999999488,
+					minMs: 4.808199999999488,
+					maxMs: 7.186099999991711,
+					medianCallbackGapMs: 5.354400000003807
+				},
+				{
+					name: "source/search/selective-text",
+					lane: "bun",
+					n: 9,
+					medianMs: 21.520799999998417,
+					minMs: 20.249099999986356,
+					maxMs: 48.271999999997206,
+					medianCallbackGapMs: 21.520599999988917
+				},
+				{
+					name: "source/group/namespace",
+					lane: "rust",
+					n: 9,
+					medianMs: 49.03879999999481,
+					minMs: 44.25639999999839,
+					maxMs: 67.61359999999695,
+					medianCallbackGapMs: 18.215100000001257
+				},
+				{
+					name: "source/group/namespace",
+					lane: "bun",
+					n: 9,
+					medianMs: 2490.830100000021,
+					minMs: 2442.239100000006,
+					maxMs: 4948.692500000005,
+					medianCallbackGapMs: 2490.8276000000187
+				},
+				{
+					name: "source/rows/continuation",
+					lane: "rust",
+					n: 9,
+					medianMs: 4.083300000005693,
+					minMs: 3.3038000000087777,
+					maxMs: 6.150200000003679,
+					medianCallbackGapMs: 4.0887000000002445
+				},
+				{
+					name: "source/rows/continuation",
+					lane: "bun",
+					n: 9,
+					medianMs: 2.0446999999985565,
+					minMs: 1.8300999999628402,
+					maxMs: 5.110500000009779,
+					medianCallbackGapMs: 2.04670000000624
+				},
+				{
+					name: "source/search/continuation",
+					lane: "rust",
+					n: 9,
+					medianMs: 13.387399999999616,
+					minMs: 12.423699999999371,
+					maxMs: 19.372099999993225,
+					medianCallbackGapMs: 12.42819999999847
+				},
+				{
+					name: "source/search/continuation",
+					lane: "bun",
+					n: 9,
+					medianMs: 737.1448999999557,
+					minMs: 729.6050000000105,
+					maxMs: 1479.7789999999804,
+					medianCallbackGapMs: 737.1416000000318
+				},
+				{
+					name: "target/rows/first50",
+					lane: "rust",
+					n: 9,
+					medianMs: 13.16710000000603,
+					minMs: 12.227500000000873,
+					maxMs: 20.332299999994575,
+					medianCallbackGapMs: 10.130000000004657
+				},
+				{
+					name: "target/rows/first50",
+					lane: "bun",
+					n: 9,
+					medianMs: 14.890300000028219,
+					minMs: 14.269599999999627,
+					maxMs: 32.803500000038184,
+					medianCallbackGapMs: 14.892500000016298
+				},
+				{
+					name: "target/search/first50",
+					lane: "rust",
+					n: 9,
+					medianMs: 66.46839999999793,
+					minMs: 61.77209999999468,
+					maxMs: 73.19749999999476,
+					medianCallbackGapMs: 15.820800000001327
+				},
+				{
+					name: "target/search/first50",
+					lane: "bun",
+					n: 9,
+					medianMs: 20480.358399999997,
+					minMs: 20196.209600000002,
+					maxMs: 38471.85979999998,
+					medianCallbackGapMs: 20480.348700000002
+				},
+				{
+					name: "target/rows/first5000",
+					lane: "rust",
+					n: 9,
+					medianMs: 1160.321100000001,
+					minMs: 1135.153600000005,
+					maxMs: 1209.6561000000002,
+					medianCallbackGapMs: 380.0253999999986
+				},
+				{
+					name: "target/rows/first5000",
+					lane: "bun",
+					n: 9,
+					medianMs: 1380.3746999999858,
+					minMs: 1231.842399999965,
+					maxMs: 1631.1639999999898,
+					medianCallbackGapMs: 1380.3716999999888
+				},
+				{
+					name: "target/search/first5000",
+					lane: "rust",
+					n: 9,
+					medianMs: 1193.6134999999922,
+					minMs: 1178.1778999999951,
+					maxMs: 1270.0612000000037,
+					medianCallbackGapMs: 353.9170999999915
+				},
+				{
+					name: "target/search/first5000",
+					lane: "bun",
+					n: 9,
+					medianMs: 21891.840200000035,
+					minMs: 21505.22370000003,
+					maxMs: 22662.505999999994,
+					medianCallbackGapMs: 21891.85190000001
+				},
+				{
+					name: "target/rows/dense-text",
+					lane: "rust",
+					n: 9,
+					medianMs: 18.547999999995227,
+					minMs: 17.934899999992922,
+					maxMs: 24.513700000003155,
+					medianCallbackGapMs: 14.72149999999965
+				},
+				{
+					name: "target/rows/dense-text",
+					lane: "bun",
+					n: 9,
+					medianMs: 15.092699999979232,
+					minMs: 12.718100000056438,
+					maxMs: 33.05810000002384,
+					medianCallbackGapMs: 15.102000000013504
+				},
+				{
+					name: "target/search/dense-text",
+					lane: "rust",
+					n: 9,
+					medianMs: 62.46570000000065,
+					minMs: 61.22799999998824,
+					maxMs: 76.52130000000034,
+					medianCallbackGapMs: 15.835999999995693
+				},
+				{
+					name: "target/search/dense-text",
+					lane: "bun",
+					n: 9,
+					medianMs: 21173.618399999978,
+					minMs: 20656.53090000007,
+					maxMs: 24811.84639999998,
+					medianCallbackGapMs: 21173.615300000005
+				},
+				{
+					name: "target/rows/selective-text",
+					lane: "rust",
+					n: 9,
+					medianMs: 13.619600000005448,
+					minMs: 11.616600000001199,
+					maxMs: 18.62659999999596,
+					medianCallbackGapMs: 10.972499999996217
+				},
+				{
+					name: "target/rows/selective-text",
+					lane: "bun",
+					n: 9,
+					medianMs: 50.70460000005551,
+					minMs: 50.07469999999739,
+					maxMs: 82.3238999999885,
+					medianCallbackGapMs: 50.70619999995688
+				},
+				{
+					name: "target/search/selective-text",
+					lane: "rust",
+					n: 9,
+					medianMs: 15.243999999991502,
+					minMs: 13.457099999999627,
+					maxMs: 21.98059999999532,
+					medianCallbackGapMs: 10.322800000001735
+				},
+				{
+					name: "target/search/selective-text",
+					lane: "bun",
+					n: 9,
+					medianMs: 140.1064999999944,
+					minMs: 127.79830000002403,
+					maxMs: 216.60719999999856,
+					medianCallbackGapMs: 140.10389999998733
+				},
+				{
+					name: "target/group/namespace",
+					lane: "rust",
+					n: 9,
+					medianMs: 83.8747999999905,
+					minMs: 79.7152999999962,
+					maxMs: 107.33179999999993,
+					medianCallbackGapMs: 19.770400000001246
+				},
+				{
+					name: "target/group/namespace",
+					lane: "bun",
+					n: 9,
+					medianMs: 25861.304600000003,
+					minMs: 25300.146400000027,
+					maxMs: 31229.550600000075,
+					medianCallbackGapMs: 25861.303799999994
+				},
+				{
+					name: "target/rows/continuation",
+					lane: "rust",
+					n: 9,
+					medianMs: 12.59100000000035,
+					minMs: 12.018599999995786,
+					maxMs: 17.86830000000191,
+					medianCallbackGapMs: 12.033299999995506
+				},
+				{
+					name: "target/rows/continuation",
+					lane: "bun",
+					n: 9,
+					medianMs: 13.771299999963958,
+					minMs: 13.313800000003539,
+					maxMs: 19.820300000021234,
+					medianCallbackGapMs: 13.772900000039954
+				},
+				{
+					name: "target/search/continuation",
+					lane: "rust",
+					n: 9,
+					medianMs: 62.75149999999849,
+					minMs: 60.8411000000051,
+					maxMs: 72.12329999999929,
+					medianCallbackGapMs: 17.346300000004703
+				},
+				{
+					name: "target/search/continuation",
+					lane: "bun",
+					n: 9,
+					medianMs: 20518.450500000006,
+					minMs: 20164.575300000026,
+					maxMs: 22794.677200000035,
+					medianCallbackGapMs: 20518.44649999999
+				},
+				{
+					name: "target/culture/de",
+					lane: "rust",
+					n: 9,
+					medianMs: 51.80540000000474,
+					minMs: 50.37700000000041,
+					maxMs: 54.713199999998324,
+					medianCallbackGapMs: 16.20640000000276
+				},
+				{
+					name: "target/culture/de",
+					lane: "bun",
+					n: 9,
+					medianMs: 14504.234399999958,
+					minMs: 14287.596499999985,
+					maxMs: 19734.506200000003,
+					medianCallbackGapMs: 14504.232300000032
+				},
+				{
+					name: "target/translations/de",
+					lane: "rust",
+					n: 9,
+					medianMs: 21.544999999998254,
+					minMs: 20.5425000000032,
+					maxMs: 24.461200000005192,
+					medianCallbackGapMs: 17.491900000000896
+				},
+				{
+					name: "target/translations/de",
+					lane: "bun",
+					n: 9,
+					medianMs: 7889.083800000022,
+					minMs: 7714.214199999988,
+					maxMs: 11276.378999999957,
+					medianCallbackGapMs: 7889.079700000002
+				},
+				{
+					name: "target/all-fields-picked-1000",
+					lane: "rust",
+					n: 9,
+					medianMs: 577.9032000000007,
+					minMs: 568.1903999999995,
+					maxMs: 630.1166999999987,
+					medianCallbackGapMs: 147.32649999999558
+				},
+				{
+					name: "target/all-fields-picked-1000",
+					lane: "bun",
+					n: 9,
+					medianMs: 229.38079999998445,
+					minMs: 218.9890000000014,
+					maxMs: 370.3503000000492,
+					medianCallbackGapMs: 229.3794999999809
+				},
+				{
+					name: "target/identity-source",
+					lane: "rust",
+					n: 9,
+					medianMs: 19544.124800000005,
+					minMs: 19353.008099999992,
+					maxMs: 24147.739499999996,
+					medianCallbackGapMs: 926.2813000000024
+				},
+				{
+					name: "target/identity-source",
+					lane: "bun",
+					n: 9,
+					medianMs: 5259.597499999974,
+					minMs: 5149.455699999991,
+					maxMs: 7810.725800000015,
+					medianCallbackGapMs: 5259.608800000045
+				},
+				{
+					name: "aggregate/culture+state",
+					lane: "rust",
+					n: 9,
+					medianMs: 466.8429000000033,
+					minMs: 452.2806999999957,
+					maxMs: 480.6875,
+					medianCallbackGapMs: 27.631600000000617
+				},
+				{
+					name: "aggregate/culture+state",
+					lane: "bun",
+					n: 9,
+					medianMs: 5350.524100000039,
+					minMs: 5285.9991000000155,
+					maxMs: 9141.350099999981,
+					medianCallbackGapMs: 5350.530199999979
+				}
+			];
+			const names = [...new Set(data.map((x) => x.name))];
+			const representative = [
+				"source/rows/first50",
+				"target/rows/first50",
+				"target/search/first50",
+				"target/rows/first5000",
+				"target/search/selective-text",
+				"target/all-fields-picked-1000",
+				"target/identity-source",
+				"aggregate/culture+state"
+			];
+			const labels = {
+				"source/rows/first50": "Source page · 50",
+				"target/rows/first50": "Target page · 50",
+				"target/search/first50": "Target page + counts · 50",
+				"target/rows/first5000": "Target page · 5,000",
+				"target/search/selective-text": "Selective target search",
+				"target/all-fields-picked-1000": "All fields · 1,000 lines",
+				"target/identity-source": "Identity/source · all lines",
+				"aggregate/culture+state": "Culture × state aggregate"
+			};
+			const fmt = (n) =>
+				n < 1 ? n.toFixed(2) : n < 100 ? n.toFixed(1) : Math.round(n).toLocaleString();
+			const svg = document.getElementById("plot"),
+				ns = "http://www.w3.org/2000/svg";
+			function add(tag, attrs, text) {
+				const el = document.createElementNS(ns, tag);
+				for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+				if (text !== undefined) el.textContent = text;
+				svg.append(el);
+				return el;
+			}
+			function draw() {
+				const group = document.getElementById("group").value;
+				const shown = names.filter((n) =>
+					group === "representative"
+						? representative.includes(n)
+						: group === "rows"
+							? n.includes("/rows/")
+							: group === "search"
+								? n.includes("/search/") ||
+									n.includes("/group/") ||
+									n.includes("/culture/") ||
+									n.includes("/translations/")
+								: n.startsWith("aggregate/") ||
+									n.includes("fields") ||
+									n.includes("identity-source")
+				);
+				const rows = shown.map((n) => ({
+					name: n,
+					rust: data.find((x) => x.name === n && x.lane === "rust"),
+					bun: data.find((x) => x.name === n && x.lane === "bun")
+				}));
+				const values = rows.flatMap((r) => [
+					r.rust.minMs,
+					r.rust.maxMs,
+					r.bun.minMs,
+					r.bun.maxMs
+				]);
+				const lo = Math.floor(Math.log10(Math.max(0.001, Math.min(...values)))),
+					hi = Math.ceil(Math.log10(Math.max(...values)));
+				const width = svg.clientWidth;
+				svg.setAttribute("viewBox", "0 0 " + width + " 365");
+				const left = Math.min(240, width * 0.48),
+					right = width - 24,
+					top = 20,
+					step = 310 / rows.length,
+					x = (n) =>
+						left +
+						((Math.log10(Math.max(0.001, n)) - lo) / (hi - lo || 1)) * (right - left);
+				svg.replaceChildren();
+				for (let p = lo; p <= hi; p++) {
+					const at = x(10 ** p);
+					add("line", { x1: at, x2: at, y1: 8, y2: 330, stroke: "var(--border)" });
+					add(
+						"text",
+						{ x: at, y: 353, "text-anchor": "middle", class: "axis" },
+						p >= 3 ? 10 ** (p - 3) + "k" : fmt(10 ** p)
+					);
+				}
+				rows.forEach((r, i) => {
+					const y = top + i * step + step / 2,
+						label =
+							labels[r.name] ||
+							r.name.replace("source/", "S · ").replace("target/", "T · "),
+						limit = Math.floor((left - 12) / 6);
+					add(
+						"text",
+						{ x: 0, y: y + 4 },
+						label.length > limit ? label.slice(0, limit - 1) + "…" : label
+					);
+					for (const [lane, dy, color] of [
+						["rust", -4, "var(--chart-1)"],
+						["bun", 4, "var(--chart-2)"]
+					]) {
+						const d = r[lane];
+						add("line", {
+							x1: x(d.minMs),
+							x2: x(d.maxMs),
+							y1: y + dy,
+							y2: y + dy,
+							stroke: color,
+							"stroke-width": 2
+						});
+						const dot = add("circle", {
+							cx: x(d.medianMs),
+							cy: y + dy,
+							r: 4,
+							fill: color
+						});
+						const title = document.createElementNS(ns, "title");
+						title.textContent =
+							lane +
+							": " +
+							fmt(d.medianMs) +
+							" ms [" +
+							fmt(d.minMs) +
+							"–" +
+							fmt(d.maxMs) +
+							"], n=" +
+							d.n;
+						dot.append(title);
+					}
+				});
+			}
+			for (const name of names) {
+				const tr = document.createElement("tr");
+				for (const text of [
+					name,
+					...["rust", "bun"].map((l) => {
+						const d = data.find((x) => x.name === name && x.lane === l);
+						return fmt(d.medianMs) + " [" + fmt(d.minMs) + "–" + fmt(d.maxMs) + "]";
+					})
+				]) {
+					const td = document.createElement("td");
+					td.textContent = text;
+					tr.append(td);
+				}
+				document.getElementById("all").append(tr);
+			}
+			document.getElementById("group").addEventListener("change", draw);
+			draw();
+			window.addEventListener("resize", draw);
+		</script>
+	</body>
+</html>

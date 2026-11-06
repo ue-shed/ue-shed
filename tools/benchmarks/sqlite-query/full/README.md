@@ -1,6 +1,6 @@
 # Full-evidence Bun SQLite pilot
 
-[Plan 065](../../../../plans/065-sqlite-retained-query-pilot.md). Direct `bun:sqlite` against the
+[Plan 065](../../../../plans/archive/065-sqlite-retained-query-pilot.md). Direct `bun:sqlite` against the
 shipping Rust reader through its public TypeScript host. The Node SQLite and SQLite process
 adapters are excluded. Node still runs the production Rust host.
 
@@ -20,6 +20,10 @@ $env:RUSTUP_TOOLCHAIN = "1.98.1"
 $env:CARGO_TARGET_DIR = "$PWD/target"
 $env:CARGO_BUILD_JOBS = "8"
 cargo build --locked --release -p uasset-io
+
+# Record the shipping reader before any diagnostic patch/build.
+New-Item -ItemType Directory -Force test-results/sqlite-spike/bin | Out-Null
+Copy-Item target/release/uasset.exe test-results/sqlite-spike/bin/uasset-baseline.exe
 
 node --max-old-space-size=16384 --import tsx tools/benchmarks/sqlite-query/full/prepare.ts test-results/pilot-source 1
 node --max-old-space-size=8192 --import tsx tools/benchmarks/sqlite-query/full/retain.ts test-results/pilot-source test-results/pilot
@@ -101,6 +105,8 @@ claim equivalent incremental package-update cost.
   existing public host, including its current response decoding; Bun reconstructs sealed records.
   Native host decode stages are recorded. These are application paths, not isolated engine or
   binding measurements, and latency differences cannot be attributed solely to storage.
+  Setup starts after shared harness input loads; working-set peaks include inputs/results and
+  file-backed/shared pages, rather than private engine storage alone.
 - Three fresh processes per lane, one correctness-checked warmup per case/process, three timed
   repetitions, rotated case/lane order. Hashing is outside timers. Process-tree RSS is sampled
   every 1.5 seconds; query runs stop above 8 GiB or 20 minutes. Callback gaps include synchronous
@@ -116,7 +122,8 @@ bun tools/benchmarks/sqlite-query/full/visualize.ts docs/research/pilot.json doc
 ```
 
 Capture requires the successful `pnpm check` exit code in `pilot-check-exit.txt` beside that log,
-and the baseline binary at the path documented in the parent experiment. It verifies timing
+and the separately recorded baseline at `test-results/sqlite-spike/bin/uasset-baseline.exe`.
+It verifies timing
 hashes, record/query controls, complete-generation lifecycle checks, Python's full-line read and
 the shipping reader's binary hash. It records exact source hashes so a dirty measured revision
 cannot be mistaken for the initial spike commit.

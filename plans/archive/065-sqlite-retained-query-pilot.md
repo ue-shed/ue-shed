@@ -1,8 +1,8 @@
 # 065 — Complete retained Game Text queries in Bun SQLite
 
-Status: IN PROGRESS
+Status: DONE — bounded retained-query pilot; no production backend migration.
 
-Continue the bounded [spike](archive/064-sqlite-query-engine-spike.md) on
+Continue the bounded [spike](064-sqlite-query-engine-spike.md) on
 `research/sqlite-query-engine`. Compare direct Bun SQLite with the shipping Rust reader only.
 
 ## Scope and acceptance
@@ -26,6 +26,14 @@ Continue the bounded [spike](archive/064-sqlite-query-engine-spike.md) on
 ## Execution
 
 1. Initial spike committed as `b5c2f4af`.
-2. Full local `pnpm check` started with the installed Rust 1.98.1 toolchain.
-3. Implement and verify the Bun retained-query store and conformance workload.
-4. Measure in isolated fresh processes, document results, and commit.
+2. Full-evidence implementation committed as `7c985ed8`; progress logging as `e09dd8ba`.
+   The independent page-bound fix is `186627f1`.
+3. All 583,798 units and 583,507 raw lines retained; complete record/view/preview parity and
+   corpus fingerprint passed. Full-size 268 cases plus 798 small/before/after cases matched.
+   Complete-generation commit, pinning, rollback and recovery with spilled WAL passed.
+4. Six fresh timing processes completed: 486 timed answers and 162 warmups matched. Full local
+   `pnpm check`, final precommit and prototype checks passed, with configured integration/native
+   skips disclosed in the evidence. No fresh Unreal matrix or hosted CI run was claimed.
+5. [Report and portable evidence](../../docs/research/sqlite-full-evidence-pilot-2026-11-06.md)
+   record the results, reproducible commands, failures/restarts and unimplemented product APIs.
+   Keep Rust in production while the SQL count model and missing capabilities are investigated.

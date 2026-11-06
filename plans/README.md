@@ -8,8 +8,6 @@ the status row when done.
 
 ## Active
 
-- [065 — Complete retained Game Text queries in Bun SQLite](065-sqlite-retained-query-pilot.md) — IN PROGRESS.
-
 | Plan                                                     | Title                                                                      | Priority | Effort | Depends on                | Status                            |
 | -------------------------------------------------------- | -------------------------------------------------------------------------- | -------- | ------ | ------------------------- | --------------------------------- |
 | [007](007-conflicts-rich-types-and-views.md)             | Complete conflicts, rich Unreal types, composites, and views               | P1       | XL     | 006, 015                  | IN PROGRESS — demo cutoff         |

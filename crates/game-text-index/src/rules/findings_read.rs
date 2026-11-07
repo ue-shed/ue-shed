@@ -68,30 +68,39 @@ impl EngineQuery {
         let places = std::mem::take(&mut page.places);
         let findings = std::mem::take(&mut page.findings);
         reply.part(javascript_json(&serde_json::to_value(&page)?, false).into_bytes())?;
-        let mut sets = Batches::new(
-            &PLACE,
-            "places",
-            PLACE.select(&["parent", "id", "location", "packageFile"])?,
-        );
-        for set in places {
-            for place in set.occurrences {
-                sets.push_child(set.id, &serde_json::to_value(place)?)?;
-                if sets.full() {
-                    sets.flush(reply)?;
-                }
-            }
-        }
-        sets.finish(reply)?;
-        let mut rows = Batches::new(&FINDING, "findings", FINDING.all());
-        for finding in findings {
-            rows.push(&json!({ "finding": finding }))?;
-            if rows.full() {
-                rows.flush(reply)?;
-            }
-        }
-        rows.finish(reply)?;
-        Ok(())
+        send_findings(places, findings, reply)
     }
+}
+
+/// A page's place sets and findings as batches, the sets first because the findings name them.
+pub(super) fn send_findings(
+    places: Vec<PlaceSet>,
+    findings: Vec<Value>,
+    reply: &mut dyn Reply,
+) -> Result<()> {
+    let mut sets = Batches::new(
+        &PLACE,
+        "places",
+        PLACE.select(&["parent", "id", "location", "packageFile"])?,
+    );
+    for set in places {
+        for place in set.occurrences {
+            sets.push_child(set.id, &serde_json::to_value(place)?)?;
+            if sets.full() {
+                sets.flush(reply)?;
+            }
+        }
+    }
+    sets.finish(reply)?;
+    let mut rows = Batches::new(&FINDING, "findings", FINDING.all());
+    for finding in findings {
+        rows.push(&json!({ "finding": finding }))?;
+        if rows.full() {
+            rows.flush(reply)?;
+        }
+    }
+    rows.finish(reply)?;
+    Ok(())
 }
 
 #[cfg(test)]

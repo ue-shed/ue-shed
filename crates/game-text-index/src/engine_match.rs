@@ -705,15 +705,28 @@ impl EngineQuery {
         }))
     }
 
-    /// An atom's set, from the cache or evaluated over every row.
-    fn atom(&self, key: String, evaluate: impl FnOnce(&Self) -> Result<RowSet>) -> Result<RowSet> {
+    /// An atom's set, from the cache or evaluated over every row. A narrowed scope's atom is
+    /// found in either cache and kept in the narrowed one.
+    fn atom(
+        &self,
+        narrowed: bool,
+        key: String,
+        evaluate: impl FnOnce(&Self) -> Result<RowSet>,
+    ) -> Result<RowSet> {
         if let Some(set) = self.atoms.lock().get(&key) {
+            return Ok(set);
+        }
+        if narrowed && let Some(set) = self.narrowed_atoms.lock().get(&key) {
             return Ok(set);
         }
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchAtom");
         let set = evaluate(self)?;
-        self.atoms.lock().insert(key, set.clone());
+        if narrowed {
+            self.narrowed_atoms.lock().insert(key, set.clone());
+        } else {
+            self.atoms.lock().insert(key, set.clone());
+        }
         Ok(set)
     }
 
@@ -784,6 +797,7 @@ impl EngineQuery {
             // PO text when that is not synced: today's joined-string test, term by term.
             let p = Arc::clone(&projection);
             sets.push(self.atom(
+                selection.narrowed,
                 format!(
                     "line|translated-text|{}|{scope:?}",
                     serde_json::to_string(&lowered)?
@@ -820,6 +834,7 @@ impl EngineQuery {
             let matches = self.source_matches(query, cancelled)?;
             let p = Arc::clone(&projection);
             sets.push(self.atom(
+                selection.narrowed,
                 format!("{relation}|text|{}", serde_json::to_string(&lowered)?),
                 |query| {
                     RowSet::from_fn(len, cancelled, |row| {
@@ -839,16 +854,18 @@ impl EngineQuery {
         // A visible row: a line whose source is visible, and with saved places, one of them is;
         // a unit that is visible.
         let p = Arc::clone(&projection);
-        sets.push(self.atom(format!("{relation}|visible"), |_| {
-            RowSet::from_fn(len, cancelled, |row| {
-                Ok(if localized {
-                    p.source_visible[row] != 0
-                        && (p.starts[row] == p.starts[row + 1] || p.saved_visible[row])
-                } else {
-                    p.raw.visible[row] != 0
+        sets.push(
+            self.atom(selection.narrowed, format!("{relation}|visible"), |_| {
+                RowSet::from_fn(len, cancelled, |row| {
+                    Ok(if localized {
+                        p.source_visible[row] != 0
+                            && (p.starts[row] == p.starts[row + 1] || p.saved_visible[row])
+                    } else {
+                        p.raw.visible[row] != 0
+                    })
                 })
-            })
-        })?);
+            })?,
+        );
         let kind = if localized { Kind::Line } else { Kind::Raw };
         let findings_key = findings
             .as_ref()
@@ -873,7 +890,7 @@ impl EngineQuery {
             );
             let p = Arc::clone(&projection);
             let at = Arc::clone(&places);
-            sets.push(self.atom(key, |query| {
+            sets.push(self.atom(selection.narrowed, key, |query| {
                 let context = Context {
                     query,
                     projection: &p,

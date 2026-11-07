@@ -8,6 +8,9 @@ use std::sync::{Arc, atomic::AtomicBool};
 
 /// The cache's bound on the bytes of the sets it keeps.
 const ATOM_CACHE_BYTES: usize = 64 * 1024 * 1024;
+/// Finding rows' atoms in a scope narrowed to one finding's culture, which the Text tab never
+/// reads (Phase 7 §4): their own budget, so they never evict the Text tab's.
+pub(crate) const NARROWED_ATOM_CACHE_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone)]
 pub(crate) struct RowSet {
@@ -131,14 +134,28 @@ impl RowSet {
 }
 
 /// Atom sets by normalized key, least recently used first out, bounded by their bytes.
-#[derive(Default)]
 pub(crate) struct AtomCache {
     entries: HashMap<String, (RowSet, u64)>,
     clock: u64,
     bytes: usize,
+    budget: usize,
+}
+
+impl Default for AtomCache {
+    fn default() -> Self {
+        Self::with_budget(ATOM_CACHE_BYTES)
+    }
 }
 
 impl AtomCache {
+    pub fn with_budget(budget: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            clock: 0,
+            bytes: 0,
+            budget,
+        }
+    }
     pub fn get(&mut self, key: &str) -> Option<RowSet> {
         self.clock += 1;
         let clock = self.clock;
@@ -149,10 +166,10 @@ impl AtomCache {
     }
 
     pub fn insert(&mut self, key: String, set: RowSet) {
-        if set.bytes() > ATOM_CACHE_BYTES {
+        if set.bytes() > self.budget {
             return;
         }
-        while self.bytes + set.bytes() > ATOM_CACHE_BYTES {
+        while self.bytes + set.bytes() > self.budget {
             let Some(oldest) = self
                 .entries
                 .iter()

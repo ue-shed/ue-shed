@@ -85,6 +85,44 @@ pub struct FacetPart {
     pub under: Option<String>,
 }
 
+/// The rows a selection reads: a target's lines, corpus units without one, or a findings
+/// layer's findings (Phase 7 §4).
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "QueryRows"))]
+#[serde(rename_all = "camelCase")]
+pub enum Rows {
+    Lines,
+    Units,
+    Findings,
+}
+
+/// Which findings finding rows list.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "snake_case")]
+pub enum FindingsView {
+    /// Source and line findings, as the Quality workspace lists them: a source rule's findings
+    /// shadow the line findings they repeat.
+    Workspace,
+    /// Line findings, as `loc check` reports them.
+    Report,
+}
+
+/// The orders finding rows list in.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "snake_case")]
+pub enum FindingsOrder {
+    /// Blocking, normal, then low; within one, source findings, then line findings in report
+    /// order.
+    Severity,
+    Report,
+    Line,
+    /// Source findings in the source report's order.
+    Source,
+}
+
 /// The findings layer a read shows, and the review acceptance whose findings it hides.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(TS))]
@@ -96,6 +134,9 @@ pub struct FindingsSelection {
     /// Only the layer's source rules, as Browse without a target lists them.
     #[cfg_attr(test, ts(optional))]
     pub source_only: Option<bool>,
+    /// Finding rows only: which findings they list.
+    #[cfg_attr(test, ts(optional))]
+    pub view: Option<FindingsView>,
 }
 
 impl FindingsSelection {
@@ -122,12 +163,16 @@ pub struct TextSearch {
     pub translations: Option<bool>,
 }
 
-/// The rows a query reads (Phase 4 §6): a target's lines, or corpus units without one.
+/// The rows a query reads (Phase 4 §6): a target's lines, or corpus units without one, or with
+/// `rows: findings` a findings layer's findings (Phase 7 §4).
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[cfg_attr(test, derive(TS))]
 #[cfg_attr(test, ts(rename = "QuerySelection"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Selection {
+    /// Lines with a target and units without one, unless it names findings.
+    #[cfg_attr(test, ts(optional))]
+    pub rows: Option<Rows>,
     /// The localization target whose lines are the rows.
     #[cfg_attr(test, ts(optional))]
     pub target: Option<String>,
@@ -150,6 +195,14 @@ pub struct Selection {
     #[serde(skip)]
     #[cfg_attr(test, ts(skip))]
     pub dropped: Vec<Field>,
+    /// Units reading a finding's line test: its line-only tests are false.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) lenient: bool,
+    /// A scope narrowed to one finding's culture: its atoms keep their own budget.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) narrowed: bool,
 }
 
 /// A group's rows: the matching rows whose `by` group is `key`.
@@ -175,6 +228,23 @@ pub struct RowsPart {
     /// Only one group's rows.
     #[cfg_attr(test, ts(optional))]
     pub group: Option<GroupKey>,
+    /// Finding rows only: their order, by default the view's (`severity` for the workspace,
+    /// `report` for the report).
+    #[cfg_attr(test, ts(optional))]
+    pub order: Option<FindingsOrder>,
+    /// Finding rows only: rows skipped after the cursor.
+    #[cfg_attr(test, ts(optional))]
+    pub offset: Option<u32>,
+}
+
+/// A page of the findings layer's diagnostics in the culture selection.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiagnosticsPart {
+    #[cfg_attr(test, ts(optional))]
+    pub offset: Option<u32>,
+    pub limit: u32,
 }
 
 /// Groups to list the first rows of, in this order.
@@ -222,6 +292,13 @@ pub struct QueryParts {
     /// were not scanned.
     #[cfg_attr(test, ts(optional))]
     pub file_scope: Option<Vec<String>>,
+    /// Finding rows only: a page of the layer's diagnostics.
+    #[cfg_attr(test, ts(optional))]
+    pub diagnostics: Option<DiagnosticsPart>,
+    /// Finding rows only: writes every selected finding through a `findingJson` sink, in the
+    /// report view, rather than sending rows.
+    #[cfg_attr(test, ts(optional))]
+    pub write: Option<crate::sink::Sink>,
 }
 
 /// An open group in a query's answer. Its rows are the `groupUnits` and `groupLines` batches
@@ -287,6 +364,23 @@ pub struct QueryAnswer {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub open_groups: Option<Vec<OpenGroupAnswer>>,
+    /// Finding rows: the diagnostics page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "FindingDiagnostics"))]
+    pub diagnostics: Option<Value>,
+    /// Finding rows: what the write's sink wrote.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "SinkSummary"))]
+    pub sink: Option<Value>,
+    /// Finding rows: the rows asked for and the findings sent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "ReadProfile"))]
+    pub profile: Option<Value>,
+    /// Finding rows: milliseconds per stage. `total` adds the stages; `compose`'s parts are
+    /// outside it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "{ readonly [stage: string]: number }"))]
+    pub stages: Option<std::collections::BTreeMap<&'static str, f64>>,
 }
 
 /// Which kind of row a `line` request selects.
@@ -691,14 +785,60 @@ impl Selection {
         if let Some(findings) = &self.findings {
             findings.validate()?;
         }
-        self.plan()?;
+        let rows = self.rows();
+        require(
+            match rows {
+                Rows::Lines => self.target.is_some(),
+                Rows::Units => self.target.is_none(),
+                Rows::Findings => {
+                    self.target.is_some()
+                        && self
+                            .findings
+                            .as_ref()
+                            .is_some_and(|findings| findings.view.is_some())
+                }
+            },
+            invalid(match rows {
+                Rows::Lines => "Lines need a target.",
+                Rows::Units => "Units are read without a target.",
+                Rows::Findings => "Finding rows need a target and a findings layer with a view.",
+            }),
+        )?;
+        require(
+            rows == Rows::Findings
+                || self
+                    .findings
+                    .as_ref()
+                    .is_none_or(|findings| findings.view.is_none()),
+            invalid("A findings view chooses finding rows."),
+        )?;
+        if rows == Rows::Findings {
+            self.filter.as_ref().map(Node::parse_findings).transpose()?;
+        } else {
+            self.plan()?;
+        }
         Ok(())
+    }
+    /// The rows it reads.
+    pub fn rows(&self) -> Rows {
+        self.rows.unwrap_or(if self.target.is_some() {
+            Rows::Lines
+        } else {
+            Rows::Units
+        })
     }
     /// The `where`, parsed, with the dropped facets' marks holding.
     pub(crate) fn plan(&self) -> Result<Option<Node>> {
         self.filter
             .as_ref()
-            .map(|value| Ok(Node::parse(value, self.target.is_some())?.without(&self.dropped)))
+            .map(|value| {
+                let node = if self.lenient {
+                    Node::parse_for_units(value)?
+                } else {
+                    Node::parse(value, self.target.is_some())?
+                };
+                Ok(node.without(&self.dropped))
+            })
             .transpose()
     }
     /// The selection with the marks naming `field` holding.
@@ -716,7 +856,45 @@ impl Query {
     pub fn validate(&self) -> Result<()> {
         self.selection.validate()?;
         let parts = &self.parts;
-        let lines = self.selection.localized();
+        let lines = self.selection.rows();
+        let findings = lines == Rows::Findings;
+        require(
+            !findings
+                || (parts.groups.is_none()
+                    && parts.open_groups.is_none()
+                    && parts.file_scope.is_none()
+                    && parts.rows.as_ref().is_none_or(|rows| rows.group.is_none())),
+            invalid("Finding rows are not grouped."),
+        )?;
+        require(
+            findings
+                || (parts.diagnostics.is_none()
+                    && parts.write.is_none()
+                    && parts
+                        .rows
+                        .as_ref()
+                        .is_none_or(|rows| rows.order.is_none() && rows.offset.is_none())),
+            invalid("Orders, offsets, diagnostics and writes are for finding rows."),
+        )?;
+        if let Some(diagnostics) = &parts.diagnostics {
+            require(
+                diagnostics.limit <= 5000,
+                invalid("A diagnostics page holds at most 5000 rows."),
+            )?;
+        }
+        if let Some(write) = &parts.write {
+            require(
+                write.format == crate::sink::Format::FindingJson
+                    && self
+                        .selection
+                        .findings
+                        .as_ref()
+                        .and_then(|findings| findings.view)
+                        == Some(FindingsView::Report)
+                    && parts.rows.is_none(),
+                invalid("A write sends the report view's findings as findingJson, without rows."),
+            )?;
+        }
         let bounded_key =
             |key: &str| bounded(key, MAX_SOURCE_LENGTH, "Group key exceeds its bound.");
         if let Some(rows) = &parts.rows {
@@ -786,11 +964,17 @@ impl Query {
             .pointer("/parts/openGroups/keys")
             .and_then(Value::as_array)
             .map_or(0, Vec::len) as u64;
-        number("/parts/rows/limit").saturating_add(
-            number("/parts/openGroups/firstRows")
-                .saturating_mul(keys)
-                .min(MAX_OPEN_GROUP_ROWS as u64),
-        )
+        // A write reads every selected finding.
+        if request.pointer("/parts/write").is_some() {
+            return u64::MAX;
+        }
+        number("/parts/rows/limit")
+            .saturating_add(
+                number("/parts/openGroups/firstRows")
+                    .saturating_mul(keys)
+                    .min(MAX_OPEN_GROUP_ROWS as u64),
+            )
+            .saturating_add(number("/parts/diagnostics/limit"))
     }
 }
 
@@ -827,6 +1011,7 @@ mod tests {
                 key: "layer".into(),
                 acceptance: Some("review".into()),
                 source_only: None,
+                view: None,
             })
         );
         let long = "x".repeat(MAX_SOURCE_LENGTH as usize);

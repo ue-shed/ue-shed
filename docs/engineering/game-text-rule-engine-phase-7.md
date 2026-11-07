@@ -86,13 +86,16 @@ on `editing`, `notes` and `origins`. Today's `kinds` mark (a place's origins) an
 ## 4. Finding rows
 
 A selection names its rows: `lines` (with a target, as today), `units` (without one, as today) or
-**`findings`**. Finding rows need the selection's findings layer and acceptance, and a view:
+**`findings`**. Finding rows need a target, and the selection's findings layer and acceptance with
+a view (`findings.view`):
 
 - `workspace`: source and line findings, shadowed ones hidden when the program has an enabled
   `unit_source` rule;
 - `report`: line findings.
 
-Accepted findings are hidden under an acceptance key, as today (Phase 3 §5).
+Accepted findings are hidden under an acceptance key, as today (Phase 3 §5). The selection's
+`culture` keeps that culture's findings and those without one, as Quality's culture picker does
+today; the `culture` field tests a finding's own culture.
 
 ### Testing a finding
 
@@ -104,7 +107,7 @@ A `where` over findings tests finding fields directly, and its **text row** thro
 		{ "facet": ["severity", { "in": [{ "field": "severity" }, { "lit": ["blocking"] }] }] },
 		{
 			"row": {
-				"facet": ["folder", { "any": [{ "field": "paths" }, { "pathHasPrefix": ["…"] }] }]
+				"facet": ["paths", { "any": [{ "field": "paths" }, { "pathHasPrefix": ["…"] }] }]
 			}
 		}
 	]
@@ -121,8 +124,10 @@ A `where` over findings tests finding fields directly, and its **text row** thro
 - **`unit_source` findings**: the row is the finding's raw unit, tested as the Text tab tests units
   without a target. Line-only fields and culture quantifiers are false. Today a source finding
   matches no `where`; this keeps source findings filterable by folder, asset and origin.
-- **Facet marks** work inside `row` as they do at the top level: counting `folder` drops the
-  folder marks wherever they stand.
+- **Facet marks** work inside `row` as they do at the top level: counting `paths` drops the
+  `paths` marks wherever they stand.
+- A finding's own fields are `rule`, `severity`, `culture`, `subject`, `fixable`, `change` and
+  `id` (its finding ID). A `line` filter is `row` over the line's `id`.
 
 ### Text
 
@@ -135,26 +140,40 @@ culture's translation, ignoring case; a source finding's own source.
   culture scope it needs. The sets are the Text tab's atoms, keyed the same way, so a filter the
   Text tab just ran is already cached.
 - A finding passes a `row` test when its line's bit is set in its culture's set.
-- Finding-field tests are bitsets over findings, built from the layer's columns and cached per
-  (layer, acceptance, clause). At Coral's 156,637 findings a set is 19 KiB.
+- Finding-field tests read the layer's columns per finding, compiled once per request: a rule
+  test is a mask over the program's rules, a flag test a bit. At Coral's 156,637 findings this is
+  a scan of four `u32` columns, so nothing is cached for it.
 - **Cache budget.** Line sets narrowed to one culture are new entries the Text tab never uses.
   They get their own 16 MiB budget, so finding queries can't evict the Text tab's sets.
 
 ## 5. Parts, for every kind of row
 
 - **`rows`**: a page in an order, after a cursor.
-    - Finding orders are today's: `severity`, `report`, `line`, `source`. The cursor is a finding
-      ID, as today.
-    - Finding rows travel in today's composed shape (`ix/rules/findings_read.rs`).
-- **`counts`**: `total`. For findings also `accepted` (what the acceptance key hid).
+    - Finding orders are today's: `severity`, `report`, `line`, `source`, by default the view's
+      (`severity`, `report`). The cursor is a finding ID, and `offset` skips rows after it, as
+      today's pages do. The `source` order lists only source findings, as today; a host says so
+      with `subject` so its counts agree.
+    - Finding rows travel in today's composed shape (`ix/rules/findings_read.rs`): the `places`
+      and `findings` batches.
+- **`counts`**: `total`. For findings also `accepted`, what the acceptance key hid from the rows
+  every filter selects, `fixable` among `total`, and `limits`, the diagnostics by code. Today's
+  `all` is the sum of the `rule` facet.
 - **`facets`**: a list, `[{ "by": "paths", "under": "/Game" }, { "by": "severity" }, …]`, each
   field at most once. The answer holds each under the field's name, in today's shape. Each
   counts the query's rows over the selection with that field's marks dropped: counts follow every
   filter but their own, as today. Finding rows count findings, so a line with three findings
   counts three under its folder. This replaces the fixed `Facets` struct and `findings_query`'s
   counts by rule, severity and fixable.
+    - A finding field's facet lists every value, `{ key, label, count }`: rules in program order,
+      rules sharing an ID once.
+    - A text-row field's facet (`paths`, `files`, `origins`, `audience`, `namespace`,
+      `assetTypes`, `sources`) counts findings under their line's values and their unit's, in
+      today's group shape, the units' entries added to the lines' by key.
 - **`groups`** and **`openGroups`**: by any groupable field, with today's meaning and budgets.
-- **`diagnostics`**: stays, for finding rows, as today.
+  Finding rows refuse them until a host lists findings in groups.
+- **`diagnostics`**: stays, for finding rows, as today: a page, `{ offset, limit }`.
+- **`write`**, finding rows only: a `findingJson` sink in the report view takes every selected
+  finding, as today's findings sink, rather than a page.
 
 ## 6. TypeScript and hosts
 
@@ -258,9 +277,11 @@ Settled by the owner on 2026-11-07:
    request with both an origin pill and a location kind counts origins without either. Timings
    unchanged.
 4. **Finding rows.** Selection `rows: findings`, the finding fields, `row`, text, orders, cursors,
-   facets, groups and diagnostics. A parity test sends every request the queried workspace and
-   `loc check` send today, through both `findings_query` and finding rows, and compares the
-   answers on the fixture and on Coral.
+   facets, diagnostics and writes. A parity test sends every request the queried workspace, the
+   source report and `loc check` send today, through both `findings_query` and finding rows, and
+   compares the answers on the fixture and on Coral. A second test checks what is new against the
+   Text tab's own answers: a culture finding's row test in its culture, a source finding's
+   through its unit, and counts by the row's fields.
 5. **TypeScript.** The `Expr` schema and the exported converter. Both tabs' requests take `where`
    and `facets`; the workspace and the CLI read finding rows; presets save the query; the
    Workbench converts its pills; `findings_query` is deleted.

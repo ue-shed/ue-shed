@@ -26,7 +26,7 @@ use ts_rs::TS;
 /// Accepted findings one `findings_accept` call takes; larger review files are sent in chunks.
 const MAX_ACCEPTED: usize = 5000;
 /// Findings one `findings_query` page returns.
-const MAX_LIMIT: usize = 5000;
+pub(super) const MAX_LIMIT: usize = 5000;
 
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidInput, message)
@@ -63,28 +63,7 @@ pub(crate) struct Acceptance {
     pub(super) entries: HashSet<(u32, u32, String)>,
 }
 
-#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "FindingsView"))]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum View {
-    /// Source and line findings, as the Quality workspace lists them.
-    Workspace,
-    /// Line findings, as `loc check` reports them.
-    Report,
-}
-
-#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "FindingsOrder"))]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Order {
-    Severity,
-    Report,
-    Line,
-    /// Source findings in `order.source`, as the source report lists them.
-    Source,
-}
+pub(crate) use crate::engine_types::{FindingsOrder as Order, FindingsView as View};
 
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(TS))]
@@ -115,12 +94,19 @@ pub(crate) struct LineSearch {
 }
 
 impl LineSearch {
+    /// A search for text alone.
+    pub(super) fn text(text: &str) -> Self {
+        Self {
+            text: Some(text.to_owned()),
+            filter: None,
+        }
+    }
     /// Blank text and no `where` keep every finding.
-    fn text(&self) -> Option<&str> {
+    fn searched(&self) -> Option<&str> {
         self.text.as_deref().filter(|text| !text.trim().is_empty())
     }
     fn narrows(&self) -> bool {
-        self.text().is_some() || self.filter.is_some()
+        self.searched().is_some() || self.filter.is_some()
     }
 }
 
@@ -251,14 +237,14 @@ pub(crate) struct FindingsPage {
     #[cfg_attr(test, ts(type = "{ [stage: string]: number }"))]
     stages: BTreeMap<&'static str, f64>,
 }
-const SEVERITIES: [(Severity, &str); 3] = [
+pub(super) const SEVERITIES: [(Severity, &str); 3] = [
     (Severity::Blocking, "blocking"),
     (Severity::Normal, "normal"),
     (Severity::Low, "low"),
 ];
 
 /// A finding ID's identity lanes, for a line finding or a source finding.
-fn id_lanes(id: &str) -> Option<(bool, u32, u32)> {
+pub(super) fn id_lanes(id: &str) -> Option<(bool, u32, u32)> {
     if let Some(hex) = id.strip_prefix("localization-finding:") {
         if hex.len() != 16 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
@@ -461,7 +447,7 @@ impl EngineQuery {
 
 /// `localizationReviewFingerprint`: SHA-256 of the source, a NUL, and the translation or a
 /// marker for none, over the UTF-8 a host's `TextEncoder` writes.
-fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
+pub(super) fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
     let utf8 =
         |view: &str| String::from_utf16_lossy(&crate::wtf8::Wtf8Buf::from_view(view).to_utf16());
     digest(
@@ -475,18 +461,18 @@ fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
 }
 
 /// The layer's columns a query reads.
-struct Columns {
-    rule: Arc<[u32]>,
-    line: Arc<[u32]>,
-    culture: Arc<[u32]>,
-    flags: Arc<[u32]>,
+pub(super) struct Columns {
+    pub(super) rule: Arc<[u32]>,
+    pub(super) line: Arc<[u32]>,
+    pub(super) culture: Arc<[u32]>,
+    pub(super) flags: Arc<[u32]>,
     /// Each rule's first finding number, then the count.
-    bases: Vec<u32>,
+    pub(super) bases: Vec<u32>,
     id0: Vec<Arc<[u32]>>,
     id1: Vec<Arc<[u32]>>,
 }
 
-fn columns(layer: &FindingsLayer) -> Result<Columns> {
+pub(super) fn columns(layer: &FindingsLayer) -> Result<Columns> {
     let mut bases = vec![0u32];
     let mut id0 = Vec::new();
     let mut id1 = Vec::new();
@@ -528,7 +514,7 @@ fn columns(layer: &FindingsLayer) -> Result<Columns> {
 }
 
 impl Columns {
-    fn lanes(&self, number: u32) -> (u32, u32) {
+    pub(super) fn lanes(&self, number: u32) -> (u32, u32) {
         let rule = self.rule[number as usize] as usize;
         let position = (number - self.bases[rule]) as usize;
         (self.id0[rule][position], self.id1[rule][position])
@@ -537,7 +523,7 @@ impl Columns {
 
 /// The rows a line search keeps: by culture index, the line rows for findings of that culture;
 /// `any`, for findings without one; `sources`, how source findings match.
-struct LineMatches {
+pub(super) struct LineMatches {
     cultures: Vec<RowSet>,
     any: RowSet,
     sources: Option<SourceMatches>,
@@ -558,10 +544,10 @@ struct SourceMatches {
 impl LineMatches {
     /// Each set is the Text tab's `matching` for the search in one culture scope, so its atoms
     /// are cached with the Text tab's.
-    fn open(
+    pub(super) fn open(
         query: &EngineQuery,
         layer: &FindingsLayer,
-        request: &QueryRequest,
+        selection: &FindingsSelection,
         search: &LineSearch,
         culture: Option<u32>,
         cancelled: &AtomicBool,
@@ -572,11 +558,11 @@ impl LineMatches {
             .as_str()
             .ok_or("The findings' target has no name.")?
             .to_owned();
-        let text = search.text();
+        let text = search.searched();
         let findings = search.filter.as_ref().map(|_| FindingsSelection {
-            key: request.key.clone(),
-            acceptance: request.acceptance.clone(),
+            view: None,
             source_only: None,
+            ..selection.clone()
         });
         let lines = query.reader.column("line.source")?.len();
         let select = |culture: Option<String>, cultures: Option<Vec<String>>| -> Result<RowSet> {
@@ -590,7 +576,7 @@ impl LineMatches {
                     query: query.to_owned(),
                     translations: Some(true),
                 }),
-                dropped: Vec::new(),
+                ..Selection::default()
             };
             selection.validate()?;
             RowSet::from_rows(lines, &query.matching(&selection, cancelled)?)
@@ -644,7 +630,7 @@ impl LineMatches {
         })
     }
 
-    fn holds(&self, columns: &Columns, number: u32) -> bool {
+    pub(super) fn holds(&self, columns: &Columns, number: u32) -> bool {
         let n = number as usize;
         let line = columns.line[n];
         if line == NONE {
@@ -744,7 +730,13 @@ fn run_query(
     let id = request.id.as_deref().map(id_lanes);
     let lines = match request.lines.as_ref().filter(|search| search.narrows()) {
         Some(search) => {
-            let lines = LineMatches::open(query, layer, request, search, culture, cancelled)?;
+            let selection = FindingsSelection {
+                key: request.key.clone(),
+                acceptance: request.acceptance.clone(),
+                source_only: None,
+                view: None,
+            };
+            let lines = LineMatches::open(query, layer, &selection, search, culture, cancelled)?;
             mark(&mut stages, "lines", &mut since);
             Some(lines)
         }
@@ -976,18 +968,18 @@ fn run_query(
 /// Where composing a page's findings spends its time, in milliseconds: opening the line and source
 /// subjects, prefetching the lines' occurrences, and composing the rows.
 #[derive(Default)]
-struct ComposeTimes {
-    open: f64,
-    prefetch: f64,
-    rows: f64,
+pub(super) struct ComposeTimes {
+    pub(super) open: f64,
+    pub(super) prefetch: f64,
+    pub(super) rows: f64,
     /// Imaging the string dictionary, when this compose was the first to read a string.
-    image: Option<f64>,
+    pub(super) image: Option<f64>,
     /// The line prefetch's parts: its read arena, occurrence IDs and place strings.
-    prefetch_parts: [f64; 3],
+    pub(super) prefetch_parts: [f64; 3],
 }
 
 /// Composes findings in the given order, with the place sets they name.
-fn compose(
+pub(super) fn compose(
     query: &EngineQuery,
     layer: &FindingsLayer,
     page: &[u32],

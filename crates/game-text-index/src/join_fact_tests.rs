@@ -864,7 +864,7 @@ fn example_program(checks: &[&str], document: Option<Value>) -> Result<crate::ru
 }
 
 /// The effective v4 document's JSON text, as the host sends it; without a document, the starter's checks.
-fn example_document(checks: &[&str], document: Option<Value>) -> Result<String> {
+pub(crate) fn example_document(checks: &[&str], document: Option<Value>) -> Result<String> {
     let output = std::process::Command::new("node").args(["--import","tsx","--input-type=module","-e","import {effectiveRuleDocument} from './packages/game-text/src/rules/effective.ts';import {STARTER_CHECK_RULES} from './packages/game-text/src/starter-rules.ts';const [checks,document]=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify(effectiveRuleDocument(document??STARTER_CHECK_RULES,{checks})));",&serde_json::to_string(&(checks,document))?])
         .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).ok_or("Missing repository root.")?).output()?;
     crate::require(

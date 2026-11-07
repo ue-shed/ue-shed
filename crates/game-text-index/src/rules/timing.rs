@@ -217,6 +217,96 @@ fn persisted_findings_query_timing() -> Result<()> {
     Ok(())
 }
 
+/// Phase 7 step 4 on a real project: every request the workspace, the source report and
+/// `loc check` send, through `findings_query` and as finding rows. Point
+/// `UE_SHED_GAME_TEXT_TIMING_CACHE` at a disposable copy of a retained cache, and
+/// `UE_SHED_GAME_TEXT_PARITY_RULES` at the project's rules file.
+#[test]
+#[ignore = "Requires a disposable retained cache, a rules file, Node 26 and --release"]
+fn persisted_finding_rows_parity() -> Result<()> {
+    let cache = std::env::var("UE_SHED_GAME_TEXT_TIMING_CACHE")
+        .map_err(|cause| crate::Error::new(crate::ErrorCode::InvalidInput, cause.to_string()))?;
+    let rules = std::env::var("UE_SHED_GAME_TEXT_PARITY_RULES")
+        .map_err(|cause| crate::Error::new(crate::ErrorCode::InvalidInput, cause.to_string()))?;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let effective = Command::new("node")
+        .args(["--import","tsx","--input-type=module","-e",r#"import {readFileSync} from "node:fs"; import {canonicalRuleDocument,effectiveRuleDocument} from "./packages/game-text/src/rules/effective.ts"; console.log(canonicalRuleDocument(effectiveRuleDocument(JSON.parse(readFileSync(process.argv[1], "utf8")))));"#, &rules])
+        .current_dir(&root)
+        .output()?;
+    require(
+        effective.status.success(),
+        String::from_utf8_lossy(&effective.stderr).to_string(),
+    )?;
+    let document = String::from_utf8(effective.stdout)?;
+    let query = retained_query(Path::new(&cache))?;
+    let cancelled = AtomicBool::new(false);
+    let started = std::time::Instant::now();
+    let evaluated: Value =
+        serde_json::from_str(&query.findings_evaluate(document.trim(), "en", &cancelled)?)?;
+    let key = evaluated["key"].as_str().ok_or("Missing findings key.")?;
+    println!(
+        "{}",
+        json!({"evaluateMs": started.elapsed().as_secs_f64() * 1000.0})
+    );
+    let layer = query.layer(key)?;
+    let rules = &layer.metadata.rules;
+    let ids = |kinds: &[&str]| -> Vec<String> {
+        rules
+            .iter()
+            .filter(|rule| kinds.contains(&rule.kind.as_str()))
+            .map(|rule| rule.rule_id.clone())
+            .collect()
+    };
+    let cultures = query.cultures.clone();
+    let culture = cultures
+        .iter()
+        .find(|culture| culture.as_str() != query.target["nativeCulture"].as_str().unwrap_or(""))
+        .ok_or("No foreign culture.")?
+        .clone();
+    let first = query.findings_page(
+        json!({"key":key,"view":"workspace","order":"severity","limit":1}),
+        &cancelled,
+    )?;
+    let first_id = first["findings"][0]["id"].clone();
+    let line = first["findings"][0]["lineId"].clone();
+    let workspace = |fields: Value| {
+        let mut request = json!({"key":key,"view":"workspace","order":"severity","offset":0,"limit":50,"counts":true});
+        for (name, value) in fields.as_object().into_iter().flatten() {
+            request[name] = value.clone();
+        }
+        request
+    };
+    let cases = vec![
+        workspace(json!({})),
+        workspace(json!({"culture": culture})),
+        workspace(json!({"rules": ids(&["whitespace"])})),
+        workspace(json!({"rules": ids(&["format_arguments", "rich_text"]), "culture": culture})),
+        workspace(json!({"severities": ["blocking"]})),
+        workspace(json!({"severities": ["normal"], "fixable": true})),
+        workspace(json!({"lines": {"text": "eggs"}})),
+        workspace(json!({"lines": {"text": "the"}, "culture": culture})),
+        workspace(json!({"lines": {"text": "zzqqxxnomatch"}})),
+        workspace(json!({"offset": 100, "limit": 50})),
+        workspace(json!({"offset": 0, "limit": 5000})),
+        workspace(json!({"after": first_id, "limit": 50})),
+        json!({"key":key,"view":"workspace","order":"severity","id":first_id,"limit":1}),
+        json!({"key":key,"view":"workspace","order":"severity","line":line,"limit":50}),
+        json!({"key":key,"view":"report","order":"report","limit":0,"diagnostics":{"offset":0,"limit":5000},"counts":true}),
+        json!({"key":key,"view":"report","culture":culture,"order":"report","limit":0,"diagnostics":{"offset":0,"limit":5000},"counts":true}),
+        json!({"key":key,"view":"report","order":"line","rules":ids(&["format_argument_renamed"]),"change":true,"offset":0,"limit":5000}),
+        json!({"key":key,"view":"report","order":"report","sink":{"format":"findingJson"}}),
+    ];
+    for case in &cases {
+        let started = std::time::Instant::now();
+        super::findings_select::assert_parity(&query, case)?;
+        println!(
+            "{}",
+            json!({"case": case, "ms": started.elapsed().as_secs_f64() * 1000.0})
+        );
+    }
+    Ok(())
+}
+
 /// Streaming canonical output digest. Delimit records with their byte length; keep emission,
 /// affected-set and diagnostic order, and sort only object keys and the mask map.
 pub(super) fn digest_subject(

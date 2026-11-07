@@ -223,6 +223,8 @@ mod tests {
             Selection::decl(&config),
             TextSearch::decl(&config),
             FindingsSelection::decl(&config),
+            crate::engine_types::Rows::decl(&config),
+            crate::engine_types::DiagnosticsPart::decl(&config),
             QueryParts::decl(&config),
             RowsPart::decl(&config),
             GroupKey::decl(&config),

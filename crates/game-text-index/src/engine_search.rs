@@ -615,6 +615,9 @@ impl EngineQuery {
         cancelled: &AtomicBool,
         reply: &mut dyn Reply,
     ) -> Result<()> {
+        if request.selection.rows() == crate::engine_types::Rows::Findings {
+            return self.query_findings(request, cancelled, reply);
+        }
         let selection = &request.selection;
         let parts = &request.parts;
         // Counts, groups, facets and a group's rows read every matching row. Without them a

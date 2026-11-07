@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.27.1",
-	contractHash: "85899d6fd36054640b6ec3e2bfba088e4eb7e1567e0adbfeb05145164b92fd58"
+	contractHash: "ecd727fcacc8c3822694c07dc7fde4138ace98dbe06d6d2bdaa6c9812a7703eb"
 } as const;
 
 /**
@@ -38,7 +38,7 @@ export type Finding = {
 };
 
 /** A query field: what a `where` tests, a facet mark names, and rows group and count by. */
-export type QueryField = "problems" | "facts" | "origins" | "editing" | "notes" | "audience" | "namespace" | "translationKey" | "assetTypes" | "sources" | "paths" | "files" | "findings" | "keyChanged" | "id" | "state" | "notSynced" | "review" | "cultures";
+export type QueryField = "problems" | "facts" | "origins" | "editing" | "notes" | "audience" | "namespace" | "translationKey" | "assetTypes" | "sources" | "paths" | "files" | "findings" | "keyChanged" | "id" | "state" | "notSynced" | "review" | "rule" | "severity" | "culture" | "subject" | "fixable" | "change" | "cultures";
 
 export type LocalizationFormat = "manifest" | "archive" | "po" | "locres";
 
@@ -361,6 +361,10 @@ export type Query = { selection: QuerySelection, parts: QueryParts, };
 
 export type QuerySelection = { 
 /**
+ * Lines with a target and units without one, unless it names findings.
+ */
+rows?: QueryRows, 
+/**
  * The localization target whose lines are the rows.
  */
 target?: string, 
@@ -387,7 +391,15 @@ export type FindingsSelection = { key: string, acceptance?: string,
 /**
  * Only the layer's source rules, as Browse without a target lists them.
  */
-sourceOnly?: boolean, };
+sourceOnly?: boolean, 
+/**
+ * Finding rows only: which findings they list.
+ */
+view?: FindingsView, };
+
+export type QueryRows = "lines" | "units" | "findings";
+
+export type DiagnosticsPart = { offset?: number, limit: number, };
 
 export type QueryParts = { rows?: RowsPart, openGroups?: OpenGroupsPart, 
 /**
@@ -402,7 +414,16 @@ facets?: ReadonlyArray<QueryFacet>, groups?: GroupsPart,
  * Files the counts report on: how many hold matching text, lie outside the project or
  * were not scanned.
  */
-fileScope?: ReadonlyArray<string>, };
+fileScope?: ReadonlyArray<string>, 
+/**
+ * Finding rows only: a page of the layer's diagnostics.
+ */
+diagnostics?: DiagnosticsPart, 
+/**
+ * Finding rows only: writes every selected finding through a `findingJson` sink, in the
+ * report view, rather than sending rows.
+ */
+write?: Sink, };
 
 export type RowsPart = { 
 /**
@@ -416,7 +437,16 @@ after?: string,
 /**
  * Only one group's rows.
  */
-group?: GroupKey, };
+group?: GroupKey, 
+/**
+ * Finding rows only: their order, by default the view's (`severity` for the workspace,
+ * `report` for the report).
+ */
+order?: FindingsOrder, 
+/**
+ * Finding rows only: rows skipped after the cursor.
+ */
+offset?: number, };
 
 export type GroupKey = { by: QueryField, key: string, };
 
@@ -454,7 +484,24 @@ localization?: { readonly [key: string]: JsonValue },
 /**
  * The ID of the rows part's last row, when more follow.
  */
-nextCursor?: string, openGroups?: ReadonlyArray<OpenGroupAnswer>, };
+nextCursor?: string, openGroups?: ReadonlyArray<OpenGroupAnswer>, 
+/**
+ * Finding rows: the diagnostics page.
+ */
+diagnostics?: FindingDiagnostics, 
+/**
+ * Finding rows: what the write's sink wrote.
+ */
+sink?: SinkSummary, 
+/**
+ * Finding rows: the rows asked for and the findings sent.
+ */
+profile?: ReadProfile, 
+/**
+ * Finding rows: milliseconds per stage. `total` adds the stages; `compose`'s parts are
+ * outside it.
+ */
+stages?: { readonly [stage: string]: number }, };
 
 export type OpenGroupAnswer = { key: string, 
 /**

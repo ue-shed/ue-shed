@@ -18,6 +18,8 @@ import {
 	textRowFindingFields
 } from "./text-problem-schema.js";
 import { TEXT_PROBLEMS } from "./text-problem-rules.js";
+import { MAX_TEXT_QUERY_PAGE_SIZE } from "./query-limits.js";
+export { MAX_TEXT_QUERY_PAGE_SIZE } from "./query-limits.js";
 export * from "./identifiers.js";
 export * from "./text-audience-schema.js";
 
@@ -284,8 +286,6 @@ export const parseTextCorpusRunResult = gameTextResponseParser(
  * Upper bound on one search page at the public query boundary, including Workbench IPC. The
  * engine answers a page of more than 500 rows as a bulk read, streaming its rows.
  */
-export const MAX_TEXT_QUERY_PAGE_SIZE = 100_000;
-
 const TextQueryPageSize = Schema.Int.pipe(
 	Schema.check(Schema.isBetween({ minimum: 1, maximum: MAX_TEXT_QUERY_PAGE_SIZE }))
 );

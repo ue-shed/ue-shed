@@ -720,6 +720,124 @@ fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> 
     Ok(())
 }
 
+#[test]
+fn a_page_without_counts_lists_what_a_counted_page_lists_and_fields_match_the_preview() -> Result<()>
+{
+    let mut fixture = Fixture::new()?;
+    fixture.file("Game.manifest","manifest",&[
+        json!({"namespace":"UI","key":"N","source":"Noted","path":"/Game/Text/Example.Example.Noted"}),
+        json!({"namespace":"UI","key":"P","source":"Plain","path":"/Game/Text/Example.Example.Plain"}),
+        json!({"namespace":"UI","key":"Q","source":"Plain again","path":"/Game/Text/Example.Example.Again"}),
+        json!({"namespace":"UI","key":"R","source":"Plainly","path":"/Game/Text/Example.Example.Plainly"}),
+    ])?;
+    fixture.file("en.archive", "archive", &[])?;
+    fixture.file(
+        "de.archive",
+        "archive",
+        &[json!({"namespace":"UI","key":"P","source":"Plain","translation":"Schlicht"})],
+    )?;
+    fixture.file("en.po", "po", &[])?;
+    fixture.file("de.po", "po", &[])?;
+    fixture.packages(&[
+        json!({"namespace":"UI","key":"N","source":"Noted","object":"/Game/Text/Example.Example","property":"Noted"}),
+        json!({"namespace":"UI","key":"P","source":"Plain","object":"/Game/Text/Example.Example","property":"Plain"}),
+        json!({"namespace":"UI","key":"Q","source":"Plain again","object":"/Game/Text/Example.Example","property":"Again"}),
+    ])?;
+    fixture.lines()?;
+    let cancelled = AtomicBool::new(false);
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let page = |selection: &Value, rows: Value, counts: bool| -> Result<Value> {
+        let mut parts = json!({ "rows": rows });
+        if counts {
+            parts["counts"] = json!(true);
+        }
+        query.query_page(json!({"selection":selection,"parts":parts}), &cancelled)
+    };
+    // What a page lists: its units, its lines and the cursor of the page after it.
+    let listed = |page: &Value| {
+        [
+            page["units"].clone(),
+            page["localization"]["lines"].clone(),
+            page["localization"]["nextCursor"].clone(),
+            page["nextCursor"].clone(),
+        ]
+    };
+    let cursor = |page: &Value| {
+        [&page["localization"]["nextCursor"], &page["nextCursor"]]
+            .into_iter()
+            .find(|cursor| cursor.is_string())
+            .cloned()
+    };
+    for selection in [
+        json!({"target":"Game"}),
+        json!({}),
+        json!({"target":"Game","text":{"query":"plain"}}),
+        json!({"text":{"query":"plain"}}),
+    ] {
+        for limit in [1, 2, 50] {
+            // Walk every page: a page read without counts lists exactly the counted page's rows.
+            let mut after: Option<Value> = None;
+            let mut pages = 0;
+            loop {
+                let mut rows = json!({ "limit": limit });
+                if let Some(after) = &after {
+                    rows["after"] = after.clone();
+                }
+                let alone = page(&selection, rows.clone(), false)?;
+                assert_eq!(listed(&alone), listed(&page(&selection, rows, true)?));
+                pages += 1;
+                match cursor(&alone) {
+                    Some(next) => after = Some(next),
+                    None => break,
+                }
+                assert!(pages <= 4, "pages end");
+            }
+        }
+    }
+    // A cursor whose row no longer matches restarts the listing, with or without counts.
+    let target = json!({"target":"Game"});
+    let noted = page(&target, json!({"limit":50}), false)?["localization"]["lines"]
+        .as_array()
+        .ok_or("Missing lines.")?
+        .iter()
+        .find(|line| line["source"] == "Noted")
+        .ok_or("Missing the Noted line.")?["id"]
+        .clone();
+    let plain = json!({"target":"Game","text":{"query":"plain"}});
+    let first = page(&plain, json!({"limit":1}), true)?;
+    for counts in [false, true] {
+        let restarted = page(&plain, json!({"limit":1,"after":noted}), counts)?;
+        assert_eq!(listed(&restarted), listed(&first));
+    }
+    // Each narrow export field is the value the whole preview has; `marks` are its cultures.
+    for row in 0..4 {
+        let preview = query.preview(row)?;
+        for field in [
+            "origin",
+            "identity",
+            "source",
+            "keyChange",
+            "audience",
+            "outOfScope",
+            "marks",
+        ] {
+            let line = query.localization_line_fields(row, &[field], &[], None, &cancelled)?;
+            assert_eq!(line["id"], preview["id"], "{field}");
+            let wanted = if field == "marks" {
+                preview.get("cultures")
+            } else {
+                preview.get(field)
+            };
+            assert_eq!(line.get(field), wanted, "{field} of row {row}");
+            assert_eq!(
+                line.as_object().map(serde_json::Map::len),
+                Some(1 + usize::from(wanted.is_some()))
+            );
+        }
+    }
+    Ok(())
+}
+
 fn example_program(checks: &[&str], document: Option<Value>) -> Result<crate::rules::Program> {
     crate::rules::compile(&example_document(checks, document)?)
 }

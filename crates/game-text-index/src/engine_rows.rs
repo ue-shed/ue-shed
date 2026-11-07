@@ -93,6 +93,28 @@ impl RowSet {
         })
     }
 
+    /// The set's first `take` rows in `order`, stopping as soon as it has them.
+    pub fn first_in_order(
+        &self,
+        order: &[u32],
+        take: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<u32>> {
+        let mut rows = Vec::with_capacity(take.min(order.len()));
+        for (index, row) in order.iter().enumerate() {
+            if rows.len() == take {
+                break;
+            }
+            if index & 4095 == 0 {
+                checkpoint(cancelled)?;
+            }
+            if self.contains(*row as usize) {
+                rows.push(*row);
+            }
+        }
+        Ok(rows)
+    }
+
     /// The set's rows in `order`, a permutation of the relation's rows.
     pub fn in_order(&self, order: &[u32], cancelled: &AtomicBool) -> Result<Vec<u32>> {
         let mut rows = Vec::new();
@@ -169,6 +191,21 @@ mod tests {
         assert_eq!(
             both.in_order(&[128, 6, 5, 4, 2, 0], &cancelled)?,
             [128, 6, 4, 2, 0]
+        );
+        // A page stops once it has its rows; it lists the same prefix as the whole listing.
+        let order = [128, 6, 5, 4, 2, 0];
+        assert_eq!(both.first_in_order(&order, 2, &cancelled)?, [128, 6]);
+        assert_eq!(
+            both.first_in_order(&order, 9, &cancelled)?,
+            [128, 6, 4, 2, 0]
+        );
+        assert_eq!(
+            both.first_in_order(&order, 0, &cancelled)?,
+            Vec::<u32>::new()
+        );
+        assert_eq!(
+            both.first_in_order(&[5, 3], 2, &cancelled)?,
+            Vec::<u32>::new()
         );
         assert!(!RowSet::intersection(130, &[])?.contains(130));
         assert!(RowSet::intersection(130, &[])?.contains(129));

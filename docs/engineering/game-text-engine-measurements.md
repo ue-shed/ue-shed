@@ -948,6 +948,25 @@ The same drives on the same Electroswag, with step 2's reader, cold after a rest
 left of the cold page is the reader's occurrence relation (`OccurrenceData::build`), once per
 reader. The search's `lines` is the line search itself, which finding rows replace in step 4.
 
+### Steps 5 and 6: Quality reads finding rows, with the Text tab's toolbar
+
+Isolated Electroswag on Coral, with the Quality toolbar (search, Filter menu with Severity, Folder
+and Suggested fix) sending `where` and five row facets on every page, cold after a restart:
+
+| Path                                    |   Baseline | Step 2 |  Steps 5–6 | Where it goes now                            |
+| --------------------------------------- | ---------: | -----: | ---------: | -------------------------------------------- |
+| Quality, the first page after opening   |   2,825 ms | 362 ms |     613 ms | `compose_open` 453, `facets` 63, `counts` 37 |
+| Quality, the badge's duplicate of it    |   2,834 ms | 378 ms |       none | Electroswag reads the list's own count       |
+| Quality, the first search ("eggs")      |   2,478 ms | 479 ms |     446 ms | `lines` 432 ms                               |
+| Quality, a new word with no match       |     149 ms |      — |      97 ms | `lines` 92 ms                                |
+| Quality, a severity, folder or fix pill |   39–62 ms |      — |   20–97 ms | `select` 7–23 ms, `facets` up to 44 ms       |
+| Text tab, a search                      | 247–285 ms |      — | 219–281 ms | unchanged                                    |
+
+The first page is slower than step 2's by `compose_open` (299 → 453 ms, the reader's cold
+occurrence relation, which varies with the disk cache) and by the row facets the Filter menu now
+counts (63 ms over 156,640 findings). Every path is under its baseline; the badge's request is
+gone.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

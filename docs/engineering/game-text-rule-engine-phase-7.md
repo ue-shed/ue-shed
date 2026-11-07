@@ -73,6 +73,16 @@ counted everywhere it is marked, with no host-specific option.
 a field name from the registry, so counting by any field drops the marks on that field, and a
 host can mark any filter it builds.
 
+**One name per field.** A field's registry name is the name everywhere: a `where` tests
+`{ "field": "paths" }`, a mark is `{ "facet": ["paths", …] }`, and rows group and count
+`{ "by": "paths" }`. The contract generates `QueryField`, the union of the names, from the
+registry. Hosts keep their own words for them: Electroswag's "Folder" is `paths`, "Asset" is
+`files`. The count-only `cultures` field is each culture's line states, as today's culture facet.
+
+The counts' tabs (`editable`, `readOnly`, `withoutNotes`, `origins` in `counts`) drop the marks
+on `editing`, `notes` and `origins`. Today's `kinds` mark (a place's origins) and `origin` mark
+(a row's) both become `origins`, so counting origins drops both: each is a filter on origins.
+
 ## 4. Finding rows
 
 A selection names its rows: `lines` (with a target, as today), `units` (without one, as today) or
@@ -137,7 +147,8 @@ culture's translation, ignoring case; a source finding's own source.
       ID, as today.
     - Finding rows travel in today's composed shape (`ix/rules/findings_read.rs`).
 - **`counts`**: `total`. For findings also `accepted` (what the acceptance key hid).
-- **`facets`**: a list, `[{ "by": "folder", "under": "/Game" }, { "by": "severity" }, …]`. Each
+- **`facets`**: a list, `[{ "by": "paths", "under": "/Game" }, { "by": "severity" }, …]`, each
+  field at most once. The answer holds each under the field's name, in today's shape. Each
   counts the query's rows over the selection with that field's marks dropped: counts follow every
   filter but their own, as today. Finding rows count findings, so a line with three findings
   counts three under its folder. This replaces the fixed `Facets` struct and `findings_query`'s
@@ -215,6 +226,9 @@ UE Shed 0.27.1, 2026-11-07. Server RPC times; the engine's stages where it recor
   If a studio wants it, a rule could name an output in the rules file and make it a field. It must
   stay optional, so rules keep their freedom.
 - **Showing accepted findings** as a filter value. `accepted` stays a count.
+- **`aggregate`'s dimensions.** The multi-dimension rollup reports and the CLI read keeps its own
+  list (`ix/engine_rollup.rs`): per-culture marks and measures are its own. Folding it into the
+  registry is its own change.
 - **Arbitrary expressions in `row`** beyond what the row-set compiler compiles today (Phase 4 §6).
   The compiler refuses them, as it does for the Text tab.
 
@@ -239,7 +253,10 @@ Settled by the owner on 2026-11-07:
    lines, not every line's; evaluations keep the shared corpus order. Measured on Coral: the first
    Quality page without the 2.2 s, later pages and the Text tab unchanged.
 3. **The field registry.** `FIELDS`, `GroupBy` and `Facets` become one list; facets become a list
-   for lines and units; the `namespace` count. Text tab answers byte-identical; timings unchanged.
+   for lines and units; the `namespace` count. Until step 5 the builder maps the Text tab's group
+   names and facet object to fields and back, so its answers are byte-identical, except that a
+   request with both an origin pill and a location kind counts origins without either. Timings
+   unchanged.
 4. **Finding rows.** Selection `rows: findings`, the finding fields, `row`, text, orders, cursors,
    facets, groups and diagnostics. A parity test sends every request the queried workspace and
    `loc check` send today, through both `findings_query` and finding rows, and compares the

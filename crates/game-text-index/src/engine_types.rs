@@ -1,5 +1,5 @@
 //! Bounded query requests. The native boundary validates requests independently of its TS client.
-use crate::engine_where::{Facet, Node};
+use crate::engine_where::{Field, Node};
 use crate::join_policy::characters;
 use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
@@ -67,55 +67,22 @@ pub const REVIEWS: [&str; 5] = [
     "machine_translated",
 ];
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "QueryGroupBy"))]
-#[serde(rename_all = "snake_case")]
-pub enum GroupBy {
-    Problem,
-    Folder,
-    Asset,
-    Origin,
-    Namespace,
-    Audience,
-    /// Exact source text: a line's source, or a unit's first source in UTF-16 order.
-    Source,
-    /// The rules with a finding on the row, one group per rule; a row can be in several.
-    Finding,
-    /// The main asset class of a line's packages. Facets only: requests cannot group by it.
-    #[serde(skip)]
-    AssetType,
-}
-
 /// The most groups one request lists the rows of, and the most rows it lists for them.
 pub const MAX_OPEN_GROUPS: usize = 20;
 pub const MAX_OPEN_GROUP_ROWS: usize = 500;
 
-/// The facets a query counts, each over the rows its own facet's marks don't narrow.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+/// The query's rows counted by one field, over the rows the marks naming that field don't
+/// narrow. The answer's `facets` holds each under the field's name.
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "QueryFacets"))]
+#[cfg_attr(test, ts(rename = "QueryFacet"))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Facets {
-    /// The folders under this path.
+pub struct FacetPart {
+    #[cfg_attr(test, ts(type = "QueryField"))]
+    pub by: Field,
+    /// `paths` only: count the folders directly under this one; empty for the top folders.
     #[cfg_attr(test, ts(optional))]
-    pub folder: Option<String>,
-    #[cfg_attr(test, ts(optional))]
-    pub assets: Option<bool>,
-    #[cfg_attr(test, ts(optional))]
-    pub origins: Option<bool>,
-    #[cfg_attr(test, ts(optional))]
-    pub audiences: Option<bool>,
-    #[cfg_attr(test, ts(optional))]
-    pub cultures: Option<bool>,
-    #[cfg_attr(test, ts(optional))]
-    pub asset_types: Option<bool>,
-    /// Every rule of the findings layer, in program order, with the rows it has a finding on.
-    #[cfg_attr(test, ts(optional))]
-    pub findings: Option<bool>,
-    /// The rows with each fact.
-    #[cfg_attr(test, ts(optional))]
-    pub facts: Option<bool>,
+    pub under: Option<String>,
 }
 
 /// The findings layer a read shows, and the review acceptance whose findings it hides.
@@ -179,10 +146,10 @@ pub struct Selection {
     pub filter: Option<Value>,
     #[cfg_attr(test, ts(optional))]
     pub text: Option<TextSearch>,
-    /// The facets whose marks hold, as counting a facet drops them.
+    /// The fields whose marks hold, as counting by a field drops them.
     #[serde(skip)]
     #[cfg_attr(test, ts(skip))]
-    pub dropped: Vec<Facet>,
+    pub dropped: Vec<Field>,
 }
 
 /// A group's rows: the matching rows whose `by` group is `key`.
@@ -190,7 +157,8 @@ pub struct Selection {
 #[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GroupKey {
-    pub by: GroupBy,
+    #[cfg_attr(test, ts(type = "QueryField"))]
+    pub by: Field,
     pub key: String,
 }
 
@@ -214,7 +182,8 @@ pub struct RowsPart {
 #[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OpenGroupsPart {
-    pub by: GroupBy,
+    #[cfg_attr(test, ts(type = "QueryField"))]
+    pub by: Field,
     pub keys: Vec<String>,
     /// Rows each group lists. Past 500 rows in all, a group and every one after it list none.
     pub first_rows: u32,
@@ -225,7 +194,8 @@ pub struct OpenGroupsPart {
 #[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GroupsPart {
-    pub by: GroupBy,
+    #[cfg_attr(test, ts(type = "QueryField"))]
+    pub by: Field,
     /// Only groups holding at least this many matching rows.
     #[cfg_attr(test, ts(optional))]
     pub min_size: Option<u32>,
@@ -243,8 +213,9 @@ pub struct QueryParts {
     /// `counts`, `total`, `problems`, `fileScope` and the localization tallies.
     #[cfg_attr(test, ts(optional))]
     pub counts: Option<bool>,
+    /// Each field at most once.
     #[cfg_attr(test, ts(optional))]
-    pub facets: Option<Facets>,
+    pub facets: Option<Vec<FacetPart>>,
     #[cfg_attr(test, ts(optional))]
     pub groups: Option<GroupsPart>,
     /// Files the counts report on: how many hold matching text, lie outside the project or
@@ -285,11 +256,22 @@ pub struct QueryAnswer {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional, type = "JsonValue"))]
     pub problems: Option<Value>,
+    /// The groups, with the field they are `by`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    #[cfg_attr(
+        test,
+        ts(
+            optional,
+            type = "{ readonly by: QueryField; readonly [key: string]: JsonValue }"
+        )
+    )]
     pub groups: Option<Value>,
+    /// Each facet's counts under its field's name.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    #[cfg_attr(
+        test,
+        ts(optional, type = "{ readonly [field in QueryField]?: JsonValue }")
+    )]
     pub facets: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional, type = "JsonValue"))]
@@ -719,10 +701,10 @@ impl Selection {
             .map(|value| Ok(Node::parse(value, self.target.is_some())?.without(&self.dropped)))
             .transpose()
     }
-    /// The selection with `facet`'s marks holding.
-    pub fn without(&self, facet: Facet) -> Self {
+    /// The selection with the marks naming `field` holding.
+    pub fn without(&self, field: Field) -> Self {
         let mut result = self.clone();
-        result.dropped.push(facet);
+        result.dropped.push(field);
         result
     }
     pub fn localized(&self) -> bool {
@@ -734,6 +716,7 @@ impl Query {
     pub fn validate(&self) -> Result<()> {
         self.selection.validate()?;
         let parts = &self.parts;
+        let lines = self.selection.localized();
         let bounded_key =
             |key: &str| bounded(key, MAX_SOURCE_LENGTH, "Group key exceeds its bound.");
         if let Some(rows) = &parts.rows {
@@ -745,10 +728,12 @@ impl Query {
                 bounded(after, 32767, "Search cursor exceeds its bound.")?;
             }
             if let Some(group) = &rows.group {
+                group.by.groups(lines)?;
                 bounded_key(&group.key)?;
             }
         }
         if let Some(open) = &parts.open_groups {
+            open.by.groups(lines)?;
             require(
                 !open.keys.is_empty() && open.keys.len() <= MAX_OPEN_GROUPS,
                 invalid("Open groups must name between 1 and 20 groups."),
@@ -762,6 +747,7 @@ impl Query {
             )?;
         }
         if let Some(groups) = &parts.groups {
+            groups.by.groups(lines)?;
             require(
                 groups.min_size.is_none_or(|size| size >= 1),
                 invalid("Minimum group size must be at least 1."),
@@ -770,10 +756,21 @@ impl Query {
         if let Some(files) = &parts.file_scope {
             list(files, 5000, 1024, "Invalid changed-file scope.")?;
         }
-        if let Some(facets) = &parts.facets
-            && let Some(folder) = &facets.folder
-        {
-            bounded(folder, 512, "Facet folder exceeds its bound.")?;
+        if let Some(facets) = &parts.facets {
+            for (index, facet) in facets.iter().enumerate() {
+                facet.by.counts(lines)?;
+                require(
+                    facets[..index].iter().all(|other| other.by != facet.by),
+                    invalid("A query counts by each field once."),
+                )?;
+                if let Some(under) = &facet.under {
+                    require(
+                        facet.by == Field::Paths,
+                        invalid("Only paths are counted under a folder."),
+                    )?;
+                    bounded(under, 512, "Facet folder exceeds its bound.")?;
+                }
+            }
         }
         Ok(())
     }
@@ -840,14 +837,14 @@ mod tests {
             parse_query(&json!({"selection":selection,"parts":parts}).to_string())
         };
         for (selection, parts) in [
-            (json!({}), json!({"groups":{"by":"source","minSize":2}})),
+            (json!({}), json!({"groups":{"by":"sources","minSize":2}})),
             (
                 json!({}),
-                json!({"rows":{"limit":1,"group":{"by":"source","key":long}}}),
+                json!({"rows":{"limit":1,"group":{"by":"sources","key":long}}}),
             ),
             (
                 json!({}),
-                json!({"openGroups":{"by":"finding","keys":["whitespace"],"firstRows":500}}),
+                json!({"openGroups":{"by":"findings","keys":["whitespace"],"firstRows":500}}),
             ),
             (
                 json!({"target":"Game","culture":"de","cultures":["de","fr"]}),
@@ -855,7 +852,7 @@ mod tests {
             ),
             (
                 json!({"text":{"query":"quit","translations":true}}),
-                json!({"facets":{"folder":"/Game"}}),
+                json!({"facets":[{"by":"paths","under":"/Game"},{"by":"namespace"}]}),
             ),
         ] {
             query(selection, parts)?;
@@ -864,22 +861,30 @@ mod tests {
             (json!({}), json!({"rows":{"limit":0}})),
             (
                 json!({}),
-                json!({"openGroups":{"by":"source","keys":[],"firstRows":1}}),
+                json!({"openGroups":{"by":"sources","keys":[],"firstRows":1}}),
             ),
             (
                 json!({}),
-                json!({"openGroups":{"by":"source","keys":crowded,"firstRows":1}}),
+                json!({"openGroups":{"by":"sources","keys":crowded,"firstRows":1}}),
             ),
             (
                 json!({}),
-                json!({"openGroups":{"by":"source","keys":["a"],"firstRows":501}}),
+                json!({"openGroups":{"by":"sources","keys":["a"],"firstRows":501}}),
             ),
             (
                 json!({}),
-                json!({"openGroups":{"by":"source","keys":[long.clone() + "x"],"firstRows":1}}),
+                json!({"openGroups":{"by":"sources","keys":[long.clone() + "x"],"firstRows":1}}),
             ),
-            (json!({}), json!({"groups":{"by":"source","minSize":0}})),
+            (json!({}), json!({"groups":{"by":"sources","minSize":0}})),
             (json!({}), json!({"groups":{"by":"asset_type"}})),
+            (json!({}), json!({"groups":{"by":"assetTypes"}})),
+            (json!({}), json!({"facets":[{"by":"cultures"}]})),
+            (
+                json!({}),
+                json!({"facets":[{"by":"files","under":"/Game"}]}),
+            ),
+            (json!({}), json!({"facets":[{"by":"files"},{"by":"files"}]})),
+            (json!({}), json!({"facets":[{"by":"keyChanged"}]})),
             (json!({}), json!({"fileScope":[]})),
             (json!({"culture":"de"}), json!({})),
             (json!({"findings":{"key":""}}), json!({})),

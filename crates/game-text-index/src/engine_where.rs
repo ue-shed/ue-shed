@@ -16,35 +16,12 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-#[cfg(test)]
-use ts_rs::TS;
 
-/// What a facet mark constrains. Counting a facet drops its marks, as the counts' tabs drop
-/// `capability`, `withoutNotes` and `kinds`.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "QueryFacet"))]
-#[serde(rename_all = "camelCase")]
-pub enum Facet {
-    Problem,
-    Fact,
-    Finding,
-    Folder,
-    Asset,
-    Origin,
-    Audience,
-    AssetType,
-    /// The source-editing capability a place must have.
-    Capability,
-    /// Places without translator notes.
-    WithoutNotes,
-    /// The origin kinds a place must have.
-    Kinds,
-}
-
-/// A field a test reads: of the row, of one of its cultures, or of one of its places.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-pub(crate) enum Field {
+/// A query field (Phase 7 §3): what a `where` tests, what a facet mark names, and what rows
+/// group and count by, under one name from `FIELDS`. Counting by a field drops the marks that
+/// name it; the counts' tabs drop the marks on `editing`, `notes` and `origins`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Field {
     Problems,
     Facts,
     Origins,
@@ -63,6 +40,73 @@ pub(crate) enum Field {
     State,
     NotSynced,
     Review,
+    /// The cultures of a target, counted only: each with its lines' states over the rows the
+    /// culture scope doesn't narrow.
+    Cultures,
+}
+
+/// Every field's name, in registry order, for the contract's `QueryField`.
+#[cfg(test)]
+pub fn field_names() -> impl Iterator<Item = &'static str> {
+    FIELDS.iter().map(|spec| spec.name)
+}
+
+impl Field {
+    fn spec(self) -> &'static Spec {
+        FIELDS
+            .iter()
+            .find(|spec| spec.field == self)
+            .unwrap_or_else(|| unreachable!("every field has a spec"))
+    }
+    pub fn name(self) -> &'static str {
+        self.spec().name
+    }
+    fn named(name: &str) -> Result<Self> {
+        FIELDS
+            .iter()
+            .find(|spec| spec.name == name)
+            .map(|spec| spec.field)
+            .ok_or_else(|| invalid(&format!("A query has no field {name}.")))
+    }
+    fn able(self, lines: bool, able: bool, verb: &str) -> Result<Self> {
+        let spec = self.spec();
+        let rows = if lines { Within::Line } else { Within::Unit };
+        require(
+            able && spec.within.contains(&rows),
+            invalid(&format!(
+                "{} rows cannot be {verb} by {}.",
+                if lines { "Line" } else { "Unit" },
+                spec.name
+            )),
+        )?;
+        Ok(self)
+    }
+    /// The field, if rows of this kind group by it.
+    pub fn groups(self, lines: bool) -> Result<Self> {
+        self.able(lines, self.spec().group, "grouped")
+    }
+    /// The field, if rows of this kind count by it.
+    pub fn counts(self, lines: bool) -> Result<Self> {
+        self.able(lines, self.spec().count, "counted")
+    }
+}
+
+impl Serialize for Field {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
+}
+
+impl<'de> Deserialize<'de> for Field {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Self::named(&name).map_err(serde::de::Error::custom)
+    }
 }
 
 /// What an expression is evaluated over.
@@ -92,7 +136,14 @@ struct Spec {
     name: &'static str,
     list: bool,
     values: Values,
+    /// The rows, cultures or places the field belongs to.
     within: &'static [Within],
+    /// A `where` can test it.
+    filter: bool,
+    /// Rows group by it (`groups`, `openGroups`).
+    group: bool,
+    /// Rows count by it (`facets`).
+    count: bool,
 }
 
 const ROW: &[Within] = &[Within::Line, Within::Unit];
@@ -104,13 +155,16 @@ const TEXT: Values = Values::Text {
     max: 32767,
 };
 
-const FIELDS: [Spec; 18] = [
+const FIELDS: [Spec; 19] = [
     Spec {
         field: Field::Problems,
         name: "problems",
         list: true,
         values: Values::Labels(&PROBLEMS),
         within: ROW,
+        filter: true,
+        group: true,
+        count: false,
     },
     Spec {
         field: Field::Facts,
@@ -118,6 +172,9 @@ const FIELDS: [Spec; 18] = [
         list: true,
         values: Values::Labels(&FACTS),
         within: ROW,
+        filter: true,
+        group: false,
+        count: true,
     },
     Spec {
         field: Field::Origins,
@@ -125,6 +182,9 @@ const FIELDS: [Spec; 18] = [
         list: true,
         values: Values::Labels(&ORIGINS),
         within: ROW_OR_PLACE,
+        filter: true,
+        group: true,
+        count: true,
     },
     Spec {
         field: Field::Editing,
@@ -132,6 +192,9 @@ const FIELDS: [Spec; 18] = [
         list: true,
         values: Values::Labels(&["editable", "read_only"]),
         within: ROW_OR_PLACE,
+        filter: true,
+        group: false,
+        count: false,
     },
     Spec {
         field: Field::Notes,
@@ -139,6 +202,9 @@ const FIELDS: [Spec; 18] = [
         list: false,
         values: Values::Bool,
         within: ROW_OR_PLACE,
+        filter: true,
+        group: false,
+        count: false,
     },
     Spec {
         field: Field::Audience,
@@ -146,6 +212,9 @@ const FIELDS: [Spec; 18] = [
         list: false,
         values: Values::Labels(&AUDIENCES),
         within: ROW,
+        filter: true,
+        group: true,
+        count: true,
     },
     Spec {
         field: Field::Namespace,
@@ -156,6 +225,9 @@ const FIELDS: [Spec; 18] = [
             max: 1024,
         },
         within: ROW,
+        filter: true,
+        group: true,
+        count: true,
     },
     Spec {
         field: Field::TranslationKey,
@@ -163,6 +235,9 @@ const FIELDS: [Spec; 18] = [
         list: false,
         values: Values::Key,
         within: ROW,
+        filter: true,
+        group: false,
+        count: false,
     },
     Spec {
         field: Field::AssetTypes,
@@ -173,6 +248,9 @@ const FIELDS: [Spec; 18] = [
             max: 1024,
         },
         within: ROW,
+        filter: true,
+        group: false,
+        count: true,
     },
     Spec {
         field: Field::Sources,
@@ -180,6 +258,9 @@ const FIELDS: [Spec; 18] = [
         list: true,
         values: TEXT,
         within: ROW,
+        filter: true,
+        group: true,
+        count: true,
     },
     Spec {
         field: Field::Paths,
@@ -190,6 +271,9 @@ const FIELDS: [Spec; 18] = [
             max: 512,
         },
         within: ROW_OR_PLACE,
+        filter: true,
+        group: true,
+        count: true,
     },
     Spec {
         field: Field::Files,
@@ -200,6 +284,9 @@ const FIELDS: [Spec; 18] = [
             max: 1024,
         },
         within: ROW_OR_PLACE,
+        filter: true,
+        group: true,
+        count: true,
     },
     Spec {
         field: Field::Findings,
@@ -210,6 +297,9 @@ const FIELDS: [Spec; 18] = [
             max: 256,
         },
         within: ROW,
+        filter: true,
+        group: true,
+        count: true,
     },
     Spec {
         field: Field::KeyChanged,
@@ -217,6 +307,9 @@ const FIELDS: [Spec; 18] = [
         list: false,
         values: Values::Bool,
         within: LINE,
+        filter: true,
+        group: false,
+        count: false,
     },
     Spec {
         field: Field::Id,
@@ -224,6 +317,9 @@ const FIELDS: [Spec; 18] = [
         list: false,
         values: TEXT,
         within: LINE,
+        filter: true,
+        group: false,
+        count: false,
     },
     Spec {
         field: Field::State,
@@ -231,6 +327,9 @@ const FIELDS: [Spec; 18] = [
         list: false,
         values: Values::Labels(&STATES),
         within: CULTURE,
+        filter: true,
+        group: false,
+        count: false,
     },
     Spec {
         field: Field::NotSynced,
@@ -238,6 +337,9 @@ const FIELDS: [Spec; 18] = [
         list: false,
         values: Values::Bool,
         within: CULTURE,
+        filter: true,
+        group: false,
+        count: false,
     },
     Spec {
         field: Field::Review,
@@ -245,6 +347,19 @@ const FIELDS: [Spec; 18] = [
         list: true,
         values: Values::Labels(&REVIEWS),
         within: CULTURE,
+        filter: true,
+        group: false,
+        count: false,
+    },
+    Spec {
+        field: Field::Cultures,
+        name: "cultures",
+        list: true,
+        values: Values::Labels(&[]),
+        within: LINE,
+        filter: false,
+        group: false,
+        count: true,
     },
 ];
 
@@ -266,7 +381,8 @@ pub(crate) enum Node {
     AnyCulture(Box<Node>),
     EveryCulture(Box<Node>),
     AnyPlace(Box<Node>),
-    Facet(Facet, Box<Node>),
+    /// A test that counting by the field drops.
+    Facet(Field, Box<Node>),
 }
 
 fn operator(value: &Value) -> Option<(&str, &Value)> {
@@ -312,10 +428,11 @@ impl Parser {
         let Some(("field", Value::String(name))) = operator(value) else {
             return Err(invalid("A where test reads a field."));
         };
-        let spec = FIELDS
-            .iter()
-            .find(|spec| spec.name == name)
-            .ok_or_else(|| invalid(&format!("A query has no field {name}.")))?;
+        let spec = Field::named(name)?.spec();
+        require(
+            spec.filter,
+            invalid(&format!("{name} is counted, not tested.")),
+        )?;
         require(
             spec.within.contains(&within),
             invalid(&match within {
@@ -448,10 +565,12 @@ impl Parser {
                     conjunctive && within != Within::Culture,
                     invalid("A facet mark must be ANDed into the where or a place's test."),
                 )?;
-                let [facet, body] = arguments(argument, op)?;
-                let facet = serde_json::from_value::<Facet>(facet.clone())
-                    .map_err(|_| invalid(&format!("Unknown facet {facet}.")))?;
-                Node::Facet(facet, Box::new(self.node(body, within, true)?))
+                let [field, body] = arguments(argument, op)?;
+                let field = field
+                    .as_str()
+                    .ok_or_else(|| invalid("A facet mark names a field."))
+                    .and_then(Field::named)?;
+                Node::Facet(field, Box::new(self.node(body, within, true)?))
             }
             _ => return Err(refused(op)),
         })
@@ -516,7 +635,7 @@ impl Node {
         Parser::default().node(value, if lines { Within::Line } else { Within::Unit }, true)
     }
     /// The expression with the marks of `dropped` holding, and every other mark removed.
-    pub fn without(&self, dropped: &[Facet]) -> Self {
+    pub fn without(&self, dropped: &[Field]) -> Self {
         let each = |nodes: &[Node]| nodes.iter().map(|node| node.without(dropped)).collect();
         match self {
             Self::And(nodes) => Self::And(each(nodes)),
@@ -732,6 +851,7 @@ impl Test {
                     Field::State => Self::State(mask(&STATES, &text)),
                     Field::NotSynced => Self::NotSynced(bools(values)),
                     Field::Review => Self::Review(mask(&REVIEWS, &text)),
+                    Field::Cultures => unreachable!("the parser refuses tests of counted fields"),
                 }
             }
         })
@@ -905,13 +1025,13 @@ mod tests {
     #[test]
     fn browse_shapes_parse_and_other_expressions_are_refused_by_name() -> Result<()> {
         let valid = json!({"and":[
-            {"facet":["problem",{"any":[{"field":"problems"},{"in":[{"var":"item"},{"lit":["translation"]}]}]}]},
+            {"facet":["problems",{"any":[{"field":"problems"},{"in":[{"var":"item"},{"lit":["translation"]}]}]}]},
             {"not":{"in":[{"field":"audience"},{"lit":["editor"]}]}},
             {"eq":[{"field":"keyChanged"},{"lit":true}]},
             {"anyCulture":{"or":[{"in":[{"field":"state"},{"lit":["not_synced"]}]},{"eq":[{"field":"notSynced"},{"lit":true}]}]}},
             {"anyPlace":{"and":[
-                {"facet":["capability",{"any":[{"field":"editing"},{"eq":[{"var":"place"},{"lit":"editable"}]},"place"]}]},
-                {"facet":["withoutNotes",{"eq":[{"field":"notes"},{"lit":false}]}]},
+                {"facet":["editing",{"any":[{"field":"editing"},{"eq":[{"var":"place"},{"lit":"editable"}]},"place"]}]},
+                {"facet":["notes",{"eq":[{"field":"notes"},{"lit":false}]}]},
                 {"any":[{"field":"paths"},{"or":[{"pathHasPrefix":[{"var":"item"},{"lit":"/Game/UI"}]}]}]}
             ]}},
             {"in":[{"field":"translationKey"},{"lit":[["UI","Title"]]}]},
@@ -920,10 +1040,10 @@ mod tests {
         let node = parse(valid, true)?;
         assert!(node.mentions(Field::KeyChanged));
         assert!(node.reads_scope() && node.reads_findings());
-        let kept = node.without(&[Facet::Capability]).conjuncts();
+        let kept = node.without(&[Field::Editing]).conjuncts();
         assert_eq!(kept.len(), 7);
         let place = serde_json::to_string(&kept[4])?;
-        assert!(!place.contains("Facet") && !place.contains("Editing") && place.contains("Notes"));
+        assert!(!place.contains("Facet") && !place.contains("editing") && place.contains("notes"));
         for (value, lines, message) in [
             (
                 json!({"utf16Length":[{"field":"source"}]}),
@@ -947,9 +1067,19 @@ mod tests {
                 "Invalid problems value",
             ),
             (
-                json!({"not":{"facet":["origin",{"lit":true}]}}),
+                json!({"not":{"facet":["origins",{"lit":true}]}}),
                 true,
                 "facet mark",
+            ),
+            (
+                json!({"facet":["origin",{"lit":true}]}),
+                true,
+                "no field origin",
+            ),
+            (
+                json!({"in":[{"field":"cultures"},{"lit":["de"]}]}),
+                true,
+                "counted, not tested",
             ),
             (
                 json!({"in":[{"field":"translationKey"},{"lit":[["UI",""]]}]}),

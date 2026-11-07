@@ -5,7 +5,7 @@ use crate::engine_match::{Projection, checkpoint};
 use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, selected_bits};
 use crate::engine_types::*;
-use crate::engine_where::{Facet, Field};
+use crate::engine_where::Field;
 use crate::rules::FindingRows;
 use crate::{Result, require};
 use serde_json::{Value, json};
@@ -87,14 +87,14 @@ impl EngineQuery {
                 }
             }
         }
-        let tab = |facet: Facet| -> Result<std::sync::Arc<[u32]>> {
+        let tab = |field: Field| -> Result<std::sync::Arc<[u32]>> {
             if localized {
                 Ok(std::sync::Arc::from(matched))
             } else {
-                self.matching(&selection.without(facet), cancelled)
+                self.matching(&selection.without(field), cancelled)
             }
         };
-        for (index, row) in tab(Facet::Capability)?.iter().enumerate() {
+        for (index, row) in tab(Field::Editing)?.iter().enumerate() {
             if index & 255 == 0 {
                 checkpoint(cancelled)?;
             }
@@ -102,13 +102,13 @@ impl EngineQuery {
             counts[3] += usize::from(editing[row] & 1 != 0);
             counts[4] += usize::from(editing[row] & 2 != 0);
         }
-        for (index, row) in tab(Facet::WithoutNotes)?.iter().enumerate() {
+        for (index, row) in tab(Field::Notes)?.iter().enumerate() {
             if index & 255 == 0 {
                 checkpoint(cancelled)?;
             }
             counts[5] += usize::from(notes[*row as usize] == 0);
         }
-        let rows = self.matching(&selection.without(Facet::Kinds), cancelled)?;
+        let rows = self.matching(&selection.without(Field::Origins), cancelled)?;
         for (index, row) in rows.iter().enumerate() {
             if index & 255 == 0 {
                 checkpoint(cancelled)?;
@@ -269,7 +269,7 @@ impl EngineQuery {
     }
     /// The rows with each fact, over every atom but the `fact` clauses.
     fn fact_counts(&self, selection: &Selection, cancelled: &AtomicBool) -> Result<Value> {
-        let rows = self.matching(&selection.without(Facet::Fact), cancelled)?;
+        let rows = self.matching(&selection.without(Field::Facts), cancelled)?;
         let p = Projection::open(self, cancelled)?;
         let localized = selection.localized();
         let mut counts = [0usize; FACTS.len()];
@@ -295,7 +295,7 @@ impl EngineQuery {
     fn problem_counts(&self, selection: &Selection, cancelled: &AtomicBool) -> Result<Value> {
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("searchProblemCounts");
-        let selection = selection.without(Facet::Problem);
+        let selection = selection.without(Field::Problems);
         let localized = selection.localized();
         let scope = self.culture_scope(&selection)?;
         let findings = self.request_findings(&selection, cancelled)?;
@@ -315,6 +315,36 @@ impl EngineQuery {
             }
         }
         Ok(record(&PROBLEMS, &problems))
+    }
+    /// The rows counted by one field, over the rows the marks naming it don't narrow.
+    fn facet(
+        &self,
+        selection: &Selection,
+        matched: &[u32],
+        facet: &FacetPart,
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        let by = facet.by;
+        Ok(match by {
+            Field::Cultures => self.culture_facets(selection, matched, cancelled)?,
+            Field::Facts => self.fact_counts(selection, cancelled)?,
+            Field::Findings => match self.request_findings(selection, cancelled)? {
+                Some(findings) => {
+                    let rows = self.matching(&selection.without(by), cancelled)?;
+                    self.finding_groups(&rows, selection, &findings, None, cancelled)?
+                }
+                None => json!({"entries":[],"more":0}),
+            },
+            _ => {
+                let rows = self.matching(&selection.without(by), cancelled)?;
+                let under = facet.under.as_deref().unwrap_or("");
+                let mut value = self.aggregate(&rows, selection, by, None, under, cancelled)?;
+                if by == Field::Paths {
+                    value["under"] = json!(under);
+                }
+                value
+            }
+        })
     }
     /// The answer's aggregates, as its parts ask for them.
     fn search_metadata(
@@ -339,7 +369,7 @@ impl EngineQuery {
             #[cfg(feature = "benchmark-timings")]
             let _span = crate::benchmark_timings::Span::new("searchGroups");
             let minimum = groups.min_size.unwrap_or(1) as usize;
-            let mut value = if groups.by == GroupBy::Finding {
+            let mut value = if groups.by == Field::Findings {
                 match self.request_findings(selection, cancelled)? {
                     Some(findings) => self.finding_groups(
                         matched,
@@ -359,51 +389,12 @@ impl EngineQuery {
         if let Some(facets) = &parts.facets {
             #[cfg(feature = "benchmark-timings")]
             let _span = crate::benchmark_timings::Span::new("searchFacets");
-            let mut values = json!({});
-            if let Some(under) = &facets.folder {
-                let rows = self.matching(&selection.without(Facet::Folder), cancelled)?;
-                let mut folders =
-                    self.aggregate(&rows, selection, GroupBy::Folder, None, under, cancelled)?;
-                folders["under"] = json!(under);
-                values["folders"] = folders;
+            let mut values = serde_json::Map::new();
+            for facet in facets {
+                let value = self.facet(selection, matched, facet, cancelled)?;
+                values.insert(facet.by.name().to_owned(), value);
             }
-            for (enabled, facet, by, name) in [
-                (facets.assets, Facet::Asset, GroupBy::Asset, "assets"),
-                (facets.origins, Facet::Origin, GroupBy::Origin, "origins"),
-                (
-                    facets.audiences,
-                    Facet::Audience,
-                    GroupBy::Audience,
-                    "audiences",
-                ),
-                (
-                    facets.asset_types,
-                    Facet::AssetType,
-                    GroupBy::AssetType,
-                    "assetTypes",
-                ),
-            ] {
-                if enabled == Some(true) {
-                    let rows = self.matching(&selection.without(facet), cancelled)?;
-                    values[name] = self.aggregate(&rows, selection, by, None, "", cancelled)?;
-                }
-            }
-            if facets.cultures == Some(true) && localized {
-                values["cultures"] = self.culture_facets(selection, matched, cancelled)?;
-            }
-            if facets.findings == Some(true) {
-                values["findings"] = match self.request_findings(selection, cancelled)? {
-                    Some(findings) => {
-                        let rows = self.matching(&selection.without(Facet::Finding), cancelled)?;
-                        self.finding_groups(&rows, selection, &findings, None, cancelled)?
-                    }
-                    None => json!({"entries":[],"more":0}),
-                };
-            }
-            if facets.facts == Some(true) {
-                values["facts"] = self.fact_counts(selection, cancelled)?;
-            }
-            result.facets = Some(values);
+            result.facets = Some(Value::Object(values));
         }
         if counts {
             if let Some(files) = &parts.file_scope {
@@ -532,7 +523,7 @@ impl EngineQuery {
         let mut found: HashMap<u32, Vec<u32>> = HashMap::new();
         for key in keys {
             // A finding group is its rule's position in the layer.
-            let id = if by == GroupBy::Finding {
+            let id = if by == Field::Findings {
                 findings
                     .as_deref()
                     .and_then(|findings| findings.rule(key))
@@ -565,7 +556,7 @@ impl EngineQuery {
                 }
             };
             match &findings {
-                Some(findings) if by == GroupBy::Finding => {
+                Some(findings) if by == Field::Findings => {
                     for rule in findings.of(*row as usize) {
                         fill(rule as u32);
                     }

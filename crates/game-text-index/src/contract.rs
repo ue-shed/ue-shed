@@ -73,12 +73,11 @@ mod tests {
     use crate::batch::{BatchHeader, ColumnHeader, ColumnType, Missing, StringsHeader};
     use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile, Progress};
     use crate::engine_types::{
-        DetailSection, Facets, FindingsSelection, GroupBy, GroupKey, GroupsPart, LineAnswer,
-        LineRequest, OpenGroupAnswer, OpenGroupsPart, PlacesSection, Query, QueryAnswer,
-        QueryParts, RelatedSection, ReviewIdentity, ReviewLine, ReviewLinesAnswer,
-        ReviewLinesRequest, ReviewPoEntry, RowKind, RowSelection, RowsPart, Selection, TextSearch,
+        DetailSection, FacetPart, FindingsSelection, GroupKey, GroupsPart, LineAnswer, LineRequest,
+        OpenGroupAnswer, OpenGroupsPart, PlacesSection, Query, QueryAnswer, QueryParts,
+        RelatedSection, ReviewIdentity, ReviewLine, ReviewLinesAnswer, ReviewLinesRequest,
+        ReviewPoEntry, RowKind, RowSelection, RowsPart, Selection, TextSearch,
     };
-    use crate::engine_where::Facet;
     use crate::package_text_contract::{
         BaseLocalization, CodeLayerOutcome, CodeLayerRequest, ComparePointsRequest, CultureArchive,
         GateCheck, LocalizationRevision, PackageTextAudienceMatch, PackageTextAudienceRule,
@@ -143,6 +142,14 @@ mod tests {
              export type Finding = {\n\treadonly places: number;\n\treadonly id: string;\n\t\
              readonly [key: string]: JsonValue;\n};\n",
         );
+        text.push_str(&format!(
+            "\n/** A query field: what a `where` tests, a facet mark names, and rows group and count by. */\n\
+             export type QueryField = {};\n",
+            crate::engine_where::field_names()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ));
         for declaration in [
             crate::localization::Format::decl(&config),
             crate::localization::Options::decl(&config),
@@ -216,14 +223,12 @@ mod tests {
             Selection::decl(&config),
             TextSearch::decl(&config),
             FindingsSelection::decl(&config),
-            Facet::decl(&config),
             QueryParts::decl(&config),
             RowsPart::decl(&config),
             GroupKey::decl(&config),
             OpenGroupsPart::decl(&config),
             GroupsPart::decl(&config),
-            GroupBy::decl(&config),
-            Facets::decl(&config),
+            FacetPart::decl(&config),
             QueryAnswer::decl(&config),
             OpenGroupAnswer::decl(&config),
             LineRequest::decl(&config),

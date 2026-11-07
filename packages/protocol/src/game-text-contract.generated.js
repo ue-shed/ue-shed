@@ -3,7 +3,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
     buildId: "0.27.1",
-    contractHash: "0b7928ccbb08f121f588b1addf8a66c138923ff25bba267d9e36ffea6abb7801"
+    contractHash: "462568803fb76f22bb9c84ac9e628c16905d121c09a329fb64de1e5d1009b9a9"
 };
 /**
  * The localization import: the version of its semantics in every content key it returns, and

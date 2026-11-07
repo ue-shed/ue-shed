@@ -11,7 +11,8 @@ const holds = (name, values) => ({
 const is = (name, value) => ({ eq: [field(name), { lit: value }] });
 const all = (tests) => (tests.length === 1 ? tests[0] : { and: tests });
 const some = (tests) => (tests.length === 1 ? tests[0] : { or: tests });
-const marked = (facet, test) => ({ facet: [facet, test] });
+/** A test that counting by `name` drops. */
+const marked = (name, test) => ({ facet: [name, test] });
 const under = (prefixes) => ({
     any: [
         field("paths"),
@@ -31,21 +32,21 @@ const pill = (clause) => {
     const test = (expr) => (clause.op === "is" ? expr : { not: expr });
     switch (clause.field) {
         case "problem":
-            return marked("problem", test(holds("problems", clause.values)));
+            return marked("problems", test(holds("problems", clause.values)));
         case "finding":
-            return marked("finding", test(holds("findings", clause.values)));
+            return marked("findings", test(holds("findings", clause.values)));
         case "fact":
-            return marked("fact", test(holds("facts", clause.values)));
+            return marked("facts", test(holds("facts", clause.values)));
         case "origin":
-            return marked("origin", test(holds("origins", clause.values)));
+            return marked("origins", test(holds("origins", clause.values)));
         case "folder":
-            return marked("folder", test(under(clause.values)));
+            return marked("paths", test(under(clause.values)));
         case "asset":
-            return marked("asset", test(holds("files", clause.values)));
+            return marked("files", test(holds("files", clause.values)));
         case "audience":
             return marked("audience", test(oneOf("audience", clause.values)));
         case "asset_type":
-            return marked("assetType", test(holds("assetTypes", clause.values)));
+            return marked("assetTypes", test(holds("assetTypes", clause.values)));
         case "namespace":
             return test(oneOf("namespace", clause.values));
         case "editing":
@@ -88,14 +89,14 @@ export const querySelection = (request) => {
         conjuncts.push(is("keyChanged", true));
     const place = [];
     if (request.capability !== "all")
-        place.push(marked("capability", holds("editing", [
+        place.push(marked("editing", holds("editing", [
             request.capability === "source_editable" ? "editable" : "read_only"
         ])));
     if (request.withoutNotes === true)
-        place.push(marked("withoutNotes", is("notes", false)));
+        place.push(marked("notes", is("notes", false)));
     const where = request.where;
     if (where?.kinds)
-        place.push(marked("kinds", holds("origins", where.kinds)));
+        place.push(marked("origins", holds("origins", where.kinds)));
     if (where?.pathPrefix)
         place.push(under([where.pathPrefix]));
     if (where?.files)
@@ -118,13 +119,56 @@ export const querySelection = (request) => {
         })
     };
 };
+/** The field each of a search request's groups is. */
+const GROUP_FIELDS = {
+    problem: "problems",
+    folder: "paths",
+    asset: "files",
+    origin: "origins",
+    namespace: "namespace",
+    audience: "audience",
+    source: "sources",
+    finding: "findings"
+};
+/** The field each of a search request's facets counts by, and the page's name for it. */
+const FACET_FIELDS = [
+    ["assets", "files"],
+    ["origins", "origins"],
+    ["audiences", "audience"],
+    ["cultures", "cultures"],
+    ["assetTypes", "assetTypes"],
+    ["findings", "findings"],
+    ["facts", "facts"]
+];
+/** A search request's facets as the query's list. Cultures are counted for a target's lines. */
+const queryFacets = (facets, localized) => [
+    ...(facets.folder !== undefined ? [{ by: "paths", under: facets.folder }] : []),
+    ...FACET_FIELDS.filter(([name]) => facets[name] === true && (name !== "cultures" || localized)).map(([, by]) => ({ by }))
+];
+/** The query's facets, keyed by field, under a search page's names. */
+const pageFacets = (facets) => {
+    const page = {};
+    if (facets.paths !== undefined)
+        page["folders"] = facets.paths;
+    for (const [name, by] of FACET_FIELDS) {
+        const value = facets[by];
+        if (value !== undefined)
+            page[name] = value;
+    }
+    return page;
+};
+/** The query's groups under a search page's group name. */
+const pageGroups = (groups) => {
+    const by = Object.entries(GROUP_FIELDS).find(([, field]) => field === groups.by)?.[0];
+    return by === undefined ? groups : { ...groups, by };
+};
 /**
  * A search request as a query: its rows, or the open groups' first rows, and with `aggregates`
  * the counts, facets and groups.
  */
 export const searchQuery = (request, aggregates) => {
     const after = request.localization ? request.localizationCursor : request.cursor;
-    const group = request.group;
+    const group = request.group === undefined ? undefined : GROUP_FIELDS[request.group];
     const open = request.openGroups;
     return {
         selection: querySelection(request),
@@ -143,7 +187,9 @@ export const searchQuery = (request, aggregates) => {
                 }),
             ...(aggregates && {
                 counts: true,
-                ...(request.facets && { facets: request.facets }),
+                ...(request.facets && {
+                    facets: queryFacets(request.facets, request.localization !== undefined)
+                }),
                 ...(group !== undefined && {
                     groups: {
                         by: group,
@@ -162,7 +208,12 @@ export const searchQuery = (request, aggregates) => {
 export const searchPage = (request, head, rows) => {
     const target = request.localization?.target;
     const assemble = (page, units, lines) => {
-        const { nextCursor, localization, ...rest } = page;
+        const { nextCursor, localization, facets, groups, ...counted } = page;
+        const rest = {
+            ...counted,
+            ...(facets !== undefined && { facets: pageFacets(facets) }),
+            ...(groups !== undefined && { groups: pageGroups(groups) })
+        };
         const next = nextCursor === undefined ? undefined : { nextCursor };
         return target === undefined
             ? { ...rest, ...next, units }

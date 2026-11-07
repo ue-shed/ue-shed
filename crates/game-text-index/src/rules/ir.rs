@@ -60,7 +60,10 @@ macro_rules! expressions {
             AnyPlace(Box<Expr>),
             /// A query conjunct that counting its facet drops.
             #[serde(rename = "facet")]
-            Facet((crate::engine_where::Facet, Box<Expr>)),
+            Facet(
+                #[cfg_attr(test, ts(type = "[QueryField, Expr]"))]
+                (crate::engine_where::Field, Box<Expr>),
+            ),
             $(#[serde(rename = $unary_name)] $unary(Box<Expr>),)*
             $(#[serde(rename = $binary_name)] $binary(Box<[Expr; 2]>),)*
             $(#[serde(rename = $ternary_name)] $ternary(Box<[Expr; 3]>),)*

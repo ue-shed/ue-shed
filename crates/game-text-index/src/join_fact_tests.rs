@@ -523,7 +523,7 @@ fn manifest_notes_count_for_saved_lines_and_the_detail_keeps_the_list_culture_sc
         .to_owned();
     let query = EngineQuery::open(&fixture.configuration, None)?;
     let cancelled = AtomicBool::new(false);
-    let without_notes = json!({"selection":{"target":"Game","where":{"anyPlace":{"facet":["withoutNotes",
+    let without_notes = json!({"selection":{"target":"Game","where":{"anyPlace":{"facet":["notes",
         {"eq":[{"field":"notes"},{"lit":false}]}]}}},"parts":{"rows":{"limit":50}}});
     let page = query.query_page(without_notes, &cancelled)?;
     let listed = page["localization"]["lines"]
@@ -588,7 +588,7 @@ fn search_atoms_are_reused_by_their_normal_form_and_never_change_an_answer() -> 
         lines("pl"),
         lines("no"),
         json!({"selection":{"target":"Game","culture":"de","text":{"query":"notiert","translations":true}},"parts":parts}),
-        json!({"selection":{"text":{"query":"pla"},"where":{"anyPlace":{"facet":["withoutNotes",missing]}}},"parts":parts}),
+        json!({"selection":{"text":{"query":"pla"},"where":{"anyPlace":{"facet":["notes",missing]}}},"parts":parts}),
     ];
     let mut atoms = Vec::new();
     let mut listed = Vec::new();
@@ -642,10 +642,10 @@ fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> 
         )
     };
     let full = search(
-        json!({"rows":{"limit":50},"counts":true,"facets":{"origins":true},
-        "groups":{"by":"source"}}),
+        json!({"rows":{"limit":50},"counts":true,"facets":[{"by":"origins"}],
+        "groups":{"by":"sources"}}),
     )?;
-    let groups = search(json!({"groups":{"by":"source"}}))?;
+    let groups = search(json!({"groups":{"by":"sources"}}))?;
     assert_eq!(groups["groups"], full["groups"]);
     for absent in [
         "counts",
@@ -657,6 +657,27 @@ fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> 
     ] {
         assert!(groups.get(absent).is_none(), "{absent}");
     }
+    // Groups and facets answer under the field's name.
+    assert_eq!(full["groups"]["by"], "sources");
+    assert!(full["facets"]["origins"]["entries"].is_array());
+    // Any field a host marks is dropped when counting by it: a namespace no line has matches
+    // nothing, and the namespace count still lists every line's namespace.
+    let other = query.query_page(
+        json!({"selection":{"target":"Game",
+            "where":{"facet":["namespace",{"in":[{"field":"namespace"},{"lit":["Other"]}]}]}},
+        "parts":{"counts":true,"facets":[{"by":"namespace"}]}}),
+        &cancelled,
+    )?;
+    assert_eq!(other["total"], 0);
+    assert_eq!(
+        other["facets"]["namespace"]["entries"]
+            .as_array()
+            .map(|entries| entries
+                .iter()
+                .map(|entry| (entry["key"].clone(), entry["count"].clone()))
+                .collect::<Vec<_>>()),
+        Some(vec![(json!("UI"), json!(3))])
+    );
     let entries = full["groups"]["entries"]
         .as_array()
         .ok_or("Missing groups.")?;
@@ -681,7 +702,7 @@ fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> 
             .unwrap_or_default()
     };
     // Open groups list their first rows in the order named; a key nothing has lists none.
-    let rows = search(json!({"openGroups":{"by":"source","firstRows":1,
+    let rows = search(json!({"openGroups":{"by":"sources","firstRows":1,
         "keys":[keys[1], keys[0], "Nowhere"]}}))?;
     for absent in ["counts", "groups", "facets", "units", "localization"] {
         assert!(rows.get(absent).is_none(), "{absent}");
@@ -699,7 +720,7 @@ fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> 
     // Each open group's page is the first page an `openGroup` read lists, with its cursor.
     for (index, key) in keys.iter().enumerate() {
         let page = &open[1 - index]["page"];
-        let read = search(json!({"rows":{"limit":1,"group":{"by":"source","key":key}}}))?;
+        let read = search(json!({"rows":{"limit":1,"group":{"by":"sources","key":key}}}))?;
         assert_eq!(sources(page), sources(&read));
         assert_eq!(page["units"], read["units"]);
         assert_eq!(
@@ -711,10 +732,10 @@ fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> 
     let cursor = example["localization"]["nextCursor"].clone();
     assert!(cursor.is_string(), "the two-line group has a next page");
     let more = search(json!({"rows":{"limit":50,"after":cursor,
-        "group":{"by":"source","key":keys[two]}}}))?;
+        "group":{"by":"sources","key":keys[two]}}}))?;
     let mut listed = sources(example);
     listed.extend(sources(&more));
-    let whole = search(json!({"rows":{"limit":50,"group":{"by":"source","key":keys[two]}}}))?;
+    let whole = search(json!({"rows":{"limit":50,"group":{"by":"sources","key":keys[two]}}}))?;
     assert_eq!(listed, sources(&whole));
     assert_eq!(listed.len(), 2);
     Ok(())
@@ -2138,7 +2159,7 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     };
     let has =
         |rules: Value| json!({"any":[{"field":"findings"},{"in":[{"var":"item"},{"lit":rules}]}]});
-    let finding = |rules: Value| json!({"facet":["finding",has(rules)]});
+    let finding = |rules: Value| json!({"facet":["findings",has(rules)]});
     let keys = |page: &Value| -> Vec<Value> {
         page["localization"]["lines"]
             .as_array()
@@ -2160,7 +2181,7 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     let page = search(
         &query,
         json!({}),
-        json!({"facets":{"findings":true,"facts":true}}),
+        json!({"facets":[{"by":"findings"},{"by":"facts"}]}),
     )?;
     let line = |key: &str| -> Result<Value> {
         page["localization"]["lines"]
@@ -2212,14 +2233,14 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     let only = search(
         &query,
         json!({"where":finding(json!(["localization.format_arguments"]))}),
-        json!({"facets":{"findings":true}}),
+        json!({"facets":[{"by":"findings"}]}),
     )?;
     assert_eq!(keys(&only), vec![json!("Args")]);
     // The facet leaves out its own clause.
     assert_eq!(facet(&only), facet(&page));
     let others = search(
         &query,
-        json!({"where":{"facet":["finding",{"not":has(json!(["localization.format_arguments"]))}]}}),
+        json!({"where":{"facet":["findings",{"not":has(json!(["localization.format_arguments"]))}]}}),
         json!({}),
     )?;
     assert_eq!(others["total"], json!(2));
@@ -2234,7 +2255,7 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     let grouped = search(
         &query,
         json!({}),
-        json!({"groups":{"by":"finding"},"openGroups":{"by":"finding","firstRows":50,
+        json!({"groups":{"by":"findings"},"openGroups":{"by":"findings","firstRows":50,
             "keys":["localization.source_whitespace"]}}),
     )?;
     let groups = grouped["groups"]["entries"]
@@ -2254,7 +2275,7 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
     let english = search(
         &query,
         json!({"cultures":["en"]}),
-        json!({"facets":{"findings":true}}),
+        json!({"facets":[{"by":"findings"}]}),
     )?;
     assert_eq!(
         facet(&english),
@@ -2267,7 +2288,7 @@ fn browse_reads_a_findings_layer_as_rows_facets_groups_problems_and_row_findings
 
     // Without a target, Browse lists the source rules' findings on their units.
     let corpus = json!({"selection":{"findings":{"key":key,"sourceOnly":true}},
-        "parts":{"rows":{"limit":50},"facets":{"findings":true}}});
+        "parts":{"rows":{"limit":50},"facets":[{"by":"findings"}]}});
     let units = query.query_page(corpus, &cancelled)?;
     assert_eq!(facet(&units), vec![(json!("terms"), json!(1))]);
     let args = units["units"]

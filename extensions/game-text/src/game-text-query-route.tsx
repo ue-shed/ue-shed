@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import {
-	investigationRequest,
+	investigationControls,
 	staleRuntimeCopy,
 	type GameTextInvestigationPreset,
 	type TextQualityFindingId,
@@ -110,7 +110,8 @@ import {
 	sourceText
 } from "./game-text-view.js";
 import { styles } from "./game-text-styles.js";
-import { WhereFilter, textWhere } from "./game-text-where.js";
+import { WhereFilter, textLocation } from "./game-text-where.js";
+import { textWhere } from "@ue-shed/game-text/query";
 
 export { CopyButton } from "./game-text-copy-button.js";
 export type { GameTextPreferences } from "./game-text-preferences.js";
@@ -428,9 +429,12 @@ export function GameTextRoute(props: {
 		const value = group();
 		return value === "none" ? undefined : { group: value };
 	};
+	/** A preset's localization: the selection, with the lens it saves beside it. */
 	const localizationField = () => {
 		const selected = localization.selection();
-		return selected === undefined ? undefined : { localization: selected };
+		return selected === undefined
+			? undefined
+			: { localization: { ...selected, ...localization.lens() } };
 	};
 	let searchInput: HTMLInputElement | undefined;
 	const navigation = createLineNavigation({
@@ -581,9 +585,9 @@ export function GameTextRoute(props: {
 				(page()?.facets?.findings?.entries ?? []).map((entry) => [entry.key, entry.label])
 			)
 	);
-	const searchRequest = createMemo((): TextCorpusSearchRequest => {
-		const selected = localization.selection();
-		const clauses = selected
+	// Without a target, translation pills and translation problems select nothing to ask for.
+	const requestClauses = (): TextFilter =>
+		localization.selection()
 			? filter()
 			: filter().flatMap((clause): TextFilter => {
 					if (clause.field === "translation") return [];
@@ -593,12 +597,23 @@ export function GameTextRoute(props: {
 					);
 					return values.length ? [{ ...clause, values }] : [];
 				});
-		return {
-			query: query(),
+	const searchRequest = createMemo((): TextCorpusSearchRequest => {
+		const selected = localization.selection();
+		const clauses = requestClauses();
+		// The controls become one `where`; the changed files stay the request's file scope.
+		const location = where();
+		const filtered = textWhere({
+			filter: clauses,
+			...(selected ? { lens: localization.lens() } : undefined),
 			capability: capability(),
 			withoutNotes: withoutNotes(),
-			...whereField(),
-			...(clauses.length > 0 ? { filter: clauses } : undefined),
+			kinds: location?.kinds,
+			pathPrefix: location?.pathPrefix
+		});
+		return {
+			query: query(),
+			...(filtered ? { where: filtered } : undefined),
+			...(location?.files ? { fileScope: location.files } : undefined),
 			...groupField(),
 			facets: {
 				folder: facetFolder(),
@@ -910,7 +925,7 @@ export function GameTextRoute(props: {
 				capability: capability(),
 				withoutNotes: withoutNotes(),
 				// A changed-file list lasts for the session; pills and grouping are saved.
-				where: textWhere(where()?.kinds, where()?.pathPrefix),
+				where: textLocation(where()?.kinds, where()?.pathPrefix),
 				filter: filter(),
 				group: group(),
 				mode: mode(),
@@ -1038,7 +1053,7 @@ export function GameTextRoute(props: {
 			});
 		});
 	const restorePreset = (preset: GameTextInvestigationPreset) => {
-		const { localization: selected, ...saved } = investigationRequest(preset.query);
+		const { localization: selected, ...saved } = investigationControls(preset.query);
 		restore({
 			...saved,
 			qualityFilter: saved.workspaceFilter ?? saved.qualityFilter,
@@ -1128,8 +1143,8 @@ export function GameTextRoute(props: {
 							capability: capability(),
 							withoutNotes: withoutNotes(),
 							...whereField(),
-							...(searchRequest().filter
-								? { filter: searchRequest().filter }
+							...(requestClauses().length > 0
+								? { filter: requestClauses() }
 								: undefined),
 							...groupField(),
 							// Problem and translation pills need the target, as the list does.

@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -266,9 +267,8 @@ it.live("units read from the index carry Unreal's object paths for every locatio
 			// Search reads its contexts and path filters from the stored columns.
 			const page = yield* result.search({
 				query: "",
-				capability: "all",
 				pageSize: 50,
-				where: { pathPrefix: "/Game/Text/Table.Table" }
+				where: textWhere({ pathPrefix: "/Game/Text/Table.Table" })!
 			});
 			expect(page.units.map((unit) => keyOf(memory, unit.id)).sort()).toEqual([
 				"Cell",

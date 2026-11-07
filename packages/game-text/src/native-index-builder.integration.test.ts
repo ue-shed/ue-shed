@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { mkdtemp, rm, readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -173,7 +174,6 @@ describe.skipIf(!executable)("native index build capability", () => {
 									snapshots.push(
 										yield* query.search({
 											query: "",
-											capability: "all",
 											pageSize: 50,
 											localization: {
 												target: authored.name,
@@ -320,21 +320,21 @@ describe.skipIf(!executable)("native index build capability", () => {
 											(queryText) =>
 												query.search({
 													query: queryText,
-													capability: "all",
 													pageSize: 50
 												})
 										);
 										const filtered = yield* query.search({
 											query: "",
-											capability: "all",
 											pageSize: 50,
-											filter: [
-												{
-													field: "finding",
-													op: "is",
-													values: ["localization.long"]
-												}
-											],
+											where: textWhere({
+												filter: [
+													{
+														field: "finding",
+														op: "is",
+														values: ["localization.long"]
+													}
+												]
+											})!,
 											group: "audience"
 										});
 										return {
@@ -359,7 +359,6 @@ describe.skipIf(!executable)("native index build capability", () => {
 								expect(
 									(yield* pinned.query.search({
 										query: "first",
-										capability: "all",
 										pageSize: 50
 									})).total
 								).toBe(1);
@@ -424,7 +423,6 @@ describe.skipIf(!executable)("native index build capability", () => {
 								expect(
 									(yield* pinned.query.search({
 										query: "first",
-										capability: "all",
 										pageSize: 50
 									})).total
 								).toBe(1);

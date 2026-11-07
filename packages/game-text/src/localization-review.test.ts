@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import {
 	emptyLocalizationReviewFile,
 	localizationEvidenceFingerprint,
@@ -129,7 +130,7 @@ describe("localization review state", () => {
 					});
 					const notReviewed = yield* query.search({
 						...request,
-						localization: { ...request.localization, review: "not_reviewed" }
+						where: textWhere({ lens: { review: "not_reviewed" } })!
 					});
 					expect(
 						notReviewed.localization?.lines.map((line) => line.identity?.key)

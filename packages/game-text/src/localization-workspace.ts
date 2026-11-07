@@ -16,7 +16,22 @@ import {
 	textQualityQuery
 } from "./quality-query.js";
 import type { GameTextContract } from "@ue-shed/protocol";
-import type { NativeFindings, QueriedFinding } from "./native-findings.js";
+import {
+	facetCounts,
+	findingRowsQuery,
+	type FindingRowsOptions,
+	type NativeFindings,
+	type QueriedFinding
+} from "./native-findings.js";
+import {
+	allOf,
+	marked,
+	QueryExpr,
+	QueryFacetCounts,
+	QueryFacets,
+	qualityPillsOf,
+	ruleIn
+} from "./query-filter.js";
 import type { GameTextIndexError } from "./index-error.js";
 import type { IndexFailure } from "./index-failure.js";
 import type { LocalizationFocusRequest } from "./localization-view.js";
@@ -131,22 +146,22 @@ const Selection = { target: LocalizationTargetName, culture: Schema.optionalKey(
 /**
  * What narrows a quality list besides its check. `query` searches as the Text tab does: each
  * word in the line's source or in the finding's culture's translation, ignoring case; a source
- * finding's own source text. `severities` keeps those severities' findings, and `fixable` the
- * findings with (or without) a suggested fix.
+ * finding's own source text. `where` is a query filter over finding rows, as `qualityWhere` and
+ * `rowWhere` write it; a test marked with a field leaves that field's counts.
  */
 export const WorkspaceQualityNarrowing = {
 	query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512))),
-	severities: Schema.optionalKey(Schema.Array(CheckSeverity).check(Schema.isMaxLength(3))),
-	fixable: Schema.optionalKey(Schema.Boolean)
+	where: Schema.optionalKey(QueryExpr)
 };
 /**
- * Target/culture quality-list request with a filter, its narrowing and an offset. The workspace
- * retains complete findings while each host page stays bounded.
+ * Target/culture quality-list request with a filter, its narrowing, the fields to count besides
+ * the checks and severities, and an offset.
  */
 export const WorkspaceQualityRequest = Schema.Struct({
 	...Selection,
 	filter: WorkspaceQualityFilter,
 	...WorkspaceQualityNarrowing,
+	facets: Schema.optionalKey(QueryFacets),
 	offset: Offset
 });
 export type WorkspaceQualityRequest = typeof WorkspaceQualityRequest.Type;
@@ -199,10 +214,13 @@ export const WorkspaceQualityPage = Schema.Struct({
 	).check(Schema.isMaxLength(512)),
 	/**
 	 * Counts follow every filter but their own: `counts` each check's findings under the
-	 * narrowing, and `severityCounts` each severity's findings under the check and the narrowing
-	 * without `severities`. `total` follows every filter.
+	 * narrowing without its tests marked `rule`, and `severityCounts` each severity's findings
+	 * under the check and the narrowing without its tests marked `severity`. `total` follows
+	 * every filter.
 	 */
 	severityCounts: Schema.Record(CheckSeverity, Count),
+	/** The request's `facets`, by field. */
+	facets: Schema.optionalKey(Schema.Record(Schema.String, QueryFacetCounts)),
 	nextOffset: Offset,
 	suggestedFixCount: Count,
 	limits: Schema.Array(
@@ -212,6 +230,7 @@ export const WorkspaceQualityPage = Schema.Struct({
 	rules: Schema.Array(TextQualityRuleSummary).check(Schema.isMaxLength(1032))
 });
 const decodeCounts = Schema.decodeUnknownEffect(WorkspaceQualityPage.fields.counts);
+const decodeFacets = Schema.decodeUnknownEffect(Schema.Record(Schema.String, QueryFacetCounts));
 export type WorkspaceQualityPage = typeof WorkspaceQualityPage.Type;
 const decodeQualityCounts = Schema.decodeUnknownSync(WorkspaceQualityPage.fields.counts);
 /** File reports keep every matching finding; renderer pages remain bounded. */
@@ -962,8 +981,7 @@ function itemMatches(item: WorkspaceQualityItem, terms: readonly string[]): bool
 function narrowingOf(request: WorkspaceQualityRequest) {
 	return {
 		...(request.query?.trim() ? { query: request.query } : undefined),
-		...(request.severities ? { severities: request.severities } : undefined),
-		...(request.fixable !== undefined ? { fixable: request.fixable } : undefined)
+		...(request.where !== undefined ? { where: request.where } : undefined)
 	};
 }
 
@@ -973,9 +991,19 @@ function selectionKey(request: WorkspaceQualityRequest): string {
 		request.culture ?? null,
 		request.filter,
 		searchTerms(request.query),
-		request.severities ?? null,
-		request.fixable ?? null
+		request.where ?? null
 	]);
+}
+
+/**
+ * The severities and suggested-fix filter the in-memory list reads from `where`; it serves
+ * tests and the Workbench harness, so it refuses any other filter.
+ */
+function pillsOf(request: WorkspaceQualityRequest) {
+	const pills = qualityPillsOf(request.where);
+	if (pills === undefined || pills.rules !== undefined)
+		throw new Error("The in-memory quality list filters by severity and suggested fix only.");
+	return pills;
 }
 
 function localizationQualityReads(
@@ -1077,13 +1105,15 @@ function localizationQualityReads(
 			}
 			found = hits;
 		}
-		const fixable = request.fixable;
+		const fixable = pillsOf(request).fixable;
 		return (position) =>
 			(fixable === undefined || eligibleAt(position) === fixable) &&
 			(found === undefined || found[position] === 1);
 	};
-	const severityWanted = (request: WorkspaceQualityRequest, severity: CheckSeverity) =>
-		request.severities === undefined || request.severities.includes(severity);
+	const severityWanted = (request: WorkspaceQualityRequest, severity: CheckSeverity) => {
+		const { severities } = pillsOf(request);
+		return severities === undefined || severities.includes(severity);
+	};
 	/** Matching positions, blocking findings first, then normal, then low; else in order. */
 	const matched = (
 		request: WorkspaceQualityRequest,
@@ -1703,7 +1733,7 @@ function ruleFilter(rule: GameTextContract.RuleMetadata): Exclude<WorkspaceQuali
  * scan listed them. `acceptance` names the review the workspace applies.
  */
 export function queriedLocalizationQualityWorkspace(options: {
-	readonly findings: Pick<NativeFindings, "findingsQuery">;
+	readonly findings: Pick<NativeFindings, "findingRows">;
 	readonly key: string;
 	readonly rules: readonly GameTextContract.RuleMetadata[];
 	readonly acceptance: string | undefined;
@@ -1718,31 +1748,38 @@ export function queriedLocalizationQualityWorkspace(options: {
 		filter: customQualityFilter(ruleId),
 		label
 	}));
+	// The check is a test marked `rule`, so the checks' counts leave it out.
 	const query = (
-		request: Pick<
-			WorkspaceQualityRequest,
-			"culture" | "filter" | "query" | "severities" | "fixable"
-		>,
-		fields: Omit<GameTextContract.FindingsQueryRequest, "key" | "view" | "order">
+		request: Pick<WorkspaceQualityRequest, "target" | "culture" | "filter" | "query" | "where">,
+		fields: Pick<FindingRowsOptions, "rows" | "counts" | "facets">,
+		also: readonly QueryExpr[] = []
 	) =>
-		findings.findingsQuery({
-			key,
-			view: "workspace",
-			order: "severity",
-			...(request.culture ? { culture: request.culture } : undefined),
-			...(acceptance ? { acceptance } : undefined),
-			...(request.filter === "all"
-				? undefined
-				: {
-						rules: [...filterOfRule]
-							.filter(([, filter]) => filter === request.filter)
-							.map(([ruleId]) => ruleId)
-					}),
-			...(request.query?.trim() ? { lines: { text: request.query } } : undefined),
-			...(request.severities ? { severities: request.severities } : undefined),
-			...(request.fixable !== undefined ? { fixable: request.fixable } : undefined),
-			...fields
-		});
+		findings.findingRows(
+			findingRowsQuery(key, {
+				view: "workspace",
+				target: request.target,
+				culture: request.culture,
+				acceptance,
+				where: allOf([
+					...(request.filter === "all"
+						? []
+						: [
+								marked(
+									"rule",
+									ruleIn(
+										[...filterOfRule]
+											.filter(([, filter]) => filter === request.filter)
+											.map(([ruleId]) => ruleId)
+									)
+								)
+							]),
+					...(request.where === undefined ? [] : [request.where]),
+					...also
+				]),
+				text: request.query,
+				...fields
+			})
+		);
 	const summaryOf = (finding: QueriedFinding): WorkspaceFinding => {
 		if (!("culture" in finding))
 			return qualitySummary(finding, undefined, finding.sourceKey ?? undefined);
@@ -1758,15 +1795,25 @@ export function queriedLocalizationQualityWorkspace(options: {
 		request: WorkspaceQualityRequest
 	) {
 		const offset = request.offset ?? 0;
-		const page = yield* query(request, { offset, limit: 50, counts: true });
-		const counts = page.counts!;
+		const asked = (request.facets ?? []).filter(({ by }) => by !== "rule" && by !== "severity");
+		const page = yield* query(request, {
+			rows: { order: "severity", offset, limit: 50 },
+			counts: true,
+			facets: [{ by: "rule" }, { by: "severity" }, ...asked]
+		});
+		const counts = page.counts ?? { accepted: 0, fixable: 0, limits: [] };
 		const typeCounts = new Map<WorkspaceQualityFilter, number>();
-		const ruleCounts = new Map<string, number>();
-		for (const { ruleId, count } of counts.rules) {
-			ruleCounts.set(ruleId, count);
+		const ruleCounts = facetCounts(page, "rule");
+		const severities = facetCounts(page, "severity");
+		let all = 0;
+		for (const [ruleId, count] of ruleCounts) {
+			all += count;
 			const filter = filterOfRule.get(ruleId);
 			if (filter) typeCounts.set(filter, (typeCounts.get(filter) ?? 0) + count);
 		}
+		const facets = yield* decodeFacets(
+			Object.fromEntries(asked.map(({ by }) => [by, page.facets?.[by]]))
+		).pipe(Effect.orDie);
 		const result: WorkspaceQualityPage = {
 			findings: page.findings.map(summaryOf),
 			total: page.total,
@@ -1774,13 +1821,18 @@ export function queriedLocalizationQualityWorkspace(options: {
 				Object.fromEntries([
 					...BuiltInQualityFilter.literals.map((filter) => [
 						filter,
-						filter === "all" ? counts.all : (typeCounts.get(filter) ?? 0)
+						filter === "all" ? all : (typeCounts.get(filter) ?? 0)
 					]),
 					...customFilters.map(({ filter }) => [filter, typeCounts.get(filter) ?? 0])
 				])
 			).pipe(Effect.orDie),
 			customFilters,
-			severityCounts: counts.severities,
+			severityCounts: {
+				blocking: severities.get("blocking") ?? 0,
+				normal: severities.get("normal") ?? 0,
+				low: severities.get("low") ?? 0
+			},
+			...(asked.length > 0 ? { facets } : undefined),
 			// SAFETY: diagnostic codes are the engine's DIAGNOSTIC_CODES, the host's code union.
 			// Verified by: localization-checks.test.ts reads native syntax_limit diagnostics.
 			limits: counts.limits as WorkspaceQualityPage["limits"],
@@ -1800,7 +1852,9 @@ export function queriedLocalizationQualityWorkspace(options: {
 			const { nextOffset: _offset, ...page } = yield* search({ ...request, offset: 0 });
 			const all: WorkspaceFinding[] = [];
 			for (let offset = 0; offset === 0 || offset < page.total; offset += 5000) {
-				const next = yield* query(request, { offset, limit: 5000 });
+				const next = yield* query(request, {
+					rows: { order: "severity", offset, limit: 5000 }
+				});
 				all.push(...next.findings.map(summaryOf));
 				if (next.findings.length < 5000) break;
 			}
@@ -1819,8 +1873,13 @@ export function queriedLocalizationQualityWorkspace(options: {
 			request: WorkspaceQualityFocusRequest
 		) {
 			const page = yield* query(
-				{ ...(request.culture ? { culture: request.culture } : undefined), filter: "all" },
-				{ id: request.id, limit: 1 }
+				{
+					target: request.target,
+					...(request.culture ? { culture: request.culture } : undefined),
+					filter: "all"
+				},
+				{ rows: { order: "severity", limit: 1 } },
+				[{ eq: [{ field: "id" }, { lit: request.id }] }]
 			);
 			const finding = page.findings[0];
 			if (!finding) return { status: "not_found" } as const;
@@ -1922,32 +1981,35 @@ export function queriedLocalizationQualityWorkspace(options: {
 			// Only format-argument findings suggest changes: one per line and culture, and a line's
 			// identity is unique, so changes past the first 100 are counted without reading them.
 			// Findings without a suggested fix offer none, so that filter copies nothing.
-			if (request.fixable !== false)
-				do {
-					const page = yield* query(request, { fixable: true, offset: read, limit: 128 });
-					total = page.total;
-					read += page.findings.length;
-					for (const finding of page.findings) {
-						const change = eligibleLocalizationChange(finding);
-						if (!change) continue;
-						const id = JSON.stringify([
-							change.target,
-							change.culture,
-							change.namespace,
-							change.key
-						]);
-						if (seen.has(id)) continue;
-						seen.add(id);
-						const size = new TextEncoder().encode(JSON.stringify(change)).length;
-						if (changes.length === 100 || bytes + size > 1_000_000) {
-							remaining++;
-							continue;
-						}
-						changes.push(change);
-						bytes += size;
+			do {
+				const page = yield* query(
+					request,
+					{ rows: { order: "severity", offset: read, limit: 128 } },
+					[{ eq: [{ field: "fixable" }, { lit: true }] }]
+				);
+				total = page.total;
+				read += page.findings.length;
+				for (const finding of page.findings) {
+					const change = eligibleLocalizationChange(finding);
+					if (!change) continue;
+					const id = JSON.stringify([
+						change.target,
+						change.culture,
+						change.namespace,
+						change.key
+					]);
+					if (seen.has(id)) continue;
+					seen.add(id);
+					const size = new TextEncoder().encode(JSON.stringify(change)).length;
+					if (changes.length === 100 || bytes + size > 1_000_000) {
+						remaining++;
+						continue;
 					}
-					if (page.findings.length === 0) break;
-				} while (read < total && changes.length < 100);
+					changes.push(change);
+					bytes += size;
+				}
+				if (page.findings.length === 0) break;
+			} while (read < total && changes.length < 100);
 			remaining += total - read;
 			return {
 				status: "ready" as const,

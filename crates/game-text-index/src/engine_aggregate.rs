@@ -4,6 +4,7 @@ use crate::engine_match::{Kind, Projection, checkpoint};
 use crate::engine_places::Places;
 use crate::engine_query::{EngineQuery, audience};
 use crate::engine_types::*;
+use crate::engine_where::Field;
 use crate::rules::FindingRows;
 use crate::text_problem::{self, PROBLEM_LABELS};
 use crate::wtf8::Wtf8Buf;
@@ -58,10 +59,10 @@ impl Places {
         }
         Ok((self.folder_keys[position], self.folder_labels[position]))
     }
-    fn display(&self, by: GroupBy, key: u32, label: u32) -> Result<(String, String)> {
+    fn display(&self, by: Field, key: u32, label: u32) -> Result<(String, String)> {
         let key = key as usize;
         Ok(match by {
-            GroupBy::Problem => (
+            Field::Problems => (
                 PROBLEMS
                     .get(key)
                     .ok_or("Unknown problem group.")?
@@ -71,7 +72,7 @@ impl Places {
                     .ok_or("Unknown problem label.")?
                     .to_string(),
             ),
-            GroupBy::Origin => {
+            Field::Origins => {
                 if key == 0 {
                     (String::new(), String::new())
                 } else {
@@ -87,7 +88,7 @@ impl Places {
                     )
                 }
             }
-            GroupBy::Audience => (
+            Field::Audience => (
                 AUDIENCES
                     .get(key)
                     .ok_or("Unknown audience group.")?
@@ -100,13 +101,13 @@ impl Places {
             _ => (self.labels.text(key as u32)?, self.labels.text(label)?),
         })
     }
-    fn label_rank(&self, by: GroupBy, key: u32, label: u32) -> Result<u32> {
+    fn label_rank(&self, by: Field, key: u32, label: u32) -> Result<u32> {
         Ok(match by {
-            GroupBy::Problem => 0,
-            GroupBy::Origin => *[0, 5, 3, 1, 2, 4]
+            Field::Problems => 0,
+            Field::Origins => *[0, 5, 3, 1, 2, 4]
                 .get(key as usize)
                 .ok_or("Unknown origin rank.")?,
-            GroupBy::Audience => *[1, 0, 2]
+            Field::Audience => *[1, 0, 2]
                 .get(key as usize)
                 .ok_or("Unknown audience rank.")?,
             _ => *self.rank.get(label as usize).ok_or("Unknown place rank.")?,
@@ -138,12 +139,12 @@ impl Projection {
         localized: bool,
         row: usize,
         problems: &[u32],
-        by: GroupBy,
+        by: Field,
     ) -> Result<u32> {
         let kind = if localized { Kind::Line } else { Kind::Raw };
         Ok(match by {
-            GroupBy::Problem => problems[row].trailing_zeros(),
-            GroupBy::Origin => {
+            Field::Problems => problems[row].trailing_zeros(),
+            Field::Origins => {
                 let bits = if localized {
                     self.origins[row]
                 } else {
@@ -155,7 +156,7 @@ impl Projection {
                     bits.trailing_zeros() + 1
                 }
             }
-            GroupBy::Audience => {
+            Field::Audience => {
                 let value = audience(if localized {
                     self.audience[row]
                 } else {
@@ -166,9 +167,9 @@ impl Projection {
                     .position(|label| *label == value)
                     .ok_or("Unknown audience.")? as u32
             }
-            GroupBy::Namespace => self.namespace(places, kind, row)?.unwrap_or(0),
+            Field::Namespace => self.namespace(places, kind, row)?.unwrap_or(0),
             // The source's dictionary ID. Unit sources are stored in UTF-16 order.
-            GroupBy::Source => {
+            Field::Sources => {
                 if localized {
                     self.source[row]
                 } else {
@@ -179,18 +180,16 @@ impl Projection {
                         .ok_or("Stored unit has no source values.")?
                 }
             }
-            GroupBy::AssetType => return Err("Asset types are a facet, not a group.".into()),
-            GroupBy::Finding => return Err("A row can have several findings.".into()),
-            GroupBy::Asset | GroupBy::Folder => {
+            Field::Findings => return Err("A row can have several findings.".into()),
+            Field::Files | Field::Paths => {
                 let mut key = 0;
                 self.each_file(kind, row, &mut |file| {
-                    key = places
-                        .coordinate(file, by == GroupBy::Folder, None, None)?
-                        .0;
+                    key = places.coordinate(file, by == Field::Paths, None, None)?.0;
                     Ok(true)
                 })?;
                 key
             }
+            _ => return Err(format!("Rows are not grouped by {}.", by.name()).into()),
         })
     }
 }
@@ -248,7 +247,7 @@ impl EngineQuery {
         &self,
         rows: &[u32],
         selection: &Selection,
-        by: GroupBy,
+        by: Field,
         minimum: Option<usize>,
         under: &str,
         cancelled: &AtomicBool,
@@ -278,7 +277,7 @@ impl EngineQuery {
         } else {
             Some(Wtf8Buf::from_view(&(parent + "/")).into_bytes())
         };
-        let types = if by == GroupBy::AssetType {
+        let types = if by == Field::AssetTypes {
             Some(AssetTypes::open(self, cancelled)?)
         } else {
             None
@@ -311,18 +310,18 @@ impl EngineQuery {
                 }
             };
             match by {
-                GroupBy::Asset | GroupBy::Folder => {
+                Field::Files | Field::Paths => {
                     let mut found = false;
                     projection.each_file(kind, row, &mut |file| {
                         let (key, label) = places.coordinate(
                             file,
-                            by == GroupBy::Folder,
-                            if facet && by == GroupBy::Folder {
+                            by == Field::Paths,
+                            if facet && by == Field::Paths {
                                 Some(depth)
                             } else {
                                 None
                             },
-                            parent.as_deref().filter(|_| facet && by == GroupBy::Folder),
+                            parent.as_deref().filter(|_| facet && by == Field::Paths),
                         )?;
                         if facet && label == 0 {
                             return Ok(false);
@@ -336,14 +335,14 @@ impl EngineQuery {
                     }
                 }
                 // A line of several types counts in each.
-                GroupBy::AssetType => {
+                Field::AssetTypes => {
                     let types = types.as_ref().ok_or("Asset types are not open.")?;
                     types.each(&projection, kind, row, &mut |kind| {
                         visit(kind, kind);
                         false
                     })?;
                 }
-                GroupBy::Origin if facet => {
+                Field::Origins if facet => {
                     let bits = if localized {
                         projection.origins[row]
                     } else {
@@ -370,7 +369,7 @@ impl EngineQuery {
             .collect::<Vec<_>>();
         // Source groups are keyed by dictionary ID; they read and tie-break by their text.
         let mut texts = HashMap::new();
-        if by == GroupBy::Source {
+        if by == Field::Sources {
             let mut keys = Vec::with_capacity(tallies.len());
             for (index, (key, _)) in tallies.iter().enumerate() {
                 if index & 255 == 0 {

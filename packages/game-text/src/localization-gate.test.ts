@@ -86,9 +86,8 @@ function gate(
 		Effect.gen(function* () {
 			const base = {
 				query: "",
-				capability: "all" as const,
 				localization: { target: localization.target },
-				where: { files: changed }
+				fileScope: changed
 			};
 			const fileScope = (yield* query.search({ ...base, pageSize: 1 })).fileScope;
 			return localizationGateTarget({

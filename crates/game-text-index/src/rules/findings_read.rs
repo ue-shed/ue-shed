@@ -1,9 +1,9 @@
-use super::findings_query::FindingsPage;
 use super::ir::Family;
-use super::replies::{Place, PlaceSet, ReadProfile};
-use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, SubjectRows, javascript_json};
+use super::replies::{Place, PlaceSet};
+use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, SubjectRows};
 use crate::batch::{Batches, FINDING, PLACE};
 use crate::engine::Reply;
+#[cfg(test)]
 use crate::engine_query::EngineQuery;
 use crate::{Result, require};
 use serde_json::{Value, json};
@@ -46,105 +46,48 @@ fn ordered_places(ids: &[String], occurrences: &[Value]) -> Result<Vec<Value>> {
         .collect()
 }
 
-impl EngineQuery {
-    /// Sends a findings page: its counts and profile as a part, then its place sets and its
-    /// findings as batches, the sets first because the findings name them.
-    pub(super) fn send_page(
-        &self,
-        key: &str,
-        requested: usize,
-        read: impl FnOnce(&Self, &FindingsLayer) -> Result<FindingsPage>,
-        reply: &mut dyn Reply,
-    ) -> Result<()> {
-        let layer = self.layer(key)?;
-        let mut page = read(self, &layer)?;
-        page.profile = ReadProfile {
-            rows_requested: requested,
-            findings_returned: page.findings.len(),
-        };
-        let places = std::mem::take(&mut page.places);
-        let findings = std::mem::take(&mut page.findings);
-        reply.part(javascript_json(&serde_json::to_value(&page)?, false).into_bytes())?;
-        let mut sets = Batches::new(
-            &PLACE,
-            "places",
-            PLACE.select(&["parent", "id", "location", "packageFile"])?,
-        );
-        for set in places {
-            for place in set.occurrences {
-                sets.push_child(set.id, &serde_json::to_value(place)?)?;
-                if sets.full() {
-                    sets.flush(reply)?;
-                }
+/// A page's place sets and findings as batches, the sets first because the findings name them.
+pub(super) fn send_findings(
+    places: Vec<PlaceSet>,
+    findings: Vec<Value>,
+    reply: &mut dyn Reply,
+) -> Result<()> {
+    let mut sets = Batches::new(
+        &PLACE,
+        "places",
+        PLACE.select(&["parent", "id", "location", "packageFile"])?,
+    );
+    for set in places {
+        for place in set.occurrences {
+            sets.push_child(set.id, &serde_json::to_value(place)?)?;
+            if sets.full() {
+                sets.flush(reply)?;
             }
         }
-        sets.finish(reply)?;
-        let mut rows = Batches::new(&FINDING, "findings", FINDING.all());
-        for finding in findings {
-            rows.push(&json!({ "finding": finding }))?;
-            if rows.full() {
-                rows.flush(reply)?;
-            }
-        }
-        rows.finish(reply)?;
-        Ok(())
     }
+    sets.finish(reply)?;
+    let mut rows = Batches::new(&FINDING, "findings", FINDING.all());
+    for finding in findings {
+        rows.push(&json!({ "finding": finding }))?;
+        if rows.full() {
+            rows.flush(reply)?;
+        }
+    }
+    rows.finish(reply)?;
+    Ok(())
 }
 
 #[cfg(test)]
 impl EngineQuery {
-    /// A findings page as one value: its part, with its place sets and findings gathered from
-    /// their batches, in the order the page used to be encoded.
+    /// A page of findings as one value, asked for as the hosts asked before finding rows (`key`,
+    /// `view`, `order`, `rules`, `severities`, `limit` …) and read as finding rows.
     pub(crate) fn findings_page(
         &self,
         request: Value,
         cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<Value> {
-        let mut gathered = crate::engine::Gathered::default();
-        self.findings_query(request, cancelled, &mut gathered)?;
-        let head = crate::json_value::parse(std::str::from_utf8(
-            gathered
-                .parts
-                .first()
-                .ok_or("A findings page has no part.")?,
-        )?)?;
-        let mut places: Vec<Value> = Vec::new();
-        let mut findings = Vec::new();
-        for body in &gathered.batches {
-            let (part, rows) = crate::batch::read(body)?;
-            for mut row in rows {
-                if part == "findings" {
-                    findings.push(row["finding"].take());
-                    continue;
-                }
-                let set = row
-                    .as_object_mut()
-                    .and_then(|row| row.remove("parent"))
-                    .ok_or("A place has no set.")?;
-                match places.last_mut() {
-                    Some(last) if last["id"] == set => {
-                        last["occurrences"]
-                            .as_array_mut()
-                            .ok_or("A place set has no places.")?
-                            .push(row);
-                    }
-                    _ => places.push(json!({"id": set, "occurrences": [row]})),
-                }
-            }
-        }
-        let mut page = serde_json::Map::new();
-        page.insert("profile".into(), head["profile"].clone());
-        page.insert("places".into(), Value::Array(places));
-        page.insert("findings".into(), Value::Array(findings));
-        for (key, value) in head
-            .as_object()
-            .ok_or("A findings page is not an object.")?
-        {
-            if key != "profile" {
-                page.insert(key.clone(), value.clone());
-            }
-        }
-        Ok(Value::Object(page))
+        let request = super::findings_select::as_finding_rows(self, &request)?;
+        self.finding_rows_page(request, cancelled)
     }
 }
 

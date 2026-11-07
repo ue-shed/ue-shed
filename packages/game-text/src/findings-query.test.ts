@@ -17,7 +17,8 @@ import {
 	type LocalizationPolicyFinding,
 	type LocalizationQualityFinding
 } from "./localization-quality-schema.js";
-import { acceptReview } from "./native-findings.js";
+import { acceptReview, findingRowsQuery } from "./native-findings.js";
+import { qualityWhere, type QualityFilterInput } from "./query-filter.js";
 import { localizationLineFingerprint } from "./localization-review.js";
 import { type BuiltInCheckId, SourceCheckId } from "./localization-check-ids.js";
 import {
@@ -432,19 +433,20 @@ it.live(
 						}
 					// A search, severities and suggested fixes narrow a list the same way in both,
 					// and its counts follow every filter but their own.
+					const pills = (input: QualityFilterInput) => ({ where: qualityWhere(input)! });
 					const narrowings: ReadonlyArray<
-						Pick<WorkspaceQualityRequest, "query" | "severities" | "fixable">
+						Pick<WorkspaceQualityRequest, "query" | "where">
 					> = [
 						{ query: "hello" },
 						{ query: "HALLO" },
 						{ query: "  bold   gold " },
 						{ query: "spiel speichern" },
 						{ query: "no such words" },
-						{ severities: ["blocking"] },
-						{ severities: ["normal", "low"] },
-						{ fixable: true },
-						{ fixable: false },
-						{ query: "hello", severities: ["blocking"], fixable: true }
+						pills({ severities: ["blocking"] }),
+						pills({ severities: ["normal", "low"] }),
+						pills({ fixable: true }),
+						pills({ fixable: false }),
+						{ query: "hello", ...pills({ severities: ["blocking"], fixable: true }) }
 					];
 					const german = join.cultures.find((culture) => culture === "de")!;
 					for (const culture of [undefined, german])
@@ -490,7 +492,7 @@ it.live(
 					const blocking = legacy.search({
 						target: join.target,
 						filter: "all",
-						severities: ["blocking"]
+						where: qualityWhere({ severities: ["blocking"] })!
 					});
 					expect(blocking.severityCounts).toEqual(all.severityCounts);
 					expect(blocking.total).toBe(all.severityCounts.blocking);
@@ -628,15 +630,14 @@ const expectReportBytes = Effect.fn("Test.GameText.reportBytes")(function* (
 	const acceptance = yield* acceptReview(native, key, options.review);
 	const findings: ReportedFinding[] = [];
 	for (let offset = 0; ; offset += 5000) {
-		const page = yield* native.findingsQuery({
-			key,
-			view: "report",
-			...(options.culture ? { culture: options.culture } : undefined),
-			order: "report",
-			...(acceptance ? { acceptance } : undefined),
-			offset,
-			limit: 5000
-		});
+		const page = yield* native.findingRows(
+			findingRowsQuery(key, {
+				view: "report",
+				culture: options.culture,
+				acceptance,
+				rows: { order: "report", offset, limit: 5000 }
+			})
+		);
 		// SAFETY: the report view returns line findings only.
 		// Verified by: the report's schema decodes the report this oracle builds.
 		findings.push(...(page.findings as readonly ReportedFinding[]).map(reportedFinding));

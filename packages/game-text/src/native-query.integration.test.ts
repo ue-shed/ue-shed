@@ -44,13 +44,12 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							queryPids.length = 0;
 							observe = true;
 							const pending = yield* model.query
-								.search({ query: "", capability: "all", pageSize: 1 })
+								.search({ query: "", pageSize: 1 })
 								.pipe(Effect.forkChild);
 							yield* Deferred.await(started);
 							yield* Fiber.interrupt(pending);
 							const page = yield* model.query.search({
 								query: "",
-								capability: "all",
 								pageSize: 1
 							});
 							observe = false;
@@ -61,7 +60,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					).pipe(Effect.provide(fixture.layer(fixture.source, implementation)));
 					const closed = yield* prepare;
 					const failed = yield* closed.query
-						.search({ query: "", capability: "all", pageSize: 1 })
+						.search({ query: "", pageSize: 1 })
 						.pipe(Effect.result);
 					expect(Result.isFailure(failed)).toBe(true);
 					if (Result.isFailure(failed)) {

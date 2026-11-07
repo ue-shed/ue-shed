@@ -4,7 +4,7 @@ import {
 	LocalizationBaseline,
 	LocalizationProgressReport,
 	LocalizationStatusReport,
-	type WorkspaceQualityRequest
+	type GameTextInvestigationQuery
 } from "@ue-shed/game-text/corpus";
 import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_CHECK_RULES } from "@ue-shed/game-text/rules";
 import { LocalizationQualityReport, TextProblem } from "@ue-shed/game-text/schema";
@@ -686,7 +686,7 @@ describe.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE)("localization quality pr
 			.split(/\s+/u)
 			.find((part) => /^\p{L}{3,}$/u.test(part))!;
 		const narrowed = async (
-			workspaceNarrowing: Pick<WorkspaceQualityRequest, "query" | "severities" | "fixable">,
+			workspaceNarrowing: NonNullable<GameTextInvestigationQuery["workspaceNarrowing"]>,
 			format: "json" | "csv" = "json"
 		) => {
 			const path = join(fixture.root, "Saved", "localization-quality-narrowed.json");

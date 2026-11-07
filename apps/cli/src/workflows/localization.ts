@@ -2,7 +2,7 @@ import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { refreshCliGameTextIndex } from "./game-text-index.js";
 import { cultureList, parseTextFilter } from "./text-filter.js";
 import { readChangedFiles } from "./changed-files.js";
-import { textWhere } from "../commands/localization-flags.js";
+import { textRequestFilter } from "../commands/localization-flags.js";
 import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "@ue-shed/localization";
 import { resolve } from "node:path";
 import { type Brand, Effect, Metric, Result, Schema } from "effect";
@@ -11,6 +11,7 @@ import { indexedLocalizationStatusReport } from "@ue-shed/game-text/index";
 import {
 	GameTextLocalizationError,
 	localizationManifestFailure,
+	LocalizationLens,
 	LocalizationSelection,
 	type TextCorpus
 } from "@ue-shed/game-text/schema";
@@ -24,7 +25,10 @@ type LocalizationSearchCommand = Extract<CliCommand, { readonly _tag: "TextSearc
 type LocalizationCheckCommand = Extract<CliCommand, { readonly _tag: "LocalizationCheck" }>;
 type LocalizationReportCommand = Extract<CliCommand, { readonly _tag: "LocalizationReport" }>;
 
-const decodeSelection = Schema.decodeUnknownEffect(LocalizationSelection);
+// The lens flags are read beside the selection; requests carry them in `where`.
+const decodeSelection = Schema.decodeUnknownEffect(
+	Schema.Struct({ ...LocalizationSelection.fields, ...LocalizationLens.fields })
+);
 const isAssetReaderError = Schema.is(AssetReaderError);
 
 /** Compatibility projection for explicit full-corpus reports and exports. */
@@ -44,7 +48,7 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		| LocalizationReportCommand
 		| LocalizationExportCommand
 ) {
-	const selection = yield* decodeSelection({
+	const { state, review, keyChanged, ...selection } = yield* decodeSelection({
 		target: command.target,
 		...("culture" in command && command.culture !== undefined
 			? { culture: command.culture }
@@ -124,6 +128,11 @@ export const loadLocalizationContext = Effect.fn("Cli.localization.load_context"
 		join: indexed.localizationJoin,
 		evidence: indexed.evidence,
 		selection,
+		lens: {
+			...(state === undefined ? undefined : { state }),
+			...(review === undefined ? undefined : { review }),
+			...(keyChanged === undefined ? undefined : { keyChanged })
+		},
 		localization: indexed.localization,
 		query: indexed.query,
 		review: indexed.review,
@@ -160,35 +169,28 @@ export const loadTargetQuery = Effect.fn("Cli.localization.target_query")(functi
 	return indexed.query;
 }, Effect.provide(LocalizationEvidenceNodeLive));
 
-function whereField(command: Parameters<typeof textWhere>[0], files?: readonly string[]) {
-	const where = textWhere(command, files);
-	return where === undefined ? undefined : { where };
-}
-
-/** The request's `filter` for the command's `--filter` clauses; absent when none was given. */
-const filterField = Effect.fn("Cli.localization.filter")(function* (command: {
+/** The command's `--filter` clauses; absent when none was given. */
+const filterClauses = Effect.fn("Cli.localization.filter")(function* (command: {
 	readonly filter?: readonly string[];
 }) {
 	if (command.filter === undefined) return undefined;
-	return { filter: yield* parseTextFilter(command.filter) };
+	return yield* parseTextFilter(command.filter);
 });
 
 export const loadLocalizationStatus = Effect.fn("Cli.localization.load_status")(function* (
 	command: LocalizationStatusCommand | LocalizationSearchCommand
 ) {
-	const { query, evidence, selection } = yield* loadLocalizationContext(command);
+	const { query, evidence, selection, lens } = yield* loadLocalizationContext(command);
 	const files =
 		command.changedFiles === undefined
 			? undefined
 			: yield* readChangedFiles(command.changedFiles, command.projectRoot);
-	const filter = yield* filterField(command);
+	const filter = yield* filterClauses(command);
 	const page = yield* query.search({
-		capability: "all",
 		pageSize: command.limit ?? 50,
 		query: command._tag === "TextSearch" ? command.query : "",
 		localization: selection,
-		...whereField(command, files),
-		...filter,
+		...textRequestFilter(command, { files, filter, lens }),
 		...(command.group === undefined ? undefined : { group: command.group })
 	});
 	yield* Metric.update(Metric.counter("cli.localization.status.lines"), page.total);
@@ -242,12 +244,12 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 							message: "The export destination must be a CSV file.",
 							recovery: "Choose a new .csv file."
 						});
-					const { query, selection } = yield* loadLocalizationContext(command);
+					const { query, selection, lens } = yield* loadLocalizationContext(command);
 					const files =
 						command.changedFiles === undefined
 							? undefined
 							: yield* readChangedFiles(command.changedFiles, command.projectRoot);
-					const filter = yield* filterField(command);
+					const filter = yield* filterClauses(command);
 					// The engine encodes the spreadsheet and writes the file; no line reaches the CLI.
 					const unwritable = new LocalizationExportError({
 						retrySafe: false,
@@ -259,11 +261,9 @@ export const runLocalizationExport = Effect.fn("Cli.workflow.localization_export
 					const written = yield* query
 						.writeLocalizationLinesCsv(
 							{
-								capability: "all",
 								query: "",
 								localization: selection,
-								...whereField(command, files),
-								...filter
+								...textRequestFilter(command, { files, filter, lens })
 							},
 							{ path: resolve(command.output), exclusive: true }
 						)

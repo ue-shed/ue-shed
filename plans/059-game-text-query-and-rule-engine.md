@@ -20,7 +20,8 @@
   recorded. Phase 4 is complete (#170); its measurements and the owner's review are recorded.
   Phase 4.5 (the cold scan) is complete (#171); its measurements and the owner's review are
   recorded. Phase 5 (incremental findings, #172) is complete; its measurements and the owner's
-  review are recorded. Phase 6 (Electroswag) is in progress.
+  review are recorded. Phase 6 (Electroswag) is in progress. Phase 7 (findings as query rows) is
+  in design, for the owner's review.
 - **Priority**: P1
 - **Effort**: XL
 - **Risk**: HIGH. This replaces how every finding is produced and how every Game Text query runs.
@@ -554,6 +555,18 @@ The specification is [Game Text rule engine, Phase 6](../docs/engineering/game-t
 - Electroswag deletes its fork and its vendored oracle.
 - Rules come from the file plus the host overlay.
 - Its fixture runs on the same generator.
+
+### Phase 7: findings are rows of the query engine
+
+The specification is [Game Text rule engine, Phase 7](../docs/engineering/game-text-rule-engine-phase-7.md).
+
+- Phase 3 put findings in the engine as `findings_query`, with one option per filter, so each new
+  Quality filter or count needed a UE Shed release (#209, #212). Decision 3 isn't met yet.
+- Findings become rows of the same query: a `where` in the Text tab's grammar, finding fields, a
+  `row` test for the finding's line or unit, and facets and groups by any field from one field
+  registry.
+- The scan, the rules, the findings layer, finding identity and the Text tab's query path don't
+  change. `findings_query` is deleted.
 
 ## Measurement and acceptance
 

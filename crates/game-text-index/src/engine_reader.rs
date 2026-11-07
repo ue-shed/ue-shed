@@ -82,7 +82,8 @@ pub struct EngineReader {
     segments: Vec<Segment>,
     columns: Lock<Columns>,
     byte_columns: Lock<HashMap<String, Arc<[u8]>>>,
-    imaged: OnceLock<()>,
+    /// Milliseconds imaging the dictionary took, once imaged.
+    imaged: OnceLock<f64>,
     empty_ids: Once<Arc<BTreeSet<u32>>>,
 }
 
@@ -642,6 +643,7 @@ impl EngineReader {
             return Ok(());
         }
         use rayon::prelude::*;
+        let started = std::time::Instant::now();
         #[cfg(feature = "benchmark-timings")]
         let _span = crate::benchmark_timings::Span::new("dictionaryImages");
         for segment in &self.segments {
@@ -663,8 +665,13 @@ impl EngineReader {
                 let _ = segment.image.set(image);
                 Ok(())
             })?;
-        let _ = self.imaged.set(());
+        let _ = self.imaged.set(started.elapsed().as_secs_f64() * 1000.0);
         Ok(())
+    }
+
+    /// Whether the dictionary is imaged, and how long imaging took.
+    pub fn imaged_ms(&self) -> Option<f64> {
+        self.imaged.get().copied()
     }
 
     /// One string, decoded alone from its segment's image. All dictionary IO uses pinned file

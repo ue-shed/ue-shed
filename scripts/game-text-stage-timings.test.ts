@@ -68,7 +68,7 @@ it.live("records the join, findings evaluation and findings query stages of a re
 		for (const stage of ["select", "order", "page", "compose", "counts"])
 			expect(
 				counts[
-					`stage.GameText.native.findingsQuery.game_text.findings.query.stage_ms.${stage}`
+					`stage.GameText.native.findingRows.game_text.findings.query.stage_ms.${stage}`
 				]
 			).toBeGreaterThanOrEqual(0);
 		expect(counts["stage.PackageText.refresh.package-text.stage_ms.selection"]).toBeDefined();

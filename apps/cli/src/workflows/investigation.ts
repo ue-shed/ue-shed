@@ -79,7 +79,9 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 											...(preset.query.localization.culture
 												? { culture: preset.query.localization.culture }
 												: undefined),
-											...preset.query.workspaceNarrowing
+											...text.presetNarrowingRequest(
+												preset.query.workspaceNarrowing
+											)
 										})
 								: undefined;
 						const document = yield* text.exportGameTextInvestigation(

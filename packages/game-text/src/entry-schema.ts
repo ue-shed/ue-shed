@@ -40,6 +40,7 @@ export {
 	LocalizationQueryPage,
 	LocalizationReviewLens,
 	LocalizationReviewState,
+	LocalizationLens,
 	LocalizationSelection,
 	LocalizationState,
 	LocalizationStateCounts,

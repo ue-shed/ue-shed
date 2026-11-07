@@ -5,6 +5,7 @@ import type {
 	LocalizationTargetResult
 } from "@ue-shed/game-text/corpus";
 import type {
+	LocalizationLens,
 	LocalizationSelection,
 	TextCorpusQuerySummary,
 	TextUnitId
@@ -168,17 +169,22 @@ export function createGameTextLocalizationState(props: {
 		// Restored signals can still be pending when target loading finishes; `cultures` keeps only
 		// cultures the loaded target has, regardless of when the persisted value is cleared.
 		const chosen = cultures();
-		const selectedState = state();
-		const selectedReview = review();
 		if (!current) return undefined;
 		return {
 			target: current.target.name,
 			...(chosen.length === 1 ? { culture: chosen[0] } : undefined),
 			...(chosen.length > 1 ? { cultures: chosen } : undefined),
+			searchTranslations: chosen.length > 0 && searchTranslations()
+		};
+	};
+	/** The lens the list filters by: a line state, a review flag, or changed keys. */
+	const lens = (): LocalizationLens => {
+		const selectedState = state();
+		const selectedReview = review();
+		return {
 			...(selectedState ? { state: selectedState } : undefined),
 			...(selectedReview ? { review: selectedReview } : undefined),
-			...(keyChanged() ? { keyChanged: true } : undefined),
-			searchTranslations: chosen.length > 0 && searchTranslations()
+			...(keyChanged() ? { keyChanged: true } : undefined)
 		};
 	};
 
@@ -357,6 +363,7 @@ export function createGameTextLocalizationState(props: {
 		},
 		load,
 		selection,
+		lens,
 		more: (cultureOffset?: number, locationOffset?: number) => {
 			const current = untrack(detail);
 			const name = untrack(target);

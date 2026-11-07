@@ -1,22 +1,19 @@
-//! Findings reads over a layer's numbering and orders: review acceptance (`findings_accept`) and
-//! `findings_query`, which filters, orders, pages and counts a layer's findings for Quality, the
-//! `loc check` report and the status report.
-use super::findings_order::{CHANGE, FIXABLE, KEYLESS, NONE, SHADOWED};
+//! What finding rows read of a layer: review acceptance (`findings_accept`), the layer's
+//! columns, which findings a text search keeps, and findings composed in the host's shape.
+use super::findings_order::NONE;
 use super::findings_read::{compose_line_finding, compose_unit_finding};
-use super::findings_sink::reported_finding;
 use super::ir::Severity;
-use super::replies::{LineDiagnostic, PlaceSet, ReadProfile};
+use super::replies::{LineDiagnostic, PlaceSet};
 use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, javascript_json};
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
 use crate::engine_rows::RowSet;
-use crate::engine_types::{FindingsSelection, Selection, TextSearch};
-use crate::sink::{Format, Sink, SinkSummary, SinkWriter, pretty_json};
+use crate::engine_types::{Selection, TextSearch};
 use crate::store::digest;
 use crate::{Error, ErrorCode, Result, require};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
@@ -25,8 +22,8 @@ use ts_rs::TS;
 
 /// Accepted findings one `findings_accept` call takes; larger review files are sent in chunks.
 const MAX_ACCEPTED: usize = 5000;
-/// Findings one `findings_query` page returns.
-const MAX_LIMIT: usize = 5000;
+/// Findings one page of finding rows returns, and one composed batch of a write.
+pub(super) const MAX_LIMIT: usize = 5000;
 
 fn invalid(message: &str) -> Error {
     Error::new(ErrorCode::InvalidInput, message)
@@ -63,147 +60,11 @@ pub(crate) struct Acceptance {
     pub(super) entries: HashSet<(u32, u32, String)>,
 }
 
-#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "FindingsView"))]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum View {
-    /// Source and line findings, as the Quality workspace lists them.
-    Workspace,
-    /// Line findings, as `loc check` reports them.
-    Report,
-}
-
-#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "FindingsOrder"))]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Order {
-    Severity,
-    Report,
-    Line,
-    /// Source findings in `order.source`, as the source report lists them.
-    Source,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "FindingsPageRequest"))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct Page {
-    #[serde(default)]
-    #[cfg_attr(test, ts(optional, type = "number"))]
-    offset: usize,
-    #[cfg_attr(test, ts(type = "number"))]
-    limit: usize,
-}
-
-/// Findings by their line, as the Text tab searches lines: each `text` term in the line's source
-/// or the finding's culture's translation, and `where` over the line. A finding without a
-/// culture reads the request's culture, or every culture. A source finding matches `text` in its
-/// unit's source; none matches a `where`, which tests lines.
-#[derive(Deserialize)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "FindingsLineSearch"))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct LineSearch {
-    #[cfg_attr(test, ts(optional))]
-    text: Option<String>,
-    #[serde(rename = "where")]
-    #[cfg_attr(test, ts(optional, type = "Expr"))]
-    filter: Option<Value>,
-}
-
-impl LineSearch {
-    /// Blank text and no `where` keep every finding.
-    fn text(&self) -> Option<&str> {
-        self.text.as_deref().filter(|text| !text.trim().is_empty())
-    }
-    fn narrows(&self) -> bool {
-        self.text().is_some() || self.filter.is_some()
-    }
-}
-
-/// `findings_query`: a view's findings, filtered, in an order, paged and counted.
-#[derive(Deserialize)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "FindingsQueryRequest"))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct QueryRequest {
-    key: String,
-    view: View,
-    #[cfg_attr(test, ts(optional))]
-    culture: Option<String>,
-    #[cfg_attr(test, ts(optional))]
-    rules: Option<Vec<String>>,
-    #[cfg_attr(test, ts(optional))]
-    severities: Option<Vec<Severity>>,
-    #[cfg_attr(test, ts(optional))]
-    fixable: Option<bool>,
-    #[cfg_attr(test, ts(optional))]
-    change: Option<bool>,
-    #[cfg_attr(test, ts(optional))]
-    acceptance: Option<String>,
-    #[cfg_attr(test, ts(optional))]
-    line: Option<String>,
-    #[cfg_attr(test, ts(optional))]
-    id: Option<String>,
-    #[cfg_attr(test, ts(optional))]
-    lines: Option<LineSearch>,
-    order: Order,
-    #[cfg_attr(test, ts(optional))]
-    after: Option<String>,
-    #[serde(default)]
-    #[cfg_attr(test, ts(optional, type = "number"))]
-    offset: usize,
-    /// The page's size; a sink writes every selected finding unless it is given.
-    #[cfg_attr(test, ts(optional, type = "number"))]
-    limit: Option<usize>,
-    #[serde(default)]
-    #[cfg_attr(test, ts(as = "Option<bool>", optional))]
-    counts: bool,
-    #[cfg_attr(test, ts(optional))]
-    diagnostics: Option<Page>,
-    /// Writes the report view's findings as `findingJson` rather than sending them.
-    #[cfg_attr(test, ts(optional))]
-    sink: Option<Sink>,
-}
-
-#[derive(Serialize, Default)]
-#[cfg_attr(test, derive(TS))]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct RuleTotal {
-    rule_id: String,
-    count: u32,
-}
-
-#[derive(Serialize, Default)]
-#[cfg_attr(test, derive(TS))]
-#[cfg_attr(test, ts(rename = "FindingCounts"))]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Counts {
-    /// Findings in the view, the culture selection and the line search that every filter but
-    /// `rules` selects, accepted ones left out.
-    all: u32,
-    /// Each rule's findings that every filter but `rules` selects.
-    rules: Vec<RuleTotal>,
-    /// Each severity's findings that every filter but `severities` selects.
-    #[cfg_attr(test, ts(type = "{ blocking: number, normal: number, low: number }"))]
-    severities: BTreeMap<&'static str, u32>,
-    /// Findings in the view, the culture selection and the line search the acceptance key hid.
-    accepted: u32,
-    /// Findings every filter selects, and those of them with an acceptable change.
-    total: u32,
-    fixable: u32,
-    /// Diagnostics in the culture selection by code, in first-seen order.
-    limits: Vec<CodeCount>,
-}
-
 #[derive(Serialize)]
 #[cfg_attr(test, derive(TS))]
 pub(crate) struct CodeCount {
-    code: String,
-    count: u32,
+    pub(super) code: String,
+    pub(super) count: u32,
 }
 
 #[derive(Serialize)]
@@ -211,53 +72,18 @@ pub(crate) struct CodeCount {
 #[cfg_attr(test, ts(rename = "FindingDiagnostics"))]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Diagnostics {
-    total: u32,
-    rows: Vec<LineDiagnostic>,
+    pub(super) total: u32,
+    pub(super) rows: Vec<LineDiagnostic>,
 }
 
-/// A `findings_query` reply's part. Its place sets follow as the `places` part and its findings
-/// as the `findings` part, both batches. Line findings are the host's shape with
-/// `manifestSource`, `lineSource`, `shippedTranslation` and `family`; source findings add
-/// `sourceKey`.
-#[derive(Serialize, Default)]
-#[cfg_attr(test, derive(TS))]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct FindingsPage {
-    pub(super) profile: ReadProfile,
-    #[serde(skip)]
-    #[cfg_attr(test, ts(skip))]
-    pub(super) places: Vec<PlaceSet>,
-    #[serde(skip)]
-    #[cfg_attr(test, ts(skip))]
-    pub(super) findings: Vec<Value>,
-    /// The selected findings to compose, in their order.
-    #[serde(skip)]
-    #[cfg_attr(test, ts(skip))]
-    numbers: Vec<u32>,
-    /// What the request's sink wrote.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    sink: Option<SinkSummary>,
-    /// Findings every filter selects.
-    total: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    counts: Option<Counts>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(test, ts(optional))]
-    diagnostics: Option<Diagnostics>,
-    /// Milliseconds per stage: select, order, page, compose and counts.
-    #[cfg_attr(test, ts(type = "{ [stage: string]: number }"))]
-    stages: BTreeMap<&'static str, f64>,
-}
-const SEVERITIES: [(Severity, &str); 3] = [
+pub(super) const SEVERITIES: [(Severity, &str); 3] = [
     (Severity::Blocking, "blocking"),
     (Severity::Normal, "normal"),
     (Severity::Low, "low"),
 ];
 
 /// A finding ID's identity lanes, for a line finding or a source finding.
-fn id_lanes(id: &str) -> Option<(bool, u32, u32)> {
+pub(super) fn id_lanes(id: &str) -> Option<(bool, u32, u32)> {
     if let Some(hex) = id.strip_prefix("localization-finding:") {
         if hex.len() != 16 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
@@ -392,75 +218,11 @@ impl EngineQuery {
         );
         Ok(javascript_json(&json!({ "acceptance": key }), false))
     }
-
-    pub fn findings_query(
-        &self,
-        request: serde_json::Value,
-        cancelled: &AtomicBool,
-        reply: &mut dyn crate::engine::Reply,
-    ) -> Result<()> {
-        let request: QueryRequest = serde_json::from_value(request).map_err(|source| {
-            Error::with_source(ErrorCode::InvalidInput, "Invalid findings query.", source)
-        })?;
-        match &request.sink {
-            Some(sink) => require(
-                sink.format == Format::FindingJson && request.view == View::Report,
-                invalid("A findings sink writes the report view's findings as findingJson."),
-            )?,
-            None => require(
-                request.limit.is_some(),
-                invalid("A findings page names its limit."),
-            )?,
-        }
-        require(
-            request.limit.is_none_or(|limit| limit <= MAX_LIMIT)
-                && request
-                    .diagnostics
-                    .as_ref()
-                    .is_none_or(|page| page.limit <= MAX_LIMIT),
-            invalid("A findings page holds at most 5000 rows."),
-        )?;
-        let key = request.key.clone();
-        let acceptance = match &request.acceptance {
-            Some(name) => {
-                let acceptance = self
-                    .acceptances
-                    .get(name)
-                    .ok_or_else(|| invalid("The acceptance is not open."))?;
-                require(
-                    acceptance.layer == key,
-                    invalid("The acceptance belongs to other findings."),
-                )?;
-                Some(acceptance)
-            }
-            None => None,
-        };
-        if let Some(sink) = &request.sink {
-            return self.write_findings(
-                &key,
-                &request,
-                acceptance.as_deref(),
-                sink,
-                cancelled,
-                reply,
-            );
-        }
-        self.send_page(
-            &key,
-            request.limit.unwrap_or_default(),
-            |query, layer| {
-                let mut page = run_query(query, layer, &request, acceptance.as_deref(), cancelled)?;
-                compose_page(query, layer, &mut page, cancelled)?;
-                Ok(page)
-            },
-            reply,
-        )
-    }
 }
 
 /// `localizationReviewFingerprint`: SHA-256 of the source, a NUL, and the translation or a
 /// marker for none, over the UTF-8 a host's `TextEncoder` writes.
-fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
+pub(super) fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
     let utf8 =
         |view: &str| String::from_utf16_lossy(&crate::wtf8::Wtf8Buf::from_view(view).to_utf16());
     digest(
@@ -474,18 +236,18 @@ fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
 }
 
 /// The layer's columns a query reads.
-struct Columns {
-    rule: Arc<[u32]>,
-    line: Arc<[u32]>,
-    culture: Arc<[u32]>,
-    flags: Arc<[u32]>,
+pub(super) struct Columns {
+    pub(super) rule: Arc<[u32]>,
+    pub(super) line: Arc<[u32]>,
+    pub(super) culture: Arc<[u32]>,
+    pub(super) flags: Arc<[u32]>,
     /// Each rule's first finding number, then the count.
-    bases: Vec<u32>,
+    pub(super) bases: Vec<u32>,
     id0: Vec<Arc<[u32]>>,
     id1: Vec<Arc<[u32]>>,
 }
 
-fn columns(layer: &FindingsLayer) -> Result<Columns> {
+pub(super) fn columns(layer: &FindingsLayer) -> Result<Columns> {
     let mut bases = vec![0u32];
     let mut id0 = Vec::new();
     let mut id1 = Vec::new();
@@ -527,7 +289,7 @@ fn columns(layer: &FindingsLayer) -> Result<Columns> {
 }
 
 impl Columns {
-    fn lanes(&self, number: u32) -> (u32, u32) {
+    pub(super) fn lanes(&self, number: u32) -> (u32, u32) {
         let rule = self.rule[number as usize] as usize;
         let position = (number - self.bases[rule]) as usize;
         (self.id0[rule][position], self.id1[rule][position])
@@ -536,7 +298,7 @@ impl Columns {
 
 /// The rows a line search keeps: by culture index, the line rows for findings of that culture;
 /// `any`, for findings without one; `sources`, how source findings match.
-struct LineMatches {
+pub(super) struct LineMatches {
     cultures: Vec<RowSet>,
     any: RowSet,
     sources: Option<SourceMatches>,
@@ -557,11 +319,10 @@ struct SourceMatches {
 impl LineMatches {
     /// Each set is the Text tab's `matching` for the search in one culture scope, so its atoms
     /// are cached with the Text tab's.
-    fn open(
+    pub(super) fn open(
         query: &EngineQuery,
         layer: &FindingsLayer,
-        request: &QueryRequest,
-        search: &LineSearch,
+        text: &str,
         culture: Option<u32>,
         cancelled: &AtomicBool,
     ) -> Result<Self> {
@@ -571,25 +332,19 @@ impl LineMatches {
             .as_str()
             .ok_or("The findings' target has no name.")?
             .to_owned();
-        let text = search.text();
-        let findings = search.filter.as_ref().map(|_| FindingsSelection {
-            key: request.key.clone(),
-            acceptance: request.acceptance.clone(),
-            source_only: None,
-        });
+        // Blank text keeps every finding.
+        let text = Some(text).filter(|text| !text.trim().is_empty());
         let lines = query.reader.column("line.source")?.len();
         let select = |culture: Option<String>, cultures: Option<Vec<String>>| -> Result<RowSet> {
             let selection = Selection {
                 target: Some(target.clone()),
                 culture,
                 cultures,
-                findings: findings.clone(),
-                filter: search.filter.clone(),
                 text: text.map(|query| TextSearch {
                     query: query.to_owned(),
                     translations: Some(true),
                 }),
-                dropped: Vec::new(),
+                ..Selection::default()
             };
             selection.validate()?;
             RowSet::from_rows(lines, &query.matching(&selection, cancelled)?)
@@ -606,8 +361,8 @@ impl LineMatches {
                     .collect::<Result<_>>()?,
             ),
         };
-        let sources = match (text, &search.filter) {
-            (Some(text), None) => {
+        let sources = match text {
+            Some(text) => {
                 // Terms split as the Text tab splits them.
                 let lowered = text.to_lowercase();
                 let terms = lowered
@@ -634,7 +389,7 @@ impl LineMatches {
                     sources: layer.column("subjects.unit_source.sources")?,
                 })
             }
-            _ => None,
+            None => None,
         };
         Ok(Self {
             cultures,
@@ -643,7 +398,7 @@ impl LineMatches {
         })
     }
 
-    fn holds(&self, columns: &Columns, number: u32) -> bool {
+    pub(super) fn holds(&self, columns: &Columns, number: u32) -> bool {
         let n = number as usize;
         let line = columns.line[n];
         if line == NONE {
@@ -670,315 +425,33 @@ impl LineMatches {
     }
 }
 
-fn run_query(
-    query: &EngineQuery,
-    layer: &FindingsLayer,
-    request: &QueryRequest,
-    acceptance: Option<&Acceptance>,
-    cancelled: &AtomicBool,
-) -> Result<FindingsPage> {
-    let mut stages = BTreeMap::new();
-    let started = Instant::now();
-    let mark = |stages: &mut BTreeMap<&'static str, f64>, name, since: &mut Instant| {
-        stages.insert(name, since.elapsed().as_secs_f64() * 1000.0);
-        *since = Instant::now();
-    };
-    let mut since = started;
-    let rules = layer.metadata.rules.clone();
-    let columns = columns(layer)?;
-    let culture = match &request.culture {
-        Some(culture) => Some(u32::try_from(
-            query
-                .cultures
-                .iter()
-                .position(|value| value == culture)
-                .ok_or_else(|| invalid("The culture is not in the target."))?,
-        )?),
-        None => None,
-    };
-    let wanted_rules = request.rules.as_ref().map(|ids| {
-        rules
-            .iter()
-            .map(|rule| ids.contains(&rule.rule_id))
-            .collect::<Vec<_>>()
-    });
-    let severities = request.severities.as_ref().map(|severities| {
-        rules
-            .iter()
-            .map(|rule| severities.contains(&rule.severity))
-            .collect::<Vec<_>>()
-    });
-    // Accepted findings: (line, culture, rule) through each rule's ID.
-    let accepted_rules = acceptance.map(|acceptance| {
-        let mut by_rule = vec![HashSet::new(); rules.len()];
-        for (line, ci, check) in &acceptance.entries {
-            for (index, rule) in rules.iter().enumerate() {
-                if &rule.rule_id == check {
-                    by_rule[index].insert((*line, *ci));
-                }
-            }
-        }
-        by_rule
-    });
-    let accepted = |number: u32| {
-        let n = number as usize;
-        accepted_rules.as_ref().is_some_and(|by_rule| {
-            columns.flags[n] & KEYLESS == 0
-                && columns.line[n] != NONE
-                && by_rule[columns.rule[n] as usize]
-                    .contains(&(columns.line[n], columns.culture[n]))
-        })
-    };
-    let has_source_rules = rules.iter().any(|rule| rule.subject == Subject::UnitSource);
-    let shadow = request.view == View::Workspace && has_source_rules;
-    let in_culture = |number: u32| {
-        let n = number as usize;
-        culture.is_none_or(|ci| columns.culture[n] == NONE || columns.culture[n] == ci)
-            && !(shadow && columns.flags[n] & SHADOWED != 0)
-    };
-    let line_row = match &request.line {
-        Some(id) => Some(query.find_id("line", id)?.map_or(NONE, |row| row as u32)),
-        None => None,
-    };
-    let id = request.id.as_deref().map(id_lanes);
-    let lines = match request.lines.as_ref().filter(|search| search.narrows()) {
-        Some(search) => {
-            let lines = LineMatches::open(query, layer, request, search, culture, cancelled)?;
-            mark(&mut stages, "lines", &mut since);
-            Some(lines)
-        }
-        None => None,
-    };
-    let searched = |number: u32| {
-        lines
-            .as_ref()
-            .is_none_or(|lines| lines.holds(&columns, number))
-    };
-    let rule_selected = |number: u32| {
-        wanted_rules
-            .as_ref()
-            .is_none_or(|wanted| wanted[columns.rule[number as usize] as usize])
-    };
-    let severity_selected = |number: u32| {
-        severities
-            .as_ref()
-            .is_none_or(|wanted| wanted[columns.rule[number as usize] as usize])
-    };
-    // The filters besides rules and severities, which every count follows.
-    let otherwise_selected = |number: u32| {
-        let n = number as usize;
-        request
-            .fixable
-            .is_none_or(|wanted| (columns.flags[n] & FIXABLE != 0) == wanted)
-            && request
-                .change
-                .is_none_or(|wanted| (columns.flags[n] & CHANGE != 0) == wanted)
-            && line_row.is_none_or(|row| columns.line[n] == row)
-            && id.is_none_or(|lanes| {
-                lanes.is_some_and(|(line, first, second)| {
-                    (columns.line[n] != NONE) == line && columns.lanes(number) == (first, second)
-                })
-            })
-    };
-
-    // The view's findings in the request's order.
-    let report = layer.column("order.report")?;
-    let source = if request.view == View::Workspace || request.order == Order::Source {
-        layer.column("order.source")?
-    } else {
-        Arc::from([])
-    };
-    let sequence: Vec<u32> = match request.order {
-        Order::Report => report.to_vec(),
-        Order::Line => layer.column("order.line")?.to_vec(),
-        Order::Source => source.to_vec(),
-        Order::Severity => {
-            let mut sequence = Vec::with_capacity(report.len() + source.len());
-            for (severity, _) in SEVERITIES {
-                let of = |number: &&u32| {
-                    rules[columns.rule[**number as usize] as usize].severity == severity
-                };
-                sequence.extend(source.iter().filter(of));
-                sequence.extend(report.iter().filter(of));
-            }
-            sequence
-        }
-    };
-    mark(&mut stages, "order", &mut since);
-    checkpoint(cancelled)?;
-
-    let mut counts = request.counts.then(|| Counts {
-        rules: rules
-            .iter()
-            .map(|rule| RuleTotal {
-                rule_id: rule.rule_id.clone(),
-                count: 0,
-            })
-            .collect(),
-        severities: SEVERITIES.iter().map(|(_, name)| (*name, 0)).collect(),
-        ..Counts::default()
-    });
-    // Counts are facets: a rule's count follows every filter but the rules, a severity's every
-    // filter but the severities, so a list can show what choosing another one would select.
-    let mut matched = Vec::new();
-    for number in &sequence {
-        let number = *number;
-        if !in_culture(number) || !searched(number) {
-            continue;
-        }
-        if accepted(number) {
-            if let Some(counts) = &mut counts {
-                counts.accepted += 1;
-            }
-            continue;
-        }
-        if !otherwise_selected(number) {
-            continue;
-        }
-        let (by_rule, by_severity) = (rule_selected(number), severity_selected(number));
-        if let Some(counts) = &mut counts {
-            let rule = columns.rule[number as usize] as usize;
-            if by_severity {
-                counts.all += 1;
-                counts.rules[rule].count += 1;
-            }
-            if by_rule {
-                *counts
-                    .severities
-                    .entry(
-                        SEVERITIES
-                            .iter()
-                            .find(|(s, _)| *s == rules[rule].severity)
-                            .map_or("normal", |(_, name)| name),
-                    )
-                    .or_default() += 1;
-            }
-        }
-        if by_rule && by_severity {
-            matched.push(number);
-            if let Some(counts) = &mut counts {
-                counts.total += 1;
-                if columns.flags[number as usize] & FIXABLE != 0 {
-                    counts.fixable += 1;
-                }
-            }
-        }
-    }
-    mark(&mut stages, "select", &mut since);
-    // Rules sharing an ID count once, under the first of them.
-    if let Some(counts) = &mut counts {
-        let mut seen = HashMap::<String, usize>::new();
-        let mut merged = Vec::new();
-        for total in std::mem::take(&mut counts.rules) {
-            if let Some(index) = seen.get(&total.rule_id) {
-                let entry: &mut RuleTotal = &mut merged[*index];
-                entry.count += total.count;
-            } else {
-                seen.insert(total.rule_id.clone(), merged.len());
-                merged.push(total);
-            }
-        }
-        counts.rules = merged;
-    }
-
-    // The cursor starts after the first selected finding with its ID.
-    let mut start = 0;
-    if let Some(after) = &request.after
-        && let Some(Some((line, first, second))) = Some(id_lanes(after))
-        && let Some(position) = matched.iter().position(|number| {
-            (columns.line[*number as usize] != NONE) == line
-                && columns.lanes(*number) == (first, second)
-        })
-    {
-        start = position + 1;
-    }
-    let page = matched
-        .iter()
-        .skip(start)
-        .skip(request.offset)
-        .take(request.limit.unwrap_or(usize::MAX))
-        .copied()
-        .collect::<Vec<_>>();
-    mark(&mut stages, "page", &mut since);
-
-    if let Some(counts) = &mut counts {
-        let rows = layer.column("diag.rows")?;
-        let cultures = layer.column("diag.cultures")?;
-        let codes = layer.column("diag.codes")?;
-        let mut seen = Vec::<(u32, u32)>::new();
-        for index in layer.column("diag.order")?.iter() {
-            let index = *index as usize;
-            if culture.is_some_and(|ci| cultures[index] != ci) {
-                continue;
-            }
-            let _ = rows[index];
-            match seen.iter_mut().find(|(code, _)| *code == codes[index]) {
-                Some(entry) => entry.1 += 1,
-                None => seen.push((codes[index], 1)),
-            }
-        }
-        counts.limits = seen
-            .into_iter()
-            .map(|(code, count)| {
-                Ok(CodeCount {
-                    code: layer.dictionary.string(code)?,
-                    count,
-                })
-            })
-            .collect::<Result<_>>()?;
-    }
-    let diagnostics = match &request.diagnostics {
-        Some(page) => {
-            let rows = layer.column("diag.rows")?;
-            let cultures = layer.column("diag.cultures")?;
-            let codes = layer.column("diag.codes")?;
-            let order = layer.column("diag.order")?;
-            let selection = order
-                .iter()
-                .map(|index| *index as usize)
-                .filter(|index| culture.is_none_or(|ci| cultures[*index] == ci))
-                .collect::<Vec<_>>();
-            let mut result = Vec::new();
-            for index in selection.iter().skip(page.offset).take(page.limit) {
-                result.push(LineDiagnostic {
-                    line_id: query.packed("line", rows[*index] as usize)?,
-                    culture: query
-                        .cultures
-                        .get(cultures[*index] as usize)
-                        .ok_or("Diagnostic culture outside target.")?
-                        .clone(),
-                    code: layer.dictionary.string(codes[*index])?,
-                });
-            }
-            Some(Diagnostics {
-                total: u32::try_from(selection.len())?,
-                rows: result,
-            })
-        }
-        None => None,
-    };
-    mark(&mut stages, "counts", &mut since);
-    stages.insert("total", started.elapsed().as_secs_f64() * 1000.0);
-    Ok(FindingsPage {
-        profile: ReadProfile::default(),
-        places: Vec::new(),
-        total: u32::try_from(matched.len())?,
-        findings: Vec::new(),
-        numbers: page,
-        sink: None,
-        counts,
-        diagnostics,
-        stages,
-    })
+/// Where composing a page's findings spends its time, in milliseconds: opening the line and source
+/// subjects, prefetching the lines' occurrences, and composing the rows.
+#[derive(Default)]
+pub(super) struct ComposeTimes {
+    pub(super) open: f64,
+    pub(super) prefetch: f64,
+    pub(super) rows: f64,
+    /// Imaging the string dictionary, when this compose was the first to read a string.
+    pub(super) image: Option<f64>,
+    /// The line prefetch's parts: its read arena, occurrence IDs and place strings.
+    pub(super) prefetch_parts: [f64; 3],
 }
 
 /// Composes findings in the given order, with the place sets they name.
-fn compose(
+pub(super) fn compose(
     query: &EngineQuery,
     layer: &FindingsLayer,
     page: &[u32],
     cancelled: &AtomicBool,
-) -> Result<(Vec<PlaceSet>, Vec<Value>)> {
+) -> Result<(Vec<PlaceSet>, Vec<Value>, ComposeTimes)> {
+    let mut times = ComposeTimes::default();
+    let imaged = query.reader.imaged_ms().is_some();
+    let mut since = Instant::now();
+    let mut lap = |slot: &mut f64| {
+        *slot += since.elapsed().as_secs_f64() * 1000.0;
+        since = Instant::now();
+    };
     let rules = &layer.metadata.rules;
     let columns = columns(layer)?;
     let collator = HostCollator::new(&layer.metadata.collation)?;
@@ -992,6 +465,7 @@ fn compose(
     let mut composed = HashMap::new();
     if !line_findings.is_empty() {
         let mut subjects = NativeSubjects::new(query, Subject::Line, &collator, cancelled)?;
+        lap(&mut times.open);
         let mut lines = line_findings
             .iter()
             .map(|number| columns.line[*number as usize])
@@ -999,6 +473,8 @@ fn compose(
         lines.sort_unstable();
         lines.dedup();
         subjects.prefetch_occurrences(&lines)?;
+        lap(&mut times.prefetch);
+        times.prefetch_parts = subjects.prefetch_ms;
         let mut place_ids = HashSet::new();
         let mut line_places = HashMap::new();
         for number in &line_findings {
@@ -1033,8 +509,10 @@ fn compose(
         .copied()
         .collect::<Vec<_>>();
     if !unit_findings.is_empty() {
+        lap(&mut times.rows);
         let unit_lines = query.unit_lines(cancelled)?;
         let mut subjects = NativeSubjects::new(query, Subject::UnitSource, &collator, cancelled)?;
+        lap(&mut times.open);
         let mut place_ids = places.iter().map(|set| set.id).collect::<HashSet<_>>();
         for number in &unit_findings {
             checkpoint(cancelled)?;
@@ -1072,75 +550,11 @@ fn compose(
                 .ok_or("A paged finding was not composed.")?,
         );
     }
-    Ok((places, findings))
-}
-
-/// Composes a page's findings, timed as its `compose` stage.
-fn compose_page(
-    query: &EngineQuery,
-    layer: &FindingsLayer,
-    page: &mut FindingsPage,
-    cancelled: &AtomicBool,
-) -> Result<()> {
-    let started = Instant::now();
-    let numbers = std::mem::take(&mut page.numbers);
-    (page.places, page.findings) = compose(query, layer, &numbers, cancelled)?;
-    page.timed("compose", started);
-    Ok(())
-}
-
-impl FindingsPage {
-    fn timed(&mut self, stage: &'static str, started: Instant) {
-        let ms = started.elapsed().as_secs_f64() * 1000.0;
-        self.stages.insert(stage, ms);
-        *self.stages.entry("total").or_default() += ms;
+    lap(&mut times.rows);
+    if !imaged {
+        times.image = query.reader.imaged_ms();
     }
-}
-
-impl EngineQuery {
-    /// Writes the selected findings through a `findingJson` sink, composing a page of them at a
-    /// time, and answers with the page's counts and what the sink wrote.
-    fn write_findings(
-        &self,
-        key: &str,
-        request: &QueryRequest,
-        acceptance: Option<&Acceptance>,
-        sink: &Sink,
-        cancelled: &AtomicBool,
-        reply: &mut dyn crate::engine::Reply,
-    ) -> Result<()> {
-        let layer = self.layer(key)?;
-        let mut page = run_query(self, &layer, request, acceptance, cancelled)?;
-        let numbers = std::mem::take(&mut page.numbers);
-        let started = Instant::now();
-        let mut writer = SinkWriter::open(sink, reply)?;
-        let mut out = Vec::new();
-        for chunk in numbers.chunks(MAX_LIMIT) {
-            let (places, findings) = compose(self, &layer, chunk, cancelled)?;
-            let sets = places
-                .into_iter()
-                .map(|set| (set.id, set.occurrences))
-                .collect::<HashMap<_, _>>();
-            for finding in findings {
-                out.clear();
-                if writer.rows() > 0 {
-                    out.push(b',');
-                }
-                out.extend_from_slice(b"\n\t\t");
-                pretty_json(&reported_finding(finding, &sets)?, 2, &mut out);
-                writer.write(&out)?;
-                writer.row();
-            }
-        }
-        let summary = writer.finish()?;
-        page.timed("compose", started);
-        page.profile = ReadProfile {
-            rows_requested: numbers.len(),
-            findings_returned: summary.rows as usize,
-        };
-        page.sink = Some(summary);
-        reply.part(javascript_json(&serde_json::to_value(&page)?, false).into_bytes())
-    }
+    Ok((places, findings, times))
 }
 
 #[cfg(test)]

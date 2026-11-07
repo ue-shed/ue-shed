@@ -3,8 +3,10 @@ import {
 	MAX_TEXT_QUERY_PAGE_SIZE,
 	TextGroupBy,
 	TextOriginKind,
-	type TextWhere
+	type LocalizationLens,
+	type TextFilter
 } from "@ue-shed/game-text/schema";
+import { textWhere } from "@ue-shed/game-text/query";
 import { Option } from "effect";
 import { Flag } from "effect/cli";
 
@@ -61,20 +63,30 @@ export function optionalWhereFlags(
 	};
 }
 
-/** The search request's location filter for those command fields and the read file list. */
-export function textWhere(
+/**
+ * A search request's filter for those command fields: `--kind`, `--path`, `--filter` clauses and
+ * the localization lens as its `where`, and the read file list as its file scope.
+ */
+export function textRequestFilter(
 	command: {
 		readonly kinds?: readonly TextOriginKind[];
 		readonly pathPrefix?: string;
 	},
-	files?: readonly string[]
-): TextWhere | undefined {
-	if (command.kinds === undefined && command.pathPrefix === undefined && files === undefined)
-		return undefined;
+	options: {
+		readonly files?: readonly string[] | undefined;
+		readonly filter?: TextFilter | undefined;
+		readonly lens?: LocalizationLens | undefined;
+	} = {}
+) {
+	const where = textWhere({
+		kinds: command.kinds,
+		pathPrefix: command.pathPrefix,
+		filter: options.filter,
+		lens: options.lens
+	});
 	return {
-		...(command.kinds === undefined ? undefined : { kinds: command.kinds }),
-		...(command.pathPrefix === undefined ? undefined : { pathPrefix: command.pathPrefix }),
-		...(files === undefined ? undefined : { files })
+		...(where === undefined ? undefined : { where }),
+		...(options.files === undefined ? undefined : { fileScope: options.files })
 	};
 }
 

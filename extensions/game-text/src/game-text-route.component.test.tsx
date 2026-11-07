@@ -712,7 +712,7 @@ it("keeps progress through translations and the first results query", async () =
 	await Effect.runPromise(
 		Deferred.succeed(firstPage, {
 			status: "ready",
-			page: cannedPage(planted.answers, { query: "", capability: "all", pageSize: 50 })
+			page: cannedPage(planted.answers, { query: "", pageSize: 50 })
 		})
 	);
 	await screen.findByText("2 matches");

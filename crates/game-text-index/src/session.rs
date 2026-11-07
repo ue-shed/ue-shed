@@ -449,6 +449,8 @@ struct Job {
     class: Class,
     work: Work,
     flow: Arc<Flow>,
+    /// When the engine read the request, so its answer reports how long it queued.
+    received: Instant,
 }
 
 /// A request's answer as it goes out: each part and batch is queued for the writer as soon as
@@ -555,7 +557,9 @@ fn run(shared: &Arc<Shared>, job: Job) {
         class,
         work,
         flow,
+        received,
     } = job;
+    let queued = received.elapsed();
     let mut outgoing = Outgoing {
         shared,
         class,
@@ -572,6 +576,7 @@ fn run(shared: &Arc<Shared>, job: Job) {
         batches: outgoing.batches,
         batch_bytes: outgoing.batch_bytes,
         credit_stall_ms: outgoing.stalled.as_secs_f64() * 1000.0,
+        queued_ms: queued.as_secs_f64() * 1000.0,
         ..profile
     };
     let terminal = match answered {
@@ -647,6 +652,7 @@ pub fn serve(mut input: impl Read, output: impl Write + Send) -> Result<()> {
                             class,
                             work,
                             flow: shared.live.start(id),
+                            received: Instant::now(),
                         };
                         match class {
                             Class::Interactive => {

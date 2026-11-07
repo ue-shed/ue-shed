@@ -96,6 +96,7 @@ import {
 import {
 	corpusInvestigationEnvelope,
 	investigationRequest,
+	presetNarrowingRequest,
 	readFindingUnits
 } from "./investigation.js";
 import { hasBrowseRules, makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
@@ -864,17 +865,14 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const projectRelativeRequest = (request: TextCorpusSearchRequest) =>
 		Ref.get(modelSelection).pipe(
 			Effect.map((owner) =>
-				owner === undefined || request.where?.files === undefined
+				owner === undefined || request.fileScope === undefined
 					? request
 					: {
 							...request,
-							where: {
-								...request.where,
-								files: projectRelativeTextFiles(
-									request.where.files,
-									owner.projectRoot
-								)
-							}
+							fileScope: projectRelativeTextFiles(
+								request.fileScope,
+								owner.projectRoot
+							)
 						}
 			)
 		);
@@ -1473,7 +1471,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 							...(query.localization.culture
 								? { culture: query.localization.culture }
 								: undefined),
-							...query.workspaceNarrowing
+							...presetNarrowingRequest(query.workspaceNarrowing)
 						})
 					: undefined;
 			const index = yield* currentIndex();

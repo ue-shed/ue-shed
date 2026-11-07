@@ -38,6 +38,10 @@
 			"types": "./dist/entry-labels.d.ts",
 			"import": "./dist/entry-labels.js"
 		},
+		"./query": {
+			"types": "./dist/entry-query.d.ts",
+			"import": "./dist/entry-query.js"
+		},
 		"./corpus": {
 			"types": "./dist/entry-corpus.d.ts",
 			"import": "./dist/entry-corpus.js"

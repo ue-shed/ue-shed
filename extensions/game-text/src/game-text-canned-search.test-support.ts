@@ -1,9 +1,11 @@
+import { type QueryExpr, textWhere } from "@ue-shed/game-text/query";
 import {
 	makeTextUnitId,
 	type LocalizationJoin,
 	type LocalizationLine,
 	type LocalizationLinePreview,
 	type LocalizationQueryPage,
+	type LocalizationLens,
 	type LocalizationSelection,
 	type TextCorpus,
 	type TextCorpusFocus,
@@ -39,8 +41,11 @@ export interface CannedWhen {
 	readonly query?: string;
 	readonly filter?: TextFilter;
 	readonly where?: TextWhere;
-	/** The selection fields the requests share; absent for requests without a target. */
-	readonly localization?: Partial<LocalizationSelection>;
+	/**
+	 * The selection fields the requests share, with the lens the list chose; absent for requests
+	 * without a target.
+	 */
+	readonly localization?: Partial<LocalizationSelection & LocalizationLens>;
 }
 
 /** One planted answer: the rows in order, and the aggregates every page of it carries. */
@@ -135,20 +140,33 @@ export function pageOf(units: readonly TextUnitSearchResult[]): TextCorpusSearch
 	};
 }
 
-const same = (
-	left: TextFilter | TextWhere | LocalizationSelection | undefined,
-	right: TextFilter | TextWhere | LocalizationSelection | undefined
-) => JSON.stringify(left) === JSON.stringify(right);
+type Compared = QueryExpr | readonly string[] | Partial<LocalizationSelection> | undefined;
+const same = (left: Compared, right: Compared) => JSON.stringify(left) === JSON.stringify(right);
 
 /** Whether an answer serves a request: equal narrowing, and the selection fields it names. */
-const serves = ({ when = {} }: CannedAnswer, request: TextCorpusSearchRequest) =>
-	request.query === (when.query ?? "") &&
-	same(request.filter, when.filter) &&
-	same(request.where, when.where) &&
-	(when.localization === undefined
-		? request.localization === undefined
-		: request.localization !== undefined &&
-			same({ ...request.localization, ...when.localization }, request.localization));
+const serves = ({ when = {} }: CannedAnswer, request: TextCorpusSearchRequest) => {
+	// The narrowing as the route sends it: one `where`, and the changed files as the scope.
+	const { state, review, keyChanged, ...selection } = when.localization ?? {};
+	const where = textWhere({
+		filter: when.filter,
+		lens: {
+			...(state === undefined ? undefined : { state }),
+			...(review === undefined ? undefined : { review }),
+			...(keyChanged === undefined ? undefined : { keyChanged })
+		},
+		kinds: when.where?.kinds,
+		pathPrefix: when.where?.pathPrefix
+	});
+	return (
+		request.query === (when.query ?? "") &&
+		same(request.where, where) &&
+		same(request.fileScope, when.where?.files) &&
+		(when.localization === undefined
+			? request.localization === undefined
+			: request.localization !== undefined &&
+				same({ ...request.localization, ...selection }, request.localization))
+	);
+};
 
 /** The page after a cursor: the rows after the one with that ID, and the cursor past them. */
 function pageAfter<T, Id extends string>(
@@ -180,8 +198,8 @@ export function cannedPage(
 			"No planted answer for " +
 				JSON.stringify({
 					query: request.query,
-					filter: request.filter,
 					where: request.where,
+					fileScope: request.fileScope,
 					localization: request.localization
 				})
 		);
@@ -208,7 +226,7 @@ export function cannedPage(
 					}
 				}
 			: undefined),
-		...(request.where && answer.fileScope ? { fileScope: answer.fileScope } : undefined)
+		...(request.fileScope && answer.fileScope ? { fileScope: answer.fileScope } : undefined)
 	};
 	if (request.localization) {
 		const lines = listed.filter((row) => row.line !== undefined);

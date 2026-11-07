@@ -363,7 +363,7 @@ const validArgsByChannel = {
 	"game-text:localization:report": [{ target: "FixtureGame" }],
 	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "save_baseline" }],
 	"game-text:localization:lines-file": [
-		{ query: "", capability: "all", pageSize: 50, localization: { target: "FixtureGame" } }
+		{ query: "", pageSize: 50, localization: { target: "FixtureGame" } }
 	],
 	"game-text:localization:choose-file": [{ side: "before" }],
 	"game-text:localization:compare-files": [
@@ -378,10 +378,9 @@ const validArgsByChannel = {
 		{ target: "FixtureGame", selection: { kind: "line", id: "line-1" } }
 	],
 	"game-text:related": [{ selection: { kind: "unit", id: "unit-1" }, pageSize: 50 }],
-	"game-text:search": [{ capability: "all", pageSize: 50, query: "" }],
+	"game-text:search": [{ pageSize: 50, query: "" }],
 	"game-text:search-rows": [
 		{
-			capability: "all",
 			pageSize: 50,
 			query: "",
 			group: "asset",

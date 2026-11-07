@@ -1,3 +1,4 @@
+import { textWhere } from "@ue-shed/game-text/query";
 import { screen, waitFor, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import {
@@ -216,7 +217,7 @@ it.each([
 		}
 		await waitFor(() => {
 			expect(screen.queryByRole("button", { name: /^Culture:/u })).toBeNull();
-			expect(requests.at(-1)?.filter).toEqual(effectiveFilter);
+			expect(requests.at(-1)?.where).toEqual(textWhere({ filter: effectiveFilter }));
 			expect(requests.at(-1)?.localization).toBeUndefined();
 			expect(screen.queryByRole("button", { name: "Search translations" })).toBeNull();
 			expect(screen.queryByRole("alert")).toBeNull();

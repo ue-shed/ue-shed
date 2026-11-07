@@ -145,12 +145,6 @@ pub enum EngineRequest {
         #[cfg_attr(test, ts(type = "FindingsAcceptRequest"))]
         request: Value,
     },
-    /// Filters, orders, pages and counts a findings layer's findings.
-    FindingsQuery {
-        reader: String,
-        #[cfg_attr(test, ts(type = "FindingsQueryRequest"))]
-        request: Value,
-    },
     /// Compiles a v4 rule document and returns its first problem; needs no reader.
     RulesCheck {
         /// The v4 rule document.
@@ -217,8 +211,7 @@ impl EngineRequest {
             | Self::Line { reader, .. }
             | Self::LocalizationExport { reader, .. }
             | Self::FindingsEvaluate { reader, .. }
-            | Self::FindingsAccept { reader, .. }
-            | Self::FindingsQuery { reader, .. } => {
+            | Self::FindingsAccept { reader, .. } => {
                 require(
                     !reader.is_empty() && reader.len() <= 128,
                     invalid("Invalid native reader handle."),
@@ -276,6 +269,9 @@ pub struct Profile {
     pub batch_bytes: u64,
     /// How long the request waited for the host to consume its batches.
     pub credit_stall_ms: f64,
+    /// How long the request waited for a thread after the engine read it: bulk requests run two
+    /// at a time and later ones queue.
+    pub queued_ms: f64,
 }
 impl Profile {
     /// A profile with no stages, for a request that failed.
@@ -286,6 +282,7 @@ impl Profile {
             batches: 0,
             batch_bytes: 0,
             credit_stall_ms: 0.0,
+            queued_ms: 0.0,
         }
     }
 }
@@ -540,7 +537,6 @@ impl EngineSession {
             | EngineRequest::LocalizationExport { reader, .. }
             | EngineRequest::FindingsEvaluate { reader, .. }
             | EngineRequest::FindingsAccept { reader, .. }
-            | EngineRequest::FindingsQuery { reader, .. }
             | EngineRequest::ReviewLines { reader, .. }
             | EngineRequest::ChangedSince { reader, .. } => {
                 let query=self.readers.lock().get(reader).cloned().ok_or_else(|| Error::new(ErrorCode::NotFound,"The native Game Text reader is closed or belongs to another session; reopen its snapshot."))?;
@@ -564,10 +560,6 @@ impl EngineSession {
                         "findings_accept",
                         Some(query.findings_accept(request.clone(), cancelled)?),
                     ),
-                    EngineRequest::FindingsQuery { request, .. } => {
-                        query.findings_query(request.clone(), cancelled, reply)?;
-                        ("findings_query", None)
-                    }
                     EngineRequest::Summary { .. } => (
                         "summary",
                         Some(crate::wtf8::view_json(&query.summary(cancelled)?)?),
@@ -722,7 +714,7 @@ mod tests {
 
     #[test]
     fn requests_carry_their_values_inline_not_as_text() -> Result<()> {
-        for action in ["findings_query", "findings_accept", "query"] {
+        for action in ["findings_accept", "query"] {
             let request: EngineRequest = serde_json::from_value(
                 json!({"action":action,"reader":"reader","request":{"key":"findings-v1:test"}}),
             )?;

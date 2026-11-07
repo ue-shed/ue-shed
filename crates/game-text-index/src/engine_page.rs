@@ -3,6 +3,7 @@ use crate::engine_match::{Projection, checkpoint};
 use crate::engine_places::Places;
 use crate::engine_query::EngineQuery;
 use crate::engine_types::*;
+use crate::engine_where::Field;
 use crate::{Result, require};
 use std::sync::{Arc, atomic::AtomicBool};
 
@@ -44,7 +45,7 @@ impl EngineQuery {
         let _span = crate::benchmark_timings::Span::new("searchListedRows");
         let findings = self.request_findings(selection, cancelled)?;
         // A finding group's rows are its rule's; without the rule no row is in it.
-        if by == GroupBy::Finding {
+        if by == Field::Findings {
             let set = findings
                 .as_deref()
                 .and_then(|findings| findings.rule(opened).map(|rule| &findings.sets[rule]));
@@ -82,13 +83,13 @@ impl EngineQuery {
     }
 
     /// A group key's ID under `by`, as `group_key` computes it; `None` when no row can have it.
-    pub(crate) fn group_id(&self, by: GroupBy, key: &str, places: &Places) -> Result<Option<u32>> {
+    pub(crate) fn group_id(&self, by: Field, key: &str, places: &Places) -> Result<Option<u32>> {
         Ok(match by {
-            GroupBy::Problem => PROBLEMS
+            Field::Problems => PROBLEMS
                 .iter()
                 .position(|value| *value == key)
                 .map(|id| id as u32),
-            GroupBy::Origin => {
+            Field::Origins => {
                 if key.is_empty() {
                     Some(0)
                 } else {
@@ -98,12 +99,12 @@ impl EngineQuery {
                         .map(|id| id as u32 + 1)
                 }
             }
-            GroupBy::Audience => AUDIENCES
+            Field::Audience => AUDIENCES
                 .iter()
                 .position(|value| *value == key)
                 .map(|id| id as u32),
-            GroupBy::Source => self.reader.find_string(key)?,
-            GroupBy::Finding => return Err("Finding groups are keyed by their rule.".into()),
+            Field::Sources => self.reader.find_string(key)?,
+            Field::Findings => return Err("Finding groups are keyed by their rule.".into()),
             _ => places
                 .labels(&[key.to_owned()], false)
                 .iter()

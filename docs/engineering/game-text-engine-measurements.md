@@ -931,6 +931,23 @@ Finding rows still compose their places, so this path stays in Phase 7. The fix 
 read orders only its own lines' members, and the corpus order is left to the evaluations that
 read every line. It lands on this branch as its own step, measured before the field registry.
 
+### Step 2: a page orders only its lines
+
+The same drives on the same Electroswag, with step 2's reader, cold after a restart:
+
+| Path                                  |     Step 1 |     Step 2 | Where it goes now                        |
+| ------------------------------------- | ---------: | ---------: | ---------------------------------------- |
+| Quality, the first page after opening |   2,547 ms |     362 ms | `compose_open` 299 ms, `compose_rows` 47 |
+| Quality, the badge's duplicate of it  |   2,562 ms |     378 ms | the same, beside it                      |
+| Quality, a page                       |   25–35 ms |   13–24 ms | `compose_prefetch` 2–3 ms, was 8–14      |
+| Quality, the first search ("eggs")    |     547 ms |     479 ms | `lines` 469 ms                           |
+| Text tab, the full list with facets   | 215–229 ms | 207–238 ms | unchanged                                |
+| Text tab, a search or the next rows   |    2–16 ms |    2–16 ms | unchanged                                |
+
+`compose_prefetch_arena` is 0 ms on every page: a read arena no longer builds anything. What is
+left of the cold page is the reader's occurrence relation (`OccurrenceData::build`), once per
+reader. The search's `lines` is the line search itself, which finding rows replace in step 4.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

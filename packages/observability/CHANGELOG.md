@@ -1,5 +1,27 @@
 # @ue-shed/observability
 
+## 0.27.0
+
+### Minor Changes
+
+- 84915c0: Expose parameterless service operations as reusable Effect/Stream properties. Callers execute
+  `yield* ids.generate` rather than `yield* ids.generate()`; parameterful operations remain functions.
+  Implementations retain per-execution work, original service and scope requirements, fresh IDs and
+  named tracing. Native schemas and wire representations are unchanged. Hosts must migrate their supplied service
+  implementations and local checked-dispatcher adapters when adopting the coordinated suite release.
+  See `docs/engineering/effect-operation-properties.md` for migration guidance and the consumer audit.
+
+    Game Text progress hooks and corpus comparison layers preserve their supplied error types rather
+    than widening them to `unknown`. Private viewer read/search ports use the same generic error
+    parameterization. Recoverable file/JSON/schema boundaries retain their original tagged failures
+    and nested causes; trusted construction failures remain defects.
+
+    Export a tagged `GameTextWorkspaceHostFailure` constructor in place of the former untagged host
+    failure interface. Host adapters supply the original failure as `cause` with the existing recovery
+    guidance. Reject non-finite TypeScript measurement/cache metadata and localization memory budgets,
+    while retaining finite fractional values and existing host policy. Wait for cancelled plugin archive
+    IO to settle before releasing staging resources, including cancellation through the owning fiber.
+
 ## 0.26.0
 
 ## 0.25.0

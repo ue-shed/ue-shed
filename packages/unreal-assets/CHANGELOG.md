@@ -1,5 +1,85 @@
 # @ue-shed/unreal-assets
 
+## 0.27.0
+
+### Minor Changes
+
+- 84915c0: Expose parameterless service operations as reusable Effect/Stream properties. Callers execute
+  `yield* ids.generate` rather than `yield* ids.generate()`; parameterful operations remain functions.
+  Implementations retain per-execution work, original service and scope requirements, fresh IDs and
+  named tracing. Native schemas and wire representations are unchanged. Hosts must migrate their supplied service
+  implementations and local checked-dispatcher adapters when adopting the coordinated suite release.
+  See `docs/engineering/effect-operation-properties.md` for migration guidance and the consumer audit.
+
+    Game Text progress hooks and corpus comparison layers preserve their supplied error types rather
+    than widening them to `unknown`. Private viewer read/search ports use the same generic error
+    parameterization. Recoverable file/JSON/schema boundaries retain their original tagged failures
+    and nested causes; trusted construction failures remain defects.
+
+    Export a tagged `GameTextWorkspaceHostFailure` constructor in place of the former untagged host
+    failure interface. Host adapters supply the original failure as `cause` with the existing recovery
+    guidance. Reject non-finite TypeScript measurement/cache metadata and localization memory budgets,
+    while retaining finite fractional values and existing host policy. Wait for cancelled plugin archive
+    IO to settle before releasing staging resources, including cancellation through the owning fiber.
+
+- 81fe6ab: A Game Text rescan of an existing index now updates it in place however many package shards
+  changed: it reads and converts only the changed packages, and the native writer keeps every
+  unchanged record. The reader stages the changed packages straight into shard snapshots, as a
+  first scan does, so their records never sit in the JavaScript heap; a source without staging
+  spools them to files as they arrive. A change that touched more than 8 of the 256 shards used to decode every changed
+  shard in JavaScript and re-encode each record. All changed shards still publish atomically. Only a
+  first scan, or an index in an older package format or audience policy, reads and writes the
+  changed shards again.
+
+    Progress reports reads apart from reuse. `package_read` ("Reading changed packages") replaces
+    `packages` and counts the packages read of those to read, with `unchanged` giving the packages kept
+    from the index without reading them. `package_update` ("Updating package text") covers the
+    in-place update; `package_publish` stays for a shard set written again.
+
+    uasset-io 1.22 adds `compare_packages`, which compares a refresh's changed shards with the index
+    in the native writer, so unchanged entries no longer cross into JavaScript. `publish_packages`
+    accepts `rowsFile`, the rows as a file of little-endian 32-bit integers, and an input without
+    `previousKey` for a shard the index doesn't hold yet. The native writer interns each string
+    domain once across a request, so a change to every shard fits the dictionary's 256 segments.
+
+### Patch Changes
+
+- b9e73b1: Game Text answers what on disk differs from its index, read-only, so a host can show "N saved
+  packages changed since the last scan" without its own snapshot of the tree or a Project Index
+  refresh:
+    - `GameTextIndexSteps.diskChanges` and the workspace's `diskChanges` take a project root, an
+      optional localization `target`, optional project-relative `paths` (at most 4,096) and a page
+      (`after`, `limit` up to 1,000). Without `paths`, the reader walks `Content` as the Project Index
+      does and compares every package's bundle signature with the indexed one; with `paths`, it checks
+      only those, and a sidecar checks its package. With `target`, the target's manifest, archives,
+      POs and review file are compared by size and modification time. The answer is `not_indexed`, or
+      `ready` with counts (`packages` and `localization`, each `added`, `changed`, `removed`) and a page
+      of items in path order with the next page's cursor. Nothing is written.
+    - `watchDiskChanges` (on the steps and, as a host-only method, on the workspace) returns a `Stream`
+      of `{ status: "not_indexed" }` or `{ status: "ready", changed, files, counts, checking }`: one full
+      check, then `Content` and the target's folders are watched with `fs.watch` through the new
+      `DiskWatcher` service (`DiskWatcherNodeLive`). Bursts settle for 300 ms by default (`settle`);
+      named files are rechecked by path, and folder events, watcher errors and published scans run a
+      full walk.
+    - The engine contract adds the `disk_changes` builder request (`DiskChangesRequest`,
+      `DiskChangesAnswer`, `DiskChangeItem`, `DiskChangeCounts`, `DiskChangeKind`) and
+      `JoinedReviewFile`; the uasset-io request and event schemas add the action and its outcome
+      (`diskChanges`), sent with contract minor 16.
+    - A localization target's join records its review file's path, size and modification time
+      (`reviewFile`), keyed like file provenances, so a target with a review file gets a new
+      generation once. `LocalizationReviewSnapshot` has the file's `provenance` when it exists.
+
+- Updated dependencies [73c7081]
+- Updated dependencies [79a96ef]
+- Updated dependencies [b9e73b1]
+- Updated dependencies [d104ec9]
+- Updated dependencies [61ae5df]
+- Updated dependencies [c773bcd]
+- Updated dependencies [acaa3ee]
+- Updated dependencies [81fe6ab]
+- Updated dependencies [fe2f488]
+    - @ue-shed/protocol@0.27.0
+
 ## 0.26.0
 
 ### Patch Changes

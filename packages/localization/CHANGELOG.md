@@ -1,5 +1,107 @@
 # @ue-shed/localization
 
+## 0.27.0
+
+### Minor Changes
+
+- b9e73b1: Game Text answers what on disk differs from its index, read-only, so a host can show "N saved
+  packages changed since the last scan" without its own snapshot of the tree or a Project Index
+  refresh:
+    - `GameTextIndexSteps.diskChanges` and the workspace's `diskChanges` take a project root, an
+      optional localization `target`, optional project-relative `paths` (at most 4,096) and a page
+      (`after`, `limit` up to 1,000). Without `paths`, the reader walks `Content` as the Project Index
+      does and compares every package's bundle signature with the indexed one; with `paths`, it checks
+      only those, and a sidecar checks its package. With `target`, the target's manifest, archives,
+      POs and review file are compared by size and modification time. The answer is `not_indexed`, or
+      `ready` with counts (`packages` and `localization`, each `added`, `changed`, `removed`) and a page
+      of items in path order with the next page's cursor. Nothing is written.
+    - `watchDiskChanges` (on the steps and, as a host-only method, on the workspace) returns a `Stream`
+      of `{ status: "not_indexed" }` or `{ status: "ready", changed, files, counts, checking }`: one full
+      check, then `Content` and the target's folders are watched with `fs.watch` through the new
+      `DiskWatcher` service (`DiskWatcherNodeLive`). Bursts settle for 300 ms by default (`settle`);
+      named files are rechecked by path, and folder events, watcher errors and published scans run a
+      full walk.
+    - The engine contract adds the `disk_changes` builder request (`DiskChangesRequest`,
+      `DiskChangesAnswer`, `DiskChangeItem`, `DiskChangeCounts`, `DiskChangeKind`) and
+      `JoinedReviewFile`; the uasset-io request and event schemas add the action and its outcome
+      (`diskChanges`), sent with contract minor 16.
+    - A localization target's join records its review file's path, size and modification time
+      (`reviewFile`), keyed like file provenances, so a target with a review file gets a new
+      generation once. `LocalizationReviewSnapshot` has the file's `provenance` when it exists.
+
+- 84915c0: Expose parameterless service operations as reusable Effect/Stream properties. Callers execute
+  `yield* ids.generate` rather than `yield* ids.generate()`; parameterful operations remain functions.
+  Implementations retain per-execution work, original service and scope requirements, fresh IDs and
+  named tracing. Native schemas and wire representations are unchanged. Hosts must migrate their supplied service
+  implementations and local checked-dispatcher adapters when adopting the coordinated suite release.
+  See `docs/engineering/effect-operation-properties.md` for migration guidance and the consumer audit.
+
+    Game Text progress hooks and corpus comparison layers preserve their supplied error types rather
+    than widening them to `unknown`. Private viewer read/search ports use the same generic error
+    parameterization. Recoverable file/JSON/schema boundaries retain their original tagged failures
+    and nested causes; trusted construction failures remain defects.
+
+    Export a tagged `GameTextWorkspaceHostFailure` constructor in place of the former untagged host
+    failure interface. Host adapters supply the original failure as `cause` with the existing recovery
+    guidance. Reject non-finite TypeScript measurement/cache metadata and localization memory budgets,
+    while retaining finite fractional values and existing host policy. Wait for cancelled plugin archive
+    IO to settle before releasing staging resources, including cancellation through the owning fiber.
+
+- acaa3ee: Game Text shows a culture's translations from its compiled `.locres` when the culture has no
+  archive.
+    - The native localization import reads compiled resources (format `"locres"`), versions 0 to 3:
+      an archive-shaped layer with each entry's display string and the hash of the source it was
+      compiled from (`entry.source-hash`). Malformed resources fail with the typed `malformed_locres`
+      and recovery guidance. The hash is verified against Unreal-compiled version 3 resources; for
+      versions 0 to 2 it is exposed but marked unverified.
+    - A culture whose archive is missing reads its resource. Against the manifest source, or the saved
+      source without a manifest, it is `translated`, `not_translated` (the source or native text was
+      compiled in) or `needs_update` (the source changed since the compile). An entry the resource
+      lacks is `not_translated` with a manifest and `unknown` without one.
+    - The shipped translation's origin can be `"locres"`, culture states carry the `locres` entry, and
+      rules read it as `latest` with `latestOrigin: "locres"`.
+    - In a project with no gather configs, target discovery finds compiled resources by Unreal's runtime
+      convention, `Content/Localization/<Target>/<culture>/<Target>.locres`. A Dashboard target of the
+      same name gets them; another name becomes a `resource_files` target. Both are marked
+      `resourcesDiscovered`, and the Workbench labels them "discovered".
+
+### Patch Changes
+
+- d104ec9: Game Text reviews and change checks no longer slow down or miss results on large targets:
+    - Comparing a change lists the findings that fail it first across every page, not only within one
+      page, so a failure is never left behind a page of warnings. The engine's `compare_points` request
+      takes the failing checks as `failOn`; `readGameTextChangePoints` passes them through.
+    - Fixing an ID reads every place of a unit, a page at a time, so a reviewed place beyond the unit's
+      first 500 is found rather than reported as no longer in the scan. A unit that changes between
+      pages is still refused.
+    - A related unit may list as many places as its request asks for, up to 500, instead of failing to
+      decode beyond 50.
+    - Setting review flags or accepting findings, and reviewing staged edits, read each line's source,
+      shipped translation and review fingerprint from the index in one engine request per culture
+      (`review_lines`, new in the engine contract, exposed as `NativeTextQuery.reviewLines`), instead of
+      decoding the target's manifest, archive and PO files in the host for every line.
+      `reviewLocalizationChangeSet` takes such lines in place of parsed files.
+    - A fingerprint from parsed files (`localizationEvidenceFingerprint`) and a staged edit's review
+      from parsed files now choose the shipped translation as the index's join does when a line has
+      duplicate archive or PO entries or its archive is unreadable (`shippedEvidenceTranslation`), so
+      a review they stamp is current to the join.
+
+- Updated dependencies [73c7081]
+- Updated dependencies [79a96ef]
+- Updated dependencies [b9e73b1]
+- Updated dependencies [d104ec9]
+- Updated dependencies [61ae5df]
+- Updated dependencies [84915c0]
+- Updated dependencies [c773bcd]
+- Updated dependencies [acaa3ee]
+- Updated dependencies [81fe6ab]
+- Updated dependencies [fe2f488]
+- Updated dependencies [8999b38]
+    - @ue-shed/protocol@0.27.0
+    - @ue-shed/unreal-connection@0.27.0
+    - @ue-shed/engine@0.27.0
+    - @ue-shed/config-explorer@0.27.0
+
 ## 0.26.0
 
 ### Patch Changes

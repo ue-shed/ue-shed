@@ -4,7 +4,7 @@ Plan 059 Phase 7: findings become rows of the query engine. The Quality tab asks
 in the same filter language, as the Text tab. A host composes any filter, count and group from
 fields, and UE Shed changes only when a new field is added.
 
-Status: design, for the owner's review. Nothing is built yet.
+Status: design. The owner settled §9's decisions on 2026-11-07. Nothing is built yet.
 
 ## 1. Why
 
@@ -68,6 +68,10 @@ the Text tab's `findings` field does.
 
 Adding a field later means one registry entry, and the field can then be filtered, grouped and
 counted everywhere it is marked, with no host-specific option.
+
+**Facet marks name fields.** Today a mark names a fixed `Facet` (`ix/engine_where.rs`). It becomes
+a field name from the registry, so counting by any field drops the marks on that field, and a
+host can mark any filter it builds.
 
 ## 4. Finding rows
 
@@ -143,24 +147,32 @@ culture's translation, ignoring case; a source finding's own source.
 
 ## 6. TypeScript and hosts
 
-- **The engine boundary.** `gt/native-query-ir.ts` stays the one place pills become a `where`.
-- **Quality's request.** `WorkspaceQualityRequest` keeps its target, culture and check. What
-  narrows it becomes:
-    - `query`, the search;
-    - `filter`, a `TextFilter`: the Text tab's pills, applied to the finding's row, plus finding
-      pills. `TextFilterField` gains `severity` and `suggested_fix`, which are valid only on
-      findings;
-    - `facets`, the list of §5.
+**Requests carry filters, not pills.** A pill is how a host shows a filter. The query takes the
+filter itself, so a new kind of pill over existing fields needs no UE Shed change.
 
-    `severities` and `fixable` go; they become pills. Presets keep their saved narrowing through
-    one translation when they load.
-
-- **The Text tab's request is unchanged** for hosts: `TextFacetRequest` maps to the facet list
-  inside the builder.
+- **Both tabs' requests take `where`**, the rule IR's expression with facet marks:
+    - `WorkspaceQualityRequest` keeps its target, culture and check, and takes `query` (the
+      search), `where` and `facets` (§5). `severities` and `fixable` go: severity and suggested fix
+      are fields like any other.
+    - `TextCorpusSearchRequest` takes `where` in place of its pill list (`filter`) and of the
+      fields that only built one: `capability`, `withoutNotes`, the localization `state`,
+      `review` and `keyChanged`, and today's location `where` (`kinds`, `pathPrefix`, `files`).
+      The changed files the counts report on stay their own field, `fileScope`.
+      `TextFacetRequest` becomes the facet list.
+- **Pills become filters on the host**, through a published converter: today's builder
+  (`gt/native-query-ir.ts`), exported from a browser-safe entry. It turns the Text tab's pills,
+  and the severity and suggested-fix pills, into marked expressions. A host may build its own
+  expressions for its own pills; to count by a field, it marks what it builds with that field.
+- **One Effect Schema for `Expr`**, so hosts validate a filter at their own boundary (Electroswag's
+  RPC) before it reaches UE Shed. The engine validates again, as today.
+- **Saved filters.** Investigation presets, which the CLI also runs, save the query: `where`,
+  `query` and facets. A host that wants its pills back saves them beside it, as its own data.
+  Browse preferences are the host's, and keep whatever the host shows.
 - **`findings_query` is deleted** (Plan 059: code a phase replaces is deleted in that phase). The
   queried workspace, `ue-shed loc check` and its sink read finding rows instead.
 - **Electroswag** gives Quality the Text tab's toolbar: search, Filter menu and pills, with
-  severity and suggested fix as menu fields. That toolbar is already drafted against #212.
+  severity and suggested fix as menu fields, converted to `where` before it sends them. The
+  Workbench and the CLI convert their pills the same way.
 
 ## 7. Performance
 
@@ -206,13 +218,15 @@ UE Shed 0.27.1, 2026-11-07. Server RPC times; the engine's stages where it recor
 - **Arbitrary expressions in `row`** beyond what the row-set compiler compiles today (Phase 4 §6).
   The compiler refuses them, as it does for the Text tab.
 
-## 9. Decisions for the owner
+## 9. Decisions
 
-1. **May hosts send a raw `where` expression**, beside pills? Recommended: yes, through the same
-   validation, so a host can build any filter the IR supports without a UE Shed change.
-   Electroswag keeps using pills.
+Settled by the owner on 2026-11-07:
+
+1. **Requests carry filters, not pills** (§6). Pills are converted to a marked `where` on the
+   host; UE Shed publishes the converter for the pills the tabs share.
 2. **Source findings are tested through their unit** (§4), rather than matching no filter.
-3. **Severity and suggested fix become pills.** Quality's row of check chips stays as it is.
+3. **Severity and suggested fix are pills** in the Filter menu. Quality's row of check chips stays
+   as it is.
 4. **`findings_query` is deleted** rather than kept as a wrapper.
 
 ## 10. Steps, one commit each at least
@@ -225,7 +239,9 @@ UE Shed 0.27.1, 2026-11-07. Server RPC times; the engine's stages where it recor
    facets, groups and diagnostics. A parity test sends every request the queried workspace and
    `loc check` send today, through both `findings_query` and finding rows, and compares the
    answers on the fixture and on Coral.
-4. **TypeScript.** The workspace and the CLI read finding rows; `WorkspaceQualityRequest` takes
-   `filter` and `facets`; presets translate; `findings_query` is deleted.
-5. **Electroswag.** Quality's toolbar on the new request; the badge's duplicate request goes.
+4. **TypeScript.** The `Expr` schema and the exported converter. Both tabs' requests take `where`
+   and `facets`; the workspace and the CLI read finding rows; presets save the query; the
+   Workbench converts its pills; `findings_query` is deleted.
+5. **Electroswag.** Both tabs convert their pills and send `where`; Quality gets the Text tab's
+   toolbar; the badge's duplicate request goes.
 6. **Measure** on Coral and the released project against §7, and the owner reviews.

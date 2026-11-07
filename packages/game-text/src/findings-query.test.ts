@@ -687,6 +687,58 @@ const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 				}
 		}
 });
+it.live(
+	"a search matches a source finding by its own source, not its key's other sources",
+	() =>
+		Effect.gen(function* () {
+			const fixture = yield* makeIndexRegressionFixture();
+			yield* Effect.promise(() => writeLocalization(fixture.projectRoot, keys));
+			// One key saved with two conflicting menu texts, each over the menu's budget.
+			const clash = (source: string, property: string) => {
+				const saved = occurrence("Clash", source, 0);
+				return { ...saved, location: { ...saved.location, property_path: property } };
+			};
+			fixture.update([
+				...gathered.map(({ key, source }, index) => occurrence(key, source, index)),
+				clash("Alpha unique", "ClashA"),
+				clash("Beta unique", "ClashB")
+			]);
+			yield* Effect.gen(function* () {
+				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
+				const join = yield* result.localizationJoin;
+				const source = yield* (yield* result.sourceQuality(document)).export("all");
+				const legacy = localizationQualityWorkspace(
+					source,
+					yield* result.localizationCheck(document, {}),
+					join
+				);
+				const indexed = localizationQualityWorkspaceOf(
+					source,
+					yield* result.localizationQuality(document, {})
+				);
+				const searched = (query: string) =>
+					Effect.gen(function* () {
+						const request: WorkspaceQualityRequest = {
+							target: join.target,
+							filter: "character_budget",
+							query
+						};
+						const report = yield* indexed.export(request);
+						expect(report).toEqual(legacy.export(request));
+						return report.findings
+							.filter(({ culture }) => culture === undefined)
+							.map((finding) => finding.source)
+							.sort();
+					});
+				expect(yield* searched("unique")).toEqual(["Alpha unique", "Beta unique"]);
+				expect(yield* searched("alpha")).toEqual(["Alpha unique"]);
+				expect(yield* searched("BETA unique")).toEqual(["Beta unique"]);
+				// Words from different sources of one key do not combine into a match.
+				expect(yield* searched("alpha beta")).toEqual([]);
+			}).pipe(Effect.provide(fixture.layer()));
+		}).pipe(Effect.scoped),
+	120000
+);
 it.live("checks report each place once, its compiled Blueprint copies folded in", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();

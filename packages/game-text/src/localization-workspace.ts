@@ -940,11 +940,14 @@ function searchTerms(query: string | undefined): readonly string[] {
 
 /**
  * Whether each word is in the finding's source, or for a line finding in its culture's archive
- * translation or, when not synced, its PO text: the text the engine searches.
+ * translation or, when not synced, its PO text: the text the engine searches. A source finding
+ * reads its own source, not the other sources its unit holds.
  */
 function itemMatches(item: WorkspaceQualityItem, terms: readonly string[]): boolean {
-	const texts = [item.line?.source ?? item.summary.source];
 	const finding = item.finding;
+	const texts = [
+		"culture" in finding ? (item.line?.source ?? item.summary.source) : finding.actual.source
+	];
 	if ("culture" in finding) {
 		const mark = item.line?.cultures.find((mark) => mark.culture === finding.culture);
 		if (mark?.archive) texts.push(mark.archive.translation.Text);

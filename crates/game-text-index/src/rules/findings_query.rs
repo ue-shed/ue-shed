@@ -477,8 +477,6 @@ fn review_fingerprint(source: &str, translation: Option<&str>) -> String {
 struct Columns {
     rule: Arc<[u32]>,
     line: Arc<[u32]>,
-    /// A source finding's unit, a `raw` row.
-    unit: Arc<[u32]>,
     culture: Arc<[u32]>,
     flags: Arc<[u32]>,
     /// Each rule's first finding number, then the count.
@@ -507,7 +505,6 @@ fn columns(layer: &FindingsLayer) -> Result<Columns> {
     let result = Columns {
         rule: layer.column("f.rule")?,
         line: layer.column("f.line")?,
-        unit: layer.column("f.unit")?,
         culture: layer.column("f.culture")?,
         flags: layer.column("f.flags")?,
         bases,
@@ -519,7 +516,6 @@ fn columns(layer: &FindingsLayer) -> Result<Columns> {
         [
             result.rule.len(),
             result.line.len(),
-            result.unit.len(),
             result.culture.len(),
             result.flags.len(),
         ]
@@ -539,11 +535,23 @@ impl Columns {
 }
 
 /// The rows a line search keeps: by culture index, the line rows for findings of that culture;
-/// `any`, for findings without one; `units`, the `raw` rows for source findings.
+/// `any`, for findings without one; `sources`, how source findings match.
 struct LineMatches {
     cultures: Vec<RowSet>,
     any: RowSet,
-    units: Option<RowSet>,
+    sources: Option<SourceMatches>,
+}
+
+/// A source finding's own source text against each search term. A unit can hold several
+/// conflicting sources, each its own finding subject, so a finding matches only when every term
+/// is in its own source, not in the unit's sources together.
+struct SourceMatches {
+    /// Each term's match by string ID, as the Text tab's source search reads it.
+    terms: Vec<Arc<[u8]>>,
+    /// Each source rule's finding subject rows; empty for other rules.
+    rows: Vec<Arc<[u32]>>,
+    /// Each `unit_source` subject row's source string.
+    sources: Arc<[u32]>,
 }
 
 impl LineMatches {
@@ -551,6 +559,7 @@ impl LineMatches {
     /// are cached with the Text tab's.
     fn open(
         query: &EngineQuery,
+        layer: &FindingsLayer,
         request: &QueryRequest,
         search: &LineSearch,
         culture: Option<u32>,
@@ -597,31 +606,40 @@ impl LineMatches {
                     .collect::<Result<_>>()?,
             ),
         };
-        let units = match (text, &search.filter) {
+        let sources = match (text, &search.filter) {
             (Some(text), None) => {
-                let selection = Selection {
-                    text: Some(TextSearch {
-                        query: text.to_owned(),
-                        translations: None,
-                    }),
-                    ..Selection::default()
-                };
-                selection.validate()?;
-                let units = crate::engine_match::Projection::open(query, cancelled)?
-                    .raw
-                    .visible
-                    .len();
-                Some(RowSet::from_rows(
-                    units,
-                    &query.matching(&selection, cancelled)?,
-                )?)
+                // Terms split as the Text tab splits them.
+                let lowered = text.to_lowercase();
+                let terms = lowered
+                    .split(crate::join_policy::js_space)
+                    .filter(|term| !term.is_empty())
+                    .map(|term| query.source_matches(term, cancelled))
+                    .collect::<Result<_>>()?;
+                let rows = layer
+                    .metadata
+                    .rules
+                    .iter()
+                    .enumerate()
+                    .map(|(index, rule)| {
+                        if rule.subject == Subject::UnitSource {
+                            layer.column(&format!("r{index}.rows"))
+                        } else {
+                            Ok(Arc::from([]))
+                        }
+                    })
+                    .collect::<Result<_>>()?;
+                Some(SourceMatches {
+                    terms,
+                    rows,
+                    sources: layer.column("subjects.unit_source.sources")?,
+                })
             }
             _ => None,
         };
         Ok(Self {
             cultures,
             any,
-            units,
+            sources,
         })
     }
 
@@ -629,10 +647,21 @@ impl LineMatches {
         let n = number as usize;
         let line = columns.line[n];
         if line == NONE {
-            return self
-                .units
-                .as_ref()
-                .is_some_and(|units| units.contains(columns.unit[n] as usize));
+            return self.sources.as_ref().is_some_and(|matches| {
+                let rule = columns.rule[n] as usize;
+                let position = (number - columns.bases[rule]) as usize;
+                matches
+                    .rows
+                    .get(rule)
+                    .and_then(|rows| rows.get(position))
+                    .and_then(|row| matches.sources.get(*row as usize))
+                    .is_some_and(|source| {
+                        matches
+                            .terms
+                            .iter()
+                            .all(|term| term.get(*source as usize) == Some(&1))
+                    })
+            });
         }
         self.cultures
             .get(columns.culture[n] as usize)
@@ -714,7 +743,7 @@ fn run_query(
     let id = request.id.as_deref().map(id_lanes);
     let lines = match request.lines.as_ref().filter(|search| search.narrows()) {
         Some(search) => {
-            let lines = LineMatches::open(query, request, search, culture, cancelled)?;
+            let lines = LineMatches::open(query, layer, request, search, culture, cancelled)?;
             mark(&mut stages, "lines", &mut since);
             Some(lines)
         }

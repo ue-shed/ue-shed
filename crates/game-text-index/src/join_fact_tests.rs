@@ -364,7 +364,7 @@ impl Fixture {
         refresh(self.store()?, &input)
     }
 
-    fn lines(&mut self) -> Result<Vec<Value>> {
+    pub(crate) fn lines(&mut self) -> Result<Vec<Value>> {
         let outcome = self.join()?;
         let query = EngineQuery::open(&self.configuration, Some(&outcome.key))?;
         let count = query.reader.meta["count"].as_u64().ok_or("line count")? as usize;

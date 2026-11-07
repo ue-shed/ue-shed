@@ -580,16 +580,49 @@ const PLACE_STRINGS: [&str; 7] = [
     "source", "notes", "object", "property", "class", "row", "key",
 ];
 impl NativeSubjects<'_> {
-    /// The arena `occurrences` reads through, with the occurrence children prepared.
+    /// The arena `occurrences` reads through. A read wants a page of lines, so it orders only
+    /// theirs (`line_order`); every line's order is built by the evaluations that read every
+    /// line, and adopted here when one already has.
     fn take_read_arena(&mut self) -> Result<super::columns::Arena> {
-        match self.read_arena.take() {
-            Some(arena) => Ok(arena),
-            None => {
-                let mut arena = super::columns::Arena::new(self.dictionary_len()?)?;
-                self.prepare_columns(&[], &mut arena, true)?;
-                Ok(arena)
-            }
+        if let Some(arena) = self.read_arena.take() {
+            return Ok(arena);
         }
+        let mut arena = super::columns::Arena::new(self.dictionary_len()?)?;
+        arena.occurrences.data = Some(Arc::clone(&self.occurrences));
+        arena.occurrences.len = self.occurrences.len();
+        arena.line_children = self
+            .query
+            .line_children
+            .lock()
+            .as_ref()
+            .filter(|(locale, _)| *locale == self.collator.locale)
+            .map(|(_, children)| Arc::clone(children));
+        Ok(arena)
+    }
+    /// A line's occurrences in the order every line's children have them: collated by
+    /// occurrence ID, ties in reader order.
+    fn line_order(&self, arena: &mut super::columns::Arena, line: usize) -> Result<Vec<u32>> {
+        use super::columns::StrId;
+        if let Some(children) = &arena.line_children {
+            return Ok(children.members(line).to_vec());
+        }
+        let mut members = self.line_members(line);
+        if members.len() > 1 {
+            arena.occurrence_ids(
+                self.query,
+                &members,
+                &mut super::stages::Measure::start(),
+                self.cancelled,
+            )?;
+            let ids = &arena.occurrences.ids;
+            members.sort_by(|a, b| {
+                self.collator.compare(
+                    arena.text(ids[*a as usize].unwrap_or(StrId(0))),
+                    arena.text(ids[*b as usize].unwrap_or(StrId(0))),
+                )
+            });
+        }
+        Ok(members)
     }
     /// Load what `occurrences` reads for these subject rows in one batch per arena, so that
     /// reading them one at a time afterwards finds every string already loaded. No rows need
@@ -607,13 +640,7 @@ impl NativeSubjects<'_> {
             if self.subject == Subject::UnitSource {
                 members.extend_from_slice(&self.units[*row as usize].members);
             } else {
-                members.extend_from_slice(
-                    arena
-                        .line_children
-                        .as_ref()
-                        .ok_or("Missing occurrence CSR.")?
-                        .members(self.line_row(*row as usize)?),
-                );
+                members.extend(self.line_members(self.line_row(*row as usize)?));
             }
         }
         members.sort_unstable();
@@ -771,12 +798,8 @@ impl SubjectRows for NativeSubjects<'_> {
         let members = if self.subject == Subject::UnitSource {
             self.units[row].members.clone()
         } else {
-            arena
-                .line_children
-                .as_ref()
-                .ok_or("Missing occurrence CSR.")?
-                .members(self.line_row(row)?)
-                .to_vec()
+            let line = self.line_row(row)?;
+            self.line_order(&mut arena, line)?
         };
         let atoms = members
             .into_iter()
@@ -787,5 +810,68 @@ impl SubjectRows for NativeSubjects<'_> {
         self.read_arena = Some(arena);
         let affected = &affected[&set];
         self.places(&affected.rows, &affected.ids)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::join_fact_tests::Fixture;
+
+    /// A page read orders a line's occurrences itself, as every line's order would, and builds
+    /// nothing for the other lines.
+    #[test]
+    fn a_page_read_orders_its_lines_as_the_corpus_order_does() -> Result<()> {
+        let mut fixture = Fixture::new()?;
+        fixture.file("Game.manifest","manifest",&[
+            json!({"namespace":"UI","key":"K","source":"Many","path":"/Game/Text/Zeta.Zeta.Label"}),
+            json!({"namespace":"UI","key":"O","source":"One","path":"/Game/Text/Only.Only.Label"}),
+        ])?;
+        fixture.file("en.archive", "archive", &[])?;
+        fixture.file("en.po", "po", &[])?;
+        fixture.packages(&[
+            json!({"namespace":"UI","key":"K","source":"Many","object":"/Game/Text/Zeta.Zeta","property":"Label"}),
+            json!({"namespace":"UI","key":"K","source":"Many","object":"/Game/Text/alpha.alpha","property":"Label"}),
+            json!({"namespace":"UI","key":"K","source":"Many","object":"/Game/Text/Beta.Beta","property":"Label"}),
+            json!({"namespace":"UI","key":"O","source":"One","object":"/Game/Text/Only.Only","property":"Label"}),
+        ])?;
+        fixture.lines()?;
+        let query = EngineQuery::open(&fixture.configuration, None)?;
+        let collator = HostCollator::new("en")?;
+        let cancelled = AtomicBool::new(false);
+        let read = |query: &EngineQuery| -> Result<Vec<Vec<Value>>> {
+            let mut subjects = NativeSubjects::new(query, Subject::Line, &collator, &cancelled)?;
+            let rows = (0..subjects.len() as u32).collect::<Vec<_>>();
+            subjects.prefetch_occurrences(&rows)?;
+            (0..subjects.len())
+                .map(|row| subjects.occurrences(row))
+                .collect()
+        };
+        let own = read(&query)?;
+        assert!(query.line_children.lock().is_none());
+        let many = own
+            .iter()
+            .find(|places| places.len() == 3)
+            .ok_or("Missing the line with three places.")?;
+        let objects = many
+            .iter()
+            .map(|place| place["location"]["objectPath"].clone())
+            .collect::<Vec<_>>();
+        // Collated, not the reader's order (Zeta, alpha, Beta) or bytes' (Beta, Zeta, alpha).
+        assert_eq!(
+            objects,
+            [
+                "/Game/Text/alpha.alpha",
+                "/Game/Text/Beta.Beta",
+                "/Game/Text/Zeta.Zeta"
+            ]
+        );
+        let mut every = NativeSubjects::new(&query, Subject::Line, &collator, &cancelled)?;
+        let mut arena = super::super::columns::Arena::new(every.dictionary_len()?)?;
+        every.prepare_columns(&[], &mut arena, true)?;
+        drop(every);
+        assert!(query.line_children.lock().is_some());
+        assert_eq!(read(&query)?, own);
+        Ok(())
     }
 }

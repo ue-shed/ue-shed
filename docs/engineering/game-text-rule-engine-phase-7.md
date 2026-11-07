@@ -1,0 +1,231 @@
+# Game Text rule engine: Phase 7 specification
+
+Plan 059 Phase 7: findings become rows of the query engine. The Quality tab asks the same engine,
+in the same filter language, as the Text tab. A host composes any filter, count and group from
+fields, and UE Shed changes only when a new field is added.
+
+Status: design, for the owner's review. Nothing is built yet.
+
+## 1. Why
+
+Plan 059 decided that findings and quality checks stop being two things (decision 3). Phase 3
+put findings in the engine, but as `findings_query`, a function with one option per filter
+(`ix/rules/findings_query.rs`): `rules`, `severities`, `fixable`, `change`, `acceptance`, `line`,
+`id`, and counts fixed to rule, severity and fixable. So every new Quality filter or count is a
+UE Shed change and a release:
+
+- #209 added a search (`lines: { text, where }`);
+- #212 added pills (`lineFilter`) and fixed folder, asset, asset type, origin and audience counts.
+  It is closed in favour of this phase.
+
+The Text tab's query (Phase 3 §3, Phase 4 §6) is already the shape this needs: rows, a `where`
+in the rule IR's grammar with facet marks, and parts. It isn't fully general either: its facets
+are a fixed struct (`Facets` in `ix/engine_types.rs`) and its groups a fixed enum (`GroupBy`), so
+a "count by namespace" is a UE Shed change too.
+
+## 2. What doesn't change
+
+- **The scan, the join and the index.** No new columns are stored, nothing is rescanned, and the
+  store format is unchanged.
+- **Rules.** Authoring, the rule IR, the three subjects, evaluation, incremental evaluation and
+  the findings layer's contents are unchanged. **Finding identity is unchanged**, so review files
+  keep working (Plan 059 STOP condition).
+- **The Text tab's path.** Line and unit queries compile and run as today. The row-set compiler
+  (`ix/engine_where.rs`), its atom cache and its 64 MiB budget are untouched. Every Text tab
+  answer stays byte-identical (the fixture's Browse cases and the benchmark's page hashes), and
+  its timings must not move (§7).
+- **Custom rules keep their freedom.** A rule decides what it matches and what it reports. The
+  query side sees what every finding has: its rule, severity, culture, subject, flags and text
+  row. A rule's message and evidence stay its own and are never parsed. A filter names a rule by
+  its ID, so a new rule needs no engine change. What would cost freedom is hard-coding rule kinds
+  into queries; the check list's grouping of rules (`character_budget`, `terminology`) stays in
+  TypeScript, outside the engine.
+
+## 3. One list of fields
+
+Fields are declared in three places today: `FIELDS` (what a `where` can test), `GroupBy` (what
+rows group by) and `Facets` (what a page counts). They become one registry. Each field declares:
+
+- its name and value type;
+- the rows it belongs to: `line`, `unit`, `place`, `culture` or `finding`;
+- whether it can **filter**, **group** and **count**.
+
+| Field                                                    | Rows                | Filter | Group and count |
+| -------------------------------------------------------- | ------------------- | ------ | --------------- |
+| `paths` (folder)                                         | line, unit, place   | yes    | yes, by level   |
+| `files` (asset), `assetTypes`, `origins`, `audience`     | line, unit, (place) | yes    | yes             |
+| `namespace`                                              | line, unit          | yes    | yes (new count) |
+| `sources`, `problems`, `findings`                        | line, unit          | yes    | yes             |
+| `facts`, `editing`, `notes`, `translationKey`            | line, unit, (place) | yes    | as today        |
+| `state`, `notSynced`, `review`                           | culture             | yes    | as today        |
+| `keyChanged`, `id`                                       | line                | yes    | no              |
+| **`rule`**, **`severity`**, **`culture`**, **`subject`** | finding             | yes    | yes             |
+| **`fixable`**, **`change`**                              | finding             | yes    | yes             |
+
+The finding fields are new. Their values come from the layer's columns (`f.rule`, `f.culture`,
+`f.flags`) and the rule's metadata, so they cost no storage. `rule` takes the layer's rule IDs, as
+the Text tab's `findings` field does.
+
+Adding a field later means one registry entry, and the field can then be filtered, grouped and
+counted everywhere it is marked, with no host-specific option.
+
+## 4. Finding rows
+
+A selection names its rows: `lines` (with a target, as today), `units` (without one, as today) or
+**`findings`**. Finding rows need the selection's findings layer and acceptance, and a view:
+
+- `workspace`: source and line findings, shadowed ones hidden when the program has an enabled
+  `unit_source` rule;
+- `report`: line findings.
+
+Accepted findings are hidden under an acceptance key, as today (Phase 3 §5).
+
+### Testing a finding
+
+A `where` over findings tests finding fields directly, and its **text row** through `row`:
+
+```jsonc
+{
+	"and": [
+		{ "facet": ["severity", { "in": [{ "field": "severity" }, { "lit": ["blocking"] }] }] },
+		{
+			"row": {
+				"facet": ["folder", { "any": [{ "field": "paths" }, { "pathHasPrefix": ["…"] }] }]
+			}
+		}
+	]
+}
+```
+
+- **`row`** takes a body in the Text tab's grammar: the same pills, the same builder
+  (`gt/native-query-ir.ts`). The Text tab's filter means the same thing on Quality.
+- **Line and `line_culture` findings**: the row is the finding's line.
+    - A `line_culture` finding is tested with the culture scope narrowed to its own culture, so a
+      translation test reads the culture the finding is about.
+    - A `line` finding (a source check) is tested with the selection's culture scope.
+    - This is #209's search semantics, generalised to every field.
+- **`unit_source` findings**: the row is the finding's raw unit, tested as the Text tab tests units
+  without a target. Line-only fields and culture quantifiers are false. Today a source finding
+  matches no `where`; this keeps source findings filterable by folder, asset and origin.
+- **Facet marks** work inside `row` as they do at the top level: counting `folder` drops the
+  folder marks wherever they stand.
+
+### Text
+
+`text` keeps #209's meaning on finding rows: each word in the line's source or the finding's
+culture's translation, ignoring case; a source finding's own source.
+
+### Evaluation
+
+- A `row` body compiles with the existing row-set compiler into a line set, or a unit set, per
+  culture scope it needs. The sets are the Text tab's atoms, keyed the same way, so a filter the
+  Text tab just ran is already cached.
+- A finding passes a `row` test when its line's bit is set in its culture's set.
+- Finding-field tests are bitsets over findings, built from the layer's columns and cached per
+  (layer, acceptance, clause). At Coral's 156,637 findings a set is 19 KiB.
+- **Cache budget.** Line sets narrowed to one culture are new entries the Text tab never uses.
+  They get their own 16 MiB budget, so finding queries can't evict the Text tab's sets.
+
+## 5. Parts, for every kind of row
+
+- **`rows`**: a page in an order, after a cursor.
+    - Finding orders are today's: `severity`, `report`, `line`, `source`. The cursor is a finding
+      ID, as today.
+    - Finding rows travel in today's composed shape (`ix/rules/findings_read.rs`).
+- **`counts`**: `total`. For findings also `accepted` (what the acceptance key hid).
+- **`facets`**: a list, `[{ "by": "folder", "under": "/Game" }, { "by": "severity" }, …]`. Each
+  counts the query's rows over the selection with that field's marks dropped: counts follow every
+  filter but their own, as today. Finding rows count findings, so a line with three findings
+  counts three under its folder. This replaces the fixed `Facets` struct and `findings_query`'s
+  counts by rule, severity and fixable.
+- **`groups`** and **`openGroups`**: by any groupable field, with today's meaning and budgets.
+- **`diagnostics`**: stays, for finding rows, as today.
+
+## 6. TypeScript and hosts
+
+- **The engine boundary.** `gt/native-query-ir.ts` stays the one place pills become a `where`.
+- **Quality's request.** `WorkspaceQualityRequest` keeps its target, culture and check. What
+  narrows it becomes:
+    - `query`, the search;
+    - `filter`, a `TextFilter`: the Text tab's pills, applied to the finding's row, plus finding
+      pills. `TextFilterField` gains `severity` and `suggested_fix`, which are valid only on
+      findings;
+    - `facets`, the list of §5.
+
+    `severities` and `fixable` go; they become pills. Presets keep their saved narrowing through
+    one translation when they load.
+
+- **The Text tab's request is unchanged** for hosts: `TextFacetRequest` maps to the facet list
+  inside the builder.
+- **`findings_query` is deleted** (Plan 059: code a phase replaces is deleted in that phase). The
+  queried workspace, `ue-shed loc check` and its sink read finding rows instead.
+- **Electroswag** gives Quality the Text tab's toolbar: search, Filter menu and pills, with
+  severity and suggested fix as menu fields. That toolbar is already drafted against #212.
+
+## 7. Performance
+
+### Baseline
+
+Coral (265,791 lines, 156,637 findings, ten cultures), isolated Electroswag on published
+UE Shed 0.27.1, 2026-11-07. Server RPC times; the engine's stages where it records them.
+
+| Path                                                            | Time         | Where it goes                                     |
+| --------------------------------------------------------------- | ------------ | ------------------------------------------------- |
+| Text tab, full list with facets                                 | 247–285 ms   | Engine (no stage breakdown recorded)              |
+| Text tab, a search ("lantern" cold, "qq", no match)             | 16–30 ms     |                                                   |
+| Text tab, broad pills (folder, asset type)                      | 144–274 ms   |                                                   |
+| Text tab, next rows                                             | 17–36 ms     |                                                   |
+| Quality, first page after opening                               | **2,825 ms** | `compose` 2,791 ms, cold                          |
+| Quality, the same page requested again at once by the tab badge | 2,834 ms     | Electroswag sends it twice                        |
+| Quality, a page                                                 | 31–48 ms     | `compose` 18–20 ms                                |
+| Quality, first search ("eggs")                                  | **2,478 ms** | stages 741 ms (`lines` 720); 1.7 s outside stages |
+| Quality, a search after that, or adding a severity              | 39–62 ms     |                                                   |
+| Quality, a new word with no match                               | 149 ms       | `lines` 140 ms                                    |
+
+### Rules
+
+- **The Text tab must not move.** Its path is unchanged, so its timings stay within run-to-run
+  noise on Coral and the released project. A regression is a STOP.
+- **Quality must not get slower** on any baseline path.
+- **Attribute the cold costs the baseline found** in step 1, before changing anything:
+    - the first page's 2.8 s `compose`, cold;
+    - the 1.7 s of the first search that no stage covers. A `layer` stage (opening the findings
+      layer) and a wait stage go in first.
+
+    Those in the path this phase replaces are fixed here. The others are recorded for their own
+    change.
+
+- Electroswag stops sending the badge's duplicate request (its own change, with the toolbar).
+
+## 8. Out of scope
+
+- **Filtering or counting by a rule's own outputs**, such as "length over 40". Today nothing can.
+  If a studio wants it, a rule could name an output in the rules file and make it a field. It must
+  stay optional, so rules keep their freedom.
+- **Showing accepted findings** as a filter value. `accepted` stays a count.
+- **Arbitrary expressions in `row`** beyond what the row-set compiler compiles today (Phase 4 §6).
+  The compiler refuses them, as it does for the Text tab.
+
+## 9. Decisions for the owner
+
+1. **May hosts send a raw `where` expression**, beside pills? Recommended: yes, through the same
+   validation, so a host can build any filter the IR supports without a UE Shed change.
+   Electroswag keeps using pills.
+2. **Source findings are tested through their unit** (§4), rather than matching no filter.
+3. **Severity and suggested fix become pills.** Quality's row of check chips stays as it is.
+4. **`findings_query` is deleted** rather than kept as a wrapper.
+
+## 10. Steps, one commit each at least
+
+1. **Attribute and baseline.** The `layer` and wait stages, the cold `compose` and the 1.7 s,
+   attributed on Coral. The measurement record gets §7's baseline.
+2. **The field registry.** `FIELDS`, `GroupBy` and `Facets` become one list; facets become a list
+   for lines and units; the `namespace` count. Text tab answers byte-identical; timings unchanged.
+3. **Finding rows.** Selection `rows: findings`, the finding fields, `row`, text, orders, cursors,
+   facets, groups and diagnostics. A parity test sends every request the queried workspace and
+   `loc check` send today, through both `findings_query` and finding rows, and compares the
+   answers on the fixture and on Coral.
+4. **TypeScript.** The workspace and the CLI read finding rows; `WorkspaceQualityRequest` takes
+   `filter` and `facets`; presets translate; `findings_query` is deleted.
+5. **Electroswag.** Quality's toolbar on the new request; the badge's duplicate request goes.
+6. **Measure** on Coral and the released project against §7, and the owner reviews.

@@ -47,6 +47,7 @@ function outcome(
 			batches: 0,
 			batchBytes: 0,
 			creditStallMs: 0,
+			queuedMs: 0,
 			io: {
 				opens: 0,
 				sectionLoads: 0,

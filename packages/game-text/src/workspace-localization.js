@@ -1,0 +1,912 @@
+import { resolve } from "node:path";
+import { indexPublicFailure } from "./index-public-error.js";
+import { Schema } from "effect";
+import { localizationQualityWorkspaceOf, indexedLocalizationProgressReport, indexedLocalizationBaseline, localizationReportPage, localizationReportCsv, decodeLocalizationBaselineJson, LocalizationReportError, localizationKeyChangesAcross, KEY_CHANGE_FIELDS, localizationEditChangeSet, localizationEditOutcomes, localizationEvidenceFileStatuses, localizationTargetFiles } from "./entry-corpus.js";
+import { makeRetainedGameTextIndexWith, GameTextIndexSteps, GameTextIndexError } from "./entry-index.js";
+import {} from "./entry-rules.js";
+import { MAX_LOCALIZATION_CULTURES } from "./entry-schema.js";
+import { applyLocalizationChangeSet, defaultLocalizationReviewPath, LocalizationChangeSetError, LocalizationEvidence, LocalizationFileAccessLive, updateLocalizationReview, reviewLocalizationChangeSet } from "@ue-shed/localization";
+import { Cause, Effect, Exit, Fiber, Ref, Result, Semaphore } from "effect";
+import { effectiveRuleDocument } from "./rules/effective.js";
+import { localizationPoHasSourceText } from "./index-context.js";
+const wantedKey = (line) => JSON.stringify([line.culture, line.namespace, line.key]);
+/**
+ * Each wanted line as a review reads it: one engine call per culture, however many lines, so no
+ * localization file is decoded in the host. The lookup answers each line by culture and identity.
+ */
+const readReviewLines = Effect.fn("GameText.workspace.localization.reviewLines")(function* (model, target, wanted) {
+    const byCulture = new Map();
+    for (const line of wanted) {
+        const identities = byCulture.get(line.culture) ?? new Map();
+        identities.set(wantedKey(line), { namespace: line.namespace, key: line.key });
+        byCulture.set(line.culture, identities);
+    }
+    const lines = new Map();
+    for (const [culture, identities] of byCulture) {
+        const answered = yield* model.reviewLines({
+            target,
+            culture,
+            identities: [...identities.values()]
+        });
+        [...identities.keys()].forEach((key, index) => {
+            const line = answered[index];
+            if (line !== undefined)
+                lines.set(key, line);
+        });
+    }
+    yield* Effect.annotateCurrentSpan({ lines: wanted.length, cultures: byCulture.size });
+    return (line) => {
+        const answer = lines.get(wantedKey(line));
+        return answer?.status === "found" ? answer : undefined;
+    };
+});
+/** A review that could not read its lines: the index's own failure and way forward. */
+const unreadLines = (error) => ({
+    status: "failed",
+    code: error.code,
+    message: error.message,
+    recovery: error.recovery
+});
+const isLocalizationReportError = Schema.is(LocalizationReportError);
+/** Every line of a target's join: the lines reports and key pairing read. */
+const indexedLines = (target) => ({
+    query: "",
+    capability: "all",
+    localization: { target }
+});
+/** The selection's index reads a report needs. */
+const reportIndex = (retained) => ({ query: retained.model, localization: retained.join, evidence: retained.evidence });
+/**
+ * Whether Browse has findings to show for a rules document: an enabled rule, and without a
+ * target a source rule, since only those run there.
+ */
+export function hasBrowseRules(document, target) {
+    if (!document)
+        return false;
+    return effectiveRuleDocument(document).rules.some((rule) => target || rule.subject === "unit_source");
+}
+function failure(code) {
+    return {
+        status: "failed",
+        code,
+        message: "Localization files could not be loaded.",
+        recovery: "Check the project's localization settings and files, then rescan."
+    };
+}
+/** The published model's revision: readers of a replaced model cannot publish results. */
+export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.localization")(function* (currentRevision, currentProject, currentRules, currentIndex, options = { author: "game-text", localizationFiles: LocalizationFileAccessLive }) {
+    const reader = yield* LocalizationEvidence;
+    const index = yield* GameTextIndexSteps;
+    const currentRoot = () => currentProject().pipe(Effect.map((project) => project?.projectRoot));
+    const refreshIndex = yield* makeRetainedGameTextIndexWith(Effect.fn("GameText.workspace.prepareTarget")(function* (request) {
+        const project = yield* currentProject().pipe(Effect.scoped);
+        if (!project)
+            return yield* new GameTextIndexError({
+                nextStep: "escalate",
+                retrySafe: false,
+                code: "index_failed",
+                operation: "project",
+                message: "The project index is no longer selected.",
+                recovery: "Scan the selected project again."
+            });
+        const code = options.codeSource
+            ? yield* options.codeSource(project.projectRoot)
+            : undefined;
+        const imported = yield* index.importTarget(project, code === undefined ? request : { ...request, code });
+        const target = yield* index.buildTarget(project, imported, request);
+        const prepared = yield* (currentIndex?.() ?? Effect.undefined).pipe(Effect.scoped);
+        if (prepared?.queryRevision !== undefined &&
+            prepared.queryRevision === target.queryRevision) {
+            // Borrowing the host model pins its reader and worker in this target's scope.
+            // Validation above still observes changed files, reviews and carried key changes.
+            yield* prepared.borrow;
+            return prepared;
+        }
+        return yield* index.openTarget(target);
+    }));
+    const rules = currentRules ?? (() => Effect.undefined);
+    const baseline = yield* Ref.make(undefined);
+    const qualityCache = yield* Ref.make(undefined);
+    // Quality scans run in the service's scope, so a request that leaves does not stop them.
+    const serviceScope = yield* Effect.scope;
+    const qualityLock = yield* Semaphore.make(1);
+    const clearQuality = Effect.fn("GameText.workspace.localization.clearQuality")(function* () {
+        const previous = yield* Ref.getAndSet(qualityCache, undefined);
+        if (previous)
+            yield* Fiber.interrupt(previous.scan).pipe(Effect.forkIn(serviceScope));
+    });
+    const discovery = yield* Ref.make(undefined);
+    const selected = yield* Ref.make(undefined);
+    /** Counts selections and resets; a stale attempt does not publish. */
+    const version = yield* Ref.make(0);
+    // Unreal's gather drops the archive translations of keys that left the manifest. The join from
+    // before a gather UE Shed runs is kept until the next selection pairs those keys with the keys
+    // that joined. The pairs live for the project, beyond the refresh that follows the gather.
+    const gatherBaseline = yield* Ref.make(undefined);
+    const acrossGather = yield* Ref.make(undefined);
+    const preparation = Effect.fn("GameText.workspace.localization.preparation")(function* (projectRoot) {
+        const discovered = yield* reader.discover({ projectRoot }).pipe(Effect.result);
+        if (Result.isFailure(discovered) ||
+            discovered.success.targets.length > 50 ||
+            discovered.success.targets.some((target) => target.cultures.length > MAX_LOCALIZATION_CULTURES))
+            return undefined;
+        const previous = yield* Ref.get(selected);
+        const target = (previous?.projectRoot === projectRoot &&
+            discovered.success.targets.find((target) => target.name === previous?.join.target)) ||
+            discovered.success.targets[0];
+        if (!target)
+            return undefined;
+        const carried = yield* Ref.get(acrossGather);
+        return {
+            targetName: target.name,
+            tolerateReviewErrors: true,
+            keyChangePairs: carried?.root === projectRoot && carried.target === target.name
+                ? carried.pairs
+                : []
+        };
+    });
+    const beforeGather = Effect.fn("GameText.workspace.localization.before_gather")(function* (name) {
+        const root = yield* currentRoot();
+        const cached = yield* current(name);
+        // The keys and translations Unreal's gather may drop, read before it runs.
+        yield* Ref.set(gatherBaseline, root && cached?.join.target === name
+            ? {
+                root,
+                target: name,
+                nativeCulture: cached.join.nativeCulture,
+                lines: yield* cached.model.selectLocalizationLines(indexedLines(name), KEY_CHANGE_FIELDS)
+            }
+            : undefined);
+    });
+    const reset = Effect.fn("GameText.workspace.localization.reset")(function* (preservePrepared = false) {
+        yield* Ref.update(version, (value) => value + 1);
+        yield* Ref.set(discovery, undefined);
+        yield* Ref.set(selected, undefined);
+        yield* clearQuality();
+        yield* Ref.set(baseline, undefined);
+        // On an unchanged package revision, retain the old target's pin until its replacement
+        // acquires the same immutable worker. It is unavailable through `selected` meanwhile.
+        if (!preservePrepared)
+            yield* refreshIndex.release();
+    });
+    /**
+     * Forgets the discovered targets, so the next listing reads the project's targets again. A
+     * scan that keeps its model calls it: the selection and its quality stay, but targets may
+     * have been added or removed.
+     */
+    const rediscover = Effect.fn("GameText.workspace.localization.rediscover")(function* () {
+        yield* Ref.update(version, (value) => value + 1);
+        yield* Ref.set(discovery, undefined);
+    });
+    const targets = Effect.fn("GameText.workspace.localization.targets")(function* () {
+        const revision = yield* currentRevision();
+        const root = yield* currentRoot();
+        if (!revision || !root)
+            return { status: "not_ready" };
+        const cached = yield* Ref.get(discovery);
+        if (cached?.revision === revision)
+            return cached.result;
+        const attempt = yield* Ref.get(version);
+        const discovered = yield* reader.discover({ projectRoot: root }).pipe(Effect.result);
+        if ((yield* currentRevision()) !== revision || (yield* Ref.get(version)) !== attempt)
+            return { status: "not_ready" };
+        if (Result.isFailure(discovered)) {
+            yield* refreshIndex.release();
+            return failure(discovered.failure.code);
+        }
+        const available = discovered.success.targets;
+        if (available.length === 0)
+            yield* refreshIndex.release();
+        if (available.length > 50 ||
+            available.some((target) => target.cultures.length > MAX_LOCALIZATION_CULTURES)) {
+            yield* refreshIndex.release();
+            return failure("bounds_exceeded");
+        }
+        if (!available.length && discovered.success.diagnostics.length)
+            return failure("discovery_incomplete");
+        const result = {
+            status: "ready",
+            targets: available.map(({ name, nativeCulture, cultures, resourcesDiscovered }) => {
+                const preview = { name, nativeCulture, cultures };
+                if (resourcesDiscovered)
+                    Object.assign(preview, { discovered: true });
+                return preview;
+            })
+        };
+        yield* Ref.set(discovery, { revision, targets: available, result });
+        yield* Effect.annotateCurrentSpan({ targetCount: available.length });
+        return result;
+    });
+    const select = Effect.fn("GameText.workspace.localization.select")(function* (name, refresh = false) {
+        const revision = yield* currentRevision();
+        const root = yield* currentRoot();
+        if (!revision || !root)
+            return { status: "not_ready" };
+        const cached = yield* Ref.get(selected);
+        if (!refresh && cached?.revision === revision && cached.join.target === name)
+            return cached.result;
+        const listed = yield* targets();
+        if (listed.status !== "ready")
+            return listed;
+        const target = (yield* Ref.get(discovery))?.targets.find((item) => item.name === name);
+        if (!target)
+            return failure("target_not_found");
+        const attempt = yield* Ref.updateAndGet(version, (value) => value + 1);
+        const carried = yield* Ref.get(acrossGather);
+        const published = !refresh && !(yield* Ref.get(gatherBaseline))
+            ? yield* currentIndex?.() ?? Effect.undefined
+            : undefined;
+        let indexed = published?.localization.target === name
+            ? Result.succeed(published)
+            : yield* refreshIndex
+                .refresh({
+                projectRoot: root,
+                targetName: name,
+                tolerateReviewErrors: true,
+                keyChangePairs: carried?.root === root && carried.target === name
+                    ? carried.pairs
+                    : []
+            })
+                .pipe(Effect.result);
+        if ((yield* currentRevision()) !== revision || (yield* Ref.get(version)) !== attempt)
+            return { status: "not_ready" };
+        if (Result.isFailure(indexed))
+            return failure("operation" in indexed.failure ? indexed.failure.operation : "invalid_project");
+        const before = yield* Ref.get(gatherBaseline);
+        if (before?.root === root && before.target === name) {
+            const loaded = yield* indexed.success.query
+                .selectLocalizationLines(indexedLines(name), ["identity", "source", "manifest"])
+                .pipe(Effect.result);
+            if (Result.isFailure(loaded))
+                return {
+                    status: "failed",
+                    code: "index_failed",
+                    message: loaded.failure.message,
+                    recovery: loaded.failure.recovery
+                };
+            const across = localizationKeyChangesAcross(before, { lines: loaded.success });
+            yield* Ref.set(gatherBaseline, undefined);
+            yield* Ref.set(acrossGather, { root, target: name, pairs: across.pairs });
+            indexed = yield* refreshIndex
+                .refresh({
+                projectRoot: root,
+                targetName: name,
+                tolerateReviewErrors: true,
+                keyChangePairs: across.pairs
+            })
+                .pipe(Effect.result);
+            if (Result.isFailure(indexed))
+                return failure("operation" in indexed.failure
+                    ? indexed.failure.operation
+                    : "invalid_project");
+        }
+        const join = indexed.success.localization, model = indexed.success.query, review = indexed.success.review;
+        const evidence = indexed.success.evidence;
+        const textCountsResult = yield* indexed.success
+            .search({
+            query: "",
+            capability: "all",
+            withoutNotes: false,
+            pageSize: 1,
+            localization: { target: name }
+        })
+            .pipe(Effect.result);
+        if (Result.isFailure(textCountsResult))
+            return {
+                status: "failed",
+                code: "index_failed",
+                message: textCountsResult.failure.message,
+                recovery: textCountsResult.failure.recovery
+            };
+        const textCounts = textCountsResult.success;
+        if ((yield* currentRevision()) !== revision || (yield* Ref.get(version)) !== attempt)
+            return { status: "not_ready" };
+        const result = {
+            status: "ready",
+            target: {
+                name: target.name,
+                nativeCulture: target.nativeCulture,
+                cultures: target.cultures
+            },
+            lines: textCounts.total,
+            notSynced: textCounts.localization?.notSynced ?? 0,
+            ...localizationTargetFiles(localizationEvidenceFileStatuses(evidence)),
+            ...(indexed.success.generation === undefined
+                ? undefined
+                : { generation: indexed.success.generation })
+        };
+        return yield* Effect.uninterruptible(Effect.gen(function* () {
+            if ((yield* currentRevision()) !== revision ||
+                (yield* Ref.get(version)) !== attempt)
+                return { status: "not_ready" };
+            if (cached?.join.target !== name)
+                yield* Ref.set(baseline, undefined);
+            yield* Ref.set(selected, {
+                projectRoot: root,
+                revision,
+                join,
+                quality: indexed.success.localizationQuality,
+                sourceQuality: indexed.success.sourceQuality,
+                model,
+                search: indexed.success.search,
+                searchRows: indexed.success.searchRows,
+                borrow: indexed.success.borrow,
+                result,
+                evidence,
+                review
+            });
+            // A scan nobody waits for would otherwise keep checking, and pinning, the previous
+            // selection until another quality request happened to replace it.
+            yield* qualityLock.withPermits(1)(clearQuality());
+            yield* indexed.success.retain;
+            if (indexed.success === published)
+                yield* refreshIndex.release({ background: true });
+            yield* Effect.annotateCurrentSpan({
+                lineCount: textCounts.total,
+                notSyncedCount: result.notSynced
+            });
+            return result;
+        }));
+    });
+    const current = Effect.fn("GameText.workspace.localization.current")(function* (target) {
+        const cached = yield* Ref.get(selected);
+        if (!cached ||
+            cached.revision !== (yield* currentRevision()) ||
+            cached.join.target !== target)
+            return undefined;
+        yield* cached.borrow;
+        return cached;
+    });
+    const search = Effect.fn("GameText.workspace.localization.search")(function* (request) {
+        if (!request.localization)
+            return { status: "not_ready" };
+        const cached = yield* current(request.localization.target);
+        if (!cached ||
+            (request.localization.culture &&
+                !cached.join.cultures.includes(request.localization.culture)))
+            return { status: "not_ready" };
+        const outcome = yield* cached.search(request).pipe(Effect.result);
+        if (Result.isFailure(outcome))
+            return { status: "failed", error: indexPublicFailure(outcome.failure) };
+        const page = outcome.success;
+        if ((yield* current(request.localization.target)) !== cached)
+            return { status: "not_ready" };
+        return { status: "ready", page };
+    });
+    const searchRows = Effect.fn("GameText.workspace.localization.searchRows")(function* (request) {
+        if (!request.localization)
+            return { status: "not_ready" };
+        const cached = yield* current(request.localization.target);
+        if (!cached ||
+            (request.localization.culture &&
+                !cached.join.cultures.includes(request.localization.culture)))
+            return { status: "not_ready" };
+        const outcome = yield* cached.searchRows(request).pipe(Effect.result);
+        if (Result.isFailure(outcome))
+            return { status: "failed", error: indexPublicFailure(outcome.failure) };
+        const page = outcome.success;
+        if ((yield* current(request.localization.target)) !== cached)
+            return { status: "not_ready" };
+        return { status: "ready", page };
+    });
+    const focus = Effect.fn("GameText.workspace.localization.focus")(function* (request) {
+        const cached = yield* current(request.target);
+        if (!cached)
+            return { status: "not_ready" };
+        const outcome = yield* cached.model.localizationDetail(request).pipe(Effect.result);
+        if (Result.isFailure(outcome))
+            return {
+                status: "failed",
+                code: "index_failed",
+                message: outcome.failure.message,
+                recovery: outcome.failure.recovery
+            };
+        if ((yield* current(request.target)) !== cached)
+            return { status: "not_ready" };
+        return outcome.success
+            ? { status: "found", focus: outcome.success }
+            : { status: "not_found" };
+    });
+    /** The selection's quality scan for a rules document, started when none runs. */
+    const qualityScan = Effect.fn("GameText.workspace.localization.qualityScan")(function* (retained, document) {
+        // One scan per selection and rules document, shared by every request that needs it.
+        return yield* qualityLock.withPermits(1)(Effect.gen(function* () {
+            // A selection published since this request began has already cleared the cache.
+            if ((yield* Ref.get(selected)) !== retained)
+                return undefined;
+            const cached = yield* Ref.get(qualityCache);
+            if (cached?.join === retained.join && cached.document === document)
+                return cached.scan;
+            yield* clearQuality();
+            const options = retained.review ? { review: retained.review.file } : {};
+            const scan = yield* Effect.scoped(Effect.gen(function* () {
+                // The scan pins the index itself while it reads.
+                yield* retained.borrow;
+                const quality = yield* retained.quality(document, options);
+                // Queried quality lists source and target findings in one query; only
+                // in-memory quality reads the source report beside it.
+                const source = document && quality.withSource
+                    ? yield* (yield* retained.sourceQuality(document)).export("all")
+                    : undefined;
+                return {
+                    workspace: localizationQualityWorkspaceOf(source, quality),
+                    ...(quality.findings ? { findings: quality.findings } : undefined)
+                };
+            })).pipe(Effect.forkIn(serviceScope));
+            yield* Ref.set(qualityCache, { join: retained.join, document, scan });
+            return scan;
+        }));
+    });
+    const quality = Effect.fn("GameText.workspace.localization.quality")(function* (request) {
+        const retained = yield* current(request.target);
+        if (!retained || (request.culture && !retained.join.cultures.includes(request.culture)))
+            return undefined;
+        const scan = yield* qualityScan(retained, yield* rules());
+        if (!scan)
+            return undefined;
+        const exit = yield* Fiber.await(scan);
+        // A newer selection, rescan or rules change interrupted it; the caller asks again.
+        if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))
+            return undefined;
+        return (yield* exit).workspace;
+    });
+    /**
+     * Browse's findings over a target: the quality scan's layer, with its review acceptance,
+     * once the scan is done. Browse starts the scan when none runs and shows `pending` until
+     * then; a failed scan shows its error in Quality, and Browse none.
+     */
+    const browseFindings = Effect.fn("GameText.workspace.localization.browseFindings")(function* (target) {
+        const document = yield* rules();
+        if (!hasBrowseRules(document, true))
+            return { status: "none" };
+        const retained = yield* current(target);
+        if (!retained)
+            return { status: "pending" };
+        const scan = yield* qualityScan(retained, document);
+        const exit = scan?.pollUnsafe();
+        if (!exit)
+            return { status: "pending" };
+        return Exit.isSuccess(exit) && exit.value.findings
+            ? { status: "ready", selection: exit.value.findings }
+            : { status: "none" };
+    });
+    const qualitySearch = Effect.fn("GameText.workspace.localization.qualitySearch")(function* (request) {
+        const checked = yield* quality(request).pipe(Effect.result);
+        if (Result.isFailure(checked))
+            return {
+                status: "failed",
+                message: checked.failure.message,
+                recovery: checked.failure.recovery
+            };
+        const model = checked.success;
+        if (!model)
+            return { status: "not_ready" };
+        const result = yield* model.search(request).pipe(Effect.result);
+        if (Result.isFailure(result))
+            return {
+                status: "failed",
+                message: result.failure.message,
+                recovery: result.failure.recovery
+            };
+        const page = result.success;
+        yield* Effect.annotateCurrentSpan({
+            findingCount: page.total,
+            pageCount: page.findings.length
+        });
+        return { status: "ready", page };
+    });
+    const qualityFocus = Effect.fn("GameText.workspace.localization.qualityFocus")(function* (request) {
+        const checked = yield* quality({ ...request, filter: "all" }).pipe(Effect.result);
+        if (Result.isFailure(checked))
+            return {
+                status: "failed",
+                message: checked.failure.message,
+                recovery: checked.failure.recovery
+            };
+        const model = checked.success;
+        if (!model)
+            return { status: "not_ready" };
+        return yield* model.focus(request).pipe(Effect.catchTag(["SnapshotStoreError", "SnapshotFormatError", "GameTextIndexError"], (cause) => Effect.succeed({
+            status: "failed",
+            message: cause.message,
+            recovery: cause.recovery
+        })));
+    });
+    const changes = Effect.fn("GameText.workspace.localization.changes")(function* (request) {
+        const checked = yield* quality(request).pipe(Effect.result);
+        if (Result.isFailure(checked))
+            return {
+                status: "failed",
+                message: checked.failure.message,
+                recovery: checked.failure.recovery
+            };
+        const model = checked.success;
+        if (!model)
+            return { status: "not_ready" };
+        const checkedChanges = yield* model.changes(request).pipe(Effect.result);
+        if (Result.isFailure(checkedChanges))
+            return {
+                status: "failed",
+                message: checkedChanges.failure.message,
+                recovery: checkedChanges.failure.recovery
+            };
+        const result = checkedChanges.success;
+        if (result.status === "ready")
+            yield* Effect.annotateCurrentSpan({
+                changeCount: result.document.changes.length,
+                remainingCount: result.remaining
+            });
+        return result;
+    });
+    const reportFailure = (error) => ({
+        status: "failed",
+        message: error.message,
+        recovery: error.recovery
+    });
+    const report = Effect.fn("GameText.workspace.localization.report")(function* (request) {
+        const retained = yield* current(request.target);
+        if (!retained)
+            return { status: "not_ready" };
+        const previous = yield* Ref.get(baseline);
+        // Grouped counts and the corpus header, in Rust; the corpus and join are not read.
+        return yield* indexedLocalizationProgressReport(reportIndex(retained), previous).pipe(Effect.flatMap((progress) => Effect.try({
+            try: () => ({
+                status: "ready",
+                page: localizationReportPage(progress, retained.join.nativeCulture, request, previous)
+            }),
+            catch: (cause) => isLocalizationReportError(cause)
+                ? cause
+                : new LocalizationReportError({
+                    cause: cause,
+                    retrySafe: false,
+                    nextStep: "fix_input",
+                    code: "invalid_report_context",
+                    message: "Report evidence could not be read.",
+                    recovery: "Rescan the selected project."
+                })
+        })), Effect.catchTag(["GameTextIndexError", "LocalizationReportError"], (error) => Effect.succeed(reportFailure(error))));
+    });
+    const reportFile = Effect.fn("GameText.workspace.localization.reportFile")(function* (request, dialog, files) {
+        const retained = yield* current(request.target);
+        if (!retained)
+            return { status: "not_ready" };
+        const previous = yield* Ref.get(baseline);
+        const index = reportIndex(retained);
+        const result = yield* Effect.gen(function* () {
+            const choice = request.operation === "compare_baseline"
+                ? yield* dialog.chooseFile({
+                    title: "Compare localization baseline",
+                    filters: [{ name: "Localization baseline", extensions: ["json"] }]
+                })
+                : yield* dialog.chooseSaveFile({
+                    title: request.operation === "save_baseline"
+                        ? "Save localization baseline"
+                        : "Export localization report",
+                    defaultPath: request.operation === "save_baseline"
+                        ? "localization.baseline.json"
+                        : "localization.report.csv",
+                    filters: [
+                        {
+                            name: "Localization report",
+                            extensions: [
+                                request.operation === "save_baseline" ? "json" : "csv"
+                            ]
+                        }
+                    ]
+                });
+            if (choice.status === "cancelled")
+                return choice;
+            if ((yield* current(request.target)) !== retained)
+                return { status: "not_ready" };
+            if (request.operation === "compare_baseline") {
+                const bytes = yield* files.readFile(choice.path, {
+                    maxBytes: 16 * 1024 * 1024
+                });
+                const decoded = decodeLocalizationBaselineJson(new TextDecoder().decode(bytes));
+                if (Result.isFailure(decoded))
+                    return reportFailure(decoded.failure);
+                const progress = yield* indexedLocalizationProgressReport(index, decoded.success);
+                if ((yield* current(request.target)) !== retained)
+                    return { status: "not_ready" };
+                yield* Ref.set(baseline, decoded.success);
+                return {
+                    status: "compared",
+                    page: localizationReportPage(progress, retained.join.nativeCulture, request, decoded.success)
+                };
+            }
+            const saved = request.operation === "save_baseline"
+                ? yield* indexedLocalizationBaseline(index, new Date().toISOString())
+                : undefined;
+            const progress = saved === undefined
+                ? yield* indexedLocalizationProgressReport(index, previous)
+                : undefined;
+            const contents = yield* Effect.try({
+                try: () => {
+                    if (saved !== undefined)
+                        return JSON.stringify(saved, null, 2) + "\n";
+                    const rows = progress.cultures.flatMap((_, offset) => offset % 50 === 0
+                        ? localizationReportPage(progress, retained.join.nativeCulture, { target: request.target, offset }, previous).rows
+                        : []);
+                    return localizationReportCsv(rows, previous !== undefined);
+                },
+                catch: (cause) => isLocalizationReportError(cause)
+                    ? cause
+                    : new LocalizationReportError({
+                        cause: cause,
+                        retrySafe: false,
+                        nextStep: "fix_input",
+                        code: "invalid_report_context",
+                        message: "The report could not be prepared.",
+                        recovery: "Rescan and try again."
+                    })
+            });
+            if ((yield* current(request.target)) !== retained)
+                return { status: "not_ready" };
+            yield* files.writeFile(choice.path, new TextEncoder().encode(contents), {
+                maxBytes: 16 * 1024 * 1024,
+                exclusive: request.operation === "save_baseline"
+            });
+            return {
+                status: "saved",
+                message: request.operation === "save_baseline"
+                    ? "Baseline saved."
+                    : "Report CSV exported."
+            };
+        }).pipe(Effect.catchTag([
+            "GameTextIndexError",
+            "GameTextWorkspaceHostFailure",
+            "LocalizationReportError"
+        ], (error) => Effect.succeed({
+            status: "failed",
+            message: isLocalizationReportError(error)
+                ? error.message
+                : "The file operation failed.",
+            recovery: isLocalizationReportError(error)
+                ? error.recovery
+                : "Choose a new destination for a baseline; existing files are never overwritten. Check permissions and try again."
+        })));
+        return result;
+    });
+    /** Writes every line the request matches, a column per culture, to a CSV the person chose. */
+    const linesFile = Effect.fn("GameText.workspace.localization.linesFile")(function* (request, dialog) {
+        const name = request.localization?.target;
+        if (name === undefined)
+            return { status: "not_ready" };
+        const retained = yield* current(name);
+        if (!retained)
+            return { status: "not_ready" };
+        return yield* Effect.gen(function* () {
+            const choice = yield* dialog.chooseSaveFile({
+                title: "Export all languages",
+                defaultPath: `${name}.all-languages.csv`,
+                filters: [{ name: "CSV", extensions: ["csv"] }]
+            });
+            if (choice.status === "cancelled")
+                return choice;
+            if ((yield* current(name)) !== retained)
+                return { status: "not_ready" };
+            // The engine encodes the spreadsheet and writes the file; no line reaches the host.
+            const written = yield* retained.model.writeLocalizationLinesCsv(request, {
+                path: choice.path
+            });
+            const rows = written.status === "written" ? written.rows : 0;
+            yield* Effect.annotateCurrentSpan({ rowCount: rows });
+            return { status: "saved", path: choice.path, rowCount: rows };
+        }).pipe(Effect.catchTag(["GameTextIndexError", "GameTextWorkspaceHostFailure"], () => Effect.succeed({
+            status: "failed",
+            message: "The all-languages CSV could not be written.",
+            recovery: "Choose a writable destination and try again."
+        })));
+    });
+    /**
+     * Reviews or writes staged translation edits against the retained evidence. Writing replaces
+     * only PO `msgstr` values; the target is then reloaded so pending edits show as not synced.
+     */
+    const edits = Effect.fn("GameText.workspace.localization.edits")(function* (request) {
+        const retained = yield* current(request.target);
+        const root = yield* currentRoot();
+        if (!retained || !root)
+            return { status: "not_ready" };
+        // Each edited line's source and shipped translation, read natively in one call per
+        // culture rather than by decoding the manifest, archives and PO files.
+        const read = yield* readReviewLines(retained.model, request.target, request.edits).pipe(Effect.result);
+        if (Result.isFailure(read))
+            return unreadLines(read.failure);
+        const line = read.success;
+        const changeSet = localizationEditChangeSet(retained.evidence, request.edits, options.author, (edit) => line(edit)?.source);
+        if (request.mode === "review") {
+            const poHasSourceText = localizationPoHasSourceText(retained.evidence.target);
+            const review = reviewLocalizationChangeSet(retained.evidence, changeSet, (change) => {
+                const found = line(change);
+                return {
+                    source: found?.source,
+                    currentTranslation: found?.translation ?? null,
+                    po: found?.po ?? undefined,
+                    poHasSourceText
+                };
+            });
+            return {
+                status: "reviewed",
+                edits: localizationEditOutcomes(review),
+                files: review.files.map(({ culture, relativePath, changes }) => ({
+                    culture,
+                    relativePath,
+                    changes,
+                    written: false
+                })),
+                notSynced: retained.result.status === "ready" ? retained.result.notSynced : 0
+            };
+        }
+        // The apply prepares the batch it read fresh, which is the batch it writes.
+        const prepareWrites = options.prepareWrites;
+        let refused;
+        const receipt = yield* applyLocalizationChangeSet({ projectRoot: root, changeSet }, prepareWrites
+            ? {
+                prepareWrites: (paths) => prepareWrites(paths.map((path) => resolve(root, path))).pipe(Effect.mapError((cause) => {
+                    refused = cause;
+                    return new LocalizationChangeSetError({
+                        code: "unwritable_change",
+                        message: cause.message,
+                        recovery: cause.recovery,
+                        retrySafe: true,
+                        nextStep: "fix_input",
+                        cause
+                    });
+                }))
+            }
+            : {}).pipe(Effect.provideService(LocalizationEvidence, reader), Effect.provide(options.localizationFiles), Effect.result);
+        if (Result.isFailure(receipt))
+            return {
+                status: "failed",
+                // A host's refusal reads as a refused review write does.
+                code: refused ? "file_unwritable" : receipt.failure.code,
+                message: receipt.failure.message,
+                recovery: receipt.failure.recovery
+            };
+        yield* index
+            .invalidate({
+            projectRoot: root,
+            targetName: request.target,
+            changedFiles: receipt.success.files
+                .filter((file) => file.error === null)
+                .map((file) => file.relativePath)
+        })
+            .pipe(Effect.catchTag(["SnapshotFormatError", "SnapshotStoreError", "GameTextIndexError"], (cause) => Effect.logWarning("Game Text write succeeded but cache invalidation failed", {
+            message: cause.message,
+            recovery: cause.recovery
+        })));
+        // Reload so states, counts and the not-synced indicator describe the written files.
+        yield* Ref.set(selected, undefined);
+        const reloaded = yield* select(request.target, true);
+        yield* Effect.annotateCurrentSpan({
+            edits: request.edits.length,
+            status: receipt.success.status
+        });
+        return {
+            status: receipt.success.status === "nothing_to_write"
+                ? "written"
+                : receipt.success.status,
+            edits: localizationEditOutcomes(receipt.success.review),
+            files: receipt.success.files.map(({ culture, relativePath, changes, error }) => ({
+                culture,
+                relativePath,
+                changes,
+                written: error === null
+            })),
+            notSynced: reloaded.status === "ready" ? reloaded.notSynced : 0
+        };
+    });
+    /** Writes review flags or accepted findings, fingerprinted against the retained evidence. */
+    const review = Effect.fn("GameText.workspace.localization.review")(function* (request, by) {
+        const retained = yield* current(request.target);
+        const root = yield* currentRoot();
+        if (!retained || !root)
+            return { status: "not_ready" };
+        const updates = [];
+        // Every fingerprint the request needs, read natively in one call per culture.
+        const read = yield* readReviewLines(retained.model, request.target, request.changes.filter((change) => change.kind !== "clear" && change.kind !== "unaccept")).pipe(Effect.result);
+        if (Result.isFailure(read))
+            return unreadLines(read.failure);
+        for (const change of request.changes) {
+            if (change.kind === "clear") {
+                updates.push({ ...change, kind: "clear" });
+                continue;
+            }
+            if (change.kind === "unaccept") {
+                updates.push({ ...change, kind: "unaccept" });
+                continue;
+            }
+            const fingerprint = read.success(change)?.fingerprint;
+            if (fingerprint === undefined)
+                return {
+                    status: "failed",
+                    code: "not_gathered",
+                    message: "This line is not in the target's gathered text.",
+                    recovery: "Gather the target with Unreal, then review the line."
+                };
+            updates.push({ ...change, fingerprint });
+        }
+        if (options.prepareWrites) {
+            const prepared = yield* options
+                .prepareWrites([
+                resolve(root, retained.review?.relativePath ??
+                    defaultLocalizationReviewPath(request.target))
+            ])
+                .pipe(Effect.result);
+            if (Result.isFailure(prepared))
+                return {
+                    status: "failed",
+                    code: "file_unwritable",
+                    message: prepared.failure.message,
+                    recovery: prepared.failure.recovery
+                };
+        }
+        const written = yield* updateLocalizationReview({ projectRoot: root, target: request.target }, updates, { by, at: new Date().toISOString() }, retained.review).pipe(Effect.provide(options.localizationFiles), Effect.result);
+        if (Result.isFailure(written))
+            return {
+                status: "failed",
+                code: written.failure.code,
+                message: "The review file could not be updated.",
+                recovery: written.failure.code === "file_changed"
+                    ? "The review file changed on disk, for example after a merge. Rescan and try again."
+                    : "Check the file out in source control or make it writable, then try again."
+            };
+        yield* index
+            .invalidate({
+            projectRoot: root,
+            targetName: request.target,
+            changedFiles: [written.success.relativePath]
+        })
+            .pipe(Effect.catchTag(["SnapshotFormatError", "SnapshotStoreError", "GameTextIndexError"], (cause) => Effect.logWarning("Game Text write succeeded but cache invalidation failed", {
+            message: cause.message,
+            recovery: cause.recovery
+        })));
+        yield* Ref.set(selected, undefined);
+        yield* clearQuality();
+        yield* select(request.target, true);
+        yield* Effect.annotateCurrentSpan({ changes: request.changes.length });
+        return { status: "written", relativePath: written.success.relativePath };
+    });
+    return {
+        preparation,
+        beforeGather,
+        linesFile,
+        /**
+         * The target as the published discovery lists it, for state polls: never discovers,
+         * so it never waits on a scan. Undefined until a discovery at `revision` is published.
+         */
+        operationStateTarget: (name, revision) => Ref.get(discovery).pipe(Effect.map((cached) => cached?.revision === revision
+            ? cached.targets.find((target) => target.name === name)
+            : undefined)),
+        operationTarget: (name) => targets().pipe(Effect.flatMap((result) => result.status === "ready"
+            ? Effect.gen(function* () {
+                const cached = yield* Ref.get(discovery);
+                return cached?.revision === (yield* currentRevision())
+                    ? cached?.targets.find((target) => target.name === name)
+                    : undefined;
+            })
+            : Effect.undefined)),
+        reset,
+        rediscover,
+        targets,
+        select,
+        search,
+        searchRows,
+        /** The selected target and its generation, read without borrowing its model. */
+        selectedGeneration: () => Ref.get(selected).pipe(Effect.map((cached) => cached?.result.status === "ready"
+            ? `${cached.join.target}\0${cached.result.generation ?? ""}`
+            : undefined)),
+        /** The selected target's query; absent when not loaded. */
+        targetQuery: (target) => current(target).pipe(Effect.map((cached) => cached?.model)),
+        focus,
+        qualityExport: (request) => quality(request).pipe(Effect.flatMap((model) => (model ? model.export(request) : Effect.undefined))),
+        qualitySearch,
+        browseFindings,
+        qualityFocus,
+        changes,
+        report,
+        reportFile,
+        edits,
+        review
+    };
+});

@@ -246,7 +246,8 @@ pub(crate) struct FindingsPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     diagnostics: Option<Diagnostics>,
-    /// Milliseconds per stage: select, order, page, compose and counts.
+    /// Milliseconds per stage: layer, lines, order, select, page, compose (with its parts
+    /// `compose_open`, `compose_prefetch` and `compose_rows`, outside the total) and counts.
     #[cfg_attr(test, ts(type = "{ [stage: string]: number }"))]
     stages: BTreeMap<&'static str, f64>,
 }
@@ -972,13 +973,33 @@ fn run_query(
     })
 }
 
+/// Where composing a page's findings spends its time, in milliseconds: opening the line and source
+/// subjects, prefetching the lines' occurrences, and composing the rows.
+#[derive(Default)]
+struct ComposeTimes {
+    open: f64,
+    prefetch: f64,
+    rows: f64,
+    /// Imaging the string dictionary, when this compose was the first to read a string.
+    image: Option<f64>,
+    /// The line prefetch's parts: its read arena, occurrence IDs and place strings.
+    prefetch_parts: [f64; 3],
+}
+
 /// Composes findings in the given order, with the place sets they name.
 fn compose(
     query: &EngineQuery,
     layer: &FindingsLayer,
     page: &[u32],
     cancelled: &AtomicBool,
-) -> Result<(Vec<PlaceSet>, Vec<Value>)> {
+) -> Result<(Vec<PlaceSet>, Vec<Value>, ComposeTimes)> {
+    let mut times = ComposeTimes::default();
+    let imaged = query.reader.imaged_ms().is_some();
+    let mut since = Instant::now();
+    let mut lap = |slot: &mut f64| {
+        *slot += since.elapsed().as_secs_f64() * 1000.0;
+        since = Instant::now();
+    };
     let rules = &layer.metadata.rules;
     let columns = columns(layer)?;
     let collator = HostCollator::new(&layer.metadata.collation)?;
@@ -992,6 +1013,7 @@ fn compose(
     let mut composed = HashMap::new();
     if !line_findings.is_empty() {
         let mut subjects = NativeSubjects::new(query, Subject::Line, &collator, cancelled)?;
+        lap(&mut times.open);
         let mut lines = line_findings
             .iter()
             .map(|number| columns.line[*number as usize])
@@ -999,6 +1021,8 @@ fn compose(
         lines.sort_unstable();
         lines.dedup();
         subjects.prefetch_occurrences(&lines)?;
+        lap(&mut times.prefetch);
+        times.prefetch_parts = subjects.prefetch_ms;
         let mut place_ids = HashSet::new();
         let mut line_places = HashMap::new();
         for number in &line_findings {
@@ -1033,8 +1057,10 @@ fn compose(
         .copied()
         .collect::<Vec<_>>();
     if !unit_findings.is_empty() {
+        lap(&mut times.rows);
         let unit_lines = query.unit_lines(cancelled)?;
         let mut subjects = NativeSubjects::new(query, Subject::UnitSource, &collator, cancelled)?;
+        lap(&mut times.open);
         let mut place_ids = places.iter().map(|set| set.id).collect::<HashSet<_>>();
         for number in &unit_findings {
             checkpoint(cancelled)?;
@@ -1072,7 +1098,11 @@ fn compose(
                 .ok_or("A paged finding was not composed.")?,
         );
     }
-    Ok((places, findings))
+    lap(&mut times.rows);
+    if !imaged {
+        times.image = query.reader.imaged_ms();
+    }
+    Ok((places, findings, times))
 }
 
 /// Composes a page's findings, timed as its `compose` stage.
@@ -1084,14 +1114,31 @@ fn compose_page(
 ) -> Result<()> {
     let started = Instant::now();
     let numbers = std::mem::take(&mut page.numbers);
-    (page.places, page.findings) = compose(query, layer, &numbers, cancelled)?;
+    let times;
+    (page.places, page.findings, times) = compose(query, layer, &numbers, cancelled)?;
     page.timed("compose", started);
+    // Parts of `compose`, so they stay out of the total.
+    page.stages.insert("compose_open", times.open);
+    page.stages.insert("compose_prefetch", times.prefetch);
+    page.stages.insert("compose_rows", times.rows);
+    if let Some(ms) = times.image {
+        page.stages.insert("compose_dictionary_image", ms);
+    }
+    page.stages
+        .insert("compose_prefetch_arena", times.prefetch_parts[0]);
+    page.stages
+        .insert("compose_prefetch_ids", times.prefetch_parts[1]);
+    page.stages
+        .insert("compose_prefetch_strings", times.prefetch_parts[2]);
     Ok(())
 }
 
 impl FindingsPage {
     fn timed(&mut self, stage: &'static str, started: Instant) {
-        let ms = started.elapsed().as_secs_f64() * 1000.0;
+        self.add_stage(stage, started.elapsed().as_secs_f64() * 1000.0);
+    }
+    /// Records a stage's milliseconds and adds them to the total.
+    pub(super) fn add_stage(&mut self, stage: &'static str, ms: f64) {
         self.stages.insert(stage, ms);
         *self.stages.entry("total").or_default() += ms;
     }
@@ -1116,7 +1163,7 @@ impl EngineQuery {
         let mut writer = SinkWriter::open(sink, reply)?;
         let mut out = Vec::new();
         for chunk in numbers.chunks(MAX_LIMIT) {
-            let (places, findings) = compose(self, &layer, chunk, cancelled)?;
+            let (places, findings, _) = compose(self, &layer, chunk, cancelled)?;
             let sets = places
                 .into_iter()
                 .map(|set| (set.id, set.occurrences))

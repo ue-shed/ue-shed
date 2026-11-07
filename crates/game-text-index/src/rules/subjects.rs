@@ -52,6 +52,9 @@ pub struct NativeSubjects<'a> {
     pub(super) cancelled: &'a AtomicBool,
     pub(super) occurrences: Arc<super::occurrences::OccurrenceData>,
     read_arena: Option<super::columns::Arena>,
+    /// Milliseconds the last `prefetch_occurrences` spent preparing its read arena, loading
+    /// occurrence IDs and loading place strings.
+    pub prefetch_ms: [f64; 3],
     /// The strings `places` reads, kept for the rest of this read.
     place_arena: Option<super::columns::Arena>,
     join_positions: Option<Arc<[u32]>>,
@@ -144,6 +147,7 @@ impl<'a> NativeSubjects<'a> {
             cancelled,
             occurrences,
             read_arena: None,
+            prefetch_ms: [0.0; 3],
             place_arena: None,
             join_positions: None,
         })
@@ -594,7 +598,10 @@ impl NativeSubjects<'_> {
         if rows.is_empty() {
             return Ok(());
         }
+        let started = std::time::Instant::now();
         let mut arena = self.take_read_arena()?;
+        self.prefetch_ms[0] = started.elapsed().as_secs_f64() * 1000.0;
+        let started = std::time::Instant::now();
         let mut members = Vec::new();
         for row in rows {
             if self.subject == Subject::UnitSource {
@@ -619,6 +626,8 @@ impl NativeSubjects<'_> {
         );
         self.read_arena = Some(arena);
         loaded?;
+        self.prefetch_ms[1] = started.elapsed().as_secs_f64() * 1000.0;
+        let started = std::time::Instant::now();
         let data = Arc::clone(&self.occurrences);
         let strings = members
             .iter()
@@ -630,6 +639,7 @@ impl NativeSubjects<'_> {
         };
         let loaded = arena.load_strings(&self.query.reader, &strings, self.cancelled);
         self.place_arena = Some(arena);
+        self.prefetch_ms[2] = started.elapsed().as_secs_f64() * 1000.0;
         loaded
     }
     /// Places as reads and evidence show them, built from the index. Their strings load into

@@ -1,0 +1,599 @@
+import { LocalizationIdentity, resolveLocalizationGatherPath } from "@ue-shed/localization/browser";
+import { Option, Schema } from "effect";
+import { LocalizationEvidenceLineId, LocalizationLineId, LocalizationUnknownReason } from "./localization-schema.js";
+import { gatheredIdentityKey, gatheredTextGroups, gatheredTextOccurrenceIdentity } from "./gathered-text.js";
+import { hasSearchableSource } from "./search.js";
+import { isEditorOnlyText, lineTextAudience, occurrenceTextAudience } from "./text-audience.js";
+/** FString matching is case insensitive; ? consumes zero or one character, * any number. */
+export function matchesUnrealWildcard(value, pattern) {
+    const expression = [...pattern]
+        .map((character) => {
+        if (character === "*")
+            return ".*";
+        if (character === "?")
+            return ".?";
+        return character.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
+    })
+        .join("");
+    return new RegExp(`^${expression}$`, "isu").test(value);
+}
+function normalizePath(value) {
+    return value.replace(/\\/gu, "/").replace(/^\.\//u, "");
+}
+const GatherRule = Schema.Struct({
+    includes: Schema.Array(Schema.String),
+    excludes: Schema.Array(Schema.String),
+    filenames: Schema.Array(Schema.String),
+    classes: Schema.Array(Schema.String),
+    excludeDerived: Schema.Boolean
+});
+function gatherRules(target) {
+    const rules = target.configs.flatMap((config) => config.steps
+        .filter((step) => step.commandletClass === "GatherTextFromAssets")
+        .map((step) => {
+        const fields = step.fields;
+        const common = config.common;
+        return {
+            includes: fields.IncludePathFilters.length
+                ? fields.IncludePathFilters
+                : common.IncludePathFilters,
+            excludes: fields.ExcludePathFilters.length
+                ? fields.ExcludePathFilters
+                : common.ExcludePathFilters,
+            filenames: fields.PackageFileNameFilters.length
+                ? fields.PackageFileNameFilters
+                : common.PackageFileNameFilters,
+            classes: fields.ExcludeClasses.length
+                ? fields.ExcludeClasses
+                : common.ExcludeClasses,
+            excludeDerived: fields.ShouldExcludeDerivedClasses ??
+                common.ShouldExcludeDerivedClasses ??
+                false
+        };
+    }));
+    if (rules.length)
+        return rules;
+    const settings = target.dashboard?.settings.GatherFromPackages;
+    if (!settings) {
+        // An authored recipe without an asset-gather step proves assets are outside its scope.
+        return target.configs.length ? [] : undefined;
+    }
+    if (!settings.IsEnabled)
+        return [];
+    if ([...settings.IncludePathWildcards, ...settings.ExcludePathWildcards].some((path) => path.PathRoot === "Engine"))
+        return undefined;
+    return [
+        {
+            includes: settings.IncludePathWildcards.map((path) => path.Pattern),
+            excludes: settings.ExcludePathWildcards.map((path) => path.Pattern),
+            filenames: settings.FileExtensions.map((extension) => `*.${extension.Pattern.replace(/^\*?\./u, "")}`),
+            classes: settings.ExcludeClasses ?? [],
+            excludeDerived: settings.ShouldExcludeDerivedClasses ?? false
+        }
+    ];
+}
+/**
+ * Whether the target's asset gather reads editor-only data (`ShouldGatherFromEditorOnlyData`).
+ * Unreal's GatherTextFromAssets commandlet defaults it to false. A recipe with several asset-gather
+ * steps that disagree, or no asset gather at all, is undefined: the caller cannot rely on it.
+ */
+export function localizationGathersEditorOnlyData(target) {
+    const steps = target.configs.flatMap((config) => config.steps
+        .filter((step) => step.commandletClass === "GatherTextFromAssets")
+        .map((step) => step.fields.ShouldGatherFromEditorOnlyData ??
+        config.common.ShouldGatherFromEditorOnlyData ??
+        false));
+    if (steps.length)
+        return steps.every((value) => value === steps[0]) ? steps[0] : undefined;
+    const settings = target.dashboard?.settings.GatherFromPackages;
+    if (!settings?.IsEnabled)
+        return undefined;
+    return settings.ShouldGatherFromEditorOnlyData ?? false;
+}
+function pathRating(pattern) {
+    return (100 - (pattern.match(/\//gu)?.length ?? 0) + (pattern.match(/[?*]/gu)?.length ?? 0) * 1000);
+}
+function resolveGatherFilters(patterns) {
+    const paths = [];
+    let uncertain = false;
+    for (const pattern of patterns) {
+        const resolved = resolveLocalizationGatherPath(pattern);
+        if (resolved.root === "engine")
+            continue;
+        const path = normalizePath(resolved.path);
+        if (resolved.root === "unknown" ||
+            /%[^%]+%/u.test(path) ||
+            /^(?:\/|[a-z]:)/iu.test(path) ||
+            path.split("/").includes(".."))
+            uncertain = true;
+        else
+            paths.push(path);
+    }
+    return { paths, uncertain };
+}
+function includedPath(path, rule) {
+    const filters = [
+        ...rule.includes.map((pattern) => ({ pattern: normalizePath(pattern), included: true })),
+        ...rule.excludes.map((pattern) => ({ pattern: normalizePath(pattern), included: false }))
+    ].sort((a, b) => pathRating(a.pattern) - pathRating(b.pattern) || Number(a.included) - Number(b.included));
+    return (filters.find(({ pattern }) => pattern.indexOf("*") === pattern.length - 1
+        ? path.toLowerCase().startsWith(pattern.slice(0, -1).toLowerCase())
+        : matchesUnrealWildcard(path, pattern))?.included ?? false);
+}
+/**
+ * Evidence describing whether a saved text place belongs to a target's gather scope.
+ * Unavailable settings or hierarchy preserve unknown rather than an inferred exclusion.
+ */
+export const LocalizationGatherCoverage = Schema.Union([
+    Schema.Struct({ status: Schema.Literals(["inside", "outside"]) }),
+    Schema.Struct({ status: Schema.Literal("unknown"), reason: LocalizationUnknownReason })
+]);
+/** Paths must be project-relative. No host paths or class hierarchy are guessed. */
+export function localizationGatherCoverage(target, occurrence) {
+    const path = normalizePath(occurrence.packageFile);
+    if (/^(?:\/|[a-z]:)/iu.test(path) || path.split("/").includes(".."))
+        return { status: "unknown", reason: "path_not_project_relative" };
+    const rules = gatherRules(target);
+    if (!rules)
+        return { status: "unknown", reason: "gather_settings_unavailable" };
+    let uncertain;
+    for (const rule of rules) {
+        const includes = resolveGatherFilters(rule.includes);
+        const excludes = resolveGatherFilters(rule.excludes);
+        if (includes.uncertain || excludes.uncertain) {
+            uncertain = "gather_settings_unavailable";
+            continue;
+        }
+        if (!includedPath(path, { ...rule, includes: includes.paths, excludes: excludes.paths }))
+            continue;
+        if (!rule.filenames.some((pattern) => matchesUnrealWildcard(path.split("/").at(-1) ?? "", pattern)))
+            continue;
+        if (occurrence.location.kind === "data_table_cell" && rule.classes.length) {
+            // The corpus location does not distinguish DataTable from CompositeDataTable classes.
+            uncertain = "asset_class_unavailable";
+            continue;
+        }
+        const classPath = occurrence.location.kind === "asset_property"
+            ? occurrence.location.classPath
+            : occurrence.location.kind === "string_table_entry"
+                ? "/Script/Engine.StringTable"
+                : "/Script/Engine.DataTable";
+        if (rule.classes.some((excluded) => excluded.toLowerCase() === classPath.toLowerCase() ||
+            excluded.toLowerCase() === classPath.split(".").at(-1)?.toLowerCase()))
+            continue;
+        if (rule.excludeDerived && rule.classes.length) {
+            uncertain = "class_hierarchy_unavailable";
+            continue;
+        }
+        return { status: "inside" };
+    }
+    return uncertain ? { status: "unknown", reason: uncertain } : { status: "outside" };
+}
+/**
+ * Whether the selected target's gather would collect the occurrence: its include and exclude
+ * paths, then `ShouldGatherFromEditorOnlyData` for editor text. Lines that are out of scope are
+ * reported as such rather than "Not gathered yet".
+ */
+export function textGatherScope(target, occurrence, classification) {
+    if (!target)
+        return { status: "no_target" };
+    const coverage = localizationGatherCoverage(target, occurrence);
+    if (coverage.status === "outside")
+        return { status: "out_of_scope", reason: "outside_gather_paths" };
+    if (isEditorOnlyText(classification) && localizationGathersEditorOnlyData(target) === false)
+        return { status: "out_of_scope", reason: "editor_only_data_not_gathered" };
+    return coverage.status === "inside" ? { status: "in_scope" } : { status: "unknown" };
+}
+/** A unit has one gathered identity only when all its occurrences agree. */
+export function gatheredTextIdentity(unit) {
+    let identity = null;
+    for (const occurrence of unit.occurrences) {
+        const gathered = gatheredTextOccurrenceIdentity(occurrence);
+        if (!gathered ||
+            (identity && gatheredIdentityKey(identity) !== gatheredIdentityKey(gathered)))
+            return null;
+        identity = gathered;
+    }
+    return identity;
+}
+// Decoded JSON objects are plain objects; JSON's strings, numbers and booleans are primitives.
+function isJsonRecord(value) {
+    return value instanceof Object && !Array.isArray(value);
+}
+function sameJson(left, right) {
+    if (left === right)
+        return true;
+    if (left === null || right === null)
+        return false;
+    if (Array.isArray(left))
+        return (Array.isArray(right) &&
+            left.length === right.length &&
+            left.every((item, index) => sameJson(item, right[index] ?? null)));
+    if (Array.isArray(right))
+        return false;
+    if (!isJsonRecord(left) || !isJsonRecord(right))
+        return false;
+    const keys = Object.keys(left);
+    return (keys.length === Object.keys(right).length &&
+        keys.every((key) => Object.hasOwn(right, key) && sameJson(left[key] ?? null, right[key] ?? null)));
+}
+/**
+ * Compares source text with Unreal-compatible newline normalization. Matching text is evidence
+ * for synchronization, distinct from localization identity equality.
+ */
+export function localizationTextMatches(left, right) {
+    return sameJson(left, right);
+}
+/** Unreal NativeText uses a differing native archive translation as the foreign source. */
+export function localizationExpectedSource(source, culture, nativeCulture, nativeArchive) {
+    return culture !== nativeCulture &&
+        nativeArchive &&
+        !localizationTextMatches(nativeArchive.source, nativeArchive.translation)
+        ? nativeArchive.translation
+        : source;
+}
+const CommentMetadata = Schema.Struct({ Comment: Schema.optionalKey(Schema.String) });
+const decodeCommentMetadata = Schema.decodeUnknownOption(CommentMetadata);
+/**
+ * Collects manifest developer/translator note text for presentation. It reads retained manifest
+ * evidence and does not mutate authored or gathered notes.
+ */
+export function localizationManifestNotes(entry) {
+    const info = decodeCommentMetadata(entry.metadata?.Info);
+    const comment = Option.isSome(info) ? (info.value.Comment ?? "") : "";
+    return [...new Set([entry.devNotes ?? "", comment])].filter((notes) => notes.trim() !== "");
+}
+/** A key path can point into a package or into C++/config. Only project asset paths prove absence. */
+export function manifestPackageFile(path) {
+    const normalized = normalizePath(path);
+    const file = normalized.match(/^(Content\/.*?\.(?:uasset|umap))(?:$|[:.])/iu)?.[1];
+    if (file)
+        return file;
+    const game = normalized.match(/^\/Game\/([^.:]+)(?:\.|:|$)/u)?.[1];
+    return game ? `Content/${game}.uasset` : undefined;
+}
+const precedence = [
+    "outside_target",
+    "not_gathered",
+    "not_found",
+    "gathered_only",
+    "changed_since_gather",
+    "unknown",
+    "not_synced",
+    "needs_update",
+    "not_translated",
+    "translated"
+];
+function groupByIdentity(entries) {
+    const grouped = new Map();
+    for (const entry of entries) {
+        const key = gatheredIdentityKey(entry);
+        grouped.set(key, [...(grouped.get(key) ?? []), entry]);
+    }
+    return grouped;
+}
+function collapsedPOEntries(file) {
+    const groups = new Map();
+    if (file.status !== "read" || !file.value.hasSourceText)
+        return groups;
+    for (const entry of file.value.entries) {
+        if (entry.identity?.key !== "")
+            continue;
+        const key = JSON.stringify([entry.identity.namespace, entry.msgid]);
+        const group = groups.get(key) ?? [];
+        group.push({ entry });
+        groups.set(key, group);
+    }
+    return groups;
+}
+const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
+    let value = index;
+    for (let bit = 0; bit < 8; bit++)
+        value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    return value;
+});
+/**
+ * Unreal's `SourceStringHash`, `FCrc::StrCrc32<TCHAR>`: CRC-32 over each UTF-16 code unit as four
+ * little-endian bytes, up to the first NUL. Mirrors `localization::locres::source_hash`.
+ */
+export function localizationResourceSourceHash(text) {
+    let crc = 0xffffffff;
+    for (let index = 0; index < text.length; index++) {
+        const unit = text.charCodeAt(index);
+        if (unit === 0)
+            break;
+        for (const byte of [unit & 0xff, unit >>> 8, 0, 0])
+            crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
+/**
+ * Join gathered namespace/key, stripping package markers only from saved FText occurrences. A
+ * culture with no archive takes its translations from `options.resources` when given.
+ */
+export function joinLocalizationTarget(corpus, evidence, target = evidence.target, options = {}) {
+    const manifest = groupByIdentity(evidence.manifest.status === "read" ? evidence.manifest.value.entries : []);
+    const rows = gatheredTextGroups(corpus);
+    const knownTables = new Set(corpus.units.flatMap((unit) => unit.occurrences.flatMap((occurrence) => occurrence.location.kind === "string_table_entry" &&
+        occurrence.identity.status === "resolved"
+        ? [occurrence.location.objectPath]
+        : [])));
+    for (const [key, entries] of manifest) {
+        const entry = entries[0];
+        if (entry && !rows.has(key))
+            rows.set(key, { identity: { namespace: entry.namespace, key: entry.key }, units: [] });
+    }
+    const packageCoverage = new Map();
+    for (const item of corpus.packageCoverage ?? []) {
+        const path = normalizePath(item.packageFile).toLowerCase();
+        const previous = packageCoverage.get(path);
+        if (previous === "failed" || (previous === "partial" && item.status === "complete"))
+            continue;
+        packageCoverage.set(path, item.status);
+    }
+    for (const diagnostic of corpus.diagnostics) {
+        const path = normalizePath(diagnostic.packageFile).toLowerCase();
+        if (packageCoverage.get(path) === "failed")
+            continue;
+        packageCoverage.set(path, diagnostic.code === "package_inspection_failed" ? "failed" : "partial");
+    }
+    const cultureIndexes = evidence.cultures.map((culture) => ({
+        ...culture,
+        archives: groupByIdentity(culture.archive.status === "read" ? culture.archive.value.entries : []),
+        collapsedPos: target.collapseMode === "IdenticalNamespaceAndSource"
+            ? collapsedPOEntries(culture.po)
+            : undefined,
+        pos: groupByIdentity(culture.po.status === "read"
+            ? culture.po.value.entries.flatMap((entry) => entry.identity ? [{ ...entry.identity, entry }] : [])
+            : [])
+    }));
+    const resourceIndexes = new Map([...(options.resources ?? [])].flatMap(([culture, resource]) => {
+        const index = cultureIndexes.find((item) => item.culture === culture);
+        const archiveMissing = !index ||
+            (index.archive.status === "failed" && index.archive.error.code === "file_missing");
+        return archiveMissing
+            ? [
+                [
+                    culture,
+                    {
+                        verified: resource.verified,
+                        entries: new Map(resource.entries.map((entry) => [
+                            // gatheredIdentityKey's spelling, for unbranded names.
+                            JSON.stringify([entry.namespace, entry.key]),
+                            entry
+                        ]))
+                    }
+                ]
+            ]
+            : [];
+    }));
+    // Unreal skips editor-only text when the target does not gather editor-only data.
+    const skipsEditorOnlyData = localizationGathersEditorOnlyData(target) === false;
+    const lines = [];
+    for (const [key, row] of rows) {
+        let outOfScope;
+        const entries = manifest.get(key) ?? [];
+        const first = entries[0];
+        const reasons = [];
+        const structural = [];
+        // A saved String Table reference has no authored source or gather scope of its own.
+        // Its owning table entry supplies both, while all reference unit IDs remain attached.
+        const authored = row.units.filter((unit) => unit.identity.status !== "string_table");
+        const occurrences = (authored.length ? authored : row.units).flatMap((unit) => unit.occurrences);
+        const sources = [...new Set(occurrences.map((occurrence) => occurrence.source))];
+        const source = sources.length ? sources.join(" ") : (first?.source.Text ?? "");
+        if (!row.identity)
+            reasons.push(row.units.some((unit) => unit.identity.status === "string_table")
+                ? row.units.some((unit) => unit.identity.status === "string_table" &&
+                    knownTables.has(unit.identity.tableId))
+                    ? "string_table_entry_missing"
+                    : "string_table_namespace_unavailable"
+                : "unresolved_identity");
+        if (evidence.manifest.status === "failed")
+            reasons.push("missing_manifest");
+        if (entries.length > 1)
+            reasons.push("duplicate_manifest_identity");
+        if (sources.length > 1)
+            reasons.push("conflicting_source");
+        if (occurrences.length) {
+            const coverage = occurrences.map((occurrence) => localizationGatherCoverage(target, occurrence));
+            if (coverage.every((item) => item.status === "outside")) {
+                structural.push("outside_target");
+                outOfScope = "outside_gather_paths";
+            }
+            else if (!coverage.some((item) => item.status === "inside")) {
+                for (const item of coverage)
+                    if (item.status === "unknown")
+                        reasons.push(item.reason);
+            }
+            else if (!first && evidence.manifest.status === "read" && row.identity) {
+                // Not gathered because the gather skips editor-only data, not because it is stale.
+                if (skipsEditorOnlyData &&
+                    occurrences.every((occurrence, index) => coverage[index].status === "outside" ||
+                        isEditorOnlyText(occurrenceTextAudience(occurrence)))) {
+                    structural.push("outside_target");
+                    outOfScope = "editor_only_data_not_gathered";
+                }
+                else
+                    structural.push("not_gathered");
+            }
+            if (first && sources.length === 1 && sources[0] !== first.source.Text)
+                structural.push("changed_since_gather");
+            // A global identity match does not prove that the manifest's original package still has it.
+            for (const entry of entries) {
+                const file = manifestPackageFile(entry.path);
+                if (!file)
+                    continue;
+                const path = normalizePath(file).toLowerCase();
+                const alternative = path.replace(/\.uasset$/u, ".umap");
+                if (occurrences.some((occurrence) => [path, alternative].includes(normalizePath(occurrence.packageFile).toLowerCase())))
+                    continue;
+                const status = packageCoverage.get(path) ?? packageCoverage.get(alternative);
+                if (status === "complete" ||
+                    (status === undefined && options.completePackageInventory))
+                    structural.push("not_found");
+                else
+                    reasons.push(status === "partial"
+                        ? "package_partial"
+                        : status === "failed"
+                            ? "package_failed"
+                            : "package_not_scanned");
+            }
+        }
+        else if (first) {
+            const files = entries.map((entry) => manifestPackageFile(entry.path));
+            if (files.every((file) => file === undefined) &&
+                entries.every((entry) => !normalizePath(entry.path).startsWith("/")))
+                structural.push("gathered_only");
+            else {
+                for (const file of files) {
+                    if (!file) {
+                        reasons.push("package_not_scanned");
+                        continue;
+                    }
+                    const normalized = normalizePath(file).toLowerCase();
+                    const status = packageCoverage.get(normalized) ??
+                        packageCoverage.get(normalized.replace(/\.uasset$/u, ".umap"));
+                    if (status !== "complete" &&
+                        !(status === undefined && options.completePackageInventory))
+                        reasons.push(status === "partial"
+                            ? "package_partial"
+                            : status === "failed"
+                                ? "package_failed"
+                                : "package_not_scanned");
+                }
+                if (!reasons.length)
+                    structural.push("not_found");
+            }
+        }
+        const cultures = target.cultures.map((culture) => {
+            const index = cultureIndexes.find((item) => item.culture === culture);
+            const archives = index?.archives.get(key) ?? [];
+            const archive = archives[0] ?? null;
+            const nativeEntries = cultureIndexes
+                .find((item) => item.culture === target.nativeCulture)
+                ?.archives.get(key);
+            const expectedSource = first &&
+                localizationExpectedSource(first.source, culture, target.nativeCulture, nativeEntries?.length === 1 ? nativeEntries[0] : null);
+            const pos = index?.pos.get(key) ??
+                (row.identity &&
+                    index?.collapsedPos?.get(JSON.stringify([row.identity.namespace, expectedSource?.Text ?? source]))) ??
+                [];
+            const po = pos[0]?.entry ?? null;
+            const poValue = po?.msgstr["0"] ?? "";
+            const archiveAbsent = index?.archive.status === "failed" && index.archive.error.code === "file_missing";
+            const poAbsent = index?.po.status === "failed" && index.po.error.code === "file_missing";
+            const unknownReasons = [...reasons];
+            const facts = [...structural];
+            if (!index || index.archive.status === "failed")
+                unknownReasons.push("missing_archive");
+            if (!index || index.po.status === "failed")
+                unknownReasons.push("missing_po");
+            if (archives.length > 1)
+                unknownReasons.push("duplicate_archive_identity");
+            if (pos.length > 1)
+                unknownReasons.push("duplicate_po_identity");
+            if ((index?.archive.status === "read" || archiveAbsent) &&
+                archives.length <= 1 &&
+                pos.length === 1 &&
+                poValue !== "" &&
+                poValue !== (archive?.translation.Text ?? ""))
+                facts.push("not_synced");
+            if (archives.length === 1 &&
+                entries.length === 1 &&
+                archive &&
+                first &&
+                expectedSource &&
+                !localizationTextMatches(archive.source, expectedSource))
+                facts.push("needs_update");
+            const resource = resourceIndexes.get(culture);
+            const compiled = resource?.entries.get(key);
+            const resourceFailed = !resource && archiveAbsent && (options.failedResources?.has(culture) ?? false);
+            if (resourceFailed) {
+                // The stand-in for the missing archive could not be read: nothing is decided.
+            }
+            else if (resource) {
+                // The culture has no archive: its compiled resource decides what it can.
+                if (compiled) {
+                    const compiledSource = first?.source.Text ?? sources[0] ?? "";
+                    const nativeArchive = nativeEntries?.length === 1 ? nativeEntries[0] : undefined;
+                    const nativeText = nativeArchive &&
+                        !localizationTextMatches(nativeArchive.source, nativeArchive.translation)
+                        ? nativeArchive.translation.Text
+                        : target.nativeCulture === null
+                            ? undefined
+                            : resourceIndexes.get(target.nativeCulture)?.entries.get(key)?.text;
+                    if (resource.verified &&
+                        compiled.sourceHash !== localizationResourceSourceHash(compiledSource))
+                        facts.push("needs_update");
+                    else if (culture !== target.nativeCulture &&
+                        (compiled.text === compiledSource || compiled.text === nativeText))
+                        facts.push("not_translated");
+                    else
+                        facts.push("translated");
+                }
+                else if (evidence.manifest.status === "read")
+                    facts.push("not_translated");
+            }
+            else if ((index?.archive.status === "read" || archiveAbsent) &&
+                archives.length <= 1) {
+                if (!archive || archive.translation.Text === "")
+                    facts.push("not_translated");
+                else if (entries.length === 1 &&
+                    first &&
+                    expectedSource &&
+                    localizationTextMatches(archive.source, expectedSource))
+                    facts.push("translated");
+            }
+            // Native entries are evaluated from the native archive too; absent evidence is never invented.
+            if (unknownReasons.some((reason) => !(reason === "missing_archive" && archiveAbsent && !resourceFailed) &&
+                !(reason === "missing_po" && poAbsent) &&
+                // The resource answers what a missing manifest would leave unknown.
+                !(reason === "missing_manifest" && compiled)))
+                facts.push("unknown");
+            const state = precedence.find((candidate) => facts.includes(candidate)) ?? "unknown";
+            const result = {
+                culture,
+                state,
+                facts: [...new Set(facts)],
+                unknownReasons: [...new Set(unknownReasons)],
+                reducedSourceChecking: (index?.po.status === "read" && !index.po.value.hasSourceText) ||
+                    resource !== undefined,
+                archive,
+                poTranslation: facts.includes("not_synced") ? poValue : null,
+                po
+            };
+            // Only a culture that reads its compiled resource has the field, as in the native join.
+            if (resource)
+                Object.assign(result, {
+                    locres: compiled
+                        ? { text: compiled.text, sourceHash: compiled.sourceHash }
+                        : null
+                });
+            return result;
+        });
+        const evidenceId = LocalizationEvidenceLineId.make(`evidence:${target.name}:${key}`);
+        const origin = row.units.length
+            ? { kind: "corpus", unitIds: row.units.map((unit) => unit.id).sort() }
+            : { kind: "evidence", id: evidenceId };
+        lines.push({
+            id: LocalizationLineId.make(`${target.name}:${key}`),
+            origin,
+            identity: row.identity,
+            source,
+            manifest: entries,
+            cultures,
+            audience: lineTextAudience(row.units
+                .filter(hasSearchableSource)
+                .flatMap((unit) => unit.occurrences.map((occurrence) => occurrenceTextAudience(occurrence).audience))),
+            ...(outOfScope === undefined ? undefined : { outOfScope })
+        });
+    }
+    return {
+        schemaVersion: 1,
+        target: target.name,
+        nativeCulture: target.nativeCulture,
+        cultures: target.cultures,
+        lines: lines.sort((a, b) => a.id.localeCompare(b.id))
+    };
+}

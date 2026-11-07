@@ -1,0 +1,103 @@
+import { TextProblem } from "./schema.js";
+import { matchesTextPathPrefix, textFileKey } from "./text-origin.js";
+import { TEXT_PROBLEMS, TEXT_PROBLEM_LABELS, TEXT_PROBLEM_RULES } from "./text-problem-rules.js";
+export { TEXT_PROBLEM_LABELS };
+/** Whether a line has work before it ships: its worst problem is one `TEXT_PROBLEM_RULES` marks. */
+export function needsWork(problems) {
+    const worst = problems[0];
+    return worst !== undefined && TEXT_PROBLEM_RULES[worst].work;
+}
+/** Translation work in the given cultures' marks. */
+export function translationStates(marks) {
+    const states = new Set();
+    for (const mark of marks) {
+        if (mark.state === "not_translated")
+            states.add("missing");
+        if (mark.state === "needs_update")
+            states.add("to_update");
+        if (mark.state === "not_synced" || mark.facts.includes("not_synced"))
+            states.add("not_synced");
+    }
+    return [...states];
+}
+/**
+ * Every problem a line has, worst first; `up_to_date` alone when it has none, from
+ * `TEXT_PROBLEM_RULES`. `marks` are the cultures in scope, absent for text that no localization
+ * target covers. `finding` says a rule that counts has a finding on the text.
+ */
+export function textProblems(input) {
+    const marks = input.marks ?? [];
+    const found = new Set();
+    if (input.keyChanged)
+        found.add("key_changed");
+    for (const problem of TEXT_PROBLEMS) {
+        const rule = TEXT_PROBLEM_RULES[problem];
+        if (rule.signals.some((signal) => input.signals.includes(signal)) ||
+            marks.some((mark) => rule.states.includes(mark.state) ||
+                rule.facts.some((fact) => mark.facts.includes(fact)) ||
+                rule.reasons.some((reason) => mark.unknownReasons.includes(reason))))
+            found.add(problem);
+    }
+    if (input.finding === true)
+        found.add("finding");
+    if (found.size === 0)
+        return ["up_to_date"];
+    return TextProblem.literals.filter((problem) => found.has(problem));
+}
+function clauseHas(facts, clause) {
+    switch (clause.field) {
+        case "problem":
+            return clause.values.some((value) => facts.problems.includes(value));
+        case "finding":
+            return clause.values.some((value) => facts.findings.includes(value));
+        case "fact":
+            return clause.values.some((value) => facts.reviewSignals?.includes(value) === true);
+        case "translation":
+            return clause.values.some((value) => facts.translation.includes(value));
+        case "origin":
+            return clause.values.some((value) => facts.origins.includes(value));
+        case "folder":
+            return clause.values.some((value) => matchesTextPathPrefix(facts.paths, value));
+        case "asset": {
+            const keys = facts.files.map(textFileKey);
+            return clause.values.some((value) => keys.includes(textFileKey(value)));
+        }
+        case "namespace":
+            return facts.namespace !== undefined && clause.values.includes(facts.namespace);
+        case "editing":
+            return clause.values.some((value) => facts.editing.includes(value));
+        case "notes":
+            return clause.values.includes(facts.notes);
+        case "audience":
+            return clause.values.includes(facts.audience);
+        case "translation_key":
+            return clause.values.some((value) => facts.translationKeys?.includes(value) === true);
+        case "source":
+            return clause.values.some((value) => facts.sources?.includes(value) === true);
+        case "asset_type":
+            return clause.values.some((value) => facts.assetTypes?.includes(value) === true);
+    }
+}
+/** Whether every clause matches, leaving out clauses on `except` so a facet can count itself. */
+export function matchesTextFilter(facts, filter, except) {
+    if (filter === undefined)
+        return true;
+    return filter.every((clause) => clause.field === except || clauseHas(facts, clause) === (clause.op === "is"));
+}
+/** How many lines have each problem; a line counts once for every problem it has. */
+export function textProblemCounts(lines) {
+    const counts = {
+        key_changed: 0,
+        conflicting_source: 0,
+        not_gathered: 0,
+        changed_since_gather: 0,
+        translation: 0,
+        finding: 0,
+        unchecked: 0,
+        up_to_date: 0
+    };
+    for (const problems of lines)
+        for (const problem of problems)
+            counts[problem]++;
+    return counts;
+}

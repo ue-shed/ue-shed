@@ -1,0 +1,564 @@
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
+import { Layer, Effect, Stream, Scope, Exit, Schema, Result } from "effect";
+import { describe, expect, it } from "vitest";
+import { GameTextIndexBuilder } from "./index-builder.js";
+import { GameTextIndexQuery } from "./index-query-native.js";
+import { nativeIndexBuilderLayer } from "./native-index-builder.js";
+import { typeScriptIndexBuilderLayer } from "./index-reference.test-support.js";
+import { SharedIndex, sharedIndexNodeLayer } from "./shared-index.js";
+import { emptyPackageTextRecord } from "./package-text-record.js";
+import { decodePackageTextColumns } from "./package-text-columns.js";
+import { packageTextShard } from "./package-text-layer.js";
+import { GameTextIndexProgressReporter } from "./index-progress.js";
+import { openJoinedTarget } from "./joined-target-reader.js";
+import { target } from "./localization.test-support.js";
+import { TextCorpusSearchRequest } from "./schema.js";
+import { encodeStringBlock } from "./snapshot-format.js";
+import { snapshotColumnsSource } from "./snapshot-file.js";
+const decodeTextCorpusSearchRequest = Schema.decodeEffect(TextCorpusSearchRequest);
+const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
+const sourceTarget = { ...target, cultures: [] };
+const header = {
+    packageFlags: 0x40000,
+    gatherableTextDataCount: 0,
+    gatherableTextDataOffset: 0,
+    hasTextProperty: false
+};
+const record = (path, source, key, copies = 0) => {
+    const name = basename(path, ".uasset");
+    const object = `/Game/Text/${name}.${name}`;
+    return {
+        ...emptyPackageTextRecord(path),
+        fileBytes: 100 + source.length,
+        blueprintClasses: [
+            {
+                blueprint: object,
+                generatedClass: `${object}_C`,
+                classDefault: `/Game/Text/${name}.Default__${name}_C`
+            }
+        ],
+        occurrences: Array.from({ length: copies + 1 }, (_, copy) => ({
+            source,
+            dev_notes: "",
+            identity: { status: "resolved", namespace: "UI", key },
+            location: {
+                kind: "asset_property",
+                object_path: `${object}${copy ? "_C" : ""}.WidgetTree.Title`,
+                class_path: "/Script/UMG.TextBlock",
+                property_path: "Text"
+            },
+            edit_capability: "read_only"
+        }))
+    };
+};
+// Fill dictionary segments within a lease; reopen only to exercise cross-session edits.
+describe.skipIf(!executable)("native package record deltas", () => {
+    it("keeps dictionary IDs coherent in mixed leases and compacts repeated package and localization edits", async () => {
+        if (!executable)
+            throw new Error("Native reader required");
+        const root = await mkdtemp(join(tmpdir(), "ue-shed-delta-capacity-"));
+        const configuration = {
+            cacheRoot: root,
+            projectKey: "capacity",
+            targetKey: "source",
+            projectView: { kind: "source" }
+        };
+        const path = "Content/Text/Capacity.uasset";
+        const local = (values, localization = false) => snapshotColumnsSource([
+            {
+                name: "source.b0",
+                kind: "strings",
+                domain: "source",
+                stringCount: values.length,
+                values: encodeStringBlock(values)
+            },
+            { name: "source.starts", kind: "u32", values: Uint32Array.of(0) },
+            {
+                name: "entry.source",
+                kind: "stringIds",
+                domain: "source",
+                stringCount: values.length,
+                values: Uint32Array.from(values, (_, i) => i)
+            },
+            ...(localization
+                ? [
+                    {
+                        name: "file.meta",
+                        kind: "bytes",
+                        values: new TextEncoder().encode("{}")
+                    }
+                ]
+                : [])
+        ]);
+        const fillDictionary = (writer, phase) => Effect.gen(function* () {
+            while (writer.manifest().segments.length < 255)
+                yield* writer.intern("source", [
+                    `${phase}-capacity-${writer.manifest().segments.length}`
+                ]);
+            // Interning is staged; publish the root so the next lease retains all 255 segments.
+            yield* writer.publishIds("capacity", phase, {
+                columns: [
+                    { name: "probe", kind: "u32", load: async () => Uint32Array.of(0) }
+                ]
+            }, writer.manifest().generation);
+        });
+        try {
+            await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+                const builder = yield* GameTextIndexBuilder;
+                const generations = new Set();
+                for (let round = 0; round < 5; round++) {
+                    yield* builder.withSession({ configuration }, Effect.scoped(Effect.gen(function* () {
+                        const store = yield* SharedIndex;
+                        const writer = yield* store.writer;
+                        if (round === 1)
+                            yield* writer.publish("large", "large", local(Array.from({ length: 8200 }, (_, i) => `large-${i}`)));
+                        yield* builder.refreshPackageTextLayer({
+                            inventory: [
+                                {
+                                    path,
+                                    signature: `edit-${round}`,
+                                    headerData: header
+                                }
+                            ],
+                            read: () => Stream.succeed(record(path, `source-${round}`, "K"))
+                        });
+                        yield* writer.publish("probe.po", `po-${round}`, local(["unchanged localization", `translation-${round}`], true));
+                        const ids = yield* writer.intern("source", [
+                            `after-${round}`
+                        ]);
+                        yield* writer.publishIds("after", `after-${round}`, {
+                            columns: [
+                                {
+                                    name: "entry.source",
+                                    kind: "stringIds",
+                                    domain: "source",
+                                    load: async () => ids
+                                }
+                            ]
+                        }, writer.manifest().generation);
+                        yield* builder.refreshJoinedTarget({
+                            projectRoot: root,
+                            target: sourceTarget
+                        });
+                        const current = yield* store.open;
+                        generations.add(current.manifest.generation);
+                        expect(current.manifest.segments.length).toBeLessThanOrEqual(256);
+                        const packages = yield* decodePackageTextColumns(yield* current.layer(`package-text.${packageTextShard(path)}`));
+                        expect(packages[0].evidence).toMatchObject({
+                            occurrences: [{ source: `source-${round}` }]
+                        });
+                        for (const [name, expected] of [
+                            [
+                                "probe.po",
+                                ["unchanged localization", `translation-${round}`]
+                            ],
+                            ["after", [`after-${round}`]]
+                        ]) {
+                            const layer = yield* current.layer(name);
+                            const values = yield* layer.section("entry.source");
+                            if (!(values instanceof Uint32Array))
+                                throw new Error("Expected IDs");
+                            expect(yield* current.strings([...values])).toEqual(expected);
+                        }
+                        if (round === 0)
+                            yield* fillDictionary(writer, "package");
+                        let end = 0;
+                        for (const segment of current.manifest.segments) {
+                            expect(segment.start).toBe(end);
+                            end += segment.count;
+                        }
+                    })));
+                }
+                expect(generations.size).toBeGreaterThan(1);
+                const localizationGenerations = new Set();
+                for (let round = 0; round < 5; round++) {
+                    yield* builder.withSession({ configuration }, Effect.scoped(Effect.gen(function* () {
+                        const store = yield* SharedIndex;
+                        const writer = yield* store.writer;
+                        yield* writer.publish("probe.po", `only-po-${round}`, local([
+                            "unchanged localization",
+                            `only-translation-${round}`
+                        ], true));
+                        localizationGenerations.add(writer.manifest().generation);
+                        const reader = yield* store.open;
+                        const layer = yield* reader.layer("probe.po");
+                        const ids = yield* layer.section("entry.source");
+                        if (!(ids instanceof Uint32Array))
+                            throw new Error("Expected IDs");
+                        expect(yield* reader.strings([...ids])).toEqual([
+                            "unchanged localization",
+                            `only-translation-${round}`
+                        ]);
+                        if (round === 0)
+                            yield* fillDictionary(writer, "localization");
+                    })));
+                }
+                expect(localizationGenerations.size).toBeGreaterThan(1);
+                // A new lease must retain all active layers rather than quarantine a broken dictionary.
+                yield* builder.withSession({ configuration }, Effect.gen(function* () {
+                    const manifest = (yield* (yield* SharedIndex).writer).manifest();
+                    expect(manifest.active.large).toBe("large");
+                    expect(manifest.active.after).toBe("after-4");
+                }));
+            })).pipe(Effect.provide(nativeIndexBuilderLayer({
+                executable,
+                timeoutMs: 30000,
+                catalogTimeoutMs: 120000
+            }))));
+        }
+        finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    }, 300_000);
+    it("matches complete records and summaries across edits, copies, eligibility, deletion and undo", async () => {
+        if (!executable)
+            throw new Error("Native reader required");
+        const root = await mkdtemp(join(tmpdir(), "ue-shed-package-delta-"));
+        try {
+            const projectRoot = join(root, "project");
+            await mkdir(projectRoot);
+            const paths = [];
+            for (let id = 0; paths.length < 4; id++) {
+                const path = `Content/Text/Item${id}.uasset`;
+                if (packageTextShard(path) === packageTextShard("Content/Text/Item0.uasset"))
+                    paths.push(path);
+            }
+            const first = record(paths[0], "Shared 😀 \ud800 source", "A");
+            const second = record(paths[1], first.occurrences[0].source, "B", 1);
+            const third = record(paths[2], "Third source", "C");
+            const original = [first, second, third];
+            const textEdit = [
+                {
+                    ...first,
+                    fileBytes: first.fileBytes + 16,
+                    occurrences: first.occurrences.map((o) => ({
+                        ...o,
+                        source: "Different \udfff source"
+                    }))
+                },
+                second,
+                third
+            ];
+            const structure = [
+                textEdit[0],
+                record(paths[1], "Changed copy", "New identity"),
+                third
+            ];
+            const inserted = [record(paths[3], "Inserted source", "D"), second, third];
+            const states = [original, textEdit, structure, structure, inserted, original];
+            // Every state has three units of one place each: the second package's compiled copy
+            // folds into its saved place. While the first package is not gatherable it is skipped.
+            const summary = (units) => ({
+                schemaVersion: 1,
+                status: "complete",
+                counts: {
+                    all: units,
+                    unresolved: 0,
+                    conflicting: 0,
+                    editable: 0,
+                    readOnly: units,
+                    withoutNotes: units,
+                    origins: {
+                        string_table: 0,
+                        data_table: 0,
+                        asset: units,
+                        cpp: 0,
+                        other_source: 0
+                    }
+                },
+                searchable: { textUnits: units, textOccurrences: units },
+                coverage: {
+                    discoveredPackages: 3,
+                    inspectedPackages: units,
+                    partialPackages: 0,
+                    failedPackages: 0,
+                    textUnits: units,
+                    textOccurrences: units,
+                    resolvedOccurrences: units,
+                    unresolvedOccurrences: 0,
+                    unsupportedTextProperties: 0
+                },
+                notGatherablePackages: 3 - units,
+                diagnosticCount: 3 - units,
+                review: { all: units, unresolved: 0, conflicting: 0 },
+                sources: { assetProperty: units, dataTable: 0, mixed: 0, stringTable: 0 }
+            });
+            const summaries = [3, 3, 3, 2, 3, 3].map(summary);
+            const outputs = [];
+            for (const backend of ["reference", "native"]) {
+                const configuration = {
+                    cacheRoot: join(root, backend),
+                    projectKey: projectRoot,
+                    targetKey: "source",
+                    projectView: { kind: "source" }
+                };
+                outputs.push(await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+                    const builder = yield* GameTextIndexBuilder;
+                    const queries = yield* GameTextIndexQuery;
+                    const snapshots = [];
+                    for (const [step, state] of states.entries()) {
+                        const sorted = [...state].sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)));
+                        const result = yield* builder.withSession({ configuration }, Effect.gen(function* () {
+                            const refresh = yield* builder.refreshPackageTextLayer({
+                                inventory: sorted.map((value) => ({
+                                    path: value.path,
+                                    signature: createHash("sha256")
+                                        .update(JSON.stringify(value))
+                                        .digest("hex"),
+                                    headerData: step === 3 && value.path === first.path
+                                        ? { ...header, packageFlags: 0 }
+                                        : header
+                                })),
+                                read: (wanted) => Stream.fromIterable([...wanted]
+                                    .reverse()
+                                    .map((path) => sorted.find((value) => value.path === path)))
+                            });
+                            yield* builder.refreshJoinedTarget({
+                                projectRoot,
+                                target: sourceTarget
+                            });
+                            return refresh;
+                        }));
+                        // The reference writer replaces no records, so it reads the shard again.
+                        if (step === 1 && backend === "native")
+                            expect(result.readPackages).toBe(1);
+                        const joined = yield* openJoinedTarget().pipe(Effect.provide(sharedIndexNodeLayer(configuration)));
+                        const native = yield* queries.open({
+                            configuration,
+                            storeEpoch: joined.reader.manifest.generation,
+                            joinedKey: joined.reader.manifest.active.joined
+                        });
+                        if (backend === "native") {
+                            const owner = yield* Scope.make();
+                            const borrowed = yield* queries
+                                .open({
+                                joinedKey: joined.reader.manifest.active.joined,
+                                storeEpoch: joined.reader.manifest.generation,
+                                configuration
+                            })
+                                .pipe(Effect.provideService(Scope.Scope, owner));
+                            expect(borrowed).toBe(native);
+                            yield* Scope.close(owner, Exit.void);
+                        }
+                        expect(yield* native.summary, `${backend} step ${step}`).toEqual(summaries[step]);
+                        const reader = yield* (yield* SharedIndex).open;
+                        const records = yield* decodePackageTextColumns(yield* reader.layer(`package-text.${packageTextShard(first.path)}`));
+                        snapshots.push({
+                            records,
+                            summary: yield* native.summary,
+                            page: yield* native.search({
+                                query: "",
+                                capability: "all",
+                                pageSize: 50
+                            })
+                        });
+                        if (backend === "native" && step === states.length - 1) {
+                            const invalid = yield* decodeTextCorpusSearchRequest({
+                                query: "",
+                                capability: "all",
+                                pageSize: 1,
+                                localization: { target: "OtherTarget" }
+                            }).pipe(Effect.orDie);
+                            expect(Result.isFailure(yield* native.search(invalid).pipe(Effect.result))).toBe(true);
+                            const request = {
+                                configuration,
+                                storeEpoch: joined.reader.manifest.generation,
+                                joinedKey: joined.reader.manifest.active.joined
+                            };
+                            const recovered = yield* queries.open(request);
+                            expect(recovered).not.toBe(native);
+                            yield* native.search(invalid).pipe(Effect.result);
+                            expect(yield* queries.open(request)).toBe(recovered);
+                            expect(yield* recovered.summary).toEqual(summaries[step]);
+                        }
+                    }
+                    return snapshots;
+                })).pipe(Effect.provide(Layer.provideMerge(sharedIndexNodeLayer(configuration), backend === "native"
+                    ? nativeIndexBuilderLayer({
+                        executable,
+                        timeoutMs: 30000,
+                        catalogTimeoutMs: 120000
+                    })
+                    : typeScriptIndexBuilderLayer)))));
+            }
+            expect(outputs[1]).toEqual(outputs[0]);
+        }
+        finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    }, 300_000);
+    it("refreshes a change to every shard in place, as a fresh build of the same inventory", async () => {
+        if (!executable)
+            throw new Error("Native reader required");
+        const root = await mkdtemp(join(tmpdir(), "ue-shed-package-delta-all-"));
+        try {
+            const builderLayer = nativeIndexBuilderLayer({
+                executable,
+                timeoutMs: 60_000,
+                catalogTimeoutMs: 120_000
+            });
+            const before = new Map();
+            for (let id = 0; id < 1200; id++) {
+                const path = `Content/Folder${id % 13}/Item${id}.uasset`;
+                before.set(path, { path, text: id % 3 === 0, revision: 0 });
+            }
+            // The change adds 600 packages, 20 with text, edits 40 with text and deletes 30, so
+            // nearly every shard changes.
+            const after = new Map(before);
+            for (let id = 1200; id < 1800; id++) {
+                const path = `Content/External/Actor${id}.uasset`;
+                after.set(path, { path, text: id % 30 === 0, revision: 0 });
+            }
+            for (let id = 0; id < 120; id += 3) {
+                const path = `Content/Folder${id % 13}/Item${id}.uasset`;
+                after.set(path, { ...before.get(path), revision: 1 });
+            }
+            for (let id = 1; id < 90; id += 3)
+                after.delete(`Content/Folder${id % 13}/Item${id}.uasset`);
+            const inventory = (packages) => [...packages.values()]
+                .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)))
+                .map((entry) => ({
+                path: entry.path,
+                signature: `${entry.revision}`,
+                headerData: { ...header, packageFlags: entry.text ? 0x40000 : 0 }
+            }));
+            const refresh = (cacheRoot, packages) => {
+                const configuration = { cacheRoot, projectKey: "all-shards", targetKey: "text" };
+                const progress = [];
+                return Effect.gen(function* () {
+                    const builder = yield* GameTextIndexBuilder;
+                    const result = yield* builder.withSession({ configuration }, Effect.scoped(builder.refreshPackageTextLayer({
+                        inventory: inventory(packages),
+                        read: (paths) => Stream.fromIterable(paths).pipe(Stream.map((path) => {
+                            const entry = packages.get(path);
+                            return record(path, `${path} r${entry.revision}`, path);
+                        }))
+                    })));
+                    const layers = yield* Effect.gen(function* () {
+                        const reader = yield* (yield* SharedIndex).open;
+                        const layers = {};
+                        for (const name of Object.keys(reader.manifest.active).sort())
+                            if (name.startsWith("package-text."))
+                                layers[name] = {
+                                    key: reader.manifest.active[name],
+                                    records: yield* decodePackageTextColumns(yield* reader.layer(name))
+                                };
+                        return layers;
+                    }).pipe(Effect.scoped, Effect.provide(sharedIndexNodeLayer(configuration)));
+                    return { result, layers, progress };
+                }).pipe(Effect.provideService(GameTextIndexProgressReporter, (event) => {
+                    progress.push(event);
+                }));
+            };
+            const outcome = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+                yield* refresh(join(root, "refreshed"), before);
+                return {
+                    refreshed: yield* refresh(join(root, "refreshed"), after),
+                    fresh: yield* refresh(join(root, "fresh"), after)
+                };
+            })).pipe(Effect.provide(builderLayer)));
+            const { refreshed, fresh } = outcome;
+            expect(refreshed.layers).toEqual(fresh.layers);
+            expect(Object.keys(refreshed.layers)).toHaveLength(256);
+            expect(refreshed.result.changedShards).toBeGreaterThan(200);
+            // Only the added and edited packages with text are read.
+            expect(refreshed.result.readPackages).toBe(20 + 40);
+            const phases = refreshed.progress.map((event) => event.phase);
+            expect(phases).toContain("package_update");
+            expect(phases).not.toContain("package_publish");
+            expect(refreshed.progress.find((event) => event.phase === "package_read")).toEqual({
+                phase: "package_read",
+                completed: 0,
+                total: 60,
+                // The held packages neither edited nor deleted.
+                unchanged: 1200 - 40 - 30
+            });
+            expect(fresh.progress.map((event) => event.phase)).toContain("package_publish");
+        }
+        finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    }, 300_000);
+    it("keeps the host's heap flat however much changed text an in-place refresh reads", async () => {
+        if (!executable)
+            throw new Error("Native reader required");
+        setFlagsFromString("--expose-gc");
+        // SAFETY: --expose-gc, set just above, defines `gc` in every new context.
+        const gc = runInNewContext("gc");
+        const heap = () => {
+            gc();
+            return process.memoryUsage().heapUsed;
+        };
+        const root = await mkdtemp(join(tmpdir(), "ue-shed-package-delta-heap-"));
+        try {
+            // Two text packages in every shard; the refresh gives one of each a distinct 256 KiB
+            // source, 64 MiB of changed text in all, read one package at a time.
+            const changed = [], kept = [];
+            for (let id = 0; changed.length < 256 || kept.length < 256; id++) {
+                const path = `Content/Large/Item${id}.uasset`;
+                const shard = packageTextShard(path);
+                if (!changed.some((other) => packageTextShard(other) === shard))
+                    changed.push(path);
+                else if (!kept.some((other) => packageTextShard(other) === shard))
+                    kept.push(path);
+            }
+            const inventory = (revision) => [...changed, ...kept]
+                .sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
+                .map((path) => ({
+                path,
+                signature: changed.includes(path) ? `${revision}` : "0",
+                headerData: header
+            }));
+            const large = 256 * 1024;
+            // A flat string: `repeat` builds a rope that shares its parts and would cost nothing.
+            const text = (path) => {
+                const fill = Buffer.alloc(large - path.length - 1, 0x61 + (path.length % 26));
+                return `${path}:${fill.toString("latin1")}`;
+            };
+            const sample = { reads: 0, start: 0, end: 0 };
+            const configuration = { cacheRoot: root, projectKey: "heap", targetKey: "text" };
+            const refresh = (revision) => Effect.gen(function* () {
+                const builder = yield* GameTextIndexBuilder;
+                return yield* builder.withSession({ configuration }, Effect.scoped(builder.refreshPackageTextLayer({
+                    inventory: inventory(revision),
+                    read: (paths) => Stream.fromIterable(paths, { chunkSize: 1 }).pipe(Stream.map((path) => {
+                        if (revision && sample.reads++ === 0)
+                            sample.start = heap();
+                        return record(path, revision ? text(path) : path, path);
+                    }), 
+                    // The whole read has passed through the host here.
+                    Stream.onEnd(Effect.sync(() => {
+                        if (revision)
+                            sample.end = heap();
+                    })))
+                })));
+            });
+            const result = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+                yield* refresh(0);
+                return yield* refresh(1);
+            })).pipe(Effect.provide(nativeIndexBuilderLayer({
+                executable,
+                timeoutMs: 120_000,
+                catalogTimeoutMs: 120_000
+            }))));
+            expect(result).toMatchObject({ readPackages: 256, reusedPackages: 256 });
+            // Holding the read records would retain the 64 MiB the read passed through.
+            expect(sample.end - sample.start).toBeLessThan(16 * 1024 * 1024);
+            const stored = await Effect.runPromise(Effect.gen(function* () {
+                const reader = yield* (yield* SharedIndex).open;
+                return yield* decodePackageTextColumns(yield* reader.layer(`package-text.${packageTextShard(changed[0])}`));
+            }).pipe(Effect.scoped, Effect.provide(sharedIndexNodeLayer(configuration))));
+            const updated = stored.find((item) => item.path === changed[0]);
+            expect(updated?.evidence.event === "text_package_record" &&
+                updated.evidence.occurrences[0]?.source.length).toBe(large);
+        }
+        finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    }, 300_000);
+});

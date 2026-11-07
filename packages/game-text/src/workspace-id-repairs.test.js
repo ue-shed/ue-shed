@@ -1,0 +1,549 @@
+import { GameTextWorkspaceHostFailure } from "./workspace-host.js";
+import { resolve } from "node:path";
+import { it } from "@effect/vitest";
+import { expect } from "vitest";
+import { Layer, Effect, Schema, Stream } from "effect";
+import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
+import { RemoteControlClientError, makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
+import { GameTextActionsRequest } from "@ue-shed/protocol";
+import { makeGameTextIdRepairs } from "./workspace-id-repairs.js";
+import { TextIdRepairRequest } from "./id-repair-schema.js";
+import { makeTextOccurrenceId, makeTextUnitId } from "./identifiers.js";
+import { textOccurrenceFromExtraction } from "./corpus.js";
+import { emptyPackageTextRecord } from "./package-text-record.js";
+const decodeJsonEffect = Schema.decodeEffect(Schema.Json);
+const decodeActionsRequestJson = Schema.decodeUnknownEffect(Schema.fromJsonString(GameTextActionsRequest));
+// A rooted path on every platform, so artifact paths resolve the same on Windows and Linux.
+const root = resolve("/Fixture").replaceAll("\\", "/");
+const original = {
+    source: "Keep the lamp lit",
+    dev_notes: "",
+    identity: { status: "resolved", namespace: "Notes", key: "Lamp" },
+    location: {
+        kind: "asset_property",
+        object_path: "/Game/Notes.Notes",
+        class_path: "/Script/Fixture.Notes",
+        property_path: "Text"
+    },
+    edit_capability: "read_only"
+};
+const occurrence = textOccurrenceFromExtraction({
+    packageFile: "Content/Notes.uasset",
+    occurrence: original
+});
+const unitId = makeTextUnitId("unit:lamp");
+const focus = {
+    occurrences: [occurrence],
+    totalOccurrences: 1,
+    diagnostics: [],
+    unit: {
+        id: unitId,
+        source: { status: "consistent", value: original.source },
+        identity: occurrence.identity,
+        contexts: [],
+        locationKinds: ["asset_property"],
+        characterCount: 17,
+        wordCount: 4,
+        occurrenceCount: 1,
+        remainingContextCount: 0,
+        reviewSignals: []
+    }
+};
+const request = TextIdRepairRequest.make({
+    projectKey: root,
+    title: "New key",
+    changes: [
+        { unitId, occurrence, edit: { kind: "change_key", namespace: "Notes", key: "NewLamp" } }
+    ]
+});
+function setup(dataTable = false, authoring = false) {
+    const extracted = dataTable
+        ? {
+            ...original,
+            location: {
+                kind: "data_table_cell",
+                object_path: "/Game/Notes.Notes",
+                row: "Row",
+                property_path: "Text"
+            },
+            edit_capability: "source_editable"
+        }
+        : original;
+    const reviewed = textOccurrenceFromExtraction({
+        packageFile: "Content/Notes.uasset",
+        occurrence: extracted
+    });
+    const tableRequest = TextIdRepairRequest.make({
+        ...request,
+        changes: [{ ...request.changes[0], occurrence: reviewed }]
+    });
+    const calls = [];
+    const files = new Map();
+    let currentRoot = root;
+    let editorRoot = root;
+    let session = "session-1";
+    let mutations = 0;
+    let savesFail = false;
+    let focusValue = { ...focus, occurrences: [reviewed] };
+    let focusReads = 0;
+    // Runs once, after the first page is served: a rescan between two pages.
+    let afterFirstPage;
+    let readerFails = false;
+    let readerRetrySafe = false;
+    let lostReply = false;
+    const native = makeRemoteControlClientTestLayer((call) => Effect.gen(function* () {
+        calls.push(call.functionName);
+        if (call.functionName === "GetCapabilityManifest")
+            return yield* decodeJsonEffect({
+                schemaVersion: 1,
+                producerKind: "unreal_editor",
+                capabilities: [
+                    "game-text.actions.v1",
+                    "game-text.actions.key-repairs.v1",
+                    ...(authoring ? ["authoring.snapshot.v2"] : [])
+                ],
+                ...(authoring
+                    ? {
+                        authoringObjectPath: "/Script/UEShedAuthoring.Default__UEShedAuthoringLibrary"
+                    }
+                    : undefined),
+                gameTextObjectPath: "/Script/UEShedGameText.Default__UEShedGameTextLibrary",
+                identity: {
+                    engineVersion: "5.8",
+                    processId: 1,
+                    sessionId: session,
+                    plugins: []
+                }
+            }).pipe(Effect.orDie);
+        const input = yield* decodeActionsRequestJson(call.parameters.RequestJson).pipe(Effect.orDie);
+        if (input.mode === "apply")
+            mutations++;
+        if (input.mode === "apply" && lostReply)
+            return yield* new RemoteControlClientError({
+                code: "request_timeout",
+                endpoint: call.endpoint,
+                functionName: call.functionName,
+                operation: call.operation ?? "repair",
+                message: "Reply lost",
+                recovery: "Inspect Unreal",
+                retrySafe: false,
+                nextStep: "reconcile"
+            });
+        const result = {
+            contract: input.contract,
+            version: input.version,
+            mode: input.mode,
+            status: savesFail && input.mode === "apply" ? "failed" : "ok",
+            rolledBack: false,
+            actions: input.actions.map((action) => ({
+                id: action.id,
+                place: action.place,
+                before: action.expected,
+                after: { namespace: "Notes", key: "NewLamp", source: original.source },
+                status: input.mode === "apply" ? "applied" : "planned"
+            })),
+            packages: [
+                {
+                    packageName: "/Game/Notes",
+                    packageFile: `${root}/Content/Notes.uasset`,
+                    saved: input.mode === "apply" && !savesFail,
+                    persistence: input.mode === "apply" && !savesFail ? "saved" : "unsaved"
+                }
+            ],
+            blueprints: [],
+            errors: savesFail && input.mode === "apply"
+                ? [
+                    {
+                        code: "save_failed",
+                        message: "Read only",
+                        recovery: "Save in Unreal",
+                        retrySafe: false,
+                        nextStep: "reconcile"
+                    }
+                ]
+                : []
+        };
+        return yield* decodeJsonEffect(result).pipe(Effect.orDie);
+    }));
+    const unused = Effect.suspend(() => Effect.die("Unexpected reader operation"));
+    const reader = makeAssetReaderTestLayer({
+        configuration: unused,
+        discoverAssets: () => unused,
+        discoverTables: () => unused,
+        extractProjectText: () => Stream.die("Unused"),
+        extractProjectTextures: () => Stream.die("Unused"),
+        readAsset: () => unused,
+        readBlueprint: () => unused,
+        readLevelSequence: () => unused,
+        readTable: () => unused,
+        readSavedWorld: () => unused,
+        scanProject: () => unused,
+        scanProgress: unused,
+        savedWorldProgress: unused,
+        source: unused,
+        extractProjectTextPackages: () => readerFails
+            ? Stream.fail(new AssetReaderError({
+                kind: "process",
+                operation: "extract_text_packages",
+                message: "Reader failed",
+                recovery: "Inspect the saved receipt",
+                retrySafe: readerRetrySafe,
+                nextStep: readerRetrySafe ? "retry" : "reconcile"
+            }))
+            : Stream.make({
+                ...emptyPackageTextRecord(`${root}/Content/Notes.uasset`),
+                occurrences: [
+                    {
+                        ...extracted,
+                        identity: { status: "resolved", namespace: "Notes", key: "NewLamp" }
+                    }
+                ]
+            })
+    });
+    const make = makeGameTextIdRepairs({
+        workspace: {
+            // Pages as the engine does: an unknown cursor serves the first page again.
+            focus: (input) => Effect.sync(() => {
+                focusReads++;
+                const all = focusValue.occurrences;
+                const start = input.occurrenceCursor === undefined
+                    ? 0
+                    : all.findIndex((item) => item.id === input.occurrenceCursor) + 1;
+                const occurrences = all.slice(start, start + input.pageSize);
+                const next = start + input.pageSize < all.length ? occurrences.at(-1) : undefined;
+                const page = {
+                    ...focusValue,
+                    occurrences,
+                    totalOccurrences: all.length,
+                    ...(next === undefined ? undefined : { nextOccurrenceCursor: next.id })
+                };
+                afterFirstPage?.();
+                afterFirstPage = undefined;
+                return { status: "found", focus: page };
+            }),
+            beginOperation: Effect.succeed(true),
+            endOperation: Effect.void
+        },
+        current: Effect.sync(() => ({ status: "ready", project: { projectRoot: currentRoot } })),
+        endpoint: Effect.succeed("http://127.0.0.1:30010"),
+        editorProject: () => Effect.succeed(editorRoot),
+        files: {
+            readFileWithin: (directory, path) => Effect.try({
+                try: () => {
+                    const bytes = files.get(`${directory}/${path}`.replaceAll("\\", "/"));
+                    if (!bytes)
+                        throw new Error("Missing artifact");
+                    return bytes;
+                },
+                catch: (cause) => new GameTextWorkspaceHostFailure({
+                    message: "Missing artifact",
+                    recovery: "Choose the original project and review again.",
+                    cause,
+                    retrySafe: false,
+                    nextStep: "reconcile"
+                })
+            }),
+            writeFile: (path, bytes, options) => Effect.try({
+                try: () => {
+                    const key = path.replaceAll("\\", "/");
+                    if (options?.exclusive && files.has(key))
+                        throw new Error("Already exists");
+                    files.set(key, bytes);
+                },
+                catch: (cause) => new GameTextWorkspaceHostFailure({
+                    message: "Already claimed",
+                    recovery: "Inspect the saved receipt.",
+                    cause,
+                    retrySafe: false,
+                    nextStep: "reconcile"
+                })
+            })
+        }
+    }).pipe(Effect.provide(Layer.provideMerge(native, reader)));
+    return {
+        make,
+        calls,
+        tableRequest,
+        files,
+        mutations: () => mutations,
+        project: (value) => {
+            currentRoot = value;
+        },
+        editor: (value) => {
+            editorRoot = value;
+        },
+        session: (value) => {
+            session = value;
+        },
+        stale: () => {
+            focusValue = { ...focus, occurrences: [] };
+        },
+        /**
+         * The unit's places: `count` others, named from `prefix`, with the reviewed place at `at`.
+         * With `without`, that other is left out and one more is named instead.
+         */
+        places: (count, at, prefix = "Other", without) => {
+            const others = Array.from({ length: count + (without === undefined ? 0 : 1) }, (_, index) => textOccurrenceFromExtraction({
+                packageFile: "Content/Notes.uasset",
+                occurrence: {
+                    ...extracted,
+                    location: { ...extracted.location, property_path: `${prefix}${index}` }
+                }
+            })).filter((_, index) => index !== without);
+            focusValue = {
+                ...focus,
+                occurrences: [...others.slice(0, at), reviewed, ...others.slice(at)]
+            };
+        },
+        changeAfterFirstPage: (change) => {
+            afterFirstPage = change;
+        },
+        focusReads: () => focusReads,
+        saveFails: () => {
+            savesFail = true;
+        },
+        failReader: (retrySafe = false) => {
+            readerFails = true;
+            readerRetrySafe = retrySafe;
+        },
+        loseReply: () => {
+            lostReply = true;
+        }
+    };
+}
+it.effect("prepares without mutation, verifies saved files and prevents replay across service restart", () => Effect.gen(function* () {
+    const test = setup();
+    const service = yield* test.make;
+    const preview = yield* service.prepare(request);
+    expect(preview.status).toBe("prepared");
+    expect(test.mutations()).toBe(0);
+    if (preview.status !== "prepared")
+        return;
+    expect(test.files.size).toBe(1);
+    const result = yield* service.apply(preview.plan.id);
+    expect(result).toMatchObject({ status: "finished", verified: true });
+    const restarted = yield* test.make;
+    expect(yield* restarted.apply(preview.plan.id)).toMatchObject({
+        status: "unavailable",
+        nextStep: "reconcile"
+    });
+    expect(test.mutations()).toBe(1);
+}));
+it.effect("refuses a proposal claimed by another process before any mutation", () => Effect.gen(function* () {
+    const test = setup();
+    const first = yield* test.make;
+    const preview = yield* first.prepare(request);
+    if (preview.status !== "prepared")
+        throw new Error(JSON.stringify(preview));
+    test.files.set(`${root}/Saved/UEShed/GameTextActions/${preview.plan.id}.started.json`, new Uint8Array());
+    const second = yield* test.make;
+    expect(yield* second.apply(preview.plan.id)).toMatchObject({
+        status: "unavailable",
+        nextStep: "reconcile"
+    });
+    expect(test.mutations()).toBe(0);
+}));
+it.effect("retains mutation outcomes when verification fails, and does not replay a lost reply", () => Effect.gen(function* () {
+    // A retry-safe re-read after the save still leaves the claimed repair to reconcile.
+    for (const kind of ["reader", "retry-safe reader", "reply"]) {
+        const test = setup();
+        const service = yield* test.make;
+        const preview = yield* service.prepare(request);
+        if (preview.status !== "prepared")
+            throw new Error(JSON.stringify(preview));
+        if (kind === "reply")
+            test.loseReply();
+        else
+            test.failReader(kind === "retry-safe reader");
+        expect(yield* service.apply(preview.plan.id)).toMatchObject({
+            status: "unavailable",
+            retrySafe: false,
+            nextStep: "reconcile"
+        });
+        const receiptBytes = test.files.get(`${root}/${preview.plan.artifact}`);
+        expect(receiptBytes).toBeDefined();
+        if (!receiptBytes)
+            return;
+        const receipt = new TextDecoder().decode(receiptBytes);
+        expect(receipt).toContain(kind === "reply" ? '"state":"started"' : '"state":"finished"');
+        if (kind !== "reply")
+            expect(receipt).toContain('"status":"applied"');
+        const restarted = yield* test.make;
+        expect((yield* restarted.apply(preview.plan.id)).status).toBe("unavailable");
+        expect(test.mutations()).toBe(1);
+    }
+}));
+it.effect("refuses changed selected projects, editor projects, sessions and stale places", () => Effect.gen(function* () {
+    for (const kind of ["project", "editor", "session", "stale"]) {
+        const test = setup();
+        const service = yield* test.make;
+        const preview = yield* service.prepare(request);
+        if (preview.status !== "prepared")
+            throw new Error(JSON.stringify(preview));
+        if (kind === "stale")
+            test.stale();
+        else
+            test[kind]("different");
+        const result = yield* service.apply(preview.plan.id);
+        expect(result.status).toBe("unavailable");
+        // Refusals before any mutation keep their own guidance instead of demanding reconciliation.
+        if (kind === "editor" || kind === "stale")
+            expect(result).toMatchObject({ retrySafe: true, nextStep: "fix_input" });
+        expect(test.mutations()).toBe(0);
+    }
+}));
+it.effect("retains live applied outcomes after save failure and never replays them", () => Effect.gen(function* () {
+    const test = setup();
+    const service = yield* test.make;
+    const preview = yield* service.prepare(request);
+    if (preview.status !== "prepared")
+        throw new Error(JSON.stringify(preview));
+    test.saveFails();
+    const result = yield* service.apply(preview.plan.id);
+    expect(result).toMatchObject({
+        status: "finished",
+        verified: false,
+        result: {
+            status: "failed",
+            actions: [{ status: "applied" }],
+            packages: [{ persistence: "unsaved" }]
+        }
+    });
+    expect((yield* service.apply(preview.plan.id)).status).toBe("unavailable");
+    expect(test.mutations()).toBe(1);
+}));
+it.effect("rejects duplicate or forged occurrences before any editor mutation", () => Effect.gen(function* () {
+    const test = setup();
+    const service = yield* test.make;
+    expect((yield* service.prepare({
+        ...request,
+        changes: [...request.changes, ...request.changes]
+    })).status).toBe("unavailable");
+    expect((yield* service.prepare({
+        ...request,
+        changes: request.changes.map((change) => ({
+            ...change,
+            occurrence: {
+                ...change.occurrence,
+                packageFile: "../Other/Content/Notes.uasset"
+            }
+        }))
+    })).status).toBe("unavailable");
+    expect(test.mutations()).toBe(0);
+}));
+it.effect("repairs simple DataTable cells through Game Text when Authoring is absent", () => Effect.gen(function* () {
+    const test = setup(true);
+    const service = yield* test.make;
+    const preview = yield* service.prepare(test.tableRequest);
+    expect(preview.status).toBe("prepared");
+    if (preview.status !== "prepared")
+        throw new Error(JSON.stringify(preview));
+    expect(preview.plan.authoring).toBeUndefined();
+    expect(preview.plan.preview.actions[0]?.place.selector).toEqual({
+        kind: "data_table_cell",
+        row: "Row"
+    });
+    expect(yield* service.apply(preview.plan.id)).toMatchObject({
+        status: "finished",
+        verified: true
+    });
+    expect(test.mutations()).toBe(1);
+    expect(test.calls.every((name) => ["GetCapabilityManifest", "ApplyTextActions"].includes(name))).toBe(true);
+    expect(new TextDecoder().decode(test.files.get(`${root}/${preview.plan.artifact}`))).toContain('"state":"finished"');
+}));
+it.effect("regenerates cell keys through Game Text even when Authoring is present", () => Effect.gen(function* () {
+    const test = setup(true, true);
+    const service = yield* test.make;
+    const preview = yield* service.prepare({
+        ...test.tableRequest,
+        changes: test.tableRequest.changes.map((change) => ({
+            ...change,
+            edit: { kind: "regenerate_key" }
+        }))
+    });
+    expect(preview.status).toBe("prepared");
+    if (preview.status !== "prepared")
+        throw new Error(JSON.stringify(preview));
+    expect(preview.plan.authoring).toBeUndefined();
+    expect(yield* service.apply(preview.plan.id)).toMatchObject({
+        status: "finished",
+        verified: true
+    });
+    expect(test.mutations()).toBe(1);
+    expect(test.calls.every((name) => ["GetCapabilityManifest", "ApplyTextActions"].includes(name))).toBe(true);
+}));
+it.effect("DataTable fallback retains stale-place and saved-verification refusals", () => Effect.gen(function* () {
+    for (const kind of ["stale", "save", "reader"]) {
+        const test = setup(true);
+        const service = yield* test.make;
+        const preview = yield* service.prepare(test.tableRequest);
+        if (preview.status !== "prepared")
+            throw new Error(JSON.stringify(preview));
+        if (kind === "stale")
+            test.stale();
+        else if (kind === "save")
+            test.saveFails();
+        else
+            test.failReader();
+        const result = yield* service.apply(preview.plan.id);
+        if (kind === "save")
+            expect(result).toMatchObject({ status: "finished", verified: false });
+        else
+            expect(result.status).toBe("unavailable");
+        expect(test.mutations()).toBe(kind === "stale" ? 0 : 1);
+    }
+}));
+it.effect("finds a reviewed place beyond the unit's first page, reading the unit once", () => Effect.gen(function* () {
+    const test = setup();
+    test.places(1200, 1100);
+    const service = yield* test.make;
+    const preview = yield* service.prepare(request);
+    expect(preview.status).toBe("prepared");
+    // Three pages of 500 for 1,201 places.
+    expect(test.focusReads()).toBe(3);
+    const [change] = request.changes;
+    if (change === undefined)
+        throw new Error("The request has a change.");
+    const twice = yield* service.prepare({
+        ...request,
+        changes: [
+            change,
+            {
+                ...change,
+                occurrence: { ...occurrence, id: makeTextOccurrenceId("not-a-place") }
+            }
+        ]
+    });
+    // The second change shares the unit, which is not read again before it is refused.
+    expect(twice.status).toBe("unavailable");
+    expect(test.focusReads()).toBe(6);
+    expect(test.mutations()).toBe(0);
+}));
+it.effect("refuses a unit that changes between its pages", () => Effect.gen(function* () {
+    for (const change of ["grown", "shrunk"]) {
+        const test = setup();
+        test.places(1200, 1100);
+        test.changeAfterFirstPage(() => change === "grown" ? test.places(1300, 1100) : test.places(800, 700));
+        const service = yield* test.make;
+        expect(yield* service.prepare(request)).toMatchObject({
+            status: "unavailable",
+            message: "A reviewed place is no longer in the current scan.",
+            retrySafe: true
+        });
+        expect(test.mutations()).toBe(0);
+    }
+}));
+it.effect("refuses a unit whose cursor is lost, rather than reading the first page forever", () => Effect.gen(function* () {
+    // The same number of places, but the cursor's place is gone, so the engine serves the
+    // first page again: with the places seen already, or with every place renamed.
+    for (const prefix of ["Other", "Moved"]) {
+        const test = setup();
+        test.places(1200, 1100);
+        test.changeAfterFirstPage(() => prefix === "Other"
+            ? test.places(1200, 1100, prefix, 499)
+            : test.places(1200, 1100, prefix));
+        const service = yield* test.make;
+        expect((yield* service.prepare(request)).status).toBe("unavailable");
+        expect(test.focusReads()).toBeLessThanOrEqual(4);
+    }
+}));

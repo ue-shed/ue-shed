@@ -1,0 +1,172 @@
+import { it } from "@effect/vitest";
+import { Effect, Schema } from "effect";
+import { describe, expect } from "vitest";
+import { withIndexedCorpus } from "./indexed-corpus.test-support.js";
+import { joinLocalizationTarget } from "./localization.js";
+import { applyLocalizationKeyChanges, localizationKeyChanges, localizationKeyChangesAcross, manifestPlace } from "./localization-key-changes.js";
+import { archiveEntry, corpus, cultureCode, evidence, ftextUnit, manifestEntry, target, unit } from "./localization.test-support.js";
+import { TextUnit } from "./schema.js";
+const decodeTextUnit = Schema.decodeSync(TextUnit);
+function cell(key, source, row = "Start") {
+    return decodeTextUnit({
+        id: `unit:${key}`,
+        source: { status: "consistent", value: source },
+        identity: { status: "resolved", namespace: "NS", key },
+        occurrences: [
+            {
+                id: `occurrence:${key}`,
+                devNotes: "",
+                packageFile: "Content/Text/DT_Menu.uasset",
+                source,
+                identity: { status: "resolved", namespace: "NS", key },
+                editCapability: "source_editable",
+                location: {
+                    kind: "data_table_cell",
+                    objectPath: "/Game/Text/DT_Menu.DT_Menu",
+                    row,
+                    propertyPath: "Label"
+                }
+            }
+        ]
+    });
+}
+function scanned(units) {
+    return {
+        ...corpus(units),
+        packageCoverage: [
+            { packageFile: "Content/Text/Table.uasset", status: "complete" },
+            { packageFile: "Content/Text/DT_Menu.uasset", status: "complete" }
+        ]
+    };
+}
+describe("localization key changes", () => {
+    it("pairs saved package namespaces using the gathered identity", () => {
+        const text = scanned([
+            ftextUnit("Renamed", "Welcome back", "Content/Text/Table.uasset", "NS [PKG]")
+        ]);
+        const joined = joinLocalizationTarget(text, evidence([manifestEntry("Welcome", "Welcome back")], [archiveEntry("Welcome", "Welcome back", "Willkommen zurück")]));
+        const { pairs } = localizationKeyChanges(joined, text);
+        expect(pairs).toHaveLength(1);
+        expect(pairs[0]).toMatchObject({
+            from: { namespace: "NS", key: "Welcome" },
+            to: { namespace: "NS", key: "Renamed" },
+            translations: [{ culture: "de", translation: "Willkommen zurück" }]
+        });
+        expect(applyLocalizationKeyChanges(joined, pairs).lines.find((line) => line.identity?.key === "Renamed")?.keyChange?.direction).toBe("to");
+    });
+    it("pairs a DataTable cell whose key changed by its saved place, even when the text changed", () => {
+        const text = scanned([cell("NewKey", "Start the game")]);
+        const joined = joinLocalizationTarget(text, evidence([manifestEntry("OldKey", "Start game", "/Game/Text/DT_Menu.DT_Menu.Start.Label")], [archiveEntry("OldKey", "Start game", "Spiel starten")]));
+        const { pairs, ambiguous } = localizationKeyChanges(joined, text);
+        expect(ambiguous).toBe(0);
+        expect(pairs).toEqual([
+            {
+                from: { namespace: "NS", key: "OldKey" },
+                to: { namespace: "NS", key: "NewKey" },
+                match: "same_place",
+                sourceChanged: true,
+                previousSource: "Start game",
+                // The native culture's "translation" is its source and is never carried.
+                translations: [{ culture: cultureCode("de"), translation: "Spiel starten" }]
+            }
+        ]);
+    });
+    it("pairs String Table entries by unchanged text in the same table", () => {
+        const text = scanned([unit("Renamed", "Welcome back")]);
+        const joined = joinLocalizationTarget(text, evidence([manifestEntry("Welcome", "Welcome back")], [archiveEntry("Welcome", "Welcome back", "Willkommen zurück")]));
+        const [found] = localizationKeyChanges(joined, text).pairs;
+        expect(found?.match).toBe("same_text_in_package");
+        expect(found?.sourceChanged).toBe(false);
+    });
+    it("never pairs String Table entries by the table path every entry shares", () => {
+        const text = scanned([]);
+        const before = joinLocalizationTarget(text, evidence([manifestEntry("Removed", "Temporary instruction")], []));
+        const after = joinLocalizationTarget(text, evidence([manifestEntry("Added", "A new instruction")], []));
+        expect(localizationKeyChangesAcross(before, after)).toEqual({ pairs: [], ambiguous: 0 });
+        expect(manifestPlace("/Game/Text/Table.Table")).toBeUndefined();
+        expect(manifestPlace("/Game/Text/DT.DT.Row.Label")).toBe("/game/text/dt.dt.row.label");
+        expect(manifestPlace("Source/Game/Private/Menu.cpp(12)")).toBe("source/game/private/menu.cpp[12]");
+    });
+    it("leaves ambiguous candidates unpaired and counts them", () => {
+        const text = scanned([unit("First", "OK"), unit("Second", "OK")]);
+        const joined = joinLocalizationTarget(text, evidence([manifestEntry("Old", "OK")], [archiveEntry("Old", "OK", "OK")]));
+        expect(localizationKeyChanges(joined, text)).toEqual({ pairs: [], ambiguous: 2 });
+    });
+    it("never pairs by text that a line whose key did not change also has", () => {
+        const kept = "/Game/Text/Kept.Kept";
+        // Across a gather: Removed and Added both say OK, and so does the unchanged Kept.
+        const before = joinLocalizationTarget(scanned([]), evidence([
+            manifestEntry("Removed", "OK", "/Game/Text/Old.Old"),
+            manifestEntry("Kept", "OK", kept)
+        ], [archiveEntry("Removed", "OK", "Okay")]));
+        const after = joinLocalizationTarget(scanned([]), evidence([
+            manifestEntry("Added", "OK", "/Game/Text/New.New"),
+            manifestEntry("Kept", "OK", kept)
+        ], []));
+        expect(localizationKeyChangesAcross(before, after)).toEqual({ pairs: [], ambiguous: 1 });
+        // Before a gather: the earlier key is in a fully read table, the new one in another asset.
+        const text = scanned([
+            unit("Added", "OK", "Content/Text/New.uasset"),
+            unit("Kept", "OK", "Content/Text/Kept.uasset")
+        ]);
+        const joined = joinLocalizationTarget(text, evidence([manifestEntry("Removed", "OK"), manifestEntry("Kept", "OK", kept)], [archiveEntry("Removed", "OK", "Okay")]));
+        expect(localizationKeyChanges(joined, text)).toEqual({ pairs: [], ambiguous: 1 });
+        // Without the unchanged line the text is unique, and the keys pair.
+        const alone = joinLocalizationTarget(scanned([]), evidence([manifestEntry("Added", "OK", "/Game/Text/New.New")], []));
+        const unique = joinLocalizationTarget(scanned([]), evidence([manifestEntry("Removed", "OK", "/Game/Text/Old.Old")], [archiveEntry("Removed", "OK", "Okay")]));
+        expect(localizationKeyChangesAcross(unique, alone).pairs[0]?.match).toBe("same_text");
+    });
+    it("counts unpaired keys in linear time", () => {
+        const earlier = joinLocalizationTarget(scanned([]), evidence(Array.from({ length: 8000 }, (_, index) => manifestEntry(`Old${index}`, `Old text ${index}`, `/Game/Text/Old${index}.Old`)), []));
+        const later = joinLocalizationTarget(scanned([]), evidence(Array.from({ length: 8000 }, (_, index) => manifestEntry(`New${index}`, `New text ${index}`, `/Game/Text/New${index}.New`)), []));
+        expect(localizationKeyChangesAcross(earlier, later)).toEqual({ pairs: [], ambiguous: 0 });
+        // It took about 14 seconds when each new key rebuilt the indexes.
+    });
+    it("pairs gathered C++ keys across a gather, carrying translations Unreal trimmed", () => {
+        const text = scanned([]);
+        const path = "Source/Game/Private/Menu.cpp(12)";
+        const before = joinLocalizationTarget(text, evidence([manifestEntry("MenuTitle", "Main menu", path)], [archiveEntry("MenuTitle", "Main menu", "Hauptmenü")]));
+        const after = joinLocalizationTarget(text, evidence([manifestEntry("MainMenuTitle", "Main menu", path)], [archiveEntry("MainMenuTitle", "Main menu", "")]));
+        const { pairs } = localizationKeyChangesAcross(before, after);
+        expect(pairs.map((item) => [item.from.key, item.to.key, item.match])).toEqual([
+            ["MenuTitle", "MainMenuTitle", "same_place"]
+        ]);
+        expect(pairs[0]?.translations).toEqual([
+            { culture: cultureCode("de"), translation: "Hauptmenü" }
+        ]);
+    });
+    it.live("marks both lines, filters new keys and counts them in the query", () => {
+        const text = scanned([cell("NewKey", "Start game"), unit("Other", "Other")]);
+        const files = evidence([
+            manifestEntry("OldKey", "Start game", "/Game/Text/DT_Menu.DT_Menu.Start.Label"),
+            manifestEntry("Other", "Other")
+        ], [archiveEntry("OldKey", "Start game", "Spiel starten"), archiveEntry("Other", "Other")]);
+        const joined = joinLocalizationTarget(text, files);
+        const { pairs } = localizationKeyChanges(joined, text);
+        const marked = applyLocalizationKeyChanges(joined, pairs);
+        const byKey = (key) => marked.lines.find((line) => line.identity?.key === key);
+        expect(byKey("NewKey")?.keyChange).toMatchObject({
+            direction: "to",
+            other: { key: "OldKey" }
+        });
+        expect(byKey("OldKey")?.keyChange).toMatchObject({
+            direction: "from",
+            other: { key: "NewKey" }
+        });
+        const request = {
+            query: "",
+            capability: "all",
+            pageSize: 50,
+            localization: { target: target.name }
+        };
+        return withIndexedCorpus(text, { files, keyChangePairs: pairs }, ({ query }) => Effect.gen(function* () {
+            expect((yield* query.search(request)).localization?.keyChanged).toBe(1);
+            const changed = yield* query.search({
+                ...request,
+                localization: { ...request.localization, keyChanged: true }
+            });
+            expect(changed.total).toBe(1);
+            expect(changed.localization?.lines[0]?.keyChange?.other.key).toBe("OldKey");
+        }));
+    });
+});

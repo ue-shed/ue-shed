@@ -93,6 +93,7 @@ export const nativeGameTextEngineClientLayer = (
 					"game_text.engine.batches": answer.profile.batches,
 					"game_text.engine.batch_bytes": answer.profile.batchBytes,
 					"game_text.engine.credit_stall_ms": answer.profile.creditStallMs,
+					"game_text.engine.queued_ms": answer.profile.queuedMs,
 					...Object.fromEntries(
 						Object.entries(answer.profile.stageSeconds).map(([stage, seconds]) => [
 							`game_text.engine.seconds.${stage}`,

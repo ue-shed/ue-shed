@@ -1,0 +1,123 @@
+import { exportGameTextInvestigation } from "./export-reference.test-support.js";
+import { Effect, Schema } from "effect";
+import { describe, expect, it } from "vitest";
+import { GameTextInvestigationQuery, GameTextInvestigationPreset, GameTextInvestigationExport, investigationRequest } from "./investigation.js";
+import { qualityFixture } from "./localization-workspace.test-support.js";
+const decodeGameTextInvestigationExport = Schema.decodeSync(GameTextInvestigationExport);
+const decodeGameTextInvestigationExportResult = Schema.decodeResult(GameTextInvestigationExport);
+const decodeGameTextInvestigationPreset = Schema.decodeUnknownSync(GameTextInvestigationPreset);
+const decodeGameTextInvestigationPresetResult = Schema.decodeUnknownResult(GameTextInvestigationPreset);
+// Freeze the fields and version check shipped in 0.11.0. Its decoder ignores unknown fields.
+const legacyPreset = Schema.Struct({
+    ...GameTextInvestigationPreset.fields,
+    schemaVersion: Schema.Literal(1),
+    query: Schema.Struct({
+        withoutNotes: GameTextInvestigationQuery.fields.withoutNotes,
+        mode: GameTextInvestigationQuery.fields.mode,
+        query: GameTextInvestigationQuery.fields.query,
+        capability: GameTextInvestigationQuery.fields.capability,
+        lens: GameTextInvestigationQuery.fields.lens,
+        where: GameTextInvestigationQuery.fields.where,
+        filter: GameTextInvestigationQuery.fields.filter,
+        group: GameTextInvestigationQuery.fields.group,
+        localization: GameTextInvestigationQuery.fields.localization,
+        qualityFilter: GameTextInvestigationQuery.fields.qualityFilter
+    })
+}).check(Schema.makeFilter((preset) => preset.query.mode !== "quality" || preset.rules !== undefined));
+const source = {
+    projectRoot: "C:/Project",
+    generation: null,
+    authority: "project_files"
+};
+describe("investigation format compatibility", () => {
+    it("rejects new localization presets in legacy readers, including embedded rules", async () => {
+        const { text, document, files, workspace } = qualityFixture();
+        const request = { target: files.target.name, filter: "format_arguments" };
+        const input = {
+            schemaVersion: 2,
+            kind: "game_text",
+            sort: "domain_order",
+            query: {
+                mode: "quality",
+                query: "",
+                capability: "all",
+                qualityFilter: "all",
+                workspaceFilter: request.filter,
+                localization: { target: request.target }
+            }
+        };
+        for (const rules of [undefined, document]) {
+            const encoded = { ...input, ...(rules ? { rules } : undefined) };
+            const preset = decodeGameTextInvestigationPreset(encoded);
+            expect(Schema.decodeUnknownResult(legacyPreset)(encoded)._tag).toBe("Failure");
+            expect(decodeGameTextInvestigationPresetResult({
+                ...encoded,
+                schemaVersion: 1
+            })._tag).toBe("Failure");
+            const exported = await Effect.runPromise(exportGameTextInvestigation(text, preset, source, undefined, workspace.export(request)));
+            expect(exported).toMatchObject({
+                schemaVersion: 2,
+                preset: { schemaVersion: 2 },
+                result: { mode: "localization_quality" }
+            });
+            expect(decodeGameTextInvestigationExport(exported)).toEqual(exported);
+            expect(decodeGameTextInvestigationExportResult({
+                ...exported,
+                schemaVersion: 1
+            })._tag).toBe("Failure");
+            const failed = await Effect.runPromise(Effect.flip(exportGameTextInvestigation(text, { ...preset, schemaVersion: 1 }, source, undefined, workspace.export(request))));
+            expect(failed.message).toBe("Localization quality presets require schemaVersion 2.");
+        }
+        // This is the original failure: v1 plus rules silently loses the localization selection.
+        const unsafe = Schema.decodeUnknownSync(legacyPreset)({
+            ...input,
+            schemaVersion: 1,
+            rules: document
+        });
+        expect(unsafe.query).not.toHaveProperty("workspaceFilter");
+    });
+    it("reads and replays v1 corpus and source quality investigations without changing their format", async () => {
+        const { text, document, files, workspace } = qualityFixture();
+        for (const mode of ["corpus", "quality"]) {
+            const encoded = {
+                schemaVersion: 1,
+                kind: "game_text",
+                sort: "domain_order",
+                query: { mode, query: "", capability: "all", qualityFilter: "all" },
+                ...(mode === "quality" ? { rules: document } : undefined)
+            };
+            const preset = decodeGameTextInvestigationPreset(encoded);
+            expect(Schema.decodeUnknownSync(legacyPreset)(encoded)).toEqual(preset);
+            const exported = await Effect.runPromise(exportGameTextInvestigation(text, preset, source, undefined, workspace.export({ target: files.target.name, filter: "all" })));
+            expect(exported.schemaVersion).toBe(1);
+            expect(exported.result.mode).toBe(mode);
+            expect(decodeGameTextInvestigationExport(exported)).toEqual(exported);
+            expect(decodeGameTextInvestigationExportResult({
+                ...exported,
+                schemaVersion: 2
+            })._tag).toBe("Failure");
+        }
+    });
+    it("reads a saved lens as the filter clause it stands for", () => {
+        const open = (lens) => investigationRequest(decodeGameTextInvestigationPreset({
+            schemaVersion: 1,
+            kind: "game_text",
+            sort: "domain_order",
+            query: {
+                mode: "corpus",
+                query: "",
+                capability: "all",
+                qualityFilter: "all",
+                lens
+            }
+        }).query);
+        expect(open("unresolved").filter).toEqual([
+            { field: "fact", op: "is", values: ["unresolved"] }
+        ]);
+        expect(open("shared").filter).toEqual([
+            { field: "finding", op: "is", values: ["localization.shared"] }
+        ]);
+        expect(open("all").filter).toBeUndefined();
+        expect("lens" in open("long")).toBe(false);
+    });
+});

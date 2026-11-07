@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.27.1",
-	contractHash: "61bbc6e2c96ca33a659bef407add3f0b90a4dec34222100621483ed1c2cd11d7"
+	contractHash: "0b7928ccbb08f121f588b1addf8a66c138923ff25bba267d9e36ffea6abb7801"
 } as const;
 
 /**
@@ -198,7 +198,12 @@ batches: number, batchBytes: number,
 /**
  * How long the request waited for the host to consume its batches.
  */
-creditStallMs: number, };
+creditStallMs: number, 
+/**
+ * How long the request waited for a thread after the engine read it: bulk requests run two
+ * at a time and later ones queue.
+ */
+queuedMs: number, };
 
 export type EngineProgress = { stage: string, completed: number, total?: number, 
 /**
@@ -1044,7 +1049,8 @@ sink?: SinkSummary,
  */
 total: number, counts?: FindingCounts, diagnostics?: FindingDiagnostics, 
 /**
- * Milliseconds per stage: select, order, page, compose and counts.
+ * Milliseconds per stage: layer, lines, order, select, page, compose (with its parts
+ * `compose_open`, `compose_prefetch` and `compose_rows`, outside the total) and counts.
  */
 stages: { [stage: string]: number }, };
 

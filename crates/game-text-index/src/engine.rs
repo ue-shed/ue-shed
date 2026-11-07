@@ -276,6 +276,9 @@ pub struct Profile {
     pub batch_bytes: u64,
     /// How long the request waited for the host to consume its batches.
     pub credit_stall_ms: f64,
+    /// How long the request waited for a thread after the engine read it: bulk requests run two
+    /// at a time and later ones queue.
+    pub queued_ms: f64,
 }
 impl Profile {
     /// A profile with no stages, for a request that failed.
@@ -286,6 +289,7 @@ impl Profile {
             batches: 0,
             batch_bytes: 0,
             credit_stall_ms: 0.0,
+            queued_ms: 0.0,
         }
     }
 }

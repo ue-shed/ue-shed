@@ -1,0 +1,175 @@
+import { MAX_TEXT_GROUPS, TEXT_AUDIENCE_LABELS, TextProblem } from "./schema.js";
+import { TEXT_ORIGIN_KINDS, TEXT_ORIGIN_LABELS, normalizeTextPath, textFileKey, textFolderLabel } from "./text-origin.js";
+import { textAssetTypeLabel } from "./text-asset-type.js";
+import { TEXT_PROBLEM_LABELS, needsWork } from "./text-problems.js";
+/**
+ * The group a line falls in: its worst problem, first file's folder or file, origin, namespace,
+ * audience, exact source text (a unit's first source in UTF-16 order) or first rule with a
+ * finding on it. The engine puts a row in each of its rules' groups.
+ */
+export function textGroupOf(facts, by) {
+    switch (by) {
+        case "finding": {
+            const rule = facts.findings[0] ?? "";
+            return { key: rule, label: rule };
+        }
+        case "problem": {
+            const worst = facts.problems[0] ?? "up_to_date";
+            return { key: worst, label: TEXT_PROBLEM_LABELS[worst] };
+        }
+        case "folder": {
+            const file = facts.files[0];
+            const folder = file === undefined ? "" : textFolderLabel(file);
+            return { key: normalizeTextPath(folder), label: folder };
+        }
+        case "asset": {
+            const file = facts.files[0] ?? "";
+            return { key: textFileKey(file), label: file };
+        }
+        case "origin": {
+            const origin = TEXT_ORIGIN_KINDS.find((kind) => facts.origins.includes(kind));
+            return origin === undefined
+                ? { key: "", label: "" }
+                : { key: origin, label: TEXT_ORIGIN_LABELS[origin] };
+        }
+        case "namespace": {
+            const namespace = facts.namespace ?? "";
+            return { key: namespace, label: namespace };
+        }
+        case "audience":
+            return { key: facts.audience, label: TEXT_AUDIENCE_LABELS[facts.audience] };
+        case "source": {
+            const source = facts.sources?.[0] ?? "";
+            return { key: source, label: source };
+        }
+    }
+}
+class Tallies {
+    #byKey = new Map();
+    add(place, facts) {
+        const tally = this.#byKey.get(place.key) ?? {
+            key: place.key,
+            label: place.label,
+            count: 0,
+            needWork: 0,
+            worst: TextProblem.literals.length
+        };
+        tally.count++;
+        if (needsWork(facts.problems))
+            tally.needWork++;
+        const worst = TextProblem.literals.indexOf(facts.problems[0] ?? "up_to_date");
+        if (worst < tally.worst)
+            tally.worst = worst;
+        this.#byKey.set(place.key, tally);
+    }
+    /**
+     * Worst first, then most lines needing work, then most lines, then by label. Groups under
+     * `minSize` lines are left out, and not counted in `more`.
+     */
+    list(max = MAX_TEXT_GROUPS, minSize = 1) {
+        const sorted = [...this.#byKey.values()]
+            .filter((tally) => tally.count >= minSize)
+            .sort((left, right) => left.worst - right.worst ||
+            right.needWork - left.needWork ||
+            right.count - left.count ||
+            (left.label < right.label ? -1 : left.label > right.label ? 1 : 0));
+        const entries = sorted.slice(0, max).map((tally) => ({
+            key: tally.key,
+            label: tally.label,
+            count: tally.count,
+            needWork: tally.needWork,
+            worst: TextProblem.literals[tally.worst] ?? "up_to_date"
+        }));
+        return { entries, more: Math.max(0, sorted.length - entries.length) };
+    }
+}
+/** Every group of the given lines holding at least `minSize` of them. */
+export function textGroups(facts, by, minSize = 1) {
+    const tallies = new Tallies();
+    for (const item of facts)
+        tallies.add(textGroupOf(item, by), item);
+    return tallies.list(MAX_TEXT_GROUPS, minSize);
+}
+/**
+ * The folders directly under `under` (normalized; empty for the top folders), each counting the
+ * lines anywhere inside it once.
+ */
+export function textFolderFacet(facts, under) {
+    const parent = normalizeTextPath(under).replace(/\/+$/u, "");
+    const depth = parent === "" ? 1 : parent.split("/").length + 1;
+    const tallies = new Tallies();
+    for (const item of facts) {
+        const children = new Map();
+        for (const file of item.files) {
+            const folder = textFolderLabel(file);
+            const key = normalizeTextPath(folder);
+            if (parent !== "" && !key.startsWith(parent + "/"))
+                continue;
+            const segments = folder.split("/");
+            if (segments.length < depth)
+                continue;
+            const label = segments.slice(0, depth).join("/");
+            children.set(normalizeTextPath(label), label);
+        }
+        for (const [key, label] of children)
+            tallies.add({ key, label }, item);
+    }
+    return tallies.list();
+}
+/** The files holding the lines, each counting its lines once. */
+export function textAssetFacet(facts) {
+    const tallies = new Tallies();
+    for (const item of facts) {
+        const files = new Map(item.files.map((file) => [textFileKey(file), file]));
+        for (const [key, label] of files)
+            tallies.add({ key, label }, item);
+    }
+    return tallies.list();
+}
+/** Where the lines come from; a line with several origins counts in each. */
+export function textOriginFacet(facts) {
+    const tallies = new Tallies();
+    for (const item of facts)
+        for (const origin of item.origins)
+            tallies.add({ key: origin, label: TEXT_ORIGIN_LABELS[origin] }, item);
+    return tallies.list();
+}
+/** The asset types of the packages holding the lines; a line of several types counts in each. */
+export function textAssetTypeFacet(facts) {
+    const tallies = new Tallies();
+    for (const item of facts)
+        for (const type of new Set(item.assetTypes))
+            tallies.add({ key: type, label: textAssetTypeLabel(type) }, item);
+    return tallies.list();
+}
+/** Who the lines are for: player, editor or unknown text. Each line counts once. */
+export function textAudienceFacet(facts) {
+    const tallies = new Tallies();
+    for (const item of facts)
+        tallies.add({ key: item.audience, label: TEXT_AUDIENCE_LABELS[item.audience] }, item);
+    return tallies.list();
+}
+/** Each culture's translation work over the given lines' marks, worst culture first. */
+export function textCultureFacet(lines, cultures) {
+    const facets = new Map(cultures.map((culture) => [
+        culture,
+        { culture, lines: 0, shipped: 0, missing: 0, toUpdate: 0, notSynced: 0 }
+    ]));
+    for (const marks of lines)
+        for (const mark of marks) {
+            const facet = facets.get(mark.culture);
+            if (!facet)
+                continue;
+            facet.lines++;
+            if (mark.state === "translated")
+                facet.shipped++;
+            if (mark.state === "not_translated")
+                facet.missing++;
+            if (mark.state === "needs_update")
+                facet.toUpdate++;
+            if (mark.state === "not_synced" || mark.facts.includes("not_synced"))
+                facet.notSynced++;
+        }
+    return [...facets.values()].sort((left, right) => right.missing + right.toUpdate - (left.missing + left.toUpdate) ||
+        (left.culture < right.culture ? -1 : left.culture > right.culture ? 1 : 0));
+}

@@ -232,16 +232,21 @@ Settled by the owner on 2026-11-07:
 ## 10. Steps, one commit each at least
 
 1. **Attribute and baseline.** The `layer` and wait stages, the cold `compose` and the 1.7 s,
-   attributed on Coral. The measurement record gets §7's baseline.
-2. **The field registry.** `FIELDS`, `GroupBy` and `Facets` become one list; facets become a list
+   attributed on Coral. The measurement record gets §7's baseline. Found: the cold `compose` is
+   the whole corpus's occurrence order, built for a 50-line page; the 1.7 s didn't reproduce, and
+   nothing queues.
+2. **Page reads order only their lines.** Reading a page's places orders the members of its own
+   lines, not every line's; evaluations keep the shared corpus order. Measured on Coral: the first
+   Quality page without the 2.2 s, later pages and the Text tab unchanged.
+3. **The field registry.** `FIELDS`, `GroupBy` and `Facets` become one list; facets become a list
    for lines and units; the `namespace` count. Text tab answers byte-identical; timings unchanged.
-3. **Finding rows.** Selection `rows: findings`, the finding fields, `row`, text, orders, cursors,
+4. **Finding rows.** Selection `rows: findings`, the finding fields, `row`, text, orders, cursors,
    facets, groups and diagnostics. A parity test sends every request the queried workspace and
    `loc check` send today, through both `findings_query` and finding rows, and compares the
    answers on the fixture and on Coral.
-4. **TypeScript.** The `Expr` schema and the exported converter. Both tabs' requests take `where`
+5. **TypeScript.** The `Expr` schema and the exported converter. Both tabs' requests take `where`
    and `facets`; the workspace and the CLI read finding rows; presets save the query; the
    Workbench converts its pills; `findings_query` is deleted.
-5. **Electroswag.** Both tabs convert their pills and send `where`; Quality gets the Text tab's
+6. **Electroswag.** Both tabs convert their pills and send `where`; Quality gets the Text tab's
    toolbar; the badge's duplicate request goes.
-6. **Measure** on Coral and the released project against §7, and the owner reviews.
+7. **Measure** on Coral and the released project against §7, and the owner reviews.

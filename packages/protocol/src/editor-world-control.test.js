@@ -1,0 +1,72 @@
+import { makeWireJsonSchemaDocument, canonicalJsonSchemaReferences } from "./json-schema.js";
+import { Effect, Schema } from "effect";
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { EditorWorldOpenRequest, EditorWorldOperation, EditorWorldState, decodeEditorWorldOpenResponse } from "./editor-world-control.js";
+const decodeEditorWorldOperation = Schema.decodeResult(EditorWorldOperation);
+const decodeEditorWorldOperationResult = Schema.decodeUnknownResult(EditorWorldOperation);
+const decodeEditorWorldOpenRequest = Schema.decodeResult(EditorWorldOpenRequest);
+const contract = {
+    name: "unreal-editor-world-control",
+    version: { major: 1, minor: 0 }
+};
+describe("editor world-control wire contract", () => {
+    it("keeps asynchronous operation and state schemas aligned with the wire authority", () => {
+        for (const [name, schema] of [
+            ["operation", EditorWorldOperation],
+            ["state", EditorWorldState]
+        ]) {
+            const wire = JSON.parse(readFileSync(new URL(`../contracts/editor-world/v1/${name}.schema.json`, import.meta.url), "utf8"));
+            const document = makeWireJsonSchemaDocument(schema);
+            expect(canonicalJsonSchemaReferences({
+                $schema: "https://json-schema.org/draft/2020-12/schema",
+                $defs: document.definitions,
+                ...document.schema
+            })).toEqual(canonicalJsonSchemaReferences(wire));
+        }
+    });
+    it("requires completed map results and preserves dirty-world refusals", () => {
+        const base = { contract, operationId: "open", targetMapPath: "/Game/Fixture/Target" };
+        expect(decodeEditorWorldOperation({ ...base, status: "pending" })._tag).toBe("Success");
+        expect(decodeEditorWorldOperationResult({ ...base, status: "completed" })._tag).toBe("Failure");
+        expect(decodeEditorWorldOperationResult({ ...base, status: "unavailable" })._tag).toBe("Failure");
+        expect(decodeEditorWorldOperationResult({ ...base, status: "anything" })._tag).toBe("Failure");
+        {
+            const response = {
+                after: {
+                    dirtyWorldPackages: ["/Game/Fixture/Maps/L_Work"],
+                    mapPath: "/Game/Fixture/Maps/L_Work",
+                    playSessionActive: false
+                },
+                before: {
+                    dirtyWorldPackages: ["/Game/Fixture/Maps/L_Work"],
+                    mapPath: "/Game/Fixture/Maps/L_Work",
+                    playSessionActive: false
+                },
+                code: "dirty_world",
+                contract,
+                message: "The open editor world has unsaved packages.",
+                operationId: "open-fixture-map",
+                outcome: "rejected",
+                recovery: "Save or revert the dirty world packages, then retry.",
+                retrySafe: true,
+                targetMapPath: "/Game/Fixture/Cameras/L_CameraLoad"
+            };
+            expect(Effect.runSync(decodeEditorWorldOpenResponse(response))).toEqual(response);
+        }
+    });
+    it("rejects filesystem paths as map identities", () => {
+        expect(decodeEditorWorldOpenRequest({
+            contract,
+            operationId: "open",
+            targetMapPath: "C:/Project/Content/Map.umap"
+        })._tag).toBe("Failure");
+    });
+    it("rejects engine packages as project map targets", () => {
+        expect(decodeEditorWorldOpenRequest({
+            contract,
+            operationId: "open",
+            targetMapPath: "/Engine/Maps/Templates/OpenWorld"
+        })._tag).toBe("Failure");
+    });
+});

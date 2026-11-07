@@ -1,0 +1,20 @@
+// Named exports only. Modules not listed in an entry point are private to the package.
+export { STRING_TABLE_CLASS, TEXT_PROPERTY_NAME, TextCorpusScanError, TextCorpusScanLimit, TextCorpusScanOptions, TextCorpusService, TextCorpusServiceLive, buildTextCorpus, makeTextCorpusServiceTestLayer, parseTextCorpusScanOptions, scanTextCorpus, textCorpusFromExtractionEvents, textOccurrenceFromExtraction, textOccurrenceId, textOccurrencesFromInspection, textPackagePathsFromProjectIndex } from "./corpus.js";
+export { GameTextIndexBuilder } from "./index-builder.js";
+export { DiskChangeCounts, DiskChangeItem, DiskChangesAnswer, DiskChangesRequest, DiskChangesResult, DiskChangesState, DiskWatcher, DiskWatcherNodeLive, MAX_DISK_CHANGE_PATHS, MAX_DISK_CHANGES_PAGE, watchDiskChanges, watchedFolders } from "./disk-changes.js";
+export { indexedLocalizationLinesRequest, indexedLocalizationStatusReport, readIndexedLocalizationEvidence } from "./index-context.js";
+export { GameTextCodeSource, GameTextIndexError, GameTextIndexRefresh, GameTextIndexRefreshRequest, GameTextIndexSource } from "./index-contract.js";
+export { GameTextIndexPhase, GameTextIndexProgress, GameTextIndexProgressReporter } from "./index-progress.js";
+export { gameTextIndexRefreshLayer } from "./index-refresh.js";
+export { makeRetainedGameTextIndex, makeRetainedGameTextIndexWith } from "./index-retained.js";
+export { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
+export { GameTextIndexSteps, GameTextProjectRefreshRequest, GameTextTargetBuildRequest, GameTextTargetImportRequest, gameTextIndexStepsLayer, makeGameTextIndexSteps } from "./index-steps.js";
+export { LOCALIZATION_IMPORT_VERSION, LocalizationImportSource, importLocalizationFile, importLocalizationTarget, localizationImportMetrics } from "./localization-import.js";
+export {} from "./project-index-view.js";
+export { TextRulesFileError, createStarterTextRules } from "./rules-file.js";
+export { SnapshotFormatError } from "./snapshot-format.js";
+export { SnapshotStoreError } from "./snapshot-store.js";
+export { GameTextIndexBuilderLive, nativeIndexBuilderLayer } from "./native-index-builder.js";
+export { GAME_TEXT_ACTIONS_CAPABILITY, GameTextActionsError, gameTextActionForOccurrence, gameTextActionsRequest, runGameTextActions, verifyGameTextActions } from "./text-actions.js";
+export { nativeIndexQueryLayer, GameTextIndexQuery } from "./index-query-native.js";
+export { changeComparisonTarget, changePointReads, readGameTextChangePoints, unreadableChangePaths } from "./change-points.js";

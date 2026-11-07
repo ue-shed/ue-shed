@@ -147,10 +147,6 @@ export const WorkspaceQualityNarrowing = {
 	severities: Schema.optionalKey(Schema.Array(CheckSeverity).check(Schema.isMaxLength(3))),
 	fixable: Schema.optionalKey(Schema.Boolean)
 };
-/**
- * Target/culture quality-list request with a filter, its narrowing and an offset. The workspace
- * retains complete findings while each host page stays bounded.
- */
 /** The line facets a Quality page can count, as the Text tab's Filter menu lists them. */
 export const WorkspaceQualityFacetRequest = TextFacetRequest.mapFields(
 	({ folder, assets, assetTypes, origins, audiences }) => ({
@@ -177,6 +173,10 @@ export const WorkspaceQualityFacets = TextFacets.mapFields(
 );
 export type WorkspaceQualityFacets = typeof WorkspaceQualityFacets.Type;
 const decodeQualityFacets = Schema.decodeUnknownEffect(WorkspaceQualityFacets);
+/**
+ * Target/culture quality-list request with a filter, its narrowing, an offset and the facets to
+ * count. The workspace retains complete findings while each host page stays bounded.
+ */
 export const WorkspaceQualityRequest = Schema.Struct({
 	...Selection,
 	filter: WorkspaceQualityFilter,

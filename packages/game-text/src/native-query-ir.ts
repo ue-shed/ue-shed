@@ -105,6 +105,10 @@ const pill = (clause: TextFilterClause): Expr => {
 	}
 };
 
+/** Filter pills as one `where` over lines, each pill marked with its facet; none is no `where`. */
+export const filterWhere = (filter: readonly TextFilterClause[]): Expr | undefined =>
+	filter.length === 0 ? undefined : all(filter.map(pill));
+
 /**
  * A search request's rows as a query selection. The capability, translator-notes and location
  * filters must hold on one place together; the counts' tabs drop their marks.

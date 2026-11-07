@@ -10,7 +10,8 @@ use super::{FindingsLayer, HostCollator, NativeSubjects, Subject, javascript_jso
 use crate::engine_match::checkpoint;
 use crate::engine_query::EngineQuery;
 use crate::engine_rows::RowSet;
-use crate::engine_types::{FindingsSelection, Selection, TextSearch};
+use crate::engine_types::{FindingsSelection, GroupBy, Selection, TextSearch};
+use crate::engine_where::{Facet, Node};
 use crate::sink::{Format, Sink, SinkSummary, SinkWriter, pretty_json};
 use crate::store::digest;
 use crate::{Error, ErrorCode, Result, require};
@@ -124,6 +125,27 @@ impl LineSearch {
     }
 }
 
+/// The line facets a findings query counts. Each lists its values with the findings choosing it
+/// would list: every filter holds, and the line search's `where` with the facet's own marks
+/// holding, as the Text tab's facets count lines. Source findings have no line and count in none.
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(TS))]
+#[cfg_attr(test, ts(rename = "FindingsFacets"))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct FindingFacets {
+    /// The folders under this path.
+    #[cfg_attr(test, ts(optional))]
+    folder: Option<String>,
+    #[cfg_attr(test, ts(optional))]
+    assets: Option<bool>,
+    #[cfg_attr(test, ts(optional))]
+    asset_types: Option<bool>,
+    #[cfg_attr(test, ts(optional))]
+    origins: Option<bool>,
+    #[cfg_attr(test, ts(optional))]
+    audiences: Option<bool>,
+}
+
 /// `findings_query`: a view's findings, filtered, in an order, paged and counted.
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(TS))]
@@ -150,6 +172,9 @@ pub(crate) struct QueryRequest {
     id: Option<String>,
     #[cfg_attr(test, ts(optional))]
     lines: Option<LineSearch>,
+    /// Line facets to count; needs `counts`.
+    #[cfg_attr(test, ts(optional))]
+    facets: Option<FindingFacets>,
     order: Order,
     #[cfg_attr(test, ts(optional))]
     after: Option<String>,
@@ -246,7 +271,12 @@ pub(crate) struct FindingsPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     diagnostics: Option<Diagnostics>,
-    /// Milliseconds per stage: select, order, page, compose and counts.
+    /// The requested facets as the Text tab's facets read: `folders` (with `under`), `assets`,
+    /// `assetTypes`, `origins` and `audiences`, each counting findings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = "JsonValue"))]
+    facets: Option<Value>,
+    /// Milliseconds per stage: layer, lines, order, select, facets, page, compose and counts.
     #[cfg_attr(test, ts(type = "{ [stage: string]: number }"))]
     stages: BTreeMap<&'static str, f64>,
 }
@@ -420,6 +450,19 @@ impl EngineQuery {
                     .is_none_or(|page| page.limit <= MAX_LIMIT),
             invalid("A findings page holds at most 5000 rows."),
         )?;
+        if let Some(facets) = &request.facets {
+            require(
+                request.counts,
+                invalid("Findings facets are counted with `counts`."),
+            )?;
+            require(
+                facets
+                    .folder
+                    .as_ref()
+                    .is_none_or(|folder| folder.chars().count() <= 512),
+                invalid("Facet folder exceeds its bound."),
+            )?;
+        }
         let key = request.key.clone();
         let acceptance = match &request.acceptance {
             Some(name) => {
@@ -562,6 +605,7 @@ impl LineMatches {
         layer: &FindingsLayer,
         request: &QueryRequest,
         search: &LineSearch,
+        dropped: &[Facet],
         culture: Option<u32>,
         cancelled: &AtomicBool,
     ) -> Result<Self> {
@@ -589,7 +633,7 @@ impl LineMatches {
                     query: query.to_owned(),
                     translations: Some(true),
                 }),
-                dropped: Vec::new(),
+                dropped: dropped.to_vec(),
             };
             selection.validate()?;
             RowSet::from_rows(lines, &query.matching(&selection, cancelled)?)
@@ -743,7 +787,7 @@ fn run_query(
     let id = request.id.as_deref().map(id_lanes);
     let lines = match request.lines.as_ref().filter(|search| search.narrows()) {
         Some(search) => {
-            let lines = LineMatches::open(query, layer, request, search, culture, cancelled)?;
+            let lines = LineMatches::open(query, layer, request, search, &[], culture, cancelled)?;
             mark(&mut stages, "lines", &mut since);
             Some(lines)
         }
@@ -865,6 +909,34 @@ fn run_query(
         }
     }
     mark(&mut stages, "select", &mut since);
+    let facets = match &request.facets {
+        Some(facets) => {
+            let selected = |number: u32| {
+                in_culture(number)
+                    && !accepted(number)
+                    && otherwise_selected(number)
+                    && rule_selected(number)
+                    && severity_selected(number)
+            };
+            let values = facet_counts(
+                query,
+                layer,
+                request,
+                facets,
+                FacetInputs {
+                    columns: &columns,
+                    sequence: &sequence,
+                    lines: lines.as_ref(),
+                    culture,
+                    selected: &selected,
+                },
+                cancelled,
+            )?;
+            mark(&mut stages, "facets", &mut since);
+            Some(values)
+        }
+        None => None,
+    };
     // Rules sharing an ID count once, under the first of them.
     if let Some(counts) = &mut counts {
         let mut seen = HashMap::<String, usize>::new();
@@ -968,8 +1040,147 @@ fn run_query(
         sink: None,
         counts,
         diagnostics,
+        facets,
         stages,
     })
+}
+
+/// What `facet_counts` reads from a running query.
+struct FacetInputs<'a> {
+    columns: &'a Columns,
+    /// The view's findings in order.
+    sequence: &'a [u32],
+    /// The request's line search, when it narrows.
+    lines: Option<&'a LineMatches>,
+    culture: Option<u32>,
+    /// Every filter but the line search.
+    selected: &'a dyn Fn(u32) -> bool,
+}
+
+/// The requested facets: each value with the findings choosing it would list. A facet the
+/// `where` marks reopens the line search with its marks holding; its atoms are cached.
+fn facet_counts(
+    query: &EngineQuery,
+    layer: &FindingsLayer,
+    request: &QueryRequest,
+    facets: &FindingFacets,
+    inputs: FacetInputs,
+    cancelled: &AtomicBool,
+) -> Result<Value> {
+    let search = request.lines.as_ref().filter(|search| search.narrows());
+    let plan = match search.and_then(|search| search.filter.as_ref()) {
+        Some(value) => Some(Node::parse(value, true)?),
+        None => None,
+    };
+    let target = query.target["name"]
+        .as_str()
+        .ok_or("The findings' target has no name.")?
+        .to_owned();
+    let (culture, cultures) = match inputs.culture {
+        Some(ci) => (Some(query.cultures[ci as usize].clone()), None),
+        None => (None, Some(query.cultures.clone())),
+    };
+    let selection = Selection {
+        target: Some(target),
+        culture,
+        cultures,
+        findings: Some(FindingsSelection {
+            key: request.key.clone(),
+            acceptance: request.acceptance.clone(),
+            source_only: None,
+        }),
+        filter: None,
+        text: None,
+        dropped: Vec::new(),
+    };
+    let line_count = query.reader.column("line.source")?.len();
+    let under = facets.folder.as_deref();
+    let mut values = json!({});
+    for (enabled, facet, by, name) in [
+        (under.is_some(), Facet::Folder, GroupBy::Folder, "folders"),
+        (
+            facets.assets == Some(true),
+            Facet::Asset,
+            GroupBy::Asset,
+            "assets",
+        ),
+        (
+            facets.asset_types == Some(true),
+            Facet::AssetType,
+            GroupBy::AssetType,
+            "assetTypes",
+        ),
+        (
+            facets.origins == Some(true),
+            Facet::Origin,
+            GroupBy::Origin,
+            "origins",
+        ),
+        (
+            facets.audiences == Some(true),
+            Facet::Audience,
+            GroupBy::Audience,
+            "audiences",
+        ),
+    ] {
+        if !enabled {
+            continue;
+        }
+        let own = match (&plan, search) {
+            (Some(plan), Some(search)) if plan.marks(facet) => Some(LineMatches::open(
+                query,
+                layer,
+                request,
+                search,
+                &[facet],
+                inputs.culture,
+                cancelled,
+            )?),
+            _ => None,
+        };
+        let lines = own.as_ref().or(inputs.lines);
+        // Each line once, counted once per finding on it.
+        let mut weights = vec![0u32; line_count];
+        for (index, number) in inputs.sequence.iter().enumerate() {
+            if index & 4095 == 0 {
+                checkpoint(cancelled)?;
+            }
+            let number = *number;
+            let line = inputs.columns.line[number as usize];
+            if line == NONE
+                || !(inputs.selected)(number)
+                || lines.is_some_and(|lines| !lines.holds(inputs.columns, number))
+            {
+                continue;
+            }
+            weights[line as usize] += 1;
+        }
+        let (rows, weights): (Vec<u32>, Vec<u32>) = weights
+            .into_iter()
+            .enumerate()
+            .filter(|(_, weight)| *weight > 0)
+            .map(|(line, weight)| (line as u32, weight))
+            .unzip();
+        let folder = if by == GroupBy::Folder {
+            under.unwrap_or("")
+        } else {
+            ""
+        };
+        let mut value = query.aggregate_weighted(
+            &rows,
+            Some(&weights),
+            &selection,
+            by,
+            None,
+            folder,
+            cancelled,
+        )?;
+        if by == GroupBy::Folder {
+            value["under"] = json!(folder);
+        }
+        values[name] = value;
+    }
+    Ok(values)
 }
 
 /// Composes findings in the given order, with the place sets they name.
@@ -1091,7 +1302,10 @@ fn compose_page(
 
 impl FindingsPage {
     fn timed(&mut self, stage: &'static str, started: Instant) {
-        let ms = started.elapsed().as_secs_f64() * 1000.0;
+        self.add_stage(stage, started.elapsed().as_secs_f64() * 1000.0);
+    }
+    /// Records a stage's milliseconds and adds them to the total.
+    pub(super) fn add_stage(&mut self, stage: &'static str, ms: f64) {
         self.stages.insert(stage, ms);
         *self.stages.entry("total").or_default() += ms;
     }

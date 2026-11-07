@@ -253,6 +253,26 @@ impl EngineQuery {
         under: &str,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
+        self.aggregate_weighted(rows, None, selection, by, minimum, under, cancelled)
+    }
+
+    /// `aggregate` with each row counted `weights[i]` times, as Quality counts a line once per
+    /// finding on it. Without weights each row counts once.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn aggregate_weighted(
+        &self,
+        rows: &[u32],
+        weights: Option<&[u32]>,
+        selection: &Selection,
+        by: GroupBy,
+        minimum: Option<usize>,
+        under: &str,
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
+        require(
+            weights.is_none_or(|weights| weights.len() == rows.len()),
+            "Each row needs one weight.",
+        )?;
         let facet = minimum.is_none();
         let projection = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
@@ -291,6 +311,7 @@ impl EngineQuery {
             let row = *row as usize;
             let bits = problems[row];
             let worst = bits.trailing_zeros();
+            let weight = weights.map_or(1, |weights| weights[stamp] as usize);
             let mut visit = |key: u32, label: u32| {
                 let tally = tallies.entry(key).or_insert(Tally {
                     count: 0,
@@ -304,8 +325,8 @@ impl EngineQuery {
                     tally.label = label;
                 }
                 if tally.last != stamp {
-                    tally.count += 1;
-                    tally.work += usize::from(bits & text_problem::WORK != 0);
+                    tally.count += weight;
+                    tally.work += weight * usize::from(bits & text_problem::WORK != 0);
                     tally.worst = tally.worst.min(worst);
                     tally.last = stamp;
                 }

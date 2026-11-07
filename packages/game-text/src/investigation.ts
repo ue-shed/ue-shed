@@ -95,6 +95,7 @@ function sameNarrowing(report: Narrowing, preset: Narrowing): boolean {
 	return (
 		(report.query?.trim() ?? "") === (preset.query?.trim() ?? "") &&
 		JSON.stringify(report.severities ?? null) === JSON.stringify(preset.severities ?? null) &&
+		JSON.stringify(report.lineFilter ?? []) === JSON.stringify(preset.lineFilter ?? []) &&
 		report.fixable === preset.fixable
 	);
 }

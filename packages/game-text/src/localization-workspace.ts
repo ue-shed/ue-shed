@@ -7,7 +7,15 @@ import {
 	LocalizationChange,
 	LocalizationChangeSet
 } from "@ue-shed/localization/browser";
-import { TextCorpus, TextLocation, TextUnitId } from "./schema.js";
+import {
+	TextCorpus,
+	TextFacetRequest,
+	TextFacets,
+	TextFilter,
+	TextLocation,
+	TextUnitId
+} from "./schema.js";
+import { filterWhere } from "./native-query-ir.js";
 import {
 	TextQualityFindingId,
 	TextQualityFocus,
@@ -17,7 +25,7 @@ import {
 } from "./quality-query.js";
 import type { GameTextContract } from "@ue-shed/protocol";
 import type { NativeFindings, QueriedFinding } from "./native-findings.js";
-import type { GameTextIndexError } from "./index-error.js";
+import { GameTextIndexError } from "./index-error.js";
 import type { IndexFailure } from "./index-failure.js";
 import type { LocalizationFocusRequest } from "./localization-view.js";
 import {
@@ -129,13 +137,13 @@ export function workspaceQualitySeverity(
 }
 const Selection = { target: LocalizationTargetName, culture: Schema.optionalKey(CultureCode) };
 /**
- * What narrows a quality list besides its check. `query` searches as the Text tab does: each
- * word in the line's source or in the finding's culture's translation, ignoring case; a source
- * finding's own source text. `severities` keeps those severities' findings, and `fixable` the
- * findings with (or without) a suggested fix.
+ * What narrows a quality list besides its check. `query` searches line and translation (or a
+ * source finding's source) as the Text tab does; `lineFilter` is its filter pills over each
+ * finding's line, which no source finding has; `severities` and `fixable` keep those findings.
  */
 export const WorkspaceQualityNarrowing = {
 	query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512))),
+	lineFilter: Schema.optionalKey(TextFilter),
 	severities: Schema.optionalKey(Schema.Array(CheckSeverity).check(Schema.isMaxLength(3))),
 	fixable: Schema.optionalKey(Schema.Boolean)
 };
@@ -143,11 +151,39 @@ export const WorkspaceQualityNarrowing = {
  * Target/culture quality-list request with a filter, its narrowing and an offset. The workspace
  * retains complete findings while each host page stays bounded.
  */
+/** The line facets a Quality page can count, as the Text tab's Filter menu lists them. */
+export const WorkspaceQualityFacetRequest = TextFacetRequest.mapFields(
+	({ folder, assets, assetTypes, origins, audiences }) => ({
+		folder,
+		assets,
+		assetTypes,
+		origins,
+		audiences
+	})
+);
+export type WorkspaceQualityFacetRequest = typeof WorkspaceQualityFacetRequest.Type;
+/**
+ * Each requested facet's values with the findings choosing that value would list: every filter
+ * holds but the facet's own pills. Source findings have no line and count in no facet.
+ */
+export const WorkspaceQualityFacets = TextFacets.mapFields(
+	({ folders, assets, assetTypes, origins, audiences }) => ({
+		folders,
+		assets,
+		assetTypes,
+		origins,
+		audiences
+	})
+);
+export type WorkspaceQualityFacets = typeof WorkspaceQualityFacets.Type;
+const decodeQualityFacets = Schema.decodeUnknownEffect(WorkspaceQualityFacets);
 export const WorkspaceQualityRequest = Schema.Struct({
 	...Selection,
 	filter: WorkspaceQualityFilter,
 	...WorkspaceQualityNarrowing,
-	offset: Offset
+	offset: Offset,
+	/** Line facets to count; pages without an index count none. */
+	facets: Schema.optionalKey(WorkspaceQualityFacetRequest)
 });
 export type WorkspaceQualityRequest = typeof WorkspaceQualityRequest.Type;
 /**
@@ -209,14 +245,16 @@ export const WorkspaceQualityPage = Schema.Struct({
 		Schema.Struct({ code: LocalizationCheckDiagnostic.fields.code, count: Count })
 	).check(Schema.isMaxLength(32)),
 	unsupportedRuleCultures: Count,
-	rules: Schema.Array(TextQualityRuleSummary).check(Schema.isMaxLength(1032))
+	rules: Schema.Array(TextQualityRuleSummary).check(Schema.isMaxLength(1032)),
+	/** The request's facets, counting findings. */
+	facets: Schema.optionalKey(WorkspaceQualityFacets)
 });
 const decodeCounts = Schema.decodeUnknownEffect(WorkspaceQualityPage.fields.counts);
 export type WorkspaceQualityPage = typeof WorkspaceQualityPage.Type;
 const decodeQualityCounts = Schema.decodeUnknownSync(WorkspaceQualityPage.fields.counts);
 /** File reports keep every matching finding; renderer pages remain bounded. */
 export const WorkspaceQualityReport = WorkspaceQualityPage.mapFields(
-	({ nextOffset: _offset, ...fields }) => ({
+	({ nextOffset: _offset, facets: _facets, ...fields }) => ({
 		...fields,
 		findings: Schema.Array(WorkspaceFinding),
 		corpusCoverage: TextCorpus.fields.coverage,
@@ -891,11 +929,26 @@ export function localizationQuality(
 ): QueriedLocalizationQuality {
 	const withSource = (source: TextQualityReport | undefined): LocalizationQualityWorkspace => {
 		const memory = localizationQualityWorkspace(source, report, join);
+		// Filter pills test lines through the index; without one they cannot narrow the list.
+		const pills = <A>(request: WorkspaceQualityRequest, read: () => A) =>
+			request.lineFilter?.length
+				? Effect.fail(
+						new GameTextIndexError({
+							code: "index_failed",
+							operation: "quality_search",
+							nextStep: "fix_input",
+							retrySafe: false,
+							message:
+								"Filtering Quality findings by their lines needs the Game Text index.",
+							recovery: "Remove the filter pills, or open the project with its index."
+						})
+					)
+				: Effect.sync(read);
 		return {
-			search: (request) => Effect.sync(() => memory.search(request)),
-			export: (request) => Effect.sync(() => memory.export(request)),
+			search: (request) => pills(request, () => memory.search(request)),
+			export: (request) => pills(request, () => memory.export(request)),
 			focus: (request) => Effect.sync(() => memory.focus(request)),
-			changes: (request) => Effect.sync(() => memory.changes(request))
+			changes: (request) => pills(request, () => memory.changes(request))
 		};
 	};
 	return { workspace: withSource(undefined), withSource };
@@ -962,6 +1015,7 @@ function itemMatches(item: WorkspaceQualityItem, terms: readonly string[]): bool
 function narrowingOf(request: WorkspaceQualityRequest) {
 	return {
 		...(request.query?.trim() ? { query: request.query } : undefined),
+		...(request.lineFilter?.length ? { lineFilter: request.lineFilter } : undefined),
 		...(request.severities ? { severities: request.severities } : undefined),
 		...(request.fixable !== undefined ? { fixable: request.fixable } : undefined)
 	};
@@ -1697,6 +1751,22 @@ function ruleFilter(rule: GameTextContract.RuleMetadata): Exclude<WorkspaceQuali
 	return rule.kind as Exclude<WorkspaceQualityFilter, "all">;
 }
 
+/** A narrowing's search and filter pills as the findings query's line search, when they narrow. */
+function lineSearch(
+	request: Pick<WorkspaceQualityRequest, "query" | "lineFilter">
+): Pick<GameTextContract.FindingsQueryRequest, "lines"> | undefined {
+	const text = request.query?.trim() ? request.query : undefined;
+	const where = filterWhere(request.lineFilter ?? []);
+	return text === undefined && where === undefined
+		? undefined
+		: {
+				lines: {
+					...(text === undefined ? undefined : { text }),
+					...(where === undefined ? undefined : { where })
+				}
+			};
+}
+
 /**
  * The Quality workspace over a findings layer. Pages list blocking findings, then normal, then
  * low; within a severity, source findings first, then line findings in report order, as the
@@ -1721,7 +1791,7 @@ export function queriedLocalizationQualityWorkspace(options: {
 	const query = (
 		request: Pick<
 			WorkspaceQualityRequest,
-			"culture" | "filter" | "query" | "severities" | "fixable"
+			"culture" | "filter" | "query" | "lineFilter" | "severities" | "fixable"
 		>,
 		fields: Omit<GameTextContract.FindingsQueryRequest, "key" | "view" | "order">
 	) =>
@@ -1738,7 +1808,7 @@ export function queriedLocalizationQualityWorkspace(options: {
 							.filter(([, filter]) => filter === request.filter)
 							.map(([ruleId]) => ruleId)
 					}),
-			...(request.query?.trim() ? { lines: { text: request.query } } : undefined),
+			...lineSearch(request),
 			...(request.severities ? { severities: request.severities } : undefined),
 			...(request.fixable !== undefined ? { fixable: request.fixable } : undefined),
 			...fields
@@ -1758,7 +1828,12 @@ export function queriedLocalizationQualityWorkspace(options: {
 		request: WorkspaceQualityRequest
 	) {
 		const offset = request.offset ?? 0;
-		const page = yield* query(request, { offset, limit: 50, counts: true });
+		const page = yield* query(request, {
+			offset,
+			limit: 50,
+			counts: true,
+			...(request.facets ? { facets: request.facets } : undefined)
+		});
 		const counts = page.counts!;
 		const typeCounts = new Map<WorkspaceQualityFilter, number>();
 		const ruleCounts = new Map<string, number>();
@@ -1790,14 +1865,18 @@ export function queriedLocalizationQualityWorkspace(options: {
 				ruleId,
 				findingCount: ruleCounts.get(ruleId) ?? 0
 			})),
-			...(offset + 50 < page.total ? { nextOffset: offset + 50 } : undefined)
+			...(offset + 50 < page.total ? { nextOffset: offset + 50 } : undefined),
+			...(page.facets === undefined
+				? undefined
+				: { facets: yield* decodeQualityFacets(page.facets).pipe(Effect.orDie) })
 		};
 		return result;
 	});
 	return {
 		search,
 		export: Effect.fn("GameText.quality.export")(function* (request: WorkspaceQualityRequest) {
-			const { nextOffset: _offset, ...page } = yield* search({ ...request, offset: 0 });
+			const { facets: _facets, ...listed } = request;
+			const { nextOffset: _offset, ...page } = yield* search({ ...listed, offset: 0 });
 			const all: WorkspaceFinding[] = [];
 			for (let offset = 0; offset === 0 || offset < page.total; offset += 5000) {
 				const next = yield* query(request, { offset, limit: 5000 });

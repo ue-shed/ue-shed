@@ -23,14 +23,17 @@ import { type BuiltInCheckId, SourceCheckId } from "./localization-check-ids.js"
 import {
 	BuiltInQualityFilter,
 	WorkspaceQualityFilter,
+	localizationQuality,
 	localizationQualityWorkspace,
 	localizationQualityWorkspaceOf,
 	type WorkspaceQualityRequest
 } from "./localization-workspace.js";
+import { TextFilterClause } from "./schema.js";
 import { TextQualityFindingId } from "./quality-query.js";
 import { type BuiltInCheckEntry, GameTextRuleDocument } from "./game-text-rules.js";
 import { STARTER_CHECK_RULES, STARTER_CHECKS } from "./starter-rules.js";
 const decodeLocalizationReviewFile = Schema.decodeEffect(LocalizationReviewFile);
+const pill = Schema.decodeUnknownSync(TextFilterClause);
 const decodeGameTextRuleDocument = Schema.decodeUnknownEffect(GameTextRuleDocument);
 const decodeLocalizationQualityReportJson = Schema.decodeEffect(
 	Schema.fromJsonString(LocalizationQualityReport)
@@ -466,6 +469,103 @@ it.live(
 									legacy.changes(request)
 								);
 							}
+					// Filter pills narrow by each finding's line, as the Text tab's pills narrow lines,
+					// and each facet value counts the findings choosing it would list.
+					const base = { target: join.target, filter: "all" } as const;
+					const faceted = yield* indexed.search({
+						...base,
+						facets: {
+							folder: "",
+							assets: true,
+							assetTypes: true,
+							origins: true,
+							audiences: true
+						}
+					});
+					const facets = faceted.facets!;
+					expect(facets.folders?.entries.length).toBeGreaterThan(0);
+					// Folders are left out: this fixture's folder keys are file folders that a
+					// folder pill, which reads package paths here, does not match, in the Text tab
+					// too. Each other facet value counts what its pill lists.
+					const pillFields = [
+						["assets", "asset"],
+						["assetTypes", "asset_type"],
+						["origins", "origin"],
+						["audiences", "audience"]
+					] as const;
+					for (const [name, field] of pillFields) {
+						const list = facets[name]!;
+						// The fixture's packages have no classes, so no asset types.
+						expect([name, list.entries.length > 0]).toEqual([
+							name,
+							name !== "assetTypes"
+						]);
+						for (const entry of list.entries) {
+							const narrowed = yield* indexed.search({
+								...base,
+								lineFilter: [pill({ field, op: "is", values: [entry.key] })]
+							});
+							expect([name, entry.key, narrowed.total]).toEqual([
+								name,
+								entry.key,
+								entry.count
+							]);
+						}
+					}
+					const ui = pill({ field: "folder", op: "is", values: ["/Game/UI/"] });
+					const notUi = pill({ field: "folder", op: "is_not", values: ["/Game/UI/"] });
+					const ids = function* (
+						request: Omit<WorkspaceQualityRequest, "target" | "filter">
+					) {
+						return (yield* indexed.export({ ...base, ...request })).findings;
+					};
+					const inUi = yield* ids({ lineFilter: [ui] });
+					expect(inUi.length).toBeGreaterThan(0);
+					// A source finding has no line, so no pill keeps it.
+					expect(inUi.every((finding) => finding.culture !== undefined)).toBe(true);
+					// "is" and "is not" split the line findings between them.
+					const outsideUi = new Set(
+						(yield* ids({ lineFilter: [notUi] })).map(({ id }) => id)
+					);
+					expect(inUi.filter(({ id }) => outsideUi.has(id))).toEqual([]);
+					expect(inUi.length + outsideUi.size).toBe(
+						(yield* ids({})).filter((finding) => finding.culture !== undefined).length
+					);
+					// A facet's own pills leave its counts alone; the others' follow them.
+					const pilled = yield* indexed.search({
+						...base,
+						lineFilter: [ui],
+						facets: { folder: "", assets: true }
+					});
+					expect(pilled.facets!.folders).toEqual(facets.folders);
+					for (const entry of pilled.facets!.assets!.entries) {
+						const both = yield* indexed.search({
+							...base,
+							lineFilter: [
+								ui,
+								pill({ field: "asset", op: "is", values: [entry.key] })
+							]
+						});
+						expect([entry.key, both.total]).toEqual([entry.key, entry.count]);
+					}
+					// Pills and a search keep the findings both keep, in the same order.
+					const hello = new Set((yield* ids({ query: "hello" })).map(({ id }) => id));
+					expect(
+						(yield* ids({ query: "hello", lineFilter: [ui] })).map(({ id }) => id)
+					).toEqual(inUi.filter(({ id }) => hello.has(id)).map(({ id }) => id));
+					// Without an index, pills fail rather than list every finding.
+					const memory = localizationQualityWorkspaceOf(
+						source,
+						localizationQuality(
+							yield* result.localizationCheck(document, options),
+							join
+						)
+					);
+					expect(
+						Exit.isFailure(
+							yield* Effect.exit(memory.search({ ...base, lineFilter: [ui] }))
+						)
+					).toBe(true);
 					const searched = (query: string) =>
 						legacy
 							.export({ target: join.target, filter: "all", query })

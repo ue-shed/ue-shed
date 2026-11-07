@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.27.1",
-	contractHash: "61bbc6e2c96ca33a659bef407add3f0b90a4dec34222100621483ed1c2cd11d7"
+	contractHash: "ea246a81f50b295b7e57871696d74d390a24fcad7a6f31eb0ef0d684e66edecb"
 } as const;
 
 /**
@@ -337,7 +337,11 @@ export type FindingsAcceptRequest = { key: string, previous?: string, accepted: 
 
 export type AcceptedFinding = { check: string, culture?: string, namespace: string, key: string, fingerprint: string, };
 
-export type FindingsQueryRequest = { key: string, view: FindingsView, culture?: string, rules?: ReadonlyArray<string>, severities?: ReadonlyArray<Severity>, fixable?: boolean, change?: boolean, acceptance?: string, line?: string, id?: string, lines?: FindingsLineSearch, order: FindingsOrder, after?: string, offset?: number, 
+export type FindingsQueryRequest = { key: string, view: FindingsView, culture?: string, rules?: ReadonlyArray<string>, severities?: ReadonlyArray<Severity>, fixable?: boolean, change?: boolean, acceptance?: string, line?: string, id?: string, lines?: FindingsLineSearch, 
+/**
+ * Line facets to count; needs `counts`.
+ */
+facets?: FindingsFacets, order: FindingsOrder, after?: string, offset?: number, 
 /**
  * The page's size; a sink writes every selected finding unless it is given.
  */
@@ -348,6 +352,12 @@ limit?: number, counts?: boolean, diagnostics?: FindingsPageRequest,
 sink?: Sink, };
 
 export type FindingsLineSearch = { text?: string, where?: Expr, };
+
+export type FindingsFacets = { 
+/**
+ * The folders under this path.
+ */
+folder?: string, assets?: boolean, assetTypes?: boolean, origins?: boolean, audiences?: boolean, };
 
 export type Query = { selection: QuerySelection, parts: QueryParts, };
 
@@ -1044,7 +1054,12 @@ sink?: SinkSummary,
  */
 total: number, counts?: FindingCounts, diagnostics?: FindingDiagnostics, 
 /**
- * Milliseconds per stage: select, order, page, compose and counts.
+ * The requested facets as the Text tab's facets read: `folders` (with `under`), `assets`,
+ * `assetTypes`, `origins` and `audiences`, each counting findings.
+ */
+facets?: JsonValue, 
+/**
+ * Milliseconds per stage: layer, lines, order, select, facets, page, compose and counts.
  */
 stages: { [stage: string]: number }, };
 

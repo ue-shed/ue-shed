@@ -551,6 +551,10 @@ impl Node {
                 Self::Const(_) | Self::Is(..) | Self::Under(_) => false,
             }
     }
+    /// Whether a mark of `facet` stands in the expression.
+    pub fn marks(&self, facet: Facet) -> bool {
+        self.any(&|node| matches!(node, Self::Facet(mark, _) if *mark == facet))
+    }
     /// Whether a test reads `field`.
     pub fn mentions(&self, field: Field) -> bool {
         self.any(&|node| matches!(node, Self::Is(read, _) if *read == field))

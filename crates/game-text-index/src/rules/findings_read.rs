@@ -56,8 +56,11 @@ impl EngineQuery {
         read: impl FnOnce(&Self, &FindingsLayer) -> Result<FindingsPage>,
         reply: &mut dyn Reply,
     ) -> Result<()> {
+        let opened = std::time::Instant::now();
         let layer = self.layer(key)?;
+        let opened = opened.elapsed().as_secs_f64() * 1000.0;
         let mut page = read(self, &layer)?;
+        page.add_stage("layer", opened);
         page.profile = ReadProfile {
             rows_requested: requested,
             findings_returned: page.findings.len(),

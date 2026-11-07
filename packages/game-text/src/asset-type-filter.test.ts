@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
@@ -184,14 +185,16 @@ describe("asset_type filter", () => {
 								filter: TextFilter,
 								scoped: boolean,
 								pageSize = 50
-							): TextCorpusSearchRequest => ({
-								query: "",
-								capability: "all",
-								pageSize,
-								filter,
-								facets: { assetTypes: true, origins: true },
-								...(scoped ? { localization } : undefined)
-							});
+							): TextCorpusSearchRequest => {
+								const where = textWhere({ filter });
+								return {
+									query: "",
+									pageSize,
+									...(where ? { where } : undefined),
+									facets: { assetTypes: true, origins: true },
+									...(scoped ? { localization } : undefined)
+								};
+							};
 							const search = (filter: TextFilter, scoped: boolean) =>
 								result
 									.search(request(filter, scoped))

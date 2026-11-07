@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
@@ -93,14 +94,17 @@ describe("text origins", () => {
 					other_source: 0
 				});
 				for (const kind of TEXT_ORIGIN_KINDS) {
-					const filtered = yield* query.search({ ...request, where: { kinds: [kind] } });
+					const filtered = yield* query.search({
+						...request,
+						where: textWhere({ kinds: [kind] })!
+					});
 					expect(filtered.total).toBe(all.counts.origins[kind]);
 					// The origin facet never narrows its own counts.
 					expect(filtered.counts.origins).toEqual(all.counts.origins);
 				}
 				const two = yield* query.search({
 					...request,
-					where: { kinds: ["data_table", "asset"] }
+					where: textWhere({ kinds: ["data_table", "asset"] })!
 				});
 				expect(two.total).toBe(2);
 				expect(two.counts.editable).toBe(2);
@@ -113,12 +117,12 @@ describe("text origins", () => {
 			Effect.gen(function* () {
 				const byObject = yield* query.search({
 					...request,
-					where: { pathPrefix: "/game/ui/" }
+					where: textWhere({ pathPrefix: "/game/ui/" })!
 				});
 				expect(byObject.units.map((item) => item.id)).toEqual(["unreal:NS:Row"]);
 				const byFile = yield* query.search({
 					...request,
-					where: { pathPrefix: "Content\\Characters\\" }
+					where: textWhere({ pathPrefix: "Content\\Characters\\" })!
 				});
 				expect(byFile.units.map((item) => item.id)).toEqual(["unreal:NS:Prop"]);
 				expect(byFile.counts.origins.asset).toBe(1);
@@ -146,14 +150,14 @@ describe("text origins", () => {
 				for (const kind of TEXT_ORIGIN_KINDS) {
 					const filtered = yield* query.search({
 						...localized,
-						where: { kinds: [kind] }
+						where: textWhere({ kinds: [kind] })!
 					});
 					expect(filtered.total).toBe(expected[kind]);
 					expect(filtered.counts.origins).toEqual(expected);
 				}
 				const source = yield* query.search({
 					...localized,
-					where: { pathPrefix: "source/game/" }
+					where: textWhere({ pathPrefix: "source/game/" })!
 				});
 				expect(source.localization?.lines.map((line) => line.identity?.key)).toEqual([
 					"Code"
@@ -190,14 +194,12 @@ describe("text origins", () => {
 			Effect.gen(function* () {
 				const page = yield* query.search({
 					...request,
-					where: {
-						files: [
-							"Content/UI/DT_Menu.uexp",
-							"/Game/Missing/Thing",
-							"E:/elsewhere/x.uasset",
-							"Source/Readme.md"
-						]
-					}
+					fileScope: [
+						"Content/UI/DT_Menu.uexp",
+						"/Game/Missing/Thing",
+						"E:/elsewhere/x.uasset",
+						"Source/Readme.md"
+					]
 				});
 				expect(page.units.map((item) => item.id)).toEqual(["unreal:NS:Row"]);
 				expect(page.fileScope).toEqual({
@@ -220,7 +222,7 @@ describe("text origins", () => {
 			Effect.gen(function* () {
 				const page = yield* query.search({
 					...localized,
-					where: { files: ["Source\\Game\\Private\\Menu.cpp"] }
+					fileScope: ["Source\\Game\\Private\\Menu.cpp"]
 				});
 				expect(page.localization?.lines.map((line) => line.identity?.key)).toEqual([
 					"Code"

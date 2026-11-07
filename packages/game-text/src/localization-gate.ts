@@ -511,9 +511,8 @@ export const indexedLocalizationGateTarget = Effect.fn("GameText.localizationGat
 ) {
 	const base = {
 		query: "",
-		capability: "all" as const,
 		localization: { target: input.join.target },
-		where: { files: input.files }
+		fileScope: input.files
 	};
 	const lines = yield* query.selectLocalizationLines(base, LOCALIZATION_GATE_FIELDS);
 	const page = yield* query.search({ ...base, pageSize: 1 });

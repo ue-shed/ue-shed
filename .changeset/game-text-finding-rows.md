@@ -12,3 +12,8 @@ Quality's request (`WorkspaceQualityRequest`) takes `where` and `facets` in plac
 and `fixable`; its page answers the requested `facets`. `@ue-shed/game-text/query` exports the
 `QueryExpr` schema and the converter from pills to `where` (`textWhere`, `qualityWhere`,
 `rowWhere`). Saved investigation presets are unchanged and replay as before.
+
+The Text tab's request (`TextCorpusSearchRequest`) takes the same `where` in place of `filter`,
+`capability`, `withoutNotes`, the location `where` and the localization lens (`state`, `review`,
+`keyChanged`, now `LocalizationLens`); a changed-file list is `fileScope`. `textWhere` builds the
+`where` from those controls.

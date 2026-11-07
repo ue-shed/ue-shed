@@ -242,7 +242,6 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	) {
 		const decoded = yield* decodeTextCorpusSearchRequest({
 			query: "",
-			capability: "all",
 			...request,
 			pageSize: 50
 		}).pipe(Effect.mapError((cause) => failed("export", cause)));

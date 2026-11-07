@@ -291,8 +291,11 @@ Settled by the owner on 2026-11-07:
    Quality's request takes `where` and `facets`; the workspace, the source report and the CLI
    read finding rows; presets convert their pills on replay; `findings_query` is deleted, and the
    parity test becomes one that checks finding rows' pages, counts and writes against each other.
-   Then the Text tab's request takes `where` and the facet list, and the Workbench converts its
-   pills.
+   Then the Text tab's request takes `where`: its pills, capability, translator-notes filter,
+   location and localization lens arrive as one expression, and a pasted changed-file list as
+   `fileScope`. The Workbench, the CLI and the corpus tools convert their controls with
+   `textWhere`; saved presets and stored view settings keep their format and convert on load.
+   The Text tab's facet request keeps its shape for now.
 6. **Electroswag.** Both tabs convert their pills and send `where`; Quality gets the Text tab's
    toolbar; the badge's duplicate request goes.
 7. **Measure** on Coral and the released project against §7, and the owner reviews.

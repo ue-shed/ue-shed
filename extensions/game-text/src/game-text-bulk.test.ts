@@ -107,14 +107,13 @@ describe("bulk actions", () => {
 		const selection = decodeLocalizationSelection({
 			target: "Game",
 			cultures: ["de", "fr"],
-			state: "not_translated",
-			review: "not_reviewed",
-			keyChanged: true,
 			searchTranslations: true
 		});
 		const request = exportRequest(selection, [line("Start", []), line("Quit", [])]);
 		expect(request.localization).toEqual({ target: "Game", cultures: ["de", "fr"] });
 		expect(request.lines).toEqual(["line:Start", "line:Quit"]);
+		// The list's lens lives in its `where`, which an export of ticked lines leaves out.
+		expect(request.where).toBeUndefined();
 	});
 
 	it("copies keys as two spreadsheet columns", () => {

@@ -137,7 +137,6 @@ describe("saved text in several packages", () => {
 							);
 							const request: TextCorpusSearchRequest = {
 								query: "Welcome",
-								capability: "all",
 								pageSize: 50
 							};
 							const units = places(yield* result.search(request));
@@ -165,7 +164,6 @@ describe("saved text in several packages", () => {
 							const lines = yield* result.query.selectLocalizationLines(
 								{
 									query: "Welcome",
-									capability: "all",
 									localization: { target: fixture.target.name }
 								},
 								["identity", "places"]

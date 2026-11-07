@@ -19,7 +19,6 @@ export function exportRequest(
 ): TextCorpusSearchRequest {
 	return {
 		query: "",
-		capability: "all",
 		localization: {
 			target: localization.target,
 			...(localization.culture === undefined ? undefined : { culture: localization.culture }),

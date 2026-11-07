@@ -9,7 +9,15 @@ import {
 	InvestigationError,
 	investigationTable
 } from "@ue-shed/unreal-assets/investigation";
-import { TextCorpus, TextCorpusSearchRequest, type TextFilterClause } from "./schema.js";
+import {
+	TextCapabilityFilter,
+	TextCorpus,
+	TextCorpusSearchRequest,
+	TextFilter,
+	TextWhere,
+	type TextFilterClause
+} from "./schema.js";
+import { LocalizationLens, LocalizationSelection } from "./localization-schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import {
 	WorkspaceQualityFilter,
@@ -18,7 +26,7 @@ import {
 } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
 import { CheckSeverity } from "./localization-check-ids.js";
-import { qualityWhere } from "./query-filter.js";
+import { qualityWhere, textWhere } from "./query-filter.js";
 import { TextQualityFilter, type AsyncTextQualityQuery } from "./quality-query.js";
 import type { TextUnit } from "./schema.js";
 
@@ -47,24 +55,26 @@ const SavedLens = Schema.Literals([
  * filters require quality mode and a selected localization target.
  */
 export const GameTextInvestigationQuery = Schema.Struct({
-	withoutNotes: TextCorpusSearchRequest.fields.withoutNotes,
+	withoutNotes: Schema.optional(Schema.Boolean),
 	mode: Schema.Literals(["corpus", "quality"]),
 	query: TextCorpusSearchRequest.fields.query,
-	capability: TextCorpusSearchRequest.fields.capability,
+	capability: TextCapabilityFilter,
 	/**
 	 * A lens from a preset saved before filter pills; `investigationRequest` reads it as the clause
 	 * it is now. New presets use `filter`.
 	 */
 	lens: Schema.optional(SavedLens),
-	where: TextCorpusSearchRequest.fields.where,
+	where: Schema.optionalKey(TextWhere),
 	/** Filter pills; presets saved before them use the fields above. */
-	filter: TextCorpusSearchRequest.fields.filter,
+	filter: Schema.optionalKey(TextFilter),
 	group: TextCorpusSearchRequest.fields.group,
 	/**
-	 * The localization target and cultures the pills were chosen against. Problem and translation
-	 * pills need it, so the export joins the target's files as the list does.
+	 * The localization target and cultures the pills were chosen against, with the lens. Problem
+	 * and translation pills need the target, so the export joins its files as the list does.
 	 */
-	localization: TextCorpusSearchRequest.fields.localization,
+	localization: Schema.optionalKey(
+		Schema.Struct({ ...LocalizationSelection.fields, ...LocalizationLens.fields })
+	),
 	qualityFilter: TextQualityFilter,
 	/** The localization quality list's filter; only a quality query over a target has one. */
 	workspaceFilter: Schema.optionalKey(WorkspaceQualityFilter),
@@ -86,20 +96,59 @@ export const GameTextInvestigationQuery = Schema.Struct({
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;
 
 /**
- * The request an investigation query runs, with a saved lens read as its clause: `shared`,
- * `duplicate_source` and `long` name those checks' findings (`localization.<check>`), and
- * `unresolved` and `conflicting` are facts.
+ * An investigation query's controls as a host shows them, with a saved lens read as its clause:
+ * `shared`, `duplicate_source` and `long` name those checks' findings (`localization.<check>`),
+ * and `unresolved` and `conflicting` are facts.
  */
-export function investigationRequest(
+export function investigationControls(
 	query: GameTextInvestigationQuery
 ): Omit<GameTextInvestigationQuery, "lens"> {
-	const { lens, ...request } = query;
-	if (lens === undefined || lens === "all") return request;
+	const { lens, ...controls } = query;
+	if (lens === undefined || lens === "all") return controls;
 	const clause: TextFilterClause =
 		lens === "unresolved" || lens === "conflicting"
 			? { field: "fact", op: "is", values: [lens] }
 			: { field: "finding", op: "is", values: [`localization.${lens}`] };
-	return { ...request, filter: [...(request.filter ?? []), clause] };
+	return { ...controls, filter: [...(controls.filter ?? []), clause] };
+}
+
+/**
+ * The search request an investigation query runs: its controls as one `where`, and its changed
+ * files as the file scope.
+ */
+export function investigationRequest(
+	query: GameTextInvestigationQuery
+): Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> {
+	const controls = investigationControls(query);
+	const saved = controls.localization;
+	const where = textWhere({
+		filter: controls.filter,
+		lens: saved && {
+			...(saved.state !== undefined && { state: saved.state }),
+			...(saved.review !== undefined && { review: saved.review }),
+			...(saved.keyChanged !== undefined && { keyChanged: saved.keyChanged })
+		},
+		capability: controls.capability,
+		withoutNotes: controls.withoutNotes,
+		kinds: controls.where?.kinds,
+		pathPrefix: controls.where?.pathPrefix
+	});
+	return {
+		query: controls.query,
+		...(saved && {
+			localization: {
+				target: saved.target,
+				...(saved.culture !== undefined && { culture: saved.culture }),
+				...(saved.cultures !== undefined && { cultures: saved.cultures }),
+				...(saved.searchTranslations !== undefined && {
+					searchTranslations: saved.searchTranslations
+				})
+			}
+		}),
+		...(where && { where }),
+		...(controls.where?.files && { fileScope: controls.where.files }),
+		...(controls.group && { group: controls.group })
+	};
 }
 type Narrowing = Schema.Schema.Type<Schema.Struct<typeof WorkspaceQualityNarrowing>>;
 type PresetNarrowing = Schema.Schema.Type<Schema.Struct<typeof PresetQualityNarrowing>>;

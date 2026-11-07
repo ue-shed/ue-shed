@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
@@ -120,7 +121,6 @@ describe("index queries", () => {
 								result
 									.search({
 										query: "",
-										capability: "all",
 										pageSize: 50,
 										...(scoped ? { localization } : undefined),
 										...patch
@@ -188,7 +188,7 @@ describe("index queries", () => {
 
 							// Exact text: case and trailing space are other texts.
 							const mushroom = yield* search(true, {
-								filter: [source("is", ["Mushroom"])]
+								where: textWhere({ filter: [source("is", ["Mushroom"])] })!
 							});
 							expect(mushroom).toMatchObject({
 								total: 3,
@@ -196,7 +196,9 @@ describe("index queries", () => {
 								problems: { not_gathered: 3 }
 							});
 							expect(
-								yield* search(false, { filter: [source("is", ["Mushroom"])] })
+								yield* search(false, {
+									where: textWhere({ filter: [source("is", ["Mushroom"])] })!
+								})
 							).toMatchObject({
 								total: 3,
 								units: ["unreal:Shop:Item", "unreal:UI:Header", "unreal:UI:Title"],
@@ -205,12 +207,16 @@ describe("index queries", () => {
 							});
 							expect(
 								yield* search(true, {
-									filter: [source("is", ["mushroom", "Mushroom ", "absent"])]
+									where: textWhere({
+										filter: [source("is", ["mushroom", "Mushroom ", "absent"])]
+									})!
 								})
 							).toMatchObject({ total: 2, lines: ["UI/Lower", "UI/Spaced"] });
 							// A unit with conflicting sources has each of them.
 							expect(
-								yield* search(false, { filter: [source("is", ["Blue cap"])] })
+								yield* search(false, {
+									where: textWhere({ filter: [source("is", ["Blue cap"])] })!
+								})
 							).toMatchObject({
 								total: 1,
 								units: ["unreal:UI:Cap"],
@@ -225,7 +231,9 @@ describe("index queries", () => {
 							});
 							expect(
 								yield* search(true, {
-									filter: [source("is_not", ["Mushroom", "Stem"])]
+									where: textWhere({
+										filter: [source("is_not", ["Mushroom", "Stem"])]
+									})!
 								})
 							).toMatchObject({
 								total: 4,
@@ -240,7 +248,11 @@ describe("index queries", () => {
 							// Every stored fact filters: the key holding two texts conflicts.
 							expect(
 								yield* search(true, {
-									filter: [{ field: "fact", op: "is", values: ["conflicting"] }]
+									where: textWhere({
+										filter: [
+											{ field: "fact", op: "is", values: ["conflicting"] }
+										]
+									})!
 								})
 							).toMatchObject({
 								total: 1,
@@ -250,7 +262,11 @@ describe("index queries", () => {
 							// Every saved place is read only, so every unit is evidence only.
 							expect(
 								yield* search(false, {
-									filter: [{ field: "fact", op: "is", values: ["evidence_only"] }]
+									where: textWhere({
+										filter: [
+											{ field: "fact", op: "is", values: ["evidence_only"] }
+										]
+									})!
 								})
 							).toMatchObject({ total: 8, units, problems: unitsProblems });
 

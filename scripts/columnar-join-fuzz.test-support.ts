@@ -750,7 +750,6 @@ export async function compareJoinFuzzInput(
 		Object.fromEntries(cultures.map((culture) => [culture.culture, culture]));
 	const request: TextCorpusSearchRequest = {
 		query: "",
-		capability: "all",
 		pageSize: 1,
 		localization: { target: expected.target }
 	};

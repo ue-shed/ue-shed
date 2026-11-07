@@ -378,7 +378,6 @@ it.effect("passes localization corpus focus through the selected target's query"
 		yield* service.configuredRefresh({});
 		yield* service.localizationTarget(localizationTarget.name);
 		const result = yield* service.search({
-			capability: "all",
 			query: "",
 			pageSize: 50,
 			localization: { target: localizationTarget.name }
@@ -551,9 +550,7 @@ it.effect(
 					status: "ready",
 					targets: []
 				});
-				expect(
-					yield* service.search({ query: "Source", capability: "all", pageSize: 50 })
-				).toMatchObject({
+				expect(yield* service.search({ query: "Source", pageSize: 50 })).toMatchObject({
 					status: "ready",
 					page: { total: 1 }
 				});
@@ -750,9 +747,7 @@ it.effect("an old project's scan cannot overwrite a newer project's result", () 
 			expect((yield* service.configuredRefresh({})).status).toBe("completed");
 			yield* Deferred.succeed(release, undefined);
 			expect((yield* Fiber.join(first)).status).toBe("failed");
-			expect(
-				(yield* service.search({ query: "", pageSize: 50, capability: "all" })).status
-			).toBe("ready");
+			expect((yield* service.search({ query: "", pageSize: 50 })).status).toBe("ready");
 		}).pipe(Effect.provide(gameTextLive.pipe(Layer.provide(project), Layer.provide(corpus))));
 	})
 );
@@ -808,8 +803,7 @@ for (const phase of ["candidates", "scan"] as const) {
 					expect(
 						(yield* service.search({
 							query: "",
-							pageSize: 50,
-							capability: "all"
+							pageSize: 50
 						})).status
 					).not.toBe("ready");
 					expect(
@@ -828,8 +822,7 @@ for (const phase of ["candidates", "scan"] as const) {
 					expect(
 						(yield* service.search({
 							query: "",
-							pageSize: 50,
-							capability: "all"
+							pageSize: 50
 						})).status
 					).toBe("ready");
 				}).pipe(
@@ -978,7 +971,7 @@ it.effect(
 				},
 				status: "failed"
 			});
-			expect(yield* service.search({ capability: "all", pageSize: 50, query: "" })).toEqual({
+			expect(yield* service.search({ pageSize: 50, query: "" })).toEqual({
 				page: {
 					total: 0,
 					units: [],

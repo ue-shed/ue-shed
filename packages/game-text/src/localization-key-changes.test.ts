@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 import { describe, expect } from "vitest";
@@ -280,7 +281,7 @@ describe("localization key changes", () => {
 				expect((yield* query.search(request)).localization?.keyChanged).toBe(1);
 				const changed = yield* query.search({
 					...request,
-					localization: { ...request.localization, keyChanged: true }
+					where: textWhere({ lens: { keyChanged: true } })!
 				});
 				expect(changed.total).toBe(1);
 				expect(changed.localization?.lines[0]?.keyChange?.other.key).toBe("OldKey");

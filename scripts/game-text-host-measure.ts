@@ -1,5 +1,6 @@
 /// <reference path="../apps/workbench/node_modules/electron/electron.d.ts" />
 import { GameTextIndexBuilderLive } from "../packages/game-text/dist/entry-index.js";
+import { textWhere } from "../packages/game-text/dist/entry-query.js";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { Context, Effect, Exit, Layer, Schema, Scope, Stream, type Tracer } from "effect";
@@ -385,7 +386,6 @@ export async function measureGameTextHosts(
 	};
 	const base: TextCorpusSearchRequest = {
 		query: "",
-		capability: "all",
 		pageSize: 1,
 		localization: { target: targetName, culture: CultureCode.make(recipe.cultures[0]!) }
 	};
@@ -463,7 +463,9 @@ export async function measureGameTextHosts(
 			() =>
 				query({
 					...base,
-					filter: [{ field: "problem", op: "is", values: ["translation"] }]
+					where: textWhere({
+						filter: [{ field: "problem", op: "is", values: ["translation"] }]
+					})!
 				}),
 			pageSummary
 		);

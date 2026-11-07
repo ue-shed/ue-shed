@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import type { SavedAssetPackageTextRecord } from "@ue-shed/unreal-assets";
@@ -141,9 +142,8 @@ describe("translation_key filter", () => {
 								result
 									.search({
 										query: "",
-										capability: "all",
 										pageSize: 50,
-										filter,
+										where: textWhere({ filter })!,
 										facets: { origins: true },
 										...(scoped ? { localization } : undefined)
 									})

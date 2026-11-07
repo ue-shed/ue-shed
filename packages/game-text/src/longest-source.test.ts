@@ -49,7 +49,6 @@ it.live("measures the longest conflicting source through the index and each refr
 				for (const localization of [undefined, { target: fixture.target.name }]) {
 					const page = yield* indexed.query.search({
 						query: "",
-						capability: "all",
 						pageSize: 50,
 						...(localization ? { localization } : undefined)
 					});

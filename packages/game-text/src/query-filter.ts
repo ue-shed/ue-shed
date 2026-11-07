@@ -4,7 +4,7 @@
  */
 import { Option, Schema } from "effect";
 import { type GameTextContract, queryFields } from "@ue-shed/protocol";
-import type { LocalizationSelection } from "./localization-schema.js";
+import type { LocalizationLens } from "./localization-schema.js";
 import type { TextCapabilityFilter, TextFilterClause, TextOriginKind } from "./schema.js";
 
 type JsonValue = GameTextContract.JsonValue;
@@ -214,7 +214,7 @@ export interface TextFilterInput {
 	/** Only these localization lines, such as a selection. */
 	readonly lines?: readonly string[] | undefined;
 	/** The localization lens: a state, a review flag, or changed keys. */
-	readonly lens?: Pick<LocalizationSelection, "state" | "review" | "keyChanged"> | undefined;
+	readonly lens?: LocalizationLens | undefined;
 	/** A place that can be edited, or read only, rather than any. */
 	readonly capability?: TextCapabilityFilter | undefined;
 	/** A place without translator notes. */

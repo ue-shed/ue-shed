@@ -192,9 +192,9 @@ describe("Game Text review state", () => {
 		expect(within(bar).getByText("3 selected")).toBeDefined();
 		await user.click(within(bar).getByRole("button", { name: "Export for translators" }));
 		await within(bar).findByText("Exported 3 lines.");
-		expect(exports[0]).toMatchObject({ query: "", capability: "all" });
+		expect(exports[0]).toMatchObject({ query: "" });
 		expect(exports[0]?.lines).toHaveLength(3);
-		expect(exports[0]?.filter).toBeUndefined();
+		expect(exports[0]?.where).toBeUndefined();
 		await user.click(screen.getByRole("button", { name: "Export" }));
 		await user.click(await screen.findByRole("button", { name: "All languages (CSV)" }));
 		await screen.findByText("Exported 3 rows: C:/out/picked.csv");

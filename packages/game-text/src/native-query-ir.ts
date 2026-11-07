@@ -1,28 +1,18 @@
 /**
- * Builds the engine's `query` request from a search request: filter pills, the location scope
- * and the localization lens become a `where` in the rule IR, with facet marks on the conjuncts a
- * facet's counts drop. Saved documents keep their search requests; this is how they reach the
- * engine.
+ * Builds the engine's `query` request from a search request: its `where`, the selected lines and
+ * the changed files become the selection, and its groups and facets the parts.
  */
 import type { GameTextContract } from "@ue-shed/protocol";
-import type {
-	TextCorpusSearchRequest,
-	TextFacetRequest,
-	TextFilterClause,
-	TextGroupBy
-} from "./schema.js";
+import type { TextCorpusSearchRequest, TextFacetRequest, TextGroupBy } from "./schema.js";
 
 type Expr = GameTextContract.Expr;
 type JsonValue = GameTextContract.JsonValue;
 type QueryField = GameTextContract.QueryField;
 
 /** The fields of a search request that choose its rows. */
-export type QuerySelectionFields = Pick<TextCorpusSearchRequest, "query" | "capability"> &
+export type QuerySelectionFields = Pick<TextCorpusSearchRequest, "query"> &
 	Partial<
-		Pick<
-			TextCorpusSearchRequest,
-			"withoutNotes" | "where" | "filter" | "lines" | "localization" | "findings"
-		>
+		Pick<TextCorpusSearchRequest, "where" | "fileScope" | "lines" | "localization" | "findings">
 	>;
 
 const field = (name: string): Expr => ({ field: name });
@@ -35,116 +25,17 @@ const oneOf = (name: string, values: readonly JsonValue[]): Expr => ({
 const holds = (name: string, values: readonly JsonValue[]): Expr => ({
 	any: [field(name), { in: [item, { lit: values }] }]
 });
-const is = (name: string, value: boolean): Expr => ({ eq: [field(name), { lit: value }] });
-const all = (tests: readonly Expr[]): Expr => (tests.length === 1 ? tests[0]! : { and: tests });
-const some = (tests: readonly Expr[]): Expr => (tests.length === 1 ? tests[0]! : { or: tests });
-/** A test that counting by `name` drops. */
-const marked = (name: QueryField, test: Expr): Expr => ({ facet: [name, test] });
-const under = (prefixes: readonly string[]): Expr => ({
-	any: [
-		field("paths"),
-		some(prefixes.map((prefix) => ({ pathHasPrefix: [item, { lit: prefix }] })))
-	]
-});
-
-const STATES = {
-	missing: "not_translated",
-	to_update: "needs_update",
-	not_synced: "not_synced"
-} as const;
-
 /**
- * One pill: `is` holds when the row has one of the values, `is_not` when it has none. The facets'
- * own pills carry their mark.
- */
-const pill = (clause: TextFilterClause): Expr => {
-	const test = (expr: Expr): Expr => (clause.op === "is" ? expr : { not: expr });
-	switch (clause.field) {
-		case "problem":
-			return marked("problems", test(holds("problems", clause.values)));
-		case "finding":
-			return marked("findings", test(holds("findings", clause.values)));
-		case "fact":
-			return marked("facts", test(holds("facts", clause.values)));
-		case "origin":
-			return marked("origins", test(holds("origins", clause.values)));
-		case "folder":
-			return marked("paths", test(under(clause.values)));
-		case "asset":
-			return marked("files", test(holds("files", clause.values)));
-		case "audience":
-			return marked("audience", test(oneOf("audience", clause.values)));
-		case "asset_type":
-			return marked("assetTypes", test(holds("assetTypes", clause.values)));
-		case "namespace":
-			return test(oneOf("namespace", clause.values));
-		case "editing":
-			return test(holds("editing", clause.values));
-		case "notes":
-			return test(
-				oneOf(
-					"notes",
-					clause.values.map((value) => value === "present")
-				)
-			);
-		case "translation_key":
-			// Each value is a validated `JSON.stringify([namespace, key])`.
-			return test(
-				oneOf(
-					"translationKey",
-					clause.values.map((value): JsonValue => JSON.parse(value))
-				)
-			);
-		case "source":
-			return test(holds("sources", clause.values));
-		case "translation":
-			// A culture of the scope has no translation, an old one, or one not in Unreal.
-			return test({
-				anyCulture: some([
-					oneOf(
-						"state",
-						clause.values.map((value) => STATES[value])
-					),
-					...(clause.values.includes("not_synced") ? [is("notSynced", true)] : [])
-				])
-			});
-	}
-};
-
-/**
- * A search request's rows as a query selection. The capability, translator-notes and location
- * filters must hold on one place together; the counts' tabs drop their marks.
+ * A search request's rows as a query selection: its `where`, its lines, and a place in its
+ * changed files.
  */
 export const querySelection = (request: QuerySelectionFields): GameTextContract.QuerySelection => {
 	const localization = request.localization;
-	const conjuncts: Expr[] = (request.filter ?? []).map(pill);
+	const conjuncts: Expr[] = [];
+	if (request.where) conjuncts.push(request.where);
 	if (request.lines) conjuncts.push(oneOf("id", request.lines));
-	if (localization?.state)
-		conjuncts.push({
-			anyCulture:
-				localization.state === "not_synced"
-					? is("notSynced", true)
-					: oneOf("state", [localization.state])
-		});
-	if (localization?.review)
-		conjuncts.push({ anyCulture: holds("review", [localization.review]) });
-	if (localization?.keyChanged === true) conjuncts.push(is("keyChanged", true));
-	const place: Expr[] = [];
-	if (request.capability !== "all")
-		place.push(
-			marked(
-				"editing",
-				holds("editing", [
-					request.capability === "source_editable" ? "editable" : "read_only"
-				])
-			)
-		);
-	if (request.withoutNotes === true) place.push(marked("notes", is("notes", false)));
-	const where = request.where;
-	if (where?.kinds) place.push(marked("origins", holds("origins", where.kinds)));
-	if (where?.pathPrefix) place.push(under([where.pathPrefix]));
-	if (where?.files) place.push(holds("files", where.files));
-	if (place.length > 0) conjuncts.push({ anyPlace: all(place) });
+	if (request.fileScope) conjuncts.push({ anyPlace: holds("files", request.fileScope) });
+	const all = (tests: readonly Expr[]): Expr => (tests.length === 1 ? tests[0]! : { and: tests });
 	return {
 		...(localization && {
 			target: localization.target,
@@ -252,7 +143,7 @@ export const searchQuery = (
 						...(request.minGroupSize !== undefined && { minSize: request.minGroupSize })
 					}
 				}),
-				...(request.where?.files && { fileScope: request.where.files })
+				...(request.fileScope && { fileScope: request.fileScope })
 			})
 		}
 	};

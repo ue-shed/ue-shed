@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
 import { describe, expect } from "vitest";
@@ -211,7 +212,6 @@ describe("game text corpus", () => {
 			return withIndexedCorpus(corpus, {}, ({ query }) =>
 				Effect.gen(function* () {
 					const page = yield* query.search({
-						capability: "all",
 						query: "",
 						pageSize: 50
 					});
@@ -269,9 +269,8 @@ describe("game text corpus", () => {
 			expect(searchTextCorpus(corpus, "GreetingAgain Label")).toHaveLength(0);
 			expect(searchTextCorpus(corpus, "missing")).toHaveLength(0);
 			return withIndexedCorpus(corpus, {}, ({ query }) =>
-				Effect.map(
-					query.search({ capability: "all", pageSize: 50, query: "Greeting" }),
-					(page) => expect(page.total).toBe(0)
+				Effect.map(query.search({ pageSize: 50, query: "Greeting" }), (page) =>
+					expect(page.total).toBe(0)
 				)
 			);
 		}
@@ -311,12 +310,8 @@ describe("game text corpus", () => {
 		expect(searchTextCorpus(corpus, "hel")).toHaveLength(1);
 		return withIndexedCorpus(corpus, {}, ({ query }) =>
 			Effect.gen(function* () {
-				expect(
-					(yield* query.search({ capability: "all", pageSize: 50, query: "hel" })).total
-				).toBe(1);
-				expect(
-					(yield* query.search({ capability: "all", pageSize: 50, query: "" })).total
-				).toBe(1);
+				expect((yield* query.search({ pageSize: 50, query: "hel" })).total).toBe(1);
+				expect((yield* query.search({ pageSize: 50, query: "" })).total).toBe(1);
 			})
 		);
 	});
@@ -330,7 +325,7 @@ describe("game text corpus", () => {
 			return withIndexedCorpus(corpus, {}, ({ query }) =>
 				Effect.gen(function* () {
 					const page = yield* query.search({
-						capability: "source_editable",
+						where: textWhere({ capability: "source_editable" })!,
 						pageSize: 1,
 						query: "Hello"
 					});
@@ -377,7 +372,7 @@ describe("corpus query pages and exports", () => {
 	it.live("carries a bounded location preview and the remaining context count", () =>
 		withIndexedCorpus({ units: [continueUnit("Continue", "Continue")] }, {}, ({ query }) =>
 			Effect.gen(function* () {
-				const page = yield* query.search({ capability: "all", pageSize: 50, query: "" });
+				const page = yield* query.search({ pageSize: 50, query: "" });
 				expect(page.units[0]?.contexts).toHaveLength(3);
 				expect(page.units[0]?.contexts[0]?.location).toEqual({
 					kind: "data_table_cell",
@@ -422,7 +417,10 @@ describe("corpus query pages and exports", () => {
 				expect(none.units).toEqual([]);
 				expect(none.coverage).toEqual(coverage);
 				expect(
-					(yield* query.export({ ...request, capability: "read_only" })).units
+					(yield* query.export({
+						...request,
+						where: textWhere({ capability: "read_only" })!
+					})).units
 				).toEqual([]);
 			})
 		);

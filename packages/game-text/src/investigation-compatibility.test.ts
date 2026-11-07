@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { exportGameTextInvestigation } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
@@ -161,13 +162,13 @@ describe("investigation format compatibility", () => {
 					}
 				}).query
 			);
-		expect(open("unresolved").filter).toEqual([
-			{ field: "fact", op: "is", values: ["unresolved"] }
-		]);
-		expect(open("shared").filter).toEqual([
-			{ field: "finding", op: "is", values: ["localization.shared"] }
-		]);
-		expect(open("all").filter).toBeUndefined();
+		expect(open("unresolved").where).toEqual(
+			textWhere({ filter: [{ field: "fact", op: "is", values: ["unresolved"] }] })
+		);
+		expect(open("shared").where).toEqual(
+			textWhere({ filter: [{ field: "finding", op: "is", values: ["localization.shared"] }] })
+		);
+		expect(open("all").where).toBeUndefined();
 		expect("lens" in open("long")).toBe(false);
 	});
 });

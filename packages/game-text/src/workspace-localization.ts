@@ -138,7 +138,6 @@ const isLocalizationReportError = Schema.is(LocalizationReportError);
 /** Every line of a target's join: the lines reports and key pairing read. */
 const indexedLines = (target: LocalizationJoin["target"]) => ({
 	query: "",
-	capability: "all" as const,
 	localization: { target }
 });
 /** The selection's index reads a report needs. */
@@ -494,8 +493,6 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			const textCountsResult = yield* indexed.success
 				.search({
 					query: "",
-					capability: "all",
-					withoutNotes: false,
 					pageSize: 1,
 					localization: { target: name }
 				})

@@ -13,7 +13,7 @@ import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { For, Show, createSignal, createUniqueId } from "solid-js";
 
 /** A location filter with only the given parts; none at all means no filter. */
-export function textWhere(
+export function textLocation(
 	kinds: readonly TextOriginKind[] | undefined,
 	pathPrefix: string | undefined,
 	files?: readonly string[]
@@ -87,7 +87,7 @@ export function WhereFilter(props: {
 	const toggle = (kind: TextOriginKind) => {
 		const kinds = props.where?.kinds ?? [];
 		props.onChange(
-			textWhere(
+			textLocation(
 				selected(kind) ? kinds.filter((item) => item !== kind) : [...kinds, kind],
 				props.where?.pathPrefix,
 				props.where?.files
@@ -98,7 +98,7 @@ export function WhereFilter(props: {
 		const prefix = value.trim().slice(0, 512);
 		if (prefix === (props.where?.pathPrefix ?? "")) return;
 		props.onChange(
-			textWhere(props.where?.kinds, prefix === "" ? undefined : prefix, props.where?.files)
+			textLocation(props.where?.kinds, prefix === "" ? undefined : prefix, props.where?.files)
 		);
 	};
 	const showFiles = () => {
@@ -114,12 +114,12 @@ export function WhereFilter(props: {
 		}
 		setMessage(undefined);
 		setOpen(false);
-		props.onChange(textWhere(props.where?.kinds, props.where?.pathPrefix, listed));
+		props.onChange(textLocation(props.where?.kinds, props.where?.pathPrefix, listed));
 	};
 	const clearFiles = () => {
 		setDraft("");
 		setMessage(undefined);
-		props.onChange(textWhere(props.where?.kinds, props.where?.pathPrefix));
+		props.onChange(textLocation(props.where?.kinds, props.where?.pathPrefix));
 	};
 	return (
 		<>

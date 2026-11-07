@@ -11,6 +11,7 @@ import {
 	LocalizationProjectRule
 } from "@ue-shed/game-text/rules";
 import {
+	LocalizationLens,
 	LocalizationSelection,
 	LocalizationLineId,
 	TextCapabilityFilter,
@@ -118,8 +119,8 @@ const StoredPreferences = Schema.Struct({
 	localizationTarget: lenient(Schema.optionalKey(LocalizationSelection.fields.target)),
 	localizationCulture: lenient(LocalizationSelection.fields.culture),
 	localizationCultures: lenient(LocalizationSelection.fields.cultures),
-	localizationState: lenient(LocalizationSelection.fields.state),
-	localizationReview: lenient(LocalizationSelection.fields.review),
+	localizationState: lenient(LocalizationLens.fields.state),
+	localizationReview: lenient(LocalizationLens.fields.review),
 	localizationKeyChanged: lenient(Schema.optionalKey(Schema.Boolean)),
 	searchTranslations: lenient(Schema.optionalKey(Schema.Boolean)),
 	selectedLocalizationId: lenient(Schema.optionalKey(LocalizationLineId)),
@@ -159,12 +160,8 @@ export interface GameTextPreferences {
 	readonly localizationCultures?:
 		| Schema.Schema.Type<typeof LocalizationSelection>["cultures"]
 		| undefined;
-	readonly localizationState?:
-		| Schema.Schema.Type<typeof LocalizationSelection>["state"]
-		| undefined;
-	readonly localizationReview?:
-		| Schema.Schema.Type<typeof LocalizationSelection>["review"]
-		| undefined;
+	readonly localizationState?: LocalizationLens["state"] | undefined;
+	readonly localizationReview?: LocalizationLens["review"] | undefined;
 	readonly localizationKeyChanged?: boolean | undefined;
 	readonly searchTranslations?: boolean | undefined;
 	readonly selectedLocalizationId?: Schema.Schema.Type<typeof LocalizationLineId> | undefined;
@@ -214,7 +211,7 @@ export function migratePreferences(preferences: GameTextPreferences): GameTextPr
  * preset without them picks the first target and every culture, as before presets carried them.
  */
 export function localizationPreferences(
-	selection: Schema.Schema.Type<typeof LocalizationSelection> | undefined
+	selection: (Schema.Schema.Type<typeof LocalizationSelection> & LocalizationLens) | undefined
 ) {
 	return {
 		localizationTarget: selection?.target,

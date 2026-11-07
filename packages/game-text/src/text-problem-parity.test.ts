@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { describe, expect, it } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -358,12 +359,15 @@ describe("text problems in the engine and textProblems", () => {
 									for (const group of [undefined, "problem" as const]) {
 										const request: TextCorpusSearchRequest = {
 											query: "",
-											capability: "all",
 											pageSize: 50,
 											facets: { origins: true },
 											...(variant.filter === undefined
 												? undefined
-												: { filter: variant.filter }),
+												: {
+														where: textWhere({
+															filter: variant.filter
+														})!
+													}),
 											...(group === undefined ? undefined : { group }),
 											...(scoped
 												? { localization: { target: fixture.target.name } }
@@ -398,7 +402,7 @@ describe("text problems in the engine and textProblems", () => {
 										// A row has the problem its filter asked for, and without
 										// a findings layer neither a finding nor the problem.
 										const asked: readonly string[] | undefined =
-											request.filter?.find(
+											variant.filter?.find(
 												(clause) => clause.field === "problem"
 											)?.values;
 										if (asked)

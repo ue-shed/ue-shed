@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { TextNamespace } from "@ue-shed/localization/browser";
 import { it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
@@ -111,7 +112,6 @@ const indexed = <A, E>(use: (query: NativeTextQuery) => Effect.Effect<A, E>) =>
 	withIndexedCorpus(text, { files }, (model) => use(model.query));
 const request: TextCorpusSearchRequest = {
 	query: "",
-	capability: "all",
 	pageSize: 50,
 	localization: { target: target.name }
 };
@@ -207,7 +207,7 @@ describe("text groups and facets", () => {
 					];
 					const filtered = yield* query.search({
 						...request,
-						filter,
+						where: textWhere({ filter })!,
 						facets: { folder: "Content/Text/UI" }
 					});
 					expect(filtered.total).toBe(entry.count);
@@ -230,7 +230,9 @@ describe("text groups and facets", () => {
 				for (const entry of assets) {
 					const filtered = yield* query.search({
 						...request,
-						filter: [{ field: "asset", op: "is", values: [entry.label] }],
+						where: textWhere({
+							filter: [{ field: "asset", op: "is", values: [entry.label] }]
+						})!,
 						facets: { assets: true }
 					});
 					expect(filtered.total).toBe(entry.count);
@@ -260,7 +262,6 @@ describe("text groups and facets", () => {
 			Effect.gen(function* () {
 				const page = yield* query.search({
 					query: "",
-					capability: "all",
 					pageSize: 50,
 					group: "folder"
 				});
@@ -272,9 +273,10 @@ describe("text groups and facets", () => {
 				]);
 				const quests = yield* query.search({
 					query: "",
-					capability: "all",
 					pageSize: 50,
-					filter: [{ field: "namespace", op: "is", values: ["Quests"] }]
+					where: textWhere({
+						filter: [{ field: "namespace", op: "is", values: ["Quests"] }]
+					})!
 				});
 				expect(quests.total).toBe(2);
 			})

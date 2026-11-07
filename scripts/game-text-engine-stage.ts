@@ -17,6 +17,7 @@ import * as currentAssets from "../packages/unreal-assets/dist/index.js";
 import * as currentLocalization from "../packages/localization/dist/index.js";
 import * as currentCorpus from "../packages/game-text/dist/entry-corpus.js";
 import * as currentRules from "../packages/game-text/dist/entry-rules.js";
+import * as currentQuery from "../packages/game-text/dist/entry-query.js";
 import { retainedPackageSource } from "./game-text-scale-quality.ts";
 import { trackBenchmarkEventLoop } from "./benchmark-event-loop.ts";
 import {
@@ -97,6 +98,14 @@ export async function runEngineStage(options: EngineStageOptions) {
 	// The schema comes from the revision loaded above, so its compilers are built once per run.
 	const decodeSearchRequest = Schema.decodeUnknownSync(TextCorpusSearchRequest);
 	const decodeSearchRequestSync = Schema.decodeSync(TextCorpusSearchRequest);
+	// Revisions before requests took `where` list their pills as `filter`.
+	const pillRequests = "filter" in TextCorpusSearchRequest.fields;
+	const queryApi = pillRequests
+		? undefined
+		: await load("game-text/dist/entry-query.js", currentQuery);
+	/** A request's pills in the loaded revision's shape. */
+	const narrowed = (filter: currentSchema.TextFilter) =>
+		queryApi === undefined ? { filter } : { where: queryApi.textWhere({ filter }) };
 	const { AssetReader, AssetReaderLive, projectIndexProcessLayerFromReader } = await load(
 		"unreal-assets/dist/index.js",
 		currentAssets
@@ -617,8 +626,7 @@ export async function runEngineStage(options: EngineStageOptions) {
 				const nothing = () =>
 					run(
 						query.exportWithSignals({
-							query: "\u{10ffff}no match\u{10ffff}",
-							capability: "all"
+							query: "\u{10ffff}no match\u{10ffff}"
 						})
 					).then(({ corpus }) => ({ rowCount: corpus.units.length }));
 				for (let repeat = 0; repeat < 5; repeat++)
@@ -641,22 +649,45 @@ export async function runEngineStage(options: EngineStageOptions) {
 						query.findingsEvaluate(effectiveRuleDocument(freshRules()))
 					);
 					await cancel(`cancel:export:${repeat}`, () =>
-						query.exportWithSignals({ query: "", capability: "all" })
+						query.exportWithSignals({ query: "" })
 					);
 				}
 				// A 5,000-row findings page over the captured rules' layer.
 				const { key } = await run(query.findingsEvaluate(effectiveRuleDocument(captured)));
+				// Revisions before finding rows read the same page with `findingsQuery`.
+				const legacy: {
+					readonly findingRows?: unknown;
+					readonly findingsQuery?: (request: {
+						readonly key: string;
+						readonly view: "workspace";
+						readonly order: "severity";
+						readonly offset: number;
+						readonly limit: number;
+					}) => Effect.Effect<unknown, unknown>;
+				} = query;
 				for (let repeat = 0; repeat < 10; repeat++)
 					await measure(`findings-page:${repeat}`, () =>
-						run(
-							query.findingRows({
-								selection: {
-									rows: "findings",
-									findings: { key, view: "workspace" }
-								},
-								parts: { rows: { order: "severity", offset: 0, limit: 5000 } }
-							})
-						)
+						legacy.findingsQuery
+							? run(
+									legacy.findingsQuery({
+										key,
+										view: "workspace",
+										order: "severity",
+										offset: 0,
+										limit: 5000
+									})
+								)
+							: run(
+									query.findingRows({
+										selection: {
+											rows: "findings",
+											findings: { key, view: "workspace" }
+										},
+										parts: {
+											rows: { order: "severity", offset: 0, limit: 5000 }
+										}
+									})
+								)
 					);
 				// The engine's resident memory: the worker's descendants with one snapshot open.
 				const engineBytes = async () =>
@@ -754,13 +785,13 @@ export async function runEngineStage(options: EngineStageOptions) {
 									? {
 											...base,
 											query: prefix,
-											filter: [
+											...narrowed([
 												{
 													field: "audience",
 													op: "is_not",
 													values: ["editor"]
 												}
-											]
+											])
 										}
 									: { ...base, query: prefix }
 							);
@@ -841,18 +872,17 @@ export async function runEngineStage(options: EngineStageOptions) {
 									: undefined;
 								causePages.push(
 									await search(
-										decodeSearchRequestSync({
+										decodeSearchRequest({
 											query: "",
-											capability: "all",
 											pageSize: selection.pageSize,
-											filter: [
+											...narrowed([
 												{
 													field: "fact",
 													op: "is",
 													values: ["conflicting"]
 												},
 												{ field: "asset", op: "is", values: files }
-											],
+											]),
 											...cursor
 										})
 									)
@@ -886,13 +916,12 @@ export async function runEngineStage(options: EngineStageOptions) {
 									? gatheredIdentityKey(identity)
 									: JSON.stringify(["", ""]);
 								const page = await search(
-									decodeSearchRequestSync({
+									decodeSearchRequest({
 										query: "",
-										capability: "all",
 										pageSize: selection.keySearchPageSize,
-										filter: [
+										...narrowed([
 											{ field: "translation_key", op: "is", values: [key] }
-										]
+										])
 									})
 								);
 								const ids = page.units

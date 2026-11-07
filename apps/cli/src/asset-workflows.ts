@@ -1,5 +1,5 @@
 import { readChangedFiles } from "./workflows/changed-files.js";
-import { textWhere } from "./commands/localization-flags.js";
+import { textRequestFilter } from "./commands/localization-flags.js";
 import { readFile, stat } from "node:fs/promises";
 import { EnhancedInputService, EnhancedInputServiceLive } from "@ue-shed/enhanced-input";
 import {
@@ -188,16 +188,14 @@ export const runTextSearch = Effect.fn("Cli.workflow.text_search")((command: Tex
 				{ projectRoot: command.projectRoot },
 				command.reader
 			);
-			const where = textWhere(
-				command,
-				command.changedFiles === undefined
-					? undefined
-					: yield* readChangedFiles(command.changedFiles, command.projectRoot)
-			);
 			const exported = yield* query.export({
 				query: command.query,
-				capability: "all",
-				...(where ? { where } : undefined)
+				...textRequestFilter(command, {
+					files:
+						command.changedFiles === undefined
+							? undefined
+							: yield* readChangedFiles(command.changedFiles, command.projectRoot)
+				})
 			});
 			// `--limit` bounds the printed lines here as it does with `--target`; a broad word
 			// would otherwise print every match in the project.

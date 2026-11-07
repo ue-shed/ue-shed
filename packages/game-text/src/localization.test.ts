@@ -207,7 +207,7 @@ describe("localization identity join and precedence", () => {
 				{ namespace: "UI [B]", key: "K" }
 			]);
 			return withIndexedCorpus(text, {}, ({ query }) =>
-				Effect.map(query.search({ capability: "all", query: "", pageSize: 50 }), (page) =>
+				Effect.map(query.search({ query: "", pageSize: 50 }), (page) =>
 					expect(page.counts.conflicting).toBe(0)
 				)
 			);
@@ -374,7 +374,7 @@ describe("localization identity join and precedence", () => {
 				expect(line.cultures[0]?.facts).not.toContain("changed_since_gather");
 			}
 			return withIndexedCorpus(text, {}, ({ query }) =>
-				Effect.map(query.search({ capability: "all", query: "", pageSize: 50 }), (page) =>
+				Effect.map(query.search({ query: "", pageSize: 50 }), (page) =>
 					expect(page.counts).toMatchObject({ conflicting: 0 })
 				)
 			);

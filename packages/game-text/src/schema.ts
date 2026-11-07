@@ -1,4 +1,5 @@
 import { Effect, Option, Schema } from "effect";
+import { QueryExpr } from "./query-filter.js";
 import { SavedAssetTextCoverageGap } from "@ue-shed/unreal-assets/text-extraction";
 import { TextUnitId, TextOccurrenceId } from "./identifiers.js";
 import {
@@ -323,9 +324,15 @@ export const TextOriginKind = Schema.Literals([
 ]);
 export type TextOriginKind = Schema.Schema.Type<typeof TextOriginKind>;
 
+/** A changed-file list, as pasted: project paths or absolute paths under the project. */
+export const TextScopeFiles = Schema.Array(Schema.String.check(Schema.isMaxLength(1024))).check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(MAX_TEXT_SCOPE_FILES)
+);
+
 /**
- * Location filters: any of the given origin kinds, a path prefix, and a list of changed files
- * (project-relative package or source files, or `/Game` package paths).
+ * Location filters, as saved presets keep them: any of the given origin kinds, a path prefix,
+ * and a list of changed files (project-relative package or source files, or `/Game` paths).
  */
 export const TextWhere = Schema.Struct({
 	kinds: Schema.optionalKey(
@@ -334,12 +341,7 @@ export const TextWhere = Schema.Struct({
 	pathPrefix: Schema.optionalKey(
 		Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
 	),
-	files: Schema.optionalKey(
-		Schema.Array(Schema.String.check(Schema.isMaxLength(1024))).check(
-			Schema.isMinLength(1),
-			Schema.isMaxLength(MAX_TEXT_SCOPE_FILES)
-		)
-	)
+	files: Schema.optionalKey(TextScopeFiles)
 });
 export type TextWhere = Schema.Schema.Type<typeof TextWhere>;
 
@@ -762,12 +764,17 @@ export const parseTextCorpusQueryRunResult = gameTextResponseParser(
 export const TextCorpusSearchRequest = Schema.Struct({
 	localization: Schema.optionalKey(LocalizationSelection),
 	localizationCursor: Schema.optionalKey(LocalizationLineId),
-	withoutNotes: Schema.optional(Schema.Boolean),
-	capability: TextCapabilityFilter,
 	cursor: Schema.optional(TextUnitId),
-	where: Schema.optionalKey(TextWhere),
-	/** Filter pills, applied on top of the other fields. */
-	filter: Schema.optionalKey(TextFilter),
+	/**
+	 * The rows' filter, as `textWhere` writes it from the Text tab's controls or as a host builds
+	 * it. A test marked with a field leaves that field's facet and groups.
+	 */
+	where: Schema.optionalKey(QueryExpr),
+	/**
+	 * A changed-file list: only lines with a place in these files, and the page reports how the
+	 * list relates to the project (`fileScope`). Paths under the project may be absolute.
+	 */
+	fileScope: Schema.optionalKey(TextScopeFiles),
 	/** Only these localization lines, such as a selection. */
 	lines: Schema.optionalKey(
 		Schema.Array(LocalizationLineId).check(

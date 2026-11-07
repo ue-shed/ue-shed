@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { describe, expect, it } from "vitest";
 import { referenceLocalizationLinesCsv } from "./localization-csv-reference.test-support.js";
 import { Effect, Schema } from "effect";
@@ -667,9 +668,10 @@ describe("index reads", () => {
 							for (const source of sources) {
 								const matching: Matching = {
 									query: "",
-									capability: "all",
 									localization: { target: fixture.target.name },
-									filter: [{ field: "source", op: "is", values: [source] }]
+									where: textWhere({
+										filter: [{ field: "source", op: "is", values: [source] }]
+									})!
 								};
 								expect(
 									(yield* model.query.search({ ...matching, pageSize: 50 })).total
@@ -753,7 +755,9 @@ describe("index reads", () => {
 														}
 													: undefined)
 											},
-											...(filter ? { filter } : undefined),
+											...(filter
+												? { where: textWhere({ filter })! }
+												: undefined),
 											by,
 											measures: ["lines", "sourceWords", "lineBreakWords"]
 										})
@@ -799,7 +803,12 @@ describe("index reads", () => {
 							const fields = LocalizationLineField.literals;
 							for (const [filter, keys] of filteredLines) {
 								const views = yield* model.query.selectLocalizationLines(
-									{ ...lines, ...(filter.length ? { filter } : undefined) },
+									{
+										...lines,
+										...(filter.length
+											? { where: textWhere({ filter })! }
+											: undefined)
+									},
 									fields
 								);
 								expect(views.map(factsOf), JSON.stringify(filter)).toEqual(
@@ -819,7 +828,11 @@ describe("index reads", () => {
 							const conflicting = yield* model.query.selectLocalizationLines(
 								{
 									...lines,
-									filter: [{ field: "fact", op: "is", values: ["conflicting"] }]
+									where: textWhere({
+										filter: [
+											{ field: "fact", op: "is", values: ["conflicting"] }
+										]
+									})!
 								},
 								["identity", "marks"]
 							);

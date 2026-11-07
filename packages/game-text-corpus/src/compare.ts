@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { type Brand, Effect, Layer, Schema } from "effect";
 import { textProblems } from "@ue-shed/game-text/checks";
+import { textWhere } from "@ue-shed/game-text/query";
 import {
 	GameTextIndexBuilderLive,
 	GameTextIndexRefresh,
@@ -141,7 +142,6 @@ const compareFolder = Effect.fnUntraced(function* (
 			do {
 				const page = yield* model.search({
 					query: "",
-					capability: "all",
 					pageSize: 50,
 					findings: signalLayer,
 					localization: { target: model.localization.target },
@@ -195,7 +195,6 @@ const compareFolder = Effect.fnUntraced(function* (
 				do {
 					const page = yield* model.search({
 						query: "",
-						capability: "all",
 						pageSize: 50,
 						localization: {
 							target: model.localization.target,
@@ -398,10 +397,11 @@ const compareFolder = Effect.fnUntraced(function* (
 						if (probe.kind === "without-notes") {
 							const page = yield* model.search({
 								query: "",
-								capability: "all",
 								pageSize: 50,
-								withoutNotes: true,
-								filter: [{ field: "source", op: "is", values: [source] }],
+								where: textWhere({
+									withoutNotes: true,
+									filter: [{ field: "source", op: "is", values: [source] }]
+								})!,
 								localization: { target: model.localization.target }
 							});
 							observed =

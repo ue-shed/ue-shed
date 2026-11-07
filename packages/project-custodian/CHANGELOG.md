@@ -1,5 +1,20 @@
 # @ue-shed/project-custodian
 
+## 0.27.0
+
+### Patch Changes
+
+- Updated dependencies [73c7081]
+- Updated dependencies [79a96ef]
+- Updated dependencies [b9e73b1]
+- Updated dependencies [d104ec9]
+- Updated dependencies [61ae5df]
+- Updated dependencies [c773bcd]
+- Updated dependencies [acaa3ee]
+- Updated dependencies [81fe6ab]
+- Updated dependencies [fe2f488]
+    - @ue-shed/protocol@0.27.0
+
 ## 0.26.0
 
 ### Patch Changes

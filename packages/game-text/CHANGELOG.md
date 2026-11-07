@@ -1,5 +1,227 @@
 # @ue-shed/game-text
 
+## 0.27.0
+
+### Minor Changes
+
+- 79a96ef: A Game Text target reports its generation, and the engine answers what changed since an earlier
+  one, so hosts no longer need their own package tracker or inventory hash:
+    - `generation` is the target's joined key, an opaque string. It changes whenever something the
+      target shows changes (packages, imported localization files, the review file, code or policy),
+      stays equal across refreshes that change nothing, is safe to persist and compare across
+      processes, and also changes after the store is compacted. It is on `GameTextIndexRefreshResult`,
+      `GameTextTargetIndex`, the workspace's completed `configuredRefresh` result and a ready
+      `localizationTarget` result.
+    - Renamed: `GameTextProjectIndex.generation` and the old `GameTextTargetIndex.generation`, which
+      held the store's dictionary epoch (renewed only when the store is created again or compacted,
+      not when inputs change), are now `storeEpoch`; `GameTextIndexQuery.open` takes `storeEpoch`
+      instead of `generation`.
+    - `NativeTextQuery.changedSince` and the workspace's `changedSince` (with an optional `target`)
+      list what changed since a generation: `lines` by line ID, with namespace and key, or `packages`
+      by path, including packages without text. The answer is `same`, `too_old` (`compacted`,
+      `format` or `unknown`; the host decides what to do instead) or `changes`, with every change's
+      counts and a page of up to 1,000 items in ID order and the next page's cursor. The engine diffs
+      once per reader and pages the cached result.
+    - The engine contract adds the `changed_since` request (`ChangedSinceRequest`,
+      `ChangedSinceAnswer`, `ChangeItem`, `ChangeCounts`, `TooOldReason`).
+
+- b9e73b1: Game Text answers what on disk differs from its index, read-only, so a host can show "N saved
+  packages changed since the last scan" without its own snapshot of the tree or a Project Index
+  refresh:
+    - `GameTextIndexSteps.diskChanges` and the workspace's `diskChanges` take a project root, an
+      optional localization `target`, optional project-relative `paths` (at most 4,096) and a page
+      (`after`, `limit` up to 1,000). Without `paths`, the reader walks `Content` as the Project Index
+      does and compares every package's bundle signature with the indexed one; with `paths`, it checks
+      only those, and a sidecar checks its package. With `target`, the target's manifest, archives,
+      POs and review file are compared by size and modification time. The answer is `not_indexed`, or
+      `ready` with counts (`packages` and `localization`, each `added`, `changed`, `removed`) and a page
+      of items in path order with the next page's cursor. Nothing is written.
+    - `watchDiskChanges` (on the steps and, as a host-only method, on the workspace) returns a `Stream`
+      of `{ status: "not_indexed" }` or `{ status: "ready", changed, files, counts, checking }`: one full
+      check, then `Content` and the target's folders are watched with `fs.watch` through the new
+      `DiskWatcher` service (`DiskWatcherNodeLive`). Bursts settle for 300 ms by default (`settle`);
+      named files are rechecked by path, and folder events, watcher errors and published scans run a
+      full walk.
+    - The engine contract adds the `disk_changes` builder request (`DiskChangesRequest`,
+      `DiskChangesAnswer`, `DiskChangeItem`, `DiskChangeCounts`, `DiskChangeKind`) and
+      `JoinedReviewFile`; the uasset-io request and event schemas add the action and its outcome
+      (`diskChanges`), sent with contract minor 16.
+    - A localization target's join records its review file's path, size and modification time
+      (`reviewFile`), keyed like file provenances, so a target with a review file gets a new
+      generation once. `LocalizationReviewSnapshot` has the file's `provenance` when it exists.
+
+- 61ae5df: `related` can answer a line's similar keys, ranked by the engine, so hosts no longer page every
+  `not_found` and `not_gathered` line through search and run their own edit-distance matcher:
+    - Ask with `similarKeys: { limit }` on `RelatedLinesRequest` (with a target). The answer's
+      `similarKeys` names the selected line's side (`not_found` for a key that left the manifest,
+      `not_gathered` for a new key), its one-to-one `pair` (the other line's ID, namespace, key, source
+      and state, the edit `distance`, whether it was found `same_package` or `cross_package`, and the
+      earlier line's translations), up to `limit` near lines as `candidates` ranked by distance, then
+      same-package first, then line ID, the target's pair count, whether the comparison budget
+      `truncated` the matcher, and the milliseconds the request spent building the index.
+    - It is a fourth key-change tier after the join's exact ones and leaves them alone: lines the
+      join already paired, blank text and trivial text are not compared, and the join's
+      `key_changed` marks and counts do not change.
+    - The matcher's policy is the host's: `distanceRatio` (0.2), `reachRatio` (0.25), `maxDistance`
+      (12), `comparisonBudget` (2,000,000) and `minLetters` (2) are optional request fields. A reader
+      builds the index for the whole target on the first request and keeps one parameter set.
+    - The engine contract adds `RelatedSection.similarKeys` (`SimilarKeysSection`) and the typed
+      answer `SimilarKeysAnswer` with `SimilarKeyPair`, `SimilarKeyCandidate`, `SimilarKeyLine`,
+      `SimilarKeyTranslation`, `SimilarKeyState` and `SimilarKeyScope`. `RelatedLines.similarKeys`
+      is the generated type; `SimilarKeysRequest` and `SimilarKeys` are exported.
+    - `NativeTextQuery.related` annotates its span with the pair count, candidates, whether the line
+      is paired, truncation and build time.
+
+- 84915c0: Expose parameterless service operations as reusable Effect/Stream properties. Callers execute
+  `yield* ids.generate` rather than `yield* ids.generate()`; parameterful operations remain functions.
+  Implementations retain per-execution work, original service and scope requirements, fresh IDs and
+  named tracing. Native schemas and wire representations are unchanged. Hosts must migrate their supplied service
+  implementations and local checked-dispatcher adapters when adopting the coordinated suite release.
+  See `docs/engineering/effect-operation-properties.md` for migration guidance and the consumer audit.
+
+    Game Text progress hooks and corpus comparison layers preserve their supplied error types rather
+    than widening them to `unknown`. Private viewer read/search ports use the same generic error
+    parameterization. Recoverable file/JSON/schema boundaries retain their original tagged failures
+    and nested causes; trusted construction failures remain defects.
+
+    Export a tagged `GameTextWorkspaceHostFailure` constructor in place of the former untagged host
+    failure interface. Host adapters supply the original failure as `cause` with the existing recovery
+    guidance. Reject non-finite TypeScript measurement/cache metadata and localization memory budgets,
+    while retaining finite fractional values and existing host policy. Wait for cancelled plugin archive
+    IO to settle before releasing staging resources, including cancellation through the owning fiber.
+
+- acaa3ee: Game Text shows a culture's translations from its compiled `.locres` when the culture has no
+  archive.
+    - The native localization import reads compiled resources (format `"locres"`), versions 0 to 3:
+      an archive-shaped layer with each entry's display string and the hash of the source it was
+      compiled from (`entry.source-hash`). Malformed resources fail with the typed `malformed_locres`
+      and recovery guidance. The hash is verified against Unreal-compiled version 3 resources; for
+      versions 0 to 2 it is exposed but marked unverified.
+    - A culture whose archive is missing reads its resource. Against the manifest source, or the saved
+      source without a manifest, it is `translated`, `not_translated` (the source or native text was
+      compiled in) or `needs_update` (the source changed since the compile). An entry the resource
+      lacks is `not_translated` with a manifest and `unknown` without one.
+    - The shipped translation's origin can be `"locres"`, culture states carry the `locres` entry, and
+      rules read it as `latest` with `latestOrigin: "locres"`.
+    - In a project with no gather configs, target discovery finds compiled resources by Unreal's runtime
+      convention, `Content/Localization/<Target>/<culture>/<Target>.locres`. A Dashboard target of the
+      same name gets them; another name becomes a `resource_files` target. Both are marked
+      `resourcesDiscovered`, and the Workbench labels them "discovered".
+
+- 81fe6ab: A Game Text rescan of an existing index now updates it in place however many package shards
+  changed: it reads and converts only the changed packages, and the native writer keeps every
+  unchanged record. The reader stages the changed packages straight into shard snapshots, as a
+  first scan does, so their records never sit in the JavaScript heap; a source without staging
+  spools them to files as they arrive. A change that touched more than 8 of the 256 shards used to decode every changed
+  shard in JavaScript and re-encode each record. All changed shards still publish atomically. Only a
+  first scan, or an index in an older package format or audience policy, reads and writes the
+  changed shards again.
+
+    Progress reports reads apart from reuse. `package_read` ("Reading changed packages") replaces
+    `packages` and counts the packages read of those to read, with `unchanged` giving the packages kept
+    from the index without reading them. `package_update` ("Updating package text") covers the
+    in-place update; `package_publish` stays for a shard set written again.
+
+    uasset-io 1.22 adds `compare_packages`, which compares a refresh's changed shards with the index
+    in the native writer, so unchanged entries no longer cross into JavaScript. `publish_packages`
+    accepts `rowsFile`, the rows as a file of little-endian 32-bit integers, and an input without
+    `previousKey` for a shard the index doesn't hold yet. The native writer interns each string
+    domain once across a request, so a change to every shard fits the dictionary's 256 segments.
+
+- fe2f488: Search and narrow the Quality list. `WorkspaceQualityRequest` takes `query`, `severities` and `fixable` beside its check filter. `query` searches as the Text tab does, through the same native matcher: each word in the line's source or the finding's culture's translation, ignoring case. A source finding matches on its own source text. Search, export, suggested fixes and export presets (`workspaceNarrowing` on a quality preset query) all apply the same narrowing, and a report records it. The engine's `findings_query` takes `lines: { text, where }`, timed as its `lines` stage.
+
+    Counts now follow every filter except their own. A check's count follows the narrowing. A severity's count follows the check and the narrowing, leaving out the chosen severities. Before, `severityCounts` counted every check.
+
+- 8999b38: Expose typed supervisor-resolution and review/map-tile capture/release failures instead of `unknown`.
+  Supervisor resolution reports `ProcessSupervisorUnavailable` with the original Node failure in
+  `cause`; explicit executable overrides retain their existing behavior. Map-tile ports expose named
+  unions of their existing tagged transport, protocol and timeout failures. Restoration refusals now
+  report `MapTileCaptureRestorationError`, retain the decoded response and keep the run owned until
+  release succeeds. Host ports that previously returned arbitrary failures must classify them into
+  the declared unions, using Effect's tagged `UnknownError` at a foreign throwing API boundary when
+  necessary. Capture results, RPC requests, polling, release ordering and cancellation are unchanged.
+
+    Review capture ports now expose `ReviewCaptureError`, retaining the existing
+    `ReviewCaptureConnectionError` and its concrete nested causes, plus tagged `UnknownError` for
+    unclassified host-boundary throws/rejections. Known host failures must retain their cause and
+    truthful guidance through the connection error. Per-view failure outcomes, endpoint resolution,
+    resource scopes and interruption are unchanged.
+
+    Package text diff counters now validate as non-negative integers, matching the cardinalities
+    `diffPackageText` produces. This tightens the TypeScript-owned result schema for custom producers;
+    it does not constrain authored Unreal numeric values or a host's quality policy. Source quality
+    hydration also preserves the receiver of host-supplied finding-list methods.
+
+### Patch Changes
+
+- 73c7081: Game Text's change answers report what they missed before:
+    - `changedSince` lists a line as `changed` when its set of saved places differs: an occurrence
+      moved to another object of the same package, or one added to or removed from an existing unit.
+    - `diskChanges` compares the disk with the packages the view's own joined layer read, not with the
+      shards the store has published since. After a project-only refresh or another target's scan, the
+      view keeps reporting the difference until it is joined again.
+    - `diskChanges` matches a package whose file name contains a literal reserved scalar (U+F0000 to
+      U+F0800) with its indexed package, in walks and named-path checks, instead of listing it as both
+      added and removed. Item paths and cursors are the files' own names, the same text `changedSince`
+      uses for a package, and items are ordered as `changedSince` orders IDs (WTF-8 bytes).
+    - `watchDiskChanges` follows a target folder that doesn't exist yet, such as
+      `Config/UEShed/Localization` before the first review is saved, from its nearest existing ancestor,
+      so creating the folder and its review file triggers a check. `DiskWatcher.watch` now takes the
+      project root and a project-relative folder, so a custom watcher can do the same.
+
+- d104ec9: Game Text reviews and change checks no longer slow down or miss results on large targets:
+    - Comparing a change lists the findings that fail it first across every page, not only within one
+      page, so a failure is never left behind a page of warnings. The engine's `compare_points` request
+      takes the failing checks as `failOn`; `readGameTextChangePoints` passes them through.
+    - Fixing an ID reads every place of a unit, a page at a time, so a reviewed place beyond the unit's
+      first 500 is found rather than reported as no longer in the scan. A unit that changes between
+      pages is still refused.
+    - A related unit may list as many places as its request asks for, up to 500, instead of failing to
+      decode beyond 50.
+    - Setting review flags or accepting findings, and reviewing staged edits, read each line's source,
+      shipped translation and review fingerprint from the index in one engine request per culture
+      (`review_lines`, new in the engine contract, exposed as `NativeTextQuery.reviewLines`), instead of
+      decoding the target's manifest, archive and PO files in the host for every line.
+      `reviewLocalizationChangeSet` takes such lines in place of parsed files.
+    - A fingerprint from parsed files (`localizationEvidenceFingerprint`) and a staged edit's review
+      from parsed files now choose the shipped translation as the index's join does when a line has
+      duplicate archive or PO entries or its archive is unreadable (`shippedEvidenceTranslation`), so
+      a review they stamp is current to the join.
+
+- c773bcd: Game Text imports localization files through one native path, cold or warm:
+    - A refresh reads every changed file of a target in one native engine request, instead of one
+      request and one publication per file. Files whose stat matches their hint still need no read.
+    - A warm import that changes many strings loads the dictionary once instead of probing every
+      dictionary segment for each changed block. On a generated 130k-line, 10-culture target (21 files,
+      712 MiB), a refresh after every file was rewritten took 8.5 s instead of 35.4 s.
+    - One file that fails to read or parse no longer stops the others: the engine publishes every file
+      that imported and returns a typed failure for each other file, which becomes that file's
+      diagnostic as before.
+    - The engine contract's `import_localization` request drops `cold` (the engine decides per file),
+      each file result is a tagged union (`outcome: "imported"` with `file`, or `outcome: "failed"`
+      with `error`), and the generated contract exports `localizationImport` (`version`,
+      `maximumFiles`).
+    - The engine owns the content key and returns it per file; the host keeps the returned key in its
+      stat hints. Stat hints move to a new version, so the first refresh after updating reads every
+      file once (and reuses each retained layer without parsing).
+    - `importLocalizationTarget` reports its import profile (`LocalizationImportProfile`: files, stat
+      hits, imported, failed, native calls, worker count, parse and publish time) for warm imports too.
+
+- Updated dependencies [73c7081]
+- Updated dependencies [79a96ef]
+- Updated dependencies [b9e73b1]
+- Updated dependencies [d104ec9]
+- Updated dependencies [61ae5df]
+- Updated dependencies [84915c0]
+- Updated dependencies [c773bcd]
+- Updated dependencies [acaa3ee]
+- Updated dependencies [81fe6ab]
+- Updated dependencies [fe2f488]
+    - @ue-shed/protocol@0.27.0
+    - @ue-shed/localization@0.27.0
+    - @ue-shed/unreal-assets@0.27.0
+    - @ue-shed/unreal-connection@0.27.0
+
 ## 0.26.0
 
 ### Minor Changes

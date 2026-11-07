@@ -1,5 +1,45 @@
 # @ue-shed/game-text-corpus
 
+## 0.27.0
+
+### Minor Changes
+
+- 84915c0: Expose parameterless service operations as reusable Effect/Stream properties. Callers execute
+  `yield* ids.generate` rather than `yield* ids.generate()`; parameterful operations remain functions.
+  Implementations retain per-execution work, original service and scope requirements, fresh IDs and
+  named tracing. Native schemas and wire representations are unchanged. Hosts must migrate their supplied service
+  implementations and local checked-dispatcher adapters when adopting the coordinated suite release.
+  See `docs/engineering/effect-operation-properties.md` for migration guidance and the consumer audit.
+
+    Game Text progress hooks and corpus comparison layers preserve their supplied error types rather
+    than widening them to `unknown`. Private viewer read/search ports use the same generic error
+    parameterization. Recoverable file/JSON/schema boundaries retain their original tagged failures
+    and nested causes; trusted construction failures remain defects.
+
+    Export a tagged `GameTextWorkspaceHostFailure` constructor in place of the former untagged host
+    failure interface. Host adapters supply the original failure as `cause` with the existing recovery
+    guidance. Reject non-finite TypeScript measurement/cache metadata and localization memory budgets,
+    while retaining finite fractional values and existing host policy. Wait for cancelled plugin archive
+    IO to settle before releasing staging resources, including cancellation through the owning fiber.
+
+### Patch Changes
+
+- Updated dependencies [73c7081]
+- Updated dependencies [79a96ef]
+- Updated dependencies [b9e73b1]
+- Updated dependencies [d104ec9]
+- Updated dependencies [61ae5df]
+- Updated dependencies [84915c0]
+- Updated dependencies [c773bcd]
+- Updated dependencies [acaa3ee]
+- Updated dependencies [81fe6ab]
+- Updated dependencies [fe2f488]
+- Updated dependencies [8999b38]
+    - @ue-shed/game-text@0.27.0
+    - @ue-shed/protocol@0.27.0
+    - @ue-shed/localization@0.27.0
+    - @ue-shed/unreal-assets@0.27.0
+
 ## 0.26.0
 
 ### Patch Changes

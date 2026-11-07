@@ -195,9 +195,14 @@ filter itself, so a new kind of pill over existing fields needs no UE Shed chang
   expressions for its own pills; to count by a field, it marks what it builds with that field.
 - **One Effect Schema for `Expr`**, so hosts validate a filter at their own boundary (Electroswag's
   RPC) before it reaches UE Shed. The engine validates again, as today.
-- **Saved filters.** Investigation presets, which the CLI also runs, save the query: `where`,
-  `query` and facets. A host that wants its pills back saves them beside it, as its own data.
-  Browse preferences are the host's, and keep whatever the host shows.
+- **Saved filters.** Investigation presets, which the CLI also runs, keep saving Quality's search,
+  severities and suggested-fix filter, as both their formats do today; a replay converts them
+  with `qualityWhere` (`presetNarrowingRequest`), and a report matches a preset when its `where`
+  is what the preset converts to. The preset formats don't change, so no saved preset needs
+  migrating. Browse preferences are the host's, and keep whatever the host shows.
+- **The in-memory Quality list** (`localizationQualityWorkspace`), which only tests and the
+  Workbench harness read, stays as their double: it reads severities and the suggested-fix filter
+  back from `where` (`qualityPillsOf`) and refuses any other filter.
 - **`findings_query` is deleted** (Plan 059: code a phase replaces is deleted in that phase). The
   queried workspace, `ue-shed loc check` and its sink read finding rows instead.
 - **Electroswag** gives Quality the Text tab's toolbar: search, Filter menu and pills, with
@@ -282,9 +287,12 @@ Settled by the owner on 2026-11-07:
    compares the answers on the fixture and on Coral. A second test checks what is new against the
    Text tab's own answers: a culture finding's row test in its culture, a source finding's
    through its unit, and counts by the row's fields.
-5. **TypeScript.** The `Expr` schema and the exported converter. Both tabs' requests take `where`
-   and `facets`; the workspace and the CLI read finding rows; presets save the query; the
-   Workbench converts its pills; `findings_query` is deleted.
+5. **TypeScript.** The `Expr` schema and the exported converter (`@ue-shed/game-text/query`).
+   Quality's request takes `where` and `facets`; the workspace, the source report and the CLI
+   read finding rows; presets convert their pills on replay; `findings_query` is deleted, and the
+   parity test becomes one that checks finding rows' pages, counts and writes against each other.
+   Then the Text tab's request takes `where` and the facet list, and the Workbench converts its
+   pills.
 6. **Electroswag.** Both tabs convert their pills and send `where`; Quality gets the Text tab's
    toolbar; the badge's duplicate request goes.
 7. **Measure** on Coral and the released project against §7, and the owner reviews.

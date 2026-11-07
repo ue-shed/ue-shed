@@ -4,12 +4,12 @@
 //! any finding field, or over the text row's fields with a finding counted under its row.
 use super::findings_order::{CHANGE, FIXABLE, KEYLESS, NONE, SHADOWED};
 use super::findings_query::{
-    Acceptance, Columns, ComposeTimes, LineMatches, LineSearch, MAX_LIMIT, SEVERITIES, columns,
-    compose, id_lanes,
+    Acceptance, CodeCount, Columns, ComposeTimes, Diagnostics, LineMatches, MAX_LIMIT, SEVERITIES,
+    columns, compose, id_lanes,
 };
 use super::findings_read::send_findings;
 use super::findings_sink::reported_finding;
-use super::replies::{PlaceSet, ReadProfile, RuleMetadata};
+use super::replies::{LineDiagnostic, PlaceSet, ReadProfile, RuleMetadata};
 use super::{Subject, javascript_json};
 use crate::engine::Reply;
 use crate::engine_match::{Projection, checkpoint};
@@ -154,6 +154,14 @@ impl Context<'_> {
     /// A `row` body over the text rows: the Text tab's selection of it, in each culture scope
     /// a finding can read, and over units for source findings.
     fn row(&self, body: &Value, dropped: &[Field]) -> Result<RowTest> {
+        // Without a target there are no lines, only source findings' units.
+        if self.selection.target.is_none() {
+            return Ok(RowTest {
+                cultures: Vec::new(),
+                any: RowSet::from_rows(0, &[])?,
+                units: self.units_row(body, dropped)?,
+            });
+        }
         let parsed = Node::parse(body, true)?;
         let reads_findings = parsed.reads_findings();
         // A test that reads no culture scope keeps the same lines in every culture.
@@ -192,7 +200,17 @@ impl Context<'_> {
                     .collect::<Result<_>>()?,
             ),
         };
-        let units = if self.source_rows.iter().any(|rows| !rows.is_empty()) {
+        Ok(RowTest {
+            cultures,
+            any,
+            units: self.units_row(body, dropped)?,
+        })
+    }
+
+    /// A `row` body over the units of source findings, if the layer has source rules.
+    fn units_row(&self, body: &Value, dropped: &[Field]) -> Result<Option<RowSet>> {
+        let reads_findings = Node::parse_for_units(body)?.reads_findings();
+        Ok(if self.source_rows.iter().any(|rows| !rows.is_empty()) {
             let selection = Selection {
                 findings: reads_findings.then(|| FindingsSelection {
                     view: None,
@@ -214,11 +232,6 @@ impl Context<'_> {
             )?)
         } else {
             None
-        };
-        Ok(RowTest {
-            cultures,
-            any,
-            units,
         })
     }
 
@@ -434,8 +447,7 @@ impl EngineQuery {
             Some(text) => Some(LineMatches::open(
                 self,
                 &layer,
-                findings,
-                &LineSearch::text(&text.query),
+                &text.query,
                 culture,
                 cancelled,
             )?),
@@ -690,7 +702,10 @@ impl EngineQuery {
             let limits = seen
                 .into_iter()
                 .map(|(code, count)| {
-                    Ok(json!({"code": layer.dictionary.string(code)?, "count": count}))
+                    Ok(CodeCount {
+                        code: layer.dictionary.string(code)?.to_owned(),
+                        count,
+                    })
                 })
                 .collect::<Result<Vec<_>>>()?;
             answer.counts =
@@ -706,14 +721,21 @@ impl EngineQuery {
                 .skip(part.offset.unwrap_or(0) as usize)
                 .take(part.limit as usize)
                 .map(|index| {
-                    Ok(json!({
-                        "lineId": self.packed("line", rows[*index] as usize)?,
-                        "culture": self.cultures.get(cultures[*index] as usize).ok_or("Diagnostic culture outside target.")?,
-                        "code": layer.dictionary.string(codes[*index])?,
-                    }))
+                    Ok(LineDiagnostic {
+                        line_id: self.packed("line", rows[*index] as usize)?,
+                        culture: self
+                            .cultures
+                            .get(cultures[*index] as usize)
+                            .ok_or("Diagnostic culture outside target.")?
+                            .clone(),
+                        code: layer.dictionary.string(codes[*index])?.to_owned(),
+                    })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            answer.diagnostics = Some(json!({"total": selected.len(), "rows": listed}));
+            answer.diagnostics = Some(serde_json::to_value(Diagnostics {
+                total: u32::try_from(selected.len())?,
+                rows: listed,
+            })?);
         }
         lap(&mut stages, "counts");
 
@@ -825,8 +847,9 @@ impl EngineQuery {
     }
 }
 
-/// Parity with `findings_query` (Phase 7 step 4): a request the workspace, the source report or
-/// `loc check` sends today, as finding rows.
+/// A findings request as hosts sent them before finding rows (`key`, `view`, `order`, `rules`,
+/// `severities`, `fixable`, `change`, `line`, `id`, `lines`, `limit` …), as finding rows. Tests
+/// written against that shape read finding rows through it.
 #[cfg(test)]
 pub(crate) fn as_finding_rows(query: &EngineQuery, old: &Value) -> Result<Value> {
     let marked = |field: &str, test: Value| json!({"facet": [field, test]});
@@ -896,103 +919,6 @@ pub(crate) fn as_finding_rows(query: &EngineQuery, old: &Value) -> Result<Value>
         parts["diagnostics"] = diagnostics.clone();
     }
     Ok(json!({"selection": selection, "parts": parts}))
-}
-
-/// Sends `old` through `findings_query` and as finding rows, and compares what hosts read.
-#[cfg(test)]
-pub(crate) fn assert_parity(query: &EngineQuery, old: &Value) -> Result<()> {
-    let cancelled = AtomicBool::new(false);
-    let request = as_finding_rows(query, old)?;
-    if old.get("sink").is_some() {
-        let mut before = crate::engine::Gathered::default();
-        query.findings_query(old.clone(), &cancelled, &mut before)?;
-        let mut after = crate::engine::Gathered::default();
-        let parsed = crate::engine_types::parse_query(&request.to_string())?;
-        query.query(&parsed, &cancelled, &mut after)?;
-        require(
-            before.texts == after.texts,
-            format!("Written findings differ: {old}"),
-        )?;
-        let head = |parts: &[Vec<u8>]| -> Result<Value> {
-            crate::json_value::parse(std::str::from_utf8(parts.first().ok_or("No part.")?)?)
-        };
-        let (before, after) = (head(&before.parts)?, head(&after.parts)?);
-        require(
-            before["sink"] == after["sink"] && before["total"] == after["total"],
-            format!("Write summaries differ: {old}\n{before}\n{after}"),
-        )?;
-        return Ok(());
-    }
-    let before = query.findings_page(old.clone(), &cancelled)?;
-    let after = query.finding_rows_page(request.clone(), &cancelled)?;
-    let same = |what: &str, left: &Value, right: &Value| {
-        require(
-            left == right,
-            format!("{what} differs for {old}\nfindings_query: {left}\nfinding rows: {right}"),
-        )
-    };
-    same("total", &before["total"], &after["total"])?;
-    same("findings", &before["findings"], &after["findings"])?;
-    same("places", &before["places"], &after["places"])?;
-    if before.get("diagnostics").is_some() {
-        same("diagnostics", &before["diagnostics"], &after["diagnostics"])?;
-    }
-    if let Some(counts) = before.get("counts") {
-        let entries = |field: &str| {
-            after["facets"][field]["entries"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default()
-        };
-        let rules = entries("rule")
-            .iter()
-            .map(|entry| json!({"ruleId": entry["key"], "count": entry["count"]}))
-            .collect::<Vec<_>>();
-        same("rule counts", &counts["rules"], &json!(rules))?;
-        let all = entries("rule")
-            .iter()
-            .map(|entry| entry["count"].as_u64().unwrap_or(0))
-            .sum::<u64>();
-        same("all", &counts["all"], &json!(all))?;
-        let severities = entries("severity")
-            .iter()
-            .map(|entry| {
-                (
-                    entry["key"].as_str().unwrap_or_default().to_owned(),
-                    entry["count"].clone(),
-                )
-            })
-            .collect::<serde_json::Map<_, _>>();
-        same(
-            "severity counts",
-            &counts["severities"],
-            &Value::Object(severities),
-        )?;
-        same("fixable", &counts["fixable"], &after["counts"]["fixable"])?;
-        same("limits", &counts["limits"], &after["counts"]["limits"])?;
-        // Accepted findings now follow every filter; they differ from today's only beside a
-        // rule, severity, flag, line or ID filter, which no host sends with an acceptance count.
-        let filtered = ["rules", "severities", "fixable", "change", "line", "id"]
-            .iter()
-            .any(|name| old.get(*name).is_some());
-        if !filtered {
-            same(
-                "accepted",
-                &counts["accepted"],
-                &after["counts"]["accepted"],
-            )?;
-        }
-    }
-    // A page's cursor: today's hosts page by offset; the next cursor reads where it ended.
-    if let (Some(next), Some(last)) = (
-        after["nextCursor"].as_str(),
-        after["findings"]
-            .as_array()
-            .and_then(|findings| findings.last()),
-    ) {
-        same("cursor", &json!(next), &last["id"])?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1083,31 +1009,29 @@ mod tests {
         Ok((query, key.to_owned()))
     }
 
-    /// Every request the workspace, the source report and `loc check` send, through both reads.
+    /// The requests the workspace, the source report and `loc check` send agree with each other:
+    /// pages are slices of the whole list, counts add up, and a write lists what a page lists.
     #[test]
-    fn finding_rows_answer_what_findings_query_answers() -> Result<()> {
+    fn finding_rows_pages_counts_and_writes_agree() -> Result<()> {
         let (query, key) = fixture_findings()?;
         let key = key.as_str();
         let cancelled = AtomicBool::new(false);
         let layer = query.layer(key)?;
-        let metadata = &layer.metadata.rules;
-        let source_rules = metadata
+        let source_rules = layer
+            .metadata
+            .rules
             .iter()
             .filter(|rule| rule.subject == Subject::UnitSource)
             .map(|rule| rule.rule_id.clone())
             .collect::<Vec<_>>();
         require(source_rules.len() == 2, "The fixture has two source rules.")?;
-        let renamed = metadata
+        let renamed = layer
+            .metadata
+            .rules
             .iter()
             .find(|rule| rule.kind == "format_argument_renamed")
             .map(|rule| rule.rule_id.clone())
             .ok_or("Missing the renamed-argument rule.")?;
-        let whitespace = metadata
-            .iter()
-            .find(|rule| rule.kind == "whitespace")
-            .map(|rule| rule.rule_id.clone())
-            .ok_or("Missing the whitespace rule.")?;
-        // Accept the German renamed argument, as a review file would.
         let source = "Take {Count}";
         let accepted = crate::json_value::parse(&query.findings_accept(
             json!({"key": key, "accepted": [{"check": renamed, "namespace": "UI", "key": "A", "culture": "de",
@@ -1115,74 +1039,145 @@ mod tests {
             &cancelled,
         )?)?;
         let acceptance = accepted["acceptance"].clone();
-
-        // Every finding, to pick IDs and lines from.
-        let all = query.findings_page(
-            json!({"key":key,"view":"workspace","order":"severity","limit":5000}),
-            &cancelled,
-        )?;
-        let findings = all["findings"].as_array().ok_or("Missing findings.")?;
-        require(
-            findings.len() >= 6,
-            format!("The fixture has findings of each kind: {all}"),
-        )?;
-        let first_id = findings[0]["id"].clone();
-        let line_finding = findings
-            .iter()
-            .find(|finding| finding.get("lineId").is_some())
-            .ok_or("Missing a line finding.")?;
-
+        let page = |request: Value| query.findings_page(request, &cancelled);
         let workspace = |fields: Value| {
-            let mut request = json!({"key":key,"view":"workspace","order":"severity","offset":0,"limit":50,"counts":true});
+            let mut request = json!({"key":key,"view":"workspace","order":"severity","limit":5000,"counts":true});
             for (name, value) in fields.as_object().into_iter().flatten() {
                 request[name] = value.clone();
             }
             request
         };
-        let report = |fields: Value| {
-            let mut request = json!({"key":key,"view":"report","culture":"de"});
-            for (name, value) in fields.as_object().into_iter().flatten() {
-                request[name] = value.clone();
-            }
-            request
+        let ids = |page: &Value| -> Vec<Value> {
+            page["findings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|finding| finding["id"].clone())
+                .collect()
         };
-        let cases = vec![
-            // The Quality workspace's pages.
-            workspace(json!({})),
-            workspace(json!({"culture": "de"})),
-            workspace(json!({"culture": "fr", "acceptance": acceptance})),
-            workspace(json!({"acceptance": acceptance})),
-            workspace(json!({"rules": [whitespace]})),
-            workspace(json!({"rules": source_rules})),
-            workspace(json!({"severities": ["blocking"]})),
-            workspace(json!({"severities": ["normal", "low"], "fixable": true})),
-            workspace(json!({"fixable": false})),
-            workspace(json!({"lines": {"text": "take"}})),
-            workspace(json!({"lines": {"text": "nimm"}, "culture": "de"})),
-            workspace(json!({"lines": {"text": "bad"}})),
-            workspace(json!({"lines": {"text": "zzz"}})),
-            workspace(json!({"offset": 2, "limit": 2})),
-            workspace(json!({"offset": 0, "limit": 5000})),
-            workspace(json!({"after": first_id, "limit": 3})),
-            json!({"key":key,"view":"workspace","order":"severity","id":first_id,"limit":1}),
-            json!({"key":key,"view":"workspace","order":"severity","line":line_finding["lineId"],"limit":50}),
-            // The source report.
-            json!({"key":key,"view":"workspace","order":"source","rules":source_rules,"limit":0,"counts":true}),
-            json!({"key":key,"view":"workspace","order":"source","rules":source_rules,"offset":0,"limit":1}),
-            // `loc check`.
-            report(
-                json!({"order":"report","limit":0,"diagnostics":{"offset":0,"limit":100},"counts":true,"acceptance":acceptance}),
-            ),
-            report(
-                json!({"order":"report","limit":0,"diagnostics":{"offset":0,"limit":100},"counts":true}),
-            ),
-            report(json!({"order":"line","rules":[renamed],"change":true,"offset":0,"limit":100})),
-            json!({"key":key,"view":"report","order":"report","sink":{"format":"findingJson"}}),
-            json!({"key":key,"view":"report","culture":"fr","order":"report","sink":{"format":"findingJson"}}),
-        ];
-        for case in &cases {
-            assert_parity(&query, case)?;
+        let entries = |page: &Value, field: &str| -> Vec<(String, u64)> {
+            page["facets"][field]["entries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|entry| {
+                    (
+                        entry["key"].as_str().unwrap_or_default().to_owned(),
+                        entry["count"].as_u64().unwrap_or(0),
+                    )
+                })
+                .collect()
+        };
+        let sum = |entries: &[(String, u64)]| entries.iter().map(|(_, count)| count).sum::<u64>();
+
+        let all = page(workspace(json!({})))?;
+        let every = ids(&all);
+        require(every.len() >= 6, format!("The fixture has findings of each kind: {all}"))?;
+        assert_eq!(all["total"], json!(every.len()));
+        // Unfiltered, the rule and severity counts each add up to the list.
+        assert_eq!(sum(&entries(&all, "rule")), every.len() as u64);
+        assert_eq!(sum(&entries(&all, "severity")), every.len() as u64);
+        // Blocking findings first, then normal, then low.
+        let rank = |severity: &str| ["blocking", "normal", "low"].iter().position(|s| *s == severity);
+        let severities = all["findings"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|finding| rank(finding["severity"].as_str().unwrap_or_default()))
+            .collect::<Vec<_>>();
+        assert!(severities.is_sorted(), "{severities:?}");
+
+        // Offsets and cursors read slices of the list; an ID reads its finding.
+        assert_eq!(
+            ids(&page(workspace(json!({"offset": 2, "limit": 2})))?),
+            every[2..4]
+        );
+        assert_eq!(
+            ids(&page(workspace(json!({"after": every[0], "limit": 3})))?),
+            every[1..4]
+        );
+        let found = page(json!({"key":key,"view":"workspace","order":"severity","id":every[3],"limit":1}))?;
+        assert_eq!(ids(&found), vec![every[3].clone()]);
+
+        // A severity filter leaves the severity counts and narrows the rule counts to it.
+        let blocking = page(workspace(json!({"severities": ["blocking"]})))?;
+        assert_eq!(entries(&blocking, "severity"), entries(&all, "severity"));
+        let blocking_count = entries(&all, "severity")
+            .iter()
+            .find(|(key, _)| key == "blocking")
+            .map_or(0, |(_, count)| *count);
+        assert_eq!(blocking["total"], json!(blocking_count));
+        assert_eq!(sum(&entries(&blocking, "rule")), blocking_count);
+        // A rule filter leaves the rule counts.
+        let sources = page(workspace(json!({"rules": source_rules})))?;
+        assert_eq!(entries(&sources, "rule"), entries(&all, "rule"));
+        // The source order lists the source rules' findings, which are the source findings.
+        let ordered = page(json!({"key":key,"view":"workspace","order":"source","rules":source_rules,"limit":5000}))?;
+        assert_eq!(ordered["total"], sources["total"]);
+        assert!(
+            ordered["findings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .all(|finding| finding.get("lineId").is_none())
+        );
+
+        // The acceptance hides what it accepted, in every culture selection.
+        for culture in [None, Some("de")] {
+            let mut fields = json!({});
+            if let Some(culture) = culture {
+                fields["culture"] = json!(culture);
+            }
+            let open = page(workspace(fields.clone()))?;
+            fields["acceptance"] = acceptance.clone();
+            let reviewed = page(workspace(fields))?;
+            assert_eq!(reviewed["counts"]["accepted"], json!(1));
+            assert_eq!(
+                reviewed["total"].as_u64().unwrap_or(0) + 1,
+                open["total"].as_u64().unwrap_or(0)
+            );
         }
+        // A text search keeps the findings whose line or source holds every word.
+        let take = page(workspace(json!({"lines": {"text": "take"}})))?;
+        assert!(take["total"].as_u64().unwrap_or(0) > 0);
+        assert_eq!(page(workspace(json!({"lines": {"text": "zzz"}})))?["total"], json!(0));
+
+        // `loc check`: the report's rule counts add up to what the write lists.
+        let report = |fields: Value| {
+            let mut request = json!({"key":key,"view":"report","culture":"de","order":"report"});
+            for (name, value) in fields.as_object().into_iter().flatten() {
+                request[name] = value.clone();
+            }
+            request
+        };
+        let counted = page(report(
+            json!({"limit":0,"diagnostics":{"offset":0,"limit":100},"counts":true}),
+        ))?;
+        let listed = page(report(json!({"limit": 5000})))?;
+        assert_eq!(counted["total"], json!(ids(&listed).len()));
+        assert_eq!(sum(&entries(&counted, "rule")), ids(&listed).len() as u64);
+        let mut written = crate::engine::Gathered::default();
+        let request = as_finding_rows(&query, &report(json!({"sink":{"format":"findingJson"}})))?;
+        query.query(
+            &crate::engine_types::parse_query(&request.to_string())?,
+            &cancelled,
+            &mut written,
+        )?;
+        let head = crate::json_value::parse(std::str::from_utf8(
+            written.parts.first().ok_or("A write has no part.")?,
+        )?)?;
+        assert_eq!(head["sink"]["rows"], json!(ids(&listed).len()));
+        // The suggested changes `loc check` collects.
+        let changes = page(report(
+            json!({"order":"line","rules":[renamed],"change":true,"offset":0,"limit":100}),
+        ))?;
+        assert!(
+            changes["findings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .all(|finding| finding.get("suggestedChange").is_some())
+        );
         Ok(())
     }
 

@@ -790,18 +790,15 @@ impl Selection {
             match rows {
                 Rows::Lines => self.target.is_some(),
                 Rows::Units => self.target.is_none(),
-                Rows::Findings => {
-                    self.target.is_some()
-                        && self
-                            .findings
-                            .as_ref()
-                            .is_some_and(|findings| findings.view.is_some())
-                }
+                Rows::Findings => self
+                    .findings
+                    .as_ref()
+                    .is_some_and(|findings| findings.view.is_some()),
             },
             invalid(match rows {
                 Rows::Lines => "Lines need a target.",
                 Rows::Units => "Units are read without a target.",
-                Rows::Findings => "Finding rows need a target and a findings layer with a view.",
+                Rows::Findings => "Finding rows need a findings layer with a view.",
             }),
         )?;
         require(
@@ -901,6 +898,10 @@ impl Query {
             require(
                 rows.limit >= 1,
                 invalid("A rows part lists at least one row."),
+            )?;
+            require(
+                !findings || rows.limit <= 5000,
+                invalid("A page of finding rows holds at most 5000 rows."),
             )?;
             if let Some(after) = &rows.after {
                 bounded(after, 32767, "Search cursor exceeds its bound.")?;

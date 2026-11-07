@@ -96,6 +96,7 @@ import {
 import {
 	corpusInvestigationEnvelope,
 	investigationRequest,
+	presetNarrowingRequest,
 	readFindingUnits
 } from "./investigation.js";
 import { hasBrowseRules, makeGameTextWorkspaceLocalization } from "./workspace-localization.js";
@@ -1473,7 +1474,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 							...(query.localization.culture
 								? { culture: query.localization.culture }
 								: undefined),
-							...query.workspaceNarrowing
+							...presetNarrowingRequest(query.workspaceNarrowing)
 						})
 					: undefined;
 			const index = yield* currentIndex();

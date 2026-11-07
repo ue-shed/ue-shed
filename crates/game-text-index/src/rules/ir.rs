@@ -58,6 +58,9 @@ macro_rules! expressions {
             /// A query's test that holds for some visible place of the row.
             #[serde(rename = "anyPlace")]
             AnyPlace(Box<Expr>),
+            /// A finding query's test of the finding's text row.
+            #[serde(rename = "row")]
+            Row(Box<Expr>),
             /// A query conjunct that counting its facet drops.
             #[serde(rename = "facet")]
             Facet(
@@ -98,6 +101,7 @@ macro_rules! expressions {
                     Self::AnyCulture(_) => Form::Query("anyCulture"),
                     Self::EveryCulture(_) => Form::Query("everyCulture"),
                     Self::AnyPlace(_) => Form::Query("anyPlace"),
+                    Self::Row(_) => Form::Query("row"),
                     Self::Facet(_) => Form::Query("facet"),
                     Self::Object(fields) => Form::Object(fields),
                     Self::List(values) => Form::Apply(Op::List, values),

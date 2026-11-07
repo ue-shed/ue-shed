@@ -17,8 +17,20 @@ import {
 	WorkspaceQualityReport
 } from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
+import { CheckSeverity } from "./localization-check-ids.js";
+import { qualityWhere } from "./query-filter.js";
 import { TextQualityFilter, type AsyncTextQualityQuery } from "./quality-query.js";
 import type { TextUnit } from "./schema.js";
+
+/**
+ * A preset's quality narrowing as it is saved: the search, severities and suggested-fix filter.
+ * `presetNarrowingRequest` reads it as the list's `where`.
+ */
+const PresetQualityNarrowing = {
+	query: WorkspaceQualityNarrowing.query,
+	severities: Schema.optionalKey(Schema.Array(CheckSeverity).check(Schema.isMaxLength(3))),
+	fixable: Schema.optionalKey(Schema.Boolean)
+};
 
 /** The review lens presets saved before findings were the project's rules; read as a clause. */
 const SavedLens = Schema.Literals([
@@ -57,7 +69,7 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	/** The localization quality list's filter; only a quality query over a target has one. */
 	workspaceFilter: Schema.optionalKey(WorkspaceQualityFilter),
 	/** The localization quality list's search, severities and suggested-fix filter. */
-	workspaceNarrowing: Schema.optionalKey(Schema.Struct(WorkspaceQualityNarrowing))
+	workspaceNarrowing: Schema.optionalKey(Schema.Struct(PresetQualityNarrowing))
 }).check(
 	Schema.makeFilter((query) =>
 		query.workspaceFilter === undefined ||
@@ -90,12 +102,21 @@ export function investigationRequest(
 	return { ...request, filter: [...(request.filter ?? []), clause] };
 }
 type Narrowing = Schema.Schema.Type<Schema.Struct<typeof WorkspaceQualityNarrowing>>;
+type PresetNarrowing = Schema.Schema.Type<Schema.Struct<typeof PresetQualityNarrowing>>;
+/** The quality list request a preset's narrowing makes: its pills as the list's `where`. */
+export function presetNarrowingRequest(preset: PresetNarrowing | undefined): Narrowing {
+	const where = qualityWhere({ severities: preset?.severities, fixable: preset?.fixable });
+	return {
+		...(preset?.query === undefined ? undefined : { query: preset.query }),
+		...(where === undefined ? undefined : { where })
+	};
+}
 /** Whether a report lists what a preset's narrowing selects: blank searches select everything. */
-function sameNarrowing(report: Narrowing, preset: Narrowing): boolean {
+function sameNarrowing(report: Narrowing, preset: PresetNarrowing): boolean {
+	const request = presetNarrowingRequest(preset);
 	return (
-		(report.query?.trim() ?? "") === (preset.query?.trim() ?? "") &&
-		JSON.stringify(report.severities ?? null) === JSON.stringify(preset.severities ?? null) &&
-		report.fixable === preset.fixable
+		(report.query?.trim() ?? "") === (request.query?.trim() ?? "") &&
+		JSON.stringify(report.where ?? null) === JSON.stringify(request.where ?? null)
 	);
 }
 /**

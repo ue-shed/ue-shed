@@ -458,11 +458,11 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 	 */
 	const findingsPage = Effect.fn("GameTextIndex.nativeFindingsPage")(function* (
 		pinned: Pinned,
-		request: GameTextContract.FindingsQueryRequest
+		request: GameTextContract.Query
 	) {
-		const answer = yield* pinned.execute({ action: "findings_query", reader, request });
-		const page = answerJson<GameTextContract.FindingsPage>(answer);
-		if (page === undefined) return yield* failed("findings_query", "The engine sent no reply.");
+		const answer = yield* pinned.execute({ action: "query", reader, request });
+		const page = answerJson<GameTextContract.QueryAnswer>(answer);
+		if (page === undefined) return yield* failed("query", "The engine sent no reply.");
 		const sets = new Map<number, Row[]>();
 		for (const { parent, ...place } of answerRows(answer, "places")) {
 			const set = Number(parent);
@@ -731,36 +731,36 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 				rules: enabledRuleDocument(document)
 			}).pipe(Effect.mapError((cause) => failed("rules_check", cause)))
 		),
-		findingsQuery: Effect.fn("GameText.native.findingsQuery")((request) =>
+		findingRows: Effect.fn("GameText.native.findingRows")((request) =>
 			findingsPage(pinned, request).pipe(
 				Effect.tap(({ page }) =>
 					Effect.annotateCurrentSpan(
 						Object.fromEntries(
-							Object.entries(page.stages).map(([stage, ms]) => [
+							Object.entries(page.stages ?? {}).map(([stage, ms]) => [
 								`game_text.findings.query.stage_ms.${stage}`,
 								ms
 							])
 						)
 					)
 				),
-				Effect.tap(({ page }) => annotateFindingsProfile(page.profile)),
+				Effect.tap(({ page }) =>
+					page.profile === undefined ? Effect.void : annotateFindingsProfile(page.profile)
+				),
 				Effect.flatMap(inflateFindingsPage),
-				Effect.mapError((cause) => failed("findings_query", cause))
+				Effect.mapError((cause) => failed("query", cause))
 			)
 		),
 		findingsWrite: Effect.fn("GameText.native.findingsWrite")((request, text) =>
-			engineReply<GameTextContract.FindingsPage>(
+			engineReply<GameTextContract.QueryAnswer>(
 				pinned,
-				{
-					action: "findings_query",
-					reader,
-					request: { ...request, sink: { format: "findingJson" } }
-				},
+				{ action: "query", reader, request },
 				undefined,
 				text
 			).pipe(
-				Effect.tap((page) => annotateFindingsProfile(page.profile)),
-				Effect.mapError((cause) => failed("findings_query", cause))
+				Effect.tap((page) =>
+					page.profile === undefined ? Effect.void : annotateFindingsProfile(page.profile)
+				),
+				Effect.mapError((cause) => failed("query", cause))
 			)
 		),
 		summary,

@@ -89,9 +89,9 @@ mod tests {
         PointIdentityStatus, PointKey, PointOutcome, PointPlace, PointPlaceKind, PointRequest,
         PointText,
     };
+    use crate::engine_types::{FindingsOrder, FindingsView};
     use crate::rules::findings_query::{
-        AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
-        LineSearch, Order, Page, QueryRequest, RuleTotal, View,
+        AcceptedFinding, CodeCount, Diagnostics, FindingsAcceptRequest,
     };
     use crate::rules::ir::{
         Document, Expr, Family, MatchOperator, MatcherKind, Role, RoleMatcher, RoleScope, Rule,
@@ -130,6 +130,14 @@ mod tests {
              export const localizationImport = {{\n\tversion: {},\n\tmaximumFiles: {}\n}} as const;\n\n",
             crate::localization::import::VERSION,
             crate::localization::import::MAXIMUM_FILES
+        ));
+        text.push_str(&format!(
+            "/** Every query field (`GameTextContract.QueryField`), in the engine's registry order. */\n\
+             export const queryFields = [{}] as const;\n\n",
+            crate::engine_where::field_names()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
         text.push_str(
             "/**\n * The Game Text engine's message types: the v4 rule IR, the findings replies and the\n\
@@ -217,8 +225,6 @@ mod tests {
             Memory::decl(&config),
             FindingsAcceptRequest::decl(&config),
             AcceptedFinding::decl(&config),
-            QueryRequest::decl(&config),
-            LineSearch::decl(&config),
             Query::decl(&config),
             Selection::decl(&config),
             TextSearch::decl(&config),
@@ -319,12 +325,8 @@ mod tests {
             Envelope::decl(&config),
             Format::decl(&config),
             SinkSummary::decl(&config),
-            View::decl(&config),
-            Order::decl(&config),
-            Page::decl(&config),
-            FindingsPage::decl(&config),
-            Counts::decl(&config),
-            RuleTotal::decl(&config),
+            FindingsView::decl(&config),
+            FindingsOrder::decl(&config),
             CodeCount::decl(&config),
             Diagnostics::decl(&config),
             LineDiagnostic::decl(&config),

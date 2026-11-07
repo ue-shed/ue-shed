@@ -649,12 +649,12 @@ export async function runEngineStage(options: EngineStageOptions) {
 				for (let repeat = 0; repeat < 10; repeat++)
 					await measure(`findings-page:${repeat}`, () =>
 						run(
-							query.findingsQuery({
-								key,
-								view: "workspace",
-								order: "severity",
-								offset: 0,
-								limit: 5000
+							query.findingRows({
+								selection: {
+									rows: "findings",
+									findings: { key, view: "workspace" }
+								},
+								parts: { rows: { order: "severity", offset: 0, limit: 5000 } }
 							})
 						)
 					);

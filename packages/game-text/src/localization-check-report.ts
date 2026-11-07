@@ -15,7 +15,16 @@ import {
 	type LocalizationCheckOptions,
 	type LocalizationCheckDiagnostic
 } from "./localization-quality-schema.js";
-import { acceptReview, checkCompleteRules, type NativeFindings } from "./native-findings.js";
+import {
+	acceptReview,
+	checkCompleteRules,
+	facetCounts,
+	findingRowsQuery,
+	type FindingRowsOptions,
+	type FindingRowsPage,
+	type NativeFindings
+} from "./native-findings.js";
+import { allOf, marked } from "./query-filter.js";
 import type { GameTextIndexError } from "./index-error.js";
 import type { GameTextRuleDocument } from "./game-text-rules.js";
 import type { TextCorpusQuerySummary } from "./schema.js";
@@ -59,7 +68,7 @@ const writeReport = Effect.fn("GameText.writeLocalizationCheckReport")(function*
 	write: (text: string) => Effect.Effect<void>,
 	findings: (
 		text: EngineTextSink
-	) => Effect.Effect<GameTextContract.FindingsPage, GameTextIndexError>
+	) => Effect.Effect<GameTextContract.QueryAnswer, GameTextIndexError>
 ) {
 	let chunk = "";
 	const flush = Effect.suspend(() => {
@@ -112,26 +121,24 @@ export const prepareLocalizationCheck = Effect.fn("GameText.prepareLocalizationC
 	yield* checkCompleteRules(native, document);
 	const evaluated = yield* native.findingsEvaluate(effectiveRuleDocument(document, options));
 	const acceptance = yield* acceptReview(native, evaluated.key, options.review);
-	const read = (fields: Omit<GameTextContract.FindingsQueryRequest, "key" | "view">) =>
-		native.findingsQuery({
-			key: evaluated.key,
-			view: "report",
-			...(options.culture ? { culture: options.culture } : undefined),
-			...fields
-		});
+	const read = (fields: Omit<FindingRowsOptions, "view" | "target" | "culture">) =>
+		native.findingRows(
+			findingRowsQuery(evaluated.key, {
+				view: "report",
+				target: join.target,
+				culture: options.culture,
+				...fields
+			})
+		);
 	// The first diagnostics page counts the findings the report lists.
 	const diagnostics: LocalizationCheckDiagnostic[] = [];
-	let counts: GameTextContract.FindingCounts | undefined;
+	let counted: FindingRowsPage | undefined;
 	for (let offset = 0; ; offset += PAGE) {
 		const page = yield* read({
-			order: "report",
-			limit: 0,
 			diagnostics: { offset, limit: PAGE },
-			...(offset === 0
-				? { counts: true, ...(acceptance ? { acceptance } : undefined) }
-				: undefined)
+			...(offset === 0 ? { counts: true, facets: [{ by: "rule" }], acceptance } : undefined)
 		});
-		counts ??= page.counts;
+		counted ??= page;
 		// SAFETY: diagnostic codes are the engine's DIAGNOSTIC_CODES, the host's code union.
 		// Verified by: localization-checks.test.ts reads native syntax_limit diagnostics.
 		diagnostics.push(...(page.diagnostics!.rows as readonly LocalizationCheckDiagnostic[]));
@@ -141,18 +148,23 @@ export const prepareLocalizationCheck = Effect.fn("GameText.prepareLocalizationC
 	const changes: LocalizationChange[] = [];
 	for (let offset = 0; ; offset += PAGE) {
 		const page = yield* read({
-			order: "line",
-			rules: [localizationRuleId("format_argument_renamed")],
-			change: true,
-			offset,
-			limit: PAGE
+			where: allOf([
+				marked("rule", {
+					in: [
+						{ field: "rule" },
+						{ lit: [localizationRuleId("format_argument_renamed")] }
+					]
+				}),
+				marked("change", { in: [{ field: "change" }, { lit: [true] }] })
+			]),
+			rows: { order: "line", offset, limit: PAGE }
 		});
 		for (const finding of page.findings)
 			if ("suggestedChange" in finding && finding.suggestedChange)
 				changes.push(finding.suggestedChange);
 		if (page.findings.length < PAGE) break;
 	}
-	const ruleCounts = new Map((counts?.rules ?? []).map(({ ruleId, count }) => [ruleId, count]));
+	const ruleCounts = counted ? facetCounts(counted, "rule") : new Map<string, number>();
 	const policyRules = document
 		? localizationPolicyRules(join.cultures, document)
 		: { rules: [], diagnostics: [] };
@@ -186,24 +198,24 @@ export const prepareLocalizationCheck = Effect.fn("GameText.prepareLocalizationC
 			changes
 		},
 		...(document ? { ruleDiagnostics: policyRules.diagnostics } : undefined),
-		...(options.review ? { acceptedFindings: counts?.accepted ?? 0 } : undefined),
+		...(options.review ? { acceptedFindings: counted?.counts?.accepted ?? 0 } : undefined),
 		...(customChecks.length
 			? { customChecks: customChecks.map(({ id, label }) => ({ ruleId: id, label })) }
 			: undefined)
 	});
 	return {
-		findings: counts?.total ?? 0,
+		findings: counted?.total ?? 0,
 		changes: report.changes,
 		write: (write) =>
 			writeReport(report, write, (text) =>
 				native.findingsWrite(
-					{
-						key: evaluated.key,
+					findingRowsQuery(evaluated.key, {
 						view: "report",
-						...(options.culture ? { culture: options.culture } : undefined),
-						order: "report",
-						...(acceptance ? { acceptance } : undefined)
-					},
+						target: join.target,
+						culture: options.culture,
+						acceptance,
+						write: { format: "findingJson" }
+					}),
 					text
 				)
 			)

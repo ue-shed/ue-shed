@@ -824,6 +824,7 @@ const gameTextBrowserEntries = [
 	"entry-rules.ts",
 	"entry-checks.ts",
 	"entry-labels.ts",
+	"entry-query.ts",
 	"entry-corpus.ts"
 ];
 

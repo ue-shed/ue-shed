@@ -1,6 +1,14 @@
 import { Effect, Schema } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
-import type { FindingsQueryPage, NativeFindings, QueriedSourceFinding } from "./native-findings.js";
+import {
+	facetCounts,
+	findingRowsQuery,
+	type FindingRowsOptions,
+	type FindingRowsPage,
+	type NativeFindings,
+	type QueriedSourceFinding
+} from "./native-findings.js";
+import { allOf, ruleIn, type QueryExpr } from "./query-filter.js";
 import type { GameTextIndexError } from "./index-error.js";
 import { materializeQualityRead, type QualityRead } from "./quality-hydration.js";
 import {
@@ -600,11 +608,11 @@ export function textQualityQuery(report: TextQualityReport): TextQualityQuery {
 
 /**
  * The source quality query over a findings layer: the layer's `unit_source` findings in the
- * source report's order, each read a findings query. Counts are read once, when it opens.
+ * source report's order, each read a finding rows query. Counts are read once, when it opens.
  */
 export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 	function* (options: {
-		readonly findings: Pick<NativeFindings, "findingsQuery">;
+		readonly findings: Pick<NativeFindings, "findingRows">;
 		readonly evaluation: GameTextContract.FindingsEvaluation;
 		readonly report: Omit<TextQualityReport, "findings" | "roles" | "rules">;
 	}) {
@@ -614,19 +622,27 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 			sourceRules
 				.filter((rule) => filter === "all" || rule.kind === filter)
 				.map((rule) => rule.ruleId);
+		// The source order lists only source findings, so the query names its subject.
 		const query = (
 			filter: TextQualityFilter,
-			fields: Omit<GameTextContract.FindingsQueryRequest, "key" | "view" | "order" | "rules">
-		) =>
-			findings.findingsQuery({
-				key: evaluation.key,
-				view: "workspace",
-				order: "source",
-				rules: ids(filter),
-				...fields
-			});
-		const counted = yield* query("all", { limit: 0, counts: true });
-		const counts = new Map(counted.counts!.rules.map(({ ruleId, count }) => [ruleId, count]));
+			fields: Pick<FindingRowsOptions, "rows" | "facets">,
+			id?: string
+		) => {
+			const tests: QueryExpr[] = [
+				{ eq: [{ field: "subject" }, { lit: "unit_source" }] },
+				ruleIn(ids(filter))
+			];
+			if (id !== undefined) tests.push({ eq: [{ field: "id" }, { lit: id }] });
+			return findings.findingRows(
+				findingRowsQuery(evaluation.key, {
+					view: "workspace",
+					where: allOf(tests),
+					...fields
+				})
+			);
+		};
+		const counted = yield* query("all", { facets: [{ by: "rule" }] });
+		const counts = facetCounts(counted, "rule");
 		const rules = [...sourceRules]
 			.sort((left, right) => left.ruleId.localeCompare(right.ruleId))
 			.map((rule) => ({ findingCount: counts.get(rule.ruleId) ?? 0, ruleId: rule.ruleId }));
@@ -667,7 +683,7 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 			sourceKey: _key,
 			...finding
 		}: QueriedSourceFinding): TextQualityFinding => finding;
-		const sourceFindings = (page: FindingsQueryPage) =>
+		const sourceFindings = (page: FindingRowsPage) =>
 			// SAFETY: every rule this query names is a `unit_source` rule, and the engine returns
 			// only the named rules' findings.
 			// Verified by: source-quality-index.test.ts compares every page with the in-memory query.
@@ -680,8 +696,11 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 			) {
 				// One past the page says whether another follows.
 				const page = yield* query(request.filter, {
-					...(request.cursor ? { after: request.cursor } : undefined),
-					limit: request.pageSize + 1
+					rows: {
+						order: "source",
+						...(request.cursor ? { after: request.cursor } : undefined),
+						limit: request.pageSize + 1
+					}
 				});
 				const found = sourceFindings(page);
 				const shown = found.slice(0, request.pageSize);
@@ -697,7 +716,11 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 			focus: Effect.fn("GameText.sourceQuality.focus")(function* (
 				request: TextQualityFocusRequest
 			) {
-				const page = yield* query("all", { id: request.id, limit: 1 });
+				const page = yield* query(
+					"all",
+					{ rows: { order: "source", limit: 1 } },
+					request.id
+				);
 				const finding = sourceFindings(page)[0];
 				return finding && findingFocus(strip(finding), idOf(finding), request);
 			}),
@@ -706,7 +729,9 @@ export const queriedTextQualityQuery = Effect.fn("GameText.sourceQuality.open")(
 			) {
 				const all: TextQualityFinding[] = [];
 				for (let offset = 0; ; offset += 5000) {
-					const page = yield* query(filter, { offset, limit: 5000 });
+					const page = yield* query(filter, {
+						rows: { order: "source", offset, limit: 5000 }
+					});
 					all.push(...sourceFindings(page).map(strip));
 					if (page.findings.length < 5000) break;
 				}

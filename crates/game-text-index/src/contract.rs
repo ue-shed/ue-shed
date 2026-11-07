@@ -92,7 +92,7 @@ mod tests {
     };
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
-        Order, Page, QueryRequest, RuleTotal, View,
+        LineSearch, Order, Page, QueryRequest, RuleTotal, View,
     };
     use crate::rules::ir::{
         Document, Expr, Family, MatchOperator, MatcherKind, Role, RoleMatcher, RoleScope, Rule,
@@ -211,6 +211,7 @@ mod tests {
             FindingsAcceptRequest::decl(&config),
             AcceptedFinding::decl(&config),
             QueryRequest::decl(&config),
+            LineSearch::decl(&config),
             Query::decl(&config),
             Selection::decl(&config),
             TextSearch::decl(&config),

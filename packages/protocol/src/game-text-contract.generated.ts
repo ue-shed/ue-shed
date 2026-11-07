@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.26.0",
-	contractHash: "c14aa30d37e68786d0fb762e2e1c39f012e2bbb981b9f1549460e138c060eaed"
+	contractHash: "10b5e61801d70917aa8f46e5b706d4732109a96c5261fae8d8a110abcf628ee4"
 } as const;
 
 /**
@@ -337,7 +337,7 @@ export type FindingsAcceptRequest = { key: string, previous?: string, accepted: 
 
 export type AcceptedFinding = { check: string, culture?: string, namespace: string, key: string, fingerprint: string, };
 
-export type FindingsQueryRequest = { key: string, view: FindingsView, culture?: string, rules?: ReadonlyArray<string>, severities?: ReadonlyArray<Severity>, fixable?: boolean, change?: boolean, acceptance?: string, line?: string, id?: string, order: FindingsOrder, after?: string, offset?: number, 
+export type FindingsQueryRequest = { key: string, view: FindingsView, culture?: string, rules?: ReadonlyArray<string>, severities?: ReadonlyArray<Severity>, fixable?: boolean, change?: boolean, acceptance?: string, line?: string, id?: string, lines?: FindingsLineSearch, order: FindingsOrder, after?: string, offset?: number, 
 /**
  * The page's size; a sink writes every selected finding unless it is given.
  */
@@ -346,6 +346,8 @@ limit?: number, counts?: boolean, diagnostics?: FindingsPageRequest,
  * Writes the report view's findings as `findingJson` rather than sending them.
  */
 sink?: Sink, };
+
+export type FindingsLineSearch = { text?: string, where?: Expr, };
 
 export type Query = { selection: QuerySelection, parts: QueryParts, };
 
@@ -1048,11 +1050,20 @@ stages: { [stage: string]: number }, };
 
 export type FindingCounts = { 
 /**
- * Findings in the view and the culture selection, accepted ones left out.
+ * Findings in the view, the culture selection and the line search that every filter but
+ * `rules` selects, accepted ones left out.
  */
-all: number, rules: ReadonlyArray<RuleTotal>, severities: { blocking: number, normal: number, low: number }, 
+all: number, 
 /**
- * Findings in the view and the culture selection the acceptance key hid.
+ * Each rule's findings that every filter but `rules` selects.
+ */
+rules: ReadonlyArray<RuleTotal>, 
+/**
+ * Each severity's findings that every filter but `severities` selects.
+ */
+severities: { blocking: number, normal: number, low: number }, 
+/**
+ * Findings in the view, the culture selection and the line search the acceptance key hid.
  */
 accepted: number, 
 /**

@@ -11,7 +11,11 @@ import {
 } from "@ue-shed/unreal-assets/investigation";
 import { TextCorpus, TextCorpusSearchRequest, type TextFilterClause } from "./schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
-import { WorkspaceQualityFilter, WorkspaceQualityReport } from "./localization-workspace.js";
+import {
+	WorkspaceQualityFilter,
+	WorkspaceQualityNarrowing,
+	WorkspaceQualityReport
+} from "./localization-workspace.js";
 import { TextQualityReport } from "./quality-schema.js";
 import { TextQualityFilter, type AsyncTextQualityQuery } from "./quality-query.js";
 import type { TextUnit } from "./schema.js";
@@ -51,13 +55,20 @@ export const GameTextInvestigationQuery = Schema.Struct({
 	localization: TextCorpusSearchRequest.fields.localization,
 	qualityFilter: TextQualityFilter,
 	/** The localization quality list's filter; only a quality query over a target has one. */
-	workspaceFilter: Schema.optionalKey(WorkspaceQualityFilter)
+	workspaceFilter: Schema.optionalKey(WorkspaceQualityFilter),
+	/** The localization quality list's search, severities and suggested-fix filter. */
+	workspaceNarrowing: Schema.optionalKey(Schema.Struct(WorkspaceQualityNarrowing))
 }).check(
 	Schema.makeFilter((query) =>
 		query.workspaceFilter === undefined ||
 		(query.mode === "quality" && query.localization !== undefined)
 			? undefined
 			: "A localization quality filter needs quality mode and a localization target."
+	),
+	Schema.makeFilter((query) =>
+		query.workspaceNarrowing === undefined || query.workspaceFilter !== undefined
+			? undefined
+			: "A localization quality search needs a localization quality filter."
 	)
 );
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;
@@ -77,6 +88,15 @@ export function investigationRequest(
 			? { field: "fact", op: "is", values: [lens] }
 			: { field: "finding", op: "is", values: [`localization.${lens}`] };
 	return { ...request, filter: [...(request.filter ?? []), clause] };
+}
+type Narrowing = Schema.Schema.Type<Schema.Struct<typeof WorkspaceQualityNarrowing>>;
+/** Whether a report lists what a preset's narrowing selects: blank searches select everything. */
+function sameNarrowing(report: Narrowing, preset: Narrowing): boolean {
+	return (
+		(report.query?.trim() ?? "") === (preset.query?.trim() ?? "") &&
+		JSON.stringify(report.severities ?? null) === JSON.stringify(preset.severities ?? null) &&
+		report.fixable === preset.fixable
+	);
 }
 /**
  * Versioned reusable query with domain ordering and optional embedded rules. Source quality
@@ -241,7 +261,8 @@ export function exportGameTextInvestigation(
 			preset.query.workspaceFilter !== undefined &&
 			(workspace.filter !== preset.query.workspaceFilter ||
 				workspace.target !== preset.query.localization?.target ||
-				workspace.culture !== preset.query.localization?.culture)
+				workspace.culture !== preset.query.localization?.culture ||
+				!sameNarrowing(workspace, preset.query.workspaceNarrowing ?? {}))
 		)
 			return yield* new InvestigationError({
 				message: "The quality report does not match this preset's selection.",

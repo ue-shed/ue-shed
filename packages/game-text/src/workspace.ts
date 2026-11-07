@@ -1472,7 +1472,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 							filter: query.workspaceFilter,
 							...(query.localization.culture
 								? { culture: query.localization.culture }
-								: undefined)
+								: undefined),
+							...query.workspaceNarrowing
 						})
 					: undefined;
 			const index = yield* currentIndex();

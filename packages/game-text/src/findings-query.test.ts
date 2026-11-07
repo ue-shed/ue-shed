@@ -430,6 +430,80 @@ it.live(
 									).toEqual(legacy.focus({ ...request, id, occurrenceOffset }));
 							}
 						}
+					// A search, severities and suggested fixes narrow a list the same way in both,
+					// and its counts follow every filter but their own.
+					const narrowings: ReadonlyArray<
+						Pick<WorkspaceQualityRequest, "query" | "severities" | "fixable">
+					> = [
+						{ query: "hello" },
+						{ query: "HALLO" },
+						{ query: "  bold   gold " },
+						{ query: "spiel speichern" },
+						{ query: "no such words" },
+						{ severities: ["blocking"] },
+						{ severities: ["normal", "low"] },
+						{ fixable: true },
+						{ fixable: false },
+						{ query: "hello", severities: ["blocking"], fixable: true }
+					];
+					const german = join.cultures.find((culture) => culture === "de")!;
+					for (const culture of [undefined, german])
+						for (const filter of ["all", "placeholder_text", "whitespace"] as const)
+							for (const narrowing of narrowings) {
+								const request: WorkspaceQualityRequest = {
+									target: join.target,
+									filter,
+									...(culture ? { culture } : undefined),
+									...narrowing
+								};
+								expect(yield* indexed.search(request)).toEqual(
+									legacy.search(request)
+								);
+								expect(yield* indexed.export(request)).toEqual(
+									legacy.export(request)
+								);
+								expect(yield* indexed.changes(request)).toEqual(
+									legacy.changes(request)
+								);
+							}
+					const searched = (query: string) =>
+						legacy
+							.export({ target: join.target, filter: "all", query })
+							.findings.map(({ source, culture }) => [source, culture]);
+					// Source text and a culture's translation match; another culture's does not.
+					expect(searched("hello").length).toBeGreaterThan(0);
+					expect(searched("hello").every(([source]) => /hello/iu.test(source!))).toBe(
+						true
+					);
+					const hallo = searched("hallo");
+					expect(hallo.length).toBeGreaterThan(0);
+					expect(hallo.every(([, culture]) => culture === "de")).toBe(true);
+					expect(searched("no such words")).toEqual([]);
+					const exported = legacy.export({
+						target: join.target,
+						filter: "all",
+						query: "hello"
+					});
+					expect(exported.query).toBe("hello");
+					// Choosing a severity leaves the severity counts as they were, and narrows the
+					// check counts to it.
+					const blocking = legacy.search({
+						target: join.target,
+						filter: "all",
+						severities: ["blocking"]
+					});
+					expect(blocking.severityCounts).toEqual(all.severityCounts);
+					expect(blocking.total).toBe(all.severityCounts.blocking);
+					expect(blocking.counts.all).toBe(all.severityCounts.blocking);
+					// Choosing a check leaves the check counts as they were.
+					const placeholders = legacy.search({
+						target: join.target,
+						filter: "placeholder_text",
+						query: "hello"
+					});
+					expect(placeholders.counts).toEqual(
+						legacy.search({ target: join.target, filter: "all", query: "hello" }).counts
+					);
 					const unknown = TextQualityFindingId.make(
 						all.findings[0]!.id.replace(/.$/u, "x")
 					);
@@ -613,6 +687,58 @@ const expectSameQuality = Effect.fn("Test.GameText.sameQuality")(function* (
 				}
 		}
 });
+it.live(
+	"a search matches a source finding by its own source, not its key's other sources",
+	() =>
+		Effect.gen(function* () {
+			const fixture = yield* makeIndexRegressionFixture();
+			yield* Effect.promise(() => writeLocalization(fixture.projectRoot, keys));
+			// One key saved with two conflicting menu texts, each over the menu's budget.
+			const clash = (source: string, property: string) => {
+				const saved = occurrence("Clash", source, 0);
+				return { ...saved, location: { ...saved.location, property_path: property } };
+			};
+			fixture.update([
+				...gathered.map(({ key, source }, index) => occurrence(key, source, index)),
+				clash("Alpha unique", "ClashA"),
+				clash("Beta unique", "ClashB")
+			]);
+			yield* Effect.gen(function* () {
+				const result = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
+				const join = yield* result.localizationJoin;
+				const source = yield* (yield* result.sourceQuality(document)).export("all");
+				const legacy = localizationQualityWorkspace(
+					source,
+					yield* result.localizationCheck(document, {}),
+					join
+				);
+				const indexed = localizationQualityWorkspaceOf(
+					source,
+					yield* result.localizationQuality(document, {})
+				);
+				const searched = (query: string) =>
+					Effect.gen(function* () {
+						const request: WorkspaceQualityRequest = {
+							target: join.target,
+							filter: "character_budget",
+							query
+						};
+						const report = yield* indexed.export(request);
+						expect(report).toEqual(legacy.export(request));
+						return report.findings
+							.filter(({ culture }) => culture === undefined)
+							.map((finding) => finding.source)
+							.sort();
+					});
+				expect(yield* searched("unique")).toEqual(["Alpha unique", "Beta unique"]);
+				expect(yield* searched("alpha")).toEqual(["Alpha unique"]);
+				expect(yield* searched("BETA unique")).toEqual(["Beta unique"]);
+				// Words from different sources of one key do not combine into a match.
+				expect(yield* searched("alpha beta")).toEqual([]);
+			}).pipe(Effect.provide(fixture.layer()));
+		}).pipe(Effect.scoped),
+	120000
+);
 it.live("checks report each place once, its compiled Blueprint copies folded in", () =>
 	Effect.gen(function* () {
 		const fixture = yield* makeIndexRegressionFixture();

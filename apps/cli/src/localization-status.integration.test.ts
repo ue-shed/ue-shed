@@ -3,7 +3,8 @@ import { it } from "@effect/vitest";
 import {
 	LocalizationBaseline,
 	LocalizationProgressReport,
-	LocalizationStatusReport
+	LocalizationStatusReport,
+	type WorkspaceQualityRequest
 } from "@ue-shed/game-text/corpus";
 import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_CHECK_RULES } from "@ue-shed/game-text/rules";
 import { LocalizationQualityReport, TextProblem } from "@ue-shed/game-text/schema";
@@ -680,6 +681,41 @@ describe.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE)("localization quality pr
 		expect(before.result.report.findings.length).toBeGreaterThan(0);
 		const csv = await run([...args, "--format", "csv"]);
 		expect(csv).toContain('"finding_id","kind","culture","source","problem","context"');
+		// A narrowed preset replays its search: the report lists what the Workbench list did.
+		const word = String(before.result.report.findings[0].source)
+			.split(/\s+/u)
+			.find((part) => /^\p{L}{3,}$/u.test(part))!;
+		const narrowed = async (
+			workspaceNarrowing: Pick<WorkspaceQualityRequest, "query" | "severities" | "fixable">,
+			format: "json" | "csv" = "json"
+		) => {
+			const path = join(fixture.root, "Saved", "localization-quality-narrowed.json");
+			await writeFile(
+				path,
+				JSON.stringify({ ...preset, query: { ...preset.query, workspaceNarrowing } })
+			);
+			const printed = await run([
+				"investigations",
+				"run",
+				fixture.root,
+				"--preset",
+				path,
+				"--format",
+				format
+			]);
+			return format === "json" ? JSON.parse(printed) : printed;
+		};
+		const searched = await narrowed({ query: word });
+		expect(searched.result.report.query).toBe(word);
+		expect(searched.result.report.findings.length).toBeGreaterThan(0);
+		expect(
+			searched.result.report.findings.map((finding: { id: string }) => finding.id)
+		).toContain(before.result.report.findings[0].id);
+		const none = await narrowed({ query: "zzqx nothing matches" });
+		expect(none.result.report.findings).toEqual([]);
+		expect(await narrowed({ query: word, severities: ["blocking"] }, "csv")).toContain(
+			'"finding_id","kind","culture","source","problem","context"'
+		);
 		// An accepted finding leaves the replay exactly as it leaves the Workbench list.
 		await run([
 			"loc",

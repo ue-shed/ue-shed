@@ -16,8 +16,8 @@ use crate::engine_match::{Projection, checkpoint};
 use crate::engine_query::EngineQuery;
 use crate::engine_rows::RowSet;
 use crate::engine_types::{
-    FacetPart, FindingsOrder, FindingsSelection, FindingsView, MAX_GROUPS, PROBLEMS, Query,
-    QueryAnswer, Selection, invalid,
+    FacetPart, FindingsOrder, FindingsSelection, FindingsView, Query, QueryAnswer, Selection,
+    invalid,
 };
 use crate::engine_where::{Field, Node};
 use crate::sink::{SinkWriter, pretty_json};
@@ -335,40 +335,6 @@ fn value_index(context: &Context<'_>, field: Field, number: u32, rules: &[usize]
     }
 }
 
-/// Two counts of one field, over lines and over units, as one: entries with the same key add,
-/// and the units' other keys follow the lines' while there is room.
-fn merged(mut lines: Value, units: Value) -> Value {
-    let rank = |worst: &Value| {
-        worst
-            .as_str()
-            .and_then(|worst| PROBLEMS.iter().position(|problem| *problem == worst))
-            .unwrap_or(PROBLEMS.len())
-    };
-    let mut more = lines["more"].as_u64().unwrap_or(0) + units["more"].as_u64().unwrap_or(0);
-    let Some(entries) = lines["entries"].as_array_mut() else {
-        return units;
-    };
-    for entry in units["entries"].as_array().into_iter().flatten() {
-        match entries.iter().position(|line| line["key"] == entry["key"]) {
-            Some(index) => {
-                let line = &mut entries[index];
-                for count in ["count", "needWork"] {
-                    let sum =
-                        line[count].as_u64().unwrap_or(0) + entry[count].as_u64().unwrap_or(0);
-                    line[count] = json!(sum);
-                }
-                if rank(&entry["worst"]) < rank(&line["worst"]) {
-                    line["worst"] = entry["worst"].clone();
-                }
-            }
-            None if entries.len() < MAX_GROUPS => entries.push(entry.clone()),
-            None => more += 1,
-        }
-    }
-    lines["more"] = json!(more);
-    lines
-}
-
 impl EngineQuery {
     /// A query over finding rows: its part, then a page's place sets and findings as batches, or
     /// with a write, what the write's sink wrote.
@@ -621,23 +587,17 @@ impl EngineQuery {
                     json!({"entries": entries, "more": 0})
                 } else {
                     let under = tally.part.under.as_deref().unwrap_or("");
-                    let lines =
-                        self.aggregate(&tally.lines, &lines_selection, by, None, under, cancelled)?;
-                    let mut value = if tally.units.is_empty() {
-                        lines
-                    } else {
-                        merged(
-                            lines,
-                            self.aggregate(
-                                &tally.units,
-                                &units_selection,
-                                by,
-                                None,
-                                under,
-                                cancelled,
-                            )?,
-                        )
-                    };
+                    // Lines and units count together before the facet keeps its first values.
+                    let mut value = self.aggregate_parts(
+                        &[
+                            (&tally.lines, &lines_selection),
+                            (&tally.units, &units_selection),
+                        ],
+                        by,
+                        None,
+                        under,
+                        cancelled,
+                    )?;
                     if by == Field::Paths {
                         value["under"] = json!(under);
                     }
@@ -1197,6 +1157,79 @@ mod tests {
 
     /// Finding rows test their text row with the Text tab's grammar: a culture's finding in that
     /// culture's scope, a source finding through its unit; and count by its fields.
+    /// A facet over line and source findings counts both before it keeps its first values: a
+    /// value's source findings count even where the sources alone would leave it out.
+    #[test]
+    fn finding_rows_count_lines_and_units_together_before_the_facet_limit() -> Result<()> {
+        let mut fixture = Fixture::new()?;
+        let names = (0..=200).map(|n| format!("N{n:03}")).collect::<Vec<_>>();
+        let source = |name: &str| {
+            if name == "N200" {
+                " Long text"
+            } else {
+                "Long text"
+            }
+        };
+        let lines = names
+            .iter()
+            .map(|name| json!({"namespace":name,"key":"K","source":source(name),"path":format!("/Game/Text/{name}.{name}.K")}))
+            .collect::<Vec<_>>();
+        fixture.file("Game.manifest", "manifest", &lines)?;
+        for culture in ["en", "de"] {
+            let entries = names
+                .iter()
+                .map(|name| json!({"namespace":name,"key":"K","source":source(name),"translation":source(name)}))
+                .collect::<Vec<_>>();
+            fixture.file(&format!("{culture}.archive"), "archive", &entries)?;
+            fixture.file(&format!("{culture}.po"), "po", &[])?;
+        }
+        let places = names
+            .iter()
+            .map(|name| json!({"namespace":name,"key":"K","source":source(name),"object":format!("/Game/Text/{name}.{name}"),"property":"K"}))
+            .collect::<Vec<_>>();
+        fixture.packages(&places)?;
+        fixture.lines()?;
+        let role = json!({"id":"all","scopes":[{"matchers":[{"kind":"object_path","operator":"prefix","value":"/Game/"}]}]});
+        let rules = json!([{"kind":"source_whitespace"},
+            {"id":"budget","kind":"character_budget","role":"all","maximumCharacters":1,"recovery":"Shorten it."}]);
+        let document = example_document(
+            &["source_whitespace"],
+            Some(json!({"schemaVersion":1,"roles":[role],"rules":rules})),
+        )?;
+        let configuration = fixture.configuration.clone();
+        drop(fixture);
+        let query = EngineQuery::open(&configuration, None)?;
+        let cancelled = AtomicBool::new(false);
+        let evaluated =
+            crate::json_value::parse(&query.findings_evaluate(&document, "en", &cancelled)?)?;
+        let key = evaluated["key"].as_str().ok_or("Missing findings key.")?;
+        let page = query.finding_rows_page(
+            json!({"selection":{"target":query.target["name"],"rows":"findings",
+                "findings":{"key":key,"view":"workspace"}},
+                "parts":{"facets":[{"by":"namespace"},{"by":"subject"}]}}),
+            &cancelled,
+        )?;
+        let subjects = &page["facets"]["subject"]["entries"];
+        let count = |entries: &Value, key: &str| {
+            entries
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|entry| entry["key"] == key)
+                .and_then(|entry| entry["count"].as_u64())
+        };
+        // Each namespace's source is over budget; only N200's line has a leading space.
+        assert_eq!(count(subjects, "unit_source"), Some(201));
+        let namespaces = &page["facets"]["namespace"];
+        assert_eq!(
+            namespaces["entries"].as_array().map(Vec::len),
+            Some(crate::engine_types::MAX_GROUPS)
+        );
+        assert_eq!(namespaces["more"], 1);
+        assert_eq!(count(&namespaces["entries"], "N200"), Some(2));
+        Ok(())
+    }
+
     #[test]
     fn finding_rows_test_their_text_rows_as_the_text_tab_does() -> Result<()> {
         let (query, key) = fixture_findings()?;

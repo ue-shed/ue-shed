@@ -252,18 +252,22 @@ impl EngineQuery {
         under: &str,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
+        self.aggregate_parts(&[(rows, selection)], by, minimum, under, cancelled)
+    }
+
+    /// Rows of several kinds counted together, each part read under its own selection: a value's
+    /// tally sums every part before the groups are ranked and the first `MAX_GROUPS` kept.
+    pub(crate) fn aggregate_parts(
+        &self,
+        parts: &[(&[u32], &Selection)],
+        by: Field,
+        minimum: Option<usize>,
+        under: &str,
+        cancelled: &AtomicBool,
+    ) -> Result<Value> {
         let facet = minimum.is_none();
         let projection = Projection::open(self, cancelled)?;
         let places = Places::open(self)?;
-        let localized = selection.localized();
-        let kind = if localized { Kind::Line } else { Kind::Raw };
-        let scope = if localized {
-            self.culture_scope(selection)?
-        } else {
-            Vec::new()
-        };
-        let findings = self.request_findings(selection, cancelled)?;
-        let problems = self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
         let parent = Self::normalized_path(under)
             .trim_end_matches('/')
             .to_owned();
@@ -283,82 +287,98 @@ impl EngineQuery {
             None
         };
         let mut tallies: HashMap<u32, Tally> = HashMap::new();
-        for (stamp, row) in rows.iter().enumerate() {
-            if stamp & 255 == 0 {
-                checkpoint(cancelled)?;
-            }
-            let row = *row as usize;
-            let bits = problems[row];
-            let worst = bits.trailing_zeros();
-            let mut visit = |key: u32, label: u32| {
-                let tally = tallies.entry(key).or_insert(Tally {
-                    count: 0,
-                    work: 0,
-                    worst,
-                    label,
-                    first: stamp,
-                    last: usize::MAX,
-                });
-                if tally.first == stamp {
-                    tally.label = label;
-                }
-                if tally.last != stamp {
-                    tally.count += 1;
-                    tally.work += usize::from(bits & text_problem::WORK != 0);
-                    tally.worst = tally.worst.min(worst);
-                    tally.last = stamp;
-                }
+        // A stamp names one row of one part, so a row counts once in each value it holds.
+        let mut stamps = 0;
+        for (rows, selection) in parts.iter().filter(|(rows, _)| !rows.is_empty()) {
+            let localized = selection.localized();
+            let kind = if localized { Kind::Line } else { Kind::Raw };
+            let scope = if localized {
+                self.culture_scope(selection)?
+            } else {
+                Vec::new()
             };
-            match by {
-                Field::Files | Field::Paths => {
-                    let mut found = false;
-                    projection.each_file(kind, row, &mut |file| {
-                        let (key, label) = places.coordinate(
-                            file,
-                            by == Field::Paths,
-                            if facet && by == Field::Paths {
-                                Some(depth)
-                            } else {
-                                None
-                            },
-                            parent.as_deref().filter(|_| facet && by == Field::Paths),
-                        )?;
-                        if facet && label == 0 {
-                            return Ok(false);
-                        }
-                        visit(key, label);
-                        found = true;
-                        Ok(!facet)
-                    })?;
-                    if !facet && !found {
-                        visit(0, 0);
+            let findings = self.request_findings(selection, cancelled)?;
+            let problems =
+                self.problem_column(localized, &scope, findings.as_deref(), cancelled)?;
+            for (index, row) in rows.iter().enumerate() {
+                let stamp = stamps + index;
+                if stamp & 255 == 0 {
+                    checkpoint(cancelled)?;
+                }
+                let row = *row as usize;
+                let bits = problems[row];
+                let worst = bits.trailing_zeros();
+                let mut visit = |key: u32, label: u32| {
+                    let tally = tallies.entry(key).or_insert(Tally {
+                        count: 0,
+                        work: 0,
+                        worst,
+                        label,
+                        first: stamp,
+                        last: usize::MAX,
+                    });
+                    if tally.first == stamp {
+                        tally.label = label;
                     }
-                }
-                // A line of several types counts in each.
-                Field::AssetTypes => {
-                    let types = types.as_ref().ok_or("Asset types are not open.")?;
-                    types.each(&projection, kind, row, &mut |kind| {
-                        visit(kind, kind);
-                        false
-                    })?;
-                }
-                Field::Origins if facet => {
-                    let bits = if localized {
-                        projection.origins[row]
-                    } else {
-                        projection.raw.origins[row]
-                    };
-                    for bit in 0..ORIGINS.len() {
-                        if bits & (1 << bit) != 0 {
-                            visit(bit as u32 + 1, bit as u32 + 1);
+                    if tally.last != stamp {
+                        tally.count += 1;
+                        tally.work += usize::from(bits & text_problem::WORK != 0);
+                        tally.worst = tally.worst.min(worst);
+                        tally.last = stamp;
+                    }
+                };
+                match by {
+                    Field::Files | Field::Paths => {
+                        let mut found = false;
+                        projection.each_file(kind, row, &mut |file| {
+                            let (key, label) = places.coordinate(
+                                file,
+                                by == Field::Paths,
+                                if facet && by == Field::Paths {
+                                    Some(depth)
+                                } else {
+                                    None
+                                },
+                                parent.as_deref().filter(|_| facet && by == Field::Paths),
+                            )?;
+                            if facet && label == 0 {
+                                return Ok(false);
+                            }
+                            visit(key, label);
+                            found = true;
+                            Ok(!facet)
+                        })?;
+                        if !facet && !found {
+                            visit(0, 0);
                         }
                     }
-                }
-                _ => {
-                    let key = projection.group_key(&places, localized, row, &problems, by)?;
-                    visit(key, key);
+                    // A line of several types counts in each.
+                    Field::AssetTypes => {
+                        let types = types.as_ref().ok_or("Asset types are not open.")?;
+                        types.each(&projection, kind, row, &mut |kind| {
+                            visit(kind, kind);
+                            false
+                        })?;
+                    }
+                    Field::Origins if facet => {
+                        let bits = if localized {
+                            projection.origins[row]
+                        } else {
+                            projection.raw.origins[row]
+                        };
+                        for bit in 0..ORIGINS.len() {
+                            if bits & (1 << bit) != 0 {
+                                visit(bit as u32 + 1, bit as u32 + 1);
+                            }
+                        }
+                    }
+                    _ => {
+                        let key = projection.group_key(&places, localized, row, &problems, by)?;
+                        visit(key, key);
+                    }
                 }
             }
+            stamps += rows.len();
         }
         // Groups below the requested size are left out before ranking, and so are not counted
         // in `more`. Facets list every value.

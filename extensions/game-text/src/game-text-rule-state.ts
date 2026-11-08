@@ -28,7 +28,35 @@ export function createGameTextRuleState(options: {
 	let baseline = options.initialState?.draft;
 	const [state, setState] = createSignal(options.initialState);
 	const [fileAttached, setFileAttached] = createSignal(false);
-	const [busy, setBusy] = createSignal(false);
+	type Lifecycle =
+		| { readonly _tag: "Idle" }
+		| {
+				readonly _tag: "Running";
+				readonly operation: "preview" | "save" | "discard";
+				readonly replacement?: () => void;
+		  };
+	const [lifecycle, setLifecycle] = createSignal<Lifecycle>({ _tag: "Idle" });
+	const busy = () => lifecycle()._tag === "Running";
+	const transition = (
+		event:
+			| { readonly _tag: "Begin"; readonly operation: "preview" | "save" | "discard" }
+			| { readonly _tag: "Replace"; readonly run: () => void }
+			| { readonly _tag: "Finish" }
+	) => {
+		const current = lifecycle();
+		if (event._tag === "Replace") {
+			if (current._tag === "Running" && current.operation === "save") {
+				setLifecycle({ ...current, replacement: event.run });
+				return;
+			}
+			event.run();
+		} else if (event._tag === "Begin")
+			setLifecycle({ _tag: "Running", operation: event.operation });
+		else {
+			setLifecycle({ _tag: "Idle" });
+			if (current._tag === "Running") current.replacement?.();
+		}
+	};
 	const [feedback, setFeedback] = createSignal<EditorFeedback>({ status: "idle" });
 	const dirty = createMemo(() => {
 		const current = state();
@@ -38,14 +66,18 @@ export function createGameTextRuleState(options: {
 		);
 	});
 	const problems = createMemo(() => (state()?.draft ? draftProblems(state()?.draft) : []));
-	const replace = (document: GameTextRuleDocument | undefined, persisted = true) => {
-		action.cancel();
-		baseline = document;
-		setFileAttached(persisted && document !== undefined);
-		setState(document ? { draft: document, savedDocument: document } : undefined);
-		setBusy(false);
-		setFeedback({ status: "idle" });
-	};
+	const replace = (document: GameTextRuleDocument | undefined, persisted = true) =>
+		transition({
+			_tag: "Replace",
+			run: () => {
+				action.cancel();
+				baseline = document;
+				setFileAttached(persisted && document !== undefined);
+				setState(document ? { draft: document, savedDocument: document } : undefined);
+				transition({ _tag: "Finish" });
+				setFeedback({ status: "idle" });
+			}
+		});
 	const changeDraft = (draft: GameTextRuleDocument) => {
 		setState((current) => ({ draft, savedDocument: current?.savedDocument }));
 		setFeedback({ status: "idle" });
@@ -61,7 +93,7 @@ export function createGameTextRuleState(options: {
 			});
 			return;
 		}
-		setBusy(true);
+		transition({ _tag: "Begin", operation });
 		setFeedback({ status: "idle" });
 		action.run(
 			operation !== "save"
@@ -69,14 +101,13 @@ export function createGameTextRuleState(options: {
 				: options.client.saveQualityRules(submitted),
 			{
 				onFailure: (cause) => {
-					setBusy(false);
+					transition({ _tag: "Finish" });
 					setFeedback({
 						message: failureText("The rules couldn’t be checked.", cause),
 						status: "failed"
 					});
 				},
 				onSuccess: (result) => {
-					setBusy(false);
 					if (result.status === "completed") {
 						setState((current) => ({
 							draft:
@@ -119,17 +150,22 @@ export function createGameTextRuleState(options: {
 									}
 						);
 					}
+					transition({ _tag: "Finish" });
 				}
 			}
 		);
 	};
 	// Whether a rules file is attached is the host's to say; a restored draft keeps that answer.
-	const restore = (saved: RuleEditorState) => {
-		action.cancel();
-		setState(saved);
-		setBusy(false);
-		setFeedback({ status: "idle" });
-	};
+	const restore = (saved: RuleEditorState) =>
+		transition({
+			_tag: "Replace",
+			run: () => {
+				action.cancel();
+				setState(saved);
+				transition({ _tag: "Finish" });
+				setFeedback({ status: "idle" });
+			}
+		});
 	const discard = () => {
 		const document = state()?.savedDocument ?? baseline;
 		if (!document || busy()) return;

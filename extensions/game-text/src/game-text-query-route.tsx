@@ -275,6 +275,7 @@ export function GameTextRoute(props: {
 	const focusAction = createEffectAction();
 	const refreshAction = createEffectAction();
 	const qualityAction = createEffectAction();
+	const ruleFileAction = createEffectAction();
 	const memoryAction = createEffectAction();
 	const progressSubscription = createEffectSubscription();
 	const elapsedSubscription = createEffectSubscription();
@@ -1057,7 +1058,7 @@ export function GameTextRoute(props: {
 					? props.client.chooseQualityRules
 					: props.client.createStarterRules?.(create);
 			if (!operation) return;
-			qualityAction.run(operation, {
+			ruleFileAction.run(operation, {
 				onSuccess: applyQuality,
 				onFailure: (cause) =>
 					showError(failureText("Couldn’t open the rules file.", cause), () =>
@@ -1068,7 +1069,7 @@ export function GameTextRoute(props: {
 	const reloadRules = () =>
 		guardRules(() => {
 			setQualityFailure(undefined);
-			qualityAction.run(props.client.reloadQualityRules ?? props.client.chooseQualityRules, {
+			ruleFileAction.run(props.client.reloadQualityRules ?? props.client.chooseQualityRules, {
 				onSuccess: applyQuality,
 				onFailure: (cause) =>
 					showError(failureText("Couldn’t reload the rules file.", cause), reloadRules)

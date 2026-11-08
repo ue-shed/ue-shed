@@ -25,3 +25,5 @@ Keep carried ID-repair translations attached to the target submitted with Apply.
 of the selected project while another project is opening, preserve newer rules selections when
 an older save completes, scope scan progress to the logical scan, and clear recovered rules-file
 errors without dismissing newer unrelated failures.
+
+Refusing an oversized scan request now preserves progress and ownership of a scan already running.

@@ -1738,7 +1738,6 @@ export function invokeProtocolScan(
 	const projectRoot = options.projectRoot;
 	return Effect.suspend(() => {
 		const owner = Symbol();
-		scanOwners.set(progress, owner);
 		const destination: ScanProgressStore = {
 			get current() {
 				return progress.current;
@@ -1776,6 +1775,16 @@ export function invokeProtocolScan(
 						);
 			if (batches instanceof ProtocolStreamFailure)
 				return yield* mapProtocolFailure(batches, "scan", projectRoot);
+			// Requests without explicit paths still need their filter envelope admitted.
+			if (
+				paths === undefined &&
+				Buffer.byteLength(
+					`${JSON.stringify(makeScanRequest(configuration, options))}\n`,
+					"utf8"
+				) > MAX_PROTOCOL_REQUEST_BYTES
+			)
+				return yield* mapProtocolFailure(requestTooLarge(), "scan", projectRoot);
+			scanOwners.set(progress, owner);
 			yield* Effect.annotateCurrentSpan({ [READER_BATCHES_ATTRIBUTE]: batches?.length ?? 1 });
 			if (paths === undefined || batches === undefined || batches.length === 1) {
 				// A list that only fit once its repeats were dropped is sent without them.

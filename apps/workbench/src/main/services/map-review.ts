@@ -409,19 +409,32 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const activeReviewSetPath = yield* Ref.make<
 			Option.Option<{ readonly path: string; readonly projectRoot: string }>
 		>(Option.none());
-		const provisionedCameraBindings = yield* Ref.make<
-			Option.Option<{
-				readonly bindings: ReadonlyArray<{
-					readonly cameraId: string;
-					readonly candidateId: string;
-					readonly index: number;
-					readonly previewContext: "editor_live" | "play_live";
-				}>;
-				readonly poseFingerprint: string;
-				readonly endpoint: string;
-				readonly sessionId: string;
-			}>
-		>(Option.none());
+		type ProvisionedBindings = {
+			readonly bindings: ReadonlyArray<{
+				readonly cameraId: string;
+				readonly candidateId: string;
+				readonly index: number;
+				readonly previewContext: "editor_live" | "play_live";
+			}>;
+			readonly poseFingerprint: string;
+			readonly endpoint: string;
+			readonly sessionId: string;
+		};
+		type ProvisionedSlot = { readonly revision: number } & (
+			| { readonly _tag: "Empty" | "Provisioning" }
+			| { readonly _tag: "Held"; readonly value: ProvisionedBindings }
+		);
+		const provisionedSlot = yield* Ref.make<ProvisionedSlot>({ _tag: "Empty", revision: 0 });
+		const transitionProvisioned = (update: (state: ProvisionedSlot) => ProvisionedSlot) =>
+			Ref.updateAndGet(provisionedSlot, update);
+		const provisionedCameraBindings = Ref.get(provisionedSlot).pipe(
+			Effect.map((state) =>
+				state._tag === "Held"
+					? Option.some(state.value)
+					: Option.none<ProvisionedBindings>()
+			)
+		);
+
 		const livePreviewFps = yield* Ref.make(5);
 		const playActiveCache = yield* Ref.make<
 			Option.Option<{
@@ -843,8 +856,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const invalidateProvisionedCameras = Effect.fn(
 			"Workbench.WorkbenchMapReview.invalidateProvisionedCameras"
 		)(function* () {
-			const bindings = yield* Ref.getAndSet(provisionedCameraBindings, Option.none());
-			if (Option.isNone(bindings)) return;
+			const previous = yield* Ref.get(provisionedSlot);
+			yield* transitionProvisioned((state) => ({
+				_tag: "Empty",
+				revision: state.revision + 1
+			}));
+			if (previous._tag === "Empty") return;
 			const endpoint = yield* connection.endpoint;
 
 			yield* clearProvisionedCameras(endpoint).pipe(
@@ -879,7 +896,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const setLivePreviewFps = Effect.fn("Workbench.WorkbenchMapReview.setLivePreviewFps")(
 			function* (fps: number) {
 				const endpoint = yield* connection.endpoint;
-				const bindings = yield* Ref.get(provisionedCameraBindings);
+				const bindings = yield* provisionedCameraBindings;
 				const cameraCount =
 					Option.isSome(bindings) && bindings.value.endpoint === endpoint
 						? bindings.value.bindings.length
@@ -1810,7 +1827,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					const liveAttempt = yield* Effect.gen(function* () {
 						const bindings = yield* liveEnsureGate.withPermits(1)(
 							Effect.gen(function* () {
-								const cached = yield* Ref.get(provisionedCameraBindings);
+								const cached = yield* provisionedCameraBindings;
 								if (
 									Option.isSome(cached) &&
 									cached.value.endpoint === endpoint &&
@@ -1821,6 +1838,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								}
 								return yield* runExclusive(
 									Effect.gen(function* () {
+										const owner = yield* transitionProvisioned((state) => ({
+											_tag: "Provisioning",
+											revision: state.revision + 1
+										}));
 										const fps = yield* Ref.get(livePreviewFps);
 										const next = yield* ensureProvisionedCameras(
 											endpoint,
@@ -1849,9 +1870,31 @@ export const WorkbenchMapReviewLive = Layer.effect(
 												remoteControl
 											)
 										);
-										yield* Ref.set(
-											provisionedCameraBindings,
-											Option.some({
+
+										if (
+											(yield* Ref.get(provisionedSlot)).revision !==
+											owner.revision
+										) {
+											yield* clearProvisionedCameras(endpoint).pipe(
+												Effect.provideService(
+													RemoteControlClient,
+													remoteControl
+												),
+												Effect.ignore
+											);
+											return yield* new ProvisionedCameraError({
+												message:
+													"The camera session changed during provisioning.",
+												operation: "ensure_cameras",
+												recovery: "Reframe the selected subject.",
+												retrySafe: true,
+												nextStep: "reconcile"
+											});
+										}
+										yield* transitionProvisioned((state) => ({
+											_tag: "Held",
+											revision: state.revision,
+											value: {
 												bindings: next.map((item) => ({
 													cameraId: item.cameraId,
 													candidateId:
@@ -1864,8 +1907,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 												poseFingerprint,
 												endpoint,
 												sessionId: intent.sessionId
-											})
-										);
+											}
+										}));
 										return next.map((item) => ({
 											cameraId: item.cameraId,
 											candidateId:
@@ -2271,6 +2314,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							targetMapPath
 						});
 						if (response.outcome !== "rejected") {
+							yield* invalidateProvisionedCameras();
 							yield* editorHandoff.activate(endpoint);
 							yield* Ref.set(lastWorldSnapshot, Option.none());
 							yield* Ref.set(lastObservationSample, Option.none());
@@ -2372,7 +2416,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					...current,
 					subscribers: 0
 				}));
-				const bindings = yield* Ref.get(provisionedCameraBindings);
+				const bindings = yield* provisionedCameraBindings;
 				if (Option.isSome(bindings)) yield* invalidateProvisionedCameras();
 				yield* Ref.set(playActiveCache, Option.none());
 				yield* Ref.set(lastWorldSnapshot, Option.none());

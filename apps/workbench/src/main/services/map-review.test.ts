@@ -10,6 +10,7 @@ import {
 	legacyReviewRenderPolicy,
 	type ReviewAuthoringApi,
 	ReviewAuthoringSessionError,
+	ReviewAuthoringSession,
 	VisibilityPolicyId,
 	type ReviewAuthoringSessionsApi,
 	type ReviewCaptureApi,
@@ -41,6 +42,7 @@ import {
 import { WorkbenchMapReview, WorkbenchMapReviewLive } from "./map-review.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
+const decodeAuthoringSession = Schema.decodeUnknownSync(ReviewAuthoringSession);
 const decodeString = Schema.decodeUnknownEffect(Schema.String);
 const ProvisioningRequestJson = Schema.fromJsonString(
 	Schema.Struct({
@@ -1958,7 +1960,10 @@ const livePreviewSession = {
 	viewId: "initial-view"
 };
 
-function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
+function makeLivePreviewServiceLayer(
+	worldContext: "editor" | "play",
+	beforeEnsure: Effect.Effect<void> = Effect.void
+) {
 	return MapReviewLiveWithDialog.pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -1991,8 +1996,53 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				}),
 				makeWorkbenchWindowTestLayer(),
 				makeRemoteControlClientTestLayer((request) => {
+					if (request.functionName === "GetCapabilityManifest") {
+						return Effect.succeed({
+							capabilities: ["editor.world-control.v1", "editor.world-state.v1"],
+							producerKind: "unreal_editor",
+							schemaVersion: 1,
+							worldControlObjectPath: "/Script/Fixture.WorldControl"
+						});
+					}
+					if (request.functionName === "GetWorldState") {
+						return Effect.succeed({
+							contract: {
+								name: "unreal-editor-world-control",
+								version: { major: 1, minor: 0 }
+							},
+							projectName: "MyProj",
+							...(mapReviewProject.project.projectRoot === undefined
+								? undefined
+								: { projectRoot: mapReviewProject.project.projectRoot }),
+							snapshot: {
+								dirtyWorldPackages: [],
+								mapPath: "/Game/Maps/L_Alpha",
+								playSessionActive: false
+							}
+						});
+					}
+					if (request.functionName === "OpenMap") {
+						return Effect.gen(function* () {
+							const json = yield* decodeString(request.parameters.RequestJson);
+							const intent = yield* decodeEditorWorldOpenRequest(JSON.parse(json));
+							expect(intent.targetMapPath).toBe("/Game/Maps/L_Alpha");
+							const snapshot = {
+								dirtyWorldPackages: [],
+								mapPath: intent.targetMapPath,
+								playSessionActive: false
+							};
+							return {
+								...intent,
+								outcome: "opened",
+								before: snapshot,
+								after: snapshot
+							};
+						}).pipe(Effect.orDie);
+					}
+
 					if (request.functionName === "EnsureProvisionedCameras") {
 						return decodeProvisioningRequestJson(request.parameters.RequestJson).pipe(
+							Effect.tap(() => beforeEnsure),
 							Effect.orDie,
 							Effect.flatMap((provisioned) => {
 								expect(provisioned.cameras[0]).toMatchObject({
@@ -2023,6 +2073,13 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				}),
 				makeReviewAuthoringSessionsTestLayer({
 					...dyingAuthoringSessions,
+					discard: () =>
+						Effect.sync(() =>
+							decodeAuthoringSession({
+								...livePreviewSession,
+								lifecycle: "discarded"
+							})
+						),
 					// SAFETY: livePreviewSession is a complete test-owned session fixture.
 					load: () => Effect.succeed(livePreviewSession as never)
 				}),
@@ -2424,6 +2481,63 @@ it.effect("L3.2 restarts a failed observation stream for a new subscriber", () =
 								: Stream.fromEffect(Effect.never)
 					}
 				})
+			)
+		);
+	})
+);
+
+it.effect("L2.2 invalidates provisioned bindings after an accepted map open", () =>
+	Effect.gen(function* () {
+		let ensures = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const intent = { candidateId: "facade_front", sessionId: "session-live" };
+			expect((yield* service.previewAuthoringCandidate(intent)).status).toBe("ready");
+			expect((yield* service.openMapInUnreal!("Content/Maps/L_Alpha.umap")).outcome).toBe(
+				"opened"
+			);
+			expect((yield* service.previewAuthoringCandidate(intent)).status).toBe("ready");
+			expect(ensures).toBe(2);
+		}).pipe(
+			Effect.provide(
+				makeLivePreviewServiceLayer(
+					"editor",
+					Effect.sync(() => {
+						ensures++;
+					})
+				)
+			)
+		);
+	})
+);
+it.effect("L2.3 refuses to recache bindings invalidated during ensure", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let ensures = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const intent = { candidateId: "facade_front", sessionId: "session-live" };
+			const first = yield* service
+				.previewAuthoringCandidate(intent)
+				.pipe(Effect.exit, Effect.forkChild);
+			yield* Deferred.await(started);
+			yield* service.discardAuthoring({ sessionId: "session-live" });
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(first);
+			yield* service.previewAuthoringCandidate(intent);
+			expect(ensures).toBe(2);
+		}).pipe(
+			Effect.provide(
+				makeLivePreviewServiceLayer(
+					"editor",
+					Effect.gen(function* () {
+						if (++ensures === 1) {
+							yield* Deferred.succeed(started, undefined);
+							yield* Deferred.await(release);
+						}
+					})
+				)
 			)
 		);
 	})

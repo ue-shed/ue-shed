@@ -14,6 +14,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { qualityFixture } from "../../../packages/game-text/src/localization-workspace.test-support.js";
 import { cultureCode } from "../../../packages/game-text/src/localization.test-support.js";
 import { qualityFixtureText } from "./game-text-canned-search.test-support.js";
+import { GameTextClientError } from "./game-text-client.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import type { GameTextPreferences } from "./game-text-preferences.js";
 import { GameTextRoute } from "./game-text-query-route.js";
@@ -419,4 +420,55 @@ describe("localization quality and reports", () => {
 			}
 		]);
 	}, 30_000);
+});
+
+it("U4.3 clears failed feedback after a successful same-context page retry", async () => {
+	const base = client();
+	let failNext = false;
+	let failed = false;
+	let reads = 0;
+	mount({
+		...base,
+		localizationQualitySearch: (request) => {
+			reads++;
+			if (failNext) {
+				failNext = false;
+				failed = true;
+				return Effect.fail(
+					new GameTextClientError({
+						code: "game_text_client_failed",
+						operation: "quality",
+						message: "Read failed",
+						cause: new Error("Read failed"),
+						recovery: "Retry",
+						retrySafe: true,
+						nextStep: "retry"
+					})
+				);
+			}
+			return base.localizationQualitySearch!(request).pipe(
+				Effect.map((result) =>
+					!failed && result.status === "ready"
+						? {
+								...result,
+								page: {
+									...result.page,
+									total: result.page.findings.length + 1,
+									nextOffset: 1
+								}
+							}
+						: result
+				)
+			);
+		}
+	});
+	const user = userEvent.setup({ delay: null });
+	const more = await screen.findByRole("button", { name: /Show.*more/u });
+	failNext = true;
+	await user.click(more);
+	await screen.findByRole("alert");
+	const beforeRetry = reads;
+	await user.click(screen.getByRole("button", { name: /Show.*more/u }));
+	await waitFor(() => expect(reads).toBeGreaterThan(beforeRetry));
+	await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 });

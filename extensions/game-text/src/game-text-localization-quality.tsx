@@ -181,6 +181,8 @@ export function GameTextLocalizationQuality(props: {
 					if (version !== revision) return;
 					setLoading(false);
 					if (result.status === "ready") {
+						setFailed(false);
+						setMessage(undefined);
 						setPage((previous) =>
 							offset && previous
 								? {

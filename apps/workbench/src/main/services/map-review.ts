@@ -442,29 +442,37 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		);
 		const observationWake = yield* Queue.sliding<void>(1);
 		const nextObservationPresentationAtMillis = yield* Ref.make(0);
-		const observationSubscription = yield* Ref.make<{
+		type ObservationSubscription = {
 			readonly endpoint: string | undefined;
 			readonly cadenceHz: WorldScoutRefreshRate | undefined;
-			readonly fiber: Fiber.Fiber<void, never> | undefined;
-			readonly pausedForExclusive: boolean;
 			readonly subscribers: number;
-		}>({
+		} & (
+			| { readonly _tag: "Idle"; readonly fiber: undefined }
+			| { readonly _tag: "Paused"; readonly fiber: Fiber.Fiber<void, never> | undefined }
+			| { readonly _tag: "Streaming"; readonly fiber: Fiber.Fiber<void, never> }
+		);
+		const observationSubscription = yield* Ref.make<ObservationSubscription>({
+			_tag: "Idle",
 			endpoint: undefined,
 			cadenceHz: undefined,
 			fiber: undefined,
-			pausedForExclusive: false,
 			subscribers: 0
 		});
+		const transitionObservation = (
+			update: (state: ObservationSubscription) => ObservationSubscription
+		) => Ref.update(observationSubscription, update);
+		const setObservation = (state: ObservationSubscription) =>
+			transitionObservation(() => state);
 
 		yield* Effect.addFinalizer(() =>
 			Effect.gen(function* () {
 				const current = yield* Ref.get(observationSubscription);
 				if (current.fiber !== undefined) yield* Fiber.interrupt(current.fiber);
-				yield* Ref.set(observationSubscription, {
+				yield* setObservation({
 					endpoint: undefined,
 					cadenceHz: undefined,
 					fiber: undefined,
-					pausedForExclusive: false,
+					_tag: "Idle",
 					subscribers: 0
 				});
 				yield* Ref.set(pendingObservation, emptyPendingObservationSlots());
@@ -665,8 +673,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			function* () {
 				const current = yield* Ref.get(observationSubscription);
 				if (current.fiber !== undefined) yield* Fiber.interrupt(current.fiber);
-				yield* Ref.update(observationSubscription, (subscription) => ({
+				yield* transitionObservation((subscription) => ({
 					...subscription,
+					_tag: subscription._tag === "Paused" ? "Paused" : "Idle",
 					fiber: undefined
 				}));
 			}
@@ -679,33 +688,47 @@ export const WorkbenchMapReviewLive = Layer.effect(
 
 			yield* stopObservationFiber();
 			let previous: WorldObservationState | undefined;
-			const fiber = yield* observatory.observe(endpoint, { cadenceHz }).pipe(
-				Stream.runForEach((state) =>
-					Effect.gen(function* () {
-						yield* ingestObservationStateWithDiff(state, previous);
-						previous = state;
-					})
-				),
-				Effect.catchTag(
-					["ActorObservationSessionError", "ActorObservationRecoveryExhaustedError"],
-					() =>
+			const fiber: Fiber.Fiber<void, never> = yield* observatory
+				.observe(endpoint, { cadenceHz })
+				.pipe(
+					Stream.runForEach((state) =>
 						Effect.gen(function* () {
-							const sample = yield* Ref.get(lastObservationSample);
-							yield* queueStatusEvent({
-								kind: "unavailable",
-								message: "World observation stopped unexpectedly.",
-								recovery:
-									"Unsubscribe and subscribe again, or use Connect world for a snapshot.",
-								...(Option.isSome(sample)
-									? { sample: sampleToWire(sample.value) }
-									: undefined)
-							});
+							yield* ingestObservationStateWithDiff(state, previous);
+							previous = state;
 						})
-				),
-				Effect.forkIn(layerScope)
-			);
-			yield* Ref.update(observationSubscription, (subscription) => ({
+					),
+					Effect.catchTag(
+						["ActorObservationSessionError", "ActorObservationRecoveryExhaustedError"],
+						() =>
+							Effect.gen(function* () {
+								const sample = yield* Ref.get(lastObservationSample);
+								yield* queueStatusEvent({
+									kind: "unavailable",
+									message: "World observation stopped unexpectedly.",
+									recovery:
+										"Unsubscribe and subscribe again, or use Connect world for a snapshot.",
+									...(Option.isSome(sample)
+										? { sample: sampleToWire(sample.value) }
+										: undefined)
+								});
+							})
+					),
+					Effect.ensuring(
+						transitionObservation((subscription) =>
+							subscription.fiber === fiber
+								? {
+										...subscription,
+										_tag: subscription._tag === "Paused" ? "Paused" : "Idle",
+										fiber: undefined
+									}
+								: subscription
+						)
+					),
+					Effect.forkIn(layerScope, { startImmediately: false })
+				);
+			yield* transitionObservation((subscription) => ({
 				...subscription,
+				_tag: "Streaming",
 				cadenceHz,
 				fiber
 			}));
@@ -714,11 +737,9 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const pauseObservationForExclusive = Effect.fn(
 			"Workbench.WorkbenchMapReview.pauseObservationForExclusive"
 		)(function* () {
-			const current = yield* Ref.get(observationSubscription);
-			if (current.subscribers <= 0) return;
-			yield* Ref.update(observationSubscription, (subscription) => ({
+			yield* transitionObservation((subscription) => ({
 				...subscription,
-				pausedForExclusive: true
+				_tag: "Paused"
 			}));
 			yield* stopObservationFiber();
 			const sample = yield* Ref.get(lastObservationSample);
@@ -738,9 +759,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			"Workbench.WorkbenchMapReview.resumeObservationAfterExclusive"
 		)(function* () {
 			const current = yield* Ref.get(observationSubscription);
-			yield* Ref.update(observationSubscription, (subscription) => ({
+			yield* transitionObservation((subscription) => ({
 				...subscription,
-				pausedForExclusive: false
+				_tag: "Idle",
+				fiber: undefined
 			}));
 			if (current.subscribers <= 0 || current.cadenceHz === undefined) return;
 			yield* Ref.set(lastPresentedCatalogKey, undefined);
@@ -764,13 +786,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const endpoint = yield* connection.endpoint;
 			const current = yield* Ref.get(observationSubscription);
 			const subscribers = current.subscribers + 1;
-			yield* Ref.set(observationSubscription, {
+			yield* setObservation({
 				...current,
 				endpoint,
 				cadenceHz,
 				subscribers
 			});
-			if (current.pausedForExclusive) return;
+			if (current._tag === "Paused") return;
 			if (
 				subscribers === 1 ||
 				current.cadenceHz !== cadenceHz ||
@@ -783,7 +805,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const unsubscribeWorldObservations = Effect.gen(function* () {
 			const current = yield* Ref.get(observationSubscription);
 			const subscribers = Math.max(0, current.subscribers - 1);
-			yield* Ref.set(observationSubscription, {
+			yield* setObservation({
 				...current,
 				subscribers
 			});
@@ -805,7 +827,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				.poll(observatory.setObservationCadence(endpoint, cadenceHz))
 				.pipe(Effect.catchTag("ObservatoryConnectionError", () => Effect.succeedNone));
 			if (Option.isNone(updated)) return current.cadenceHz;
-			yield* Ref.update(observationSubscription, (subscription) => ({
+			yield* transitionObservation((subscription) => ({
 				...subscription,
 				cadenceHz: updated.value
 			}));
@@ -2346,7 +2368,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					)
 				);
 				yield* stopObservationFiber();
-				yield* Ref.update(observationSubscription, (current) => ({
+				yield* transitionObservation((current) => ({
 					...current,
 					subscribers: 0
 				}));

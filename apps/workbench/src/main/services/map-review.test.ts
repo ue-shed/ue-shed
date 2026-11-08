@@ -18,6 +18,7 @@ import {
 import { it } from "@effect/vitest";
 import {
 	ActorId,
+	ActorObservationSessionError,
 	makeObservatoryTestLayer,
 	Observatory,
 	WorldScoutRefreshRate
@@ -2340,6 +2341,87 @@ it.effect("L1.1 rechecks capture policy after queued exclusive work", () =>
 							Effect.sync(() => {
 								captures++;
 							}).pipe(Effect.andThen(Effect.die("unexpected capture")))
+					}
+				})
+			)
+		);
+	})
+);
+it.effect("L3.1 delays the first observation subscriber during exclusive work", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let observes = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const owner = yield* service
+				.authorFromSelection({ destination: { kind: "append_view" } })
+				.pipe(Effect.exit, Effect.forkChild);
+			yield* Deferred.await(started);
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(10));
+			const during = observes;
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(owner);
+			expect(during).toBe(0);
+			expect(observes).toBe(1);
+		}).pipe(
+			Effect.provide(
+				auditMapLayer({
+					authoring: {
+						...dyingAuthoring,
+						inspectSelection: () =>
+							Effect.gen(function* () {
+								yield* Deferred.succeed(started, undefined);
+								yield* Deferred.await(release);
+								return yield* Effect.die("end exclusive");
+							})
+					},
+					observation: {
+						focus: () => Effect.die("unused"),
+						snapshot: () => Effect.die("unused"),
+						setObservationCadence: () => Effect.die("unused"),
+						observe: () => {
+							observes++;
+							return Stream.fromEffect(Effect.never);
+						}
+					}
+				})
+			)
+		);
+	})
+);
+it.effect("L3.2 restarts a failed observation stream for a new subscriber", () =>
+	Effect.gen(function* () {
+		const stopped = yield* Deferred.make<void>();
+		let observes = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(10));
+			yield* Deferred.await(stopped);
+			for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(10));
+			expect(observes).toBe(2);
+		}).pipe(
+			Effect.provide(
+				auditMapLayer({
+					observation: {
+						focus: () => Effect.die("unused"),
+						snapshot: () => Effect.die("unused"),
+						setObservationCadence: () => Effect.die("unused"),
+						observe: () =>
+							++observes === 1
+								? Stream.fail(
+										new ActorObservationSessionError({
+											endpoint: "http://127.0.0.1:30001",
+											expectedSessionId: "old",
+											receivedSessionId: "new",
+											message: "Session lost",
+											recovery: "Reconnect",
+											nextStep: "retry",
+											retrySafe: true
+										})
+									).pipe(Stream.ensuring(Deferred.succeed(stopped, undefined)))
+								: Stream.fromEffect(Effect.never)
 					}
 				})
 			)

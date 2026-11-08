@@ -682,15 +682,20 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			yield* Queue.offer(observationWake, undefined);
 		});
 
+		const observationGate = yield* Semaphore.make(1);
 		const stopObservationFiber = Effect.fn("Workbench.WorkbenchMapReview.stopObservationFiber")(
 			function* () {
 				const current = yield* Ref.get(observationSubscription);
 				if (current.fiber !== undefined) yield* Fiber.interrupt(current.fiber);
-				yield* transitionObservation((subscription) => ({
-					...subscription,
-					_tag: subscription._tag === "Paused" ? "Paused" : "Idle",
-					fiber: undefined
-				}));
+				yield* transitionObservation((subscription) =>
+					subscription.fiber !== current.fiber
+						? subscription
+						: {
+								...subscription,
+								_tag: subscription._tag === "Paused" ? "Paused" : "Idle",
+								fiber: undefined
+							}
+				);
 			}
 		);
 
@@ -700,6 +705,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const endpoint = selectedEndpoint ?? (yield* connection.endpoint);
 
 			yield* stopObservationFiber();
+			if ((yield* Ref.get(observationSubscription))._tag === "Paused") return;
 			let previous: WorldObservationState | undefined;
 			const fiber: Fiber.Fiber<void, never> = yield* observatory
 				.observe(endpoint, { cadenceHz })
@@ -739,13 +745,14 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					),
 					Effect.forkIn(layerScope, { startImmediately: false })
 				);
-			yield* transitionObservation((subscription) => ({
-				...subscription,
-				_tag: "Streaming",
-				cadenceHz,
-				fiber
-			}));
-		});
+			yield* transitionObservation((subscription) =>
+				subscription._tag === "Paused"
+					? subscription
+					: { ...subscription, _tag: "Streaming", cadenceHz, fiber }
+			);
+			if ((yield* Ref.get(observationSubscription)).fiber !== fiber)
+				yield* Fiber.interrupt(fiber);
+		}, observationGate.withPermits(1));
 
 		const pauseObservationForExclusive = Effect.fn(
 			"Workbench.WorkbenchMapReview.pauseObservationForExclusive"
@@ -754,7 +761,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				...subscription,
 				_tag: "Paused"
 			}));
-			yield* stopObservationFiber();
+			yield* stopObservationFiber().pipe(observationGate.withPermits(1));
 			const sample = yield* Ref.get(lastObservationSample);
 			if (Option.isSome(sample)) {
 				yield* Ref.set(lastPresentedCatalogKey, undefined);
@@ -823,7 +830,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				subscribers
 			});
 			if (subscribers === 0) {
-				yield* stopObservationFiber();
+				yield* stopObservationFiber().pipe(observationGate.withPermits(1));
 				yield* Ref.set(pendingObservation, emptyPendingObservationSlots());
 				yield* Ref.set(lastPresentedCatalogKey, undefined);
 			}
@@ -2411,7 +2418,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						(cause) => Effect.logWarning("Camera workspace close failed", cause)
 					)
 				);
-				yield* stopObservationFiber();
+				yield* stopObservationFiber().pipe(observationGate.withPermits(1));
 				yield* transitionObservation((current) => ({
 					...current,
 					subscribers: 0

@@ -2542,3 +2542,65 @@ it.effect("L2.3 refuses to recache bindings invalidated during ensure", () =>
 		);
 	})
 );
+
+it.effect("4507003856 a pending observation restart cannot erase exclusive pause", () =>
+	Effect.gen(function* () {
+		const stopping = yield* Deferred.make<void>();
+		const stopped = yield* Deferred.make<void>();
+		const entered = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let observes = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(10));
+			const restarting = yield* service
+				.subscribeWorldObservations(WorldScoutRefreshRate.make(20))
+				.pipe(Effect.forkChild);
+			yield* Deferred.await(stopping);
+			const owner = yield* service
+				.authorFromSelection({ destination: { kind: "append_view" } })
+				.pipe(Effect.exit, Effect.forkChild);
+			for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+			yield* Deferred.succeed(stopped, undefined);
+			yield* Deferred.await(entered);
+			yield* Fiber.join(restarting);
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(30));
+			const during = observes;
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(owner);
+			expect(during).toBe(1);
+			expect(observes).toBe(2);
+		}).pipe(
+			Effect.provide(
+				auditMapLayer({
+					observation: {
+						focus: () => Effect.die("unused"),
+						snapshot: () => Effect.die("unused"),
+						setObservationCadence: () => Effect.die("unused"),
+						observe: () => {
+							const first = ++observes === 1;
+							return Stream.fromEffect(Effect.never).pipe(
+								Stream.ensuring(
+									first
+										? Deferred.succeed(stopping, undefined).pipe(
+												Effect.andThen(Deferred.await(stopped))
+											)
+										: Effect.void
+								)
+							);
+						}
+					},
+					authoring: {
+						...dyingAuthoring,
+						inspectSelection: () =>
+							Deferred.succeed(entered, undefined).pipe(
+								Effect.andThen(Deferred.await(release)),
+								Effect.andThen(Effect.die("end exclusive"))
+							)
+					}
+				})
+			)
+		);
+	})
+);
+

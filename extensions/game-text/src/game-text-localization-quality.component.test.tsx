@@ -9,11 +9,12 @@ import {
 } from "@ue-shed/game-text/corpus";
 import type { GameTextRuleDocument } from "@ue-shed/game-text/rules";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime, Stream } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { qualityFixture } from "../../../packages/game-text/src/localization-workspace.test-support.js";
 import { cultureCode } from "../../../packages/game-text/src/localization.test-support.js";
 import { qualityFixtureText } from "./game-text-canned-search.test-support.js";
+import { GameTextClientError } from "./game-text-client.js";
 import type { GameTextClientApi } from "./game-text-client.js";
 import type { GameTextPreferences } from "./game-text-preferences.js";
 import { GameTextRoute } from "./game-text-query-route.js";
@@ -419,4 +420,106 @@ describe("localization quality and reports", () => {
 			}
 		]);
 	}, 30_000);
+});
+
+it("U4.3 clears failed feedback after a successful same-context page retry", async () => {
+	const base = client();
+	let failNext = false;
+	let failed = false;
+	let reads = 0;
+	mount({
+		...base,
+		localizationQualitySearch: (request) => {
+			reads++;
+			if (failNext) {
+				failNext = false;
+				failed = true;
+				return Effect.fail(
+					new GameTextClientError({
+						code: "game_text_client_failed",
+						operation: "quality",
+						message: "Read failed",
+						cause: new Error("Read failed"),
+						recovery: "Retry",
+						retrySafe: true,
+						nextStep: "retry"
+					})
+				);
+			}
+			return base.localizationQualitySearch!(request).pipe(
+				Effect.map((result) =>
+					!failed && result.status === "ready"
+						? {
+								...result,
+								page: {
+									...result.page,
+									total: result.page.findings.length + 1,
+									nextOffset: 1
+								}
+							}
+						: result
+				)
+			);
+		}
+	});
+	const user = userEvent.setup({ delay: null });
+	const more = await screen.findByRole("button", { name: /Show.*more/u });
+	failNext = true;
+	await user.click(more);
+	await screen.findByRole("alert");
+	const beforeRetry = reads;
+	await user.click(screen.getByRole("button", { name: /Show.*more/u }));
+	await waitFor(() => expect(reads).toBeGreaterThan(beforeRetry));
+	await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+});
+
+it("4507054540 pagination success preserves a newer detail failure", async () => {
+	const base = client();
+	const release = await Effect.runPromise(Deferred.make<void>());
+	mount({
+		...base,
+		localizationQualitySearch: (request) =>
+			request.offset !== undefined
+				? Deferred.await(release).pipe(
+						Effect.andThen(base.localizationQualitySearch!(request))
+					)
+				: base.localizationQualitySearch!(request).pipe(
+						Effect.map((result) =>
+							result.status === "ready"
+								? {
+										...result,
+										page: {
+											...result.page,
+											total: result.page.findings.length + 1,
+											nextOffset: 1
+										}
+									}
+								: result
+						)
+					),
+		localizationQualityFocus: () =>
+			Effect.fail(
+				new GameTextClientError({
+					code: "game_text_client_failed",
+					operation: "detail",
+					message: "Failed",
+					recovery: "Retry",
+					retrySafe: true,
+					nextStep: "retry",
+					cause: new Error("Failed")
+				})
+			)
+	});
+	const user = userEvent.setup({ delay: null });
+	await user.click(await screen.findByRole("button", { name: "Renamed format arguments 1" }));
+	await user.click(await screen.findByRole("button", { name: /Show.*more/u }));
+	await user.click(
+		within(screen.getByRole("region", { name: "Findings" })).getByRole("button", {
+			name: /de · \{Name\} should be/u
+		})
+	);
+	await screen.findByText("Couldn’t load finding details.");
+	await Effect.runPromise(Deferred.succeed(release, undefined));
+	await waitFor(() => expect(screen.queryByRole("button", { name: /Show.*more/u })).toBeNull());
+	expect(screen.getByText("Couldn’t load finding details.")).toBeDefined();
 });

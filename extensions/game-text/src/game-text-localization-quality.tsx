@@ -105,7 +105,12 @@ export function GameTextLocalizationQuality(props: {
 	const [loading, setLoading] = createSignal(true),
 		[detailLoading, setDetailLoading] = createSignal(false);
 	const [editing, setEditing] = createSignal(false);
-	const [message, setMessage] = createSignal<string>();
+	const [message, setMessageValue] = createSignal<string>();
+	let messageOwner: "page" | "detail" | undefined;
+	const setMessage = (value: string | undefined, owner?: "page" | "detail") => {
+		messageOwner = owner;
+		setMessageValue(value);
+	};
 	const [failed, setFailed] = createSignal(false);
 	let revision = 0,
 		focusRevision = 0;
@@ -174,13 +179,17 @@ export function GameTextLocalizationQuality(props: {
 					if (version === revision) {
 						setLoading(false);
 						setFailed(true);
-						setMessage("Couldn’t load findings. Rescan to try again.");
+						setMessage("Couldn’t load findings. Rescan to try again.", "page");
 					}
 				},
 				onSuccess: (result) => {
 					if (version !== revision) return;
 					setLoading(false);
 					if (result.status === "ready") {
+						if (messageOwner === "page") {
+							setFailed(false);
+							setMessage(undefined);
+						}
 						setPage((previous) =>
 							offset && previous
 								? {
@@ -194,7 +203,8 @@ export function GameTextLocalizationQuality(props: {
 						setMessage(
 							result.status === "failed"
 								? result.message + " " + result.recovery
-								: "Quality checks are unavailable. Rescan to try again."
+								: "Quality checks are unavailable. Rescan to try again.",
+							"page"
 						);
 					}
 				}
@@ -223,7 +233,7 @@ export function GameTextLocalizationQuality(props: {
 					if (version === focusRevision) {
 						setDetailLoading(false);
 						setFailed(true);
-						setMessage("Couldn’t load finding details.");
+						setMessage("Couldn’t load finding details.", "detail");
 					}
 				},
 				onSuccess: (result) => {

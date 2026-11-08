@@ -40,7 +40,16 @@ import {
 } from "@ue-shed/ui";
 import { InvestigationActions } from "@ue-shed/ui/investigation-actions";
 import { Effect, Schedule, Stream } from "effect";
-import { For, Show, createEffect, createMemo, createSignal, onSettled, untrack } from "solid-js";
+import {
+	For,
+	Show,
+	createEffect,
+	createMemo,
+	createSignal,
+	onSettled,
+	onCleanup,
+	untrack
+} from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { failureText } from "./game-text-failure.js";
 import { mergePages, nextPageCursor, pageRows } from "./game-text-pages.js";
@@ -201,11 +210,18 @@ export function GameTextRoute(props: {
 	}>();
 	const [searchFailed, setSearchFailed] = createSignal(false);
 	/** One error at a time, with the action that recovers from it; search errors also end the count. */
+	let errorOwner: symbol | undefined;
+	const ruleFileErrorOwner = Symbol();
 	const showError = (
 		message: string,
 		retry: () => void,
-		options: { readonly search?: boolean; readonly label?: string } = {}
+		options: {
+			readonly search?: boolean;
+			readonly label?: string;
+			readonly owner?: symbol;
+		} = {}
 	) => {
+		errorOwner = options.owner;
 		setError(message);
 		setRetryError({ label: options.label ?? "Retry", run: retry });
 		setSearchFailed(options.search ?? false);
@@ -275,10 +291,16 @@ export function GameTextRoute(props: {
 	const focusAction = createEffectAction();
 	const refreshAction = createEffectAction();
 	const qualityAction = createEffectAction();
+	const ruleFileAction = createEffectAction();
 	const memoryAction = createEffectAction();
 	const progressSubscription = createEffectSubscription();
 	const elapsedSubscription = createEffectSubscription();
 	let searchGeneration = 0;
+	let findingsTimer: ReturnType<typeof setTimeout> | undefined;
+	onCleanup(() => {
+		searchGeneration++;
+		if (findingsTimer !== undefined) clearTimeout(findingsTimer);
+	});
 	let focusGeneration = 0;
 	const localization = createGameTextLocalizationState({
 		client: props.client,
@@ -685,6 +707,8 @@ export function GameTextRoute(props: {
 	let previousSearch = "";
 	const requestPage = (request: TextCorpusSearchRequest, debounce = false) => {
 		const generation = ++searchGeneration;
+		if (findingsTimer !== undefined) clearTimeout(findingsTimer);
+		findingsTimer = undefined;
 		const {
 			cursor: _cursor,
 			localizationCursor: _localizationCursor,
@@ -697,7 +721,7 @@ export function GameTextRoute(props: {
 				: 50;
 		let started = 0;
 		if (!request.cursor && !request.localizationCursor) navigation.cancelSteps();
-		setError(undefined);
+		if (untrack(searchFailed)) setError(undefined);
 		setSearchFailed(false);
 		setSearching(true);
 		searchAction.run(
@@ -766,7 +790,8 @@ export function GameTextRoute(props: {
 							!request.cursor &&
 							!request.localizationCursor
 						)
-							setTimeout(() => {
+							findingsTimer = setTimeout(() => {
+								findingsTimer = undefined;
 								if (generation === searchGeneration) requestPage(request);
 							}, 2000);
 					} else {
@@ -1057,21 +1082,39 @@ export function GameTextRoute(props: {
 					? props.client.chooseQualityRules
 					: props.client.createStarterRules?.(create);
 			if (!operation) return;
-			qualityAction.run(operation, {
-				onSuccess: applyQuality,
+			ruleFileAction.run(operation, {
+				onSuccess: (result) => {
+					if (result.status === "completed" && errorOwner === ruleFileErrorOwner) {
+						setError(undefined);
+						setRetryError(undefined);
+						errorOwner = undefined;
+					}
+					applyQuality(result);
+				},
 				onFailure: (cause) =>
-					showError(failureText("Couldn’t open the rules file.", cause), () =>
-						loadRules(create)
+					showError(
+						failureText("Couldn’t open the rules file.", cause),
+						() => loadRules(create),
+						{ owner: ruleFileErrorOwner }
 					)
 			});
 		});
 	const reloadRules = () =>
 		guardRules(() => {
 			setQualityFailure(undefined);
-			qualityAction.run(props.client.reloadQualityRules ?? props.client.chooseQualityRules, {
-				onSuccess: applyQuality,
+			ruleFileAction.run(props.client.reloadQualityRules ?? props.client.chooseQualityRules, {
+				onSuccess: (result) => {
+					if (result.status === "completed" && errorOwner === ruleFileErrorOwner) {
+						setError(undefined);
+						setRetryError(undefined);
+						errorOwner = undefined;
+					}
+					applyQuality(result);
+				},
 				onFailure: (cause) =>
-					showError(failureText("Couldn’t reload the rules file.", cause), reloadRules)
+					showError(failureText("Couldn’t reload the rules file.", cause), reloadRules, {
+						owner: ruleFileErrorOwner
+					})
 			});
 		});
 	/** Shows a preset's saved controls; one this view didn't save has none to show. */
@@ -1921,6 +1964,17 @@ export function GameTextRoute(props: {
 												collapsed() && styles.hiddenPane
 											)}
 										>
+											<Show when={localization.detailError()}>
+												<p role="alert">
+													{localization.detailError()}{" "}
+													<button
+														type="button"
+														onClick={localization.retryDetail}
+													>
+														Retry line translations
+													</button>
+												</p>
+											</Show>
 											<Show when={lineOpen()}>
 												<LinePageHeader
 													position={linePosition()}

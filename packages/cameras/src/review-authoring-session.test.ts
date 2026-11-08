@@ -724,3 +724,78 @@ describe("ReviewAuthoringSessions", () => {
 		expect(latest).toBeUndefined();
 	});
 });
+
+it("L5.2 preserves approved sessions when resumed against changed world evidence", async () => {
+	const projectRoot = await makeProjectRoot();
+	let changed = false;
+	const layer = sessionLayer({
+		inspectSubject: () => (changed ? { ...selection, mapPath: "/Game/Other" } : selection),
+		onSave: () => undefined
+	});
+	const created = await withSessions(layer, (sessions) =>
+		sessions.start({
+			candidates: generateFramingCandidates(selection),
+			destination: { kind: "append_view" },
+			projectRoot,
+			selection
+		})
+	);
+	await withSessions(layer, (sessions) =>
+		sessions.approve({ endpoint: "http://127.0.0.1:30001", projectRoot, sessionId: created.id })
+	);
+	const path = reviewAuthoringSessionPath({ id: created.id, projectRoot });
+	const before = await readFile(path, "utf8");
+	changed = true;
+	const resumed = await withSessions(layer, (sessions) =>
+		sessions.resume({ endpoint: "http://127.0.0.1:30001", projectRoot, sessionId: created.id })
+	);
+	expect(resumed).toMatchObject({ status: "resumable", session: { lifecycle: "approved" } });
+	expect(await readFile(path, "utf8")).toBe(before);
+	expect(
+		await withSessions(layer, (sessions) => sessions.latest({ projectRoot }))
+	).toBeUndefined();
+});
+it.each(["approved", "discarded"] as const)(
+	"L5.5 refuses projection on %s sessions",
+	async (terminal) => {
+		const projectRoot = await makeProjectRoot();
+		const layer = sessionLayer({ inspectSubject: () => selection, onSave: () => undefined });
+		const created = await withSessions(layer, (sessions) =>
+			sessions.start({
+				candidates: generateFramingCandidates(selection),
+				destination: { kind: "append_view" },
+				projectRoot,
+				selection
+			})
+		);
+		if (terminal === "approved")
+			await withSessions(layer, (sessions) =>
+				sessions.approve({
+					endpoint: "http://127.0.0.1:30001",
+					projectRoot,
+					sessionId: created.id
+				})
+			);
+		else
+			await withSessions(layer, (sessions) =>
+				sessions.discard({ projectRoot, sessionId: created.id })
+			);
+		const path = reviewAuthoringSessionPath({ id: created.id, projectRoot });
+		const before = await readFile(path, "utf8");
+		await expect(
+			withSessions(layer, (sessions) =>
+				sessions.recordProjection({
+					projectRoot,
+					sessionId: created.id,
+					candidateId: created.candidates[0]!.id,
+					projection: {
+						status: "unprojectable",
+						code: "behind_camera",
+						message: "Behind camera"
+					}
+				})
+			)
+		).rejects.toMatchObject({ _tag: "ReviewAuthoringSessionError" });
+		expect(await readFile(path, "utf8")).toBe(before);
+	}
+);

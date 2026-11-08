@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Cache, Context, Data, Duration, Effect, Layer, Schema } from "effect";
 import { join } from "node:path";
 import { FixtureProcess } from "../adapters/fixture-process.js";
 import { LocalFiles } from "../adapters/local-files.js";
@@ -65,13 +65,15 @@ export const ProjectLauncherLive = Layer.effect(
 		const processHost = yield* FixtureProcess;
 		const project = yield* WorkbenchProject;
 
-		const launch = Effect.fn("Workbench.ProjectLauncher.launch")(function* (
-			mode: ProjectLaunchMode
-		) {
-			const selected = yield* project.current;
-			if (selected.status !== "ready") return noSelectedProject;
+		class LaunchKey extends Data.Class<{
+			readonly projectRoot: string;
+			readonly mode: ProjectLaunchMode;
+		}> {}
+		const launchSelected = Effect.fn("Workbench.ProjectLauncher.launchSelected")(function* ({
+			projectRoot,
+			mode
+		}: LaunchKey) {
 			if (configuration.sourceCheckout.status !== "configured") return noLauncher;
-
 			const cwd = configuration.sourceCheckout.path;
 			const script = join(cwd, "scripts", "unreal-project.ts");
 			if (!(yield* files.exists(script))) return noLauncher;
@@ -82,7 +84,7 @@ export const ProjectLauncherLive = Layer.effect(
 						args: typescriptCheckoutArgs(script, [
 							"launch",
 							"--project",
-							selected.project.projectRoot,
+							projectRoot,
 							"--mode",
 							mode
 						]),
@@ -112,6 +114,22 @@ export const ProjectLauncherLive = Layer.effect(
 							})
 						)
 					)
+			);
+		});
+
+		const launches = yield* Cache.makeWith(launchSelected, {
+			capacity: 16,
+			timeToLive: () => Duration.zero
+		});
+		const launch = Effect.fn("Workbench.ProjectLauncher.launch")(function* (
+			mode: ProjectLaunchMode
+		) {
+			const selected = yield* project.current;
+			if (selected.status !== "ready") return noSelectedProject;
+			if (configuration.sourceCheckout.status !== "configured") return noLauncher;
+			return yield* Cache.get(
+				launches,
+				new LaunchKey({ projectRoot: selected.project.projectRoot, mode })
 			);
 		});
 

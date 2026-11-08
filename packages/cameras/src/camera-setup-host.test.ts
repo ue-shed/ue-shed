@@ -61,8 +61,16 @@ it.effect("does not recreate cameras after a lost setup acknowledgement", () =>
 					};
 				})
 		};
-		yield* host.poll(bridge, "Fixture").pipe(Effect.flip);
-		yield* host.poll(bridge, "Fixture");
+		yield* host
+			.poll(bridge, "Fixture", {
+				projectRoot: "C:/Fixture",
+				endpoint: "http://127.0.0.1:30001"
+			})
+			.pipe(Effect.flip);
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(creations).toBe(1);
 		expect(acknowledgements).toBe(2);
 	})
@@ -92,8 +100,14 @@ it.effect("reports creation failures to the native UI without replaying the muta
 					};
 				})
 		};
-		yield* host.poll(bridge, "Fixture");
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(creations).toBe(1);
 		expect(error).toBe("The draft directory is read-only.");
 	})
@@ -128,7 +142,10 @@ it.effect("releases only its own connection on graceful shutdown", () =>
 		};
 		yield* host.close();
 		expect(requests).toHaveLength(0);
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		yield* host.close();
 		yield* host.close();
 		expect(requests).toHaveLength(2);
@@ -189,8 +206,16 @@ it.effect("reopens a listed set once, even after a lost acknowledgement", () =>
 					return setupState({ canOpen: true, sets: [savedSet], open: openIntent });
 				})
 		};
-		yield* host.poll(bridge, "Fixture").pipe(Effect.flip);
-		yield* host.poll(bridge, "Fixture");
+		yield* host
+			.poll(bridge, "Fixture", {
+				projectRoot: "C:/Fixture",
+				endpoint: "http://127.0.0.1:30001"
+			})
+			.pipe(Effect.flip);
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(opened).toEqual([openIntent]);
 		expect(polls[0]).toMatchObject({ operation: "setup_poll", reopen: true, sets: [savedSet] });
 		expect(polls.at(-1)).toMatchObject({ outcome: { id: "open-1", error: null } });
@@ -218,8 +243,14 @@ it.effect("reports a failed reopen to the native panel without retrying it", () 
 					return setupState({ canOpen: true, open: openIntent });
 				})
 		};
-		yield* host.poll(bridge, "Fixture");
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(attempts).toBe(1);
 		expect(error).toBe("The saved set belongs to another map.");
 	})
@@ -241,14 +272,26 @@ it.effect("lists saved sets at most every five seconds, and again after an outco
 		const bridge: CameraAuthoringBridge = {
 			call: () => Effect.succeed(setupState(pending ? { request: pending } : {}))
 		};
-		yield* host.poll(bridge, "Fixture");
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(listings).toBe(1);
 		yield* TestClock.adjust("5 seconds");
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(listings).toBe(2);
 		pending = intent;
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(listings).toBe(3);
 	})
 );
@@ -270,10 +313,16 @@ it.effect("keeps polling with the previous listing when listing fails", () =>
 					return setupState();
 				})
 		};
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		fail = true;
 		yield* TestClock.adjust("5 seconds");
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(sent).toEqual([[savedSet], [savedSet]]);
 	})
 );
@@ -289,7 +338,10 @@ it.effect("hosts without reopening keep the original poll and ignore open reques
 					return setupState({ open: openIntent });
 				})
 		};
-		yield* host.poll(bridge, "Fixture");
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
 		expect(polls).toHaveLength(1);
 		expect(polls[0]).not.toHaveProperty("reopen");
 		expect(polls[0]).not.toHaveProperty("sets");
@@ -348,3 +400,97 @@ it("lists a saved arrangement by its subject, map and camera count", () => {
 		"Gate views"
 	);
 });
+
+it.effect("L11.1 isolates cached listings and outcomes by project root and endpoint", () =>
+	Effect.gen(function* () {
+		let current = "A";
+		const polls: CameraBridgeRequest[] = [];
+		const host = yield* makeCameraSetupHost({
+			create: () => Effect.void,
+			open: () => Effect.void,
+			sets: () => Effect.succeed([{ ...savedSet, name: current }])
+		});
+		const bridge: CameraAuthoringBridge = {
+			call: (request) =>
+				Effect.sync(() => {
+					polls.push(request);
+					return setupState(current === "A" ? { request: intent } : {});
+				})
+		};
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/A",
+			endpoint: "http://127.0.0.1:30001"
+		});
+		current = "B";
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/B",
+			endpoint: "http://127.0.0.1:30001"
+		});
+		expect(polls.at(-1)).toMatchObject({ sets: [{ name: "B" }] });
+		expect(polls.at(-1)).not.toHaveProperty("outcome");
+		current = "C";
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/B",
+			endpoint: "http://127.0.0.1:31001"
+		});
+		expect(polls.at(-1)).toMatchObject({ sets: [{ name: "C" }] });
+	})
+);
+
+it.effect("4507054530 retains unacknowledged creation across context round trips", () =>
+	Effect.gen(function* () {
+		let creations = 0;
+		let acknowledgements = 0;
+		const host = yield* makeCameraSetupHost({
+			create: (received) =>
+				Effect.sync(() => {
+					expect(received).toEqual(intent);
+					creations++;
+				})
+		});
+		const bridge: CameraAuthoringBridge = {
+			call: (request) =>
+				Effect.gen(function* () {
+					if (request.operation !== "setup_poll")
+						return yield* Effect.die("Unexpected operation");
+					if (request.outcome && ++acknowledgements === 1)
+						return yield* new CameraBridgeError({
+							code: "disconnected",
+							message: "Reply lost",
+							recovery: "Poll again",
+							retrySafe: true,
+							nextStep: "retry"
+						});
+					return {
+						version: 1 as const,
+						status: "setup" as const,
+						connected: true,
+						message: "",
+						request: intent
+					};
+				})
+		};
+		yield* host
+			.poll(bridge, "Fixture", {
+				projectRoot: "C:/Fixture",
+				endpoint: "http://127.0.0.1:30001"
+			})
+			.pipe(Effect.flip);
+		yield* host.poll(
+			{
+				call: (request) => {
+					expect(request).not.toHaveProperty("outcome");
+					return Effect.succeed(setupState({}));
+				}
+			},
+			"Other",
+			{ projectRoot: "C:/Other", endpoint: "http://127.0.0.1:31001" }
+		);
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
+		expect(creations).toBe(1);
+		expect(acknowledgements).toBe(2);
+	})
+);

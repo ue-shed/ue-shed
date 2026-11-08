@@ -54,6 +54,36 @@ describe.skipIf(!executable)("the Game Text engine's failure paths", () => {
 		);
 	}, 10_000);
 
+	it("G1.a keeps a busy engine when a queued request is cancelled", async () => {
+		// Both bulk threads stay busy past the stuck-session wait; the queued request's cancel must
+		// still be answered at once, so the engine and its held requests survive.
+		await Effect.runPromise(
+			Effect.acquireUseRelease(
+				Effect.sync(
+					() => new GameTextEngineSession(executable!, undefined, undefined, 500)
+				),
+				(session) =>
+					Effect.gen(function* () {
+						yield* session.call({ action: "capabilities" });
+						const generation = session.generation;
+						const busy = [
+							yield* Effect.forkChild(session.call(probe("hold", true))),
+							yield* Effect.forkChild(session.call(probe("hold", true)))
+						];
+						yield* Effect.sleep("50 millis");
+						const queued = yield* Effect.forkChild(session.call(probe("hold", true)));
+						yield* Effect.sleep("50 millis");
+						yield* Fiber.interrupt(queued);
+						yield* Effect.sleep("1500 millis");
+						expect(session.generation).toBe(generation);
+						yield* session.call({ action: "capabilities" });
+						for (const fiber of busy) yield* Fiber.interrupt(fiber);
+					}),
+				(session) => Effect.promise(() => session.close())
+			)
+		);
+	}, 10_000);
+
 	it("credits each batch it gathers, so an answer streams past the engine's window", async () => {
 		await withSession((session) =>
 			Effect.gen(function* () {

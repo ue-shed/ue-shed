@@ -994,7 +994,10 @@ export class UassetProtocolSession {
 				if (this.child !== child) return;
 				this.processError = cause;
 			});
-			child.onClose((code, signal) => resolvePromise({ code, signal }));
+			child.onClose((code, signal) => {
+				resolvePromise({ code, signal });
+				if (!this.running) this.releaseProcess(child);
+			});
 		});
 		return child;
 	}
@@ -1603,6 +1606,8 @@ function makeScanRequest(
 	);
 }
 
+const scanOwners = new WeakMap<ScanProgressStore, symbol>();
+
 async function collectProtocolScan(
 	configuration: AssetReaderConfiguration,
 	options: SavedAssetScanOptions,
@@ -1731,101 +1736,132 @@ export function invokeProtocolScan(
 	batching: ProtocolBatchingOptions = {}
 ): Effect.Effect<SavedAssetScan, AssetReaderError> {
 	const projectRoot = options.projectRoot;
-	return Effect.gen(function* () {
-		const paths = options.paths;
-		const batches =
-			paths === undefined
-				? undefined
-				: requestPathBatches(
-						projectRoot,
-						paths,
-						Buffer.byteLength(
-							JSON.stringify(
-								makeScanRequest(configuration, {
-									...options,
-									paths: [],
-									...(options.cachePath === undefined
-										? undefined
-										: {
-												cachePath: batchCachePath(
-													options.cachePath,
-													paths.length
-												)
-											})
-								})
+	return Effect.suspend(() => {
+		const owner = Symbol();
+		const destination: ScanProgressStore = {
+			get current() {
+				return progress.current;
+			},
+			set current(next) {
+				if (scanOwners.get(progress) === owner) progress.current = next;
+			}
+		};
+		return Effect.gen(function* () {
+			const paths = options.paths;
+			const batches =
+				paths === undefined
+					? undefined
+					: requestPathBatches(
+							projectRoot,
+							paths,
+							Buffer.byteLength(
+								JSON.stringify(
+									makeScanRequest(configuration, {
+										...options,
+										paths: [],
+										...(options.cachePath === undefined
+											? undefined
+											: {
+													cachePath: batchCachePath(
+														options.cachePath,
+														paths.length
+													)
+												})
+									})
+								),
+								"utf8"
 							),
-							"utf8"
-						),
-						batching.maximumRequestBytes ?? MAX_PROTOCOL_REQUEST_BYTES
-					);
-		if (batches instanceof ProtocolStreamFailure)
-			return yield* mapProtocolFailure(batches, "scan", projectRoot);
-		yield* Effect.annotateCurrentSpan({ [READER_BATCHES_ATTRIBUTE]: batches?.length ?? 1 });
-		if (paths === undefined || batches === undefined || batches.length === 1) {
-			// A list that only fit once its repeats were dropped is sent without them.
-			const only = batches?.[0];
-			return yield* invokeProtocolScanBatch(
-				configuration,
-				paths === undefined || only === undefined || only.length === paths.length
-					? options
-					: { ...options, paths: only.map((index) => paths[index] ?? "") },
-				progress,
-				batching.processFactory
-			);
-		}
-		const batched = new BatchedScanProgress(progress, batches.length);
-		const assetIdentities = new BatchIdentities(projectRoot);
-		const inventoryIdentities = new BatchIdentities(projectRoot);
-		const scans: SavedAssetScan[] = [];
-		let counted = 0;
-		for (const [index, batch] of batches.entries()) {
-			const batchProgress = batched.batch(index);
-			const scan = yield* invokeProtocolScanBatch(
-				configuration,
-				{
-					...options,
-					paths: batch.map((pathIndex) => paths[pathIndex] ?? ""),
-					...(options.cachePath === undefined
-						? undefined
-						: { cachePath: batchCachePath(options.cachePath, index) })
-				},
-				batchProgress,
-				batching.processFactory
-			);
-			const assets = scan.assets.filter((entry) =>
-				assetIdentities.keep(scanEntryPath(entry))
-			);
-			const inventory = scan.inventory?.filter((entry) =>
-				inventoryIdentities.keep(entry.path)
-			);
-			const repeated = assetIdentities.finish();
-			const repeatedInventory = inventoryIdentities.finish();
-			counted += scan.summary.scannedAssets - repeated;
-			if (options.maximumAssets !== undefined && counted > options.maximumAssets)
-				return yield* mapProtocolFailure(
-					packageLimitFailure(counted, options.maximumAssets),
-					"scan",
-					projectRoot
+							batching.maximumRequestBytes ?? MAX_PROTOCOL_REQUEST_BYTES
+						);
+			if (batches instanceof ProtocolStreamFailure)
+				return yield* mapProtocolFailure(batches, "scan", projectRoot);
+			// Requests without explicit paths still need their filter envelope admitted.
+			if (
+				paths === undefined &&
+				Buffer.byteLength(
+					`${JSON.stringify(makeScanRequest(configuration, options))}\n`,
+					"utf8"
+				) > MAX_PROTOCOL_REQUEST_BYTES
+			)
+				return yield* mapProtocolFailure(requestTooLarge(), "scan", projectRoot);
+			scanOwners.set(progress, owner);
+			yield* Effect.annotateCurrentSpan({ [READER_BATCHES_ATTRIBUTE]: batches?.length ?? 1 });
+			if (paths === undefined || batches === undefined || batches.length === 1) {
+				// A list that only fit once its repeats were dropped is sent without them.
+				const only = batches?.[0];
+				return yield* invokeProtocolScanBatch(
+					configuration,
+					paths === undefined || only === undefined || only.length === paths.length
+						? options
+						: { ...options, paths: only.map((index) => paths[index] ?? "") },
+					destination,
+					batching.processFactory
 				);
-			scans.push({
-				...scan,
-				assets,
-				...(inventory === undefined ? undefined : { inventory }),
-				summary: {
-					...scan.summary,
-					emittedAssets: scan.summary.emittedAssets - repeated,
-					scannedAssets: scan.summary.scannedAssets - repeated,
-					...(scan.summary.inventoryFiles === undefined
-						? undefined
-						: { inventoryFiles: scan.summary.inventoryFiles - repeatedInventory })
-				}
-			});
-			batched.finish(batchProgress);
-		}
-		const cachePath = options.cachePath;
-		if (cachePath !== undefined)
-			yield* Effect.promise(() => removeLeftoverBatchCaches(cachePath, batches.length));
-		return mergeSavedAssetScans(scans);
+			}
+			const batched = new BatchedScanProgress(destination, batches.length);
+			const assetIdentities = new BatchIdentities(projectRoot);
+			const inventoryIdentities = new BatchIdentities(projectRoot);
+			const scans: SavedAssetScan[] = [];
+			let counted = 0;
+			for (const [index, batch] of batches.entries()) {
+				const batchProgress = batched.batch(index);
+				const scan = yield* invokeProtocolScanBatch(
+					configuration,
+					{
+						...options,
+						paths: batch.map((pathIndex) => paths[pathIndex] ?? ""),
+						...(options.cachePath === undefined
+							? undefined
+							: { cachePath: batchCachePath(options.cachePath, index) })
+					},
+					batchProgress,
+					batching.processFactory
+				);
+				const assets = scan.assets.filter((entry) =>
+					assetIdentities.keep(scanEntryPath(entry))
+				);
+				const inventory = scan.inventory?.filter((entry) =>
+					inventoryIdentities.keep(entry.path)
+				);
+				const repeated = assetIdentities.finish();
+				const repeatedInventory = inventoryIdentities.finish();
+				counted += scan.summary.scannedAssets - repeated;
+				if (options.maximumAssets !== undefined && counted > options.maximumAssets)
+					return yield* mapProtocolFailure(
+						packageLimitFailure(counted, options.maximumAssets),
+						"scan",
+						projectRoot
+					);
+				scans.push({
+					...scan,
+					assets,
+					...(inventory === undefined ? undefined : { inventory }),
+					summary: {
+						...scan.summary,
+						emittedAssets: scan.summary.emittedAssets - repeated,
+						scannedAssets: scan.summary.scannedAssets - repeated,
+						...(scan.summary.inventoryFiles === undefined
+							? undefined
+							: { inventoryFiles: scan.summary.inventoryFiles - repeatedInventory })
+					}
+				});
+				batched.finish(batchProgress);
+			}
+			const cachePath = options.cachePath;
+			if (cachePath !== undefined)
+				yield* Effect.promise(() => removeLeftoverBatchCaches(cachePath, batches.length));
+			return mergeSavedAssetScans(scans);
+		}).pipe(
+			Effect.ensuring(
+				Effect.sync(() => {
+					if (scanOwners.get(progress) === owner) {
+						scanOwners.delete(progress);
+						if (progress.current.phase !== "ready")
+							progress.current = { ...progress.current, phase: "idle" };
+					}
+				})
+			)
+		);
 	}).pipe(Effect.withSpan("unreal_assets.protocol_scan"));
 }
 

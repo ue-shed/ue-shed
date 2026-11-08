@@ -89,8 +89,9 @@ export function GameTextIdRepairs(props: {
 	const [survivor, setSurvivor] = createSignal<TextCorpusFocus>();
 	let revision = 0;
 	createEffect(
-		() => [props.focus, props.target, props.projectKey] as const,
+		() => [props.focus.unit.id, props.target, props.projectKey] as const,
 		() => {
+			if (locked() && (working() || receipt() === undefined)) return;
 			revision++;
 			action.cancel();
 			relatedAction.cancel();
@@ -198,6 +199,7 @@ export function GameTextIdRepairs(props: {
 		if (!current || !fix || !client || current.preview.status !== "ok" || working() || locked())
 			return;
 		const generation = revision;
+		const submittedTarget = props.target;
 		setWorking(true);
 		setLocked(true);
 		action.run(client.apply(current.id), {
@@ -207,12 +209,13 @@ export function GameTextIdRepairs(props: {
 				if (result.status === "finished") {
 					setReceipt(result);
 					const ok = result.result.status === "ok" && result.verified;
-					if (ok && fix.translations.length > 0) {
+					if (ok && submittedTarget && fix.translations.length > 0) {
 						props.edits.stageAll(
 							fix.translations.map((item) => ({
 								edit: decodeLocalizationEdit(item),
 								source: item.source
-							}))
+							})),
+							submittedTarget
 						);
 						props.edits.setOpen(true);
 					}

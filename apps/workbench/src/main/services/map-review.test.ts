@@ -10,6 +10,7 @@ import {
 	legacyReviewRenderPolicy,
 	type ReviewAuthoringApi,
 	ReviewAuthoringSessionError,
+	ReviewAuthoringSession,
 	VisibilityPolicyId,
 	type ReviewAuthoringSessionsApi,
 	type ReviewCaptureApi,
@@ -18,6 +19,7 @@ import {
 import { it } from "@effect/vitest";
 import {
 	ActorId,
+	ActorObservationSessionError,
 	makeObservatoryTestLayer,
 	Observatory,
 	WorldScoutRefreshRate
@@ -26,7 +28,7 @@ import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import { EditorPlaySessionId, decodeEditorWorldOpenRequest } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
-import { Effect, Layer, Queue, Ref, Schema, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Queue, Ref, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { join, resolve } from "node:path";
 import { expect } from "vitest";
@@ -40,6 +42,7 @@ import {
 import { WorkbenchMapReview, WorkbenchMapReviewLive } from "./map-review.js";
 import { makeWorkbenchProjectTestLayer } from "./project-workspace.js";
 
+const decodeAuthoringSession = Schema.decodeUnknownSync(ReviewAuthoringSession);
 const decodeString = Schema.decodeUnknownEffect(Schema.String);
 const ProvisioningRequestJson = Schema.fromJsonString(
 	Schema.Struct({
@@ -1957,7 +1960,11 @@ const livePreviewSession = {
 	viewId: "initial-view"
 };
 
-function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
+function makeLivePreviewServiceLayer(
+	worldContext: "editor" | "play",
+	beforeEnsure: Effect.Effect<void> = Effect.void,
+	fallback: ReviewAuthoringApi = dyingAuthoring
+) {
 	return MapReviewLiveWithDialog.pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -1990,8 +1997,53 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				}),
 				makeWorkbenchWindowTestLayer(),
 				makeRemoteControlClientTestLayer((request) => {
+					if (request.functionName === "GetCapabilityManifest") {
+						return Effect.succeed({
+							capabilities: ["editor.world-control.v1", "editor.world-state.v1"],
+							producerKind: "unreal_editor",
+							schemaVersion: 1,
+							worldControlObjectPath: "/Script/Fixture.WorldControl"
+						});
+					}
+					if (request.functionName === "GetWorldState") {
+						return Effect.succeed({
+							contract: {
+								name: "unreal-editor-world-control",
+								version: { major: 1, minor: 0 }
+							},
+							projectName: "MyProj",
+							...(mapReviewProject.project.projectRoot === undefined
+								? undefined
+								: { projectRoot: mapReviewProject.project.projectRoot }),
+							snapshot: {
+								dirtyWorldPackages: [],
+								mapPath: "/Game/Maps/L_Alpha",
+								playSessionActive: false
+							}
+						});
+					}
+					if (request.functionName === "OpenMap") {
+						return Effect.gen(function* () {
+							const json = yield* decodeString(request.parameters.RequestJson);
+							const intent = yield* decodeEditorWorldOpenRequest(JSON.parse(json));
+							expect(intent.targetMapPath).toBe("/Game/Maps/L_Alpha");
+							const snapshot = {
+								dirtyWorldPackages: [],
+								mapPath: intent.targetMapPath,
+								playSessionActive: false
+							};
+							return {
+								...intent,
+								outcome: "opened",
+								before: snapshot,
+								after: snapshot
+							};
+						}).pipe(Effect.orDie);
+					}
+
 					if (request.functionName === "EnsureProvisionedCameras") {
 						return decodeProvisioningRequestJson(request.parameters.RequestJson).pipe(
+							Effect.tap(() => beforeEnsure),
 							Effect.orDie,
 							Effect.flatMap((provisioned) => {
 								expect(provisioned.cameras[0]).toMatchObject({
@@ -2022,6 +2074,13 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				}),
 				makeReviewAuthoringSessionsTestLayer({
 					...dyingAuthoringSessions,
+					discard: () =>
+						Effect.sync(() =>
+							decodeAuthoringSession({
+								...livePreviewSession,
+								lifecycle: "discarded"
+							})
+						),
 					// SAFETY: livePreviewSession is a complete test-owned session fixture.
 					load: () => Effect.succeed(livePreviewSession as never)
 				}),
@@ -2074,8 +2133,8 @@ function makeLivePreviewServiceLayer(worldContext: "editor" | "play") {
 				}),
 				makeReviewCaptureTestLayer(dyingCapture),
 				makeReviewAuthoringTestLayer({
-					...dyingAuthoring,
-					previewCandidate: () => Effect.die("PNG fallback must not run")
+					...fallback,
+					previewCandidate: fallback.previewCandidate
 				})
 			)
 		)
@@ -2236,5 +2295,357 @@ it.effect("closes the open camera set before Capture Set renders", () =>
 		);
 		expect(exit._tag).toBe("Failure");
 		expect(calls).toEqual(["close", "capture"]);
+	})
+);
+
+function auditMapLayer(
+	options: {
+		authoring?: ReviewAuthoringApi;
+		capture?: ReviewCaptureApi;
+		observation?: Parameters<typeof makeObservatoryTestLayer>[0];
+		play?: Parameters<typeof makeEditorPlaySessionTestLayer>[0];
+	} = {}
+) {
+	return MapReviewWithProject.pipe(
+		Layer.provide(makeWorkbenchCameraWorkspaceTestLayer({ close: Effect.void })),
+		Layer.provide(makeReviewAuthoringTestLayer(options.authoring ?? dyingAuthoring)),
+		Layer.provide(makeReviewCaptureTestLayer(options.capture ?? dyingCapture)),
+		Layer.provide(
+			options.observation ? makeObservatoryTestLayer(options.observation) : Layer.empty
+		),
+		Layer.provide(options.play ? makeEditorPlaySessionTestLayer(options.play) : Layer.empty),
+		Layer.provide(baseMapReviewDeps),
+		Layer.provide(
+			Layer.mergeAll(
+				makeWorkbenchConfigurationLayer(configuredReview),
+				makeLocalFilesTestLayer(),
+				makeReviewRepositoryTestLayer({
+					// This test never lists Review Sets.
+					listSets: () => Effect.die("not used"),
+					discardStaging: () => Effect.die("not used"),
+					findSet: () => Effect.die("not used"),
+					finalizeRun: () => Effect.die("not used"),
+					listRuns: () => Effect.die("not used"),
+					loadRun: () => Effect.die("not used"),
+					loadSet: () => Effect.succeed(fixtureReviewSet),
+					prepareRun: () => Effect.die("not used"),
+					saveSet: () => Effect.die("not used"),
+					storeArtifact: () => Effect.die("not used"),
+					writeRunDocument: () => Effect.die("not used")
+				})
+			)
+		)
+	);
+}
+it.effect("L1.1 rechecks capture policy after queued exclusive work", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		const checked = yield* Deferred.make<void>();
+		let playing = false;
+		let captures = 0;
+		const play = {
+			execute: () => Effect.die("unused"),
+			pause: () => Effect.die("unused"),
+			resume: () => Effect.die("unused"),
+			start: () => Effect.die("unused"),
+			stop: () => Effect.die("unused"),
+			status: () =>
+				Effect.gen(function* () {
+					yield* Deferred.succeed(checked, undefined);
+					return {
+						contract: {
+							name: "unreal-editor-play-session" as const,
+							version: { major: 1 as const, minor: 0 as const }
+						},
+						state: playing
+							? {
+									status: "running" as const,
+									mode: "play" as const,
+									sessionId: EditorPlaySessionId.make("pie")
+								}
+							: { status: "stopped" as const }
+					};
+				})
+		};
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const owner = yield* service
+				.authorFromSelection({ destination: { kind: "append_view" } })
+				.pipe(Effect.exit, Effect.forkChild);
+			yield* Deferred.await(started);
+			const capture = yield* service.capture({ viewIds: ["view-1"] }).pipe(Effect.forkChild);
+			for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+			playing = true;
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(owner);
+			expect((yield* Fiber.join(capture)).status).toBe("blocked");
+			expect(captures).toBe(0);
+		}).pipe(
+			Effect.provide(
+				auditMapLayer({
+					play,
+					authoring: {
+						...dyingAuthoring,
+						inspectSelection: () =>
+							Effect.gen(function* () {
+								yield* Deferred.succeed(started, undefined);
+								yield* Deferred.await(release);
+								return yield* Effect.die("end exclusive");
+							})
+					},
+					capture: {
+						captureSet: () =>
+							Effect.sync(() => {
+								captures++;
+							}).pipe(Effect.andThen(Effect.die("unexpected capture")))
+					}
+				})
+			)
+		);
+	})
+);
+it.effect("L3.1 delays the first observation subscriber during exclusive work", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let observes = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const owner = yield* service
+				.authorFromSelection({ destination: { kind: "append_view" } })
+				.pipe(Effect.exit, Effect.forkChild);
+			yield* Deferred.await(started);
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(10));
+			const during = observes;
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(owner);
+			expect(during).toBe(0);
+			expect(observes).toBe(1);
+		}).pipe(
+			Effect.provide(
+				auditMapLayer({
+					authoring: {
+						...dyingAuthoring,
+						inspectSelection: () =>
+							Effect.gen(function* () {
+								yield* Deferred.succeed(started, undefined);
+								yield* Deferred.await(release);
+								return yield* Effect.die("end exclusive");
+							})
+					},
+					observation: {
+						focus: () => Effect.die("unused"),
+						snapshot: () => Effect.die("unused"),
+						setObservationCadence: () => Effect.die("unused"),
+						observe: () => {
+							observes++;
+							return Stream.fromEffect(Effect.never);
+						}
+					}
+				})
+			)
+		);
+	})
+);
+it.effect("L3.2 restarts a failed observation stream for a new subscriber", () =>
+	Effect.gen(function* () {
+		const stopped = yield* Deferred.make<void>();
+		let observes = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(10));
+			yield* Deferred.await(stopped);
+			for (let i = 0; i < 10; i++) yield* Effect.yieldNow;
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(10));
+			expect(observes).toBe(2);
+		}).pipe(
+			Effect.provide(
+				auditMapLayer({
+					observation: {
+						focus: () => Effect.die("unused"),
+						snapshot: () => Effect.die("unused"),
+						setObservationCadence: () => Effect.die("unused"),
+						observe: () =>
+							++observes === 1
+								? Stream.fail(
+										new ActorObservationSessionError({
+											endpoint: "http://127.0.0.1:30001",
+											expectedSessionId: "old",
+											receivedSessionId: "new",
+											message: "Session lost",
+											recovery: "Reconnect",
+											nextStep: "retry",
+											retrySafe: true
+										})
+									).pipe(Stream.ensuring(Deferred.succeed(stopped, undefined)))
+								: Stream.fromEffect(Effect.never)
+					}
+				})
+			)
+		);
+	})
+);
+
+it.effect("L2.2 invalidates provisioned bindings after an accepted map open", () =>
+	Effect.gen(function* () {
+		let ensures = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const intent = { candidateId: "facade_front", sessionId: "session-live" };
+			expect((yield* service.previewAuthoringCandidate(intent)).status).toBe("ready");
+			expect((yield* service.openMapInUnreal!("Content/Maps/L_Alpha.umap")).outcome).toBe(
+				"opened"
+			);
+			expect((yield* service.previewAuthoringCandidate(intent)).status).toBe("ready");
+			expect(ensures).toBe(2);
+		}).pipe(
+			Effect.provide(
+				makeLivePreviewServiceLayer(
+					"editor",
+					Effect.sync(() => {
+						ensures++;
+					})
+				)
+			)
+		);
+	})
+);
+it.effect("L2.3 refuses to recache bindings invalidated during ensure", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let ensures = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const intent = { candidateId: "facade_front", sessionId: "session-live" };
+			const first = yield* service
+				.previewAuthoringCandidate(intent)
+				.pipe(Effect.exit, Effect.forkChild);
+			yield* Deferred.await(started);
+			yield* service.discardAuthoring({ sessionId: "session-live" });
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(first);
+			yield* service.previewAuthoringCandidate(intent);
+			expect(ensures).toBe(2);
+		}).pipe(
+			Effect.provide(
+				makeLivePreviewServiceLayer(
+					"editor",
+					Effect.gen(function* () {
+						if (++ensures === 1) {
+							yield* Deferred.succeed(started, undefined);
+							yield* Deferred.await(release);
+						}
+					})
+				)
+			)
+		);
+	})
+);
+
+it.effect("4507003856 a pending observation restart cannot erase exclusive pause", () =>
+	Effect.gen(function* () {
+		const stopping = yield* Deferred.make<void>();
+		const stopped = yield* Deferred.make<void>();
+		const entered = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let observes = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(10));
+			const restarting = yield* service
+				.subscribeWorldObservations(WorldScoutRefreshRate.make(20))
+				.pipe(Effect.forkChild);
+			yield* Deferred.await(stopping);
+			const owner = yield* service
+				.authorFromSelection({ destination: { kind: "append_view" } })
+				.pipe(Effect.exit, Effect.forkChild);
+			for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+			yield* Deferred.succeed(stopped, undefined);
+			yield* Deferred.await(entered);
+			yield* Fiber.join(restarting);
+			yield* service.subscribeWorldObservations(WorldScoutRefreshRate.make(30));
+			const during = observes;
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(owner);
+			expect(during).toBe(1);
+			expect(observes).toBe(2);
+		}).pipe(
+			Effect.provide(
+				auditMapLayer({
+					observation: {
+						focus: () => Effect.die("unused"),
+						snapshot: () => Effect.die("unused"),
+						setObservationCadence: () => Effect.die("unused"),
+						observe: () => {
+							const first = ++observes === 1;
+							return Stream.fromEffect(Effect.never).pipe(
+								Stream.ensuring(
+									first
+										? Deferred.succeed(stopping, undefined).pipe(
+												Effect.andThen(Deferred.await(stopped))
+											)
+										: Effect.void
+								)
+							);
+						}
+					},
+					authoring: {
+						...dyingAuthoring,
+						inspectSelection: () =>
+							Effect.gen(function* () {
+								yield* Deferred.succeed(entered, undefined);
+								yield* Deferred.await(release);
+								return yield* Effect.die("end exclusive");
+							})
+					}
+				})
+			)
+		);
+	})
+);
+
+it.effect("4507026650 invalidated live provisioning must not start PNG fallback", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let inspected = 0;
+		let rendered = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const pending = yield* service
+				.previewAuthoringCandidate({
+					candidateId: "facade_front",
+					sessionId: "session-live"
+				})
+				.pipe(Effect.exit, Effect.forkChild);
+			yield* Deferred.await(started);
+			yield* service.discardAuthoring({ sessionId: "session-live" });
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(pending);
+			expect(inspected).toBe(0);
+			expect(rendered).toBe(0);
+		}).pipe(
+			Effect.provide(
+				makeLivePreviewServiceLayer(
+					"editor",
+					Deferred.succeed(started, undefined).pipe(
+						Effect.andThen(Deferred.await(release))
+					),
+					{
+						...dyingAuthoring,
+						inspectSubject: () =>
+							Effect.sync(() => {
+								inspected++;
+							}).pipe(Effect.andThen(Effect.die("stale subject inspection"))),
+						previewCandidate: () =>
+							Effect.sync(() => {
+								rendered++;
+							}).pipe(Effect.andThen(Effect.die("stale render")))
+					}
+				)
+			)
+		);
 	})
 );

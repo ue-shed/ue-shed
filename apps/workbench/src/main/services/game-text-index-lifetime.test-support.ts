@@ -1,3 +1,4 @@
+import { GameTextIndexError, GameTextIndexProgressReporter } from "@ue-shed/game-text/index";
 import { GameTextIndexSteps } from "@ue-shed/game-text/index";
 import { Deferred, Effect, Layer, Ref, Option } from "effect";
 import { makeIndexRegressionFixture } from "../../../../../packages/game-text/src/index-refresh-regressions.test-support.js";
@@ -12,6 +13,7 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 		| "rejected"
 		| "localization"
 		| "pipeline"
+		| "failed-progress"
 		| "source"
 		| "source-read"
 		| "cached"
@@ -97,6 +99,18 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 						yield* Effect.addFinalizer(() =>
 							Deferred.succeed(secondRetired, undefined)
 						);
+					if (mode === "failed-progress") {
+						const report = yield* GameTextIndexProgressReporter;
+						report({ phase: "package_read", completed: 1, total: 2 });
+						return yield* new GameTextIndexError({
+							code: "index_failed",
+							operation: "project",
+							message: "Read failed",
+							recovery: "Retry",
+							nextStep: "retry",
+							retrySafe: true
+						});
+					}
 					const result = yield* real.openTarget(request);
 					if (call === 2 && mode === "rejected") {
 						yield* Deferred.succeed(prepared, undefined);

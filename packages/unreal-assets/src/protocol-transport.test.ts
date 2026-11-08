@@ -1,11 +1,12 @@
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 import { AssetReaderError } from "./asset-reader.js";
 import { MAX_PROTOCOL_REQUEST_BYTES } from "./protocol-request-limit.js";
 import {
 	invokeProtocolSessionSingle,
+	invokeProtocolScan,
 	makeProtocolRequest,
 	type ProtocolProcessFactory,
 	type ProtocolSessionProcess,
@@ -511,3 +512,309 @@ it("keeps Unicode line and paragraph separators inside persistent NDJSON frames"
 		await session.close();
 	}
 });
+
+it("A5.1 replaces a worker that closes between completed requests", async () => {
+	const request = makeProtocolRequest(
+		{ kind: "inspect", assetPath: "C:/Fixture/A.uasset" },
+		{ timeoutMs: 1000, maximumOutputBytes: 4096 }
+	);
+	const frame = { contract: request.contract, requestId: request.requestId };
+	const output = [
+		{ ...frame, kind: "accepted", operation: "inspect", sequence: 0 },
+		{ ...frame, kind: "completed", outcome: "complete", sequence: 1 }
+	]
+		.map((event) => JSON.stringify(event) + "\n")
+		.join("");
+	const workers: StalledInputProcess[] = [];
+	const session = new UassetProtocolSession({ executable: "fake", timeoutMs: 1000 }, () => {
+		const worker = new StalledInputProcess(
+			true,
+			undefined,
+			undefined,
+			new Writable({
+				write(_chunk, _encoding, callback) {
+					worker.stdout.write(output);
+					callback();
+				}
+			})
+		);
+		workers.push(worker);
+		return worker;
+	});
+	const run = async () => {
+		for await (const _event of session.events({
+			request,
+			signal: undefined,
+			timeoutMs: 1000
+		})) {
+			/* consume */
+		}
+	};
+	try {
+		await run();
+		workers[0]!.emitClose();
+		await run();
+		expect(workers).toHaveLength(2);
+	} finally {
+		await session.close();
+	}
+});
+
+const decodeRequestIdentity = Schema.decodeSync(
+	Schema.fromJsonString(Schema.Struct({ contract: Schema.Unknown, requestId: Schema.String }))
+);
+it("A6.1 clears scan progress after a worker closes without a summary", async () => {
+	class ScanChild extends EventEmitter {
+		readonly pid = 19;
+		killed = false;
+		readonly stdout = new PassThrough();
+		readonly stderr = new PassThrough();
+		readonly stdin = new Writable({
+			write: (chunk, _encoding, callback) => {
+				const frame = decodeRequestIdentity(String(chunk));
+				this.stdout.write(
+					JSON.stringify({ ...frame, kind: "accepted", operation: "scan", sequence: 0 }) +
+						"\n"
+				);
+				this.stdout.end(
+					JSON.stringify({
+						...frame,
+						kind: "progress",
+						phase: "reading",
+						completedItems: 1,
+						totalItems: 2,
+						sequence: 1
+					}) + "\n"
+				);
+				callback();
+				setImmediate(() => this.emit("close", 1, null));
+			}
+		});
+		kill() {
+			return true;
+		}
+	}
+	const progress: import("./asset-reader.js").ScanProgressStore = {
+		current: {
+			cacheHits: 0,
+			emittedAssets: 0,
+			phase: "idle",
+			processedAssets: 0,
+			totalAssets: 0
+		}
+	};
+	const failure = await Effect.runPromise(
+		invokeProtocolScan(
+			{ executable: "fake", timeoutMs: 1000, catalogTimeoutMs: 1000 },
+			{ projectRoot: "C:/Fixture", depth: "header" },
+			progress,
+			{ processFactory: () => new ScanChild() }
+		).pipe(Effect.flip)
+	);
+	expect(failure).toBeInstanceOf(AssetReaderError);
+	expect(progress.current.phase).toBe("idle");
+});
+
+it("4506934663 an old batched scan cannot clear a newer shared progress destination", async () => {
+	class HeldScan extends EventEmitter {
+		readonly pid = 20;
+		killed = false;
+		readonly stdout = new PassThrough();
+		readonly stderr = new PassThrough();
+		constructor(
+			readonly started: () => void,
+			readonly total = 2
+		) {
+			super();
+		}
+		readonly stdin = new Writable({
+			write: (chunk, _encoding, callback) => {
+				const frame = decodeRequestIdentity(String(chunk));
+				this.stdout.write(
+					JSON.stringify({ ...frame, kind: "accepted", operation: "scan", sequence: 0 }) +
+						"\n"
+				);
+				this.stdout.write(
+					JSON.stringify({
+						...frame,
+						kind: "progress",
+						phase: "reading",
+						completedItems: 1,
+						totalItems: this.total,
+						sequence: 1
+					}) + "\n"
+				);
+				callback();
+				this.started();
+			}
+		});
+		fail() {
+			this.stdout.end();
+			this.emit("close", 1, null);
+		}
+		kill() {
+			return true;
+		}
+	}
+	const observed = Promise.withResolvers<void>();
+	let current: import("./asset-reader.js").ScanProgressStore["current"] = {
+		phase: "idle",
+		cacheHits: 0,
+		emittedAssets: 0,
+		processedAssets: 0,
+		totalAssets: 0
+	};
+	const progress: import("./asset-reader.js").ScanProgressStore = {
+		get current() {
+			return current;
+		},
+		set current(next) {
+			current = next;
+			if (next.totalAssets === 7) observed.resolve();
+		}
+	};
+
+	const oldStarted = Promise.withResolvers<void>();
+	const newStarted = Promise.withResolvers<void>();
+	const old = new HeldScan(oldStarted.resolve);
+	const newer = new HeldScan(newStarted.resolve, 7);
+	const config = { executable: "fake", timeoutMs: 5000, catalogTimeoutMs: 5000 };
+	const first = Effect.runPromise(
+		invokeProtocolScan(
+			config,
+			{
+				projectRoot: "C:/Fixture",
+				depth: "header",
+				paths: Array.from({ length: 10 }, (_, i) => `${i}${"x".repeat(200)}.uasset`)
+			},
+			progress,
+			{ maximumRequestBytes: 800, processFactory: () => old }
+		).pipe(Effect.exit)
+	);
+	await oldStarted.promise;
+	const second = Effect.runPromise(
+		invokeProtocolScan(config, { projectRoot: "C:/Fixture", depth: "header" }, progress, {
+			processFactory: () => newer
+		}).pipe(Effect.exit)
+	);
+	await newStarted.promise;
+	await observed.promise;
+	try {
+		expect(progress.current.phase).toBe("scanning");
+		old.fail();
+		await first;
+		expect(progress.current.phase).toBe("scanning");
+	} finally {
+		newer.fail();
+		await second;
+	}
+});
+
+it.each([true, false])(
+	"4507516099 a request-size refusal preserves progress ownership (paths=%s)",
+	async (withPaths) => {
+		const active = Promise.withResolvers<void>();
+		const continued = Promise.withResolvers<void>();
+		let publish: (completed: number) => void = (_completed) => {
+			throw new Error("Worker has not started");
+		};
+		class ActiveScan extends EventEmitter {
+			readonly pid = 21;
+			killed = false;
+			readonly stdout = new PassThrough();
+			readonly stderr = new PassThrough();
+			readonly stdin = new Writable({
+				write: (chunk, _encoding, callback) => {
+					const frame = decodeRequestIdentity(String(chunk));
+					let sequence = 0;
+					this.stdout.write(
+						JSON.stringify({
+							...frame,
+							kind: "accepted",
+							operation: "scan",
+							sequence: sequence++
+						}) + "\n"
+					);
+					publish = (completed) =>
+						this.stdout.write(
+							JSON.stringify({
+								...frame,
+								kind: "progress",
+								phase: "reading",
+								completedItems: completed,
+								totalItems: 3,
+								sequence: sequence++
+							}) + "\n"
+						);
+					publish(1);
+					callback();
+				}
+			});
+			kill() {
+				return true;
+			}
+			close() {
+				this.stdout.end();
+				this.emit("close", 1, null);
+			}
+		}
+		let current: import("./asset-reader.js").ScanProgressStore["current"] = {
+			phase: "idle",
+			cacheHits: 0,
+			emittedAssets: 0,
+			processedAssets: 0,
+			totalAssets: 0
+		};
+		const progress: import("./asset-reader.js").ScanProgressStore = {
+			get current() {
+				return current;
+			},
+			set current(next) {
+				current = next;
+				if (next.phase === "scanning" && next.processedAssets === 1) active.resolve();
+				if (next.phase === "scanning" && next.processedAssets === 2) continued.resolve();
+			}
+		};
+		const child = new ActiveScan();
+		const config = { executable: "fake", timeoutMs: 5000, catalogTimeoutMs: 5000 };
+		const running = Effect.runPromiseExit(
+			invokeProtocolScan(config, { projectRoot: "C:/Fixture", depth: "header" }, progress, {
+				processFactory: () => child
+			})
+		);
+		await active.promise;
+		let refusedStarts = 0;
+		try {
+			const refusal = await Effect.runPromise(
+				invokeProtocolScan(
+					config,
+					{
+						projectRoot: "C:/Fixture",
+						depth: "header",
+						...(withPaths ? { paths: ["Content/A.uasset"] } : undefined),
+						names: Array.from({ length: 60_000 }, (_, i) => `${i}${"x".repeat(100)}`)
+					},
+					progress,
+					{
+						processFactory: () => {
+							refusedStarts++;
+							return new ActiveScan();
+						}
+					}
+				).pipe(Effect.flip)
+			);
+			expect(refusal).toBeInstanceOf(AssetReaderError);
+			expect(refusal.kind).toBe("request_too_large");
+			expect(refusedStarts).toBe(0);
+			expect(progress.current.phase).toBe("scanning");
+			expect(progress.current.processedAssets).toBe(1);
+			publish(2);
+			await continued.promise;
+			expect(progress.current.processedAssets).toBe(2);
+		} finally {
+			child.close();
+			await running;
+		}
+		expect(progress.current.phase).toBe("idle");
+	}
+);

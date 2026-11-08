@@ -158,17 +158,20 @@ export function EditorSessionTransport(props: {
 	};
 
 	const execute = (command: EditorPlaySessionCommand) => {
+		subscription.cancel();
 		setPending(true);
 		setMessage(undefined);
 		action.run(props.client.executeEditorSessionCommand(command), {
 			onFailure: () => {
 				setPending(false);
 				setMessage("Command failed");
+				subscribeStatus();
 			},
 			onSuccess: (result) => {
 				setPending(false);
 				setState(result.state);
 				setMessage(result.outcome === "rejected" ? result.message : undefined);
+				subscribeStatus();
 			}
 		});
 	};

@@ -1,6 +1,6 @@
 import { ErrorNextStep } from "@ue-shed/protocol/errors";
 import { decodeTexturePreviewResult, type TexturePreviewResult } from "@ue-shed/asset-audits";
-import { type Brand, Context, Effect, Layer, Option, Schema } from "effect";
+import { type Brand, Context, Effect, Layer, Option, Schema, Semaphore } from "effect";
 import { createHash } from "node:crypto";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { ElectronApp } from "../adapters/electron-app.js";
@@ -339,6 +339,7 @@ export const OfflineTexturePreviewLive = Layer.effect(
 			};
 		});
 
+		const previewGate = yield* Semaphore.make(1);
 		const previewBatch = Effect.fn("Workbench.OfflineTexturePreview.previewBatch")(function* (
 			inputs: ReadonlyArray<OfflineTexturePreviewInput>
 		) {
@@ -523,7 +524,7 @@ export const OfflineTexturePreviewLive = Layer.effect(
 					(result): result is TexturePreviewResult => result !== undefined
 				)
 			};
-		});
+		}, previewGate.withPermits(1));
 
 		const preview = Effect.fn("Workbench.OfflineTexturePreview.preview")(function* (
 			input: OfflineTexturePreviewInput

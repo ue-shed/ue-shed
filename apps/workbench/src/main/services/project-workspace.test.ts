@@ -8,6 +8,7 @@ import {
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	ProjectIndexRefreshEvent,
 	ProjectIndexRefreshFailed,
+	ProjectIndexUnavailable,
 	ProjectIndexStaleGeneration,
 	ProjectIdentity,
 	ProjectIndexGeneration,
@@ -161,6 +162,9 @@ it.effect(
 		Effect.gen(function* () {
 			const started = yield* Deferred.make<void>();
 			const release = yield* Deferred.make<void>();
+			const openStarted = yield* Deferred.make<void>();
+			const openRelease = yield* Deferred.make<void>();
+			let blockOther = false;
 			let block = false;
 			let fail = false;
 			let packages = 1;
@@ -171,6 +175,17 @@ it.effect(
 				Stream.fromEffect(
 					Effect.gen(function* () {
 						const count = packages;
+						if (blockOther && root !== projectRoot) {
+							yield* Deferred.succeed(openStarted, undefined);
+							yield* Deferred.await(openRelease);
+							return yield* new ProjectIndexRefreshFailed({
+								message: "Open failed",
+								recovery: "Retry",
+								retrySafe: true,
+								nextStep: "retry"
+							});
+						}
+
 						if (block && root === projectRoot) {
 							yield* Deferred.succeed(started, undefined);
 							yield* Deferred.await(release);
@@ -296,6 +311,17 @@ it.effect(
 					project: { packageCount: 3 }
 				});
 				expect(rebuilds).toBe(1);
+				blockOther = true;
+				picked = "C:/Projects/Other";
+				const opening = yield* service.choose.pipe(Effect.forkChild);
+				yield* Deferred.await(openStarted);
+				packages = 5;
+				yield* service.refresh();
+				expect(yield* service.current).toMatchObject({ project: { packageCount: 5 } });
+				yield* Deferred.succeed(openRelease, undefined);
+				yield* Fiber.join(opening);
+				expect(yield* service.current).toMatchObject({ project: { packageCount: 5 } });
+				blockOther = false;
 				block = true;
 				const oldRefresh = yield* service.refresh().pipe(Effect.forkChild);
 				yield* Deferred.await(started);
@@ -858,3 +884,123 @@ it.effect("a refresh during a warm open's background refresh waits for it instea
 		);
 	})
 );
+
+for (const failingCurrent of [false, true]) {
+	it.effect(
+		failingCurrent
+			? "W1.3 old current failure preserves the new selected summary"
+			: "W1.1 last requested project survives late open completion",
+		() =>
+			Effect.gen(function* () {
+				const started = yield* Deferred.make<void>();
+				const release = yield* Deferred.make<void>();
+				const other = "C:/Projects/Other";
+				let picked = projectRoot;
+				let otherStatusReads = 0;
+				const summary = (root: string) =>
+					ProjectIndexSummary.make({
+						projectId: ProjectIdentity.make(root),
+						generation: ProjectIndexGeneration.make(1),
+						packageCount: 1,
+						mapCount: 0,
+						changedPackages: 1,
+						removedPackages: 0,
+						completeness: "complete",
+						diagnostics: []
+					});
+				const index = makeProjectIndexTestLayer({
+					rebuild: () => Stream.die("unused"),
+					status: ({ projectRoot: root }) =>
+						Effect.gen(function* () {
+							if (root === other) otherStatusReads++;
+							if (root === projectRoot) {
+								yield* Deferred.succeed(started, undefined);
+								yield* Deferred.await(release);
+								if (failingCurrent)
+									return yield* new ProjectIndexUnavailable({
+										message: "old status failed",
+										recovery: "Retry",
+										retrySafe: true,
+										nextStep: "retry"
+									});
+							}
+							return { status: "ready" as const, summary: summary(root) };
+						}),
+					refresh: ({ projectRoot: root }) =>
+						Stream.succeed(
+							ProjectIndexRefreshEvent.cases.Completed.make({
+								summary: summary(root)
+							})
+						),
+					query: (request) =>
+						Effect.succeed({
+							projectId: request.projectId,
+							generation: request.expectedGeneration,
+							items: []
+						})
+				});
+				const picker = Layer.succeed(
+					ElectronDialog,
+					ElectronDialog.of({
+						chooseDirectory: () =>
+							Effect.sync(() => ({ status: "selected" as const, path: picked })),
+						chooseFile: () => Effect.die("unused"),
+						chooseFiles: () => Effect.die("unused"),
+						chooseSaveFile: () => Effect.die("unused")
+					})
+				);
+				const assetReader = makeAssetReaderTestLayer({
+					configuration: Effect.sync(() => ({
+						executable: "uasset",
+						timeoutMs: 30_000,
+						catalogTimeoutMs: 50 * 60_000
+					})),
+					catalogProgress: Effect.suspend(() => Effect.die("not used")),
+					scanProgress: Effect.suspend(() => Effect.die("not used")),
+					savedWorldProgress: Effect.suspend(() => Effect.die("not used")),
+					readBlueprint: () => Effect.die("not used"),
+					readLevelSequence: () => Effect.die("not used"),
+					readSavedWorld: () => Effect.die("not used"),
+					extractProjectText: () => Stream.die("not used"),
+					extractProjectTextPackages: () => Stream.die("not used"),
+					extractProjectTextures: () => Stream.die("not used"),
+					discoverAssets: () => Effect.die("not used"),
+					discoverTables: () => Effect.die("not used"),
+					readAsset: () => Effect.die("not used"),
+					readTable: () => Effect.die("not used"),
+					scanProject: () => Effect.die("not used"),
+					source: Effect.sync(() => "configured" as const)
+				});
+				yield* Effect.gen(function* () {
+					const service = yield* WorkbenchProject;
+					const old = yield* (
+						failingCurrent ? service.current : service.openRecent(projectRoot)
+					).pipe(Effect.forkChild);
+					yield* Deferred.await(started);
+					picked = other;
+					expect((yield* service.choose).status).toBe("ready");
+					yield* Deferred.succeed(release, undefined);
+					yield* Fiber.join(old);
+					expect((yield* service.selectedProject).projectRoot).toBe(other);
+					expect(yield* service.current).toMatchObject({
+						status: "ready",
+						project: { projectRoot: other }
+					});
+					expect(otherStatusReads).toBe(0);
+				}).pipe(
+					Effect.provide(
+						Layer.provideMerge(
+							WorkbenchProjectLive,
+							Layer.mergeAll(
+								configuredProject,
+								picker,
+								makeWorkbenchProjectHistoryTestLayer([projectRoot]),
+								assetReader,
+								index
+							)
+						)
+					)
+				);
+			})
+	);
+}

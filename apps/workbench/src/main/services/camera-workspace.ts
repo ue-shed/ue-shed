@@ -93,6 +93,9 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 				store: ReturnType<typeof makeCameraAuthoringStore>;
 		  }
 		| undefined;
+	let pendingDetach:
+		| Pick<NonNullable<typeof active>, "bridge" | "snapshot" | "endpoint" | "livePreview">
+		| undefined;
 	let error: string | null = null;
 	let recovery: CameraRecoveryProposal | null = null;
 	let savedSets: CameraWorkspaceResult["sets"] = [];
@@ -127,14 +130,25 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 		);
 	});
 	const close = Effect.fn("Workbench.CameraWorkspace.close")(function* () {
-		if (!active) return;
-		const current = active;
-		const detached = yield* current.bridge.call({
-			version: 1,
-			operation: "detach",
-			sessionId: current.snapshot.sessionId,
-			producerId: current.snapshot.producerId
-		});
+		const current = active ?? pendingDetach;
+		if (!current) return;
+		pendingDetach = current;
+		active = undefined;
+		recovery = null;
+		const detached = yield* current.bridge
+			.call({
+				version: 1,
+				operation: "detach",
+				sessionId: current.snapshot.sessionId,
+				producerId: current.snapshot.producerId
+			})
+			.pipe(
+				Effect.tapError((cause) =>
+					Effect.sync(() => {
+						error = cause.message;
+					})
+				)
+			);
 		if (detached.status !== "detached" && detached.status !== "unavailable")
 			return yield* failure(detached.message);
 		active = undefined;
@@ -143,8 +157,11 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			yield* clearProvisionedCameras(current.endpoint).pipe(
 				Effect.provideService(RemoteControlClient, client)
 			);
+		pendingDetach = undefined;
+		error = null;
 	});
 	const tick = Effect.fn("Workbench.CameraWorkspace.tick")(function* () {
+		if (!active) return;
 		if (active) active.snapshot = yield* active.panel.tick();
 		if (active?.snapshot.panel && active.livePreview) {
 			const panel = active.snapshot.panel;

@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Deferred, Effect, Fiber, Layer } from "effect";
 import { join } from "node:path";
 import { expect } from "vitest";
 import { FixtureProcessTest, makeFixtureProcessTestLayer } from "../adapters/fixture-process.js";
@@ -49,10 +49,13 @@ function projectLayer(state: typeof selected | { readonly status: "not_configure
 	});
 }
 
-function launcherLayer(state: typeof selected | { readonly status: "not_configured" } = selected) {
+function launcherLayer(
+	state: typeof selected | { readonly status: "not_configured" } = selected,
+	behavior?: Parameters<typeof makeFixtureProcessTestLayer>[0]
+) {
 	const dependencies = Layer.mergeAll(
 		projectLayer(state),
-		makeFixtureProcessTestLayer(),
+		makeFixtureProcessTestLayer(behavior),
 		makeLocalFilesTestLayer(new Map([[script, new Uint8Array([1])]])),
 		workbenchConfigurationFromUnknown({
 			UE_SHED_REPOSITORY_ROOT: repositoryRoot,
@@ -107,3 +110,32 @@ it("explains engine-change refusal without hiding the build output", () => {
 	expect(failure.message).toContain("existing Unreal engine build");
 	expect(failure.details).toBe(output);
 });
+
+it.effect("L11.8 shares concurrent launches and permits a later retry", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		yield* Effect.gen(function* () {
+			const launcher = yield* ProjectLauncher;
+			const process = yield* FixtureProcessTest;
+			const first = yield* launcher.launch("ue_shed").pipe(Effect.forkChild);
+			yield* Deferred.await(started);
+			const second = yield* launcher.launch("ue_shed").pipe(Effect.forkChild);
+			for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+			yield* Deferred.succeed(release, undefined);
+			expect(yield* Fiber.join(first)).toEqual(yield* Fiber.join(second));
+			expect(yield* process.launches).toHaveLength(1);
+			yield* launcher.launch("ue_shed");
+			expect(yield* process.launches).toHaveLength(2);
+		}).pipe(
+			Effect.provide(
+				launcherLayer(selected, () =>
+					Deferred.succeed(started, undefined).pipe(
+						Effect.andThen(Deferred.await(release)),
+						Effect.as({ status: "ready" as const })
+					)
+				)
+			)
+		);
+	})
+);

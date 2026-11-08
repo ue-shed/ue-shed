@@ -1378,16 +1378,30 @@ const makeAuthoringSessionServiceEffect = Effect.fn("AuthoringSessions.make")(
 				);
 			}),
 			close: Effect.fn("AuthoringSessions.close")((sessionId) =>
-				update(sessionId, (document, timestamp) => ({
-					...document,
-					lifecycle: "closed",
-					updatedAt: timestamp
-				}))
+				update(sessionId, (document, timestamp) => {
+					requireIdle(document);
+					return { ...document, lifecycle: "closed", updatedAt: timestamp };
+				})
 			),
 			discard: Effect.fn("AuthoringSessions.discard")((sessionId) =>
 				mutex.withPermits(1)(
 					validateSessionId(sessionId).pipe(
-						Effect.flatMap((validId) => repository.discard(validId)),
+						Effect.flatMap((validId) =>
+							Effect.gen(function* () {
+								const document = yield* load(validId);
+								if (document.pendingOperation.kind !== "none") {
+									return yield* new AuthoringSessionTransitionError({
+										message: `Session has an unresolved ${document.pendingOperation.kind} operation; reconcile it first`,
+										recovery:
+											"Reconcile the pending operation before discarding the session.",
+										retrySafe: false,
+										nextStep: "reconcile",
+										sessionId
+									});
+								}
+								yield* repository.discard(validId);
+							})
+						),
 						Effect.withSpan("authoring.session.discard", {
 							attributes: { "authoring.session.id": sessionId }
 						})

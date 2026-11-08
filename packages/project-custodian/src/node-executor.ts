@@ -21,11 +21,12 @@ import {
 	type CustodianExecutionRefusal,
 	type CustodianPrepareRequest,
 	type CustodianProposalTarget,
-	type CustodianReceipt,
+	CustodianReceipt,
 	type CustodianTarget
 } from "./schema.js";
 
 const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeReceipt = Schema.decodeSync(Schema.fromJsonString(CustodianReceipt));
 
 interface RunningProcess {
 	readonly pid: number;
@@ -371,6 +372,13 @@ export async function executeCustodianProposal(
 	dependencies: CustodianExecutorDependencies = defaultDependencies
 ): Promise<CustodianReceipt> {
 	const startedAt = dependencies.now().toISOString();
+	const previous = await readFile(proposal.receiptPath, "utf8").catch((cause: unknown) => {
+		if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined;
+		throw cause;
+	});
+	if (previous !== undefined) {
+		return decodeReceipt(previous);
+	}
 	await appendLog(proposal, { event: "execution_requested" }, dependencies);
 	if (approvalPhrase !== proposal.approvalPhrase) {
 		return refuse({
@@ -399,7 +407,7 @@ export async function executeCustodianProposal(
 		});
 	}
 
-	if (signal.aborted) {
+	const cancelled = () => {
 		const entries = cancelledEntries(proposal.targets);
 		return persistReceipt(
 			{
@@ -420,12 +428,17 @@ export async function executeCustodianProposal(
 			proposal,
 			dependencies
 		);
-	}
-
+	};
+	if (signal.aborted) return cancelled();
 	const report = await scanCustodian(
 		{ root: proposal.root, ignorePressure: proposal.ignorePressure },
 		signal
-	);
+	).catch((cause: unknown) => {
+		if (signal.aborted) return undefined;
+		throw cause;
+	});
+	if (report === undefined || signal.aborted) return cancelled();
+
 	const currentById = new Map(
 		flattenPlanTargets(report.plan.items).map((target) => [target.target.id, target] as const)
 	);

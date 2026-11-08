@@ -1,6 +1,6 @@
 import { WorkbenchEditorHandoff } from "../services/editor-handoff.js";
 import { EditorPlaySession } from "@ue-shed/engine";
-import { Effect, Option } from "effect";
+import { Effect, Option, Semaphore } from "effect";
 import { WorkbenchMapReview } from "../services/map-review.js";
 import { ElectronIpc } from "../adapters/electron-ipc.js";
 import { invokeContracts } from "../ipc-contracts.js";
@@ -63,6 +63,7 @@ export const register = Effect.gen(function* () {
 		const [enabled] = args;
 		return responsiveness.setEnabled(enabled);
 	});
+	const targetChanges = yield* Semaphore.make(1);
 	yield* ipc.register(invokeContracts["editor-session:set-port"], (...args) => {
 		const [port] = args;
 		return Effect.gen(function* () {
@@ -71,6 +72,6 @@ export const register = Effect.gen(function* () {
 				if (Option.isSome(review)) yield* review.value.resetLiveTarget ?? Effect.void;
 			}
 			return yield* connection.setPort(port);
-		});
+		}).pipe(targetChanges.withPermits(1));
 	});
 }).pipe(Effect.withSpan("Workbench.Ipc.registerEditorSession"));

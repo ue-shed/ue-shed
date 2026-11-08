@@ -16,7 +16,7 @@ const CATALOG_DIRECTORY: &str = "catalogs-oracle-v4";
 const MANIFEST_FILE: &str = "manifest.json";
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
 const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
-const MAX_QUARANTINE_SLOTS: u32 = 64;
+const MAX_QUARANTINE_ATTEMPTS: u32 = 8;
 const ENTRY_COLUMNS: &str = "relative_path,kind,size,modified_nanos,is_map,profile_version,package_name,failure_code,classes,serialized_names,reversed_classes,header_data";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -837,8 +837,9 @@ fn quarantine_directory(directory: &Path) -> Result<Option<PathBuf>, CatalogErro
     if !directory.exists() {
         return Ok(None);
     }
-    for slot in 0..MAX_QUARANTINE_SLOTS {
-        let candidate = directory.with_extension(format!("quarantine-{slot}"));
+    for _ in 0..MAX_QUARANTINE_ATTEMPTS {
+        let candidate =
+            directory.with_extension(format!("quarantine-{}", game_text_index::store::token()));
         if candidate.exists() {
             continue;
         }
@@ -847,8 +848,7 @@ fn quarantine_directory(directory: &Path) -> Result<Option<PathBuf>, CatalogErro
             .map_err(io_unavailable("quarantine the SQLite Catalog"));
     }
     Err(CatalogError::Unavailable {
-        message: "could not quarantine the SQLite Catalog: all quarantine slots are occupied"
-            .to_owned(),
+        message: "could not find a free SQLite Catalog quarantine name".to_owned(),
     })
 }
 

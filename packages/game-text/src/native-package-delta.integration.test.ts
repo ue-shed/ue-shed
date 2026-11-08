@@ -470,11 +470,13 @@ describe.skipIf(!executable)("native package record deltas", () => {
 											storeEpoch: joined.reader.manifest.generation,
 											joinedKey: joined.reader.manifest.active.joined!
 										};
-										const recovered = yield* queries.open(request);
-										expect(recovered).not.toBe(native);
+										// A refused request leaves a healthy reader open: only a lost
+										// reader is replaced.
+										const kept = yield* queries.open(request);
+										expect(kept).toBe(native);
 										yield* native.search(invalid).pipe(Effect.result);
-										expect(yield* queries.open(request)).toBe(recovered);
-										expect(yield* recovered.summary).toEqual(summaries[step]);
+										expect(yield* queries.open(request)).toBe(kept);
+										expect(yield* kept.summary).toEqual(summaries[step]);
 									}
 								}
 								return snapshots;

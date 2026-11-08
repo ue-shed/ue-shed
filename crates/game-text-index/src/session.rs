@@ -11,7 +11,7 @@ use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, Read, Write};
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 #[cfg(test)]
@@ -302,10 +302,19 @@ fn write_frames(outbox: &Outbox, mut output: impl Write) -> io::Result<()> {
     written
 }
 
-/// A request's cancel token and the batches it sent that the host hasn't consumed.
-#[derive(Default)]
+/// A request still waiting for a thread.
+const QUEUED: u8 = 0;
+/// A request a thread has taken; it answers itself.
+const RUNNING: u8 = 1;
+/// A queued request answered by its cancel; no thread runs it.
+const SETTLED: u8 = 2;
+
+/// A request's cancel token, whether it is queued, running or settled, and the batches it sent
+/// that the host hasn't consumed.
 struct Flow {
+    class: Class,
     cancelled: AtomicBool,
+    phase: AtomicU8,
     window: Mutex<Window>,
     changed: Condvar,
 }
@@ -347,6 +356,18 @@ impl Flow {
         relock(self.window.lock()).released = true;
         self.changed.notify_all();
     }
+    /// Takes the request for a thread; false when its cancel already answered it.
+    fn begin(&self) -> bool {
+        self.phase
+            .compare_exchange(QUEUED, RUNNING, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+    /// Settles a request no thread has taken yet; false once one has, as it answers itself.
+    fn settle_queued(&self) -> bool {
+        self.phase
+            .compare_exchange(QUEUED, SETTLED, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
 }
 
 /// Requests in flight, each with its flow.
@@ -356,15 +377,16 @@ struct Live {
     idle: Condvar,
 }
 impl Live {
-    fn start(&self, id: u32) -> Arc<Flow> {
-        let flow = Arc::new(Flow::default());
+    fn start(&self, id: u32, class: Class) -> Arc<Flow> {
+        let flow = Arc::new(Flow {
+            class,
+            cancelled: AtomicBool::new(false),
+            phase: AtomicU8::new(QUEUED),
+            window: Mutex::default(),
+            changed: Condvar::new(),
+        });
         relock(self.requests.lock()).insert(id, Arc::clone(&flow));
         flow
-    }
-    fn cancel(&self, id: u32) {
-        if let Some(flow) = relock(self.requests.lock()).get(&id) {
-            flow.cancel();
-        }
     }
     fn credit(&self, id: u32, frames: u32) {
         if let Some(flow) = relock(self.requests.lock()).get(&id) {
@@ -397,6 +419,23 @@ struct Shared {
     session: EngineSession,
     outbox: Outbox,
     live: Live,
+}
+impl Shared {
+    /// Cancels a request. One still queued is answered at once: waiting for a free thread could
+    /// outlast the host's patience while every thread is busy with slow, healthy work.
+    fn cancel(&self, id: u32) {
+        let flow = relock(self.live.requests.lock()).get(&id).cloned();
+        let Some(flow) = flow else { return };
+        flow.cancel();
+        if flow.settle_queued() {
+            let profile = Profile::now();
+            self.outbox.push(
+                flow.class,
+                encoded(Kind::Cancelled, id, &EngineEnd { profile }),
+            );
+            self.live.finish(id);
+        }
+    }
 }
 
 /// What a request frame asks for. A parsed request is boxed: its largest variants would size
@@ -559,6 +598,10 @@ fn run(shared: &Arc<Shared>, job: Job) {
         flow,
         received,
     } = job;
+    if !flow.begin() {
+        // Its cancel answered it while it waited for this thread.
+        return;
+    }
     let queued = received.elapsed();
     let mut outgoing = Outgoing {
         shared,
@@ -651,7 +694,7 @@ pub fn serve(mut input: impl Read, output: impl Write + Send) -> Result<()> {
                             id,
                             class,
                             work,
-                            flow: shared.live.start(id),
+                            flow: shared.live.start(id, class),
                             received: Instant::now(),
                         };
                         match class {
@@ -666,7 +709,7 @@ pub fn serve(mut input: impl Read, output: impl Write + Send) -> Result<()> {
                             }
                         }
                     }
-                    Kind::Cancel => shared.live.cancel(frame.request),
+                    Kind::Cancel => shared.cancel(frame.request),
                     Kind::Credit => {
                         let credit: Credit =
                             serde_json::from_slice(&frame.body).map_err(|source| {
@@ -977,6 +1020,43 @@ mod tests {
         host.send(Kind::Cancel, 3, Value::Null);
         host.send(Kind::Cancel, 2, Value::Null);
         assert_eq!(host.terminal(2).kind, Kind::Cancelled);
+        host.close()
+    }
+
+    #[test]
+    fn a_queued_request_answers_its_cancel_while_every_slot_is_busy() -> Result<()> {
+        // G1.a: a cancel must not wait for a free slot, or the host's watchdog kills a healthy
+        // engine whose other requests are only slow.
+        let host = Host::start();
+        for id in [1, 2] {
+            host.send(
+                Kind::Request,
+                id,
+                json!({"action":"probe","probe":"hold","bulk":true}),
+            );
+        }
+        host.send(
+            Kind::Request,
+            4,
+            json!({"action":"probe","probe":"hold","bulk":true}),
+        );
+        std::thread::sleep(Duration::from_millis(20));
+        host.send(Kind::Cancel, 4, Value::Null);
+        assert_eq!(host.terminal(4).kind, Kind::Cancelled);
+        assert!(host.answered(1).is_empty() && host.answered(2).is_empty());
+        // The slots stay with their requests, and the cancelled one never runs after them.
+        host.send(Kind::Cancel, 1, Value::Null);
+        assert_eq!(host.terminal(1).kind, Kind::Cancelled);
+        host.send(Kind::Cancel, 2, Value::Null);
+        assert_eq!(host.terminal(2).kind, Kind::Cancelled);
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(
+            host.answered(4)
+                .iter()
+                .filter(|frame| frame.flags & LAST != 0)
+                .count(),
+            1
+        );
         host.close()
     }
 

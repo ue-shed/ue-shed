@@ -92,3 +92,14 @@ it.live(
 			}).pipe(Effect.provide(test.layer));
 		})
 );
+
+it.live("G3.a retires progress after a failed scan", () =>
+	Effect.gen(function* () {
+		const test = yield* makeHost("failed-progress");
+		yield* Effect.gen(function* () {
+			const host = yield* WorkbenchGameText;
+			expect((yield* host.configuredRefresh({})).status).toBe("failed");
+			expect((yield* host.progress).phase).toBe("idle");
+		}).pipe(Effect.provide(test.layer));
+	})
+);

@@ -183,9 +183,13 @@ export const WorkbenchContentObservatoryLive = Layer.effect(
 			const current = yield* Ref.get(state);
 			if (current.status !== "running") return current;
 			yield* interruptActive();
-			const cancelled: ContentObservatoryState = { ...current, status: "cancelled" };
-			yield* Ref.set(state, cancelled);
-			return cancelled;
+			return yield* Ref.updateAndGet(
+				state,
+				(latest): ContentObservatoryState =>
+					latest.status === "running" && latest.jobId === current.jobId
+						? { ...latest, status: "cancelled" }
+						: latest
+			);
 		}).pipe(Effect.withSpan("Workbench.ContentObservatory.cancel"));
 
 		const start = Effect.fn("Workbench.ContentObservatory.start")(function* (

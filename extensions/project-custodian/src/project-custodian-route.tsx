@@ -486,7 +486,10 @@ function CleanupWorkflow(props: {
 	);
 	const [mode, setMode] = createSignal<CustodianExecutionMode>("trash");
 	const [approval, setApproval] = createSignal("");
-	const [cancelRequested, setCancelRequested] = createSignal(false);
+	const [cancellation, setCancellation] = createSignal<"idle" | "requested" | "not_running">(
+		"idle"
+	);
+	const cancelRequested = () => cancellation() === "requested";
 	const [state, setState] = createSignal<CleanupState>({ stage: "select" });
 	const selectedTargets = createMemo(() =>
 		targets.filter(({ target }) => selectedIds().includes(target.id))
@@ -555,11 +558,12 @@ function CleanupWorkflow(props: {
 		);
 	};
 	const cancel = (proposal: CustodianProposal) => {
-		setCancelRequested(true);
+		setCancellation("requested");
 		cancelAction.run(props.client.cancel(proposal.id), {
 			onFailure: (cause) => setState({ stage: "failed", error: clientFailure(cause) }),
 			onSuccess: (result) => {
 				if (result.status === "failed") setState({ stage: "failed", error: result.error });
+				else if (result.result.status === "not_running") setCancellation("not_running");
 			}
 		});
 	};

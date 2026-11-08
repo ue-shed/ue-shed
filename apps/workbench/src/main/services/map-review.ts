@@ -409,19 +409,32 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const activeReviewSetPath = yield* Ref.make<
 			Option.Option<{ readonly path: string; readonly projectRoot: string }>
 		>(Option.none());
-		const provisionedCameraBindings = yield* Ref.make<
-			Option.Option<{
-				readonly bindings: ReadonlyArray<{
-					readonly cameraId: string;
-					readonly candidateId: string;
-					readonly index: number;
-					readonly previewContext: "editor_live" | "play_live";
-				}>;
-				readonly poseFingerprint: string;
-				readonly endpoint: string;
-				readonly sessionId: string;
-			}>
-		>(Option.none());
+		type ProvisionedBindings = {
+			readonly bindings: ReadonlyArray<{
+				readonly cameraId: string;
+				readonly candidateId: string;
+				readonly index: number;
+				readonly previewContext: "editor_live" | "play_live";
+			}>;
+			readonly poseFingerprint: string;
+			readonly endpoint: string;
+			readonly sessionId: string;
+		};
+		type ProvisionedSlot = { readonly revision: number } & (
+			| { readonly _tag: "Empty" | "Provisioning" }
+			| { readonly _tag: "Held"; readonly value: ProvisionedBindings }
+		);
+		const provisionedSlot = yield* Ref.make<ProvisionedSlot>({ _tag: "Empty", revision: 0 });
+		const transitionProvisioned = (update: (state: ProvisionedSlot) => ProvisionedSlot) =>
+			Ref.updateAndGet(provisionedSlot, update);
+		const provisionedCameraBindings = Ref.get(provisionedSlot).pipe(
+			Effect.map((state) =>
+				state._tag === "Held"
+					? Option.some(state.value)
+					: Option.none<ProvisionedBindings>()
+			)
+		);
+
 		const livePreviewFps = yield* Ref.make(5);
 		const playActiveCache = yield* Ref.make<
 			Option.Option<{
@@ -442,29 +455,37 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		);
 		const observationWake = yield* Queue.sliding<void>(1);
 		const nextObservationPresentationAtMillis = yield* Ref.make(0);
-		const observationSubscription = yield* Ref.make<{
+		type ObservationSubscription = {
 			readonly endpoint: string | undefined;
 			readonly cadenceHz: WorldScoutRefreshRate | undefined;
-			readonly fiber: Fiber.Fiber<void, never> | undefined;
-			readonly pausedForExclusive: boolean;
 			readonly subscribers: number;
-		}>({
+		} & (
+			| { readonly _tag: "Idle"; readonly fiber: undefined }
+			| { readonly _tag: "Paused"; readonly fiber: Fiber.Fiber<void, never> | undefined }
+			| { readonly _tag: "Streaming"; readonly fiber: Fiber.Fiber<void, never> }
+		);
+		const observationSubscription = yield* Ref.make<ObservationSubscription>({
+			_tag: "Idle",
 			endpoint: undefined,
 			cadenceHz: undefined,
 			fiber: undefined,
-			pausedForExclusive: false,
 			subscribers: 0
 		});
+		const transitionObservation = (
+			update: (state: ObservationSubscription) => ObservationSubscription
+		) => Ref.update(observationSubscription, update);
+		const setObservation = (state: ObservationSubscription) =>
+			transitionObservation(() => state);
 
 		yield* Effect.addFinalizer(() =>
 			Effect.gen(function* () {
 				const current = yield* Ref.get(observationSubscription);
 				if (current.fiber !== undefined) yield* Fiber.interrupt(current.fiber);
-				yield* Ref.set(observationSubscription, {
+				yield* setObservation({
 					endpoint: undefined,
 					cadenceHz: undefined,
 					fiber: undefined,
-					pausedForExclusive: false,
+					_tag: "Idle",
 					subscribers: 0
 				});
 				yield* Ref.set(pendingObservation, emptyPendingObservationSlots());
@@ -661,14 +682,20 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			yield* Queue.offer(observationWake, undefined);
 		});
 
+		const observationGate = yield* Semaphore.make(1);
 		const stopObservationFiber = Effect.fn("Workbench.WorkbenchMapReview.stopObservationFiber")(
 			function* () {
 				const current = yield* Ref.get(observationSubscription);
 				if (current.fiber !== undefined) yield* Fiber.interrupt(current.fiber);
-				yield* Ref.update(observationSubscription, (subscription) => ({
-					...subscription,
-					fiber: undefined
-				}));
+				yield* transitionObservation((subscription) =>
+					subscription.fiber !== current.fiber
+						? subscription
+						: {
+								...subscription,
+								_tag: subscription._tag === "Paused" ? "Paused" : "Idle",
+								fiber: undefined
+							}
+				);
 			}
 		);
 
@@ -678,49 +705,63 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const endpoint = selectedEndpoint ?? (yield* connection.endpoint);
 
 			yield* stopObservationFiber();
+			if ((yield* Ref.get(observationSubscription))._tag === "Paused") return;
 			let previous: WorldObservationState | undefined;
-			const fiber = yield* observatory.observe(endpoint, { cadenceHz }).pipe(
-				Stream.runForEach((state) =>
-					Effect.gen(function* () {
-						yield* ingestObservationStateWithDiff(state, previous);
-						previous = state;
-					})
-				),
-				Effect.catchTag(
-					["ActorObservationSessionError", "ActorObservationRecoveryExhaustedError"],
-					() =>
+			const fiber: Fiber.Fiber<void, never> = yield* observatory
+				.observe(endpoint, { cadenceHz })
+				.pipe(
+					Stream.runForEach((state) =>
 						Effect.gen(function* () {
-							const sample = yield* Ref.get(lastObservationSample);
-							yield* queueStatusEvent({
-								kind: "unavailable",
-								message: "World observation stopped unexpectedly.",
-								recovery:
-									"Unsubscribe and subscribe again, or use Connect world for a snapshot.",
-								...(Option.isSome(sample)
-									? { sample: sampleToWire(sample.value) }
-									: undefined)
-							});
+							yield* ingestObservationStateWithDiff(state, previous);
+							previous = state;
 						})
-				),
-				Effect.forkIn(layerScope)
+					),
+					Effect.catchTag(
+						["ActorObservationSessionError", "ActorObservationRecoveryExhaustedError"],
+						() =>
+							Effect.gen(function* () {
+								const sample = yield* Ref.get(lastObservationSample);
+								yield* queueStatusEvent({
+									kind: "unavailable",
+									message: "World observation stopped unexpectedly.",
+									recovery:
+										"Unsubscribe and subscribe again, or use Connect world for a snapshot.",
+									...(Option.isSome(sample)
+										? { sample: sampleToWire(sample.value) }
+										: undefined)
+								});
+							})
+					),
+					Effect.ensuring(
+						transitionObservation((subscription) =>
+							subscription.fiber === fiber
+								? {
+										...subscription,
+										_tag: subscription._tag === "Paused" ? "Paused" : "Idle",
+										fiber: undefined
+									}
+								: subscription
+						)
+					),
+					Effect.forkIn(layerScope, { startImmediately: false })
+				);
+			yield* transitionObservation((subscription) =>
+				subscription._tag === "Paused"
+					? subscription
+					: { ...subscription, _tag: "Streaming", cadenceHz, fiber }
 			);
-			yield* Ref.update(observationSubscription, (subscription) => ({
-				...subscription,
-				cadenceHz,
-				fiber
-			}));
-		});
+			if ((yield* Ref.get(observationSubscription)).fiber !== fiber)
+				yield* Fiber.interrupt(fiber);
+		}, observationGate.withPermits(1));
 
 		const pauseObservationForExclusive = Effect.fn(
 			"Workbench.WorkbenchMapReview.pauseObservationForExclusive"
 		)(function* () {
-			const current = yield* Ref.get(observationSubscription);
-			if (current.subscribers <= 0) return;
-			yield* Ref.update(observationSubscription, (subscription) => ({
+			yield* transitionObservation((subscription) => ({
 				...subscription,
-				pausedForExclusive: true
+				_tag: "Paused"
 			}));
-			yield* stopObservationFiber();
+			yield* stopObservationFiber().pipe(observationGate.withPermits(1));
 			const sample = yield* Ref.get(lastObservationSample);
 			if (Option.isSome(sample)) {
 				yield* Ref.set(lastPresentedCatalogKey, undefined);
@@ -738,9 +779,10 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			"Workbench.WorkbenchMapReview.resumeObservationAfterExclusive"
 		)(function* () {
 			const current = yield* Ref.get(observationSubscription);
-			yield* Ref.update(observationSubscription, (subscription) => ({
+			yield* transitionObservation((subscription) => ({
 				...subscription,
-				pausedForExclusive: false
+				_tag: "Idle",
+				fiber: undefined
 			}));
 			if (current.subscribers <= 0 || current.cadenceHz === undefined) return;
 			yield* Ref.set(lastPresentedCatalogKey, undefined);
@@ -764,13 +806,13 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const endpoint = yield* connection.endpoint;
 			const current = yield* Ref.get(observationSubscription);
 			const subscribers = current.subscribers + 1;
-			yield* Ref.set(observationSubscription, {
+			yield* setObservation({
 				...current,
 				endpoint,
 				cadenceHz,
 				subscribers
 			});
-			if (current.pausedForExclusive) return;
+			if (current._tag === "Paused") return;
 			if (
 				subscribers === 1 ||
 				current.cadenceHz !== cadenceHz ||
@@ -783,12 +825,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const unsubscribeWorldObservations = Effect.gen(function* () {
 			const current = yield* Ref.get(observationSubscription);
 			const subscribers = Math.max(0, current.subscribers - 1);
-			yield* Ref.set(observationSubscription, {
+			yield* setObservation({
 				...current,
 				subscribers
 			});
 			if (subscribers === 0) {
-				yield* stopObservationFiber();
+				yield* stopObservationFiber().pipe(observationGate.withPermits(1));
 				yield* Ref.set(pendingObservation, emptyPendingObservationSlots());
 				yield* Ref.set(lastPresentedCatalogKey, undefined);
 			}
@@ -805,7 +847,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				.poll(observatory.setObservationCadence(endpoint, cadenceHz))
 				.pipe(Effect.catchTag("ObservatoryConnectionError", () => Effect.succeedNone));
 			if (Option.isNone(updated)) return current.cadenceHz;
-			yield* Ref.update(observationSubscription, (subscription) => ({
+			yield* transitionObservation((subscription) => ({
 				...subscription,
 				cadenceHz: updated.value
 			}));
@@ -821,8 +863,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const invalidateProvisionedCameras = Effect.fn(
 			"Workbench.WorkbenchMapReview.invalidateProvisionedCameras"
 		)(function* () {
-			const bindings = yield* Ref.getAndSet(provisionedCameraBindings, Option.none());
-			if (Option.isNone(bindings)) return;
+			const previous = yield* Ref.get(provisionedSlot);
+			yield* transitionProvisioned((state) => ({
+				_tag: "Empty",
+				revision: state.revision + 1
+			}));
+			if (previous._tag === "Empty") return;
 			const endpoint = yield* connection.endpoint;
 
 			yield* clearProvisionedCameras(endpoint).pipe(
@@ -857,7 +903,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 		const setLivePreviewFps = Effect.fn("Workbench.WorkbenchMapReview.setLivePreviewFps")(
 			function* (fps: number) {
 				const endpoint = yield* connection.endpoint;
-				const bindings = yield* Ref.get(provisionedCameraBindings);
+				const bindings = yield* provisionedCameraBindings;
 				const cameraCount =
 					Option.isSome(bindings) && bindings.value.endpoint === endpoint
 						? bindings.value.bindings.length
@@ -1374,72 +1420,81 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			if (reviewProject === undefined) return { status: "not_configured" as const };
 			const reviewSetPath = yield* selectedReviewSetPath();
 			if (reviewSetPath === undefined) return { status: "not_configured" as const };
-			const session = yield* editorSession.status(endpoint).pipe(Effect.option);
-			if (Option.isNone(session)) {
-				return {
-					policy: {
-						code: "play_session_unavailable" as const,
-						message: "Workbench could not verify the Unreal Editor play-session state.",
-						recovery:
-							"Confirm UEShedCoreEditor and Remote Control are available, then retry."
-					},
-					status: "blocked" as const
-				};
-			}
-			const policy = evaluateReviewCapturePolicy(session.value.state);
-			if (policy.status === "blocked") {
-				const { status: _status, ...block } = policy;
-				return { policy: block, status: "blocked" as const };
-			}
-			const { projectRoot } = reviewProject;
-			yield* cameraWorkspace.close.pipe(Effect.orDie);
 			return yield* runExclusive(
-				capture
-					.captureSet({
-						...(intent.renderer === undefined
-							? undefined
-							: { renderer: intent.renderer }),
-						endpoint: endpoint,
-						projectRoot,
-						reviewSetPath,
-						viewIds: intent.viewIds.map((viewId) => ReviewViewId.make(viewId))
-					})
-					.pipe(
-						Effect.flatMap((run) =>
-							load.pipe(
-								Effect.map((review): MapReviewCaptureResult => {
-									if (review.status === "setup_required") {
-										return { status: "not_configured" as const };
-									}
-									if (review.status !== "ready") return review;
-									const failedViews = run.results.filter(
-										(result) => result.status === "failed"
-									).length;
-									return {
-										job: {
-											completedAt: run.completedAt,
-											context: "editor",
-											failedViews,
-											jobId: run.id,
-											progress: {
-												completedViews: run.results.length,
-												totalViews: intent.viewIds.length
+				Effect.gen(function* () {
+					const session = yield* editorSession.status(endpoint).pipe(Effect.option);
+					if (Option.isNone(session)) {
+						return {
+							policy: {
+								code: "play_session_unavailable" as const,
+								message:
+									"Workbench could not verify the Unreal Editor play-session state.",
+								recovery:
+									"Confirm UEShedCoreEditor and Remote Control are available, then retry."
+							},
+							status: "blocked" as const
+						};
+					}
+					const policy = evaluateReviewCapturePolicy(session.value.state);
+					if (policy.status === "blocked") {
+						const { status: _status, ...block } = policy;
+						return { policy: block, status: "blocked" as const };
+					}
+					const { projectRoot } = reviewProject;
+					yield* cameraWorkspace.close;
+					return yield* capture
+						.captureSet({
+							...(intent.renderer === undefined
+								? undefined
+								: { renderer: intent.renderer }),
+							endpoint: endpoint,
+							projectRoot,
+							reviewSetPath,
+							viewIds: intent.viewIds.map((viewId) => ReviewViewId.make(viewId))
+						})
+						.pipe(
+							Effect.flatMap((run) =>
+								load.pipe(
+									Effect.map((review): MapReviewCaptureResult => {
+										if (review.status === "setup_required") {
+											return { status: "not_configured" as const };
+										}
+										if (review.status !== "ready") return review;
+										const failedViews = run.results.filter(
+											(result) => result.status === "failed"
+										).length;
+										return {
+											job: {
+												completedAt: run.completedAt,
+												context: "editor",
+												failedViews,
+												jobId: run.id,
+												progress: {
+													completedViews: run.results.length,
+													totalViews: intent.viewIds.length
+												},
+												runId: run.id,
+												status: "completed",
+												successfulViews: run.results.length - failedViews,
+												viewIds: intent.viewIds
 											},
-											runId: run.id,
-											status: "completed",
-											successfulViews: run.results.length - failedViews,
-											viewIds: intent.viewIds
-										},
-										review,
-										status: "completed"
-									};
-								})
+											review,
+											status: "completed"
+										};
+									})
+								)
+							),
+							Effect.catchTag(
+								["ReviewStorageError", "ReviewCaptureRunError"],
+								(cause) => Effect.succeed(mapReviewFailure(cause))
 							)
-						),
-						Effect.catchTag(["ReviewStorageError", "ReviewCaptureRunError"], (cause) =>
-							Effect.succeed(mapReviewFailure(cause))
-						)
-					)
+						);
+				})
+			).pipe(
+				Effect.catchTag(
+					["CameraBridgeError", "ProvisionedCameraError", "CameraWorkspaceError"],
+					(cause) => Effect.succeed(mapReviewFailure(cause))
+				)
 			);
 		});
 
@@ -1776,10 +1831,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				});
 
 				if (session.candidates.length <= 32) {
+					let liveRevision = (yield* Ref.get(provisionedSlot)).revision;
 					const liveAttempt = yield* Effect.gen(function* () {
 						const bindings = yield* liveEnsureGate.withPermits(1)(
 							Effect.gen(function* () {
-								const cached = yield* Ref.get(provisionedCameraBindings);
+								const cached = yield* provisionedCameraBindings;
 								if (
 									Option.isSome(cached) &&
 									cached.value.endpoint === endpoint &&
@@ -1790,6 +1846,11 @@ export const WorkbenchMapReviewLive = Layer.effect(
 								}
 								return yield* runExclusive(
 									Effect.gen(function* () {
+										const owner = yield* transitionProvisioned((state) => ({
+											_tag: "Provisioning",
+											revision: state.revision + 1
+										}));
+										liveRevision = owner.revision;
 										const fps = yield* Ref.get(livePreviewFps);
 										const next = yield* ensureProvisionedCameras(
 											endpoint,
@@ -1818,9 +1879,31 @@ export const WorkbenchMapReviewLive = Layer.effect(
 												remoteControl
 											)
 										);
-										yield* Ref.set(
-											provisionedCameraBindings,
-											Option.some({
+
+										if (
+											(yield* Ref.get(provisionedSlot)).revision !==
+											owner.revision
+										) {
+											yield* clearProvisionedCameras(endpoint).pipe(
+												Effect.provideService(
+													RemoteControlClient,
+													remoteControl
+												),
+												Effect.ignore
+											);
+											return yield* new ProvisionedCameraError({
+												message:
+													"The camera session changed during provisioning.",
+												operation: "ensure_cameras",
+												recovery: "Reframe the selected subject.",
+												retrySafe: true,
+												nextStep: "reconcile"
+											});
+										}
+										yield* transitionProvisioned((state) => ({
+											_tag: "Held",
+											revision: state.revision,
+											value: {
 												bindings: next.map((item) => ({
 													cameraId: item.cameraId,
 													candidateId:
@@ -1833,8 +1916,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 												poseFingerprint,
 												endpoint,
 												sessionId: intent.sessionId
-											})
-										);
+											}
+										}));
 										return next.map((item) => ({
 											cameraId: item.cameraId,
 											candidateId:
@@ -1878,7 +1961,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					if (Result.isSuccess(liveAttempt)) return liveAttempt.success;
 					// A running play world is the requested authority, so surfacing its failure is
 					// more truthful than silently switching the preview to the editor world.
-					if (playActive) return yield* liveAttempt.failure;
+					if (playActive || (yield* Ref.get(provisionedSlot)).revision !== liveRevision)
+						return yield* liveAttempt.failure;
 				}
 
 				yield* invalidateProvisionedCameras();
@@ -2240,6 +2324,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 							targetMapPath
 						});
 						if (response.outcome !== "rejected") {
+							yield* invalidateProvisionedCameras();
 							yield* editorHandoff.activate(endpoint);
 							yield* Ref.set(lastWorldSnapshot, Option.none());
 							yield* Ref.set(lastObservationSample, Option.none());
@@ -2336,12 +2421,12 @@ export const WorkbenchMapReviewLive = Layer.effect(
 						(cause) => Effect.logWarning("Camera workspace close failed", cause)
 					)
 				);
-				yield* stopObservationFiber();
-				yield* Ref.update(observationSubscription, (current) => ({
+				yield* stopObservationFiber().pipe(observationGate.withPermits(1));
+				yield* transitionObservation((current) => ({
 					...current,
 					subscribers: 0
 				}));
-				const bindings = yield* Ref.get(provisionedCameraBindings);
+				const bindings = yield* provisionedCameraBindings;
 				if (Option.isSome(bindings)) yield* invalidateProvisionedCameras();
 				yield* Ref.set(playActiveCache, Option.none());
 				yield* Ref.set(lastWorldSnapshot, Option.none());
@@ -2478,7 +2563,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const endpoint = yield* connection.endpoint;
 			yield* setupHost.poll(
 				makeCameraAuthoringBridge(remoteControl, endpoint),
-				basename(descriptor, ".uproject")
+				basename(descriptor, ".uproject"),
+				{ projectRoot: selected.projectRoot, endpoint }
 			);
 		}).pipe(
 			Effect.withSpan("Workbench.MapReview.nativeSetupPoll"),

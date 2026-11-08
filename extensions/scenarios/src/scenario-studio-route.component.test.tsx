@@ -327,3 +327,35 @@ describe("ScenarioStudioRoute", () => {
 		expect(within(results).getByText("Cancelled")).toBeDefined();
 	});
 });
+
+it("L7.1 refuses a replacement document while a scenario is active", async () => {
+	const client = clientWith({
+		saveDocument: () => Effect.succeed({ status: "cancelled" }),
+		openDocument: Effect.succeed({
+			status: "completed",
+			path: "C:/Drafts/custom.json",
+			document: customScenario
+		}),
+		watch: () =>
+			Stream.make({
+				_tag: "Active" as const,
+				contract: scenarioWireContract,
+				gameTimeMs: 900,
+				pieSessionId: liveHandle.pieSessionId,
+				runId: liveHandle.runId,
+				state: "running" as const
+			})
+	});
+	renderRoute(client);
+	const user = userEvent.setup({ delay: null });
+	await screen.findByDisplayValue(liveHandle.endpoint);
+	await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
+	await screen.findByRole("button", { name: "Cancel run" });
+	await user.click(screen.getByRole("button", { name: "Open draft\u2026" }));
+	expect(screen.getByRole("button", { name: "Open draft\u2026" })).toHaveProperty(
+		"disabled",
+		true
+	);
+	expect(screen.getByRole("button", { name: "Cancel run" })).toBeDefined();
+	expect(screen.queryByText("Custom patrol")).toBeNull();
+});

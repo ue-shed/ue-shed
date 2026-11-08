@@ -4,8 +4,9 @@ import { join, resolve } from "node:path";
 import { it } from "@effect/vitest";
 import { AssetReader, AssetReaderLive } from "@ue-shed/unreal-assets";
 import { LocalizationTargetName } from "@ue-shed/localization";
-import { Effect, Layer } from "effect";
-import { expect } from "vitest";
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect";
+import { expect, vi } from "vitest";
+import * as localizationModule from "./workspace-localization.js";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { typeScriptIndexBuilderLayer } from "./index-builder-reference.test-support.js";
 import { nativeIndexQueryLayer } from "./index-query-native.js";
@@ -56,7 +57,8 @@ type Counts = { source: number; localization: number };
 
 function countingLayer(
 	fixture: Effect.Success<ReturnType<typeof makeIndexRegressionFixture>>,
-	counts: Counts
+	counts: Counts,
+	afterSource: Effect.Effect<void> = Effect.void
 ) {
 	const nativeQuery = Layer.unwrap(
 		Effect.flatMap(AssetReader, (reader) => reader.configuration).pipe(
@@ -96,7 +98,9 @@ function countingLayer(
 							...model,
 							sourceQuality: (document: GameTextRuleDocument) => {
 								counts.source++;
-								return model.sourceQuality(document);
+								return model
+									.sourceQuality(document)
+									.pipe(Effect.tap(() => afterSource));
 							},
 							localizationQuality: (
 								document: GameTextRuleDocument | undefined,
@@ -285,4 +289,140 @@ it.live(
 			}).pipe(Effect.provide(layer));
 		}).pipe(Effect.scoped),
 	60_000
+);
+
+it.live("G3.c rejected rules publication preserves the original save destination", () =>
+	Effect.gen(function* () {
+		const fixture = yield* makeIndexRegressionFixture();
+		let arm = false;
+		let switched = false;
+		const files = memoryFiles();
+		const writes: string[] = [];
+		const path = join(fixture.projectRoot, "chosen.json");
+		const bytes = new TextEncoder().encode(
+			JSON.stringify({ ...STARTER_CHECK_RULES, rules: [] })
+		);
+		const project = projectFor(fixture.projectRoot);
+		const layer = countingLayer(
+			fixture,
+			{ source: 0, localization: 0 },
+			Effect.sync(() => {
+				if (arm) {
+					arm = false;
+					switched = true;
+				}
+			})
+		);
+		yield* Effect.gen(function* () {
+			const workspace = yield* makeGameTextWorkspace({
+				project: {
+					...project,
+					current: Effect.suspend(() => {
+						if (switched) {
+							switched = false;
+							return Effect.succeed({
+								status: "ready" as const,
+								project: { projectRoot: "C:/Other", generation: 3 }
+							});
+						}
+						return project.current;
+					})
+				},
+				files: {
+					...files,
+					chooseFile: () => Effect.succeed({ status: "selected", path }),
+					readFile: () => Effect.succeed(bytes),
+					writeFile: (path, bytes, options) => {
+						writes.push(path);
+						return files.writeFile(path, bytes, options);
+					}
+				}
+			});
+			expect((yield* workspace.configuredRefresh({})).status).toBe("completed");
+			expect((yield* workspace.createStarterRules({ loadExisting: false })).status).toBe(
+				"completed"
+			);
+			arm = true;
+			expect((yield* workspace.chooseQualityRules).status).toBe("not_ready");
+			expect((yield* workspace.saveQualityRules(STARTER_CHECK_RULES)).status).toBe(
+				"completed"
+			);
+			expect(writes).not.toContain(path);
+		}).pipe(Effect.provide(layer));
+	})
+);
+
+it.live("G3.b serializes localization reset with publication", () =>
+	Effect.gen(function* () {
+		const fixture = yield* makeIndexRegressionFixture();
+		const resetting = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		const newerSelected = yield* Deferred.make<void>();
+		let arm = false;
+		let generation = 3;
+		const original = localizationModule.makeGameTextWorkspaceLocalization;
+		const spy = vi
+			.spyOn(localizationModule, "makeGameTextWorkspaceLocalization")
+			.mockImplementation((...args) =>
+				original(...args).pipe(
+					Effect.map((service) => ({
+						...service,
+						reset: (...args: Parameters<typeof service.reset>) =>
+							Effect.gen(function* () {
+								if (arm) {
+									arm = false;
+									yield* Deferred.succeed(resetting, undefined);
+									yield* Deferred.await(release);
+								}
+								return yield* service.reset(...args);
+							})
+					}))
+				)
+			);
+		const layer = countingLayer(fixture, { source: 0, localization: 0 });
+		const project = projectFor(fixture.projectRoot);
+		yield* Effect.gen(function* () {
+			const workspace = yield* makeGameTextWorkspace({
+				project: {
+					...project,
+					candidates: Effect.sync(() => ({
+						generation,
+						summary: { projectRoot: fixture.projectRoot }
+					})),
+					current: Effect.sync(() => ({
+						status: "ready" as const,
+						project: { projectRoot: fixture.projectRoot, generation }
+					})),
+					refresh: Effect.sync(() => ({
+						status: "ready" as const,
+						project: { projectRoot: fixture.projectRoot, generation }
+					}))
+				},
+				files: memoryFiles()
+			});
+			yield* workspace.configuredRefresh({});
+			yield* workspace.previewQualityRules(STARTER_CHECK_RULES);
+			generation = 4;
+			fixture.setSource("Old scan");
+			arm = true;
+			const older = yield* workspace.configuredRefresh({}).pipe(Effect.forkChild);
+			yield* Deferred.await(resetting);
+			generation = 5;
+			fixture.setSource("New scan");
+			const newer = yield* workspace.configuredRefresh({}).pipe(
+				Effect.andThen(workspace.localizationTarget(fixture.target.name)),
+				Effect.tap(() => Deferred.succeed(newerSelected, undefined)),
+				Effect.forkChild
+			);
+			const publication = yield* Deferred.await(newerSelected).pipe(
+				Effect.timeout("1 second"),
+				Effect.exit
+			);
+			const publishedDuringReset = Exit.isSuccess(publication);
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(older);
+			yield* Fiber.join(newer);
+			expect(publishedDuringReset).toBe(false);
+		}).pipe(Effect.provide(layer), Effect.ensuring(Effect.sync(() => spy.mockRestore())));
+	})
 );

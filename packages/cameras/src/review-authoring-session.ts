@@ -843,6 +843,20 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 					projectRoot: args.projectRoot,
 					id: args.sessionId
 				});
+				if (session.lifecycle !== "active") {
+					return yield* new ReviewAuthoringSessionError({
+						message: `Cannot record a projection on a ${session.lifecycle} authoring session.`,
+						operation: "patch",
+						path: reviewAuthoringSessionPath({
+							id: session.id,
+							projectRoot: args.projectRoot
+						}),
+						recovery:
+							"Start or reframe an active authoring session before previewing a candidate.",
+						retrySafe: false,
+						nextStep: "reconcile"
+					});
+				}
 				const candidate = session.candidates.find((item) => item.id === args.candidateId);
 				if (!candidate) {
 					return yield* new ReviewAuthoringSessionError({
@@ -911,6 +925,9 @@ export const ReviewAuthoringSessionsLive = Layer.effect(
 				};
 			}
 			const session = loaded.session;
+			if (session.lifecycle === "approved" || session.lifecycle === "discarded") {
+				return { session, status: "resumable" as const };
+			}
 			const reviewSet =
 				session.pendingReviewSet === undefined
 					? yield* repository.loadSet(session.reviewSet.path).pipe(

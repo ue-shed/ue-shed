@@ -50,11 +50,14 @@ export function createGameTextLocalizationState(props: {
 	const [ready, setReady] = createSignal(!supported);
 	const [error, setError] = createSignal<string>();
 	const [detail, setDetail] = createSignal<LocalizationFocus>();
+	const [detailError, setDetailError] = createSignal<string>();
+	let lastFocus: LocalizationFocusRequest | undefined;
 	const [detailLoading, setDetailLoading] = createSignal(false);
 	const listAction = createEffectAction();
 	const targetAction = createEffectAction();
 	const focusAction = createEffectAction();
 	let generation = 0;
+	let listGeneration = 0;
 	let focusGeneration = 0;
 	// A restore, such as opening a preset, can run in the same update as the load that follows it,
 	// before the restored target commits; the load picks this target instead of the one before.
@@ -118,14 +121,15 @@ export function createGameTextLocalizationState(props: {
 		if (!supported) return;
 		const operation = props.client.localizationTargets;
 		if (!operation) return;
-		const version = ++generation;
+		const version = ++listGeneration;
+		generation++;
 		props.onPending();
 		setReady(false);
 		setError(undefined);
 		targetAction.cancel();
 		listAction.run(operation, {
 			onFailure: () => {
-				if (version !== generation) return;
+				if (version !== listGeneration) return;
 				setActive(undefined);
 				setReady(true);
 				setError(
@@ -133,7 +137,7 @@ export function createGameTextLocalizationState(props: {
 				);
 			},
 			onSuccess: (result) => {
-				if (version !== generation) return;
+				if (version !== listGeneration) return;
 				if (result.status !== "ready") {
 					setActive(undefined);
 					setReady(true);
@@ -198,13 +202,15 @@ export function createGameTextLocalizationState(props: {
 		};
 		const operation = props.client.localizationFocus?.(request);
 		if (!operation) return;
+		lastFocus = request;
+		setDetailError(undefined);
 		const version = ++focusGeneration;
 		setDetailLoading(true);
 		focusAction.run(operation, {
 			onFailure: () => {
 				if (version !== focusGeneration) return;
 				setDetailLoading(false);
-				setError(
+				setDetailError(
 					"Translations for this line could not be loaded. Retry translations to try again."
 				);
 			},
@@ -289,7 +295,7 @@ export function createGameTextLocalizationState(props: {
 				else {
 					setDetail(undefined);
 					if (result.status === "failed")
-						setError(`${result.message} ${result.recovery}`);
+						setDetailError(`${result.message} ${result.recovery}`);
 					if (result.status === "not_found") setSelectedId(undefined);
 				}
 			}
@@ -309,6 +315,8 @@ export function createGameTextLocalizationState(props: {
 		({ ready: loaded, summary, target: name, id, unit }) => {
 			focusGeneration++;
 			focusAction.cancel();
+			lastFocus = undefined;
+			setDetailError(undefined);
 			const identity = JSON.stringify([name, id, unit]);
 			if (identity !== focusedIdentity) {
 				setDetail(undefined);
@@ -339,6 +347,10 @@ export function createGameTextLocalizationState(props: {
 		error,
 		detail,
 		detailLoading,
+		detailError,
+		retryDetail: () => {
+			if (lastFocus) requestFocus(lastFocus);
+		},
 		selectTarget,
 		setState,
 		setReview,

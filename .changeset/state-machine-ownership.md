@@ -27,3 +27,7 @@ an older save completes, scope scan progress to the logical scan, and clear reco
 errors without dismissing newer unrelated failures.
 
 Refusing an oversized scan request now preserves progress and ownership of a scan already running.
+
+Keep observation paused during pending restarts and retain failed camera-detach cleanup for retry.
+Discarded provisioning no longer falls back to rendering a stale session. Setup acknowledgements
+survive project/editor round trips, and pagination preserves newer finding-detail errors.

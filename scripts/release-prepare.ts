@@ -22,7 +22,7 @@ import {
 	type Timing
 } from "./gate-runner.ts";
 import { PUBLIC_VERSION } from "./pack-public-packages.ts";
-import { releaseCargoTargetDirectory } from "./release-cargo.ts";
+import { mainCheckoutRoot, releaseCargoTargetDirectory } from "./release-cargo.ts";
 import {
 	gateEvidenceState,
 	gateFingerprint,
@@ -434,9 +434,12 @@ async function main() {
 			}
 		);
 		if (unrealGates.length > 0) {
+			// Beside the main checkout, so a release run from any linked worktree reuses the same
+			// lane and the Unreal build output kept in it, instead of building its own.
+			const mainCheckout = mainCheckoutRoot();
 			const unrealPath = resolve(
 				values["unreal-worktree"] ??
-					join(dirname(repositoryRoot), `${basename(repositoryRoot)}-unreal`)
+					join(dirname(mainCheckout), `${basename(mainCheckout)}-unreal`)
 			);
 			// Its own Cargo directory: this lane builds the same crates from a different path, which
 			// would otherwise replace executables the portable lane is running.

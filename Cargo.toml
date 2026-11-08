@@ -3,6 +3,11 @@ members = ["crates/*"]
 exclude = ["crates/uasset-inspection-wasm"]
 resolver = "3"
 
+# Line tables keep dependency frames readable in backtraces; full dependency debug info made up
+# most of each debug target directory on Windows.
+[profile.dev.package."*"]
+debug = "line-tables-only"
+
 [profile.release]
 # Fat LTO inlines across the parser, inspection and IO crates: decode measured 5-10% faster.
 lto = "fat"

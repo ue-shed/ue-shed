@@ -85,8 +85,9 @@ anyway, as described below.
 | `plugins-5.7`, `plugins-5.8`, `plugins-4.27` | `test:unreal-plugins` on each engine             | as `check`                                     |
 
 The portable gates run in this checkout, the pack in its own temporary worktree, and the Unreal
-gates one after another in a second worktree of the same commit (`<checkout>-unreal`, kept between
-releases so its dependencies and Unreal build output are reused). UnrealBuildTool writes one log file
+gates one after another in a second worktree of the same commit (`<main checkout>-unreal`, beside
+the main checkout even when the release runs from a linked worktree, and kept between releases so
+its dependencies and Unreal build output are reused). UnrealBuildTool writes one log file
 shared by every installed engine, and the Unreal gates rebuild package output `pnpm check` reads, so
 they neither overlap each other nor share a checkout with the check. `--serial` runs every gate in
 this checkout, one after another. An engine that is not installed is recorded as unavailable, not

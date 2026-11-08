@@ -31,7 +31,6 @@ it.live(
 						query: {
 							mode: "corpus",
 							query: "",
-							capability: "all",
 							qualityFilter: "all"
 						},
 						format: "json"
@@ -82,7 +81,6 @@ it.live(
 						query: {
 							mode: "corpus",
 							query: "",
-							capability: "all",
 							qualityFilter: "all"
 						},
 						format: "json"

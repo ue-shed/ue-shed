@@ -617,7 +617,7 @@ const factsOf = (view: LocalizationLineView<LocalizationLineField>) => ({
 describe("index reads", () => {
 	it("validates aggregate requests", () => {
 		const valid = Schema.is(TextAggregateRequest);
-		const base = { query: "", capability: "all" } as const;
+		const base = { query: "" } as const;
 		const localization = { target: "Game" };
 		expect(valid({ ...base, localization, by: ["culture", "state"] })).toBe(true);
 		expect(valid({ ...base, by: ["source", "problem"], measures: ["lineBreakWords"] })).toBe(
@@ -735,7 +735,7 @@ describe("index reads", () => {
 								fixture.request
 							);
 							const localization = { target: fixture.target.name };
-							const lines = { query: "", capability: "all" as const, localization };
+							const lines = { query: "", localization };
 
 							// Grouped counts and words, every dimension, under filters and picked cultures.
 							for (const { by, filter, cultures, ...expected } of aggregates)
@@ -1006,8 +1006,8 @@ describe("index reads", () => {
 									effectiveRuleDocument(STARTER_CHECK_RULES)
 								);
 								const corpusRequests = [
-									{ query: "", capability: "all" },
-									{ query: "", capability: "all", findings: { key } },
+									{ query: "" },
+									{ query: "", findings: { key } },
 									{ ...lines, findings: { key } }
 								] as const;
 								for (const [index, request] of corpusRequests.entries()) {
@@ -1049,12 +1049,9 @@ describe("index reads", () => {
 											new Error("A corpus export reads no source rules.")
 										)
 								};
-								for (const [index, request] of [
-									{ query: "", capability: "all" as const },
-									lines
-								].entries()) {
+								for (const [index, request] of [{ query: "" }, lines].entries()) {
 									const preset: GameTextInvestigationPreset = {
-										schemaVersion: 1,
+										schemaVersion: 3,
 										kind: "game_text",
 										sort: "domain_order",
 										query: { ...request, mode: "corpus", qualityFilter: "all" }

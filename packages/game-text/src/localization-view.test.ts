@@ -355,7 +355,6 @@ describe("localization presentation", () => {
 describe("localization in the query", () => {
 	const request = {
 		query: "",
-		capability: "all" as const,
 		pageSize: 50,
 		localization: { target: target.name }
 	};

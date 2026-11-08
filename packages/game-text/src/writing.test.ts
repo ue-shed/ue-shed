@@ -109,7 +109,7 @@ describe("writer counts", () => {
 		() =>
 			withIndexedCorpus(corpusOf(["row one", "row two", "other", ""]), {}, ({ query }) =>
 				Effect.gen(function* () {
-					const request = { query: "row", capability: "all" as const, pageSize: 50 };
+					const request = { query: "row", pageSize: 50 };
 					expect((yield* query.search(request)).counts).toMatchObject({
 						all: 2,
 						editable: 1,

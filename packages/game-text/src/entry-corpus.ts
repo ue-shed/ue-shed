@@ -20,9 +20,7 @@ export {
 	GameTextInvestigationPresetResult,
 	GameTextInvestigationQuery,
 	exportGameTextInvestigation,
-	investigationControls,
 	investigationRequest,
-	presetNarrowingRequest,
 	readFindingUnits,
 	type IndexedInvestigationSource,
 	gameTextInvestigationCsv

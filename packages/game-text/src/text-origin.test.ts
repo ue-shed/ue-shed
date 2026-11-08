@@ -56,7 +56,7 @@ const asset = located("Prop", "Content/Characters/BP_Hero.uasset", {
 	propertyPath: "DisplayName"
 });
 const units = [unit("Table"), dataTable, asset];
-const request = { query: "", capability: "all" as const, pageSize: 50 };
+const request = { query: "", pageSize: 50 };
 const localized = { ...request, localization: { target: target.name } };
 // Gathered-only C++ and config lines beside the saved String Table entry.
 const gathered = evidence(

@@ -134,14 +134,12 @@ describe("bounded corpus reports", () => {
 	});
 	it("bounds corpus diagnostics and package evidence in investigation exports", async () => {
 		const preset = GameTextInvestigationPreset.make({
-			schemaVersion: 1,
+			schemaVersion: 3,
 			kind: "game_text",
 			sort: "domain_order",
 			query: {
 				mode: "corpus",
 				query: "",
-				capability: "all",
-
 				qualityFilter: "all"
 			}
 		});

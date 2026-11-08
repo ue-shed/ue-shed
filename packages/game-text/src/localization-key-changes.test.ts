@@ -272,7 +272,6 @@ describe("localization key changes", () => {
 		});
 		const request = {
 			query: "",
-			capability: "all" as const,
 			pageSize: 50,
 			localization: { target: target.name }
 		};

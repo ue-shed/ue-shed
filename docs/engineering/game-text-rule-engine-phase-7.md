@@ -195,11 +195,13 @@ filter itself, so a new kind of pill over existing fields needs no UE Shed chang
   expressions for its own pills; to count by a field, it marks what it builds with that field.
 - **One Effect Schema for `Expr`**, so hosts validate a filter at their own boundary (Electroswag's
   RPC) before it reaches UE Shed. The engine validates again, as today.
-- **Saved filters.** Investigation presets, which the CLI also runs, keep saving Quality's search,
-  severities and suggested-fix filter, as both their formats do today; a replay converts them
-  with `qualityWhere` (`presetNarrowingRequest`), and a report matches a preset when its `where`
-  is what the preset converts to. The preset formats don't change, so no saved preset needs
-  migrating. Browse preferences are the host's, and keep whatever the host shows.
+- **Saved filters.** Investigation presets, which the CLI also runs, save what the list sends: the
+  Text tab's `where` and `fileScope`, and Quality's search and `where`. The host's own controls
+  ride beside them as `controls`, JSON that UE Shed saves and never reads, so opening a preset
+  shows the pills again. A report matches a preset when its `where` is the preset's. The owner
+  chose the new format over converting old pills (2026-11-08): presets are version 3, and
+  earlier versions are refused, since nobody keeps presets yet. Browse preferences are the
+  host's, and keep whatever the host shows.
 - **The in-memory Quality list** (`localizationQualityWorkspace`), which only tests and the
   Workbench harness read, stays as their double: it reads severities and the suggested-fix filter
   back from `where` (`qualityPillsOf`) and refuses any other filter.
@@ -289,12 +291,13 @@ Settled by the owner on 2026-11-07:
    through its unit, and counts by the row's fields.
 5. **TypeScript.** The `Expr` schema and the exported converter (`@ue-shed/game-text/query`).
    Quality's request takes `where` and `facets`; the workspace, the source report and the CLI
-   read finding rows; presets convert their pills on replay; `findings_query` is deleted, and the
+   read finding rows; `findings_query` is deleted, and the
    parity test becomes one that checks finding rows' pages, counts and writes against each other.
    Then the Text tab's request takes `where`: its pills, capability, translator-notes filter,
    location and localization lens arrive as one expression, and a pasted changed-file list as
    `fileScope`. The Workbench, the CLI and the corpus tools convert their controls with
-   `textWhere`; saved presets and stored view settings keep their format and convert on load.
+   `textWhere`; stored view settings keep their format and convert on load. Presets then save
+   the `where` they run, with the host's controls beside it (version 3).
    The Text tab's facet request keeps its shape for now.
 6. **Electroswag.** Both tabs convert their pills and send `where`; Quality gets the Text tab's
    toolbar; the badge's duplicate request goes.

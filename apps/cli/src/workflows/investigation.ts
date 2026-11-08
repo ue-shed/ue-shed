@@ -33,7 +33,8 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 							new InvestigationError({
 								cause: cause,
 								message: `Invalid investigation preset: ${cause.message}`,
-								recovery: "Use a version 1 Game Text or Texture Audit preset.",
+								recovery:
+									"Use a version 3 Game Text or version 1 Texture Audit preset.",
 								retrySafe: true,
 								nextStep: "fix_input"
 							})
@@ -79,9 +80,7 @@ export const runInvestigation = Effect.fn("Cli.workflow.investigation")(
 											...(preset.query.localization.culture
 												? { culture: preset.query.localization.culture }
 												: undefined),
-											...text.presetNarrowingRequest(
-												preset.query.workspaceNarrowing
-											)
+											...preset.query.workspaceNarrowing
 										})
 								: undefined;
 						const document = yield* text.exportGameTextInvestigation(

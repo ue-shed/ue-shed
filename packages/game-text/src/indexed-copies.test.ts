@@ -478,7 +478,6 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 			// Exported lines and rows list places, not copies.
 			const exported = {
 				query: "",
-				capability: "all",
 				localization: { target: fixture.target.name }
 			} as const;
 			expect(
@@ -504,7 +503,7 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 							? { ...item, source: compiled }
 							: item
 				);
-			const request = { query: "", capability: "all", pageSize: 50 } as const;
+			const request = { query: "", pageSize: 50 } as const;
 			// Place text edits join incrementally, whatever the texts' length.
 			const long = "Press any button to begin a new adventure";
 			const longer = "Press any button to begin your next adventure";

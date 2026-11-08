@@ -1,6 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
 import {
-	investigationControls,
 	staleRuntimeCopy,
 	type GameTextInvestigationPreset,
 	type TextQualityFindingId,
@@ -56,7 +55,8 @@ import { GameTextReports } from "./game-text-reports.js";
 import { GameTextFileComparison } from "./game-text-file-comparison.js";
 import { createGameTextRuleState } from "./game-text-rule-state.js";
 import {
-	localizationPreferences,
+	presetControls,
+	presetPreferences,
 	migratePreferences,
 	readGameTextPreferences,
 	writeGameTextPreferences,
@@ -421,20 +421,9 @@ export function GameTextRoute(props: {
 		);
 	};
 
-	const whereField = () => {
-		const value = where();
-		return value === undefined ? undefined : { where: value };
-	};
 	const groupField = () => {
 		const value = group();
 		return value === "none" ? undefined : { group: value };
-	};
-	/** A preset's localization: the selection, with the lens it saves beside it. */
-	const localizationField = () => {
-		const selected = localization.selection();
-		return selected === undefined
-			? undefined
-			: { localization: { ...selected, ...localization.lens() } };
 	};
 	let searchInput: HTMLInputElement | undefined;
 	const navigation = createLineNavigation({
@@ -597,13 +586,15 @@ export function GameTextRoute(props: {
 					);
 					return values.length ? [{ ...clause, values }] : [];
 				});
-	const searchRequest = createMemo((): TextCorpusSearchRequest => {
+	/**
+	 * What the list runs, before its page and counts: the controls as one `where`, and the changed
+	 * files as the file scope.
+	 */
+	const listRequest = () => {
 		const selected = localization.selection();
-		const clauses = requestClauses();
-		// The controls become one `where`; the changed files stay the request's file scope.
 		const location = where();
 		const filtered = textWhere({
-			filter: clauses,
+			filter: requestClauses(),
 			...(selected ? { lens: localization.lens() } : undefined),
 			capability: capability(),
 			withoutNotes: withoutNotes(),
@@ -615,6 +606,12 @@ export function GameTextRoute(props: {
 			...(filtered ? { where: filtered } : undefined),
 			...(location?.files ? { fileScope: location.files } : undefined),
 			...groupField(),
+			...(selected ? { localization: selected } : undefined)
+		};
+	};
+	const searchRequest = createMemo(
+		(): TextCorpusSearchRequest => ({
+			...listRequest(),
 			facets: {
 				folder: facetFolder(),
 				assets: true,
@@ -623,12 +620,37 @@ export function GameTextRoute(props: {
 				assetTypes: true,
 				findings: true,
 				facts: true,
-				...(selected ? { cultures: true } : undefined)
+				...(localization.selection() ? { cultures: true } : undefined)
 			},
-			...(selected ? { localization: selected } : undefined),
 			pageSize: 50
+		})
+	);
+	/** A preset: what the list runs, and the controls that built it, to show them again on open. */
+	const presetRequest = () => {
+		const selected = localization.selection();
+		const lens = localization.lens();
+		return {
+			...listRequest(),
+			controls: presetControls({
+				query: query(),
+				capability: capability(),
+				withoutNotes: withoutNotes(),
+				where: where(),
+				filter: filter(),
+				group: group(),
+				qualityFilter: qualityFilter(),
+				...(selected && {
+					localizationTarget: selected.target,
+					localizationCulture: selected.culture,
+					localizationCultures: selected.cultures,
+					searchTranslations: selected.searchTranslations,
+					localizationState: lens.state,
+					localizationReview: lens.review,
+					localizationKeyChanged: lens.keyChanged
+				})
+			})
 		};
-	});
+	};
 	const narrowing = createMemo(
 		() =>
 			[
@@ -1052,17 +1074,22 @@ export function GameTextRoute(props: {
 					showError(failureText("Couldn’t reload the rules file.", cause), reloadRules)
 			});
 		});
+	/** Shows a preset's saved controls; one this view didn't save has none to show. */
 	const restorePreset = (preset: GameTextInvestigationPreset) => {
-		const { localization: selected, ...saved } = investigationControls(preset.query);
+		const saved = presetPreferences(preset.query.controls);
+		if (saved === undefined)
+			return "This preset has no Game Text view controls to show. Save it again from Game Text.";
 		restore({
 			...saved,
-			qualityFilter: saved.workspaceFilter ?? saved.qualityFilter,
-			...localizationPreferences(selected),
-			withoutNotes: saved.withoutNotes ?? false,
+			// A preset without a target picks the first target and every culture.
+			localizationKeyChanged: saved.localizationKeyChanged ?? false,
+			searchTranslations: saved.searchTranslations ?? false,
+			mode: preset.query.mode,
 			selectedId: undefined,
 			qualityDocument: preset.rules
 		});
 		load(false);
+		return undefined;
 	};
 	createEffect(
 		() => ({
@@ -1139,16 +1166,7 @@ export function GameTextRoute(props: {
 						revision={[summary(), qualitySummary()]}
 						query={{
 							mode: mode() === "quality" ? "quality" : "corpus",
-							query: query(),
-							capability: capability(),
-							withoutNotes: withoutNotes(),
-							...whereField(),
-							...(requestClauses().length > 0
-								? { filter: requestClauses() }
-								: undefined),
-							...groupField(),
-							// Problem and translation pills need the target, as the list does.
-							...localizationField(),
+							...presetRequest(),
 							qualityFilter: sourceFilter(),
 							...(mode() === "quality" && localization.active()
 								? { workspaceFilter: qualityFilter() }

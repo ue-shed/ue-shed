@@ -1041,7 +1041,8 @@ mod tests {
         let acceptance = accepted["acceptance"].clone();
         let page = |request: Value| query.findings_page(request, &cancelled);
         let workspace = |fields: Value| {
-            let mut request = json!({"key":key,"view":"workspace","order":"severity","limit":5000,"counts":true});
+            let mut request =
+                json!({"key":key,"view":"workspace","order":"severity","limit":5000,"counts":true});
             for (name, value) in fields.as_object().into_iter().flatten() {
                 request[name] = value.clone();
             }
@@ -1072,13 +1073,20 @@ mod tests {
 
         let all = page(workspace(json!({})))?;
         let every = ids(&all);
-        require(every.len() >= 6, format!("The fixture has findings of each kind: {all}"))?;
+        require(
+            every.len() >= 6,
+            format!("The fixture has findings of each kind: {all}"),
+        )?;
         assert_eq!(all["total"], json!(every.len()));
         // Unfiltered, the rule and severity counts each add up to the list.
         assert_eq!(sum(&entries(&all, "rule")), every.len() as u64);
         assert_eq!(sum(&entries(&all, "severity")), every.len() as u64);
         // Blocking findings first, then normal, then low.
-        let rank = |severity: &str| ["blocking", "normal", "low"].iter().position(|s| *s == severity);
+        let rank = |severity: &str| {
+            ["blocking", "normal", "low"]
+                .iter()
+                .position(|s| *s == severity)
+        };
         let severities = all["findings"]
             .as_array()
             .into_iter()
@@ -1096,7 +1104,8 @@ mod tests {
             ids(&page(workspace(json!({"after": every[0], "limit": 3})))?),
             every[1..4]
         );
-        let found = page(json!({"key":key,"view":"workspace","order":"severity","id":every[3],"limit":1}))?;
+        let found =
+            page(json!({"key":key,"view":"workspace","order":"severity","id":every[3],"limit":1}))?;
         assert_eq!(ids(&found), vec![every[3].clone()]);
 
         // A severity filter leaves the severity counts and narrows the rule counts to it.
@@ -1112,7 +1121,9 @@ mod tests {
         let sources = page(workspace(json!({"rules": source_rules})))?;
         assert_eq!(entries(&sources, "rule"), entries(&all, "rule"));
         // The source order lists the source rules' findings, which are the source findings.
-        let ordered = page(json!({"key":key,"view":"workspace","order":"source","rules":source_rules,"limit":5000}))?;
+        let ordered = page(
+            json!({"key":key,"view":"workspace","order":"source","rules":source_rules,"limit":5000}),
+        )?;
         assert_eq!(ordered["total"], sources["total"]);
         assert!(
             ordered["findings"]
@@ -1140,7 +1151,10 @@ mod tests {
         // A text search keeps the findings whose line or source holds every word.
         let take = page(workspace(json!({"lines": {"text": "take"}})))?;
         assert!(take["total"].as_u64().unwrap_or(0) > 0);
-        assert_eq!(page(workspace(json!({"lines": {"text": "zzz"}})))?["total"], json!(0));
+        assert_eq!(
+            page(workspace(json!({"lines": {"text": "zzz"}})))?["total"],
+            json!(0)
+        );
 
         // `loc check`: the report's rule counts add up to what the write lists.
         let report = |fields: Value| {

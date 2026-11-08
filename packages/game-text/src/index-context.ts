@@ -71,7 +71,6 @@ export function localizationPoHasSourceText(target: LocalizationTargetEvidence["
 export function indexedLocalizationLinesRequest(joined: JoinedTargetReader) {
 	return {
 		query: "",
-		capability: "all" as const,
 		localization: { target: joined.meta.input.target.name }
 	};
 }

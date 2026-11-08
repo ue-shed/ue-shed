@@ -404,7 +404,6 @@ describe("GameTextWorkspaceContract", () => {
 					const query = {
 						mode: "corpus",
 						query: "",
-						capability: "all",
 						qualityFilter: "all"
 					} as const;
 					yield* serve(

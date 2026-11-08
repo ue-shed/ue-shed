@@ -312,16 +312,12 @@ const validArgsByChannel = {
 			query: {
 				mode: "corpus",
 				qualityFilter: "all",
-				query: "",
-				capability: "all",
-				filter: []
+				query: ""
 			},
 			format: "json"
 		}
 	],
-	"game-text:investigation-save": [
-		{ mode: "corpus", qualityFilter: "all", query: "", capability: "all", filter: [] }
-	],
+	"game-text:investigation-save": [{ mode: "corpus", qualityFilter: "all", query: "" }],
 	"game-text:investigation-open": [],
 	"game-text:localization:quality-search": [{ target: "FixtureGame", filter: "all" }],
 	"game-text:localization:operation-state": ["FixtureGame"],
@@ -1015,7 +1011,7 @@ const malformedArgsByChannel = {
 	"game-text:localization:review": [{ target: "FixtureGame", changes: [] }],
 	"game-text:localization:report": [{ target: "FixtureGame", offset: -1 }],
 	"game-text:localization:report-file": [{ target: "FixtureGame", operation: "write_po" }],
-	"game-text:localization:lines-file": [{ query: "", capability: "everything", pageSize: 50 }],
+	"game-text:localization:lines-file": [{ query: "", pageSize: 50, fileScope: "Content" }],
 	"game-text:localization:choose-file": [{ side: "middle" }],
 	"game-text:localization:compare-files": [{ changes: { offset: 0, limit: 200 } }],
 	"game-text:quality:create-starter-rules": ["C:/Untrusted/output.json"],
@@ -1026,8 +1022,8 @@ const malformedArgsByChannel = {
 		{ target: "FixtureGame", selection: { kind: "file", id: "C:/Untrusted" } }
 	],
 	"game-text:related": [{ selection: { kind: "unit", id: "unit-1" }, pageSize: 501 }],
-	"game-text:search": [{ query: "", capability: "all", pageSize: 50, withoutNotes: "yes" }],
-	"game-text:search-rows": [{ query: "", capability: "all", pageSize: 50, openGroups: ["a"] }],
+	"game-text:search": [{ query: "", pageSize: 50, fileScope: "Content/UI" }],
+	"game-text:search-rows": [{ query: "", pageSize: 50, openGroups: ["a"] }],
 	"editor-session:set-port": [65_536],
 	"asset-audits:textures:preview": ["/Engine/Textures/Bad"],
 	"asset-audits:textures:preview-offline": ["/Engine/Textures/Bad"],
@@ -1330,7 +1326,7 @@ it("rejects malformed input for every input-bearing channel", () => {
 		[InvokeChannel, unknown]
 	>) {
 		const decoded = decodeUnknownInvokeArgs(channel)(args);
-		expect(Result.isFailure(decoded)).toBe(true);
+		expect({ channel, failed: Result.isFailure(decoded) }).toEqual({ channel, failed: true });
 	}
 });
 

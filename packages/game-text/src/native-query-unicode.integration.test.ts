@@ -120,7 +120,6 @@ describe.skipIf(!executable)("native nested JSON evidence", () => {
 						const model = yield* (yield* GameTextIndexRefresh).refresh(fixture.request);
 						const request = {
 							query: "",
-							capability: "all" as const,
 							localization: { target: fixture.target.name }
 						};
 						// Every file's extra JSON, comments and flags come back as written. The native

@@ -299,7 +299,7 @@ describe("localization identity join and precedence", () => {
 			expect(csv).toContain(
 				`"UI","K","Source","/Game/Text/Base.Base","${kind === "asset_property" ? "Asset" : "Data table"}"`
 			);
-			const request = { capability: "all" as const, query: "", pageSize: 50 };
+			const request = { query: "", pageSize: 50 };
 			return withIndexedCorpus(text, { files }, ({ query }) =>
 				Effect.gen(function* () {
 					expect((yield* query.search(request)).counts).toMatchObject({ conflicting: 0 });
@@ -421,7 +421,7 @@ describe("localization identity join and precedence", () => {
 			...ftextUnit("K", "Other", "Content/Text/Other.uasset", "UI [Other]"),
 			id: TextUnit.fields.id.make("unit:other")
 		});
-		const request = { capability: "all" as const, query: "", pageSize: 50 };
+		const request = { query: "", pageSize: 50 };
 		return withIndexedCorpus(
 			{ ...text, units: [...text.units, other] },
 			{ files: evidence() },

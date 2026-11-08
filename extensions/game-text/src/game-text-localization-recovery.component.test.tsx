@@ -22,20 +22,31 @@ import { storedGameTextPreferences } from "./game-text-preferences.js";
 const decodeGameTextInvestigationPreset = Schema.decodeSync(GameTextInvestigationPreset);
 
 describe("Game Text all-languages export", () => {
-	it("opens a preset on its saved target, cultures and translation filters", async () => {
-		const user = userEvent.setup({ delay: null });
-		const preset = decodeGameTextInvestigationPreset({
-			schemaVersion: 1,
+	const missing: TextFilter = [{ field: "translation", op: "is", values: ["missing"] }];
+	const missingWhere = textWhere({ filter: missing });
+	const savedPreset = (controls?: Schema.Json) =>
+		decodeGameTextInvestigationPreset({
+			schemaVersion: 3,
 			kind: "game_text",
 			sort: "domain_order",
 			query: {
 				mode: "corpus",
 				query: "",
-				capability: "all",
 				qualityFilter: "all",
-				filter: [{ field: "translation", op: "is", values: ["missing"] }],
-				localization: { target: second, cultures: ["de", "fr"], searchTranslations: true }
+				...(missingWhere && { where: missingWhere }),
+				localization: { target: second, cultures: ["de", "fr"], searchTranslations: true },
+				...(controls && { controls })
 			}
+		});
+	it("opens a preset on its saved target, cultures and translation filters", async () => {
+		const user = userEvent.setup({ delay: null });
+		const preset = savedPreset({
+			query: "",
+			capability: "all",
+			filter: missing,
+			localizationTarget: second,
+			localizationCultures: ["de", "fr"],
+			searchTranslations: true
 		});
 		const exported: GameTextInvestigationQuery[] = [];
 		mount({
@@ -63,7 +74,32 @@ describe("Game Text all-languages export", () => {
 			cultures: ["de", "fr"],
 			searchTranslations: true
 		});
-		expect(exported[0]?.filter).toEqual(preset.query.filter);
+		expect(exported[0]?.where).toEqual(preset.query.where);
+		expect(exported[0]?.controls).toMatchObject({ filter: missing });
+	});
+	it("refuses a preset without the view's controls, and keeps the view", async () => {
+		const user = userEvent.setup({ delay: null });
+		mount({
+			...client({ twoTargets: true }),
+			investigations: {
+				export: () => Effect.succeed({ status: "cancelled" }),
+				save: () => Effect.succeed({ status: "cancelled" }),
+				open: Effect.sync(() => ({
+					status: "opened",
+					preset: savedPreset(),
+					path: "C:/out/preset.json"
+				}))
+			}
+		});
+		await screen.findByRole("button", { name: `Localization target: ${target.name}` });
+		await user.click(screen.getByRole("button", { name: "Presets" }));
+		await user.click(await screen.findByRole("button", { name: "Open preset…" }));
+		expect((await screen.findByRole("alert")).textContent).toContain(
+			"This preset has no Game Text view controls to show."
+		);
+		expect(
+			screen.getByRole("button", { name: `Localization target: ${target.name}` })
+		).toBeTruthy();
 	});
 });
 it("keeps typed translations across a rescan, review writes and a fresh mount", async () => {
@@ -234,7 +270,7 @@ it.each([
 		await user.click(await screen.findByRole("button", { name: /^Save preset/u }));
 		await waitFor(() => expect(files).toHaveLength(2));
 		for (const selection of files) {
-			expect(selection.filter).toEqual(effectiveFilter);
+			expect(selection.where).toEqual(textWhere({ filter: effectiveFilter }));
 			expect(selection.localization).toBeUndefined();
 		}
 		expect(storedGameTextPreferences("localization-project").filter).toEqual(savedFilter);

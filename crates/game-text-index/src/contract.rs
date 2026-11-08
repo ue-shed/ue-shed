@@ -78,6 +78,7 @@ mod tests {
         RelatedSection, ReviewIdentity, ReviewLine, ReviewLinesAnswer, ReviewLinesRequest,
         ReviewPoEntry, RowKind, RowSelection, RowsPart, Selection, TextSearch,
     };
+    use crate::engine_types::{FindingsOrder, FindingsView};
     use crate::package_text_contract::{
         BaseLocalization, CodeLayerOutcome, CodeLayerRequest, ComparePointsRequest, CultureArchive,
         GateCheck, LocalizationRevision, PackageTextAudienceMatch, PackageTextAudienceRule,
@@ -89,7 +90,6 @@ mod tests {
         PointIdentityStatus, PointKey, PointOutcome, PointPlace, PointPlaceKind, PointRequest,
         PointText,
     };
-    use crate::engine_types::{FindingsOrder, FindingsView};
     use crate::rules::findings_query::{
         AcceptedFinding, CodeCount, Diagnostics, FindingsAcceptRequest,
     };

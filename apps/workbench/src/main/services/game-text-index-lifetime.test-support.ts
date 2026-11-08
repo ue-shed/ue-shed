@@ -258,4 +258,4 @@ export const makeHost = Effect.fn("Test.GameText.productionHost")(function* (
 		)
 	};
 });
-export const request = { query: "", capability: "all" as const, pageSize: 10 };
+export const request = { query: "", pageSize: 10 };

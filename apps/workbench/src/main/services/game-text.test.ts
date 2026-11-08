@@ -811,7 +811,6 @@ for (const phase of ["candidates", "scan"] as const) {
 							query: {
 								mode: "corpus",
 								query: "",
-								capability: "all",
 								filter: [],
 								qualityFilter: "all"
 							},
@@ -1137,7 +1136,6 @@ it("exports one captured generation when the project changes during the save dia
 				const query = {
 					mode: "corpus" as const,
 					query: "",
-					capability: "all" as const,
 					filter: [],
 					qualityFilter: "all" as const
 				};
@@ -1205,7 +1203,6 @@ it("exports the selected target's localization quality list as a replayable repo
 	const query = {
 		mode: "quality" as const,
 		query: "",
-		capability: "all" as const,
 		filter: [],
 		qualityFilter: "all" as const,
 		workspaceFilter: "empty_translation" as const,
@@ -1245,8 +1242,8 @@ it("exports the selected target's localization quality list as a replayable repo
 				const exported = JSON.parse(
 					yield* Effect.promise(() => readFile(outputPath, "utf8"))
 				);
-				expect(exported.schemaVersion).toBe(2);
-				expect(exported.preset.schemaVersion).toBe(2);
+				expect(exported.schemaVersion).toBe(3);
+				expect(exported.preset.schemaVersion).toBe(3);
 				expect(exported.preset.query).toEqual(query);
 				expect(exported.result).toMatchObject({
 					mode: "localization_quality",
@@ -1263,7 +1260,7 @@ it("exports the selected target's localization quality list as a replayable repo
 				const savedPreset = JSON.parse(
 					yield* Effect.promise(() => readFile(outputPath, "utf8"))
 				);
-				expect(savedPreset).toMatchObject({ schemaVersion: 2, query });
+				expect(savedPreset).toMatchObject({ schemaVersion: 3, query });
 				outputPath = join(root, "export.csv");
 				expect((yield* service.investigationExport({ query, format: "csv" })).status).toBe(
 					"saved"
@@ -1305,12 +1302,11 @@ it("restores embedded rules without retaining another rule file's write destinat
 	const query = {
 		mode: "corpus" as const,
 		query: "",
-		capability: "all" as const,
 		filter: [],
 		qualityFilter: "all" as const
 	};
 	const preset = {
-		schemaVersion: 1,
+		schemaVersion: 3,
 		kind: "game_text",
 		sort: "domain_order",
 		query,

@@ -178,7 +178,7 @@ it.live(
 				yield* Deferred.succeed(holdRead, undefined);
 				const target = yield* Fiber.join(running);
 				const opened = yield* steps.openTarget(target);
-				const request = { query: "Source", capability: "all" as const, pageSize: 10 };
+				const request = { query: "Source", pageSize: 10 };
 				return {
 					target,
 					search: yield* opened.query.search(request),
@@ -196,7 +196,7 @@ it.live(
 				const project = yield* steps.refreshProject(sequentialFixture.request);
 				const target = yield* steps.buildTarget(project, imported);
 				const opened = yield* steps.openTarget(target);
-				const request = { query: "Source", capability: "all" as const, pageSize: 10 };
+				const request = { query: "Source", pageSize: 10 };
 				return {
 					target,
 					search: yield* opened.query.search(request),

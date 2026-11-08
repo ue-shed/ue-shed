@@ -206,28 +206,66 @@ export function migratePreferences(preferences: GameTextPreferences): GameTextPr
 	};
 }
 
-/**
- * A preset's target, cultures and translation filters as the preference fields a restore reads. A
- * preset without them picks the first target and every culture, as before presets carried them.
- */
-export function localizationPreferences(
-	selection: (Schema.Schema.Type<typeof LocalizationSelection> & LocalizationLens) | undefined
-) {
-	return {
-		localizationTarget: selection?.target,
-		localizationCulture: selection?.culture,
-		localizationCultures: selection?.cultures,
-		localizationState: selection?.state,
-		localizationReview: selection?.review,
-		localizationKeyChanged: selection?.keyChanged ?? false,
-		searchTranslations: selection?.searchTranslations ?? false
-	} satisfies Partial<GameTextPreferences>;
-}
-
 type StoredPreferences = Schema.Schema.Type<typeof StoredPreferences>;
 const decodeStoredPreferences = Schema.decodeUnknownOption(
 	Schema.fromJsonString(StoredPreferences)
 );
+
+/** The controls a preset saves, so opening it shows them again: the fields a restore reads. */
+const PresetControls = StoredPreferences.mapFields(
+	({
+		localizationTarget,
+		localizationCulture,
+		localizationCultures,
+		localizationState,
+		localizationReview,
+		localizationKeyChanged,
+		searchTranslations,
+		query,
+		capability,
+		withoutNotes,
+		where,
+		qualityFilter,
+		filter,
+		group
+	}) => ({
+		localizationTarget,
+		localizationCulture,
+		localizationCultures,
+		localizationState,
+		localizationReview,
+		localizationKeyChanged,
+		searchTranslations,
+		query,
+		capability,
+		withoutNotes,
+		where,
+		qualityFilter,
+		filter,
+		group
+	})
+);
+export type PresetControls = Pick<
+	GameTextPreferences,
+	keyof Schema.Schema.Type<typeof PresetControls>
+>;
+// `JSON.stringify` leaves out the unset fields, as storing preferences does.
+const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json));
+const decodePresetControls = Schema.decodeUnknownOption(PresetControls);
+
+/** The view's controls as a preset keeps them; UE Shed saves them and never reads them. */
+export function presetControls(controls: PresetControls): Schema.Json {
+	return decodeJson(JSON.stringify(controls));
+}
+
+/** A preset's saved controls as the preferences a restore reads; none when it has none. */
+export function presetPreferences(
+	controls: Schema.Json | undefined
+): GameTextPreferences | undefined {
+	if (controls === undefined) return undefined;
+	const decoded = decodePresetControls(controls);
+	return Option.isSome(decoded) ? preferencesFrom(decoded.value) : undefined;
+}
 
 /** The view's settings and the work in progress are stored apart, so either can fail alone. */
 const VIEW_PREFIX = "ue-shed:game-text:";

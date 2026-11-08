@@ -114,7 +114,6 @@ describe("localization review state", () => {
 			const review = reviewOf("K", ["reviewed", "machine_translated"]);
 			const request = {
 				query: "",
-				capability: "all" as const,
 				pageSize: 50,
 				localization: { target: target.name, culture: de }
 			};

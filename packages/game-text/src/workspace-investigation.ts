@@ -117,7 +117,8 @@ export const openWorkspaceInvestigation = Effect.fn("GameText.workspace.investig
 						retrySafe: true,
 						nextStep: "fix_input",
 						message: `Invalid investigation preset: ${error.message}`,
-						recovery: "Choose a version 1 preset for this workspace."
+						recovery:
+							"Choose a preset this version saved. Presets from older versions can't be opened: rebuild the view and save it again."
 					})
 			)
 		);

@@ -6,6 +6,7 @@ import {
 	LocalizationStatusReport,
 	type GameTextInvestigationQuery
 } from "@ue-shed/game-text/corpus";
+import { qualityWhere } from "@ue-shed/game-text/query";
 import { GAME_TEXT_RULES_RELATIVE_PATH, STARTER_CHECK_RULES } from "@ue-shed/game-text/rules";
 import { LocalizationQualityReport, TextProblem } from "@ue-shed/game-text/schema";
 import { LocalizationChangeSet } from "@ue-shed/localization/browser";
@@ -583,7 +584,7 @@ it.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE).each(["game_text", "texture_au
 				)
 			);
 			const preset = {
-				schemaVersion: 1,
+				schemaVersion: kind === "game_text" ? 3 : 1,
 				kind,
 				sort: kind === "game_text" ? "domain_order" : "object_path",
 				query:
@@ -591,7 +592,6 @@ it.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE).each(["game_text", "texture_au
 						? {
 								mode: "quality",
 								query: "",
-								capability: "all",
 								qualityFilter: "character_budget"
 							}
 						: { findingsOnly: true, query: "" },
@@ -653,13 +653,12 @@ describe.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE)("localization quality pr
 			return output;
 		};
 		const preset = {
-			schemaVersion: 2,
+			schemaVersion: 3,
 			kind: "game_text",
 			sort: "domain_order",
 			query: {
 				mode: "quality",
 				query: "",
-				capability: "all",
 				qualityFilter: "all",
 				workspaceFilter: "format_argument_renamed",
 				localization: { target: "FixtureGame", culture: "de" }
@@ -672,8 +671,8 @@ describe.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE)("localization quality pr
 		await writeFile(presetPath, JSON.stringify(preset));
 		const args = ["investigations", "run", fixture.root, "--preset", presetPath];
 		const before = JSON.parse(await run(args));
-		expect(before.schemaVersion).toBe(2);
-		expect(before.preset.schemaVersion).toBe(2);
+		expect(before.schemaVersion).toBe(3);
+		expect(before.preset.schemaVersion).toBe(3);
 		expect(before.result).toMatchObject({
 			mode: "localization_quality",
 			report: { target: "FixtureGame", culture: "de", filter: "format_argument_renamed" }
@@ -713,9 +712,10 @@ describe.skipIf(!process.env.UE_SHED_UASSET_EXECUTABLE)("localization quality pr
 		).toContain(before.result.report.findings[0].id);
 		const none = await narrowed({ query: "zzqx nothing matches" });
 		expect(none.result.report.findings).toEqual([]);
-		expect(await narrowed({ query: word, severities: ["blocking"] }, "csv")).toContain(
-			'"finding_id","kind","culture","source","problem","context"'
-		);
+		const blocking = qualityWhere({ severities: ["blocking"] });
+		expect(
+			await narrowed({ query: word, ...(blocking && { where: blocking }) }, "csv")
+		).toContain('"finding_id","kind","culture","source","problem","context"');
 		// An accepted finding leaves the replay exactly as it leaves the Workbench list.
 		await run([
 			"loc",

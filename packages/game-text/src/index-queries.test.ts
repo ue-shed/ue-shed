@@ -78,7 +78,7 @@ describe("index queries", () => {
 	it("bounds source clauses and needs a group for a minimum group size", () => {
 		const clause = Schema.is(TextFilterClause);
 		const request = Schema.is(TextCorpusSearchRequest);
-		const base = { query: "", capability: "all", pageSize: 1 } as const;
+		const base = { query: "", pageSize: 1 } as const;
 		expect(clause({ field: "source", op: "is", values: ["Mushroom", " x "] })).toBe(true);
 		expect(clause({ field: "source", op: "is", values: [""] })).toBe(false);
 		expect(clause({ field: "source", op: "is", values: [] })).toBe(false);

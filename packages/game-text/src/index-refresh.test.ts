@@ -159,11 +159,10 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					});
 					expect(progress.at(-1)?.phase).toBe("ready");
 					const searches = [
-						{ query: "source", capability: "all" as const, pageSize: 10 },
-						{ query: "absent", capability: "all" as const, pageSize: 10 },
+						{ query: "source", pageSize: 10 },
+						{ query: "absent", pageSize: 10 },
 						{
 							query: "Source",
-							capability: "all" as const,
 							pageSize: 10,
 							localization: { target: authored.name, culture: "de" },
 							facets: { folder: "", assets: true, origins: true, cultures: true }

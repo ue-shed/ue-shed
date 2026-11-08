@@ -302,7 +302,6 @@ describe("persisted joined source cache", () => {
 						expect(first.joined.meta.sourceCache?.flagsVersion).toBe(1);
 						const search = (query: string) => ({
 							query,
-							capability: "all" as const,
 							pageSize: 10
 						});
 						expect((yield* first.query.search(search("originalsource"))).total).toBe(1);

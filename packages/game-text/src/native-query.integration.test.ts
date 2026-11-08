@@ -141,7 +141,6 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						const model = yield* index.refresh(fixture.request);
 						const selected = {
 							query: "",
-							capability: "all" as const,
 							localization: { target: target.name }
 						};
 						const lines = yield* model.query.localizationLines(selected);
@@ -279,7 +278,6 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						const index = yield* GameTextIndexRefresh;
 						const request = {
 							query: "",
-							capability: "all" as const,
 							pageSize: 50,
 							localization: { target: fixture.target.name }
 						};
@@ -490,7 +488,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					yield* Effect.gen(function* () {
 						const index = yield* GameTextIndexRefresh;
 						const first = yield* index.refresh(fixture.request);
-						const request = { query: "", capability: "all" as const, pageSize: 50 };
+						const request = { query: "", pageSize: 50 };
 						const original = yield* first.query.search(request);
 						expect(yield* first.corpus).toEqual(fixture.raw());
 						yield* Effect.promise(() =>

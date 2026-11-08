@@ -565,7 +565,6 @@ const indexTallies = Effect.fn("GameText.localizationReportTallies")(function* (
 ) {
 	const lines = {
 		query: "",
-		capability: "all" as const,
 		localization: { target: model.localization.target }
 	};
 	const [states, reasons, facts, statuses, flags, page] = yield* Effect.all([

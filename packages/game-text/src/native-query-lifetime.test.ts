@@ -213,7 +213,8 @@ it("G2.b retains a valid reader after an expected exclusive-export refusal", asy
 				expect(
 					yield* query.writeCorpusJson(
 						{ query: "" },
-						{ path: "existing.json", exclusive: true }
+						{ path: "existing.json", exclusive: true },
+						{ before: "[", after: "]", depth: 1 }
 					)
 				).toEqual({ status: "exists" });
 				expect(yield* query.search(request)).toEqual(page);

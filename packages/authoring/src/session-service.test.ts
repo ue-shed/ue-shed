@@ -777,69 +777,74 @@ describe("AuthoringSessionService", () => {
 		}
 	});
 
-	it("marks Apply indeterminate when dispatch is interrupted before durable completion", async () => {
-		const root = await mkdtemp(join(tmpdir(), "ue-shed-session-apply-interrupt-"));
-		const storageRoot = join(root, "sessions");
-		try {
-			const service = await Effect.runPromise(
-				sessionService(
-					{ projectId: "fixture", projectRoot: root, storageRoot },
-					authoringIdGeneratorLayer(() => "generated")
-				)
-			);
-			await Effect.runPromise(service.create([snapshot()], { id: "interrupt" }));
-			await Effect.runPromise(
-				service.setCells({
-					edits: [
-						{
-							fieldName: "Count",
-							rowId: "row:Alpha",
-							value: { kind: "int", value: "2" }
-						}
-					],
-					sessionId: "interrupt",
-					tableObjectPath: "/Game/Fixture/DT_Test.DT_Test"
-				})
-			);
+	it.each(["close", "discard"] as const)(
+		"L6.3 refuses %s while Apply is indeterminate",
+		async (transition) => {
+			const root = await mkdtemp(join(tmpdir(), "ue-shed-session-apply-interrupt-"));
+			const storageRoot = join(root, "sessions");
+			try {
+				const service = await Effect.runPromise(
+					sessionService(
+						{ projectId: "fixture", projectRoot: root, storageRoot },
+						authoringIdGeneratorLayer(() => "generated")
+					)
+				);
+				await Effect.runPromise(service.create([snapshot()], { id: "interrupt" }));
+				await Effect.runPromise(
+					service.setCells({
+						edits: [
+							{
+								fieldName: "Count",
+								rowId: "row:Alpha",
+								value: { kind: "int", value: "2" }
+							}
+						],
+						sessionId: "interrupt",
+						tableObjectPath: "/Game/Fixture/DT_Test.DT_Test"
+					})
+				);
 
-			const started = await Effect.runPromise(Deferred.make<void>());
-			const release = await Effect.runPromise(Deferred.make<void>());
-			const fiber = Effect.runFork(
-				service
-					.apply(
-						"interrupt",
-						{ maxCommands: 1024, maxPayloadBytes: 1048576, maxTables: 16 },
-						"apply-interrupt"
-					)
-					.pipe(
-						Effect.provide(
-							authoringSessionLivePortLayer({
-								apply: () =>
-									Effect.gen(function* () {
-										yield* Deferred.succeed(started, undefined);
-										yield* Deferred.await(release);
-										// SAFETY: this test port is interrupted after release and must not produce an apply result.
-										return null as never;
-									}),
-								lookupApplyResult: () => Effect.die("unused"),
-								save: () => Effect.die("unused")
-							})
+				const started = await Effect.runPromise(Deferred.make<void>());
+				const release = await Effect.runPromise(Deferred.make<void>());
+				const fiber = Effect.runFork(
+					service
+						.apply(
+							"interrupt",
+							{ maxCommands: 1024, maxPayloadBytes: 1048576, maxTables: 16 },
+							"apply-interrupt"
 						)
-					)
-			);
-			await Effect.runPromise(Deferred.await(started));
-			await Effect.runPromise(Fiber.interrupt(fiber));
-			await Effect.runPromise(Fiber.await(fiber));
-			const pending = await Effect.runPromise(service.open("interrupt"));
-			expect(pending.pendingOperation).toMatchObject({
-				kind: "apply",
-				status: "indeterminate"
-			});
-			await Effect.runPromise(Deferred.succeed(release, undefined).pipe(Effect.ignore));
-		} finally {
-			await rm(root, { force: true, recursive: true });
+						.pipe(
+							Effect.provide(
+								authoringSessionLivePortLayer({
+									apply: () =>
+										Effect.gen(function* () {
+											yield* Deferred.succeed(started, undefined);
+											yield* Deferred.await(release);
+											// SAFETY: this test port is interrupted after release and must not produce an apply result.
+											return null as never;
+										}),
+									lookupApplyResult: () => Effect.die("unused"),
+									save: () => Effect.die("unused")
+								})
+							)
+						)
+				);
+				await Effect.runPromise(Deferred.await(started));
+				await Effect.runPromise(Fiber.interrupt(fiber));
+				await Effect.runPromise(Fiber.await(fiber));
+				const pending = await Effect.runPromise(service.open("interrupt"));
+				expect(pending.pendingOperation).toMatchObject({
+					kind: "apply",
+					status: "indeterminate"
+				});
+				await expect(Effect.runPromise(service[transition]("interrupt"))).rejects.toThrow();
+				expect(await Effect.runPromise(service.open("interrupt"))).toEqual(pending);
+				await Effect.runPromise(Deferred.succeed(release, undefined).pipe(Effect.ignore));
+			} finally {
+				await rm(root, { force: true, recursive: true });
+			}
 		}
-	});
+	);
 
 	it("marks Apply indeterminate when completion fails after a successful dispatch", async () => {
 		const root = await mkdtemp(join(tmpdir(), "ue-shed-session-apply-complete-fail-"));

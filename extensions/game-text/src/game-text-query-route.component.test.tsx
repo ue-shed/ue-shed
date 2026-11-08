@@ -54,18 +54,16 @@ it("U1.1 reconciles a chooser that finishes after a rescan preview", async () =>
 it("U2.1 cancels pending-findings retries when the route unmounts", async () => {
 	const base = makeClient();
 	const search = vi.fn((request: Parameters<typeof base.search>[0]) =>
-		base
-			.search(request)
-			.pipe(
-				Effect.map((result) =>
-					result.status === "ready"
-						? {
-								...result,
-								page: { ...result.page, findings: { status: "pending" as const } }
-							}
-						: result
-				)
+		base.search(request).pipe(
+			Effect.map((result) =>
+				result.status === "ready"
+					? {
+							...result,
+							page: { ...result.page, findings: { status: "pending" as const } }
+						}
+					: result
 			)
+		)
 	);
 	vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 	try {

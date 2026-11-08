@@ -214,7 +214,9 @@ describe("ProjectCustodianRoute", () => {
 							}
 						]
 					}
-				} as const).pipe(Effect.tap(() => (pending ? Deferred.await(release) : Effect.void)));
+				} as const).pipe(
+					Effect.tap(() => (pending ? Deferred.await(release) : Effect.void))
+				);
 			},
 			cancel: (id) =>
 				Effect.succeed({

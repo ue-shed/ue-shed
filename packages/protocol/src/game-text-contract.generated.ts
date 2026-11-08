@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.27.1",
-	contractHash: "2812dbb348acf88dc72a5e6b85cf630ecbf632fdd916580ee065aac82ed672c6"
+	contractHash: "1408c61c1a8088f906001b8981a29b15bdb9581e7ef0b2dfabd81ab80dac0158"
 } as const;
 
 /**

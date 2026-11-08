@@ -96,8 +96,10 @@ export function createGameTextEdits(input: {
 		fromItems(input.initial?.drafts ?? [])
 	);
 	const [undo, setUndo] = createSignal<ReadonlyMap<string, StagedEdit>>();
-	const keyFor = (edit: Pick<LocalizationEdit, "culture" | "namespace" | "key">) =>
-		JSON.stringify([input.target(), editKey(edit)]);
+	const keyFor = (
+		edit: Pick<LocalizationEdit, "culture" | "namespace" | "key">,
+		target = input.target()
+	) => JSON.stringify([target, editKey(edit)]);
 	const [open, setOpen] = createSignal(false);
 	const [reviewTarget, setReviewTarget] = createSignal<LocalizationSelection["target"]>();
 	const [review, setReview] = createSignal<LocalizationEditResult | undefined>(undefined);
@@ -133,12 +135,12 @@ export function createGameTextEdits(input: {
 	};
 	// Many edits at once, such as a selection's carried translations, in one update.
 	const stageAll = (
-		items: readonly { readonly edit: LocalizationEdit; readonly source: string }[]
+		items: readonly { readonly edit: LocalizationEdit; readonly source: string }[],
+		target = input.target()
 	) => {
 		const next = new Map(staged());
-		const target = input.target();
 		if (!target) return;
-		for (const item of items) next.set(keyFor(item.edit), { ...item, target });
+		for (const item of items) next.set(keyFor(item.edit, target), { ...item, target });
 		setStaged(next);
 		resetReview();
 	};

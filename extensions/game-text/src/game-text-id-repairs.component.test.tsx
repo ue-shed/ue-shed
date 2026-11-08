@@ -70,6 +70,8 @@ function mount(
 	let checked = 0;
 	let changeFocus: () => void = () => undefined;
 	let refreshFocus: () => void = () => undefined;
+	let changeTarget: () => void = () => undefined;
+	let restoreTarget: () => void = () => undefined;
 	let editModel: ReturnType<typeof createGameTextEdits> | undefined;
 	const target = options.withTarget
 		? LocalizationSelection.fields.target.make("Game")
@@ -164,6 +166,9 @@ function mount(
 		}
 	};
 	function Panel() {
+		const [selectedTarget, setSelectedTarget] = createSignal(target);
+		restoreTarget = () => setSelectedTarget(target);
+		changeTarget = () => setSelectedTarget(LocalizationSelection.fields.target.make("Other"));
 		const [current, setCurrent] = createSignal(
 			options.incomplete ? { ...focus, totalOccurrences: 3 } : (options.related?.[0] ?? focus)
 		);
@@ -172,24 +177,28 @@ function mount(
 			setCurrent({ ...focus, unit: { ...focus.unit, id: TextUnitId.make("another") } });
 		const edits = createGameTextEdits({
 			client: {},
-			target: () => target,
+			target: selectedTarget,
 			nativeCulture: () => undefined,
 			busy: () => false,
 			onWritten: () => undefined
 		});
 		editModel = edits;
 		return (
-			<GameTextIdRepairs
-				focus={current()}
-				detail={options.details?.[0]}
-				client={client}
-				projectKey="C:/Fixture"
-				target={target}
-				nativeCulture={undefined}
-				edits={edits}
-				busy={false}
-				onApplied={() => undefined}
-			/>
+			<>
+				{" "}
+				<span>{selectedTarget()}</span>
+				<GameTextIdRepairs
+					focus={current()}
+					detail={options.details?.[0]}
+					client={client}
+					projectKey="C:/Fixture"
+					target={selectedTarget()}
+					nativeCulture={undefined}
+					edits={edits}
+					busy={false}
+					onApplied={() => undefined}
+				/>
+			</>
 		);
 	}
 	render(() => (
@@ -203,6 +212,8 @@ function mount(
 		plan: () => planned,
 		changeFocus,
 		refreshFocus,
+		changeTarget,
+		restoreTarget,
 		staged: () => editModel?.edits() ?? []
 	};
 }
@@ -442,4 +453,25 @@ it("U6.1 retains apply ownership when focus is refreshed", async () => {
 	await Effect.runPromise(Deferred.succeed(release, undefined));
 	await waitFor(() => expect(test.applied()).toBe(1));
 	await screen.findByText(/Unreal saved the fix/u);
+});
+
+it("4506885251 retains the submitted translation target after Apply", async () => {
+	const release = await Effect.runPromise(Deferred.make<void>());
+	const test = mount({
+		withTarget: true,
+		details: [translationsFor(focus, "Lampe")],
+		beforeApply: Deferred.await(release)
+	});
+	const user = userEvent.setup({ delay: null });
+	await user.click(screen.getAllByRole("button", { name: "Give this text its own key" })[0]!);
+	await user.click(screen.getByRole("button", { name: "Check in Unreal" }));
+	await user.click(await screen.findByRole("button", { name: "Apply and save in Unreal" }));
+	test.changeTarget();
+	await screen.findByText("Other");
+	await Effect.runPromise(Deferred.succeed(release, undefined));
+	await screen.findByText(/Unreal saved the fix/u);
+	expect(test.staged()).toHaveLength(0);
+	test.restoreTarget();
+	await screen.findByText("Game");
+	await waitFor(() => expect(test.staged()).toHaveLength(1));
 });

@@ -32,6 +32,7 @@ export const makeCameraSetupHost = Effect.fn("CameraSetup.makeHost")(function* <
 	const hostId = CameraArrangementId.make(randomUUID());
 	const gate = yield* Semaphore.make(1);
 	let outcome: typeof CameraSetupOutcome.Type | undefined;
+	const outcomes = new Map<string, typeof CameraSetupOutcome.Type>();
 	let connectedBridge: CameraAuthoringBridge | undefined;
 	let contextKey: string | undefined;
 	let listing:
@@ -80,7 +81,7 @@ export const makeCameraSetupHost = Effect.fn("CameraSetup.makeHost")(function* <
 			if (contextKey !== key) {
 				contextKey = key;
 				listing = undefined;
-				outcome = undefined;
+				outcome = outcomes.get(key);
 			}
 			const offer = yield* reopen();
 			const state = yield* bridge.call({
@@ -108,6 +109,7 @@ export const makeCameraSetupHost = Effect.fn("CameraSetup.makeHost")(function* <
 					: state.open !== undefined && open
 						? yield* settle(state.open.id, open(state.open))
 						: undefined;
+			if (outcome) outcomes.set(key, outcome);
 			// A new or reopened set must appear in the next listing.
 			listing = undefined;
 			// Cache the result before acknowledging: a lost reply must never repeat the request.

@@ -436,3 +436,61 @@ it.effect("L11.1 isolates cached listings and outcomes by project root and endpo
 		expect(polls.at(-1)).toMatchObject({ sets: [{ name: "C" }] });
 	})
 );
+
+it.effect("4507054530 retains unacknowledged creation across context round trips", () =>
+	Effect.gen(function* () {
+		let creations = 0;
+		let acknowledgements = 0;
+		const host = yield* makeCameraSetupHost({
+			create: (received) =>
+				Effect.sync(() => {
+					expect(received).toEqual(intent);
+					creations++;
+				})
+		});
+		const bridge: CameraAuthoringBridge = {
+			call: (request) =>
+				Effect.gen(function* () {
+					if (request.operation !== "setup_poll")
+						return yield* Effect.die("Unexpected operation");
+					if (request.outcome && ++acknowledgements === 1)
+						return yield* new CameraBridgeError({
+							code: "disconnected",
+							message: "Reply lost",
+							recovery: "Poll again",
+							retrySafe: true,
+							nextStep: "retry"
+						});
+					return {
+						version: 1 as const,
+						status: "setup" as const,
+						connected: true,
+						message: "",
+						request: intent
+					};
+				})
+		};
+		yield* host
+			.poll(bridge, "Fixture", {
+				projectRoot: "C:/Fixture",
+				endpoint: "http://127.0.0.1:30001"
+			})
+			.pipe(Effect.flip);
+		yield* host.poll(
+			{
+				call: (request) => {
+					expect(request).not.toHaveProperty("outcome");
+					return Effect.succeed(setupState({}));
+				}
+			},
+			"Other",
+			{ projectRoot: "C:/Other", endpoint: "http://127.0.0.1:31001" }
+		);
+		yield* host.poll(bridge, "Fixture", {
+			projectRoot: "C:/Fixture",
+			endpoint: "http://127.0.0.1:30001"
+		});
+		expect(creations).toBe(1);
+		expect(acknowledgements).toBe(2);
+	})
+);

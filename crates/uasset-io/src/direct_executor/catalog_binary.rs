@@ -16,7 +16,7 @@ const CATALOG_DIRECTORY: &str = "catalogs-v6";
 const MANIFEST_FILE: &str = "manifest.json";
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
 const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
-const MAX_QUARANTINE_SLOTS: u32 = 64;
+const MAX_QUARANTINE_ATTEMPTS: u32 = 8;
 const MAGIC: &[u8; 8] = b"UESHC004";
 /// The magic, then each section's stored length, raw length and raw checksum.
 const HEADER_BYTES: u64 = 8 + 5 * 24;
@@ -1569,8 +1569,10 @@ fn quarantine_directory(directory: &Path) -> Result<Option<PathBuf>, CatalogErro
     if !directory.exists() {
         return Ok(None);
     }
-    for slot in 0..MAX_QUARANTINE_SLOTS {
-        let candidate = directory.with_extension(format!("quarantine-{slot}"));
+    // Each quarantine gets a name of its own, so earlier quarantines never block a rebuild.
+    for _ in 0..MAX_QUARANTINE_ATTEMPTS {
+        let candidate =
+            directory.with_extension(format!("quarantine-{}", game_text_index::store::token()));
         if candidate.exists() {
             continue;
         }
@@ -1595,7 +1597,7 @@ fn quarantine_directory(directory: &Path) -> Result<Option<PathBuf>, CatalogErro
         }
     }
     Err(CatalogError::Unavailable {
-        message: "Catalog quarantine slots exhausted".into(),
+        message: "could not find a free Catalog quarantine name".into(),
     })
 }
 
@@ -2102,6 +2104,20 @@ mod tests {
         assert!(BinaryCatalog::open(&root, &fixture_project_id()).is_err());
         release_test_writer(&mut writer);
         assert!(BinaryCatalog::open(&root, &fixture_project_id()).is_ok());
+    }
+
+    #[test]
+    fn rebuild_succeeds_with_every_old_quarantine_slot_occupied() {
+        // A2.3: earlier rebuilds leave quarantined catalogs behind; they must never block the next.
+        let mut writer = custom_catalog();
+        let directory = writer.directory.clone();
+        for slot in 0..64 {
+            fs::create_dir_all(directory.with_extension(format!("quarantine-{slot}"))).unwrap();
+        }
+        writer.clear_for_rebuild().unwrap();
+        writer.clear_for_rebuild().unwrap();
+        assert!(directory.is_dir());
+        release_test_writer(&mut writer);
     }
 
     #[test]

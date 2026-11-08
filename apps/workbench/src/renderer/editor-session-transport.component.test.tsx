@@ -1,9 +1,10 @@
 import { cleanup, render, screen, waitFor } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Exit, Layer, ManagedRuntime, Queue, Stream } from "effect";
+import { Deferred, Effect, Exit, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 import type { EditorHandoffNotice } from "../shared/editor-handoff.js";
+import { EditorPlaySessionId } from "@ue-shed/protocol";
 import { EditorSessionTransport } from "./editor-session-transport.js";
 
 const runtime = ManagedRuntime.make(Layer.empty);
@@ -118,4 +119,64 @@ it("keeps a pending responsiveness change usable when the settings are reopened"
 	);
 	expect(checkbox.checked).toBe(false);
 	expect(checkbox.disabled).toBe(false);
+});
+
+it("L11.4 drops status samples started before a settled command", async () => {
+	const stale = await Effect.runPromise(Deferred.make<void>());
+	const contract = {
+		name: "unreal-editor-play-session" as const,
+		version: { major: 1 as const, minor: 0 as const }
+	};
+	const running = {
+		contract,
+		state: {
+			status: "running" as const,
+			mode: "play" as const,
+			sessionId: EditorPlaySessionId.make("pie")
+		}
+	};
+	let subscriptions = 0;
+	const statuses = Stream.unwrap(
+		Effect.sync(() =>
+			++subscriptions === 1
+				? Stream.concat(
+						Stream.succeed(Exit.succeed(running)),
+						Stream.fromEffect(
+							Deferred.await(stale).pipe(Effect.as(Exit.succeed(running)))
+						)
+					)
+				: Stream.fromEffect(Effect.never)
+		)
+	);
+	render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<EditorSessionTransport
+				client={{
+					editorSessionStatuses: statuses,
+					unrealConnectionSettings: Effect.succeed({
+						endpoint: "http://127.0.0.1:30001",
+						port: 30001
+					}),
+					setUnrealConnectionPort: () => Effect.die("unused"),
+					executeEditorSessionCommand: () =>
+						Effect.succeed({
+							contract,
+							command: "pause",
+							outcome: "accepted",
+							state: { ...running.state, status: "paused" }
+						}),
+					editorHandoffs: Stream.fromEffect(Effect.never),
+					activateEditorWindow: Effect.die("unused"),
+					editorResponsiveness: Effect.die("unused"),
+					setEditorResponsiveness: () => Effect.die("unused")
+				}}
+			/>
+		</EffectRuntimeProvider>
+	));
+	const user = userEvent.setup({ delay: null });
+	await user.click(await screen.findByRole("button", { name: "Pause" }));
+	await screen.findByText(/Play.*paused/u);
+	await Effect.runPromise(Deferred.succeed(stale, undefined));
+	await new Promise<void>((resolve) => queueMicrotask(resolve));
+	await waitFor(() => expect(screen.getByText(/Play.*paused/u)).toBeDefined());
 });

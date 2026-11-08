@@ -129,12 +129,22 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 	const close = Effect.fn("Workbench.CameraWorkspace.close")(function* () {
 		if (!active) return;
 		const current = active;
-		const detached = yield* current.bridge.call({
-			version: 1,
-			operation: "detach",
-			sessionId: current.snapshot.sessionId,
-			producerId: current.snapshot.producerId
-		});
+		active = undefined;
+		recovery = null;
+		const detached = yield* current.bridge
+			.call({
+				version: 1,
+				operation: "detach",
+				sessionId: current.snapshot.sessionId,
+				producerId: current.snapshot.producerId
+			})
+			.pipe(
+				Effect.tapError((cause) =>
+					Effect.sync(() => {
+						error = cause.message;
+					})
+				)
+			);
 		if (detached.status !== "detached" && detached.status !== "unavailable")
 			return yield* failure(detached.message);
 		active = undefined;
@@ -145,6 +155,7 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			);
 	});
 	const tick = Effect.fn("Workbench.CameraWorkspace.tick")(function* () {
+		if (!active) return;
 		if (active) active.snapshot = yield* active.panel.tick();
 		if (active?.snapshot.panel && active.livePreview) {
 			const panel = active.snapshot.panel;

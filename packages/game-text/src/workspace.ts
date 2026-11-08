@@ -430,10 +430,17 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 				yield* activityChanged;
 				return yield* restore(scan).pipe(
 					Effect.ensuring(
-						Ref.update(activity, (value) => ({
+						Ref.updateAndGet(activity, (value) => ({
 							...value,
 							scans: value.scans - 1
-						})).pipe(Effect.andThen(activityChanged))
+						})).pipe(
+							Effect.tap((value) =>
+								Effect.sync(() => {
+									if (value.scans === 0) indexProgress = undefined;
+								})
+							),
+							Effect.andThen(activityChanged)
+						)
 					)
 				);
 			})

@@ -4,14 +4,19 @@ import {
 	type ContentObservatoryState
 } from "@ue-shed/extension-content-observatory/client";
 import {
+	MapHistory,
 	PerforceFastMapHistory,
 	PerforceMapHistory,
 	makeMapHistoryTestLayer,
 	type MapHistoryApi
 } from "@ue-shed/map-history";
 import type { SavedWorld } from "@ue-shed/protocol";
-import { makeAssetReaderTestLayer, type AssetReaderTestApi } from "@ue-shed/unreal-assets";
-import { Deferred, Effect, Layer, Schema, Stream } from "effect";
+import {
+	AssetReader,
+	makeAssetReaderTestLayer,
+	type AssetReaderTestApi
+} from "@ue-shed/unreal-assets";
+import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
 import {
 	WorkbenchContentObservatory,
 	WorkbenchContentObservatoryLive
@@ -376,3 +381,98 @@ describe("WorkbenchContentObservatory", () => {
 		}).pipe(Effect.scoped)
 	);
 });
+
+const decodeRequest = Schema.decodeUnknownSync(ContentObservatoryHistoryRequest);
+it.effect("L11.6 preserves a newer job while cancellation awaits the old finalizer", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const stopping = yield* Deferred.make<void>();
+		let calls = 0;
+		const release = yield* Deferred.make<void>();
+		const map = "Content/Map.umap";
+
+		const project = makeWorkbenchProjectTestLayer({
+			current: Effect.succeed({ status: "not_configured" }),
+			choose: Effect.succeed({ status: "not_configured" }),
+			savedProject: Effect.succeed({
+				projectRoot: "C:/Fixture",
+				maps: [{ label: "Map", mapPath: map }]
+			}),
+			inputAtlas: Effect.die("unused"),
+			savedTables: Effect.die("unused")
+		});
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchContentObservatory;
+			const request = decodeRequest({
+				mode: "fast",
+				limits: {
+					maxChangelists: 250,
+					maxConcurrency: 4,
+					maxDurationMs: 120000,
+					maxMaterializedFiles: 4000,
+					maxPackages: 4000
+				},
+				mapPath: map,
+				range: { since: "2026-07-20T00:00:00.000Z", until: "2026-07-27T00:00:00.000Z" },
+				target: {
+					kind: "actor",
+					identity: { kind: "actor_guid", actorGuid: "00000000000000000000000000000001" }
+				}
+			});
+			yield* service.start(request);
+			yield* Deferred.await(started);
+			const cancelling = yield* service.cancel.pipe(Effect.forkChild);
+			yield* Deferred.await(stopping);
+			const newer = yield* service.start(request);
+			yield* Deferred.succeed(release, undefined);
+			const settled = yield* Fiber.join(cancelling);
+			expect("jobId" in settled && "jobId" in newer && settled.jobId).toBe(
+				"jobId" in newer && newer.jobId
+			);
+			expect((yield* service.status).status).toBe("running");
+		}).pipe(
+			Effect.provide(
+				WorkbenchContentObservatoryLive.pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							project,
+							Layer.mock(AssetReader, {
+								savedWorldProgress: Effect.succeed({
+									phase: "idle" as const,
+									actorsFound: 0,
+									processedPackages: 0,
+									totalPackages: 0
+								})
+							}),
+							Layer.mock(MapHistory, {
+								progress: Effect.succeed({
+									phase: "idle" as const,
+									processedChangelists: 0,
+									totalChangelists: 0
+								}),
+								readPerforceFastMapHistory: () =>
+									Effect.gen(function* () {
+										const call = ++calls;
+										yield* Deferred.succeed(started, undefined);
+										return yield* Effect.never.pipe(
+											Effect.ensuring(
+												call === 1
+													? Effect.gen(function* () {
+															yield* Deferred.succeed(
+																stopping,
+																undefined
+															);
+															yield* Deferred.await(release);
+														})
+													: Effect.void
+											)
+										);
+									})
+							})
+						)
+					)
+				)
+			)
+		);
+	})
+);

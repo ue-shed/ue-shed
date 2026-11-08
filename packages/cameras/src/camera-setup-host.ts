@@ -33,6 +33,7 @@ export const makeCameraSetupHost = Effect.fn("CameraSetup.makeHost")(function* <
 	const gate = yield* Semaphore.make(1);
 	let outcome: typeof CameraSetupOutcome.Type | undefined;
 	let connectedBridge: CameraAuthoringBridge | undefined;
+	let contextKey: string | undefined;
 	let listing:
 		| { readonly at: number; readonly sets: ReadonlyArray<CameraSetupSavedSet> }
 		| undefined;
@@ -72,8 +73,15 @@ export const makeCameraSetupHost = Effect.fn("CameraSetup.makeHost")(function* <
 		}, gate.withPermits(1)),
 		poll: Effect.fn("CameraSetup.poll")(function* (
 			bridge: CameraAuthoringBridge,
-			projectName: string
+			projectName: string,
+			context: { readonly projectRoot: string; readonly endpoint: string }
 		) {
+			const key = JSON.stringify([context.projectRoot, context.endpoint]);
+			if (contextKey !== key) {
+				contextKey = key;
+				listing = undefined;
+				outcome = undefined;
+			}
 			const offer = yield* reopen();
 			const state = yield* bridge.call({
 				version: 1,

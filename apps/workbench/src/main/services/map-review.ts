@@ -2553,7 +2553,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			const endpoint = yield* connection.endpoint;
 			yield* setupHost.poll(
 				makeCameraAuthoringBridge(remoteControl, endpoint),
-				basename(descriptor, ".uproject")
+				basename(descriptor, ".uproject"),
+				{ projectRoot: selected.projectRoot, endpoint }
 			);
 		}).pipe(
 			Effect.withSpan("Workbench.MapReview.nativeSetupPoll"),

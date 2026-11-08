@@ -1962,7 +1962,8 @@ const livePreviewSession = {
 
 function makeLivePreviewServiceLayer(
 	worldContext: "editor" | "play",
-	beforeEnsure: Effect.Effect<void> = Effect.void
+	beforeEnsure: Effect.Effect<void> = Effect.void,
+	fallback: ReviewAuthoringApi = dyingAuthoring
 ) {
 	return MapReviewLiveWithDialog.pipe(
 		Layer.provide(
@@ -2132,8 +2133,8 @@ function makeLivePreviewServiceLayer(
 				}),
 				makeReviewCaptureTestLayer(dyingCapture),
 				makeReviewAuthoringTestLayer({
-					...dyingAuthoring,
-					previewCandidate: () => Effect.die("PNG fallback must not run")
+					...fallback,
+					previewCandidate: fallback.previewCandidate
 				})
 			)
 		)
@@ -2604,3 +2605,46 @@ it.effect("4507003856 a pending observation restart cannot erase exclusive pause
 	})
 );
 
+it.effect("4507026650 invalidated live provisioning must not start PNG fallback", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let inspected = 0;
+		let rendered = 0;
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const pending = yield* service
+				.previewAuthoringCandidate({
+					candidateId: "facade_front",
+					sessionId: "session-live"
+				})
+				.pipe(Effect.exit, Effect.forkChild);
+			yield* Deferred.await(started);
+			yield* service.discardAuthoring({ sessionId: "session-live" });
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(pending);
+			expect(inspected).toBe(0);
+			expect(rendered).toBe(0);
+		}).pipe(
+			Effect.provide(
+				makeLivePreviewServiceLayer(
+					"editor",
+					Deferred.succeed(started, undefined).pipe(
+						Effect.andThen(Deferred.await(release))
+					),
+					{
+						...dyingAuthoring,
+						inspectSubject: () =>
+							Effect.sync(() => {
+								inspected++;
+							}).pipe(Effect.andThen(Effect.die("stale subject inspection"))),
+						previewCandidate: () =>
+							Effect.sync(() => {
+								rendered++;
+							}).pipe(Effect.andThen(Effect.die("stale render")))
+					}
+				)
+			)
+		);
+	})
+);

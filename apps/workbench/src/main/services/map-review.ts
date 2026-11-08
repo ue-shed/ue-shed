@@ -1831,6 +1831,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 				});
 
 				if (session.candidates.length <= 32) {
+					let liveRevision = (yield* Ref.get(provisionedSlot)).revision;
 					const liveAttempt = yield* Effect.gen(function* () {
 						const bindings = yield* liveEnsureGate.withPermits(1)(
 							Effect.gen(function* () {
@@ -1849,6 +1850,7 @@ export const WorkbenchMapReviewLive = Layer.effect(
 											_tag: "Provisioning",
 											revision: state.revision + 1
 										}));
+										liveRevision = owner.revision;
 										const fps = yield* Ref.get(livePreviewFps);
 										const next = yield* ensureProvisionedCameras(
 											endpoint,
@@ -1959,7 +1961,8 @@ export const WorkbenchMapReviewLive = Layer.effect(
 					if (Result.isSuccess(liveAttempt)) return liveAttempt.success;
 					// A running play world is the requested authority, so surfacing its failure is
 					// more truthful than silently switching the preview to the editor world.
-					if (playActive) return yield* liveAttempt.failure;
+					if (playActive || (yield* Ref.get(provisionedSlot)).revision !== liveRevision)
+						return yield* liveAttempt.failure;
 				}
 
 				yield* invalidateProvisionedCameras();

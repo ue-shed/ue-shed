@@ -184,6 +184,9 @@ const decodeOpenedReader = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Schema.Struct({ reader: Schema.String }))
 );
 const textDecoder = new TextDecoder();
+/** The reader handle in an open reply's part, if the part is one. */
+const openedReader = (body: ArrayBuffer): string | undefined =>
+	Option.getOrUndefined(decodeOpenedReader(textDecoder.decode(body)))?.reader;
 
 /** One running engine process and its requests in flight. */
 class Worker {
@@ -282,7 +285,11 @@ class Worker {
 			at: performance.now(),
 			timer,
 			open: pending.action === "open",
-			reader: undefined
+			// The open's reply may already be in: its reader is then known before the end arrives.
+			reader:
+				pending.action === "open"
+					? pending.parts.map(openedReader).find((reader) => reader !== undefined)
+					: undefined
 		});
 	}
 
@@ -314,9 +321,7 @@ class Worker {
 			// A late frame for a request the host cancelled; its last one ends the wait.
 			const cancelled = this.cancelling.get(frame.request);
 			if (cancelled?.open && frame.kind === FrameKind.part)
-				cancelled.reader = Option.getOrUndefined(
-					decodeOpenedReader(textDecoder.decode(frame.body))
-				)?.reader;
+				cancelled.reader = openedReader(frame.body) ?? cancelled.reader;
 			if (cancelled !== undefined && frame.flags & LAST_FRAME) {
 				clearTimeout(cancelled.timer);
 				this.cancelling.delete(frame.request);

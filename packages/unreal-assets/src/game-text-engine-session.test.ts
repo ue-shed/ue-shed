@@ -82,3 +82,50 @@ it("G2.c closes a reader whose open finished after the host cancelled it", async
 		})
 	);
 });
+
+it("G2.c closes a reader whose open reply arrived just before the host cancelled it", async () => {
+	const engine = fakeEngine();
+	const session = new GameTextEngineSession("unused", () => engine.process, undefined, 60_000);
+	await Effect.runPromise(
+		Effect.gen(function* () {
+			const opening = yield* Effect.forkChild(
+				session.call({
+					action: "open",
+					configuration: {
+						cacheRoot: "cache",
+						projectKey: "project",
+						targetKey: "target",
+						sharedProject: false
+					},
+					expectedGeneration: "generation",
+					expectedJoined: "joined",
+					policy: { audienceRules: [] }
+				})
+			);
+			yield* Effect.yieldNow;
+			const id = engine.lastRequestId();
+			// The reply's part is in, its end not yet: the reader is open, and only the host knows it.
+			const encoder = new TextEncoder();
+			engine.send(
+				encodeFrame(
+					FrameKind.part,
+					id,
+					encoder.encode(
+						JSON.stringify({
+							reader: "r1",
+							generation: "generation",
+							joinedKey: "joined"
+						})
+					)
+				)
+			);
+			yield* Fiber.interrupt(opening);
+			const end = encodeFrame(FrameKind.end, id, encoder.encode("{}"));
+			end[5] = 1;
+			engine.send(end);
+			expect(engine.requests().at(-1)).toBe(
+				JSON.stringify({ action: "close", reader: "r1" })
+			);
+		})
+	);
+});

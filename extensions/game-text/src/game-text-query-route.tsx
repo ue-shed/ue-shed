@@ -1939,6 +1939,17 @@ export function GameTextRoute(props: {
 												collapsed() && styles.hiddenPane
 											)}
 										>
+											<Show when={localization.detailError()}>
+												<p role="alert">
+													{localization.detailError()}{" "}
+													<button
+														type="button"
+														onClick={localization.retryDetail}
+													>
+														Retry line translations
+													</button>
+												</p>
+											</Show>
 											<Show when={lineOpen()}>
 												<LinePageHeader
 													position={linePosition()}

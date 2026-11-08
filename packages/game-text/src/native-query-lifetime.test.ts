@@ -245,3 +245,43 @@ it("G2.b retains a valid reader after an expected exclusive-export refusal", asy
 		)
 	);
 });
+
+it("G2.b still replaces a reader after a failure that is not a refusal", async () => {
+	let invalidations = 0;
+	await Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				const query = yield* openNativeTextQuery({
+					configuration,
+					generation: "generation",
+					joinedKey: "joined",
+					onFailure: Effect.sync(() => {
+						invalidations++;
+					})
+				});
+				yield* query.search(request).pipe(Effect.result);
+				expect(invalidations).toBe(1);
+			})
+		).pipe(
+			Effect.provideService(
+				NativeGameTextEngineClient,
+				NativeGameTextEngineClient.of({
+					execute: (operation) =>
+						operation.action !== "query"
+							? Effect.succeed(outcome(operation, null))
+							: Effect.fail(
+									new AssetReaderError({
+										kind: "process",
+										code: "engine_exited",
+										operation: "game_text_engine",
+										message: "The engine stopped",
+										recovery: "Try again",
+										retrySafe: true,
+										nextStep: "retry"
+									})
+								)
+				})
+			)
+		)
+	);
+});

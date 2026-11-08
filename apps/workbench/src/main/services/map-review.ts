@@ -1374,72 +1374,81 @@ export const WorkbenchMapReviewLive = Layer.effect(
 			if (reviewProject === undefined) return { status: "not_configured" as const };
 			const reviewSetPath = yield* selectedReviewSetPath();
 			if (reviewSetPath === undefined) return { status: "not_configured" as const };
-			const session = yield* editorSession.status(endpoint).pipe(Effect.option);
-			if (Option.isNone(session)) {
-				return {
-					policy: {
-						code: "play_session_unavailable" as const,
-						message: "Workbench could not verify the Unreal Editor play-session state.",
-						recovery:
-							"Confirm UEShedCoreEditor and Remote Control are available, then retry."
-					},
-					status: "blocked" as const
-				};
-			}
-			const policy = evaluateReviewCapturePolicy(session.value.state);
-			if (policy.status === "blocked") {
-				const { status: _status, ...block } = policy;
-				return { policy: block, status: "blocked" as const };
-			}
-			const { projectRoot } = reviewProject;
-			yield* cameraWorkspace.close.pipe(Effect.orDie);
 			return yield* runExclusive(
-				capture
-					.captureSet({
-						...(intent.renderer === undefined
-							? undefined
-							: { renderer: intent.renderer }),
-						endpoint: endpoint,
-						projectRoot,
-						reviewSetPath,
-						viewIds: intent.viewIds.map((viewId) => ReviewViewId.make(viewId))
-					})
-					.pipe(
-						Effect.flatMap((run) =>
-							load.pipe(
-								Effect.map((review): MapReviewCaptureResult => {
-									if (review.status === "setup_required") {
-										return { status: "not_configured" as const };
-									}
-									if (review.status !== "ready") return review;
-									const failedViews = run.results.filter(
-										(result) => result.status === "failed"
-									).length;
-									return {
-										job: {
-											completedAt: run.completedAt,
-											context: "editor",
-											failedViews,
-											jobId: run.id,
-											progress: {
-												completedViews: run.results.length,
-												totalViews: intent.viewIds.length
+				Effect.gen(function* () {
+					const session = yield* editorSession.status(endpoint).pipe(Effect.option);
+					if (Option.isNone(session)) {
+						return {
+							policy: {
+								code: "play_session_unavailable" as const,
+								message:
+									"Workbench could not verify the Unreal Editor play-session state.",
+								recovery:
+									"Confirm UEShedCoreEditor and Remote Control are available, then retry."
+							},
+							status: "blocked" as const
+						};
+					}
+					const policy = evaluateReviewCapturePolicy(session.value.state);
+					if (policy.status === "blocked") {
+						const { status: _status, ...block } = policy;
+						return { policy: block, status: "blocked" as const };
+					}
+					const { projectRoot } = reviewProject;
+					yield* cameraWorkspace.close;
+					return yield* capture
+						.captureSet({
+							...(intent.renderer === undefined
+								? undefined
+								: { renderer: intent.renderer }),
+							endpoint: endpoint,
+							projectRoot,
+							reviewSetPath,
+							viewIds: intent.viewIds.map((viewId) => ReviewViewId.make(viewId))
+						})
+						.pipe(
+							Effect.flatMap((run) =>
+								load.pipe(
+									Effect.map((review): MapReviewCaptureResult => {
+										if (review.status === "setup_required") {
+											return { status: "not_configured" as const };
+										}
+										if (review.status !== "ready") return review;
+										const failedViews = run.results.filter(
+											(result) => result.status === "failed"
+										).length;
+										return {
+											job: {
+												completedAt: run.completedAt,
+												context: "editor",
+												failedViews,
+												jobId: run.id,
+												progress: {
+													completedViews: run.results.length,
+													totalViews: intent.viewIds.length
+												},
+												runId: run.id,
+												status: "completed",
+												successfulViews: run.results.length - failedViews,
+												viewIds: intent.viewIds
 											},
-											runId: run.id,
-											status: "completed",
-											successfulViews: run.results.length - failedViews,
-											viewIds: intent.viewIds
-										},
-										review,
-										status: "completed"
-									};
-								})
+											review,
+											status: "completed"
+										};
+									})
+								)
+							),
+							Effect.catchTag(
+								["ReviewStorageError", "ReviewCaptureRunError"],
+								(cause) => Effect.succeed(mapReviewFailure(cause))
 							)
-						),
-						Effect.catchTag(["ReviewStorageError", "ReviewCaptureRunError"], (cause) =>
-							Effect.succeed(mapReviewFailure(cause))
-						)
-					)
+						);
+				})
+			).pipe(
+				Effect.catchTag(
+					["CameraBridgeError", "ProvisionedCameraError", "CameraWorkspaceError"],
+					(cause) => Effect.succeed(mapReviewFailure(cause))
+				)
 			);
 		});
 

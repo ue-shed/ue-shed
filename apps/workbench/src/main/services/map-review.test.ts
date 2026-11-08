@@ -26,7 +26,7 @@ import { makeEditorPlaySessionTestLayer } from "@ue-shed/engine";
 import { EditorPlaySessionId, decodeEditorWorldOpenRequest } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { makeRemoteControlClientTestLayer } from "@ue-shed/unreal-connection";
-import { Effect, Layer, Queue, Ref, Schema, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Queue, Ref, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 import { join, resolve } from "node:path";
 import { expect } from "vitest";
@@ -2236,5 +2236,113 @@ it.effect("closes the open camera set before Capture Set renders", () =>
 		);
 		expect(exit._tag).toBe("Failure");
 		expect(calls).toEqual(["close", "capture"]);
+	})
+);
+
+function auditMapLayer(
+	options: {
+		authoring?: ReviewAuthoringApi;
+		capture?: ReviewCaptureApi;
+		observation?: Parameters<typeof makeObservatoryTestLayer>[0];
+		play?: Parameters<typeof makeEditorPlaySessionTestLayer>[0];
+	} = {}
+) {
+	return MapReviewWithProject.pipe(
+		Layer.provide(makeWorkbenchCameraWorkspaceTestLayer({ close: Effect.void })),
+		Layer.provide(makeReviewAuthoringTestLayer(options.authoring ?? dyingAuthoring)),
+		Layer.provide(makeReviewCaptureTestLayer(options.capture ?? dyingCapture)),
+		Layer.provide(
+			options.observation ? makeObservatoryTestLayer(options.observation) : Layer.empty
+		),
+		Layer.provide(options.play ? makeEditorPlaySessionTestLayer(options.play) : Layer.empty),
+		Layer.provide(baseMapReviewDeps),
+		Layer.provide(
+			Layer.mergeAll(
+				makeWorkbenchConfigurationLayer(configuredReview),
+				makeLocalFilesTestLayer(),
+				makeReviewRepositoryTestLayer({
+					// This test never lists Review Sets.
+					listSets: () => Effect.die("not used"),
+					discardStaging: () => Effect.die("not used"),
+					findSet: () => Effect.die("not used"),
+					finalizeRun: () => Effect.die("not used"),
+					listRuns: () => Effect.die("not used"),
+					loadRun: () => Effect.die("not used"),
+					loadSet: () => Effect.succeed(fixtureReviewSet),
+					prepareRun: () => Effect.die("not used"),
+					saveSet: () => Effect.die("not used"),
+					storeArtifact: () => Effect.die("not used"),
+					writeRunDocument: () => Effect.die("not used")
+				})
+			)
+		)
+	);
+}
+it.effect("L1.1 rechecks capture policy after queued exclusive work", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		const checked = yield* Deferred.make<void>();
+		let playing = false;
+		let captures = 0;
+		const play = {
+			execute: () => Effect.die("unused"),
+			pause: () => Effect.die("unused"),
+			resume: () => Effect.die("unused"),
+			start: () => Effect.die("unused"),
+			stop: () => Effect.die("unused"),
+			status: () =>
+				Effect.gen(function* () {
+					yield* Deferred.succeed(checked, undefined);
+					return {
+						contract: {
+							name: "unreal-editor-play-session" as const,
+							version: { major: 1 as const, minor: 0 as const }
+						},
+						state: playing
+							? {
+									status: "running" as const,
+									mode: "play" as const,
+									sessionId: EditorPlaySessionId.make("pie")
+								}
+							: { status: "stopped" as const }
+					};
+				})
+		};
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchMapReview;
+			const owner = yield* service
+				.authorFromSelection({ destination: { kind: "append_view" } })
+				.pipe(Effect.exit, Effect.forkChild);
+			yield* Deferred.await(started);
+			const capture = yield* service.capture({ viewIds: ["view-1"] }).pipe(Effect.forkChild);
+			for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+			playing = true;
+			yield* Deferred.succeed(release, undefined);
+			yield* Fiber.join(owner);
+			expect((yield* Fiber.join(capture)).status).toBe("blocked");
+			expect(captures).toBe(0);
+		}).pipe(
+			Effect.provide(
+				auditMapLayer({
+					play,
+					authoring: {
+						...dyingAuthoring,
+						inspectSelection: () =>
+							Effect.gen(function* () {
+								yield* Deferred.succeed(started, undefined);
+								yield* Deferred.await(release);
+								return yield* Effect.die("end exclusive");
+							})
+					},
+					capture: {
+						captureSet: () =>
+							Effect.sync(() => {
+								captures++;
+							}).pipe(Effect.andThen(Effect.die("unexpected capture")))
+					}
+				})
+			)
+		);
 	})
 );

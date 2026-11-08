@@ -1,5 +1,12 @@
 # @ue-shed/unreal-assets
 
+## 0.28.0
+
+### Patch Changes
+
+- Updated dependencies [618560b]
+    - @ue-shed/protocol@0.28.0
+
 ## 0.27.1
 
 ### Patch Changes

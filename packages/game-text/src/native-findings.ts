@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Exit, Option } from "effect";
+import { Clock, Context, Effect, Exit, Option, Schema } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
 import type { LocalizationAcceptedFinding } from "@ue-shed/localization/browser";
 import type {
@@ -10,6 +10,7 @@ import type { TextQualityFinding } from "./quality-schema.js";
 import type { RuleDocumentV4 } from "./rules/schema.js";
 import type { GameTextIndexError } from "./index-error.js";
 import { completeRulesOf, ruleProblemError, type GameTextRuleDocument } from "./game-text-rules.js";
+import type { QueryExpr } from "./query-filter.js";
 import { effectiveRuleDocument } from "./rules/effective.js";
 
 /** Profiles contain only bounded operation names and numbers from this call. */
@@ -76,7 +77,7 @@ export const annotateFindingsProfile = Effect.fnUntraced(function* (
 		span.end(origin + BigInt(Math.round(sample.endOffsetMs * 1_000_000)), Exit.void);
 	}
 });
-/** A line finding as `findings_query` returns it: the host shape and what a list reads of its line. */
+/** A line finding as finding rows return it: the host shape and what a list reads of its line. */
 export type QueriedLineFinding = (
 	| LocalizationQualityFinding
 	| LocalizationPolicyFinding
@@ -89,27 +90,66 @@ export type QueriedLineFinding = (
 	readonly shippedTranslation: string | null;
 	readonly family: "builtin" | "policy" | "custom";
 };
-/** A source finding as `findings_query` returns it, with its line's key. */
+/** A source finding as finding rows return it, with its line's key. */
 export type QueriedSourceFinding = TextQualityFinding & {
 	readonly id: string;
 	readonly sourceKey: string | null;
 };
 export type QueriedFinding = QueriedLineFinding | QueriedSourceFinding;
-/** A `findings_query` page with its findings' places resolved. */
-export interface FindingsQueryPage extends Omit<GameTextContract.FindingsPage, "profile"> {
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+/** Finding rows' counts: what the acceptance hid, the suggested fixes, and the diagnostics. */
+const FindingRowCounts = Schema.Struct({
+	accepted: Count,
+	fixable: Count,
+	limits: Schema.Array(Schema.Struct({ code: Schema.String, count: Count }))
+});
+export type FindingRowCounts = typeof FindingRowCounts.Type;
+const decodeFindingRowCounts = Schema.decodeUnknownOption(FindingRowCounts);
+/** One value a finding field counts, in its facet. */
+export interface FindingFacetEntry {
+	readonly key: string;
+	readonly label: string;
+	readonly count: number;
+}
+/** A page of finding rows, with its findings' places resolved. */
+export interface FindingRowsPage {
+	readonly total: number;
+	readonly counts?: FindingRowCounts;
+	/** Each facet asked for, by field: a finding field's `entries`, or a row field's groups. */
+	readonly facets?: GameTextContract.QueryAnswer["facets"];
+	readonly nextCursor?: string;
+	readonly diagnostics?: GameTextContract.FindingDiagnostics;
+	readonly stages: { readonly [stage: string]: number };
 	readonly findings: readonly QueriedFinding[];
 }
-/** A `findings_query` answer: its part, its findings, and the place sets they name by ID. */
+/** A finding facet's counts by key. */
+export const facetCounts = (
+	page: Pick<FindingRowsPage, "facets">,
+	field: GameTextContract.QueryField
+): ReadonlyMap<string, number> => {
+	// SAFETY: finding rows answer a finding field's facet as `{ entries: FindingFacetEntry[] }`.
+	// Verified by: findings_select.rs's parity test reads them as today's rule and severity counts.
+	const facet = page.facets?.[field] as { readonly entries?: readonly FindingFacetEntry[] };
+	return new Map((facet?.entries ?? []).map(({ key, count }) => [key, count]));
+};
+/** A finding rows answer: its part, its findings, and the place sets they name by ID. */
 export interface FindingsRead {
-	readonly page: GameTextContract.FindingsPage;
+	readonly page: GameTextContract.QueryAnswer;
 	readonly findings: ReadonlyArray<GameTextContract.JsonValue | undefined>;
 	readonly sets: ReadonlyMap<number, ReadonlyArray<GameTextContract.JsonValue>>;
 }
 export const inflateFindingsPage = ({ page, findings, sets }: FindingsRead) =>
-	Effect.sync((): FindingsQueryPage => {
-		const { profile: _profile, ...rest } = page;
+	Effect.sync((): FindingRowsPage => {
 		return {
-			...rest,
+			total: page.total ?? 0,
+			...Option.match(decodeFindingRowCounts(page.counts), {
+				onNone: () => ({}),
+				onSome: (counts) => ({ counts })
+			}),
+			...(page.facets !== undefined && { facets: page.facets }),
+			...(page.nextCursor !== undefined && { nextCursor: page.nextCursor }),
+			...(page.diagnostics !== undefined && { diagnostics: page.diagnostics }),
+			stages: page.stages ?? {},
 			findings: findings.map((finding) => {
 				// SAFETY: the engine writes each finding in its family's host shape, with the
 				// fields its query adds and `places` naming its place set; the handshake checked
@@ -163,18 +203,18 @@ export interface NativeFindings {
 		key: string,
 		accepted: ReadonlyArray<GameTextContract.AcceptedFinding>
 	) => Effect.Effect<string, GameTextIndexError>;
-	/** One page of a layer's findings, filtered, ordered and counted by the engine. */
-	readonly findingsQuery: (
-		request: GameTextContract.FindingsQueryRequest
-	) => Effect.Effect<FindingsQueryPage, GameTextIndexError>;
+	/** A query over a layer's findings: a page, filtered, ordered and counted by the engine. */
+	readonly findingRows: (
+		request: GameTextContract.Query
+	) => Effect.Effect<FindingRowsPage, GameTextIndexError>;
 	/**
 	 * Writes the report view's selected findings to `text` as `findingJson`, the elements of the
-	 * CLI report's `findings` array, and answers with the page's counts and what it wrote.
+	 * CLI report's `findings` array, and answers with its counts and what it wrote.
 	 */
 	readonly findingsWrite: (
-		request: Omit<GameTextContract.FindingsQueryRequest, "sink" | "limit">,
+		request: GameTextContract.Query,
 		text: (chunk: Uint8Array) => Effect.Effect<void>
-	) => Effect.Effect<GameTextContract.FindingsPage, GameTextIndexError>;
+	) => Effect.Effect<GameTextContract.QueryAnswer, GameTextIndexError>;
 	/** The program's first problem as the engine compiles it, with the rule at fault. */
 	readonly rulesCheck: (
 		document: RuleDocumentV4
@@ -198,3 +238,47 @@ export const checkCompleteRules = (
 						problem ? Effect.fail(ruleProblemError(problem)) : Effect.void
 					)
 				);
+
+/** What a finding rows query reads, besides its layer. */
+export interface FindingRowsOptions {
+	readonly view: GameTextContract.FindingsView;
+	/** The layer's target; a source-only layer has none. */
+	readonly target?: string | undefined;
+	/** That culture's findings and those without one. */
+	readonly culture?: string | undefined;
+	readonly acceptance?: string | undefined;
+	readonly where?: QueryExpr | undefined;
+	/** Each word in the finding's line's source or its culture's translation; a source finding's source. */
+	readonly text?: string | undefined;
+	readonly rows?: GameTextContract.RowsPart | undefined;
+	readonly counts?: boolean | undefined;
+	readonly facets?: ReadonlyArray<GameTextContract.QueryFacet> | undefined;
+	readonly diagnostics?: GameTextContract.DiagnosticsPart | undefined;
+	readonly write?: GameTextContract.Sink | undefined;
+}
+
+/** A query over a findings layer's findings. */
+export const findingRowsQuery = (
+	key: string,
+	options: FindingRowsOptions
+): GameTextContract.Query => ({
+	selection: {
+		rows: "findings",
+		findings: {
+			key,
+			view: options.view,
+			...(options.acceptance !== undefined && { acceptance: options.acceptance })
+		},
+		...(options.target !== undefined && { target: options.target }),
+		...(options.culture !== undefined && { culture: options.culture }),
+		...(options.where !== undefined && { where: options.where }),
+		...(options.text?.trim() && { text: { query: options.text, translations: true } })
+	},
+	parts: {
+		...(options.rows !== undefined && { rows: options.rows }),
+		...(options.counts === true && { counts: true }),
+		...(options.facets !== undefined && { facets: options.facets }),
+		...(options.diagnostics !== undefined && { diagnostics: options.diagnostics }),
+		...(options.write !== undefined && { write: options.write })
+	}
+});

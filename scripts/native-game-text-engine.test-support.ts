@@ -5,6 +5,7 @@ import { effectiveRuleDocument } from "../packages/game-text/src/rules/effective
 import { STARTER_CHECK_RULES } from "../packages/game-text/src/starter-rules.ts";
 import { SharedIndex, sharedIndexNodeLayer } from "../packages/game-text/src/shared-index.ts";
 import { openNativeTextQuery } from "../packages/game-text/src/native-query.ts";
+import { findingRowsQuery } from "../packages/game-text/src/native-findings.ts";
 import type { TextCorpusSearchRequest } from "../packages/game-text/src/schema.ts";
 import type { joinStoreOptions } from "./columnar-join.test-support.ts";
 import type { NativeLineFacts } from "./columnar-join-fuzz.test-support.ts";
@@ -41,9 +42,9 @@ export function nativeEngineLines(executable: string) {
 }
 
 type NativeTextQuery = Effect.Success<ReturnType<typeof openNativeTextQuery>>;
-/** A findings page as a query returns it, without its timing. */
+/** A page of finding rows as a query returns it, without its timing. */
 type QueriedFindingsPage = Omit<
-	Effect.Success<ReturnType<NativeTextQuery["findingsQuery"]>>,
+	Effect.Success<ReturnType<NativeTextQuery["findingRows"]>>,
 	"stages"
 >;
 
@@ -92,15 +93,30 @@ export function nativeEngineFindings(executable: string) {
 						] as const) {
 							const rows: QueriedFindingsPage[] = [];
 							for (let offset = 0; ; offset += size) {
-								const { stages: _stages, ...page } = yield* query.findingsQuery({
-									key: evaluation.key,
-									view,
-									order,
-									offset,
-									limit: size,
-									...(offset === 0 ? { counts: true } : undefined),
-									diagnostics: { offset, limit: size }
-								});
+								const { stages: _stages, ...page } = yield* query.findingRows(
+									findingRowsQuery(evaluation.key, {
+										view,
+										// The source order lists only source findings.
+										...(order === "source"
+											? {
+													where: {
+														eq: [
+															{ field: "subject" },
+															{ lit: "unit_source" }
+														]
+													}
+												}
+											: undefined),
+										rows: { order, offset, limit: size },
+										...(offset === 0
+											? {
+													counts: true,
+													facets: [{ by: "rule" }, { by: "severity" }]
+												}
+											: undefined),
+										diagnostics: { offset, limit: size }
+									})
+								);
 								rows.push(page);
 								if (
 									page.findings.length < size &&

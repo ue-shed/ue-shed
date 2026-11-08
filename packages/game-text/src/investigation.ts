@@ -9,7 +9,8 @@ import {
 	InvestigationError,
 	investigationTable
 } from "@ue-shed/unreal-assets/investigation";
-import { TextCorpus, TextCorpusSearchRequest, type TextFilterClause } from "./schema.js";
+import { TextCorpus, TextCorpusSearchRequest } from "./schema.js";
+import { LocalizationSelection } from "./localization-schema.js";
 import { TextCorpusReport, textCorpusReport } from "./corpus-summary.js";
 import {
 	WorkspaceQualityFilter,
@@ -20,44 +21,33 @@ import { TextQualityReport } from "./quality-schema.js";
 import { TextQualityFilter, type AsyncTextQualityQuery } from "./quality-query.js";
 import type { TextUnit } from "./schema.js";
 
-/** The review lens presets saved before findings were the project's rules; read as a clause. */
-const SavedLens = Schema.Literals([
-	"all",
-	"shared",
-	"duplicate_source",
-	"long",
-	"unresolved",
-	"conflicting"
-]);
-
 /**
- * Serializable corpus or quality query for a reusable investigation. Localization quality
- * filters require quality mode and a selected localization target.
+ * Serializable corpus or quality query for a reusable investigation: the request UE Shed runs, and
+ * the host's own record of the controls that built it. Localization quality filters require
+ * quality mode and a selected localization target.
  */
 export const GameTextInvestigationQuery = Schema.Struct({
-	withoutNotes: TextCorpusSearchRequest.fields.withoutNotes,
 	mode: Schema.Literals(["corpus", "quality"]),
 	query: TextCorpusSearchRequest.fields.query,
-	capability: TextCorpusSearchRequest.fields.capability,
-	/**
-	 * A lens from a preset saved before filter pills; `investigationRequest` reads it as the clause
-	 * it is now. New presets use `filter`.
-	 */
-	lens: Schema.optional(SavedLens),
+	/** The list's filter, as the Text tab's request sends it. */
 	where: TextCorpusSearchRequest.fields.where,
-	/** Filter pills; presets saved before them use the fields above. */
-	filter: TextCorpusSearchRequest.fields.filter,
+	fileScope: TextCorpusSearchRequest.fields.fileScope,
 	group: TextCorpusSearchRequest.fields.group,
 	/**
-	 * The localization target and cultures the pills were chosen against. Problem and translation
-	 * pills need it, so the export joins the target's files as the list does.
+	 * The localization target and cultures the filter was chosen against. Problem and translation
+	 * tests need the target, so the export joins its files as the list does.
 	 */
-	localization: TextCorpusSearchRequest.fields.localization,
+	localization: Schema.optionalKey(LocalizationSelection),
 	qualityFilter: TextQualityFilter,
 	/** The localization quality list's filter; only a quality query over a target has one. */
 	workspaceFilter: Schema.optionalKey(WorkspaceQualityFilter),
-	/** The localization quality list's search, severities and suggested-fix filter. */
-	workspaceNarrowing: Schema.optionalKey(Schema.Struct(WorkspaceQualityNarrowing))
+	/** The localization quality list's search and filter, as its request sends them. */
+	workspaceNarrowing: Schema.optionalKey(Schema.Struct(WorkspaceQualityNarrowing)),
+	/**
+	 * The host's record of the controls that built this query, so opening the preset shows them
+	 * again. UE Shed saves it and never reads it.
+	 */
+	controls: Schema.optionalKey(Schema.Json)
 }).check(
 	Schema.makeFilter((query) =>
 		query.workspaceFilter === undefined ||
@@ -73,51 +63,44 @@ export const GameTextInvestigationQuery = Schema.Struct({
 );
 export type GameTextInvestigationQuery = Schema.Schema.Type<typeof GameTextInvestigationQuery>;
 
-/**
- * The request an investigation query runs, with a saved lens read as its clause: `shared`,
- * `duplicate_source` and `long` name those checks' findings (`localization.<check>`), and
- * `unresolved` and `conflicting` are facts.
- */
+/** The search request an investigation query runs. */
 export function investigationRequest(
 	query: GameTextInvestigationQuery
-): Omit<GameTextInvestigationQuery, "lens"> {
-	const { lens, ...request } = query;
-	if (lens === undefined || lens === "all") return request;
-	const clause: TextFilterClause =
-		lens === "unresolved" || lens === "conflicting"
-			? { field: "fact", op: "is", values: [lens] }
-			: { field: "finding", op: "is", values: [`localization.${lens}`] };
-	return { ...request, filter: [...(request.filter ?? []), clause] };
+): Omit<TextCorpusSearchRequest, "cursor" | "pageSize"> {
+	return {
+		query: query.query,
+		...(query.localization && { localization: query.localization }),
+		...(query.where && { where: query.where }),
+		...(query.fileScope && { fileScope: query.fileScope }),
+		...(query.group && { group: query.group })
+	};
 }
 type Narrowing = Schema.Schema.Type<Schema.Struct<typeof WorkspaceQualityNarrowing>>;
 /** Whether a report lists what a preset's narrowing selects: blank searches select everything. */
 function sameNarrowing(report: Narrowing, preset: Narrowing): boolean {
 	return (
 		(report.query?.trim() ?? "") === (preset.query?.trim() ?? "") &&
-		JSON.stringify(report.severities ?? null) === JSON.stringify(preset.severities ?? null) &&
-		report.fixable === preset.fixable
+		JSON.stringify(report.where ?? null) === JSON.stringify(preset.where ?? null)
 	);
 }
 /**
- * Versioned reusable query with domain ordering and optional embedded rules. Source quality
- * needs rules; localization quality requires schema version 2.
+ * Versioned reusable query with domain ordering and optional embedded rules. Source quality needs
+ * rules. Version 3 saves the filter UE Shed runs; earlier versions saved pills and are refused.
  */
 export const GameTextInvestigationPreset = Schema.Struct({
-	schemaVersion: Schema.Literals([1, 2]),
+	schemaVersion: Schema.Literal(3),
 	kind: Schema.Literal("game_text"),
 	sort: Schema.Literal("domain_order"),
 	query: GameTextInvestigationQuery,
 	rules: Schema.optionalKey(GameTextRuleDocument)
 }).check(
-	Schema.makeFilter((preset) => {
-		if (preset.schemaVersion === 1 && preset.query.workspaceFilter !== undefined)
-			return "Localization quality presets require schemaVersion 2.";
-		return preset.query.mode !== "quality" ||
-			preset.rules !== undefined ||
-			preset.query.workspaceFilter !== undefined
+	Schema.makeFilter((preset) =>
+		preset.query.mode !== "quality" ||
+		preset.rules !== undefined ||
+		preset.query.workspaceFilter !== undefined
 			? undefined
-			: "Source quality presets require a rule document.";
-	})
+			: "Source quality presets require a rule document."
+	)
 );
 export type GameTextInvestigationPreset = Schema.Schema.Type<typeof GameTextInvestigationPreset>;
 /**
@@ -154,15 +137,7 @@ export const GameTextInvestigationExport = Schema.Struct({
 			report: WorkspaceQualityReport
 		})
 	])
-}).check(
-	Schema.makeFilter((document) => {
-		if (document.schemaVersion !== document.preset.schemaVersion)
-			return "An investigation export and its preset must use the same schemaVersion.";
-		return document.schemaVersion === 1 && document.result.mode === "localization_quality"
-			? "Localization quality exports require schemaVersion 2."
-			: undefined;
-	})
-);
+});
 export type GameTextInvestigationExport = Schema.Schema.Type<typeof GameTextInvestigationExport>;
 
 /**
@@ -230,13 +205,6 @@ export function exportGameTextInvestigation(
 		);
 	});
 	return Effect.gen(function* () {
-		if (preset.schemaVersion === 1 && preset.query.workspaceFilter !== undefined)
-			return yield* new InvestigationError({
-				message: "Localization quality presets require schemaVersion 2.",
-				recovery: "Save this localization quality selection as a version-2 preset.",
-				retrySafe: true,
-				nextStep: "fix_input"
-			});
 		if (
 			preset.query.mode === "quality" &&
 			preset.rules === undefined &&

@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
@@ -308,11 +309,12 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 					for (const group of [undefined, "audience"] as const) {
 						const request: TextCorpusSearchRequest = {
 							query: "",
-							capability: "all",
 							pageSize: 50,
 							facets: { audiences: true },
 							...(scoped ? { localization } : undefined),
-							...(filter === undefined ? undefined : { filter }),
+							...(filter === undefined
+								? undefined
+								: { where: textWhere({ filter })! }),
 							...(group === undefined ? undefined : { group })
 						};
 						const facet = scoped ? facets.lines : facets.units;
@@ -360,9 +362,10 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 			// Exported lines carry the same audience and scope.
 			const exported = yield* result.query.localizationLines({
 				query: "",
-				capability: "all",
 				localization,
-				filter: [{ field: "audience", op: "is_not", values: ["player"] }]
+				where: textWhere({
+					filter: [{ field: "audience", op: "is_not", values: ["player"] }]
+				})!
 			});
 			const exportedKeys = [
 				"Anim",
@@ -394,10 +397,11 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 			// The audience facet leaves out its own clause, and counts each line once.
 			const player = yield* result.search({
 				query: "",
-				capability: "all",
 				pageSize: 50,
 				localization,
-				filter: [{ field: "audience", op: "is", values: ["player"] }],
+				where: textWhere({
+					filter: [{ field: "audience", op: "is", values: ["player"] }]
+				})!,
 				facets: { audiences: true }
 			});
 			expect(player.localization?.lines.map((line) => line.identity?.key).sort()).toEqual([
@@ -413,9 +417,8 @@ it.live("audience is stored, filtered, faceted and grouped the same through the 
 			// Without a target, units are listed by their own audience.
 			const editor = yield* result.search({
 				query: "",
-				capability: "all",
 				pageSize: 50,
-				filter: [{ field: "audience", op: "is", values: ["editor"] }]
+				where: textWhere({ filter: [{ field: "audience", op: "is", values: ["editor"] }] })!
 			});
 			expect(editor.units.map((unit) => keyOfUnit(memory, unit.id)).sort()).toEqual([
 				"Anim",

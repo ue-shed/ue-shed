@@ -858,6 +858,115 @@ restored sources, and requires each layer to equal a full one. The fuzzer's in-p
 200 seeds before the review fixes and 32 on the final reader; it now fails unless a run has an
 incremental join and an incremental evaluation, judged by the rows each closure chose.
 
+## Phase 7 baseline and attribution
+
+Measured on 2026-11-07 on the released project Coral (265,791 lines, 156,637 findings, ten
+cultures) in an isolated Electroswag run (its own home, ports and reader), driven by a headless
+browser. The baseline is published UE Shed 0.27.1. The attribution run is the same Electroswag
+with this branch's step 1 instrumentation: its reader, `@ue-shed/protocol` and
+`@ue-shed/unreal-assets`. Times are the server's RPC spans and the engine's stages from the
+Electroswag trace; one run of each path, so they are directions, not medians. Artifacts are under
+`E:/scratch/ues-0271/` (`base-trace*.jsonl`, `s1-trace.jsonl`, `drive/`).
+
+### Baseline, 0.27.1
+
+| Path                                                        | Time       | Where it goes                                      |
+| ----------------------------------------------------------- | ---------- | -------------------------------------------------- |
+| Text tab, the full list with facets                         | 247–285 ms | Engine; the Text tab records no stages             |
+| Text tab, a search ("lantern" cold, "qq", no match)         | 16–30 ms   |                                                    |
+| Text tab, broad pills (a folder, an asset type)             | 144–274 ms |                                                    |
+| Text tab, the next rows                                     | 17–36 ms   |                                                    |
+| Quality, the first page after opening                       | 2,825 ms   | `compose` 2,791 ms                                 |
+| Quality, the same page again, sent at once by the tab badge | 2,834 ms   | Electroswag sends it twice                         |
+| Quality, a page                                             | 31–48 ms   | `compose` 18–20 ms                                 |
+| Quality, the first search ("eggs")                          | 2,478 ms   | stages 741 ms (`lines` 720 ms); 1.7 s outside them |
+| Quality, a search after that, or adding a severity          | 39–62 ms   |                                                    |
+| Quality, a new word with no match                           | 149 ms     | `lines` 140 ms                                     |
+
+### What step 1 added
+
+- **`queuedMs`** on every engine reply's profile: how long the request waited for a thread after
+  the engine read it, annotated as `game_text.engine.queued_ms`. `findings_query` runs in the bulk
+  class, two at a time, so a Quality page can queue behind an evaluation.
+- **`layer`**: opening the findings layer, inside a findings page's total.
+- **`compose_open`, `compose_prefetch` and `compose_rows`**: where `compose` goes, outside the
+  total. `compose_prefetch` is split into `compose_prefetch_arena` (the read arena),
+  `compose_prefetch_ids` (the page's occurrence IDs) and `compose_prefetch_strings` (their place
+  strings), and `compose_dictionary_image` appears when the compose was the first read of a string.
+
+### Attribution
+
+The first page after reopening the cached index, with the instrumentation:
+
+| Stage                         | First page | Later pages |
+| ----------------------------- | ---------: | ----------: |
+| `compose`                     |   2,509 ms |    10–15 ms |
+| — `compose_open`              |     301 ms |        0 ms |
+| — `compose_prefetch`          |   2,164 ms |      7–8 ms |
+| —— `compose_prefetch_arena`   |   2,163 ms |        7 ms |
+| —— `compose_prefetch_ids`     |       0 ms |        0 ms |
+| —— `compose_prefetch_strings` |       1 ms |      0–1 ms |
+| — `compose_rows`              |      44 ms |      1–3 ms |
+| `compose_dictionary_image`    |     absent |      absent |
+| `queuedMs`, every call        |       0 ms |        0 ms |
+
+- **The cold 2.2 s is the whole corpus's occurrence children.** Reading a page's places takes a
+  read arena (`NativeSubjects::take_read_arena`), and a new one runs
+  `prepare_columns(&[], arena, with_children: true)`. That builds the line-to-occurrence order for
+  every line in the project, 265,791 of them: each line's members, the IDs of every occurrence of
+  a line with more than one, and a collated sort of each group (`Projector::children`,
+  `rules/subjects_columns.rs`). A page needs the members of its 50 lines. The order is cached on
+  the reader's query per locale, which is why later pages take 7 ms; that 7 ms is a new arena
+  sized to the dictionary and a copy of the cached order, per request.
+- **Not the dictionary image.** The image was already built when Quality composed (no
+  `compose_dictionary_image` stage), and the page's own IDs and strings take 1 ms.
+- **`compose_open`'s 301 ms** builds the reader's occurrence relation (`OccurrenceData::build`),
+  once per reader.
+- **The 1.7 s outside the stages didn't reproduce.** The first search took 517 ms in the engine,
+  500 ms of it `lines`, with nothing queued. The queue and `layer` timings will show it if it
+  returns.
+- **The badge's duplicate request** ran beside the list's, both cold, so both built the order.
+
+Finding rows still compose their places, so this path stays in Phase 7. The fix is local: a page
+read orders only its own lines' members, and the corpus order is left to the evaluations that
+read every line. It lands on this branch as its own step, measured before the field registry.
+
+### Step 2: a page orders only its lines
+
+The same drives on the same Electroswag, with step 2's reader, cold after a restart:
+
+| Path                                  |     Step 1 |     Step 2 | Where it goes now                        |
+| ------------------------------------- | ---------: | ---------: | ---------------------------------------- |
+| Quality, the first page after opening |   2,547 ms |     362 ms | `compose_open` 299 ms, `compose_rows` 47 |
+| Quality, the badge's duplicate of it  |   2,562 ms |     378 ms | the same, beside it                      |
+| Quality, a page                       |   25–35 ms |   13–24 ms | `compose_prefetch` 2–3 ms, was 8–14      |
+| Quality, the first search ("eggs")    |     547 ms |     479 ms | `lines` 469 ms                           |
+| Text tab, the full list with facets   | 215–229 ms | 207–238 ms | unchanged                                |
+| Text tab, a search or the next rows   |    2–16 ms |    2–16 ms | unchanged                                |
+
+`compose_prefetch_arena` is 0 ms on every page: a read arena no longer builds anything. What is
+left of the cold page is the reader's occurrence relation (`OccurrenceData::build`), once per
+reader. The search's `lines` is the line search itself, which finding rows replace in step 4.
+
+### Steps 5 and 6: Quality reads finding rows, with the Text tab's toolbar
+
+Isolated Electroswag on Coral, with the Quality toolbar (search, Filter menu with Severity, Folder
+and Suggested fix) sending `where` and five row facets on every page, cold after a restart:
+
+| Path                                    |   Baseline | Step 2 |  Steps 5–6 | Where it goes now                            |
+| --------------------------------------- | ---------: | -----: | ---------: | -------------------------------------------- |
+| Quality, the first page after opening   |   2,825 ms | 362 ms |     613 ms | `compose_open` 453, `facets` 63, `counts` 37 |
+| Quality, the badge's duplicate of it    |   2,834 ms | 378 ms |       none | Electroswag reads the list's own count       |
+| Quality, the first search ("eggs")      |   2,478 ms | 479 ms |     446 ms | `lines` 432 ms                               |
+| Quality, a new word with no match       |     149 ms |      — |      97 ms | `lines` 92 ms                                |
+| Quality, a severity, folder or fix pill |   39–62 ms |      — |   20–97 ms | `select` 7–23 ms, `facets` up to 44 ms       |
+| Text tab, a search                      | 247–285 ms |      — | 219–281 ms | unchanged                                    |
+
+The first page is slower than step 2's by `compose_open` (299 → 453 ms, the reader's cold
+occurrence relation, which varies with the disk cache) and by the row facets the Filter menu now
+counts (63 ms over 156,640 findings). Every path is under its baseline; the badge's request is
+gone.
+
 ## Instrumentation details
 
 Rust timings require the `benchmark-timings` Cargo feature and

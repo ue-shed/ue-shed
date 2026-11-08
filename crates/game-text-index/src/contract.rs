@@ -73,12 +73,12 @@ mod tests {
     use crate::batch::{BatchHeader, ColumnHeader, ColumnType, Missing, StringsHeader};
     use crate::engine::{EnginePolicy, EngineRequest, OpenReply, Profile, Progress};
     use crate::engine_types::{
-        DetailSection, Facets, FindingsSelection, GroupBy, GroupKey, GroupsPart, LineAnswer,
-        LineRequest, OpenGroupAnswer, OpenGroupsPart, PlacesSection, Query, QueryAnswer,
-        QueryParts, RelatedSection, ReviewIdentity, ReviewLine, ReviewLinesAnswer,
-        ReviewLinesRequest, ReviewPoEntry, RowKind, RowSelection, RowsPart, Selection, TextSearch,
+        DetailSection, FacetPart, FindingsSelection, GroupKey, GroupsPart, LineAnswer, LineRequest,
+        OpenGroupAnswer, OpenGroupsPart, PlacesSection, Query, QueryAnswer, QueryParts,
+        RelatedSection, ReviewIdentity, ReviewLine, ReviewLinesAnswer, ReviewLinesRequest,
+        ReviewPoEntry, RowKind, RowSelection, RowsPart, Selection, TextSearch,
     };
-    use crate::engine_where::Facet;
+    use crate::engine_types::{FindingsOrder, FindingsView};
     use crate::package_text_contract::{
         BaseLocalization, CodeLayerOutcome, CodeLayerRequest, ComparePointsRequest, CultureArchive,
         GateCheck, LocalizationRevision, PackageTextAudienceMatch, PackageTextAudienceRule,
@@ -91,8 +91,7 @@ mod tests {
         PointText,
     };
     use crate::rules::findings_query::{
-        AcceptedFinding, CodeCount, Counts, Diagnostics, FindingsAcceptRequest, FindingsPage,
-        LineSearch, Order, Page, QueryRequest, RuleTotal, View,
+        AcceptedFinding, CodeCount, Diagnostics, FindingsAcceptRequest,
     };
     use crate::rules::ir::{
         Document, Expr, Family, MatchOperator, MatcherKind, Role, RoleMatcher, RoleScope, Rule,
@@ -132,6 +131,14 @@ mod tests {
             crate::localization::import::VERSION,
             crate::localization::import::MAXIMUM_FILES
         ));
+        text.push_str(&format!(
+            "/** Every query field (`GameTextContract.QueryField`), in the engine's registry order. */\n\
+             export const queryFields = [{}] as const;\n\n",
+            crate::engine_where::field_names()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
         text.push_str(
             "/**\n * The Game Text engine's message types: the v4 rule IR, the findings replies and the\n\
              * evaluation profile. Hosts build and read engine messages with these types; the session\n\
@@ -143,6 +150,14 @@ mod tests {
              export type Finding = {\n\treadonly places: number;\n\treadonly id: string;\n\t\
              readonly [key: string]: JsonValue;\n};\n",
         );
+        text.push_str(&format!(
+            "\n/** A query field: what a `where` tests, a facet mark names, and rows group and count by. */\n\
+             export type QueryField = {};\n",
+            crate::engine_where::field_names()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        ));
         for declaration in [
             crate::localization::Format::decl(&config),
             crate::localization::Options::decl(&config),
@@ -210,20 +225,18 @@ mod tests {
             Memory::decl(&config),
             FindingsAcceptRequest::decl(&config),
             AcceptedFinding::decl(&config),
-            QueryRequest::decl(&config),
-            LineSearch::decl(&config),
             Query::decl(&config),
             Selection::decl(&config),
             TextSearch::decl(&config),
             FindingsSelection::decl(&config),
-            Facet::decl(&config),
+            crate::engine_types::Rows::decl(&config),
+            crate::engine_types::DiagnosticsPart::decl(&config),
             QueryParts::decl(&config),
             RowsPart::decl(&config),
             GroupKey::decl(&config),
             OpenGroupsPart::decl(&config),
             GroupsPart::decl(&config),
-            GroupBy::decl(&config),
-            Facets::decl(&config),
+            FacetPart::decl(&config),
             QueryAnswer::decl(&config),
             OpenGroupAnswer::decl(&config),
             LineRequest::decl(&config),
@@ -312,12 +325,8 @@ mod tests {
             Envelope::decl(&config),
             Format::decl(&config),
             SinkSummary::decl(&config),
-            View::decl(&config),
-            Order::decl(&config),
-            Page::decl(&config),
-            FindingsPage::decl(&config),
-            Counts::decl(&config),
-            RuleTotal::decl(&config),
+            FindingsView::decl(&config),
+            FindingsOrder::decl(&config),
             CodeCount::decl(&config),
             Diagnostics::decl(&config),
             LineDiagnostic::decl(&config),

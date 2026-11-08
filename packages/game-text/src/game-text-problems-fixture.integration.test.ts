@@ -126,7 +126,6 @@ function keyed(join: LocalizationJoin, identity: typeof Identity.Type) {
 }
 const search = (target: LocalizationJoin["target"]): TextCorpusSearchRequest => ({
 	query: "",
-	capability: "all",
 	pageSize: 50,
 	localization: { target }
 });

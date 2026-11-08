@@ -412,15 +412,11 @@ describe("folded corpus", () => {
 					expect(signals).not.toContain("conflicting");
 					const page = yield* query.search({
 						query: "",
-						capability: "all",
 						pageSize: 50
 					});
 					expect(page.counts.conflicting).toBe(0);
 					// Search finds the line by its authored text only.
-					expect(
-						(yield* query.search({ query: "now", capability: "all", pageSize: 50 }))
-							.total
-					).toBe(1);
+					expect((yield* query.search({ query: "now", pageSize: 50 })).total).toBe(1);
 				})
 			);
 		}

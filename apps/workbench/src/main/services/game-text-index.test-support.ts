@@ -67,7 +67,7 @@ function cannedTextQuery(
 	return {
 		findingsEvaluate: unplanted("findingsEvaluate"),
 		findingsAccept: unplanted("findingsAccept"),
-		findingsQuery: unplanted("findingsQuery"),
+		findingRows: unplanted("findingRows"),
 		findingsWrite: unplanted("findingsWrite"),
 		rulesCheck: unplanted("rulesCheck"),
 		readCorpus: Effect.die("This test planted no answer for readCorpus."),

@@ -153,7 +153,6 @@ it.effect(
 			expect(reads).toBe(1);
 			const page = yield* localization.search({
 				query: "Pending",
-				capability: "all",
 				pageSize: 1,
 				localization: {
 					target: target.name,
@@ -644,7 +643,6 @@ it.live("writes review flags and shows a later edit as changed since review", ()
 		const counts = Effect.gen(function* () {
 			const result = yield* localization.search({
 				query: "",
-				capability: "all",
 				pageSize: 50,
 				localization: { target: name, culture: line.culture }
 			});

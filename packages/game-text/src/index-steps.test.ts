@@ -99,7 +99,7 @@ it.live(
 				expect(target.queryRevision).toBeDefined();
 				expect(first.queryRevision).toBe(target.queryRevision);
 				expect(second.queryRevision).toBe(target.queryRevision);
-				const request = { query: "Source", capability: "all" as const, pageSize: 10 };
+				const request = { query: "Source", pageSize: 10 };
 				const expected = yield* first.query.search(request);
 				yield* Scope.close(firstScope, Exit.void);
 				expect(yield* second.search(request)).toEqual(expected);
@@ -358,7 +358,7 @@ it.live(
 				const imported = yield* steps.importTarget(project, fixture.request);
 				const target = yield* steps.buildTarget(project, imported);
 				const pinned = yield* steps.openTarget(target);
-				const search = { query: "Source", capability: "all" as const, pageSize: 10 };
+				const search = { query: "Source", pageSize: 10 };
 				const original = yield* pinned.query.search(search);
 				yield* steps.invalidate(fixture.request);
 				expect(yield* steps.openTarget(target).pipe(Effect.flip)).toMatchObject({
@@ -406,10 +406,7 @@ it.live("cancellation releases the project writer so a queued refresh can comple
 			const result = yield* steps.openTarget(
 				yield* steps.buildTarget(project, yield* steps.importTarget(project))
 			);
-			expect(
-				(yield* result.query.search({ query: "Source", capability: "all", pageSize: 10 }))
-					.total
-			).toBe(1);
+			expect((yield* result.query.search({ query: "Source", pageSize: 10 })).total).toBe(1);
 		}).pipe(Effect.provide(fixture.layer()));
 	}).pipe(Effect.scoped)
 );
@@ -438,7 +435,7 @@ it.live(
 						yield* steps.importTarget(project, fixture.request)
 					);
 				});
-				const search = { query: "Source", capability: "all" as const, pageSize: 10 };
+				const search = { query: "Source", pageSize: 10 };
 				// The old model pins its generation's reader and worker for the whole test.
 				const old = yield* steps.openTarget(yield* build);
 				const before = yield* old.query.search(search);
@@ -566,9 +563,7 @@ it.live("retains existing refresh adapters that do not return project-step metad
 			const model = yield* retained.refresh({ projectRoot: fixture.projectRoot });
 			yield* model.retain;
 			expect(model.project).toBeUndefined();
-			expect(
-				(yield* model.search({ query: "Source", capability: "all", pageSize: 10 })).total
-			).toBe(1);
+			expect((yield* model.search({ query: "Source", pageSize: 10 })).total).toBe(1);
 		}).pipe(Effect.provide(legacy));
 	}).pipe(Effect.scoped)
 );
@@ -598,10 +593,7 @@ it.live("opens a committed target after restart without inventory, imports or a 
 			expect(Option.isSome(opened)).toBe(true);
 			if (Option.isNone(opened)) throw new Error("Expected committed target");
 			expect(opened.value.summary).toEqual(expected);
-			expect(
-				(yield* opened.value.search({ query: "Source", capability: "all", pageSize: 50 }))
-					.total
-			).toBe(1);
+			expect((yield* opened.value.search({ query: "Source", pageSize: 50 })).total).toBe(1);
 			expect(opened.value.packages.readPackages).toBe(0);
 			expect(fixture.inventories()).toBe(1);
 			expect(fixture.packageReads()).toBe(1);

@@ -183,7 +183,7 @@ describe("GameTextWorkspaceContract", () => {
 						first
 					);
 
-					const search = { capability: "all", pageSize: 10, query: "" } as const;
+					const search = { pageSize: 10, query: "" } as const;
 					const found = yield* serve(
 						GameTextWorkspaceContract.search,
 						workspace.search,
@@ -404,7 +404,6 @@ describe("GameTextWorkspaceContract", () => {
 					const query = {
 						mode: "corpus",
 						query: "",
-						capability: "all",
 						qualityFilter: "all"
 					} as const;
 					yield* serve(

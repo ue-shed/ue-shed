@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { describe, expect, it } from "vitest";
 import { referenceLocalizationLinesCsv } from "./localization-csv-reference.test-support.js";
 import { Effect, Schema } from "effect";
@@ -616,7 +617,7 @@ const factsOf = (view: LocalizationLineView<LocalizationLineField>) => ({
 describe("index reads", () => {
 	it("validates aggregate requests", () => {
 		const valid = Schema.is(TextAggregateRequest);
-		const base = { query: "", capability: "all" } as const;
+		const base = { query: "" } as const;
 		const localization = { target: "Game" };
 		expect(valid({ ...base, localization, by: ["culture", "state"] })).toBe(true);
 		expect(valid({ ...base, by: ["source", "problem"], measures: ["lineBreakWords"] })).toBe(
@@ -667,9 +668,10 @@ describe("index reads", () => {
 							for (const source of sources) {
 								const matching: Matching = {
 									query: "",
-									capability: "all",
 									localization: { target: fixture.target.name },
-									filter: [{ field: "source", op: "is", values: [source] }]
+									where: textWhere({
+										filter: [{ field: "source", op: "is", values: [source] }]
+									})!
 								};
 								expect(
 									(yield* model.query.search({ ...matching, pageSize: 50 })).total
@@ -733,7 +735,7 @@ describe("index reads", () => {
 								fixture.request
 							);
 							const localization = { target: fixture.target.name };
-							const lines = { query: "", capability: "all" as const, localization };
+							const lines = { query: "", localization };
 
 							// Grouped counts and words, every dimension, under filters and picked cultures.
 							for (const { by, filter, cultures, ...expected } of aggregates)
@@ -753,7 +755,9 @@ describe("index reads", () => {
 														}
 													: undefined)
 											},
-											...(filter ? { filter } : undefined),
+											...(filter
+												? { where: textWhere({ filter })! }
+												: undefined),
 											by,
 											measures: ["lines", "sourceWords", "lineBreakWords"]
 										})
@@ -799,7 +803,12 @@ describe("index reads", () => {
 							const fields = LocalizationLineField.literals;
 							for (const [filter, keys] of filteredLines) {
 								const views = yield* model.query.selectLocalizationLines(
-									{ ...lines, ...(filter.length ? { filter } : undefined) },
+									{
+										...lines,
+										...(filter.length
+											? { where: textWhere({ filter })! }
+											: undefined)
+									},
 									fields
 								);
 								expect(views.map(factsOf), JSON.stringify(filter)).toEqual(
@@ -819,7 +828,11 @@ describe("index reads", () => {
 							const conflicting = yield* model.query.selectLocalizationLines(
 								{
 									...lines,
-									filter: [{ field: "fact", op: "is", values: ["conflicting"] }]
+									where: textWhere({
+										filter: [
+											{ field: "fact", op: "is", values: ["conflicting"] }
+										]
+									})!
 								},
 								["identity", "marks"]
 							);
@@ -993,8 +1006,8 @@ describe("index reads", () => {
 									effectiveRuleDocument(STARTER_CHECK_RULES)
 								);
 								const corpusRequests = [
-									{ query: "", capability: "all" },
-									{ query: "", capability: "all", findings: { key } },
+									{ query: "" },
+									{ query: "", findings: { key } },
 									{ ...lines, findings: { key } }
 								] as const;
 								for (const [index, request] of corpusRequests.entries()) {
@@ -1036,12 +1049,9 @@ describe("index reads", () => {
 											new Error("A corpus export reads no source rules.")
 										)
 								};
-								for (const [index, request] of [
-									{ query: "", capability: "all" as const },
-									lines
-								].entries()) {
+								for (const [index, request] of [{ query: "" }, lines].entries()) {
 									const preset: GameTextInvestigationPreset = {
-										schemaVersion: 1,
+										schemaVersion: 3,
 										kind: "game_text",
 										sort: "domain_order",
 										query: { ...request, mode: "corpus", qualityFilter: "all" }

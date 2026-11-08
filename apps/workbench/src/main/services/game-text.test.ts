@@ -378,7 +378,6 @@ it.effect("passes localization corpus focus through the selected target's query"
 		yield* service.configuredRefresh({});
 		yield* service.localizationTarget(localizationTarget.name);
 		const result = yield* service.search({
-			capability: "all",
 			query: "",
 			pageSize: 50,
 			localization: { target: localizationTarget.name }
@@ -551,9 +550,7 @@ it.effect(
 					status: "ready",
 					targets: []
 				});
-				expect(
-					yield* service.search({ query: "Source", capability: "all", pageSize: 50 })
-				).toMatchObject({
+				expect(yield* service.search({ query: "Source", pageSize: 50 })).toMatchObject({
 					status: "ready",
 					page: { total: 1 }
 				});
@@ -750,9 +747,7 @@ it.effect("an old project's scan cannot overwrite a newer project's result", () 
 			expect((yield* service.configuredRefresh({})).status).toBe("completed");
 			yield* Deferred.succeed(release, undefined);
 			expect((yield* Fiber.join(first)).status).toBe("failed");
-			expect(
-				(yield* service.search({ query: "", pageSize: 50, capability: "all" })).status
-			).toBe("ready");
+			expect((yield* service.search({ query: "", pageSize: 50 })).status).toBe("ready");
 		}).pipe(Effect.provide(gameTextLive.pipe(Layer.provide(project), Layer.provide(corpus))));
 	})
 );
@@ -808,8 +803,7 @@ for (const phase of ["candidates", "scan"] as const) {
 					expect(
 						(yield* service.search({
 							query: "",
-							pageSize: 50,
-							capability: "all"
+							pageSize: 50
 						})).status
 					).not.toBe("ready");
 					expect(
@@ -817,8 +811,6 @@ for (const phase of ["candidates", "scan"] as const) {
 							query: {
 								mode: "corpus",
 								query: "",
-								capability: "all",
-								filter: [],
 								qualityFilter: "all"
 							},
 							format: "json"
@@ -828,8 +820,7 @@ for (const phase of ["candidates", "scan"] as const) {
 					expect(
 						(yield* service.search({
 							query: "",
-							pageSize: 50,
-							capability: "all"
+							pageSize: 50
 						})).status
 					).toBe("ready");
 				}).pipe(
@@ -978,7 +969,7 @@ it.effect(
 				},
 				status: "failed"
 			});
-			expect(yield* service.search({ capability: "all", pageSize: 50, query: "" })).toEqual({
+			expect(yield* service.search({ pageSize: 50, query: "" })).toEqual({
 				page: {
 					total: 0,
 					units: [],
@@ -1144,8 +1135,6 @@ it("exports one captured generation when the project changes during the save dia
 				const query = {
 					mode: "corpus" as const,
 					query: "",
-					capability: "all" as const,
-					filter: [],
 					qualityFilter: "all" as const
 				};
 				expect(yield* service.investigationExport({ query, format: "json" })).toMatchObject(
@@ -1212,8 +1201,6 @@ it("exports the selected target's localization quality list as a replayable repo
 	const query = {
 		mode: "quality" as const,
 		query: "",
-		capability: "all" as const,
-		filter: [],
 		qualityFilter: "all" as const,
 		workspaceFilter: "empty_translation" as const,
 		localization: { target: localizationTarget.name, culture: cultureCode("de") }
@@ -1252,8 +1239,8 @@ it("exports the selected target's localization quality list as a replayable repo
 				const exported = JSON.parse(
 					yield* Effect.promise(() => readFile(outputPath, "utf8"))
 				);
-				expect(exported.schemaVersion).toBe(2);
-				expect(exported.preset.schemaVersion).toBe(2);
+				expect(exported.schemaVersion).toBe(3);
+				expect(exported.preset.schemaVersion).toBe(3);
 				expect(exported.preset.query).toEqual(query);
 				expect(exported.result).toMatchObject({
 					mode: "localization_quality",
@@ -1270,7 +1257,7 @@ it("exports the selected target's localization quality list as a replayable repo
 				const savedPreset = JSON.parse(
 					yield* Effect.promise(() => readFile(outputPath, "utf8"))
 				);
-				expect(savedPreset).toMatchObject({ schemaVersion: 2, query });
+				expect(savedPreset).toMatchObject({ schemaVersion: 3, query });
 				outputPath = join(root, "export.csv");
 				expect((yield* service.investigationExport({ query, format: "csv" })).status).toBe(
 					"saved"
@@ -1312,12 +1299,10 @@ it("restores embedded rules without retaining another rule file's write destinat
 	const query = {
 		mode: "corpus" as const,
 		query: "",
-		capability: "all" as const,
-		filter: [],
 		qualityFilter: "all" as const
 	};
 	const preset = {
-		schemaVersion: 1,
+		schemaVersion: 3,
 		kind: "game_text",
 		sort: "domain_order",
 		query,

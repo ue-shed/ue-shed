@@ -62,7 +62,6 @@ it.each([false, true])(
 		]);
 		const request = {
 			query: "",
-			capability: "all" as const,
 			pageSize: 50,
 			group: "folder" as const
 		};
@@ -143,7 +142,6 @@ it("reads the groups that open together in one rows request", async () => {
 	const rows = groupedRows("asset", planted);
 	const request = {
 		query: "",
-		capability: "all" as const,
 		pageSize: 50,
 		group: "asset" as const
 	};

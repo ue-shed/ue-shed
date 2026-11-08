@@ -451,14 +451,12 @@ describe.skipIf(!executable)("native package record deltas", () => {
 										summary: yield* native.summary,
 										page: yield* native.search({
 											query: "",
-											capability: "all",
 											pageSize: 50
 										})
 									});
 									if (backend === "native" && step === states.length - 1) {
 										const invalid = yield* decodeTextCorpusSearchRequest({
 											query: "",
-											capability: "all",
 											pageSize: 1,
 											localization: { target: "OtherTarget" }
 										}).pipe(Effect.orDie);

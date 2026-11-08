@@ -20,6 +20,8 @@ import {
 } from "./localization.test-support.js";
 import { joinLocalizationTarget } from "./localization.js";
 import { localizationKeyChanges } from "./localization-key-changes.js";
+import { textWhere } from "./query-filter.js";
+import type { TextFilter } from "./schema.js";
 import {
 	WorkspaceQualityPage,
 	WorkspaceQualityRequest,
@@ -104,14 +106,12 @@ describe("bounded localization workspace", () => {
 	it("preserves the rules file in source investigation exports", async () => {
 		const { text, document } = qualityFixture();
 		const preset = decodeGameTextInvestigationPreset({
-			schemaVersion: 1,
+			schemaVersion: 3,
 			kind: "game_text",
 			sort: "domain_order",
 			query: {
 				mode: "quality",
 				query: "",
-				capability: "all",
-
 				qualityFilter: "all"
 			},
 			rules: document
@@ -145,17 +145,16 @@ describe("bounded localization workspace", () => {
 			authority: "project_files"
 		} as const;
 		type Query = (typeof GameTextInvestigationPreset.Encoded)["query"];
-		const preset = (filter: Query["filter"], localization?: Query["localization"]) =>
+		const preset = (filter: TextFilter, localization?: Query["localization"]) =>
 			decodeUnknownGameTextInvestigationPreset({
-				schemaVersion: 1,
+				schemaVersion: 3,
 				kind: "game_text",
 				sort: "domain_order",
 				query: {
 					mode: "corpus",
 					query: "",
-					capability: "all",
 					qualityFilter: "all",
-					filter,
+					where: textWhere({ filter }),
 					...(localization === undefined ? undefined : { localization })
 				}
 			});
@@ -224,13 +223,12 @@ it("exports and replays the exact localization quality filter and culture with c
 	expect(csv.split("\r\n")[0]).toContain('"Finding ID","Scan status"');
 	expect(csv.endsWith("\r\n")).toBe(true);
 	const input = {
-		schemaVersion: 2,
+		schemaVersion: 3,
 		kind: "game_text",
 		sort: "domain_order",
 		query: {
 			mode: "quality",
 			query: "",
-			capability: "all",
 			qualityFilter: "all",
 			workspaceFilter: selection.filter,
 			localization: { target: selection.target, culture: selection.culture }
@@ -245,7 +243,7 @@ it("exports and replays the exact localization quality filter and culture with c
 	const exported = await Effect.runPromise(
 		exportGameTextInvestigation(fixture.text, preset, source, undefined, report)
 	);
-	expect(exported.schemaVersion).toBe(2);
+	expect(exported.schemaVersion).toBe(3);
 	expect(exported.result).toEqual({ mode: "localization_quality", report });
 	expect(decodeGameTextInvestigationExport(exported)).toEqual(exported);
 	expect(gameTextInvestigationCsv(exported)).toContain("finding_id");

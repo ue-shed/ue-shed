@@ -402,14 +402,12 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 			yield* Effect.promise(() => readFile(fixtureRules, "utf8"))
 		);
 		const preset = {
-			schemaVersion: 1 as const,
+			schemaVersion: 3 as const,
 			kind: "game_text" as const,
 			sort: "domain_order" as const,
 			query: {
 				mode: "quality" as const,
 				query: "",
-				capability: "all" as const,
-
 				qualityFilter: "terminology" as const
 			},
 			rules
@@ -447,7 +445,7 @@ it.effect("replays embedded quality rules and exports filtered evidence with pro
 		expect(
 			yield* decodePreset({
 				...preset,
-				schemaVersion: 3
+				schemaVersion: 2
 			}).pipe(Effect.result)
 		).toMatchObject({ _tag: "Failure" });
 		const invalidRules = {

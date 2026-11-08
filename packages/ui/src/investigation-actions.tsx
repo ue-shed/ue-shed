@@ -37,7 +37,8 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 	readonly disabled: boolean;
 	/** Block every action while the host has an exclusive project operation. */
 	readonly blocked?: boolean;
-	readonly onOpen: (preset: Preset) => void;
+	/** Shows an opened preset; answers why when the view can't show it. */
+	readonly onOpen: (preset: Preset) => string | undefined;
 	readonly onRequestOpen?: (open: () => void) => void;
 	readonly disabledReason?: string | undefined;
 	readonly compact?: boolean;
@@ -104,8 +105,9 @@ export function InvestigationActions<Query, Preset, Error>(props: {
 				}
 				if (result.status === "opened") {
 					setSaved(undefined);
-					props.onOpen(result.preset);
-					status(`Opened ${result.path}`);
+					const refused = props.onOpen(result.preset);
+					if (refused === undefined) status(`Opened ${result.path}`);
+					else alert(refused);
 				} else {
 					if (result.replayCommand)
 						setSaved({ key: baseline, command: result.replayCommand });

@@ -249,7 +249,6 @@ describe.skipIf(!executable)("native committed Game Text reopen", () => {
 							expect(
 								(yield* opened.value.search({
 									query: "Source",
-									capability: "all",
 									pageSize: 50
 								})).total
 							).toBe(1);

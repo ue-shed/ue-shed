@@ -44,13 +44,12 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 							queryPids.length = 0;
 							observe = true;
 							const pending = yield* model.query
-								.search({ query: "", capability: "all", pageSize: 1 })
+								.search({ query: "", pageSize: 1 })
 								.pipe(Effect.forkChild);
 							yield* Deferred.await(started);
 							yield* Fiber.interrupt(pending);
 							const page = yield* model.query.search({
 								query: "",
-								capability: "all",
 								pageSize: 1
 							});
 							observe = false;
@@ -61,7 +60,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					).pipe(Effect.provide(fixture.layer(fixture.source, implementation)));
 					const closed = yield* prepare;
 					const failed = yield* closed.query
-						.search({ query: "", capability: "all", pageSize: 1 })
+						.search({ query: "", pageSize: 1 })
 						.pipe(Effect.result);
 					expect(Result.isFailure(failed)).toBe(true);
 					if (Result.isFailure(failed)) {
@@ -142,7 +141,6 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						const model = yield* index.refresh(fixture.request);
 						const selected = {
 							query: "",
-							capability: "all" as const,
 							localization: { target: target.name }
 						};
 						const lines = yield* model.query.localizationLines(selected);
@@ -280,7 +278,6 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 						const index = yield* GameTextIndexRefresh;
 						const request = {
 							query: "",
-							capability: "all" as const,
 							pageSize: 50,
 							localization: { target: fixture.target.name }
 						};
@@ -491,7 +488,7 @@ describe.skipIf(!executable)("production native Game Text queries", () => {
 					yield* Effect.gen(function* () {
 						const index = yield* GameTextIndexRefresh;
 						const first = yield* index.refresh(fixture.request);
-						const request = { query: "", capability: "all" as const, pageSize: 50 };
+						const request = { query: "", pageSize: 50 };
 						const original = yield* first.query.search(request);
 						expect(yield* first.corpus).toEqual(fixture.raw());
 						yield* Effect.promise(() =>

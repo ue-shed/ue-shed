@@ -419,6 +419,7 @@ export function TextureAuditRoute(props: {
 							setFindingsOnly(preset.query.findingsOnly);
 							setSelection(preset.query.selection);
 							load(false);
+							return undefined;
 						}}
 					/>
 				)}

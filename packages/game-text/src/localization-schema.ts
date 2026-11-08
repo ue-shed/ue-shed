@@ -233,13 +233,20 @@ export const LocalizationSelection = Schema.Struct({
 			Schema.isMaxLength(MAX_LOCALIZATION_CULTURES)
 		)
 	),
-	state: Schema.optionalKey(LocalizationState),
-	review: Schema.optionalKey(LocalizationReviewLens),
-	/** Only lines whose key changed, listed by their new key. */
-	keyChanged: Schema.optionalKey(Schema.Boolean),
 	searchTranslations: Schema.optionalKey(Schema.Boolean)
 });
 export type LocalizationSelection = typeof LocalizationSelection.Type;
+/**
+ * The localization lens the Text tab and saved presets choose: a line state, a review flag, or
+ * changed keys. Requests carry it in `where`; `textWhere` writes it.
+ */
+export const LocalizationLens = Schema.Struct({
+	state: Schema.optionalKey(LocalizationState),
+	review: Schema.optionalKey(LocalizationReviewLens),
+	/** Only lines whose key changed, listed by their new key. */
+	keyChanged: Schema.optionalKey(Schema.Boolean)
+});
+export type LocalizationLens = typeof LocalizationLens.Type;
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 /**
  * Nonnegative line and source-word totals for every localization state. Word counts may be

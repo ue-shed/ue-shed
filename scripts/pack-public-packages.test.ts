@@ -241,6 +241,7 @@ void test("Game Text packs focused entry points without aggregate fallbacks", as
 		"./corpus",
 		"./index",
 		"./labels",
+		"./query",
 		"./rules",
 		"./schema",
 		"./workspace"

@@ -17,7 +17,7 @@ describe("localization row bounds", () => {
 			remainingLocationCount: 0,
 			cultures: []
 		};
-		expect(isSearchRequest({ query: "", capability: "all", pageSize: 500 })).toBe(true);
+		expect(isSearchRequest({ query: "", pageSize: 500 })).toBe(true);
 		expect(isPageLines(Array(500).fill(line))).toBe(true);
 		expect(isPageLines(Array(MAX_TEXT_QUERY_PAGE_SIZE + 1).fill(line))).toBe(false);
 	});

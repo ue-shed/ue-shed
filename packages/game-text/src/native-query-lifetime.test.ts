@@ -7,7 +7,7 @@ import { openNativeTextQuery } from "./native-query.js";
 import type { TextCorpusSearchPage } from "./schema.js";
 
 // A search that matches nothing: its page is all head, with no row batches to fake.
-const request = { query: "no such text", capability: "all" as const, pageSize: 1 };
+const request = { query: "no such text", pageSize: 1 };
 const configuration = {
 	cacheRoot: tmpdir(),
 	projectKey: "fixture",
@@ -47,6 +47,7 @@ function outcome(
 			batches: 0,
 			batchBytes: 0,
 			creditStallMs: 0,
+			queuedMs: 0,
 			io: {
 				opens: 0,
 				sectionLoads: 0,

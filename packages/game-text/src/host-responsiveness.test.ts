@@ -35,7 +35,7 @@ it.live.skipIf(!enabled)(
 				service.refresh(fixture.request).pipe(
 					Effect.tap((result) =>
 						Effect.gen(function* () {
-							yield* result.search({ query: "", capability: "all", pageSize: 50 });
+							yield* result.search({ query: "", pageSize: 50 });
 							// Summary reads stay asynchronous through the native engine.
 							expect(
 								(yield* result.query.summary).searchable.textUnits
@@ -74,11 +74,7 @@ it.live.skipIf(!enabled)(
 				Effect.scoped(
 					steps
 						.openTarget(target)
-						.pipe(
-							Effect.tap((model) =>
-								model.search({ query: "", capability: "all", pageSize: 50 })
-							)
-						)
+						.pipe(Effect.tap((model) => model.search({ query: "", pageSize: 50 })))
 				)
 			);
 			yield* Effect.logInfo("Open event-loop gap").pipe(

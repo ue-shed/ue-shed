@@ -221,7 +221,6 @@ if (values.worker) {
 				const queryStarted = performance.now();
 				const searched = opened.query.search({
 					query: "",
-					capability: "all",
 					pageSize: 50,
 					...(targetName ? { localization: { target: targetName } } : undefined)
 				});

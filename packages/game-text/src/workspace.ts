@@ -137,7 +137,7 @@ const investigationPreset = (
 	query: GameTextInvestigationQuery,
 	rules: GameTextInvestigationPreset["rules"]
 ): GameTextInvestigationPreset => ({
-	schemaVersion: query.workspaceFilter === undefined ? 1 : 2,
+	schemaVersion: 3,
 	kind: "game_text",
 	sort: "domain_order",
 	query,
@@ -864,17 +864,14 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const projectRelativeRequest = (request: TextCorpusSearchRequest) =>
 		Ref.get(modelSelection).pipe(
 			Effect.map((owner) =>
-				owner === undefined || request.where?.files === undefined
+				owner === undefined || request.fileScope === undefined
 					? request
 					: {
 							...request,
-							where: {
-								...request.where,
-								files: projectRelativeTextFiles(
-									request.where.files,
-									owner.projectRoot
-								)
-							}
+							fileScope: projectRelativeTextFiles(
+								request.fileScope,
+								owner.projectRoot
+							)
 						}
 			)
 		);

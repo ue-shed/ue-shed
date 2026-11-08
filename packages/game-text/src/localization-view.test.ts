@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { it } from "@effect/vitest";
 import { describe, expect } from "vitest";
 import { Effect, Schema } from "effect";
@@ -43,13 +44,9 @@ describe("localization presentation", () => {
 					Effect.gen(function* () {
 						const page = yield* query.search({
 							query: "",
-							capability: "all",
 							pageSize: 50,
-							localization: {
-								target: target.name,
-								state: "not_synced",
-								culture: cultureCode("de")
-							}
+							localization: { target: target.name, culture: cultureCode("de") },
+							where: textWhere({ lens: { state: "not_synced" } })!
 						});
 						expect(page.total).toBe(1);
 						expect(page.counts.all).toBe(1);
@@ -67,9 +64,9 @@ describe("localization presentation", () => {
 						).toBe("Pending translation");
 						const noHits = yield* query.search({
 							query: "absent",
-							capability: "all",
 							pageSize: 50,
-							localization: { target: target.name, state: "not_synced" }
+							localization: { target: target.name },
+							where: textWhere({ lens: { state: "not_synced" } })!
 						});
 						expect(noHits.localization?.notSynced).toBe(0);
 						expect(noHits.localization?.stateCounts.not_synced).toBe(0);
@@ -234,9 +231,9 @@ describe("localization presentation", () => {
 				Effect.map(
 					query.search({
 						query: "",
-						capability: "all",
 						pageSize: 50,
-						localization: { target: target.name, state: "not_synced" }
+						localization: { target: target.name },
+						where: textWhere({ lens: { state: "not_synced" } })!
 					}),
 					(page) => expect(page.total).toBe(0)
 				)
@@ -358,7 +355,6 @@ describe("localization presentation", () => {
 describe("localization in the query", () => {
 	const request = {
 		query: "",
-		capability: "all" as const,
 		pageSize: 50,
 		localization: { target: target.name }
 	};
@@ -439,11 +435,8 @@ describe("localization in the query", () => {
 					const page = yield* query.search({
 						...request,
 						pageSize: 1,
-						localization: {
-							target: target.name,
-							culture: cultureCode("de"),
-							state: "not_gathered"
-						}
+						localization: { target: target.name, culture: cultureCode("de") },
+						where: textWhere({ lens: { state: "not_gathered" } })!
 					});
 					expect(page.total).toBe(1);
 					expect(page.localization?.counts[0]?.states.not_gathered).toEqual({
@@ -512,7 +505,10 @@ describe("localization in the query", () => {
 		};
 		return withIndexedCorpus({ units: [] }, { files: evidence([entry]) }, ({ query }) =>
 			Effect.gen(function* () {
-				expect((yield* query.search({ ...request, withoutNotes: true })).total).toBe(0);
+				expect(
+					(yield* query.search({ ...request, where: textWhere({ withoutNotes: true })! }))
+						.total
+				).toBe(0);
 				expect((yield* query.search(request)).total).toBe(1);
 			})
 		);

@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { indexedTestReports } from "./indexed-reports.test-support.js";
 import { corpusCsvForTest } from "./export-reference.test-support.js";
 import { Effect, Schema } from "effect";
@@ -65,7 +66,6 @@ describe("writer counts", () => {
 				Effect.gen(function* () {
 					const page = yield* query.search({
 						query: "",
-						capability: "all",
 						pageSize: 50
 					});
 					expect(yield* decodeTextCorpusSearchPage(page).pipe(Effect.orDie)).toEqual(
@@ -86,9 +86,9 @@ describe("writer counts", () => {
 							)
 						})
 					).toThrow();
-					expect(
-						(yield* query.search({ query: "", capability: "all", pageSize: 1 })).counts
-					).toEqual(page.counts);
+					expect((yield* query.search({ query: "", pageSize: 1 })).counts).toEqual(
+						page.counts
+					);
 					expect(page.total).toBe(2);
 					expect(page.counts.all).toBe(page.total);
 					const summary = yield* query.summary;
@@ -109,25 +109,30 @@ describe("writer counts", () => {
 		() =>
 			withIndexedCorpus(corpusOf(["row one", "row two", "other", ""]), {}, ({ query }) =>
 				Effect.gen(function* () {
-					const request = { query: "row", capability: "all" as const, pageSize: 50 };
+					const request = { query: "row", pageSize: 50 };
 					expect((yield* query.search(request)).counts).toMatchObject({
 						all: 2,
 						editable: 1,
 						readOnly: 1,
 						withoutNotes: 1
 					});
-					const withoutNotes = yield* query.search({ ...request, withoutNotes: true });
+					const withoutNotes = yield* query.search({
+						...request,
+						where: textWhere({ withoutNotes: true })!
+					});
 					expect(withoutNotes.total).toBe(1);
 					expect(withoutNotes.counts.readOnly).toBe(0);
-					const readOnly = yield* query.search({ ...request, capability: "read_only" });
+					const readOnly = yield* query.search({
+						...request,
+						where: textWhere({ capability: "read_only" })!
+					});
 					expect(readOnly.total).toBe(1);
 					expect(readOnly.counts.all).toBe(readOnly.total);
 					expect(readOnly.counts.readOnly).toBe(readOnly.total);
 					expect(
 						(yield* query.search({
 							...request,
-							capability: "read_only",
-							withoutNotes: true
+							where: textWhere({ capability: "read_only", withoutNotes: true })!
 						})).total
 					).toBe(0);
 					expect((yield* query.search({ ...request, query: "key:" })).total).toBe(0);
@@ -163,7 +168,7 @@ describe("human CSV", () => {
 				Effect.gen(function* () {
 					const filtered = yield* query.exportWithSignals({
 						query: "",
-						capability: "source_editable"
+						where: textWhere({ capability: "source_editable" })!
 					});
 					expect(filtered.corpus.units).toHaveLength(1);
 					expect(formatCsv(filtered.corpus, filtered.reviewSignals)).toContain(
@@ -207,8 +212,7 @@ describe("human CSV", () => {
 			);
 			return withIndexedCorpus(corpus, {}, ({ query }) =>
 				Effect.gen(function* () {
-					const id = (yield* query.search({ query: "", capability: "all", pageSize: 1 }))
-						.units[0]!.id;
+					const id = (yield* query.search({ query: "", pageSize: 1 })).units[0]!.id;
 					expect((yield* query.focus({ id, pageSize: 50 }))?.unit.characterCount).toBe(2);
 				})
 			);

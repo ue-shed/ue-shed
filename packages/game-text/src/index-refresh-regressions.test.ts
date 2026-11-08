@@ -50,7 +50,7 @@ it.live(
 					(yield* service.refresh({ projectRoot: fixture.projectRoot })).join.rebuilt
 				).toBe(false);
 				expect((yield* service.refresh(fixture.request)).join.rebuilt).toBe(true);
-				const search = { query: "Source", capability: "all" as const, pageSize: 10 };
+				const search = { query: "Source", pageSize: 10 };
 				const pinned = yield* source.query.search(search);
 				fixture.setSource("Updated");
 				const changedTarget = yield* service.refresh(fixture.request);
@@ -142,7 +142,6 @@ it.live.each(["manifest", "archive", "po"] as const)(
 					);
 					const search = {
 						query: "",
-						capability: "all" as const,
 						pageSize: 10,
 						localization: {
 							target: fixture.target.name,
@@ -238,7 +237,7 @@ it.live("raw corpus retains invisible units and empty-source String Table eviden
 			expect(yield* indexed.corpus).toEqual(fixture.raw());
 			expect((yield* indexed.corpus).units).toHaveLength(4);
 			expect((yield* indexed.corpus).coverage.textOccurrences).toBe(4);
-			const search = { query: "", capability: "all" as const, pageSize: 10 };
+			const search = { query: "", pageSize: 10 };
 			// Search and export list only the unit with visible text; the coverage counts all four.
 			expect((yield* indexed.query.search(search)).total).toBe(1);
 			const exported = yield* indexed.query.export(search);

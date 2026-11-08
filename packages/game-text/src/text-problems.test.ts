@@ -1,3 +1,4 @@
+import { textWhere } from "./query-filter.js";
 import { it } from "@effect/vitest";
 import { Effect } from "effect";
 import { describe, expect } from "vitest";
@@ -135,7 +136,6 @@ describe("problems in the query", () => {
 	);
 	const request = {
 		query: "",
-		capability: "all" as const,
 		pageSize: 50,
 		localization: { target: target.name }
 	};
@@ -151,7 +151,7 @@ describe("problems in the query", () => {
 						? undefined
 						: { cultures: cultures.map((culture) => cultureCode(culture)) })
 				},
-				filter
+				where: textWhere({ filter })!
 			})
 			.pipe(Effect.map((page) => page.localization?.lines.map((line) => line.identity?.key)));
 
@@ -172,7 +172,9 @@ describe("problems in the query", () => {
 				for (const problem of TextProblem.literals) {
 					const filtered = yield* query.search({
 						...request,
-						filter: [{ field: "problem", op: "is", values: [problem] }]
+						where: textWhere({
+							filter: [{ field: "problem", op: "is", values: [problem] }]
+						})!
 					});
 					expect(filtered.total).toBe(all.problems?.[problem]);
 					// The problem clause never narrows the problem counts.
@@ -188,7 +190,10 @@ describe("problems in the query", () => {
 				const rule: TextFilter = [
 					{ field: "finding", op: "is", values: ["length_outlier"] }
 				];
-				const named = yield* query.search({ ...request, filter: rule });
+				const named = yield* query.search({
+					...request,
+					where: textWhere({ filter: rule })!
+				});
 				expect(named.total).toBe(0);
 				expect(named.problems?.finding).toBe(0);
 				expect(
@@ -206,7 +211,7 @@ describe("problems in the query", () => {
 					{ field: "problem", op: "is", values: ["up_to_date"] }
 				];
 				expect(yield* keys(query, filter)).toEqual(["Done", "Long"]);
-				const page = yield* query.search({ ...request, filter });
+				const page = yield* query.search({ ...request, where: textWhere({ filter })! });
 				expect(page.problems?.up_to_date).toBe(2);
 				expect(page.problems?.not_gathered).toBe(1);
 				expect(
@@ -256,9 +261,10 @@ describe("problems in the query", () => {
 				const refused = yield* Effect.flip(
 					query.search({
 						query: "",
-						capability: "all",
 						pageSize: 50,
-						filter: [{ field: "translation", op: "is", values: ["missing"] }]
+						where: textWhere({
+							filter: [{ field: "translation", op: "is", values: ["missing"] }]
+						})!
 					})
 				);
 				expect(refused).toMatchObject({
@@ -267,7 +273,6 @@ describe("problems in the query", () => {
 				});
 				const corpusOnly = yield* query.search({
 					query: "",
-					capability: "all",
 					pageSize: 50
 				});
 				expect(corpusOnly.problems?.finding).toBe(0);

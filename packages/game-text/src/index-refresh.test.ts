@@ -159,11 +159,10 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					});
 					expect(progress.at(-1)?.phase).toBe("ready");
 					const searches = [
-						{ query: "source", capability: "all" as const, pageSize: 10 },
-						{ query: "absent", capability: "all" as const, pageSize: 10 },
+						{ query: "source", pageSize: 10 },
+						{ query: "absent", pageSize: 10 },
 						{
 							query: "Source",
-							capability: "all" as const,
 							pageSize: 10,
 							localization: { target: authored.name, culture: "de" },
 							facets: { folder: "", assets: true, origins: true, cultures: true }
@@ -192,7 +191,6 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					expect(
 						(yield* first.query.search({
 							query: "Source",
-							capability: "all",
 							pageSize: 10
 						})).total
 					).toBe(1);
@@ -223,14 +221,12 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					expect(
 						(yield* changed.query.search({
 							query: "Changed",
-							capability: "all",
 							pageSize: 10
 						})).total
 					).toBe(1);
 					expect(
 						(yield* first.query.search({
 							query: "Changed",
-							capability: "all",
 							pageSize: 10
 						})).total
 					).toBe(0);
@@ -242,12 +238,9 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					expect(yield* first.search(searches[0]!)).toEqual(
 						yield* first.query.search(searches[0]!)
 					);
-					expect(
-						yield* changed.search({ query: "Changed", capability: "all", pageSize: 10 })
-					).toEqual(
+					expect(yield* changed.search({ query: "Changed", pageSize: 10 })).toEqual(
 						yield* changed.query.search({
 							query: "Changed",
-							capability: "all",
 							pageSize: 10
 						})
 					);
@@ -301,14 +294,12 @@ it("retains readers across refresh steps updating selected inputs and review", a
 					expect(
 						(yield* incremental.query.search({
 							query: "Optimized",
-							capability: "all",
 							pageSize: 10
 						})).total
 					).toBe(1);
 					expect(
 						(yield* full.query.search({
 							query: "Optimized",
-							capability: "all",
 							pageSize: 10
 						})).total
 					).toBe(0);

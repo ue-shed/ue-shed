@@ -431,7 +431,6 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 						for (const group of [undefined, "problem", "asset"] as const) {
 							const request: TextCorpusSearchRequest = {
 								query: search.query,
-								capability: "all",
 								pageSize: 50,
 								facets: { assets: true },
 								...(scoped
@@ -460,7 +459,7 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 											: undefined
 							});
 						}
-			const all = yield* result.search({ query: "", capability: "all", pageSize: 50 });
+			const all = yield* result.search({ query: "", pageSize: 50 });
 			expect(all.counts.conflicting).toBe(0);
 			expect(
 				all.units
@@ -473,13 +472,12 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 				{ status: "consistent", value: "v1.2" }
 			]);
 			// The compiled copy's old text is provenance, not a searchable place.
-			const old = yield* result.search({ query: "v1.1", capability: "all", pageSize: 50 });
+			const old = yield* result.search({ query: "v1.1", pageSize: 50 });
 			expect(old.total).toBe(0);
 
 			// Exported lines and rows list places, not copies.
 			const exported = {
 				query: "",
-				capability: "all",
 				localization: { target: fixture.target.name }
 			} as const;
 			expect(
@@ -505,7 +503,7 @@ it.live("folded copies agree between the index and the in-memory corpus and join
 							? { ...item, source: compiled }
 							: item
 				);
-			const request = { query: "", capability: "all", pageSize: 50 } as const;
+			const request = { query: "", pageSize: 50 } as const;
 			// Place text edits join incrementally, whatever the texts' length.
 			const long = "Press any button to begin a new adventure";
 			const longer = "Press any button to begin your next adventure";

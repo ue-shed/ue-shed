@@ -49,6 +49,8 @@ pub struct EngineQuery {
     culture_translations: Lock<HashMap<usize, CultureTexts>>,
     /// Each search predicate's rows, by its normalized form.
     pub(crate) atoms: Lock<crate::engine_rows::AtomCache>,
+    /// Atoms of scopes narrowed to one finding's culture, on their own budget.
+    pub(crate) narrowed_atoms: Lock<crate::engine_rows::AtomCache>,
     pub(crate) places: Once<Arc<crate::engine_places::Places>>,
     pub(crate) projection: Once<Arc<crate::engine_match::Projection>>,
     /// The occurrence relation finding reads share, built once per reader.
@@ -244,6 +246,9 @@ impl EngineQuery {
             translation_matches: Lock::default(),
             culture_translations: Lock::default(),
             atoms: Lock::default(),
+            narrowed_atoms: Lock::new(crate::engine_rows::AtomCache::with_budget(
+                crate::engine_rows::NARROWED_ATOM_CACHE_BYTES,
+            )),
             places: Once::default(),
             projection: Once::default(),
             asset_types: Once::default(),

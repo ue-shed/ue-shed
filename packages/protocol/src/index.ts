@@ -572,5 +572,6 @@ export {
 export {
 	gameTextEngineContract,
 	localizationImport,
+	queryFields,
 	type GameTextContract
 } from "./game-text-contract.generated.js";

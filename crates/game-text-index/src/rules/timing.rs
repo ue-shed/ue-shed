@@ -165,7 +165,7 @@ fn persisted_default_catalogue_timing() -> Result<()> {
 /// written to the cache, so point it at a disposable copy.
 #[test]
 #[ignore = "Requires a disposable retained cache, Node 26, a heavy-run lease, and --release"]
-fn persisted_findings_query_timing() -> Result<()> {
+fn persisted_finding_rows_timing() -> Result<()> {
     let (query, catalogue) = timing_inputs()?;
     let cancelled = AtomicBool::new(false);
     let rules = catalogue["rules"]
@@ -198,11 +198,18 @@ fn persisted_findings_query_timing() -> Result<()> {
     for call in 0..calls {
         let started = std::time::Instant::now();
         let mut reply = crate::engine::Gathered::default();
-        query.findings_query(
-            json!({"key":key,"view":"workspace","order":order,"offset":call * size,"limit":size}),
-            &cancelled,
-            &mut reply,
-        )?;
+        let mut request = json!({
+            "selection": {"target": query.target["name"], "rows": "findings",
+                "findings": {"key": key, "view": "workspace"}},
+            "parts": {"rows": {"order": order, "offset": call * size, "limit": size}}
+        });
+        // The source order lists only source findings, so the query names its subject.
+        if order == "source" {
+            request["selection"]["where"] =
+                json!({"eq": [{"field": "subject"}, {"lit": "unit_source"}]});
+        }
+        let request = crate::engine_types::parse_query(&request.to_string())?;
+        query.query(&request, &cancelled, &mut reply)?;
         let bytes = reply
             .parts
             .iter()

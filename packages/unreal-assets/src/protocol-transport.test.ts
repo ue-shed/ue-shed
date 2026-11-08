@@ -1,11 +1,12 @@
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 import { AssetReaderError } from "./asset-reader.js";
 import { MAX_PROTOCOL_REQUEST_BYTES } from "./protocol-request-limit.js";
 import {
 	invokeProtocolSessionSingle,
+	invokeProtocolScan,
 	makeProtocolRequest,
 	type ProtocolProcessFactory,
 	type ProtocolSessionProcess,
@@ -557,4 +558,59 @@ it("A5.1 replaces a worker that closes between completed requests", async () => 
 	} finally {
 		await session.close();
 	}
+});
+
+const decodeRequestIdentity = Schema.decodeSync(
+	Schema.fromJsonString(Schema.Struct({ contract: Schema.Unknown, requestId: Schema.String }))
+);
+it("A6.1 clears scan progress after a worker closes without a summary", async () => {
+	class ScanChild extends EventEmitter {
+		readonly pid = 19;
+		killed = false;
+		readonly stdout = new PassThrough();
+		readonly stderr = new PassThrough();
+		readonly stdin = new Writable({
+			write: (chunk, _encoding, callback) => {
+				const frame = decodeRequestIdentity(String(chunk));
+				this.stdout.write(
+					JSON.stringify({ ...frame, kind: "accepted", operation: "scan", sequence: 0 }) +
+						"\n"
+				);
+				this.stdout.end(
+					JSON.stringify({
+						...frame,
+						kind: "progress",
+						phase: "reading",
+						completedItems: 1,
+						totalItems: 2,
+						sequence: 1
+					}) + "\n"
+				);
+				callback();
+				setImmediate(() => this.emit("close", 1, null));
+			}
+		});
+		kill() {
+			return true;
+		}
+	}
+	const progress: import("./asset-reader.js").ScanProgressStore = {
+		current: {
+			cacheHits: 0,
+			emittedAssets: 0,
+			phase: "idle",
+			processedAssets: 0,
+			totalAssets: 0
+		}
+	};
+	const failure = await Effect.runPromise(
+		invokeProtocolScan(
+			{ executable: "fake", timeoutMs: 1000, catalogTimeoutMs: 1000 },
+			{ projectRoot: "C:/Fixture", depth: "header" },
+			progress,
+			{ processFactory: () => new ScanChild() }
+		).pipe(Effect.flip)
+	);
+	expect(failure).toBeInstanceOf(AssetReaderError);
+	expect(progress.current.phase).toBe("idle");
 });

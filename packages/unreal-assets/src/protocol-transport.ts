@@ -1606,6 +1606,8 @@ function makeScanRequest(
 	);
 }
 
+const scanOwners = new WeakMap<ScanProgressStore, symbol>();
+
 async function collectProtocolScan(
 	configuration: AssetReaderConfiguration,
 	options: SavedAssetScanOptions,
@@ -1614,74 +1616,89 @@ async function collectProtocolScan(
 	signal?: AbortSignal,
 	processFactory?: ProtocolProcessFactory
 ): Promise<SavedAssetScan> {
-	const request = makeScanRequest(configuration, options);
-	const assets: SavedAssetScanEntry[] = [];
-	const failures: SavedAssetScanFailure[] = [];
-	const inventory: SavedAssetManifestEntry[] = [];
-	let summary: SavedAssetScanSummary | undefined;
-	let partial = false;
-	for await (const event of protocolEvents({
-		configuration,
-		operation: "scan",
-		path: options.projectRoot,
-		...(processFactory === undefined ? undefined : { processFactory }),
-		request,
-		signal,
-		telemetry,
-		timeoutMs: configuration.catalogTimeoutMs
-	})) {
-		if (event.kind === "progress") {
-			progress.current = {
-				...progress.current,
-				phase: protocolPhase(event.phase),
-				processedAssets: event.completedItems,
-				...(event.totalItems === undefined ? undefined : { totalAssets: event.totalItems })
-			};
-		} else if (event.kind === "diagnostic") {
-			partial = true;
-			failures.push({
-				code: event.code,
-				message: event.message,
-				path: options.projectRoot,
-				retrySafe: true
-			});
-		} else if (event.kind === "result") {
-			switch (event.result.kind) {
-				case "scan_asset":
-					assets.push(event.result.entry);
-					break;
-				case "scan_inventory":
-					inventory.push(event.result.entry);
-					break;
-				case "scan_summary":
-					summary = event.result.summary;
-					progress.current = {
-						...progress.current,
-						cacheHits: event.result.summary.cacheHits,
-						emittedAssets: event.result.summary.emittedAssets,
-						totalAssets: event.result.summary.scannedAssets
-					};
-					break;
+	const owner = Symbol();
+	scanOwners.set(progress, owner);
+	try {
+		const request = makeScanRequest(configuration, options);
+		const assets: SavedAssetScanEntry[] = [];
+		const failures: SavedAssetScanFailure[] = [];
+		const inventory: SavedAssetManifestEntry[] = [];
+		let summary: SavedAssetScanSummary | undefined;
+		let partial = false;
+		for await (const event of protocolEvents({
+			configuration,
+			operation: "scan",
+			path: options.projectRoot,
+			...(processFactory === undefined ? undefined : { processFactory }),
+			request,
+			signal,
+			telemetry,
+			timeoutMs: configuration.catalogTimeoutMs
+		})) {
+			if (event.kind === "progress") {
+				progress.current = {
+					...progress.current,
+					phase: protocolPhase(event.phase),
+					processedAssets: event.completedItems,
+					...(event.totalItems === undefined
+						? undefined
+						: { totalAssets: event.totalItems })
+				};
+			} else if (event.kind === "diagnostic") {
+				partial = true;
+				failures.push({
+					code: event.code,
+					message: event.message,
+					path: options.projectRoot,
+					retrySafe: true
+				});
+			} else if (event.kind === "result") {
+				switch (event.result.kind) {
+					case "scan_asset":
+						assets.push(event.result.entry);
+						break;
+					case "scan_inventory":
+						inventory.push(event.result.entry);
+						break;
+					case "scan_summary":
+						summary = event.result.summary;
+						progress.current = {
+							...progress.current,
+							cacheHits: event.result.summary.cacheHits,
+							emittedAssets: event.result.summary.emittedAssets,
+							totalAssets: event.result.summary.scannedAssets
+						};
+						break;
+				}
+			} else if (event.kind === "failed" || event.kind === "rejected") {
+				throw protocolFailureFromEvent(event);
+			} else if (event.kind === "completed" && event.outcome === "partial") {
+				partial = true;
 			}
-		} else if (event.kind === "failed" || event.kind === "rejected") {
-			throw protocolFailureFromEvent(event);
-		} else if (event.kind === "completed" && event.outcome === "partial") {
-			partial = true;
+		}
+		if (summary === undefined) {
+			throw new ProtocolStreamFailure(
+				"contract",
+				"Protocol scan ended without a summary result"
+			);
+		}
+		progress.current = { ...progress.current, phase: "ready" };
+		return {
+			assets,
+			failures,
+			...(inventory.length === 0 ? undefined : { inventory }),
+			summary: {
+				...summary,
+				partialAssets: Math.max(summary.partialAssets, partial ? 1 : 0)
+			}
+		};
+	} finally {
+		if (scanOwners.get(progress) === owner) {
+			scanOwners.delete(progress);
+			if (progress.current.phase !== "ready")
+				progress.current = { ...progress.current, phase: "idle" };
 		}
 	}
-	if (summary === undefined) {
-		throw new ProtocolStreamFailure("contract", "Protocol scan ended without a summary result");
-	}
-	progress.current = { ...progress.current, phase: "ready" };
-	return {
-		assets,
-		failures,
-		...(inventory.length === 0 ? undefined : { inventory }),
-		summary: {
-			...summary,
-			partialAssets: Math.max(summary.partialAssets, partial ? 1 : 0)
-		}
-	};
 }
 
 /** One scan request in one reader process, with that process's telemetry. */

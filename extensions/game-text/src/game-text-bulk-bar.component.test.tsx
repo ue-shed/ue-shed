@@ -8,6 +8,7 @@ import { LocalizationLinePreview, LocalizationSelection } from "@ue-shed/game-te
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
+import { createSignal } from "solid-js";
 import { BulkBar, createLineSelection } from "./game-text-bulk-bar.js";
 import { createGameTextEdits } from "./game-text-translation-edits.js";
 const decodeLocalizationLinePreview = Schema.decodeSync(LocalizationLinePreview);
@@ -15,7 +16,7 @@ const runtime = ManagedRuntime.make(Layer.empty);
 afterAll(() => runtime.dispose());
 afterEach(cleanup);
 
-it("confirms bulk review, reports progress and retains partial failure context", async () => {
+it("U4.2 resets written reviews on a target change while retaining partial failure context", async () => {
 	const pending = await Effect.runPromise(Deferred.make<LocalizationReviewResult>());
 	const requests: LocalizationReviewRequest[] = [];
 	const changed = vi.fn();
@@ -43,16 +44,27 @@ it("confirms bulk review, reports progress and retains partial failure context",
 		})
 	);
 	function Review() {
+		const [context, setContext] = createSignal(localization);
 		const selection = createLineSelection({ order: () => lines });
 		const edits = createGameTextEdits({
 			client: {},
-			target: () => localization.target,
+			target: () => context().target,
 			nativeCulture: () => "en",
 			busy: () => false,
 			onWritten: () => undefined
 		});
 		return (
 			<>
+				<button
+					onClick={() =>
+						setContext({
+							...localization,
+							target: LocalizationSelection.fields.target.make("Other")
+						})
+					}
+				>
+					Switch target
+				</button>
 				<button
 					onClick={() => {
 						const line = lines[0];
@@ -82,7 +94,7 @@ it("confirms bulk review, reports progress and retains partial failure context",
 								: Deferred.await(pending);
 						}
 					}}
-					localization={localization}
+					localization={context()}
 					cultures={[]}
 					nativeCulture="en"
 					edits={edits}
@@ -124,4 +136,6 @@ it("confirms bulk review, reports progress and retains partial failure context",
 	);
 	expect(changed).toHaveBeenCalledOnce();
 	expect(screen.getByRole("button", { name: "Mark reviewed (1)" })).toBeDefined();
+	await user.click(screen.getByRole("button", { name: "Switch target" }));
+	await screen.findByRole("button", { name: "Mark reviewed (501)" });
 });

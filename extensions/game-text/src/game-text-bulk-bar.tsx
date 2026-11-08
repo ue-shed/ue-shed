@@ -121,6 +121,10 @@ export function BulkBar(props: {
 	// Reviews written from this bar, so a ticked line in a closed group, which the list has not
 	// reloaded, does not offer them again.
 	const [written, setWritten] = createSignal<ReadonlySet<string>>(new Set());
+	const reviewContext = createMemo(() => JSON.stringify([props.localization?.target, lines()]));
+	createEffect(reviewContext, () => {
+		setWritten(new Set<string>());
+	});
 	const reviewKey = (change: LocalizationReviewChange) =>
 		change.kind === "set" ? [change.culture, change.namespace, change.key].join("\u0000") : "";
 	const reviews = createMemo(() =>
@@ -181,6 +185,7 @@ export function BulkBar(props: {
 		const request = props.client.localizationReview;
 		const target = props.localization?.target;
 		const changes = reviews();
+		const context = reviewContext();
 		if (!request || target === undefined || changes.length === 0) return;
 		setConfirming(false);
 		// One request per batch, in order; the first failure stops the rest.
@@ -197,7 +202,8 @@ export function BulkBar(props: {
 				const result = yield* request({ target, changes: batch });
 				if (result.status !== "written") return { marked, result };
 				marked += batch.length;
-				setWritten((done) => new Set([...done, ...batch.map(reviewKey)]));
+				if (context === reviewContext())
+					setWritten((done) => new Set([...done, ...batch.map(reviewKey)]));
 			}
 			return { marked, result: undefined };
 		});

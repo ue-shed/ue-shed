@@ -453,11 +453,25 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		...(index.generation === undefined ? undefined : { generation: index.generation }),
 		...(cached ? { cached } : undefined)
 	});
-	const qualityModel = yield* Ref.make<AsyncTextQualityQuery | undefined>(undefined);
-	const qualityDocument = yield* Ref.make<GameTextRuleDocument | undefined>(undefined);
-	const qualityRulePath = yield* Ref.make<
-		{ readonly path: string; readonly projectRoot: string } | undefined
-	>(undefined);
+	type RuleState =
+		| { readonly _tag: "Empty" }
+		| {
+				readonly _tag: "Loaded";
+				readonly document: GameTextRuleDocument;
+				readonly model: AsyncTextQualityQuery;
+				readonly destination?: { readonly path: string; readonly projectRoot: string };
+		  };
+	const ruleState = yield* Ref.make<RuleState>({ _tag: "Empty" });
+	const transitionRules = (state: RuleState) => Ref.set(ruleState, state);
+	const qualityModel = Ref.get(ruleState).pipe(
+		Effect.map((state) => (state._tag === "Loaded" ? state.model : undefined))
+	);
+	const qualityDocument = Ref.get(ruleState).pipe(
+		Effect.map((state) => (state._tag === "Loaded" ? state.document : undefined))
+	);
+	const qualityRulePath = Ref.get(ruleState).pipe(
+		Effect.map((state) => (state._tag === "Loaded" ? state.destination : undefined))
+	);
 	const progress = Effect.fn("GameText.workspace.progress")(
 		function* (): Effect.fn.Return<GameTextWorkspaceProgress> {
 			const projectProgress = yield* project.progress;
@@ -538,8 +552,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	});
 	const currentModel = <A>(read: (index: RetainedGameTextIndexResult) => A) =>
 		currentIndex().pipe(Effect.map((index) => (index ? read(index) : undefined)));
-	const currentValue = <A>(ref: Ref.Ref<A | undefined>) =>
-		currentIndex().pipe(Effect.flatMap((index) => (index ? Ref.get(ref) : Effect.undefined)));
+	const currentValue = <A>(read: Effect.Effect<A | undefined>) =>
+		currentIndex().pipe(Effect.flatMap((index) => (index ? read : Effect.undefined)));
 	// Review records name who set them; the host's policy decides who that is.
 	const reviewer = host.reviewer ?? (() => "game-text");
 	const localization = yield* makeGameTextWorkspaceLocalization(
@@ -574,9 +588,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			yield* Ref.set(modelSelection, undefined);
 			yield* Ref.update(scanRevision, (value) => value + 1);
 			yield* Ref.set(investigationSnapshot, undefined);
-			yield* Ref.set(qualityModel, undefined);
-			yield* Ref.set(qualityDocument, undefined);
-			yield* Ref.set(qualityRulePath, undefined);
+			yield* transitionRules({ _tag: "Empty" });
 			yield* localization.reset();
 			yield* cachedIndex.release({ background: true });
 			yield* refreshIndex.release({ background: true });
@@ -680,7 +692,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					const carriedRules = Effect.gen(function* () {
 						const owner = yield* Ref.get(modelSelection);
 						return owner?.projectRoot === projectRoot
-							? yield* Ref.get(qualityDocument)
+							? yield* qualityDocument
 							: undefined;
 					});
 					// Ends once the project, its generation or a newer scan supersedes this one.
@@ -749,7 +761,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 								const owner = yield* Ref.get(modelSelection);
 								const rulePath =
 									owner?.projectRoot === projectRoot
-										? yield* Ref.get(qualityRulePath)
+										? yield* qualityRulePath
 										: undefined;
 								yield* Ref.set(investigationSnapshot, {
 									source: {
@@ -760,11 +772,18 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 									revision: modelRevision,
 									...(rules ? { rules } : undefined)
 								});
-								yield* Effect.all([
-									Ref.set(qualityModel, evaluated.model),
-									Ref.set(qualityDocument, rules),
-									Ref.set(qualityRulePath, rulePath)
-								]);
+								yield* transitionRules(
+									rules && evaluated.model
+										? {
+												_tag: "Loaded",
+												document: rules,
+												model: evaluated.model,
+												...(rulePath
+													? { destination: rulePath }
+													: undefined)
+											}
+										: { _tag: "Empty" }
+								);
 								yield* Ref.set(modelSelection, {
 									projectRoot,
 									generation: index.generation,
@@ -773,8 +792,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 								yield* indexed.retain;
 								yield* cachedIndex.release({ background: true });
 								return completedQuery(indexed);
-							}).pipe(publication.withPermit);
-						}).pipe(Effect.uninterruptible);
+							});
+						}).pipe(publication.withPermit, Effect.uninterruptible);
 						if (published) return published;
 					}
 				})
@@ -1046,8 +1065,8 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		// A document equal to the published one (a host's copy, a reloaded file) keeps the published
 		// object and model, so the source and localization quality computed for it stay current.
 		const snapshot = yield* Ref.get(investigationSnapshot);
-		const published = yield* Ref.get(qualityDocument);
-		const publishedModel = yield* Ref.get(qualityModel);
+		const published = yield* qualityDocument;
+		const publishedModel = yield* qualityModel;
 		if (
 			snapshot?.revision === revision &&
 			published !== undefined &&
@@ -1095,11 +1114,14 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	});
 
 	const publishQualityRules = Effect.fn("GameText.workspace.publishQualityRules")(
-		function* (prepared: {
-			readonly document: GameTextRuleDocument;
-			readonly model: AsyncTextQualityQuery;
-			readonly revision: RetainedGameTextIndexResult["revision"];
-		}) {
+		function* (
+			prepared: {
+				readonly document: GameTextRuleDocument;
+				readonly model: AsyncTextQualityQuery;
+				readonly revision: RetainedGameTextIndexResult["revision"];
+			},
+			destination?: { readonly path: string; readonly projectRoot: string } | null
+		) {
 			const snapshot = yield* Ref.get(investigationSnapshot);
 			if (
 				snapshot?.revision !== prepared.revision ||
@@ -1107,19 +1129,24 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			)
 				return { status: "not_ready" as const };
 			yield* Ref.set(investigationSnapshot, { ...snapshot, rules: prepared.document });
-			yield* Effect.all([
-				Ref.set(qualityDocument, prepared.document),
-				Ref.set(qualityModel, prepared.model)
-			]);
+			const path =
+				destination === null ? undefined : (destination ?? (yield* qualityRulePath));
+			yield* transitionRules({
+				_tag: "Loaded",
+				document: prepared.document,
+				model: prepared.model,
+				...(path ? { destination: path } : undefined)
+			});
 			// The renderer learns whether Save has a file destination, never the path itself.
-			const destination = yield* Ref.get(qualityRulePath);
+			const attachedDestination = path;
 			const owner = yield* Ref.get(modelSelection);
 			return {
 				document: prepared.document,
 				status: "completed" as const,
 				summary: prepared.model.summary(),
 				ruleFile:
-					destination !== undefined && destination.projectRoot === owner?.projectRoot
+					attachedDestination !== undefined &&
+					attachedDestination.projectRoot === owner?.projectRoot
 						? ("attached" as const)
 						: ("none" as const)
 			};
@@ -1188,8 +1215,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			)
 				return { status: "not_ready" as const };
 			if (prepared.status !== "ready") return prepared;
-			yield* Ref.set(qualityRulePath, { path, projectRoot: root });
-			return yield* publishQualityRules(prepared);
+			return yield* publishQualityRules(prepared, { path, projectRoot: root });
 		}).pipe(
 			Effect.catchTag(
 				["GameTextWorkspaceHostFailure", "GameTextRuleDocumentError"],
@@ -1266,11 +1292,10 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 		if (prepared.status !== "ready") return prepared;
 		const snapshot = yield* Ref.get(investigationSnapshot);
 		if (snapshot?.revision !== prepared.revision) return { status: "not_ready" as const };
-		yield* Ref.set(qualityRulePath, {
+		return yield* publishQualityRules(prepared, {
 			path: choice.path,
 			projectRoot: snapshot.source.projectRoot
 		});
-		return yield* publishQualityRules(prepared);
 	});
 
 	const previewQualityRules = Effect.fn("GameText.workspace.previewQualityRules")(function* (
@@ -1283,7 +1308,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 	const reloadQualityRules = Effect.fn("GameText.workspace.reloadQualityRules")(function* () {
 		const revision = yield* currentModel(retainedRevision);
 		if (!revision) return { status: "not_ready" as const };
-		const destination = yield* Ref.get(qualityRulePath);
+		const destination = yield* qualityRulePath;
 		const owner = yield* Ref.get(modelSelection);
 		const path =
 			destination?.projectRoot === owner?.projectRoot ? destination?.path : undefined;
@@ -1329,13 +1354,12 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 					retrySafe: true
 				}
 			};
-		const destination = yield* Ref.get(qualityRulePath);
+		const destination = yield* qualityRulePath;
 		const owner = yield* Ref.get(modelSelection);
 		const path =
 			destination?.projectRoot === owner?.projectRoot ? destination?.path : undefined;
 		if (path === undefined) {
-			if ((yield* Ref.get(qualityDocument)) === undefined)
-				return { status: "not_ready" as const };
+			if ((yield* qualityDocument) === undefined) return { status: "not_ready" as const };
 			return {
 				status: "failed" as const,
 				error: {
@@ -1631,20 +1655,22 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			const opened = yield* openInvestigation(dialog, GameTextInvestigationPreset);
 			if (opened.status !== "opened") return opened;
 			if (opened.preset.rules) {
-				const applied = yield* previewQualityRules(opened.preset.rules);
+				const prepared = yield* prepareQualityRules(opened.preset.rules);
+				const applied =
+					prepared.status === "ready"
+						? yield* publishQualityRules(prepared, null)
+						: prepared;
 				if (applied.status !== "completed")
 					return investigationFailure({
 						message: "Cannot apply quality rules to this workspace.",
 						recovery: "Refresh Game Text and open the preset again."
 					});
 			} else {
-				yield* Ref.set(qualityDocument, undefined);
-				yield* Ref.set(qualityModel, undefined);
+				yield* transitionRules({ _tag: "Empty" });
 				yield* Ref.update(investigationSnapshot, (snapshot) =>
 					snapshot ? { source: snapshot.source, revision: snapshot.revision } : undefined
 				);
 			}
-			yield* Ref.set(qualityRulePath, undefined);
 			return opened;
 		}).pipe(
 			Effect.catchTag("InvestigationError", (error) =>

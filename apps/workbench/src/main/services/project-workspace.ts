@@ -179,12 +179,93 @@ export const WorkbenchProjectLive = Layer.effect(
 			configuration.project.status === "configured"
 				? configuration.project.projectRoot
 				: rememberedProjects[0]?.projectRoot;
-		const selectedRoot = yield* Ref.make<Option.Option<string>>(
-			initialRoot === undefined ? Option.none() : Option.some(initialRoot)
+		type CommittedSelection =
+			| { readonly _tag: "None" }
+			| {
+					readonly _tag: "Ready";
+					readonly root: string;
+					readonly summary: Option.Option<ProjectSummaryInventory>;
+			  };
+		type Selection = { readonly requestId: number } & (
+			| CommittedSelection
+			| {
+					readonly _tag: "Opening";
+					readonly previous: CommittedSelection;
+			  }
 		);
-		const selectedSummary = yield* Ref.make<Option.Option<ProjectSummaryInventory>>(
-			Option.none()
+		const selection = yield* Ref.make<Selection>(
+			initialRoot === undefined
+				? { _tag: "None", requestId: 0 }
+				: { _tag: "Ready", root: initialRoot, summary: Option.none(), requestId: 0 }
 		);
+		const committed = (state: Selection): CommittedSelection =>
+			state._tag === "Opening" ? state.previous : state;
+		const selectedRoot = Ref.get(selection).pipe(
+			Effect.map((state) => {
+				const current = committed(state);
+				return current._tag === "Ready" ? Option.some(current.root) : Option.none<string>();
+			})
+		);
+		const selectedSummary = Ref.get(selection).pipe(
+			Effect.map((state) => {
+				const current = committed(state);
+				return current._tag === "Ready"
+					? current.summary
+					: Option.none<ProjectSummaryInventory>();
+			})
+		);
+		type SelectionEvent =
+			| { readonly _tag: "Open" }
+			| {
+					readonly _tag: "Loaded";
+					readonly requestId: number;
+					readonly inventory: ProjectSummaryInventory;
+			  }
+			| { readonly _tag: "OpenFailed"; readonly requestId: number }
+			| { readonly _tag: "Inventory"; readonly inventory: ProjectSummaryInventory }
+			| { readonly _tag: "CurrentFailed"; readonly requestId: number };
+		const transitionSelection = (event: SelectionEvent) =>
+			Ref.updateAndGet(selection, (state): Selection => {
+				switch (event._tag) {
+					case "Open":
+						return {
+							_tag: "Opening",
+							requestId: state.requestId + 1,
+							previous: committed(state)
+						};
+					case "Loaded":
+						return state._tag === "Opening" && state.requestId === event.requestId
+							? {
+									_tag: "Ready",
+									requestId: state.requestId,
+									root: event.inventory.project.projectRoot,
+									summary: Option.some(event.inventory)
+								}
+							: state;
+					case "OpenFailed":
+						return state._tag === "Opening" && state.requestId === event.requestId
+							? { ...state.previous, requestId: state.requestId }
+							: state;
+					case "Inventory": {
+						if (
+							state._tag !== "Ready" ||
+							state.root !== event.inventory.project.projectRoot
+						)
+							return state;
+						if (
+							Option.isSome(state.summary) &&
+							(state.summary.value.indexSummary?.generation ?? 0) >
+								(event.inventory.indexSummary?.generation ?? 0)
+						)
+							return state;
+						return { ...state, summary: Option.some(event.inventory) };
+					}
+					case "CurrentFailed":
+						return state._tag === "Ready" && state.requestId === event.requestId
+							? { ...state, summary: Option.none() }
+							: state;
+				}
+			});
 		const projectIndexProgress = yield* SubscriptionRef.make<WorkbenchTaskProgress>({
 			completed: 0,
 			phase: "idle",
@@ -469,16 +550,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					maps,
 					project
 				} satisfies ProjectSummaryInventory;
-				const root = yield* Ref.get(selectedRoot);
-				if (Option.isSome(root) && root.value === projectRoot) {
-					yield* Ref.update(selectedSummary, (current) =>
-						Option.isSome(current) &&
-						current.value.project.projectRoot === projectRoot &&
-						(current.value.indexSummary?.generation ?? 0) > summary.generation
-							? current
-							: Option.some(result)
-					);
-				}
+				yield* transitionSelection({ _tag: "Inventory", inventory: result });
 				return result;
 			}
 		);
@@ -578,7 +650,7 @@ export const WorkbenchProjectLive = Layer.effect(
 
 		const currentInventory = Effect.fn("Workbench.WorkbenchProject.currentInventory")(
 			function* (projectRoot: string) {
-				const cached = yield* Ref.get(selectedSummary);
+				const cached = yield* selectedSummary;
 				if (Option.isSome(cached) && cached.value.project.projectRoot === projectRoot) {
 					return cached.value;
 				}
@@ -633,7 +705,8 @@ export const WorkbenchProjectLive = Layer.effect(
 		});
 
 		const current = Effect.gen(function* () {
-			const root = yield* Ref.get(selectedRoot);
+			const { requestId } = yield* Ref.get(selection);
+			const root = yield* selectedRoot;
 			if (Option.isNone(root)) return { status: "not_configured" as const };
 			return yield* currentInventory(root.value).pipe(
 				Effect.tap((inventory) => remember(inventory.project.projectRoot)),
@@ -642,7 +715,7 @@ export const WorkbenchProjectLive = Layer.effect(
 					status: "ready" as const
 				})),
 				Effect.catchTag("WorkbenchProjectUnavailable", (error) =>
-					Ref.set(selectedSummary, Option.none()).pipe(
+					transitionSelection({ _tag: "CurrentFailed", requestId }).pipe(
 						Effect.as({
 							error: mapProjectFailure(error.message, error.recovery),
 							status: "failed" as const
@@ -663,7 +736,7 @@ export const WorkbenchProjectLive = Layer.effect(
 		const refresh = Effect.fn("Workbench.WorkbenchProject.refresh")(function* (
 			mode: "refresh" | "rebuild" = "refresh"
 		) {
-			const root = yield* Ref.get(selectedRoot);
+			const root = yield* selectedRoot;
 			if (Option.isNone(root)) return { status: "not_configured" as const };
 			const load =
 				mode === "rebuild"
@@ -694,13 +767,18 @@ export const WorkbenchProjectLive = Layer.effect(
 			projectRoot: string,
 			forceRefresh: boolean
 		) {
+			const { requestId } = yield* transitionSelection({ _tag: "Open" });
 			if (forceRefresh) yield* Cache.invalidate(summaryLoads, projectRoot);
-			yield* Ref.set(selectedSummary, Option.none());
-			const inventory = yield* forceRefresh
-				? Cache.get(refreshLoads, projectRoot)
-				: loadSummary(projectRoot);
-			yield* Ref.set(selectedRoot, Option.some(projectRoot));
-			yield* Ref.set(selectedSummary, Option.some(inventory));
+			const inventory = yield* (
+				forceRefresh ? Cache.get(refreshLoads, projectRoot) : loadSummary(projectRoot)
+			).pipe(
+				Effect.onExit((exit) =>
+					Exit.isFailure(exit)
+						? transitionSelection({ _tag: "OpenFailed", requestId }).pipe(Effect.asVoid)
+						: Effect.void
+				)
+			);
+			yield* transitionSelection({ _tag: "Loaded", requestId, inventory });
 			yield* remember(projectRoot);
 			return { project: inventory.project, status: "ready" as const };
 		});
@@ -773,7 +851,7 @@ export const WorkbenchProjectLive = Layer.effect(
 		});
 
 		const selected = Effect.fn("Workbench.WorkbenchProject.selected")(function* () {
-			const root = yield* Ref.get(selectedRoot);
+			const root = yield* selectedRoot;
 			if (Option.isNone(root))
 				return yield* new WorkbenchProjectUnavailable({
 					retrySafe: false,
@@ -786,7 +864,7 @@ export const WorkbenchProjectLive = Layer.effect(
 		});
 
 		const selectedProject = Effect.gen(function* () {
-			const root = yield* Ref.get(selectedRoot);
+			const root = yield* selectedRoot;
 			if (Option.isNone(root)) {
 				return yield* new WorkbenchProjectUnavailable({
 					retrySafe: false,
@@ -800,7 +878,7 @@ export const WorkbenchProjectLive = Layer.effect(
 		}).pipe(Effect.withSpan("Workbench.WorkbenchProject.selectedProject"));
 
 		const inputAtlas = Effect.gen(function* () {
-			const root = yield* Ref.get(selectedRoot);
+			const root = yield* selectedRoot;
 			if (Option.isNone(root)) {
 				return {
 					error: {
@@ -922,7 +1000,7 @@ export const WorkbenchProjectLive = Layer.effect(
 		);
 
 		const savedProject = Effect.gen(function* () {
-			const root = yield* Ref.get(selectedRoot);
+			const root = yield* selectedRoot;
 			if (Option.isNone(root)) {
 				return yield* new WorkbenchProjectUnavailable({
 					retrySafe: false,

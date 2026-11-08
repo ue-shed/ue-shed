@@ -89,8 +89,9 @@ export function GameTextIdRepairs(props: {
 	const [survivor, setSurvivor] = createSignal<TextCorpusFocus>();
 	let revision = 0;
 	createEffect(
-		() => [props.focus, props.target, props.projectKey] as const,
+		() => [props.focus.unit.id, props.target, props.projectKey] as const,
 		() => {
+			if (locked() && (working() || receipt() === undefined)) return;
 			revision++;
 			action.cancel();
 			relatedAction.cancel();

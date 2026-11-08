@@ -104,6 +104,7 @@ export function createGameTextEdits(input: {
 	const [message, setMessage] = createSignal<string | undefined>(undefined);
 	const [working, setWorking] = createSignal(false);
 	const action = createEffectAction();
+	const clipboardAction = createEffectAction();
 	const edits = createMemo(() =>
 		[...staged().values()].filter((item) => item.target === input.target())
 	);
@@ -255,7 +256,7 @@ export function createGameTextEdits(input: {
 	const copyFiles = () => {
 		const current = review();
 		if (current?.status !== "reviewed") return;
-		action.run(
+		clipboardAction.run(
 			Effect.tryPromise({
 				try: () =>
 					navigator.clipboard.writeText(

@@ -10,7 +10,7 @@ import {
 } from "@ue-shed/game-text/schema";
 import { LocalizationFocus, type RelatedUnit } from "@ue-shed/game-text/corpus";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime, Schema } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { createSignal } from "solid-js";
 import { afterAll, afterEach, expect, it } from "vitest";
 import { GameTextIdRepairs } from "./game-text-id-repairs.js";
@@ -54,6 +54,7 @@ const focus: TextCorpusFocus = {
 
 function mount(
 	options: {
+		readonly beforeApply?: Effect.Effect<void>;
 		readonly rejected?: boolean;
 		readonly failed?: boolean;
 		readonly incomplete?: boolean;
@@ -68,6 +69,7 @@ function mount(
 	let applied = 0;
 	let checked = 0;
 	let changeFocus: () => void = () => undefined;
+	let refreshFocus: () => void = () => undefined;
 	let editModel: ReturnType<typeof createGameTextEdits> | undefined;
 	const target = options.withTarget
 		? LocalizationSelection.fields.target.make("Game")
@@ -144,7 +146,8 @@ function mount(
 					return { status: "prepared", plan: planned };
 				}),
 			apply: () =>
-				Effect.sync(() => {
+				Effect.gen(function* () {
+					if (options.beforeApply) yield* options.beforeApply;
 					applied++;
 					if (!planned) throw new Error("No preview");
 					return {
@@ -164,6 +167,7 @@ function mount(
 		const [current, setCurrent] = createSignal(
 			options.incomplete ? { ...focus, totalOccurrences: 3 } : (options.related?.[0] ?? focus)
 		);
+		refreshFocus = () => setCurrent((current) => ({ ...current }));
 		changeFocus = () =>
 			setCurrent({ ...focus, unit: { ...focus.unit, id: TextUnitId.make("another") } });
 		const edits = createGameTextEdits({
@@ -198,6 +202,7 @@ function mount(
 		checked: () => checked,
 		plan: () => planned,
 		changeFocus,
+		refreshFocus,
 		staged: () => editModel?.edits() ?? []
 	};
 }
@@ -419,4 +424,22 @@ it("invalidates the preview when focus changes and blocks incomplete occurrence 
 	expect(
 		within(panel).getAllByRole("button", { name: "Give this text its own key" })[0]
 	).toHaveProperty("disabled", true);
+});
+
+it("U6.1 retains apply ownership when focus is refreshed", async () => {
+	const release = await Effect.runPromise(Deferred.make<void>());
+	const test = mount({ beforeApply: Deferred.await(release) });
+	const user = userEvent.setup();
+	await user.click(screen.getAllByRole("button", { name: "Give this text its own key" })[0]!);
+	await user.click(screen.getByRole("button", { name: "Check in Unreal" }));
+	await user.click(await screen.findByRole("button", { name: "Apply and save in Unreal" }));
+	test.refreshFocus();
+	await waitFor(() =>
+		expect(
+			screen.getAllByRole("button", { name: "Give this text its own key" })[0]
+		).toHaveProperty("disabled", true)
+	);
+	await Effect.runPromise(Deferred.succeed(release, undefined));
+	await waitFor(() => expect(test.applied()).toBe(1));
+	await screen.findByText(/Unreal saved the fix/u);
 });

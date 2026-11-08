@@ -6,7 +6,7 @@ import { LocalizationSelection } from "@ue-shed/game-text/schema";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { createSignal } from "solid-js";
-import { afterAll, afterEach, expect, it } from "vitest";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
 import {
 	createGameTextEdits,
 	StagedEditsButton,
@@ -370,4 +370,99 @@ it("keeps stale edits staged and explains why nothing was written", async () => 
 	expect(within(panel).getByText("After")).toBeDefined();
 	await user.click(within(panel).getByRole("button", { name: "Unstage" }));
 	expect(screen.queryByRole("region", { name: "Staged translations" })).toBeNull();
+});
+
+it("U3.1 copying files preserves the pending PO write completion", async () => {
+	const pending = await Effect.runPromise(Deferred.make<LocalizationEditResult>());
+	const onWritten = vi.fn();
+	Object.defineProperty(navigator, "clipboard", {
+		configurable: true,
+		value: { writeText: async () => undefined }
+	});
+	const target = LocalizationSelection.fields.target.make("Game");
+	const edit = decodeLocalizationEdit({
+		culture: "fr",
+		namespace: "UI",
+		key: "K",
+		seenTranslation: "Before",
+		translation: "Submitted"
+	});
+	function InFlight() {
+		const model = createGameTextEdits({
+			client: {
+				localizationEdits: (request) =>
+					request.mode === "write"
+						? Deferred.await(pending)
+						: Effect.succeed({
+								status: "reviewed",
+								edits: [
+									{ ...edit, currentTranslation: "Before", outcome: "ready" }
+								],
+								files: [
+									{
+										culture: edit.culture,
+										relativePath: "Localization/fr/Game.po",
+										changes: 1,
+										written: false
+									}
+								],
+								notSynced: 1
+							})
+			},
+			target: () => target,
+			nativeCulture: () => "en",
+			busy: () => false,
+			onWritten,
+			initial: { staged: [{ target, edit, source: "Source" }], drafts: [] }
+		});
+		return (
+			<>
+				<button onClick={model.check}>Review</button>
+				<button onClick={model.write}>Start write</button>
+				<button onClick={model.copyFiles}>Copy</button>
+				<span>{model.working() ? "Working" : "Idle"}</span>
+				<span>{model.review()?.status}</span>
+				<StagedEditsButton model={model} />
+				<StagedEditsPanel model={model} />
+			</>
+		);
+	}
+	render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<InFlight />
+		</EffectRuntimeProvider>
+	));
+	const user = userEvent.setup();
+	await user.click(screen.getByRole("button", { name: "Review" }));
+	await screen.findByText("reviewed");
+	await user.click(screen.getByRole("button", { name: "Start write" }));
+	await user.click(screen.getByRole("button", { name: "Copy" }));
+	await Effect.runPromise(
+		Deferred.succeed(pending, {
+			status: "written",
+			edits: [
+				{
+					culture: edit.culture,
+					namespace: edit.namespace,
+					key: edit.key,
+					outcome: "ready",
+					currentTranslation: "Before",
+					translation: "Submitted"
+				}
+			],
+			files: [
+				{
+					culture: edit.culture,
+					relativePath: "Localization/fr/Game.po",
+					changes: 1,
+					written: true
+				}
+			],
+			notSynced: 1
+		})
+	);
+	await screen.findByText(/Wrote 1 translation/u);
+	expect(screen.getByText("Idle")).toBeDefined();
+	expect(onWritten).toHaveBeenCalledTimes(1);
+	expect(screen.queryByRole("button", { name: "1 staged" })).toBeNull();
 });

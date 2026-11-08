@@ -811,7 +811,6 @@ for (const phase of ["candidates", "scan"] as const) {
 							query: {
 								mode: "corpus",
 								query: "",
-								filter: [],
 								qualityFilter: "all"
 							},
 							format: "json"
@@ -1136,7 +1135,6 @@ it("exports one captured generation when the project changes during the save dia
 				const query = {
 					mode: "corpus" as const,
 					query: "",
-					filter: [],
 					qualityFilter: "all" as const
 				};
 				expect(yield* service.investigationExport({ query, format: "json" })).toMatchObject(
@@ -1203,7 +1201,6 @@ it("exports the selected target's localization quality list as a replayable repo
 	const query = {
 		mode: "quality" as const,
 		query: "",
-		filter: [],
 		qualityFilter: "all" as const,
 		workspaceFilter: "empty_translation" as const,
 		localization: { target: localizationTarget.name, culture: cultureCode("de") }
@@ -1302,7 +1299,6 @@ it("restores embedded rules without retaining another rule file's write destinat
 	const query = {
 		mode: "corpus" as const,
 		query: "",
-		filter: [],
 		qualityFilter: "all" as const
 	};
 	const preset = {

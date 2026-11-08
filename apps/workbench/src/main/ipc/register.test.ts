@@ -17,7 +17,7 @@ import {
 	type ScenarioRunnerApi
 } from "@ue-shed/scenarios";
 import { AssetReaderError, makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
-import { Effect, Layer, Ref, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Ref, Stream } from "effect";
 import { resolve } from "node:path";
 import { expect } from "vitest";
 import { makeElectronDialogTestLayer } from "../adapters/electron-dialog.js";
@@ -115,6 +115,7 @@ const sampleCameraStatus: CameraStatus = {
 
 interface RegistrationOptions {
 	readonly blueprintErrorCode?: string;
+	readonly resetLiveTarget?: Effect.Effect<void>;
 	readonly sequenceErrorCode?: string;
 	readonly blueprintProjectConfigured?: boolean;
 }
@@ -496,6 +497,7 @@ function buildRegistrationLayer(recorder: Recorder, options: RegistrationOptions
 	});
 
 	const mapReview = makeWorkbenchMapReviewTestLayer({
+		resetLiveTarget: options.resetLiveTarget ?? Effect.void,
 		worldSnapshot: Effect.suspend(() =>
 			recorder.record("mapReview.worldSnapshot").pipe(
 				Effect.as({
@@ -903,15 +905,19 @@ function runRegistered<A, E>(
 ) {
 	return Effect.gen(function* () {
 		const recorder = yield* makeRecorder();
-		const ipcTest = yield* Effect.provide(
-			Effect.gen(function* () {
-				yield* register;
-				return yield* ElectronIpcTest;
-			}),
-			Layer.mergeAll(makeElectronIpcTestLayer(), buildRegistrationLayer(recorder, options))
+		return yield* Effect.gen(function* () {
+			yield* register;
+			const ipc = yield* ElectronIpcTest;
+			const result = yield* body(ipc);
+			return { recorder, result };
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					makeElectronIpcTestLayer(),
+					buildRegistrationLayer(recorder, options)
+				)
+			)
 		);
-		const result = yield* body(ipcTest);
-		return { recorder, result };
 	}).pipe(Effect.scoped);
 }
 
@@ -1138,5 +1144,40 @@ it.effect("maps a failed camera status request to actionable unavailable state",
 					"Launch the project With UE Shed and wait for UEShedCameras to connect. PIE is optional."
 			});
 		}).pipe(Effect.provide(Layer.mergeAll(ipcLayer, presentation)));
+	})
+);
+
+it.effect("L11.5 serializes overlapping editor target resets and port updates", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let resets = 0;
+		const { result } = yield* runRegistered(
+			(ipc) =>
+				Effect.gen(function* () {
+					const first = yield* ipc
+						.invoke("editor-session:set-port", 31001)
+						.pipe(Effect.forkChild);
+					yield* Deferred.await(started);
+					const second = yield* ipc
+						.invoke("editor-session:set-port", 32001)
+						.pipe(Effect.forkChild);
+					for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+					yield* Deferred.succeed(release, undefined);
+					yield* Fiber.join(first);
+					yield* Fiber.join(second);
+					return yield* ipc.invoke("editor-session:settings");
+				}),
+			{
+				resetLiveTarget: Effect.gen(function* () {
+					if (++resets === 1) {
+						yield* Deferred.succeed(started, undefined);
+						yield* Deferred.await(release);
+					}
+				})
+			}
+		);
+		expect(result).toMatchObject({ port: 32001 });
+		expect(resets).toBe(2);
 	})
 );

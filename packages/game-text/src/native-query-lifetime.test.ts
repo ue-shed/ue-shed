@@ -1,7 +1,11 @@
 import { Deferred, Effect, Exit, Fiber, Ref, Scope } from "effect";
 import { tmpdir } from "node:os";
 import { expect, it } from "vitest";
-import { type EngineAnswer, NativeGameTextEngineClient } from "@ue-shed/unreal-assets";
+import {
+	type EngineAnswer,
+	NativeGameTextEngineClient,
+	AssetReaderError
+} from "@ue-shed/unreal-assets";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { openNativeTextQuery } from "./native-query.js";
 import type { TextCorpusSearchPage } from "./schema.js";
@@ -189,6 +193,54 @@ it("refuses a reader of a different snapshot, and closes it", async () => {
 				expect(failure.code).toBe("index_failed");
 				expect(calls).toEqual(["open:", "close:reader"]);
 			})
+		)
+	);
+});
+
+it("G2.b retains a valid reader after an expected exclusive-export refusal", async () => {
+	let invalidations = 0;
+	await Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				const query = yield* openNativeTextQuery({
+					configuration,
+					generation: "generation",
+					joinedKey: "joined",
+					onFailure: Effect.sync(() => {
+						invalidations++;
+					})
+				});
+				expect(
+					yield* query.writeCorpusJson(
+						{ query: "" },
+						{ path: "existing.json", exclusive: true }
+					)
+				).toEqual({ status: "exists" });
+				expect(yield* query.search(request)).toEqual(page);
+				expect(invalidations).toBe(0);
+			})
+		).pipe(
+			Effect.provideService(
+				NativeGameTextEngineClient,
+				NativeGameTextEngineClient.of({
+					execute: (operation) =>
+						operation.action === "export"
+							? Effect.fail(
+									new AssetReaderError({
+										kind: "process",
+										code: "exists",
+										operation: "game_text_engine",
+										message: "Exists",
+										recovery: "Choose another file",
+										retrySafe: true,
+										nextStep: "fix_input"
+									})
+								)
+							: Effect.succeed(
+									outcome(operation, operation.action === "query" ? page : null)
+								)
+				})
+			)
 		)
 	);
 });

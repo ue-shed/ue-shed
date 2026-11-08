@@ -139,8 +139,12 @@ export const openNativeTextQuery = Effect.fn("GameTextIndex.openNativeQuery")(fu
 			text?: EngineTextSink
 		) =>
 			engine.execute(request, progress, text).pipe(
-				Effect.mapError((cause) => failed(request.action, cause)),
-				Effect.tapError(() => input.onFailure ?? Effect.void)
+				Effect.tapError((cause) =>
+					cause.code === "exists" || cause.code === "invalid_input"
+						? Effect.void
+						: (input.onFailure ?? Effect.void)
+				),
+				Effect.mapError((cause) => failed(request.action, cause))
 			)
 	);
 	const reportProgress = yield* GameTextIndexProgressReporter;

@@ -1,6 +1,7 @@
 import {
 	access,
 	link,
+	readFile,
 	mkdtemp,
 	mkdir,
 	rename,
@@ -518,6 +519,14 @@ it.effect("persists an approved proposal and permanently removes only its revali
 			expect(yield* exists(join(project, "Content", "authored.txt"))).toBe(true);
 			expect(yield* exists(proposal.receiptPath)).toBe(true);
 			expect(yield* exists(proposal.logPath)).toBe(true);
+			const original = yield* Effect.tryPromise(() => readFile(proposal.receiptPath, "utf8"));
+			const repeated = yield* Effect.tryPromise((signal) =>
+				executeCustodianProposal(proposal, proposal.approvalPhrase, signal, dependencies)
+			);
+			expect(repeated).toEqual(receipt);
+			expect(yield* Effect.tryPromise(() => readFile(proposal.receiptPath, "utf8"))).toBe(
+				original
+			);
 		})
 	)
 );

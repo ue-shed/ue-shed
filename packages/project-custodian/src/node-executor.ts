@@ -21,11 +21,12 @@ import {
 	type CustodianExecutionRefusal,
 	type CustodianPrepareRequest,
 	type CustodianProposalTarget,
-	type CustodianReceipt,
+	CustodianReceipt,
 	type CustodianTarget
 } from "./schema.js";
 
 const decodeJson = Schema.decodeUnknownSync(Schema.Json);
+const decodeReceipt = Schema.decodeSync(Schema.fromJsonString(CustodianReceipt));
 
 interface RunningProcess {
 	readonly pid: number;
@@ -371,6 +372,13 @@ export async function executeCustodianProposal(
 	dependencies: CustodianExecutorDependencies = defaultDependencies
 ): Promise<CustodianReceipt> {
 	const startedAt = dependencies.now().toISOString();
+	const previous = await readFile(proposal.receiptPath, "utf8").catch((cause: unknown) => {
+		if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined;
+		throw cause;
+	});
+	if (previous !== undefined) {
+		return decodeReceipt(previous);
+	}
 	await appendLog(proposal, { event: "execution_requested" }, dependencies);
 	if (approvalPhrase !== proposal.approvalPhrase) {
 		return refuse({

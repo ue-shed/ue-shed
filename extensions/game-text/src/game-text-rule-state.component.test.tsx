@@ -4,10 +4,16 @@ import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect } from "effect";
 import { expect, it, vi } from "vitest";
 import { makeClient, rulesDocument, runtime } from "./game-text-route.test-support.js";
+import { GameTextClientError } from "./game-text-client.js";
 import { createGameTextRuleState } from "./game-text-rule-state.js";
-it.each(["replace", "restore"] as const)(
-	"U1.4 defers %s until a pending save reconciles",
-	async (replacement) => {
+it.each([
+	{ replacement: "replace", fail: false },
+	{ replacement: "restore", fail: false },
+	{ replacement: "replace", fail: true },
+	{ replacement: "restore", fail: true }
+] as const)(
+	"U1.4 defers $replacement until a pending save reconciles (failed=$fail)",
+	async ({ replacement, fail }) => {
 		const pending = await Effect.runPromise(Deferred.make<void>());
 		const onReviewed = vi.fn();
 		const base = makeClient();
@@ -17,7 +23,23 @@ it.each(["replace", "restore"] as const)(
 				client: {
 					...base,
 					saveQualityRules: (doc) =>
-						Deferred.await(pending).pipe(Effect.andThen(base.saveQualityRules(doc)))
+						Deferred.await(pending).pipe(
+							Effect.andThen(
+								fail
+									? Effect.fail(
+											new GameTextClientError({
+												code: "game_text_client_failed",
+												operation: "save",
+												message: "Save failed",
+												recovery: "Retry",
+												retrySafe: true,
+												nextStep: "retry",
+												cause: new Error("Save failed")
+											})
+										)
+									: base.saveQualityRules(doc)
+							)
+						)
 				},
 				initialState: { draft: rulesDocument },
 				onReviewed
@@ -34,6 +56,7 @@ it.each(["replace", "restore"] as const)(
 					>
 						Replace
 					</button>
+					<span>{editor.feedback().status} feedback</span>
 					<span>{editor.busy() ? "Saving" : "Idle"}</span>
 					<span>{editor.state()?.draft.rules.length} rules</span>
 				</>
@@ -49,7 +72,9 @@ it.each(["replace", "restore"] as const)(
 		await user.click(screen.getByRole("button", { name: "Replace" }));
 		expect(screen.getByText("Saving")).toBeDefined();
 		await Effect.runPromise(Deferred.succeed(pending, undefined));
-		await waitFor(() => expect(onReviewed).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(screen.getByText("Idle")).toBeDefined());
+		expect(onReviewed).toHaveBeenCalledTimes(fail ? 0 : 1);
+		expect(screen.getByText("idle feedback")).toBeDefined();
 		expect(screen.getByText("0 rules")).toBeDefined();
 		expect(screen.getByText("Idle")).toBeDefined();
 	}

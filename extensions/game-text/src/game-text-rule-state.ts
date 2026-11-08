@@ -49,6 +49,7 @@ export function createGameTextRuleState(options: {
 				setLifecycle({ ...current, replacement: event.run });
 				return;
 			}
+			setLifecycle({ _tag: "Idle" });
 			event.run();
 		} else if (event._tag === "Begin")
 			setLifecycle({ _tag: "Running", operation: event.operation });
@@ -74,7 +75,6 @@ export function createGameTextRuleState(options: {
 				baseline = document;
 				setFileAttached(persisted && document !== undefined);
 				setState(document ? { draft: document, savedDocument: document } : undefined);
-				transition({ _tag: "Finish" });
 				setFeedback({ status: "idle" });
 			}
 		});
@@ -101,11 +101,11 @@ export function createGameTextRuleState(options: {
 				: options.client.saveQualityRules(submitted),
 			{
 				onFailure: (cause) => {
-					transition({ _tag: "Finish" });
 					setFeedback({
 						message: failureText("The rules couldn’t be checked.", cause),
 						status: "failed"
 					});
+					transition({ _tag: "Finish" });
 				},
 				onSuccess: (result) => {
 					if (result.status === "completed") {
@@ -162,7 +162,6 @@ export function createGameTextRuleState(options: {
 			run: () => {
 				action.cancel();
 				setState(saved);
-				transition({ _tag: "Finish" });
 				setFeedback({ status: "idle" });
 			}
 		});

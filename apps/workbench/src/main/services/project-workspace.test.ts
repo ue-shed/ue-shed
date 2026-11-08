@@ -162,6 +162,9 @@ it.effect(
 		Effect.gen(function* () {
 			const started = yield* Deferred.make<void>();
 			const release = yield* Deferred.make<void>();
+			const openStarted = yield* Deferred.make<void>();
+			const openRelease = yield* Deferred.make<void>();
+			let blockOther = false;
 			let block = false;
 			let fail = false;
 			let packages = 1;
@@ -172,6 +175,17 @@ it.effect(
 				Stream.fromEffect(
 					Effect.gen(function* () {
 						const count = packages;
+						if (blockOther && root !== projectRoot) {
+							yield* Deferred.succeed(openStarted, undefined);
+							yield* Deferred.await(openRelease);
+							return yield* new ProjectIndexRefreshFailed({
+								message: "Open failed",
+								recovery: "Retry",
+								retrySafe: true,
+								nextStep: "retry"
+							});
+						}
+
 						if (block && root === projectRoot) {
 							yield* Deferred.succeed(started, undefined);
 							yield* Deferred.await(release);
@@ -297,6 +311,17 @@ it.effect(
 					project: { packageCount: 3 }
 				});
 				expect(rebuilds).toBe(1);
+				blockOther = true;
+				picked = "C:/Projects/Other";
+				const opening = yield* service.choose.pipe(Effect.forkChild);
+				yield* Deferred.await(openStarted);
+				packages = 5;
+				yield* service.refresh();
+				expect(yield* service.current).toMatchObject({ project: { packageCount: 5 } });
+				yield* Deferred.succeed(openRelease, undefined);
+				yield* Fiber.join(opening);
+				expect(yield* service.current).toMatchObject({ project: { packageCount: 5 } });
+				blockOther = false;
 				block = true;
 				const oldRefresh = yield* service.refresh().pipe(Effect.forkChild);
 				yield* Deferred.await(started);

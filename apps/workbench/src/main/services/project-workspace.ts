@@ -247,18 +247,22 @@ export const WorkbenchProjectLive = Layer.effect(
 							? { ...state.previous, requestId: state.requestId }
 							: state;
 					case "Inventory": {
+						const selected = committed(state);
 						if (
-							state._tag !== "Ready" ||
-							state.root !== event.inventory.project.projectRoot
+							selected._tag !== "Ready" ||
+							selected.root !== event.inventory.project.projectRoot
 						)
 							return state;
 						if (
-							Option.isSome(state.summary) &&
-							(state.summary.value.indexSummary?.generation ?? 0) >
+							Option.isSome(selected.summary) &&
+							(selected.summary.value.indexSummary?.generation ?? 0) >
 								(event.inventory.indexSummary?.generation ?? 0)
 						)
 							return state;
-						return { ...state, summary: Option.some(event.inventory) };
+						const updated = { ...selected, summary: Option.some(event.inventory) };
+						return state._tag === "Opening"
+							? { ...state, previous: updated }
+							: { ...updated, requestId: state.requestId };
 					}
 					case "CurrentFailed":
 						return state._tag === "Ready" && state.requestId === event.requestId

@@ -2594,10 +2594,11 @@ it.effect("4507003856 a pending observation restart cannot erase exclusive pause
 					authoring: {
 						...dyingAuthoring,
 						inspectSelection: () =>
-							Deferred.succeed(entered, undefined).pipe(
-								Effect.andThen(Deferred.await(release)),
-								Effect.andThen(Effect.die("end exclusive"))
-							)
+							Effect.gen(function* () {
+								yield* Deferred.succeed(entered, undefined);
+								yield* Deferred.await(release);
+								return yield* Effect.die("end exclusive");
+							})
 					}
 				})
 			)

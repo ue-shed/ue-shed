@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { channel } from "node:diagnostics_channel";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import type { GameTextContract } from "@ue-shed/protocol";
 import { AssetReaderError, type AssetReaderProtocolObservation } from "./asset-reader.js";
 import {
@@ -180,13 +180,26 @@ const failure = (
 		...fields
 	});
 
+const decodeOpenedReader = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Struct({ reader: Schema.String }))
+);
+const textDecoder = new TextDecoder();
+
 /** One running engine process and its requests in flight. */
 class Worker {
 	readonly pending = new Map<number, Pending>();
-	/** Cancelled requests awaiting their terminal frame: when each was cancelled, and its timer. */
+	/**
+	 * Cancelled requests awaiting their terminal frame: when each was cancelled, its timer, and
+	 * for a cancelled open, the reader it registered, which nobody else can close.
+	 */
 	private readonly cancelling = new Map<
 		number,
-		{ readonly at: number; readonly timer: ReturnType<typeof setTimeout> }
+		{
+			readonly at: number;
+			readonly timer: ReturnType<typeof setTimeout>;
+			readonly open: boolean;
+			reader: string | undefined;
+		}
 	>();
 	private readonly decoder = new FrameDecoder();
 	private next = 0;
@@ -241,7 +254,7 @@ class Worker {
 	/** The next request ID; IDs are never 0 and never reused while a request is in flight. */
 	id(): number {
 		do this.next = this.next === 0xffff_ffff ? 1 : this.next + 1;
-		while (this.pending.has(this.next));
+		while (this.pending.has(this.next) || this.cancelling.has(this.next));
 		return this.next;
 	}
 
@@ -250,7 +263,9 @@ class Worker {
 	 * within `wait` is stuck: the session kills it and fails what is in flight.
 	 */
 	cancel(id: number, wait: number): void {
-		if (!this.pending.delete(id) || this.exited) return;
+		const pending = this.pending.get(id);
+		if (pending === undefined || this.exited) return;
+		this.pending.delete(id);
 		this.process.write(encodeFrame(FrameKind.cancel, id));
 		const timer = setTimeout(() => {
 			this.fail(
@@ -263,7 +278,34 @@ class Worker {
 			this.process.kill();
 		}, wait);
 		timer.unref();
-		this.cancelling.set(id, { at: performance.now(), timer });
+		this.cancelling.set(id, {
+			at: performance.now(),
+			timer,
+			open: pending.action === "open",
+			reader: undefined
+		});
+	}
+
+	/** Closes a reader the engine opened for a request the host cancelled; nothing awaits it. */
+	private release(reader: string): void {
+		if (this.exited) return;
+		const body = new TextEncoder().encode(JSON.stringify({ action: "close", reader }));
+		const id = this.id();
+		this.pending.set(id, {
+			parts: [],
+			batches: [],
+			texts: [],
+			text: undefined,
+			written: Promise.resolve(),
+			writeFailed: undefined,
+			progress: undefined,
+			resume: () => undefined,
+			outputBytes: 0,
+			largestFrameBytes: 0,
+			action: "close",
+			requestBytes: FRAME_HEADER_BYTES + body.byteLength
+		});
+		this.process.write(encodeFrame(FrameKind.request, id, body));
 	}
 
 	private receive(frame: EngineFrame): void {
@@ -271,9 +313,16 @@ class Worker {
 		if (pending === undefined) {
 			// A late frame for a request the host cancelled; its last one ends the wait.
 			const cancelled = this.cancelling.get(frame.request);
+			if (cancelled?.open && frame.kind === FrameKind.part)
+				cancelled.reader = Option.getOrUndefined(
+					decodeOpenedReader(textDecoder.decode(frame.body))
+				)?.reader;
 			if (cancelled !== undefined && frame.flags & LAST_FRAME) {
 				clearTimeout(cancelled.timer);
 				this.cancelling.delete(frame.request);
+				// The open finished before the cancel reached the engine: close what it opened.
+				if (frame.kind === FrameKind.end && cancelled.reader !== undefined)
+					this.release(cancelled.reader);
 				if (benchmark.hasSubscribers)
 					benchmark.publish({
 						stage: "engineCancel",

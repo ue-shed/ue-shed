@@ -398,6 +398,8 @@ impl EngineSession {
         checkpoint(cancelled)?;
         let started = Instant::now();
         let mut stage_seconds = BTreeMap::new();
+        // A reader this request registered: it is the host's only once the reply is delivered.
+        let mut registered: Option<String> = None;
         let (action, part) = match request {
             EngineRequest::Capabilities => (
                 "capabilities",
@@ -515,8 +517,9 @@ impl EngineSession {
                         "Close a pinned reader before opening another native Game Text snapshot.",
                     ),
                 )?;
-                readers.insert(reader, Arc::new(query));
+                readers.insert(reader.clone(), Arc::new(query));
                 drop(readers);
+                registered = Some(reader);
                 ("open", Some(serde_json::to_string(&reply)?))
             }
             EngineRequest::Close { reader } => {
@@ -693,10 +696,18 @@ impl EngineSession {
                 (action, part)
             }
         };
-        if let Some(part) = part {
-            reply.part(part.into_bytes())?;
+        let delivered = match part {
+            Some(part) => reply.part(part.into_bytes()),
+            None => Ok(()),
         }
-        checkpoint(cancelled)?;
+        .and_then(|()| checkpoint(cancelled));
+        if let Err(error) = delivered {
+            // A cancelled or undelivered open never reaches the host, which could not close it.
+            if let Some(reader) = registered {
+                self.readers.lock().remove(&reader);
+            }
+            return Err(error);
+        }
         stage_seconds.insert(action.into(), started.elapsed().as_secs_f64());
         Ok(Profile {
             stage_seconds,
@@ -1009,6 +1020,48 @@ mod tests {
         std::fs::remove_dir_all(configuration.cache_root)?;
         Ok(())
     }
+    /// Cancels the request while the open reply is being delivered, as the host does when it
+    /// gives up on a request.
+    struct CancelledOnDelivery<'a>(&'a AtomicBool);
+    impl Reply for CancelledOnDelivery<'_> {
+        fn part(&mut self, _: Vec<u8>) -> Result<()> {
+            self.0.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+        fn batch(&mut self, _: Vec<u8>) -> Result<()> {
+            Ok(())
+        }
+        fn text(&mut self, _: Vec<u8>) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn an_open_cancelled_after_registration_releases_its_reader() -> Result<()> {
+        // G2.c: the host never learns the handle of an open it cancelled, so the engine must not
+        // keep the reader it registered; repeated cancels would otherwise exhaust the slots.
+        let (configuration, generation) = snapshot()?;
+        let session = EngineSession::default();
+        let request = EngineRequest::Open {
+            configuration: configuration.clone(),
+            expected_generation: generation,
+            expected_joined: "joined-native-v2:fixture".into(),
+            policy: EnginePolicy::default(),
+        };
+        for _ in 0..2 {
+            let cancelled = AtomicBool::new(false);
+            let answered =
+                session.answer(&request, &cancelled, &mut CancelledOnDelivery(&cancelled));
+            assert_eq!(
+                answered.err().ok_or("cancelled open")?.code,
+                ErrorCode::Cancelled
+            );
+            assert!(session.readers.lock().is_empty());
+        }
+        std::fs::remove_dir_all(configuration.cache_root)?;
+        Ok(())
+    }
+
     #[test]
     fn stale_snapshot_open_does_not_consume_a_reader_slot() -> Result<()> {
         let (configuration, _) = snapshot()?;

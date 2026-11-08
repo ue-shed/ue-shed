@@ -430,3 +430,61 @@ it.effect("prioritizes the selected texture and audit findings in one saved-prev
 		)
 	);
 });
+
+it.effect("A7.2 a refused stale refresh preserves a valid scan owner", () =>
+	Effect.gen(function* () {
+		const started = yield* Deferred.make<void>();
+		const release = yield* Deferred.make<void>();
+		let stale = false;
+		const current = Effect.sync(() => {
+			const generation = stale ? 0 : 1;
+			stale = false;
+			return { status: "ready" as const, project: { ...projectSummary, generation } };
+		});
+		let candidates = 0;
+		const project = makeWorkbenchProjectTestLayer({
+			current,
+			choose: current,
+			candidates: () =>
+				Effect.sync(() => ({ ...projectIndex, generation: ++candidates === 1 ? 1 : 0 })),
+			inputAtlas: Effect.die("unused"),
+			savedProject: Effect.die("unused"),
+			savedTables: Effect.die("unused")
+		});
+		const scanner = makeTextureAuditTestLayer({
+			scan: () => Effect.die("unused"),
+			scanFromProjectIndex: () =>
+				Deferred.succeed(started, undefined).pipe(
+					Effect.andThen(Deferred.await(release)),
+					Effect.as(emptyReport)
+				)
+		});
+		yield* Effect.gen(function* () {
+			const service = yield* WorkbenchAssetAudits;
+			const valid = yield* service.configuredRefresh(false).pipe(Effect.forkChild);
+			yield* Deferred.await(started);
+			stale = true;
+			expect((yield* service.configuredRefresh(false)).status).toBe("failed");
+			yield* Deferred.succeed(release, undefined);
+			expect((yield* Fiber.join(valid)).status).toBe("completed");
+			expect(
+				(yield* service.search({ query: "", pageSize: 50, findingsOnly: false })).status
+			).toBe("ready");
+		}).pipe(
+			Effect.provide(
+				WorkbenchAssetAuditsLive.pipe(
+					Layer.provide(
+						Layer.mergeAll(
+							project,
+							scanner,
+							configuration,
+							dialogLayer({}),
+							offlinePreviewLayer,
+							makeRemoteControlClientTestLayer(() => Effect.die("unused"))
+						)
+					)
+				)
+			)
+		);
+	})
+);

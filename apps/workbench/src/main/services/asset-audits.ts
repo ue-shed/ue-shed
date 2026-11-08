@@ -182,7 +182,6 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 			ruleFile: string | TextureAuditRuleSet,
 			index: WorkbenchProjectCandidates
 		) {
-			const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
 			const selected = yield* project.current;
 			if (
 				selected.status !== "ready" ||
@@ -194,6 +193,7 @@ export const WorkbenchAssetAuditsLive = Layer.effect(
 					"The selected project changed.",
 					"Retry in the selected project."
 				);
+			const revision = yield* Ref.updateAndGet(scanRevision, (value) => value + 1);
 			return yield* scanAudit(projectRoot, ruleFile, index).pipe(
 				Effect.flatMap((report) =>
 					Effect.gen(function* () {

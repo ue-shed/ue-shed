@@ -407,7 +407,7 @@ export async function executeCustodianProposal(
 		});
 	}
 
-	if (signal.aborted) {
+	const cancelled = () => {
 		const entries = cancelledEntries(proposal.targets);
 		return persistReceipt(
 			{
@@ -428,12 +428,17 @@ export async function executeCustodianProposal(
 			proposal,
 			dependencies
 		);
-	}
-
+	};
+	if (signal.aborted) return cancelled();
 	const report = await scanCustodian(
 		{ root: proposal.root, ignorePressure: proposal.ignorePressure },
 		signal
-	);
+	).catch((cause: unknown) => {
+		if (signal.aborted) return undefined;
+		throw cause;
+	});
+	if (report === undefined || signal.aborted) return cancelled();
+
 	const currentById = new Map(
 		flattenPlanTargets(report.plan.items).map((target) => [target.target.id, target] as const)
 	);

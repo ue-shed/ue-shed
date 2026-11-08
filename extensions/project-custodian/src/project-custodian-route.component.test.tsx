@@ -5,7 +5,7 @@ import {
 	CustodianTargetId,
 	type CustodianReport
 } from "@ue-shed/project-custodian/browser";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import type { CustodianClientApi } from "./custodian-client.js";
 import { ProjectCustodianRoute } from "./project-custodian-route.js";
@@ -155,7 +155,8 @@ describe("ProjectCustodianRoute", () => {
 		expect(screen.getByRole("button", { name: "Review cleanup…" })).toBeDefined();
 	});
 
-	it("requires a durable proposal and exact approval before cleanup", async () => {
+	it.each([false, true])("A10.4 reconciles early cancellation (pending=%s)", async (pending) => {
+		const release = await Effect.runPromise(Deferred.make<void>());
 		const proposalId = CustodianProposalId.make("proposal-fixture");
 		const proposal = {
 			schemaVersion: 1 as const,
@@ -213,7 +214,7 @@ describe("ProjectCustodianRoute", () => {
 							}
 						]
 					}
-				});
+				} as const).pipe(Effect.tap(() => (pending ? Deferred.await(release) : Effect.void)));
 			},
 			cancel: (id) =>
 				Effect.succeed({
@@ -241,6 +242,12 @@ describe("ProjectCustodianRoute", () => {
 		expect(executeButton).toHaveProperty("disabled", false);
 		fireEvent.click(executeButton);
 		await waitFor(() => expect(executed).toBe(1));
+		if (pending) {
+			const cancel = await screen.findByRole("button", { name: "Cancel remaining" });
+			fireEvent.click(cancel);
+			await waitFor(() => expect(cancel).toHaveProperty("disabled", false));
+			await Effect.runPromise(Deferred.succeed(release, undefined));
+		}
 		await screen.findByRole("region", { name: "Cleanup result" });
 		expect(screen.getByText("Cleanup finished")).toBeDefined();
 	});

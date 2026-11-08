@@ -13,8 +13,9 @@ import {
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { it } from "@effect/vitest";
-import { Effect, Schema } from "effect";
-import { expect } from "vitest";
+import { Deferred, Effect, Fiber, Schema } from "effect";
+import { expect, vi } from "vitest";
+import * as scanner from "./node-scanner.js";
 import { scanCustodian } from "./node-scanner.js";
 import {
 	executeCustodianProposal,
@@ -685,6 +686,63 @@ it.effect("cancels remaining targets and keeps durable partial evidence", () =>
 			expect(receipt.status).toBe("cancelled");
 			expect(receipt.entries.map(({ status }) => status)).toEqual(["trashed", "cancelled"]);
 			expect(yield* exists(join(project, "Binaries"))).toBe(true);
+		})
+	)
+);
+
+it.live("A10.3 persists a cancelled receipt when revalidation is aborted", () =>
+	withWorkspace((root) =>
+		Effect.gen(function* () {
+			yield* makeProject({ root, ageDays: 120 });
+			const report = yield* scan(root);
+			const target = report.projects[0]?.targets.find(
+				(target) => target.relativePath === "Intermediate"
+			);
+			if (!target) throw new Error("Missing fixture target");
+			const dependencies = executorDependencies();
+			const proposal = yield* Effect.tryPromise((signal) =>
+				prepareCustodianProposal(
+					{
+						root,
+						ignorePressure: true,
+						mode: "permanent",
+						proposalDirectory: join(root, "receipts"),
+						targetIds: [target.id]
+					},
+					signal,
+					dependencies
+				)
+			);
+			const started = yield* Deferred.make<void>();
+			const release = yield* Deferred.make<void>();
+			const controller = new AbortController();
+			const original = scanner.scanCustodian;
+			const spy = vi
+				.spyOn(scanner, "scanCustodian")
+				.mockImplementationOnce(async (...args) => {
+					await Effect.runPromise(Deferred.succeed(started, undefined));
+					await Effect.runPromise(Deferred.await(release));
+					return original(...args);
+				});
+			yield* Effect.gen(function* () {
+				const run = yield* Effect.tryPromise(() =>
+					executeCustodianProposal(
+						proposal,
+						proposal.approvalPhrase,
+						controller.signal,
+						dependencies
+					)
+				).pipe(Effect.forkChild);
+				yield* Deferred.await(started);
+				controller.abort(new Error("Cancelled during scan"));
+				yield* Deferred.succeed(release, undefined);
+				const receipt = yield* Fiber.join(run);
+				expect(receipt.status).toBe("cancelled");
+				expect(receipt.processedBytes).toBe(0);
+				expect(
+					yield* Effect.tryPromise(() => readFile(proposal.receiptPath, "utf8"))
+				).toContain('"cancelled"');
+			}).pipe(Effect.ensuring(Effect.sync(() => spy.mockRestore())));
 		})
 	)
 );

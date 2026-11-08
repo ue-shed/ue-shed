@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@solidjs/testing-library";
+import { render, screen } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
 import { Deferred, Effect } from "effect";
@@ -19,9 +19,12 @@ function mountState(api: GameTextClientApi) {
 			<>
 				<button onClick={state.load}>Load</button>
 				<button onClick={() => state.selectTarget(joined.target)}>Select</button>
+				<button onClick={() => state.setSelectedId(undefined)}>Clear</button>
+				<button onClick={state.retryDetail}>Retry detail</button>
 				<button onClick={() => state.setSelectedId(joined.lines[0]!.id)}>First</button>
 				<button onClick={() => state.setSelectedId(joined.lines[1]!.id)}>Second</button>
 				<span>{state.ready() ? "Ready" : "Loading"}</span>
+				<span>{state.detailError() ?? "No detail error"}</span>
 				<span>{state.error() ?? "No target error"}</span>
 				<span>{state.targets().length} targets</span>
 				<span>{state.detail()?.id}</span>
@@ -58,7 +61,13 @@ it("U5.1 keeps detail failure out of the target error and recovers on another li
 	await user.click(screen.getByRole("button", { name: "Load" }));
 	await screen.findByText("Ready");
 	await user.click(screen.getByRole("button", { name: "First" }));
-	await waitFor(() => expect(reads).toBe(1));
+	await screen.findByText(
+		"Translations for this line could not be loaded. Retry translations to try again."
+	);
+	await user.click(screen.getByRole("button", { name: "Clear" }));
+	await screen.findByText("No detail error");
+	await user.click(screen.getByRole("button", { name: "Retry detail" }));
+	expect(reads).toBe(1);
 	await user.click(screen.getByRole("button", { name: "Second" }));
 	await screen.findByText(joined.lines[1]!.id);
 	expect(screen.getByText("No target error")).toBeDefined();

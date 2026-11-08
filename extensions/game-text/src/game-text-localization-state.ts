@@ -315,6 +315,8 @@ export function createGameTextLocalizationState(props: {
 		({ ready: loaded, summary, target: name, id, unit }) => {
 			focusGeneration++;
 			focusAction.cancel();
+			lastFocus = undefined;
+			setDetailError(undefined);
 			const identity = JSON.stringify([name, id, unit]);
 			if (identity !== focusedIdentity) {
 				setDetail(undefined);

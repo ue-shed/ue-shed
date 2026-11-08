@@ -614,3 +614,98 @@ it("A6.1 clears scan progress after a worker closes without a summary", async ()
 	expect(failure).toBeInstanceOf(AssetReaderError);
 	expect(progress.current.phase).toBe("idle");
 });
+
+it("4506934663 an old batched scan cannot clear a newer shared progress destination", async () => {
+	class HeldScan extends EventEmitter {
+		readonly pid = 20;
+		killed = false;
+		readonly stdout = new PassThrough();
+		readonly stderr = new PassThrough();
+		constructor(
+			readonly started: () => void,
+			readonly total = 2
+		) {
+			super();
+		}
+		readonly stdin = new Writable({
+			write: (chunk, _encoding, callback) => {
+				const frame = decodeRequestIdentity(String(chunk));
+				this.stdout.write(
+					JSON.stringify({ ...frame, kind: "accepted", operation: "scan", sequence: 0 }) +
+						"\n"
+				);
+				this.stdout.write(
+					JSON.stringify({
+						...frame,
+						kind: "progress",
+						phase: "reading",
+						completedItems: 1,
+						totalItems: this.total,
+						sequence: 1
+					}) + "\n"
+				);
+				callback();
+				this.started();
+			}
+		});
+		fail() {
+			this.stdout.end();
+			this.emit("close", 1, null);
+		}
+		kill() {
+			return true;
+		}
+	}
+	const observed = Promise.withResolvers<void>();
+	let current: import("./asset-reader.js").ScanProgressStore["current"] = {
+		phase: "idle",
+		cacheHits: 0,
+		emittedAssets: 0,
+		processedAssets: 0,
+		totalAssets: 0
+	};
+	const progress: import("./asset-reader.js").ScanProgressStore = {
+		get current() {
+			return current;
+		},
+		set current(next) {
+			current = next;
+			if (next.totalAssets === 7) observed.resolve();
+		}
+	};
+
+	const oldStarted = Promise.withResolvers<void>();
+	const newStarted = Promise.withResolvers<void>();
+	const old = new HeldScan(oldStarted.resolve);
+	const newer = new HeldScan(newStarted.resolve, 7);
+	const config = { executable: "fake", timeoutMs: 5000, catalogTimeoutMs: 5000 };
+	const first = Effect.runPromise(
+		invokeProtocolScan(
+			config,
+			{
+				projectRoot: "C:/Fixture",
+				depth: "header",
+				paths: Array.from({ length: 10 }, (_, i) => `${i}${"x".repeat(200)}.uasset`)
+			},
+			progress,
+			{ maximumRequestBytes: 800, processFactory: () => old }
+		).pipe(Effect.exit)
+	);
+	await oldStarted.promise;
+	const second = Effect.runPromise(
+		invokeProtocolScan(config, { projectRoot: "C:/Fixture", depth: "header" }, progress, {
+			processFactory: () => newer
+		}).pipe(Effect.exit)
+	);
+	await newStarted.promise;
+	await observed.promise;
+	try {
+		expect(progress.current.phase).toBe("scanning");
+		old.fail();
+		await first;
+		expect(progress.current.phase).toBe("scanning");
+	} finally {
+		newer.fail();
+		await second;
+	}
+});

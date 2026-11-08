@@ -1616,89 +1616,74 @@ async function collectProtocolScan(
 	signal?: AbortSignal,
 	processFactory?: ProtocolProcessFactory
 ): Promise<SavedAssetScan> {
-	const owner = Symbol();
-	scanOwners.set(progress, owner);
-	try {
-		const request = makeScanRequest(configuration, options);
-		const assets: SavedAssetScanEntry[] = [];
-		const failures: SavedAssetScanFailure[] = [];
-		const inventory: SavedAssetManifestEntry[] = [];
-		let summary: SavedAssetScanSummary | undefined;
-		let partial = false;
-		for await (const event of protocolEvents({
-			configuration,
-			operation: "scan",
-			path: options.projectRoot,
-			...(processFactory === undefined ? undefined : { processFactory }),
-			request,
-			signal,
-			telemetry,
-			timeoutMs: configuration.catalogTimeoutMs
-		})) {
-			if (event.kind === "progress") {
-				progress.current = {
-					...progress.current,
-					phase: protocolPhase(event.phase),
-					processedAssets: event.completedItems,
-					...(event.totalItems === undefined
-						? undefined
-						: { totalAssets: event.totalItems })
-				};
-			} else if (event.kind === "diagnostic") {
-				partial = true;
-				failures.push({
-					code: event.code,
-					message: event.message,
-					path: options.projectRoot,
-					retrySafe: true
-				});
-			} else if (event.kind === "result") {
-				switch (event.result.kind) {
-					case "scan_asset":
-						assets.push(event.result.entry);
-						break;
-					case "scan_inventory":
-						inventory.push(event.result.entry);
-						break;
-					case "scan_summary":
-						summary = event.result.summary;
-						progress.current = {
-							...progress.current,
-							cacheHits: event.result.summary.cacheHits,
-							emittedAssets: event.result.summary.emittedAssets,
-							totalAssets: event.result.summary.scannedAssets
-						};
-						break;
-				}
-			} else if (event.kind === "failed" || event.kind === "rejected") {
-				throw protocolFailureFromEvent(event);
-			} else if (event.kind === "completed" && event.outcome === "partial") {
-				partial = true;
+	const request = makeScanRequest(configuration, options);
+	const assets: SavedAssetScanEntry[] = [];
+	const failures: SavedAssetScanFailure[] = [];
+	const inventory: SavedAssetManifestEntry[] = [];
+	let summary: SavedAssetScanSummary | undefined;
+	let partial = false;
+	for await (const event of protocolEvents({
+		configuration,
+		operation: "scan",
+		path: options.projectRoot,
+		...(processFactory === undefined ? undefined : { processFactory }),
+		request,
+		signal,
+		telemetry,
+		timeoutMs: configuration.catalogTimeoutMs
+	})) {
+		if (event.kind === "progress") {
+			progress.current = {
+				...progress.current,
+				phase: protocolPhase(event.phase),
+				processedAssets: event.completedItems,
+				...(event.totalItems === undefined ? undefined : { totalAssets: event.totalItems })
+			};
+		} else if (event.kind === "diagnostic") {
+			partial = true;
+			failures.push({
+				code: event.code,
+				message: event.message,
+				path: options.projectRoot,
+				retrySafe: true
+			});
+		} else if (event.kind === "result") {
+			switch (event.result.kind) {
+				case "scan_asset":
+					assets.push(event.result.entry);
+					break;
+				case "scan_inventory":
+					inventory.push(event.result.entry);
+					break;
+				case "scan_summary":
+					summary = event.result.summary;
+					progress.current = {
+						...progress.current,
+						cacheHits: event.result.summary.cacheHits,
+						emittedAssets: event.result.summary.emittedAssets,
+						totalAssets: event.result.summary.scannedAssets
+					};
+					break;
 			}
-		}
-		if (summary === undefined) {
-			throw new ProtocolStreamFailure(
-				"contract",
-				"Protocol scan ended without a summary result"
-			);
-		}
-		progress.current = { ...progress.current, phase: "ready" };
-		return {
-			assets,
-			failures,
-			...(inventory.length === 0 ? undefined : { inventory }),
-			summary: {
-				...summary,
-				partialAssets: Math.max(summary.partialAssets, partial ? 1 : 0)
-			}
-		};
-	} finally {
-		if (scanOwners.get(progress) === owner) {
-			scanOwners.delete(progress);
-			if (progress.current.phase !== "ready")
-				progress.current = { ...progress.current, phase: "idle" };
+		} else if (event.kind === "failed" || event.kind === "rejected") {
+			throw protocolFailureFromEvent(event);
+		} else if (event.kind === "completed" && event.outcome === "partial") {
+			partial = true;
 		}
 	}
+	if (summary === undefined) {
+		throw new ProtocolStreamFailure("contract", "Protocol scan ended without a summary result");
+	}
+	progress.current = { ...progress.current, phase: "ready" };
+	return {
+		assets,
+		failures,
+		...(inventory.length === 0 ? undefined : { inventory }),
+		summary: {
+			...summary,
+			partialAssets: Math.max(summary.partialAssets, partial ? 1 : 0)
+		}
+	};
 }
 
 /** One scan request in one reader process, with that process's telemetry. */
@@ -1751,101 +1736,123 @@ export function invokeProtocolScan(
 	batching: ProtocolBatchingOptions = {}
 ): Effect.Effect<SavedAssetScan, AssetReaderError> {
 	const projectRoot = options.projectRoot;
-	return Effect.gen(function* () {
-		const paths = options.paths;
-		const batches =
-			paths === undefined
-				? undefined
-				: requestPathBatches(
-						projectRoot,
-						paths,
-						Buffer.byteLength(
-							JSON.stringify(
-								makeScanRequest(configuration, {
-									...options,
-									paths: [],
-									...(options.cachePath === undefined
-										? undefined
-										: {
-												cachePath: batchCachePath(
-													options.cachePath,
-													paths.length
-												)
-											})
-								})
+	return Effect.suspend(() => {
+		const owner = Symbol();
+		scanOwners.set(progress, owner);
+		const destination: ScanProgressStore = {
+			get current() {
+				return progress.current;
+			},
+			set current(next) {
+				if (scanOwners.get(progress) === owner) progress.current = next;
+			}
+		};
+		return Effect.gen(function* () {
+			const paths = options.paths;
+			const batches =
+				paths === undefined
+					? undefined
+					: requestPathBatches(
+							projectRoot,
+							paths,
+							Buffer.byteLength(
+								JSON.stringify(
+									makeScanRequest(configuration, {
+										...options,
+										paths: [],
+										...(options.cachePath === undefined
+											? undefined
+											: {
+													cachePath: batchCachePath(
+														options.cachePath,
+														paths.length
+													)
+												})
+									})
+								),
+								"utf8"
 							),
-							"utf8"
-						),
-						batching.maximumRequestBytes ?? MAX_PROTOCOL_REQUEST_BYTES
-					);
-		if (batches instanceof ProtocolStreamFailure)
-			return yield* mapProtocolFailure(batches, "scan", projectRoot);
-		yield* Effect.annotateCurrentSpan({ [READER_BATCHES_ATTRIBUTE]: batches?.length ?? 1 });
-		if (paths === undefined || batches === undefined || batches.length === 1) {
-			// A list that only fit once its repeats were dropped is sent without them.
-			const only = batches?.[0];
-			return yield* invokeProtocolScanBatch(
-				configuration,
-				paths === undefined || only === undefined || only.length === paths.length
-					? options
-					: { ...options, paths: only.map((index) => paths[index] ?? "") },
-				progress,
-				batching.processFactory
-			);
-		}
-		const batched = new BatchedScanProgress(progress, batches.length);
-		const assetIdentities = new BatchIdentities(projectRoot);
-		const inventoryIdentities = new BatchIdentities(projectRoot);
-		const scans: SavedAssetScan[] = [];
-		let counted = 0;
-		for (const [index, batch] of batches.entries()) {
-			const batchProgress = batched.batch(index);
-			const scan = yield* invokeProtocolScanBatch(
-				configuration,
-				{
-					...options,
-					paths: batch.map((pathIndex) => paths[pathIndex] ?? ""),
-					...(options.cachePath === undefined
-						? undefined
-						: { cachePath: batchCachePath(options.cachePath, index) })
-				},
-				batchProgress,
-				batching.processFactory
-			);
-			const assets = scan.assets.filter((entry) =>
-				assetIdentities.keep(scanEntryPath(entry))
-			);
-			const inventory = scan.inventory?.filter((entry) =>
-				inventoryIdentities.keep(entry.path)
-			);
-			const repeated = assetIdentities.finish();
-			const repeatedInventory = inventoryIdentities.finish();
-			counted += scan.summary.scannedAssets - repeated;
-			if (options.maximumAssets !== undefined && counted > options.maximumAssets)
-				return yield* mapProtocolFailure(
-					packageLimitFailure(counted, options.maximumAssets),
-					"scan",
-					projectRoot
+							batching.maximumRequestBytes ?? MAX_PROTOCOL_REQUEST_BYTES
+						);
+			if (batches instanceof ProtocolStreamFailure)
+				return yield* mapProtocolFailure(batches, "scan", projectRoot);
+			yield* Effect.annotateCurrentSpan({ [READER_BATCHES_ATTRIBUTE]: batches?.length ?? 1 });
+			if (paths === undefined || batches === undefined || batches.length === 1) {
+				// A list that only fit once its repeats were dropped is sent without them.
+				const only = batches?.[0];
+				return yield* invokeProtocolScanBatch(
+					configuration,
+					paths === undefined || only === undefined || only.length === paths.length
+						? options
+						: { ...options, paths: only.map((index) => paths[index] ?? "") },
+					destination,
+					batching.processFactory
 				);
-			scans.push({
-				...scan,
-				assets,
-				...(inventory === undefined ? undefined : { inventory }),
-				summary: {
-					...scan.summary,
-					emittedAssets: scan.summary.emittedAssets - repeated,
-					scannedAssets: scan.summary.scannedAssets - repeated,
-					...(scan.summary.inventoryFiles === undefined
-						? undefined
-						: { inventoryFiles: scan.summary.inventoryFiles - repeatedInventory })
-				}
-			});
-			batched.finish(batchProgress);
-		}
-		const cachePath = options.cachePath;
-		if (cachePath !== undefined)
-			yield* Effect.promise(() => removeLeftoverBatchCaches(cachePath, batches.length));
-		return mergeSavedAssetScans(scans);
+			}
+			const batched = new BatchedScanProgress(destination, batches.length);
+			const assetIdentities = new BatchIdentities(projectRoot);
+			const inventoryIdentities = new BatchIdentities(projectRoot);
+			const scans: SavedAssetScan[] = [];
+			let counted = 0;
+			for (const [index, batch] of batches.entries()) {
+				const batchProgress = batched.batch(index);
+				const scan = yield* invokeProtocolScanBatch(
+					configuration,
+					{
+						...options,
+						paths: batch.map((pathIndex) => paths[pathIndex] ?? ""),
+						...(options.cachePath === undefined
+							? undefined
+							: { cachePath: batchCachePath(options.cachePath, index) })
+					},
+					batchProgress,
+					batching.processFactory
+				);
+				const assets = scan.assets.filter((entry) =>
+					assetIdentities.keep(scanEntryPath(entry))
+				);
+				const inventory = scan.inventory?.filter((entry) =>
+					inventoryIdentities.keep(entry.path)
+				);
+				const repeated = assetIdentities.finish();
+				const repeatedInventory = inventoryIdentities.finish();
+				counted += scan.summary.scannedAssets - repeated;
+				if (options.maximumAssets !== undefined && counted > options.maximumAssets)
+					return yield* mapProtocolFailure(
+						packageLimitFailure(counted, options.maximumAssets),
+						"scan",
+						projectRoot
+					);
+				scans.push({
+					...scan,
+					assets,
+					...(inventory === undefined ? undefined : { inventory }),
+					summary: {
+						...scan.summary,
+						emittedAssets: scan.summary.emittedAssets - repeated,
+						scannedAssets: scan.summary.scannedAssets - repeated,
+						...(scan.summary.inventoryFiles === undefined
+							? undefined
+							: { inventoryFiles: scan.summary.inventoryFiles - repeatedInventory })
+					}
+				});
+				batched.finish(batchProgress);
+			}
+			const cachePath = options.cachePath;
+			if (cachePath !== undefined)
+				yield* Effect.promise(() => removeLeftoverBatchCaches(cachePath, batches.length));
+			return mergeSavedAssetScans(scans);
+		}).pipe(
+			Effect.ensuring(
+				Effect.sync(() => {
+					if (scanOwners.get(progress) === owner) {
+						scanOwners.delete(progress);
+						if (progress.current.phase !== "ready")
+							progress.current = { ...progress.current, phase: "idle" };
+					}
+				})
+			)
+		);
 	}).pipe(Effect.withSpan("unreal_assets.protocol_scan"));
 }
 

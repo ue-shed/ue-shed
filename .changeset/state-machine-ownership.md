@@ -20,3 +20,8 @@ clear abandoned scan progress, and serialize duplicate thumbnail generation.
 Workbench now serializes editor target changes, refreshes command status without stale polls,
 retains current history jobs during cancellation, shares pending launches, and safely retires
 camera sessions and preview bindings across failures and world changes.
+
+Keep carried ID-repair translations attached to the target submitted with Apply. Retain refreshes
+of the selected project while another project is opening, preserve newer rules selections when
+an older save completes, scope scan progress to the logical scan, and clear recovered rules-file
+errors without dismissing newer unrelated failures.

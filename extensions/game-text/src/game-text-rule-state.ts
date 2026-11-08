@@ -108,6 +108,11 @@ export function createGameTextRuleState(options: {
 					transition({ _tag: "Finish" });
 				},
 				onSuccess: (result) => {
+					const current = lifecycle();
+					if (current._tag === "Running" && current.replacement) {
+						transition({ _tag: "Finish" });
+						return;
+					}
 					if (result.status === "completed") {
 						setState((current) => ({
 							draft:

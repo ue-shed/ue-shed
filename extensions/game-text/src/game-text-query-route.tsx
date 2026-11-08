@@ -210,11 +210,18 @@ export function GameTextRoute(props: {
 	}>();
 	const [searchFailed, setSearchFailed] = createSignal(false);
 	/** One error at a time, with the action that recovers from it; search errors also end the count. */
+	let errorOwner: symbol | undefined;
+	const ruleFileErrorOwner = Symbol();
 	const showError = (
 		message: string,
 		retry: () => void,
-		options: { readonly search?: boolean; readonly label?: string } = {}
+		options: {
+			readonly search?: boolean;
+			readonly label?: string;
+			readonly owner?: symbol;
+		} = {}
 	) => {
+		errorOwner = options.owner;
 		setError(message);
 		setRetryError({ label: options.label ?? "Retry", run: retry });
 		setSearchFailed(options.search ?? false);
@@ -1076,10 +1083,19 @@ export function GameTextRoute(props: {
 					: props.client.createStarterRules?.(create);
 			if (!operation) return;
 			ruleFileAction.run(operation, {
-				onSuccess: applyQuality,
+				onSuccess: (result) => {
+					if (result.status === "completed" && errorOwner === ruleFileErrorOwner) {
+						setError(undefined);
+						setRetryError(undefined);
+						errorOwner = undefined;
+					}
+					applyQuality(result);
+				},
 				onFailure: (cause) =>
-					showError(failureText("Couldn’t open the rules file.", cause), () =>
-						loadRules(create)
+					showError(
+						failureText("Couldn’t open the rules file.", cause),
+						() => loadRules(create),
+						{ owner: ruleFileErrorOwner }
 					)
 			});
 		});
@@ -1087,9 +1103,18 @@ export function GameTextRoute(props: {
 		guardRules(() => {
 			setQualityFailure(undefined);
 			ruleFileAction.run(props.client.reloadQualityRules ?? props.client.chooseQualityRules, {
-				onSuccess: applyQuality,
+				onSuccess: (result) => {
+					if (result.status === "completed" && errorOwner === ruleFileErrorOwner) {
+						setError(undefined);
+						setRetryError(undefined);
+						errorOwner = undefined;
+					}
+					applyQuality(result);
+				},
 				onFailure: (cause) =>
-					showError(failureText("Couldn’t reload the rules file.", cause), reloadRules)
+					showError(failureText("Couldn’t reload the rules file.", cause), reloadRules, {
+						owner: ruleFileErrorOwner
+					})
 			});
 		});
 	/** Shows a preset's saved controls; one this view didn't save has none to show. */

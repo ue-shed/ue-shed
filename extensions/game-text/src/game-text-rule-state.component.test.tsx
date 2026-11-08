@@ -73,7 +73,7 @@ it.each([
 		expect(screen.getByText("Saving")).toBeDefined();
 		await Effect.runPromise(Deferred.succeed(pending, undefined));
 		await waitFor(() => expect(screen.getByText("Idle")).toBeDefined());
-		expect(onReviewed).toHaveBeenCalledTimes(fail ? 0 : 1);
+		expect(onReviewed).not.toHaveBeenCalled();
 		expect(screen.getByText("idle feedback")).toBeDefined();
 		expect(screen.getByText("0 rules")).toBeDefined();
 		expect(screen.getByText("Idle")).toBeDefined();

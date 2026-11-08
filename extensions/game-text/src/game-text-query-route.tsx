@@ -40,7 +40,16 @@ import {
 } from "@ue-shed/ui";
 import { InvestigationActions } from "@ue-shed/ui/investigation-actions";
 import { Effect, Schedule, Stream } from "effect";
-import { For, Show, createEffect, createMemo, createSignal, onSettled, untrack } from "solid-js";
+import {
+	For,
+	Show,
+	createEffect,
+	createMemo,
+	createSignal,
+	onSettled,
+	onCleanup,
+	untrack
+} from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { failureText } from "./game-text-failure.js";
 import { mergePages, nextPageCursor, pageRows } from "./game-text-pages.js";
@@ -280,6 +289,11 @@ export function GameTextRoute(props: {
 	const progressSubscription = createEffectSubscription();
 	const elapsedSubscription = createEffectSubscription();
 	let searchGeneration = 0;
+	let findingsTimer: ReturnType<typeof setTimeout> | undefined;
+	onCleanup(() => {
+		searchGeneration++;
+		if (findingsTimer !== undefined) clearTimeout(findingsTimer);
+	});
 	let focusGeneration = 0;
 	const localization = createGameTextLocalizationState({
 		client: props.client,
@@ -686,6 +700,8 @@ export function GameTextRoute(props: {
 	let previousSearch = "";
 	const requestPage = (request: TextCorpusSearchRequest, debounce = false) => {
 		const generation = ++searchGeneration;
+		if (findingsTimer !== undefined) clearTimeout(findingsTimer);
+		findingsTimer = undefined;
 		const {
 			cursor: _cursor,
 			localizationCursor: _localizationCursor,
@@ -698,7 +714,7 @@ export function GameTextRoute(props: {
 				: 50;
 		let started = 0;
 		if (!request.cursor && !request.localizationCursor) navigation.cancelSteps();
-		setError(undefined);
+		if (untrack(searchFailed)) setError(undefined);
 		setSearchFailed(false);
 		setSearching(true);
 		searchAction.run(
@@ -767,7 +783,8 @@ export function GameTextRoute(props: {
 							!request.cursor &&
 							!request.localizationCursor
 						)
-							setTimeout(() => {
+							findingsTimer = setTimeout(() => {
+								findingsTimer = undefined;
 								if (generation === searchGeneration) requestPage(request);
 							}, 2000);
 					} else {

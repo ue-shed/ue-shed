@@ -994,7 +994,10 @@ export class UassetProtocolSession {
 				if (this.child !== child) return;
 				this.processError = cause;
 			});
-			child.onClose((code, signal) => resolvePromise({ code, signal }));
+			child.onClose((code, signal) => {
+				resolvePromise({ code, signal });
+				if (!this.running) this.releaseProcess(child);
+			});
 		});
 		return child;
 	}

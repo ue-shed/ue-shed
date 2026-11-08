@@ -511,3 +511,50 @@ it("keeps Unicode line and paragraph separators inside persistent NDJSON frames"
 		await session.close();
 	}
 });
+
+it("A5.1 replaces a worker that closes between completed requests", async () => {
+	const request = makeProtocolRequest(
+		{ kind: "inspect", assetPath: "C:/Fixture/A.uasset" },
+		{ timeoutMs: 1000, maximumOutputBytes: 4096 }
+	);
+	const frame = { contract: request.contract, requestId: request.requestId };
+	const output = [
+		{ ...frame, kind: "accepted", operation: "inspect", sequence: 0 },
+		{ ...frame, kind: "completed", outcome: "complete", sequence: 1 }
+	]
+		.map((event) => JSON.stringify(event) + "\n")
+		.join("");
+	const workers: StalledInputProcess[] = [];
+	const session = new UassetProtocolSession({ executable: "fake", timeoutMs: 1000 }, () => {
+		const worker = new StalledInputProcess(
+			true,
+			undefined,
+			undefined,
+			new Writable({
+				write(_chunk, _encoding, callback) {
+					worker.stdout.write(output);
+					callback();
+				}
+			})
+		);
+		workers.push(worker);
+		return worker;
+	});
+	const run = async () => {
+		for await (const _event of session.events({
+			request,
+			signal: undefined,
+			timeoutMs: 1000
+		})) {
+			/* consume */
+		}
+	};
+	try {
+		await run();
+		workers[0]!.emitClose();
+		await run();
+		expect(workers).toHaveLength(2);
+	} finally {
+		await session.close();
+	}
+});

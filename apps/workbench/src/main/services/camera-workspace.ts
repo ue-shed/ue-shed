@@ -93,6 +93,9 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 				store: ReturnType<typeof makeCameraAuthoringStore>;
 		  }
 		| undefined;
+	let pendingDetach:
+		| Pick<NonNullable<typeof active>, "bridge" | "snapshot" | "endpoint" | "livePreview">
+		| undefined;
 	let error: string | null = null;
 	let recovery: CameraRecoveryProposal | null = null;
 	let savedSets: CameraWorkspaceResult["sets"] = [];
@@ -127,8 +130,9 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 		);
 	});
 	const close = Effect.fn("Workbench.CameraWorkspace.close")(function* () {
-		if (!active) return;
-		const current = active;
+		const current = active ?? pendingDetach;
+		if (!current) return;
+		pendingDetach = current;
 		active = undefined;
 		recovery = null;
 		const detached = yield* current.bridge
@@ -153,6 +157,8 @@ const makeCameraWorkspace = Effect.fn("Workbench.CameraWorkspace.make")(function
 			yield* clearProvisionedCameras(current.endpoint).pipe(
 				Effect.provideService(RemoteControlClient, client)
 			);
+		pendingDetach = undefined;
+		error = null;
 	});
 	const tick = Effect.fn("Workbench.CameraWorkspace.tick")(function* () {
 		if (!active) return;

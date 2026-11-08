@@ -21,6 +21,7 @@ it.effect("L4.1 retires local ticking and retains failed detach diagnostics", ()
 		const store = cameras.makeCameraAuthoringStore(join(root, "draft.json"));
 		yield* store.create(arrangement, set);
 		let ticks = 0;
+		let detaches = 0;
 		let snapshot = cameras.CameraBridgeSnapshot.make({
 			version: 1,
 			status: "ready",
@@ -39,7 +40,13 @@ it.effect("L4.1 retires local ticking and retains failed detach diagnostics", ()
 		vi.spyOn(cameras, "attachArrangementCamera").mockReturnValue(Effect.sync(() => snapshot));
 		vi.spyOn(cameras, "makeCameraAuthoringBridge").mockReturnValue({
 			call: (request) => {
-				if (request.operation === "detach")
+				if (request.operation === "detach") {
+					if (++detaches > 1)
+						return Effect.succeed({
+							version: 1 as const,
+							status: "detached" as const,
+							message: "Done"
+						});
 					return Effect.fail(
 						new cameras.CameraBridgeError({
 							code: "disconnected",
@@ -49,6 +56,7 @@ it.effect("L4.1 retires local ticking and retains failed detach diagnostics", ()
 							nextStep: "reconcile"
 						})
 					);
+				}
 				ticks++;
 				if (request.operation === "panel") snapshot = { ...snapshot, panel: request.state };
 				return Effect.succeed(snapshot);
@@ -74,6 +82,10 @@ it.effect("L4.1 retires local ticking and retains failed detach diagnostics", ()
 			const state = yield* workspace.request(context, { kind: "state" });
 			expect(state.panel).toBeNull();
 			expect(state.error).toContain("Detach failed");
+			yield* workspace.close;
+			expect(detaches).toBe(2);
+			yield* TestClock.adjust("1 second");
+			expect(ticks).toBe(before);
 		}).pipe(
 			Effect.provide(
 				WorkbenchCameraWorkspaceLive.pipe(

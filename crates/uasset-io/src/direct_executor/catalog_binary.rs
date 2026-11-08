@@ -883,6 +883,14 @@ pub(crate) struct BinaryCatalog {
     #[cfg(test)]
     cleanup_root: Option<PathBuf>,
 }
+/// How a catalog is opened: the writer verifies, locks and recovers; a query reader trusts the
+/// manifest; a status reader verifies but never locks or writes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OpenMode {
+    Writer,
+    Query,
+    Status,
+}
 impl std::fmt::Debug for BinaryCatalog {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BinaryCatalog")
@@ -892,27 +900,64 @@ impl std::fmt::Debug for BinaryCatalog {
 }
 impl BinaryCatalog {
     pub(crate) fn open(root: &Path, project_id: &ProjectId) -> Result<Self, CatalogError> {
-        Self::open_checked(root, project_id, true)
+        Self::open_checked(root, project_id, OpenMode::Writer)
     }
     pub(crate) fn open_for_query(
         root: &Path,
         project_id: &ProjectId,
     ) -> Result<Self, CatalogError> {
-        Self::open_checked(root, project_id, false)
+        Self::open_checked(root, project_id, OpenMode::Query)
+    }
+    /// Reads the committed catalog for status: no writer lock, so a refresh in progress doesn't
+    /// hide the last committed generation, and nothing on disk is created, cleaned or quarantined.
+    /// A damaged catalog reads as absent; the next refresh quarantines it.
+    pub(crate) fn open_for_status(
+        root: &Path,
+        project_id: &ProjectId,
+    ) -> Result<Self, CatalogError> {
+        match Self::open_checked(root, project_id, OpenMode::Status) {
+            Err(CatalogError::Corrupt { .. }) => Ok(Self::unopened(
+                root.join(CATALOG_DIRECTORY)
+                    .join(catalog_directory_name(project_id)),
+                project_id,
+            )),
+            opened => opened,
+        }
+    }
+    fn unopened(directory: PathBuf, project_id: &ProjectId) -> Self {
+        Self {
+            writer_lock: None,
+            publication_uncertain: false,
+            directory,
+            project_id: project_id.clone(),
+            manifest: None,
+            snapshot: RefCell::new(None),
+            staging: None,
+            quarantined_from: None,
+            writes: CatalogWriteCounts::default(),
+            #[cfg(test)]
+            cleanup_root: None,
+        }
     }
     fn open_checked(
         root: &Path,
         project_id: &ProjectId,
-        verify: bool,
+        mode: OpenMode,
     ) -> Result<Self, CatalogError> {
         let directory = root
             .join(CATALOG_DIRECTORY)
             .join(catalog_directory_name(project_id));
-        if let Some(namespace) = directory.parent() {
+        if mode == OpenMode::Status && !directory.is_dir() {
+            return Ok(Self::unopened(directory, project_id));
+        }
+        let verify = mode != OpenMode::Query;
+        if mode != OpenMode::Status
+            && let Some(namespace) = directory.parent()
+        {
             fs::create_dir_all(namespace)
                 .map_err(io_unavailable("create binary Catalog namespace"))?;
         }
-        let writer_lock = if verify {
+        let writer_lock = if mode == OpenMode::Writer {
             let lock = File::options()
                 .read(true)
                 .write(true)
@@ -927,8 +972,10 @@ impl BinaryCatalog {
         } else {
             None
         };
-        fs::create_dir_all(&directory)
-            .map_err(io_unavailable("create binary Catalog directory"))?;
+        if mode != OpenMode::Status {
+            fs::create_dir_all(&directory)
+                .map_err(io_unavailable("create binary Catalog directory"))?;
+        }
         let opened = (|| {
             let manifest = read_and_verify_manifest(&directory, project_id, false)?;
             if manifest.as_ref().is_some_and(|m| {
@@ -960,7 +1007,7 @@ impl BinaryCatalog {
         })();
         let (manifest, snapshot, quarantined_from) = match opened {
             Ok((manifest, snapshot)) => (manifest, snapshot, None),
-            Err(CatalogError::Corrupt { .. }) if verify => {
+            Err(CatalogError::Corrupt { .. }) if mode == OpenMode::Writer => {
                 let quarantine = quarantine_directory(&directory)?;
                 fs::create_dir_all(&directory)
                     .map_err(io_unavailable("recreate binary Catalog"))?;
@@ -968,7 +1015,9 @@ impl BinaryCatalog {
             }
             Err(error) => return Err(error),
         };
-        if verify && let Some(manifest) = &manifest {
+        if mode == OpenMode::Writer
+            && let Some(manifest) = &manifest
+        {
             cleanup_retired_snapshots(&directory, manifest);
         }
         Ok(Self {
@@ -2104,6 +2153,39 @@ mod tests {
         assert!(BinaryCatalog::open(&root, &fixture_project_id()).is_err());
         release_test_writer(&mut writer);
         assert!(BinaryCatalog::open(&root, &fixture_project_id()).is_ok());
+    }
+
+    #[test]
+    fn status_reads_the_committed_catalog_while_a_writer_holds_it() {
+        // A2.1: status during a refresh shows the last committed catalog instead of failing.
+        let mut catalog = custom_catalog();
+        let root = catalog.cleanup_root.as_ref().unwrap().clone();
+        refresh(
+            &mut catalog,
+            &refresh_fixture(),
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let generation = catalog.committed_generation().unwrap();
+        let status = BinaryCatalog::open_for_status(&root, &fixture_project_id()).unwrap();
+        assert_eq!(status.committed_generation(), Some(generation));
+        assert!(BinaryCatalog::open(&root, &fixture_project_id()).is_err());
+        release_test_writer(&mut catalog);
+    }
+
+    #[test]
+    fn status_of_a_missing_catalog_creates_nothing() {
+        // A2.1: asking whether a project has an index must not create one.
+        let root = std::env::temp_dir().join(format!(
+            "ue-shed-binary-catalog-status-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let status = BinaryCatalog::open_for_status(&root, &fixture_project_id()).unwrap();
+        assert_eq!(status.committed_generation(), None);
+        assert!(!root.exists());
     }
 
     #[test]

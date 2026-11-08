@@ -778,7 +778,7 @@ fn execute_direct(
             cache_root,
             project_root,
         } => {
-            let catalog = direct_executor::open_catalog(cache_root, project_root)?;
+            let catalog = direct_executor::open_catalog_for_status(cache_root, project_root)?;
             let status = direct_executor::project_index_status_protocol(&catalog);
             emit_typed_result(emitter, &ResultFrame::ProjectIndexStatus { status })?;
             Ok(false)

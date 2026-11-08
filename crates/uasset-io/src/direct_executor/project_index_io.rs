@@ -242,6 +242,16 @@ pub(crate) fn open_catalog(cache_root: &str, project_root: &str) -> Result<Binar
     open_catalog_for_id(cache_root, &project_id_from_root(project_root))
 }
 
+/// The catalog as status reports it: the last committed generation, read without the writer
+/// lock and without creating or repairing anything on disk.
+pub(crate) fn open_catalog_for_status(
+    cache_root: &str,
+    project_root: &str,
+) -> Result<BinaryCatalog, Failure> {
+    BinaryCatalog::open_for_status(Path::new(cache_root), &project_id_from_root(project_root))
+        .map_err(catalog_to_failure)
+}
+
 pub(crate) fn open_catalog_for_id(
     cache_root: &str,
     project_id: &ProjectId,

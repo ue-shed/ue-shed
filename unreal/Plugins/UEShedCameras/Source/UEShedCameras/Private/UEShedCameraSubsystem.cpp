@@ -1,4 +1,5 @@
 #include "UEShedCameraSubsystem.h"
+#include "UEShedCameraReadbackOwnership.h"
 #include "UEShedCameraStreamPolicy.h"
 
 #include "Async/Async.h"
@@ -41,7 +42,7 @@ uint64 CameraAuthorityEpoch = 0;
 struct FReadbackSlot
 {
     TSharedPtr<UEShedCameraStreamPolicy::FDeliveryReceipt, ESPMode::ThreadSafe> Delivery;
-	TAtomic<int32> State{ 0 }; // idle, enqueued, ready
+	UEShedCameraReadback::FSlotOwnership Ownership;
 	TUniquePtr<FRHIGPUTextureReadback> Readback;
 	TArray<uint8> Pixels;
 	double CaptureMonotonicMs = 0;
@@ -668,12 +669,20 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 	{
 		for (const TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe>& Slot : Camera.Slots)
 		{
-			if (Slot->State.Load() == 1)
+			// One poll per capture at a time. Each poll is bound to its capture's generation, so a
+			// poll can never copy an earlier capture into a slot recycled for a later one.
+			uint64 PollGeneration = 0;
+			if (Slot->Ownership.TryQueuePoll(PollGeneration))
 			{
 				ENQUEUE_RENDER_COMMAND(UEShedPollCameraReadback)(
-					[Slot](FRHICommandListImmediate& RHICmdList)
+					[Slot, PollGeneration](FRHICommandListImmediate& RHICmdList)
 					{
-						if (!Slot->Readback || !Slot->Readback->IsReady()) return;
+						if (!Slot->Ownership.OwnsCapture(PollGeneration) || !Slot->Readback
+							|| !Slot->Readback->IsReady())
+						{
+							Slot->Ownership.FinishPoll(PollGeneration, false);
+							return;
+						}
 						int32 RowPitchPixels = 0;
 						int32 BufferHeight = 0;
 						const uint8* Source = static_cast<const uint8*>(
@@ -691,14 +700,14 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 						Slot->Readback->Unlock();
 						Slot->ReadbackLatencyMs = FPlatformTime::Seconds() * 1000.0
 							- Slot->CaptureMonotonicMs;
-						Slot->State.Store(2);
+						Slot->Ownership.FinishPoll(PollGeneration, true);
 					});
 			}
-			if (Slot->State.Load() != 2) continue;
+			if (!Slot->Ownership.IsReady()) continue;
 			AUEShedCameraSource* Source = Camera.Source.Get();
 			if (Source == nullptr)
 			{
-				Slot->State.Store(0);
+				Slot->Ownership.Consume();
 				continue;
 			}
 			TSharedRef<FFramePacket, ESPMode::ThreadSafe> Packet =
@@ -739,7 +748,7 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 			FMemory::Memcpy(Packet->Bytes.GetData() + FrameHeaderBytes,
 				Slot->Pixels.GetData(), Slot->Pixels.Num());
 			Runtime->Writer->Submit(Packet);
-			Slot->State.Store(0);
+			Slot->Ownership.Consume();
 		}
 	}
 	for (FCameraState& Camera : Runtime->Cameras)
@@ -750,7 +759,7 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 		bool bReadbacksIdle = true;
 		for (const TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe>& Slot : Camera.Slots)
 		{
-			bReadbacksIdle = bReadbacksIdle && Slot->State.Load() == 0;
+			bReadbacksIdle = bReadbacksIdle && Slot->Ownership.IsAvailable();
 		}
 		if (!bReadbacksIdle) continue;
 		if (UTextureRenderTarget2D* Target = Source->GetCaptureComponent2D()->TextureTarget)
@@ -771,6 +780,7 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 	{
 		USceneCaptureComponent2D* Component = nullptr;
 		TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe> Slot;
+		uint64 Generation = 0;
 	};
 
 	const double Now = World->GetTimeSeconds();
@@ -827,7 +837,7 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 		{
 			for (const TSharedPtr<FReadbackSlot, ESPMode::ThreadSafe>& Slot : Camera.Slots)
 			{
-				if (Slot->State.Load() == 0)
+				if (Slot->Ownership.IsAvailable())
 				{
 					Available = Slot;
 					break;
@@ -851,9 +861,9 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 			Available->Width = Source->CaptureWidth;
 			Available->Height = Source->CaptureHeight;
 			Available->Sequence = Camera.Sequence++;
-			Available->State.Store(1);
 		}
-		PendingCaptures.Add({ Source->GetCaptureComponent2D(), Available });
+		PendingCaptures.Add({ Source->GetCaptureComponent2D(), Available,
+			Available ? Available->Ownership.BeginCapture() : 0 });
 		Captured++;
 		Runtime->SchedulerCursor = (Index + 1) % ActiveCameraCount;
 	}
@@ -881,7 +891,7 @@ void UUEShedCameraSubsystem::Tick(float DeltaTime)
 		{
 			if (Pending.Slot)
 			{
-				Pending.Slot->State.Store(0);
+				Pending.Slot->Ownership.AbandonCapture(Pending.Generation);
 			}
 			continue;
 		}

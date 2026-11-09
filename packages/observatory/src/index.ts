@@ -299,7 +299,8 @@ export type {
 	ActorFeedOptions,
 	ActorFeedApi,
 	ActorObservationDiagnostic,
-	ObserveActorFeedOptions
+	ObserveActorFeedOptions,
+	WritersLost
 } from "./actor-feed.js";
 
 /** @deprecated Use `ActorFeedApi`. */

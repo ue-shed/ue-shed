@@ -599,6 +599,76 @@ describe("observeActorFeed", () => {
 		await Effect.runPromise(Fiber.interrupt(fiber));
 	});
 
+	test("C4 ignores the superseded writer closing after the next session's catalog is installed", async () => {
+		const name = pipeName();
+		const sessionA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		const sessionB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+		let starts = 0;
+		const { remote } = makeRemote({
+			onStart: () => {
+				starts += 1;
+				return readyStart({
+					pipeName: name,
+					sessionId: starts === 1 ? sessionA : sessionB,
+					catalogRevision: String(starts)
+				});
+			}
+		});
+		const firstLive = await Effect.runPromise(Deferred.make<void>());
+		const secondInstalled = await Effect.runPromise(Deferred.make<void>());
+		const secondSampled = await Effect.runPromise(Deferred.make<void>());
+		const afterSecond: string[] = [];
+		let installed = false;
+		const fiber = Effect.runFork(
+			observeActorFeed(remote, "http://127.0.0.1:30010", {
+				cadenceHz: 30,
+				pipeName: name
+			}).pipe(
+				Stream.tap((state) =>
+					Effect.gen(function* () {
+						if (installed) afterSecond.push(state.status);
+						if (state.status !== "live") return;
+						const session = state.sample.catalog.sessionId;
+						if (session === sessionA)
+							yield* Deferred.succeed(firstLive, undefined).pipe(Effect.ignore);
+						if (session === sessionB && state.sample.lastSequence === 0n) {
+							installed = true;
+							yield* Deferred.succeed(secondInstalled, undefined).pipe(Effect.ignore);
+						}
+						if (session === sessionB && state.sample.lastSequence >= 1n)
+							yield* Deferred.succeed(secondSampled, undefined).pipe(Effect.ignore);
+					})
+				),
+				Stream.runDrain
+			)
+		);
+		await Effect.runPromise(Deferred.await(firstLive));
+		const old = await connectToFeed(name);
+		old.write(packet({ sequence: 1n, sessionId: sessionA, reset: true }));
+		await Effect.runPromise(Deferred.await(secondInstalled));
+		// Unreal destroys session A's writer as it starts B; that close lands before B's writer.
+		const closed = once(old, "close");
+		old.destroy();
+		await closed;
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		const replacement = await connectToFeed(name);
+		replacement.write(
+			packet({
+				sequence: 1n,
+				sessionId: sessionB,
+				catalogRevision: 2n,
+				records: [{ streamIndex: 0, x: 3, y: 4 }]
+			})
+		);
+		await Effect.runPromise(Deferred.await(secondSampled).pipe(Effect.timeout("3 seconds")));
+		expect(starts).toBe(2);
+		expect(afterSecond.filter((status) => status !== "live")).toEqual([]);
+		// B's own writer going away is still a loss.
+		replacement.destroy();
+		await vi.waitFor(() => expect(starts).toBe(3), { timeout: 3000 });
+		await Effect.runPromise(Fiber.interrupt(fiber));
+	});
+
 	test("fails the stream when recovery attempts are exhausted instead of emitting empty", async () => {
 		const { remote } = makeRemote({
 			onStart: () => ({

@@ -553,7 +553,7 @@ function validateExactPackageGraph(manifests: readonly PackedPackage[]) {
 	requireExactInternalDependency(mapHistory, "@ue-shed/protocol", byName, failures);
 	requireExactInternalDependency(mapHistory, "@ue-shed/unreal-assets", byName, failures);
 	requirePeerDependency(mapHistory, "effect", effectPeerRange, failures);
-	requireExactDependency(mapHistory, "p4client-ts", "0.13.0", failures);
+	requireExactDependency(mapHistory, "p4client-ts", "0.15.0", failures);
 	requireExactInternalDependency(configExplorer, ENGINE_PACKAGE_NAME, byName, failures);
 	requirePeerDependency(configExplorer, "effect", effectPeerRange, failures);
 	requireExactInternalDependency(localization, CONFIG_EXPLORER_PACKAGE_NAME, byName, failures);

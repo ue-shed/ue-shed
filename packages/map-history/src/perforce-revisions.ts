@@ -222,10 +222,8 @@ const printToFile = Effect.fnUntraced(function* (spec: string, file: string) {
 	yield* p4
 		.runTagged({ schema: TaggedRecord, args: ["print", "-q", "-o", temporary, spec] })
 		.pipe(Effect.onError(() => Effect.promise(() => rm(temporary, { force: true }))));
-	return yield* Effect.promise(async () => {
-		await publish(temporary, file);
-		return (await stat(file)).size;
-	});
+	yield* publish(temporary, file);
+	return yield* Effect.promise(async () => (await stat(file)).size);
 });
 
 /**
@@ -242,17 +240,19 @@ function stagingPath(file: string): string {
  * published it first (the rename can fail on Windows while that file is open), its copy is as good
  * as ours: drop ours and use it.
  */
-async function publish(temporary: string, file: string): Promise<void> {
-	try {
-		await rename(temporary, file);
-	} catch (cause) {
-		const published = await stat(file).then(
-			() => true,
-			() => false
-		);
-		await rm(temporary, { force: true });
-		if (!published) throw cause;
-	}
+function publish(temporary: string, file: string): Effect.Effect<void> {
+	return Effect.promise(async () => {
+		try {
+			await rename(temporary, file);
+		} catch (cause) {
+			const published = await stat(file).then(
+				() => true,
+				() => false
+			);
+			await rm(temporary, { force: true });
+			if (!published) throw cause;
+		}
+	});
 }
 
 /**
@@ -312,17 +312,17 @@ const printMissing = Effect.fnUntraced(function* (
 					);
 				bytes += item.content.byteLength;
 				printed++;
+				const temporary = stagingPath(target.file);
 				yield* Effect.promise(async () => {
 					await mkdir(join(target.file, ".."), { recursive: true });
-					const temporary = stagingPath(target.file);
 					try {
 						await writeFile(temporary, item.content);
 					} catch (cause) {
 						await rm(temporary, { force: true });
 						throw cause;
 					}
-					await publish(temporary, target.file);
 				});
+				yield* publish(temporary, target.file);
 			}
 		}
 	}

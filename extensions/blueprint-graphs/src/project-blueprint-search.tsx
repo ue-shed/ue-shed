@@ -50,6 +50,10 @@ export function ProjectBlueprintSearch<E = never, SearchError = never>(
 	let openerInput: HTMLInputElement | undefined;
 	let resultList: HTMLElement | undefined;
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	// The query the shown results answer, and an Enter waiting for the typed query's results.
+	// Results for an older query must not be opened by Enter on a newer one (P6).
+	let resultQuery: string | undefined;
+	let openFirstFor: string | undefined;
 	const indexedResult = createMemo(() => {
 		const state = indexedBlueprints();
 		return state.status === "ready" || state.status === "updating" ? state.result : undefined;
@@ -71,15 +75,21 @@ export function ProjectBlueprintSearch<E = never, SearchError = never>(
 				setIndexedBlueprints({ status: "transport_failed" });
 			},
 			onSuccess: (next) => {
+				resultQuery = query;
 				setIndexedBlueprints(
 					next.status === "ready" ? { result: next, status: "ready" } : next
 				);
+				if (openFirstFor !== query) return;
+				openFirstFor = undefined;
+				const first = next.status === "ready" ? next.assets[0] : undefined;
+				if (first !== undefined) openIndexedBlueprint(first);
 			}
 		});
 	};
 	const updateAssetQuery = (query: string) => {
 		setAssetQuery(query);
 		setPickerOpen(true);
+		openFirstFor = undefined;
 		if (searchTimer !== undefined) clearTimeout(searchTimer);
 		searchTimer = setTimeout(() => requestBlueprints(query), 120);
 	};
@@ -94,10 +104,18 @@ export function ProjectBlueprintSearch<E = never, SearchError = never>(
 	};
 	const searchKeyDown = (event: KeyboardEvent) => {
 		if (event.key === "Enter") {
-			const first = indexedResult()?.assets[0];
-			if (first === undefined || indexedBlueprints().status === "updating") return;
 			event.preventDefault();
-			openIndexedBlueprint(first);
+			const current = indexedBlueprints();
+			if (current.status === "ready" && resultQuery === assetQuery()) {
+				const first = current.result.assets[0];
+				if (first !== undefined) openIndexedBlueprint(first);
+				return;
+			}
+			// The shown results answer an earlier query: search for this one now and open its
+			// first result when it arrives.
+			openFirstFor = assetQuery();
+			if (searchTimer !== undefined) clearTimeout(searchTimer);
+			requestBlueprints(assetQuery());
 			return;
 		}
 		if (event.key === "ArrowDown") {

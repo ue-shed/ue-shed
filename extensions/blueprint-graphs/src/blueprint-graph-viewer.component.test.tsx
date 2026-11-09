@@ -396,6 +396,29 @@ describe("BlueprintGraphViewer", () => {
 		await waitFor(() => expect(searchBlueprints).toHaveBeenLastCalledWith({ query: "" }));
 	});
 
+	it("P6 opens the first result of the query typed, not of the previous one", async () => {
+		const readBlueprint = vi.fn((_path: string) => Effect.succeed(ready()));
+		const searchBlueprints = vi.fn((request: { readonly query: string }) => {
+			const assets = request.query.toLowerCase().includes("settings")
+				? [indexedSettings]
+				: [indexedPlayer, indexedSettings];
+			return Effect.succeed({
+				assets,
+				matchCount: assets.length,
+				projectName: "ExampleProject",
+				status: "ready" as const
+			});
+		});
+		renderViewer(clientWith({ readBlueprint, searchBlueprints }));
+		await screen.findByRole("button", { name: "Open BP_PlayerCharacter from project index" });
+
+		const user = userEvent.setup({ delay: null });
+		// Enter right after typing, before the debounced search for "settings" has run.
+		await user.type(screen.getByLabelText(searchLabel), "settings{Enter}");
+		await waitFor(() => expect(readBlueprint).toHaveBeenCalled());
+		expect(readBlueprint.mock.calls.map(([path]) => path)).toEqual([indexedSettings.assetPath]);
+	});
+
 	it("searches only the scanned project and defers project selection to the sidebar", async () => {
 		renderViewer(
 			clientWith({ searchBlueprints: () => Effect.succeed({ status: "not_configured" }) })

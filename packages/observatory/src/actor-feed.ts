@@ -318,7 +318,9 @@ export function makeActorFeedTestLayer(feed: Partial<ActorFeedApi> = {}): Layer.
 				startedMonotonicMs: 0,
 				transportErrors: 0
 			}),
-		packets: feed.packets ?? Stream.empty
+		packets: feed.packets ?? Stream.empty,
+		// A test feed's writers stay connected unless the test says otherwise.
+		writersLost: feed.writersLost ?? Stream.never
 	});
 }
 

@@ -208,17 +208,22 @@ export function mapHistoryPlaybackFrameAt(input: {
 			`Map History revision index ${input.revisionIndex} is outside this result.`
 		);
 	}
+	// Playback holds only proven changes. Once a snapshot on the way here was partial, the diff
+	// withheld what it couldn't prove, and nothing later puts those facts back, so the frame can't
+	// claim to be complete even if this revision's own snapshot is (C7).
+	let replayedPartial = startSnapshot?.completeness === "partial";
 	for (let index = 0; index <= input.revisionIndex; index += 1) {
 		const revision = input.history.revisions[index];
 		if (revision === undefined) throw new Error(`Missing Map History revision ${index}.`);
 		state = applyMapHistoryRevision({ revision, state });
+		if (revision.completeness === "partial") replayedPartial = true;
 	}
 	const revision = input.history.revisions[input.revisionIndex];
 	if (revision === undefined)
 		throw new Error(`Missing Map History revision ${input.revisionIndex}.`);
 	return {
 		actors: orderedActors(state),
-		completeness: revision.completeness,
+		completeness: replayedPartial ? "partial" : revision.completeness,
 		diagnostics: [...revision.diagnostics, ...state.diagnostics],
 		kind: "revision",
 		revision,

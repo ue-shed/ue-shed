@@ -294,6 +294,53 @@ describe("Map History playback", () => {
 		expect(mapHistoryPlaybackMatchesRangeEnd({ history: result })).toBeUndefined();
 	});
 
+	it("C7 keeps later frames partial after a partial range start, even when coverage recovers", () => {
+		// The range-start snapshot missed actor A; the next snapshot is complete and still has A
+		// unchanged. The diff withholds an "added" event (creation is unproven), so playback can't
+		// know A, and must not call the frame complete.
+		const result = history({
+			end: [actor()],
+			revisions: [
+				revision({
+					change: 10,
+					changes: [
+						{
+							after: { completeness: "complete", failedPackages: 0, partialPackages: 0 },
+							before: { completeness: "partial", failedPackages: 1, partialPackages: 0 },
+							kind: "snapshot_coverage_changed"
+						}
+					]
+				}),
+				revision({ change: 11, changes: [] })
+			],
+			start: [],
+			startCompleteness: "partial"
+		});
+		expect(mapHistoryPlaybackFrameAt({ history: result, revisionIndex: 0 }).completeness).toBe(
+			"partial"
+		);
+		expect(mapHistoryPlaybackFrameAt({ history: result, revisionIndex: 1 }).completeness).toBe(
+			"partial"
+		);
+	});
+
+	it("C7 keeps frames after a partial revision partial", () => {
+		const result = history({
+			end: [actor()],
+			revisions: [
+				revision({ change: 10, changes: [], completeness: "partial" }),
+				revision({ change: 11, changes: [] })
+			],
+			start: [actor()]
+		});
+		expect(mapHistoryPlaybackFrameAt({ history: result, revisionIndex: 1 }).completeness).toBe(
+			"partial"
+		);
+		expect(mapHistoryPlaybackFrameAt({ history: result, revisionIndex: undefined }).completeness).toBe(
+			"complete"
+		);
+	});
+
 	it("rejects a baseline result missing the required playback snapshot", () => {
 		const encoded = encodeHistory(history({ end: [], revisions: [], start: [] }));
 		const { rangeStartSnapshot: _rangeStartSnapshot, ...missingSnapshot } = encoded;

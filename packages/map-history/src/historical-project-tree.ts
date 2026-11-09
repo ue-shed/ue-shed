@@ -118,12 +118,33 @@ function validateMutations(
 	});
 }
 
+/**
+ * A tree's revision state. Mutations apply file by file, so a failure partway leaves a mix of
+ * revisions that no retry of the same batch can repair (renamed sources are gone): the tree is then
+ * Invalid and refuses every later revision. Rebuilding means a new tree (C1).
+ */
+type TreeState = "ready" | "applying" | "invalid";
+
+function unusableTree(projectRoot: string, cause?: unknown): MapHistoryError {
+	return new MapHistoryError({
+		...(cause === undefined ? undefined : { cause }),
+		kind: "temporary_storage",
+		message: `A revision failed partway through ${projectRoot}, so this temporary project holds a mix of revisions and can't be used again.`,
+		recovery:
+			"Check temporary-directory permissions and available disk space, then run the history again; it rebuilds the project from scratch.",
+		retrySafe: true,
+		nextStep: "retry"
+	});
+}
+
 function makeHistoricalProjectTree(operationRoot: string): HistoricalProjectTree {
 	const projectRoot = resolve(operationRoot, "project");
 	const materializationRoot = resolve(operationRoot, "materialized");
+	let state: TreeState = "ready";
 	const applyRevision = Effect.fn("HistoricalProjectTree.applyRevision")(function* (
 		mutations: readonly HistoricalFileMutation[]
 	) {
+		if (state !== "ready") return yield* unusableTree(projectRoot);
 		const validated = yield* Effect.try({
 			try: () => validateMutations(projectRoot, mutations),
 			catch: (cause) =>
@@ -131,6 +152,18 @@ function makeHistoricalProjectTree(operationRoot: string): HistoricalProjectTree
 					? cause
 					: invalidTarget("", "The historical revision targets are invalid.", cause)
 		});
+		// Validation changed nothing; from here on a failure leaves the tree mixed.
+		state = "applying";
+		yield* applyValidated(validated).pipe(
+			Effect.tapError(() => Effect.sync(() => (state = "invalid"))),
+			Effect.mapError((cause) => unusableTree(projectRoot, cause)),
+			Effect.onInterrupt(() => Effect.sync(() => (state = "invalid")))
+		);
+		state = "ready";
+	});
+	const applyValidated = Effect.fnUntraced(function* (
+		validated: ReturnType<typeof validateMutations>
+	) {
 		for (const { mutation, target } of validated) {
 			if (mutation.action === "delete") {
 				yield* Effect.tryPromise({

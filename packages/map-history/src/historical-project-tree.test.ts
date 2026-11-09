@@ -102,6 +102,67 @@ describe("HistoricalProjectTree", () => {
 		)
 	);
 
+	it.effect("C1 refuses further revisions after one failed partway, and says why", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const tree = yield* acquireHistoricalProjectTree;
+				const source = yield* temporarySource("first");
+				const missing = resolve(tmpdir(), "ue-shed-map-history-missing", "gone.bin");
+
+				const failed = yield* tree
+					.applyRevision([
+						{
+							action: "add",
+							materializedPath: source.path,
+							projectRelativePath: "Content/Maps/L_First.umap"
+						},
+						{
+							action: "add",
+							materializedPath: missing,
+							projectRelativePath: "Content/Maps/L_Second.umap"
+						}
+					])
+					.pipe(Effect.flip);
+				expect(failed.kind).toBe("temporary_storage");
+				expect(failed.message).toMatch(/can't be used again/);
+
+				// The first file landed and the second didn't: the tree is a mix of revisions.
+				const again = yield* tree
+					.applyRevision([{ action: "delete", projectRelativePath: "Content/Maps/L_First.umap" }])
+					.pipe(Effect.flip);
+				expect(again.kind).toBe("temporary_storage");
+				expect(again.message).toMatch(/can't be used again/);
+				expect(existsSync(resolve(tree.projectRoot, "Content/Maps/L_First.umap"))).toBe(true);
+			})
+		)
+	);
+
+	it.effect("C1 keeps a tree usable when a revision is refused before any file changes", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const tree = yield* acquireHistoricalProjectTree;
+				const source = yield* temporarySource("valid");
+				yield* tree
+					.applyRevision([
+						{
+							action: "add",
+							materializedPath: source.path,
+							projectRelativePath: "../outside.uasset"
+						}
+					])
+					.pipe(Effect.flip);
+				yield* tree.applyRevision([
+					{
+						action: "add",
+						materializedPath: source.path,
+						projectRelativePath: "Content/Maps/L_History.umap"
+					}
+				]);
+				expect(existsSync(resolve(tree.projectRoot, "Content/Maps/L_History.umap"))).toBe(true);
+			})
+		)
+	);
+
 	it.effect("removes the owned project after scope completion", () =>
 		Effect.gen(function* () {
 			const observedRoot = yield* Ref.make("");

@@ -31,7 +31,11 @@ function perforceFile(
 	};
 }
 
-/** Materializes exact Perforce revisions and applies their scoped mutations atomically to one tree. */
+/**
+ * Materializes exact Perforce revisions and applies their scoped mutations to one tree. The
+ * mutations apply file by file, not atomically: if one fails, the tree refuses every later
+ * revision and the history has to be rebuilt on a new tree.
+ */
 export const materializePlannedRevision = Effect.fn("MapHistory.materializePlannedRevision")(
 	function* (options: {
 		readonly change: number;

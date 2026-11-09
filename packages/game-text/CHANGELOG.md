@@ -1,5 +1,73 @@
 # @ue-shed/game-text
 
+## 0.29.0
+
+### Patch Changes
+
+- 8766a46: The package parser checks an outer chain's depth before following it, so a malformed package
+  fails with a parse error instead of exhausting the stack. A Blueprint diff no longer reports
+  false component additions or removals when a construction-script node could not be read. The
+  source-text wrapper scan no longer caches a set from a scan that could not list every folder.
+
+    Game Text imports a culture's compiled resource when its archive disappears during a refresh.
+    A finding accepted on a culture backed only by a `.locres` stays accepted. Such findings now
+    load in the CLI quality report and the workspace.
+
+    A supervised editor session accepts readiness only from the editor it launched. A persistent
+    reader request's write is bounded by its deadline and cancellation.
+
+    A visibility-policy change advances the View revision. Map history refuses a project tree that
+    a failed revision left mixed. It counts the baseline budget over distinct files, and gives each
+    concurrent revision-cache write its own staging file. Playback frames after a partial snapshot
+    read as partial. Actor observation leaves live, keeping the last sample, when Unreal's writer
+    closes without a reset. The previous session's writer closing late does not end the new session.
+
+    In the Unreal plugins:
+    - A camera readback poll can no longer copy an earlier capture into a slot reused for a later
+      one.
+    - A scenario run that holds live-input isolation past a real-time limit ends as
+      `ownership_timeout`, including while PIE is paused.
+    - Final renders rescan editor-preview children before each frame.
+    - The camera arrangement panel stays read-only until it matches the applied revision, and keeps
+      a typed value while it waits.
+    - The Game Text commandlet publishes its result through a temporary file and a rename.
+
+    Map history requires p4client-ts 0.15.0.
+
+- 4e0936f: Preserve unresolved authoring sessions and cleanup receipts, keep approved camera sessions
+  unchanged by later previews or world changes, and replace native reader workers that exit idle.
+  Game Text now retains pending translation writes when copying file lists and preserves ID-repair
+  ownership and receipts when the focused text is refreshed.
+
+    Camera setup hosts must now call `poll(bridge, projectName, { projectRoot, endpoint })`.
+    The required stable context argument scopes saved-set listings and acknowledgement outcomes to
+    one project and editor, including when bridge adapters are recreated between polls.
+
+    Keep Game Text rule saves, scan publication, localization selection, review batches and retries
+    owned by their originating operation and context. Preserve recoverable native query failures,
+    clear abandoned scan progress, and serialize duplicate thumbnail generation.
+    Workbench now serializes editor target changes, refreshes command status without stale polls,
+    retains current history jobs during cancellation, shares pending launches, and safely retires
+    camera sessions and preview bindings across failures and world changes.
+
+    Keep carried ID-repair translations attached to the target submitted with Apply. Retain refreshes
+    of the selected project while another project is opening, preserve newer rules selections when
+    an older save completes, scope scan progress to the logical scan, and clear recovered rules-file
+    errors without dismissing newer unrelated failures.
+
+    Refusing an oversized scan request now preserves progress and ownership of a scan already running.
+
+    Keep observation paused during pending restarts and retain failed camera-detach cleanup for retry.
+    Discarded provisioning no longer falls back to rendering a stale session. Setup acknowledgements
+    survive project/editor round trips, and pagination preserves newer finding-detail errors.
+
+- Updated dependencies [8766a46]
+- Updated dependencies [4e0936f]
+    - @ue-shed/protocol@0.29.0
+    - @ue-shed/unreal-assets@0.29.0
+    - @ue-shed/localization@0.29.0
+    - @ue-shed/unreal-connection@0.29.0
+
 ## 0.28.0
 
 ### Minor Changes

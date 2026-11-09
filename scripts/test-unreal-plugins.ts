@@ -79,6 +79,7 @@ const allTests = [
 	"UEShed.Cameras.Streaming.DeliveryScope",
 	"UEShed.Cameras.Streaming.CadenceUpdates",
 	"UEShed.Cameras.Streaming.ReadbackOwnership",
+	"UEShed.Scenarios.OwnershipWatchdog",
 	"UEShed.Niagara.IndependentCamera",
 	"UEShed.Core.EditorWorld.AsyncOpen",
 	"UEShed.Core.EditorAssets.Manifest",

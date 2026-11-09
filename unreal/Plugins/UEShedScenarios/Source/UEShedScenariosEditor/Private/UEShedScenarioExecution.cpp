@@ -10,6 +10,7 @@
 #include "Framework/Application/IInputProcessor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "FileHelpers.h"
+#include "HAL/PlatformTime.h"
 #include "GameFramework/PlayerController.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
@@ -28,6 +29,11 @@ constexpr int32 MaxActions = 8;
 constexpr int32 MaxDurationMs = 30000;
 constexpr int32 MaxEvidence = 8;
 constexpr int32 MaxKeyframes = 32;
+// Real seconds a run may outlast its authored game time (hitches, slow frames) before the
+// ownership watchdog takes its input isolation back.
+constexpr double OwnershipGraceSeconds = 30.0;
+// How often the core ticker checks ownership. It runs while PIE is paused.
+constexpr float OwnershipCheckIntervalSeconds = 0.25f;
 
 class FScenarioInputBlocker final : public IInputProcessor
 {
@@ -194,6 +200,8 @@ struct FUEShedScenarioExecution::FRunState
 	double StartWorldSeconds = 0.0;
 	double PausedWorldSeconds = 0.0;
 	double WaitBeganWorldSeconds = 0.0;
+	// Monotonic real-time deadline for holding input isolation, independent of game time.
+	double OwnershipDeadlineSeconds = 0.0;
 	int32 DurationMs = 0;
 	int32 EvidenceLimit = 0;
 	int32 WaitAtMs = 0;
@@ -247,10 +255,24 @@ struct FUEShedScenarioExecution::FRunState
 	}
 };
 
+FUEShedScenarioExecution::FUEShedScenarioExecution() = default;
+FUEShedScenarioExecution::~FUEShedScenarioExecution() = default;
+
+double FUEShedScenarioExecution::OwnershipLimitSeconds(int32 DurationMs, int32 WaitTimeoutMs)
+{
+	// At real-time game speed a run ends within its duration plus its blocking wait's timeout.
+	return (static_cast<double>(DurationMs) + static_cast<double>(WaitTimeoutMs)) / 1000.0
+		+ OwnershipGraceSeconds;
+}
+
 void FUEShedScenarioExecution::Startup()
 {
 	TickHandle = FWorldDelegates::OnWorldTickStart.AddRaw(this, &FUEShedScenarioExecution::Tick);
 	EndPieHandle = FEditorDelegates::EndPIE.AddRaw(this, &FUEShedScenarioExecution::OnEndPie);
+	// The core ticker keeps running while PIE is paused, unlike world ticks and game time.
+	OwnershipHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateRaw(this, &FUEShedScenarioExecution::CheckOwnership),
+		OwnershipCheckIntervalSeconds);
 }
 
 void FUEShedScenarioExecution::Shutdown()
@@ -264,8 +286,10 @@ void FUEShedScenarioExecution::Shutdown()
 	RestoreIsolation();
 	if (TickHandle.IsValid()) FWorldDelegates::OnWorldTickStart.Remove(TickHandle);
 	if (EndPieHandle.IsValid()) FEditorDelegates::EndPIE.Remove(EndPieHandle);
+	if (OwnershipHandle.IsValid()) FTSTicker::GetCoreTicker().RemoveTicker(OwnershipHandle);
 	TickHandle.Reset();
 	EndPieHandle.Reset();
+	OwnershipHandle.Reset();
 }
 
 void FUEShedScenarioExecution::Prepare(const FString& ScenarioId, const FString& MapPath,
@@ -577,11 +601,16 @@ void FUEShedScenarioExecution::Start(const FString& RequestJson, FString& Result
 		return;
 	}
 
+	Admit(MoveTemp(Candidate), ResultJson);
+}
+
+bool FUEShedScenarioExecution::Admit(TUniquePtr<FRunState> Candidate, FString& ResultJson)
+{
 	if (!FSlateApplication::IsInitialized())
 	{
 		Serialize(Rejected(TEXT("isolation_unavailable"), TEXT("Slate input isolation is unavailable."),
 			TEXT("Run the scenario in an interactive Unreal Editor session.")), ResultJson);
-		return;
+		return false;
 	}
 	Candidate->InputBlocker = MakeShared<FScenarioInputBlocker>();
 	FSlateApplication& Slate = FSlateApplication::Get();
@@ -594,10 +623,16 @@ void FUEShedScenarioExecution::Start(const FString& RequestJson, FString& Result
 		Serialize(Rejected(TEXT("isolation_unavailable"),
 			TEXT("Live-device input isolation could not be verified."),
 			TEXT("Resolve conflicting Slate input preprocessors and retry.")), ResultJson);
-		return;
+		return false;
 	}
-	World->GetFirstPlayerController()->FlushPressedKeys();
+	if (APlayerController* Controller = Candidate->World.IsValid()
+		? Candidate->World->GetFirstPlayerController() : nullptr)
+	{
+		Controller->FlushPressedKeys();
+	}
 	Candidate->bIsolationEstablished = true;
+	Candidate->OwnershipDeadlineSeconds = (Clock ? Clock() : FPlatformTime::Seconds())
+		+ OwnershipLimitSeconds(Candidate->DurationMs, Candidate->WaitTimeoutMs);
 	Candidate->AddLifecycle(TEXT("accepted"));
 	Candidate->AddLifecycle(TEXT("isolating"));
 	Candidate->AddLifecycle(TEXT("running"));
@@ -610,7 +645,51 @@ void FUEShedScenarioExecution::Start(const FString& RequestJson, FString& Result
 	Accepted->SetStringField(TEXT("runId"), Run->RunId);
 	Accepted->SetStringField(TEXT("state"), TEXT("accepted"));
 	Serialize(Accepted, ResultJson);
+	return true;
 }
+
+bool FUEShedScenarioExecution::CheckOwnership(float)
+{
+	if (!Run.IsValid() || Run->bTerminal) return true;
+	if ((Clock ? Clock() : FPlatformTime::Seconds()) < Run->OwnershipDeadlineSeconds) return true;
+	Run->AddLifecycle(TEXT("cancelling"));
+	Finish(TEXT("cancelled"), TEXT("ownership_timeout"),
+		TEXT("The run held live-input isolation past its real-time limit; game time may be paused."),
+		TEXT("Resume PIE or cancel paused runs, then start a fresh run."));
+	return true;
+}
+
+#if WITH_DEV_AUTOMATION_TESTS
+FString FUEShedScenarioExecution::StartIsolatedRunForTest(UWorld* World, int32 DurationMs,
+	int32 WaitTimeoutMs, TFunction<double()> InClock, FString& ResultJson)
+{
+	Clock = MoveTemp(InClock);
+	if (Run.IsValid() && !Run->bTerminal)
+	{
+		Serialize(Rejected(TEXT("run_active"), TEXT("A scenario run is already active."),
+			TEXT("Cancel or await the active run before starting another.")), ResultJson);
+		return FString();
+	}
+	TUniquePtr<FRunState> Candidate = MakeUnique<FRunState>();
+	Candidate->RunId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower);
+	Candidate->ScenarioId = TEXT("ownership-test");
+	Candidate->PieSessionId = TEXT("ownership-test");
+	Candidate->World = World;
+	Candidate->StartWorldSeconds = World ? World->GetTimeSeconds() : 0.0;
+	Candidate->DurationMs = DurationMs;
+	Candidate->WaitTimeoutMs = WaitTimeoutMs;
+	Candidate->EvidenceLimit = 1;
+	const FString RunId = Candidate->RunId;
+	return Admit(MoveTemp(Candidate), ResultJson) ? RunId : FString();
+}
+
+bool FUEShedScenarioExecution::IsInputIsolatedForTest() const
+{
+	return Run.IsValid() && Run->InputBlocker.IsValid() && FSlateApplication::IsInitialized()
+		&& FSlateApplication::Get().FindInputPreProcessor(
+			Run->InputBlocker, EInputPreProcessorType::PreGame) != INDEX_NONE;
+}
+#endif
 
 void FUEShedScenarioExecution::Status(const FString& RunId, FString& ResultJson)
 {

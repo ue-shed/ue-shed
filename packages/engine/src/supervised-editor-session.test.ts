@@ -27,6 +27,14 @@ const manifest = {
 	schemaVersion: 1 as const
 };
 
+/** The manifest the launched editor itself reports: its identity names its own process. */
+function manifestFor(processId: number) {
+	return {
+		...manifest,
+		identity: { engineVersion: "5.7.0", plugins: [], processId, sessionId: `session-${processId}` }
+	};
+}
+
 interface TestInstallation {
 	readonly executable: string;
 	readonly pluginDescriptor: string;
@@ -183,7 +191,7 @@ it.effect("validates files before starting the owned process", () =>
 		const layer = sessionLayer({
 			connection: makeEditorConnectionTestLayer({
 				connect: () => Effect.succeed(manifest),
-				waitUntilReady: () => Effect.succeed(manifest)
+				waitUntilReady: () => Effect.succeed(manifestFor(41))
 			}),
 			fixture,
 			process: makeOwnedProcessTreeTestLayer((options) =>
@@ -216,7 +224,7 @@ it.effect("runs unattended and offscreen, and protects unsaved work to recover",
 		const layer = sessionLayer({
 			connection: makeEditorConnectionTestLayer({
 				connect: () => Effect.succeed(manifest),
-				waitUntilReady: () => Effect.succeed(manifest)
+				waitUntilReady: () => Effect.succeed(manifestFor(44))
 			}),
 			fixture,
 			process: makeOwnedProcessTreeTestLayer((options) =>
@@ -334,7 +342,7 @@ it.effect("refuses a project built for another engine before spawning", () =>
 		const layer = sessionLayer({
 			connection: makeEditorConnectionTestLayer({
 				connect: () => Effect.succeed(manifest),
-				waitUntilReady: () => Effect.succeed(manifest)
+				waitUntilReady: () => Effect.succeed(manifestFor(43))
 			}),
 			fixture,
 			process: makeOwnedProcessTreeTestLayer((options) =>
@@ -368,7 +376,7 @@ it.effect("acquires readiness and releases only its owned process", () =>
 		const layer = sessionLayer({
 			connection: makeEditorConnectionTestLayer({
 				connect: () => Effect.succeed(manifest),
-				waitUntilReady: () => Effect.succeed(manifest)
+				waitUntilReady: () => Effect.succeed(manifestFor(42))
 			}),
 			fixture,
 			process: makeOwnedProcessTreeTestLayer((options) =>
@@ -383,7 +391,7 @@ it.effect("acquires readiness and releases only its owned process", () =>
 			)
 		).pipe(Effect.provide(layer));
 		expect(acquired).toMatchObject({
-			manifest,
+			manifest: manifestFor(42),
 			pid: 42,
 			projectDescriptor: fixture.projectDescriptor,
 			remoteControlEndpoint: "http://127.0.0.1:30001"
@@ -409,7 +417,7 @@ it.effect("cancellation during readiness tears down the acquired process", () =>
 				waitUntilReady: () =>
 					Deferred.succeed(readinessStarted, undefined).pipe(
 						Effect.andThen(Deferred.await(readiness)),
-						Effect.as(manifest)
+						Effect.as(manifestFor(43))
 					)
 			}),
 			fixture,
@@ -439,7 +447,7 @@ test("cancellation during launch cancels the process acquisition", async () => {
 	const layer = sessionLayer({
 		connection: makeEditorConnectionTestLayer({
 			connect: () => Effect.succeed(manifest),
-			waitUntilReady: () => Effect.succeed(manifest)
+			waitUntilReady: () => Effect.succeed(manifestFor(46))
 		}),
 		fixture,
 		process: makeOwnedProcessTreeTestLayer(() =>
@@ -471,7 +479,7 @@ it.effect("cancellation during operation tears down the acquired process", () =>
 		const layer = sessionLayer({
 			connection: makeEditorConnectionTestLayer({
 				connect: () => Effect.succeed(manifest),
-				waitUntilReady: () => Effect.succeed(manifest)
+				waitUntilReady: () => Effect.succeed(manifestFor(46))
 			}),
 			fixture,
 			process: makeOwnedProcessTreeTestLayer(() =>
@@ -535,7 +543,7 @@ it.effect("rejects a missing required capability after real readiness", () =>
 		const layer = sessionLayer({
 			connection: makeEditorConnectionTestLayer({
 				connect: () => Effect.succeed(manifest),
-				waitUntilReady: () => Effect.succeed(manifest)
+				waitUntilReady: () => Effect.succeed(manifestFor(45))
 			}),
 			fixture,
 			process: makeOwnedProcessTreeTestLayer(() =>
@@ -672,3 +680,56 @@ describe("owned process trees", () => {
 		await rm(base, { force: true, recursive: true });
 	});
 });
+
+it.effect("P4 refuses readiness from another editor on the port and stops only its own", () =>
+	Effect.gen(function* () {
+		const terminations = yield* Ref.make<readonly OwnedProcessTerminationReason[]>([]);
+		const fixture = yield* installationFixture();
+		const layer = sessionLayer({
+			connection: makeEditorConnectionTestLayer({
+				connect: () => Effect.succeed(manifestFor(9_001)),
+				// Another editor, same project, already listening on the requested port.
+				waitUntilReady: () => Effect.succeed(manifestFor(9_001))
+			}),
+			fixture,
+			process: makeOwnedProcessTreeTestLayer(() => Effect.succeed(testHandle(47, terminations)))
+		});
+		const error = yield* Effect.flip(
+			Effect.scoped(
+				Effect.flatMap(SupervisedEditorSession, (sessions) =>
+					sessions.acquire(request(fixture))
+				)
+			).pipe(Effect.provide(layer))
+		);
+		expect(error).toMatchObject({ code: "readiness_failed", stage: "readiness" });
+		expect(error.message).toMatch(/9001/);
+		// Only the launched editor (47) is stopped; nothing is sent to the other one.
+		expect(yield* Ref.get(terminations)).toHaveLength(1);
+		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
+	})
+);
+
+it.effect("P4 refuses readiness that doesn't say which process answered", () =>
+	Effect.gen(function* () {
+		const terminations = yield* Ref.make<readonly OwnedProcessTerminationReason[]>([]);
+		const fixture = yield* installationFixture();
+		const layer = sessionLayer({
+			connection: makeEditorConnectionTestLayer({
+				connect: () => Effect.succeed(manifest),
+				waitUntilReady: () => Effect.succeed(manifest)
+			}),
+			fixture,
+			process: makeOwnedProcessTreeTestLayer(() => Effect.succeed(testHandle(48, terminations)))
+		});
+		const error = yield* Effect.flip(
+			Effect.scoped(
+				Effect.flatMap(SupervisedEditorSession, (sessions) =>
+					sessions.acquire(request(fixture))
+				)
+			).pipe(Effect.provide(layer))
+		);
+		expect(error).toMatchObject({ code: "readiness_failed", stage: "readiness" });
+		expect(yield* Ref.get(terminations)).toHaveLength(1);
+		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
+	})
+);

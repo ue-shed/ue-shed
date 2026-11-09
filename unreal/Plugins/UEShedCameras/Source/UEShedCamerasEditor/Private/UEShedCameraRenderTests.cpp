@@ -923,6 +923,142 @@ bool FUEShedCameraEditorPreviewsTest::RunTest(const FString &Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraEditorPreviewRebuildTest,
+								 "UEShed.Cameras.Rendering.EditorPreviewRebuild",
+								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedCameraEditorPreviewRebuildTest::RunTest(const FString &Parameters)
+{
+	UWorld *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	auto *Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!World || GEditor->PlayWorld || !Cube)
+	{
+		AddError(TEXT("Open a rendering editor fixture without Play or Simulate."));
+		return false;
+	}
+	FStaticMeshCompilingManager::Get().FinishCompilation({Cube});
+	const bool DirtyBefore = World->GetOutermost()->IsDirty();
+	const FVector Location(0, 0, 50000);
+	FString FixtureError;
+	AActor *Owner = nullptr;
+	AStaticMeshActor *Child = SpawnEditorPreviewFixture(World, Location, Cube, Owner, FixtureError);
+	ON_SCOPE_EXIT
+	{
+		if (Owner)
+			World->DestroyActor(Owner);
+	};
+	if (!Child)
+	{
+		AddError(FixtureError);
+		return false;
+	}
+	const auto Camera = UEShedCameraPose(Location - FVector(4000, 0, 0), FRotator::ZeroRotator, 60, false);
+	auto Center = [](const TSharedPtr<FJsonObject> &Result, FColor &Out) {
+		FImage Image, Pixels;
+		const FString Path = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("UEShed/CameraRenderStaging"),
+											 Result->GetObjectField(TEXT("artifact"))->GetStringField(TEXT("relativePath")));
+		if (!FImageUtils::LoadImage(*Path, Image))
+			return false;
+		Image.CopyTo(Pixels, ERawImageFormat::BGRA8, EGammaSpace::sRGB);
+		Out = Pixels.AsBGRA8()[int64(Pixels.SizeY / 2) * Pixels.SizeX + Pixels.SizeX / 2];
+		return true;
+	};
+	auto Open = [&](bool Reveal) {
+		auto Request = UEShedLegacyRenderRequest(FGuid::NewGuid().ToString(EGuidFormats::Digits), World, false,
+												 TEXT("full_fidelity"));
+		const auto Policy = Request->GetObjectField(TEXT("policy"));
+		Policy->GetObjectField(TEXT("settling"))->SetNumberField(TEXT("minimumFrames"), 8);
+		Policy->GetObjectField(TEXT("renderer"))->SetBoolField(TEXT("editorPreviews"), Reveal);
+		TSharedPtr<FJsonObject> Error;
+		auto Session = FUEShedCameraRenderSession::Open(Request, Error);
+		if (!Session)
+			AddError(UEShedCameraJsonText(Error));
+		return Session;
+	};
+
+	// References: the preview absent, and the original child revealed in the same view.
+	auto Reference = [&](bool Reveal, FColor &Out) {
+		auto Session = Open(Reveal);
+		if (!Session)
+			return false;
+		const auto Result = Session->RenderBlocking(
+			UEShedRenderFrame(Session->Id(), Reveal ? TEXT("revealed") : TEXT("hidden"), Camera, 320, 180));
+		Session->Close();
+		return TestEqual(TEXT("Reference frame captured"), Result->GetStringField(TEXT("status")), FString(TEXT("captured"))) &&
+			   TestTrue(TEXT("Reference PNG readable"), Center(Result, Out));
+	};
+	FColor Hidden = FColor::Black, Shown = FColor::Black;
+	if (!Reference(false, Hidden) || !Reference(true, Shown))
+		return false;
+
+	auto Session = Open(true);
+	if (!Session)
+		return false;
+	ON_SCOPE_EXIT { Session->Close(); };
+	const FString Operation = TEXT("rebuilt");
+	auto Result = Session->Start(UEShedRenderFrame(Session->Id(), Operation, Camera, 320, 180));
+	for (int32 Tick = 0; Tick < 2 && Result->GetStringField(TEXT("status")) == TEXT("running"); ++Tick)
+	{
+		Session->Tick(true);
+		Result = Session->Poll(Operation);
+	}
+	if (!TestEqual(TEXT("The view is configured and settling"), Result->GetStringField(TEXT("phase")),
+				   FString(TEXT("frame_warmup"))))
+	{
+		AddError(UEShedCameraJsonText(Result));
+		return false;
+	}
+	TestFalse(TEXT("Configure revealed the original child"), Child->bIsEditorOnlyActor);
+
+	// A construction-script rerun replaces the child between settling ticks.
+	auto *Preview = Owner->FindComponentByClass<UChildActorComponent>();
+	Preview->DestroyChildActor();
+	Preview->CreateChildActor();
+	auto *Replacement = Cast<AStaticMeshActor>(Preview->GetChildActor());
+	if (!TestNotNull(TEXT("The component spawned a replacement child"), Replacement))
+		return false;
+	Replacement->GetStaticMeshComponent()->SetStaticMesh(Cube);
+	Replacement->SetActorScale3D(FVector(20));
+	TestTrue(TEXT("The replacement is a different actor"), Replacement != Child);
+	TestTrue(TEXT("The engine marks the replacement editor-only"), Replacement->bIsEditorOnlyActor);
+	// Its proxies were created before the engine set the flag; any later render update hides it.
+	Replacement->MarkComponentsRenderStateDirty();
+	World->SendAllEndOfFrameUpdates();
+
+	while (Result->GetStringField(TEXT("status")) == TEXT("running"))
+	{
+		Session->Tick(true);
+		Result = Session->Poll(Operation);
+	}
+	if (!TestEqual(TEXT("Settled frame captured"), Result->GetStringField(TEXT("status")), FString(TEXT("captured"))))
+	{
+		AddError(UEShedCameraJsonText(Result));
+		return false;
+	}
+	TestFalse(TEXT("The replacement was revealed before the final frame"), Replacement->bIsEditorOnlyActor);
+	TestTrue(TEXT("The owner was never revealed"), Owner->IsEditorOnly());
+	TestTrue(TEXT("Evidence counts the revealed replacement"),
+			 Result->GetObjectField(TEXT("evidence"))
+					 ->GetObjectField(TEXT("editorPreviews"))
+					 ->GetIntegerField(TEXT("revealedChildActors")) >= 1);
+	FColor Final = FColor::Black;
+	if (TestTrue(TEXT("Settled PNG readable"), Center(Result, Final)))
+	{
+		auto Distance = [](const FColor &A, const FColor &B) {
+			return FMath::Abs(A.R - B.R) + FMath::Abs(A.G - B.G) + FMath::Abs(A.B - B.B);
+		};
+		AddInfo(FString::Printf(TEXT("Hidden center %s, revealed center %s, final center %s"), *Hidden.ToString(),
+								*Shown.ToString(), *Final.ToString()));
+		TestTrue(TEXT("The references differ"), Distance(Hidden, Shown) > 24);
+		TestTrue(TEXT("The final frame shows the replacement like the revealed reference"),
+				 Distance(Final, Shown) < Distance(Final, Hidden));
+	}
+	TestEqual(TEXT("Session restored"), Session->Close()->GetStringField(TEXT("status")), FString(TEXT("closed")));
+	TestTrue(TEXT("Close restores the replacement's editor-only flag"), Replacement->IsEditorOnly());
+	TestEqual(TEXT("Map dirty state preserved"), World->GetOutermost()->IsDirty(), DirtyBefore);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedProvisionedEditorPreviewsTest,
 								 "UEShed.Cameras.Streaming.ProvisionedEditorPreviews",
 								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

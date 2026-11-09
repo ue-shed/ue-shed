@@ -80,14 +80,21 @@ Authored and live input may not mix. Before the first injected value, the Unreal
 4. report isolation ownership in run status.
 
 If any step fails, execution is rejected. The capability removes the isolator on completion,
-cancellation, failure, PIE end, world replacement, or module shutdown. Ignore-move/look flags,
+cancellation, failure, PIE end, world replacement, module shutdown, or when the run outlives its
+real-time ownership limit (below). Ignore-move/look flags,
 disabled pawn input, and focus loss do not satisfy this contract because they do not prove that all
 live device paths are separated from authored injection.
 
 ### Time, wait, and probe
 
 Clips are scheduled against PIE world game time. Wall time is used only for client-side transport
-deadlines and bounded polling.
+deadlines, bounded polling, and the native ownership limit.
+
+Game time stops while PIE is paused, so it cannot bound how long a run holds live-input isolation.
+The capability also checks a monotonic real-time limit of the run's duration plus its wait timeout
+plus 30 seconds. A run still active past that limit ends as `cancelled` with failure code
+`ownership_timeout`, and the isolator is removed once; a failed removal is reported as
+`isolation_restore_failed`, as on every other terminal path.
 
 The first slice supports one blocking wait, `landing_ready`. When its timeline point is reached,
 scenario time stops advancing while PIE/game time continues. The run resumes when the fixture state

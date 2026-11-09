@@ -1,5 +1,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
+#include "UEShedCameraReadbackOwnership.h"
 #include "UEShedCameraStreamPolicy.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraStreamPolicyTest,
@@ -106,6 +107,104 @@ bool FUEShedCameraCadenceUpdateTest::RunTest(const FString& Parameters)
         ReconcileDeadline(100.25, 4.0, 0.5, 100.1, false), 102.0);
     TestEqual(TEXT("Never-captured camera stays immediately due"),
         ReconcileDeadline(0.0, 0.1, 30.0, 100.1, false), 0.0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraReadbackOwnershipTest,
+    "UEShed.Cameras.Streaming.ReadbackOwnership",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+namespace
+{
+// The parts of the runtime readback slot that the game thread and a queued poll both touch.
+struct FModelSlot
+{
+    UEShedCameraReadback::FSlotOwnership Ownership;
+    TArray<uint8> Pixels;
+    uint64 Sequence = 0;
+};
+
+// The game thread's capture step: write metadata while available, then claim the slot.
+uint64 BeginModelCapture(FModelSlot& Slot, uint64 Sequence, int32 PixelCount)
+{
+    Slot.Sequence = Sequence;
+    Slot.Pixels.Init(0, PixelCount);
+    return Slot.Ownership.BeginCapture();
+}
+
+// The render-thread poll body, with the GPU readback's current contents as Source.
+void RunModelPoll(FModelSlot& Slot, uint64 Generation, const TArray<uint8>& Source, bool bReadbackReady)
+{
+    if (!Slot.Ownership.OwnsCapture(Generation) || !bReadbackReady)
+    {
+        Slot.Ownership.FinishPoll(Generation, false);
+        return;
+    }
+    Slot.Pixels = Source;
+    Slot.Ownership.FinishPoll(Generation, true);
+}
+}
+
+bool FUEShedCameraReadbackOwnershipTest::RunTest(const FString& Parameters)
+{
+    using EState = UEShedCameraReadback::FSlotOwnership::EState;
+    const TArray<uint8> PixelsA = { 'A', 'A', 'A', 'A', 'A', 'A', 'A', 'A' };
+    const TArray<uint8> PixelsB = { 'B', 'B', 'B', 'B' };
+    FModelSlot Slot;
+    TestTrue(TEXT("A new slot is available"), Slot.Ownership.IsAvailable());
+
+    // Capture A. Two game ticks see it copying before the render thread runs any poll.
+    const uint64 CaptureA = BeginModelCapture(Slot, 1, PixelsA.Num());
+    uint64 FirstPoll = 0, SecondPoll = 0;
+    TestTrue(TEXT("The first tick queues a poll for capture A"), Slot.Ownership.TryQueuePoll(FirstPoll));
+    TestEqual(TEXT("The poll is bound to capture A"), FirstPoll, CaptureA);
+    TestFalse(TEXT("A second tick queues no further poll while one is outstanding"),
+        Slot.Ownership.TryQueuePoll(SecondPoll));
+
+    // The first poll copies A; the game thread packages it and reuses the slot for a smaller B.
+    RunModelPoll(Slot, FirstPoll, PixelsA, true);
+    TestTrue(TEXT("Capture A is ready"), Slot.Ownership.IsReady());
+    TestEqual(TEXT("A's packet carries A's sequence"), Slot.Sequence, uint64(1));
+    TestTrue(TEXT("A's packet carries A's pixels"), Slot.Pixels == PixelsA);
+    Slot.Ownership.Consume();
+    TestTrue(TEXT("A consumed slot whose poll finished is available"), Slot.Ownership.IsAvailable());
+    const uint64 CaptureB = BeginModelCapture(Slot, 2, PixelsB.Num());
+    TestTrue(TEXT("Reuse starts a new capture generation"), CaptureB != CaptureA);
+
+    // A poll queued for A runs after the reuse, before B's GPU copy, while the readback still
+    // holds A. Whatever queued it, it must not own B's slot.
+    TestFalse(TEXT("A poll for capture A does not own the slot reused for B"),
+        Slot.Ownership.OwnsCapture(CaptureA));
+    RunModelPoll(Slot, CaptureA, PixelsA, true);
+    TestTrue(TEXT("A stale poll cannot publish B as ready"), Slot.Ownership.State() == EState::Copying);
+    TestTrue(TEXT("A stale poll leaves B's buffer and size alone"), Slot.Pixels == TArray<uint8>{ 0, 0, 0, 0 });
+    TestEqual(TEXT("B keeps its own sequence"), Slot.Sequence, uint64(2));
+
+    // B's own poll: first before its copy finished, then after.
+    uint64 PollB = 0;
+    TestTrue(TEXT("B gets its own poll"), Slot.Ownership.TryQueuePoll(PollB));
+    TestEqual(TEXT("B's poll is bound to B"), PollB, CaptureB);
+    RunModelPoll(Slot, PollB, PixelsB, false);
+    TestTrue(TEXT("A poll that finds the copy unfinished keeps B copying"), Slot.Ownership.State() == EState::Copying);
+    TestTrue(TEXT("The next tick may poll B again"), Slot.Ownership.TryQueuePoll(PollB));
+    RunModelPoll(Slot, PollB, PixelsB, true);
+    TestTrue(TEXT("Capture B is ready"), Slot.Ownership.IsReady());
+    TestTrue(TEXT("B's packet carries B's pixels"), Slot.Pixels == PixelsB);
+    TestEqual(TEXT("B's packet carries B's sequence"), Slot.Sequence, uint64(2));
+    Slot.Ownership.Consume();
+
+    // A capture abandoned before submission returns the slot, but never under a queued poll.
+    const uint64 CaptureC = BeginModelCapture(Slot, 3, PixelsB.Num());
+    Slot.Ownership.AbandonCapture(CaptureC);
+    TestTrue(TEXT("An unsubmitted capture returns the slot"), Slot.Ownership.IsAvailable());
+    const uint64 CaptureD = BeginModelCapture(Slot, 4, PixelsB.Num());
+    uint64 PollD = 0;
+    TestTrue(TEXT("D queues a poll"), Slot.Ownership.TryQueuePoll(PollD));
+    Slot.Ownership.AbandonCapture(CaptureD);
+    TestFalse(TEXT("A slot with a queued poll is not available"), Slot.Ownership.IsAvailable());
+    RunModelPoll(Slot, PollD, PixelsA, true);
+    TestTrue(TEXT("The abandoned capture's poll copies nothing"), Slot.Pixels == TArray<uint8>{ 0, 0, 0, 0 });
+    TestTrue(TEXT("The slot is available once its poll finished"), Slot.Ownership.IsAvailable());
     return true;
 }
 #endif

@@ -71,8 +71,14 @@ TSharedRef<SWidget> Text(const FString &V)
 
 bool SCameraArrangementPanel::Ready() const
 {
+    // After a native apply the snapshot can carry the next revision or active camera while the panel
+    // still shows the previous one. Commands name the panel's revision, so wait for them to agree.
+    double PanelRevision = 0, NativeRevision = 0;
     return Str(Active, TEXT("status")) == TEXT("ready") && Panel->HasField(TEXT("arrangement")) &&
-           !Active->HasField(TEXT("panelEvent")) && !Active->GetBoolField(TEXT("pending"));
+           !Active->HasField(TEXT("panelEvent")) && !Active->GetBoolField(TEXT("pending")) &&
+           Arrangement->TryGetNumberField(TEXT("revision"), PanelRevision) &&
+           Active->TryGetNumberField(TEXT("revision"), NativeRevision) && PanelRevision == NativeRevision &&
+           Str(Panel, TEXT("activeCameraId")) == Str(Active, TEXT("cameraId"));
 }
 SCameraArrangementPanel::FObject SCameraArrangementPanel::Request(const TCHAR *Op) const
 {
@@ -473,7 +479,8 @@ void SCameraArrangementPanel::FlushSetting()
     Q->SetObjectField(TEXT("action"), A);
     const auto Result = Call(Q);
     if (Str(Result, TEXT("status")) == TEXT("ready")) { Active = Result; SettingEdit->Dirty = false; }
-    else SettingEdit.Reset();
+    // A busy bridge is still synchronizing; keep the value and send it on a later refresh.
+    else if (Str(Result, TEXT("status")) != TEXT("busy")) SettingEdit.Reset();
 }
 
 void SCameraArrangementPanel::Construct(const FArguments &Args)

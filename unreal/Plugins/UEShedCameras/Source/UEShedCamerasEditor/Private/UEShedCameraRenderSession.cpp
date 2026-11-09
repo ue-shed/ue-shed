@@ -687,7 +687,6 @@ struct FUEShedCameraRenderSession::FState
 	{
 		ResolvedVisibility = UEShedResolveCameraVisibility(World.Get(), Child(Policy(), TEXT("visibility")));
 		if (!ResolvedVisibility.Valid) return false;
-		if (ShowsEditorPreviews()) EditorPreviews.Apply(World.Get());
 		if (Viewport()) {
 			if (!Visibility) Visibility = FSceneViewExtensions::NewExtension<FUEShedCameraVisibility>();
 			Visibility->Target = Client->ViewState.GetReference(); Visibility->Components = ResolvedVisibility.Components; Visibility->Enabled = true;
@@ -1189,6 +1188,10 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	for (auto *L : S.World->GetStreamingLevels())
 		if (L && L->IsStreamingStatePending())
 			return;
+	// Rescan before every rendered frame, as the live feed and review do: a construction script can
+	// replace a revealed preview child between settling ticks, and the replacement is editor-only.
+	if (S.ShowsEditorPreviews())
+		S.EditorPreviews.Apply(S.World.Get());
 	if (!S.FrameConfigured)
 	{
 		const auto E = Child(S.Policy(), TEXT("exposure"));

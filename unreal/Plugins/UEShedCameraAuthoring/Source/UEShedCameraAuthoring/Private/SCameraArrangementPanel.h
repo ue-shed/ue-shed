@@ -20,6 +20,7 @@ class SCameraArrangementPanel : public SCompoundWidget
 
   private:
     friend class FUEShedCameraPreviewPanelTest;
+    friend class FUEShedCameraPanelRevisionTest;
     using FObject = TSharedPtr<FJsonObject>;
     FObject Active, Panel, Arrangement, Setup;
     TSharedPtr<SVerticalBox> CameraRows, GroupRows, ActorRows, ProposalRows, ActiveActions;

@@ -176,14 +176,9 @@ impl EngineQuery {
                 } else {
                     manifest
                 };
-                let origin = subjects.culture_field(line, ci, "latestOrigin")?;
-                let translation = subjects.culture_field(
-                    line,
-                    ci,
-                    if origin == "po" { "po" } else { "archive" },
-                )?;
+                let translation = subjects.query.review_translation(ci, line)?;
                 let fingerprint =
-                    review_fingerprint(source.as_str().unwrap_or(""), translation.as_str());
+                    review_fingerprint(source.as_str().unwrap_or(""), translation.as_deref());
                 if fingerprint == entry.fingerprint {
                     entries.insert((
                         u32::try_from(line)?,

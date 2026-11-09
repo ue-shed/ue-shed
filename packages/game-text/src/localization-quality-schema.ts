@@ -38,7 +38,7 @@ const Base = {
 	recovery: Schema.NonEmptyString,
 	affectedOccurrences: Schema.Array(TextQualityAffectedOccurrence),
 	manifestLocations: Strings,
-	translationOrigin: Schema.Literals(["po", "archive", "absent"]),
+	translationOrigin: Schema.Literals(["po", "archive", "locres", "absent"]),
 	suggestedChange: Schema.optionalKey(LocalizationChange),
 	/** The check's severity; never part of the finding's ID. */
 	severity: CheckSeverity,

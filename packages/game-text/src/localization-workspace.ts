@@ -303,7 +303,7 @@ export const WorkspaceLocalizationFindingFocus = Schema.Struct({
 	id: TextQualityFindingId,
 	source: Excerpt,
 	translation: Schema.NullOr(Excerpt),
-	translationOrigin: Schema.Literals(["po", "archive", "absent"]),
+	translationOrigin: Schema.Literals(["po", "archive", "locres", "absent"]),
 	sourceRanges: Schema.Array(Range).check(Schema.isMaxLength(64)),
 	translationRanges: Schema.Array(Range).check(Schema.isMaxLength(64)),
 	truncated: Schema.Boolean,

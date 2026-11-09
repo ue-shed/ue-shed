@@ -15,6 +15,9 @@ import {
 	gameTextIndexRefreshLayer
 } from "./index-refresh.js";
 import { LocalizationSelectionObserved } from "./localization-import.js";
+import { LocalizationReviewFile } from "@ue-shed/localization";
+import { STARTER_CHECK_RULES } from "./starter-rules.js";
+import type { LocalizationQualityReport } from "./localization-quality-schema.js";
 
 const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -507,6 +510,177 @@ describe.skipIf(!executable)("a culture with only a compiled resource", () => {
 				{ origin: "locres", value: "Dritte" }
 			]);
 			expect(german[5]).not.toEqual({ origin: "locres", value: "Vierte" });
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps a finding accepted against a resource's translation hidden", async () => {
+		if (!executable) throw new Error("The native reader is required.");
+		const directory = await mkdtemp(join(tmpdir(), "ue-shed-locres-accept-"));
+		try {
+			const projectRoot = await realpath(directory);
+			const resource = "Content/Localization/Game/de/Game.locres";
+			const manifest = "Content/Localization/Game/Game.manifest";
+			const authored = decodeLocalizationTarget({
+				...target,
+				name: "Game",
+				cultures: ["en", "de"],
+				outputPaths: {
+					manifest,
+					archives: {},
+					portableObjects: {},
+					resources: { de: resource },
+					locmeta: null,
+					wordCount: null,
+					conflicts: null
+				}
+			});
+			// A trailing space the compiled translation lost: a whitespace finding on German.
+			const source = "Ready ";
+			const writeResource = (text: string) =>
+				writeFile(join(projectRoot, resource), locres("UI", [["Ready", source, text]]));
+			await mkdir(dirname(join(projectRoot, resource)), { recursive: true });
+			await writeFile(
+				join(projectRoot, manifest),
+				JSON.stringify({
+					FormatVersion: 1,
+					Namespace: "UI",
+					Children: [
+						{
+							Source: { Text: source },
+							Keys: [{ Key: "Ready", Path: "/Game/Text/Table.Table.Ready" }]
+						}
+					]
+				})
+			);
+			await writeResource("Bereit");
+			const path = "Content/Text/Table.uasset";
+			let signature = 0;
+			const packages = Layer.succeed(GameTextIndexSource, {
+				inventory: () =>
+					Effect.succeed([
+						{
+							path,
+							signature: String(signature),
+							headerData: {
+								packageFlags: 0x40000,
+								gatherableTextDataCount: 0,
+								gatherableTextDataOffset: 0,
+								hasTextProperty: false
+							}
+						}
+					]),
+				read: () =>
+					Stream.succeed({
+						...emptyPackageTextRecord(path),
+						occurrences: [
+							{
+								source,
+								dev_notes: "",
+								identity: {
+									status: "resolved" as const,
+									namespace: "UI",
+									key: "Ready"
+								},
+								location: {
+									kind: "asset_property" as const,
+									object_path: "/Game/Text/Table.Table",
+									class_path: "/Script/Engine.DataAsset",
+									property_path: "Ready"
+								},
+								edit_capability: "read_only" as const
+							}
+						]
+					})
+			});
+			const evidence = Layer.succeed(LocalizationEvidence, {
+				discover: () =>
+					Effect.succeed({ schemaVersion: 1, targets: [authored], diagnostics: [] }),
+				read: () => Effect.die("Index refresh reads no localization files as objects."),
+				targets: () => Effect.die("Index refresh discovers target configuration directly.")
+			});
+			const outcome = await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const refresh = yield* GameTextIndexRefresh;
+						const opened = () =>
+							refresh.refresh({ projectRoot, targetName: authored.name });
+						let result = yield* opened();
+						// The rules that found something on the line in German.
+						const german = (findings: LocalizationQualityReport["findings"]) =>
+							findings.flatMap((finding) =>
+								"culture" in finding &&
+								finding.culture === "de" &&
+								JSON.stringify(finding.identity).includes('"Ready"')
+									? [finding.ruleId]
+									: []
+							);
+						const found = german(
+							(yield* result.localizationCheck(STARTER_CHECK_RULES, {})).findings
+						);
+						// The fingerprint a review writes, as the host reads it for an accept.
+						const [line] = yield* result.query.reviewLines({
+							target: authored.name,
+							culture: "de",
+							identities: [{ namespace: "UI", key: "Ready" }]
+						});
+						if (line?.status !== "found") throw new Error("The line was not gathered.");
+						const review = yield* Schema.decodeUnknownEffect(LocalizationReviewFile)({
+							schemaVersion: 1,
+							target: authored.name,
+							records: [],
+							acceptedFindings: found.map((ruleId) => ({
+								check: ruleId,
+								culture: "de",
+								namespace: "UI",
+								key: "Ready",
+								fingerprint: line.fingerprint,
+								by: "Reviewer",
+								at: "2026-11-10T00:00:00Z"
+							}))
+						}).pipe(Effect.orDie);
+						const reviewed = () =>
+							result.localizationCheck(STARTER_CHECK_RULES, { review });
+						const accepted = yield* reviewed();
+						// The compiled translation changes: the acceptance no longer holds.
+						yield* Effect.promise(() => writeResource("Fertig"));
+						signature++;
+						result = yield* opened();
+						const changed = yield* reviewed();
+						return {
+							translation: line.translation,
+							found: found.length,
+							acceptedVisible: german(accepted.findings).length,
+							acceptedCount: accepted.acceptedFindings,
+							changedVisible: german(changed.findings).length
+						};
+					})
+				).pipe(
+					Effect.provide(
+						gameTextIndexRefreshLayer(join(projectRoot, "cache"), {}).pipe(
+							Layer.provide(packages),
+							Layer.provide(
+								nativeIndexBuilderLayer({
+									executable,
+									timeoutMs: 30_000,
+									catalogTimeoutMs: 120_000
+								})
+							),
+							Layer.provide(evidence)
+						)
+					)
+				)
+			);
+			expect(outcome.translation).toBe("Bereit");
+			expect(outcome.found).toBeGreaterThan(0);
+			expect(outcome).toEqual({
+				translation: "Bereit",
+				found: outcome.found,
+				acceptedVisible: 0,
+				acceptedCount: outcome.found,
+				changedVisible: outcome.found
+			});
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}

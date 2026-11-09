@@ -1574,6 +1574,9 @@ struct IndexPathResolver<'a> {
     exports: &'a [Export],
     import_paths: Vec<PathResolution>,
     export_paths: Vec<PathResolution>,
+    /// Deepest unresolved descent seen, so tests can prove the walk stays bounded (P2).
+    #[cfg(test)]
+    max_descent: usize,
 }
 
 impl<'a> IndexPathResolver<'a> {
@@ -1594,18 +1597,54 @@ impl<'a> IndexPathResolver<'a> {
             export_paths: (0..exports.len())
                 .map(|_| PathResolution::Unresolved)
                 .collect(),
+            #[cfg(test)]
+            max_descent: 0,
         }
     }
 
     fn ensure_resolved(&mut self, index: PackageIndex, path: &str) -> Result<(), PackageError> {
+        self.ensure_resolved_at(index, path, 0)
+    }
+
+    /// `descent` counts the unresolved entries already on the call stack below this one. The
+    /// entry being resolved sits at least `descent` levels under its root, so the depth limit is
+    /// enforced before recursing instead of after the whole chain has been walked (P2).
+    fn ensure_resolved_at(
+        &mut self,
+        index: PackageIndex,
+        path: &str,
+        descent: usize,
+    ) -> Result<(), PackageError> {
         match index {
             PackageIndex::Null => Ok(()),
-            PackageIndex::Import(import_index) => self.resolve_import(import_index, path),
-            PackageIndex::Export(export_index) => self.resolve_export(export_index, path),
+            PackageIndex::Import(import_index) => self.resolve_import(import_index, path, descent),
+            PackageIndex::Export(export_index) => self.resolve_export(export_index, path, descent),
         }
     }
 
-    fn resolve_import(&mut self, import_index: u32, path: &str) -> Result<(), PackageError> {
+    /// Resolves `outer` for an entry at `descent`. A fresh outer sits one level deeper, so a
+    /// descent past the limit already proves the starting entry's chain is too deep.
+    fn resolve_outer(
+        &mut self,
+        outer: PackageIndex,
+        path: &str,
+        descent: usize,
+    ) -> Result<(), PackageError> {
+        let outer_descent = descent + 1;
+        self.validate_outer_depth(outer_descent, path)?;
+        #[cfg(test)]
+        {
+            self.max_descent = self.max_descent.max(outer_descent);
+        }
+        self.ensure_resolved_at(outer, path, outer_descent)
+    }
+
+    fn resolve_import(
+        &mut self,
+        import_index: u32,
+        path: &str,
+        descent: usize,
+    ) -> Result<(), PackageError> {
         let slot = crate::convert::usize_from_u32(import_index);
         let Some(state) = self.import_paths.get(slot) else {
             return Err(PackageError::new(
@@ -1654,7 +1693,7 @@ impl<'a> IndexPathResolver<'a> {
                 }
             }
             outer => {
-                self.ensure_resolved(outer, path)?;
+                self.resolve_outer(outer, path, descent)?;
                 let (outer, outer_depth) = self.resolved(outer).ok_or_else(|| {
                     PackageError::new(
                         PackageErrorKind::MalformedData,
@@ -1679,7 +1718,12 @@ impl<'a> IndexPathResolver<'a> {
         Ok(())
     }
 
-    fn resolve_export(&mut self, export_index: u32, path: &str) -> Result<(), PackageError> {
+    fn resolve_export(
+        &mut self,
+        export_index: u32,
+        path: &str,
+        descent: usize,
+    ) -> Result<(), PackageError> {
         let slot = crate::convert::usize_from_u32(export_index);
         let Some(state) = self.export_paths.get(slot) else {
             return Err(PackageError::new(
@@ -1717,7 +1761,7 @@ impl<'a> IndexPathResolver<'a> {
         let (resolved, outer_depth) = match outer_index {
             PackageIndex::Null => (join_object_path(self.package_name, &object_name), 0),
             outer => {
-                self.ensure_resolved(outer, path)?;
+                self.resolve_outer(outer, path, descent)?;
                 let (outer, outer_depth) = self.resolved(outer).ok_or_else(|| {
                     PackageError::new(
                         PackageErrorKind::MalformedData,
@@ -2477,6 +2521,137 @@ mod tests {
                 "Imports",
             )
             .expect_err("a cached chain past the depth limit should be rejected");
+
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert!(error.detail().contains("depth limit"));
+    }
+
+    /// Imports where entry `i` has entry `i + 1` as its outer, so resolving entry 0 first walks
+    /// the whole unresolved chain forward. The last entry is the root.
+    fn forward_import_chain(len: usize) -> Vec<Import> {
+        (0..len)
+            .map(|index| {
+                let mut import = test_import("/Node", "/Script/CoreUObject.Object", 1, None);
+                if index + 1 < len {
+                    import.outer_index = PackageIndex::Import(
+                        u32::try_from(index + 1).expect("test import index fits in u32"),
+                    );
+                }
+                import
+            })
+            .collect()
+    }
+
+    fn forward_export_chain(len: usize) -> Vec<Export> {
+        (0..len)
+            .map(|index| {
+                let mut export = test_export(1, "/Game/Test/Test.Node", "/Script/Engine.Actor");
+                export.object_name = crate::test_support::name_ref(1, 0);
+                if index + 1 < len {
+                    export.outer_index = PackageIndex::Export(
+                        u32::try_from(index + 1).expect("test export index fits in u32"),
+                    );
+                }
+                export
+            })
+            .collect()
+    }
+
+    #[test]
+    fn accepts_forward_unresolved_chain_at_the_depth_limit() {
+        let names = vec!["None".into(), "Node".into()];
+        let imports = forward_import_chain(MAX_OBJECT_PATH_DEPTH + 1);
+        let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &imports, &[]);
+
+        resolver
+            .ensure_resolved(PackageIndex::Import(0), "Imports")
+            .expect("a chain exactly at the depth limit should resolve");
+
+        assert_eq!(
+            resolver
+                .resolved(PackageIndex::Import(0))
+                .map(|(_, depth)| depth),
+            Some(MAX_OBJECT_PATH_DEPTH)
+        );
+        assert_eq!(resolver.max_descent, MAX_OBJECT_PATH_DEPTH);
+    }
+
+    #[test]
+    fn rejects_forward_unresolved_import_chain_before_descending_past_the_limit() {
+        let names = vec!["None".into(), "Node".into()];
+        let imports = forward_import_chain(MAX_OBJECT_PATH_DEPTH + 500);
+        let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &imports, &[]);
+
+        let error = resolver
+            .ensure_resolved(PackageIndex::Import(0), "Imports")
+            .expect_err("a forward chain past the depth limit should be rejected");
+
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert!(error.detail().contains("depth limit"));
+        assert!(
+            resolver.max_descent <= MAX_OBJECT_PATH_DEPTH,
+            "descended {} levels before rejecting",
+            resolver.max_descent
+        );
+    }
+
+    #[test]
+    fn rejects_forward_unresolved_export_chain_before_descending_past_the_limit() {
+        let names = vec!["None".into(), "Node".into()];
+        let exports = forward_export_chain(MAX_OBJECT_PATH_DEPTH + 500);
+        let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &[], &exports);
+
+        let error = resolver
+            .ensure_resolved(PackageIndex::Export(0), "Exports")
+            .expect_err("a forward export chain past the depth limit should be rejected");
+
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert!(error.detail().contains("depth limit"));
+        assert!(resolver.max_descent <= MAX_OBJECT_PATH_DEPTH);
+    }
+
+    #[test]
+    fn rejects_mixed_export_import_chain_before_descending_past_the_limit() {
+        let names = vec!["None".into(), "Node".into()];
+        let half = MAX_OBJECT_PATH_DEPTH;
+        let mut exports = forward_export_chain(half);
+        exports
+            .last_mut()
+            .expect("export chain is not empty")
+            .outer_index = PackageIndex::Import(0);
+        let imports = forward_import_chain(half);
+        let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &imports, &exports);
+
+        let error = resolver
+            .ensure_resolved(PackageIndex::Export(0), "Exports")
+            .expect_err("a mixed chain past the depth limit should be rejected");
+
+        assert_eq!(error.kind(), PackageErrorKind::MalformedData);
+        assert!(error.detail().contains("depth limit"));
+        assert!(resolver.max_descent <= MAX_OBJECT_PATH_DEPTH);
+    }
+
+    #[test]
+    fn rejects_unresolved_chain_ending_at_a_deep_cached_parent() {
+        let names = vec!["None".into(), "Node".into()];
+        let cached_depth = MAX_OBJECT_PATH_DEPTH - 4;
+        let fresh = 10;
+        // Entries 0..fresh are fresh, entries fresh.. form a chain whose head sits at cached_depth.
+        let imports = forward_import_chain(fresh + cached_depth + 1);
+        let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &imports, &[]);
+        let cached_head =
+            PackageIndex::Import(u32::try_from(fresh).expect("test import index fits in u32"));
+        resolver
+            .ensure_resolved(cached_head, "Imports")
+            .expect("the cached part is within the limit");
+        assert_eq!(
+            resolver.resolved(cached_head).map(|(_, depth)| depth),
+            Some(cached_depth)
+        );
+
+        let error = resolver
+            .ensure_resolved(PackageIndex::Import(0), "Imports")
+            .expect_err("fresh entries above a deep cached parent should be rejected");
 
         assert_eq!(error.kind(), PackageErrorKind::MalformedData);
         assert!(error.detail().contains("depth limit"));

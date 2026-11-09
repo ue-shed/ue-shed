@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Schema } from "effect";
 import { P4, type P4ClientOptions } from "p4client-ts";
@@ -218,13 +218,42 @@ const projectPrefix = Effect.fnUntraced(function* (projectRoot: string) {
 const printToFile = Effect.fnUntraced(function* (spec: string, file: string) {
 	const p4 = yield* P4;
 	yield* Effect.promise(() => mkdir(join(file, ".."), { recursive: true }));
-	const temporary = `${file}.${process.pid}.tmp`;
-	yield* p4.runTagged({ schema: TaggedRecord, args: ["print", "-q", "-o", temporary, spec] });
+	const temporary = stagingPath(file);
+	yield* p4
+		.runTagged({ schema: TaggedRecord, args: ["print", "-q", "-o", temporary, spec] })
+		.pipe(Effect.onError(() => Effect.promise(() => rm(temporary, { force: true }))));
 	return yield* Effect.promise(async () => {
-		await rename(temporary, file);
+		await publish(temporary, file);
 		return (await stat(file)).size;
 	});
 });
+
+/**
+ * Where one attempt stages a cache entry. Each attempt gets its own path: two reads in the same
+ * process may print the same revision at once, and a shared path let one publish (rename) the
+ * other's half-written file or take it away from under it (C3).
+ */
+function stagingPath(file: string): string {
+	return `${file}.${process.pid}.${randomUUID()}.tmp`;
+}
+
+/**
+ * Publishes a staged cache entry. A cache entry is an immutable revision, so if another attempt
+ * published it first (the rename can fail on Windows while that file is open), its copy is as good
+ * as ours: drop ours and use it.
+ */
+async function publish(temporary: string, file: string): Promise<void> {
+	try {
+		await rename(temporary, file);
+	} catch (cause) {
+		const published = await stat(file).then(
+			() => true,
+			() => false
+		);
+		await rm(temporary, { force: true });
+		if (!published) throw cause;
+	}
+}
 
 /**
  * Prints the revisions the cache lacks, side by side, and returns what that cost. A side names
@@ -285,9 +314,14 @@ const printMissing = Effect.fnUntraced(function* (
 				printed++;
 				yield* Effect.promise(async () => {
 					await mkdir(join(target.file, ".."), { recursive: true });
-					const temporary = `${target.file}.${process.pid}.tmp`;
-					await writeFile(temporary, item.content);
-					await rename(temporary, target.file);
+					const temporary = stagingPath(target.file);
+					try {
+						await writeFile(temporary, item.content);
+					} catch (cause) {
+						await rm(temporary, { force: true });
+						throw cause;
+					}
+					await publish(temporary, target.file);
 				});
 			}
 		}

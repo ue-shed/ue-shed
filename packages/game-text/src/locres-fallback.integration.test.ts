@@ -14,6 +14,7 @@ import {
 	GameTextIndexRefresh,
 	gameTextIndexRefreshLayer
 } from "./index-refresh.js";
+import { LocalizationSelectionObserved } from "./localization-import.js";
 
 const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
@@ -331,6 +332,181 @@ describe.skipIf(!executable)("a culture with only a compiled resource", () => {
 				{ origin: "archive", value: "Archiv" },
 				{ origin: "locres", value: "Zweite" }
 			]);
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("reads the resource when the archive disappears after the inputs were chosen", async () => {
+		if (!executable) throw new Error("The native reader is required.");
+		const directory = await mkdtemp(join(tmpdir(), "ue-shed-locres-race-"));
+		try {
+			const projectRoot = await realpath(directory);
+			const resource = "Content/Localization/Game/de/Game.locres";
+			const archive = "Content/Localization/Game/de/Game.archive";
+			const authored = decodeLocalizationTarget({
+				...target,
+				name: "Game",
+				cultures: ["en", "de"],
+				outputPaths: {
+					manifest: null,
+					archives: { de: archive },
+					portableObjects: {},
+					resources: { de: resource },
+					locmeta: null,
+					wordCount: null,
+					conflicts: null
+				}
+			});
+			const writeResource = (text: string) =>
+				writeFile(join(projectRoot, resource), locres("UI", [["Kills", "Kills", text]]));
+			const writeArchive = () =>
+				writeFile(
+					join(projectRoot, archive),
+					JSON.stringify({
+						FormatVersion: 2,
+						Namespace: "",
+						Subnamespaces: [
+							{
+								Namespace: "UI",
+								Children: [
+									{
+										Source: { Text: "Kills" },
+										Translation: { Text: "Archiv" },
+										Key: "Kills"
+									}
+								]
+							}
+						]
+					})
+				);
+			const removeArchive = () =>
+				rm(join(projectRoot, archive), { recursive: true, force: true });
+			await mkdir(dirname(join(projectRoot, resource)), { recursive: true });
+			const path = "Content/Text/Table.uasset";
+			const source = Layer.succeed(GameTextIndexSource, {
+				inventory: () =>
+					Effect.succeed([
+						{
+							path,
+							signature: "one",
+							headerData: {
+								packageFlags: 0x40000,
+								gatherableTextDataCount: 0,
+								gatherableTextDataOffset: 0,
+								hasTextProperty: false
+							}
+						}
+					]),
+				read: () =>
+					Stream.succeed({
+						...emptyPackageTextRecord(path),
+						occurrences: [
+							{
+								source: "Kills",
+								dev_notes: "",
+								identity: {
+									status: "resolved" as const,
+									namespace: "UI",
+									key: "Kills"
+								},
+								location: {
+									kind: "asset_property" as const,
+									object_path: "/Game/Text/Table.Table",
+									class_path: "/Script/Engine.DataAsset",
+									property_path: "Kills"
+								},
+								edit_capability: "read_only" as const
+							}
+						]
+					})
+			});
+			const evidence = Layer.succeed(LocalizationEvidence, {
+				discover: () =>
+					Effect.succeed({ schemaVersion: 1, targets: [authored], diagnostics: [] }),
+				read: () => Effect.die("Index refresh reads no localization files as objects."),
+				targets: () => Effect.die("Index refresh discovers target configuration directly.")
+			});
+			const german = await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const refresh = yield* GameTextIndexRefresh;
+						// One refresh; `between` runs after its inputs are chosen, before they are read.
+						const state = (
+							changedFiles: readonly string[] | undefined,
+							between?: () => Promise<unknown>
+						) =>
+							refresh
+								.refresh({
+									projectRoot,
+									targetName: authored.name,
+									...(changedFiles === undefined ? undefined : { changedFiles })
+								})
+								.pipe(
+									Effect.flatMap((result) => result.query.readLocalizationLines),
+									Effect.map((lines) => {
+										const culture = lines
+											.find((line) => line.identity?.key === "Kills")
+											?.cultures.find((item) => item.culture === "de");
+										return culture === undefined
+											? null
+											: (localizationShippedTranslation(culture) ?? null);
+									}),
+									Effect.provideService(LocalizationSelectionObserved, () =>
+										between === undefined
+											? Effect.void
+											: Effect.promise(between)
+									)
+								);
+						const states = [];
+						// Cold: the archive is there when the inputs are chosen, gone when it is read.
+						yield* Effect.promise(() => writeResource("Erste"));
+						yield* Effect.promise(writeArchive);
+						states.push(yield* state(undefined, removeArchive));
+						// Warm, full refresh: an older resource layer must not stand in for the new file.
+						yield* Effect.promise(writeArchive);
+						states.push(yield* state([archive]));
+						yield* Effect.promise(() => writeResource("Zweite"));
+						states.push(yield* state(undefined, removeArchive));
+						// Warm, scoped refresh naming only the archive.
+						yield* Effect.promise(writeArchive);
+						states.push(yield* state([archive]));
+						yield* Effect.promise(() => writeResource("Dritte"));
+						states.push(yield* state([archive], removeArchive));
+						// Control: an archive that is present but unreadable keeps its culture.
+						yield* Effect.promise(() => writeResource("Vierte"));
+						states.push(
+							yield* state(undefined, async () => {
+								await removeArchive();
+								await mkdir(join(projectRoot, archive), { recursive: true });
+							})
+						);
+						return states;
+					})
+				).pipe(
+					Effect.provide(
+						gameTextIndexRefreshLayer(join(projectRoot, "cache"), {}).pipe(
+							Layer.provide(source),
+							Layer.provide(
+								nativeIndexBuilderLayer({
+									executable,
+									timeoutMs: 30_000,
+									catalogTimeoutMs: 120_000
+								})
+							),
+							Layer.provide(evidence)
+						)
+					)
+				)
+			);
+			expect(german.slice(0, 5)).toEqual([
+				{ origin: "locres", value: "Erste" },
+				{ origin: "archive", value: "Archiv" },
+				{ origin: "locres", value: "Zweite" },
+				{ origin: "archive", value: "Archiv" },
+				{ origin: "locres", value: "Dritte" }
+			]);
+			expect(german[5]).not.toEqual({ origin: "locres", value: "Vierte" });
 		} finally {
 			await rm(directory, { recursive: true, force: true });
 		}

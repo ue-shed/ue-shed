@@ -123,6 +123,7 @@ function fakeServer(address: string, projectRoot: string) {
 				port: address,
 				serverAddress: address,
 				serverVersion: null,
+				serverId: null,
 				unicode: false,
 				caseInsensitive: true,
 				messages: []

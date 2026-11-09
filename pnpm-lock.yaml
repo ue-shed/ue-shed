@@ -1106,8 +1106,8 @@ importers:
         specifier: workspace:0.28.0
         version: link:../unreal-assets
       p4client-ts:
-        specifier: 0.13.0
-        version: 0.13.0(effect@4.1.2)
+        specifier: 0.15.0
+        version: 0.15.0(effect@4.1.2)
     devDependencies:
       '@effect/vitest':
         specifier: 'catalog:'
@@ -4054,8 +4054,8 @@ packages:
     resolution: {integrity: sha512-I4Prw6ivkd6p8PiYR1tXASOAOBzIJwu0TB7fqaX0c/8c3QAehNYmX57EijyGGGBt3c/BIowGwV03RVBtXvHEVg==}
     engines: {node: '>=18'}
 
-  p4client-ts@0.13.0:
-    resolution: {integrity: sha512-upPG4Rq9xSfLoLp/38Akyw8JzLzXs5pCLX20+9TLrSJUpAW4Kik/FCx+VGYAusjiioptiFkQrfTH/4eb4VXi1A==}
+  p4client-ts@0.15.0:
+    resolution: {integrity: sha512-lbH04L5pnWOEJlAGCOEUpI5Lfe48RRKRmn+PundKCng5tCVn2VRZFfjnUSsiEbQCAhZCFzerkO9ePL85HBW2Gg==}
     engines: {node: '>=18'}
     peerDependencies:
       effect: ^4.0.0
@@ -6986,7 +6986,7 @@ snapshots:
 
   p-map@7.0.6: {}
 
-  p4client-ts@0.13.0(effect@4.1.2):
+  p4client-ts@0.15.0(effect@4.1.2):
     dependencies:
       effect: 4.1.2
 

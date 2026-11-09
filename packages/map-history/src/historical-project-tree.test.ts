@@ -128,11 +128,15 @@ describe("HistoricalProjectTree", () => {
 
 				// The first file landed and the second didn't: the tree is a mix of revisions.
 				const again = yield* tree
-					.applyRevision([{ action: "delete", projectRelativePath: "Content/Maps/L_First.umap" }])
+					.applyRevision([
+						{ action: "delete", projectRelativePath: "Content/Maps/L_First.umap" }
+					])
 					.pipe(Effect.flip);
 				expect(again.kind).toBe("temporary_storage");
 				expect(again.message).toMatch(/can't be used again/);
-				expect(existsSync(resolve(tree.projectRoot, "Content/Maps/L_First.umap"))).toBe(true);
+				expect(existsSync(resolve(tree.projectRoot, "Content/Maps/L_First.umap"))).toBe(
+					true
+				);
 			})
 		)
 	);
@@ -158,7 +162,9 @@ describe("HistoricalProjectTree", () => {
 						projectRelativePath: "Content/Maps/L_History.umap"
 					}
 				]);
-				expect(existsSync(resolve(tree.projectRoot, "Content/Maps/L_History.umap"))).toBe(true);
+				expect(existsSync(resolve(tree.projectRoot, "Content/Maps/L_History.umap"))).toBe(
+					true
+				);
 			})
 		)
 	);

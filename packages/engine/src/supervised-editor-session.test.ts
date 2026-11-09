@@ -31,7 +31,12 @@ const manifest = {
 function manifestFor(processId: number) {
 	return {
 		...manifest,
-		identity: { engineVersion: "5.7.0", plugins: [], processId, sessionId: `session-${processId}` }
+		identity: {
+			engineVersion: "5.7.0",
+			plugins: [],
+			processId,
+			sessionId: `session-${processId}`
+		}
 	};
 }
 
@@ -692,7 +697,9 @@ it.effect("P4 refuses readiness from another editor on the port and stops only i
 				waitUntilReady: () => Effect.succeed(manifestFor(9_001))
 			}),
 			fixture,
-			process: makeOwnedProcessTreeTestLayer(() => Effect.succeed(testHandle(47, terminations)))
+			process: makeOwnedProcessTreeTestLayer(() =>
+				Effect.succeed(testHandle(47, terminations))
+			)
 		});
 		const error = yield* Effect.flip(
 			Effect.scoped(
@@ -719,7 +726,9 @@ it.effect("P4 refuses readiness that doesn't say which process answered", () =>
 				waitUntilReady: () => Effect.succeed(manifest)
 			}),
 			fixture,
-			process: makeOwnedProcessTreeTestLayer(() => Effect.succeed(testHandle(48, terminations)))
+			process: makeOwnedProcessTreeTestLayer(() =>
+				Effect.succeed(testHandle(48, terminations))
+			)
 		});
 		const error = yield* Effect.flip(
 			Effect.scoped(

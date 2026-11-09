@@ -305,8 +305,16 @@ describe("Map History playback", () => {
 					change: 10,
 					changes: [
 						{
-							after: { completeness: "complete", failedPackages: 0, partialPackages: 0 },
-							before: { completeness: "partial", failedPackages: 1, partialPackages: 0 },
+							after: {
+								completeness: "complete",
+								failedPackages: 0,
+								partialPackages: 0
+							},
+							before: {
+								completeness: "partial",
+								failedPackages: 1,
+								partialPackages: 0
+							},
 							kind: "snapshot_coverage_changed"
 						}
 					]
@@ -336,9 +344,9 @@ describe("Map History playback", () => {
 		expect(mapHistoryPlaybackFrameAt({ history: result, revisionIndex: 1 }).completeness).toBe(
 			"partial"
 		);
-		expect(mapHistoryPlaybackFrameAt({ history: result, revisionIndex: undefined }).completeness).toBe(
-			"complete"
-		);
+		expect(
+			mapHistoryPlaybackFrameAt({ history: result, revisionIndex: undefined }).completeness
+		).toBe("complete");
 	});
 
 	it("rejects a baseline result missing the required playback snapshot", () => {

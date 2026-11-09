@@ -536,7 +536,9 @@ describe("observeActorFeed", () => {
 		);
 		await Effect.runPromise(Deferred.await(catalogReady));
 		const socket = await connectToFeed(name);
-		socket.write(packet({ sequence: 1n, sessionId, records: [{ streamIndex: 0, x: 1, y: 2 }] }));
+		socket.write(
+			packet({ sequence: 1n, sessionId, records: [{ streamIndex: 0, x: 1, y: 2 }] })
+		);
 		await Effect.runPromise(Deferred.await(transformed));
 		const before = starts;
 		socket.destroy();
@@ -587,7 +589,9 @@ describe("observeActorFeed", () => {
 		const closed = once(old, "close");
 		old.destroy();
 		await closed;
-		replacement.write(packet({ sequence: 2n, sessionId, records: [{ streamIndex: 0, x: 3, y: 4 }] }));
+		replacement.write(
+			packet({ sequence: 2n, sessionId, records: [{ streamIndex: 0, x: 3, y: 4 }] })
+		);
 		await Effect.runPromise(Deferred.await(second).pipe(Effect.timeout("3 seconds")));
 		expect(starts).toBe(1);
 		expect(statuses.filter((status) => status === "stale")).toEqual([]);

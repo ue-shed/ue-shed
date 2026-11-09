@@ -180,7 +180,10 @@ describe("C6 Visibility Policy changes advance the View revision", () => {
 		id: VisibilityPolicyId.make("record-clear"),
 		name: "Record Clear",
 		onLowVisibility: { action: "record" as const },
-		output: { clearStrategy: { type: "isolate_target" as const }, mode: "natural_and_clear" as const }
+		output: {
+			clearStrategy: { type: "isolate_target" as const },
+			mode: "natural_and_clear" as const
+		}
 	};
 
 	it("gives a View with a replacement policy a new revision", async () => {

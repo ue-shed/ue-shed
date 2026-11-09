@@ -78,6 +78,12 @@ export interface ActorFeedApi {
 	readonly latestPacket: Effect.Effect<ActorStreamPacket | undefined>;
 	readonly metrics: Effect.Effect<ActorFeedMetrics>;
 	readonly packets: Stream.Stream<ActorStreamPacket>;
+	/**
+	 * Emits when the last connected writer disconnects. Unreal can crash or drop its pipe without
+	 * sending a reset; without this the observation would stay live on its last sample forever.
+	 * A replacement writer that connects before the old one closes keeps the feed connected.
+	 */
+	readonly writersLost: Stream.Stream<void>;
 }
 
 export class ActorFeed extends Context.Service<ActorFeed, ActorFeedApi>()(
@@ -203,6 +209,7 @@ function acquireActorFeedResource(
 	return Effect.gen(function* () {
 		const scope = yield* Effect.scope;
 		const pubsub = yield* PubSub.sliding<ActorStreamPacket>(capacity);
+		const lost = yield* PubSub.sliding<void>(1);
 		let latest: ActorStreamPacket | undefined;
 		const sockets = new Set<Socket>();
 		const startedMonotonicMs = performance.now();
@@ -248,7 +255,11 @@ function acquireActorFeedResource(
 					socket.destroy();
 				}
 			});
-			socket.once("close", () => sockets.delete(socket));
+			socket.once("close", () => {
+				sockets.delete(socket);
+				if (sockets.size === 0)
+					Effect.runFork(Effect.forkIn(PubSub.publish(lost, undefined), scope));
+			});
 		});
 		yield* listen(server, pipeName);
 		server.on("error", () => {
@@ -266,7 +277,8 @@ function acquireActorFeedResource(
 					startedMonotonicMs,
 					transportErrors
 				})),
-				packets: Stream.fromPubSub(pubsub)
+				packets: Stream.fromPubSub(pubsub),
+				writersLost: Stream.fromPubSub(lost)
 			},
 			pubsub,
 			server,
@@ -539,6 +551,7 @@ function buildCatalogFromReady(
 
 type AttemptOutcome =
 	| { readonly _tag: "reset" }
+	| { readonly _tag: "writers_lost" }
 	| {
 			readonly _tag: "rejected_exhausted";
 			readonly expectedSessionId: string | undefined;
@@ -561,8 +574,20 @@ const runLiveAttempt = Effect.fn("ActorObservation.runLiveAttempt")(function* (a
 	};
 	let consecutiveRejected = 0;
 	let previousProducerReplacements = 0;
-	yield* Stream.runForEachWhile(args.feed.packets, (packet) =>
+	type Delivery =
+		| { readonly _tag: "packet"; readonly packet: ActorStreamPacket }
+		| { readonly _tag: "writers_lost" };
+	const deliveries: Stream.Stream<Delivery> = Stream.merge(
+		Stream.map(args.feed.packets, (packet): Delivery => ({ _tag: "packet", packet })),
+		Stream.map(args.feed.writersLost, (): Delivery => ({ _tag: "writers_lost" }))
+	);
+	yield* Stream.runForEachWhile(deliveries, (delivery) =>
 		Effect.gen(function* () {
+			if (delivery._tag === "writers_lost") {
+				outcome = { _tag: "writers_lost" };
+				return false;
+			}
+			const packet = delivery.packet;
 			const applyStarted = performance.now();
 			const stateBefore = args.getState();
 			const event: WorldObservationEvent = packet.reset
@@ -808,6 +833,12 @@ function driveObservation(
 				publish,
 				...(onDiagnostic === undefined ? undefined : { onDiagnostic })
 			});
+			if (liveOutcome._tag === "writers_lost") {
+				// The writer went away without a reset (Unreal crashed or dropped its pipe). Keep the
+				// last sample as stale and renegotiate, within the bounded recovery budget.
+				yield* attemptFailed("Unreal closed the actor stream without a reset.");
+				continue;
+			}
 			if (liveOutcome._tag === "reset") {
 				// Unreal-initiated catalog invalidation (map change, actor add/delete) is expected
 				// during ordinary editor use; it does not consume the bounded recovery budget.

@@ -2,6 +2,7 @@
 
 #include "UEShedGameTextEngine.h"
 #include "UEShedGameTextLibrary.h"
+#include "UEShedGameTextResultFile.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -637,6 +638,62 @@ bool FUEShedGameTextSaveRecoveryTest::RunTest(const FString& Parameters)
 	const FId Unchanged = IdOf(A->Title);
 	TestEqual(TEXT("An unmounted file is rejected"), FirstErrorCode(Run(TEXT("apply"), { WrongFile })), FString(TEXT("package_mismatch")));
 	TestTrue(TEXT("Rejected binding leaves text unchanged"), Same(IdOf(A->Title), Unchanged));
+	return true;
+}
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedGameTextResultPublicationTest, "UEShed.GameText.ResultPublication",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedGameTextResultPublicationTest::RunTest(const FString& Parameters)
+{
+	const FString Directory = FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectSavedDir(),
+		TEXT("UEShedGameTextResultPublication"), FGuid::NewGuid().ToString(EGuidFormats::Digits)));
+	ON_SCOPE_EXIT { IFileManager::Get().DeleteDirectory(*Directory, false, true); };
+	const FString Target = FPaths::Combine(Directory, TEXT("result.json"));
+	const FString Previous = TEXT("{\"schemaVersion\":1,\"status\":\"ok\",\"actions\":[\"first\"]}");
+	const FString Next = TEXT("{\"schemaVersion\":1,\"status\":\"ok\",\"actions\":[\"second\",\"third\"]}");
+	auto Read = [&Target] {
+		FString Text;
+		FFileHelper::LoadFileToString(Text, *Target);
+		return Text;
+	};
+	auto Entries = [&Directory] {
+		TArray<FString> Found;
+		IFileManager::Get().FindFiles(Found, *FPaths::Combine(Directory, TEXT("*")), true, false);
+		return Found;
+	};
+
+	FString Error;
+	if (!TestTrue(TEXT("A first result is published"), UEShedGameText::PublishFileAtomically(Target, Previous, Error)))
+	{
+		AddError(Error);
+		return false;
+	}
+	TestEqual(TEXT("The published result is complete"), Read(), Previous);
+
+	// The process dies or the disk fills while the next result is being written.
+	const bool bInterrupted = UEShedGameText::PublishFileAtomically(Target, Next, Error,
+		[](const FString& Path, const FString& Text)
+		{
+			FFileHelper::SaveStringToFile(Text.Left(Text.Len() / 2), *Path,
+				FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+			return false;
+		});
+	TestFalse(TEXT("An interrupted write reports failure"), bInterrupted);
+	TestFalse(TEXT("The failure says what could not be written"), Error.IsEmpty());
+	TestEqual(TEXT("Readers still see the previous complete result"), Read(), Previous);
+	TestEqual(TEXT("No partial staging file is left beside the result"), Entries().Num(), 1);
+
+	TestTrue(TEXT("The next result replaces the previous one"), UEShedGameText::PublishFileAtomically(Target, Next, Error));
+	TestEqual(TEXT("The replacement is complete"), Read(), Next);
+	TestEqual(TEXT("Only the result remains"), Entries().Num(), 1);
+
+	const FString Nested = FPaths::Combine(Directory, TEXT("nested"), TEXT("manifest.json"));
+	TestTrue(TEXT("Publishing creates the result directory"), UEShedGameText::PublishFileAtomically(Nested, Next, Error));
+	FString NestedText;
+	FFileHelper::LoadFileToString(NestedText, *Nested);
+	TestEqual(TEXT("The nested result is complete"), NestedText, Next);
 	return true;
 }
 

@@ -65,6 +65,7 @@ const allTests = [
 	"UEShed.GameText.Authoring",
 	"UEShed.GameText.Blueprint",
 	"UEShed.GameText.SaveRecovery",
+	"UEShed.GameText.ResultPublication",
 	"UEShed.Automation.Input",
 	"UEShed.Automation.Profiling",
 	"UEShed.Cameras.Rendering.LifecycleAndReference",

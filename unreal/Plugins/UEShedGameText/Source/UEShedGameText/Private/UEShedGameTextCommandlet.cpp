@@ -3,6 +3,7 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "UEShedGameTextActions.h"
+#include "UEShedGameTextResultFile.h"
 #include "UEShedCoreLibrary.h"
 
 UUEShedGameTextCommandlet::UUEShedGameTextCommandlet()
@@ -20,8 +21,10 @@ int32 UUEShedGameTextCommandlet::Main(const FString& Params)
 	{
 		FString Manifest;
 		UUEShedCoreLibrary::GetCapabilityManifest(Manifest);
-		return FFileHelper::SaveStringToFile(Manifest, *ManifestFile,
-			FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM) ? 0 : 2;
+		FString Error;
+		if (UEShedGameText::PublishFileAtomically(ManifestFile, Manifest, Error)) return 0;
+		UE_LOG(LogTemp, Error, TEXT("UEShedGameText could not publish the manifest: %s."), *Error);
+		return 2;
 	}
 	FString RequestFile;
 	FString ResultFile;
@@ -37,9 +40,11 @@ int32 UUEShedGameTextCommandlet::Main(const FString& Params)
 		return 2;
 	}
 	const FString ResultJson = UEShedGameText::ApplyTextActions(RequestJson);
-	if (!FFileHelper::SaveStringToFile(ResultJson, *ResultFile, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM))
+	// A reader sees no result or a complete one, never partial JSON.
+	FString Error;
+	if (!UEShedGameText::PublishFileAtomically(ResultFile, ResultJson, Error))
 	{
-		UE_LOG(LogTemp, Error, TEXT("UEShedGameText could not write %s."), *ResultFile);
+		UE_LOG(LogTemp, Error, TEXT("UEShedGameText could not publish the result: %s."), *Error);
 		return 2;
 	}
 	return UEShedGameText::IsOkResult(ResultJson) ? 0 : 1;

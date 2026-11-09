@@ -571,6 +571,9 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
         SelectionAck->SetObjectField(TEXT("pose"), ObservedSelection->GetObjectField(TEXT("pose")));
         SelectionAck->SetArrayField(TEXT("cameras"), ObservedSelection->GetArrayField(TEXT("cameras")));
         FUEShedCameraAuthoringBridge::Execute(SelectionAck);
+        // The host publishes the panel for the camera it just applied, as it does after every apply.
+        State->SetStringField(TEXT("activeCameraId"), ObservedSelection->GetStringField(TEXT("cameraId")));
+        FUEShedCameraAuthoringBridge::Execute(Request);
         Panel->Refresh(1.655, .2f);
         TestTrue(TEXT("Checked fitted camera is adjustable"), Panel->CanAdjust(TEXT("heightOffset")));
         TestTrue(TEXT("Checked fitted camera is ready: ") + Panel->Message, Panel->Ready());
@@ -801,6 +804,151 @@ bool FUEShedCameraPreviewPanelTest::RunTest(const FString &Parameters)
     TestEqual(TEXT("Detach clears review grid"), Reopened->Grid->GetChildren()->Num(), 0);
     TestEqual(TEXT("Detach releases snapshots"), Reopened->Review.Num(), 0);
     TestNull(TEXT("Closing the set releases its thumbnails"), Panel->PreviewShot(TEXT("camera-5")));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraPanelRevisionTest, "UEShed.Cameras.Authoring.PanelRevision",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedCameraPanelRevisionTest::RunTest(const FString &Parameters)
+{
+    UWorld *World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World || GEditor->PlayWorld)
+    {
+        AddError(TEXT("Open an editor world without Play or Simulate."));
+        return false;
+    }
+    GEditor->SelectNone(false, true);
+    TSharedPtr<FJsonObject> Request;
+    FJsonSerializer::Deserialize(
+        TJsonReaderFactory<>::Create(TEXT(
+            R"({"version":1,"operation":"attach","sessionId":"panel-revision","cameraId":"camera-0","revision":0,"pose":{"projection":"perspective","aspectRatio":"16:9","fieldOfViewDegrees":60,"location":{"x":1000,"y":1000,"z":900},"rotation":{"pitch":-30,"yaw":-135,"roll":0}}})")),
+        Request);
+    Request->SetStringField(TEXT("projectName"), FApp::GetProjectName());
+    Request->SetStringField(TEXT("mapPath"), World->GetOutermost()->GetName());
+    TArray<TSharedPtr<FJsonValue>> NativeCameras, Cameras, Effective;
+    for (int32 I = 0; I < 2; ++I)
+    {
+        const FString Id = FString::Printf(TEXT("camera-%d"), I);
+        auto Native = MakeShared<FJsonObject>(), Camera = MakeShared<FJsonObject>(), Resolved = MakeShared<FJsonObject>();
+        Native->SetStringField(TEXT("id"), Id);
+        Native->SetStringField(TEXT("displayName"), Id);
+        Native->SetObjectField(TEXT("pose"), Request->GetObjectField(TEXT("pose")));
+        NativeCameras.Add(MakeShared<FJsonValueObject>(Native));
+        Camera->SetStringField(TEXT("id"), Id);
+        Camera->SetStringField(TEXT("displayName"), Id);
+        Cameras.Add(MakeShared<FJsonValueObject>(Camera));
+        Resolved->SetStringField(TEXT("id"), Id);
+        Resolved->SetBoolField(TEXT("approved"), false);
+        Resolved->SetObjectField(TEXT("pose"), Request->GetObjectField(TEXT("pose")));
+        Effective.Add(MakeShared<FJsonValueObject>(Resolved));
+    }
+    Request->SetArrayField(TEXT("cameras"), NativeCameras);
+    const auto Attached = FUEShedCameraAuthoringBridge::Execute(Request);
+    ON_SCOPE_EXIT { FUEShedCameraAuthoringBridge::Shutdown(); };
+    if (!TestEqual(TEXT("Attach fixture"), Attached->GetStringField(TEXT("status")), FString(TEXT("ready"))))
+        return false;
+
+    // The host publishes the panel for revision 0.
+    auto State = MakeShared<FJsonObject>(), Arrangement = MakeShared<FJsonObject>(), Settings = MakeShared<FJsonObject>();
+    Arrangement->SetStringField(TEXT("id"), TEXT("panel-revision"));
+    Arrangement->SetStringField(TEXT("displayName"), TEXT("Panel revision fixture"));
+    Arrangement->SetStringField(TEXT("mapPath"), World->GetOutermost()->GetName());
+    Arrangement->SetNumberField(TEXT("revision"), 0);
+    Arrangement->SetArrayField(TEXT("groups"), {});
+    Settings->SetNumberField(TEXT("fieldOfViewDegrees"), 60);
+    Settings->SetNumberField(TEXT("distanceScale"), 1);
+    Arrangement->SetObjectField(TEXT("settings"), Settings);
+    Arrangement->SetArrayField(TEXT("cameras"), Cameras);
+    State->SetObjectField(TEXT("arrangement"), Arrangement);
+    State->SetStringField(TEXT("activeCameraId"), Attached->GetStringField(TEXT("cameraId")));
+    State->SetArrayField(TEXT("cameras"), Effective);
+    auto Publish = MakeShared<FJsonObject>(*Request);
+    Publish->SetStringField(TEXT("operation"), TEXT("panel"));
+    Publish->SetStringField(TEXT("producerId"), Attached->GetStringField(TEXT("producerId")));
+    Publish->SetObjectField(TEXT("state"), State);
+    if (!TestEqual(TEXT("Publish revision 0"), FUEShedCameraAuthoringBridge::Execute(Publish)->GetStringField(TEXT("status")),
+                   FString(TEXT("ready"))))
+        return false;
+    auto Panel = SNew(SCameraArrangementPanel);
+    Panel->Refresh(1, .2f);
+    if (!TestTrue(TEXT("A synchronized panel is editable: ") + Panel->Message, Panel->Ready()))
+        return false;
+
+    // The host persists a native edit as revision 1 and applies it; its panel publication lags.
+    auto ApplyNative = [&](double Revision, const FString &CameraId) {
+        const auto Observed = FUEShedCameraAuthoringBridge::InspectActive();
+        auto Apply = MakeShared<FJsonObject>(*Publish);
+        Apply->SetStringField(TEXT("operation"), TEXT("apply"));
+        Apply->SetStringField(TEXT("cameraId"), CameraId);
+        Apply->SetNumberField(TEXT("expectedRevision"), Observed->GetNumberField(TEXT("revision")));
+        Apply->SetNumberField(TEXT("revision"), Revision);
+        Apply->SetNumberField(TEXT("sequence"), Observed->GetNumberField(TEXT("sequence")));
+        Apply->SetObjectField(TEXT("pose"), Observed->GetObjectField(TEXT("pose")));
+        Apply->SetArrayField(TEXT("cameras"), Observed->GetArrayField(TEXT("cameras")));
+        return FUEShedCameraAuthoringBridge::Execute(Apply)->GetStringField(TEXT("status"));
+    };
+    auto Event = [] { return FUEShedCameraAuthoringBridge::InspectActive()->HasField(TEXT("panelEvent")); };
+    Panel->BeginSettingDrag(TEXT("fieldOfViewDegrees"));
+    if (!TestEqual(TEXT("Native apply advances to revision 1"), ApplyNative(1, Attached->GetStringField(TEXT("cameraId"))),
+                   FString(TEXT("ready"))))
+        return false;
+    Panel->ChangeSetting(TEXT("fieldOfViewDegrees"), 72, true);
+    Panel->Refresh(1.1, .2f);
+    TestFalse(TEXT("A panel that still shows revision 0 is not editable"), Panel->Ready());
+    TestFalse(TEXT("No edit is sent against the superseded revision"), Event());
+    if (TestTrue(TEXT("The committed value waits for the panel"), Panel->SettingEdit.IsSet()))
+    {
+        TestTrue(TEXT("The waiting value is still unsent"), Panel->SettingEdit->Dirty);
+        TestEqual(TEXT("The waiting value is kept"), Panel->SettingEdit->Value, 72.0);
+    }
+    {
+        auto Enqueue = MakeShared<FJsonObject>(*Publish);
+        Enqueue->SetStringField(TEXT("operation"), TEXT("enqueue"));
+        Enqueue->SetBoolField(TEXT("codedFailures"), true);
+        auto Action = MakeShared<FJsonObject>();
+        Action->SetStringField(TEXT("kind"), TEXT("save"));
+        Enqueue->SetObjectField(TEXT("action"), Action);
+        const auto Refused = FUEShedCameraAuthoringBridge::Execute(Enqueue);
+        TestEqual(TEXT("The bridge refuses panel actions until the panel matches the revision"),
+                  Refused->GetStringField(TEXT("status")), FString(TEXT("busy")));
+        FString Code;
+        Refused->TryGetStringField(TEXT("code"), Code);
+        TestEqual(TEXT("The refusal names the stale panel"), Code, FString(TEXT("panel_out_of_date")));
+        TestFalse(TEXT("A refused action leaves no event"), Event());
+    }
+
+    // The panel publication for revision 1 arrives: the kept value is sent against it.
+    Arrangement->SetNumberField(TEXT("revision"), 1);
+    TestEqual(TEXT("Publish revision 1"), FUEShedCameraAuthoringBridge::Execute(Publish)->GetStringField(TEXT("status")),
+              FString(TEXT("ready")));
+    Panel->Refresh(1.2, .2f);
+    if (!TestTrue(TEXT("The kept value is sent once the panel matches"), Event()))
+        return false;
+    {
+        const auto Sent = FUEShedCameraAuthoringBridge::InspectActive()->GetObjectField(TEXT("panelEvent"));
+        const auto Command = Sent->GetObjectField(TEXT("action"))->GetObjectField(TEXT("command"));
+        TestEqual(TEXT("The command names the published revision"), Command->GetNumberField(TEXT("expectedRevision")), 1.0);
+        TestEqual(TEXT("The event names the same revision"), Sent->GetNumberField(TEXT("expectedRevision")), 1.0);
+        TestEqual(TEXT("The command carries the kept value"),
+                  Command->GetObjectField(TEXT("settings"))->GetNumberField(TEXT("fieldOfViewDegrees")), 72.0);
+        Settings->SetNumberField(TEXT("fieldOfViewDegrees"), 72);
+        Publish->SetStringField(TEXT("acknowledgeEvent"), Sent->GetStringField(TEXT("id")));
+        FUEShedCameraAuthoringBridge::Execute(Publish);
+        Panel->Refresh(1.3, .2f);
+        TestFalse(TEXT("The acknowledged value clears"), Panel->SettingEdit.IsSet());
+    }
+
+    // A native apply can also switch the active camera at the same revision.
+    if (!TestEqual(TEXT("Native apply switches the active camera"), ApplyNative(1, TEXT("camera-1")), FString(TEXT("ready"))))
+        return false;
+    Panel->Refresh(1.4, .2f);
+    TestFalse(TEXT("A panel for the previous active camera is not editable"), Panel->Ready());
+    State->SetStringField(TEXT("activeCameraId"), TEXT("camera-1"));
+    FUEShedCameraAuthoringBridge::Execute(Publish);
+    Panel->Refresh(1.5, .2f);
+    TestTrue(TEXT("The panel is editable once it shows the active camera"), Panel->Ready());
+    GEditor->SelectNone(false, true);
     return true;
 }
 #endif

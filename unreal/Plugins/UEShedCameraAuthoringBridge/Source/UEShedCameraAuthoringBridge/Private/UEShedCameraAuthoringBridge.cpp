@@ -713,6 +713,14 @@ TSharedPtr<FJsonObject> FUEShedCameraAuthoringBridge::ExecuteRequest(const TShar
         if (AuthoringState->Event || AuthoringState->Sequence != AuthoringState->Acknowledged)
             return Result(TEXT("busy"),
                           TEXT("Waiting for the previous edit to synchronize. Camera movement remains native."), TEXT("edit_pending"));
+        // Apply advances the native revision before the host republishes the panel. Until it does,
+        // panel commands name the previous revision and the host would refuse them.
+        double PanelRevision = 0;
+        if (!Number(Child(AuthoringState->Panel, TEXT("arrangement")), TEXT("revision"), PanelRevision) ||
+            PanelRevision != AuthoringState->Revision ||
+            Str(AuthoringState->Panel, TEXT("activeCameraId")) != AuthoringState->CameraId)
+            return Result(TEXT("busy"), TEXT("Waiting for the arrangement host to publish the applied revision."),
+                          TEXT("panel_out_of_date"));
         const auto Action = Child(Q, TEXT("action"));
         if (!Action)
             return Result(TEXT("invalid"), TEXT("An explicit scoped panel action is required."), TEXT("missing_action"));

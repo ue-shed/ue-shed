@@ -44,6 +44,7 @@ const allTests = [
 	"UEShed.Cameras.Authoring.ScaleAndCleanup",
 	"UEShed.Cameras.Authoring.MultiCameraPreviews",
 	"UEShed.Cameras.Authoring.PreviewPanel",
+	"UEShed.Cameras.Authoring.PanelRevision",
 	"UEShed.Cameras.Rendering.ViewLocalVisibilityProof",
 	"UEShed.Cameras.Rendering.HighResolutionCapture",
 	"UEShed.Cameras.Rendering.WireConformance",

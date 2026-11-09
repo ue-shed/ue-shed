@@ -183,7 +183,7 @@ class StalledInputProcess implements ProtocolSessionProcess {
 		private readonly closesOnKill = true,
 		inputMessage?: string,
 		onWrite?: () => void,
-		stdin?: Writable
+		stdin?: RejectingProtocolInput | Writable
 	) {
 		this.stdin = stdin ?? new RejectingProtocolInput(inputMessage, onWrite);
 	}
@@ -831,7 +831,7 @@ class WithheldInput extends RejectingProtocolInput {
 it("P5 times out a request whose write never completes, and frees the session", async () => {
 	const assetPath = "C:/Fixture/BP_FullPipe.uasset";
 	const input = new WithheldInput();
-	const worker = new StalledInputProcess(true, undefined, undefined, input as unknown as Writable);
+	const worker = new StalledInputProcess(true, undefined, undefined, input);
 	const configuration = { catalogTimeoutMs: 50, executable: "full-pipe-reader", timeoutMs: 50 };
 	const session = new UassetProtocolSession(configuration, () => worker);
 	const failure = await Effect.runPromise(

@@ -20,6 +20,7 @@ import { STARTER_CHECK_RULES } from "./starter-rules.js";
 import type { LocalizationQualityReport } from "./localization-quality-schema.js";
 
 const decodeLocalizationTarget = Schema.decodeSync(LocalizationTarget);
+const decodeLocalizationReviewFile = Schema.decodeUnknownEffect(LocalizationReviewFile);
 const executable = process.env.UE_SHED_UASSET_EXECUTABLE;
 
 /** A version 3 `.locres` with one namespace, as `FTextLocalizationResource::SaveToArchive` writes. */
@@ -437,7 +438,7 @@ describe.skipIf(!executable)("a culture with only a compiled resource", () => {
 						// One refresh; `between` runs after its inputs are chosen, before they are read.
 						const state = (
 							changedFiles: readonly string[] | undefined,
-							between?: () => Promise<unknown>
+							between?: () => Promise<void>
 						) =>
 							refresh
 								.refresh({
@@ -626,7 +627,7 @@ describe.skipIf(!executable)("a culture with only a compiled resource", () => {
 							identities: [{ namespace: "UI", key: "Ready" }]
 						});
 						if (line?.status !== "found") throw new Error("The line was not gathered.");
-						const review = yield* Schema.decodeUnknownEffect(LocalizationReviewFile)({
+						const review = yield* decodeLocalizationReviewFile({
 							schemaVersion: 1,
 							target: authored.name,
 							records: [],

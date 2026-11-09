@@ -251,6 +251,9 @@ export function ScenarioStudioRoute(
 	const demoPreview = props.initialDraft === undefined;
 	const [document, setDocument] = createSignal<ScenarioDocument>(initialDocument);
 	const fileAction = createEffectAction();
+	// Which file operation owns fileAction. A pending Open is about to replace the document and
+	// reset the live state, so a run must not start until it settles (C8).
+	const [fileOperation, setFileOperation] = createSignal<"open" | "save" | undefined>();
 	const [savedPath, setSavedPath] = createSignal(props.initialDraft?.savedPath);
 	const [savedJson, setSavedJson] = createSignal(props.initialDraft?.savedJson);
 	const [fileMessage, setFileMessage] = createSignal("");
@@ -360,9 +363,14 @@ export function ScenarioStudioRoute(
 		const client = props.client;
 		if (!client?.saveDocument) return;
 		const saving = document();
+		setFileOperation("save");
 		fileAction.run(client.saveDocument(saving), {
-			onFailure: (cause) => setFileMessage(formatClientFailure(cause)),
+			onFailure: (cause) => {
+				setFileOperation(undefined);
+				setFileMessage(formatClientFailure(cause));
+			},
 			onSuccess: (result) => {
+				setFileOperation(undefined);
 				if (result.status === "failed")
 					setFileMessage(result.message + " " + result.recovery);
 				if (result.status === "completed") {
@@ -375,13 +383,24 @@ export function ScenarioStudioRoute(
 	};
 	const openDocument = () => {
 		const client = props.client;
-		if (!client?.openDocument) return;
+		if (!client?.openDocument || liveBusy()) return;
+		setFileOperation("open");
 		fileAction.run(client.openDocument, {
-			onFailure: (cause) => setFileMessage(formatClientFailure(cause)),
+			onFailure: (cause) => {
+				setFileOperation(undefined);
+				setFileMessage(formatClientFailure(cause));
+			},
 			onSuccess: (result) => {
+				setFileOperation(undefined);
 				if (result.status === "failed")
 					setFileMessage(result.message + " " + result.recovery);
 				if (result.status === "completed") {
+					// A live run owns the document and its cancel handle; replacing the document would
+					// drop that handle while Unreal keeps running.
+					if (liveBusy()) {
+						setFileMessage("Cancel the live run before opening another draft.");
+						return;
+					}
 					playbackAction.cancel();
 					liveRunAction.cancel();
 					cancelRunAction.cancel();
@@ -441,7 +460,13 @@ export function ScenarioStudioRoute(
 		setPlayheadMs(0);
 	};
 	const runLive = () => {
-		if (props.client === undefined || liveBusy() || endpoint().trim() === "") return;
+		if (
+			props.client === undefined ||
+			liveBusy() ||
+			fileOperation() === "open" ||
+			endpoint().trim() === ""
+		)
+			return;
 		stopPlayback();
 		setLiveRunState({ status: "connecting" });
 		liveRunAction.run(
@@ -699,7 +724,10 @@ export function ScenarioStudioRoute(
 					</Show>
 					<button
 						disabled={
-							props.client === undefined || liveBusy() || endpoint().trim() === ""
+							props.client === undefined ||
+							liveBusy() ||
+							fileOperation() === "open" ||
+							endpoint().trim() === ""
 						}
 						onClick={runLive}
 						{...stylex.attrs(styles.liveRunButton)}

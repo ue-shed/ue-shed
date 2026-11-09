@@ -413,7 +413,11 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 	function savePlan(saveAs: boolean) {
 		const current = plan();
 		if (current === undefined) return;
-		const currentPlanPath = selection()?.planPath;
+		// The acknowledgement belongs to this selection and this draft. Edits made while the write
+		// is pending stay in the editor as unsaved changes (C9).
+		const submittedSelection = selection();
+		const submittedDraftJson = JSON.stringify(draft());
+		const currentPlanPath = submittedSelection?.planPath;
 		setNotice({ tone: "info", text: saveAs ? "Choosing where to save…" : "Saving plan…" });
 		saveAction.run(
 			props.client.savePlan({
@@ -440,7 +444,13 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 						});
 						return;
 					}
-					setDraft(mapCapturePlanDraft(result.plan));
+					if (selection() !== submittedSelection) {
+						// Another plan was opened meanwhile; the file is saved, the editor is not its.
+						setNotice({ tone: "success", text: `Saved plan to ${result.planPath}.` });
+						return;
+					}
+					const editedDuringSave = JSON.stringify(draft()) !== submittedDraftJson;
+					if (!editedDuringSave) setDraft(mapCapturePlanDraft(result.plan));
 					setSavedPlanJson(JSON.stringify(result.plan));
 					setSelection((currentSelection) =>
 						currentSelection === undefined
@@ -449,7 +459,9 @@ export function MapCaptureRoute(props: { readonly client: MapCaptureClientApi })
 					);
 					setNotice({
 						tone: "success",
-						text: `Saved plan to ${result.planPath}.`
+						text: editedDuringSave
+							? `Saved plan to ${result.planPath}. Changes made while saving aren't saved yet.`
+							: `Saved plan to ${result.planPath}.`
 					});
 				}
 			}

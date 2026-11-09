@@ -7,7 +7,7 @@ import {
 	RemoteControlClientError
 } from "@ue-shed/unreal-connection";
 import { Context, Deferred, Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
 	ACTOR_STREAM_FLAG_RESET,
 	ActorFeed,
@@ -500,6 +500,172 @@ describe("observeActorFeed", () => {
 		expect(reacquired.sample.catalog.sessionId).toBe(sessionB);
 		expect(starts).toBe(2);
 		socket.destroy();
+		await Effect.runPromise(Fiber.interrupt(fiber));
+	});
+
+	test("C4 leaves live, keeps the sample and renegotiates when Unreal's writer disconnects without a reset", async () => {
+		const name = pipeName();
+		const sessionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		let starts = 0;
+		const { remote } = makeRemote({
+			onStart: () => {
+				starts += 1;
+				return readyStart({ pipeName: name, sessionId });
+			}
+		});
+		const transformed = await Effect.runPromise(Deferred.make<void>());
+		const catalogReady = await Effect.runPromise(Deferred.make<void>());
+		const stale = await Effect.runPromise(Deferred.make<WorldObservationState>());
+		const fiber = Effect.runFork(
+			observeActorFeed(remote, "http://127.0.0.1:30010", {
+				cadenceHz: 30,
+				pipeName: name
+			}).pipe(
+				Stream.tap((state) =>
+					Effect.gen(function* () {
+						if (state.status === "live" && state.sample.lastSequence === 0n)
+							yield* Deferred.succeed(catalogReady, undefined).pipe(Effect.ignore);
+						if (state.status === "live" && state.sample.lastSequence >= 1n)
+							yield* Deferred.succeed(transformed, undefined).pipe(Effect.ignore);
+						if (state.status === "stale" || state.status === "unavailable")
+							yield* Deferred.succeed(stale, state).pipe(Effect.ignore);
+					})
+				),
+				Stream.runDrain
+			)
+		);
+		await Effect.runPromise(Deferred.await(catalogReady));
+		const socket = await connectToFeed(name);
+		socket.write(
+			packet({ sequence: 1n, sessionId, records: [{ streamIndex: 0, x: 1, y: 2 }] })
+		);
+		await Effect.runPromise(Deferred.await(transformed));
+		const before = starts;
+		socket.destroy();
+		const state = await Effect.runPromise(
+			Deferred.await(stale).pipe(Effect.timeout("3 seconds"))
+		);
+		// No longer live, and the last sample is kept for the screen to show as out of date.
+		expect(state.status).toBe("unavailable");
+		expect("sample" in state && state.sample !== undefined).toBe(true);
+		await vi.waitFor(() => expect(starts).toBeGreaterThan(before), { timeout: 3000 });
+		await Effect.runPromise(Fiber.interrupt(fiber));
+	});
+
+	test("C4 keeps the stream live when a replacement writer connects before the old one closes", async () => {
+		const name = pipeName();
+		const sessionId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		let starts = 0;
+		const { remote } = makeRemote({
+			onStart: () => {
+				starts += 1;
+				return readyStart({ pipeName: name, sessionId });
+			}
+		});
+		const catalogReady = await Effect.runPromise(Deferred.make<void>());
+		const second = await Effect.runPromise(Deferred.make<void>());
+		const statuses: string[] = [];
+		const fiber = Effect.runFork(
+			observeActorFeed(remote, "http://127.0.0.1:30010", {
+				cadenceHz: 30,
+				pipeName: name
+			}).pipe(
+				Stream.tap((state) =>
+					Effect.gen(function* () {
+						statuses.push(state.status);
+						if (state.status === "live" && state.sample.lastSequence === 0n)
+							yield* Deferred.succeed(catalogReady, undefined).pipe(Effect.ignore);
+						if (state.status === "live" && state.sample.lastSequence >= 2n)
+							yield* Deferred.succeed(second, undefined).pipe(Effect.ignore);
+					})
+				),
+				Stream.runDrain
+			)
+		);
+		await Effect.runPromise(Deferred.await(catalogReady));
+		const old = await connectToFeed(name);
+		old.write(packet({ sequence: 1n, sessionId, records: [{ streamIndex: 0, x: 1, y: 2 }] }));
+		const replacement = await connectToFeed(name);
+		const closed = once(old, "close");
+		old.destroy();
+		await closed;
+		replacement.write(
+			packet({ sequence: 2n, sessionId, records: [{ streamIndex: 0, x: 3, y: 4 }] })
+		);
+		await Effect.runPromise(Deferred.await(second).pipe(Effect.timeout("3 seconds")));
+		expect(starts).toBe(1);
+		expect(statuses.filter((status) => status === "stale")).toEqual([]);
+		replacement.destroy();
+		await Effect.runPromise(Fiber.interrupt(fiber));
+	});
+
+	test("C4 ignores the superseded writer closing after the next session's catalog is installed", async () => {
+		const name = pipeName();
+		const sessionA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		const sessionB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+		let starts = 0;
+		const { remote } = makeRemote({
+			onStart: () => {
+				starts += 1;
+				return readyStart({
+					pipeName: name,
+					sessionId: starts === 1 ? sessionA : sessionB,
+					catalogRevision: String(starts)
+				});
+			}
+		});
+		const firstLive = await Effect.runPromise(Deferred.make<void>());
+		const secondInstalled = await Effect.runPromise(Deferred.make<void>());
+		const secondSampled = await Effect.runPromise(Deferred.make<void>());
+		const afterSecond: string[] = [];
+		let installed = false;
+		const fiber = Effect.runFork(
+			observeActorFeed(remote, "http://127.0.0.1:30010", {
+				cadenceHz: 30,
+				pipeName: name
+			}).pipe(
+				Stream.tap((state) =>
+					Effect.gen(function* () {
+						if (installed) afterSecond.push(state.status);
+						if (state.status !== "live") return;
+						const session = state.sample.catalog.sessionId;
+						if (session === sessionA)
+							yield* Deferred.succeed(firstLive, undefined).pipe(Effect.ignore);
+						if (session === sessionB && state.sample.lastSequence === 0n) {
+							installed = true;
+							yield* Deferred.succeed(secondInstalled, undefined).pipe(Effect.ignore);
+						}
+						if (session === sessionB && state.sample.lastSequence >= 1n)
+							yield* Deferred.succeed(secondSampled, undefined).pipe(Effect.ignore);
+					})
+				),
+				Stream.runDrain
+			)
+		);
+		await Effect.runPromise(Deferred.await(firstLive));
+		const old = await connectToFeed(name);
+		old.write(packet({ sequence: 1n, sessionId: sessionA, reset: true }));
+		await Effect.runPromise(Deferred.await(secondInstalled));
+		// Unreal destroys session A's writer as it starts B; that close lands before B's writer.
+		const closed = once(old, "close");
+		old.destroy();
+		await closed;
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		const replacement = await connectToFeed(name);
+		replacement.write(
+			packet({
+				sequence: 1n,
+				sessionId: sessionB,
+				catalogRevision: 2n,
+				records: [{ streamIndex: 0, x: 3, y: 4 }]
+			})
+		);
+		await Effect.runPromise(Deferred.await(secondSampled).pipe(Effect.timeout("3 seconds")));
+		expect(starts).toBe(2);
+		expect(afterSecond.filter((status) => status !== "live")).toEqual([]);
+		// B's own writer going away is still a loss.
+		replacement.destroy();
+		await vi.waitFor(() => expect(starts).toBe(3), { timeout: 3000 });
 		await Effect.runPromise(Fiber.interrupt(fiber));
 	});
 

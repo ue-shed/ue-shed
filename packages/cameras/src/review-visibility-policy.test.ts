@@ -173,3 +173,50 @@ describe("Review Visibility Policy operations", () => {
 		).rejects.toMatchObject({ code: "duplicate_view" });
 	});
 });
+
+describe("C6 Visibility Policy changes advance the View revision", () => {
+	const clearPolicy = {
+		assessment: { method: "automatic" as const },
+		id: VisibilityPolicyId.make("record-clear"),
+		name: "Record Clear",
+		onLowVisibility: { action: "record" as const },
+		output: {
+			clearStrategy: { type: "isolate_target" as const },
+			mode: "natural_and_clear" as const
+		}
+	};
+
+	it("gives a View with a replacement policy a new revision", async () => {
+		const original = fixtureReviewSet();
+		const updated = await Effect.runPromise(
+			replaceViewVisibilityPolicy({
+				policy: clearPolicy,
+				reviewSet: original,
+				viewId: original.views[0]!.id
+			})
+		);
+		expect(updated.views[0]!.revision).not.toEqual(original.views[0]!.revision);
+		expect(updated.views[1]!.revision).toEqual(original.views[1]!.revision);
+	});
+
+	it("advances only the selected Views whose policy actually changes", async () => {
+		const original = fixtureReviewSet();
+		const withPolicy = await Effect.runPromise(
+			replaceViewVisibilityPolicy({
+				policy: clearPolicy,
+				reviewSet: original,
+				viewId: original.views[0]!.id
+			})
+		);
+		const updated = await Effect.runPromise(
+			applyVisibilityPolicyToViews({
+				policyId: clearPolicy.id,
+				reviewSet: withPolicy,
+				viewIds: [original.views[0]!.id, original.views[1]!.id]
+			})
+		);
+		// view-a already had the policy: same meaning, same revision. view-b changed.
+		expect(updated.views[0]!.revision).toEqual(withPolicy.views[0]!.revision);
+		expect(updated.views[1]!.revision).not.toEqual(withPolicy.views[1]!.revision);
+	});
+});

@@ -930,6 +930,21 @@ export const SupervisedEditorSessionLive = Layer.effect(
 					)
 				)
 			);
+			// Readiness on the port proves only that some editor answered. If another editor already
+			// holds the port, its manifest wins the race while ours is still starting, and the handle
+			// would pair our PID with its endpoint (P4). The answer must name the process we launched.
+			const responder = manifest.identity?.processId;
+			if (responder !== process.pid) {
+				return yield* sessionError(
+					"readiness_failed",
+					"readiness",
+					responder === undefined
+						? `The editor answering on port ${request.remoteControlHttpPort} did not say which process it is, so it can't be confirmed as the editor launched here (process ${process.pid}).`
+						: `Another editor (process ${responder}) is answering on port ${request.remoteControlHttpPort}, not the editor launched here (process ${process.pid}).`,
+					"Close the other editor or choose a free Remote Control port, then try again.",
+					true
+				);
+			}
 			const missing = request.requiredCapabilities?.find(
 				(capability) => !manifest.capabilities.includes(capability)
 			);

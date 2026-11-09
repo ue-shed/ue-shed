@@ -3,13 +3,14 @@
 import { cleanup, render, screen, within } from "@solidjs/testing-library";
 import { userEvent } from "@testing-library/user-event";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime, Schema, Stream } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime, Schema, Stream } from "effect";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { ScenarioStudioRoute } from "./scenario-studio-route.js";
 import {
 	movementGymRuns,
 	movementGymScenario,
 	ScenarioDocument,
+	type ScenarioDocumentFileResult,
 	ScenarioRunHandle,
 	scenarioWireContract
 } from "@ue-shed/scenarios/browser";
@@ -358,4 +359,67 @@ it("L7.1 refuses a replacement document while a scenario is active", async () =>
 	);
 	expect(screen.getByRole("button", { name: "Cancel run" })).toBeDefined();
 	expect(screen.queryByText("Custom patrol")).toBeNull();
+});
+
+it("C8 refuses a live run while a replacement document is still opening", async () => {
+	let starts = 0;
+	const opening = Effect.runSync(Deferred.make<ScenarioDocumentFileResult>());
+	const client = clientWith({
+		saveDocument: () => Effect.succeed({ status: "cancelled" }),
+		openDocument: Deferred.await(opening),
+		start: () => Effect.sync(() => (starts += 1)).pipe(Effect.as(liveHandle)),
+		watch: () =>
+			Stream.make({
+				_tag: "Active" as const,
+				contract: scenarioWireContract,
+				gameTimeMs: 900,
+				pieSessionId: liveHandle.pieSessionId,
+				runId: liveHandle.runId,
+				state: "running" as const
+			})
+	});
+	renderRoute(client);
+	const user = userEvent.setup({ delay: null });
+	await screen.findByDisplayValue(liveHandle.endpoint);
+	await user.click(screen.getByRole("button", { name: "Open draft\u2026" }));
+	await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
+	expect(starts).toBe(0);
+	expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
+
+	Effect.runSync(
+		Deferred.succeed(opening, {
+			status: "completed",
+			path: "C:/Drafts/custom.json",
+			document: customScenario
+		})
+	);
+	await screen.findByText("Opened C:/Drafts/custom.json");
+	await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
+	await screen.findByRole("button", { name: "Cancel run" });
+	expect(starts).toBe(1);
+});
+
+it("C8 lets a live run start again after an Open is cancelled or fails", async () => {
+	let starts = 0;
+	const client = clientWith({
+		saveDocument: () => Effect.succeed({ status: "cancelled" }),
+		openDocument: Effect.succeed({ status: "cancelled" as const }),
+		start: () => Effect.sync(() => (starts += 1)).pipe(Effect.as(liveHandle)),
+		watch: () =>
+			Stream.make({
+				_tag: "Active" as const,
+				contract: scenarioWireContract,
+				gameTimeMs: 900,
+				pieSessionId: liveHandle.pieSessionId,
+				runId: liveHandle.runId,
+				state: "running" as const
+			})
+	});
+	renderRoute(client);
+	const user = userEvent.setup({ delay: null });
+	await screen.findByDisplayValue(liveHandle.endpoint);
+	await user.click(screen.getByRole("button", { name: "Open draft\u2026" }));
+	await user.click(screen.getByRole("button", { name: "Run in Unreal" }));
+	await screen.findByRole("button", { name: "Cancel run" });
+	expect(starts).toBe(1);
 });

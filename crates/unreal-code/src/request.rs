@@ -12,7 +12,8 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::discovery::{
-    GatherStep, absolute, relative_to, step_files, step_includes, wrapper_files,
+    DiskLister, GatherStep, Lister, absolute, relative_to, step_files, step_includes,
+    wrapper_files, wrapper_files_listed,
 };
 use crate::{
     CodeDiagnostic, CodeFile, CodePlace, DiskStore, EngineLine, FileStore, ScanSettings,
@@ -136,7 +137,7 @@ fn engine_wrappers(
     let Some(root) = request.engine_root.as_deref().map(PathBuf::from) else {
         return (Vec::new(), EngineWrappers::NoEngineRoot);
     };
-    let (wrappers, state) = engine_wrappers_in_root(request, &root);
+    let (wrappers, state) = engine_wrappers_in_root(request, &root, &DiskLister);
     let root = absolute(&root);
     let project = absolute(project);
     let wrappers = wrappers
@@ -157,15 +158,20 @@ fn project_wrappers(request: &CodeTextRequest, project: &Path) -> Vec<WrapperMac
     find_wrappers(request.engine, &wrapper_files(project, project), &DiskStore)
 }
 
+/// Names the cache file's contents. Raised when sets kept by an earlier build can no longer be
+/// trusted: 2 drops sets from prepasses that could not list every folder (P1).
+const WRAPPER_CACHE_SCHEMA: u32 = 2;
+
 fn engine_wrappers_in_root(
     request: &CodeTextRequest,
     root: &Path,
+    lister: &dyn Lister,
 ) -> (Vec<WrapperMacro>, EngineWrappers) {
     let engine_folder = root.join("Engine");
     let version =
         std::fs::read_to_string(engine_folder.join("Build/Build.version")).unwrap_or_default();
     let key = format!(
-        "{}\n{}\n{:?}\n{version}",
+        "{WRAPPER_CACHE_SCHEMA}\n{}\n{}\n{:?}\n{version}",
         env!("CARGO_PKG_VERSION"),
         root.to_string_lossy(),
         request.engine,
@@ -184,13 +190,11 @@ fn engine_wrappers_in_root(
             return (cache.wrappers, EngineWrappers::Cached);
         }
     }
-    let (wrappers, complete) = crate::wrappers_read(
-        request.engine,
-        &wrapper_files(&engine_folder, root),
-        &DiskStore,
-    );
-    // A prepass that could not read a header may lack its wrappers: the next scan reads again.
-    if let (Some(file), true) = (cache_file, complete) {
+    let (files, listed) = wrapper_files_listed(&engine_folder, root, lister);
+    let (wrappers, read) = crate::wrappers_read(request.engine, &files, &DiskStore);
+    // A prepass that could not list a folder or read a header may lack its wrappers: the next
+    // scan reads again.
+    if let (Some(file), true) = (cache_file, listed && read) {
         let written = serde_json::to_vec(&WrapperCache {
             key,
             wrappers: wrappers.clone(),
@@ -338,5 +342,137 @@ pub fn run(request: &CodeTextRequest) -> CodeTextResult {
         engine_wrappers: engine_state,
         wrapper_count: wrappers.len() as u32,
         profile,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::discovery::ListedEntry;
+
+    #[derive(Clone, Copy)]
+    enum Failure {
+        Listing,
+        Entry,
+        FileType,
+    }
+
+    /// The disk, except one folder whose listing fails as `failure` says.
+    struct FailingLister {
+        folder: PathBuf,
+        failure: Failure,
+    }
+
+    impl Lister for FailingLister {
+        fn list(&self, folder: &Path) -> std::io::Result<Vec<std::io::Result<ListedEntry>>> {
+            let listed = DiskLister.list(folder)?;
+            if folder != self.folder {
+                return Ok(listed);
+            }
+            let denied = || std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+            match self.failure {
+                Failure::Listing => Err(denied()),
+                Failure::Entry => Ok(listed.into_iter().map(|_| Err(denied())).collect()),
+                Failure::FileType => Ok(listed
+                    .into_iter()
+                    .map(|entry| {
+                        entry.map(|entry| ListedEntry {
+                            path: entry.path,
+                            is_dir: Err(denied()),
+                        })
+                    })
+                    .collect()),
+            }
+        }
+    }
+
+    struct Engine {
+        root: PathBuf,
+        cache: PathBuf,
+    }
+
+    impl Drop for Engine {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+            let _ = std::fs::remove_dir_all(&self.cache);
+        }
+    }
+
+    /// An engine root whose only wrapper sits in `Engine/Source/Nested`; it has no `Plugins`.
+    fn engine(name: &str) -> Engine {
+        let base = std::env::temp_dir().join(format!(
+            "unreal-code-{name}-{}-{}",
+            std::process::id(),
+            fnv(&format!("{:?}", Instant::now()))
+        ));
+        let root = base.join("engine");
+        let nested = root.join("Engine/Source/Nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(root.join("Engine/Build")).unwrap();
+        std::fs::write(root.join("Engine/Build/Build.version"), "{}").unwrap();
+        std::fs::write(
+            nested.join("Wrap.h"),
+            "#define WRAPPED_TEXT(Key, Text) LOCTEXT(Key, Text)\n",
+        )
+        .unwrap();
+        Engine {
+            root,
+            cache: base.join("cache"),
+        }
+    }
+
+    fn request(engine: &Engine) -> CodeTextRequest {
+        CodeTextRequest {
+            project_root: engine.root.join("Project").to_string_lossy().into_owned(),
+            engine_root: Some(engine.root.to_string_lossy().into_owned()),
+            engine: EngineLine::Ue5_7,
+            targets: Vec::new(),
+            cache_root: Some(engine.cache.to_string_lossy().into_owned()),
+            refresh_engine_wrappers: false,
+        }
+    }
+
+    fn names(wrappers: &[WrapperMacro]) -> Vec<&str> {
+        wrappers
+            .iter()
+            .map(|wrapper| wrapper.name.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_prepass_that_could_not_list_a_folder_is_not_kept() {
+        for failure in [Failure::Listing, Failure::Entry, Failure::FileType] {
+            let engine = engine("unlisted");
+            let request = request(&engine);
+            let failing = FailingLister {
+                folder: engine.root.join("Engine/Source/Nested"),
+                failure,
+            };
+
+            let (wrappers, state) = engine_wrappers_in_root(&request, &engine.root, &failing);
+            assert_eq!(state, EngineWrappers::Read);
+            assert!(names(&wrappers).is_empty());
+
+            // Once the folder lists again, the same engine build finds the wrapper it missed.
+            let (wrappers, state) = engine_wrappers_in_root(&request, &engine.root, &DiskLister);
+            assert_eq!(state, EngineWrappers::Read);
+            assert_eq!(names(&wrappers), ["WRAPPED_TEXT"]);
+            let (wrappers, state) = engine_wrappers_in_root(&request, &engine.root, &DiskLister);
+            assert_eq!(state, EngineWrappers::Cached);
+            assert_eq!(names(&wrappers), ["WRAPPED_TEXT"]);
+        }
+    }
+
+    #[test]
+    fn a_missing_plugins_folder_is_a_complete_listing() {
+        let engine = engine("no-plugins");
+        let request = request(&engine);
+        assert!(!engine.root.join("Engine/Plugins").exists());
+
+        let (wrappers, state) = engine_wrappers_in_root(&request, &engine.root, &DiskLister);
+        assert_eq!(state, EngineWrappers::Read);
+        assert_eq!(names(&wrappers), ["WRAPPED_TEXT"]);
+        let (_, state) = engine_wrappers_in_root(&request, &engine.root, &DiskLister);
+        assert_eq!(state, EngineWrappers::Cached);
     }
 }

@@ -78,6 +78,21 @@ export interface ActorFeedApi {
 	readonly latestPacket: Effect.Effect<ActorStreamPacket | undefined>;
 	readonly metrics: Effect.Effect<ActorFeedMetrics>;
 	readonly packets: Stream.Stream<ActorStreamPacket>;
+	/** How many writers have connected so far; each writer's connection number is its count. */
+	readonly connections: Effect.Effect<number>;
+	/**
+	 * Emits the connection number of the last writer when it disconnects, as when Unreal crashes or
+	 * drops its pipe without a reset. A loss is an attempt's own only when that writer connected
+	 * after the attempt started: Unreal tears down the previous session's writer as it starts the
+	 * next, and that close can arrive after the new catalog is installed.
+	 */
+	readonly writersLost: Stream.Stream<WritersLost>;
+}
+
+/** The last connected writer went away. */
+export interface WritersLost {
+	/** The connection number of the writer that closed last. */
+	readonly connection: number;
 }
 
 export class ActorFeed extends Context.Service<ActorFeed, ActorFeedApi>()(
@@ -203,6 +218,9 @@ function acquireActorFeedResource(
 	return Effect.gen(function* () {
 		const scope = yield* Effect.scope;
 		const pubsub = yield* PubSub.sliding<ActorStreamPacket>(capacity);
+		// Each loss needs a newer connection before it, so the latest loss is the one that matters.
+		const lost = yield* PubSub.sliding<WritersLost>(1);
+		let connections = 0;
 		let latest: ActorStreamPacket | undefined;
 		const sockets = new Set<Socket>();
 		const startedMonotonicMs = performance.now();
@@ -214,6 +232,7 @@ function acquireActorFeedResource(
 		let transportErrors = 0;
 		const server = createServer((socket) => {
 			sockets.add(socket);
+			const connection = ++connections;
 			const decoder = new ActorStreamDecoder();
 			let consecutiveMalformed = 0;
 			socket.on("error", () => {
@@ -248,7 +267,11 @@ function acquireActorFeedResource(
 					socket.destroy();
 				}
 			});
-			socket.once("close", () => sockets.delete(socket));
+			socket.once("close", () => {
+				sockets.delete(socket);
+				if (sockets.size === 0)
+					Effect.runFork(Effect.forkIn(PubSub.publish(lost, { connection }), scope));
+			});
 		});
 		yield* listen(server, pipeName);
 		server.on("error", () => {
@@ -266,7 +289,9 @@ function acquireActorFeedResource(
 					startedMonotonicMs,
 					transportErrors
 				})),
-				packets: Stream.fromPubSub(pubsub)
+				packets: Stream.fromPubSub(pubsub),
+				connections: Effect.sync(() => connections),
+				writersLost: Stream.fromPubSub(lost)
 			},
 			pubsub,
 			server,
@@ -306,7 +331,10 @@ export function makeActorFeedTestLayer(feed: Partial<ActorFeedApi> = {}): Layer.
 				startedMonotonicMs: 0,
 				transportErrors: 0
 			}),
-		packets: feed.packets ?? Stream.empty
+		packets: feed.packets ?? Stream.empty,
+		connections: feed.connections ?? Effect.succeed(0),
+		// A test feed's writers stay connected unless the test says otherwise.
+		writersLost: feed.writersLost ?? Stream.never
 	});
 }
 
@@ -539,6 +567,7 @@ function buildCatalogFromReady(
 
 type AttemptOutcome =
 	| { readonly _tag: "reset" }
+	| { readonly _tag: "writers_lost" }
 	| {
 			readonly _tag: "rejected_exhausted";
 			readonly expectedSessionId: string | undefined;
@@ -548,6 +577,8 @@ type AttemptOutcome =
 
 const runLiveAttempt = Effect.fn("ActorObservation.runLiveAttempt")(function* (args: {
 	readonly feed: ActorFeedApi;
+	/** Writers that connected up to this count belong to earlier attempts. */
+	readonly connectionsBefore: number;
 	readonly getState: () => WorldObservationState;
 	readonly maxConsecutiveRejectedBatches: number;
 	readonly onDiagnostic?: (diagnostic: ActorObservationDiagnostic) => Effect.Effect<void>;
@@ -561,8 +592,25 @@ const runLiveAttempt = Effect.fn("ActorObservation.runLiveAttempt")(function* (a
 	};
 	let consecutiveRejected = 0;
 	let previousProducerReplacements = 0;
-	yield* Stream.runForEachWhile(args.feed.packets, (packet) =>
+	type Delivery =
+		| { readonly _tag: "packet"; readonly packet: ActorStreamPacket }
+		| { readonly _tag: "writers_lost"; readonly connection: number };
+	const deliveries: Stream.Stream<Delivery> = Stream.merge(
+		Stream.map(args.feed.packets, (packet): Delivery => ({ _tag: "packet", packet })),
+		Stream.map(
+			args.feed.writersLost,
+			({ connection }): Delivery => ({ _tag: "writers_lost", connection })
+		)
+	);
+	yield* Stream.runForEachWhile(deliveries, (delivery) =>
 		Effect.gen(function* () {
+			if (delivery._tag === "writers_lost") {
+				// A superseded writer closing late is Unreal's expected teardown, not this attempt's loss.
+				if (delivery.connection <= args.connectionsBefore) return true;
+				outcome = { _tag: "writers_lost" };
+				return false;
+			}
+			const packet = delivery.packet;
 			const applyStarted = performance.now();
 			const stateBefore = args.getState();
 			const event: WorldObservationEvent = packet.reset
@@ -745,6 +793,9 @@ function driveObservation(
 		});
 
 		while (true) {
+			// Writers connected before this Start belong to earlier sessions; Unreal destroys the
+			// current one as it starts the next. The first attempt has no feed yet, so nothing earlier.
+			const connectionsBefore = feed === undefined ? 0 : yield* feed.connections;
 			const startOutcome = yield* Effect.result(
 				callStartActorObservation(remote, endpoint, cadenceHz)
 			);
@@ -802,12 +853,19 @@ function driveObservation(
 			yield* publish(installed.state);
 
 			const liveOutcome = yield* runLiveAttempt({
+				connectionsBefore,
 				feed,
 				getState,
 				maxConsecutiveRejectedBatches,
 				publish,
 				...(onDiagnostic === undefined ? undefined : { onDiagnostic })
 			});
+			if (liveOutcome._tag === "writers_lost") {
+				// The writer went away without a reset (Unreal crashed or dropped its pipe). Keep the
+				// last sample as stale and renegotiate, within the bounded recovery budget.
+				yield* attemptFailed("Unreal closed the actor stream without a reset.");
+				continue;
+			}
 			if (liveOutcome._tag === "reset") {
 				// Unreal-initiated catalog invalidation (map change, actor add/delete) is expected
 				// during ordinary editor use; it does not consume the bounded recovery budget.

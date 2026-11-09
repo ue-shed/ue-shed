@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { Effect } from "effect";
@@ -263,6 +263,20 @@ describe("a changelist read from a server", () => {
 		expect(again).toMatchObject({ printed: 0, reused: 40 });
 		expect(again.before).toMatchObject({ printed: 0, reused: 2 });
 		expect(again.files).toEqual(first.files);
+	});
+
+	it("C3 lets two reads in one process print the same uncached revisions at once", async () => {
+		const server = fakeServer("perforce:1666", project());
+		const [first, second] = await Promise.all([read(server), read(server)]);
+		expect(first.files).toEqual(second.files);
+		for (const file of first.files)
+			expect(file.head && (await readFile(file.head, "utf8"))).toBe(
+				`perforce:1666 ${file.depotPath}#3`
+			);
+		const leftovers = (await readdir(cache(), { recursive: true })).filter((name) =>
+			String(name).endsWith(".tmp")
+		);
+		expect(leftovers).toEqual([]);
 	});
 
 	it("keeps two servers' revisions apart, naming the server of workspace and cached files", async () => {

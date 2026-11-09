@@ -1095,6 +1095,9 @@ export class UassetProtocolSession {
 		this.running = true;
 		const telemetry = makeProtocolTelemetry(false, this.configuration.protocolObserver);
 		let terminal = false;
+		// One deadline for the whole request, write included: a worker that stops reading leaves
+		// the write callback pending, and a deadline started after it never starts (P5).
+		const deadline = nowMs() + options.timeoutMs;
 		try {
 			const child = this.start();
 			telemetry.startedAt = nowMs();
@@ -1124,12 +1127,7 @@ export class UassetProtocolSession {
 						ms: performance.now() - encodeStarted
 					});
 				const writeStarted = benchmark.hasSubscribers ? performance.now() : undefined;
-				await new Promise<void>((resolvePromise, rejectPromise) => {
-					stdin.write(frame, (cause) => {
-						if (cause === null || cause === undefined) resolvePromise();
-						else rejectPromise(cause);
-					});
-				});
+				await writeWithin(stdin, frame, deadline, options.signal);
 				if (writeStarted !== undefined)
 					benchmark.publish({
 						stage: "tsPipeWriteCallback",
@@ -1137,6 +1135,7 @@ export class UassetProtocolSession {
 						ms: performance.now() - writeStarted
 					});
 			} catch (cause) {
+				if (cause instanceof ProtocolStreamFailure) throw cause;
 				const processCause =
 					this.processError ?? (cause instanceof Error ? cause : undefined);
 				throw new ProtocolStreamFailure(
@@ -1148,7 +1147,6 @@ export class UassetProtocolSession {
 					processCause ?? cause
 				);
 			}
-			const deadline = nowMs() + options.timeoutMs;
 			while (!terminal) {
 				const next = await this.nextLine(deadline, options.signal);
 				if (next.done) {
@@ -2425,4 +2423,50 @@ function protocolProjectionBatch<A>(
 			}
 		})
 	);
+}
+
+/**
+ * Writes one request frame, settling on the write callback, the request deadline or abort,
+ * whichever comes first. A callback that arrives after the deadline or abort is ignored; the
+ * caller terminates the worker that stopped reading.
+ */
+function writeWithin(
+	stdin: { write(chunk: string, callback: (cause?: Error | null) => void): boolean },
+	frame: string,
+	deadline: number,
+	signal: AbortSignal | undefined
+): Promise<void> {
+	if (signal?.aborted) {
+		return Promise.reject(new ProtocolStreamFailure("process", "Protocol aborted"));
+	}
+	return new Promise<void>((resolvePromise, rejectPromise) => {
+		let settled = false;
+		const settle = (result: () => void) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			result();
+		};
+		const onAbort = () =>
+			settle(() => rejectPromise(new ProtocolStreamFailure("process", "Protocol aborted")));
+		const timer = setTimeout(
+			() =>
+				settle(() =>
+					rejectPromise(
+						new ProtocolStreamFailure(
+							"timeout",
+							"Protocol session timed out writing its request"
+						)
+					)
+				),
+			Math.max(0, deadline - nowMs())
+		);
+		signal?.addEventListener("abort", onAbort, { once: true });
+		stdin.write(frame, (cause) =>
+			settle(() =>
+				cause === null || cause === undefined ? resolvePromise() : rejectPromise(cause)
+			)
+		);
+	});
 }

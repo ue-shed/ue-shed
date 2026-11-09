@@ -1,11 +1,13 @@
 import { ErrorGuidanceFields } from "@ue-shed/protocol";
 import { type Brand, Effect, Schema } from "effect";
+import { revisedReviewViewRevision } from "./review-framing.js";
 import { ReviewRepository, type ReviewStorageError } from "./review-repository.js";
 import {
 	ReviewViewId,
 	VisibilityPolicyId,
 	decodeReviewSet,
 	type ReviewSet,
+	type ReviewView,
 	type ReviewViewId as ReviewViewIdType,
 	type VisibilityOverrides,
 	type VisibilityPolicy,
@@ -130,13 +132,13 @@ export function replaceViewVisibilityPolicy(args: {
 		);
 	}
 
-	const replacement = {
+	const replacement = withMeaningRevision(view, {
 		...view,
 		...(args.visibilityOverrides === undefined
 			? undefined
 			: { visibilityOverrides: args.visibilityOverrides }),
 		visibilityPolicyId: args.policy.id
-	};
+	});
 	const candidate = {
 		...args.reviewSet,
 		views: args.reviewSet.views.map((item) => (item.id === args.viewId ? replacement : item)),
@@ -152,6 +154,15 @@ export function replaceViewVisibilityPolicy(args: {
 			)
 		)
 	);
+}
+
+/**
+ * A policy or override change changes what the View captures, so it goes through the same
+ * revision transition as every other semantic View edit: equivalent meaning keeps the revision,
+ * a changed one advances it, and captures of the old revision stop reading as current (C6).
+ */
+function withMeaningRevision(current: ReviewView, next: ReviewView): ReviewView {
+	return { ...next, revision: revisedReviewViewRevision({ current, next }) };
 }
 
 /**
@@ -223,7 +234,9 @@ export function applyVisibilityPolicyToViews(args: {
 	const candidate = {
 		...args.reviewSet,
 		views: args.reviewSet.views.map((view) =>
-			selected.has(view.id) ? { ...view, visibilityPolicyId: args.policyId } : view
+			selected.has(view.id)
+				? withMeaningRevision(view, { ...view, visibilityPolicyId: args.policyId })
+				: view
 		)
 	};
 	return decodeReviewSet(candidate).pipe(

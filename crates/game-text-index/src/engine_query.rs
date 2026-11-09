@@ -689,6 +689,15 @@ impl EngineQuery {
         self.translation(path, entry as usize - 1, not_synced)
     }
 
+    /// The translation a review of the line in culture `ci` fingerprints: the one the next sync
+    /// ships, as [`Self::shipped_translation`] chooses it from the joined facts. Writing a review
+    /// and revalidating an accepted finding both read it here, so every origin (PO, archive or
+    /// compiled resource) fingerprints the same way on both sides (Q2).
+    pub(crate) fn review_translation(&self, ci: usize, row: usize) -> Result<Option<String>> {
+        let not_synced = self.reader.value(&format!("c{ci}.facts"), row)? & 8 != 0;
+        self.shipped_translation(ci, row, not_synced)
+    }
+
     /// The culture's PO entry the join matched to a line, when it has the line's own key: a
     /// collapsed entry it matched by source is not one an edit of the line writes.
     fn review_po(&self, ci: usize, row: usize) -> Result<Option<ReviewPoEntry>> {
@@ -761,8 +770,7 @@ impl EngineQuery {
             let source = self
                 .reader
                 .string(*sources.get(entry).ok_or("Manifest source outside input.")?)?;
-            let not_synced = self.reader.value(&format!("c{ci}.facts"), row)? & 8 != 0;
-            let translation = self.shipped_translation(ci, row, not_synced)?;
+            let translation = self.review_translation(ci, row)?;
             let fingerprint =
                 crate::join_marks::review_fingerprint(&source, translation.as_deref());
             lines.push(ReviewLine::Found {

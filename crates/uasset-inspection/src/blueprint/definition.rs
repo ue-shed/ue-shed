@@ -186,15 +186,21 @@ pub(super) fn project(
     });
     unread.default_object = default_object.is_none() && gaps.len() > start;
     let start = gaps.len();
+    // A node list that lost an entry is not the Blueprint's component membership: compared as
+    // complete it would report the lost node as removed (or added in reverse). Templates and the
+    // other parts keep their own evidence.
+    let mut membership_incomplete = false;
     let scs_path = reference(package, fields, "SimpleConstructionScript", path, gaps);
     let construction_script = scs_path.and_then(|p| {
         let Some(scs) = all.get(p.as_str()) else {
             issue(gaps, path, format!("construction script {p} unavailable"));
             return None;
         };
+        let membership_start = gaps.len();
         let root_nodes = references(package, &scs.properties, "RootNodes", &p, gaps);
         let mut pending =
             references(package, &scs.properties, "AllNodes", &p, gaps).unwrap_or_default();
+        membership_incomplete |= gaps.len() > membership_start;
         pending.extend(root_nodes.iter().flatten().cloned());
         let mut seen = HashSet::new();
         let mut nodes = Vec::new();
@@ -204,10 +210,13 @@ pub(super) fn project(
             }
             let Some(node) = all.get(node_path.as_str()) else {
                 issue(gaps, &p, format!("component node {node_path} unavailable"));
+                membership_incomplete = true;
                 continue;
             };
             let f = &node.properties;
+            let children_start = gaps.len();
             let children = references(package, f, "ChildNodes", &node_path, gaps);
+            membership_incomplete |= gaps.len() > children_start;
             pending.extend(children.iter().flatten().cloned());
             let start = gaps.len();
             let template_path = reference(package, f, "ComponentTemplate", &node_path, gaps);
@@ -284,7 +293,8 @@ pub(super) fn project(
             nodes,
         })
     });
-    unread.construction_script = construction_script.is_none() && gaps.len() > start;
+    unread.construction_script =
+        membership_incomplete || (construction_script.is_none() && gaps.len() > start);
     BlueprintDefinition {
         parent_class,
         variables,

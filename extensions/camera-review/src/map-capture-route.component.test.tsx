@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { userEvent } from "@testing-library/user-event";
 import { decodeMapCapturePlan } from "@ue-shed/cameras/map-tiles";
 import { EffectRuntimeProvider } from "@ue-shed/ui";
-import { Effect, Layer, ManagedRuntime, Queue, Stream } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime, Queue, Stream } from "effect";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type {
 	MapCaptureClientApi,
@@ -342,3 +342,71 @@ describe("MapCaptureRoute", () => {
 		).toBe(true);
 	});
 });
+
+it("C9 keeps edits made while a save is pending and leaves them unsaved", async () => {
+	const saves: MapCaptureSaveIntent[] = [];
+	const pending: Deferred.Deferred<void>[] = [];
+	const client: MapCaptureClientApi = {
+		actors: () => Effect.die("not used"),
+		capture: () => Effect.die("not used"),
+		choosePlan: Effect.sync(() => ({
+			grid: {
+				levels: [{ columns: 1, rows: 1, tileWorldSize: 2048, unitsPerPixel: 4, zoom: 0 }],
+				snappedBounds: { maxX: 2048, maxY: 2048, minX: 0, minY: 0 }
+			},
+			maps: [],
+			plan,
+			planPath: "C:/Fixture/map-capture.json",
+			projectRoot: "C:/Fixture",
+			source: "opened" as const,
+			status: "ready" as const,
+			tileCount: 1
+		})),
+		liveFrames: Stream.empty,
+		newPlan: Effect.suspend(() => Effect.die("not used")),
+		openMap: () => Effect.die("not used"),
+		preview: () => Effect.die("not used"),
+		progress: Stream.empty,
+		savePlan: (intent) =>
+			Effect.gen(function* () {
+				saves.push(intent);
+				const gate = yield* Deferred.make<void>();
+				pending.push(gate);
+				yield* Deferred.await(gate);
+				return {
+					plan: intent.plan,
+					planPath: "C:/Fixture/map-capture.json",
+					status: "saved" as const
+				};
+			}),
+		tile: () => Effect.die("not used")
+	};
+	render(() => (
+		<EffectRuntimeProvider runtime={runtime}>
+			<MapCaptureRoute client={client} />
+		</EffectRuntimeProvider>
+	));
+	const user = userEvent.setup();
+	await user.click(screen.getByRole("button", { name: "Open plan" }));
+	await screen.findByDisplayValue("fixture-overview");
+	const centerX = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Center X" });
+	fireEvent.input(centerX, { target: { value: "1000" } });
+	const submittedCenterX = 1000;
+
+	await user.click(screen.getByRole("button", { name: "Save" }));
+	await waitFor(() => expect(pending).toHaveLength(1));
+	fireEvent.input(centerX, { target: { value: "2000" } });
+	Effect.runSync(Deferred.succeed(pending[0]!, undefined));
+	await screen.findByText(/Saved plan to/);
+
+	expect(centerX.valueAsNumber).toBe(2000);
+	await user.click(screen.getByRole("button", { name: "Save" }));
+	await waitFor(() => expect(saves).toHaveLength(2));
+	expect(mapCenterX(saves[0]!)).toBe(submittedCenterX);
+	expect(mapCenterX(saves[1]!)).toBe(2000);
+});
+
+function mapCenterX(intent: MapCaptureSaveIntent): number {
+	const bounds = intent.plan.requestedBounds;
+	return (bounds.minX + bounds.maxX) / 2;
+}

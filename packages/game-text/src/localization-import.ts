@@ -1058,14 +1058,7 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 			return resource && archive ? [[resource, archive] as const] : [];
 		})
 	);
-	for (const relativePath of resources) {
-		const archive = archiveOfResource.get(relativePath);
-		if (
-			selectedFiles !== undefined &&
-			!selectedFiles.includes(relativePath) &&
-			!(archive !== undefined && selectedFiles.includes(archive))
-		)
-			continue;
+	const resourceRequest = (relativePath: string) => {
 		const fileRequest: LocalizationFileImportRequest = {
 			projectRoot: actualRoot,
 			cacheRoot: request.cacheRoot,
@@ -1075,8 +1068,19 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 			projectScoped: request.projectScoped ?? false
 		};
 		if (request.importLimits) Object.assign(fileRequest, { limits: request.importLimits });
-		requests.push(fileRequest);
+		return fileRequest;
+	};
+	for (const relativePath of resources) {
+		const archive = archiveOfResource.get(relativePath);
+		if (
+			selectedFiles !== undefined &&
+			!selectedFiles.includes(relativePath) &&
+			!(archive !== undefined && selectedFiles.includes(archive))
+		)
+			continue;
+		requests.push(resourceRequest(relativePath));
 	}
+	yield* (yield* LocalizationSelectionObserved)();
 	const total = requests.length;
 	reportProgress({ phase: "localization", completed: 0, total });
 	const imported = yield* importFiles(
@@ -1086,9 +1090,77 @@ export const importLocalizationTarget = Effect.fn("LocalizationSnapshot.importTa
 		() => reportProgress({ phase: "localization_publish", completed: 0, total: 0 }),
 		request.memoryBudgetBytes
 	);
+	// The selection above stats each archive before it is imported. An archive that turned out
+	// missing hands its culture over to the resource, as the join decides from that outcome, so
+	// the resource is imported now rather than joined from whatever layer an older refresh left
+	// (Q1). An archive that is present but unreadable keeps its culture, as before.
+	const requested = new Set(requests.map((item) => item.relativePath));
+	const missingArchives = new Set(
+		imported.outcomes.flatMap((outcome) =>
+			outcome._tag === "failed" && outcome.error.code === "file_missing"
+				? [outcome.relativePath]
+				: []
+		)
+	);
+	const handedOver = target.cultures.flatMap((culture) => {
+		const resource = target.outputPaths.resources[culture];
+		const archive = target.outputPaths.archives[culture];
+		return resource && archive && missingArchives.has(archive) && !requested.has(resource)
+			? [resource]
+			: [];
+	});
+	const fallback =
+		handedOver.length === 0
+			? undefined
+			: yield* importFiles(
+					configuration,
+					handedOver.map(resourceRequest),
+					(completed) =>
+						reportProgress({
+							phase: "localization",
+							completed: total + completed,
+							total: total + handedOver.length
+						}),
+					() => reportProgress({ phase: "localization_publish", completed: 0, total: 0 }),
+					request.memoryBudgetBytes
+				);
 	const files: LocalizationFileSnapshotKey[] = [];
-	for (const outcome of imported.outcomes)
+	for (const outcome of [...imported.outcomes, ...(fallback?.outcomes ?? [])])
 		if (outcome._tag === "imported") files.push(outcome.file);
 		else diagnostics.push({ relativePath: outcome.relativePath, error: outcome.error });
-	return { target, files, diagnostics, profile: imported.profile };
+	return {
+		target,
+		files,
+		diagnostics,
+		profile: combinedProfile(imported.profile, fallback?.profile ?? null)
+	};
 });
+/**
+ * Runs after a target's inputs are selected and before any of them is imported. Tests use it to
+ * change the files in between, which no filesystem permission can do deterministically.
+ */
+export const LocalizationSelectionObserved = Context.Reference<() => Effect.Effect<void>>(
+	"@ue-shed/game-text/LocalizationSelectionObserved",
+	{ defaultValue: () => () => Effect.void }
+);
+/** Two import batches' work: their counts add up, and the store counters are the later ones. */
+function combinedProfile(
+	first: LocalizationImportProfile | null,
+	second: LocalizationImportProfile | null
+): LocalizationImportProfile | null {
+	if (first === null || second === null) return first ?? second;
+	return {
+		...second,
+		files: first.files + second.files,
+		statHits: first.statHits + second.statHits,
+		imported: first.imported + second.imported,
+		failed: first.failed + second.failed,
+		nativeCalls: first.nativeCalls + second.nativeCalls,
+		workerCount: Math.max(first.workerCount, second.workerCount),
+		parseMs: first.parseMs + second.parseMs,
+		parseCpuMs: first.parseCpuMs + second.parseCpuMs,
+		publishMs: first.publishMs + second.publishMs,
+		lookupStrings: first.lookupStrings + second.lookupStrings,
+		reusedStrings: first.reusedStrings + second.reusedStrings
+	};
+}

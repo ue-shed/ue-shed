@@ -183,7 +183,7 @@ class StalledInputProcess implements ProtocolSessionProcess {
 		private readonly closesOnKill = true,
 		inputMessage?: string,
 		onWrite?: () => void,
-		stdin?: Writable
+		stdin?: RejectingProtocolInput | Writable
 	) {
 		this.stdin = stdin ?? new RejectingProtocolInput(inputMessage, onWrite);
 	}
@@ -818,3 +818,40 @@ it.each([true, false])(
 		expect(progress.current.phase).toBe("idle");
 	}
 );
+
+/** An input whose write never completes: the worker stopped reading and the pipe is full. */
+class WithheldInput extends RejectingProtocolInput {
+	writes = 0;
+	override write(_chunk: string, _callback: (cause?: Error | null) => void): boolean {
+		this.writes += 1;
+		return false;
+	}
+}
+
+it("P5 times out a request whose write never completes, and frees the session", async () => {
+	const assetPath = "C:/Fixture/BP_FullPipe.uasset";
+	const input = new WithheldInput();
+	const worker = new StalledInputProcess(true, undefined, undefined, input);
+	const configuration = { catalogTimeoutMs: 50, executable: "full-pipe-reader", timeoutMs: 50 };
+	const session = new UassetProtocolSession(configuration, () => worker);
+	const failure = await Effect.runPromise(
+		invokeProtocolSessionSingle({
+			configuration,
+			expected: "inspect",
+			operation: "inspect",
+			path: assetPath,
+			request: makeProtocolRequest(
+				{ assetPath, kind: "inspect" },
+				{ maximumOutputBytes: 1_024, timeoutMs: 50 }
+			),
+			select: () => undefined,
+			session
+		}).pipe(Effect.timeout("2 seconds"), Effect.flip)
+	);
+
+	expect(failure).toBeInstanceOf(AssetReaderError);
+	if (!(failure instanceof AssetReaderError)) return;
+	expect(failure.kind).toBe("timeout");
+	expect(worker.killCalls).toBe(1);
+	await session.close();
+});

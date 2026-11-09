@@ -1271,6 +1271,80 @@ fn blueprint_definition_reports_unavailable_defaults_templates_bad_variables_and
 }
 
 #[test]
+fn blueprint_component_membership_with_an_unread_node_is_not_compared() {
+    use uasset_inspection::blueprint::{BlueprintGraphCoverageGapReason, project_blueprint_graphs};
+    use uasset_inspection::blueprint_diff::diff_blueprints;
+    use uasset_parser::asset::{AssetDecodeContext, DecodedAsset, decode_export};
+    use uasset_parser::property::PropertyValue;
+    let bytes = fs::read(fixture_root().join("Content/Fixture/Blueprints/BP_ReviewFixture.uasset"))
+        .unwrap();
+    let package = uasset_parser::Package::parse(&bytes).unwrap();
+    let context = AssetDecodeContext {
+        property_filter: None,
+        source: &bytes,
+        package: &package,
+        schemas: uasset_parser::schema::embedded_source_model(),
+    };
+    let assets: Vec<_> = package
+        .exports
+        .iter()
+        .filter_map(|e| decode_export(e, &context).unwrap())
+        .collect();
+    let complete = project_blueprint_graphs(&package, &assets).unwrap();
+    let scs = complete.definition.construction_script.as_ref().unwrap();
+    assert!(scs.nodes.len() >= 2);
+    let missing = scs.nodes[0].object_path.clone();
+    let default = complete
+        .definition
+        .default_object
+        .as_ref()
+        .unwrap()
+        .object_path
+        .clone();
+
+    // The newer side still references every component, but one node's export was not decoded.
+    // Its class defaults also changed, which is independent of component membership.
+    let mut partial_assets: Vec<_> = assets
+        .into_iter()
+        .filter(|a| !matches!(a, DecodedAsset::UObject(o) if o.object_path.as_str() == missing))
+        .collect();
+    let mut flipped = false;
+    for asset in &mut partial_assets {
+        if let DecodedAsset::UObject(object) = asset
+            && object.object_path.as_str() == default
+        {
+            for record in &mut object.properties.records {
+                if let PropertyValue::Bool(value) = &mut record.value {
+                    *value = !*value;
+                    flipped = true;
+                    break;
+                }
+            }
+        }
+    }
+    assert!(
+        flipped,
+        "the fixture's class defaults have a bool to change"
+    );
+    let partial = project_blueprint_graphs(&package, &partial_assets).unwrap();
+
+    assert!(partial.definition.unread.construction_script);
+    assert!(partial.coverage_gaps.iter().any(|g| g.reason
+        == BlueprintGraphCoverageGapReason::IncompleteDefinition
+        && g.detail.contains(&missing)));
+    assert!(!partial.definition.unread.variables);
+    assert!(!partial.definition.unread.default_object);
+    for diff in [
+        diff_blueprints(&complete, &partial),
+        diff_blueprints(&partial, &complete),
+    ] {
+        assert_eq!(diff.components, Vec::new(), "{:?}", diff.components);
+        assert_eq!(diff.defaults.len(), 1, "{:?}", diff.defaults);
+        assert_eq!(diff.variables, Vec::new());
+    }
+}
+
+#[test]
 fn saved_actor_component_native_data_matches_independent_loaded_apis() {
     let inspected = fixture("LS_SavedDetails");
     let oracle = evidence();

@@ -721,7 +721,9 @@ export function GameTextLocalizationQuality(props: {
 														{finding().translationOrigin === "po"
 															? "Translation in PO, not synced"
 															: finding().translationOrigin ===
-																  "archive"
+																		"archive" ||
+																  finding().translationOrigin ===
+																		"locres"
 																? "Translation the game uses"
 																: "No translation"}
 													</span>

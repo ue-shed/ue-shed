@@ -50,12 +50,13 @@ export const materializeBaseline = Effect.fn("MapHistory.materializeBaseline")(f
 	const source = yield* PerforceHistorySource;
 	const byDepotPath = new Map<string, PerforceDepotFile>();
 	for (const depotPath of options.scope.fileSpecs) {
-		const remaining = options.maxFiles - byDepotPath.size;
-		if (remaining <= 0) return yield* resourceLimitError(options.change, options.maxFiles);
+		// Scopes can overlap, so a scope's listing is bounded by the whole budget, not by what the
+		// earlier scopes left: only a new distinct file proves the union is over budget (C2). A
+		// listing with more than the whole budget proves it on its own.
 		const listed = yield* source.listDepotFilesAtChange({
 			change: options.change,
 			depotPath,
-			maxFiles: remaining
+			maxFiles: options.maxFiles
 		});
 		if (listed.hasMore) {
 			return yield* resourceLimitError(options.change, options.maxFiles);

@@ -178,18 +178,62 @@ impl Matcher {
     }
 }
 
-fn entries(folder: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+/// One directory entry as a listing reports it: its path, and whether it is a folder, which can
+/// fail on its own.
+pub(crate) struct ListedEntry {
+    pub(crate) path: PathBuf,
+    pub(crate) is_dir: std::io::Result<bool>,
+}
+
+/// Lists folders for the walks. The disk is the only production lister; tests inject failures
+/// that permissions cannot produce reliably on every platform.
+pub(crate) trait Lister: Sync {
+    fn list(&self, folder: &Path) -> std::io::Result<Vec<std::io::Result<ListedEntry>>>;
+}
+
+pub(crate) struct DiskLister;
+
+impl Lister for DiskLister {
+    fn list(&self, folder: &Path) -> std::io::Result<Vec<std::io::Result<ListedEntry>>> {
+        Ok(std::fs::read_dir(folder)?
+            .map(|entry| {
+                entry.map(|entry| ListedEntry {
+                    path: entry.path(),
+                    is_dir: entry.file_type().map(|kind| kind.is_dir()),
+                })
+            })
+            .collect())
+    }
+}
+
+/// A folder's files and subfolders. A folder that does not exist has none, as an optional root
+/// such as `Plugins` may not; any other listing, entry or type failure leaves `complete` false,
+/// since the walk then misses files it cannot name (P1).
+fn entries(
+    folder: &Path,
+    lister: &dyn Lister,
+    complete: &mut bool,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut files = Vec::new();
     let mut folders = Vec::new();
-    if let Ok(read) = std::fs::read_dir(folder) {
-        for entry in read.filter_map(Result::ok) {
-            let path = entry.path();
-            match entry.file_type() {
-                Ok(kind) if kind.is_dir() => folders.push(path),
-                Ok(_) => files.push(path),
-                Err(_) => {}
+    match lister.list(folder) {
+        Ok(listed) => {
+            for entry in listed {
+                match entry {
+                    Ok(ListedEntry {
+                        path,
+                        is_dir: Ok(true),
+                    }) => folders.push(path),
+                    Ok(ListedEntry {
+                        path,
+                        is_dir: Ok(false),
+                    }) => files.push(path),
+                    Ok(ListedEntry { is_dir: Err(_), .. }) | Err(_) => *complete = false,
+                }
             }
         }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => *complete = false,
     }
     // NTFS lists names in upper-case order.
     let key = |path: &PathBuf| {
@@ -210,7 +254,7 @@ fn file_name(path: &Path) -> String {
 
 /// 4.27's `FindFilesRecursive`: this folder's matches, then each subfolder's.
 fn walk_427(folder: &Path, filter: &str, out: &mut Vec<String>) {
-    let (files, folders) = entries(folder);
+    let (files, folders) = entries(folder, &DiskLister, &mut true);
     for file in files {
         if matches_wildcard(&file_name(&file), filter) {
             out.push(absolute(&file));
@@ -228,8 +272,14 @@ fn uht_output(name: &str) -> bool {
 }
 
 /// 5.x's visitor: every file under the folder matching any filter, UHT output left out.
-fn walk_5(folder: &Path, filters: &[String], out: &mut Vec<String>) {
-    let (files, folders) = entries(folder);
+fn walk_5(
+    folder: &Path,
+    filters: &[String],
+    lister: &dyn Lister,
+    complete: &mut bool,
+    out: &mut Vec<String>,
+) {
+    let (files, folders) = entries(folder, lister, complete);
     for file in files {
         let name = file_name(&file);
         if uht_output(&name) {
@@ -240,7 +290,7 @@ fn walk_5(folder: &Path, filters: &[String], out: &mut Vec<String>) {
         }
     }
     for folder in folders {
-        walk_5(&folder, filters, out);
+        walk_5(&folder, filters, lister, complete, out);
     }
 }
 
@@ -363,7 +413,13 @@ pub fn step_files(
             if walked.iter().any(|seen| seen.eq_ignore_ascii_case(&folder)) {
                 continue;
             }
-            walk_5(Path::new(&folder), &filters, &mut found);
+            walk_5(
+                Path::new(&folder),
+                &filters,
+                &DiskLister,
+                &mut true,
+                &mut found,
+            );
             walked.push(folder);
         }
     }
@@ -389,22 +445,40 @@ pub fn step_files(
 /// The files Unreal's wrapper prepass reads under one root (the project, or the engine's `Engine`
 /// folder): `*.cpp` and `*.h` in `Source` and `Plugins`, without `Source/ThirdParty`.
 pub fn wrapper_files(root: &Path, project: &Path) -> Vec<CodeFile> {
+    wrapper_files_listed(root, project, &DiskLister).0
+}
+
+/// [`wrapper_files`], and whether every folder under the root could be listed: a prepass over a
+/// list that missed a folder may lack that folder's wrappers, so its set is not kept.
+pub(crate) fn wrapper_files_listed(
+    root: &Path,
+    project: &Path,
+    lister: &dyn Lister,
+) -> (Vec<CodeFile>, bool) {
     let filters = ["*.cpp".to_owned(), "*.h".to_owned()];
     let third_party = fold(&format!("{}/Source/ThirdParty/", absolute(root)));
     let mut found = Vec::new();
+    let mut complete = true;
     for folder in ["Source", "Plugins"] {
-        walk_5(&root.join(folder), &filters, &mut found);
+        walk_5(
+            &root.join(folder),
+            &filters,
+            lister,
+            &mut complete,
+            &mut found,
+        );
     }
     found.retain(|file| !fold(file).starts_with(&third_party));
     found.sort_by_key(|file| fold(file));
     let base = absolute(project);
-    found
+    let files = found
         .into_iter()
         .map(|file| CodeFile {
             path: relative_to(&file, &base),
             location: PathBuf::from(&file),
         })
-        .collect()
+        .collect();
+    (files, complete)
 }
 
 #[cfg(test)]

@@ -135,6 +135,11 @@ ruleTester.run("no-unguarded-owner-clear", noUnguardedOwnerClearRule, {
 			errors: [{ messageId: "unguardedClear" }]
 		},
 		{
+			// A comparison after the clear does not decide whether it runs.
+			code: "let active; const run = () => work.finally(() => { active = undefined; if (active === mine) log(); });",
+			errors: [{ messageId: "unguardedClear" }]
+		},
+		{
 			// An unrelated check does not decide whether the clear runs.
 			code: "let active; const run = () => work.finally(() => { if (status === 'done') log(); active = undefined; });",
 			errors: [{ messageId: "unguardedClear" }]

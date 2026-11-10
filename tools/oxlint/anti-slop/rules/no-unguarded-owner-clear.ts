@@ -157,28 +157,18 @@ export const noUnguardedOwnerClearRule = defineRule({
 			return false;
 		}
 
-		function guarded(
-			handler: FunctionNode,
-			slot: string | undefined,
-			clear: ESTree.Node
-		): boolean {
+		/** Whether an identity comparison in `handler` decides if `clear` runs. */
+		function guarded(handler: FunctionNode, clear: ESTree.Node): boolean {
 			let found = false;
 			const visit = (node: ESTree.Node) => {
 				if (found) return;
-				if (node.type === "BinaryExpression" && IDENTITY.has(node.operator)) {
-					if (fences(node, clear, handler)) {
-						found = true;
-						return;
-					}
-					for (const side of slot === undefined ? [] : [node.left, node.right]) {
-						const sideText = source.getText(side);
-						if (
-							sideText === slot ||
-							sideText.startsWith(`${slot}.`) ||
-							sideText.startsWith(`${slot}?.`)
-						)
-							found = true;
-					}
+				if (
+					node.type === "BinaryExpression" &&
+					IDENTITY.has(node.operator) &&
+					fences(node, clear, handler)
+				) {
+					found = true;
+					return;
 				}
 				for (const [key, value] of Object.entries(node)) {
 					if (key === "parent") continue;
@@ -225,7 +215,7 @@ export const noUnguardedOwnerClearRule = defineRule({
 				)
 					return;
 				const slot = source.getText(left);
-				if (guarded(handler, slot, node)) return;
+				if (guarded(handler, node)) return;
 				context.report({ node, messageId: "unguardedClear", data: { slot } });
 			},
 			CallExpression(node) {
@@ -234,7 +224,7 @@ export const noUnguardedOwnerClearRule = defineRule({
 				if (!target || !isEmpty(set.arguments[1])) return;
 				const handler = cleanupHandler(node);
 				if (!handler || enclosingFunction(node) === undefined) return;
-				if (guarded(handler, undefined, node)) return;
+				if (guarded(handler, node)) return;
 				context.report({
 					node,
 					messageId: "unguardedClear",

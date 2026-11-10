@@ -1,6 +1,6 @@
 {
 	"name": "@ue-shed/map-history",
-	"version": "0.28.0",
+	"version": "0.29.0",
 	"description": "Headless Perforce-backed history and playback for saved Unreal Engine maps.",
 	"homepage": "https://github.com/ue-shed/ue-shed#readme",
 	"bugs": {
@@ -48,9 +48,9 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ue-shed/protocol": "workspace:0.28.0",
-		"@ue-shed/unreal-assets": "workspace:0.28.0",
-		"p4client-ts": "0.13.0"
+		"@ue-shed/protocol": "workspace:0.29.0",
+		"@ue-shed/unreal-assets": "workspace:0.29.0",
+		"p4client-ts": "0.15.0"
 	},
 	"devDependencies": {
 		"@effect/vitest": "catalog:",

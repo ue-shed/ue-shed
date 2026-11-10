@@ -54,7 +54,7 @@ minimumReleaseAgeExclude:
     - "@solidjs/compiler-linux-x64-gnu@2.0.0-rc.13"
     - "@solidjs/compiler-wasm32-wasi@2.0.0-rc.13"
     - "@solidjs/compiler-win32-x64-msvc@2.0.0-rc.13"
-    - p4client-ts@0.13.0
+    - p4client-ts@0.15.0
     - peculiar-sheets@0.15.0
     - "@cloudflare/vite-plugin@1.51.0"
     - miniflare@5.20260801.0-alpha

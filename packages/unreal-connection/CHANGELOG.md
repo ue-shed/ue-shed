@@ -1,5 +1,12 @@
 # @ue-shed/unreal-connection
 
+## 0.29.0
+
+### Patch Changes
+
+- Updated dependencies [8766a46]
+    - @ue-shed/protocol@0.29.0
+
 ## 0.28.0
 
 ### Patch Changes

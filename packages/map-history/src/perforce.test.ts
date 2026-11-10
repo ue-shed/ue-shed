@@ -64,7 +64,8 @@ function backend() {
 			Effect.succeed({
 				directory: P4LocalPath.make("C:/temp/history"),
 				items: [],
-				messages: []
+				messages: [],
+				stats: { files: 0, bytes: 0, batched: 0, printed: 0, batches: 0, retries: 0 }
 			}),
 		resolveLocalPath: () =>
 			Effect.succeed({ depotPath: "//Project/Main/Content/Maps/L_Example.umap" })
@@ -359,8 +360,18 @@ describe("PerforceHistorySource", () => {
 					messages: [],
 					items: options.fileSpec.map((spec) => ({
 						file: spec,
-						localPath: P4LocalPath.make("C:/temp/history/Depot/map.umap")
-					}))
+						localPath: P4LocalPath.make("C:/temp/history/Depot/map.umap"),
+						bytes: 0,
+						method: "print" as const
+					})),
+					stats: {
+						files: options.fileSpec.length,
+						bytes: 0,
+						batched: 0,
+						printed: options.fileSpec.length,
+						batches: 0,
+						retries: 0
+					}
 				})
 		});
 		const result = await Effect.runPromise(

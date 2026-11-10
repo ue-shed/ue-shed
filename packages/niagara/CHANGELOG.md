@@ -1,5 +1,13 @@
 # @ue-shed/niagara
 
+## 0.29.0
+
+### Patch Changes
+
+- Updated dependencies [8766a46]
+    - @ue-shed/engine@0.29.0
+    - @ue-shed/protocol@0.29.0
+
 ## 0.28.0
 
 ### Patch Changes

@@ -113,3 +113,8 @@ export function isInCondition(node: ESTree.Node, stop: ESTree.Node): boolean {
 	}
 	return false;
 }
+
+/** Whether `inner` lies within `outer`'s source range. */
+export function contains(outer: ESTree.Node, inner: ESTree.Node): boolean {
+	return inner.start >= outer.start && inner.end <= outer.end;
+}

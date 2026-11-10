@@ -4,6 +4,7 @@ import type { ESTree, Scope } from "@oxlint/plugins";
 
 import {
 	TEST_FILE,
+	contains,
 	effectBodyCall,
 	enclosingFunction,
 	isFunctionNode,
@@ -17,13 +18,43 @@ const REF_SET = new Set(["set", "getAndSet"]);
 
 type Mark = { readonly key: string; readonly pos: number };
 type Write = Mark & { readonly node: ESTree.Node };
+type Variable = NonNullable<Scope["references"][number]["resolved"]>;
 type Body = {
-	readonly yields: Array<{ readonly start: number; readonly end: number }>;
+	readonly yields: Array<ESTree.YieldExpression>;
 	readonly tests: Array<Mark>;
 	readonly writes: Array<Write>;
-	/** `const s = yield* Ref.get(ref)`: snapshot name → ref key. */
-	readonly snapshots: Map<string, string>;
+	/** `const s = yield* Ref.get(ref)`: snapshot binding → ref key. */
+	readonly snapshots: Map<Variable, string>;
 };
+
+function terminates(statements: ReadonlyArray<ESTree.Node>): boolean {
+	const last = statements.at(-1);
+	return last?.type === "ReturnStatement" || last?.type === "ThrowStatement";
+}
+
+/**
+ * Whether control can pass from `step` to `write`: not when `step` sits in a block that ends in
+ * `return`/`throw` without containing `write`, nor when the two sit in opposite branches.
+ */
+function reaches(step: ESTree.Node, write: ESTree.Node): boolean {
+	let current: ESTree.Node | null = step.parent;
+	while (current && !isFunctionNode(current)) {
+		if (contains(current, write)) {
+			if (
+				(current.type === "IfStatement" || current.type === "ConditionalExpression") &&
+				current.alternate &&
+				((contains(current.consequent, step) && contains(current.alternate, write)) ||
+					(contains(current.alternate, step) && contains(current.consequent, write)))
+			)
+				return false;
+			return true;
+		}
+		if (current.type === "BlockStatement" && terminates(current.body)) return false;
+		if (current.type === "SwitchCase" && terminates(current.consequent)) return false;
+		current = current.parent;
+	}
+	return true;
+}
 
 /** A yield inside `return …` or `throw …` leaves the body; it never reaches a later write. */
 function leavesBody(node: ESTree.Node): boolean {
@@ -115,7 +146,7 @@ export const noCheckYieldWriteRule = defineRule({
 			},
 			YieldExpression(node) {
 				if (!node.delegate || leavesBody(node)) return;
-				bodyOf(node)?.body.yields.push({ start: node.start, end: node.end });
+				bodyOf(node)?.body.yields.push(node);
 			},
 			VariableDeclarator(node) {
 				const init = node.init;
@@ -128,7 +159,8 @@ export const noCheckYieldWriteRule = defineRule({
 				const get = refCall(init.argument, REF_GET);
 				const first = get?.arguments[0];
 				if (!first) return;
-				bodyOf(node)?.body.snapshots.set(node.id.name, `ref:${text(first)}`);
+				const [variable] = source.getDeclaredVariables(node);
+				if (variable) bodyOf(node)?.body.snapshots.set(variable, `ref:${text(first)}`);
 			},
 			CallExpression(node) {
 				const owner = bodyOf(node);
@@ -153,8 +185,8 @@ export const noCheckYieldWriteRule = defineRule({
 						const variable = reference.resolved;
 						if (!variable) continue;
 						const identifier = reference.identifier;
-						const snapshot = body.snapshots.get(variable.name);
-						if (snapshot && variable.scope.variableScope === scope.variableScope) {
+						const snapshot = body.snapshots.get(variable);
+						if (snapshot) {
 							if (reference.isRead() && isInCondition(identifier, fn))
 								body.tests.push({ key: snapshot, pos: identifier.start });
 							continue;
@@ -182,7 +214,10 @@ export const noCheckYieldWriteRule = defineRule({
 								test.key === write.key &&
 								test.pos < write.pos &&
 								body.yields.some(
-									(step) => step.start > test.pos && step.end <= write.pos
+									(step) =>
+										step.start > test.pos &&
+										step.end <= write.pos &&
+										reaches(step, write.node)
 								)
 						);
 						if (!stale) continue;

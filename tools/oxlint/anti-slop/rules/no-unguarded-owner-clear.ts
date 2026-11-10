@@ -5,6 +5,7 @@ import type { ESTree } from "@oxlint/plugins";
 import {
 	TEST_FILE,
 	calleeName,
+	contains,
 	enclosingFunction,
 	isFunctionNode,
 	isInCondition,
@@ -22,6 +23,7 @@ const CLEANUP_CALLS = new Set([
 	"acquireRelease",
 	"acquireUseRelease"
 ]);
+const DATA_FIRST = new Set(["ensuring", "onExit", "onInterrupt"]);
 const LISTENERS = new Set(["on", "once", "addListener", "addEventListener"]);
 const END_EVENTS = new Set(["close", "exit", "end", "disconnect"]);
 const END_HANDLERS = /^on(?:close|exit|end|disconnect)$/;
@@ -33,6 +35,8 @@ function cleanupArgument(call: ESTree.CallExpression, argument: ESTree.Node): bo
 	const index = call.arguments.indexOf(argument);
 	if (name === "acquireRelease") return index === 1;
 	if (name === "acquireUseRelease") return index === 2;
+	// Data-first `Effect.ensuring(self, finalizer)`: the first argument is the work, not cleanup.
+	if (DATA_FIRST.has(name) && call.arguments.length > 1) return index === 1;
 	if (CLEANUP_CALLS.has(name)) return index >= 0;
 	if (!LISTENERS.has(name) || index < 1) return false;
 	const event = call.arguments[0];
@@ -69,6 +73,13 @@ function cleanupHandler(node: ESTree.Node): FunctionNode | undefined {
 		current = current.parent;
 	}
 	return undefined;
+}
+
+function exits(statement: ESTree.Node): boolean {
+	if (statement.type === "ReturnStatement" || statement.type === "ThrowStatement") return true;
+	if (statement.type !== "BlockStatement") return false;
+	const last = statement.body.at(-1);
+	return last?.type === "ReturnStatement" || last?.type === "ThrowStatement";
 }
 
 function isEmpty(node: ESTree.Node | null | undefined): boolean {
@@ -117,17 +128,49 @@ export const noUnguardedOwnerClearRule = defineRule({
 		if (TEST_FILE.test(context.filename)) return {};
 		const source = context.sourceCode;
 
-		function guarded(handler: FunctionNode, slot: string | undefined): boolean {
+		/** Whether the comparison decides if `clear` runs: it encloses it, or exits before it. */
+		function fences(
+			comparison: ESTree.Node,
+			clear: ESTree.Node,
+			handler: FunctionNode
+		): boolean {
+			let child: ESTree.Node = comparison;
+			let current: ESTree.Node | null = comparison.parent;
+			while (current && current !== handler && !isFunctionNode(current)) {
+				if (
+					(current.type === "IfStatement" || current.type === "ConditionalExpression") &&
+					current.test === child
+				) {
+					if (contains(current.consequent, clear)) return true;
+					if (current.alternate && contains(current.alternate, clear)) return true;
+					return (
+						current.type === "IfStatement" &&
+						current.end <= clear.start &&
+						exits(current.consequent)
+					);
+				}
+				if (current.type === "LogicalExpression" && current.left === child)
+					return contains(current.right, clear);
+				child = current;
+				current = current.parent;
+			}
+			return false;
+		}
+
+		function guarded(
+			handler: FunctionNode,
+			slot: string | undefined,
+			clear: ESTree.Node
+		): boolean {
 			let found = false;
 			const visit = (node: ESTree.Node) => {
 				if (found) return;
 				if (node.type === "BinaryExpression" && IDENTITY.has(node.operator)) {
-					// A ref clear, or a fence such as `generation !== mine` that decides whether to go on.
-					if (slot === undefined || isInCondition(node, handler)) {
+					if (fences(node, clear, handler)) {
 						found = true;
 						return;
 					}
-					for (const side of [node.left, node.right]) {
+					for (const side of slot === undefined ? [] : [node.left, node.right]) {
 						const sideText = source.getText(side);
 						if (
 							sideText === slot ||
@@ -182,7 +225,7 @@ export const noUnguardedOwnerClearRule = defineRule({
 				)
 					return;
 				const slot = source.getText(left);
-				if (guarded(handler, slot)) return;
+				if (guarded(handler, slot, node)) return;
 				context.report({ node, messageId: "unguardedClear", data: { slot } });
 			},
 			CallExpression(node) {
@@ -191,7 +234,7 @@ export const noUnguardedOwnerClearRule = defineRule({
 				if (!target || !isEmpty(set.arguments[1])) return;
 				const handler = cleanupHandler(node);
 				if (!handler || enclosingFunction(node) === undefined) return;
-				if (guarded(handler, undefined)) return;
+				if (guarded(handler, undefined, node)) return;
 				context.report({
 					node,
 					messageId: "unguardedClear",

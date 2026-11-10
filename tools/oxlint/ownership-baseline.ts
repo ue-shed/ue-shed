@@ -28,5 +28,8 @@ export const ownershipBaseline = {
 		"packages/observatory/src/actor-feed.ts",
 		"scripts/test-game-text-packaged-journey.ts"
 	],
-	"anti-slop/no-unguarded-owner-clear": ["scripts/benchmark-game-text-engine.ts"]
+	"anti-slop/no-unguarded-owner-clear": [
+		"packages/game-text/src/workspace-operations.ts",
+		"scripts/benchmark-game-text-engine.ts"
+	]
 } as const;

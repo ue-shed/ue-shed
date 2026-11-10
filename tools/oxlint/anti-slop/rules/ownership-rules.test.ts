@@ -64,6 +64,10 @@ ruleTester.run("no-check-yield-write", noCheckYieldWriteRule, {
 		// The yield between them leaves the body.
 		"let cursor = 0; const run = Effect.gen(function* () { if (next < cursor) return yield* new Backwards(); cursor = next; });",
 		"let open; const run = Effect.gen(function* () { if (open) return yield* pick(yield* Deferred.await(open)); open = next; yield* send; });",
+		// The yielding branch returns before the write.
+		"let busy = false; const run = Effect.gen(function* () { if (busy) { yield* reportBusy; return; } busy = true; });",
+		// The yield and the write sit in opposite branches.
+		"let busy = false; const run = Effect.gen(function* () { if (busy) { yield* reportBusy; } else { busy = true; } });",
 		// The body runs under a permit.
 		"let cached; const get = Effect.fn('get')(function* () { if (cached) return cached; cached = yield* load; return cached; }, gate.withPermits(1));",
 		"let cached; const get = gate.withPermits(1)(Effect.gen(function* () { if (!cached) cached = yield* load; return cached; }));",
@@ -86,6 +90,11 @@ ruleTester.run("no-check-yield-write", noCheckYieldWriteRule, {
 			errors: [{ messageId: "checkYieldWrite" }]
 		},
 		{
+			// Two snapshots named `s` are different bindings; the first still races.
+			code: "const run = Effect.gen(function* () { { const s = yield* Ref.get(first); if (s.busy) return; yield* prepare; yield* Ref.set(first, { busy: true }); } { const s = yield* Ref.get(second); void s; } });",
+			errors: [{ messageId: "checkYieldWrite" }]
+		},
+		{
 			code: "const run = Effect.gen(function* () { if ((yield* Ref.get(state)).busy) return; yield* prepare; yield* Ref.set(state, { busy: true }); });",
 			errors: [{ messageId: "checkYieldWrite" }]
 		}
@@ -105,6 +114,8 @@ ruleTester.run("no-unguarded-owner-clear", noUnguardedOwnerClearRule, {
 		"let active; function reset() { active = undefined; }",
 		// Not a clear.
 		"let pending; function load() { return fetchIt().finally(() => { pending = next; }); }",
+		// Data-first: the first argument is the work, not the finalizer.
+		"let active; const run = Effect.ensuring(Effect.sync(() => { active = undefined; }), Effect.void);",
 		// Detaching handlers is not clearing an owner.
 		"const stop = () => work.finally(() => { worker.onmessage = null; });",
 		// Not a close event.
@@ -121,6 +132,15 @@ ruleTester.run("no-unguarded-owner-clear", noUnguardedOwnerClearRule, {
 		},
 		{
 			code: "let active; const run = work.pipe(Effect.ensuring(Effect.sync(() => { active = undefined; })));",
+			errors: [{ messageId: "unguardedClear" }]
+		},
+		{
+			// An unrelated check does not decide whether the clear runs.
+			code: "let active; const run = () => work.finally(() => { if (status === 'done') log(); active = undefined; });",
+			errors: [{ messageId: "unguardedClear" }]
+		},
+		{
+			code: "let active; const run = Effect.ensuring(work, Effect.sync(() => { active = undefined; }));",
 			errors: [{ messageId: "unguardedClear" }]
 		},
 		{

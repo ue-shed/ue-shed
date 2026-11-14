@@ -90,7 +90,7 @@ One row per joined line, keyed and keyless. Fields:
 | `manifestLocations`         | string list                | Unique and sorted by code unit (`:946`).                                                                       |
 | `originKind`                | string                     | `line.origin.kind`.                                                                                            |
 | `stringTables`              | string list                | `localizationStringTables` (`:203`), or the native equivalent `context.stringTables` uses.                     |
-| `missingStringTableEntries` | `{tableId, key}` list      | The line's String Table references whose table is known (a resolved entry names it) but whose entry is absent. |
+| `missingStringTableEntries` | `{tableId, key}` list      | The line's String Table references whose table is known (a String Table asset or a code `LOCTABLE_` table with a resolved entry) but whose entry is absent. |
 
 `sourceVariants` is null unless the line has `conflicting_source`. Then it is the distinct `source` values of the authored (non-String-Table) units' occurrences, or of every unit's occurrences when none is authored, sorted by code unit. It is null when fewer than two remain (`:751-761`).
 

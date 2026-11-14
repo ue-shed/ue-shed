@@ -745,7 +745,7 @@ impl<'a, 'q> Projector<'a, 'q> {
             }
             "missingStringTableEntries" => {
                 let data = Arc::clone(&self.subjects.occurrences);
-                for field in ["namespace", "key", "object", "row"] {
+                for field in ["namespace", "key", "class"] {
                     self.strings(&data.columns[field])?;
                 }
                 let arena = &self.arena;
@@ -753,12 +753,11 @@ impl<'a, 'q> Projector<'a, 'q> {
                 let mut known = HashSet::new();
                 let mut entries = HashSet::new();
                 for row in 0..data.len() {
-                    if data.value(row, "location") == 2
-                        && data.value(row, "identity") == 0
-                        && !text(data.value(row, "key")).is_empty()
+                    if let Some((table, key)) =
+                        data.table_entry(row, |id| Ok(text(id).is_empty()))?
                     {
-                        known.insert(data.value(row, "object"));
-                        entries.insert((data.value(row, "object"), data.value(row, "row")));
+                        known.insert(table);
+                        entries.insert((table, key));
                     }
                 }
                 let p = &self.subjects.projection;

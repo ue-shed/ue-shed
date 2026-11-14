@@ -1839,6 +1839,48 @@ fn string_table_entry_missing_rule_reports_only_a_known_tables_missing_entry() -
 }
 
 #[test]
+fn string_table_entry_missing_rule_reports_a_code_tables_missing_entry() -> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject};
+    let mut fixture = Fixture::new()?;
+    for (name, format) in [
+        ("Game.manifest", "manifest"),
+        ("en.archive", "archive"),
+        ("de.archive", "archive"),
+        ("en.po", "po"),
+        ("de.po", "po"),
+    ] {
+        fixture.file(name, format, &[])?;
+    }
+    // Assets name a table its code defines by the table's ID, the code place's class column.
+    fixture.packages(&[
+        json!({"source":"Start game","namespace":"Game.Menu","key":"Start","object":"/Game/Text/Example.Example","property":"Button","identity":1}),
+        json!({"source":"","namespace":"Game.Menu","key":"Absent","object":"/Game/Text/Example.Example","property":"Missing","identity":1}),
+        // A wrapper's class column never makes a table, so this reference's table is unknown.
+        json!({"source":"","namespace":"Wrapped","key":"Absent","object":"/Game/Text/Other.Other","property":"Wrapped","identity":1}),
+    ])?;
+    fixture.code(
+        "Source/Game/Menu.cpp",
+        &[
+            json!({"source":"Start game","namespace":"Game.MenuTable","key":"Start","property":"LOCTABLE_SETSTRING","class":"Game.Menu","row":"12"}),
+            json!({"source":"Quit","namespace":"Game","key":"Quit","property":"LOCTEXT","class":"Wrapped","row":"14"}),
+        ],
+    )?;
+    fixture.lines()?;
+    let program = example_program(&["string_table_entry_missing"], None)?;
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let collator = HostCollator::new("en")?;
+    let cancelled = AtomicBool::new(false);
+    let mut rows = NativeSubjects::new(&query, Subject::Line, &collator, &cancelled)?;
+    let findings = program.evaluate(&mut rows, &collator)?.findings;
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        findings[0].actual,
+        json!({"entries":[{"tableId":"Game.Menu","key":"Absent"}],"entryCount":1})
+    );
+    Ok(())
+}
+
+#[test]
 fn foreign_sources_use_native_archive_translations_including_metadata() -> Result<()> {
     let mut fixture = Fixture::new()?;
     let cases = [

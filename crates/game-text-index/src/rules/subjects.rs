@@ -160,21 +160,22 @@ impl<'a> NativeSubjects<'a> {
             string_table_entries: None,
         })
     }
-    /// Known String Tables (a resolved entry's object) and their `(table, entry key)` pairs.
+    /// Known String Tables (an asset's or code's table with a resolved entry) and their
+    /// `(table, entry key)` pairs.
     fn string_table_entries(&mut self) -> Result<StringTableEntries> {
         if let Some(entries) = &self.string_table_entries {
             return Ok(Arc::clone(entries));
         }
         let data = Arc::clone(&self.occurrences);
+        let reader = &self.query.reader;
         let mut known = std::collections::HashSet::new();
         let mut entries = std::collections::HashSet::new();
         for row in 0..data.len() {
-            if data.value(row, "location") == 2
-                && data.value(row, "identity") == 0
-                && !self.query.reader.string(data.value(row, "key"))?.is_empty()
+            if let Some((table, key)) =
+                data.table_entry(row, |id| Ok(reader.string(id)?.is_empty()))?
             {
-                known.insert(data.value(row, "object"));
-                entries.insert((data.value(row, "object"), data.value(row, "row")));
+                known.insert(table);
+                entries.insert((table, key));
             }
         }
         let built: Arc<(_, _)> = Arc::new((known, entries));

@@ -2,6 +2,7 @@ import { requireJsdocOnExportsRule } from "./rules/require-jsdoc-on-exports.ts";
 import { eslintCompatPlugin } from "@oxlint/plugins";
 
 import { noChainedEffectFlatMapRule } from "./rules/no-chained-effect-flat-map.ts";
+import { noCheckYieldWriteRule } from "./rules/no-check-yield-write.ts";
 import { noChainedTypeAssertionsRule } from "./rules/no-chained-type-assertions.ts";
 import { noEffectCatchAllRule } from "./rules/no-effect-catch-all.ts";
 import { noConditionalEmptyObjectSpreadRule } from "./rules/no-conditional-empty-object-spread.ts";
@@ -14,6 +15,8 @@ import { noReflectGetRule } from "./rules/no-reflect-get.ts";
 import { noRuntimeTypeofRule } from "./rules/no-runtime-typeof.ts";
 import { noForbiddenTermInSymbolNamesRule } from "./rules/no-shape-in-symbol-names.ts";
 import { noStringifiedCauseInErrorRule } from "./rules/no-stringified-cause-in-error.ts";
+import { noSharedLetInEffectRule } from "./rules/no-shared-let-in-effect.ts";
+import { noUnguardedOwnerClearRule } from "./rules/no-unguarded-owner-clear.ts";
 import { noUnknownParametersRule } from "./rules/no-unknown-parameters.ts";
 import { noUnknownReturnsRule } from "./rules/no-unknown-returns.ts";
 import { noUnknownTypeAliasesRule } from "./rules/no-unknown-type-aliases.ts";
@@ -32,6 +35,7 @@ const antiSlopPlugin = eslintCompatPlugin({
 		"require-jsdoc-on-exports": requireJsdocOnExportsRule,
 		"no-chained-effect-flat-map": noChainedEffectFlatMapRule,
 		"no-chained-type-assertions": noChainedTypeAssertionsRule,
+		"no-check-yield-write": noCheckYieldWriteRule,
 		"no-conditional-empty-object-spread": noConditionalEmptyObjectSpreadRule,
 		"no-effect-catch-all": noEffectCatchAllRule,
 		"no-known-value-widening": noKnownValueWideningRule,
@@ -41,6 +45,8 @@ const antiSlopPlugin = eslintCompatPlugin({
 		"no-reflect-apply": noReflectApplyRule,
 		"no-reflect-get": noReflectGetRule,
 		"no-runtime-typeof": noRuntimeTypeofRule,
+		"no-shared-let-in-effect": noSharedLetInEffectRule,
+		"no-unguarded-owner-clear": noUnguardedOwnerClearRule,
 		"no-unsafe-dictionary-type": noUnsafeDictionaryTypeRule,
 		"no-shape-in-symbol-names": noForbiddenTermInSymbolNamesRule,
 		"no-stringified-cause-in-error": noStringifiedCauseInErrorRule,

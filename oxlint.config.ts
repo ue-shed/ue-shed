@@ -2,6 +2,7 @@ import { recommended } from "@effect/tsgo/oxlint-presets";
 import { defineConfig } from "oxlint";
 
 import { effectCatchAllBaseline } from "./tools/oxlint/effect-catch-all-baseline.ts";
+import { ownershipBaseline } from "./tools/oxlint/ownership-baseline.ts";
 
 export default defineConfig({
 	extends: [recommended],
@@ -28,6 +29,7 @@ export default defineConfig({
 	rules: {
 		"anti-slop/no-chained-effect-flat-map": "error",
 		"anti-slop/no-chained-type-assertions": "error",
+		"anti-slop/no-check-yield-write": "error",
 		"anti-slop/no-conditional-empty-object-spread": "error",
 		"anti-slop/no-effect-catch-all": "error",
 		"anti-slop/no-known-value-widening": "error",
@@ -38,7 +40,9 @@ export default defineConfig({
 		"anti-slop/no-reflect-get": "error",
 		"anti-slop/no-runtime-typeof": "error",
 		"anti-slop/no-shape-in-symbol-names": "error",
+		"anti-slop/no-shared-let-in-effect": "error",
 		"anti-slop/no-stringified-cause-in-error": "error",
+		"anti-slop/no-unguarded-owner-clear": "error",
 		"anti-slop/no-unknown-parameters": "error",
 		"anti-slop/no-unknown-returns": "error",
 		"anti-slop/no-unknown-type-aliases": "error",
@@ -66,6 +70,10 @@ export default defineConfig({
 			files: [...effectCatchAllBaseline],
 			rules: { "anti-slop/no-effect-catch-all": "warn" }
 		},
+		...Object.entries(ownershipBaseline).map(([rule, files]) => ({
+			files: [...files],
+			rules: { [rule]: "warn" as const }
+		})),
 		{
 			files: ["packages/protocol/src/**/*.ts", "packages/unreal-connection/src/**/*.ts"],
 			rules: { "anti-slop/require-jsdoc-on-exports": "error" }

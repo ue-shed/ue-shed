@@ -33,8 +33,37 @@ function terminates(statements: ReadonlyArray<ESTree.Node>): boolean {
 }
 
 /**
+ * Whether leaving `block` by its final `return`/`throw` can still reach `write`: an enclosing
+ * `finally` holding the write runs on the way out, and a caught throw continues after its `try`
+ * unless the `catch` leaves too.
+ */
+function exitReaches(
+	block: ESTree.Node,
+	statements: ReadonlyArray<ESTree.Node>,
+	write: ESTree.Node
+): boolean {
+	let throws = statements.at(-1)?.type === "ThrowStatement";
+	let child: ESTree.Node = block;
+	let current: ESTree.Node | null = block.parent;
+	while (current && !isFunctionNode(current)) {
+		if (current.type === "TryStatement" && child !== current.finalizer) {
+			if (current.finalizer && contains(current.finalizer, write)) return true;
+			if (throws && child === current.block && current.handler) {
+				const caught = current.handler.body.body;
+				if (contains(current.handler, write) || !terminates(caught)) return true;
+				throws = caught.at(-1)?.type === "ThrowStatement";
+			}
+		}
+		child = current;
+		current = current.parent;
+	}
+	return false;
+}
+
+/**
  * Whether control can pass from `step` to `write`: not when `step` sits in a block that ends in
- * `return`/`throw` without containing `write`, nor when the two sit in opposite branches.
+ * `return`/`throw` without containing `write` (unless a `finally` or `catch` leads on to it), nor
+ * when the two sit in opposite branches.
  */
 function reaches(step: ESTree.Node, write: ESTree.Node): boolean {
 	let current: ESTree.Node | null = step.parent;
@@ -49,8 +78,10 @@ function reaches(step: ESTree.Node, write: ESTree.Node): boolean {
 				return false;
 			return true;
 		}
-		if (current.type === "BlockStatement" && terminates(current.body)) return false;
-		if (current.type === "SwitchCase" && terminates(current.consequent)) return false;
+		if (current.type === "BlockStatement" && terminates(current.body))
+			return exitReaches(current, current.body, write);
+		if (current.type === "SwitchCase" && terminates(current.consequent))
+			return exitReaches(current, current.consequent, write);
 		current = current.parent;
 	}
 	return true;

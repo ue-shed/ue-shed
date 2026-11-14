@@ -136,21 +136,30 @@ export const noUnguardedOwnerClearRule = defineRule({
 		): boolean {
 			let child: ESTree.Node = comparison;
 			let current: ESTree.Node | null = comparison.parent;
+			// Inside a compound test, the comparison decides a true test only through `&&`
+			// (`a && b` is true only when `a` is) and a false test only through `||`.
+			let decidesTrue = true;
+			let decidesFalse = true;
 			while (current && current !== handler && !isFunctionNode(current)) {
 				if (
 					(current.type === "IfStatement" || current.type === "ConditionalExpression") &&
 					current.test === child
 				) {
-					if (contains(current.consequent, clear)) return true;
-					if (current.alternate && contains(current.alternate, clear)) return true;
+					if (contains(current.consequent, clear)) return decidesTrue;
+					if (current.alternate && contains(current.alternate, clear))
+						return decidesFalse;
 					return (
+						decidesFalse &&
 						current.type === "IfStatement" &&
 						current.end <= clear.start &&
 						exits(current.consequent)
 					);
 				}
-				if (current.type === "LogicalExpression" && current.left === child)
-					return contains(current.right, clear);
+				if (current.type === "LogicalExpression") {
+					if (current.left === child && contains(current.right, clear)) return true;
+					if (current.operator !== "&&") decidesTrue = false;
+					if (current.operator !== "||") decidesFalse = false;
+				}
 				child = current;
 				current = current.parent;
 			}

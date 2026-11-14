@@ -68,6 +68,8 @@ ruleTester.run("no-check-yield-write", noCheckYieldWriteRule, {
 		"let busy = false; const run = Effect.gen(function* () { if (busy) { yield* reportBusy; return; } busy = true; });",
 		// The yield and the write sit in opposite branches.
 		"let busy = false; const run = Effect.gen(function* () { if (busy) { yield* reportBusy; } else { busy = true; } });",
+		// The throw is caught, but the catch returns before the write.
+		"let busy = false; const run = Effect.gen(function* () { if (busy) return; try { yield* prepare; throw failure; } catch { return; } busy = true; });",
 		// The body runs under a permit.
 		"let cached; const get = Effect.fn('get')(function* () { if (cached) return cached; cached = yield* load; return cached; }, gate.withPermits(1));",
 		"let cached; const get = gate.withPermits(1)(Effect.gen(function* () { if (!cached) cached = yield* load; return cached; }));",
@@ -97,6 +99,21 @@ ruleTester.run("no-check-yield-write", noCheckYieldWriteRule, {
 		{
 			code: "const run = Effect.gen(function* () { if ((yield* Ref.get(state)).busy) return; yield* prepare; yield* Ref.set(state, { busy: true }); });",
 			errors: [{ messageId: "checkYieldWrite" }]
+		},
+		{
+			// The try block returns, but its finally still runs the write after the yield.
+			code: "let busy = false; const run = Effect.gen(function* () { if (!busy) return; try { yield* work; return; } finally { busy = false; } });",
+			errors: [{ messageId: "checkYieldWrite" }]
+		},
+		{
+			// The throw is caught, so control goes on to the write.
+			code: "let busy = false; const run = Effect.gen(function* () { if (busy) return; try { yield* prepare; throw failure; } catch {} busy = true; });",
+			errors: [{ messageId: "checkYieldWrite" }]
+		},
+		{
+			// A switch case that returns inside a try still runs its finally.
+			code: "let busy = false; const run = Effect.gen(function* () { if (busy) return; try { switch (mode) { case 1: yield* prepare; return; } } finally { busy = true; } });",
+			errors: [{ messageId: "checkYieldWrite" }]
 		}
 	]
 });
@@ -108,6 +125,10 @@ ruleTester.run("no-unguarded-owner-clear", noUnguardedOwnerClearRule, {
 		"let active; const run = work.pipe(Effect.ensuring(Effect.sync(() => { if (active === fiber) active = undefined; })));",
 		// A generation fence decides whether this cleanup still owns the slot.
 		"let active; let generation = 0; const run = work.pipe(Effect.onExit(() => Effect.suspend(() => { if (generation !== mine) return Effect.void; active = undefined; return Effect.void; })));",
+		// A fence inside a compound test still decides the clear.
+		"let active; let generation = 0; const run = () => work.finally(() => { if (generation !== mine || stopped) return; active = undefined; });",
+		"let active; let generation = 0; const run = () => work.finally(() => { if (generation === mine && ready) active = undefined; });",
+		"let active; let generation = 0; const run = () => work.finally(() => { if (closed || (stopped || generation !== mine)) return; else active = undefined; });",
 		// A variable the cleanup owns itself.
 		"const run = work.pipe(Effect.ensuring(Effect.sync(() => { let local = 1; local = undefined; })));",
 		// Not cleanup.
@@ -142,6 +163,15 @@ ruleTester.run("no-unguarded-owner-clear", noUnguardedOwnerClearRule, {
 		{
 			// An unrelated check does not decide whether the clear runs.
 			code: "let active; const run = () => work.finally(() => { if (status === 'done') log(); active = undefined; });",
+			errors: [{ messageId: "unguardedClear" }]
+		},
+		{
+			// The other operand can run the clear without the fence.
+			code: "let active; let generation = 0; const run = () => work.finally(() => { if (generation === mine || ready) active = undefined; });",
+			errors: [{ messageId: "unguardedClear" }]
+		},
+		{
+			code: "let active; let generation = 0; const run = () => work.finally(() => { if (generation !== mine && stopped) return; active = undefined; });",
 			errors: [{ messageId: "unguardedClear" }]
 		},
 		{

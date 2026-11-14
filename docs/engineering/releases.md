@@ -87,7 +87,10 @@ anyway, as described below.
 The portable gates run in this checkout, the pack in its own temporary worktree, and the Unreal
 gates one after another in a second worktree of the same commit (`<main checkout>-unreal`, beside
 the main checkout even when the release runs from a linked worktree, and kept between releases so
-its dependencies and Unreal build output are reused). UnrealBuildTool writes one log file
+its dependencies and Unreal build output are reused). Because runs from every worktree share that
+lane, a run leases it (`<lane>.lock`, beside the lane) from before its checkout until its last Unreal
+gate ends. A second run fails at the start without touching the lane; a lease left by a run that
+was killed is taken over. UnrealBuildTool writes one log file
 shared by every installed engine, and the Unreal gates rebuild package output `pnpm check` reads, so
 they neither overlap each other nor share a checkout with the check. `--serial` runs every gate in
 this checkout, one after another. An engine that is not installed is recorded as unavailable, not

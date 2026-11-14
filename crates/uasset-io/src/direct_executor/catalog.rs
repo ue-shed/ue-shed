@@ -14,6 +14,10 @@ pub const INDEX_PROFILE_VERSION: u32 = 3;
 pub const PROJECT_INDEX_MAX_PAGE_SIZE: usize = 1024;
 /// Distinct strings a dictionary page may carry; dependency pages end early to stay within it.
 pub const PROJECT_INDEX_MAX_PAGE_STRINGS: usize = PROJECT_INDEX_MAX_PAGE_SIZE * 128;
+/// Dependencies one package may record: with its classes, each dependency's name and resolved path
+/// still fit one dictionary page. A package with more records a header failure instead.
+pub const PROJECT_INDEX_MAX_DEPENDENCIES: usize =
+    (PROJECT_INDEX_MAX_PAGE_STRINGS - PROJECT_INDEX_MAX_CLASSES) / 2;
 pub const PROJECT_INDEX_MAX_DIAGNOSTICS: usize = 64;
 pub const PROJECT_INDEX_MAX_CLASSES: usize = 64;
 pub const PROJECT_INDEX_MAX_NAMES: usize = 64;

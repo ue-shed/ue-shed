@@ -141,7 +141,8 @@ fn item_path(item: &QueryItem) -> String {
 }
 
 /// How many leading items fit in `budget` distinct page strings (classes, dependency names and
-/// resolved paths, as a dictionary page interns them). The first item always fits.
+/// resolved paths, as a dictionary page interns them). The first item is always kept: the index's
+/// class and dependency limits make one package fit the dictionary bound.
 fn within_string_budget(items: &[QueryItem], budget: usize) -> usize {
     let mut strings = HashSet::new();
     for (index, item) in items.iter().enumerate() {

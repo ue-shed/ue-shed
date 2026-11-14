@@ -16,7 +16,8 @@ use uasset_parser::package::{Package, PackageError, PackageErrorKind};
 
 use super::catalog::{
     EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
-    PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_NAMES, PackageSignature, project_relative_path,
+    PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DEPENDENCIES, PROJECT_INDEX_MAX_NAMES,
+    PackageSignature, project_relative_path,
 };
 use super::catalog_dependencies::package_name_for_path;
 use super::project_index::{CoordinatorError, HeaderEvidenceSink, ProjectScanner, observe_header};
@@ -118,9 +119,11 @@ impl ProjectScanner for FilesystemProjectScanner {
         // Unreal names a package from its file location; the saved name can be stale.
         let package_name = package_name_for_path(&self.mounts, &signature.relative_path)
             .unwrap_or_else(|| package.summary.package_name.clone());
-        let dependencies = package
-            .asset_registry_dependencies(&header, &package_name)
-            .map_err(|error| header_failure(package_error_code(&error)))?;
+        let dependencies = within_dependency_limit(
+            package
+                .asset_registry_dependencies(&header, &package_name)
+                .map_err(|error| header_failure(package_error_code(&error)))?,
+        )?;
         let classes = bounded_header_values(
             package
                 .exports
@@ -470,6 +473,15 @@ fn header_failure(code: &'static str) -> Failure {
     }
 }
 
+/// A package's dependencies, or a header failure when there are more than one page can carry:
+/// the index records them as unknown rather than keeping part of them.
+fn within_dependency_limit<T>(dependencies: Vec<T>) -> Result<Vec<T>, Failure> {
+    if dependencies.len() > PROJECT_INDEX_MAX_DEPENDENCIES {
+        return Err(header_failure("dependencies_over_limit"));
+    }
+    Ok(dependencies)
+}
+
 /// Keep the profile's lexicographically first unique values without cloning discarded evidence.
 /// Auxiliary storage is bounded by the output limit even for very large package name maps.
 fn bounded_header_values<'a>(values: impl Iterator<Item = &'a str>, limit: usize) -> Vec<String> {
@@ -504,7 +516,23 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{FilesystemProjectScanner, ProjectScanner, bounded_header_values};
+    use super::{
+        FilesystemProjectScanner, PROJECT_INDEX_MAX_DEPENDENCIES, ProjectScanner,
+        bounded_header_values, within_dependency_limit,
+    };
+
+    #[test]
+    fn a_package_over_the_dependency_limit_records_a_failure() {
+        assert_eq!(
+            within_dependency_limit(vec![(); PROJECT_INDEX_MAX_DEPENDENCIES])
+                .ok()
+                .map(|d| d.len()),
+            Some(PROJECT_INDEX_MAX_DEPENDENCIES)
+        );
+        let failure = within_dependency_limit(vec![(); PROJECT_INDEX_MAX_DEPENDENCIES + 1])
+            .expect_err("over the limit");
+        assert_eq!(failure.code, "dependencies_over_limit");
+    }
     use crate::cancellation::CancellationToken;
     use crate::direct_executor::catalog::{EntryKind, PackageSignature};
 

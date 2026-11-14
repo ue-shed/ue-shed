@@ -96,7 +96,9 @@ reads the exact-class postings; it selects results and does not narrow the walk.
 exact paths first, and only a miss builds the case-insensitive path index.
 
 Pages recompute the walk from the generation and continue after the cursor path, so a page costs
-the whole walk. On a project of about 700,000 packages, a reverse walk reaching 97,000 packages
+the whole walk. A page also ends early, with a cursor, before its distinct strings would exceed
+the dictionary page bound (131,072). A package records at most 65,504 dependencies, so one package
+always fits; a package with more records the header failure `dependencies_over_limit`. On a project of about 700,000 packages, a reverse walk reaching 97,000 packages
 takes about 0.4 s per page beyond opening the catalog (0.2 s with `classes`, 0.5 s with an edge
 filter), and a 20-root transitive forward walk about 0.3 s. On the same project, dependencies add
 about 3–10% to a full build with a warm file cache, about 200 MB to its peak memory, about 0.3 s to

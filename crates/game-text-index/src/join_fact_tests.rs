@@ -1877,6 +1877,29 @@ fn a_missing_entry_saved_without_source_is_visible_and_reported() -> Result<()> 
     ] {
         assert_eq!(seen.get(unit), Some(&expected), "{unit}: {seen:?}");
     }
+    let page = |selection: Value| -> Result<Value> {
+        query.query_page(
+            json!({"selection":selection,"parts":{"rows":{"limit":50},"counts":true}}),
+            &cancelled,
+        )
+    };
+    // Its saved place gives the line an origin, editing and audience, as visible text's do.
+    let all = page(json!({"target":"Game"}))?;
+    assert_eq!(all["total"], 2, "{all}");
+    assert_eq!(all["counts"]["origins"]["asset"], 1, "{all}");
+    assert_eq!(all["counts"]["readOnly"], 2, "{all}");
+    let assets = page(json!({"target":"Game",
+        "where":{"any":[{"field":"origins"},{"in":[{"var":"item"},{"lit":["asset"]}]}]}}))?;
+    let lines = &assets["localization"]["lines"];
+    assert_eq!(assets["total"], 1, "{assets}");
+    assert_eq!(
+        lines[0]["id"],
+        "Game:unresolved:string-table:%2FGame%2FText%2FTable.Table:Absent"
+    );
+    assert_eq!(lines[0]["audience"], "player", "{assets}");
+    let players = page(json!({"target":"Game",
+        "where":{"in":[{"field":"audience"},{"lit":["player"]}]}}))?;
+    assert_eq!(players["total"], 2, "{players}");
     drop(query);
     let configuration = fixture.configuration.clone();
     drop(fixture);

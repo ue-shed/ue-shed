@@ -649,6 +649,19 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			if (c.identity[occurrence] === 1 && c.key[occurrence] !== empty) hasReference = true;
 			else authored = true;
 		}
+		const unresolvedReason =
+			ns !== absent
+				? undefined
+				: hasReference
+					? Array.from(order.slice(os, oe)).some(
+							(index) =>
+								c.identity[index] === 1 && knownTables.has(c.namespace[index]!)
+						)
+						? "string_table_entry_missing"
+						: "string_table_namespace_unavailable"
+					: "unresolved_identity";
+		// A missing String Table entry is saved without source; its line and places stay visible.
+		const missingEntry = unresolvedReason === "string_table_entry_missing";
 		const sources = new Set<number>(),
 			insidePackages = new Set<number>(),
 			rowFolders = new Set<number>(),
@@ -692,7 +705,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 						values.add(source);
 					}
 				}
-				if (searchable) {
+				if (searchable || missingEntry) {
 					for (const member of members) {
 						origins |=
 							1 << (c.location[member] === 2 ? 0 : c.location[member] === 1 ? 1 : 2);
@@ -727,25 +740,13 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 					)[coverage - 2]!
 				);
 		}
-		if (ns === absent)
-			reasons |= reasonBit(
-				hasReference
-					? Array.from(order.slice(os, oe)).some(
-							(index) =>
-								c.identity[index] === 1 && knownTables.has(c.namespace[index]!)
-						)
-						? "string_table_entry_missing"
-						: "string_table_namespace_unavailable"
-					: "unresolved_identity"
-			);
+		if (unresolvedReason) reasons |= reasonBit(unresolvedReason);
 		if (!manifest.reader) reasons |= reasonBit("missing_manifest");
 		if (me - ms > 1) reasons |= reasonBit("duplicate_manifest_identity");
 		if (sources.size > 1) reasons |= reasonBit("conflicting_source");
 		line.source![row] =
 			sources.values().next().value ?? (first === absent ? empty : m.source![first]!);
 		const initialSource = strings.string(line.source![row]!);
-		// A missing String Table entry is saved without source; its line stays visible.
-		const missingEntry = (reasons & reasonBit("string_table_entry_missing")) !== 0;
 		line.source_visible![row] = Number(initialSource.trim() !== "" || missingEntry);
 		line.source_words![row] =
 			initialSource.trim() === "" ? 0 : initialSource.trim().split(/\s+/u).length;

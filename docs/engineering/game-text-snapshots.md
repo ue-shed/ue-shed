@@ -418,7 +418,8 @@ and character/word counts. Raw and line identifiers have packed UTF-8 arenas plu
 offsets and order vectors. `line.source_words` and `line.source_visible` complete the line
 projection. A line, slice or raw unit is visible when it has non-blank source, or when its line
 has the `string_table_entry_missing` reason (from `joined-native-v10`), because Unreal saves a
-String Table reference without source text. Overlay metadata can associate a query field with its own patch-row vector;
+String Table reference without source text. A line's origins, editing, audience, notes, folders
+and files roll up the places of its units with non-blank source, and every place on such a line. Overlay metadata can associate a query field with its own patch-row vector;
 line/culture fields retain the common `patch.rows`. Equal physical columns still alias.
 A native joined publisher must produce these projections before serving this query reader.
 

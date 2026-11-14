@@ -901,7 +901,7 @@ it has no source; archive-to-manifest comparisons still determine staleness.
 
 A reference into an available String Table whose namespace is known but whose entry is absent
 is `unknown` with `string_table_entry_missing`. Unreal saves such a reference without source text;
-its line is still listed and checked, so the missing entry can be found. `string_table_namespace_unavailable` means the
+its line is still listed, with its places' origin and audience, and checked, so the missing entry can be found. `string_table_namespace_unavailable` means the
 table's namespace could not be established. These are distinct from an unresolved FText identity.
 
 A file confirmed missing supplies absence: a non-empty PO translation with a missing archive is

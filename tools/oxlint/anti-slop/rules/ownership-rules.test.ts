@@ -115,6 +115,21 @@ ruleTester.run("no-check-yield-write", noCheckYieldWriteRule, {
 			errors: [{ messageId: "checkYieldWrite" }]
 		},
 		{
+			// The inner finally's return still runs the outer finally.
+			code: "let busy = false; const run = Effect.gen(function* () { if (busy) return; try { try { yield* prepare; throw failure; } catch {} finally { return; } } finally { busy = true; } });",
+			errors: [{ messageId: "checkYieldWrite" }]
+		},
+		{
+			// The inner finally's throw enters the outer catch.
+			code: "let busy = false; const run = Effect.gen(function* () { if (busy) return; try { try { yield* prepare; throw failure; } catch {} finally { throw another; } } catch { busy = true; } });",
+			errors: [{ messageId: "checkYieldWrite" }]
+		},
+		{
+			// A finally that throws replaces the try block's return, and the outer catch writes.
+			code: "let busy = false; const run = Effect.gen(function* () { if (busy) return; try { try { yield* prepare; return; } finally { throw another; } } catch { busy = true; } });",
+			errors: [{ messageId: "checkYieldWrite" }]
+		},
+		{
 			// A switch case that returns inside a try still runs its finally.
 			code: "let busy = false; const run = Effect.gen(function* () { if (busy) return; try { switch (mode) { case 1: yield* prepare; return; } } finally { busy = true; } });",
 			errors: [{ messageId: "checkYieldWrite" }]

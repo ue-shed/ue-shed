@@ -34,8 +34,8 @@ function terminates(statements: ReadonlyArray<ESTree.Node>): boolean {
 
 /**
  * Whether leaving `block` by its final `return`/`throw` can still reach `write`: an enclosing
- * `finally` holding the write runs on the way out, and a caught throw continues after its `try`
- * unless the `catch` leaves too.
+ * `finally` holding the write runs on the way out, a caught throw continues after its `try`
+ * unless the `catch` leaves too, and a `finally` that leaves replaces the exit with its own.
  */
 function exitReaches(
 	block: ESTree.Node,
@@ -53,11 +53,14 @@ function exitReaches(
 				const caught = current.handler.body.body;
 				if (!terminates(caught)) {
 					// The catch completes, so flow resumes after the try unless its finally leaves.
-					if (current.finalizer && terminates(current.finalizer.body)) return false;
+					if (current.finalizer && terminates(current.finalizer.body))
+						return exitReaches(current.finalizer, current.finalizer.body, write);
 					return reaches(current, write);
 				}
 				throws = caught.at(-1)?.type === "ThrowStatement";
 			}
+			if (current.finalizer && terminates(current.finalizer.body))
+				return exitReaches(current.finalizer, current.finalizer.body, write);
 		}
 		child = current;
 		current = current.parent;

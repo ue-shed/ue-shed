@@ -1,0 +1,91 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 23
+		}
+	},
+	"kind": "result",
+	"requestId": "project-index-dependencies-001",
+	"result": {
+		"kind": "project_index_dictionary_page",
+		"page": {
+			"generation": 3,
+			"items": [
+				{
+					"kind": "package",
+					"classes": [0],
+					"dependencies": [
+						{
+							"package": 1,
+							"packagePath": 2,
+							"hard": true,
+							"game": true,
+							"build": false
+						}
+					],
+					"packageName": "/Game/Materials/M_Impact",
+					"packagePath": "Content/Materials/M_Impact.uasset"
+				},
+				{
+					"kind": "package",
+					"classes": [],
+					"dependencies": [],
+					"failure": "header_read",
+					"packageName": "/Game/VFX/NS_Broken",
+					"packagePath": "Content/VFX/NS_Broken.uasset"
+				},
+				{
+					"kind": "package",
+					"classes": [3],
+					"dependencies": [
+						{
+							"package": 4,
+							"packagePath": 5,
+							"hard": false,
+							"game": true,
+							"build": false
+						},
+						{
+							"package": 6,
+							"packagePath": 7,
+							"hard": true,
+							"game": true,
+							"build": false
+						},
+						{
+							"package": 8,
+							"hard": true,
+							"game": false,
+							"build": false
+						},
+						{
+							"package": 9,
+							"hard": true,
+							"game": true,
+							"build": false
+						}
+					],
+					"packageName": "/Game/VFX/NS_Impact",
+					"packagePath": "Content/VFX/NS_Impact.uasset"
+				}
+			],
+			"nextCursor": "Content/VFX/NS_Impact.uasset",
+			"projectId": "c:/project#plugins",
+			"strings": [
+				"/Script/Engine.Material",
+				"/Game/Textures/T_Noise",
+				"Content/Textures/T_Noise.uasset",
+				"/Script/Niagara.NiagaraSystem",
+				"/Fx_Library/T_Spark",
+				"Plugins/FxLibrary/Content/T_Spark.uasset",
+				"/Game/Materials/M_Impact",
+				"Content/Materials/M_Impact.uasset",
+				"/Niagara/Modules/Spawn",
+				"/Script/Niagara"
+			]
+		}
+	},
+	"sequence": 2
+}

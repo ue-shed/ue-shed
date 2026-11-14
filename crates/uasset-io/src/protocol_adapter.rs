@@ -334,6 +334,11 @@ impl Emitter {
                 },
             };
             &compatible
+        } else if self.contract.version.minor < 23
+            && let Some(stripped) = without_index_mounts_and_changes(result)
+        {
+            compatible = stripped;
+            &compatible
         } else {
             result
         };
@@ -412,6 +417,29 @@ fn legacy_decode_error_result(result: &ResultFrame) -> Option<ResultFrame> {
         }
     }
     Some(compatible)
+}
+
+/// A Project Index summary without the v1.23 mount points and change report, for older clients.
+fn without_index_mounts_and_changes(result: &ResultFrame) -> Option<ResultFrame> {
+    let strip = |summary: &crate::protocol_result::ProjectIndexSummary| {
+        let mut summary = summary.clone();
+        summary.mounts.clear();
+        summary.changes = None;
+        summary
+    };
+    match result {
+        ResultFrame::ProjectIndexSummary { summary } => Some(ResultFrame::ProjectIndexSummary {
+            summary: strip(summary),
+        }),
+        ResultFrame::ProjectIndexStatus {
+            status: crate::protocol_result::ProjectIndexStatusPayload::Ready { summary },
+        } => Some(ResultFrame::ProjectIndexStatus {
+            status: crate::protocol_result::ProjectIndexStatusPayload::Ready {
+                summary: strip(summary),
+            },
+        }),
+        _ => None,
+    }
 }
 
 fn legacy_header_result(result: &ResultFrame) -> ResultFrame {
@@ -777,8 +805,13 @@ fn execute_direct(
         Operation::ProjectIndexStatus {
             cache_root,
             project_root,
+            plugins,
         } => {
-            let catalog = direct_executor::open_catalog_for_status(cache_root, project_root)?;
+            let catalog = direct_executor::open_catalog_for_status(
+                cache_root,
+                project_root,
+                index_scope(*plugins),
+            )?;
             let status = direct_executor::project_index_status_protocol(&catalog);
             emit_typed_result(emitter, &ResultFrame::ProjectIndexStatus { status })?;
             Ok(false)
@@ -786,11 +819,35 @@ fn execute_direct(
         Operation::ProjectIndexRefresh {
             cache_root,
             project_root,
-        } => execute_project_index_refresh(emitter, cancellation, cache_root, project_root, false),
+            plugins,
+            changes,
+        } => execute_project_index_refresh(
+            emitter,
+            cancellation,
+            cache_root,
+            project_root,
+            direct_executor::RefreshOptions {
+                scope: index_scope(*plugins),
+                rebuild: false,
+                changes: *changes,
+            },
+        ),
         Operation::ProjectIndexRebuild {
             cache_root,
             project_root,
-        } => execute_project_index_refresh(emitter, cancellation, cache_root, project_root, true),
+            plugins,
+            changes,
+        } => execute_project_index_refresh(
+            emitter,
+            cancellation,
+            cache_root,
+            project_root,
+            direct_executor::RefreshOptions {
+                scope: index_scope(*plugins),
+                rebuild: true,
+                changes: *changes,
+            },
+        ),
         Operation::ProjectIndexCount {
             cache_root,
             request,
@@ -882,14 +939,22 @@ fn execute_saved_world(
     result
 }
 
+fn index_scope(plugins: bool) -> direct_executor::IndexScope {
+    if plugins {
+        direct_executor::IndexScope::ContentAndPlugins
+    } else {
+        direct_executor::IndexScope::Content
+    }
+}
+
 fn execute_project_index_refresh(
     emitter: &mut Emitter,
     cancellation: &CancellationToken,
     cache_root: &str,
     project_root: &str,
-    rebuild: bool,
+    options: direct_executor::RefreshOptions,
 ) -> Result<bool, Failure> {
-    let mut catalog = direct_executor::open_catalog(cache_root, project_root)?;
+    let mut catalog = direct_executor::open_catalog(cache_root, project_root, options.scope)?;
     if direct_executor::catalog_was_quarantined(&catalog) {
         emitter
             .emit(
@@ -909,7 +974,7 @@ fn execute_project_index_refresh(
         direct_executor::project_index_refresh_protocol(
             &mut catalog,
             &worker_project_root,
-            rebuild,
+            &options,
             &worker_cancellation,
             |progress| {
                 let _ = progress_sender.send(progress);

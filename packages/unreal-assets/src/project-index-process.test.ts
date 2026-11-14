@@ -11,6 +11,7 @@ import {
 	getProjectIndexStatus,
 	ProjectIndexGeneration,
 	ProjectIndexQuery,
+	projectIndexDependencyClosures,
 	queryProjectIndex,
 	refreshProjectIndex
 } from "./project-index.js";
@@ -122,6 +123,49 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 					})
 				);
 				expect(recovered.generation).toBe(warm.generation);
+
+				// v1.23: an unchanged refresh reports no changed paths, then dependency walks.
+				observeQueryWorkers = false;
+				const reported = yield* foldProjectIndexRefresh(
+					yield* Stream.runCollect(
+						refreshProjectIndex({ projectRoot: fixtureRoot, changes: true })
+					)
+				);
+				expect(reported.changes).toEqual({
+					baseGeneration: warm.generation,
+					changed: [],
+					removed: [],
+					complete: true
+				});
+				expect(reported.mounts).toEqual([{ name: "/Game/", path: "Content/" }]);
+				const context = "Content/Fixture/Input/IMC_Fixture.uasset";
+				const reached = yield* queryProjectIndex(
+					ProjectIndexQuery.cases.Dependencies.make({
+						expectedGeneration: reported.generation,
+						limit: 64,
+						paths: [context],
+						projectId: reported.projectId,
+						transitive: true
+					})
+				);
+				const closure = projectIndexDependencyClosures(reached.items, [context]).get(
+					context
+				);
+				expect(closure?.packages.has("Content/Fixture/Input/IA_Jump.uasset")).toBe(true);
+				expect(closure?.unresolved.has("/Script/EnhancedInput")).toBe(true);
+				const dependents = yield* queryProjectIndex(
+					ProjectIndexQuery.cases.Dependents.make({
+						expectedGeneration: reported.generation,
+						limit: 64,
+						paths: ["Content/Fixture/Input/IA_Jump.uasset"],
+						projectId: reported.projectId
+					})
+				);
+				expect(
+					dependents.items.map((item) =>
+						item.kind === "package" ? item.packagePath : ""
+					)
+				).toContain(context);
 			}).pipe(Effect.provide(layer));
 
 			expect(new Set(queryWorkerPids).size).toBe(1);

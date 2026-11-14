@@ -43,6 +43,34 @@ pub enum ProjectIndexDictionaryItem {
         #[serde(rename = "serializedNames")]
         serialized_names: Vec<u32>,
     },
+    /// v1.23: a dependency query package; classes and dependency names are page strings.
+    #[serde(rename = "package")]
+    Package {
+        classes: Vec<u32>,
+        dependencies: Vec<ProjectIndexDictionaryDependency>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failure: Option<String>,
+        #[serde(rename = "packageName")]
+        package_name: String,
+        #[serde(rename = "packagePath")]
+        package_path: String,
+    },
+}
+
+/// A dependency whose package name and resolved path are page strings.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIndexDictionaryDependency {
+    pub package: u32,
+    #[serde(
+        default,
+        rename = "packagePath",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub package_path: Option<u32>,
+    pub hard: bool,
+    pub game: bool,
+    pub build: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -114,6 +142,28 @@ impl From<ProjectIndexPage> for ProjectIndexDictionaryPage {
                     package_path,
                     serialized_names: intern(serialized_names),
                 },
+                ProjectIndexItem::Package {
+                    classes,
+                    dependencies,
+                    failure,
+                    package_name,
+                    package_path,
+                } => ProjectIndexDictionaryItem::Package {
+                    classes: intern(classes),
+                    dependencies: dependencies
+                        .into_iter()
+                        .map(|dependency| ProjectIndexDictionaryDependency {
+                            package: intern(vec![dependency.package])[0],
+                            package_path: dependency.package_path.map(|path| intern(vec![path])[0]),
+                            hard: dependency.hard,
+                            game: dependency.game,
+                            build: dependency.build,
+                        })
+                        .collect(),
+                    failure,
+                    package_name,
+                    package_path,
+                },
             })
             .collect();
         Self {
@@ -157,6 +207,33 @@ mod tests {
         assert!(decode_event(include_bytes!("../../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-dictionary-page-negative-index.json")).is_err());
         let mut event: serde_json::Value = serde_json::from_slice(compact).unwrap();
         event["result"]["page"]["strings"] = serde_json::json!([]);
+        assert!(decode_event(&serde_json::to_vec(&event).unwrap()).is_err());
+    }
+
+    #[test]
+    fn package_pages_share_dependency_names_and_paths() {
+        let plain = include_bytes!(
+            "../../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-package-page-result-event.json"
+        );
+        let compact = include_bytes!(
+            "../../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-package-dictionary-page-result-event.json"
+        );
+        let Event::Result { result, .. } = decode_event(plain).unwrap() else {
+            panic!("plain page");
+        };
+        let ResultFrame::ProjectIndexPage { page } = *result else {
+            panic!("plain payload");
+        };
+        let Event::Result { result, .. } = decode_event(compact).unwrap() else {
+            panic!("dictionary page");
+        };
+        let ResultFrame::ProjectIndexDictionaryPage { page: expected } = *result else {
+            panic!("dictionary payload");
+        };
+        assert_eq!(ProjectIndexDictionaryPage::from(page), expected);
+        let mut event: serde_json::Value = serde_json::from_slice(compact).unwrap();
+        event["result"]["page"]["items"][0]["dependencies"][0]["packagePath"] =
+            serde_json::json!(99);
         assert!(decode_event(&serde_json::to_vec(&event).unwrap()).is_err());
     }
 

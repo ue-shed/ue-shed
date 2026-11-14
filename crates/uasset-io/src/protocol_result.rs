@@ -7,7 +7,9 @@
 use serde::{Deserialize, Serialize};
 
 mod project_index_dictionary;
-pub use project_index_dictionary::{ProjectIndexDictionaryItem, ProjectIndexDictionaryPage};
+pub use project_index_dictionary::{
+    ProjectIndexDictionaryDependency, ProjectIndexDictionaryItem, ProjectIndexDictionaryPage,
+};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "kind", deny_unknown_fields)]
@@ -101,6 +103,55 @@ pub struct ProjectIndexSummary {
     pub project_id: String,
     #[serde(rename = "removedPackages")]
     pub removed_packages: u64,
+    /// v1.23: where Unreal mounts each indexed content root, `/Game/` first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mounts: Vec<ProjectIndexMount>,
+    /// v1.23: present when the refresh request asked for `changes`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changes: Option<ProjectIndexChanges>,
+}
+
+/// Package names below `name` (`/Game/`) are files below the project-relative `path` (`Content/`).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIndexMount {
+    pub name: String,
+    pub path: String,
+}
+
+/// What a refresh saw change on disk since `baseGeneration`: packages and sidecars that are new
+/// or whose size or modified time changed, and those that are gone. Re-reading an entry for a newer
+/// index profile is not a change. When `complete` is false there were more than the report holds,
+/// and both lists are empty.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIndexChanges {
+    #[serde(
+        default,
+        rename = "baseGeneration",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub base_generation: Option<u64>,
+    pub changed: Vec<String>,
+    pub removed: Vec<String>,
+    pub complete: bool,
+}
+
+/// One package dependency with Unreal's `EDependencyProperty` bits, and the indexed package it
+/// names when there is one.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIndexDependency {
+    pub package: String,
+    #[serde(
+        default,
+        rename = "packagePath",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub package_path: Option<String>,
+    pub hard: bool,
+    pub game: bool,
+    pub build: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -156,6 +207,19 @@ pub enum ProjectIndexItem {
         package_path: String,
         #[serde(rename = "serializedNames")]
         serialized_names: Vec<String>,
+    },
+    /// v1.23: a package from a `dependencies` or `dependents` query, named as Unreal mounts it.
+    #[serde(rename = "package")]
+    Package {
+        classes: Vec<String>,
+        dependencies: Vec<ProjectIndexDependency>,
+        /// Set when the package header could not be read, so its dependencies are unknown.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failure: Option<String>,
+        #[serde(rename = "packageName")]
+        package_name: String,
+        #[serde(rename = "packagePath")]
+        package_path: String,
     },
 }
 

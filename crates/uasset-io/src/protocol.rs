@@ -150,6 +150,9 @@ pub enum Operation {
         cache_root: String,
         #[serde(rename = "projectRoot")]
         project_root: String,
+        /// v1.23: the index that also holds project plugin content.
+        #[serde(default)]
+        plugins: bool,
     },
     #[serde(rename = "project_index_refresh")]
     ProjectIndexRefresh {
@@ -157,6 +160,13 @@ pub enum Operation {
         cache_root: String,
         #[serde(rename = "projectRoot")]
         project_root: String,
+        /// v1.23: also index the content of every project plugin that can contain content, as a
+        /// separate index with its own project identity.
+        #[serde(default)]
+        plugins: bool,
+        /// v1.23: report the paths that changed on disk since the previous generation.
+        #[serde(default)]
+        changes: bool,
     },
     #[serde(rename = "project_index_rebuild")]
     ProjectIndexRebuild {
@@ -164,6 +174,10 @@ pub enum Operation {
         cache_root: String,
         #[serde(rename = "projectRoot")]
         project_root: String,
+        #[serde(default)]
+        plugins: bool,
+        #[serde(default)]
+        changes: bool,
     },
     #[serde(rename = "project_index_query")]
     ProjectIndexQuery {
@@ -266,6 +280,50 @@ pub enum ProjectIndexQuery {
         project_id: String,
         values: Vec<String>,
     },
+    /// v1.23: the packages at `paths` with their dependencies; with `transitive`, also every
+    /// indexed package they reach through dependencies `edges` accepts.
+    #[serde(rename = "dependencies")]
+    Dependencies {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+        paths: Vec<String>,
+        #[serde(default)]
+        transitive: bool,
+        #[serde(default)]
+        edges: ProjectIndexEdges,
+    },
+    /// v1.23: indexed packages that depend on the packages at `paths`; with `transitive`, also
+    /// their dependents. `classes` keeps results with one of those exact export classes.
+    #[serde(rename = "dependents")]
+    Dependents {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+        paths: Vec<String>,
+        #[serde(default)]
+        transitive: bool,
+        #[serde(default)]
+        edges: ProjectIndexEdges,
+        #[serde(default)]
+        classes: Vec<String>,
+    },
+}
+
+/// Which dependencies a dependency walk follows, by Unreal's `EDependencyProperty`. A set field
+/// requires that value; an absent one accepts either.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectIndexEdges {
+    pub hard: Option<bool>,
+    pub game: Option<bool>,
+    pub build: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -816,21 +874,48 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
         Operation::ProjectIndexStatus {
             cache_root,
             project_root,
+            plugins,
+        } => {
+            if *plugins && request.contract.version.minor < 23 {
+                return Err(ProtocolError(
+                    "a plugin-inclusive Project Index requires uasset-io v1.23".into(),
+                ));
+            }
+            validate_non_empty(cache_root, "cacheRoot")?;
+            validate_non_empty(project_root, "projectRoot")
         }
-        | Operation::ProjectIndexRefresh {
+        Operation::ProjectIndexRefresh {
             cache_root,
             project_root,
+            plugins,
+            changes,
         }
         | Operation::ProjectIndexRebuild {
             cache_root,
             project_root,
+            plugins,
+            changes,
         } => {
+            if (*plugins || *changes) && request.contract.version.minor < 23 {
+                return Err(ProtocolError(
+                    "plugin-inclusive indexes and change reports require uasset-io v1.23".into(),
+                ));
+            }
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_non_empty(project_root, "projectRoot")
         }
         Operation::ProjectIndexQuery {
             cache_root, query, ..
         } => {
+            if matches!(
+                query,
+                ProjectIndexQuery::Dependencies { .. } | ProjectIndexQuery::Dependents { .. }
+            ) && request.contract.version.minor < 23
+            {
+                return Err(ProtocolError(
+                    "dependency queries require uasset-io v1.23".into(),
+                ));
+            }
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_project_index_query(query)
         }
@@ -871,8 +956,21 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
 }
 
 const PROJECT_INDEX_MAX_PAGE_SIZE: u32 = 1024;
+const PROJECT_INDEX_MAX_DEPENDENCY_PATHS: usize = 1024;
 
 fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), ProtocolError> {
+    if let ProjectIndexQuery::Dependencies { paths, .. }
+    | ProjectIndexQuery::Dependents { paths, .. } = query
+    {
+        if paths.is_empty() || paths.len() > PROJECT_INDEX_MAX_DEPENDENCY_PATHS {
+            return Err(ProtocolError(format!(
+                "dependency queries start from 1 to {PROJECT_INDEX_MAX_DEPENDENCY_PATHS} paths"
+            )));
+        }
+        for path in paths {
+            validate_non_empty(path, "path")?;
+        }
+    }
     let (project_id, expected_generation, limit, cursor, values) = match query {
         ProjectIndexQuery::Maps {
             cursor,
@@ -919,6 +1017,27 @@ fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), Protoco
             *limit,
             cursor,
             Some(values.as_slice()),
+        ),
+        ProjectIndexQuery::Dependencies {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            ..
+        } => (project_id, *expected_generation, *limit, cursor, None),
+        ProjectIndexQuery::Dependents {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            classes,
+            ..
+        } => (
+            project_id,
+            *expected_generation,
+            *limit,
+            cursor,
+            (!classes.is_empty()).then_some(classes.as_slice()),
         ),
     };
     validate_non_empty(project_id, "projectId")?;
@@ -1097,6 +1216,28 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                                     "invalid Project Index dictionary references".to_owned(),
                                 ));
                             }
+                        }
+                    }
+                    ProjectIndexDictionaryItem::Package {
+                        classes,
+                        dependencies,
+                        package_name,
+                        package_path,
+                        ..
+                    } => {
+                        validate_non_empty(package_name, "packageName")?;
+                        validate_non_empty(package_path, "packagePath")?;
+                        let in_page = |id: &u32| (*id as usize) < page.strings.len();
+                        if classes.len() > 64
+                            || !classes.iter().all(in_page)
+                            || !dependencies.iter().all(|dependency| {
+                                in_page(&dependency.package)
+                                    && dependency.package_path.as_ref().is_none_or(in_page)
+                            })
+                        {
+                            return Err(ProtocolError(
+                                "invalid Project Index dictionary references".to_owned(),
+                            ));
                         }
                     }
                 }
@@ -1450,6 +1591,76 @@ mod game_text_contract_tests {
         assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/game-text-index-request-old-minor.json")).is_err());
         assert!(super::decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-index-result-event.json")).is_ok());
         assert!(super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/game-text-disk-changes-request.json")).is_ok());
+    }
+
+    #[test]
+    fn dependency_queries_plugin_scopes_and_change_reports_need_minor_23() {
+        use super::{
+            Operation, ProjectIndexEdges, ProjectIndexQuery, decode_event, decode_request,
+        };
+        let request = decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-dependencies-request.json")).unwrap();
+        let Operation::ProjectIndexQuery {
+            query:
+                ProjectIndexQuery::Dependencies {
+                    paths,
+                    transitive,
+                    edges,
+                    ..
+                },
+            ..
+        } = request.operation
+        else {
+            panic!("dependencies query");
+        };
+        assert_eq!(paths, ["Content/VFX/NS_Impact.uasset"]);
+        assert!(transitive);
+        assert_eq!(
+            edges,
+            ProjectIndexEdges {
+                game: Some(true),
+                ..ProjectIndexEdges::default()
+            }
+        );
+        let request = decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-dependents-request.json")).unwrap();
+        assert!(matches!(
+            request.operation,
+            Operation::ProjectIndexQuery {
+                query: ProjectIndexQuery::Dependents { .. },
+                ..
+            }
+        ));
+        let request = decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-plugins-refresh-request.json")).unwrap();
+        assert!(matches!(
+            request.operation,
+            Operation::ProjectIndexRefresh {
+                plugins: true,
+                changes: true,
+                ..
+            }
+        ));
+        // Requests without the new fields keep decoding at every minor.
+        let request = decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-refresh-request.json")).unwrap();
+        assert!(matches!(
+            request.operation,
+            Operation::ProjectIndexRefresh {
+                plugins: false,
+                changes: false,
+                ..
+            }
+        ));
+        for invalid in [
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-dependencies-request-old-minor.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-dependencies-request-no-paths.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-plugins-refresh-request-old-minor.json").as_slice(),
+        ] {
+            assert!(decode_request(invalid).is_err());
+        }
+        for event in [
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-changes-summary-result-event.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-package-page-result-event.json").as_slice(),
+        ] {
+            decode_event(event).unwrap();
+        }
     }
 
     #[test]

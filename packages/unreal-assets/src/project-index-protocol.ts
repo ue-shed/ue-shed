@@ -17,6 +17,7 @@ import {
 	ProjectIndexIncompatibleWorker,
 	ProjectIndexInvalidRequest,
 	ProjectIndexMap,
+	ProjectIndexPackage,
 	ProjectIndexPage,
 	ProjectIndexRefreshEvent,
 	ProjectIndexRefreshFailed,
@@ -61,6 +62,7 @@ export function mapProjectIndexProgress(
 export function decodeProjectIndexWireSummary(
 	summary: UAssetIoProjectIndexSummary
 ): ProjectIndexSummary {
+	const changes = summary.changes;
 	return {
 		changedPackages: summary.changedPackages,
 		completeness: summary.completeness,
@@ -69,7 +71,24 @@ export function decodeProjectIndexWireSummary(
 		mapCount: summary.mapCount,
 		packageCount: summary.packageCount,
 		projectId: ProjectIdentity.make(summary.projectId),
-		removedPackages: summary.removedPackages
+		removedPackages: summary.removedPackages,
+		...(summary.mounts === undefined ? undefined : { mounts: summary.mounts }),
+		...(changes === undefined
+			? undefined
+			: {
+					changes: {
+						changed: changes.changed,
+						removed: changes.removed,
+						complete: changes.complete,
+						...(changes.baseGeneration === undefined
+							? undefined
+							: {
+									baseGeneration: ProjectIndexGeneration.make(
+										changes.baseGeneration
+									)
+								})
+					}
+				})
 	};
 }
 
@@ -80,8 +99,10 @@ export function decodeProjectIndexWireSummary(
  */
 export function decodeProjectIndexWirePage(page: UAssetIoProjectIndexPage): ProjectIndexPage {
 	const items = page.items.map(
-		(item): ProjectIndexMap | ProjectIndexHeader | ProjectIndexInventory => {
-			if (item.kind === "inventory") return item;
+		(
+			item
+		): ProjectIndexMap | ProjectIndexHeader | ProjectIndexInventory | ProjectIndexPackage => {
+			if (item.kind === "inventory" || item.kind === "package") return item;
 			if (item.kind === "map")
 				return { kind: "map", mapPath: item.mapPath, packageName: item.packageName };
 			const header: ProjectIndexHeader = {
@@ -119,6 +140,19 @@ const DictionaryDomainPage = Schema.Struct({
 				...ProjectIndexHeader.fields,
 				classes: DictionaryReferences,
 				serializedNames: DictionaryReferences
+			}),
+			Schema.Struct({
+				...ProjectIndexPackage.fields,
+				classes: DictionaryReferences,
+				dependencies: Schema.Array(
+					Schema.Struct({
+						package: Schema.Number,
+						packagePath: Schema.optionalKey(Schema.Number),
+						hard: Schema.Boolean,
+						game: Schema.Boolean,
+						build: Schema.Boolean
+					})
+				)
 			})
 		])
 	).check(Schema.isMaxLength(PROJECT_INDEX_MAX_PAGE_SIZE)),
@@ -154,15 +188,29 @@ export function decodeProjectIndexDictionaryPage(
 	};
 	return retainValidatedPage({
 		generation: page.generation,
-		items: page.items.map((item) =>
-			item.kind !== "header"
-				? item
-				: {
-						...item,
-						classes: item.classes.map(resolveString),
-						serializedNames: item.serializedNames.map(resolveString)
-					}
-		),
+		items: page.items.map((item) => {
+			if (item.kind === "header")
+				return {
+					...item,
+					classes: item.classes.map(resolveString),
+					serializedNames: item.serializedNames.map(resolveString)
+				};
+			if (item.kind === "package")
+				return {
+					...item,
+					classes: item.classes.map(resolveString),
+					dependencies: item.dependencies.map((dependency) => ({
+						package: resolveString(dependency.package),
+						...(dependency.packagePath === undefined
+							? undefined
+							: { packagePath: resolveString(dependency.packagePath) }),
+						hard: dependency.hard,
+						game: dependency.game,
+						build: dependency.build
+					}))
+				};
+			return item;
+		}),
 		projectId: page.projectId,
 		...(page.nextCursor === undefined
 			? undefined

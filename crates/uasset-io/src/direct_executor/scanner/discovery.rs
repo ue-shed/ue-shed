@@ -78,14 +78,25 @@ impl DirectoryQueue {
     }
 }
 
+/// The project's `Content`, and each further content root (plugin `Content` directories), walked
+/// together. Further roots that do not exist hold no packages.
 pub(super) fn enumerate(
     project_root: &str,
+    further_roots: &[PathBuf],
     cancellation: &CancellationToken,
 ) -> Result<Vec<PackageSignature>, Failure> {
     let workers = std::thread::available_parallelism()
         .map_or(4, std::num::NonZeroUsize::get)
         .min(MAX_WORKERS);
-    enumerate_with_limits(project_root, cancellation, workers, MAX_QUEUED_DIRECTORIES)
+    let mut roots = vec![Path::new(project_root).join("Content")];
+    roots.extend(further_roots.iter().filter(|root| root.is_dir()).cloned());
+    enumerate_roots(
+        project_root,
+        roots,
+        cancellation,
+        workers,
+        MAX_QUEUED_DIRECTORIES,
+    )
 }
 
 /// The same walk on at most `maximum_workers` threads, for checks that run beside other work.
@@ -107,10 +118,26 @@ fn enumerate_with_limits(
     workers: usize,
     queue_capacity: usize,
 ) -> Result<Vec<PackageSignature>, Failure> {
+    enumerate_roots(
+        project_root,
+        vec![Path::new(project_root).join("Content")],
+        cancellation,
+        workers,
+        queue_capacity,
+    )
+}
+
+fn enumerate_roots(
+    project_root: &str,
+    roots: Vec<PathBuf>,
+    cancellation: &CancellationToken,
+    workers: usize,
+    queue_capacity: usize,
+) -> Result<Vec<PackageSignature>, Failure> {
     checkpoint(cancellation, "discovery")?;
     let queue = DirectoryQueue {
         work: Mutex::new(Work {
-            pending: vec![Path::new(project_root).join("Content")],
+            pending: roots,
             active: 0,
             workers: 1,
             failure: None,
@@ -326,7 +353,7 @@ mod tests {
         std::os::unix::fs::symlink(project.0.join("Outside"), project.0.join("Content/Link"))
             .unwrap();
         assert!(
-            enumerate(&project.0.to_string_lossy(), &CancellationToken::new())
+            enumerate(&project.0.to_string_lossy(), &[], &CancellationToken::new())
                 .unwrap()
                 .is_empty()
         );

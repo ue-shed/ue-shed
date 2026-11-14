@@ -17,6 +17,8 @@ export const PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
  * may instead provide an explicit cache-root layer.
  */
 export const PROJECT_INDEX_CACHE_ROOT_ENV = "UE_SHED_PROJECT_INDEX_CACHE_ROOT";
+/** Package paths one dependency or dependents query starts from: 1 to 1,024. */
+export const PROJECT_INDEX_MAX_DEPENDENCY_PATHS = 1024;
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
@@ -62,13 +64,32 @@ export type ProjectIndexCacheRoot = typeof ProjectIndexCacheRoot.Type;
  * host or infer one from ambient process state.
  */
 export const ProjectIndexTarget = Schema.Struct({
-	projectRoot: BoundedPath
+	projectRoot: BoundedPath,
+	/**
+	 * Index the content of every project plugin that can contain content too, mounted as Unreal
+	 * mounts it (`/<descriptor stem>/`). This is a separate index with its own `projectId`, so
+	 * callers that index only `Content` never see plugin packages. Needs uasset-io v1.23.
+	 */
+	plugins: Schema.optionalKey(Schema.Boolean)
 });
 /**
  * Explicit project root to refresh, rebuild or inspect. It does not select a project for a
  * host or infer one from ambient process state.
  */
 export interface ProjectIndexTarget extends Schema.Schema.Type<typeof ProjectIndexTarget> {}
+
+/**
+ * A refresh or rebuild target. `changes` asks for the paths that changed on disk since the
+ * previous generation in the completed summary. Needs uasset-io v1.23.
+ */
+export const ProjectIndexRefreshTarget = Schema.Struct({
+	...ProjectIndexTarget.fields,
+	changes: Schema.optionalKey(Schema.Boolean)
+});
+/** A refresh or rebuild target, optionally asking for the paths that changed on disk. */
+export interface ProjectIndexRefreshTarget extends Schema.Schema.Type<
+	typeof ProjectIndexRefreshTarget
+> {}
 
 /**
  * Bounded catalog diagnostic with stable code, message and replay-safety hint. Summary
@@ -86,8 +107,36 @@ export const ProjectIndexDiagnostic = Schema.Struct({
 export interface ProjectIndexDiagnostic extends Schema.Schema.Type<typeof ProjectIndexDiagnostic> {}
 
 /**
+ * Where Unreal mounts an indexed content root: package names below `name` (`/Game/`) are files
+ * below the project-relative `path` (`Content/`).
+ */
+export const ProjectIndexMount = Schema.Struct({
+	name: BoundedPath,
+	path: BoundedPath
+});
+/** Where Unreal mounts an indexed content root. */
+export interface ProjectIndexMount extends Schema.Schema.Type<typeof ProjectIndexMount> {}
+
+/**
+ * What a refresh saw change on disk since `baseGeneration` (absent for a first or rebuilt
+ * index): packages and sidecars that are new or whose size or modified time changed, and those
+ * that are gone. Re-reading for a newer index profile is not a change. When `complete` is false
+ * there were more than the report holds and both lists are empty: treat everything as changed.
+ */
+export const ProjectIndexChanges = Schema.Struct({
+	baseGeneration: Schema.optionalKey(ProjectIndexGeneration),
+	changed: Schema.Array(BoundedPath),
+	removed: Schema.Array(BoundedPath),
+	complete: Schema.Boolean
+});
+/** What a refresh saw change on disk since its base generation. */
+export interface ProjectIndexChanges extends Schema.Schema.Type<typeof ProjectIndexChanges> {}
+
+/**
  * Committed catalog identity/generation, package/map counts, changed/removed counts and
- * bounded diagnostics. Partial completeness must remain visible to callers.
+ * bounded diagnostics. Partial completeness must remain visible to callers. With uasset-io
+ * v1.23, `mounts` lists the indexed content roots, and a refresh that asked for `changes`
+ * reports them.
  */
 export const ProjectIndexSummary = Schema.Struct({
 	changedPackages: NonNegativeInt,
@@ -99,7 +148,9 @@ export const ProjectIndexSummary = Schema.Struct({
 	mapCount: NonNegativeInt,
 	packageCount: NonNegativeInt,
 	projectId: ProjectIdentity,
-	removedPackages: NonNegativeInt
+	removedPackages: NonNegativeInt,
+	mounts: Schema.optionalKey(Schema.Array(ProjectIndexMount)),
+	changes: Schema.optionalKey(ProjectIndexChanges)
 });
 /**
  * Committed catalog identity/generation, package/map counts, changed/removed counts and
@@ -147,8 +198,33 @@ const QueryBase = {
 };
 
 /**
- * Bounded generation-bound inventory, map, class or serialized-name page query. Requires the
- * committed project identity and generation; query cursors are opaque.
+ * Which dependencies a walk follows, by Unreal's `EDependencyProperty` bits. A present field
+ * requires that value; an absent one accepts either. `{}` follows every dependency,
+ * `{ game: true }` only what the game uses, `{ hard: true }` only import-map dependencies.
+ */
+export const ProjectIndexEdges = Schema.Struct({
+	hard: Schema.optionalKey(Schema.Boolean),
+	game: Schema.optionalKey(Schema.Boolean),
+	build: Schema.optionalKey(Schema.Boolean)
+});
+/** Which dependencies a walk follows, by Unreal's `EDependencyProperty` bits. */
+export interface ProjectIndexEdges extends Schema.Schema.Type<typeof ProjectIndexEdges> {}
+
+const DependencyQueryFields = {
+	...QueryBase,
+	/** Project-relative package paths, for example `Content/VFX/NS_Impact.uasset`. */
+	paths: Schema.Array(BoundedPath).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(PROJECT_INDEX_MAX_DEPENDENCY_PATHS)
+	),
+	transitive: Schema.optionalKey(Schema.Boolean),
+	edges: Schema.optionalKey(ProjectIndexEdges)
+};
+
+/**
+ * Bounded generation-bound page query; cursors are opaque. `Dependencies` and `Dependents`
+ * (uasset-io v1.23) return `package` items; `Dependents` accepts deleted paths, and its `classes`
+ * filter results without narrowing the walk.
  */
 export const ProjectIndexQuery = Schema.TaggedUnion({
 	Inventory: QueryBase,
@@ -156,7 +232,9 @@ export const ProjectIndexQuery = Schema.TaggedUnion({
 	ExactClasses: { ...QueryBase, values: QueryValues },
 	ClassPrefixes: { ...QueryBase, values: QueryValues },
 	ClassNameSuffixes: { ...QueryBase, values: QueryValues },
-	SerializedNames: { ...QueryBase, values: QueryValues }
+	SerializedNames: { ...QueryBase, values: QueryValues },
+	Dependencies: DependencyQueryFields,
+	Dependents: { ...DependencyQueryFields, classes: Schema.optionalKey(QueryValues) }
 });
 export type ProjectIndexQuery = typeof ProjectIndexQuery.Type;
 
@@ -248,13 +326,45 @@ export const ProjectIndexInventory = Schema.Struct({
  */
 export interface ProjectIndexInventory extends Schema.Schema.Type<typeof ProjectIndexInventory> {}
 /**
- * Discriminated map, header or inventory page item. Consumers must narrow by kind before
- * using fields specific to a projection.
+ * One package dependency as Unreal's Asset Registry records it: `hard` for import-map
+ * dependencies, `game` when the game uses it, `build` for extra build dependencies.
+ * `packagePath` is the indexed package the name resolves to; it is absent for script packages,
+ * engine and unindexed plugin content, and packages that are not on disk.
+ */
+export const ProjectIndexDependency = Schema.Struct({
+	package: BoundedPath,
+	packagePath: Schema.optionalKey(BoundedPath),
+	hard: Schema.Boolean,
+	game: Schema.Boolean,
+	build: Schema.Boolean
+});
+/** One package dependency as Unreal's Asset Registry records it. */
+export interface ProjectIndexDependency extends Schema.Schema.Type<typeof ProjectIndexDependency> {}
+
+/**
+ * A package from a dependency or dependents query, named as Unreal mounts it. `failure` is set
+ * when its header could not be read, so its dependencies are unknown rather than empty.
+ */
+export const ProjectIndexPackage = Schema.Struct({
+	classes: Schema.Array(QueryValue).check(Schema.isMaxLength(64)),
+	dependencies: Schema.Array(ProjectIndexDependency),
+	failure: Schema.optionalKey(BoundedIdentifier),
+	kind: Schema.Literal("package"),
+	packageName: BoundedPath,
+	packagePath: BoundedPath
+});
+/** A package from a dependency or dependents query, named as Unreal mounts it. */
+export interface ProjectIndexPackage extends Schema.Schema.Type<typeof ProjectIndexPackage> {}
+
+/**
+ * Discriminated map, header, inventory or package page item. Consumers must narrow by kind
+ * before using fields specific to a projection.
  */
 export const ProjectIndexItem = Schema.Union([
 	ProjectIndexMap,
 	ProjectIndexHeader,
-	ProjectIndexInventory
+	ProjectIndexInventory,
+	ProjectIndexPackage
 ]);
 export type ProjectIndexItem = typeof ProjectIndexItem.Type;
 
@@ -382,10 +492,10 @@ export interface ProjectIndexApi {
 		request: ProjectIndexCount
 	) => Effect.Effect<ProjectIndexCountResult, ProjectIndexError>;
 	readonly rebuild: (
-		target: ProjectIndexTarget
+		target: ProjectIndexRefreshTarget
 	) => Stream.Stream<ProjectIndexRefreshEvent, ProjectIndexError>;
 	readonly refresh: (
-		target: ProjectIndexTarget
+		target: ProjectIndexRefreshTarget
 	) => Stream.Stream<ProjectIndexRefreshEvent, ProjectIndexError>;
 	readonly query: (
 		request: ProjectIndexQuery
@@ -455,6 +565,7 @@ const invalidRequest = (message: string, cause?: unknown): ProjectIndexInvalidRe
 
 const decodeCount = Schema.decodeUnknownEffect(ProjectIndexCount);
 const decodeTarget = Schema.decodeUnknownEffect(ProjectIndexTarget);
+const decodeRefreshTarget = Schema.decodeUnknownEffect(ProjectIndexRefreshTarget);
 const decodeQuery = Schema.decodeUnknownEffect(ProjectIndexQuery);
 
 /**
@@ -616,17 +727,24 @@ export function foldProjectIndexRefresh(
 	return Effect.succeed(summary);
 }
 
-const acquireRefresh = Effect.fn("ProjectIndex.refresh")((target: ProjectIndexTarget) =>
+const decodeProjectIndexRefreshTarget = <Input>(input: Input) =>
+	decodeRefreshTarget(input).pipe(
+		Effect.mapError((cause) =>
+			invalidRequest("Project Index target must include a non-empty project root.", cause)
+		)
+	);
+
+const acquireRefresh = Effect.fn("ProjectIndex.refresh")((target: ProjectIndexRefreshTarget) =>
 	Effect.gen(function* () {
-		const decoded = yield* decodeProjectIndexTarget(target);
+		const decoded = yield* decodeProjectIndexRefreshTarget(target);
 		const index = yield* ProjectIndex;
 		return index.refresh(decoded);
 	})
 );
 
-const acquireRebuild = Effect.fn("ProjectIndex.rebuild")((target: ProjectIndexTarget) =>
+const acquireRebuild = Effect.fn("ProjectIndex.rebuild")((target: ProjectIndexRefreshTarget) =>
 	Effect.gen(function* () {
-		const decoded = yield* decodeProjectIndexTarget(target);
+		const decoded = yield* decodeProjectIndexRefreshTarget(target);
 		const index = yield* ProjectIndex;
 		return index.rebuild(decoded);
 	})
@@ -637,7 +755,7 @@ const acquireRebuild = Effect.fn("ProjectIndex.rebuild")((target: ProjectIndexTa
  * before using the new generation; query consumers must restart stale pagination.
  */
 export function refreshProjectIndex(
-	target: ProjectIndexTarget
+	target: ProjectIndexRefreshTarget
 ): Stream.Stream<ProjectIndexRefreshEvent, ProjectIndexError, ProjectIndex> {
 	return Stream.unwrap(acquireRefresh(target));
 }
@@ -647,9 +765,49 @@ export function refreshProjectIndex(
  * returns the new committed generation; it does not change the host's selected project.
  */
 export function rebuildProjectIndex(
-	target: ProjectIndexTarget
+	target: ProjectIndexRefreshTarget
 ): Stream.Stream<ProjectIndexRefreshEvent, ProjectIndexError, ProjectIndex> {
 	return Stream.unwrap(acquireRebuild(target));
+}
+
+/**
+ * Per-root closures from the `package` items of a transitive `Dependencies` query, following only
+ * the dependencies `follow` accepts. Each closure holds its root; dependencies without an indexed
+ * package are listed in `unresolved` by name.
+ */
+export function projectIndexDependencyClosures(
+	items: Iterable<ProjectIndexItem>,
+	roots: Iterable<string>,
+	follow: (dependency: ProjectIndexDependency) => boolean = () => true
+): ReadonlyMap<
+	string,
+	{ readonly packages: ReadonlySet<string>; readonly unresolved: ReadonlySet<string> }
+> {
+	const packages = new Map<string, ProjectIndexPackage>();
+	for (const item of items) if (item.kind === "package") packages.set(item.packagePath, item);
+	const closures = new Map<
+		string,
+		{ readonly packages: ReadonlySet<string>; readonly unresolved: ReadonlySet<string> }
+	>();
+	for (const root of roots) {
+		const reached = new Set<string>();
+		const unresolved = new Set<string>();
+		const pending = packages.has(root) ? [root] : [];
+		if (pending.length > 0) reached.add(root);
+		for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+			for (const dependency of packages.get(path)?.dependencies ?? []) {
+				if (!follow(dependency)) continue;
+				const target = dependency.packagePath;
+				if (target === undefined) unresolved.add(dependency.package);
+				else if (!reached.has(target)) {
+					reached.add(target);
+					pending.push(target);
+				}
+			}
+		}
+		closures.set(root, { packages: reached, unresolved });
+	}
+	return closures;
 }
 
 /**

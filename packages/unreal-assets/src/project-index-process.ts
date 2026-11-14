@@ -1,5 +1,7 @@
 import type {
 	UAssetIoOperation,
+	UAssetIoProjectIndexDependencyQuery,
+	UAssetIoProjectIndexEdges,
 	UAssetIoProjectIndexQuery,
 	UAssetIoProjectIndexFilter
 } from "@ue-shed/protocol";
@@ -14,8 +16,10 @@ import {
 	type ProjectIndexCacheRoot,
 	type ProjectIndexError,
 	type ProjectIndexPage,
+	type ProjectIndexEdges,
 	type ProjectIndexQuery,
 	type ProjectIndexApi,
+	type ProjectIndexRefreshTarget,
 	type ProjectIndexStatus,
 	type ProjectIndexSummary,
 	type ProjectIndexTarget,
@@ -160,7 +164,15 @@ export interface ProjectIndexProcessConfiguration {
 	readonly timeoutMs: number;
 }
 
-const toWireQuery = (request: ProjectIndexQuery): UAssetIoProjectIndexQuery => {
+const toWireEdges = (edges: ProjectIndexEdges): UAssetIoProjectIndexEdges => ({
+	...(edges.hard === undefined ? undefined : { hard: edges.hard }),
+	...(edges.game === undefined ? undefined : { game: edges.game }),
+	...(edges.build === undefined ? undefined : { build: edges.build })
+});
+
+const toWireQuery = (
+	request: ProjectIndexQuery
+): UAssetIoProjectIndexQuery | UAssetIoProjectIndexDependencyQuery => {
 	const base = {
 		expectedGeneration: request.expectedGeneration,
 		limit: request.limit,
@@ -180,8 +192,47 @@ const toWireQuery = (request: ProjectIndexQuery): UAssetIoProjectIndexQuery => {
 			return { kind: "class_name_suffixes", ...base, values: [...request.values] };
 		case "SerializedNames":
 			return { kind: "serialized_names", ...base, values: [...request.values] };
+		case "Dependencies":
+		case "Dependents": {
+			const walk = {
+				...base,
+				paths: [...request.paths],
+				...(request.transitive === undefined
+					? undefined
+					: { transitive: request.transitive }),
+				...(request.edges === undefined ? undefined : { edges: toWireEdges(request.edges) })
+			};
+			if (request._tag === "Dependencies") return { kind: "dependencies", ...walk };
+			return {
+				kind: "dependents",
+				...walk,
+				...(request.classes === undefined ? undefined : { classes: [...request.classes] })
+			};
+		}
 	}
 };
+
+const isDependencyQuery = (
+	query: UAssetIoProjectIndexQuery | UAssetIoProjectIndexDependencyQuery
+): query is UAssetIoProjectIndexDependencyQuery =>
+	query.kind === "dependencies" || query.kind === "dependents";
+
+/** The query operation for a domain query, in the request shape its contract minor allows. */
+const toQueryOperation = (
+	cacheRoot: ProjectIndexCacheRoot,
+	request: ProjectIndexQuery
+): UAssetIoOperation => {
+	const query = toWireQuery(request);
+	return isDependencyQuery(query)
+		? { cacheRoot, kind: "project_index_query", pageEncoding: "dictionary", query }
+		: { cacheRoot, kind: "project_index_query", pageEncoding: "dictionary", query };
+};
+
+/** Scope and change fields for a target; present only when set, so older workers still serve plain requests. */
+const scopeFields = (target: ProjectIndexRefreshTarget) => ({
+	...(target.plugins === undefined ? undefined : { plugins: target.plugins }),
+	...(target.changes === undefined ? undefined : { changes: target.changes })
+});
 
 const toWireFilter = (filter: ProjectIndexFilter): UAssetIoProjectIndexFilter => {
 	switch (filter._tag) {
@@ -209,14 +260,25 @@ const makeRequest = (
 			timeoutMs
 		},
 		{
-			contractMinor:
-				operation.kind === "project_index_count"
-					? 4
-					: operation.kind === "project_index_query"
-						? 9
-						: 1
+			contractMinor: contractMinorFor(operation)
 		}
 	);
+
+/** The oldest contract minor that carries an operation: v1.23 for dependency walks, scopes and changes. */
+const contractMinorFor = (operation: UAssetIoOperation): number => {
+	switch (operation.kind) {
+		case "project_index_count":
+			return 4;
+		case "project_index_query":
+			return isDependencyQuery(operation.query) ? 23 : 9;
+		case "project_index_status":
+		case "project_index_refresh":
+		case "project_index_rebuild":
+			return "plugins" in operation || "changes" in operation ? 23 : 1;
+		default:
+			return 1;
+	}
+};
 
 const mapStreamFailure = (cause: unknown, sawAccepted: boolean): ProjectIndexError => {
 	if (cause instanceof ProtocolStreamFailure) {
@@ -282,7 +344,7 @@ const recordRefreshMetrics = (
 async function* refreshEventStream(
 	configuration: ProjectIndexProcessConfiguration,
 	cacheRoot: ProjectIndexCacheRoot,
-	target: ProjectIndexTarget,
+	target: ProjectIndexRefreshTarget,
 	operation: "refresh" | "rebuild",
 	signal: AbortSignal | undefined
 ): AsyncGenerator<ProjectIndexRefreshEvent, void, void> {
@@ -291,7 +353,8 @@ async function* refreshEventStream(
 		{
 			cacheRoot,
 			kind: operation === "rebuild" ? "project_index_rebuild" : "project_index_refresh",
-			projectRoot: target.projectRoot
+			projectRoot: target.projectRoot,
+			...scopeFields(target)
 		},
 		configuration.timeoutMs
 	);
@@ -394,7 +457,8 @@ async function collectStatus(
 		{
 			cacheRoot,
 			kind: "project_index_status",
-			projectRoot: target.projectRoot
+			projectRoot: target.projectRoot,
+			...(target.plugins === undefined ? undefined : { plugins: target.plugins })
 		},
 		configuration.timeoutMs
 	);
@@ -475,12 +539,7 @@ async function collectQuery(
 ): Promise<ProjectIndexPage> {
 	const started = Date.now();
 	const protocolRequest = makeRequest(
-		{
-			cacheRoot,
-			kind: "project_index_query",
-			pageEncoding: "dictionary",
-			query: toWireQuery(request)
-		},
+		toQueryOperation(cacheRoot, request),
 		configuration.timeoutMs
 	);
 	let sawAccepted = false;
@@ -601,7 +660,7 @@ async function collectCount(
 function refreshStream(
 	configuration: ProjectIndexProcessConfiguration,
 	cacheRoot: ProjectIndexCacheRoot,
-	target: ProjectIndexTarget,
+	target: ProjectIndexRefreshTarget,
 	operation: "refresh" | "rebuild"
 ): Stream.Stream<ProjectIndexRefreshEvent, ProjectIndexError> {
 	const controller = new AbortController();
@@ -631,9 +690,9 @@ const makeProcessService = Effect.fn("ProjectIndexProcess.make")(function* (
 		Effect.sync(() => new UassetProtocolSession(configuration)),
 		(session) => Effect.promise(() => session.close())
 	);
-	const refresh = (target: ProjectIndexTarget) =>
+	const refresh = (target: ProjectIndexRefreshTarget) =>
 		refreshStream(configuration, cacheRoot, target, "refresh");
-	const rebuild = (target: ProjectIndexTarget) =>
+	const rebuild = (target: ProjectIndexRefreshTarget) =>
 		refreshStream(configuration, cacheRoot, target, "rebuild");
 
 	const query = Effect.fn("ProjectIndexProcess.query")(function* (request: ProjectIndexQuery) {

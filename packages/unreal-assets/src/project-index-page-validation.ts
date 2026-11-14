@@ -11,6 +11,10 @@ export function retainValidatedPage(page: ProjectIndexPage): ProjectIndexPage {
 			Object.freeze(item.classes);
 			Object.freeze(item.serializedNames);
 			if (item.headerData !== undefined) Object.freeze(item.headerData);
+		} else if (item.kind === "package") {
+			Object.freeze(item.classes);
+			for (const dependency of item.dependencies) Object.freeze(dependency);
+			Object.freeze(item.dependencies);
 		}
 		Object.freeze(item);
 	}

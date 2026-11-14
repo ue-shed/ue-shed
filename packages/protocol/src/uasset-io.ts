@@ -145,6 +145,45 @@ export const UAssetIoProjectIndexQuery = Schema.Union([
 ]).annotate({ identifier: "UAssetIoProjectIndexQuery" });
 export type UAssetIoProjectIndexQuery = Schema.Schema.Type<typeof UAssetIoProjectIndexQuery>;
 
+/** Package paths one v1.23 dependency or dependents query starts from. */
+export const UASSET_IO_PROJECT_INDEX_MAX_DEPENDENCY_PATHS = 1024;
+
+/**
+ * v1.23: which dependencies a walk follows, by Unreal's `EDependencyProperty` bits. A present field
+ * requires that value; an absent one accepts either. `{}` follows every dependency; `{ game: true }`
+ * follows only what the game uses; `{ hard: true }` only import-map dependencies.
+ */
+export const UAssetIoProjectIndexEdges = Schema.Struct({
+	hard: Schema.optionalKey(Schema.Boolean),
+	game: Schema.optionalKey(Schema.Boolean),
+	build: Schema.optionalKey(Schema.Boolean)
+}).annotate({ identifier: "UAssetIoProjectIndexEdges" });
+export type UAssetIoProjectIndexEdges = typeof UAssetIoProjectIndexEdges.Type;
+
+const ProjectIndexDependencyFields = {
+	...UAssetIoProjectIndexQueryBase,
+	paths: Schema.Array(NonEmptyString).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_DEPENDENCY_PATHS)
+	),
+	transitive: Schema.optionalKey(Schema.Boolean),
+	edges: Schema.optionalKey(UAssetIoProjectIndexEdges)
+};
+
+/**
+ * v1.23 dependency walks from 1 to 1,024 package paths, returning `package` items in path order.
+ * `dependents` accepts deleted paths; its `classes` filter results without narrowing the walk.
+ */
+export const UAssetIoProjectIndexDependencyQuery = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("dependencies"), ...ProjectIndexDependencyFields }),
+	Schema.Struct({
+		kind: Schema.Literal("dependents"),
+		...ProjectIndexDependencyFields,
+		classes: Schema.optionalKey(ProjectIndexQueryValues)
+	})
+]).annotate({ identifier: "UAssetIoProjectIndexDependencyQuery" });
+export type UAssetIoProjectIndexDependencyQuery = typeof UAssetIoProjectIndexDependencyQuery.Type;
+
 /**
  * One `project_index_count` filter (v1.4): a query kind without pagination fields. Kinds other
  * than `maps` take 1 to 64 non-empty values.
@@ -195,9 +234,37 @@ export interface UAssetIoProjectIndexDiagnostic extends Schema.Schema.Type<
 > {}
 
 /**
- * Outcome of the last committed refresh. `generation` is the immutable generation queries must
- * name; `changedPackages` and `removedPackages` count differences from the prior generation.
- * `completeness` is `partial` whenever a diagnostic was recorded, and at most 64 are kept.
+ * v1.23: where Unreal mounts an indexed content root. Package names below `name` (`/Game/`) are
+ * files below the project-relative `path` (`Content/`); a plugin mounts at `/<descriptor stem>/`.
+ */
+export const UAssetIoProjectIndexMount = Schema.Struct({
+	name: NonEmptyString,
+	path: NonEmptyString
+}).annotate({ identifier: "UAssetIoProjectIndexMount" });
+export interface UAssetIoProjectIndexMount extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexMount
+> {}
+
+/**
+ * v1.23: what a refresh saw change on disk since `baseGeneration` (absent for a first or rebuilt
+ * index): packages and sidecars that are new or whose size or modified time changed, and those
+ * that are gone. Re-reading an entry for a newer index profile is not a change. When `complete` is
+ * false there were more than 65,536 and both lists are empty.
+ */
+export const UAssetIoProjectIndexChanges = Schema.Struct({
+	baseGeneration: Schema.optionalKey(PositiveInt),
+	changed: Schema.Array(NonEmptyString),
+	removed: Schema.Array(NonEmptyString),
+	complete: Schema.Boolean
+}).annotate({ identifier: "UAssetIoProjectIndexChanges" });
+export interface UAssetIoProjectIndexChanges extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexChanges
+> {}
+
+/**
+ * Outcome of the last committed refresh; queries name its `generation`. `completeness` is
+ * `partial` when a diagnostic was recorded (at most 64 are kept). From v1.23 it lists `mounts`,
+ * and `changes` when the refresh asked for them.
  */
 export const UAssetIoProjectIndexSummary = Schema.Struct({
 	changedPackages: NonNegativeInt,
@@ -209,7 +276,9 @@ export const UAssetIoProjectIndexSummary = Schema.Struct({
 	mapCount: NonNegativeInt,
 	packageCount: NonNegativeInt,
 	projectId: NonEmptyString,
-	removedPackages: NonNegativeInt
+	removedPackages: NonNegativeInt,
+	mounts: Schema.optionalKey(Schema.Array(UAssetIoProjectIndexMount)),
+	changes: Schema.optionalKey(UAssetIoProjectIndexChanges)
 }).annotate({ identifier: "UAssetIoProjectIndexSummary" });
 export interface UAssetIoProjectIndexSummary extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexSummary
@@ -261,14 +330,53 @@ const UAssetIoProjectIndexInventory = Schema.Struct({
 	signature: NonEmptyString,
 	headerData: Schema.optionalKey(PackageHeaderData)
 });
+
+const DependencyProperties = {
+	hard: Schema.Boolean,
+	game: Schema.Boolean,
+	build: Schema.Boolean
+};
+
 /**
- * One query page item, discriminated by `kind`: `map`, `header`, or `inventory`. An inventory
- * item carries the package path, an opaque change signature, and optional minor-9 `headerData`.
+ * v1.23: one dependency with Unreal's `EDependencyProperty` bits. `packagePath` is the indexed
+ * package the name resolves to; it is absent for script, engine and unindexed packages.
+ */
+export const UAssetIoProjectIndexDependency = Schema.Struct({
+	package: NonEmptyString,
+	packagePath: Schema.optionalKey(NonEmptyString),
+	...DependencyProperties
+}).annotate({ identifier: "UAssetIoProjectIndexDependency" });
+export interface UAssetIoProjectIndexDependency extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexDependency
+> {}
+
+/**
+ * v1.23: a package from a `dependencies` or `dependents` query. `packageName` is the name Unreal
+ * mounts the file as. `failure` is set when its header could not be read, so its dependencies are
+ * unknown rather than empty.
+ */
+export const UAssetIoProjectIndexPackage = Schema.Struct({
+	classes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
+	dependencies: Schema.Array(UAssetIoProjectIndexDependency),
+	failure: Schema.optionalKey(NonEmptyString),
+	kind: Schema.Literal("package"),
+	packageName: NonEmptyString,
+	packagePath: NonEmptyString
+}).annotate({ identifier: "UAssetIoProjectIndexPackage" });
+export interface UAssetIoProjectIndexPackage extends Schema.Schema.Type<
+	typeof UAssetIoProjectIndexPackage
+> {}
+
+/**
+ * One query page item, discriminated by `kind`: `map`, `header`, `inventory`, or (v1.23 dependency
+ * queries) `package`. An inventory item carries the package path, an opaque change signature, and
+ * optional minor-9 `headerData`.
  */
 export const UAssetIoProjectIndexItem = Schema.Union([
 	UAssetIoProjectIndexMap,
 	UAssetIoProjectIndexHeader,
-	UAssetIoProjectIndexInventory
+	UAssetIoProjectIndexInventory,
+	UAssetIoProjectIndexPackage
 ]).annotate({ identifier: "UAssetIoProjectIndexItem" });
 export type UAssetIoProjectIndexItem = Schema.Schema.Type<typeof UAssetIoProjectIndexItem>;
 
@@ -295,6 +403,18 @@ const UAssetIoProjectIndexDictionaryHeader = Schema.Struct({
 	serializedNames: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64))
 }).annotate({ identifier: "UAssetIoProjectIndexDictionaryHeader" });
 
+const UAssetIoProjectIndexDictionaryPackage = Schema.Struct({
+	...UAssetIoProjectIndexPackage.fields,
+	classes: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64)),
+	dependencies: Schema.Array(
+		Schema.Struct({
+			package: NonNegativeInt,
+			packagePath: Schema.optionalKey(NonNegativeInt),
+			...DependencyProperties
+		})
+	)
+}).annotate({ identifier: "UAssetIoProjectIndexDictionaryPackage" });
+
 /** v1.3 page-local references; adapters additionally reject indices outside `strings`. */
 export const UAssetIoProjectIndexDictionaryPage = Schema.Struct({
 	...UAssetIoProjectIndexPage.fields,
@@ -302,7 +422,8 @@ export const UAssetIoProjectIndexDictionaryPage = Schema.Struct({
 		Schema.Union([
 			UAssetIoProjectIndexMap,
 			UAssetIoProjectIndexDictionaryHeader,
-			UAssetIoProjectIndexInventory
+			UAssetIoProjectIndexInventory,
+			UAssetIoProjectIndexDictionaryPackage
 		])
 	).check(Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE)),
 	strings: Schema.Array(NonEmptyString).check(
@@ -414,17 +535,23 @@ const ExistingOperation = Schema.Union([
 		mapPath: NonEmptyString,
 		projectRoot: NonEmptyString
 	}),
+	// `plugins` and `changes` need v1.23 (`ProjectIndexDependencyOperation`).
 	Schema.Struct({
 		kind: Schema.Literal("project_index_status"),
-		...UAssetIoProjectIndexTarget
+		...UAssetIoProjectIndexTarget,
+		plugins: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("project_index_refresh"),
-		...UAssetIoProjectIndexTarget
+		...UAssetIoProjectIndexTarget,
+		plugins: Schema.optionalKey(Schema.Never),
+		changes: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("project_index_rebuild"),
-		...UAssetIoProjectIndexTarget
+		...UAssetIoProjectIndexTarget,
+		plugins: Schema.optionalKey(Schema.Never),
+		changes: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		cacheRoot: NonEmptyString,
@@ -455,12 +582,44 @@ const GameTextIndexOperation = Schema.Struct({
 	request: GameTextIndexBuildRequest
 });
 /**
+ * v1.23 Project Index operations. `plugins: true` selects the index that also holds the content of
+ * every project plugin that can contain content; it is a separate index with its own `projectId`,
+ * so callers that index only `Content` are unaffected. `changes: true` asks a refresh to report the
+ * paths that changed on disk since the previous generation.
+ */
+const ProjectIndexDependencyOperation = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("project_index_status"),
+		...UAssetIoProjectIndexTarget,
+		plugins: Schema.optionalKey(Schema.Boolean)
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_refresh"),
+		...UAssetIoProjectIndexTarget,
+		plugins: Schema.optionalKey(Schema.Boolean),
+		changes: Schema.optionalKey(Schema.Boolean)
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_rebuild"),
+		...UAssetIoProjectIndexTarget,
+		plugins: Schema.optionalKey(Schema.Boolean),
+		changes: Schema.optionalKey(Schema.Boolean)
+	}),
+	Schema.Struct({
+		cacheRoot: NonEmptyString,
+		kind: Schema.Literal("project_index_query"),
+		pageEncoding: Schema.optionalKey(Schema.Literal("dictionary")),
+		query: UAssetIoProjectIndexDependencyQuery
+	})
+]);
+/**
  * Every operation a request can carry, discriminated by `kind`. String fields are trimmed and
  * must be non-empty; an explicit empty `paths` array selects zero work, not the project root.
  */
 export const UAssetIoOperation = Schema.Union([
 	GameTextIndexOperation,
 	...ExistingOperation.members,
+	...ProjectIndexDependencyOperation.members,
 	CompareBlueprintsOperation,
 	StagedPackageTextOperation,
 	SnapshotPackageTextOperation,
@@ -529,6 +688,18 @@ export const UAssetIoRequest = Schema.Union([
 		})
 	}),
 	Schema.Struct({ ...RequestFields, contract: UAssetIoContract, operation: ExistingOperation }),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(23))
+				})
+			})
+		).annotate({ identifier: "UAssetIoProjectIndexDependencyContract" }),
+		operation: ProjectIndexDependencyOperation
+	}),
 	Schema.Struct({
 		...RequestFields,
 		contract: UAssetIoContract.pipe(

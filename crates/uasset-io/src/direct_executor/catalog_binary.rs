@@ -2,6 +2,7 @@
 //! Five checksummed sections: inventory, shared strings, posting directory, postings, records.
 //! All integers are little-endian. Incompatible derived caches are rebuilt, never migrated.
 use super::catalog::*;
+use super::catalog_dependencies::{DependencyGraph, dependency_page};
 use super::project_index::CatalogSnapshot;
 use atomic_write_file::AtomicWriteFile;
 use serde::{Deserialize, Serialize};
@@ -12,12 +13,16 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const CATALOG_DIRECTORY: &str = "catalogs-v6";
+const CATALOG_DIRECTORY: &str = "catalogs-v7";
 const MANIFEST_FILE: &str = "manifest.json";
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
-const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
+const SNAPSHOT_SCHEMA_VERSION: u32 = 3;
 const MAX_QUARANTINE_ATTEMPTS: u32 = 8;
-const MAGIC: &[u8; 8] = b"UESHC004";
+const MAGIC: &[u8; 8] = b"UESHC005";
+/// Posting kinds: exact export classes, serialized names, and dependency targets.
+const POSTING_KINDS: usize = 3;
+const CLASS_POSTINGS: u8 = 0;
+const DEPENDENCY_POSTINGS: u8 = 2;
 /// The magic, then each section's stored length, raw length and raw checksum.
 const HEADER_BYTES: u64 = 8 + 5 * 24;
 const MAX_SECTION_BYTES: u64 = 512 * 1024 * 1024;
@@ -44,6 +49,12 @@ struct ManifestDiagnostic {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+struct ManifestMount {
+    name: String,
+    path: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ManifestSummary {
     changed_packages: u64,
     completeness: String,
@@ -52,6 +63,7 @@ struct ManifestSummary {
     map_count: u64,
     package_count: u64,
     removed_packages: u64,
+    mounts: Vec<ManifestMount>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -85,7 +97,25 @@ impl ManifestSummary {
             map_count: summary.map_count,
             package_count: summary.package_count,
             removed_packages: summary.removed_packages,
+            mounts: summary
+                .mounts
+                .iter()
+                .map(|mount| ManifestMount {
+                    name: mount.name.clone(),
+                    path: mount.path.clone(),
+                })
+                .collect(),
         }
+    }
+
+    fn mount_points(&self) -> Vec<MountPoint> {
+        self.mounts
+            .iter()
+            .map(|mount| MountPoint {
+                name: mount.name.clone(),
+                path: mount.path.clone(),
+            })
+            .collect()
     }
 
     fn to_refresh(&self, project_id: &ProjectId) -> RefreshSummary {
@@ -110,8 +140,28 @@ impl ManifestSummary {
                     retry_safe: diagnostic.retry_safe,
                 })
                 .collect(),
+            mounts: self.mount_points(),
         }
     }
+}
+
+/// Lexicon order: ASCII case folded first, so every spelling of a name is one adjacent range, then
+/// exact bytes, so the order is total.
+fn lexicon_order(left: &str, right: &str) -> std::cmp::Ordering {
+    folded_order(left, right).then_with(|| left.cmp(right))
+}
+
+/// FNV-1a over the ASCII-folded bytes.
+fn folded_hash(value: &str) -> u64 {
+    value.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte.to_ascii_lowercase())).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
+fn folded_order(left: &str, right: &str) -> std::cmp::Ordering {
+    left.bytes()
+        .map(|byte| byte.to_ascii_lowercase())
+        .cmp(right.bytes().map(|byte| byte.to_ascii_lowercase()))
 }
 
 fn no_staging() -> CatalogError {
@@ -232,6 +282,8 @@ struct PackedHeader {
     package_name: String,
     classes: Vec<u32>,
     names: Vec<u32>,
+    /// Each dependency's target string and `EDependencyProperty` bits.
+    dependencies: Vec<(u32, u8)>,
     failure_code: Option<String>,
 }
 struct PackedRecord {
@@ -258,6 +310,11 @@ impl PackedRecord {
                         .iter()
                         .map(|s| dictionary.intern(s))
                         .collect::<Result<_, _>>()?,
+                    dependencies: h
+                        .dependencies
+                        .iter()
+                        .map(|d| Ok((dictionary.intern(&d.package)?, d.properties())))
+                        .collect::<Result<_, CatalogError>>()?,
                     failure_code: h.failure_code,
                 })
             })
@@ -289,6 +346,11 @@ impl PackedRecord {
                     out.extend_from_slice(&id.to_le_bytes());
                 }
             }
+            put32(out, header.dependencies.len())?;
+            for (id, properties) in &header.dependencies {
+                out.extend_from_slice(&id.to_le_bytes());
+                out.push(*properties);
+            }
         }
         Ok(())
     }
@@ -310,6 +372,11 @@ struct Posting {
     len: u32,
     checksum: u64,
 }
+/// The block one call decoded last (section, block, bytes). It lives only for that call:
+/// nothing survives a query, so later queries still detect changed or truncated bytes.
+#[derive(Default)]
+struct LastBlock(Option<(usize, u64, Vec<u8>)>);
+
 struct Snapshot {
     file: RefCell<File>,
     inventory: Vec<Inventory>,
@@ -322,6 +389,9 @@ struct Snapshot {
     /// File ranges of the blocks of each blocked section. Blocks are read and decoded for each
     /// query, so a later query still detects changed or truncated bytes.
     blocks: [Vec<(u64, u64)>; 5 - BLOCKED_SECTIONS],
+    /// Package ids by the hash of their ASCII-folded path, then id (path order), built on the first
+    /// lookup that ignores case. Lookups confirm the path, so a hash collision only costs a compare.
+    folded_paths: RefCell<Option<Vec<(u64, u32)>>>,
 }
 
 fn read_range(file: &mut File, offset: u64, length: u64) -> Result<Vec<u8>, CatalogError> {
@@ -539,10 +609,9 @@ impl Snapshot {
             let text = strings
                 .get(id as usize)
                 .ok_or_else(|| corrupt("invalid dictionary id"))?;
-            if lexicon
-                .last()
-                .is_some_and(|prior| strings[*prior as usize] >= *text)
-            {
+            if lexicon.last().is_some_and(|prior| {
+                lexicon_order(&strings[*prior as usize], text) != std::cmp::Ordering::Less
+            }) {
                 return Err(corrupt("dictionary must be unique and ordered"));
             }
             lexicon.push(id);
@@ -557,7 +626,10 @@ impl Snapshot {
             let offset = d.u64()?;
             let len = d.u32()?;
             let hash = d.u64()?;
-            if kind > 1 || value as usize >= strings.len() || len as usize > inventory.len() {
+            if kind as usize >= POSTING_KINDS
+                || value as usize >= strings.len()
+                || len as usize > inventory.len()
+            {
                 return Err(corrupt("invalid posting metadata"));
             }
             if postings
@@ -585,6 +657,7 @@ impl Snapshot {
             lengths,
             hashes,
             blocks,
+            folded_paths: RefCell::new(None),
         })
     }
     /// A whole blocked section, decoded and checked.
@@ -598,6 +671,17 @@ impl Snapshot {
     /// Decoded bytes `offset..offset + length` of a blocked section. Callers check the record
     /// or posting checksums the range holds.
     fn range(&self, index: usize, offset: u64, length: u64) -> Result<Vec<u8>, CatalogError> {
+        self.range_reusing(&mut LastBlock::default(), index, offset, length)
+    }
+    /// A range read that reuses `last` when it holds the first block, then keeps the last block it
+    /// decoded, so a call reading ascending ranges decodes each block once.
+    fn range_reusing(
+        &self,
+        last: &mut LastBlock,
+        index: usize,
+        offset: u64,
+        length: u64,
+    ) -> Result<Vec<u8>, CatalogError> {
         checked_range(offset, length, self.lengths[index])?;
         let mut bytes = Vec::with_capacity(
             usize::try_from(length).map_err(|_| corrupt("range too large for address space"))?,
@@ -606,7 +690,13 @@ impl Snapshot {
             return Ok(bytes);
         }
         for block in offset / BLOCK_BYTES..=(offset + length - 1) / BLOCK_BYTES {
-            let data = self.block(index, block)?;
+            if !matches!(&last.0, Some((i, b, _)) if *i == index && *b == block) {
+                last.0 = Some((index, block, self.block(index, block)?));
+            }
+            let data = last
+                .0
+                .as_ref()
+                .map_or(&[][..], |(_, _, data)| data.as_slice());
             let base = block * BLOCK_BYTES;
             let from = offset.max(base) - base;
             let to = (offset + length).min(base + data.len() as u64) - base;
@@ -671,11 +761,22 @@ impl Snapshot {
             };
             let classes = string_ids()?;
             let names = string_ids()?;
+            let count = d.count(5)?;
+            let mut dependencies = Vec::with_capacity(count);
+            for _ in 0..count {
+                let id = d.u32()?;
+                let properties = d.byte()?;
+                if id as usize >= self.strings.len() || properties > 7 {
+                    return Err(corrupt("invalid dependency evidence"));
+                }
+                dependencies.push((id, properties));
+            }
             Some(PackedHeader {
                 header_data,
                 package_name,
                 classes,
                 names,
+                dependencies,
                 failure_code,
             })
         } else {
@@ -713,10 +814,21 @@ impl Snapshot {
                     .into_iter()
                     .map(|id| self.strings[id as usize].clone())
                     .collect(),
+                dependencies: h
+                    .dependencies
+                    .into_iter()
+                    .map(|(id, properties)| {
+                        PackageDependency::from_properties(
+                            self.strings[id as usize].clone(),
+                            properties,
+                        )
+                    })
+                    .collect(),
             })
     }
     fn headers(&self, ids: &[usize]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
         let mut headers = Vec::with_capacity(ids.len());
+        let mut last_block = LastBlock::default();
         let mut first = 0;
         while first < ids.len() {
             let entry = &self.inventory[ids[first]];
@@ -734,7 +846,7 @@ impl Snapshot {
             }
             // A page-local window avoids one seek/read/allocation per nearby record. Nothing
             // survives the query: later queries must still detect changed or truncated bytes.
-            let bytes = self.range(4, start, end - start)?;
+            let bytes = self.range_reusing(&mut last_block, 4, start, end - start)?;
             for &id in &ids[first..last] {
                 let entry = &self.inventory[id];
                 let offset = (entry.offset - start) as usize;
@@ -747,9 +859,107 @@ impl Snapshot {
     }
     fn string_id(&self, value: &str) -> Option<u32> {
         self.lexicon
-            .binary_search_by(|id| self.strings[*id as usize].as_str().cmp(value))
+            .binary_search_by(|id| lexicon_order(&self.strings[*id as usize], value))
             .ok()
             .map(|index| self.lexicon[index])
+    }
+    /// Every stored spelling of `value` without regard to ASCII case: one lexicon range.
+    fn string_ids_ignoring_case(&self, value: &str) -> &[u32] {
+        let start = self.lexicon.partition_point(|id| {
+            folded_order(&self.strings[*id as usize], value) == std::cmp::Ordering::Less
+        });
+        let spellings = self.lexicon[start..]
+            .iter()
+            .take_while(|id| self.strings[**id as usize].eq_ignore_ascii_case(value))
+            .count();
+        &self.lexicon[start..start + spellings]
+    }
+    /// One checked posting list, as inventory ids in ascending order.
+    fn posting_ids_reusing(
+        &self,
+        last: &mut LastBlock,
+        index: usize,
+    ) -> Result<Vec<usize>, CatalogError> {
+        let posting = &self.postings[index];
+        let bytes = self.range_reusing(last, 3, posting.offset, u64::from(posting.len) * 4)?;
+        if checksum(&bytes) != posting.checksum {
+            return Err(corrupt("posting checksum mismatch"));
+        }
+        let mut ids = Vec::with_capacity(posting.len as usize);
+        for raw in bytes.as_chunks::<4>().0 {
+            let id = u32::from_le_bytes(*raw) as usize;
+            if id >= self.inventory.len() || ids.last().is_some_and(|old| *old >= id) {
+                return Err(corrupt("invalid posting row order"));
+            }
+            ids.push(id);
+        }
+        Ok(ids)
+    }
+    /// The package at exactly a relative path, else, when `ignore_case`, the first package in path
+    /// order whose path matches without regard to ASCII case.
+    fn package_id_at(&self, path: &str, ignore_case: bool) -> Option<usize> {
+        if let Ok(id) = self
+            .inventory
+            .binary_search_by(|entry| entry.signature.relative_path.as_str().cmp(path))
+            && self.inventory[id].signature.kind == EntryKind::Package
+        {
+            return Some(id);
+        }
+        if !ignore_case {
+            return None;
+        }
+        let mut folded = self.folded_paths.borrow_mut();
+        let paths = folded.get_or_insert_with(|| {
+            let mut paths = self
+                .inventory
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| entry.signature.kind == EntryKind::Package)
+                .filter_map(|(id, entry)| {
+                    Some((
+                        folded_hash(&entry.signature.relative_path),
+                        u32::try_from(id).ok()?,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            paths.sort_unstable();
+            paths
+        });
+        let hash = folded_hash(path);
+        let start = paths.partition_point(|(other, _)| *other < hash);
+        paths[start..]
+            .iter()
+            .take_while(|(other, _)| *other == hash)
+            .map(|(_, id)| *id as usize)
+            .find(|id| {
+                self.inventory[*id]
+                    .signature
+                    .relative_path
+                    .eq_ignore_ascii_case(path)
+            })
+    }
+    /// Packages whose dependency evidence names any of `package_names` in any ASCII case. Lists
+    /// are read in stored order, so each posting block is decoded once.
+    fn referrers(&self, package_names: &[String]) -> Result<Vec<usize>, CatalogError> {
+        let mut lists = package_names
+            .iter()
+            .flat_map(|name| self.string_ids_ignoring_case(name))
+            .filter_map(|value| {
+                self.postings
+                    .binary_search_by_key(&(DEPENDENCY_POSTINGS, *value), |p| (p.kind, p.value))
+                    .ok()
+            })
+            .collect::<Vec<_>>();
+        lists.sort_unstable_by_key(|index| (self.postings[*index].offset, *index));
+        lists.dedup();
+        let mut last = LastBlock::default();
+        let mut ids = Vec::new();
+        for index in lists {
+            ids.extend(self.posting_ids_reusing(&mut last, index)?);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        Ok(ids)
     }
     fn matches(
         &self,
@@ -808,6 +1018,11 @@ impl Snapshot {
                 }
             }
             QueryKind::Maps | QueryKind::Inventory => unreachable!(),
+            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. } => {
+                return Err(CatalogError::InvalidRequest {
+                    message: "dependency queries walk the graph; they do not match postings".into(),
+                });
+            }
         }
         let mut ids = Vec::new();
         for index in selected {
@@ -1281,6 +1496,23 @@ impl Catalog for BinaryCatalog {
         let snapshot = cached
             .as_ref()
             .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
+        if matches!(
+            request.kind,
+            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. }
+        ) {
+            let graph = BinaryGraph {
+                snapshot,
+                mounts: manifest.summary.mount_points(),
+            };
+            let (items, next_cursor) =
+                dependency_page(&graph, &request.kind, &cursor, request.limit)?;
+            return Ok(QueryPage {
+                project_id: request.project_id.clone(),
+                generation,
+                items,
+                next_cursor,
+            });
+        }
         let after = snapshot
             .inventory
             .partition_point(|e| e.signature.relative_path <= cursor);
@@ -1382,6 +1614,62 @@ impl Catalog for BinaryCatalog {
         })
     }
 }
+/// One loaded snapshot read as a dependency graph: inventory ids are nodes, in path order.
+struct BinaryGraph<'a> {
+    snapshot: &'a Snapshot,
+    mounts: Vec<MountPoint>,
+}
+
+impl DependencyGraph for BinaryGraph<'_> {
+    type Node = usize;
+
+    fn mount_points(&self) -> &[MountPoint] {
+        &self.mounts
+    }
+
+    fn package_at(
+        &self,
+        relative_path: &str,
+        ignore_case: bool,
+    ) -> Result<Option<usize>, CatalogError> {
+        Ok(self.snapshot.package_id_at(relative_path, ignore_case))
+    }
+
+    fn package_path(&self, node: &usize) -> String {
+        self.snapshot.inventory[*node]
+            .signature
+            .relative_path
+            .clone()
+    }
+
+    fn evidence(&self, nodes: &[usize]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
+        self.snapshot.headers(nodes)
+    }
+
+    fn referrers(&self, package_names: &[String]) -> Result<Vec<usize>, CatalogError> {
+        self.snapshot.referrers(package_names)
+    }
+
+    fn class_members(
+        &self,
+        classes: &[String],
+    ) -> Result<std::collections::HashSet<usize>, CatalogError> {
+        let mut members = std::collections::HashSet::new();
+        let mut last = LastBlock::default();
+        for class in classes {
+            if let Some(id) = self.snapshot.string_id(class)
+                && let Ok(index) = self
+                    .snapshot
+                    .postings
+                    .binary_search_by_key(&(CLASS_POSTINGS, id), |p| (p.kind, p.value))
+            {
+                members.extend(self.snapshot.posting_ids_reusing(&mut last, index)?);
+            }
+        }
+        Ok(members)
+    }
+}
+
 impl CatalogSnapshot for BinaryCatalog {
     fn committed_entries(&self) -> Result<Vec<CatalogSnapshotEntry>, CatalogError> {
         self.load()?;
@@ -1410,7 +1698,7 @@ fn write_snapshot(
     let mut payload = Vec::new();
     // String IDs are dense and already validated. Index directly while building postings,
     // avoiding a hash lookup for every class/name occurrence in the project.
-    let mut postings: [Vec<Vec<u32>>; 2] =
+    let mut postings: [Vec<Vec<u32>>; POSTING_KINDS] =
         std::array::from_fn(|_| vec![Vec::new(); dictionary.strings.len()]);
     // Read retained payloads once. No per-retained-record IO, decode, or string interning.
     let prior_payload = prior.map(|p| p.section(4)).transpose()?.unwrap_or_default();
@@ -1456,6 +1744,12 @@ fn write_snapshot(
                         if list.last() != Some(&(id as u32)) {
                             list.push(id as u32);
                         }
+                    }
+                }
+                for (value, _) in &header.dependencies {
+                    let list = &mut postings[DEPENDENCY_POSTINGS as usize][*value as usize];
+                    if list.last() != Some(&(id as u32)) {
+                        list.push(id as u32);
                     }
                 }
             }
@@ -1528,7 +1822,10 @@ fn write_snapshot(
     }
     let mut lexicon = (0..dictionary.strings.len() as u32).collect::<Vec<_>>();
     lexicon.sort_unstable_by(|a, b| {
-        dictionary.strings[*a as usize].cmp(&dictionary.strings[*b as usize])
+        lexicon_order(
+            &dictionary.strings[*a as usize],
+            &dictionary.strings[*b as usize],
+        )
     });
     for id in lexicon {
         strings.extend_from_slice(&id.to_le_bytes());
@@ -1894,6 +2191,7 @@ mod tests {
                     removed_packages: 0,
                     completeness: Completeness::Complete,
                     diagnostics: vec![],
+                    mounts: vec![MountPoint::game()],
                 },
             )
             .unwrap();

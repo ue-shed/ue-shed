@@ -5,13 +5,47 @@
 
 use std::fmt;
 
-/// Versioned set of package-header probes shared by current Project Index consumers.
-pub const INDEX_PROFILE_VERSION: u32 = 2;
+pub use uasset_parser::dependencies::PackageDependency;
+
+/// Versioned set of package-header probes shared by current Project Index consumers. Profile 3
+/// adds Asset Registry package dependencies.
+pub const INDEX_PROFILE_VERSION: u32 = 3;
 /// Bounded page size shared by Rust, TypeScript, and the language-neutral protocol contract.
 pub const PROJECT_INDEX_MAX_PAGE_SIZE: usize = 1024;
 pub const PROJECT_INDEX_MAX_DIAGNOSTICS: usize = 64;
 pub const PROJECT_INDEX_MAX_CLASSES: usize = 64;
 pub const PROJECT_INDEX_MAX_NAMES: usize = 64;
+/// Changed and removed paths one refresh reports; beyond this it reports only that there were more.
+pub const PROJECT_INDEX_MAX_REPORTED_CHANGES: usize = 65_536;
+
+/// Where Unreal mounts a content root: package names below `name` (`/Game/`) are files below the
+/// project-relative `path` (`Content/`). Both end with `/`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MountPoint {
+    pub name: String,
+    pub path: String,
+}
+
+impl MountPoint {
+    /// The project's own content: `/Game/` at `Content/`.
+    pub fn game() -> Self {
+        Self {
+            name: "/Game/".to_owned(),
+            path: "Content/".to_owned(),
+        }
+    }
+}
+
+/// Which content roots an index holds. Each scope is a separate index with its own identity, so
+/// callers that index only `Content` never see plugin packages.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum IndexScope {
+    /// The project's `Content` (`/Game/`).
+    #[default]
+    Content,
+    /// `Content`, and the `Content` of every project plugin that can contain content.
+    ContentAndPlugins,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ProjectId(String);
@@ -70,6 +104,8 @@ pub struct HeaderEvidence {
     pub package_name: String,
     pub classes: Vec<String>,
     pub serialized_names: Vec<String>,
+    /// Asset Registry package dependencies, sorted by target then properties.
+    pub dependencies: Vec<PackageDependency>,
     pub failure_code: Option<String>,
 }
 
@@ -90,6 +126,21 @@ pub struct RefreshSummary {
     pub removed_packages: u64,
     pub completeness: Completeness,
     pub diagnostics: Vec<CatalogDiagnostic>,
+    /// The content roots this generation indexed, `/Game/` first.
+    pub mounts: Vec<MountPoint>,
+}
+
+/// What a refresh saw change on disk since the generation it started from.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RefreshChanges {
+    /// The generation these changes are relative to; `None` for a first or rebuilt index.
+    pub base_generation: Option<Generation>,
+    /// Entries (packages and sidecars) that are new or whose size or modified time changed.
+    pub changed: Vec<String>,
+    /// Entries the base generation held that are gone.
+    pub removed: Vec<String>,
+    /// False when there were more than `PROJECT_INDEX_MAX_REPORTED_CHANGES` and the lists stop.
+    pub complete: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,10 +175,59 @@ pub struct CatalogSnapshotEntry {
 pub enum QueryKind {
     Inventory,
     Maps,
-    ExactClasses { values: Vec<String> },
-    ClassPrefixes { values: Vec<String> },
-    ClassNameSuffixes { values: Vec<String> },
-    SerializedNames { values: Vec<String> },
+    ExactClasses {
+        values: Vec<String>,
+    },
+    ClassPrefixes {
+        values: Vec<String>,
+    },
+    ClassNameSuffixes {
+        values: Vec<String>,
+    },
+    SerializedNames {
+        values: Vec<String>,
+    },
+    /// The packages at `paths`, and with `transitive` every indexed package they reach through
+    /// dependencies `edges` accepts.
+    Dependencies {
+        paths: Vec<String>,
+        transitive: bool,
+        edges: EdgeFilter,
+    },
+    /// Indexed packages that depend on the packages at `paths` (which need not exist any more)
+    /// through dependencies `edges` accepts; with `transitive`, also their dependents, and so on.
+    /// A non-empty `classes` keeps results with one of those exact export classes; the walk itself
+    /// passes through every package.
+    Dependents {
+        paths: Vec<String>,
+        transitive: bool,
+        edges: EdgeFilter,
+        classes: Vec<String>,
+    },
+}
+
+/// Which dependencies a walk follows, by Unreal's `EDependencyProperty` bits. A set field requires
+/// that value; an unset field accepts either.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EdgeFilter {
+    pub hard: Option<bool>,
+    pub game: Option<bool>,
+    pub build: Option<bool>,
+}
+
+impl EdgeFilter {
+    pub fn accepts(&self, dependency: &PackageDependency) -> bool {
+        self.hard.is_none_or(|hard| hard == dependency.hard)
+            && self.game.is_none_or(|game| game == dependency.game)
+            && self.build.is_none_or(|build| build == dependency.build)
+    }
+}
+
+/// A dependency, and the indexed package it names when there is one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolvedDependency {
+    pub dependency: PackageDependency,
+    pub package_path: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,6 +271,15 @@ pub enum QueryItem {
         package_name: String,
         classes: Vec<String>,
         serialized_names: Vec<String>,
+    },
+    /// A package from a dependency or dependents query, named as Unreal mounts it.
+    Package {
+        package_path: String,
+        package_name: String,
+        classes: Vec<String>,
+        dependencies: Vec<ResolvedDependency>,
+        /// Set when the package header could not be read, so its dependencies are unknown.
+        failure_code: Option<String>,
     },
 }
 
@@ -281,7 +390,8 @@ pub trait Catalog {
                     paths.insert(match item {
                         QueryItem::Map { map_path, .. } => map_path,
                         QueryItem::Header { package_path, .. }
-                        | QueryItem::Inventory { package_path, .. } => package_path,
+                        | QueryItem::Inventory { package_path, .. }
+                        | QueryItem::Package { package_path, .. } => package_path,
                     });
                 }
                 cursor = page.next_cursor;
@@ -304,7 +414,27 @@ pub fn validate_count_filters(filters: &[QueryKind]) -> Result<(), CatalogError>
             message: "counts require between 1 and 16 filters".into(),
         });
     }
+    if filters.iter().any(|filter| {
+        matches!(
+            filter,
+            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. }
+        )
+    }) {
+        return Err(CatalogError::InvalidRequest {
+            message: "dependency queries are not count filters".into(),
+        });
+    }
     Ok(())
+}
+
+/// The Catalog identity of one index scope of a project root. A `Content` index keeps the root's
+/// identity; a plugin-inclusive index is a separate Catalog beside it.
+pub fn project_id_for(project_root: &str, scope: IndexScope) -> ProjectId {
+    let root = project_id_from_root(project_root);
+    match scope {
+        IndexScope::Content => root,
+        IndexScope::ContentAndPlugins => ProjectId::new(format!("{root}#plugins")),
+    }
 }
 
 /// Canonicalize a project root into a disposable Catalog identity.
@@ -392,9 +522,9 @@ pub(crate) fn parse_page_cursor(cursor: Option<&str>) -> Result<String, CatalogE
 pub(crate) fn item_path(item: &QueryItem) -> &str {
     match item {
         QueryItem::Map { map_path, .. } => map_path.as_str(),
-        QueryItem::Header { package_path, .. } | QueryItem::Inventory { package_path, .. } => {
-            package_path.as_str()
-        }
+        QueryItem::Header { package_path, .. }
+        | QueryItem::Inventory { package_path, .. }
+        | QueryItem::Package { package_path, .. } => package_path.as_str(),
     }
 }
 
@@ -417,7 +547,22 @@ pub(crate) fn bundle_signature(parts: [Option<(u64, u64)>; 4]) -> String {
 
 #[cfg(test)]
 mod path_tests {
-    use super::project_relative_path;
+    use super::{IndexScope, project_id_for, project_id_from_root, project_relative_path};
+
+    #[test]
+    fn a_plugin_inclusive_index_is_a_separate_catalog_identity() {
+        let root = "C:/Project/";
+        assert_eq!(
+            project_id_for(root, IndexScope::Content),
+            project_id_from_root(root)
+        );
+        let plugins = project_id_for(root, IndexScope::ContentAndPlugins);
+        assert_ne!(plugins, project_id_from_root(root));
+        assert_eq!(
+            plugins.as_str(),
+            format!("{}#plugins", project_id_from_root(root))
+        );
+    }
 
     #[test]
     fn project_relative_path_preserves_asset_path_casing() {

@@ -644,6 +644,19 @@ export function makeProtocolRequest(
 		return { ...fields, operation };
 	}
 	if (operation.kind === "compare_blueprints") return { ...fields, operation };
+	// v1.23 Project Index shapes (plugin scope, change reports) are supersets of the older ones.
+	if (
+		operation.kind === "project_index_status" ||
+		operation.kind === "project_index_refresh" ||
+		operation.kind === "project_index_rebuild"
+	)
+		return { ...fields, operation };
+	if (operation.kind === "project_index_query") {
+		const { query, ...rest } = operation;
+		if (query.kind === "dependencies" || query.kind === "dependents")
+			return { ...fields, operation: { ...rest, query } };
+		return { ...fields, operation: { ...rest, query } };
+	}
 	return { ...fields, operation };
 }
 

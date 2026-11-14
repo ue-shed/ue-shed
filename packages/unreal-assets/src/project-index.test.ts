@@ -14,9 +14,12 @@ import {
 	ProjectIndexConfigLive,
 	ProjectIndexGeneration,
 	ProjectIndexHeader,
+	type ProjectIndexDependency,
 	ProjectIndexMap,
+	type ProjectIndexPackage,
 	ProjectIndexPage,
 	ProjectIndexQuery,
+	projectIndexDependencyClosures,
 	queryProjectIndex,
 	refreshProjectIndex
 } from "./project-index.js";
@@ -276,6 +279,173 @@ effectIt.effect("rejects stale generations and pages with an enforced limit", ()
 		expect(page.nextCursor).toBe("1");
 	}).pipe(Effect.provide(memoryLayer))
 );
+
+const dependency = (
+	packageName: string,
+	packagePath: string | undefined,
+	properties: { hard?: boolean; game?: boolean; build?: boolean } = {}
+): ProjectIndexDependency => {
+	const resolved: ProjectIndexDependency = {
+		package: packageName,
+		hard: properties.hard ?? true,
+		game: properties.game ?? true,
+		build: properties.build ?? false
+	};
+	return packagePath === undefined ? resolved : { ...resolved, packagePath };
+};
+
+const packages: readonly ProjectIndexPackage[] = [
+	{
+		classes: ["/Script/Niagara.NiagaraSystem"],
+		dependencies: [
+			dependency("/Game/VFX/M_Spark", "Content/VFX/M_Spark.uasset"),
+			dependency("/Script/Niagara", undefined)
+		],
+		kind: "package",
+		packageName: "/Game/VFX/NS_Impact",
+		packagePath: "Content/VFX/NS_Impact.uasset"
+	},
+	{
+		classes: ["/Script/Engine.Material"],
+		dependencies: [
+			dependency("/game/textures/t_spark", "Content/Textures/T_Spark.uasset"),
+			dependency("/Game/Editor/T_Preview", "Content/Editor/T_Preview.uasset", {
+				hard: false,
+				game: false,
+				build: true
+			})
+		],
+		kind: "package",
+		packageName: "/Game/VFX/M_Spark",
+		packagePath: "Content/VFX/M_Spark.uasset"
+	},
+	{
+		classes: ["/Script/Engine.Texture2D"],
+		dependencies: [],
+		kind: "package",
+		packageName: "/Game/Textures/T_Spark",
+		packagePath: "Content/Textures/T_Spark.uasset"
+	},
+	{
+		classes: ["/Script/Engine.Texture2D"],
+		dependencies: [],
+		kind: "package",
+		packageName: "/Game/Editor/T_Preview",
+		packagePath: "Content/Editor/T_Preview.uasset"
+	}
+];
+
+const pathsOf = (page: ProjectIndexPage): readonly string[] =>
+	page.items.map((item) => (item.kind === "package" ? item.packagePath : item.kind));
+
+effectIt.effect("walks dependencies and dependents through the in-memory adapter", () =>
+	Effect.gen(function* () {
+		const summary = yield* foldProjectIndexRefresh(
+			yield* Stream.runCollect(refreshProjectIndex({ projectRoot }))
+		);
+		const base = {
+			expectedGeneration: summary.generation,
+			limit: 10,
+			projectId: summary.projectId
+		};
+		const walk = (query: ProjectIndexQuery) =>
+			queryProjectIndex(query).pipe(Effect.map(pathsOf));
+		expect(
+			yield* walk(
+				ProjectIndexQuery.cases.Dependencies.make({
+					...base,
+					paths: ["Content/VFX/NS_Impact.uasset"]
+				})
+			)
+		).toEqual(["Content/VFX/NS_Impact.uasset"]);
+		expect(
+			yield* walk(
+				ProjectIndexQuery.cases.Dependencies.make({
+					...base,
+					paths: ["content/vfx/ns_impact.uasset"],
+					transitive: true
+				})
+			)
+		).toEqual([
+			"Content/Editor/T_Preview.uasset",
+			"Content/Textures/T_Spark.uasset",
+			"Content/VFX/M_Spark.uasset",
+			"Content/VFX/NS_Impact.uasset"
+		]);
+		expect(
+			yield* walk(
+				ProjectIndexQuery.cases.Dependencies.make({
+					...base,
+					paths: ["Content/VFX/NS_Impact.uasset"],
+					transitive: true,
+					edges: { game: true }
+				})
+			)
+		).toEqual([
+			"Content/Textures/T_Spark.uasset",
+			"Content/VFX/M_Spark.uasset",
+			"Content/VFX/NS_Impact.uasset"
+		]);
+		// A dependents walk finds the effect through the material, but `classes` keeps only effects.
+		expect(
+			yield* walk(
+				ProjectIndexQuery.cases.Dependents.make({
+					...base,
+					paths: ["Content/Textures/T_Spark.uasset"],
+					transitive: true,
+					classes: ["/Script/Niagara.NiagaraSystem"]
+				})
+			)
+		).toEqual(["Content/VFX/NS_Impact.uasset"]);
+		expect(
+			yield* walk(
+				ProjectIndexQuery.cases.Dependents.make({
+					...base,
+					paths: ["Content/Editor/T_Preview.uasset"],
+					edges: { game: true }
+				})
+			)
+		).toEqual([]);
+		for (const paths of [[], Array(1025).fill("Content/A.uasset")]) {
+			const result = yield* Effect.result(
+				decodeProjectIndexQuery({ _tag: "Dependencies", ...base, paths })
+			);
+			expect(result._tag).toBe("Failure");
+		}
+	}).pipe(
+		Effect.provide(
+			projectIndexMemoryLayer({ cacheRoot, seed: { headers, maps, packages, projectId } })
+		)
+	)
+);
+
+it("splits one transitive dependency page into per-root closures", () => {
+	const closures = projectIndexDependencyClosures(
+		packages,
+		["Content/VFX/NS_Impact.uasset", "Content/VFX/M_Spark.uasset", "Content/Missing.uasset"],
+		(entry) => entry.game
+	);
+	expect(closures.get("Content/VFX/NS_Impact.uasset")).toEqual({
+		packages: new Set([
+			"Content/VFX/NS_Impact.uasset",
+			"Content/VFX/M_Spark.uasset",
+			"Content/Textures/T_Spark.uasset"
+		]),
+		unresolved: new Set(["/Script/Niagara"])
+	});
+	expect(closures.get("Content/VFX/M_Spark.uasset")?.packages).toEqual(
+		new Set(["Content/VFX/M_Spark.uasset", "Content/Textures/T_Spark.uasset"])
+	);
+	expect(closures.get("Content/Missing.uasset")).toEqual({
+		packages: new Set(),
+		unresolved: new Set()
+	});
+	expect(
+		projectIndexDependencyClosures(packages, ["Content/VFX/M_Spark.uasset"])
+			.get("Content/VFX/M_Spark.uasset")
+			?.packages.has("Content/Editor/T_Preview.uasset")
+	).toBe(true);
+});
 
 effectIt.effect("loads cache-root policy from configuration without Electron imports", () =>
 	Effect.gen(function* () {

@@ -1,0 +1,21 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 23
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"cacheRoot": "C:/Caches/project-index",
+		"changes": true,
+		"kind": "project_index_refresh",
+		"plugins": true,
+		"projectRoot": "C:/project"
+	},
+	"requestId": "project-index-plugins-refresh-001"
+}

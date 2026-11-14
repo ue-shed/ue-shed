@@ -100,6 +100,12 @@ describe("uasset IO protocol v1", () => {
 					"valid/project-index-summary-result-event.json",
 					"valid/project-index-page-result-event.json",
 					"valid/project-index-stale-generation-failed-event.json",
+					"valid/project-index-dependencies-request.json",
+					"valid/project-index-dependents-request.json",
+					"valid/project-index-plugins-refresh-request.json",
+					"valid/project-index-changes-summary-result-event.json",
+					"valid/project-index-package-page-result-event.json",
+					"valid/project-index-package-dictionary-page-result-event.json",
 					"valid/game-text-disk-changes-request.json"
 				]) {
 					const value = yield* Effect.promise(() => fixture(name));
@@ -135,6 +141,9 @@ describe("uasset IO protocol v1", () => {
 					"invalid/project-index-page-unbounded.json",
 					"invalid/project-index-count-empty-filters.json",
 					"invalid/project-index-dictionary-page-negative-index.json",
+					"invalid/project-index-dependencies-request-old-minor.json",
+					"invalid/project-index-dependencies-request-no-paths.json",
+					"invalid/project-index-plugins-refresh-request-old-minor.json",
 					"invalid/saved-world-unknown-actor-decode.json",
 					"invalid/saved-world-unsupported-minor.json",
 					"invalid/saved-world-unsupported-major.json",

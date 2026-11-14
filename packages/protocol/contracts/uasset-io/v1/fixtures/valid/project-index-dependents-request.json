@@ -1,0 +1,27 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 23
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"cacheRoot": "C:/Caches/project-index",
+		"kind": "project_index_query",
+		"query": {
+			"classes": ["/Script/Niagara.NiagaraSystem"],
+			"expectedGeneration": 3,
+			"kind": "dependents",
+			"limit": 100,
+			"paths": ["Content/Textures/T_Noise.uasset", "Content/Textures/T_Removed.uasset"],
+			"projectId": "c:/project#plugins",
+			"transitive": true
+		}
+	},
+	"requestId": "project-index-dependents-001"
+}

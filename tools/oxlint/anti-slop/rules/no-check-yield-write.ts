@@ -49,8 +49,13 @@ function exitReaches(
 		if (current.type === "TryStatement" && child !== current.finalizer) {
 			if (current.finalizer && contains(current.finalizer, write)) return true;
 			if (throws && child === current.block && current.handler) {
+				if (contains(current.handler, write)) return true;
 				const caught = current.handler.body.body;
-				if (contains(current.handler, write) || !terminates(caught)) return true;
+				if (!terminates(caught)) {
+					// The catch completes, so flow resumes after the try unless its finally leaves.
+					if (current.finalizer && terminates(current.finalizer.body)) return false;
+					return reaches(current, write);
+				}
 				throws = caught.at(-1)?.type === "ThrowStatement";
 			}
 		}

@@ -156,7 +156,11 @@ export const noUnguardedOwnerClearRule = defineRule({
 					);
 				}
 				if (current.type === "LogicalExpression") {
-					if (current.left === child && contains(current.right, clear)) return true;
+					// `left && clear` clears only when `left` is true, `left || clear` when it is false.
+					if (current.left === child && contains(current.right, clear))
+						return current.operator === "&&"
+							? decidesTrue
+							: current.operator === "||" && decidesFalse;
 					if (current.operator !== "&&") decidesTrue = false;
 					if (current.operator !== "||") decidesFalse = false;
 				}

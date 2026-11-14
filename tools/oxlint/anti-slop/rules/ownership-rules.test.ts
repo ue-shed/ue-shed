@@ -70,6 +70,10 @@ ruleTester.run("no-check-yield-write", noCheckYieldWriteRule, {
 		"let busy = false; const run = Effect.gen(function* () { if (busy) { yield* reportBusy; } else { busy = true; } });",
 		// The throw is caught, but the catch returns before the write.
 		"let busy = false; const run = Effect.gen(function* () { if (busy) return; try { yield* prepare; throw failure; } catch { return; } busy = true; });",
+		// A caught throw resumes after the try, but that path still cannot reach the write.
+		"let busy = false; const run = Effect.gen(function* () { if (busy) { try { yield* reportBusy; throw failure; } catch {} return; } busy = true; });",
+		"let busy = false; const run = Effect.gen(function* () { if (busy) { try { yield* reportBusy; throw failure; } catch {} } else { busy = true; } });",
+		"let busy = false; const run = Effect.gen(function* () { if (busy) return; try { yield* prepare; throw failure; } catch {} finally { return; } busy = true; });",
 		// The body runs under a permit.
 		"let cached; const get = Effect.fn('get')(function* () { if (cached) return cached; cached = yield* load; return cached; }, gate.withPermits(1));",
 		"let cached; const get = gate.withPermits(1)(Effect.gen(function* () { if (!cached) cached = yield* load; return cached; }));",
@@ -129,6 +133,10 @@ ruleTester.run("no-unguarded-owner-clear", noUnguardedOwnerClearRule, {
 		"let active; let generation = 0; const run = () => work.finally(() => { if (generation !== mine || stopped) return; active = undefined; });",
 		"let active; let generation = 0; const run = () => work.finally(() => { if (generation === mine && ready) active = undefined; });",
 		"let active; let generation = 0; const run = () => work.finally(() => { if (closed || (stopped || generation !== mine)) return; else active = undefined; });",
+		// A short-circuit clear whose left side still requires the fence.
+		"let active; let generation = 0; const run = () => work.finally(() => { generation === mine && (active = undefined); });",
+		"let active; let generation = 0; const run = () => work.finally(() => { (generation === mine && ready) && (active = undefined); });",
+		"let active; let generation = 0; const run = () => work.finally(() => { (generation !== mine || stopped) || (active = undefined); });",
 		// A variable the cleanup owns itself.
 		"const run = work.pipe(Effect.ensuring(Effect.sync(() => { let local = 1; local = undefined; })));",
 		// Not cleanup.
@@ -172,6 +180,14 @@ ruleTester.run("no-unguarded-owner-clear", noUnguardedOwnerClearRule, {
 		},
 		{
 			code: "let active; let generation = 0; const run = () => work.finally(() => { if (generation !== mine && stopped) return; active = undefined; });",
+			errors: [{ messageId: "unguardedClear" }]
+		},
+		{
+			code: "let active; let generation = 0; const run = () => work.finally(() => { (generation === mine || ready) && (active = undefined); });",
+			errors: [{ messageId: "unguardedClear" }]
+		},
+		{
+			code: "let active; let generation = 0; const run = () => work.finally(() => { (generation !== mine && stopped) || (active = undefined); });",
 			errors: [{ messageId: "unguardedClear" }]
 		},
 		{

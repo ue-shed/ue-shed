@@ -416,7 +416,9 @@ Joined key `joined-v7` adds private query projections. `query.raw` and `query.sl
 numeric representatives, memberships, source/file ID vectors and offsets, flags, visibility
 and character/word counts. Raw and line identifiers have packed UTF-8 arenas plus numeric
 offsets and order vectors. `line.source_words` and `line.source_visible` complete the line
-projection. Overlay metadata can associate a query field with its own patch-row vector;
+projection. A line, slice or raw unit is visible when it has non-blank source, or when its line
+has the `string_table_entry_missing` reason (from `joined-native-v10`), because Unreal saves a
+String Table reference without source text. Overlay metadata can associate a query field with its own patch-row vector;
 line/culture fields retain the common `patch.rows`. Equal physical columns still alias.
 A native joined publisher must produce these projections before serving this query reader.
 

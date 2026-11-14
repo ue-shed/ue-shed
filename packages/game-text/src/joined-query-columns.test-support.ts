@@ -9,6 +9,11 @@ import { HostSliceClock, type HostSteps } from "./host-slices.js";
 import { textAudienceBit } from "./text-audience.js";
 import { OCCURRENCE_COPY_DIFFERS } from "./package-text-columns.js";
 import { longestSource } from "./source-metrics.js";
+import { LocalizationUnknownReason } from "./localization-schema.js";
+
+/** A missing String Table entry is saved without source; its places stay visible, as its line does. */
+const MISSING_TABLE_ENTRY =
+	1 << LocalizationUnknownReason.literals.indexOf("string_table_entry_missing");
 
 /** Numeric query entries retain raw-unit predicates and each gathered occurrence slice.
  * Host steps yield between bounded slices; `runHostSteps` drives them from an Effect.
@@ -184,6 +189,8 @@ export function* joinedQueryColumns(input: {
 				visible = true;
 			}
 		}
+		const lineRow = gathered === absent ? occurrenceLine[first]! : gathered;
+		if (line.reasons![lineRow]! & MISSING_TABLE_ENTRY) visible = true;
 		const longest = longestSource(decoded.map(({ value }) => value));
 		characters = longest.length;
 		words = longest.trim() === "" ? 0 : longest.trim().split(/\s+/u).length;

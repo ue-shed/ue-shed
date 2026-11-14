@@ -1839,6 +1839,62 @@ fn string_table_entry_missing_rule_reports_only_a_known_tables_missing_entry() -
 }
 
 #[test]
+fn a_missing_entry_saved_without_source_is_visible_and_reported() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    for (name, format) in [
+        ("Game.manifest", "manifest"),
+        ("en.archive", "archive"),
+        ("de.archive", "archive"),
+        ("en.po", "po"),
+        ("de.po", "po"),
+    ] {
+        fixture.file(name, format, &[])?;
+    }
+    // Unreal saves a String Table reference without its source text, as the parser decodes it.
+    fixture.packages(&[
+        json!({"source":"An entry","namespace":"UI","key":"Present","object":"/Game/Text/Table.Table","row":"Present","location":2}),
+        json!({"source":"","namespace":"/Game/Text/Table.Table","key":"Absent","object":"/Game/Text/Example.Example","property":"MissingEntry","identity":1}),
+        json!({"source":"","namespace":"/Game/Text/Missing.Missing","key":"Absent","object":"/Game/Text/Example.Example","property":"MissingTable","identity":1}),
+        json!({"source":"","namespace":"UI","key":"Blank","object":"/Game/Text/Example.Example","property":"Blank"}),
+    ])?;
+    let outcome = fixture.join()?;
+    let query = EngineQuery::open(&fixture.configuration, Some(&outcome.key))?;
+    let visible = query.reader.column("line.source_visible")?;
+    let cancelled = AtomicBool::new(false);
+    let count = query.reader.meta["count"].as_u64().ok_or("line count")? as usize;
+    let mut seen = BTreeMap::new();
+    for row in 0..count {
+        let line = query.localization_line(row, &cancelled)?;
+        for unit in line["origin"]["unitIds"].as_array().ok_or("line units")? {
+            seen.insert(unit.as_str().ok_or("unit ID")?.to_owned(), visible[row]);
+        }
+    }
+    // The missing entry stays visible; a table outside the scan and blank text stay hidden.
+    for (unit, expected) in [
+        ("string-table:%2FGame%2FText%2FTable.Table:Absent", 1),
+        ("string-table:%2FGame%2FText%2FMissing.Missing:Absent", 0),
+        ("unreal:UI:Blank", 0),
+    ] {
+        assert_eq!(seen.get(unit), Some(&expected), "{unit}: {seen:?}");
+    }
+    drop(query);
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    // The published report keeps the finding: its line and saved place are in the join.
+    let rules = example_document(&["string_table_entry_missing"], None)?;
+    let query = EngineQuery::open(&configuration, None)?;
+    let result = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
+    let key = result["key"].as_str().ok_or("Missing findings key.")?;
+    let page = query.findings_page(
+        json!({"key":key,"view":"report","order":"report","limit":50}),
+        &cancelled,
+    )?;
+    let findings = page["findings"].as_array().ok_or("Missing findings.")?;
+    assert_eq!(findings.len(), 1, "{page}");
+    Ok(())
+}
+
+#[test]
 fn string_table_entry_missing_rule_reports_a_code_tables_missing_entry() -> Result<()> {
     use crate::rules::{HostCollator, NativeSubjects, Subject};
     let mut fixture = Fixture::new()?;

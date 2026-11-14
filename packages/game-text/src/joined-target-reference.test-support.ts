@@ -744,7 +744,9 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 		line.source![row] =
 			sources.values().next().value ?? (first === absent ? empty : m.source![first]!);
 		const initialSource = strings.string(line.source![row]!);
-		line.source_visible![row] = Number(initialSource.trim() !== "");
+		// A missing String Table entry is saved without source; its line stays visible.
+		const missingEntry = (reasons & reasonBit("string_table_entry_missing")) !== 0;
+		line.source_visible![row] = Number(initialSource.trim() !== "" || missingEntry);
 		line.source_words![row] =
 			initialSource.trim() === "" ? 0 : initialSource.trim().split(/\s+/u).length;
 		if (sources.size > 1) {
@@ -776,7 +778,7 @@ export const refreshJoinedTarget = Effect.fn("JoinedTarget.refresh")(function* (
 			for (const i of occurrenceRows)
 				if (!authored || c.identity[i] !== 1) orderedSources.add(c.source[i]!);
 			const value = [...orderedSources].map((id) => strings.string(id)).join(" ");
-			line.source_visible![row] = Number(value.trim() !== "");
+			line.source_visible![row] = Number(value.trim() !== "" || missingEntry);
 			line.source_words![row] = value.trim() === "" ? 0 : value.trim().split(/\s+/u).length;
 			snapshotCheck(
 				Buffer.byteLength(value) <= 1024 ** 2,

@@ -34,7 +34,7 @@ void test("a second run fails while the lane is leased, and leases it once relea
 	}
 });
 
-void test("a lease left by a run that is no longer running is taken over", () => {
+void test("a killed run's lease fails every later run until a person deletes it", () => {
 	const { path, dispose } = lane();
 	try {
 		const exited = spawnSync(process.execPath, ["-e", ""]).pid;
@@ -42,49 +42,108 @@ void test("a lease left by a run that is no longer running is taken over", () =>
 			`${path}.lock`,
 			JSON.stringify({ pid: exited, startedAt: "2026-01-01T00:00:00.000Z" })
 		);
-		const lease = acquireLaneLease(path);
-		assert.equal(holderPid(path), process.pid);
-		lease.release();
+		assert.throws(
+			() => acquireLaneLease(path),
+			new RegExp(`no longer running \\(pid ${exited}.*delete .*\\.lock`)
+		);
+		assert.equal(holderPid(path), exited);
+		rmSync(`${path}.lock`);
+		acquireLaneLease(path).release();
 	} finally {
 		dispose();
 	}
 });
 
-void test("a run in another process holds the lane until it ends", async () => {
-	const { path, dispose } = lane();
-	const module = new URL("./release-lane-lock.ts", import.meta.url).href;
-	const child = spawn(
+const module = new URL("./release-lane-lock.ts", import.meta.url).href;
+
+/** A run in its own process: it tries for the lane, reports, and keeps any lease until killed. */
+function contender(path: string, script = "") {
+	return spawn(
 		process.execPath,
 		[
 			"--input-type=module",
 			"-e",
 			`const { acquireLaneLease } = await import(${JSON.stringify(module)});
-			acquireLaneLease(${JSON.stringify(path)});
-			process.stdout.write("held\\n");
+			let outcome = "held";
+			try { acquireLaneLease(${JSON.stringify(path)}); } catch { outcome = "busy"; }
+			${script}
+			process.stdout.write(outcome + "\\n");
 			setInterval(() => {}, 1000);`
 		],
 		{ stdio: ["ignore", "pipe", "inherit"] }
 	);
-	try {
-		child.stdout.setEncoding("utf8");
-		assert.deepEqual(
-			(await once(child.stdout, "data")).map((chunk) => String(chunk).trim()),
-			["held"]
-		);
-		assert.throws(() => acquireLaneLease(path), new RegExp(`pid ${child.pid}`));
-		// Killed mid-run, as a cancelled release would be: its lease no longer blocks the lane.
-		child.kill("SIGKILL");
-		await once(child, "exit");
-		const lease = acquireLaneLease(path);
-		assert.equal(holderPid(path), process.pid);
-		lease.release();
-	} finally {
-		child.kill("SIGKILL");
-		dispose();
-	}
-});
+}
 
-void test("releasing leaves a lease another run has taken since", () => {
+async function outcomeOf(child: ReturnType<typeof contender>): Promise<string> {
+	child.stdout.setEncoding("utf8");
+	const [chunk] = await once(child.stdout, "data");
+	return String(chunk).split("\n")[0]?.trim() ?? "";
+}
+
+void test(
+	"runs racing for the lane get it once, and a killed run's lease admits none",
+	{ timeout: 60_000 },
+	async () => {
+		const { path, dispose } = lane();
+		const children: Array<ReturnType<typeof contender>> = [];
+		try {
+			const racers = Array.from({ length: 4 }, () => contender(path));
+			children.push(...racers);
+			const outcomes = await Promise.all(racers.map(outcomeOf));
+			assert.deepEqual(outcomes.toSorted(), ["busy", "busy", "busy", "held"]);
+			for (const child of racers) child.kill("SIGKILL");
+			await Promise.all(racers.map((child) => child.exitCode ?? once(child, "exit")));
+			// The holder is gone, but recovering its lease is a person's decision, not a racer's.
+			const recovering = Array.from({ length: 4 }, () => contender(path));
+			children.push(...recovering);
+			assert.deepEqual(await Promise.all(recovering.map(outcomeOf)), [
+				"busy",
+				"busy",
+				"busy",
+				"busy"
+			]);
+		} finally {
+			for (const child of children) child.kill("SIGKILL");
+			dispose();
+		}
+	}
+);
+
+void test(
+	"a killed run whose lane work outlives it keeps the lane",
+	{ timeout: 60_000 },
+	async () => {
+		const { path, dispose } = lane();
+		// The holder starts lane work in its own process, as its gate steps do, then is killed.
+		// Detached, so on Windows too it outlives the holder, as a shell's descendants on POSIX do.
+		const holder = contender(
+			path,
+			`const { spawn } = await import("node:child_process");
+		const work = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", detached: true });
+		work.unref();
+		process.stdout.write(work.pid + "\\n");`
+		);
+		let work: number | undefined;
+		try {
+			work = Number(await outcomeOf(holder));
+			holder.kill("SIGKILL");
+			await once(holder, "exit");
+			process.kill(work, 0);
+			assert.throws(() => acquireLaneLease(path), /no longer running.*may still be running/);
+		} finally {
+			holder.kill("SIGKILL");
+			if (work !== undefined && Number.isInteger(work))
+				try {
+					process.kill(work, "SIGKILL");
+				} catch {
+					// Already stopped.
+				}
+			dispose();
+		}
+	}
+);
+
+void test("releasing removes only this run's lease", () => {
 	const { path, dispose } = lane();
 	try {
 		const lease = acquireLaneLease(path);

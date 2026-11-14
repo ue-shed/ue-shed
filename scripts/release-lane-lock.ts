@@ -35,45 +35,41 @@ function holderOf(path: string): LaneHolder | undefined {
 /**
  * Leases the Unreal lane that runs from every worktree share, so another run cannot check out and
  * clean it under this run's gates. The lease sits beside the lane (`git clean -x` empties the
- * lane). A live holder fails this call before the lane changes; a killed holder's lease is taken.
+ * lane). Any existing lease fails this call before the lane changes, even a killed run's: its
+ * builds and editors can outlive it, so only a person who has checked may delete the lease.
  */
 export function acquireLaneLease(lane: string): LaneLease {
 	const path = `${lane}.lock`;
-	// Written in full first, then linked into place: linking fails when a lease exists, so no
-	// run ever sees a lease without its holder.
+	// Written in full first, then linked into place: linking fails when a lease exists, so exactly
+	// one run gets it and no run ever sees a lease without its holder.
 	const pending = `${path}.${process.pid}`;
 	writeFileSync(
 		pending,
 		JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })
 	);
 	try {
-		for (let attempt = 0; attempt < 2; attempt++) {
-			try {
-				linkSync(pending, path);
-				return lease(path);
-			} catch (cause) {
-				if (!hasCode(cause, "EEXIST")) throw cause;
-			}
-			const holder = holderOf(path);
-			if (holder !== undefined && running(holder.pid))
-				throw new Error(
-					`The Unreal lane ${lane} is in use by another release:prepare (pid ${holder.pid}, since ${holder.startedAt}). ` +
-						"Wait for it to finish, or pass --unreal-worktree <path> to use another lane."
-				);
-			rmSync(path, { force: true });
-		}
+		linkSync(pending, path);
+	} catch (cause) {
+		if (!hasCode(cause, "EEXIST")) throw cause;
+		throw new Error(busy(lane, path, holderOf(path)));
 	} finally {
 		rmSync(pending, { force: true });
 	}
-	throw new Error(`Could not take the Unreal lane lock ${path}.`);
-}
-
-function lease(path: string): LaneLease {
 	return {
 		path,
-		// Only this run's lease: a lease taken over after this one was presumed dead stays.
 		release: () => {
 			if (holderOf(path)?.pid === process.pid) rmSync(path, { force: true });
 		}
 	};
+}
+
+function busy(lane: string, path: string, holder: LaneHolder | undefined): string {
+	const alternative = "or pass --unreal-worktree <path> to use another lane.";
+	if (holder !== undefined && running(holder.pid))
+		return `The Unreal lane ${lane} is in use by another release:prepare (pid ${holder.pid}, since ${holder.startedAt}). Wait for it to finish, ${alternative}`;
+	const who =
+		holder === undefined
+			? "an unreadable lease"
+			: `a release:prepare that is no longer running (pid ${holder.pid}, since ${holder.startedAt})`;
+	return `The Unreal lane ${lane} is leased by ${who}. Its builds or Unreal editors may still be running in the lane. Once none are, delete ${path} and run again, ${alternative}`;
 }

@@ -12,6 +12,8 @@ pub use uasset_parser::dependencies::PackageDependency;
 pub const INDEX_PROFILE_VERSION: u32 = 3;
 /// Bounded page size shared by Rust, TypeScript, and the language-neutral protocol contract.
 pub const PROJECT_INDEX_MAX_PAGE_SIZE: usize = 1024;
+/// Distinct strings a dictionary page may carry; dependency pages end early to stay within it.
+pub const PROJECT_INDEX_MAX_PAGE_STRINGS: usize = PROJECT_INDEX_MAX_PAGE_SIZE * 128;
 pub const PROJECT_INDEX_MAX_DIAGNOSTICS: usize = 64;
 pub const PROJECT_INDEX_MAX_CLASSES: usize = 64;
 pub const PROJECT_INDEX_MAX_NAMES: usize = 64;

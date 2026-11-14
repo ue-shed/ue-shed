@@ -770,10 +770,13 @@ export function rebuildProjectIndex(
 	return Stream.unwrap(acquireRebuild(target));
 }
 
+const foldAsciiCase = (value: string): string =>
+	value.replace(/[A-Z]/gu, (letter) => letter.toLowerCase());
+
 /**
  * Per-root closures from the `package` items of a transitive `Dependencies` query, following only
- * the dependencies `follow` accepts. Each closure holds its root; dependencies without an indexed
- * package are listed in `unresolved` by name.
+ * the dependencies `follow` accepts. Roots match as the query does (exact, else ignoring ASCII
+ * case); closures are keyed by the root given and hold canonical paths, root included.
  */
 export function projectIndexDependencyClosures(
 	items: Iterable<ProjectIndexItem>,
@@ -784,7 +787,14 @@ export function projectIndexDependencyClosures(
 	{ readonly packages: ReadonlySet<string>; readonly unresolved: ReadonlySet<string> }
 > {
 	const packages = new Map<string, ProjectIndexPackage>();
-	for (const item of items) if (item.kind === "package") packages.set(item.packagePath, item);
+	const folded = new Map<string, string>();
+	for (const item of items) {
+		if (item.kind !== "package") continue;
+		packages.set(item.packagePath, item);
+		const key = foldAsciiCase(item.packagePath);
+		const kept = folded.get(key);
+		if (kept === undefined || item.packagePath < kept) folded.set(key, item.packagePath);
+	}
 	const closures = new Map<
 		string,
 		{ readonly packages: ReadonlySet<string>; readonly unresolved: ReadonlySet<string> }
@@ -792,8 +802,9 @@ export function projectIndexDependencyClosures(
 	for (const root of roots) {
 		const reached = new Set<string>();
 		const unresolved = new Set<string>();
-		const pending = packages.has(root) ? [root] : [];
-		if (pending.length > 0) reached.add(root);
+		const start = packages.has(root) ? root : folded.get(foldAsciiCase(root));
+		const pending = start === undefined ? [] : [start];
+		if (start !== undefined) reached.add(start);
 		for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
 			for (const dependency of packages.get(path)?.dependencies ?? []) {
 				if (!follow(dependency)) continue;

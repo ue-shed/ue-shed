@@ -436,6 +436,18 @@ it("splits one transitive dependency page into per-root closures", () => {
 	expect(closures.get("Content/VFX/M_Spark.uasset")?.packages).toEqual(
 		new Set(["Content/VFX/M_Spark.uasset", "Content/Textures/T_Spark.uasset"])
 	);
+	// Roots match as the query does, ignoring ASCII case, and keep canonical paths.
+	expect(
+		projectIndexDependencyClosures(packages, ["content/vfx/m_spark.UASSET"]).get(
+			"content/vfx/m_spark.UASSET"
+		)?.packages
+	).toEqual(
+		new Set([
+			"Content/VFX/M_Spark.uasset",
+			"Content/Textures/T_Spark.uasset",
+			"Content/Editor/T_Preview.uasset"
+		])
+	);
 	expect(closures.get("Content/Missing.uasset")).toEqual({
 		packages: new Set(),
 		unresolved: new Set()

@@ -11,7 +11,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use super::catalog::{
-    CatalogError, EdgeFilter, HeaderEvidence, MountPoint, QueryItem, QueryKind, ResolvedDependency,
+    CatalogError, EdgeFilter, HeaderEvidence, MountPoint, PROJECT_INDEX_MAX_PAGE_STRINGS,
+    QueryItem, QueryKind, ResolvedDependency,
 };
 
 /// Storage primitives a dependency walk reads from one committed generation.
@@ -86,7 +87,8 @@ fn strip_suffix_ignore_ascii_case<'a>(value: &'a str, suffix: &str) -> Option<&'
     tail.eq_ignore_ascii_case(suffix).then(|| &value[..split])
 }
 
-/// One page of a dependency or dependents query, in package path order after `after`.
+/// One page of a dependency or dependents query, in package path order after `after`. A page ends
+/// early, with a cursor, before its distinct strings would exceed the dictionary page bound.
 pub(crate) fn dependency_page<G: DependencyGraph>(
     graph: &G,
     kind: &QueryKind,
@@ -118,13 +120,54 @@ pub(crate) fn dependency_page<G: DependencyGraph>(
         .filter(|(path, _)| path.as_str() > after)
         .take(limit + 1)
         .collect::<Vec<_>>();
-    let more = page.len() > limit;
+    let mut more = page.len() > limit;
     page.truncate(limit);
-    let next_cursor = more
-        .then(|| page.last().map(|(path, _)| path.clone()))
-        .flatten();
     let nodes = page.into_iter().map(|(_, node)| node).collect::<Vec<_>>();
-    Ok((package_items(graph, &mut resolver, &nodes)?, next_cursor))
+    let mut items = package_items(graph, &mut resolver, &nodes)?;
+    let kept = within_string_budget(&items, PROJECT_INDEX_MAX_PAGE_STRINGS);
+    if kept < items.len() {
+        items.truncate(kept);
+        more = true;
+    }
+    let next_cursor = more.then(|| items.last().map(item_path)).flatten();
+    Ok((items, next_cursor))
+}
+
+fn item_path(item: &QueryItem) -> String {
+    match item {
+        QueryItem::Package { package_path, .. } => package_path.clone(),
+        _ => String::new(),
+    }
+}
+
+/// How many leading items fit in `budget` distinct page strings (classes, dependency names and
+/// resolved paths, as a dictionary page interns them). The first item always fits.
+fn within_string_budget(items: &[QueryItem], budget: usize) -> usize {
+    let mut strings = HashSet::new();
+    for (index, item) in items.iter().enumerate() {
+        let QueryItem::Package {
+            classes,
+            dependencies,
+            ..
+        } = item
+        else {
+            continue;
+        };
+        let added = classes
+            .iter()
+            .map(String::as_str)
+            .chain(dependencies.iter().flat_map(|resolved| {
+                std::iter::once(resolved.dependency.package.as_str())
+                    .chain(resolved.package_path.as_deref())
+            }))
+            .filter(|value| !strings.contains(*value))
+            .collect::<HashSet<_>>();
+        if index > 0 && strings.len() + added.len() > budget {
+            return index;
+        }
+        strings.extend(added);
+    }
+    items.len()
 }
 
 /// Package names resolved to stored packages through the generation's mount points.
@@ -354,6 +397,100 @@ mod tests {
         );
         assert_eq!(package_stem_for_name(&mounts, "/Script/Engine"), None);
         assert_eq!(package_stem_for_name(&mounts, "/Game/"), None);
+    }
+
+    /// Packages `P0000`..: each has its own unresolved dependencies, so pages fill the string budget.
+    struct WideGraph {
+        mounts: Vec<MountPoint>,
+        packages: usize,
+        dependencies: usize,
+    }
+
+    impl DependencyGraph for WideGraph {
+        type Node = usize;
+        fn mount_points(&self) -> &[MountPoint] {
+            &self.mounts
+        }
+        fn package_at(&self, path: &str, _: bool) -> Result<Option<usize>, CatalogError> {
+            Ok((0..self.packages).find(|node| self.package_path(node) == path))
+        }
+        fn package_path(&self, node: &usize) -> String {
+            format!("Content/P{node:04}.uasset")
+        }
+        fn evidence(&self, nodes: &[usize]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
+            Ok(nodes
+                .iter()
+                .map(|node| {
+                    Some(HeaderEvidence {
+                        header_data: None,
+                        profile_version: 3,
+                        package_name: format!("/Game/P{node:04}"),
+                        failure_code: None,
+                        classes: vec!["/Script/Engine.Texture2D".into()],
+                        serialized_names: Vec::new(),
+                        dependencies: (0..self.dependencies)
+                            .map(|index| {
+                                super::super::catalog::PackageDependency::from_properties(
+                                    format!("/Engine/Missing/P{node}_{index}"),
+                                    3,
+                                )
+                            })
+                            .collect(),
+                    })
+                })
+                .collect())
+        }
+        fn referrers(&self, _: &[String]) -> Result<Vec<usize>, CatalogError> {
+            Ok(Vec::new())
+        }
+        fn class_members(&self, _: &[String]) -> Result<HashSet<usize>, CatalogError> {
+            Ok(HashSet::new())
+        }
+    }
+
+    #[test]
+    fn dependency_pages_end_before_the_dictionary_string_bound() {
+        let graph = WideGraph {
+            mounts: mounts(),
+            packages: 1100,
+            dependencies: 129,
+        };
+        let paths = (0..graph.packages)
+            .map(|node| graph.package_path(&node))
+            .collect::<Vec<_>>();
+        let kind = QueryKind::Dependencies {
+            paths: paths.clone(),
+            transitive: false,
+            edges: EdgeFilter::default(),
+        };
+        let (mut after, mut seen, mut pages) = (String::new(), Vec::new(), 0);
+        loop {
+            let (items, cursor) = dependency_page(&graph, &kind, &after, 1024).unwrap();
+            let mut strings = HashSet::new();
+            for item in &items {
+                let QueryItem::Package {
+                    classes,
+                    dependencies,
+                    package_path,
+                    ..
+                } = item
+                else {
+                    panic!("package item");
+                };
+                strings.extend(classes.iter().cloned());
+                strings.extend(dependencies.iter().map(|d| d.dependency.package.clone()));
+                assert_eq!(dependencies.len(), 129, "evidence is never truncated");
+                seen.push(package_path.clone());
+            }
+            assert!(strings.len() <= PROJECT_INDEX_MAX_PAGE_STRINGS);
+            pages += 1;
+            match cursor {
+                Some(cursor) => after = cursor,
+                None => break,
+            }
+        }
+        assert_eq!(seen, paths, "pages continue without gaps or repeats");
+        assert!(pages >= 2);
     }
 
     #[test]

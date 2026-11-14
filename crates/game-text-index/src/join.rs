@@ -67,8 +67,13 @@ pub(crate) const L_FILE_END: usize = 18;
 pub(crate) const L_SPLIT_UNIT: usize = 19;
 pub(crate) const L_AUDIENCE: usize = 20;
 /// v8 drops the persisted `line.problems` column and the retired shared, duplicate source and long
-/// signals; queries classify problems per request.
-pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v9:";
+/// signals; queries classify problems per request. v10 keeps a missing String Table entry's line
+/// and places visible.
+pub(crate) const JOINED_KEY_PREFIX: &str = "joined-native-v10:";
+/// The `string_table_entry_missing` reason's bit. Unreal saves a reference to a String Table
+/// entry with no source text, so a line with this reason, and its places, stay visible: without
+/// them the review and the check could not show a reference to a missing entry.
+pub(crate) const MISSING_TABLE_ENTRY: u32 = 1 << 17;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct JoinInput {
@@ -944,6 +949,19 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         let has_reference = occurrence_rows
             .iter()
             .any(|i| c[O_IDENTITY][*i as usize] == 1 && c[O_KEY][*i as usize] != empty);
+        let unresolved = (g.ns == ABSENT).then(|| {
+            if !has_reference {
+                9
+            } else if occurrence_rows.iter().any(|i| {
+                c[O_IDENTITY][*i as usize] == 1 && known_tables.contains(&c[O_NS][*i as usize])
+            }) {
+                17
+            } else {
+                10
+            }
+        });
+        // A missing String Table entry is saved without source; its line and places stay visible.
+        let missing_entry = unresolved == Some(17);
         let mut sources = Vec::new();
         let mut source_set = HashSet::new();
         let mut inside_packages = HashSet::new();
@@ -981,7 +999,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                         searchable |= !trim(joined.string(source)).is_empty();
                     }
                 }
-                if searchable {
+                if searchable || missing_entry {
                     for member in members {
                         origins |= 1
                             << place_origin(c[O_LOCATION][member], || {
@@ -1015,16 +1033,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 coverage_reasons |= 1 << (coverage + 10);
             }
         }
-        if g.ns == ABSENT {
-            let reason = if !has_reference {
-                9
-            } else if occurrence_rows.iter().any(|i| {
-                c[O_IDENTITY][*i as usize] == 1 && known_tables.contains(&c[O_NS][*i as usize])
-            }) {
-                17
-            } else {
-                10
-            };
+        if let Some(reason) = unresolved {
             reasons |= 1 << reason;
         }
         if !joined.manifest.loaded {
@@ -1047,7 +1056,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         joined.line[L_SOURCE][row] = source;
         let initial = joined.string(source);
         let initial_words = words(initial);
-        let initial_visible = u32::from(!trim(initial).is_empty());
+        let initial_visible = u32::from(!trim(initial).is_empty() || missing_entry);
         joined.line[L_SOURCE_WORDS][row] = initial_words;
         joined.line[L_SOURCE_VISIBLE][row] = initial_visible;
         if sources.len() > 1 {
@@ -1075,7 +1084,8 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 .join(" ");
             require(value.len() <= 1024 * 1024, "joined source exceeds bound")?;
             joined.line[3][row] = words(&value);
-            joined.line[4][row] = u32::from(!trim(&value).is_empty());
+            joined.line[L_SOURCE_VISIBLE][row] =
+                u32::from(!trim(&value).is_empty() || missing_entry);
             pending_rows.push(row);
             pending_sources.push(value);
         }

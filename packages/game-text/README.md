@@ -546,6 +546,7 @@ CSV exports carry the severity.
 | `string_table_key_collision`  | unreal    | normal   | One namespace and key declared by more than one String Table                                                                                       |
 | `shared`                      | heuristic | low      | Text saved in more than one place, which may need a different meaning in each                                                                      |
 | `long`                        | heuristic | low      | A saved source of 40 or more UTF-16 code units                                                                                                     |
+| `string_table_entry_missing`  | unreal    | normal   | An entry the text references that a known String Table does not have                                                                               |
 
 <!-- end of check table -->
 

@@ -156,6 +156,25 @@ impl OccurrenceData {
             "wrapper"
         }
     }
+    /// The `(table, entry key)` this place defines, as the join's `table_entry` reads it: a
+    /// String Table asset's entry, or a code `LOCTABLE_` entry, whose class column holds the table
+    /// ID. `blank` says whether a string ID's text is empty.
+    pub fn table_entry(
+        &self,
+        row: usize,
+        blank: impl Fn(u32) -> Result<bool>,
+    ) -> Result<Option<(u32, u32)>> {
+        if self.value(row, "identity") != 0 || blank(self.value(row, "key"))? {
+            return Ok(None);
+        }
+        Ok(match self.value(row, "location") {
+            2 => Some((self.value(row, "object"), self.value(row, "row"))),
+            3 if self.code_class(row) == "table" && !blank(self.value(row, "class"))? => {
+                Some((self.value(row, "class"), self.value(row, "key")))
+            }
+            _ => None,
+        })
+    }
     pub fn len(&self) -> usize {
         self.packages.len()
     }

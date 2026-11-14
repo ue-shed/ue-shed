@@ -201,6 +201,14 @@ impl Entries {
             }
             visible |= !trim(value).is_empty();
         }
+        // A missing String Table entry's places have no source but stay visible, as its line does.
+        let line = if gathered == ABSENT {
+            occurrence_line[first]
+        } else {
+            gathered
+        };
+        visible |=
+            j.line[crate::join::L_REASONS][line as usize] & crate::join::MISSING_TABLE_ENTRY != 0;
         let characters_count = longest_length;
         let word_count = words(longest);
         self.sources.extend(values);

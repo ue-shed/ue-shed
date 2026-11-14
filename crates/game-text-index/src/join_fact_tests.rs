@@ -1804,6 +1804,162 @@ fn asset_text_uses_a_string_table_its_code_defines() -> Result<()> {
 }
 
 #[test]
+fn string_table_entry_missing_rule_reports_only_a_known_tables_missing_entry() -> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject};
+    let mut fixture = Fixture::new()?;
+    for (name, format) in [
+        ("Game.manifest", "manifest"),
+        ("en.archive", "archive"),
+        ("de.archive", "archive"),
+        ("en.po", "po"),
+        ("de.po", "po"),
+    ] {
+        fixture.file(name, format, &[])?;
+    }
+    fixture.packages(&[
+        json!({"source":"An entry","namespace":"UI","key":"Present","object":"/Game/Text/Table.Table","row":"Present","location":2}),
+        json!({"source":"Present entry","namespace":"/Game/Text/Table.Table","key":"Present","object":"/Game/Text/Example.Example","property":"PresentEntry","identity":1}),
+        json!({"source":"Missing entry","namespace":"/Game/Text/Table.Table","key":"Absent","object":"/Game/Text/Example.Example","property":"MissingEntry","identity":1}),
+        json!({"source":"Missing table","namespace":"/Game/Text/Missing.Missing","key":"Absent","object":"/Game/Text/Example.Example","property":"MissingTable","identity":1})
+    ])?;
+    fixture.lines()?;
+    let program = example_program(&["string_table_entry_missing"], None)?;
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let collator = HostCollator::new("en")?;
+    let cancelled = AtomicBool::new(false);
+    let mut rows = NativeSubjects::new(&query, Subject::Line, &collator, &cancelled)?;
+    let findings = program.evaluate(&mut rows, &collator)?.findings;
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        findings[0].actual,
+        json!({"entries":[{"tableId":"/Game/Text/Table.Table","key":"Absent"}],"entryCount":1})
+    );
+    assert_eq!(findings[0].expectation, json!({"entryExists":true}));
+    Ok(())
+}
+
+#[test]
+fn a_missing_entry_saved_without_source_is_visible_and_reported() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    for (name, format) in [
+        ("Game.manifest", "manifest"),
+        ("en.archive", "archive"),
+        ("de.archive", "archive"),
+        ("en.po", "po"),
+        ("de.po", "po"),
+    ] {
+        fixture.file(name, format, &[])?;
+    }
+    // Unreal saves a String Table reference without its source text, as the parser decodes it.
+    fixture.packages(&[
+        json!({"source":"An entry","namespace":"UI","key":"Present","object":"/Game/Text/Table.Table","row":"Present","location":2}),
+        json!({"source":"","namespace":"/Game/Text/Table.Table","key":"Absent","object":"/Game/Text/Example.Example","property":"MissingEntry","identity":1}),
+        json!({"source":"","namespace":"/Game/Text/Missing.Missing","key":"Absent","object":"/Game/Text/Example.Example","property":"MissingTable","identity":1}),
+        json!({"source":"","namespace":"UI","key":"Blank","object":"/Game/Text/Example.Example","property":"Blank"}),
+    ])?;
+    let outcome = fixture.join()?;
+    let query = EngineQuery::open(&fixture.configuration, Some(&outcome.key))?;
+    let visible = query.reader.column("line.source_visible")?;
+    let cancelled = AtomicBool::new(false);
+    let count = query.reader.meta["count"].as_u64().ok_or("line count")? as usize;
+    let mut seen = BTreeMap::new();
+    for row in 0..count {
+        let line = query.localization_line(row, &cancelled)?;
+        for unit in line["origin"]["unitIds"].as_array().ok_or("line units")? {
+            seen.insert(unit.as_str().ok_or("unit ID")?.to_owned(), visible[row]);
+        }
+    }
+    // The missing entry stays visible; a table outside the scan and blank text stay hidden.
+    for (unit, expected) in [
+        ("string-table:%2FGame%2FText%2FTable.Table:Absent", 1),
+        ("string-table:%2FGame%2FText%2FMissing.Missing:Absent", 0),
+        ("unreal:UI:Blank", 0),
+    ] {
+        assert_eq!(seen.get(unit), Some(&expected), "{unit}: {seen:?}");
+    }
+    let page = |selection: Value| -> Result<Value> {
+        query.query_page(
+            json!({"selection":selection,"parts":{"rows":{"limit":50},"counts":true}}),
+            &cancelled,
+        )
+    };
+    // Its saved place gives the line an origin, editing and audience, as visible text's do.
+    let all = page(json!({"target":"Game"}))?;
+    assert_eq!(all["total"], 2, "{all}");
+    assert_eq!(all["counts"]["origins"]["asset"], 1, "{all}");
+    assert_eq!(all["counts"]["readOnly"], 2, "{all}");
+    let assets = page(json!({"target":"Game",
+        "where":{"any":[{"field":"origins"},{"in":[{"var":"item"},{"lit":["asset"]}]}]}}))?;
+    let lines = &assets["localization"]["lines"];
+    assert_eq!(assets["total"], 1, "{assets}");
+    assert_eq!(
+        lines[0]["id"],
+        "Game:unresolved:string-table:%2FGame%2FText%2FTable.Table:Absent"
+    );
+    assert_eq!(lines[0]["audience"], "player", "{assets}");
+    let players = page(json!({"target":"Game",
+        "where":{"in":[{"field":"audience"},{"lit":["player"]}]}}))?;
+    assert_eq!(players["total"], 2, "{players}");
+    drop(query);
+    let configuration = fixture.configuration.clone();
+    drop(fixture);
+    // The published report keeps the finding: its line and saved place are in the join.
+    let rules = example_document(&["string_table_entry_missing"], None)?;
+    let query = EngineQuery::open(&configuration, None)?;
+    let result = crate::json_value::parse(&query.findings_evaluate(&rules, "en", &cancelled)?)?;
+    let key = result["key"].as_str().ok_or("Missing findings key.")?;
+    let page = query.findings_page(
+        json!({"key":key,"view":"report","order":"report","limit":50}),
+        &cancelled,
+    )?;
+    let findings = page["findings"].as_array().ok_or("Missing findings.")?;
+    assert_eq!(findings.len(), 1, "{page}");
+    Ok(())
+}
+
+#[test]
+fn string_table_entry_missing_rule_reports_a_code_tables_missing_entry() -> Result<()> {
+    use crate::rules::{HostCollator, NativeSubjects, Subject};
+    let mut fixture = Fixture::new()?;
+    for (name, format) in [
+        ("Game.manifest", "manifest"),
+        ("en.archive", "archive"),
+        ("de.archive", "archive"),
+        ("en.po", "po"),
+        ("de.po", "po"),
+    ] {
+        fixture.file(name, format, &[])?;
+    }
+    // Assets name a table its code defines by the table's ID, the code place's class column.
+    fixture.packages(&[
+        json!({"source":"Start game","namespace":"Game.Menu","key":"Start","object":"/Game/Text/Example.Example","property":"Button","identity":1}),
+        json!({"source":"","namespace":"Game.Menu","key":"Absent","object":"/Game/Text/Example.Example","property":"Missing","identity":1}),
+        // A wrapper's class column never makes a table, so this reference's table is unknown.
+        json!({"source":"","namespace":"Wrapped","key":"Absent","object":"/Game/Text/Other.Other","property":"Wrapped","identity":1}),
+    ])?;
+    fixture.code(
+        "Source/Game/Menu.cpp",
+        &[
+            json!({"source":"Start game","namespace":"Game.MenuTable","key":"Start","property":"LOCTABLE_SETSTRING","class":"Game.Menu","row":"12"}),
+            json!({"source":"Quit","namespace":"Game","key":"Quit","property":"LOCTEXT","class":"Wrapped","row":"14"}),
+        ],
+    )?;
+    fixture.lines()?;
+    let program = example_program(&["string_table_entry_missing"], None)?;
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let collator = HostCollator::new("en")?;
+    let cancelled = AtomicBool::new(false);
+    let mut rows = NativeSubjects::new(&query, Subject::Line, &collator, &cancelled)?;
+    let findings = program.evaluate(&mut rows, &collator)?.findings;
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        findings[0].actual,
+        json!({"entries":[{"tableId":"Game.Menu","key":"Absent"}],"entryCount":1})
+    );
+    Ok(())
+}
+
+#[test]
 fn foreign_sources_use_native_archive_translations_including_metadata() -> Result<()> {
     let mut fixture = Fixture::new()?;
     let cases = [

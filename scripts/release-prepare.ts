@@ -22,7 +22,8 @@ import {
 	type Timing
 } from "./gate-runner.ts";
 import { PUBLIC_VERSION } from "./pack-public-packages.ts";
-import { releaseCargoTargetDirectory } from "./release-cargo.ts";
+import { mainCheckoutRoot, releaseCargoTargetDirectory } from "./release-cargo.ts";
+import { acquireLaneLease } from "./release-lane-lock.ts";
 import {
 	gateEvidenceState,
 	gateFingerprint,
@@ -109,6 +110,8 @@ interface Lane {
 	readonly gates: readonly ReleaseGate[];
 	/** Prepares the lane's checkout before its first gate; false skips the lane's gates. */
 	readonly setup?: (session: GateSession, parent: Span) => Promise<boolean>;
+	/** A checkout other runs share: leased from before setup until the lane's last gate ends. */
+	readonly shared?: boolean;
 }
 
 function git(args: readonly string[], cwd = repositoryRoot) {
@@ -434,9 +437,12 @@ async function main() {
 			}
 		);
 		if (unrealGates.length > 0) {
+			// Beside the main checkout, so a release run from any linked worktree reuses the same
+			// lane and the Unreal build output kept in it, instead of building its own.
+			const mainCheckout = mainCheckoutRoot();
 			const unrealPath = resolve(
 				values["unreal-worktree"] ??
-					join(dirname(repositoryRoot), `${basename(repositoryRoot)}-unreal`)
+					join(dirname(mainCheckout), `${basename(mainCheckout)}-unreal`)
 			);
 			// Its own Cargo directory: this lane builds the same crates from a different path, which
 			// would otherwise replace executables the portable lane is running.
@@ -449,7 +455,8 @@ async function main() {
 				cwd: unrealPath,
 				env: unrealEnv,
 				gates: unrealGates,
-				setup: unrealWorktreeSetup(unrealPath, commit, unrealEnv)
+				setup: unrealWorktreeSetup(unrealPath, commit, unrealEnv),
+				shared: true
 			});
 		}
 	}
@@ -467,45 +474,51 @@ async function main() {
 		tree,
 		keepGoing: values["keep-going"]
 	};
-	const laneResults = await Promise.all(
-		lanes
-			.filter((lane) => lane.gates.length > 0)
-			.map(async (lane): Promise<{ runs: GateRun[]; skipped: ReleaseGate[] }> => {
-				const laneRuns: GateRun[] = [];
-				if (lane.setup !== undefined && !(await lane.setup(session, session.rootSpan))) {
-					for (const gate of lane.gates) {
-						laneRuns.push({
-							gate,
-							timing: {
-								name: gate.id,
-								command: "",
-								depth: 0,
-								startMs: 0,
-								durationMs: 0,
-								status: "skipped",
-								children: []
-							},
-							result: {
-								status: "failed",
-								scope: gate.scope,
-								fingerprint: gateFingerprint(gate.scope, tree),
-								commit,
-								finishedAt: new Date().toISOString(),
-								durationMs: 0,
-								trace: runDirectory,
-								detail: `The ${lane.name} lane's checkout could not be prepared.`
-							}
-						});
-					}
-					return { runs: laneRuns, skipped: [] };
-				}
-				return runLaneGates(
-					lane.gates,
-					(gate) => runGate(gate, lane, context),
-					context.keepGoing
-				);
-			})
+	const active = lanes.filter((lane) => lane.gates.length > 0);
+	// Taken before any lane starts, so a run that finds a shared lane busy changes nothing.
+	const leases = new Map(
+		active.filter((lane) => lane.shared).map((lane) => [lane, acquireLaneLease(lane.cwd)])
 	);
+	const laneResults = await Promise.all(
+		active.map(async (lane): Promise<{ runs: GateRun[]; skipped: ReleaseGate[] }> => {
+			try {
+				return await runLane(lane);
+			} finally {
+				leases.get(lane)?.release();
+			}
+		})
+	);
+	async function runLane(lane: Lane): Promise<{ runs: GateRun[]; skipped: ReleaseGate[] }> {
+		const laneRuns: GateRun[] = [];
+		if (lane.setup !== undefined && !(await lane.setup(session, session.rootSpan))) {
+			for (const gate of lane.gates) {
+				laneRuns.push({
+					gate,
+					timing: {
+						name: gate.id,
+						command: "",
+						depth: 0,
+						startMs: 0,
+						durationMs: 0,
+						status: "skipped",
+						children: []
+					},
+					result: {
+						status: "failed",
+						scope: gate.scope,
+						fingerprint: gateFingerprint(gate.scope, tree),
+						commit,
+						finishedAt: new Date().toISOString(),
+						durationMs: 0,
+						trace: runDirectory,
+						detail: `The ${lane.name} lane's checkout could not be prepared.`
+					}
+				});
+			}
+			return { runs: laneRuns, skipped: [] };
+		}
+		return runLaneGates(lane.gates, (gate) => runGate(gate, lane, context), context.keepGoing);
+	}
 	const runs = laneResults.flatMap((lane) => lane.runs);
 	// A skipped gate keeps its earlier evidence, which no longer covers this commit.
 	const skipped = laneResults.flatMap((lane) => lane.skipped);

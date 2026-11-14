@@ -1,5 +1,6 @@
 //! Immutable SQLite Catalog. Atomic manifests publish read-only physical snapshots.
 use super::catalog::*;
+use super::catalog_dependencies::{DependencyGraph, dependency_page};
 use super::project_index::CatalogSnapshot;
 use atomic_write_file::AtomicWriteFile;
 use rusqlite::types::Value;
@@ -12,12 +13,12 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const CATALOG_DIRECTORY: &str = "catalogs-oracle-v4";
+const CATALOG_DIRECTORY: &str = "catalogs-oracle-v5";
 const MANIFEST_FILE: &str = "manifest.json";
 const MANIFEST_SCHEMA_VERSION: u32 = 1;
-const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
+const SNAPSHOT_SCHEMA_VERSION: u32 = 3;
 const MAX_QUARANTINE_ATTEMPTS: u32 = 8;
-const ENTRY_COLUMNS: &str = "relative_path,kind,size,modified_nanos,is_map,profile_version,package_name,failure_code,classes,serialized_names,reversed_classes,header_data";
+const ENTRY_COLUMNS: &str = "relative_path,kind,size,modified_nanos,is_map,profile_version,package_name,failure_code,classes,serialized_names,reversed_classes,header_data,dependencies";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CatalogWriteCounts {
@@ -43,6 +44,8 @@ struct ManifestSummary {
     map_count: u64,
     package_count: u64,
     removed_packages: u64,
+    /// Mount point names and paths.
+    mounts: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -76,7 +79,22 @@ impl ManifestSummary {
             map_count: summary.map_count,
             package_count: summary.package_count,
             removed_packages: summary.removed_packages,
+            mounts: summary
+                .mounts
+                .iter()
+                .map(|mount| (mount.name.clone(), mount.path.clone()))
+                .collect(),
         }
+    }
+
+    fn mount_points(&self) -> Vec<MountPoint> {
+        self.mounts
+            .iter()
+            .map(|(name, path)| MountPoint {
+                name: name.clone(),
+                path: path.clone(),
+            })
+            .collect()
     }
 
     fn to_refresh(&self, project_id: &ProjectId) -> RefreshSummary {
@@ -101,6 +119,7 @@ impl ManifestSummary {
                     retry_safe: diagnostic.retry_safe,
                 })
                 .collect(),
+            mounts: self.mount_points(),
         }
     }
 }
@@ -262,12 +281,12 @@ impl Catalog for SqliteCatalog {
     }
     fn lookup_committed(&self, path: &str) -> Option<(PackageSignature, Option<HeaderEvidence>)> {
         let connection = self.committed_connection().ok().flatten()?;
-        connection.query_row("SELECT kind,size,modified_nanos,profile_version,package_name,failure_code,json(classes),json(serialized_names),header_data FROM entry WHERE relative_path=?", [path], |r| {
+        connection.query_row("SELECT kind,size,modified_nanos,profile_version,package_name,failure_code,json(classes),json(serialized_names),header_data,json(dependencies) FROM entry WHERE relative_path=?", [path], |r| {
             let version: Option<u32> = r.get(3)?;
             let header = match version {
                 None => None,
                 Some(profile_version) => Some(HeaderEvidence {
-                header_data: decode_json(r.get(8)?)?, profile_version, package_name:r.get(4)?, failure_code:r.get(5)?, classes:decode_json(r.get(6)?)?, serialized_names:decode_json(r.get(7)?)? })
+                header_data: decode_json(r.get(8)?)?, profile_version, package_name:r.get(4)?, failure_code:r.get(5)?, classes:decode_json(r.get(6)?)?, serialized_names:decode_json(r.get(7)?)?, dependencies:decode_dependencies(r.get(9)?)? })
             };
             Ok((PackageSignature { relative_path:path.into(),kind:decode_kind(r.get(0)?),size:decode_unsigned(r.get(1)?)?,modified_nanos:decode_unsigned(r.get(2)?)? },header))
         }).optional().ok().flatten()
@@ -322,9 +341,15 @@ impl Catalog for SqliteCatalog {
             .iter()
             .map(|v| class_name(v).chars().rev().collect::<String>())
             .collect::<Vec<_>>();
+        let dependencies = entry.header.as_ref().map_or_else(Vec::new, |h| {
+            h.dependencies
+                .iter()
+                .map(|d| (d.package.clone(), d.properties()))
+                .collect::<Vec<_>>()
+        });
         connection
             .prepare_cached(
-                &format!("INSERT INTO entry({ENTRY_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,jsonb(?),jsonb(?),jsonb(?),?) ON CONFLICT(relative_path) DO UPDATE SET kind=excluded.kind,size=excluded.size,modified_nanos=excluded.modified_nanos,is_map=excluded.is_map,profile_version=excluded.profile_version,package_name=excluded.package_name,failure_code=excluded.failure_code,classes=excluded.classes,serialized_names=excluded.serialized_names,reversed_classes=excluded.reversed_classes,header_data=excluded.header_data"),
+                &format!("INSERT INTO entry({ENTRY_COLUMNS}) VALUES (?,?,?,?,?,?,?,?,jsonb(?),jsonb(?),jsonb(?),?,jsonb(?)) ON CONFLICT(relative_path) DO UPDATE SET kind=excluded.kind,size=excluded.size,modified_nanos=excluded.modified_nanos,is_map=excluded.is_map,profile_version=excluded.profile_version,package_name=excluded.package_name,failure_code=excluded.failure_code,classes=excluded.classes,serialized_names=excluded.serialized_names,reversed_classes=excluded.reversed_classes,header_data=excluded.header_data,dependencies=excluded.dependencies"),
             )
             .map_err(storage_error("prepare staged entry"))?
             .execute(params![
@@ -342,7 +367,8 @@ impl Catalog for SqliteCatalog {
                 serde_json::to_string(classes).unwrap(),
                 serde_json::to_string(names).unwrap(),
                 serde_json::to_string(&reversed).unwrap(),
-                serde_json::to_string(&entry.header.as_ref().and_then(|h| h.header_data.as_ref())).unwrap()
+                serde_json::to_string(&entry.header.as_ref().and_then(|h| h.header_data.as_ref())).unwrap(),
+                serde_json::to_string(&dependencies).unwrap()
             ])
             .map_err(storage_error("stage entry"))?;
         if staging.prior_snapshot.is_some() {
@@ -494,6 +520,23 @@ impl Catalog for SqliteCatalog {
             ));
         }
         let connection = &cached.as_ref().unwrap().1;
+        if matches!(
+            request.kind,
+            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. }
+        ) {
+            let graph = SqliteGraph {
+                connection,
+                mounts: manifest.summary.mount_points(),
+            };
+            let (items, next_cursor) =
+                dependency_page(&graph, &request.kind, &cursor, request.limit)?;
+            return Ok(QueryPage {
+                project_id: request.project_id.clone(),
+                generation,
+                items,
+                next_cursor,
+            });
+        }
         let (sql, args) = query_sql(&request.kind, cursor, request.limit + 1);
         let mut statement = connection
             .prepare(&sql)
@@ -589,7 +632,7 @@ fn writer(staging: &mut Staging) -> Result<&Connection, CatalogError> {
             .execute_batch("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; BEGIN")
             .map_err(storage_error("begin unpublished snapshot"))?;
         if staging.prior_snapshot.is_none() {
-            connection.execute_batch("CREATE TABLE entry(id INTEGER PRIMARY KEY,relative_path TEXT NOT NULL UNIQUE,kind INTEGER NOT NULL,size BLOB NOT NULL CHECK(length(size)=8),modified_nanos BLOB NOT NULL CHECK(length(modified_nanos)=8),is_map INTEGER NOT NULL,profile_version INTEGER,package_name TEXT,failure_code TEXT,classes BLOB NOT NULL,serialized_names BLOB NOT NULL,reversed_classes BLOB NOT NULL,header_data TEXT NOT NULL)")
+            connection.execute_batch("CREATE TABLE entry(id INTEGER PRIMARY KEY,relative_path TEXT NOT NULL UNIQUE,kind INTEGER NOT NULL,size BLOB NOT NULL CHECK(length(size)=8),modified_nanos BLOB NOT NULL CHECK(length(modified_nanos)=8),is_map INTEGER NOT NULL,profile_version INTEGER,package_name TEXT,failure_code TEXT,classes BLOB NOT NULL,serialized_names BLOB NOT NULL,reversed_classes BLOB NOT NULL,header_data TEXT NOT NULL,dependencies BLOB NOT NULL)")
                 .map_err(storage_error("create unpublished snapshot"))?;
         }
         staging.connection = Some(connection);
@@ -604,6 +647,112 @@ fn open_connection(path: &Path, flags: OpenFlags) -> Result<Connection, CatalogE
         .map_err(storage_error("configure SQLite"))?;
     Ok(connection)
 }
+fn decode_dependencies(value: String) -> rusqlite::Result<Vec<PackageDependency>> {
+    let pairs: Vec<(String, u8)> = decode_json(value)?;
+    Ok(pairs
+        .into_iter()
+        .map(|(package, properties)| PackageDependency::from_properties(package, properties))
+        .collect())
+}
+
+/// SQL over the committed snapshot: deliberately plain scans, as an oracle for the binary format.
+struct SqliteGraph<'a> {
+    connection: &'a Connection,
+    mounts: Vec<MountPoint>,
+}
+
+impl DependencyGraph for SqliteGraph<'_> {
+    type Node = String;
+
+    fn mount_points(&self) -> &[MountPoint] {
+        &self.mounts
+    }
+
+    fn package_at(
+        &self,
+        relative_path: &str,
+        ignore_case: bool,
+    ) -> Result<Option<String>, CatalogError> {
+        self.connection
+            .query_row(
+                "SELECT relative_path FROM entry WHERE kind=0 AND (relative_path=?1 OR (?2 AND lower(relative_path)=lower(?1))) ORDER BY relative_path<>?1, relative_path LIMIT 1",
+                rusqlite::params![relative_path, ignore_case],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage_error("find package"))
+    }
+
+    fn package_path(&self, node: &String) -> String {
+        node.clone()
+    }
+
+    fn evidence(&self, nodes: &[String]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
+        let mut statement = self
+            .connection
+            .prepare_cached("SELECT profile_version,package_name,failure_code,json(classes),json(serialized_names),header_data,json(dependencies) FROM entry WHERE relative_path=?")
+            .map_err(storage_error("prepare evidence"))?;
+        nodes
+            .iter()
+            .map(|node| {
+                statement
+                    .query_row([node], |r| {
+                        let Some(profile_version) = r.get::<_, Option<u32>>(0)? else {
+                            return Ok(None);
+                        };
+                        Ok(Some(HeaderEvidence {
+                            header_data: decode_json(r.get(5)?)?,
+                            profile_version,
+                            package_name: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                            failure_code: r.get(2)?,
+                            classes: decode_json(r.get(3)?)?,
+                            serialized_names: decode_json(r.get(4)?)?,
+                            dependencies: decode_dependencies(r.get(6)?)?,
+                        }))
+                    })
+                    .map_err(storage_error("read evidence"))
+            })
+            .collect()
+    }
+
+    fn class_members(
+        &self,
+        classes: &[String],
+    ) -> Result<std::collections::HashSet<String>, CatalogError> {
+        let mut members = std::collections::HashSet::new();
+        let mut statement = self
+            .connection
+            .prepare_cached("SELECT DISTINCT e.relative_path FROM entry e, json_each(e.classes) j WHERE e.kind=0 AND j.value=?")
+            .map_err(storage_error("prepare class members"))?;
+        for class in classes {
+            for path in statement
+                .query_map([class], |row| row.get::<_, String>(0))
+                .map_err(storage_error("find class members"))?
+            {
+                members.insert(path.map_err(storage_error("read class members"))?);
+            }
+        }
+        Ok(members)
+    }
+
+    fn referrers(&self, package_names: &[String]) -> Result<Vec<String>, CatalogError> {
+        let mut paths = std::collections::BTreeSet::new();
+        let mut statement = self
+            .connection
+            .prepare_cached("SELECT DISTINCT e.relative_path FROM entry e, json_each(e.dependencies) j WHERE e.kind=0 AND lower(json_extract(j.value,'$[0]'))=lower(?) ORDER BY e.relative_path")
+            .map_err(storage_error("prepare referrers"))?;
+        for name in package_names {
+            for path in statement
+                .query_map([name], |row| row.get::<_, String>(0))
+                .map_err(storage_error("find referrers"))?
+            {
+                paths.insert(path.map_err(storage_error("read referrers"))?);
+            }
+        }
+        Ok(paths.into_iter().collect())
+    }
+}
+
 fn decode_json<T: serde::de::DeserializeOwned>(value: String) -> rusqlite::Result<T> {
     serde_json::from_str(&value).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
@@ -654,6 +803,7 @@ fn query_sql(kind: &QueryKind, cursor: String, limit: usize) -> (String, Vec<Val
         QueryKind::ClassPrefixes { values } => (0, values, true, false),
         QueryKind::ClassNameSuffixes { values } => (2, values, true, true),
         QueryKind::Maps | QueryKind::Inventory => unreachable!(),
+        QueryKind::Dependencies { .. } | QueryKind::Dependents { .. } => unreachable!(),
     };
     let mut clauses = Vec::new();
     for value in values {
@@ -1165,7 +1315,7 @@ mod tests {
         .expect("refresh")
         .into_iter()
         .find_map(|event| match event {
-            crate::direct_executor::project_index::RefreshEvent::Completed { summary } => {
+            crate::direct_executor::project_index::RefreshEvent::Completed { summary, .. } => {
                 Some(summary)
             }
             _ => None,

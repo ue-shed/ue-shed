@@ -540,6 +540,171 @@
 				}
 			]
 		},
+		"UAssetIoProjectIndexDependencyContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 23
+								}
+							]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexEdges": {
+			"type": "object",
+			"properties": {
+				"hard": {
+					"type": "boolean"
+				},
+				"game": {
+					"type": "boolean"
+				},
+				"build": {
+					"type": "boolean"
+				}
+			},
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexDependencyQuery": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["dependencies"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 1024
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"paths": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 1024
+								}
+							]
+						},
+						"transitive": {
+							"type": "boolean"
+						},
+						"edges": {
+							"$ref": "#/$defs/UAssetIoProjectIndexEdges"
+						}
+					},
+					"required": ["kind", "expectedGeneration", "limit", "projectId", "paths"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["dependents"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 1024
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"paths": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 1024
+								}
+							]
+						},
+						"transitive": {
+							"type": "boolean"
+						},
+						"edges": {
+							"$ref": "#/$defs/UAssetIoProjectIndexEdges"
+						},
+						"classes": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "expectedGeneration", "limit", "projectId", "paths"],
+					"additionalProperties": false
+				}
+			]
+		},
 		"UAssetIoBlueprintComparisonContract": {
 			"type": "object",
 			"properties": {
@@ -4248,6 +4413,9 @@
 										},
 										"projectRoot": {
 											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"plugins": {
+											"not": {}
 										}
 									},
 									"required": ["kind", "cacheRoot", "projectRoot"],
@@ -4265,6 +4433,12 @@
 										},
 										"projectRoot": {
 											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"plugins": {
+											"not": {}
+										},
+										"changes": {
+											"not": {}
 										}
 									},
 									"required": ["kind", "cacheRoot", "projectRoot"],
@@ -4282,6 +4456,12 @@
 										},
 										"projectRoot": {
 											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"plugins": {
+											"not": {}
+										},
+										"changes": {
+											"not": {}
 										}
 									},
 									"required": ["kind", "cacheRoot", "projectRoot"],
@@ -4320,6 +4500,113 @@
 										},
 										"query": {
 											"$ref": "#/$defs/UAssetIoProjectIndexQuery"
+										}
+									},
+									"required": ["cacheRoot", "kind", "query"],
+									"additionalProperties": false
+								}
+							]
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
+							"$ref": "#/$defs/UAssetIoProjectIndexDependencyContract"
+						},
+						"operation": {
+							"anyOf": [
+								{
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": ["project_index_status"]
+										},
+										"cacheRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"projectRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"plugins": {
+											"type": "boolean"
+										}
+									},
+									"required": ["kind", "cacheRoot", "projectRoot"],
+									"additionalProperties": false
+								},
+								{
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": ["project_index_refresh"]
+										},
+										"cacheRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"projectRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"plugins": {
+											"type": "boolean"
+										},
+										"changes": {
+											"type": "boolean"
+										}
+									},
+									"required": ["kind", "cacheRoot", "projectRoot"],
+									"additionalProperties": false
+								},
+								{
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": ["project_index_rebuild"]
+										},
+										"cacheRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"projectRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"plugins": {
+											"type": "boolean"
+										},
+										"changes": {
+											"type": "boolean"
+										}
+									},
+									"required": ["kind", "cacheRoot", "projectRoot"],
+									"additionalProperties": false
+								},
+								{
+									"type": "object",
+									"properties": {
+										"cacheRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"kind": {
+											"type": "string",
+											"enum": ["project_index_query"]
+										},
+										"pageEncoding": {
+											"type": "string",
+											"enum": ["dictionary"]
+										},
+										"query": {
+											"$ref": "#/$defs/UAssetIoProjectIndexDependencyQuery"
 										}
 									},
 									"required": ["cacheRoot", "kind", "query"],

@@ -137,6 +137,44 @@ describe("Project Index protocol adapter mappings", () => {
 		);
 	});
 
+	it("expands dependency package pages and their summary change reports", async () => {
+		const plain = await Effect.runPromise(
+			decodeUAssetIoEvent(await fixture("valid/project-index-package-page-result-event.json"))
+		);
+		const compact = await Effect.runPromise(
+			decodeUAssetIoEvent(
+				await fixture("valid/project-index-package-dictionary-page-result-event.json")
+			)
+		);
+		if (
+			plain.kind !== "result" ||
+			plain.result.kind !== "project_index_page" ||
+			compact.kind !== "result" ||
+			compact.result.kind !== "project_index_dictionary_page"
+		)
+			throw new Error("expected pages");
+		const page = decodeProjectIndexDictionaryPage(compact.result.page);
+		expect(page).toEqual(decodeProjectIndexWirePage(plain.result.page));
+		expect(await Effect.runPromise(decodeProjectIndexPage(page))).toBe(page);
+		const item = page.items[0];
+		if (item?.kind !== "package") throw new Error("expected package");
+		expect(item.dependencies.length).toBeGreaterThan(0);
+		expect(Object.isFrozen(item.dependencies)).toBe(true);
+		expect(Object.isFrozen(item.dependencies[0])).toBe(true);
+		expect(Object.isFrozen(item.classes)).toBe(true);
+
+		const summary = await Effect.runPromise(
+			decodeUAssetIoEvent(
+				await fixture("valid/project-index-changes-summary-result-event.json")
+			)
+		);
+		if (summary.kind !== "result" || summary.result.kind !== "project_index_summary")
+			throw new Error("expected summary");
+		const mapped = decodeProjectIndexWireSummary(summary.result.summary);
+		expect(mapped.changes).toEqual(summary.result.summary.changes);
+		expect(mapped.mounts).toEqual(summary.result.summary.mounts);
+	});
+
 	it("preserves reference order, duplicates, Unicode, and empty arrays", () => {
 		const page = UAssetIoProjectIndexDictionaryPage.make({
 			generation: 1,

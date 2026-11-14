@@ -7,10 +7,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::catalog::{
     Catalog, CatalogError, CatalogSnapshotEntry, CatalogStatus, EntryKind, Generation,
-    HeaderEvidence, PackageSignature, ProjectId, QueryItem, QueryKind, QueryPage, QueryRequest,
-    RefreshSummary, StagedPackage, StagingToken, class_name, item_path, parse_page_cursor,
-    validate_page_limit,
+    HeaderEvidence, MountPoint, PackageSignature, ProjectId, QueryItem, QueryKind, QueryPage,
+    QueryRequest, RefreshSummary, StagedPackage, StagingToken, class_name, item_path,
+    parse_page_cursor, validate_page_limit,
 };
+use super::catalog_dependencies::{DependencyGraph, dependency_page};
 use super::project_index::CatalogSnapshot;
 
 #[derive(Clone, Debug)]
@@ -231,6 +232,19 @@ impl Catalog for MemoryCatalog {
             });
         }
         let after = parse_page_cursor(request.cursor.as_deref())?;
+        if matches!(
+            request.kind,
+            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. }
+        ) {
+            let (items, next_cursor) =
+                dependency_page(&MemoryGraph(state), &request.kind, &after, request.limit)?;
+            return Ok(QueryPage {
+                project_id: request.project_id.clone(),
+                generation: state.generation,
+                items,
+                next_cursor,
+            });
+        }
         let items = collect_items(&state.rows, &request.kind);
         let mut page_items: Vec<QueryItem> = items
             .into_iter()
@@ -273,6 +287,91 @@ impl CatalogSnapshot for MemoryCatalog {
                     .collect()
             })
             .unwrap_or_default())
+    }
+}
+
+/// Straightforward scans over committed rows: the reference the binary adapter must match.
+struct MemoryGraph<'a>(&'a CommittedState);
+
+impl DependencyGraph for MemoryGraph<'_> {
+    type Node = String;
+
+    fn mount_points(&self) -> &[MountPoint] {
+        &self.0.summary.mounts
+    }
+
+    fn package_at(
+        &self,
+        relative_path: &str,
+        ignore_case: bool,
+    ) -> Result<Option<String>, CatalogError> {
+        let packages = || {
+            self.0
+                .rows
+                .values()
+                .filter(|row| row.signature.kind == EntryKind::Package)
+        };
+        Ok(packages()
+            .find(|row| row.signature.relative_path == relative_path)
+            .or_else(|| {
+                packages().find(|row| {
+                    ignore_case
+                        && row
+                            .signature
+                            .relative_path
+                            .eq_ignore_ascii_case(relative_path)
+                })
+            })
+            .map(|row| row.signature.relative_path.clone()))
+    }
+
+    fn package_path(&self, node: &String) -> String {
+        node.clone()
+    }
+
+    fn evidence(&self, nodes: &[String]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
+        Ok(nodes
+            .iter()
+            .map(|node| self.0.rows.get(node).and_then(|row| row.header.clone()))
+            .collect())
+    }
+
+    fn class_members(
+        &self,
+        classes: &[String],
+    ) -> Result<std::collections::HashSet<String>, CatalogError> {
+        Ok(self
+            .0
+            .rows
+            .values()
+            .filter(|row| {
+                row.header.as_ref().is_some_and(|header| {
+                    header.classes.iter().any(|class| classes.contains(class))
+                })
+            })
+            .map(|row| row.signature.relative_path.clone())
+            .collect())
+    }
+
+    fn referrers(&self, package_names: &[String]) -> Result<Vec<String>, CatalogError> {
+        let names = package_names
+            .iter()
+            .map(|name| name.to_ascii_lowercase())
+            .collect::<std::collections::HashSet<_>>();
+        Ok(self
+            .0
+            .rows
+            .values()
+            .filter(|row| {
+                row.signature.kind == EntryKind::Package
+                    && row.header.as_ref().is_some_and(|header| {
+                        header.dependencies.iter().any(|dependency| {
+                            names.contains(&dependency.package.to_ascii_lowercase())
+                        })
+                    })
+            })
+            .map(|row| row.signature.relative_path.clone())
+            .collect())
     }
 }
 
@@ -349,6 +448,7 @@ fn collect_items(rows: &BTreeMap<String, CommittedRow>, kind: &QueryKind) -> Vec
                 .iter()
                 .any(|value| header.serialized_names.iter().any(|name| name == value))
         }),
+        QueryKind::Dependencies { .. } | QueryKind::Dependents { .. } => Vec::new(),
     }
 }
 

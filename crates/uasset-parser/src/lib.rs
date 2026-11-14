@@ -7,6 +7,7 @@ pub mod archive;
 pub mod asset;
 pub mod codec;
 mod convert;
+pub mod dependencies;
 pub mod gatherable_text;
 pub mod metadata;
 pub mod native;

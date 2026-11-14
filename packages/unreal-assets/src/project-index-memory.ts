@@ -9,6 +9,7 @@ import {
 	type ProjectIndexInventory,
 	type ProjectIndexItem,
 	type ProjectIndexMap,
+	type ProjectIndexPackage,
 	type ProjectIndexPage,
 	type ProjectIndexQuery,
 	type ProjectIndexApi,
@@ -37,6 +38,8 @@ export interface ProjectIndexMemorySeed {
 	readonly inventory?: readonly ProjectIndexInventory[];
 	readonly headers?: readonly ProjectIndexHeader[];
 	readonly maps?: readonly ProjectIndexMap[];
+	/** Packages with resolved dependencies, answering dependency and dependents queries. */
+	readonly packages?: readonly ProjectIndexPackage[];
 	readonly projectId: ProjectIdentity;
 }
 
@@ -53,6 +56,7 @@ interface CommittedCatalog {
 	readonly inventory: readonly ProjectIndexInventory[];
 	readonly headers: readonly ProjectIndexHeader[];
 	readonly maps: readonly ProjectIndexMap[];
+	readonly packages: readonly ProjectIndexPackage[];
 	readonly summary: ProjectIndexSummary;
 }
 
@@ -93,7 +97,77 @@ const matchesHeader = (request: ProjectIndexQuery, header: ProjectIndexHeader): 
 			);
 		case "SerializedNames":
 			return request.values.some((value) => header.serializedNames.includes(value));
+		case "Dependencies":
+		case "Dependents":
+			return false;
 	}
+};
+
+const lower = (value: string): string => value.toLowerCase();
+
+/**
+ * Seeded dependency walks: forward through resolved `packagePath`s, backward through dependencies
+ * that resolve to, or are named like, a target. Edge filters apply as in the native index.
+ */
+const walkPackages = (
+	packages: readonly ProjectIndexPackage[],
+	request: Extract<ProjectIndexQuery, { readonly _tag: "Dependencies" | "Dependents" }>
+): readonly ProjectIndexPackage[] => {
+	const byPath = new Map(packages.map((entry) => [lower(entry.packagePath), entry]));
+	const edges = request.edges ?? {};
+	const accepts = (dependency: ProjectIndexPackage["dependencies"][number]) =>
+		(edges.hard === undefined || edges.hard === dependency.hard) &&
+		(edges.game === undefined || edges.game === dependency.game) &&
+		(edges.build === undefined || edges.build === dependency.build);
+	const selected = new Map<string, ProjectIndexPackage>();
+	if (request._tag === "Dependencies") {
+		const pending = request.paths.flatMap((path) => byPath.get(lower(path)) ?? []);
+		for (const entry of pending) selected.set(lower(entry.packagePath), entry);
+		for (
+			let current = request.transitive === true ? pending.pop() : undefined;
+			current !== undefined;
+			current = pending.pop()
+		) {
+			for (const dependency of current.dependencies) {
+				const target =
+					dependency.packagePath === undefined
+						? undefined
+						: byPath.get(lower(dependency.packagePath));
+				if (!accepts(dependency) || target === undefined) continue;
+				if (selected.has(lower(target.packagePath))) continue;
+				selected.set(lower(target.packagePath), target);
+				pending.push(target);
+			}
+		}
+	} else {
+		const targets = request.paths.map((path) => ({
+			path: lower(path),
+			name: byPath.get(lower(path))?.packageName
+		}));
+		for (let target = targets.pop(); target !== undefined; target = targets.pop()) {
+			for (const entry of packages) {
+				const depends = entry.dependencies.some(
+					(dependency) =>
+						accepts(dependency) &&
+						((dependency.packagePath !== undefined &&
+							lower(dependency.packagePath) === target.path) ||
+							(target.name !== undefined &&
+								lower(dependency.package) === lower(target.name)))
+				);
+				if (!depends || selected.has(lower(entry.packagePath))) continue;
+				selected.set(lower(entry.packagePath), entry);
+				if (request.transitive === true)
+					targets.push({ path: lower(entry.packagePath), name: entry.packageName });
+			}
+		}
+	}
+	const classes = request._tag === "Dependents" ? request.classes : undefined;
+	return [...selected.values()]
+		.filter(
+			(entry) =>
+				classes === undefined || classes.some((value) => entry.classes.includes(value))
+		)
+		.sort((left, right) => comparePath(left.packagePath, right.packagePath));
 };
 
 const parseCursor = (
@@ -150,6 +224,7 @@ const buildCatalog = (
 		headers,
 		inventory: seed?.inventory ?? previous?.inventory ?? [],
 		maps,
+		packages: seed?.packages ?? previous?.packages ?? [],
 		summary: {
 			changedPackages: previous === undefined ? packageCount : 0,
 			completeness: "complete",
@@ -240,7 +315,9 @@ const makeMemoryService = (state: Ref.Ref<MemoryState>): ProjectIndexApi => {
 				? catalog.inventory
 				: decoded._tag === "Maps"
 					? catalog.maps
-					: catalog.headers.filter((header) => matchesHeader(decoded, header));
+					: decoded._tag === "Dependencies" || decoded._tag === "Dependents"
+						? walkPackages(catalog.packages, decoded)
+						: catalog.headers.filter((header) => matchesHeader(decoded, header));
 		return yield* pageItems(
 			items,
 			decoded,

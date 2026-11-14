@@ -1,0 +1,30 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 23
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"cacheRoot": "C:/Caches/project-index",
+		"kind": "project_index_query",
+		"pageEncoding": "dictionary",
+		"query": {
+			"edges": {
+				"game": true
+			},
+			"expectedGeneration": 3,
+			"kind": "dependencies",
+			"limit": 100,
+			"paths": [],
+			"projectId": "c:/project#plugins",
+			"transitive": true
+		}
+	},
+	"requestId": "project-index-dependencies-001"
+}

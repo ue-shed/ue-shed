@@ -219,6 +219,25 @@ every package shard then sends one bounded request and still publishes all shard
 publication. Rust interns each string domain once across a request's input files. Older workers
 reject these forms before acceptance.
 
+Minor version 1.23 adds package dependencies to the Project Index. `project_index_query` takes two
+new query kinds, `dependencies` and `dependents`, each naming 1 to 1,024 project-relative package
+`paths`, with optional `transitive` and `edges` (`hard`, `game`, `build`: a present field requires
+that value). `dependents` also takes optional `classes`, which keep results with one of those
+exact export classes without narrowing the walk. Both return `package` items: the package path
+and name, its export classes, and its dependencies as the Asset Registry records them, each with
+its `packagePath` when it resolves to an indexed package, and `failure` when its header could not
+be read. Dictionary pages carry the same item with page-string references. Count requests do not
+take the dependency kinds.
+
+`project_index_status`, `project_index_refresh` and `project_index_rebuild` take optional
+`plugins`, which selects a separate catalog that also indexes content plugins under `Plugins/`; its
+`projectId` ends in `#plugins`. A refresh or rebuild may set `changes` to receive
+`summary.changes`: the base generation, the paths whose signature changed or appeared, the paths
+removed, and `complete: false` when there were more than 65,536 (the lists are then empty). From
+1.23 every summary also lists its content `mounts` (Unreal mount name and project-relative
+directory). Older minors reject the new fields and kinds before acceptance, and their summaries
+omit `mounts` and `changes`.
+
 ### Active package input budget
 
 `limits.maximumInFlightPackageBytes` is an optional positive integer byte limit for text and

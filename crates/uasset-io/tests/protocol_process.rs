@@ -1565,3 +1565,201 @@ fn native_join_failure_preserves_parse_details_over_the_process_boundary() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+fn project_index_request_at(minor: u32, operation: Value) -> Value {
+    let mut request = project_index_request(operation);
+    request["contract"]["version"]["minor"] = serde_json::json!(minor);
+    request
+}
+
+fn result_of<'a>(events: &'a [Value], kind: &str) -> &'a Value {
+    &events
+        .iter()
+        .find(|event| {
+            event.get("result").and_then(|result| result.get("kind"))
+                == Some(&serde_json::json!(kind))
+        })
+        .unwrap_or_else(|| panic!("no {kind} result in {events:?}"))["result"]
+}
+
+#[test]
+fn project_index_walks_package_dependencies_and_reports_changes() {
+    let project_root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/unreal-project");
+    let cache_root = std::env::temp_dir().join(format!(
+        "ue-shed-project-index-dependencies-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&cache_root);
+    std::fs::create_dir_all(&cache_root).expect("cache root creates");
+    let target = |kind: &str| {
+        serde_json::json!({
+            "kind": kind,
+            "cacheRoot": cache_root.to_string_lossy(),
+            "projectRoot": project_root.to_string_lossy(),
+            "changes": true
+        })
+    };
+
+    let (success, events, stderr) = run_request(project_index_request_at(
+        23,
+        target("project_index_refresh"),
+    ));
+    assert!(success, "refresh failed: {stderr}");
+    assert_valid_events(&events);
+    let summary = &result_of(&events, "project_index_summary")["summary"];
+    assert_eq!(
+        summary["mounts"],
+        serde_json::json!([{ "name": "/Game/", "path": "Content/" }])
+    );
+    let changes = &summary["changes"];
+    assert!(changes.get("baseGeneration").is_none());
+    assert_eq!(changes["complete"], true);
+    assert!(
+        changes["changed"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(
+                "Content/Fixture/Input/IMC_Fixture.uasset"
+            ))
+    );
+    let first_generation = summary["generation"].as_u64().unwrap();
+
+    let (success, events, stderr) = run_request(project_index_request_at(
+        23,
+        target("project_index_refresh"),
+    ));
+    assert!(success, "warm refresh failed: {stderr}");
+    let summary = result_of(&events, "project_index_summary")["summary"].clone();
+    assert_eq!(
+        summary["changes"],
+        serde_json::json!({
+            "baseGeneration": first_generation,
+            "changed": [],
+            "removed": [],
+            "complete": true
+        })
+    );
+    let generation = summary["generation"].clone();
+    let project_id = summary["projectId"].clone();
+
+    // Older clients never see the v1.23 summary fields.
+    let mut old = project_index_request(serde_json::json!({
+        "kind": "project_index_status",
+        "cacheRoot": cache_root.to_string_lossy(),
+        "projectRoot": project_root.to_string_lossy()
+    }));
+    old["contract"]["version"]["minor"] = serde_json::json!(22);
+    let (success, events, stderr) = run_request(old);
+    assert!(success, "status failed: {stderr}");
+    let status = &result_of(&events, "project_index_status")["status"]["summary"];
+    assert!(status.get("mounts").is_none() && status.get("changes").is_none());
+
+    let query = |query: Value, dictionary: bool| {
+        let mut operation = serde_json::json!({
+            "kind": "project_index_query",
+            "cacheRoot": cache_root.to_string_lossy(),
+            "query": query
+        });
+        if dictionary {
+            operation["pageEncoding"] = serde_json::json!("dictionary");
+        }
+        let (success, events, stderr) = run_request(project_index_request_at(23, operation));
+        assert!(success, "query failed: {stderr}");
+        assert_valid_events(&events);
+        events
+    };
+    let events = query(
+        serde_json::json!({
+            "kind": "dependencies",
+            "expectedGeneration": generation,
+            "limit": 64,
+            "projectId": project_id,
+            "paths": ["Content/Fixture/Input/IMC_Fixture.uasset"],
+            "transitive": true
+        }),
+        false,
+    );
+    let items = result_of(&events, "project_index_page")["page"]["items"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let paths = items
+        .iter()
+        .map(|item| item["packagePath"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        [
+            "Content/Fixture/Input/IA_Jump.uasset",
+            "Content/Fixture/Input/IA_Move.uasset",
+            "Content/Fixture/Input/IMC_Fixture.uasset",
+        ]
+    );
+    let context = items
+        .iter()
+        .find(|item| item["packagePath"] == "Content/Fixture/Input/IMC_Fixture.uasset")
+        .unwrap();
+    assert_eq!(context["kind"], "package");
+    assert_eq!(context["packageName"], "/Game/Fixture/Input/IMC_Fixture");
+    assert_eq!(
+        context["dependencies"],
+        serde_json::json!([
+            {
+                "package": "/Game/Fixture/Input/IA_Jump",
+                "packagePath": "Content/Fixture/Input/IA_Jump.uasset",
+                "hard": true, "game": true, "build": false
+            },
+            {
+                "package": "/Game/Fixture/Input/IA_Move",
+                "packagePath": "Content/Fixture/Input/IA_Move.uasset",
+                "hard": true, "game": true, "build": false
+            },
+            { "package": "/Script/EnhancedInput", "hard": true, "game": true, "build": false }
+        ])
+    );
+
+    let events = query(
+        serde_json::json!({
+            "kind": "dependents",
+            "expectedGeneration": generation,
+            "limit": 64,
+            "projectId": project_id,
+            "paths": ["Content/Fixture/Input/IA_Jump.uasset"]
+        }),
+        true,
+    );
+    let page = &result_of(&events, "project_index_dictionary_page")["page"];
+    let dependents = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["packagePath"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(dependents.contains(&"Content/Fixture/Input/IMC_Fixture.uasset"));
+    assert!(!dependents.contains(&"Content/Fixture/Input/IA_Jump.uasset"));
+
+    // The plugin-inclusive index is a separate Catalog: absent until refreshed.
+    let mut plugins = serde_json::json!({
+        "kind": "project_index_status",
+        "cacheRoot": cache_root.to_string_lossy(),
+        "projectRoot": project_root.to_string_lossy(),
+        "plugins": true
+    });
+    let (success, events, stderr) = run_request(project_index_request_at(23, plugins.clone()));
+    assert!(success, "plugin status failed: {stderr}");
+    assert_eq!(
+        result_of(&events, "project_index_status")["status"]["status"],
+        "absent"
+    );
+    plugins["kind"] = serde_json::json!("project_index_refresh");
+    let (success, events, stderr) = run_request(project_index_request_at(23, plugins.clone()));
+    assert!(success, "plugin refresh failed: {stderr}");
+    let summary = &result_of(&events, "project_index_summary")["summary"];
+    assert!(summary["projectId"].as_str().unwrap().ends_with("#plugins"));
+    assert!(summary.get("changes").is_none());
+    let (success, events, _) = run_request(project_index_request_at(22, plugins));
+    assert!(!success || events.iter().any(|event| event["kind"] == "rejected"));
+
+    let _ = std::fs::remove_dir_all(&cache_root);
+}

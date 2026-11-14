@@ -9,14 +9,15 @@ use std::time::{Duration, Instant};
 use crate::cancellation::CancellationToken;
 use crate::protocol::ProjectIndexQuery as ProtocolQuery;
 use crate::protocol_result::{
-    ProjectIndexCompleteness, ProjectIndexDiagnostic, ProjectIndexItem, ProjectIndexPage,
-    ProjectIndexStatusPayload, ProjectIndexSummary,
+    ProjectIndexChanges, ProjectIndexCompleteness, ProjectIndexDependency, ProjectIndexDiagnostic,
+    ProjectIndexItem, ProjectIndexMount, ProjectIndexPage, ProjectIndexStatusPayload,
+    ProjectIndexSummary,
 };
 
 use super::Failure;
 use super::catalog::{
-    CatalogError, CatalogStatus, Completeness, Generation, ProjectId, QueryItem, QueryKind,
-    QueryRequest, RefreshSummary, project_id_from_root,
+    CatalogError, CatalogStatus, Completeness, EdgeFilter, Generation, IndexScope, ProjectId,
+    QueryItem, QueryKind, QueryRequest, RefreshChanges, RefreshSummary, project_id_for,
 };
 use super::catalog_binary::BinaryCatalog;
 use super::project_index::{self, CoordinatorError, RefreshEvent, RefreshPhase, RefreshProgress};
@@ -238,8 +239,12 @@ pub(crate) struct CatalogWriteEvidence {
     pub(crate) evidence_write_ms: u64,
 }
 
-pub(crate) fn open_catalog(cache_root: &str, project_root: &str) -> Result<BinaryCatalog, Failure> {
-    open_catalog_for_id(cache_root, &project_id_from_root(project_root))
+pub(crate) fn open_catalog(
+    cache_root: &str,
+    project_root: &str,
+    scope: IndexScope,
+) -> Result<BinaryCatalog, Failure> {
+    open_catalog_for_id(cache_root, &project_id_for(project_root, scope))
 }
 
 /// The catalog as status reports it: the last committed generation, read without the writer
@@ -247,8 +252,9 @@ pub(crate) fn open_catalog(cache_root: &str, project_root: &str) -> Result<Binar
 pub(crate) fn open_catalog_for_status(
     cache_root: &str,
     project_root: &str,
+    scope: IndexScope,
 ) -> Result<BinaryCatalog, Failure> {
-    BinaryCatalog::open_for_status(Path::new(cache_root), &project_id_from_root(project_root))
+    BinaryCatalog::open_for_status(Path::new(cache_root), &project_id_for(project_root, scope))
         .map_err(catalog_to_failure)
 }
 
@@ -280,7 +286,9 @@ pub(crate) fn query_project_id(query: &ProtocolQuery) -> &str {
         | ProtocolQuery::ExactClasses { project_id, .. }
         | ProtocolQuery::ClassPrefixes { project_id, .. }
         | ProtocolQuery::ClassNameSuffixes { project_id, .. }
-        | ProtocolQuery::SerializedNames { project_id, .. } => project_id,
+        | ProtocolQuery::SerializedNames { project_id, .. }
+        | ProtocolQuery::Dependencies { project_id, .. }
+        | ProtocolQuery::Dependents { project_id, .. } => project_id,
     }
 }
 
@@ -307,6 +315,14 @@ fn query_expected_generation(query: &ProtocolQuery) -> u64 {
             ..
         }
         | ProtocolQuery::SerializedNames {
+            expected_generation,
+            ..
+        }
+        | ProtocolQuery::Dependencies {
+            expected_generation,
+            ..
+        }
+        | ProtocolQuery::Dependents {
             expected_generation,
             ..
         } => *expected_generation,
@@ -343,14 +359,22 @@ fn query_catalog(
     })
 }
 
+pub(crate) struct RefreshOptions {
+    pub(crate) scope: IndexScope,
+    pub(crate) rebuild: bool,
+    /// Report the paths that changed on disk since the previous generation.
+    pub(crate) changes: bool,
+}
+
 pub(crate) fn refresh(
     catalog: &mut BinaryCatalog,
     project_root: &str,
-    rebuild: bool,
+    options: &RefreshOptions,
     cancellation: &CancellationToken,
     mut on_progress: impl FnMut(RefreshProgress),
 ) -> Result<ProjectIndexRefreshOutput, Failure> {
-    let scanner = FilesystemProjectScanner;
+    let rebuild = options.rebuild;
+    let scanner = FilesystemProjectScanner::new(project_root, options.scope, cancellation)?;
     let started = Instant::now();
     let mut phase_durations = ProjectIndexPhaseDurations::default();
     let mut current_phase = RefreshPhase::Enumerating;
@@ -381,11 +405,11 @@ pub(crate) fn refresh(
     .map_err(coordinator_to_failure)?;
     phase_durations.add(current_phase, phase_started.elapsed());
     let phase_timings = phase_durations.into_millis();
-    let summary = events
+    let (summary, changes) = events
         .into_iter()
         .rev()
         .find_map(|event| match event {
-            RefreshEvent::Completed { summary } => Some(summary),
+            RefreshEvent::Completed { summary, changes } => Some((summary, changes)),
             _ => None,
         })
         .ok_or_else(|| {
@@ -396,13 +420,18 @@ pub(crate) fn refresh(
             )
         })?;
     let writes = catalog.write_counts();
+    let diagnostics = summary
+        .diagnostics
+        .iter()
+        .map(to_protocol_diagnostic)
+        .collect();
+    let mut summary = to_protocol_summary(summary);
+    if options.changes {
+        summary.changes = Some(to_protocol_changes(changes));
+    }
     Ok(ProjectIndexRefreshOutput {
-        diagnostics: summary
-            .diagnostics
-            .iter()
-            .map(to_protocol_diagnostic)
-            .collect(),
-        summary: to_protocol_summary(summary),
+        diagnostics,
+        summary,
         write_counts: CatalogWriteEvidence {
             staged_evidence_rows: writes.staged_evidence_rows,
             committed_evidence_rows: writes.committed_evidence_rows,
@@ -511,6 +540,46 @@ fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
                 values: values.clone(),
             },
         ),
+        ProtocolQuery::Dependencies {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            paths,
+            transitive,
+            edges,
+        } => (
+            project_id,
+            *expected_generation,
+            *limit,
+            cursor.clone(),
+            QueryKind::Dependencies {
+                paths: paths.clone(),
+                transitive: *transitive,
+                edges: to_edge_filter(edges),
+            },
+        ),
+        ProtocolQuery::Dependents {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            paths,
+            transitive,
+            edges,
+            classes,
+        } => (
+            project_id,
+            *expected_generation,
+            *limit,
+            cursor.clone(),
+            QueryKind::Dependents {
+                paths: paths.clone(),
+                transitive: *transitive,
+                edges: to_edge_filter(edges),
+                classes: classes.clone(),
+            },
+        ),
     };
     Ok(QueryRequest {
         project_id: ProjectId::new(project_id.clone()),
@@ -519,6 +588,23 @@ fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
         limit: limit as usize,
         cursor,
     })
+}
+
+fn to_edge_filter(edges: &crate::protocol::ProjectIndexEdges) -> EdgeFilter {
+    EdgeFilter {
+        hard: edges.hard,
+        game: edges.game,
+        build: edges.build,
+    }
+}
+
+fn to_protocol_changes(changes: RefreshChanges) -> ProjectIndexChanges {
+    ProjectIndexChanges {
+        base_generation: changes.base_generation.map(Generation::get),
+        changed: changes.changed,
+        removed: changes.removed,
+        complete: changes.complete,
+    }
 }
 
 fn to_protocol_summary(summary: RefreshSummary) -> ProjectIndexSummary {
@@ -538,6 +624,15 @@ fn to_protocol_summary(summary: RefreshSummary) -> ProjectIndexSummary {
         package_count: summary.package_count,
         project_id: summary.project_id.to_string(),
         removed_packages: summary.removed_packages,
+        mounts: summary
+            .mounts
+            .into_iter()
+            .map(|mount| ProjectIndexMount {
+                name: mount.name,
+                path: mount.path,
+            })
+            .collect(),
+        changes: None,
     }
 }
 
@@ -581,6 +676,28 @@ fn to_protocol_item(item: QueryItem) -> ProjectIndexItem {
             package_name,
             package_path,
             serialized_names,
+        },
+        QueryItem::Package {
+            package_path,
+            package_name,
+            classes,
+            dependencies,
+            failure_code,
+        } => ProjectIndexItem::Package {
+            classes,
+            dependencies: dependencies
+                .into_iter()
+                .map(|resolved| ProjectIndexDependency {
+                    package: resolved.dependency.package,
+                    package_path: resolved.package_path,
+                    hard: resolved.dependency.hard,
+                    game: resolved.dependency.game,
+                    build: resolved.dependency.build,
+                })
+                .collect(),
+            failure: failure_code,
+            package_name,
+            package_path,
         },
     }
 }

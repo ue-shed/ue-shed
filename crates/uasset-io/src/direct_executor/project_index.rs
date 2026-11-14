@@ -8,9 +8,10 @@ use crate::cancellation::CancellationToken;
 
 use super::catalog::{
     Catalog, CatalogDiagnostic, CatalogError, CatalogSnapshotEntry, CatalogStatus, Completeness,
-    EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, PROJECT_INDEX_MAX_CLASSES,
-    PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_NAMES, PackageSignature, QueryPage,
-    QueryRequest, RefreshSummary, StagedPackage, project_id_from_root,
+    EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
+    PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_NAMES,
+    PROJECT_INDEX_MAX_REPORTED_CHANGES, PackageSignature, QueryPage, QueryRequest, RefreshChanges,
+    RefreshSummary, StagedPackage, project_id_for,
 };
 use super::{Failure, checkpoint};
 
@@ -34,9 +35,14 @@ pub struct RefreshProgress {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefreshEvent {
-    Started { rebuild: bool },
+    Started {
+        rebuild: bool,
+    },
     Progress(RefreshProgress),
-    Completed { summary: RefreshSummary },
+    Completed {
+        summary: RefreshSummary,
+        changes: RefreshChanges,
+    },
 }
 
 /// Evidence and the signature observed immediately after reading it. Keep signature failures
@@ -54,6 +60,16 @@ pub type HeaderEvidenceSink<'a> = dyn FnMut(
 
 /// Filesystem/header probing boundary used by the coordinator.
 pub trait ProjectScanner {
+    /// The content roots this scanner indexes; each scope is its own Catalog identity.
+    fn scope(&self) -> IndexScope {
+        IndexScope::Content
+    }
+
+    /// Where Unreal mounts the content roots this scanner enumerates, `/Game/` first.
+    fn mount_points(&self) -> Vec<MountPoint> {
+        vec![MountPoint::game()]
+    }
+
     fn enumerate(
         &self,
         project_root: &str,
@@ -227,8 +243,9 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
     cancellation: &CancellationToken,
     on_progress: &mut impl FnMut(RefreshProgress),
 ) -> Result<Vec<RefreshEvent>, CoordinatorError> {
-    let project_id = project_id_from_root(project_root);
+    let project_id = project_id_for(project_root, scanner.scope());
     let mut events = vec![RefreshEvent::Started { rebuild }];
+    let base_generation = catalog.committed_generation();
     let mut prior_entries = catalog.committed_entries()?;
     prior_entries.sort_by(|a, b| a.signature.relative_path.cmp(&b.signature.relative_path));
     let mut token = Some(catalog.begin_refresh()?);
@@ -261,6 +278,7 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
         let mut diagnostics = Vec::new();
         let mut completed_packages = 0_u64;
         let mut changed_entries = Vec::new();
+        let mut changes = ChangeReport::new(base_generation);
         let mut prior_cursor = prior_entries.iter().peekable();
 
         emit_progress(
@@ -284,6 +302,11 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             let prior = prior_cursor
                 .peek()
                 .filter(|entry| entry.signature.relative_path == signature.relative_path);
+            // A changed file differs on disk; a reused profile or a failed read is re-read
+            // without counting as a change.
+            if prior.is_none_or(|prior| prior.signature != *signature) {
+                changes.changed(&signature.relative_path);
+            }
             let can_reuse = prior.is_some_and(|prior| {
                 prior.signature == *signature
                     && (signature.kind == EntryKind::Sidecar
@@ -322,20 +345,24 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
         }
 
         let mut observed = enumerated.iter().peekable();
-        let removed_packages = prior_entries
-            .iter()
-            .filter(|entry| {
-                while observed.peek().is_some_and(|signature| {
-                    signature.relative_path < entry.signature.relative_path
-                }) {
-                    observed.next();
+        let mut removed_packages = 0_u64;
+        for entry in &prior_entries {
+            while observed
+                .peek()
+                .is_some_and(|signature| signature.relative_path < entry.signature.relative_path)
+            {
+                observed.next();
+            }
+            let still_present = observed
+                .peek()
+                .is_some_and(|signature| signature.relative_path == entry.signature.relative_path);
+            if !still_present {
+                changes.removed(&entry.signature.relative_path);
+                if entry.signature.kind == EntryKind::Package {
+                    removed_packages += 1;
                 }
-                entry.signature.kind == EntryKind::Package
-                    && !observed.peek().is_some_and(|signature| {
-                        signature.relative_path == entry.signature.relative_path
-                    })
-            })
-            .count() as u64;
+            }
+        }
 
         emit_progress(
             &mut events,
@@ -411,6 +438,7 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
                 Completeness::Partial
             },
             diagnostics,
+            mounts: scanner.mount_points(),
         };
         #[expect(
             clippy::expect_used,
@@ -418,7 +446,10 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
         )]
         let staging = token.take().expect("staging token present for commit");
         catalog.commit_refresh(staging, summary.clone())?;
-        events.push(RefreshEvent::Completed { summary });
+        events.push(RefreshEvent::Completed {
+            summary,
+            changes: changes.finish(),
+        });
         Ok(events)
     })();
 
@@ -479,6 +510,7 @@ fn stage_with_initial_header<S: ProjectScanner>(
                         package_name: String::new(),
                         classes: Vec::new(),
                         serialized_names: Vec::new(),
+                        dependencies: Vec::new(),
                         failure_code: Some("header_read".to_owned()),
                     }),
                 });
@@ -527,6 +559,53 @@ fn stage_with_initial_header<S: ProjectScanner>(
             signature.relative_path
         ),
     })
+}
+
+/// Changed and removed paths, bounded so a first build of a large project does not hold every
+/// path twice.
+struct ChangeReport {
+    changes: RefreshChanges,
+}
+
+impl ChangeReport {
+    fn new(base_generation: Option<super::catalog::Generation>) -> Self {
+        Self {
+            changes: RefreshChanges {
+                base_generation,
+                complete: true,
+                ..RefreshChanges::default()
+            },
+        }
+    }
+
+    fn changed(&mut self, path: &str) {
+        if self.has_room() {
+            self.changes.changed.push(path.to_owned());
+        }
+    }
+
+    fn removed(&mut self, path: &str) {
+        if self.has_room() {
+            self.changes.removed.push(path.to_owned());
+        }
+    }
+
+    fn has_room(&mut self) -> bool {
+        if self.changes.changed.len() + self.changes.removed.len()
+            >= PROJECT_INDEX_MAX_REPORTED_CHANGES
+        {
+            self.changes.complete = false;
+        }
+        self.changes.complete
+    }
+
+    fn finish(mut self) -> RefreshChanges {
+        if !self.changes.complete {
+            self.changes.changed.clear();
+            self.changes.removed.clear();
+        }
+        self.changes
+    }
 }
 
 fn push_diagnostic(
@@ -593,6 +672,7 @@ mod tests {
                 package_name: "/Game/A".to_owned(),
                 classes: Vec::new(),
                 serialized_names: Vec::new(),
+                dependencies: Vec::new(),
                 failure_code: None,
             },
             signature: Err(CoordinatorError::Unavailable {

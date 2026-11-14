@@ -1,6 +1,7 @@
 //! Filesystem-backed package discovery and Project Index scanning.
 
 mod discovery;
+mod plugins;
 
 use std::collections::BTreeSet;
 use std::fs::{self, File};
@@ -14,9 +15,11 @@ use uasset_parser::PackageSummary;
 use uasset_parser::package::{Package, PackageError, PackageErrorKind};
 
 use super::catalog::{
-    EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, PROJECT_INDEX_MAX_CLASSES,
-    PROJECT_INDEX_MAX_NAMES, PackageSignature, project_relative_path,
+    EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
+    PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DEPENDENCIES, PROJECT_INDEX_MAX_NAMES,
+    PackageSignature, project_relative_path,
 };
+use super::catalog_dependencies::package_name_for_path;
 use super::project_index::{CoordinatorError, HeaderEvidenceSink, ProjectScanner, observe_header};
 use super::{Failure, checkpoint};
 use crate::cancellation::CancellationToken;
@@ -42,16 +45,59 @@ pub(crate) struct FileSignature {
 }
 
 /// Filesystem adapter for the storage-neutral Project Index coordinator.
-#[derive(Debug, Default)]
-pub(crate) struct FilesystemProjectScanner;
+#[derive(Debug)]
+pub(crate) struct FilesystemProjectScanner {
+    scope: IndexScope,
+    /// `/Game/` first, then plugin content mount points for a plugin-inclusive scope.
+    mounts: Vec<MountPoint>,
+}
+
+impl FilesystemProjectScanner {
+    /// A scanner for one index scope of a project, with the mount points Unreal would give it.
+    pub(crate) fn new(
+        project_root: &str,
+        scope: IndexScope,
+        cancellation: &CancellationToken,
+    ) -> Result<Self, Failure> {
+        let mut mounts = vec![MountPoint::game()];
+        if scope == IndexScope::ContentAndPlugins {
+            mounts.extend(plugins::content_mount_points(
+                Path::new(project_root),
+                cancellation,
+            )?);
+        }
+        Ok(Self { scope, mounts })
+    }
+
+    /// A scanner for the project's `Content` alone.
+    #[cfg(test)]
+    pub(crate) fn content() -> Self {
+        Self {
+            scope: IndexScope::Content,
+            mounts: vec![MountPoint::game()],
+        }
+    }
+}
 
 impl ProjectScanner for FilesystemProjectScanner {
+    fn scope(&self) -> IndexScope {
+        self.scope
+    }
+
+    fn mount_points(&self) -> Vec<MountPoint> {
+        self.mounts.clone()
+    }
+
     fn enumerate(
         &self,
         project_root: &str,
         cancellation: &CancellationToken,
     ) -> Result<Vec<PackageSignature>, CoordinatorError> {
-        discovery::enumerate(project_root, cancellation).map_err(Into::into)
+        let further_roots = self.mounts[1..]
+            .iter()
+            .map(|mount| Path::new(project_root).join(&mount.path))
+            .collect::<Vec<_>>();
+        discovery::enumerate(project_root, &further_roots, cancellation).map_err(Into::into)
     }
 
     fn read_header_evidence(
@@ -69,7 +115,15 @@ impl ProjectScanner for FilesystemProjectScanner {
             });
         }
         let path = Path::new(_project_root).join(&signature.relative_path);
-        let package = read_package_header(&path, signature.size, cancellation)?;
+        let (package, header) = read_package_header_bytes(&path, signature.size, cancellation)?;
+        // Unreal names a package from its file location; the saved name can be stale.
+        let package_name = package_name_for_path(&self.mounts, &signature.relative_path)
+            .unwrap_or_else(|| package.summary.package_name.clone());
+        let dependencies = within_dependency_limit(
+            package
+                .asset_registry_dependencies(&header, &package_name)
+                .map_err(|error| header_failure(package_error_code(&error)))?,
+        )?;
         let classes = bounded_header_values(
             package
                 .exports
@@ -90,6 +144,7 @@ impl ProjectScanner for FilesystemProjectScanner {
             package_name: package.summary.package_name.clone(),
             classes,
             serialized_names,
+            dependencies,
             failure_code: None,
         })
     }
@@ -350,6 +405,15 @@ pub(crate) fn read_package_header(
     size: u64,
     cancellation: &CancellationToken,
 ) -> Result<Package, Failure> {
+    read_package_header_bytes(path, size, cancellation).map(|(package, _)| package)
+}
+
+/// Reads and parses a package header, returning the header bytes for later header sections.
+pub(crate) fn read_package_header_bytes(
+    path: &Path,
+    size: u64,
+    cancellation: &CancellationToken,
+) -> Result<(Package, Vec<u8>), Failure> {
     checkpoint(cancellation, "read")?;
     let file_len = usize::try_from(size).map_err(|_| header_failure("asset_resource_limit"))?;
     if file_len == 0 {
@@ -396,6 +460,7 @@ pub(crate) fn read_package_header(
     checkpoint(cancellation, "read")?;
     checkpoint(cancellation, "inspection")?;
     Package::parse_header(&bytes, file_len)
+        .map(|package| (package, bytes))
         .map_err(|error| header_failure(package_error_code(&error)))
 }
 
@@ -406,6 +471,15 @@ fn header_failure(code: &'static str) -> Failure {
         retry_safe: matches!(code, "asset_io"),
         ..Default::default()
     }
+}
+
+/// A package's dependencies, or a header failure when there are more than one page can carry:
+/// the index records them as unknown rather than keeping part of them.
+fn within_dependency_limit<T>(dependencies: Vec<T>) -> Result<Vec<T>, Failure> {
+    if dependencies.len() > PROJECT_INDEX_MAX_DEPENDENCIES {
+        return Err(header_failure("dependencies_over_limit"));
+    }
+    Ok(dependencies)
 }
 
 /// Keep the profile's lexicographically first unique values without cloning discarded evidence.
@@ -442,7 +516,23 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{FilesystemProjectScanner, ProjectScanner, bounded_header_values};
+    use super::{
+        FilesystemProjectScanner, PROJECT_INDEX_MAX_DEPENDENCIES, ProjectScanner,
+        bounded_header_values, within_dependency_limit,
+    };
+
+    #[test]
+    fn a_package_over_the_dependency_limit_records_a_failure() {
+        assert_eq!(
+            within_dependency_limit(vec![(); PROJECT_INDEX_MAX_DEPENDENCIES])
+                .ok()
+                .map(|d| d.len()),
+            Some(PROJECT_INDEX_MAX_DEPENDENCIES)
+        );
+        let failure = within_dependency_limit(vec![(); PROJECT_INDEX_MAX_DEPENDENCIES + 1])
+            .expect_err("over the limit");
+        assert_eq!(failure.code, "dependencies_over_limit");
+    }
     use crate::cancellation::CancellationToken;
     use crate::direct_executor::catalog::{EntryKind, PackageSignature};
 
@@ -477,7 +567,7 @@ mod tests {
         fs::write(&sidecar, [4, 5]).expect("write sidecar");
         fs::write(content.join("Ignored.txt"), [6]).expect("write unrelated file");
 
-        let scanner = FilesystemProjectScanner;
+        let scanner = FilesystemProjectScanner::content();
         let entries = scanner
             .enumerate(&project_root.to_string_lossy(), &CancellationToken::new())
             .expect("enumerate Content");
@@ -506,7 +596,7 @@ mod tests {
 
     #[test]
     fn parallel_header_stream_preserves_signature_order() {
-        let scanner = FilesystemProjectScanner;
+        let scanner = FilesystemProjectScanner::content();
         for count in [1, 31, 129, 2051] {
             let signatures = (0..count)
                 .map(|index| PackageSignature {
@@ -549,7 +639,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let mut calls = 0;
-        let error = FilesystemProjectScanner
+        let error = FilesystemProjectScanner::content()
             .stream_header_evidence(
                 "C:/Missing",
                 &signatures,

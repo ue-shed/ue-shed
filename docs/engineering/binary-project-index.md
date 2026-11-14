@@ -6,23 +6,24 @@ CLI, and Workbench use the same adapter; there is no runtime backend selector.
 
 ## Format and lifecycle
 
-The disposable cache lives under `catalogs-v6/<project-hash>`. An atomic JSON manifest selects a
-physical snapshot and retains the previous snapshot. Existing SQLite, DuckDB and `catalogs-v5`
+The disposable cache lives under `catalogs-v7/<project-hash>`. An atomic JSON manifest selects a
+physical snapshot and retains the previous snapshot. Existing SQLite, DuckDB and older `catalogs-v*`
 caches are ignored; the first refresh builds the new format from source. Old cache directories are
 not deleted or converted automatically.
 
-Header profile 2 includes raw package flags, gatherable-text summary count/offset, and an exact
+Header profile 3 includes raw package flags, gatherable-text summary count/offset, and an exact
 `TextProperty` probe over the complete name map. Plain and dictionary header pages expose this
 optional evidence as `headerData` using uasset-io minor 9; older minors omit these fields.
 Older workers must be upgraded before using candidate pruning. The saved-header scan opts in
 with `headerData: true` and exposes the projection in `package.header_data`. These fields
 require no payload read, and remain generic inspection evidence rather than Game Text policy.
+Profile 3 adds each package's dependencies (see [Package dependencies](#package-dependencies)).
 
 The snapshot contains five length-delimited sections: compact inventory, shared strings and a
 sorted lexicon, posting directory, posting lists, and packed header records. Integers are
 little-endian, including the full unsigned file signatures. CRC32 checksums cover every decoded
 section and individual records/posting lists. These detect accidental corruption, not malicious
-changes. The file magic (`UESHC004`) versions the encoding; incompatible derived evidence is
+changes. The file magic (`UESHC005`) versions the encoding; incompatible derived evidence is
 rebuilt.
 
 Sections are zstd-compressed (level 3). The first three, which readers decode whole when they
@@ -37,6 +38,9 @@ Exact classes and serialized names have postings. Prefix and suffix queries insp
 dictionary. Results follow relative-path order and hydrate bounded pages. Readers load metadata
 when opened and retain the physical file, even before their first query. Payloads and selected
 postings are checked when accessed. Refresh opens verify all section checksums and summary counts.
+
+Package dependencies have a third posting kind, keyed by the dependency's package name (see
+below).
 
 Count requests union up to 16 filters against that same generation. They read checked postings
 and inventory IDs without hydrating headers; a package matching several filters counts once.
@@ -63,6 +67,58 @@ the writer: rename may have succeeded before a later sync error. Cleanup owns a 
 exclusive creation succeeds, so a collision cannot delete an existing snapshot.
 Windows recovery can move files individually into quarantine when an open reader prevents a
 directory rename. An interrupted partial quarantine is recoverable on the next writer open.
+
+## Package dependencies
+
+Each header record carries its package's dependencies as Unreal's Asset Registry records them:
+the package name as a string ID plus one byte of `EDependencyProperty` bits (`hard` 1, `game` 2,
+`build` 4). The parser follows UE 5.8 `LoadDependenciesFromPackageHeader`: imports are hard, and
+game when the import is used in game; soft package references are game per their bit; extra build
+dependencies are build. Like the Asset Registry, it drops the hard edges on `/Script/CoreUObject`,
+`/Script/Engine`, `/Script/BlueprintGraph` and `/Script/UnrealEd`, drops self-references, merges
+names case-insensitively, and treats an external actor's edges to its own world as editor-only.
+
+Dependency postings map each dependency name to the packages that reference it, so a dependents
+walk reads postings instead of headers. The lexicon sorts by ASCII-folded text, then by bytes, so
+every casing of a name is one contiguous range and a lookup ignores case as Unreal's `FName` does.
+
+Names resolve to indexed packages through the mount table that the manifest summary records for
+the generation: `/Game/` maps to `Content/`, and a plugin-inclusive catalog adds each content
+plugin's `/<Name>/` mount. The longest mount wins, then `.uasset` before `.umap`, matching paths
+case-insensitively. A name that resolves to no indexed package (script packages, engine content,
+plugins outside the catalog, packages not on disk) is returned without a `packagePath`.
+
+A forward walk reads the records of the requested paths and follows resolved targets. A reverse
+walk turns paths into names (so it works for packages deleted since the refresh) and follows the
+dependency postings one level at a time, reading each level's posting lists in stored order. It
+reads referrers' records only when an edge filter needs their properties. The `classes` filter
+reads the exact-class postings; it selects results and does not narrow the walk. Names resolve to
+exact paths first, and only a miss builds the case-insensitive path index.
+
+Pages recompute the walk from the generation and continue after the cursor path, so a page costs
+the whole walk. A page also ends early, with a cursor, before its distinct strings would exceed
+the dictionary page bound (131,072). A package records at most 65,504 dependencies, so one package
+always fits; a package with more records the header failure `dependencies_over_limit`. On a project of about 700,000 packages, a reverse walk reaching 97,000 packages
+takes about 0.4 s per page beyond opening the catalog (0.2 s with `classes`, 0.5 s with an edge
+filter), and a 20-root transitive forward walk about 0.3 s. On the same project, dependencies add
+about 3–10% to a full build with a warm file cache, about 200 MB to its peak memory, about 0.3 s to
+an unchanged refresh, and 5% to the snapshot (160 MB).
+
+Plugin content is opt-in. `plugins: true` discovers plugins under `Plugins/` as Unreal's
+`FindPluginsInDirectory` does (skip `Content` directories, take the first `.uplugin` in a directory
+and stop descending, mount only descriptors with `CanContainContent`). It builds a separate catalog
+whose identity is the project root plus `#plugins`, so a plugin-inclusive refresh never replaces
+the content-only generation other callers rely on.
+
+Known gaps: the walk does not apply `CoreRedirects` or package relocation, it mounts every content
+plugin whether or not the project enables it, it does not read `AdditionalPluginDirectories`, and
+names fold ASCII case only.
+
+A refresh that asks for `changes` lists the paths whose signature differs from the base generation
+(new or changed, sidecars included) and the paths it removed, up to 65,536 in total. Past that it
+sets `complete: false`, and the caller should treat the change set as unknown. Re-reading headers
+for a new profile is not a change on disk. A rebuild, or the first refresh of a new catalog, has no
+base generation, and every path counts as changed.
 
 ## Bounds and tradeoffs
 

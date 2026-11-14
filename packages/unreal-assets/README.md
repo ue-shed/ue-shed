@@ -83,6 +83,44 @@ pnpm ue-shed project-index count 'C:/Projects/Game' 'C:/Caches/Game' --exact-cla
 
 Run `project-index refresh` first if the catalog is absent or needs to discover disk changes.
 
+The Project Index also holds each package's dependencies as Unreal's Asset Registry records them
+(`hard`, `game`, `build`), so a host can find what an asset needs, or what uses it, without
+reading headers itself. The `Dependencies` query returns the packages at `paths` and, when
+`transitive`, every indexed package they reach. `Dependents` returns the indexed packages that
+depend on `paths` (which may already be deleted) and, when `transitive`, their dependents; its
+`classes` keep matching results without narrowing the walk. `edges` limits either walk, for
+example `{ game: true }` for what the game loads. Results are `package` items whose dependencies
+carry a `packagePath` when they resolve to an indexed package.
+`projectIndexDependencyClosures(items, roots, follow?)` splits one transitive page into per-root
+sets. These need uasset-io v1.23.
+
+```ts
+const summary =
+	yield *
+	foldProjectIndexRefresh(
+		yield *
+			Stream.runCollect(refreshProjectIndex({ projectRoot, plugins: true, changes: true }))
+	);
+// summary.changes: the paths whose signature changed or that were removed since the last refresh.
+const page =
+	yield *
+	queryProjectIndex(
+		ProjectIndexQuery.cases.Dependencies.make({
+			projectId: summary.projectId,
+			expectedGeneration: summary.generation,
+			limit: 1024,
+			paths: ["Content/VFX/NS_Impact.uasset"],
+			transitive: true
+		})
+	);
+```
+
+`plugins: true` selects a separate catalog that also indexes content plugins under `Plugins/`
+(its `projectId` ends in `#plugins`), so a dependency on plugin content resolves. `changes: true`
+adds `summary.changes`, up to 65,536 paths; when there are more, `complete` is false and the lists
+are empty. The walk does not apply `CoreRedirects`, mounts every content plugin whether or not the
+project enables it, and does not read `AdditionalPluginDirectories`.
+
 The process and compatibility boundary for read-only inspection of saved Unreal asset packages. It
 discovers a compatible `uasset` executable, validates its versioned CLI JSON output, and returns
 normalized package evidence with explicit partial and unsupported results.

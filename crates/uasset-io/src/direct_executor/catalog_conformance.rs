@@ -9,9 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::cancellation::CancellationToken;
 
 use super::catalog::{
-    Catalog, CatalogError, CatalogStatus, Completeness, EntryKind, Generation, HeaderEvidence,
-    INDEX_PROFILE_VERSION, PROJECT_INDEX_MAX_PAGE_SIZE, PackageSignature, ProjectId, QueryItem,
-    QueryKind, QueryRequest, RefreshSummary, StagedPackage, item_path, project_id_from_root,
+    Catalog, CatalogError, CatalogStatus, Completeness, EdgeFilter, EntryKind, Generation,
+    HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint, PROJECT_INDEX_MAX_PAGE_SIZE,
+    PackageDependency, PackageSignature, ProjectId, QueryItem, QueryKind, QueryRequest,
+    RefreshChanges, RefreshSummary, StagedPackage, item_path, project_id_from_root,
 };
 use super::checkpoint;
 use super::project_index::{
@@ -29,9 +30,23 @@ pub(crate) struct FakeScanner {
     pub(crate) header_reads: Cell<u64>,
     pub(crate) fail_after_header: BTreeSet<String>,
     pub(crate) unstable: BTreeSet<String>,
+    /// Mount points beyond `/Game/`.
+    pub(crate) plugin_mounts: Vec<MountPoint>,
+    /// The Catalog identity scope; adapters opened for the fixture project expect `Content`.
+    pub(crate) scope: IndexScope,
 }
 
 impl ProjectScanner for FakeScanner {
+    fn scope(&self) -> IndexScope {
+        self.scope
+    }
+
+    fn mount_points(&self) -> Vec<MountPoint> {
+        let mut mounts = vec![MountPoint::game()];
+        mounts.extend(self.plugin_mounts.iter().cloned());
+        mounts
+    }
+
     fn enumerate(
         &self,
         _project_root: &str,
@@ -130,6 +145,7 @@ pub(crate) fn header(package_name: &str, classes: &[&str], names: &[&str]) -> He
         package_name: package_name.to_owned(),
         classes: classes.iter().map(|value| (*value).to_owned()).collect(),
         serialized_names: names.iter().map(|value| (*value).to_owned()).collect(),
+        dependencies: Vec::new(),
         failure_code: None,
     }
 }
@@ -142,7 +158,7 @@ pub(crate) fn completed_summary(events: &[RefreshEvent]) -> RefreshSummary {
     events
         .iter()
         .find_map(|event| match event {
-            RefreshEvent::Completed { summary } => Some(summary.clone()),
+            RefreshEvent::Completed { summary, .. } => Some(summary.clone()),
             _ => None,
         })
         .expect("refresh completed")
@@ -727,7 +743,7 @@ pub(crate) fn every_query_kind_answers_from_committed_evidence<C: CatalogSnapsho
             assert_eq!(classes, &vec!["/Script/Engine.World".to_owned()]);
             assert!(serialized_names.is_empty());
         }
-        QueryItem::Map { .. } | QueryItem::Inventory { .. } => {
+        QueryItem::Map { .. } | QueryItem::Inventory { .. } | QueryItem::Package { .. } => {
             panic!("class queries return header items")
         }
     }
@@ -883,6 +899,7 @@ pub(crate) fn stale_index_profile_rebuilds_header_evidence_only<C: CatalogSnapsh
                     package_name: "/Game/A".to_owned(),
                     classes: Vec::new(),
                     serialized_names: Vec::new(),
+                    dependencies: Vec::new(),
                     failure_code: None,
                 }),
             },
@@ -900,6 +917,7 @@ pub(crate) fn stale_index_profile_rebuilds_header_evidence_only<C: CatalogSnapsh
                 removed_packages: 0,
                 completeness: Completeness::Complete,
                 diagnostics: Vec::new(),
+                mounts: vec![MountPoint::game()],
             },
         )
         .expect("commit narrow evidence");
@@ -922,6 +940,10 @@ pub(crate) fn stale_index_profile_rebuilds_header_evidence_only<C: CatalogSnapsh
     let summary = completed_summary(&events);
     assert_eq!(summary.changed_packages, 1);
     assert_eq!(summary.removed_packages, 0);
+    assert!(
+        completed_changes(&events).changed.is_empty(),
+        "re-reading for a new profile is not a change on disk"
+    );
     assert_eq!(
         scanner.header_reads.get(),
         1,
@@ -1094,12 +1116,378 @@ pub(crate) fn deleting_only_a_sidecar_drops_its_signature<C: CatalogSnapshot>(
     assert!(stamps[1].is_null(), "stale sidecar stamp: {stamps}");
 }
 
+pub(crate) fn completed_changes(events: &[RefreshEvent]) -> RefreshChanges {
+    events
+        .iter()
+        .find_map(|event| match event {
+            RefreshEvent::Completed { changes, .. } => Some(changes.clone()),
+            _ => None,
+        })
+        .expect("refresh completed")
+}
+
+fn dependency(package: &str, properties: u8) -> PackageDependency {
+    PackageDependency::from_properties(package.to_owned(), properties)
+}
+
+fn black_eye() -> MountPoint {
+    MountPoint {
+        name: "/Black_Eye/".to_owned(),
+        path: "Plugins/BlackEye/Content/".to_owned(),
+    }
+}
+
+/// A plugin-inclusive project: two effects, a material, textures, and a plugin texture. Unreal's
+/// property bits: hard 1, game 2, build 4.
+pub(crate) fn dependency_fixture() -> FakeScanner {
+    const NIAGARA: &str = "/Script/Niagara.NiagaraSystem";
+    const TEXTURE: &str = "/Script/Engine.Texture2D";
+    let with = |name: &str, class: &str, dependencies: Vec<PackageDependency>| {
+        let mut evidence = header(name, &[class], &[]);
+        evidence.dependencies = dependencies;
+        evidence
+    };
+    let headers = [
+        (
+            "Content/VFX/NS_A.uasset",
+            with(
+                "/Game/VFX/NS_A",
+                NIAGARA,
+                vec![
+                    dependency("/Black_Eye/T_Eye", 2),
+                    dependency("/Game/Mat/M_A", 3),
+                    dependency("/Game/Missing/T_Gone", 3),
+                    dependency("/Game/Tex/T_Editor", 1),
+                    dependency("/Script/Niagara", 3),
+                ],
+            ),
+        ),
+        (
+            "Content/VFX/NS_B.uasset",
+            with(
+                "/Game/VFX/NS_B",
+                NIAGARA,
+                vec![dependency("/Game/Mat/M_A", 0)],
+            ),
+        ),
+        (
+            "Content/Mat/M_A.uasset",
+            // Saved with another spelling of the texture's name; names ignore ASCII case.
+            with(
+                "/Game/Mat/M_A",
+                "/Script/Engine.Material",
+                vec![dependency("/game/tex/t_a", 3)],
+            ),
+        ),
+        (
+            "Content/Tex/T_A.uasset",
+            with("/Game/Tex/T_A", TEXTURE, Vec::new()),
+        ),
+        (
+            "Content/Tex/T_Editor.uasset",
+            with("/Game/Tex/T_Editor", TEXTURE, Vec::new()),
+        ),
+        (
+            "Plugins/BlackEye/Content/T_Eye.uasset",
+            with("/Black_Eye/T_Eye", TEXTURE, Vec::new()),
+        ),
+    ];
+    FakeScanner {
+        entries: headers
+            .iter()
+            .map(|(path, _)| package(path, 1, 1))
+            .collect(),
+        headers: headers
+            .into_iter()
+            .map(|(path, header)| (path.to_owned(), header))
+            .collect(),
+        plugin_mounts: vec![black_eye()],
+        ..FakeScanner::default()
+    }
+}
+
+fn summary_pages<C: Catalog>(
+    catalog: &C,
+    summary: &RefreshSummary,
+    kind: QueryKind,
+    limit: usize,
+) -> Vec<QueryItem> {
+    let mut items = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = query(
+            catalog,
+            &QueryRequest {
+                project_id: summary.project_id.clone(),
+                expected_generation: summary.generation,
+                kind: kind.clone(),
+                limit,
+                cursor,
+            },
+        )
+        .expect("dependency page");
+        assert!(page.items.len() <= limit);
+        items.extend(page.items);
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => return items,
+        }
+    }
+}
+
+pub(crate) fn dependency_queries_walk_resolved_edges<C: CatalogSnapshot>(make: impl Fn() -> C) {
+    let mut catalog = make();
+    let scanner = dependency_fixture();
+    let events = refresh(
+        &mut catalog,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &CancellationToken::new(),
+        |_| {},
+    )
+    .expect("refresh dependency fixture");
+    let summary = completed_summary(&events);
+    assert_eq!(summary.mounts, vec![MountPoint::game(), black_eye()]);
+    let CatalogStatus::Ready { summary: status } = catalog.status() else {
+        panic!("committed status");
+    };
+    assert_eq!(status.mounts, summary.mounts);
+
+    let owned = |paths: &[&str]| paths.iter().map(|path| (*path).to_owned()).collect();
+    let dependencies = |paths: &[&str], transitive, edges| QueryKind::Dependencies {
+        paths: owned(paths),
+        transitive,
+        edges,
+    };
+    let dependents = |paths: &[&str], transitive, edges, classes: &[&str]| QueryKind::Dependents {
+        paths: owned(paths),
+        transitive,
+        edges,
+        classes: owned(classes),
+    };
+    let paths = |kind: QueryKind, limit| {
+        summary_pages(&catalog, &summary, kind, limit)
+            .iter()
+            .map(|item| item_path(item).to_owned())
+            .collect::<Vec<_>>()
+    };
+    let any = EdgeFilter::default();
+    let game = EdgeFilter {
+        game: Some(true),
+        ..EdgeFilter::default()
+    };
+    let hard = EdgeFilter {
+        hard: Some(true),
+        ..EdgeFilter::default()
+    };
+
+    // A direct query returns the package itself, with each dependency and the indexed package it
+    // names. Paths match without regard to ASCII case.
+    let direct = summary_pages(
+        &catalog,
+        &summary,
+        dependencies(&["content/vfx/ns_a.UASSET"], false, any),
+        10,
+    );
+    let [
+        QueryItem::Package {
+            package_path,
+            package_name,
+            classes,
+            dependencies: resolved,
+            failure_code,
+        },
+    ] = direct.as_slice()
+    else {
+        panic!("one package item: {direct:?}");
+    };
+    assert_eq!(package_path, "Content/VFX/NS_A.uasset");
+    assert_eq!(package_name, "/Game/VFX/NS_A");
+    assert_eq!(classes, &["/Script/Niagara.NiagaraSystem".to_owned()]);
+    assert_eq!(failure_code, &None);
+    let resolved = resolved
+        .iter()
+        .map(|resolved| {
+            (
+                resolved.dependency.package.as_str(),
+                resolved.dependency.properties(),
+                resolved.package_path.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        resolved,
+        [
+            (
+                "/Black_Eye/T_Eye",
+                2,
+                Some("Plugins/BlackEye/Content/T_Eye.uasset")
+            ),
+            ("/Game/Mat/M_A", 3, Some("Content/Mat/M_A.uasset")),
+            ("/Game/Missing/T_Gone", 3, None),
+            ("/Game/Tex/T_Editor", 1, Some("Content/Tex/T_Editor.uasset")),
+            ("/Script/Niagara", 3, None),
+        ]
+    );
+
+    for limit in [1, 2, 100] {
+        assert_eq!(
+            paths(dependencies(&["Content/VFX/NS_A.uasset"], true, any), limit),
+            [
+                "Content/Mat/M_A.uasset",
+                "Content/Tex/T_A.uasset",
+                "Content/Tex/T_Editor.uasset",
+                "Content/VFX/NS_A.uasset",
+                "Plugins/BlackEye/Content/T_Eye.uasset",
+            ]
+        );
+    }
+    assert_eq!(
+        paths(dependencies(&["Content/VFX/NS_A.uasset"], true, game), 100),
+        [
+            "Content/Mat/M_A.uasset",
+            "Content/Tex/T_A.uasset",
+            "Content/VFX/NS_A.uasset",
+            "Plugins/BlackEye/Content/T_Eye.uasset",
+        ]
+    );
+    assert_eq!(
+        paths(dependencies(&["Content/VFX/NS_A.uasset"], true, hard), 100),
+        [
+            "Content/Mat/M_A.uasset",
+            "Content/Tex/T_A.uasset",
+            "Content/Tex/T_Editor.uasset",
+            "Content/VFX/NS_A.uasset",
+        ]
+    );
+    assert!(paths(dependencies(&["Content/Nope.uasset"], true, any), 10).is_empty());
+
+    let texture = "Content/Tex/T_A.uasset";
+    for limit in [1, 100] {
+        assert_eq!(
+            paths(dependents(&[texture], true, any, &[]), limit),
+            [
+                "Content/Mat/M_A.uasset",
+                "Content/VFX/NS_A.uasset",
+                "Content/VFX/NS_B.uasset",
+            ]
+        );
+    }
+    assert_eq!(
+        paths(dependents(&[texture], false, any, &[]), 100),
+        ["Content/Mat/M_A.uasset"]
+    );
+    // The class filter keeps results, not the walk: the effects reach the texture through the
+    // material.
+    assert_eq!(
+        paths(
+            dependents(&[texture], true, any, &["/Script/Niagara.NiagaraSystem"]),
+            100
+        ),
+        ["Content/VFX/NS_A.uasset", "Content/VFX/NS_B.uasset"]
+    );
+    assert_eq!(
+        paths(dependents(&[texture], true, game, &[]), 100),
+        ["Content/Mat/M_A.uasset", "Content/VFX/NS_A.uasset"]
+    );
+    // A deleted package still has dependents, found by the name its path would have.
+    assert_eq!(
+        paths(
+            dependents(&["Content/Missing/T_Gone.uasset"], true, any, &[]),
+            100
+        ),
+        ["Content/VFX/NS_A.uasset"]
+    );
+    assert_eq!(
+        paths(
+            dependents(&["plugins/blackeye/content/t_eye.uasset"], true, any, &[]),
+            100
+        ),
+        ["Content/VFX/NS_A.uasset"]
+    );
+    assert!(paths(dependents(&["Config/DefaultGame.ini"], true, any, &[]), 10).is_empty());
+}
+
+pub(crate) fn refresh_reports_paths_changed_on_disk<C: CatalogSnapshot>(make: impl Fn() -> C) {
+    let mut catalog = make();
+    let mut scanner = refresh_fixture();
+    let mut run = |scanner: &FakeScanner| {
+        completed_changes(
+            &refresh(
+                &mut catalog,
+                scanner,
+                FIXTURE_PROJECT_ROOT,
+                &CancellationToken::new(),
+                |_| {},
+            )
+            .expect("refresh"),
+        )
+    };
+    assert_eq!(
+        run(&scanner),
+        RefreshChanges {
+            base_generation: None,
+            changed: vec![
+                "Content/Data/DT_Items.uasset".to_owned(),
+                "Content/Data/DT_Items.uexp".to_owned(),
+                "Content/Maps/L_Fixture.umap".to_owned(),
+            ],
+            removed: Vec::new(),
+            complete: true,
+        }
+    );
+    assert_eq!(
+        run(&scanner),
+        RefreshChanges {
+            base_generation: Some(Generation::new(1)),
+            complete: true,
+            ..RefreshChanges::default()
+        }
+    );
+    scanner
+        .entries
+        .retain(|entry| entry.relative_path != "Content/Data/DT_Items.uexp");
+    scanner
+        .entries
+        .iter_mut()
+        .find(|entry| entry.relative_path == "Content/Data/DT_Items.uasset")
+        .unwrap()
+        .size = 21;
+    scanner.entries.push(package("Content/New.uasset", 1, 1));
+    scanner.headers.insert(
+        "Content/New.uasset".to_owned(),
+        header("/Game/New", &[], &[]),
+    );
+    assert_eq!(
+        run(&scanner),
+        RefreshChanges {
+            base_generation: Some(Generation::new(2)),
+            changed: vec![
+                "Content/Data/DT_Items.uasset".to_owned(),
+                "Content/New.uasset".to_owned(),
+            ],
+            removed: vec!["Content/Data/DT_Items.uexp".to_owned()],
+            complete: true,
+        }
+    );
+}
+
 macro_rules! catalog_conformance_tests {
     ($module:ident, $make:expr) => {
         mod $module {
             #[allow(unused_imports)]
             use super::*;
             use crate::direct_executor::catalog_conformance as conformance;
+
+            #[test]
+            fn dependency_queries_walk_resolved_edges() {
+                conformance::dependency_queries_walk_resolved_edges($make);
+            }
+
+            #[test]
+            fn refresh_reports_paths_changed_on_disk() {
+                conformance::refresh_reports_paths_changed_on_disk($make);
+            }
 
             #[test]
             fn inventory_retains_package_and_sidecar_signatures() {

@@ -13,6 +13,7 @@ mod catalog;
 mod catalog_binary;
 #[cfg(test)]
 mod catalog_conformance;
+mod catalog_dependencies;
 #[cfg(test)]
 mod catalog_memory;
 #[allow(dead_code)]
@@ -37,11 +38,12 @@ use crate::protocol_result::{
 };
 
 pub(crate) use blueprint::{blueprint_with_cancellation, compare_blueprints_with_cancellation};
+pub(crate) use catalog::IndexScope;
 pub(crate) use project_index::RefreshProgress;
 pub(crate) use project_index_io::gathered;
 pub(crate) use project_index_io::{
-    ProjectIndexQuerySession, ProjectIndexRefreshOutput, catalog_was_quarantined, open_catalog,
-    open_catalog_for_project_id, open_catalog_for_status, progress_phase,
+    ProjectIndexQuerySession, ProjectIndexRefreshOutput, RefreshOptions, catalog_was_quarantined,
+    open_catalog, open_catalog_for_project_id, open_catalog_for_status, progress_phase,
     query as project_index_query_protocol, query_project_id,
     refresh as project_index_refresh_protocol, status as project_index_status_protocol,
 };

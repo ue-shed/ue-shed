@@ -1,5 +1,15 @@
 # @ue-shed/cameras
 
+## 0.30.0
+
+### Patch Changes
+
+- Updated dependencies [e893be6]
+    - @ue-shed/protocol@0.30.0
+    - @ue-shed/unreal-connection@0.30.0
+    - @ue-shed/world@0.30.0
+    - @ue-shed/observability@0.30.0
+
 ## 0.29.0
 
 ### Minor Changes

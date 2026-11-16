@@ -9,6 +9,7 @@ import {
 	LevelSequenceRead,
 	isHeaderScanEntry,
 	SavedAssetCatalogInspection,
+	type SavedAssetHeader,
 	SavedAssetInspection,
 	SavedAssetScan,
 	SavedAssetScanEntry,
@@ -146,9 +147,10 @@ export {
 export type { SavedProperty, SavedPropertyValue } from "@ue-shed/protocol";
 
 /**
- * Native reader discovery, process, timeout, contract or resource-limit failure, or a request too
- * large for the reader. Carries operation/path context and original cause; honor nextStep before
- * replaying a mutating index command.
+ * Native reader discovery, process, timeout, contract or resource-limit failure, a request too
+ * large for the reader, or invalid input such as a package size that cannot be right. Carries
+ * operation/path context and original cause; honor nextStep before replaying a mutating index
+ * command.
  */
 export class AssetReaderError extends Schema.TaggedError<
 	AssetReaderError,
@@ -161,7 +163,8 @@ export class AssetReaderError extends Schema.TaggedError<
 		"contract",
 		"discovery",
 		"resource_limit",
-		"request_too_large"
+		"request_too_large",
+		"invalid_input"
 	]),
 	operation: Schema.Literals([
 		"game_text_engine",
@@ -175,6 +178,7 @@ export class AssetReaderError extends Schema.TaggedError<
 		"extract_text_packages",
 		"extract_texture",
 		"inspect",
+		"package_header",
 		"discovery",
 		"scan",
 		"saved_world"
@@ -230,8 +234,45 @@ export function assetReaderGuidance(
 					"A package path or option in this request is too large for the asset reader. Shorten it or leave it out, then try again.",
 				nextStep: "fix_input"
 			};
+		case "invalid_input":
+			return {
+				recovery:
+					"Correct the request's values, such as a package's declared size, then try again.",
+				nextStep: "fix_input"
+			};
 	}
 }
+
+/** A request the native reader refused as invalid, reported as the caller's invalid input. */
+function invalidRequestAsInvalidInput(error: AssetReaderError): AssetReaderError {
+	if (error.code !== "invalid_request") return error;
+	return new AssetReaderError({
+		...(error.cause === undefined ? undefined : { cause: error.cause }),
+		code: error.code,
+		kind: "invalid_input",
+		operation: error.operation,
+		...(error.path === undefined ? undefined : { path: error.path }),
+		message: error.message,
+		retrySafe: false,
+		...assetReaderGuidance("invalid_input", false)
+	});
+}
+
+/**
+ * A header read from a package's leading bytes was given fewer bytes than the header needs.
+ * Supply at least `requiredBytes` leading bytes of the same package (`fileBytes` long) and read
+ * again. A first call that cannot yet read the summary asks for the 64 KiB summary window, or the
+ * whole package when it is smaller; once the summary is readable it asks for the whole header.
+ */
+export class PackageHeaderNeedsBytes extends Schema.TaggedError<
+	PackageHeaderNeedsBytes,
+	Brand.Brand<"packages/unreal-assets/src/asset-reader/PackageHeaderNeedsBytes">
+>()("PackageHeaderNeedsBytes", {
+	path: Schema.String,
+	fileBytes: Schema.Number,
+	requiredBytes: Schema.Number,
+	...ErrorGuidanceFields
+}) {}
 
 /**
  * Explicit saved asset path for a single native-reader operation. The path is a filesystem
@@ -239,6 +280,22 @@ export function assetReaderGuidance(
  */
 export interface AssetReaderOptions {
 	readonly assetPath: string;
+}
+
+/**
+ * One package's leading bytes in a file, and the size of the whole package, for a header read
+ * that does not need the rest of the file.
+ */
+export interface SavedPackageHeaderOptions {
+	/** A file holding the package's first bytes from offset 0; it may hold the whole package. */
+	readonly assetPath: string;
+	/** The size in bytes of the whole package, such as a version-control server reports. */
+	readonly fileBytes: number;
+	/**
+	 * How the header's `path` names the package, such as its project-relative or depot path.
+	 * Defaults to `assetPath`. The package name and object paths come from the header itself.
+	 */
+	readonly packagePath?: string;
 }
 
 /** Entries a Blueprint comparison page holds when the caller does not say. */
@@ -445,6 +502,14 @@ export interface AssetReaderApi {
 	readonly readLevelSequence: (
 		assetPath: string
 	) => Effect.Effect<LevelSequenceRead, AssetReaderError>;
+	/**
+	 * Requires uasset-io v1.24: reads one package's header from a file of its leading bytes and
+	 * the size of the whole package, giving what a header-depth scan gives for the whole file.
+	 * Fails with `PackageHeaderNeedsBytes` when the file ends before the header does.
+	 */
+	readonly readPackageHeader?: (
+		options: SavedPackageHeaderOptions
+	) => Effect.Effect<SavedAssetHeader, AssetReaderError | PackageHeaderNeedsBytes>;
 	readonly readTable: (
 		assetPath: string
 	) => Effect.Effect<AuthoringTableSnapshot, AssetReaderError>;
@@ -875,6 +940,56 @@ function makeAssetReader(
 			outcome: evidence.outcome
 		};
 	});
+	const readPackageHeader = Effect.fn("AssetReader.readPackageHeader")(function* (
+		options: SavedPackageHeaderOptions
+	) {
+		if (!Number.isSafeInteger(options.fileBytes) || options.fileBytes <= 0) {
+			return yield* Effect.fail(
+				new AssetReaderError({
+					kind: "invalid_input",
+					operation: "package_header",
+					path: options.assetPath,
+					message: `A package's declared size must be a positive whole number of bytes, not ${options.fileBytes}.`,
+					retrySafe: false,
+					...assetReaderGuidance("invalid_input", false)
+				})
+			);
+		}
+		const outcome = yield* invokeSingle({
+			configuration,
+			operation: "package_header",
+			path: options.assetPath,
+			request: makeProtocolRequest(
+				{
+					kind: "package_header",
+					assetPath: options.assetPath,
+					fileBytes: options.fileBytes,
+					...(options.packagePath === undefined
+						? undefined
+						: { packagePath: options.packagePath })
+				},
+				{
+					maximumOutputBytes: MAX_PROTOCOL_OUTPUT_BYTES,
+					timeoutMs: configuration.timeoutMs
+				},
+				{ contractMinor: 24 }
+			),
+			expected: "package_header",
+			select: (result) => (result.kind === "package_header" ? result.outcome : undefined)
+		}).pipe(Effect.mapError(invalidRequestAsInvalidInput));
+		if (outcome.status === "header") return outcome.header;
+		return yield* Effect.fail(
+			new PackageHeaderNeedsBytes({
+				path: options.assetPath,
+				fileBytes: options.fileBytes,
+				requiredBytes: outcome.requiredBytes,
+				message: `The package's header needs its first ${outcome.requiredBytes} bytes; ${options.assetPath} holds fewer.`,
+				recovery: `Supply at least the first ${outcome.requiredBytes} bytes of the package and read again.`,
+				retrySafe: false,
+				nextStep: "fix_input"
+			})
+		);
+	});
 	const readTable = Effect.fn("AssetReader.readTable")(function* (assetPath: string) {
 		return yield* invokeSingle({
 			configuration,
@@ -971,6 +1086,7 @@ function makeAssetReader(
 		readBlueprint,
 		compareBlueprints,
 		readLevelSequence,
+		readPackageHeader,
 		readSavedWorld,
 		readTable,
 		scanProgress,
@@ -1127,6 +1243,38 @@ export function readSavedBlueprint(
 	options: AssetReaderOptions
 ): Effect.Effect<BlueprintGraphRead, AssetReaderError, AssetReader> {
 	return Effect.flatMap(AssetReader, (reader) => reader.readBlueprint(options.assetPath));
+}
+/**
+ * Reads one saved package's header through AssetReader from a file of the package's leading bytes
+ * and the size of the whole package, without the rest of the file: the exports with their class
+ * names and paths, and the package facts, exactly as a header-depth scan gives them for the whole
+ * file. The package name and object paths come from the header, as in a scan; `path` is
+ * `packagePath`, or `assetPath` when it is absent.
+ *
+ * Fails with `PackageHeaderNeedsBytes` when the file ends before the header does, naming how many
+ * leading bytes to supply next, and with an `invalid_input` `AssetReaderError` when `fileBytes` is
+ * not positive or is smaller than the file. Fails as a contract error when the reader predates
+ * uasset-io v1.24.
+ */
+export function readSavedPackageHeader(
+	options: SavedPackageHeaderOptions
+): Effect.Effect<SavedAssetHeader, AssetReaderError | PackageHeaderNeedsBytes, AssetReader> {
+	return Effect.flatMap(AssetReader, (reader) =>
+		reader.readPackageHeader === undefined
+			? Effect.fail(
+					new AssetReaderError({
+						kind: "contract",
+						operation: "package_header",
+						path: options.assetPath,
+						message: "This asset reader cannot read a header from leading bytes.",
+						recovery:
+							"Install the native reader from the same UE Shed build as this host.",
+						retrySafe: false,
+						nextStep: "reconcile"
+					})
+				)
+			: reader.readPackageHeader(options)
+	);
 }
 /**
  * Compares two saved revisions of one Blueprint through AssetReader, by graph identity, without

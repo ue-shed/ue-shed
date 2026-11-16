@@ -8,7 +8,8 @@ import {
 	type BlueprintGraphProjection,
 	assetReaderLayer,
 	getAssetReaderSource,
-	readSavedBlueprint
+	readSavedBlueprint,
+	readSavedPackageHeader
 } from "./index.js";
 
 import {
@@ -33,6 +34,29 @@ effectIt.effect("preserves an unavailable reader as a typed process failure", ()
 		expect(error.code).toBe("executable_missing");
 		expect(error.kind).toBe("process");
 		expect(error.path).toBe("C:/Fixture/BP_Test.uasset");
+	})
+);
+
+effectIt.effect("refuses a package size that cannot be right before starting a reader", () =>
+	Effect.gen(function* () {
+		const missingExecutable = `C:/__ue_shed_missing_reader_${process.pid}__/uasset.exe`;
+		for (const fileBytes of [0, -1, 1.5, Number.NaN, 2 ** 53]) {
+			const error = yield* readSavedPackageHeader({
+				assetPath: "C:/Fixture/leading.bin",
+				fileBytes
+			}).pipe(
+				Effect.provide(assetReaderLayer({ executable: missingExecutable })),
+				Effect.flip
+			);
+			expect(error).toMatchObject({
+				_tag: "AssetReaderError",
+				kind: "invalid_input",
+				nextStep: "fix_input",
+				operation: "package_header",
+				path: "C:/Fixture/leading.bin",
+				retrySafe: false
+			});
+		}
 	})
 );
 

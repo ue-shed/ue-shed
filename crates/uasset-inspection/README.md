@@ -15,6 +15,14 @@ lets the WASM adapter enforce its byte ceiling. `generic::inspect_bytes_json` is
 string-returning compatibility wrapper; native protocol execution should consume the typed result
 instead of serializing and decoding this JSON shape again.
 
+`package_header::parse_leading_header` reads a package's header from its leading bytes and the
+declared length of the whole file, for a caller that does not hold the rest of the file. The summary
+and header must parse from the bytes, and every export span must end within the declared length,
+as when the whole file is present. When the bytes end too soon it returns how many to supply next:
+the summary window (`MAX_SUMMARY_BYTES`, capped by the file) until the summary parses, then the exact
+header size. A declared length of zero or below the bytes supplied is invalid input. The native
+reader's disk scan uses the same summary and header limits.
+
 `animation::inspect_animation_bytes` returns schema-1 saved animation summaries. It joins each
 AnimSequence to its exported AnimationSequencerDataModel, MovieScene, and first FK Control Rig
 section. Timing, bone/float-curve inventory, absolute notify times, skeleton references, and

@@ -1,0 +1,19 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 24
+		}
+	},
+	"kind": "result",
+	"requestId": "package-header-001",
+	"sequence": 1,
+	"result": {
+		"kind": "package_header",
+		"outcome": {
+			"status": "needs_bytes",
+			"requiredBytes": 0
+		}
+	}
+}

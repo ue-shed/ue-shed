@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol_result::ProjectIndexStatusPayload;
+use crate::protocol_result::{PackageHeaderOutcome, ProjectIndexStatusPayload};
 pub use crate::protocol_result::{ResultFrame, SavedAssetInspection};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -109,6 +109,17 @@ pub enum Operation {
     Authoring {
         #[serde(rename = "assetPath")]
         asset_path: String,
+    },
+    /// v1.24: one package's header read from a file of its leading bytes and the declared size
+    /// of the whole package. `packagePath` names the package in the header's `path`.
+    #[serde(rename = "package_header")]
+    PackageHeader {
+        #[serde(rename = "assetPath")]
+        asset_path: String,
+        #[serde(rename = "fileBytes")]
+        file_bytes: u64,
+        #[serde(rename = "packagePath")]
+        package_path: Option<String>,
     },
     #[serde(rename = "scan")]
     Scan {
@@ -357,6 +368,8 @@ pub enum OperationKind {
     #[serde(rename = "compare_blueprints")]
     CompareBlueprints,
     Authoring,
+    #[serde(rename = "package_header")]
+    PackageHeader,
     Scan,
     #[serde(rename = "extract_text")]
     ExtractText,
@@ -738,6 +751,27 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
         | Operation::Blueprint { asset_path }
         | Operation::LevelSequence { asset_path }
         | Operation::Authoring { asset_path } => validate_non_empty(asset_path, "assetPath"),
+        Operation::PackageHeader {
+            asset_path,
+            file_bytes,
+            package_path,
+        } => {
+            if request.contract.version.minor < 24 {
+                return Err(ProtocolError(
+                    "package_header requires uasset-io v1.24".into(),
+                ));
+            }
+            validate_non_empty(asset_path, "assetPath")?;
+            if *file_bytes == 0 {
+                return Err(ProtocolError(
+                    "package_header fileBytes must be greater than zero".into(),
+                ));
+            }
+            if let Some(path) = package_path {
+                validate_non_empty(path, "packagePath")?;
+            }
+            Ok(())
+        }
         Operation::CompareBlueprints {
             before,
             after,
@@ -1268,6 +1302,15 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
         ResultFrame::ProjectIndexStatus {
             status: ProjectIndexStatusPayload::Absent,
         } => Ok(()),
+        ResultFrame::PackageHeader { outcome } => match outcome {
+            PackageHeaderOutcome::Header { header } if header.schema_version != 8 => Err(
+                ProtocolError("expected package header schema version 8".to_owned()),
+            ),
+            PackageHeaderOutcome::NeedsBytes { required_bytes: 0 } => Err(ProtocolError(
+                "a header that needs more bytes must name a positive count".to_owned(),
+            )),
+            _ => Ok(()),
+        },
         _ => Ok(()),
     }
 }
@@ -1679,6 +1722,58 @@ mod game_text_contract_tests {
             "\"rowsFile\": \"changes-0.rows\", \"rows\": [0]",
         );
         assert!(super::decode_request(both.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn a_leading_bytes_header_read_needs_minor_24_and_a_positive_size() {
+        use crate::protocol_result::{PackageHeaderOutcome, ResultFrame};
+        let request = super::decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/package-header-request.json")).unwrap();
+        assert_eq!(
+            request.operation,
+            super::Operation::PackageHeader {
+                asset_path: "C:/scratch/L_Example.leading".into(),
+                file_bytes: 312_000_000,
+                package_path: Some("Content/Maps/L_Example.umap".into()),
+            }
+        );
+        let unnamed = String::from_utf8_lossy(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/package-header-request.json"))
+            .replace(",\n\t\t\"packagePath\": \"Content/Maps/L_Example.umap\"", "");
+        assert!(matches!(
+            super::decode_request(unnamed.as_bytes()).unwrap().operation,
+            super::Operation::PackageHeader {
+                package_path: None,
+                ..
+            }
+        ));
+        for invalid in [
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/package-header-request-old-minor.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/package-header-request-zero-size.json").as_slice(),
+        ] {
+            assert!(super::decode_request(invalid).is_err());
+        }
+        let header = super::decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/package-header-result-event.json")).unwrap();
+        let super::Event::Result { result, .. } = header else {
+            panic!("result event");
+        };
+        assert!(matches!(
+            *result,
+            ResultFrame::PackageHeader {
+                outcome: PackageHeaderOutcome::Header { .. }
+            }
+        ));
+        let needs = super::decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/package-header-needs-bytes-result-event.json")).unwrap();
+        let super::Event::Result { result, .. } = needs else {
+            panic!("result event");
+        };
+        assert_eq!(
+            *result,
+            ResultFrame::PackageHeader {
+                outcome: PackageHeaderOutcome::NeedsBytes {
+                    required_bytes: 65_536
+                }
+            }
+        );
+        assert!(super::decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/package-header-needs-zero-bytes.json")).is_err());
     }
 
     #[test]

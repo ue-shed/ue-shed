@@ -463,6 +463,7 @@ export {
 	UAssetIoContract,
 	UAssetIoEvent,
 	UAssetIoOperation,
+	UAssetIoPackageHeaderOutcome,
 	UAssetIoPackageTextStaging,
 	UAssetIoPackageTextSnapshots,
 	type UAssetIoOperationKind,

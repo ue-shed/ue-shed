@@ -47,6 +47,7 @@ pub(crate) use project_index_io::{
     query as project_index_query_protocol, query_project_id,
     refresh as project_index_refresh_protocol, status as project_index_status_protocol,
 };
+pub(crate) use project_io::package_header_with_cancellation;
 pub(crate) use project_io::package_text_events;
 pub(crate) use project_io::{ProjectionStreamEvent, SavedWorldReadOptions, SkippedPropertyDetail};
 pub(crate) use project_io::{

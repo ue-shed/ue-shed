@@ -1,0 +1,20 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 23
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"assetPath": "C:/scratch/L_Example.leading",
+		"fileBytes": 312000000,
+		"kind": "package_header",
+		"packagePath": "Content/Maps/L_Example.umap"
+	},
+	"requestId": "package-header-001"
+}

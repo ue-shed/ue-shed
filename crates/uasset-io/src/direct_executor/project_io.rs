@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use uasset_inspection::blueprint_classes::blueprint_classes;
 use uasset_inspection::blueprint_text::reconcile_blueprint_text;
 use uasset_inspection::gather_coverage::{DecodedTextKeys, GatherCoverage, gather_table};
+use uasset_inspection::package_header::LeadingHeader;
 use uasset_inspection::projection::{
     TextAssetProjection, TextureRecord, project_text_asset, project_texture_asset,
     text_feature_version_gap,
@@ -38,8 +39,8 @@ use crate::cancellation::CancellationToken;
 use crate::package_text_columns::{self, Columns, Expected, SnapshotRequest};
 use crate::protocol::{Operation, ProjectSelection, Request, ScanDepth, ScanFilters};
 use crate::protocol_result::{
-    Completeness, ManifestEntryKind, ProjectionStatus, ResultFrame, SavedAssetHeader,
-    SavedAssetHeaderExport, SavedAssetHeaderPackage, SavedAssetManifestEntry,
+    Completeness, ManifestEntryKind, PackageHeaderOutcome, ProjectionStatus, ResultFrame,
+    SavedAssetHeader, SavedAssetHeaderExport, SavedAssetHeaderPackage, SavedAssetManifestEntry,
     SavedAssetPackageTextEvent, SavedAssetPackageTextRecord, SavedAssetProjectionDiagnostic,
     SavedAssetScanEntry, SavedAssetScanSummary, SavedAssetTextExtractionEvent,
     SavedAssetTextureExtractionEvent, SavedWorld, SavedWorldAuthority, SavedWorldContract,
@@ -51,6 +52,9 @@ use crate::reader_memory::{self, Stage as MemoryStage};
 
 mod projection_budget;
 use projection_budget::JobQueue;
+
+#[cfg(test)]
+mod package_header_tests;
 
 const DEFAULT_IN_FLIGHT_PACKAGE_BYTES: u64 = 256 * 1024 * 1024;
 
@@ -2015,6 +2019,64 @@ fn read_scan_header(
         Err(error) => return Err(error),
     };
     checkpoint(cancellation, "inspection")?;
+    let entry = scan_header_entry(
+        &package,
+        filters,
+        path,
+        signature.size,
+        signature.modified_nanos,
+    );
+    checkpoint(cancellation, "inspection")?;
+    Ok(entry)
+}
+
+/// v1.24: the header a header-depth scan gives for one package, read from a file of the
+/// package's leading bytes and the declared size of the whole package. `package_path` names the
+/// package in the header's `path`, which otherwise is the file of leading bytes.
+pub(crate) fn package_header_with_cancellation(
+    asset_path: &str,
+    file_bytes: u64,
+    package_path: Option<&str>,
+    cancellation: &CancellationToken,
+) -> Result<PackageHeaderOutcome, Failure> {
+    let package = match scanner::read_leading_package_header(
+        Path::new(asset_path),
+        file_bytes,
+        cancellation,
+    )? {
+        LeadingHeader::Parsed(package) => package,
+        LeadingHeader::NeedsBytes(required_bytes) => {
+            return Ok(PackageHeaderOutcome::NeedsBytes { required_bytes });
+        }
+    };
+    checkpoint(cancellation, "inspection")?;
+    let unfiltered = ScanFilters {
+        class_name_suffixes: None,
+        class_prefixes: None,
+        classes: None,
+        names: None,
+    };
+    let entry = scan_header_entry(
+        &package,
+        &unfiltered,
+        package_path.unwrap_or(asset_path).to_owned(),
+        file_bytes,
+        0,
+    );
+    checkpoint(cancellation, "inspection")?;
+    Ok(PackageHeaderOutcome::Header {
+        header: header_result(&entry),
+    })
+}
+
+/// One parsed package's header-depth projection, as a scan caches and emits it.
+fn scan_header_entry(
+    package: &Package,
+    filters: &ScanFilters,
+    path: String,
+    size: u64,
+    modified_nanos: u64,
+) -> ScanHeaderCacheEntry {
     let exports = package
         .exports
         .iter()
@@ -2045,20 +2107,19 @@ fn read_scan_header(
         .filter(|name| package.names.iter().any(|entry| entry == *name))
         .cloned()
         .collect::<Vec<_>>();
-    checkpoint(cancellation, "inspection")?;
-    Ok(ScanHeaderCacheEntry {
+    ScanHeaderCacheEntry {
         header_data: Some(
-            uasset_inspection::package_header::PackageHeaderData::from_package(&package),
+            uasset_inspection::package_header::PackageHeaderData::from_package(package),
         ),
         failure_code: None,
         matched: filters_empty(filters) || !exports.is_empty() || !matched_names.is_empty(),
         exports,
         matched_names,
-        modified_nanos: signature.modified_nanos,
+        modified_nanos,
         package_name: package.summary.package_name.clone(),
         path,
-        size: signature.size,
-    })
+        size,
+    }
 }
 
 fn class_matches(class_path: &str, filters: &ScanFilters) -> bool {

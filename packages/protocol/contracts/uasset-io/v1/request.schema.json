@@ -735,6 +735,36 @@
 			"required": ["name", "version"],
 			"additionalProperties": false
 		},
+		"UAssetIoPackageHeaderContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 24
+								}
+							]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
 		"UAssetIoPackageTextStagingContract": {
 			"type": "object",
 			"properties": {
@@ -4659,6 +4689,42 @@
 								}
 							},
 							"required": ["kind", "offset", "limit"],
+							"additionalProperties": false
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
+							"$ref": "#/$defs/UAssetIoPackageHeaderContract"
+						},
+						"operation": {
+							"type": "object",
+							"properties": {
+								"kind": {
+									"type": "string",
+									"enum": ["package_header"]
+								},
+								"assetPath": {
+									"$ref": "#/$defs/UAssetIoNonEmptyString"
+								},
+								"fileBytes": {
+									"$ref": "#/$defs/UAssetIoPositiveInt"
+								},
+								"packagePath": {
+									"$ref": "#/$defs/UAssetIoNonEmptyString"
+								}
+							},
+							"required": ["kind", "assetPath", "fileBytes"],
 							"additionalProperties": false
 						}
 					},

@@ -485,6 +485,7 @@ fn operation_kind(operation: &Operation) -> &'static str {
         Operation::LevelSequence { .. } => "level_sequence",
         Operation::CompareBlueprints { .. } => "compare_blueprints",
         Operation::Authoring { .. } => "authoring",
+        Operation::PackageHeader { .. } => "package_header",
         Operation::Scan { .. } => "scan",
         Operation::ExtractText { .. } => "extract_text",
         Operation::ExtractTextPackages { .. } => "extract_text_packages",
@@ -512,6 +513,7 @@ fn execute_direct(
                 | Operation::CompareBlueprints { .. }
                 | Operation::LevelSequence { .. }
                 | Operation::Authoring { .. }
+                | Operation::PackageHeader { .. }
                 | Operation::ProjectIndexQuery { .. }
                 | Operation::ProjectIndexCount { .. }
                 | Operation::ProjectIndexStatus { .. }
@@ -520,7 +522,7 @@ fn execute_direct(
     {
         return Err(Failure::new(
             "unsupported_session_operation",
-            "protocol-session accepts inspect, blueprint, compare_blueprints, authoring, and project index query/count/status operations",
+            "protocol-session accepts inspect, blueprint, compare_blueprints, authoring, package_header, and project index query/count/status operations",
             false,
         ));
     }
@@ -690,6 +692,20 @@ fn execute_direct(
                 direct_executor::authoring_with_cancellation(asset_path, cancellation)?;
             emit_typed_result(emitter, &ResultFrame::Authoring { snapshot })?;
             Ok(partial)
+        }
+        Operation::PackageHeader {
+            asset_path,
+            file_bytes,
+            package_path,
+        } => {
+            let outcome = direct_executor::package_header_with_cancellation(
+                asset_path,
+                *file_bytes,
+                package_path.as_deref(),
+                cancellation,
+            )?;
+            emit_typed_result(emitter, &ResultFrame::PackageHeader { outcome })?;
+            Ok(false)
         }
         Operation::Scan { selection, .. } => {
             let empty_paths = selection.paths.as_deref() == Some(&[]);

@@ -1,0 +1,39 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 24
+		}
+	},
+	"kind": "result",
+	"requestId": "package-header-001",
+	"sequence": 1,
+	"result": {
+		"kind": "package_header",
+		"outcome": {
+			"status": "header",
+			"header": {
+				"exports": [
+					{
+						"class_name": "World",
+						"class_path": "/Script/Engine.World",
+						"object_path": "/Game/Maps/L_Example.L_Example"
+					}
+				],
+				"matched_names": [],
+				"package": {
+					"name": "/Game/Maps/L_Example",
+					"header_data": {
+						"packageFlags": 262144,
+						"gatherableTextDataCount": 0,
+						"gatherableTextDataOffset": 0,
+						"hasTextProperty": false
+					}
+				},
+				"path": "Content/Maps/L_Example.umap",
+				"schema_version": 8
+			}
+		}
+	}
+}

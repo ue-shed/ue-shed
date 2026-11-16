@@ -11,6 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::time::UNIX_EPOCH;
 
+use uasset_inspection::package_header::{
+    LeadingHeader, MAX_HEADER_BYTES, MAX_SUMMARY_BYTES, parse_leading_header,
+};
 use uasset_parser::PackageSummary;
 use uasset_parser::package::{Package, PackageError, PackageErrorKind};
 
@@ -28,8 +31,6 @@ pub(crate) const PACKAGE_EXTENSIONS: &[&str] = &["uasset", "umap"];
 pub(crate) const SIDECAR_EXTENSIONS: &[&str] = &["uexp", "ubulk", "uptnl"];
 
 const HEADER_PROBE_BYTES: usize = 4 * 1024;
-const MAX_SUMMARY_BYTES: usize = 64 * 1024;
-const MAX_HEADER_BYTES: usize = 64 * 1024 * 1024;
 // Header parsing and post-read signature checks share these workers. Keep the same global
 // read-ahead bound when scaling up, and respect smaller hosts' available parallelism.
 const MAX_HEADER_WORKERS: usize = 16;
@@ -462,6 +463,64 @@ pub(crate) fn read_package_header_bytes(
     Package::parse_header(&bytes, file_len)
         .map(|package| (package, bytes))
         .map_err(|error| header_failure(package_error_code(&error)))
+}
+
+/// Reads a package header from a file holding the package's first bytes, given the size of the
+/// whole package, or says how many leading bytes the header needs. This is the read
+/// [`read_package_header_bytes`] makes, with the file length declared instead of measured. It
+/// reads the summary window and then the header, never export data the file may also hold.
+pub(crate) fn read_leading_package_header(
+    path: &Path,
+    file_bytes: u64,
+    cancellation: &CancellationToken,
+) -> Result<LeadingHeader, Failure> {
+    checkpoint(cancellation, "read")?;
+    let io_failure = |error: std::io::Error| {
+        Failure::new(
+            "io",
+            format!(
+                "could not read the package's leading bytes from {}: {error}",
+                path.display()
+            ),
+            true,
+        )
+    };
+    let mut file = File::open(path).map_err(io_failure)?;
+    let supplied = file.metadata().map_err(io_failure)?.len();
+    if file_bytes == 0 || supplied > file_bytes {
+        return Err(Failure::new(
+            "invalid_request",
+            format!(
+                "the package's declared size ({file_bytes} bytes) must be positive and at least \
+                 the {supplied} leading bytes in {}",
+                path.display()
+            ),
+            false,
+        ));
+    }
+    let supplied = usize::try_from(supplied).unwrap_or(usize::MAX);
+    let mut bytes = Vec::new();
+    let mut wanted = MAX_SUMMARY_BYTES.min(supplied);
+    loop {
+        let previous_len = bytes.len();
+        bytes.resize(wanted, 0);
+        file.read_exact(&mut bytes[previous_len..])
+            .map_err(io_failure)?;
+        checkpoint(cancellation, "read")?;
+        checkpoint(cancellation, "parsing")?;
+        let read = parse_leading_header(&bytes, file_bytes)
+            .map_err(|error| Failure::new(error.code(), error.to_string(), false))?;
+        checkpoint(cancellation, "parsing")?;
+        match read {
+            LeadingHeader::NeedsBytes(required)
+                if required <= supplied as u64 && required > bytes.len() as u64 =>
+            {
+                // The file holds more than was read; read what the header asked for.
+                wanted = usize::try_from(required).unwrap_or(usize::MAX);
+            }
+            read => return Ok(read),
+        }
+    }
 }
 
 fn header_failure(code: &'static str) -> Failure {

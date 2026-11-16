@@ -238,6 +238,37 @@ removed, and `complete: false` when there were more than 65,536 (the lists are t
 directory). Older minors reject the new fields and kinds before acceptance, and their summaries
 omit `mounts` and `changes`.
 
+Minor version 1.24 adds `package_header`, in `protocol` and `protocol-session`. It reads one
+package's header from a file holding the package's leading bytes, for a host that holds only the
+start of a package (for example from a version-control server) and knows the whole package's
+size. The request names the file in `assetPath` and the whole package's size in `fileBytes`, a
+positive integer. The reader checks every export span against `fileBytes`, as a header scan checks
+them against a file's real length. So the file need hold only the summary and the header
+(`total_header_size` bytes), and the reader never reads past the header. Optional `packagePath`
+names the package in the result's `path`, such as its project-relative path; without it, `path` is
+`assetPath`.
+
+The `package_header` result carries an `outcome`:
+
+- `{ "status": "header", "header": … }`: the `SavedAssetHeader` a header-depth scan gives for the
+  whole file. Its exports carry their class names and paths, `matched_names` is empty, and
+  `package` holds the name and `header_data`. The package name and object paths come from the
+  summary, as in a scan: a scan does not name a package from where its file sits. UE 4.27 packages
+  that save `None` therefore have package-relative object paths. Class paths of engine and script
+  classes are absolute either way.
+- `{ "status": "needs_bytes", "requiredBytes": n }`: the file ends before the header does. Supply at
+  least `n` leading bytes and read again. While the summary cannot be read, `n` is the 64 KiB window
+  a disk read grows its summary probe to, or `fileBytes` when that is smaller. Once the summary is
+  readable, `n` is the exact header size. `n` is always more than the file held, so a host reaches
+  the header in at most three reads.
+
+A `fileBytes` of zero is rejected before acceptance. A `fileBytes` smaller than the file fails with
+`invalid_request`. A header the parser refuses fails with the codes an inspection uses, such as
+`malformed_data`, including a `fileBytes` smaller than where the last export's data ends. Header
+scans and other reads of files on disk are unchanged: a file truncated on disk still fails as
+`asset_malformed_data`. Older workers reject the operation before acceptance, and the worker
+rejects it below minor 24.
+
 ### Active package input budget
 
 `limits.maximumInFlightPackageBytes` is an optional positive integer byte limit for text and

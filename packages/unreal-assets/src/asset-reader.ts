@@ -944,16 +944,14 @@ function makeAssetReader(
 		options: SavedPackageHeaderOptions
 	) {
 		if (!Number.isSafeInteger(options.fileBytes) || options.fileBytes <= 0) {
-			return yield* Effect.fail(
-				new AssetReaderError({
-					kind: "invalid_input",
-					operation: "package_header",
-					path: options.assetPath,
-					message: `A package's declared size must be a positive whole number of bytes, not ${options.fileBytes}.`,
-					retrySafe: false,
-					...assetReaderGuidance("invalid_input", false)
-				})
-			);
+			return yield* new AssetReaderError({
+				kind: "invalid_input",
+				operation: "package_header",
+				path: options.assetPath,
+				message: `A package's declared size must be a positive whole number of bytes, not ${options.fileBytes}.`,
+				retrySafe: false,
+				...assetReaderGuidance("invalid_input", false)
+			});
 		}
 		const outcome = yield* invokeSingle({
 			configuration,
@@ -978,17 +976,15 @@ function makeAssetReader(
 			select: (result) => (result.kind === "package_header" ? result.outcome : undefined)
 		}).pipe(Effect.mapError(invalidRequestAsInvalidInput));
 		if (outcome.status === "header") return outcome.header;
-		return yield* Effect.fail(
-			new PackageHeaderNeedsBytes({
-				path: options.assetPath,
-				fileBytes: options.fileBytes,
-				requiredBytes: outcome.requiredBytes,
-				message: `The package's header needs its first ${outcome.requiredBytes} bytes; ${options.assetPath} holds fewer.`,
-				recovery: `Supply at least the first ${outcome.requiredBytes} bytes of the package and read again.`,
-				retrySafe: false,
-				nextStep: "fix_input"
-			})
-		);
+		return yield* new PackageHeaderNeedsBytes({
+			path: options.assetPath,
+			fileBytes: options.fileBytes,
+			requiredBytes: outcome.requiredBytes,
+			message: `The package's header needs its first ${outcome.requiredBytes} bytes; ${options.assetPath} holds fewer.`,
+			recovery: `Supply at least the first ${outcome.requiredBytes} bytes of the package and read again.`,
+			retrySafe: false,
+			nextStep: "fix_input"
+		});
 	});
 	const readTable = Effect.fn("AssetReader.readTable")(function* (assetPath: string) {
 		return yield* invokeSingle({
@@ -1245,16 +1241,10 @@ export function readSavedBlueprint(
 	return Effect.flatMap(AssetReader, (reader) => reader.readBlueprint(options.assetPath));
 }
 /**
- * Reads one saved package's header through AssetReader from a file of the package's leading bytes
- * and the size of the whole package, without the rest of the file: the exports with their class
- * names and paths, and the package facts, exactly as a header-depth scan gives them for the whole
- * file. The package name and object paths come from the header, as in a scan; `path` is
- * `packagePath`, or `assetPath` when it is absent.
- *
- * Fails with `PackageHeaderNeedsBytes` when the file ends before the header does, naming how many
- * leading bytes to supply next, and with an `invalid_input` `AssetReaderError` when `fileBytes` is
- * not positive or is smaller than the file. Fails as a contract error when the reader predates
- * uasset-io v1.24.
+ * Reads a package's header from a file of its leading bytes and the whole package's size, as a
+ * header-depth scan reads the whole file. Fails with `PackageHeaderNeedsBytes` (supply
+ * `requiredBytes` and read again) when the file ends first, or `invalid_input` for a size that
+ * cannot be right. Needs uasset-io v1.24.
  */
 export function readSavedPackageHeader(
 	options: SavedPackageHeaderOptions

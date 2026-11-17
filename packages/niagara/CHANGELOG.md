@@ -1,5 +1,13 @@
 # @ue-shed/niagara
 
+## 0.31.0
+
+### Patch Changes
+
+- Updated dependencies [ff3c278]
+    - @ue-shed/protocol@0.31.0
+    - @ue-shed/engine@0.31.0
+
 ## 0.30.0
 
 ### Patch Changes

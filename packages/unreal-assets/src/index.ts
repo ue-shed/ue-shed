@@ -103,11 +103,13 @@ export {
 	extractProjectTextures,
 	getAssetReaderSource,
 	makeAssetReaderTestLayer,
+	PackageHeaderNeedsBytes,
 	readSavedAsset,
 	readSavedBlueprint,
 	compareBlueprintRevisions,
 	BLUEPRINT_COMPARISON_PAGE,
 	readSavedLevelSequence,
+	readSavedPackageHeader,
 	readSavedTable,
 	readSavedWorld,
 	SAVED_TABLE_SCAN_CLASSES,
@@ -127,6 +129,7 @@ export type {
 	SavedAssetScanOptions,
 	SavedAssetStagedPackageTextEvent,
 	SavedAssetStagedTextExtractionOptions,
+	SavedPackageHeaderOptions,
 	SavedTableCatalogOptions,
 	SavedWorldReadOptions
 } from "./asset-reader.js";

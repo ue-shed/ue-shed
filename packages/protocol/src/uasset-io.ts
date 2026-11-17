@@ -21,6 +21,7 @@ import { LevelSequenceProjection } from "./level-sequence.js";
 import { SavedWorld } from "./saved-world.js";
 import {
 	PackageHeaderData,
+	SavedAssetHeader,
 	SavedAssetInspection,
 	SavedAssetManifestEntry,
 	SavedAssetScanEntry,
@@ -577,6 +578,18 @@ const CompareBlueprintsOperation = Schema.Struct({
 	offset: NonNegativeInt,
 	limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 }))
 });
+/**
+ * v1.24: one package's header read from a file of its leading bytes. `fileBytes` is the size of
+ * the whole package, such as a version-control server reports; export spans are checked against
+ * it, so the file need hold only the summary and header. `packagePath` is how the result's
+ * `path` names the package, such as its project-relative path; it defaults to `assetPath`.
+ */
+const PackageHeaderOperation = Schema.Struct({
+	kind: Schema.Literal("package_header"),
+	assetPath: NonEmptyString,
+	fileBytes: PositiveInt,
+	packagePath: Schema.optionalKey(NonEmptyString)
+});
 const GameTextIndexOperation = Schema.Struct({
 	kind: Schema.Literal("game_text_index"),
 	request: GameTextIndexBuildRequest
@@ -621,6 +634,7 @@ export const UAssetIoOperation = Schema.Union([
 	...ExistingOperation.members,
 	...ProjectIndexDependencyOperation.members,
 	CompareBlueprintsOperation,
+	PackageHeaderOperation,
 	StagedPackageTextOperation,
 	SnapshotPackageTextOperation,
 	PackageTextOperation
@@ -718,6 +732,18 @@ export const UAssetIoRequest = Schema.Union([
 			Schema.fieldsAssign({
 				version: Schema.Struct({
 					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(24))
+				})
+			})
+		).annotate({ identifier: "UAssetIoPackageHeaderContract" }),
+		operation: PackageHeaderOperation
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
 					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(20))
 				})
 			})
@@ -758,6 +784,7 @@ const UAssetIoOperationKind = Schema.Literals([
 	"compare_blueprints",
 	"level_sequence",
 	"authoring",
+	"package_header",
 	"scan",
 	"extract_text",
 	"extract_text_packages",
@@ -771,6 +798,18 @@ const UAssetIoOperationKind = Schema.Literals([
 ]);
 /** Operation names the worker echoes in the `accepted` event. */
 export type UAssetIoOperationKind = Schema.Schema.Type<typeof UAssetIoOperationKind>;
+
+/**
+ * v1.24 result of `package_header`: `header` is the header a header-depth scan gives for the
+ * whole file; `needs_bytes` says how many leading bytes to supply next. That is the whole header
+ * once the summary is readable, otherwise the 64 KiB summary window (or the whole package when it
+ * is smaller), and always more than the file held.
+ */
+export const UAssetIoPackageHeaderOutcome = Schema.Union([
+	Schema.Struct({ status: Schema.Literal("header"), header: SavedAssetHeader }),
+	Schema.Struct({ status: Schema.Literal("needs_bytes"), requiredBytes: PositiveInt })
+]).annotate({ identifier: "UAssetIoPackageHeaderOutcome" });
+export type UAssetIoPackageHeaderOutcome = Schema.Schema.Type<typeof UAssetIoPackageHeaderOutcome>;
 
 /** Typed result frames carried between the IO worker and its Effect consumer. */
 export const UAssetIoResult = Schema.Union([
@@ -788,6 +827,11 @@ export const UAssetIoResult = Schema.Union([
 	}),
 	Schema.Struct({ sequence: LevelSequenceProjection, kind: Schema.Literal("level_sequence") }),
 	Schema.Struct({ kind: Schema.Literal("authoring"), snapshot: AuthoringTableSnapshot }),
+	/** v1.24: one package's header from its leading bytes, or the bytes it needs. */
+	Schema.Struct({
+		kind: Schema.Literal("package_header"),
+		outcome: UAssetIoPackageHeaderOutcome
+	}),
 	Schema.Struct({ entry: SavedAssetScanEntry, kind: Schema.Literal("scan_asset") }),
 	Schema.Struct({ entry: SavedAssetManifestEntry, kind: Schema.Literal("scan_inventory") }),
 	Schema.Struct({ kind: Schema.Literal("scan_summary"), summary: SavedAssetScanSummary }),

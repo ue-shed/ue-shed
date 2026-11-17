@@ -35,6 +35,9 @@ pub enum ResultFrame {
     BlueprintComparison { comparison: BlueprintComparison },
     #[serde(rename = "authoring")]
     Authoring { snapshot: AuthoringTableSnapshot },
+    /// v1.24: one package's header read from its leading bytes, or the bytes it needs.
+    #[serde(rename = "package_header")]
+    PackageHeader { outcome: PackageHeaderOutcome },
     #[serde(rename = "scan_asset")]
     ScanAsset { entry: SavedAssetScanEntry },
     #[serde(rename = "scan_inventory")]
@@ -288,6 +291,20 @@ pub struct SavedAssetHeaderPackage {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
+}
+
+/// v1.24: a header read from a package's leading bytes. `header` is the header a header-depth
+/// scan gives for the whole file; `needs_bytes` says how many leading bytes to supply next.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(tag = "status", deny_unknown_fields)]
+pub enum PackageHeaderOutcome {
+    #[serde(rename = "header")]
+    Header { header: SavedAssetHeader },
+    #[serde(rename = "needs_bytes")]
+    NeedsBytes {
+        #[serde(rename = "requiredBytes")]
+        required_bytes: u64,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]

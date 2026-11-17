@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, ManagedRuntime, Stream } from "effect";
@@ -18,6 +18,7 @@ import {
 	type SavedAssetScan,
 	readSavedAsset,
 	readSavedBlueprint,
+	readSavedPackageHeader,
 	readSavedTable,
 	scanSavedProject
 } from "./index.js";
@@ -331,6 +332,93 @@ describe.skipIf(!executable)("batched project scan", () => {
 			});
 		} finally {
 			await rm(projectRoot, { force: true, recursive: true });
+		}
+	});
+
+	it("reads a header from a package's leading bytes and its size, as a scan reads the file", async () => {
+		const relative = "Content/Fixture/Authoring/DT_Scalars.uasset";
+		const bytes = await readFile(join(fixture.root, relative));
+		const scan = await runReader(
+			scanSavedProject({
+				depth: "header",
+				headerData: true,
+				paths: [relative],
+				projectRoot: fixture.root
+			})
+		);
+		const [scanned] = scan.assets.filter(isHeaderScanEntry).map((entry) => entry.header);
+		expect(scanned?.exports.map((exported) => exported.class_path)).toEqual([
+			"/Script/Engine.AssetImportData",
+			"/Script/Engine.DataTable"
+		]);
+		const headerBytes = (
+			await runReader(readSavedAsset({ assetPath: join(fixture.root, relative) }))
+		).package.total_header_size;
+		const directory = await mkdtemp(join(tmpdir(), "ue-shed-leading-header-"));
+		const read = (assetPath: string, fileBytes: number, packagePath?: string) =>
+			runReader(
+				readSavedPackageHeader({
+					assetPath,
+					fileBytes,
+					...(packagePath === undefined ? undefined : { packagePath })
+				}).pipe(
+					Effect.match({
+						onFailure: (failure) => ({ failure }),
+						onSuccess: (header) => ({ header })
+					})
+				)
+			);
+		try {
+			const leading = join(directory, "leading.bin");
+			// Too few bytes for the summary, then for the header: each names what to supply.
+			await writeFile(leading, bytes.subarray(0, 100));
+			expect(await read(leading, 300_000_000)).toMatchObject({
+				failure: {
+					_tag: "PackageHeaderNeedsBytes",
+					fileBytes: 300_000_000,
+					nextStep: "fix_input",
+					path: leading,
+					requiredBytes: 65_536
+				}
+			});
+			await writeFile(leading, bytes.subarray(0, headerBytes - 1));
+			expect(await read(leading, bytes.length)).toMatchObject({
+				failure: { _tag: "PackageHeaderNeedsBytes", requiredBytes: headerBytes }
+			});
+
+			// The header alone, with the package's size, gives the scan's header.
+			await writeFile(leading, bytes.subarray(0, headerBytes));
+			expect(await read(leading, bytes.length, scanned!.path)).toEqual({ header: scanned });
+			expect(await read(leading, bytes.length)).toEqual({
+				header: { ...scanned, path: leading }
+			});
+
+			// A size the bytes cannot have is the caller's input, not malformed data.
+			for (const fileBytes of [0, 1.5, headerBytes - 1]) {
+				expect(await read(leading, fileBytes)).toMatchObject({
+					failure: {
+						_tag: "AssetReaderError",
+						kind: "invalid_input",
+						nextStep: "fix_input",
+						operation: "package_header"
+					}
+				});
+			}
+
+			// The same bytes as a file on disk are still a truncated, malformed package.
+			const projectRoot = join(directory, "Project");
+			await mkdir(join(projectRoot, "Content"), { recursive: true });
+			await writeFile(
+				join(projectRoot, "Content/DT_Scalars.uasset"),
+				bytes.subarray(0, headerBytes)
+			);
+			const truncated = await runReader(scanSavedProject({ depth: "header", projectRoot }));
+			expect(truncated.assets).toEqual([]);
+			expect(truncated.failures.map((failure) => failure.code)).toEqual([
+				"asset_malformed_data"
+			]);
+		} finally {
+			await rm(directory, { force: true, recursive: true });
 		}
 	});
 

@@ -191,6 +191,65 @@ bytecode reconstruction, and package mutation are outside this boundary. A non-e
 `coverage_gaps` array means the topology remains useful but a reference,
 native property payload, or node-subclass tail was not fully projected.
 
+## Reading a header from a package's leading bytes
+
+`readSavedPackageHeader` reads one package's header from a file that holds only the package's
+first bytes, given the size of the whole package. A host that reads a package revision from a
+version-control server can learn which classes it holds without downloading a file that may be
+hundreds of MB. The result is the `SavedAssetHeader` that `scanSavedProject({ depth: "header" })`
+gives for the whole file: each export with its class name and class path, and the package facts.
+It needs native protocol minor 1.24.
+
+```ts
+import { Effect } from "effect";
+import {
+	readSavedPackageHeader,
+	type AssetReader,
+	type AssetReaderError,
+	type SavedAssetHeader
+} from "@ue-shed/unreal-assets";
+
+// The host's own fetch: writes a revision's first `bytes` bytes to `file`.
+declare const fetchLeadingBytes: (bytes: number, file: string) => Effect.Effect<void>;
+
+const readHeader = (
+	bytes: number
+): Effect.Effect<SavedAssetHeader, AssetReaderError, AssetReader> =>
+	fetchLeadingBytes(bytes, "C:/tmp/L_Example.part").pipe(
+		Effect.andThen(
+			readSavedPackageHeader({
+				assetPath: "C:/tmp/L_Example.part",
+				fileBytes: 312_000_000, // the revision's full size, from the server
+				packagePath: "Content/Maps/L_Example.umap"
+			})
+		),
+		Effect.catchTag("PackageHeaderNeedsBytes", (needed) => readHeader(needed.requiredBytes))
+	);
+
+const header = yield * readHeader(64 * 1024);
+const classes = header.exports.map((exported) => exported.class_path);
+```
+
+A host cannot know the header's size before the first read. When the file ends before the header
+does, the read fails with `PackageHeaderNeedsBytes`, whose `requiredBytes` is how many leading bytes
+to supply next. While the summary cannot be read, that is the 64 KiB summary window, or the whole
+package when it is smaller. Once the summary is readable, it is the exact header size. Each request
+asks for more than the file held, so a host reaches the header in at most three reads. A first read
+of 64 KiB usually needs at most one more.
+
+The reader checks every export span against `fileBytes`, exactly as a header scan checks them
+against a file's real length. It never reads export data, so the bytes past the header need not be
+present. A `fileBytes` that is not a positive whole number, or that is smaller than the file, fails
+with an `AssetReaderError` of kind `invalid_input`. A header that a scan would also refuse, including
+a `fileBytes` shorter than the export data the header describes, fails as malformed data. Scans and
+other reads of files on disk are unchanged: a file that really is truncated still fails.
+
+The package name and object paths come from the package's own summary, as in a header scan, which
+does not name a package from where its file sits. UE 4.27 packages save the name `None`, so their
+object paths are package-relative. Class paths of engine and script classes are absolute either
+way, so class lookup does not depend on the name. `path` is `packagePath` when given (for example
+the project-relative or depot path the host fetched), otherwise `assetPath`.
+
 ## Reading one saved map
 
 `readSavedWorld` invokes the map-targeted `uasset saved-world` operation. Unlike a project scan, it

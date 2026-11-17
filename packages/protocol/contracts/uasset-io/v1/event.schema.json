@@ -9222,6 +9222,38 @@
 			"required": ["package", "path", "schema_version"],
 			"additionalProperties": false
 		},
+		"UAssetIoPackageHeaderOutcome": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"status": {
+							"type": "string",
+							"enum": ["header"]
+						},
+						"header": {
+							"$ref": "#/$defs/SavedAssetHeader"
+						}
+					},
+					"required": ["status", "header"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"status": {
+							"type": "string",
+							"enum": ["needs_bytes"]
+						},
+						"requiredBytes": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						}
+					},
+					"required": ["status", "requiredBytes"],
+					"additionalProperties": false
+				}
+			]
+		},
 		"SavedAssetScanEntry": {
 			"anyOf": [
 				{
@@ -11593,6 +11625,20 @@
 				{
 					"type": "object",
 					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["package_header"]
+						},
+						"outcome": {
+							"$ref": "#/$defs/UAssetIoPackageHeaderOutcome"
+						}
+					},
+					"required": ["kind", "outcome"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
 						"entry": {
 							"$ref": "#/$defs/SavedAssetScanEntry"
 						},
@@ -11793,6 +11839,7 @@
 								"compare_blueprints",
 								"level_sequence",
 								"authoring",
+								"package_header",
 								"scan",
 								"extract_text",
 								"extract_text_packages",

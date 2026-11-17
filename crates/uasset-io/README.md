@@ -16,9 +16,17 @@ newline-delimited events on stdout. The contract and shared fixtures live in
 commands; the public TypeScript reader uses the protocol mode.
 
 `uasset protocol-session` accepts one bounded request per input line and completes each response
-before reading the next. It supports inspection, authoring, and Project Index queries so a scoped
-client can amortize process startup without allowing unbounded concurrent decode work. Batched scans
-continue to use the one-request `protocol` command.
+before reading the next. It supports inspection, authoring, leading-bytes header reads, and
+Project Index queries so a scoped client can amortize process startup without allowing unbounded
+concurrent decode work. Batched scans continue to use the one-request `protocol` command.
+
+Protocol v1.24 `package_header` reads one package's header from a file of its leading bytes and
+the declared size of the whole package. `scanner::read_leading_package_header` reads the summary
+window and then the header, never export data. It hands those bytes to the portable
+`uasset_inspection::package_header::parse_leading_header`, which checks export spans against the
+declared size. The result goes through the same projection a header-depth scan uses
+(`scan_header_entry`), so both give the same header for the same package. Scans and other reads
+of files on disk still measure the file's length, and their checks are unchanged.
 
 Every protocol operation runs through the typed Rust executor: inspection, authoring, header/full
 scans, filters, cache, inventory, text/texture extraction, and saved-world inspection. The

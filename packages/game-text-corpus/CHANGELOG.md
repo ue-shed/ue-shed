@@ -1,5 +1,20 @@
 # @ue-shed/game-text-corpus
 
+## 0.32.0
+
+### Patch Changes
+
+- Updated dependencies [41e5407]
+- Updated dependencies [69aed82]
+- Updated dependencies [477cad9]
+- Updated dependencies [7e4aa1a]
+- Updated dependencies [1d5e291]
+- Updated dependencies [c76ef90]
+    - @ue-shed/game-text@0.32.0
+    - @ue-shed/protocol@0.32.0
+    - @ue-shed/unreal-assets@0.32.0
+    - @ue-shed/localization@0.32.0
+
 ## 0.31.0
 
 ### Patch Changes

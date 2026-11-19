@@ -205,7 +205,7 @@ bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 		if (!Fields(R,
 		            {TEXT("kind"), TEXT("strategy"), TEXT("profile"), TEXT("vignette"), TEXT("fog"),
 		             TEXT("volumetricFog")},
-		            {TEXT("editorPreviews"), TEXT("screenshotWarmupFrames")}) ||
+		            {TEXT("editorPreviews"), TEXT("screenshotWarmupFrames"), TEXT("clouds")}) ||
 		    String(R, TEXT("strategy")) != TEXT("high_resolution_screenshot") ||
 		    (String(R, TEXT("profile")) != TEXT("lit") &&
 		     String(R, TEXT("profile")) != TEXT("observation")) ||

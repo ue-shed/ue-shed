@@ -24,6 +24,19 @@ struct Tally {
     last: usize,
 }
 
+/// The page of ranked `entries` that starts at `offset`, at most `MAX_GROUPS` long, and how many
+/// entries follow it.
+fn group_page<T>(entries: Vec<T>, offset: usize) -> (Vec<T>, usize) {
+    let total = entries.len();
+    let page = entries
+        .into_iter()
+        .skip(offset)
+        .take(MAX_GROUPS)
+        .collect::<Vec<_>>();
+    let more = total.saturating_sub(offset.saturating_add(page.len()));
+    (page, more)
+}
+
 impl Places {
     pub(crate) fn coordinate(
         &self,
@@ -196,13 +209,14 @@ impl Projection {
 impl EngineQuery {
     /// One entry per rule of the layer in program order, with the rows it has a finding on. A
     /// row counts in every rule it has a finding of. A facet (`minimum` absent) lists every
-    /// rule; groups list those with at least `minimum` rows.
+    /// rule; groups list those with at least `minimum` rows, from the `offset`th on.
     pub(crate) fn finding_groups(
         &self,
         rows: &[u32],
         selection: &Selection,
         findings: &FindingRows,
         minimum: Option<usize>,
+        offset: usize,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
         let localized = selection.localized();
@@ -237,12 +251,13 @@ impl EngineQuery {
                 json!({"key":rule.id,"label":rule.label,"count":count,"needWork":work,"worst":PROBLEMS[worst as usize]})
             })
             .collect::<Vec<_>>();
-        let more = entries.len().saturating_sub(MAX_GROUPS);
-        Ok(json!({"entries":entries.into_iter().take(MAX_GROUPS).collect::<Vec<_>>(),"more":more}))
+        let (entries, more) = group_page(entries, offset);
+        Ok(json!({"entries":entries,"more":more}))
     }
 
     /// The rows counted by `by`: a facet when `minimum` is absent, which lists every value, or
-    /// groups holding at least `minimum` rows.
+    /// groups holding at least `minimum` rows. Either lists the first `MAX_GROUPS` values in rank
+    /// order; `aggregate_parts` takes an offset for later pages.
     pub(crate) fn aggregate(
         &self,
         rows: &[u32],
@@ -252,16 +267,18 @@ impl EngineQuery {
         under: &str,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
-        self.aggregate_parts(&[(rows, selection)], by, minimum, under, cancelled)
+        self.aggregate_parts(&[(rows, selection)], by, minimum, 0, under, cancelled)
     }
 
     /// Rows of several kinds counted together, each part read under its own selection: a value's
-    /// tally sums every part before the groups are ranked and the first `MAX_GROUPS` kept.
+    /// tally sums every part before the groups are ranked and the page of `MAX_GROUPS` from
+    /// `offset` kept.
     pub(crate) fn aggregate_parts(
         &self,
         parts: &[(&[u32], &Selection)],
         by: Field,
         minimum: Option<usize>,
+        offset: usize,
         under: &str,
         cancelled: &AtomicBool,
     ) -> Result<Value> {
@@ -423,8 +440,8 @@ impl EngineQuery {
                 .then_with(|| b.count.cmp(&a.count))
                 .then_with(|| a_rank.cmp(b_rank))
         });
-        let more = entries.len().saturating_sub(MAX_GROUPS);
-        let entries=entries.into_iter().take(MAX_GROUPS).map(|(_,key,tally)| {
+        let (entries, more) = group_page(entries, offset);
+        let entries=entries.into_iter().map(|(_,key,tally)| {
             let (key,label)=match (texts.get(&key), &types) {
                 (Some((_, text)), _) => (text.clone(), text.clone()),
                 (None, Some(types)) => (

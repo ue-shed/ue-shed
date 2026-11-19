@@ -214,7 +214,7 @@ export function cannedPage(
 		total: answer.rows.length,
 		...(answer.problems ? { problems: answer.problems } : undefined),
 		...(groups && request.group
-			? { groups: { by: request.group, entries: groups, more: 0 } }
+			? { groups: { by: request.group, offset: 0, entries: groups, more: 0 } }
 			: undefined),
 		...(request.facets && answer.facets
 			? {

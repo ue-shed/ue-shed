@@ -101,6 +101,27 @@ describe("text problems", () => {
 			entries: [{ key: "Mushroom", count: 3 }],
 			more: 0
 		});
+		// Past the first page of 200, an offset lists the next groups.
+		const many = Array.from(
+			{ length: 205 },
+			(_, index): TextFacts => ({
+				...facts,
+				sources: [`Text ${String(index).padStart(3, "0")}`]
+			})
+		);
+		const first = textGroups(many, "source");
+		expect(first.entries).toHaveLength(200);
+		expect(first.more).toBe(5);
+		const second = textGroups(many, "source", 1, 200);
+		expect(second.entries.map((entry) => entry.key)).toEqual([
+			"Text 200",
+			"Text 201",
+			"Text 202",
+			"Text 203",
+			"Text 204"
+		]);
+		expect(second.more).toBe(0);
+		expect(textGroups(many, "source", 1, 0)).toEqual(first);
 		expect(textGroupOf(sourced, "source")).toEqual({ key: "Blue cap", label: "Blue cap" });
 	});
 });

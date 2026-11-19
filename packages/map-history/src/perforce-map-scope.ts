@@ -3,9 +3,13 @@ import { AssetReader, type AssetReaderError } from "@ue-shed/unreal-assets";
 import type { SavedWorld } from "@ue-shed/protocol";
 import { Effect, Schema } from "effect";
 import { MapHistoryError, mapHistoryNextStep } from "./errors.js";
-import { PerforceHistorySource, type PerforceMapMove } from "./perforce.js";
+import {
+	PerforceHistorySource,
+	type PerforceMapLineageOptions,
+	type PerforceMapMove
+} from "./perforce.js";
 import type { ScopedPerforceFile } from "./revision-plan.js";
-import type { PerforceMapHistoryQuery } from "./schema.js";
+import type { MapHistoryDiagnostic, PerforceMapHistoryQuery } from "./schema.js";
 
 const isMapHistoryError = Schema.is(MapHistoryError);
 
@@ -27,9 +31,38 @@ export interface ResolvedPerforceMapScope {
 export interface ResolvedPerforceMapLineage {
 	readonly locations: readonly ResolvedPerforceMapScope[];
 	readonly moves: readonly PerforceMapMove[];
+	/** Warnings about the lineage, such as a filelog window too short to see older moves. */
+	readonly diagnostics?: readonly MapHistoryDiagnostic[];
 }
 
+/** The default `limits.maxDirectMapMoves`: direct moves and renames followed per map. */
 export const MAX_DIRECT_MAP_MOVES = 16;
+
+/**
+ * The lineage limits a query asks for: `maxDirectMapMoves` (16 when absent) and
+ * `maxFilelogRevisions` (`maxChangelists + maxDirectMapMoves + 2` when absent).
+ */
+export function mapLineageLimits(
+	limits: PerforceMapHistoryQuery["limits"]
+): Omit<PerforceMapLineageOptions, "depotPath"> {
+	const maxMoves = limits.maxDirectMapMoves ?? MAX_DIRECT_MAP_MOVES;
+	return {
+		maxMoves,
+		maxRevisionRecords: limits.maxFilelogRevisions ?? limits.maxChangelists + maxMoves + 2
+	};
+}
+
+/** A warning for each lineage file whose filelog filled its window. */
+function lineageWindowDiagnostics(
+	filelogsAtLimit: readonly string[] | undefined,
+	maxRevisionRecords: number
+): readonly MapHistoryDiagnostic[] {
+	return (filelogsAtLimit ?? []).map((depotPath) => ({
+		code: "map_lineage_may_be_incomplete",
+		message: `Perforce filelog returned ${maxRevisionRecords} revisions of ${depotPath}, all that limits.maxFilelogRevisions allows, so moves and renames older than those were not followed and history from before them may be missing. Raise limits.maxFilelogRevisions to look further back.`,
+		retrySafe: false
+	}));
+}
 
 function savedWorldError(error: AssetReaderError): MapHistoryError {
 	const kind = error.kind === "resource_limit" ? "resource_limit" : "saved_world_decode";
@@ -222,11 +255,16 @@ export const resolvePerforceMapLineage = Effect.fn("MapHistory.resolvePerforceMa
 		if (source.resolveMapLineage === undefined) {
 			return { locations: [options.scope], moves: [] };
 		}
+		const limits = mapLineageLimits(options.limits);
 		const lineage = yield* source.resolveMapLineage({
 			depotPath: options.scope.mapDepotPath,
-			maxMoves: MAX_DIRECT_MAP_MOVES,
-			maxRevisionRecords: options.limits.maxChangelists + MAX_DIRECT_MAP_MOVES + 2
+			...limits
 		});
+		const diagnostics = lineageWindowDiagnostics(
+			lineage.filelogsAtLimit,
+			limits.maxRevisionRecords
+		);
+		const warned = diagnostics.length === 0 ? undefined : { diagnostics };
 		if (lineage.locations.length === 0) {
 			return yield* new MapHistoryError({
 				kind: "ambiguous_map_lineage",
@@ -249,7 +287,7 @@ export const resolvePerforceMapLineage = Effect.fn("MapHistory.resolvePerforceMa
 					nextStep: "fix_input"
 				});
 			}
-			return { locations: [options.scope], moves: [] };
+			return { locations: [options.scope], moves: [], ...warned };
 		}
 		if (lineage.moves.length > 0 && options.scope.sourceKind === "world_partition") {
 			return yield* new MapHistoryError({
@@ -312,7 +350,7 @@ export const resolvePerforceMapLineage = Effect.fn("MapHistory.resolvePerforceMa
 				});
 			}
 		}
-		return { locations, moves: lineage.moves };
+		return { locations, moves: lineage.moves, ...warned };
 	}
 );
 

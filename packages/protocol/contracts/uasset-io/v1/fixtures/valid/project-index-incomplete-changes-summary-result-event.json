@@ -1,0 +1,360 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 25
+		}
+	},
+	"kind": "result",
+	"requestId": "project-index-change-limit-001",
+	"result": {
+		"kind": "project_index_summary",
+		"summary": {
+			"changedPackages": 70000,
+			"completeness": "partial",
+			"diagnostics": [
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B000.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B001.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B002.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B003.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B004.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B005.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B006.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B007.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B008.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B009.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B010.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B011.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B012.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B013.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B014.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B015.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B016.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B017.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B018.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B019.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B020.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B021.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B022.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B023.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B024.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B025.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B026.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B027.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B028.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B029.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B030.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B031.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B032.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B033.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B034.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B035.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B036.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B037.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B038.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B039.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B040.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B041.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B042.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B043.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B044.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B045.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B046.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B047.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B048.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B049.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B050.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B051.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B052.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B053.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B054.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B055.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B056.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B057.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B058.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B059.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B060.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B061.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B062.uasset",
+					"retrySafe": true
+				},
+				{
+					"code": "header_read",
+					"message": "could not read header evidence for Content/Broken/B063.uasset",
+					"retrySafe": true
+				}
+			],
+			"omittedDiagnostics": 6,
+			"generation": 8,
+			"mapCount": 12,
+			"packageCount": 70000,
+			"projectId": "c:/project",
+			"removedPackages": 2,
+			"mounts": [
+				{
+					"name": "/Game/",
+					"path": "Content/"
+				}
+			],
+			"changes": {
+				"baseGeneration": 7,
+				"changed": [],
+				"removed": [],
+				"complete": false,
+				"total": 70002
+			}
+		}
+	},
+	"sequence": 3
+}

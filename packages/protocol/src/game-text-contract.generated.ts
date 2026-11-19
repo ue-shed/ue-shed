@@ -4,7 +4,7 @@
 /** The engine build and contract this host was built against. */
 export const gameTextEngineContract = {
 	buildId: "0.31.0",
-	contractHash: "c598f76143a24160dc847a9f0287a1186d6d1893cee3a2da5480b940977b59f3"
+	contractHash: "c51e2c75a7d9a8347bf2df8c786eaef0262e347d410c0fc1bdb425651debd250"
 } as const;
 
 /**
@@ -451,7 +451,13 @@ export type GroupsPart = { by: QueryField,
 /**
  * Only groups holding at least this many matching rows.
  */
-minSize?: number, };
+minSize?: number, 
+/**
+ * Groups skipped before the page, in rank order; 0 when absent. Ask for the next page at
+ * this offset plus the page's length while `more` is above 0. An offset past the last group
+ * lists none.
+ */
+offset?: number, };
 
 export type QueryFacet = { by: QueryField, 
 /**
@@ -461,7 +467,7 @@ under?: string, };
 
 export type QueryAnswer = { counts?: JsonValue, total?: number, problems?: JsonValue, 
 /**
- * The groups, with the field they are `by`.
+ * The groups, with the field they are `by` and the `offset` their page starts at.
  */
 groups?: { readonly by: QueryField; readonly [key: string]: JsonValue }, 
 /**

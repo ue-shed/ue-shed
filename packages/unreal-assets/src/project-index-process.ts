@@ -231,7 +231,8 @@ const toQueryOperation = (
 /** Scope and change fields for a target; present only when set, so older workers still serve plain requests. */
 const scopeFields = (target: ProjectIndexRefreshTarget) => ({
 	...(target.plugins === undefined ? undefined : { plugins: target.plugins }),
-	...(target.changes === undefined ? undefined : { changes: target.changes })
+	...(target.changes === undefined ? undefined : { changes: target.changes }),
+	...(target.maximumChanges === undefined ? undefined : { maximumChanges: target.maximumChanges })
 });
 
 const toWireFilter = (filter: ProjectIndexFilter): UAssetIoProjectIndexFilter => {
@@ -264,7 +265,10 @@ const makeRequest = (
 		}
 	);
 
-/** The oldest contract minor that carries an operation: v1.23 for dependency walks, scopes and changes. */
+/**
+ * The oldest contract minor that carries an operation: v1.23 for dependency walks, scopes and
+ * changes, v1.25 for a change report limit.
+ */
 const contractMinorFor = (operation: UAssetIoOperation): number => {
 	switch (operation.kind) {
 		case "project_index_count":
@@ -274,7 +278,11 @@ const contractMinorFor = (operation: UAssetIoOperation): number => {
 		case "project_index_status":
 		case "project_index_refresh":
 		case "project_index_rebuild":
-			return "plugins" in operation || "changes" in operation ? 23 : 1;
+			return "maximumChanges" in operation
+				? 25
+				: "plugins" in operation || "changes" in operation
+					? 23
+					: 1;
 		default:
 			return 1;
 	}

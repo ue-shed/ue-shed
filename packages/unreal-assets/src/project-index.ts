@@ -9,9 +9,16 @@ import { findValidatedPage, retainValidatedPage } from "./project-index-page-val
 export const PROJECT_INDEX_MAX_PAGE_SIZE = 1024;
 /**
  * Maximum diagnostics retained in one Project Index summary: 64. Completeness remains
- * explicit even when diagnostic output is bounded.
+ * explicit even when diagnostic output is bounded, and `omittedDiagnostics` counts the rest.
  */
 export const PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
+/**
+ * Changed and removed paths a refresh's change report lists when the target sets no
+ * `maximumChanges`: 65,536.
+ */
+export const PROJECT_INDEX_DEFAULT_MAXIMUM_CHANGES = 65_536;
+/** The most changed and removed paths a target's `maximumChanges` may ask for: 1,048,576. */
+export const PROJECT_INDEX_MAX_CHANGES = 1_048_576;
 /**
  * Environment setting UE_SHED_PROJECT_INDEX_CACHE_ROOT used by ProjectIndexConfigLive. A host
  * may instead provide an explicit cache-root layer.
@@ -84,7 +91,15 @@ export interface ProjectIndexTarget extends Schema.Schema.Type<typeof ProjectInd
  */
 export const ProjectIndexRefreshTarget = Schema.Struct({
 	...ProjectIndexTarget.fields,
-	changes: Schema.optionalKey(Schema.Boolean)
+	changes: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * The most changed and removed paths `changes` lists, 1 to 1,048,576; 65,536 when absent. Past
+	 * it `changes` says `complete: false`, lists none and counts them in `total`; raise it to get
+	 * the paths after a branch switch or mass resave. Needs uasset-io v1.25.
+	 */
+	maximumChanges: Schema.optionalKey(
+		Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: PROJECT_INDEX_MAX_CHANGES }))
+	)
 });
 /** A refresh or rebuild target, optionally asking for the paths that changed on disk. */
 export interface ProjectIndexRefreshTarget extends Schema.Schema.Type<
@@ -118,16 +133,16 @@ export const ProjectIndexMount = Schema.Struct({
 export interface ProjectIndexMount extends Schema.Schema.Type<typeof ProjectIndexMount> {}
 
 /**
- * What a refresh saw change on disk since `baseGeneration` (absent for a first or rebuilt
- * index): packages and sidecars that are new or whose size or modified time changed, and those
- * that are gone. Re-reading for a newer index profile is not a change. When `complete` is false
- * there were more than the report holds and both lists are empty: treat everything as changed.
+ * Packages and sidecars new, changed (size or modified time) or gone since `baseGeneration`.
+ * `complete: false`: more than the target's `maximumChanges` (65,536 when absent), both lists
+ * empty and `total` counting them (v1.25). Treat everything as changed, or raise the limit.
  */
 export const ProjectIndexChanges = Schema.Struct({
 	baseGeneration: Schema.optionalKey(ProjectIndexGeneration),
 	changed: Schema.Array(BoundedPath),
 	removed: Schema.Array(BoundedPath),
-	complete: Schema.Boolean
+	complete: Schema.Boolean,
+	total: Schema.optionalKey(NonNegativeInt)
 });
 /** What a refresh saw change on disk since its base generation. */
 export interface ProjectIndexChanges extends Schema.Schema.Type<typeof ProjectIndexChanges> {}
@@ -136,7 +151,7 @@ export interface ProjectIndexChanges extends Schema.Schema.Type<typeof ProjectIn
  * Committed catalog identity/generation, package/map counts, changed/removed counts and
  * bounded diagnostics. Partial completeness must remain visible to callers. With uasset-io
  * v1.23, `mounts` lists the indexed content roots, and a refresh that asked for `changes`
- * reports them.
+ * reports them. With v1.25, `omittedDiagnostics` counts the diagnostics past the first 64.
  */
 export const ProjectIndexSummary = Schema.Struct({
 	changedPackages: NonNegativeInt,
@@ -144,6 +159,8 @@ export const ProjectIndexSummary = Schema.Struct({
 	diagnostics: Schema.Array(ProjectIndexDiagnostic).check(
 		Schema.isMaxLength(PROJECT_INDEX_MAX_DIAGNOSTICS)
 	),
+	/** Diagnostics the refresh recorded past the first 64 and left out; absent when none were. */
+	omittedDiagnostics: Schema.optionalKey(NonNegativeInt),
 	generation: ProjectIndexGeneration,
 	mapCount: NonNegativeInt,
 	packageCount: NonNegativeInt,

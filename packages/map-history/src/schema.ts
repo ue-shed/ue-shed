@@ -41,7 +41,19 @@ export const MapHistoryLimits = Schema.Struct({
 	maxPackages: PositiveInt,
 	maxMaterializedFiles: PositiveInt,
 	maxConcurrency: PositiveInt,
-	maxDurationMs: PositiveInt
+	maxDurationMs: PositiveInt,
+	/**
+	 * Direct moves and renames followed when tracing the selected map back through Perforce; 16
+	 * when absent. A map moved more often fails with `map_lineage_limit`, whose recovery names this
+	 * limit.
+	 */
+	maxDirectMapMoves: Schema.optionalKey(PositiveInt),
+	/**
+	 * Newest `p4 filelog` revisions read per lineage file; older moves are not seen. Default
+	 * `maxChangelists + maxDirectMapMoves + 2`. A full window adds a `map_lineage_may_be_incomplete`
+	 * diagnostic naming this limit: history from before an older move may be missing.
+	 */
+	maxFilelogRevisions: Schema.optionalKey(PositiveInt)
 });
 export type MapHistoryLimits = Schema.Schema.Type<typeof MapHistoryLimits>;
 

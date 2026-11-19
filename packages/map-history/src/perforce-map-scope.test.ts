@@ -2,9 +2,17 @@ import type { SavedWorld } from "@ue-shed/protocol";
 import { makeAssetReaderTestLayer } from "@ue-shed/unreal-assets";
 import { describe, expect, it } from "@effect/vitest";
 import { Stream, Effect, Layer, Schema } from "effect";
-import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
+import {
+	makePerforceHistorySourceTestLayer,
+	type PerforceHistorySourceApi,
+	type PerforceMapLineageOptions
+} from "./perforce.js";
 import { PerforceMapHistoryQuery } from "./schema.js";
-import { resolvePerforceMapScope, scopedPerforceFile } from "./perforce-map-scope.js";
+import {
+	resolvePerforceMapLineage,
+	resolvePerforceMapScope,
+	scopedPerforceFile
+} from "./perforce-map-scope.js";
 const decodePerforceMapHistoryQuery = Schema.decodeSync(PerforceMapHistoryQuery);
 
 function query() {
@@ -258,4 +266,81 @@ describe("resolvePerforceMapScope", () => {
 			)
 		).toBeUndefined();
 	});
+});
+
+describe("resolvePerforceMapLineage", () => {
+	const scope = {
+		fileSpecs: ["//Project/Main/Content/Maps/L_Example.*"],
+		mapDepotPath: "//Project/Main/Content/Maps/L_Example.umap",
+		mapPackageName: "/Game/Maps/L_Example",
+		mapProjectRelativePath: "Content/Maps/L_Example.umap",
+		sourceKind: "level" as const
+	};
+	const lineage = (
+		limits: Partial<PerforceMapHistoryQuery["limits"]>,
+		filelogsAtLimit?: readonly string[]
+	) => {
+		const requests: PerforceMapLineageOptions[] = [];
+		const layer = makePerforceHistorySourceTestLayer({
+			...perforceSource(),
+			resolveMapLineage: (request) => {
+				requests.push(request);
+				return Effect.succeed({
+					locations: [
+						{
+							depotPath: scope.mapDepotPath,
+							localPath: "C:/Project/" + scope.mapProjectRelativePath
+						}
+					],
+					moves: [],
+					...(filelogsAtLimit === undefined ? undefined : { filelogsAtLimit })
+				});
+			}
+		});
+		return resolvePerforceMapLineage({
+			limits: { ...query().limits, ...limits },
+			projectRoot: query().projectRoot,
+			scope
+		}).pipe(
+			Effect.map((resolved) => ({ resolved, request: requests[0] })),
+			Effect.provide(layer)
+		);
+	};
+
+	it.effect("reads 16 direct moves and maxChangelists + 18 filelog revisions by default", () =>
+		Effect.gen(function* () {
+			const { resolved, request } = yield* lineage({});
+			expect(request).toMatchObject({ maxMoves: 16, maxRevisionRecords: 118 });
+			expect(resolved).toEqual({ locations: [scope], moves: [] });
+		})
+	);
+
+	it.effect("takes both lineage limits from the query", () =>
+		Effect.gen(function* () {
+			expect((yield* lineage({ maxDirectMapMoves: 4 })).request).toMatchObject({
+				maxMoves: 4,
+				maxRevisionRecords: 106
+			});
+			expect(
+				(yield* lineage({ maxDirectMapMoves: 4, maxFilelogRevisions: 5000 })).request
+			).toMatchObject({ maxMoves: 4, maxRevisionRecords: 5000 });
+		})
+	);
+
+	it.effect("says lineage may be incomplete when a filelog fills its window", () =>
+		Effect.gen(function* () {
+			const { resolved } = yield* lineage({ maxFilelogRevisions: 40 }, [scope.mapDepotPath]);
+			expect(resolved.locations).toEqual([scope]);
+			expect(resolved.diagnostics).toEqual([
+				{
+					code: "map_lineage_may_be_incomplete",
+					message: expect.stringContaining("limits.maxFilelogRevisions"),
+					retrySafe: false
+				}
+			]);
+			expect(resolved.diagnostics?.[0]?.message).toContain(
+				`returned 40 revisions of ${scope.mapDepotPath}`
+			);
+		})
+	);
 });

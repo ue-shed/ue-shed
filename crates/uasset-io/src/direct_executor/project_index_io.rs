@@ -364,6 +364,8 @@ pub(crate) struct RefreshOptions {
     pub(crate) rebuild: bool,
     /// Report the paths that changed on disk since the previous generation.
     pub(crate) changes: bool,
+    /// The most changed and removed paths the report lists before it only counts them.
+    pub(crate) maximum_changes: usize,
 }
 
 pub(crate) fn refresh(
@@ -386,18 +388,20 @@ pub(crate) fn refresh(
         on_progress(progress);
     };
     let events = if rebuild {
-        project_index::rebuild(
+        project_index::rebuild_listing_changes(
             catalog,
             &scanner,
             project_root,
+            options.maximum_changes,
             cancellation,
             &mut record_progress,
         )
     } else {
-        project_index::refresh(
+        project_index::refresh_listing_changes(
             catalog,
             &scanner,
             project_root,
+            options.maximum_changes,
             cancellation,
             &mut record_progress,
         )
@@ -427,7 +431,7 @@ pub(crate) fn refresh(
         .collect();
     let mut summary = to_protocol_summary(summary);
     if options.changes {
-        summary.changes = Some(to_protocol_changes(changes));
+        summary.changes = Some(Box::new(to_protocol_changes(changes)));
     }
     Ok(ProjectIndexRefreshOutput {
         diagnostics,
@@ -604,6 +608,7 @@ fn to_protocol_changes(changes: RefreshChanges) -> ProjectIndexChanges {
         changed: changes.changed,
         removed: changes.removed,
         complete: changes.complete,
+        total: (!changes.complete).then_some(changes.total),
     }
 }
 
@@ -619,6 +624,7 @@ fn to_protocol_summary(summary: RefreshSummary) -> ProjectIndexSummary {
             .into_iter()
             .map(|diagnostic| to_protocol_diagnostic(&diagnostic))
             .collect(),
+        omitted_diagnostics: summary.omitted_diagnostics,
         generation: summary.generation.get(),
         map_count: summary.map_count,
         package_count: summary.package_count,

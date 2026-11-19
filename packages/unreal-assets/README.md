@@ -117,8 +117,9 @@ const page =
 
 `plugins: true` selects a separate catalog that also indexes content plugins under `Plugins/`
 (its `projectId` ends in `#plugins`), so a dependency on plugin content resolves. `changes: true`
-adds `summary.changes`, up to 65,536 paths; when there are more, `complete` is false and the lists
-are empty. The walk does not apply `CoreRedirects`, mounts every content plugin whether or not the
+adds `summary.changes`, up to 65,536 paths or the target's `maximumChanges` (at most 1,048,576);
+when there are more, `complete` is false, the lists are empty and `total` counts the changes. A
+summary that kept only the first 64 diagnostics counts the rest in `omittedDiagnostics`. The walk does not apply `CoreRedirects`, mounts every content plugin whether or not the
 project enables it, and does not read `AdditionalPluginDirectories`.
 
 The process and compatibility boundary for read-only inspection of saved Unreal asset packages. It

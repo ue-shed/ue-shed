@@ -85,10 +85,17 @@ const UAssetIoScanFilters = Schema.Struct({
 /** Enforced below every Project Index caller; mirrored in `@ue-shed/unreal-assets`. */
 export const UASSET_IO_PROJECT_INDEX_MAX_PAGE_SIZE = 1024;
 /**
- * Most diagnostics a Project Index summary carries. The worker keeps the first 64 and drops the
- * rest, so a full list does not mean every problem was reported.
+ * Most diagnostics a Project Index summary carries. The worker keeps the first 64; from v1.25
+ * the summary's `omittedDiagnostics` counts the rest.
  */
 export const UASSET_IO_PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
+/**
+ * Changed and removed paths a refresh's change report lists when the request sets no
+ * `maximumChanges`: 65,536. Past it the report is incomplete and lists none.
+ */
+export const UASSET_IO_PROJECT_INDEX_DEFAULT_MAXIMUM_CHANGES = 65_536;
+/** The most changed and removed paths a request's `maximumChanges` may ask for: 1,048,576. */
+export const UASSET_IO_PROJECT_INDEX_MAX_CHANGES = 1_048_576;
 
 const ProjectIndexPageLimit = Schema.Int.check(
 	Schema.isGreaterThan(0),
@@ -247,16 +254,16 @@ export interface UAssetIoProjectIndexMount extends Schema.Schema.Type<
 > {}
 
 /**
- * v1.23: what a refresh saw change on disk since `baseGeneration` (absent for a first or rebuilt
- * index): packages and sidecars that are new or whose size or modified time changed, and those
- * that are gone. Re-reading an entry for a newer index profile is not a change. When `complete` is
- * false there were more than 65,536 and both lists are empty.
+ * v1.23: packages and sidecars new, changed (size or modified time) or gone since
+ * `baseGeneration`. `complete: false`: more than the request's `maximumChanges` (65,536 when
+ * absent), both lists empty and, from v1.25, `total` counting them.
  */
 export const UAssetIoProjectIndexChanges = Schema.Struct({
 	baseGeneration: Schema.optionalKey(PositiveInt),
 	changed: Schema.Array(NonEmptyString),
 	removed: Schema.Array(NonEmptyString),
-	complete: Schema.Boolean
+	complete: Schema.Boolean,
+	total: Schema.optionalKey(NonNegativeInt)
 }).annotate({ identifier: "UAssetIoProjectIndexChanges" });
 export interface UAssetIoProjectIndexChanges extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexChanges
@@ -264,8 +271,9 @@ export interface UAssetIoProjectIndexChanges extends Schema.Schema.Type<
 
 /**
  * Outcome of the last committed refresh; queries name its `generation`. `completeness` is
- * `partial` when a diagnostic was recorded (at most 64 are kept). From v1.23 it lists `mounts`,
- * and `changes` when the refresh asked for them.
+ * `partial` when a diagnostic was recorded (at most 64 are kept; from v1.25 `omittedDiagnostics`
+ * counts the rest and is absent when none were left out). From v1.23 it lists `mounts`, and
+ * `changes` when the refresh asked for them.
  */
 export const UAssetIoProjectIndexSummary = Schema.Struct({
 	changedPackages: NonNegativeInt,
@@ -273,6 +281,7 @@ export const UAssetIoProjectIndexSummary = Schema.Struct({
 	diagnostics: Schema.Array(UAssetIoProjectIndexDiagnostic).check(
 		Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_DIAGNOSTICS)
 	),
+	omittedDiagnostics: Schema.optionalKey(NonNegativeInt),
 	generation: PositiveInt,
 	mapCount: NonNegativeInt,
 	packageCount: NonNegativeInt,
@@ -546,13 +555,15 @@ const ExistingOperation = Schema.Union([
 		kind: Schema.Literal("project_index_refresh"),
 		...UAssetIoProjectIndexTarget,
 		plugins: Schema.optionalKey(Schema.Never),
-		changes: Schema.optionalKey(Schema.Never)
+		changes: Schema.optionalKey(Schema.Never),
+		maximumChanges: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("project_index_rebuild"),
 		...UAssetIoProjectIndexTarget,
 		plugins: Schema.optionalKey(Schema.Never),
-		changes: Schema.optionalKey(Schema.Never)
+		changes: Schema.optionalKey(Schema.Never),
+		maximumChanges: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		cacheRoot: NonEmptyString,
@@ -610,19 +621,48 @@ const ProjectIndexDependencyOperation = Schema.Union([
 		kind: Schema.Literal("project_index_refresh"),
 		...UAssetIoProjectIndexTarget,
 		plugins: Schema.optionalKey(Schema.Boolean),
-		changes: Schema.optionalKey(Schema.Boolean)
+		changes: Schema.optionalKey(Schema.Boolean),
+		maximumChanges: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("project_index_rebuild"),
 		...UAssetIoProjectIndexTarget,
 		plugins: Schema.optionalKey(Schema.Boolean),
-		changes: Schema.optionalKey(Schema.Boolean)
+		changes: Schema.optionalKey(Schema.Boolean),
+		maximumChanges: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		cacheRoot: NonEmptyString,
 		kind: Schema.Literal("project_index_query"),
 		pageEncoding: Schema.optionalKey(Schema.Literal("dictionary")),
 		query: UAssetIoProjectIndexDependencyQuery
+	})
+]);
+const ProjectIndexMaximumChanges = Schema.Int.check(
+	Schema.isBetween({ minimum: 1, maximum: UASSET_IO_PROJECT_INDEX_MAX_CHANGES })
+).annotate({ identifier: "UAssetIoProjectIndexMaximumChanges" });
+const ProjectIndexChangeLimitFields = {
+	...UAssetIoProjectIndexTarget,
+	plugins: Schema.optionalKey(Schema.Boolean),
+	changes: Schema.optionalKey(Schema.Boolean),
+	/**
+	 * The most changed and removed paths the change report lists, 1 to 1,048,576; 65,536 when
+	 * absent. Past it the report says `complete: false`, lists none and counts them in `total`.
+	 */
+	maximumChanges: ProjectIndexMaximumChanges
+};
+/**
+ * v1.25: a refresh or rebuild that sets `maximumChanges`, the change report's limit. A host that
+ * needs every changed path after a branch switch or mass resave raises it instead of reloading.
+ */
+const ProjectIndexChangeLimitOperation = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("project_index_refresh"),
+		...ProjectIndexChangeLimitFields
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("project_index_rebuild"),
+		...ProjectIndexChangeLimitFields
 	})
 ]);
 /**
@@ -633,6 +673,7 @@ export const UAssetIoOperation = Schema.Union([
 	GameTextIndexOperation,
 	...ExistingOperation.members,
 	...ProjectIndexDependencyOperation.members,
+	...ProjectIndexChangeLimitOperation.members,
 	CompareBlueprintsOperation,
 	PackageHeaderOperation,
 	StagedPackageTextOperation,
@@ -713,6 +754,18 @@ export const UAssetIoRequest = Schema.Union([
 			})
 		).annotate({ identifier: "UAssetIoProjectIndexDependencyContract" }),
 		operation: ProjectIndexDependencyOperation
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(25))
+				})
+			})
+		).annotate({ identifier: "UAssetIoProjectIndexChangeLimitContract" }),
+		operation: ProjectIndexChangeLimitOperation
 	}),
 	Schema.Struct({
 		...RequestFields,

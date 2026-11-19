@@ -1761,5 +1761,29 @@ fn project_index_walks_package_dependencies_and_reports_changes() {
     let (success, events, _) = run_request(project_index_request_at(22, plugins));
     assert!(!success || events.iter().any(|event| event["kind"] == "rejected"));
 
+    // v1.25: past `maximumChanges` the report lists no paths and counts them; a rebuild reports
+    // every entry as changed.
+    let mut limited = target("project_index_rebuild");
+    limited["maximumChanges"] = serde_json::json!(1);
+    let (success, events, stderr) = run_request(project_index_request_at(25, limited.clone()));
+    assert!(success, "limited rebuild failed: {stderr}");
+    assert_valid_events(&events);
+    let changes = &result_of(&events, "project_index_summary")["summary"]["changes"];
+    assert_eq!(changes["complete"], false);
+    assert_eq!(changes["changed"], serde_json::json!([]));
+    assert_eq!(changes["removed"], serde_json::json!([]));
+    assert!(changes["total"].as_u64().unwrap() > 1, "{changes}");
+    // A limit the changes fit in lists them all, without a total.
+    limited["maximumChanges"] = serde_json::json!(1_048_576);
+    let (success, events, stderr) = run_request(project_index_request_at(25, limited.clone()));
+    assert!(success, "rebuild failed: {stderr}");
+    let changes = &result_of(&events, "project_index_summary")["summary"]["changes"];
+    assert_eq!(changes["complete"], true);
+    assert!(changes.get("total").is_none());
+    assert!(!changes["changed"].as_array().unwrap().is_empty());
+    // Older clients cannot set the limit.
+    let (success, events, _) = run_request(project_index_request_at(24, limited));
+    assert!(!success || events.iter().any(|event| event["kind"] == "rejected"));
+
     let _ = std::fs::remove_dir_all(&cache_root);
 }

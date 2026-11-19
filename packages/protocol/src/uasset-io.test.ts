@@ -107,6 +107,8 @@ describe("uasset IO protocol v1", () => {
 					"valid/project-index-dependents-request.json",
 					"valid/project-index-plugins-refresh-request.json",
 					"valid/project-index-changes-summary-result-event.json",
+					"valid/project-index-change-limit-refresh-request.json",
+					"valid/project-index-incomplete-changes-summary-result-event.json",
 					"valid/project-index-package-page-result-event.json",
 					"valid/project-index-package-dictionary-page-result-event.json",
 					"valid/game-text-disk-changes-request.json"
@@ -150,6 +152,8 @@ describe("uasset IO protocol v1", () => {
 					"invalid/project-index-dependencies-request-old-minor.json",
 					"invalid/project-index-dependencies-request-no-paths.json",
 					"invalid/project-index-plugins-refresh-request-old-minor.json",
+					"invalid/project-index-change-limit-request-old-minor.json",
+					"invalid/project-index-change-limit-request-over-bound.json",
 					"invalid/saved-world-unknown-actor-decode.json",
 					"invalid/saved-world-unsupported-minor.json",
 					"invalid/saved-world-unsupported-major.json",

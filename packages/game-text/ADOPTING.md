@@ -149,7 +149,9 @@ matches text whose saved places include a package with that main asset class; `f
 lists the types with readable labels. `group: "source"` keys and labels each group by its text
 and counts the matching lines holding it (units without a target, each under its first source in
 UTF-16 order). `minGroupSize` leaves smaller groups out of `groups`, including `more`; it does not
-narrow totals or `openGroup`. Key changes are on each line's `keyChange`.
+narrow totals or `openGroup`. `groups` lists at most 200 groups, worst first; while its `more` is
+above 0, ask again with `groupOffset` set to `groups.offset + groups.entries.length` for the next
+page. Key changes are on each line's `keyChange`.
 
 Bulk reads (`corpus`, exports, `readLocalizationLines`, `localizationLines`) run in a second native
 process of the model, opened on the first of them, so they never hold a search or focus. The

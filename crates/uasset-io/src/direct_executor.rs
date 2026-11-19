@@ -38,7 +38,9 @@ use crate::protocol_result::{
 };
 
 pub(crate) use blueprint::{blueprint_with_cancellation, compare_blueprints_with_cancellation};
-pub(crate) use catalog::IndexScope;
+pub(crate) use catalog::{
+    IndexScope, PROJECT_INDEX_MAX_REPORTED_CHANGES, PROJECT_INDEX_MAX_REPORTED_CHANGES_LIMIT,
+};
 pub(crate) use project_index::RefreshProgress;
 pub(crate) use project_index_io::gathered;
 pub(crate) use project_index_io::{

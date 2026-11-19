@@ -91,11 +91,18 @@ export interface PerforceMapMove {
 export interface PerforceMapLineage {
 	readonly locations: readonly PerforceMapLocation[];
 	readonly moves: readonly PerforceMapMove[];
+	/**
+	 * Depot files whose filelog returned `maxRevisionRecords` revisions, the whole window: moves
+	 * and renames older than those revisions were not seen.
+	 */
+	readonly filelogsAtLimit?: readonly string[];
 }
 
 export interface PerforceMapLineageOptions {
 	readonly depotPath: string;
+	/** Direct moves followed; more fail with `map_lineage_limit`. */
 	readonly maxMoves: number;
+	/** Revisions `p4 filelog -m` returns for each lineage file, newest first. */
 	readonly maxRevisionRecords: number;
 }
 
@@ -280,11 +287,16 @@ function mapLineageError(
 		message,
 		recovery:
 			kind === "map_lineage_limit"
-				? "Choose a range with fewer direct map relocations."
+				? "Raise limits.maxDirectMapMoves to follow every direct move and rename of this map. Lineage covers the map's whole history, so a shorter range does not help."
 				: "Inspect the map's direct Perforce move records and resolve the ambiguity before retrying.",
 		retrySafe: false,
 		nextStep: "fix_input"
 	});
+}
+
+/** How many revisions a tagged filelog record lists. */
+function filelogRevisions(record: Schema.JsonObject): number {
+	return Object.keys(record).filter((key) => /^rev\d+$/u.test(key)).length;
 }
 
 function taggedString(record: Schema.JsonObject, key: string): string | undefined {
@@ -714,6 +726,7 @@ export function perforceHistorySourceLayer(
 					const pending = [request.depotPath];
 					const queried = new Set<string>();
 					const discovered = new Map<string, PerforceMapMove>();
+					const filelogsAtLimit = new Set<string>();
 					while (pending.length > 0) {
 						const depotPath = pending.shift();
 						if (depotPath === undefined || queried.has(depotPath)) continue;
@@ -740,6 +753,14 @@ export function perforceHistorySourceLayer(
 								`Perforce could not read complete filelog records for ${depotPath}.`
 							);
 						}
+						for (const record of raw.items) {
+							const file = taggedString(record, "depotFile");
+							if (
+								file !== undefined &&
+								filelogRevisions(record) >= request.maxRevisionRecords
+							)
+								filelogsAtLimit.add(file);
+						}
 						for (const move of directMovesFromFilelog(raw.items)) {
 							discovered.set(
 								`${move.change}\u0000${move.fromDepotPath}\u0000${move.toDepotPath}`,
@@ -751,7 +772,7 @@ export function perforceHistorySourceLayer(
 						if (discovered.size > request.maxMoves) {
 							return yield* mapLineageError(
 								"map_lineage_limit",
-								`Map lineage exceeds the direct-move limit of ${request.maxMoves}.`
+								`Map lineage exceeds the direct-move limit of ${request.maxMoves} (limits.maxDirectMapMoves).`
 							);
 						}
 					}
@@ -783,7 +804,13 @@ export function perforceHistorySourceLayer(
 						}
 						locations.push({ depotPath, localPath: mapping.localFile });
 					}
-					return { locations, moves: ordered.moves };
+					return {
+						locations,
+						moves: ordered.moves,
+						...(filelogsAtLimit.size === 0
+							? undefined
+							: { filelogsAtLimit: [...filelogsAtLimit].sort() })
+					};
 				},
 				Effect.scoped
 			);

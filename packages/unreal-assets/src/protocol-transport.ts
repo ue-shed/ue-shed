@@ -645,13 +645,15 @@ export function makeProtocolRequest(
 	}
 	if (operation.kind === "compare_blueprints") return { ...fields, operation };
 	if (operation.kind === "package_header") return { ...fields, operation };
-	// v1.23 Project Index shapes (plugin scope, change reports) are supersets of the older ones.
-	if (
-		operation.kind === "project_index_status" ||
-		operation.kind === "project_index_refresh" ||
-		operation.kind === "project_index_rebuild"
-	)
-		return { ...fields, operation };
+	// v1.23 Project Index shapes (plugin scope, change reports) are supersets of the older ones;
+	// a v1.25 refresh or rebuild also sets its change report limit.
+	if (operation.kind === "project_index_refresh" || operation.kind === "project_index_rebuild") {
+		const { maximumChanges, ...rest } = operation;
+		return maximumChanges === undefined
+			? { ...fields, operation: rest }
+			: { ...fields, operation: { ...rest, maximumChanges } };
+	}
+	if (operation.kind === "project_index_status") return { ...fields, operation };
 	if (operation.kind === "project_index_query") {
 		const { query, ...rest } = operation;
 		if (query.kind === "dependencies" || query.kind === "dependents")

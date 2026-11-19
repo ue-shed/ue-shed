@@ -705,6 +705,47 @@
 				}
 			]
 		},
+		"UAssetIoProjectIndexChangeLimitContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 25
+								}
+							]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexMaximumChanges": {
+			"type": "integer",
+			"allOf": [
+				{
+					"minimum": 1
+				},
+				{
+					"maximum": 1048576
+				}
+			]
+		},
 		"UAssetIoBlueprintComparisonContract": {
 			"type": "object",
 			"properties": {
@@ -4469,6 +4510,9 @@
 										},
 										"changes": {
 											"not": {}
+										},
+										"maximumChanges": {
+											"not": {}
 										}
 									},
 									"required": ["kind", "cacheRoot", "projectRoot"],
@@ -4491,6 +4535,9 @@
 											"not": {}
 										},
 										"changes": {
+											"not": {}
+										},
+										"maximumChanges": {
 											"not": {}
 										}
 									},
@@ -4593,6 +4640,9 @@
 										},
 										"changes": {
 											"type": "boolean"
+										},
+										"maximumChanges": {
+											"not": {}
 										}
 									},
 									"required": ["kind", "cacheRoot", "projectRoot"],
@@ -4616,6 +4666,9 @@
 										},
 										"changes": {
 											"type": "boolean"
+										},
+										"maximumChanges": {
+											"not": {}
 										}
 									},
 									"required": ["kind", "cacheRoot", "projectRoot"],
@@ -4640,6 +4693,88 @@
 										}
 									},
 									"required": ["cacheRoot", "kind", "query"],
+									"additionalProperties": false
+								}
+							]
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
+							"$ref": "#/$defs/UAssetIoProjectIndexChangeLimitContract"
+						},
+						"operation": {
+							"anyOf": [
+								{
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": ["project_index_refresh"]
+										},
+										"cacheRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"projectRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"plugins": {
+											"type": "boolean"
+										},
+										"changes": {
+											"type": "boolean"
+										},
+										"maximumChanges": {
+											"$ref": "#/$defs/UAssetIoProjectIndexMaximumChanges"
+										}
+									},
+									"required": [
+										"kind",
+										"cacheRoot",
+										"projectRoot",
+										"maximumChanges"
+									],
+									"additionalProperties": false
+								},
+								{
+									"type": "object",
+									"properties": {
+										"kind": {
+											"type": "string",
+											"enum": ["project_index_rebuild"]
+										},
+										"cacheRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"projectRoot": {
+											"$ref": "#/$defs/UAssetIoNonEmptyString"
+										},
+										"plugins": {
+											"type": "boolean"
+										},
+										"changes": {
+											"type": "boolean"
+										},
+										"maximumChanges": {
+											"$ref": "#/$defs/UAssetIoProjectIndexMaximumChanges"
+										}
+									},
+									"required": [
+										"kind",
+										"cacheRoot",
+										"projectRoot",
+										"maximumChanges"
+									],
 									"additionalProperties": false
 								}
 							]

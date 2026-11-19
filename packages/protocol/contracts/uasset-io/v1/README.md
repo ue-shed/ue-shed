@@ -269,6 +269,17 @@ scans and other reads of files on disk are unchanged: a file truncated on disk s
 `asset_malformed_data`. Older workers reject the operation before acceptance, and the worker
 rejects it below minor 24.
 
+Minor version 1.25 lets a big refresh report what it would otherwise drop. `project_index_refresh`
+and `project_index_rebuild` take optional `maximumChanges`, 1 to 1,048,576: the most changed and
+removed paths the change report lists (65,536 when absent). Past it the report still says
+`complete: false` with both lists empty, which means "too many changes, reload", and now also
+carries `total`, the number of changed and removed entries. A host that needs the paths after a
+branch switch or mass resave raises `maximumChanges` instead. The summary carries
+`omittedDiagnostics` when the refresh recorded more diagnostics than the 64 it keeps, so a full
+list no longer hides how many problems were left out. Both fields are absent when there is nothing
+to count. The worker rejects `maximumChanges` below minor 25 and strips `total` and
+`omittedDiagnostics` from results for older minors.
+
 ### Active package input budget
 
 `limits.maximumInFlightPackageBytes` is an optional positive integer byte limit for text and

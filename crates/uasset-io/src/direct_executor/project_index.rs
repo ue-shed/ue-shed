@@ -10,8 +10,8 @@ use super::catalog::{
     Catalog, CatalogDiagnostic, CatalogError, CatalogSnapshotEntry, CatalogStatus, Completeness,
     EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
     PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_NAMES,
-    PROJECT_INDEX_MAX_REPORTED_CHANGES, PackageSignature, QueryPage, QueryRequest, RefreshChanges,
-    RefreshSummary, StagedPackage, project_id_for,
+    PackageSignature, QueryPage, QueryRequest, RefreshChanges, RefreshSummary, StagedPackage,
+    project_id_for,
 };
 use super::{Failure, checkpoint};
 
@@ -200,10 +200,33 @@ pub fn query<C: Catalog>(
     Ok(catalog.query(request)?)
 }
 
+/// A refresh that lists at most `PROJECT_INDEX_MAX_REPORTED_CHANGES` changed and removed paths,
+/// as the Catalog conformance suite runs it.
+#[cfg(test)]
 pub fn refresh<C: CatalogSnapshot, S: ProjectScanner>(
     catalog: &mut C,
     scanner: &S,
     project_root: &str,
+    cancellation: &CancellationToken,
+    on_progress: impl FnMut(RefreshProgress),
+) -> Result<Vec<RefreshEvent>, CoordinatorError> {
+    refresh_listing_changes(
+        catalog,
+        scanner,
+        project_root,
+        super::catalog::PROJECT_INDEX_MAX_REPORTED_CHANGES,
+        cancellation,
+        on_progress,
+    )
+}
+
+/// A refresh that lists at most `maximum_changes` changed and removed paths. Past it the change
+/// report is incomplete: both lists are empty and `total` counts the changes.
+pub fn refresh_listing_changes<C: CatalogSnapshot, S: ProjectScanner>(
+    catalog: &mut C,
+    scanner: &S,
+    project_root: &str,
+    maximum_changes: usize,
     cancellation: &CancellationToken,
     mut on_progress: impl FnMut(RefreshProgress),
 ) -> Result<Vec<RefreshEvent>, CoordinatorError> {
@@ -212,15 +235,39 @@ pub fn refresh<C: CatalogSnapshot, S: ProjectScanner>(
         scanner,
         project_root,
         false,
+        maximum_changes,
         cancellation,
         &mut on_progress,
     )
 }
 
+/// A rebuild that lists at most `PROJECT_INDEX_MAX_REPORTED_CHANGES` changed and removed paths,
+/// as the Catalog conformance suite runs it.
+#[cfg(test)]
 pub fn rebuild<C: CatalogSnapshot, S: ProjectScanner>(
     catalog: &mut C,
     scanner: &S,
     project_root: &str,
+    cancellation: &CancellationToken,
+    on_progress: impl FnMut(RefreshProgress),
+) -> Result<Vec<RefreshEvent>, CoordinatorError> {
+    rebuild_listing_changes(
+        catalog,
+        scanner,
+        project_root,
+        super::catalog::PROJECT_INDEX_MAX_REPORTED_CHANGES,
+        cancellation,
+        on_progress,
+    )
+}
+
+/// A rebuild that lists at most `maximum_changes` changed and removed paths, as
+/// `refresh_listing_changes` does.
+pub fn rebuild_listing_changes<C: CatalogSnapshot, S: ProjectScanner>(
+    catalog: &mut C,
+    scanner: &S,
+    project_root: &str,
+    maximum_changes: usize,
     cancellation: &CancellationToken,
     mut on_progress: impl FnMut(RefreshProgress),
 ) -> Result<Vec<RefreshEvent>, CoordinatorError> {
@@ -230,6 +277,7 @@ pub fn rebuild<C: CatalogSnapshot, S: ProjectScanner>(
         scanner,
         project_root,
         true,
+        maximum_changes,
         cancellation,
         &mut on_progress,
     )
@@ -240,6 +288,7 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
     scanner: &S,
     project_root: &str,
     rebuild: bool,
+    maximum_changes: usize,
     cancellation: &CancellationToken,
     on_progress: &mut impl FnMut(RefreshProgress),
 ) -> Result<Vec<RefreshEvent>, CoordinatorError> {
@@ -275,10 +324,10 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
         let mut changed_packages = 0_u64;
         let mut package_count = 0_u64;
         let mut map_count = 0_u64;
-        let mut diagnostics = Vec::new();
+        let mut diagnostics = RefreshDiagnostics::default();
         let mut completed_packages = 0_u64;
         let mut changed_entries = Vec::new();
-        let mut changes = ChangeReport::new(base_generation);
+        let mut changes = ChangeReport::new(base_generation, maximum_changes);
         let mut prior_cursor = prior_entries.iter().peekable();
 
         emit_progress(
@@ -415,9 +464,6 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             },
         )?;
 
-        if diagnostics.len() > PROJECT_INDEX_MAX_DIAGNOSTICS {
-            diagnostics.truncate(PROJECT_INDEX_MAX_DIAGNOSTICS);
-        }
         emit_progress(
             &mut events,
             on_progress,
@@ -432,12 +478,13 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             map_count,
             changed_packages,
             removed_packages,
-            completeness: if diagnostics.is_empty() {
+            completeness: if diagnostics.kept.is_empty() {
                 Completeness::Complete
             } else {
                 Completeness::Partial
             },
-            diagnostics,
+            diagnostics: diagnostics.kept,
+            omitted_diagnostics: diagnostics.omitted,
             mounts: scanner.mount_points(),
         };
         #[expect(
@@ -470,7 +517,7 @@ fn stage_with_initial_header<S: ProjectScanner>(
     signature: &PackageSignature,
     first: Result<HeaderObservation, CoordinatorError>,
     cancellation: &CancellationToken,
-    diagnostics: &mut Vec<CatalogDiagnostic>,
+    diagnostics: &mut RefreshDiagnostics,
 ) -> Result<StagedPackage, CoordinatorError> {
     let mut current = signature.clone();
     let mut next_header = Some(first);
@@ -561,39 +608,41 @@ fn stage_with_initial_header<S: ProjectScanner>(
     })
 }
 
-/// Changed and removed paths, bounded so a first build of a large project does not hold every
-/// path twice.
+/// Changed and removed paths, bounded by the refresh's change limit so a first build of a large
+/// project does not hold every path twice. Every change is counted, listed or not.
 struct ChangeReport {
     changes: RefreshChanges,
+    maximum: usize,
 }
 
 impl ChangeReport {
-    fn new(base_generation: Option<super::catalog::Generation>) -> Self {
+    fn new(base_generation: Option<super::catalog::Generation>, maximum: usize) -> Self {
         Self {
             changes: RefreshChanges {
                 base_generation,
                 complete: true,
                 ..RefreshChanges::default()
             },
+            maximum,
         }
     }
 
     fn changed(&mut self, path: &str) {
+        self.changes.total += 1;
         if self.has_room() {
             self.changes.changed.push(path.to_owned());
         }
     }
 
     fn removed(&mut self, path: &str) {
+        self.changes.total += 1;
         if self.has_room() {
             self.changes.removed.push(path.to_owned());
         }
     }
 
     fn has_room(&mut self) -> bool {
-        if self.changes.changed.len() + self.changes.removed.len()
-            >= PROJECT_INDEX_MAX_REPORTED_CHANGES
-        {
+        if self.changes.changed.len() + self.changes.removed.len() >= self.maximum {
             self.changes.complete = false;
         }
         self.changes.complete
@@ -608,16 +657,24 @@ impl ChangeReport {
     }
 }
 
+/// The first `PROJECT_INDEX_MAX_DIAGNOSTICS` diagnostics a refresh records, and how many more.
+#[derive(Debug, Default)]
+struct RefreshDiagnostics {
+    kept: Vec<CatalogDiagnostic>,
+    omitted: u64,
+}
+
 fn push_diagnostic(
-    diagnostics: &mut Vec<CatalogDiagnostic>,
+    diagnostics: &mut RefreshDiagnostics,
     code: &str,
     message: String,
     retry_safe: bool,
 ) {
-    if diagnostics.len() >= PROJECT_INDEX_MAX_DIAGNOSTICS {
+    if diagnostics.kept.len() >= PROJECT_INDEX_MAX_DIAGNOSTICS {
+        diagnostics.omitted += 1;
         return;
     }
-    diagnostics.push(CatalogDiagnostic {
+    diagnostics.kept.push(CatalogDiagnostic {
         code: code.to_owned(),
         message,
         retry_safe,
@@ -680,7 +737,7 @@ mod tests {
             }),
         });
         let scanner = FakeScanner::default();
-        let mut diagnostics = Vec::new();
+        let mut diagnostics = RefreshDiagnostics::default();
         let error = stage_with_initial_header(
             &scanner,
             "C:/Fixture",
@@ -691,7 +748,8 @@ mod tests {
         )
         .expect_err("signature errors must abort refresh");
         assert_eq!(error.to_string(), "signature read failed");
-        assert!(diagnostics.is_empty());
+        assert!(diagnostics.kept.is_empty());
+        assert_eq!(diagnostics.omitted, 0);
         assert_eq!(scanner.header_reads.get(), 0);
     }
 

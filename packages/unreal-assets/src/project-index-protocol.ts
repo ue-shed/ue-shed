@@ -67,6 +67,9 @@ export function decodeProjectIndexWireSummary(
 		changedPackages: summary.changedPackages,
 		completeness: summary.completeness,
 		diagnostics: summary.diagnostics,
+		...(summary.omittedDiagnostics === undefined
+			? undefined
+			: { omittedDiagnostics: summary.omittedDiagnostics }),
 		generation: ProjectIndexGeneration.make(summary.generation),
 		mapCount: summary.mapCount,
 		packageCount: summary.packageCount,
@@ -80,6 +83,7 @@ export function decodeProjectIndexWireSummary(
 						changed: changes.changed,
 						removed: changes.removed,
 						complete: changes.complete,
+						...(changes.total === undefined ? undefined : { total: changes.total }),
 						...(changes.baseGeneration === undefined
 							? undefined
 							: {

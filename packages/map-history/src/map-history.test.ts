@@ -13,7 +13,11 @@ import {
 	readPerforceFastMapHistory,
 	readPerforceMapHistory
 } from "./map-history.js";
-import { makePerforceHistorySourceTestLayer, type PerforceHistorySourceApi } from "./perforce.js";
+import {
+	makePerforceHistorySourceTestLayer,
+	type PerforceHistorySourceApi,
+	type PerforceMapLineageOptions
+} from "./perforce.js";
 import { PerforceFastMapHistoryQuery, PerforceMapHistoryQuery } from "./schema.js";
 const decodePerforceMapHistoryQuery = Schema.decodeSync(PerforceMapHistoryQuery);
 const decodePerforceFastMapHistoryQuery = Schema.decodeSync(PerforceFastMapHistoryQuery);
@@ -510,6 +514,52 @@ describe("readPerforceMapHistory", () => {
 				expect(result.rangeEndSnapshot?.mapPath).toBe(movedMapPath);
 				expect(observedMapPaths).toContain(mapPath);
 				expect(observedMapPaths).toContain(movedMapPath);
+			})
+		)
+	);
+
+	it.effect("says the history may miss older moves when the map's filelog fills its window", () =>
+		Effect.scoped(
+			Effect.gen(function* () {
+				const materializedRoot = yield* Effect.acquireRelease(
+					Effect.promise(() => mkdtemp(resolve(tmpdir(), "ue-shed-map-lineage-window-"))),
+					(root) => Effect.promise(() => rm(root, { force: true, recursive: true }))
+				);
+				const requests: PerforceMapLineageOptions[] = [];
+				const layer = Layer.provide(
+					mapHistoryLayer,
+					Layer.merge(
+						readerLayer([]),
+						makePerforceHistorySourceTestLayer({
+							...source(materializedRoot),
+							resolveMapLineage: (request) => {
+								requests.push(request);
+								return Effect.succeed({
+									locations: [
+										{
+											depotPath: mapDepotPath,
+											localPath: win32.resolve(projectRoot, mapPath)
+										}
+									],
+									moves: [],
+									filelogsAtLimit: [mapDepotPath]
+								});
+							}
+						})
+					)
+				);
+				const result = yield* readPerforceMapHistory(query()).pipe(Effect.provide(layer));
+
+				// The default window: maxChangelists + 16 direct moves + 2.
+				expect(requests).toEqual([
+					{ depotPath: mapDepotPath, maxMoves: 16, maxRevisionRecords: 28 }
+				]);
+				expect(result.revisions.map((revision) => revision.change)).toEqual([101, 102]);
+				expect(result.diagnostics).toContainEqual({
+					code: "map_lineage_may_be_incomplete",
+					message: expect.stringContaining("Raise limits.maxFilelogRevisions"),
+					retrySafe: false
+				});
 			})
 		)
 	);

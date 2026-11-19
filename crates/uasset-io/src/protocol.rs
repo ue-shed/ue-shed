@@ -178,6 +178,10 @@ pub enum Operation {
         /// v1.23: report the paths that changed on disk since the previous generation.
         #[serde(default)]
         changes: bool,
+        /// v1.25: the most changed and removed paths the change report lists, 1 to 1,048,576;
+        /// 65,536 when absent. Past it the report lists none and counts them in `total`.
+        #[serde(default, rename = "maximumChanges")]
+        maximum_changes: Option<u32>,
     },
     #[serde(rename = "project_index_rebuild")]
     ProjectIndexRebuild {
@@ -189,6 +193,9 @@ pub enum Operation {
         plugins: bool,
         #[serde(default)]
         changes: bool,
+        /// v1.25: as on `project_index_refresh`.
+        #[serde(default, rename = "maximumChanges")]
+        maximum_changes: Option<u32>,
     },
     #[serde(rename = "project_index_query")]
     ProjectIndexQuery {
@@ -923,17 +930,34 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
             project_root,
             plugins,
             changes,
+            maximum_changes,
         }
         | Operation::ProjectIndexRebuild {
             cache_root,
             project_root,
             plugins,
             changes,
+            maximum_changes,
         } => {
             if (*plugins || *changes) && request.contract.version.minor < 23 {
                 return Err(ProtocolError(
                     "plugin-inclusive indexes and change reports require uasset-io v1.23".into(),
                 ));
+            }
+            if let Some(maximum) = maximum_changes {
+                if request.contract.version.minor < 25 {
+                    return Err(ProtocolError(
+                        "maximumChanges requires uasset-io v1.25".into(),
+                    ));
+                }
+                if *maximum == 0
+                    || *maximum as usize
+                        > crate::direct_executor::PROJECT_INDEX_MAX_REPORTED_CHANGES_LIMIT
+                {
+                    return Err(ProtocolError(
+                        "maximumChanges must be between 1 and 1048576".into(),
+                    ));
+                }
             }
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_non_empty(project_root, "projectRoot")
@@ -1704,6 +1728,30 @@ mod game_text_contract_tests {
         ] {
             decode_event(event).unwrap();
         }
+    }
+
+    #[test]
+    fn a_change_limit_needs_minor_25_and_stays_within_its_bound() {
+        use super::{Operation, decode_event, decode_request};
+        let request = decode_request(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-change-limit-refresh-request.json")).unwrap();
+        assert!(matches!(
+            request.operation,
+            Operation::ProjectIndexRefresh {
+                changes: true,
+                maximum_changes: Some(1_048_576),
+                ..
+            }
+        ));
+        for invalid in [
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-change-limit-request-old-minor.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-change-limit-request-over-bound.json").as_slice(),
+        ] {
+            assert!(decode_request(invalid).is_err());
+        }
+        let zero = String::from_utf8_lossy(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-change-limit-refresh-request.json"))
+            .replace("1048576", "0");
+        assert!(decode_request(zero.as_bytes()).is_err());
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-incomplete-changes-summary-result-event.json")).unwrap();
     }
 
     #[test]

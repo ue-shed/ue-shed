@@ -140,7 +140,10 @@ export const searchQuery = (
 				...(group !== undefined && {
 					groups: {
 						by: group,
-						...(request.minGroupSize !== undefined && { minSize: request.minGroupSize })
+						...(request.minGroupSize !== undefined && {
+							minSize: request.minGroupSize
+						}),
+						...(request.groupOffset !== undefined && { offset: request.groupOffset })
 					}
 				}),
 				...(request.fileScope && { fileScope: request.fileScope })

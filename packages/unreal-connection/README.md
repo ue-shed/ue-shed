@@ -104,17 +104,7 @@ makeRemoteControlClient({
 durations such as `"2 minutes"`). `remoteControlTimeout(request, settings)` returns the timeout a
 call will get.
 
-## Remote call recovery
-
-`RemoteControlClient.request` never retries a call automatically. Set `idempotent: true` only when
-the caller knows repeating the read or operation has no new side effects. It defaults to false.
-A lost response, timeout or server failure can follow an applied mutation; those failures return
-`retrySafe: false` and `nextStep: "reconcile"`. Inspect editor state before sending the mutation
-again. An explicitly idempotent read can return `nextStep: "retry"` for transient transport errors.
-Permanent refusals and malformed producer responses retain correction/escalation guidance;
-replay safety alone does not make another identical call useful.
-
-## Timeouts
+### Operation names
 
 These calls set no timeout of their own, so they get the `RemoteControlClient` default. Each sends
 a stable `RemoteControlRequest.operation`, so a host can give one call more time without raising
@@ -136,3 +126,13 @@ it for every call:
 | `unreal.asset_navigation.open`      | `openUnrealAsset` (`OpenAsset`)                               |
 
 A large Apply or Save, or an actor-reference scan over a big world, can need more than the default.
+
+## Remote call recovery
+
+`RemoteControlClient.request` never retries a call automatically. Set `idempotent: true` only when
+the caller knows repeating the read or operation has no new side effects. It defaults to false.
+A lost response, timeout or server failure can follow an applied mutation; those failures return
+`retrySafe: false` and `nextStep: "reconcile"`. Inspect editor state before sending the mutation
+again. An explicitly idempotent read can return `nextStep: "retry"` for transient transport errors.
+Permanent refusals and malformed producer responses retain correction/escalation guidance;
+replay safety alone does not make another identical call useful.

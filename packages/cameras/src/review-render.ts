@@ -4,6 +4,7 @@ import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
 import {
 	makeCameraRenderer,
+	type CameraRendererOptions,
 	CameraRenderError,
 	isEditorOwnershipRejection
 } from "./camera-render.js";
@@ -100,20 +101,26 @@ function editorOwnershipFailure(
 export const captureRenderedReviewView = Effect.fn("ReviewRenderer.capture")(function* (args: {
 	readonly endpoint: string;
 	readonly request: typeof ReviewCaptureRequestCurrent.Type;
+	/** Renderer settings such as the per-call editor timeout. */
+	readonly renderer?: CameraRendererOptions;
 }) {
 	const client = yield* RemoteControlClient;
 	const request = yield* decodeReviewCaptureRequestCurrentEffect(args.request, {
 		onExcessProperty: "error"
 	});
 	if (request.authoredVisibility)
-		return yield* captureAuthoredReviewView({ endpoint: args.endpoint, request }).pipe(
+		return yield* captureAuthoredReviewView(
+			args.renderer
+				? { endpoint: args.endpoint, request, renderer: args.renderer }
+				: { endpoint: args.endpoint, request }
+		).pipe(
 			Effect.catchTag("CameraRenderError", (error) =>
 				isEditorOwnershipRejection(error)
 					? Effect.succeed(editorOwnershipFailure(request, error))
 					: Effect.fail(error)
 			)
 		);
-	const renderer = makeCameraRenderer(client, args.endpoint);
+	const renderer = makeCameraRenderer(client, args.endpoint, args.renderer);
 	const remote = (functionName: string, parameters: Record<string, string>) =>
 		client.request({
 			endpoint: args.endpoint,

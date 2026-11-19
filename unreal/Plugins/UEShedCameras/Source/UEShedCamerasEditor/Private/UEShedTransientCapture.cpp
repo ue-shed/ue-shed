@@ -123,7 +123,8 @@ void FUEShedTransientCapture::ConfigureOrthographic(float OrthoWidth)
 void FUEShedTransientCapture::ConfigureRenderPolicy(
 	bool bFog,
 	bool bVolumetricFog,
-	float LodDistanceScale)
+	float LodDistanceScale,
+	TOptional<bool> bClouds)
 {
 	USceneCaptureComponent2D* CaptureComponent = Component();
 	CaptureComponent->LODDistanceFactor = LodDistanceScale;
@@ -136,6 +137,13 @@ void FUEShedTransientCapture::ConfigureRenderPolicy(
 	VolumetricFog.ShowFlagName = TEXT("VolumetricFog");
 	VolumetricFog.Enabled = bVolumetricFog;
 	Settings.Add(VolumetricFog);
+	if (bClouds.IsSet())
+	{
+		FEngineShowFlagsSetting Cloud;
+		Cloud.ShowFlagName = TEXT("Cloud");
+		Cloud.Enabled = bClouds.GetValue();
+		Settings.Add(Cloud);
+	}
 	CaptureComponent->SetShowFlagSettings(Settings);
 }
 

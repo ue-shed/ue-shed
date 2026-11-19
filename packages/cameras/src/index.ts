@@ -67,6 +67,7 @@ export {
 export {
 	CameraRenderer,
 	type CameraRendererApi,
+	type CameraRendererOptions,
 	cameraRendererLayer,
 	CameraRenderError,
 	cameraRendererTestLayer,
@@ -140,6 +141,7 @@ export {
 	MapCapturePlanId,
 	MapCaptureProject,
 	MapCaptureRenderPolicy,
+	MapCaptureTiming,
 	MapCaptureRunId,
 	MapCaptureWorldBounds,
 	MapTileArtifact,

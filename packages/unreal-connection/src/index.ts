@@ -42,8 +42,11 @@ export {
 	RemoteControlClient,
 	type RemoteControlClientApi,
 	RemoteControlClientError,
+	remoteControlClientFromConfig,
 	RemoteControlClientLive,
-	type RemoteControlRequest
+	type RemoteControlRequest,
+	remoteControlTimeout,
+	type RemoteControlTimeoutSettings
 } from "./remote-control-client.js";
 export {
 	makeSelectedUnrealTarget,

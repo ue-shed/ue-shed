@@ -185,6 +185,8 @@ const mapTileFixtures: ReadonlyArray<{
 	{ file: "readiness-blocked.json", schema: MapCaptureReadiness },
 	{ file: "capture-operation-progress-valid.json", schema: MapTileCaptureOperation },
 	{ file: "plan-valid.json", schema: MapCapturePlan },
+	{ file: "plan-clouds-valid.json", schema: MapCapturePlan },
+	{ file: "plan-timing-valid.json", schema: MapCapturePlan },
 	{ file: "capture-request-valid.json", schema: MapTileCaptureRequest },
 	{ file: "capture-request-lit-valid.json", schema: MapTileCaptureRequest },
 	{ file: "capture-operation-running-valid.json", schema: MapTileCaptureOperation },
@@ -204,6 +206,16 @@ for (const { file, schema } of mapTileFixtures) {
 			cause
 		});
 	}
+}
+for (const file of ["invalid-plan-clouds-before-1-3.json", "invalid-plan-timing-before-1-3.json"]) {
+	// SAFETY: this repository fixture is decoded by the matching plan schema below.
+	const fixture = JSON.parse(
+		readFileSync(join(mapTileFixturesDirectory, file), "utf8")
+	) as unknown;
+	if (Schema.decodeUnknownResult(MapCapturePlan)(fixture)._tag !== "Failure")
+		throw new Error(
+			`${file}: a 1.3 field before map capture 1.3 was accepted by Effect schema`
+		);
 }
 for (const file of ["manifest-invalid-grid.json", "manifest-invalid-complete.json"]) {
 	// SAFETY: this repository fixture is decoded by the matching review schema below.
@@ -227,5 +239,5 @@ for (const file of present) {
 }
 
 console.log(
-	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v3-v5 (${provisioningFixtures.length} valid); map-tile v1 (${mapTileFixtures.length} valid, 2 invalid)`
+	`review contract parity: ${validFixtures.length} valid, ${invalidFixtures.length} invalid; provisioned v3-v5 (${provisioningFixtures.length} valid); map-tile v1 (${mapTileFixtures.length} valid, 4 invalid)`
 );

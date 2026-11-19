@@ -157,6 +157,45 @@ it.effect("starts once, polls with a bounded cadence, and decodes terminal outpu
 	})
 );
 
+it.effect("polls again when a status check times out while the editor renders", () =>
+	Effect.gen(function* () {
+		const timedOut = yield* Deferred.make<void>();
+		let polls = 0;
+		const client: RemoteControlClientApi = {
+			request: (call) =>
+				Effect.gen(function* () {
+					if (call.functionName === "GetCapabilityManifest") return manifest;
+					if (call.functionName === "BeginMapTileCapture")
+						return json({
+							state: "running",
+							operationId: request.operationId,
+							completedTiles: 0
+						});
+					if (call.functionName !== "PollMapTileCapture") return terminal;
+					if (++polls > 1) return terminal;
+					yield* Deferred.succeed(timedOut, undefined);
+					return yield* new RemoteControlClientError({
+						code: "request_timeout",
+						endpoint: "http://editor",
+						functionName: call.functionName,
+						operation: "camera.map_tile.poll.remote",
+						message: "no answer in time",
+						retrySafe: true,
+						recovery: "Test double: the editor was rendering.",
+						nextStep: "retry"
+					});
+				})
+		};
+		const fiber = yield* makeMapTileCaptureRemotePort(client, "http://editor")
+			.capture(request)
+			.pipe(Effect.forkScoped);
+		yield* Deferred.await(timedOut);
+		yield* TestClock.adjust("200 millis");
+		expect((yield* Fiber.join(fiber)).status).toBe("completed");
+		expect(polls).toBe(2);
+	})
+);
+
 it.effect("rejects another operation's running status without polling it", () =>
 	Effect.gen(function* () {
 		let calls = 0;

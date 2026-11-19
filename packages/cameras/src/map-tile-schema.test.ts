@@ -8,7 +8,8 @@ import {
 	MapTileCaptureOperation,
 	MapTileCaptureResponse,
 	MapTilePyramidManifest,
-	decodeMapTilePyramidManifest
+	decodeMapTilePyramidManifest,
+	MapCaptureTiming
 } from "./map-tile-schema.js";
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Json);
@@ -89,5 +90,33 @@ describe("map tile contracts", () => {
 		};
 		input.tiles[0]!.worldBounds.minX += 1;
 		expect(Effect.runSyncExit(decodeMapTilePyramidManifest(input))._tag).toBe("Failure");
+	});
+});
+
+describe("map capture timing", () => {
+	const decode = Schema.decodeUnknownResult(MapCaptureTiming);
+	const strict = { onExcessProperty: "error" } as const;
+	it("accepts each field within its limits and nothing else", () => {
+		expect(decode({}, strict)._tag).toBe("Success");
+		expect(
+			decode(
+				{
+					frameTimeoutMs: 900_000,
+					settleFrames: 4_096,
+					overviewFrames: 1,
+					screenshotWarmupFrames: 256
+				},
+				strict
+			)._tag
+		).toBe("Success");
+		for (const timing of [
+			{ frameTimeoutMs: 999 },
+			{ settleFrames: 0 },
+			{ overviewFrames: 4_097 },
+			{ screenshotWarmupFrames: 257 },
+			{ settleFrames: 1.5 },
+			{ leaseMs: 1_000 }
+		])
+			expect(decode(timing, strict)._tag).toBe("Failure");
 	});
 });

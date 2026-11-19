@@ -2,6 +2,7 @@
 #include "UEShedCameraRenderSession.h"
 #include "UEShedCameraReviewLibrary.h"
 #include "UEShedMapCaptureFreeze.h"
+#include "UEShedMapTileTiming.h"
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
@@ -429,7 +430,16 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject> &Request, UWorld
 		RendererPolicy->SetBoolField(
 			TEXT("volumetricFog"),
 			Render->GetObjectField(TEXT("effects"))->GetBoolField(TEXT("volumetricFog")));
-		RenderPolicy->GetObjectField(TEXT("settling"))->SetNumberField(TEXT("minimumFrames"), SettleFrames);
+		// Validated with the request: map capture 1.3 only.
+		bool bClouds = false;
+		if (Render->GetObjectField(TEXT("effects"))->TryGetBoolField(TEXT("clouds"), bClouds))
+			RendererPolicy->SetBoolField(TEXT("clouds"), bClouds);
+		// Validated with the request: map capture 1.3 only. Absent fields keep the Lit defaults.
+		FUEShedMapTileTiming Timing;
+		if (Render->HasField(TEXT("timing")))
+			UEShedReadMapTileTiming(Render->GetObjectField(TEXT("timing")), Timing);
+		UEShedApplyMapTileTiming(Timing, RequestRender, SettleFrames);
+		const int32 InitialFrames = Timing.OverviewFrames.Get(OverviewFrames);
 		RenderPolicy->SetStringField(TEXT("time"), TEXT("freeze_materials_and_ticks"));
 		auto Exposure = MakeShared<FJsonObject>();
 		if (Render->HasField(TEXT("exposureEV100")))
@@ -438,7 +448,7 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject> &Request, UWorld
 			Exposure->SetNumberField(TEXT("ev100"), EV);
 			Exposure->SetStringField(TEXT("compensation"), TEXT("project"));
 			auto Initial = MakeShared<FJsonObject>();
-			Initial->SetNumberField(TEXT("minimumFrames"), OverviewFrames);
+			Initial->SetNumberField(TEXT("minimumFrames"), InitialFrames);
 			Initial->SetObjectField(
 				TEXT("camera"),
 				UEShedCameraPose(FVector(Overview.GetCenter(), Capture->GetNumberField(TEXT("z"))),
@@ -453,7 +463,7 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject> &Request, UWorld
 		else
 		{
 			Exposure->SetStringField(TEXT("mode"), TEXT("meter_once"));
-			Exposure->SetNumberField(TEXT("minimumFrames"), OverviewFrames);
+			Exposure->SetNumberField(TEXT("minimumFrames"), InitialFrames);
 			Exposure->SetObjectField(
 				TEXT("referenceCamera"),
 				UEShedCameraPose(FVector(Overview.GetCenter(), Capture->GetNumberField(TEXT("z"))),

@@ -27,7 +27,9 @@ public:
 	void SetLocation(const FVector& Location);
 	void ConfigurePerspective(float FieldOfViewDegrees);
 	void ConfigureOrthographic(float OrthoWidth);
-	void ConfigureRenderPolicy(bool bFog, bool bVolumetricFog, float LodDistanceScale);
+	/** Unset clouds keep the capture's own Cloud show flag. */
+	void ConfigureRenderPolicy(bool bFog, bool bVolumetricFog, float LodDistanceScale,
+		TOptional<bool> bClouds = {});
 	void ConfigureFullFidelityRenderer();
 	void ConfigureSeamStableRenderer();
 	void BeginPersistentCameraCut();

@@ -52,12 +52,13 @@ export const MapCaptureOperationId = SafeIdentifier.pipe(Schema.brand("MapCaptur
 export type MapCaptureOperationId = typeof MapCaptureOperationId.Type;
 
 /**
- * Supported map-capture contract major 1 and minor 0 through 2. Version-dependent rendering
- * evidence remains explicit when reading older plans/results.
+ * Supported map-capture contract major 1 and minor 0 through 3. Version-dependent rendering
+ * evidence remains explicit when reading older plans/results. 1.2 adds authored visibility and
+ * 1.3 adds `render.effects.clouds`.
  */
 export const MapCaptureContractVersion = Schema.Struct({
 	major: Schema.Literal(1),
-	minor: Schema.Literals([0, 1, 2])
+	minor: Schema.Literals([0, 1, 2, 3])
 });
 
 /**
@@ -107,6 +108,33 @@ export const MapCaptureDataLayerPolicy = Schema.Union([
 	})
 ]);
 
+const frameCount = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
+
+/**
+ * Per-frame timing for map capture 1.3. Every field is optional; an absent field keeps the
+ * backend's own default (shown on each field).
+ */
+export const MapCaptureTiming = Schema.Struct({
+	/** Deadline for one tile or level render, preparation to screenshot. Default 120000. */
+	frameTimeoutMs: Schema.optionalKey(
+		Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 900_000 }))
+	),
+	/** Frames settled before each capture. Default 128 Lit, 3 scene capture (1 observation), 1 viewport level. */
+	settleFrames: Schema.optionalKey(frameCount(4_096)),
+	/** Lit tiles: frames for exposure metering or the initial view before the first tile. Default 512. */
+	overviewFrames: Schema.optionalKey(frameCount(4_096)),
+	/** Viewport screenshots: high-resolution warm-up frames. Default: the engine's r.HighResScreenshotDelay. */
+	screenshotWarmupFrames: Schema.optionalKey(frameCount(256))
+});
+export type MapCaptureTiming = typeof MapCaptureTiming.Type;
+
+/** Fields a map capture render policy may carry only from contract 1.3. */
+const usesMinor3 = (render: {
+	readonly effects: { readonly clouds?: boolean };
+	readonly timing?: MapCaptureTiming;
+}) => render.effects.clouds !== undefined || render.timing !== undefined;
+const minor3Issue = "Cloud control and render timing require map capture 1.3.";
+
 /**
  * Scene-capture profile, effects, exposure and LOD policy. Per-level distance scaling
  * requires a bounded scale array; other LOD modes reject that extra policy.
@@ -117,7 +145,9 @@ export const MapCaptureRenderPolicy = Schema.Struct({
 	),
 	effects: Schema.Struct({
 		fog: Schema.Boolean,
-		volumetricFog: Schema.Boolean
+		volumetricFog: Schema.Boolean,
+		/** Volumetric clouds (map capture 1.3). Absence keeps the editor's own setting. */
+		clouds: Schema.optionalKey(Schema.Boolean)
 	}),
 	lodDistanceScaleByZoom: Schema.optionalKey(
 		Schema.Array(Schema.Finite.check(Schema.isBetween({ minimum: 0.1, maximum: 100 }))).check(
@@ -126,6 +156,7 @@ export const MapCaptureRenderPolicy = Schema.Struct({
 		)
 	),
 	lodPolicy: Schema.Literals(["natural", "fixed_lod_zero", "per_level_distance_scale"]),
+	timing: Schema.optionalKey(MapCaptureTiming),
 	profile: Schema.Literals([
 		"full_fidelity",
 		"seam_stable",
@@ -184,6 +215,11 @@ export const MapCapturePlan = Schema.Struct({
 		Schema.makeFilter((plan) =>
 			plan.capture.visibility && plan.contract.version.minor < 2
 				? "Authored visibility requires map capture 1.2."
+				: undefined
+		),
+		Schema.makeFilter((plan) =>
+			usesMinor3(plan.capture.render) && plan.contract.version.minor < 3
+				? minor3Issue
 				: undefined
 		),
 		Schema.makeFilter((plan) =>
@@ -277,6 +313,8 @@ export const MapTileCaptureRequest = Schema.Struct({
 					issue: "Authored visibility requires map capture 1.2.",
 					path: ["contract"]
 				};
+			if (usesMinor3(request.capture.render) && request.contract.version.minor < 3)
+				return { issue: minor3Issue, path: ["contract"] };
 			const identities = request.tiles.map((tile) => mapTileKeyId(tile.key));
 			if (new Set(identities).size !== identities.length) {
 				return {
@@ -520,6 +558,8 @@ export const MapTilePyramidManifest = Schema.Struct({
 					issue: "Authored visibility requires map capture 1.2.",
 					path: ["contract"]
 				};
+			if (usesMinor3(manifest.capturePolicy.render) && manifest.contract.version.minor < 3)
+				return { issue: minor3Issue, path: ["contract"] };
 			const expectedGrid = createMapTileGrid({
 				coarsestUnitsPerPixel: manifest.levels[0]!.unitsPerPixel,
 				levelCount: manifest.levels.length,

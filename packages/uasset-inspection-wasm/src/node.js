@@ -24,6 +24,7 @@ export const version = runtime.version;
 
 export {
 	DEFAULT_LIMITS,
+	LIMIT_CEILING_BYTES,
 	WasmInitializationError,
 	WasmInputLimitError,
 	WasmOutputLimitError,

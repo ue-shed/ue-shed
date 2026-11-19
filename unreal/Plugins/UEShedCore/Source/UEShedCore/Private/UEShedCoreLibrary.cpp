@@ -1,4 +1,5 @@
 #include "UEShedCoreLibrary.h"
+#include "UEShedMutationLimits.h"
 
 #include "Dom/JsonObject.h"
 #include "Misc/App.h"
@@ -14,6 +15,25 @@
 #include "UObject/Class.h"
 #include "UObject/UObjectGlobals.h"
 #include "ProfilingDebugging/CsvProfiler.h"
+#include "Misc/ConfigCacheIni.h"
+
+FUEShedAuthoringLimits UEShedReadAuthoringLimits()
+{
+	FUEShedAuthoringLimits Limits;
+	auto Read = [](const TCHAR* Key, int32& Value, int32 Maximum)
+	{
+		int32 Configured = 0;
+		if (GConfig && GConfig->GetInt(UEShedAuthoringLimitsSection, Key, Configured, GEditorIni)
+			&& Configured >= 1 && Configured <= Maximum)
+		{
+			Value = Configured;
+		}
+	};
+	Read(TEXT("MaxCommands"), Limits.MaxCommands, 1000000);
+	Read(TEXT("MaxPayloadBytes"), Limits.MaxPayloadBytes, 256 * 1024 * 1024);
+	Read(TEXT("MaxTables"), Limits.MaxTables, 10000);
+	return Limits;
+}
 
 void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 {
@@ -56,10 +76,11 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		Root->SetStringField(
 			TEXT("authoringObjectPath"),
 			TEXT("/Script/UEShedAuthoring.Default__UEShedAuthoringLibrary"));
+		const FUEShedAuthoringLimits Configured = UEShedReadAuthoringLimits();
 		const TSharedRef<FJsonObject> Limits = MakeShared<FJsonObject>();
-		Limits->SetNumberField(TEXT("maxCommands"), 1024);
-		Limits->SetNumberField(TEXT("maxPayloadBytes"), 1024 * 1024);
-		Limits->SetNumberField(TEXT("maxTables"), 16);
+		Limits->SetNumberField(TEXT("maxCommands"), Configured.MaxCommands);
+		Limits->SetNumberField(TEXT("maxPayloadBytes"), Configured.MaxPayloadBytes);
+		Limits->SetNumberField(TEXT("maxTables"), Configured.MaxTables);
 		Root->SetObjectField(TEXT("authoringLimits"), Limits);
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("authoring.snapshot.v2")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("authoring.table-list.v1")));

@@ -9,10 +9,12 @@ export const makeGameTextLocalization = (
 	currentProject: Inputs[1],
 	currentRules?: Inputs[2],
 	currentIndex?: Inputs[3],
-	prepareWrites?: NonNullable<Inputs[4]>["prepareWrites"]
+	prepareWrites?: NonNullable<Inputs[4]>["prepareWrites"],
+	baselineLimits?: NonNullable<Inputs[4]>["baselineLimits"]
 ) =>
 	makeGameTextWorkspaceLocalization(currentCorpus, currentProject, currentRules, currentIndex, {
 		author: "workbench",
 		localizationFiles: LocalizationFileAccessLive,
-		...(prepareWrites ? { prepareWrites } : undefined)
+		...(prepareWrites ? { prepareWrites } : undefined),
+		...(baselineLimits ? { baselineLimits } : undefined)
 	});

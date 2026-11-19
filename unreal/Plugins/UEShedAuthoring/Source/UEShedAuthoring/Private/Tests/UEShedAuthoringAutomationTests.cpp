@@ -1,4 +1,6 @@
 #include "UEShedAuthoringLibrary.h"
+#include "UEShedMutationLimits.h"
+#include "UEShedCoreLibrary.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -10,6 +12,7 @@
 #include "Kismet2/StructureEditorUtils.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/CommandLine.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
 #include "Misc/Parse.h"
@@ -435,6 +438,50 @@ bool FUEShedAuthoringActorReferencesTest::RunTest(const FString& Parameters)
 			FString(TEXT("rejected")));
 		TestFalse(TEXT("Rejected scans are never complete"), Rejected->GetBoolField(TEXT("isComplete")));
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedAuthoringLimitsTest,
+	"UEShed.Authoring.Limits",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FUEShedAuthoringLimitsTest::RunTest(const FString& Parameters)
+{
+	const TCHAR* Section = UEShedAuthoringLimitsSection;
+	ON_SCOPE_EXIT
+	{
+		GConfig->RemoveKey(Section, TEXT("MaxCommands"), GEditorIni);
+		GConfig->RemoveKey(Section, TEXT("MaxPayloadBytes"), GEditorIni);
+		GConfig->RemoveKey(Section, TEXT("MaxTables"), GEditorIni);
+	};
+	auto ManifestLimits = []()
+	{
+		FString Json;
+		UUEShedCoreLibrary::GetCapabilityManifest(Json);
+		const TSharedPtr<FJsonObject> Manifest = ReadObject(Json);
+		return Manifest.IsValid() ? Manifest->GetObjectField(TEXT("authoringLimits")) : nullptr;
+	};
+	const TSharedPtr<FJsonObject> Defaults = ManifestLimits();
+	if (!TestTrue(TEXT("Manifest advertises authoring limits"), Defaults.IsValid())) return false;
+	TestEqual(TEXT("Default commands"), Defaults->GetIntegerField(TEXT("maxCommands")), 1024);
+	TestEqual(TEXT("Default payload"), Defaults->GetIntegerField(TEXT("maxPayloadBytes")), 1024 * 1024);
+	TestEqual(TEXT("Default tables"), Defaults->GetIntegerField(TEXT("maxTables")), 16);
+
+	GConfig->SetInt(Section, TEXT("MaxCommands"), 5000, GEditorIni);
+	GConfig->SetInt(Section, TEXT("MaxPayloadBytes"), 64, GEditorIni);
+	GConfig->SetInt(Section, TEXT("MaxTables"), 0, GEditorIni);
+	const TSharedPtr<FJsonObject> Configured = ManifestLimits();
+	TestEqual(TEXT("Configured commands are advertised"), Configured->GetIntegerField(TEXT("maxCommands")), 5000);
+	TestEqual(TEXT("Configured payload is advertised"), Configured->GetIntegerField(TEXT("maxPayloadBytes")), 64);
+	TestEqual(TEXT("An out-of-range value keeps the default"), Configured->GetIntegerField(TEXT("maxTables")), 16);
+
+	// Apply enforces the same configured value it advertises.
+	FString Result;
+	UUEShedAuthoringLibrary::Apply(FString::ChrN(65, TEXT(' ')), Result);
+	const TSharedPtr<FJsonObject> Refused = ReadObject(Result);
+	if (!TestTrue(TEXT("Oversize Apply returns JSON"), Refused.IsValid())) return false;
+	TestTrue(TEXT("Oversize Apply is refused as too large"), Result.Contains(TEXT("request_too_large")));
+	TestTrue(TEXT("Refusal names the setting that raises it"), Result.Contains(TEXT("MaxPayloadBytes")));
 	return true;
 }
 

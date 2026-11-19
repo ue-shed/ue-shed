@@ -395,7 +395,8 @@ export const makeCannedGameTextLocalization = (
 	currentProject: Parameters<typeof indexedGameTextLocalization>[1],
 	currentRules?: Parameters<typeof indexedGameTextLocalization>[2],
 	currentIndex?: Parameters<typeof indexedGameTextLocalization>[3],
-	prepareWrites?: Parameters<typeof indexedGameTextLocalization>[4]
+	prepareWrites?: Parameters<typeof indexedGameTextLocalization>[4],
+	baselineLimits?: Parameters<typeof indexedGameTextLocalization>[5]
 ) => {
 	// Each corpus the test hands over is a new scan, so it gets its own revision.
 	const revisions = new WeakMap<TextCorpus, string>();
@@ -416,7 +417,8 @@ export const makeCannedGameTextLocalization = (
 		currentProject,
 		currentRules,
 		currentIndex,
-		prepareWrites
+		prepareWrites,
+		baselineLimits
 	).pipe(
 		Effect.provide(
 			cannedGameTextIndexLayer(

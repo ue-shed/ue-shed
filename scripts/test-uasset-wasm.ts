@@ -428,6 +428,23 @@ const malformedAnimation = runtime.extractAnimations(
 assert.equal(malformedAnimation.status, "error");
 assert.equal(malformedAnimation.kind, "unsupported_format");
 
+const isInputLimit = (cause: unknown) =>
+	cause instanceof Object && "code" in cause && cause.code === "UE_SHED_UASSET_WASM_INPUT_LIMIT";
+const pastDefault = new Uint8Array(64 * 1024 * 1024 + 1);
+const wideRuntime = wasm.createNodeRuntime({ maxInputBytes: 65 * 1024 * 1024 });
+assert.equal(wideRuntime.limits.maxInputBytes, 65 * 1024 * 1024);
+assert.throws(() => runtime.inspect("Large.umap", pastDefault), isInputLimit);
+// A raised limit gets the package past both size checks; zeros then fail to parse.
+const widened = wideRuntime.inspect("Large.umap", pastDefault);
+assert.equal(widened.status, "error");
+assert.notEqual("kind" in widened ? widened.kind : undefined, "resource_limit");
+// Runtimes share the module; the default runtime keeps its own limit after the wide one ran.
+assert.throws(() => runtime.inspect("Large.umap", pastDefault), isInputLimit);
+assert.throws(
+	() => wasm.createNodeRuntime({ maxInputBytes: wasm.LIMIT_CEILING_BYTES + 1 }),
+	RangeError
+);
+
 const narrowRuntime = wasm.createNodeRuntime({ maxInputBytes: 4 });
 assert.throws(
 	() => narrowRuntime.extractAnimations("TooLarge.uasset", new Uint8Array(5)),

@@ -16,7 +16,7 @@ import {
 	writeFile
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Context, Effect, Layer, Option, Predicate, Schema, type Scope } from "effect";
+import { Context, Duration, Effect, Layer, Option, Predicate, Schema, type Scope } from "effect";
 import { extractPluginArchiveToDirectory } from "./archive.js";
 import {
 	PluginInstallCancelled,
@@ -201,8 +201,22 @@ function errnoCode(cause: unknown): string | undefined {
 		: undefined;
 }
 
+/** Another live process held the cache lock for longer than `PluginStoreLayerOptions.lockWait`. */
+class CacheLockTimeout extends Error {
+	constructor(
+		readonly path: string,
+		readonly waitedMs: number
+	) {
+		super(`Timed out after ${waitedMs} ms acquiring cache lock ${path}.`);
+		this.name = "CacheLockTimeout";
+	}
+}
+
 /** Classified storage message: what failed for which release, without the raw cause text. */
 function storageMessage(releaseVersion: string, operation: string, cause: unknown): string {
+	if (cause instanceof CacheLockTimeout) {
+		return `${operation} for plugin release ${releaseVersion} waited ${Math.round(cause.waitedMs / 1000)} s for another process that holds the cache lock. Raise lockWait on pluginStoreLayer to wait longer.`;
+	}
 	const code = errnoCode(cause);
 	if (code === "EACCES" || code === "EPERM") {
 		return `${operation} for plugin release ${releaseVersion} was denied permission.`;
@@ -679,17 +693,25 @@ async function olderThan(path: string, ms: number): Promise<boolean> {
 	}
 }
 
+/** Default for `PluginStoreLayerOptions.lockWait`. */
+const DEFAULT_LOCK_WAIT = "10 minutes";
+const FIRST_LOCK_RETRY_MS = 25;
+const LONGEST_LOCK_RETRY_MS = 500;
+
 async function acquireVersionLock<A>(
 	cacheRoot: string,
 	releaseVersion: string,
+	lockWaitMs: number,
 	signal: AbortSignal,
 	operation: () => Promise<A>
 ): Promise<A> {
 	const directory = join(cacheRoot, "locks");
 	await assertDirectoryWithinCache(cacheRoot, directory);
 	const path = join(directory, `${releaseVersion}.lock`);
+	const started = Date.now();
+	let retryMs = FIRST_LOCK_RETRY_MS;
 	let handle;
-	for (let attempt = 0; attempt < 400; attempt += 1) {
+	for (let attempt = 0; attempt === 0 || Date.now() - started < lockWaitMs; attempt += 1) {
 		if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
 		try {
 			handle = await open(path, "wx");
@@ -717,6 +739,10 @@ async function acquireVersionLock<A>(
 					}
 				}
 			}
+			const remainingMs = lockWaitMs - (Date.now() - started);
+			if (remainingMs <= 0) break;
+			const delayMs = Math.min(retryMs, remainingMs);
+			retryMs = Math.min(retryMs * 2, LONGEST_LOCK_RETRY_MS);
 			await new Promise<void>((complete, reject) => {
 				const onAbort = () => {
 					clearTimeout(timeout);
@@ -725,12 +751,12 @@ async function acquireVersionLock<A>(
 				const timeout = setTimeout(() => {
 					signal.removeEventListener("abort", onAbort);
 					complete();
-				}, 25);
+				}, delayMs);
 				signal.addEventListener("abort", onAbort, { once: true });
 			});
 		}
 	}
-	if (handle === undefined) throw new Error(`Timed out acquiring cache lock ${path}.`);
+	if (handle === undefined) throw new CacheLockTimeout(path, Date.now() - started);
 	try {
 		await handle.writeFile(JSON.stringify({ pid: process.pid }));
 		return await operation();
@@ -742,6 +768,13 @@ async function acquireVersionLock<A>(
 
 export interface PluginStoreLayerOptions {
 	readonly cacheRoot: string;
+	/**
+	 * How long publish, lease and prune wait for another live process that holds the same
+	 * variant's cache lock. The holder may be extracting a release of up to 2 GiB. Default 10
+	 * minutes. Locks of dead processes are cleared at once and never wait. Too low: the operation
+	 * fails with `PluginStorageFailure` saying how long it waited and to raise `lockWait`.
+	 */
+	readonly lockWait?: Duration.Input;
 }
 
 export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<PluginStore> =>
@@ -749,6 +782,9 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 		PluginStore,
 		Effect.gen(function* () {
 			const cacheRoot = resolve(options.cacheRoot);
+			const lockWaitMs = Duration.toMillis(
+				Duration.fromInputUnsafe(options.lockWait ?? DEFAULT_LOCK_WAIT)
+			);
 			if (dirname(cacheRoot) === cacheRoot) {
 				return yield* Effect.die(
 					new Error("Plugin cache root cannot be a filesystem root.")
@@ -946,6 +982,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 							return await acquireVersionLock(
 								cacheRoot,
 								variantIdentity,
+								lockWaitMs,
 								signal,
 								async () => {
 									await assertDirectoryWithinCache(
@@ -1101,6 +1138,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 							acquireVersionLock(
 								cacheRoot,
 								release.variantIdentity,
+								lockWaitMs,
 								signal,
 								async () => {
 									await access(release.cachePath);
@@ -1217,6 +1255,7 @@ export const pluginStoreLayer = (options: PluginStoreLayerOptions): Layer.Layer<
 									acquireVersionLock(
 										cacheRoot,
 										release.variantIdentity,
+										lockWaitMs,
 										signal,
 										async () => {
 											await assertStoredRootWithinCache(

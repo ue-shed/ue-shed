@@ -233,6 +233,46 @@ it.effect(
 		}).pipe(Effect.provide(Layer.mergeAll(reader, makeLocalFilesTestLayer())))
 );
 
+it.effect("refuses a baseline file over the host's size limit and names the option", () =>
+	Effect.gen(function* () {
+		const files = yield* LocalFiles;
+		const dialog = {
+			chooseDirectory: () => Effect.succeed({ status: "cancelled" }),
+			chooseFiles: () => Effect.succeed({ status: "cancelled" }),
+			chooseFile: () => Effect.succeed({ status: "cancelled" }),
+			chooseSaveFile: () =>
+				Effect.succeed({ status: "selected", path: "C:/Exports/limited.json" })
+		} satisfies ElectronDialogApi;
+		// Entry limits are covered in packages/game-text; this fixture has one entry.
+		const save = (baselineLimits: { maxFileBytes: number }) =>
+			Effect.gen(function* () {
+				const host = yield* makeCannedGameTextLocalization(
+					answers,
+					() => Effect.succeed(fixture.text),
+					() => Effect.succeed(testProjectIndex("C:/Project")),
+					undefined,
+					undefined,
+					undefined,
+					baselineLimits
+				);
+				yield* host.select(fixture.join.target);
+				return yield* host.reportFile(
+					{ target: fixture.join.target, operation: "save_baseline" },
+					dialog,
+					gameTextFileHooks(files)
+				);
+			});
+		expect(yield* save({ maxFileBytes: 100 })).toEqual({
+			status: "failed",
+			message: expect.stringMatching(
+				/^The baseline is [\d,]+ bytes; files are limited to 100 bytes\.$/u
+			),
+			recovery: "Raise baselineLimits.maxFileBytes to save a file this size."
+		});
+		expect(yield* files.exists("C:/Exports/limited.json")).toBe(false);
+	}).pipe(Effect.provide(Layer.mergeAll(reader, makeLocalFilesTestLayer())))
+);
+
 it.effect("selecting another target interrupts the previous target's abandoned scan", () =>
 	Effect.gen(function* () {
 		const started = yield* Deferred.make<void>();

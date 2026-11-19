@@ -49,8 +49,17 @@ export const LocalizationBaselineEntry = Schema.Struct({
 	path: Schema.optionalKey(Schema.String)
 });
 export type LocalizationBaselineEntry = typeof LocalizationBaselineEntry.Type;
-/** The most manifest entries a baseline records. */
-const MAX_BASELINE_ENTRIES = 100_000;
+/** Default for `LocalizationBaselineLimits.maxEntries`. */
+export const DEFAULT_LOCALIZATION_BASELINE_MAX_ENTRIES = 100_000;
+/** Caller limits on a localization baseline. */
+export interface LocalizationBaselineLimits {
+	/**
+	 * The most manifest entries a baseline may record, when it is created and when it is read
+	 * back. Default 100,000. Too low: creating or comparing a baseline for a bigger target fails
+	 * with `LocalizationReportError` code `invalid_baseline`, naming both counts and this option.
+	 */
+	readonly maxEntries?: number;
+}
 /**
  * Versioned target baseline with algorithm identities and corpus/evidence/file provenance.
  * Entries are bounded and identities must be unique before comparison.
@@ -68,7 +77,8 @@ export const LocalizationBaseline = Schema.Struct({
 		evidenceGeneration: Fingerprint,
 		files: Schema.Array(FileProvenance)
 	}),
-	entries: Schema.Array(LocalizationBaselineEntry).check(Schema.isMaxLength(MAX_BASELINE_ENTRIES))
+	/** Bounded by `LocalizationBaselineLimits.maxEntries` where baselines are created and read. */
+	entries: Schema.Array(LocalizationBaselineEntry)
 });
 const decodeCreatedAt = Schema.decodeResult(
 	LocalizationBaseline.fields.provenance.fields.createdAt
@@ -132,6 +142,19 @@ function reportError(
 		recovery: recovery[code]
 	});
 }
+function maxBaselineEntries(limits: LocalizationBaselineLimits | undefined): number {
+	return limits?.maxEntries ?? DEFAULT_LOCALIZATION_BASELINE_MAX_ENTRIES;
+}
+/** Fails a baseline over the entry limit with both counts and the option that raises it. */
+function baselineEntryLimitError(entries: number, maximum: number): LocalizationReportError {
+	return new LocalizationReportError({
+		retrySafe: false,
+		nextStep: "fix_input",
+		code: "invalid_baseline",
+		message: `The baseline has ${entries.toLocaleString("en-US")} entries; the limit is ${maximum.toLocaleString("en-US")}.`,
+		recovery: "Raise baselineLimits.maxEntries to work with a baseline this size."
+	});
+}
 function identityKey(identity: LocalizationIdentity): string {
 	return JSON.stringify([identity.namespace, identity.key]);
 }
@@ -140,14 +163,19 @@ function baselineValid(document: LocalizationBaseline): boolean {
 }
 /**
  * Parses baseline JSON into a Result with domain report errors. Invalid JSON/schema evidence is
- * retained; duplicate identities also reject the baseline.
+ * retained; duplicate identities and more entries than `limits.maxEntries` also reject the
+ * baseline.
  */
 export function decodeLocalizationBaselineJson(
-	input: string
+	input: string,
+	limits?: LocalizationBaselineLimits
 ): Result.Result<LocalizationBaseline, LocalizationReportError> {
 	const result = decodeLocalizationBaselineJsonResult(input);
 	if (Result.isFailure(result))
 		return Result.fail(reportError("invalid_baseline", result.failure));
+	const maximum = maxBaselineEntries(limits);
+	if (result.success.entries.length > maximum)
+		return Result.fail(baselineEntryLimitError(result.success.entries.length, maximum));
 	if (!baselineValid(result.success)) return Result.fail(reportError("invalid_baseline"));
 	return Result.succeed(result.success);
 }
@@ -209,14 +237,16 @@ function baselineEntries(evidence: LocalizationTargetEvidence): LocalizationBase
  */
 function baselineWith(
 	evidence: LocalizationTargetEvidence,
-	createdAt: string
+	createdAt: string,
+	limits: LocalizationBaselineLimits | undefined
 ): (generation: string) => LocalizationBaseline {
 	if (Result.isFailure(decodeCreatedAt(createdAt))) throw reportError("invalid_baseline");
 	const files = localizationEvidenceFileStatuses(evidence).flatMap((file) =>
 		file.provenance ? [file.provenance] : []
 	);
 	const entries = baselineEntries(evidence);
-	if (entries.length > MAX_BASELINE_ENTRIES) throw reportError("invalid_baseline");
+	const maximum = maxBaselineEntries(limits);
+	if (entries.length > maximum) throw baselineEntryLimitError(entries.length, maximum);
 	return (generation) =>
 		LocalizationBaseline.make({
 			schemaVersion: 1,
@@ -240,16 +270,17 @@ function baselineWith(
 }
 /**
  * Creates a target baseline from current corpus and manifest evidence with canonical
- * fingerprints. Missing/ambiguous manifests or unavailable portable word counts fail with
- * LocalizationReportError. An index model gives the same baseline through
- * `indexedLocalizationBaseline`, which fingerprints the corpus in Rust.
+ * fingerprints. Missing/ambiguous manifests, unavailable portable word counts or more entries than
+ * `limits.maxEntries` fail with LocalizationReportError. `indexedLocalizationBaseline` is the same
+ * from an index model, fingerprinting the corpus in Rust.
  */
 export function createLocalizationBaseline(
 	corpus: TextCorpus,
 	evidence: LocalizationTargetEvidence,
-	createdAt: string
+	createdAt: string,
+	limits?: LocalizationBaselineLimits
 ): LocalizationBaseline {
-	return baselineWith(evidence, createdAt)(corpusGeneration(corpus));
+	return baselineWith(evidence, createdAt, limits)(corpusGeneration(corpus));
 }
 /**
  * The pieces of an index model that answer report questions: grouped counts, the corpus header
@@ -269,10 +300,11 @@ export interface LocalizationReportIndex {
  */
 export const indexedLocalizationBaseline = Effect.fn("GameText.localizationBaseline")(function* (
 	model: Pick<LocalizationReportIndex, "query" | "evidence">,
-	createdAt: string
+	createdAt: string,
+	limits?: LocalizationBaselineLimits
 ) {
 	const complete = yield* Effect.try({
-		try: () => baselineWith(model.evidence, createdAt),
+		try: () => baselineWith(model.evidence, createdAt, limits),
 		catch: reportFailure("invalid_baseline")
 	});
 	const generation = yield* model.query.corpusFingerprint;

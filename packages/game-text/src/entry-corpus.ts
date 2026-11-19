@@ -62,6 +62,8 @@ export {
 	LocalizationBaselineDelta,
 	LocalizationBaselineEntry,
 	LocalizationBaselineKeyChange,
+	type LocalizationBaselineLimits,
+	DEFAULT_LOCALIZATION_BASELINE_MAX_ENTRIES,
 	LocalizationProgressCulture,
 	LocalizationProgressReport,
 	LocalizationReportError,

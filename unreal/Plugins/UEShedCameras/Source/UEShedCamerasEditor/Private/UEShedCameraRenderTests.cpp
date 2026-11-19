@@ -352,6 +352,11 @@ bool FUEShedCameraScreenshotWarmupTest::RunTest(const FString &Parameters)
 	          UEShedCameraJson(LegacyJson)->HasField(TEXT("highResolutionScreenshot")));
 	TestTrue(TEXT("Extended discovery includes native warmup controls"),
 	         UEShedCameraJson(ExtendedJson)->HasField(TEXT("highResolutionScreenshot")));
+	TestFalse(TEXT("Legacy discovery omits cloud control"),
+	          UEShedCameraJson(LegacyJson)->HasField(TEXT("clouds")));
+	TestTrue(TEXT("Extended discovery offers cloud control on both renderers"),
+	         Capabilities->GetObjectField(TEXT("clouds"))->GetBoolField(TEXT("viewport")) &&
+	             Capabilities->GetObjectField(TEXT("clouds"))->GetBoolField(TEXT("sceneCapture")));
 	TestEqual(TEXT("Advertised native warmup limit"),
 	          Capabilities->GetObjectField(TEXT("highResolutionScreenshot"))
 	              ->GetIntegerField(TEXT("maximumWarmupFrames")),

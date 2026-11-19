@@ -9,7 +9,9 @@ They are a sibling to, and do not change, `ue-shed-review-capture` v1.
 `ue-shed-map-tile-pyramid` evidence. All are major 1; legacy minor 0 remains readable. Minor 1 adds renderer evidence and minor 2 adds
 optional `capture.visibility` / `capturePolicy.visibility` hide/protect lists. Visibility requires
 minor 2 and the matching Cameras renderer. It applies before metering and to every batch, including
-the live preview; it never changes tile framing.
+the live preview; it never changes tile framing. Minor 3 adds optional `render.effects.clouds`,
+which every capture backend passes to the camera renderer as `renderer.clouds`; `false` keeps
+volumetric clouds out of the tiles and absence keeps the editor's setting.
 
 Rows progress from world max-X toward min-X. Columns progress from world min-Y toward max-Y. The
 orientation is explicit and versioned. A level halves units-per-pixel and doubles rows and columns;

@@ -287,6 +287,9 @@
 								},
 								"volumetricFog": {
 									"type": "boolean"
+								},
+								"clouds": {
+									"type": "boolean"
 								}
 							},
 							"required": ["fog", "volumetricFog"],
@@ -360,7 +363,7 @@
 						},
 						"minor": {
 							"type": "number",
-							"enum": [0, 1, 2]
+							"enum": [0, 1, 2, 3]
 						}
 					},
 					"required": ["major", "minor"],
@@ -1137,6 +1140,9 @@
 													"volumetricFog": {
 														"type": "boolean"
 													},
+													"clouds": {
+														"type": "boolean"
+													},
 													"editorPreviews": {
 														"type": "boolean"
 													},
@@ -1189,6 +1195,9 @@
 														"type": "boolean"
 													},
 													"volumetricFog": {
+														"type": "boolean"
+													},
+													"clouds": {
 														"type": "boolean"
 													},
 													"editorPreviews": {

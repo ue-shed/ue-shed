@@ -180,7 +180,7 @@ struct FViewportHighResolutionTile
 
 bool CaptureViewportHighResolutionLevel(const TArray<TSharedPtr<FJsonValue>> &TileValues, int32 TilePixelSize,
 										int32 GutterPixels, double CaptureZ, bool bFog, bool bVolumetricFog,
-										const FString &RenderProfile, const FString &RunId,
+										TOptional<bool> Clouds, const FString &RenderProfile, const FString &RunId,
 										TArray<TSharedPtr<FJsonValue>> &OutTileResults, int32 &OutSucceeded,
 										int32 &OutFailed, FString &OutFailureCode, FString &OutFailureMessage,
 										FString &OutFailureRecovery, const TSharedPtr<FJsonObject>& Visibility)
@@ -298,6 +298,8 @@ bool CaptureViewportHighResolutionLevel(const TArray<TSharedPtr<FJsonValue>> &Ti
 	if (Visibility) SessionRequest->GetObjectField(TEXT("policy"))->SetObjectField(TEXT("visibility"), Visibility);
 	RendererPolicy->SetBoolField(TEXT("fog"), bFog);
 	RendererPolicy->SetBoolField(TEXT("volumetricFog"), bVolumetricFog);
+	if (Clouds.IsSet())
+		RendererPolicy->SetBoolField(TEXT("clouds"), Clouds.GetValue());
 	RendererPolicy->SetStringField(TEXT("vignette"), TEXT("project"));
 	if (RenderProfile == TEXT("observation"))
 		RendererPolicy->SetStringField(TEXT("profile"), TEXT("observation"));
@@ -436,7 +438,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		!(*Contract)->TryGetObjectField(TEXT("version"), Version) ||
 		!(*Version)->TryGetNumberField(TEXT("major"), ContractMajor) ||
 		!(*Version)->TryGetNumberField(TEXT("minor"), ContractMinor) || ContractMajor != 1 ||
-		(ContractMinor != 0 && ContractMinor != 1 && ContractMinor != 2))
+		(ContractMinor != 0 && ContractMinor != 1 && ContractMinor != 2 && ContractMinor != 3))
 	{
 		Fail(TEXT("invalid_request"), TEXT("Map tile capture contract 1.0 is required."),
 			 TEXT("Negotiate a supported UEShedCamerasEditor capability."), false);
@@ -513,6 +515,19 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		Fail(TEXT("invalid_request"), TEXT("The top-down capture policy is invalid."),
 			 TEXT("Use finite capture Z, orientation (-90,0,0), and a supported render profile."), false);
 		return;
+	}
+	// Map capture 1.3 adds effects.clouds; absence keeps the editor's own Cloud show flag.
+	TOptional<bool> Clouds;
+	if ((*Effects)->HasField(TEXT("clouds")))
+	{
+		bool bClouds = false;
+		if (ContractMinor < 3 || !(*Effects)->TryGetBoolField(TEXT("clouds"), bClouds))
+		{
+			Fail(TEXT("invalid_request"), TEXT("render.effects.clouds requires map capture 1.3 and a boolean."),
+				 TEXT("Send contract 1.3 with a boolean clouds value, or omit it."), false);
+			return;
+		}
+		Clouds = bClouds;
 	}
 	if (DataLayerMode != TEXT("unchanged"))
 	{
@@ -599,7 +614,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		FString FailureMessage;
 		FString FailureRecovery;
 		if (!CaptureViewportHighResolutionLevel(*Tiles, TilePixelSize, GutterPixels, CaptureZ, bFog,
-												bVolumetricFog, RenderProfile, RunId, TileResults, Succeeded,
+												bVolumetricFog, Clouds, RenderProfile, RunId, TileResults, Succeeded,
 												Failed, FailureCode, FailureMessage, FailureRecovery, (*CapturePolicy)->HasField(TEXT("visibility")) ? (*CapturePolicy)->GetObjectField(TEXT("visibility")) : nullptr))
 		{
 			MapTileTopFailure(ResultJson, OperationId, CorrelationId, *FailureCode, *FailureMessage,
@@ -766,6 +781,8 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 				if ((*CapturePolicy)->HasField(TEXT("visibility"))) P->SetObjectField(TEXT("visibility"), (*CapturePolicy)->GetObjectField(TEXT("visibility")));
 				R->SetBoolField(TEXT("fog"), bFog);
 				R->SetBoolField(TEXT("volumetricFog"), bVolumetricFog);
+				if (Clouds.IsSet())
+					R->SetBoolField(TEXT("clouds"), Clouds.GetValue());
 				R->SetNumberField(TEXT("lodDistanceScale"), LodDistanceScale);
 				P->GetObjectField(TEXT("settling"))
 					->SetNumberField(TEXT("minimumFrames"), RenderProfile == TEXT("observation")

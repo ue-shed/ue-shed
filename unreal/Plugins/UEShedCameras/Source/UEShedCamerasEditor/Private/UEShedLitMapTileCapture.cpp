@@ -429,6 +429,10 @@ void BeginUEShedLitMapTileCapture(const TSharedPtr<FJsonObject> &Request, UWorld
 		RendererPolicy->SetBoolField(
 			TEXT("volumetricFog"),
 			Render->GetObjectField(TEXT("effects"))->GetBoolField(TEXT("volumetricFog")));
+		// Validated with the request: map capture 1.3 only.
+		bool bClouds = false;
+		if (Render->GetObjectField(TEXT("effects"))->TryGetBoolField(TEXT("clouds"), bClouds))
+			RendererPolicy->SetBoolField(TEXT("clouds"), bClouds);
 		RenderPolicy->GetObjectField(TEXT("settling"))->SetNumberField(TEXT("minimumFrames"), SettleFrames);
 		RenderPolicy->SetStringField(TEXT("time"), TEXT("freeze_materials_and_ticks"));
 		auto Exposure = MakeShared<FJsonObject>();

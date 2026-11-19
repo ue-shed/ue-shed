@@ -52,12 +52,13 @@ export const MapCaptureOperationId = SafeIdentifier.pipe(Schema.brand("MapCaptur
 export type MapCaptureOperationId = typeof MapCaptureOperationId.Type;
 
 /**
- * Supported map-capture contract major 1 and minor 0 through 2. Version-dependent rendering
- * evidence remains explicit when reading older plans/results.
+ * Supported map-capture contract major 1 and minor 0 through 3. Version-dependent rendering
+ * evidence remains explicit when reading older plans/results. 1.2 adds authored visibility and
+ * 1.3 adds `render.effects.clouds`.
  */
 export const MapCaptureContractVersion = Schema.Struct({
 	major: Schema.Literal(1),
-	minor: Schema.Literals([0, 1, 2])
+	minor: Schema.Literals([0, 1, 2, 3])
 });
 
 /**
@@ -117,7 +118,9 @@ export const MapCaptureRenderPolicy = Schema.Struct({
 	),
 	effects: Schema.Struct({
 		fog: Schema.Boolean,
-		volumetricFog: Schema.Boolean
+		volumetricFog: Schema.Boolean,
+		/** Volumetric clouds (map capture 1.3). Absence keeps the editor's own setting. */
+		clouds: Schema.optionalKey(Schema.Boolean)
 	}),
 	lodDistanceScaleByZoom: Schema.optionalKey(
 		Schema.Array(Schema.Finite.check(Schema.isBetween({ minimum: 0.1, maximum: 100 }))).check(
@@ -184,6 +187,11 @@ export const MapCapturePlan = Schema.Struct({
 		Schema.makeFilter((plan) =>
 			plan.capture.visibility && plan.contract.version.minor < 2
 				? "Authored visibility requires map capture 1.2."
+				: undefined
+		),
+		Schema.makeFilter((plan) =>
+			plan.capture.render.effects.clouds !== undefined && plan.contract.version.minor < 3
+				? "Cloud control requires map capture 1.3."
 				: undefined
 		),
 		Schema.makeFilter((plan) =>
@@ -277,6 +285,11 @@ export const MapTileCaptureRequest = Schema.Struct({
 					issue: "Authored visibility requires map capture 1.2.",
 					path: ["contract"]
 				};
+			if (
+				request.capture.render.effects.clouds !== undefined &&
+				request.contract.version.minor < 3
+			)
+				return { issue: "Cloud control requires map capture 1.3.", path: ["contract"] };
 			const identities = request.tiles.map((tile) => mapTileKeyId(tile.key));
 			if (new Set(identities).size !== identities.length) {
 				return {
@@ -520,6 +533,11 @@ export const MapTilePyramidManifest = Schema.Struct({
 					issue: "Authored visibility requires map capture 1.2.",
 					path: ["contract"]
 				};
+			if (
+				manifest.capturePolicy.render.effects.clouds !== undefined &&
+				manifest.contract.version.minor < 3
+			)
+				return { issue: "Cloud control requires map capture 1.3.", path: ["contract"] };
 			const expectedGrid = createMapTileGrid({
 				coarsestUnitsPerPixel: manifest.levels[0]!.unitsPerPixel,
 				levelCount: manifest.levels.length,

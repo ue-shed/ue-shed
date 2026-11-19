@@ -333,6 +333,23 @@ studio-specific plugin is required. This change does not publish a release.
 
 See [live validation and visual differences](../research/shared-camera-rendering-2026-09-08.md).
 
+## Host settings
+
+`makeCameraRenderer(client, endpoint, options)` and `cameraRendererLayer(endpoint, options)` take
+optional `CameraRendererOptions`; `captureRenderedReviewView` passes its `renderer` argument through:
+
+- `requestTimeout` (default 30 seconds) is the longest wait for one Remote Control call. Unreal
+  renders the high-resolution screenshot warm-up and the shot in one game-thread call and answers
+  nothing meanwhile, so a frame status check can outlast it. A status check that times out is sent
+  again until the frame deadline; other calls fail as before.
+- `frameDeadlineMargin` (default 30 seconds) is how long a frame may run past
+  `settling.timeoutMs`. A frame that passes the deadline fails as `settling_timeout` with
+  `nextStep: "reconcile"`.
+
+Clouds are policy, like fog: set `renderer.clouds` (or `render.effects.clouds` in a 1.3 map
+capture plan) to `false` to keep volumetric clouds out of a capture. Absence keeps the editor's
+setting.
+
 ## Authored actor visibility
 
 An optional `policy.visibility` contains loaded-actor hide/protect lists. Check the `authoredVisibility`

@@ -67,6 +67,7 @@ export {
 export {
 	CameraRenderer,
 	type CameraRendererApi,
+	type CameraRendererOptions,
 	cameraRendererLayer,
 	CameraRenderError,
 	cameraRendererTestLayer,

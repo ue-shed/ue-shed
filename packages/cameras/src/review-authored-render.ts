@@ -2,7 +2,11 @@ import { ReviewRenderInspectionResult } from "./review-render.js";
 import { randomUUID } from "node:crypto";
 import { Effect, Schema } from "effect";
 import { RemoteControlClient } from "@ue-shed/unreal-connection";
-import { makeCameraRenderer, CameraRenderError } from "./camera-render.js";
+import {
+	makeCameraRenderer,
+	CameraRenderError,
+	type CameraRendererOptions
+} from "./camera-render.js";
 import {
 	CameraRenderSessionId,
 	CameraFrameOperationId,
@@ -22,6 +26,8 @@ import {
 export const captureAuthoredReviewView = Effect.fn("ReviewRenderer.authored")(function* (args: {
 	endpoint: string;
 	request: typeof ReviewCaptureRequestCurrent.Type;
+	/** Renderer settings such as the per-call editor timeout. */
+	renderer?: CameraRendererOptions;
 }) {
 	const client = yield* RemoteControlClient,
 		request = args.request;
@@ -36,7 +42,7 @@ export const captureAuthoredReviewView = Effect.fn("ReviewRenderer.authored")(fu
 			retrySafe: true,
 			nextStep: "fix_input"
 		});
-	const renderer = makeCameraRenderer(client, args.endpoint),
+	const renderer = makeCameraRenderer(client, args.endpoint, args.renderer),
 		capabilities = yield* renderer.capabilities;
 	if (!capabilities.authoredVisibility)
 		return yield* new CameraRenderError({

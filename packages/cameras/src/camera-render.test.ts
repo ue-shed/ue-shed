@@ -20,6 +20,7 @@ import {
 	isEditorOwnershipRejection,
 	makeCameraRenderer,
 	renderCamera,
+	type CameraRendererOptions,
 	cameraRenderReuseIdentity
 } from "./camera-render.js";
 import { captureReviewView } from "./review-live.js";
@@ -108,7 +109,8 @@ const failed = (code: "editor_busy" | "capture_failed" | "restoration_failed") =
 function harness(
 	override: (name: string) => Effect.Effect<unknown, RemoteControlClientError> | undefined = () =>
 		undefined,
-	extendedCapabilities = false
+	extendedCapabilities = false,
+	options?: CameraRendererOptions
 ) {
 	const calls: string[] = [];
 	const client: RemoteControlClientApi = {
@@ -148,7 +150,7 @@ function harness(
 				return yield* decodeJsonEffect(value).pipe(Effect.orDie);
 			})
 	};
-	const renderer = makeCameraRenderer(client, "http://fixture");
+	const renderer = makeCameraRenderer(client, "http://fixture", options);
 	return {
 		calls,
 		client,
@@ -342,6 +344,83 @@ describe("shared renderer lifecycle", () => {
 		expect(h.calls.filter((name) => name === "StartCameraFrame")).toHaveLength(1);
 		expect(h.calls).toContain("PollCameraFrame");
 	});
+	const runningFrame = {
+		status: "running",
+		sessionId: request.sessionId,
+		operationId: frame.operationId,
+		phase: "capturing",
+		renderedFrames: 0,
+		elapsedMs: 0
+	};
+	const noAnswer = (functionName: string) =>
+		new RemoteControlClientError({
+			code: "request_timeout",
+			endpoint: "http://fixture",
+			functionName,
+			operation: "capture",
+			message: "no answer in time",
+			retrySafe: false,
+			recovery: "Test double: the editor was busy.",
+			nextStep: "reconcile"
+		});
+	it("keeps checking a frame whose status check times out while the editor renders", async () => {
+		let polls = 0;
+		const h = harness((name) => {
+			if (name === "StartCameraFrame") return Effect.succeed(runningFrame);
+			if (name !== "PollCameraFrame") return undefined;
+			// Unreal renders the screenshot in one call and answers nothing until it is done.
+			return ++polls === 1 ? Effect.fail(noAnswer(name)) : Effect.succeed(captured);
+		});
+		expect(await Effect.runPromise(h.run())).toEqual(captured);
+		expect(polls).toBe(2);
+		expect(h.calls.filter((name) => name === "StartCameraFrame")).toHaveLength(1);
+		expect(h.calls.at(-1)).toBe("EndCameraRender");
+	});
+	it("passes the host's request timeout to every editor call", async () => {
+		const timeouts: unknown[] = [];
+		const h = harness(undefined, false, { requestTimeout: "3 minutes" });
+		const client: RemoteControlClientApi = {
+			request: (call) => {
+				if (call.objectPath !== "/Script/UEShedCore.Default__UEShedCoreLibrary")
+					timeouts.push(call.timeout);
+				return h.client.request(call);
+			}
+		};
+		await Effect.runPromise(
+			renderCamera({ session: request, frame }).pipe(
+				Effect.provideService(
+					CameraRenderer,
+					makeCameraRenderer(client, "http://fixture", { requestTimeout: "3 minutes" })
+				)
+			)
+		);
+		expect(timeouts.length).toBeGreaterThan(0);
+		expect(new Set(timeouts)).toEqual(new Set(["3 minutes"]));
+	});
+	effectIt.effect("fails a frame that outlasts its deadline as a settling timeout", () =>
+		Effect.gen(function* () {
+			const polled = yield* Deferred.make<void>();
+			const h = harness(
+				(name) => {
+					if (name === "StartCameraFrame") return Effect.succeed(runningFrame);
+					if (name !== "PollCameraFrame") return undefined;
+					return Deferred.succeed(polled, undefined).pipe(
+						Effect.andThen(Effect.fail(noAnswer(name)))
+					);
+				},
+				false,
+				{ frameDeadlineMargin: "1 second" }
+			);
+			const fiber = yield* h.run().pipe(Effect.result, Effect.forkScoped);
+			yield* Deferred.await(polled);
+			yield* TestClock.adjust(request.policy.settling.timeoutMs + 1000);
+			expect(yield* Fiber.join(fiber)).toMatchObject({
+				_tag: "Failure",
+				failure: { code: "settling_timeout", operation: "capture", nextStep: "reconcile" }
+			});
+			expect(h.calls.at(-1)).toBe("EndCameraRender");
+		})
+	);
 	it("does not release someone else's session after an explicit ownership rejection", async () => {
 		const h = harness((name) =>
 			name === "BeginCameraRender" ? Effect.succeed(failed("editor_busy")) : undefined
@@ -553,6 +632,68 @@ describe("native screenshot warmup", () => {
 		expect(response.highResolutionScreenshot?.maximumWarmupFrames).toBe(256);
 		expect(h.calls).toContain("GetCameraRenderCapabilitiesV2");
 		expect(h.calls).not.toContain("GetCameraRenderCapabilities");
+	});
+});
+
+describe("cloud control", () => {
+	const withClouds = (renderer: CameraRendererPolicy): CameraRenderSessionRequest => ({
+		...request,
+		policy: { ...request.policy, renderer: { ...renderer, clouds: false } }
+	});
+	const supported = (sceneCapture: boolean) =>
+		CameraRenderCapabilities.make({
+			...capabilities,
+			clouds: { version: 1, viewport: true, sceneCapture }
+		});
+	it("is optional on both renderers and accepts only booleans", () => {
+		const decode = Schema.decodeUnknownResult(CameraRendererPolicy);
+		const strict = { onExcessProperty: "error" } as const;
+		for (const renderer of [highResolutionReviewRenderer, legacyReviewRenderPolicy.renderer]) {
+			const absent = decode(renderer, strict);
+			expect(absent._tag === "Success" && "clouds" in absent.success).toBe(false);
+			for (const clouds of [true, false])
+				expect(decode({ ...renderer, clouds }, strict)._tag).toBe("Success");
+			for (const clouds of ["off", 0, null])
+				expect(decode({ ...renderer, clouds }, strict)._tag).toBe("Failure");
+		}
+	});
+	it("refuses clouds before acquiring an editor whose plugin can't apply them", async () => {
+		const h = harness();
+		const opened = await Effect.runPromise(
+			Effect.scoped(h.renderer.open(withClouds(highResolutionReviewRenderer))).pipe(
+				Effect.flip
+			)
+		);
+		expect(opened).toMatchObject({ code: "unsupported_capability", operation: "open" });
+		expect(h.calls).not.toContain("BeginCameraRender");
+	});
+	it("checks support for the requested backend", async () => {
+		const h = harness(
+			(name) =>
+				name === "GetCameraRenderCapabilitiesV2"
+					? Effect.succeed(supported(false))
+					: undefined,
+			true
+		);
+		const refused = await Effect.runPromise(
+			Effect.scoped(h.renderer.open(withClouds(legacyReviewRenderPolicy.renderer))).pipe(
+				Effect.flip
+			)
+		);
+		expect(refused.code).toBe("unsupported_capability");
+		expect(h.calls).not.toContain("BeginCameraRender");
+		const allowed = harness(
+			(name) =>
+				name === "GetCameraRenderCapabilitiesV2"
+					? Effect.succeed(supported(false))
+					: undefined,
+			true
+		);
+		// The viewport supports clouds, so the request reaches the editor.
+		await Effect.runPromiseExit(
+			Effect.scoped(allowed.renderer.open(withClouds(highResolutionReviewRenderer)))
+		);
+		expect(allowed.calls).toContain("BeginCameraRender");
 	});
 });
 

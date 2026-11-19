@@ -7,6 +7,7 @@ import {
 	type Brand,
 	Cause,
 	Context,
+	Duration,
 	Effect,
 	Exit,
 	Layer,
@@ -129,6 +130,9 @@ export class CameraRenderError extends Schema.TaggedError<
 const isCameraRenderError = Schema.is(CameraRenderError);
 const isContractParseError = Schema.is(ContractParseError);
 const isRemoteControlClientError = Schema.is(RemoteControlClientError);
+/** A Remote Control call that got no answer in time, as opposed to one the editor refused. */
+const isRequestTimeout = (error: CameraRenderError) =>
+	isRemoteControlClientError(error.cause) && error.cause.code === "request_timeout";
 
 /**
  * Open was refused because another owner holds the editor: a camera set (`authoring_open`) or
@@ -285,10 +289,20 @@ function unsupportedRendererPolicy(
 			retrySafe: true,
 			nextStep: "fix_input"
 		});
+	const backend = renderer.kind === "editor_viewport" ? "viewport" : "sceneCapture";
+	if (renderer.clouds !== undefined && !capabilities.clouds?.[backend])
+		return new CameraRenderError({
+			code: "unsupported_capability",
+			operation,
+			sessionId: request.sessionId,
+			message: `The connected plugin does not support renderer.clouds for ${renderer.kind}.`,
+			recovery:
+				"Omit renderer.clouds or install a matching UE Shed Cameras plugin that advertises clouds.",
+			retrySafe: true,
+			nextStep: "fix_input"
+		});
 	if (renderer.editorPreviews === undefined) return undefined;
-	const support = capabilities.editorPreviews;
-	if (support?.[renderer.kind === "editor_viewport" ? "viewport" : "sceneCapture"])
-		return undefined;
+	if (capabilities.editorPreviews?.[backend]) return undefined;
 	return new CameraRenderError({
 		code: "unsupported_capability",
 		operation,
@@ -340,13 +354,14 @@ export class CameraRenderer extends Context.Service<CameraRenderer, CameraRender
  * does not open a render session or mutate editor state.
  */
 export function cameraRendererLayer(
-	endpoint: string
+	endpoint: string,
+	options?: CameraRendererOptions
 ): Layer.Layer<CameraRenderer, never, RemoteControlClient> {
 	return Layer.effect(
 		CameraRenderer,
 		Effect.gen(function* () {
 			const client = yield* RemoteControlClient;
-			return makeCameraRenderer(client, endpoint);
+			return makeCameraRenderer(client, endpoint, options);
 		})
 	);
 }
@@ -358,6 +373,21 @@ export function cameraRendererTestLayer(api: CameraRendererApi): Layer.Layer<Cam
 	return Layer.succeed(CameraRenderer, CameraRenderer.of(api));
 }
 
+/** Host settings for a camera renderer. Every field is optional and has a default. */
+export interface CameraRendererOptions {
+	/**
+	 * Longest wait for one Remote Control call to the editor. Default 30 seconds. Unreal answers
+	 * nothing while it renders a high-resolution screenshot, which can take longer than this; a
+	 * frame status check that times out is sent again until the frame's deadline.
+	 */
+	readonly requestTimeout?: Duration.Input;
+	/**
+	 * How long a frame may run past the policy's `settling.timeoutMs` before capture fails, to
+	 * cover the screenshot itself after settling. Default 30 seconds.
+	 */
+	readonly frameDeadlineMargin?: Duration.Input;
+}
+
 /**
  * Builds the validated Remote Control renderer, including capability negotiation, correlated
  * polling and artifact identity/PNG checks. Session acquisition attaches close/restoration to
@@ -365,8 +395,11 @@ export function cameraRendererTestLayer(api: CameraRendererApi): Layer.Layer<Cam
  */
 export function makeCameraRenderer(
 	client: RemoteControlClientApi,
-	endpoint: string
+	endpoint: string,
+	options: CameraRendererOptions = {}
 ): CameraRendererApi {
+	const requestTimeout = options.requestTimeout ?? "30 seconds";
+	const frameDeadlineMarginMs = Duration.toMillis(options.frameDeadlineMargin ?? "30 seconds");
 	const call = Effect.fn("CameraRenderer.remote")(
 		function* (
 			operation: CameraRenderError["operation"],
@@ -381,7 +414,7 @@ export function makeCameraRenderer(
 				parameters,
 				operation: `camera.render.${operation}`,
 				idempotent: operation === "capabilities" || operation === "preflight",
-				timeout: "30 seconds"
+				timeout: requestTimeout
 			});
 		},
 		(effect, operation, sessionId) =>
@@ -561,35 +594,49 @@ export function makeCameraRenderer(
 						status.status === "running" ? PubSub.publish(events, status) : Effect.void
 					)
 				);
-			// Start is issued once. A transport failure is reconciled by polling this operation.
-			const first = yield* call("capture", request.sessionId, "StartCameraFrame", {
-				RequestJson: JSON.stringify(frame)
+			// Unreal answers no request while it renders a high-resolution screenshot in one call.
+			// A status check changes nothing, so one that times out is sent again; the frame
+			// deadline below bounds the whole wait.
+			const poll = call("capture", request.sessionId, "PollCameraFrame", {
+				SessionId: request.sessionId,
+				OperationId: frame.operationId
 			}).pipe(
-				Effect.catchTag("CameraRenderError", () =>
-					call("capture", request.sessionId, "PollCameraFrame", {
-						SessionId: request.sessionId,
-						OperationId: frame.operationId
-					})
-				),
-				Effect.flatMap(decodeStatus)
+				Effect.retry({ while: isRequestTimeout, schedule: Schedule.spaced("100 millis") })
 			);
-			const result =
-				first.status !== "running"
-					? first
-					: yield* call("capture", request.sessionId, "PollCameraFrame", {
-							SessionId: request.sessionId,
-							OperationId: frame.operationId
-						}).pipe(
-							Effect.flatMap(decodeStatus),
-							Effect.repeat({
-								schedule: Schedule.spaced("100 millis"),
-								while: (status) => status.status === "running"
-							}),
-							Effect.timeout(request.policy.settling.timeoutMs + 30000),
-							Effect.mapError((cause) =>
-								renderError("capture", request.sessionId, cause)
-							)
-						);
+			const deadlineMs = request.policy.settling.timeoutMs + frameDeadlineMarginMs;
+			const frameDeadline = new CameraRenderError({
+				code: "settling_timeout",
+				operation: "capture",
+				sessionId: request.sessionId,
+				message: `Frame ${frame.operationId} in session ${request.sessionId} did not finish within ${Math.round(deadlineMs / 1000)} seconds.`,
+				recovery:
+					"Raise policy.settling.timeoutMs or the renderer's frameDeadlineMargin, or keep the editor in the foreground so it renders at full speed. Inspect the native session before retrying.",
+				retrySafe: false,
+				nextStep: "reconcile"
+			});
+			const finished = Effect.gen(function* () {
+				// Start is issued once. A transport failure is reconciled by polling this operation.
+				const first = yield* call("capture", request.sessionId, "StartCameraFrame", {
+					RequestJson: JSON.stringify(frame)
+				}).pipe(
+					Effect.catchTag("CameraRenderError", () => poll),
+					Effect.flatMap(decodeStatus)
+				);
+				if (first.status !== "running") return first;
+				return yield* poll.pipe(
+					Effect.flatMap(decodeStatus),
+					Effect.repeat({
+						schedule: Schedule.spaced("100 millis"),
+						while: (status) => status.status === "running"
+					})
+				);
+			});
+			const result = yield* finished.pipe(
+				Effect.timeoutOrElse({
+					duration: deadlineMs,
+					orElse: () => Effect.fail(frameDeadline)
+				})
+			);
 			if (result.status === "running")
 				return yield* Effect.die(
 					new Error("Camera polling ended before a terminal status.")

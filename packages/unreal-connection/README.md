@@ -85,6 +85,25 @@ and loaded modules for enabled UE Shed plugins. Versions describe loaded plugin 
 capabilities remain authoritative for feature negotiation. `ue-shed doctor --endpoint <url>`
 prints this evidence. Older producers may omit identity.
 
+## Timeouts
+
+Libraries set their own per-call timeouts; the host can always raise them. The effective timeout of
+a call is the host's `operationTimeouts[request.operation]` when set, otherwise the larger of the
+call's own timeout (or `defaultTimeout`) and the host's `minimumTimeout`:
+
+```ts
+makeRemoteControlClient({
+	defaultTimeout: "10 seconds",
+	minimumTimeout: "2 minutes", // slow editor or big project: no call waits less
+	operationTimeouts: { "camera.render.close": "10 seconds" } // exact, per operation
+});
+```
+
+`RemoteControlClientLive` and `remoteControlClientFromConfig(fallback)` read
+`UE_SHED_REMOTE_CONTROL_TIMEOUT` and the optional `UE_SHED_REMOTE_CONTROL_MINIMUM_TIMEOUT` (Effect
+durations such as `"2 minutes"`). `remoteControlTimeout(request, settings)` returns the timeout a
+call will get.
+
 ## Remote call recovery
 
 `RemoteControlClient.request` never retries a call automatically. Set `idempotent: true` only when

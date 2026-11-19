@@ -205,7 +205,7 @@ bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 		if (!Fields(R,
 		            {TEXT("kind"), TEXT("strategy"), TEXT("profile"), TEXT("vignette"), TEXT("fog"),
 		             TEXT("volumetricFog")},
-		            {TEXT("editorPreviews"), TEXT("screenshotWarmupFrames")}) ||
+		            {TEXT("editorPreviews"), TEXT("screenshotWarmupFrames"), TEXT("clouds")}) ||
 		    String(R, TEXT("strategy")) != TEXT("high_resolution_screenshot") ||
 		    (String(R, TEXT("profile")) != TEXT("lit") &&
 		     String(R, TEXT("profile")) != TEXT("observation")) ||
@@ -220,7 +220,7 @@ bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 	{
 		if (!Fields(R, {TEXT("kind"), TEXT("profile"), TEXT("lodDistanceScale"), TEXT("fog"),
 						TEXT("volumetricFog")},
-					{TEXT("editorPreviews")}) ||
+					{TEXT("editorPreviews"), TEXT("clouds")}) ||
 			!Number(R, TEXT("lodDistanceScale"), .1, 100))
 			return false;
 		const FString Profile = String(R, TEXT("profile"));
@@ -231,7 +231,8 @@ bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 	else
 		return false;
 	if (!Boolean(R, TEXT("fog")) || !Boolean(R, TEXT("volumetricFog")) ||
-		(R->HasField(TEXT("editorPreviews")) && !Boolean(R, TEXT("editorPreviews"))))
+		(R->HasField(TEXT("editorPreviews")) && !Boolean(R, TEXT("editorPreviews"))) ||
+		(R->HasField(TEXT("clouds")) && !Boolean(R, TEXT("clouds"))))
 		return false;
 	if (Mode == TEXT("project_auto"))
 	{
@@ -738,7 +739,10 @@ struct FUEShedCameraRenderSession::FState
 			}
 			Capture->ConfigureRenderPolicy(Render->GetBoolField(TEXT("fog")),
 										   Render->GetBoolField(TEXT("volumetricFog")),
-										   Render->GetNumberField(TEXT("lodDistanceScale")));
+										   Render->GetNumberField(TEXT("lodDistanceScale")),
+										   Render->HasField(TEXT("clouds"))
+											   ? TOptional<bool>(Render->GetBoolField(TEXT("clouds")))
+											   : TOptional<bool>());
 			if (Profile != TEXT("scene_capture_defaults"))
 				Capture->BeginPersistentCameraCut();
 			ApplyExposure(Capture->Component()->PostProcessSettings);
@@ -988,9 +992,14 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 		C->bDrawAxesGame = false;
 		const bool Fog = R->GetBoolField(TEXT("fog")), VolumetricFog = R->GetBoolField(TEXT("volumetricFog"));
 		const bool Observation = String(R, TEXT("profile")) == TEXT("observation");
-		C->EnableOverrideEngineShowFlags([Fog, VolumetricFog, Observation](FEngineShowFlags &Flags) {
+		// Absent clouds keep the viewport's own Cloud show flag.
+		const TOptional<bool> Clouds =
+			R->HasField(TEXT("clouds")) ? TOptional<bool>(R->GetBoolField(TEXT("clouds"))) : TOptional<bool>();
+		C->EnableOverrideEngineShowFlags([Fog, VolumetricFog, Clouds, Observation](FEngineShowFlags &Flags) {
 			Flags.SetFog(Fog);
 			Flags.SetVolumetricFog(VolumetricFog);
+			if (Clouds.IsSet())
+				Flags.SetCloud(Clouds.GetValue());
 			Flags.SetSelection(false);
 			Flags.SetSelectionOutline(false);
 			Flags.SetModeWidgets(false);
@@ -1482,6 +1491,8 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Capabilities()
 	if (IConsoleManager::Get().FindConsoleVariable(TEXT("r.HighResScreenshotDelay")))
 		Out->SetObjectField(TEXT("highResolutionScreenshot"),
 		                    UEShedCameraJson(TEXT("{\"version\":1,\"maximumWarmupFrames\":256}")));
+	Out->SetObjectField(TEXT("clouds"),
+	                    UEShedCameraJson(TEXT("{\"version\":1,\"viewport\":true,\"sceneCapture\":true}")));
 	Out->SetObjectField(TEXT("authoredVisibility"), UEShedCameraVisibilityCapabilities());
 	Out->SetObjectField(TEXT("editorPreviews"),
 						UEShedCameraJson(TEXT("{\"version\":1,\"subjects\":\"child_actors_of_editor_only_"
@@ -1520,7 +1531,9 @@ TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Capabilities()
 void UUEShedCameraRenderingLibrary::GetCameraRenderCapabilities(FString &ResultJson)
 {
 	auto Capabilities = FUEShedCameraRenderSession::Capabilities();
+	// Strict v1 clients reject fields added after v1.
 	Capabilities->RemoveField(TEXT("highResolutionScreenshot"));
+	Capabilities->RemoveField(TEXT("clouds"));
 	ResultJson = UEShedCameraJsonText(Capabilities);
 }
 void UUEShedCameraRenderingLibrary::GetCameraRenderCapabilitiesV2(FString &ResultJson)

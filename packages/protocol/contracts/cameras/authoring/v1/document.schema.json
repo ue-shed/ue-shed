@@ -1301,6 +1301,9 @@
 										"volumetricFog": {
 											"type": "boolean"
 										},
+										"clouds": {
+											"type": "boolean"
+										},
 										"editorPreviews": {
 											"type": "boolean"
 										},
@@ -1353,6 +1356,9 @@
 											"type": "boolean"
 										},
 										"volumetricFog": {
+											"type": "boolean"
+										},
+										"clouds": {
 											"type": "boolean"
 										},
 										"editorPreviews": {
@@ -2045,6 +2051,9 @@
 													"volumetricFog": {
 														"type": "boolean"
 													},
+													"clouds": {
+														"type": "boolean"
+													},
 													"editorPreviews": {
 														"type": "boolean"
 													},
@@ -2097,6 +2106,9 @@
 														"type": "boolean"
 													},
 													"volumetricFog": {
+														"type": "boolean"
+													},
+													"clouds": {
 														"type": "boolean"
 													},
 													"editorPreviews": {

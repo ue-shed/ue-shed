@@ -2,7 +2,7 @@ import { CameraRendererPolicy, reviewCaptureRenderPolicy } from "./camera-render
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import {
-	makeRemoteControlClient,
+	remoteControlClientFromConfig,
 	RemoteControlClient,
 	type RemoteControlClientApi
 } from "@ue-shed/unreal-connection";
@@ -769,9 +769,8 @@ export function makeReviewCaptureTestLayer(service: ReviewCaptureApi): Layer.Lay
 export function captureReviewSet(
 	options: CaptureReviewSetOptions
 ): Effect.Effect<CaptureRun, ReviewCaptureRunError | ReviewStorageError, ReviewRepository> {
-	const remoteClient = Layer.sync(RemoteControlClient, () =>
-		makeRemoteControlClient({ defaultTimeout: "10 seconds" })
-	);
+	// The host's UE_SHED_REMOTE_CONTROL_* settings apply; a malformed value is a host defect.
+	const remoteClient = remoteControlClientFromConfig("10 seconds").pipe(Layer.orDie);
 	return Effect.flatMap(ReviewCapture, (service) => service.captureSet(options)).pipe(
 		Effect.provide(
 			Layer.provideMerge(

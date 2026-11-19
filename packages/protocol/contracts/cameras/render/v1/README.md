@@ -37,6 +37,13 @@ from ordinary viewport settling, and its scoped value/priority override is resto
 on interruption. SceneCapture policies reject the field. Frame policy evidence carries the explicit
 choice. Clients must negotiate the extended discovery method before requesting the new control.
 
+Both renderer policies also accept an optional `clouds` boolean. It sets the Cloud show flag for
+the render, so `false` keeps volumetric clouds out of top-down captures. Absence keeps the editor
+viewport's or SceneCapture's own setting. Plugins that support it advertise
+`clouds: { version: 1, viewport, sceneCapture }` through `GetCameraRenderCapabilitiesV2` (the v1
+getter omits it), and the SDK refuses the field before acquiring an editor whose plugin lacks it.
+Earlier plugins reject it as `invalid_policy`. Frame policy evidence carries the explicit choice.
+
 Request JSON rejects unknown fields. Native semantic validation additionally rejects duplicate Data
 Layer identities, unsupported renderer/exposure combinations, effective layer hierarchy conflicts,
 world/project mismatch, contention, region overrides with preserved loading, exceeded resource

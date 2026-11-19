@@ -248,6 +248,23 @@
 			},
 			"required": ["version", "maximumWarmupFrames"],
 			"additionalProperties": false
+		},
+		"clouds": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"viewport": {
+					"type": "boolean"
+				},
+				"sceneCapture": {
+					"type": "boolean"
+				}
+			},
+			"required": ["version", "viewport", "sceneCapture"],
+			"additionalProperties": false
 		}
 	},
 	"required": [

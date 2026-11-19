@@ -100,6 +100,8 @@ export const CameraRendererPolicy = Schema.Union([
 		vignette: Schema.Literals(["project", "disabled"]),
 		fog: Schema.Boolean,
 		volumetricFog: Schema.Boolean,
+		/** Volumetric clouds; absence keeps the viewport's own setting. Needs `clouds` support. */
+		clouds: Schema.optionalKey(Schema.Boolean),
 		/** Native final-output viewport frames; absence preserves the engine/project setting. */
 		screenshotWarmupFrames: Schema.optionalKey(integer(1, 256)),
 		editorPreviews: EditorPreviews
@@ -115,6 +117,8 @@ export const CameraRendererPolicy = Schema.Union([
 		lodDistanceScale: Schema.Finite.check(Schema.isBetween({ minimum: 0.1, maximum: 100 })),
 		fog: Schema.Boolean,
 		volumetricFog: Schema.Boolean,
+		/** Volumetric clouds; absence keeps the capture's default. Needs `clouds` support. */
+		clouds: Schema.optionalKey(Schema.Boolean),
 		editorPreviews: EditorPreviews
 	})
 ]);
@@ -351,6 +355,14 @@ export const CameraRenderCapabilities = CameraRenderCapabilitiesV1.mapFields((fi
 		Schema.Struct({
 			version: Schema.Literal(1),
 			maximumWarmupFrames: integer(1, 256)
+		})
+	),
+	/** Renderers that accept `renderer.clouds`. Absent from plugins that predate it. */
+	clouds: Schema.optionalKey(
+		Schema.Struct({
+			version: Schema.Literal(1),
+			viewport: Schema.Boolean,
+			sceneCapture: Schema.Boolean
 		})
 	)
 }));

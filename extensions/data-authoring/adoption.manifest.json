@@ -180,7 +180,7 @@
 			"browser": "schema-validated HTTP AuthoringClient",
 			"host": "ShedHostLive Node server"
 		},
-		"solid": "vite-plugin-solid",
+		"solid": "@solidjs/vite-plugin",
 		"stylex": {
 			"build": "extract stylex.css",
 			"serve": "set runtimeInjection to true"

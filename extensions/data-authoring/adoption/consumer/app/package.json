@@ -16,9 +16,9 @@
 		"solid-js": "catalog:"
 	},
 	"devDependencies": {
+		"@solidjs/vite-plugin": "catalog:",
 		"@stylexjs/rollup-plugin": "catalog:",
 		"typescript": "^5.7.2",
-		"vite": "8.1.4",
-		"vite-plugin-solid": "catalog:"
+		"vite": "8.1.4"
 	}
 }

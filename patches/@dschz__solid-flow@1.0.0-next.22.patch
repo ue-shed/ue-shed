@@ -1,0 +1,80 @@
+diff --git a/dist/index/index.jsx b/dist/index/index.jsx
+index f6ebb4390c1b9838a3fbd7a05e07a638a9bedb00..b4369d3ede3ef1011ae678ce9ddd9c5f34f63af5 100644
+--- a/dist/index/index.jsx
++++ b/dist/index/index.jsx
+@@ -2321,7 +2321,7 @@ function createOptimisticNodeStore(nodes) {
+ //#region src/components/edge/EdgeWrapper.tsx
+ /** Internal per-edge wrapper: interaction, a11y, viewport culling, and the dynamic edge component. */
+ const EdgeWrapper = (props) => {
+-	let edgeRef, { store, actions, onScreenEdgeIds } = useInternalSolidFlow(), owner = getOwner(), edgeId = () => props.edgeId, edge = createMemo(() => actions.getLayoutedEdge(edgeId())), edgeType = () => edge().type ?? "default", selectable = () => isEdgeSelectable(edge(), store), focusable = () => edge().focusable ?? store.edgesFocusable, edgeTypeValid = () => edgeType() in store.edgeTypes, EdgeComponent = dynamic(() => store.edgeTypes[edgeTypeValid() ? edgeType() : "default"]);
++	let edgeRef, { store, actions, onScreenEdgeIds } = useInternalSolidFlow(), edgeId = () => props.edgeId, edge = createMemo(() => actions.getLayoutedEdge(edgeId())), edgeType = () => edge().type ?? "default", selectable = () => isEdgeSelectable(edge(), store), focusable = () => edge().focusable ?? store.edgesFocusable, edgeTypeValid = () => edgeType() in store.edgeTypes, EdgeComponent = dynamic(() => store.edgeTypes[edgeTypeValid() ? edgeType() : "default"]);
+ 	createEffect(() => ({
+ 		valid: edgeTypeValid(),
+ 		edgeType: edgeType()
+@@ -2353,21 +2353,26 @@ const EdgeWrapper = (props) => {
+ 	}, onKeyDown = (event) => {
+ 		!store.disableKeyboardA11y && elementSelectionKeys.includes(event.key) && selectable() && (event.key === "Escape" ? (edgeRef?.blur(), actions.unselectNodesAndEdges({ edges: [edge()] })) : actions.addSelectedEdges([edge().id]));
+ 	}, ariaLabel = () => edge().ariaLabel ?? `Edge from ${edge().source} to ${edge().target}`, culled = createMemo(() => edgeCulled(edge(), store.cullingActive, onScreenEdgeIds));
++	const EdgeBody = () => {
++		const view = <g ref={(el) => {
++			edgeRef = el;
++		}} data-id={edge().id} tabindex={focusable() ? 0 : void 0} role={edge().ariaRole ?? (focusable() ? "group" : "img")} aria-label={ariaLabel()} aria-roledescription="edge" aria-describedby={focusable() ? `${ARIA_EDGE_DESC_KEY}-${store.id}` : void 0} class={cx("solid-flow__edge", `solid-flow__edge-${edgeType()}`, {
++		animated: !!edge().animated,
++		selected: !!edge().selected,
++		selectable: !!selectable()
++	}, edge().class)} onClick={onClick} onKeyDown={(e) => focusable() && onKeyDown(e)} onContextMenu={onContextMenu}>
++          <EdgeComponent id={edge().id} source={edge().source} target={edge().target} sourceX={edge().sourceX} sourceY={edge().sourceY} targetX={edge().targetX} targetY={edge().targetY} sourcePosition={edge().sourcePosition} targetPosition={edge().targetPosition} animated={edge().animated} selected={edge().selected} label={edge().label} labelStyle={edge().labelStyle} data={edge().data} style={edge().style} interactionWidth={edge().interactionWidth} pathOptions={edge().pathOptions} selectable={selectable()} deletable={edge().deletable ?? !0} type={edgeType()} sourceHandleId={edge().sourceHandle} targetHandleId={edge().targetHandle} markerStart={markerStartUrl()} markerEnd={markerEndUrl()} />
++        </g>;
++		if (edgeRef) clientOnlySetup(() => mountElement(edgeRef));
++		return view;
++	};
+ 	return <EdgeIdContext value={edgeId}>
+       <svg class="solid-flow__edge-wrapper" style={{
+ 		"z-index": edge().zIndex,
+ 		visibility: culled() ? "hidden" : void 0,
+ 		"pointer-events": culled() ? "none" : void 0
+ 	}}>
+-        <g ref={(el) => {
+-		edgeRef = el, runWithOwner(owner, () => clientOnlySetup(() => mountElement(el)));
+-	}} data-id={edge().id} tabindex={focusable() ? 0 : void 0} role={edge().ariaRole ?? (focusable() ? "group" : "img")} aria-label={ariaLabel()} aria-roledescription="edge" aria-describedby={focusable() ? `${ARIA_EDGE_DESC_KEY}-${store.id}` : void 0} class={cx("solid-flow__edge", `solid-flow__edge-${edgeType()}`, {
+-		animated: !!edge().animated,
+-		selected: !!edge().selected,
+-		selectable: !!selectable()
+-	}, edge().class)} onClick={onClick} onKeyDown={(e) => focusable() && onKeyDown(e)} onContextMenu={onContextMenu}>
+-          <EdgeComponent id={edge().id} source={edge().source} target={edge().target} sourceX={edge().sourceX} sourceY={edge().sourceY} targetX={edge().targetX} targetY={edge().targetY} sourcePosition={edge().sourcePosition} targetPosition={edge().targetPosition} animated={edge().animated} selected={edge().selected} label={edge().label} labelStyle={edge().labelStyle} data={edge().data} style={edge().style} interactionWidth={edge().interactionWidth} pathOptions={edge().pathOptions} selectable={selectable()} deletable={edge().deletable ?? !0} type={edgeType()} sourceHandleId={edge().sourceHandle} targetHandleId={edge().targetHandle} markerStart={markerStartUrl()} markerEnd={markerEndUrl()} />
+-        </g>
++        <EdgeBody />
+       </svg>
+     </EdgeIdContext>;
+ }, SmoothStepEdge = (props) => {
+@@ -2732,7 +2737,7 @@ function useNodeConnectable() {
+ //#region src/components/node/NodeWrapper.tsx
+ /** Internal per-node wrapper: dragging, selection, a11y, measurement, viewport culling, and the dynamic node component. */
+ const NodeWrapper = (props) => {
+-	let { store, nodeLookup, parentIds, actions, onScreenNodeIds } = useInternalSolidFlow(), owner = getOwner(), [nodeRef, setNodeRef] = createSignal(), node = createMemo(() => nodeLookup.get(props.nodeId));
++	let { store, nodeLookup, parentIds, actions, onScreenNodeIds } = useInternalSolidFlow(), [nodeRef, setNodeRef] = createSignal(), node = createMemo(() => nodeLookup.get(props.nodeId));
+ 	onCleanup(() => {
+ 		let el = nodeRef();
+ 		el && props.resizeObserver?.unobserve(el);
+@@ -2839,8 +2844,10 @@ const NodeWrapper = (props) => {
+ 			}
+ 		}));
+ 	};
+-	return <div ref={(el) => {
+-		setNodeRef(el), runWithOwner(owner, () => clientOnlySetup(() => mountElement(el)));
++	let element;
++	const view = <div ref={(el) => {
++		element = el;
++		setNodeRef(el);
+ 	}} data-id={node().id} class={cx("solid-flow__node", `solid-flow__node-${nodeType()}`, {
+ 		connectable: !!connectable(),
+ 		draggable: !!draggable(),
+@@ -2859,6 +2866,8 @@ const NodeWrapper = (props) => {
+         </NodeConnectableContext>
+       </NodeIdContext>
+     </div>;
++	if (element) clientOnlySetup(() => mountElement(element));
++	return view;
+ }, NO_ROWS = [], NodeRenderer = (props) => {
+ 	let { actions, store, nodeLookup, onScreenNodeIds } = useInternalSolidFlow(), resizeObserver = isServer ? void 0 : new ResizeObserver((entries) => {
+ 		actions.requestUpdateNodeInternals(entries.map((entry) => {

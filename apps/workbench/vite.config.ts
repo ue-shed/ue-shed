@@ -1,7 +1,7 @@
 import stylexModule, { type PluginOptions } from "@stylexjs/rollup-plugin";
 import type { Plugin } from "vite";
 import { defineConfig } from "vite";
-import solid from "vite-plugin-solid";
+import solid from "@solidjs/vite-plugin";
 import { isBuiltin } from "node:module";
 
 function isStylexPluginFactory<Value>(

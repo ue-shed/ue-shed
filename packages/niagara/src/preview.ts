@@ -40,16 +40,30 @@ import {
 	type NiagaraPreviewSettings
 } from "./schema.js";
 
-import { submitNiagaraSessionRequest } from "./session.js";
+import { DEFAULT_NIAGARA_SESSION_TIMEOUT_MS, submitNiagaraSessionRequest } from "./session.js";
 const decodeNiagaraPreviewRunManifest = Schema.decodeEffect(NiagaraPreviewRunManifest);
 
 const MAXIMUM_RECEIPT_BYTES = 8 * 1024 * 1024;
-const COMMANDLET_TIMEOUT = Duration.minutes(30);
+const DEFAULT_COMMANDLET_TIMEOUT_MS = 30 * 60_000;
 
 export interface RunNiagaraPreviewOptions {
 	readonly onProgress?: (progress: NiagaraPreviewProgress) => Effect.Effect<void>;
 	/** Private session directory supplied by a process-owning trusted host. */
 	readonly sessionDirectory?: string;
+	/**
+	 * Milliseconds the standalone `UEShedNiagaraPreview` commandlet may run (startup, shader
+	 * compile and capture) when there is no `sessionDirectory`. A positive integer; default
+	 * 1,800,000 (30 minutes). Too low: a cold shader compile on a big project fails with
+	 * `process_timeout`, whose message names `commandletTimeoutMs`, and the commandlet is stopped.
+	 */
+	readonly commandletTimeoutMs?: number;
+	/**
+	 * Milliseconds to wait for the host-owned session's result when `sessionDirectory` is set. A
+	 * positive integer; default 1,800,000 (30 minutes). Too low: the run fails with
+	 * `process_timeout`, whose message names `sessionTimeoutMs`, and the session is asked to cancel
+	 * the run.
+	 */
+	readonly sessionTimeoutMs?: number;
 	readonly explicitEngineRoot?: string;
 	readonly outputRoot?: string;
 	readonly pluginDescriptor?: string;
@@ -136,6 +150,27 @@ function previewError(
 		...(runId === undefined ? undefined : { runId }),
 		...(cause === undefined ? undefined : { cause })
 	});
+}
+
+/** A caller's timeout option, or its default; anything but a positive integer is refused. */
+function timeoutOption(
+	name: "commandletTimeoutMs" | "sessionTimeoutMs",
+	value: number | undefined,
+	fallback: number,
+	runId: string
+): Effect.Effect<number, NiagaraPreviewError> {
+	if (value === undefined) return Effect.succeed(fallback);
+	if (Number.isSafeInteger(value) && value >= 1) return Effect.succeed(value);
+	return Effect.fail(
+		previewError(
+			"invalid_request",
+			"validation",
+			`${name} must be a whole number of milliseconds of at least 1.`,
+			`Pass ${name} as a positive integer, or omit it for the 30-minute default.`,
+			false,
+			runId
+		)
+	);
 }
 
 const hasErrorGuidance = Schema.is(
@@ -908,6 +943,18 @@ export const NiagaraPreviewLive = Layer.effect(
 				)
 			);
 			yield* validateRenderBudget(request);
+			const commandletTimeoutMs = yield* timeoutOption(
+				"commandletTimeoutMs",
+				options.commandletTimeoutMs,
+				DEFAULT_COMMANDLET_TIMEOUT_MS,
+				request.runId
+			);
+			const sessionTimeoutMs = yield* timeoutOption(
+				"sessionTimeoutMs",
+				options.sessionTimeoutMs,
+				DEFAULT_NIAGARA_SESSION_TIMEOUT_MS,
+				request.runId
+			);
 			yield* safeIo(
 				Effect.promise(() => access(projectDescriptor)),
 				previewError(
@@ -1036,20 +1083,38 @@ export const NiagaraPreviewLive = Layer.effect(
 				"-nosplash"
 			];
 			if (options.sessionDirectory !== undefined) {
-				const exitCode = yield* safeIo(
-					submitNiagaraSessionRequest({
-						directory: options.sessionDirectory,
-						requestPath,
-						runId
-					}),
-					previewError(
-						"process_failed",
-						"capture",
-						"The shared Niagara session failed or was cancelled.",
-						"Restart the host-owned session and retry the effect.",
-						true,
-						runId
-					)
+				const exitCode = yield* submitNiagaraSessionRequest({
+					directory: options.sessionDirectory,
+					requestPath,
+					runId,
+					timeoutMs: sessionTimeoutMs
+				}).pipe(
+					Effect.catchTags({
+						NiagaraSessionTimeoutError: (cause) =>
+							Effect.fail(
+								previewError(
+									"process_timeout",
+									"capture",
+									`The shared Niagara session returned no result within sessionTimeoutMs (${sessionTimeoutMs} ms).`,
+									"Check that the session is still capturing; raise sessionTimeoutMs for a cold shader compile, then retry.",
+									cause.retrySafe,
+									runId,
+									cause
+								)
+							),
+						NiagaraSessionError: (cause) =>
+							safeIo(
+								Effect.fail(cause),
+								previewError(
+									"process_failed",
+									"capture",
+									"The shared Niagara session failed or was cancelled.",
+									"Restart the host-owned session and retry the effect.",
+									true,
+									runId
+								)
+							)
+					})
 				);
 				if (exitCode !== 0) return yield* commandletExitError(exitCode, runId);
 			} else {
@@ -1087,14 +1152,14 @@ export const NiagaraPreviewLive = Layer.effect(
 						)
 					),
 					Effect.timeoutOrElse({
-						duration: COMMANDLET_TIMEOUT,
+						duration: Duration.millis(commandletTimeoutMs),
 						orElse: () =>
 							Effect.fail(
 								previewError(
 									"process_timeout",
 									"capture",
-									"The Niagara preview commandlet exceeded 30 minutes.",
-									"Inspect shader compilation and reduce the render budget before retrying.",
+									`The Niagara preview commandlet did not finish within commandletTimeoutMs (${commandletTimeoutMs} ms).`,
+									"Inspect shader compilation and reduce the render budget, or raise commandletTimeoutMs for a cold shader compile, before retrying.",
 									true,
 									request.runId
 								)

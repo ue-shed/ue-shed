@@ -10,6 +10,16 @@ export class NiagaraSessionError extends Schema.TaggedError<
 	...ErrorGuidanceFields,
 	cause: Schema.optionalKey(Schema.Defect())
 }) {}
+/** The session returned no result within `timeoutMs`; a cancellation marker has been written. */
+export class NiagaraSessionTimeoutError extends Schema.TaggedError<
+	NiagaraSessionTimeoutError,
+	Brand.Brand<"packages/niagara/src/session/NiagaraSessionTimeoutError">
+>()("NiagaraSessionTimeoutError", {
+	...ErrorGuidanceFields,
+	timeoutMs: Schema.Number
+}) {}
+/** How long a submitted run waits for the session's result when the caller sets no timeout. */
+export const DEFAULT_NIAGARA_SESSION_TIMEOUT_MS = 30 * 60_000;
 type SessionGuidance = Pick<NiagaraSessionError, "nextStep" | "recovery" | "retrySafe">;
 const failure = (message: string, guidance: SessionGuidance, cause?: unknown) =>
 	new NiagaraSessionError({
@@ -125,6 +135,7 @@ export const submitNiagaraSessionRequest = Effect.fn("NiagaraSession.submit")(fu
 			while: (result) => result === undefined
 		})
 	);
+	const timeoutMs = input.timeoutMs ?? DEFAULT_NIAGARA_SESSION_TIMEOUT_MS;
 	const result = yield* Effect.acquireUseRelease(
 		Effect.tryPromise({
 			try: async () => {
@@ -138,7 +149,23 @@ export const submitNiagaraSessionRequest = Effect.fn("NiagaraSession.submit")(fu
 					cause
 				)
 		}),
-		() => poll.pipe(Effect.timeout(input.timeoutMs ?? 30 * 60_000)),
+		() =>
+			poll.pipe(
+				Effect.timeoutOrElse({
+					duration: timeoutMs,
+					orElse: () =>
+						Effect.fail(
+							new NiagaraSessionTimeoutError({
+								message: `Niagara session run ${input.runId} timed out: no result within ${timeoutMs} ms.`,
+								recovery:
+									"The session was asked to cancel the run. Check that it is still capturing, then submit again with a longer timeout.",
+								retrySafe: true,
+								nextStep: "retry",
+								timeoutMs
+							})
+						)
+				})
+			),
 		(_, exit) =>
 			Exit.isSuccess(exit)
 				? Effect.void

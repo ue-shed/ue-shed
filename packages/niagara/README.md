@@ -24,3 +24,8 @@ progress: initialization, compilation, camera fitting, frame capture, receipt wr
 Progress carries run identity, frame counts, and elapsed milliseconds. It is optional telemetry;
 completion/publication still requires a validated receipt and frame artifacts. Older producers can
 omit progress. The CLI writes progress JSON lines to stderr and its final result to stdout.
+
+A standalone commandlet run stops after `commandletTimeoutMs` (default 30 minutes), and a run in a
+host-owned session (`sessionDirectory`) waits `sessionTimeoutMs` (default 30 minutes) for its result.
+Raise them when a cold shader compile on a big project needs longer; a run that hits one fails with
+`process_timeout` naming the option.

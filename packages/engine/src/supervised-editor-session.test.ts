@@ -410,6 +410,84 @@ it.effect("acquires readiness and releases only its owned process", () =>
 	})
 );
 
+it.effect("a cold first open can be given up to 24 hours to become ready", () =>
+	Effect.gen(function* () {
+		const fixture = yield* installationFixture();
+		const terminations = yield* Ref.make<readonly OwnedProcessTerminationReason[]>([]);
+		const deadlines = yield* Ref.make<readonly number[]>([]);
+		const layer = sessionLayer({
+			connection: makeEditorConnectionTestLayer({
+				connect: () => Effect.succeed(manifest),
+				waitUntilReady: (readiness) =>
+					Ref.update(deadlines, (current) => [
+						...current,
+						Duration.toMillis(Duration.fromInputUnsafe(readiness.timeout ?? 0))
+					]).pipe(Effect.as(manifestFor(43)))
+			}),
+			fixture,
+			process: makeOwnedProcessTreeTestLayer(() =>
+				Effect.succeed(testHandle(43, terminations))
+			)
+		});
+		const acquire = (readinessTimeoutMs: number | undefined) => {
+			const { readinessTimeoutMs: _omitted, ...base } = request(fixture);
+			return Effect.scoped(
+				Effect.flatMap(SupervisedEditorSession, (sessions) =>
+					sessions.acquire(
+						readinessTimeoutMs === undefined ? base : { ...base, readinessTimeoutMs }
+					)
+				)
+			).pipe(Effect.provide(layer));
+		};
+		yield* acquire(undefined);
+		yield* acquire(86_400_000);
+		expect(yield* Ref.get(deadlines)).toEqual([180_000, 86_400_000]);
+		const tooLong = yield* Effect.flip(acquire(86_400_001));
+		expect(tooLong.code).toBe("invalid_request");
+		expect(tooLong.recovery).toContain("24 hours");
+		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
+	})
+);
+
+it.effect("a readiness timeout names readinessTimeoutMs", () =>
+	Effect.gen(function* () {
+		const fixture = yield* installationFixture();
+		const terminations = yield* Ref.make<readonly OwnedProcessTerminationReason[]>([]);
+		const layer = sessionLayer({
+			connection: makeEditorConnectionTestLayer({
+				connect: () => Effect.succeed(manifest),
+				waitUntilReady: (readiness) =>
+					Effect.fail(
+						new EditorConnectionError({
+							code: "readiness_timeout",
+							endpoint: readiness.endpoint,
+							message: "Unreal Editor did not become ready before the deadline.",
+							recovery: "Inspect the editor log.",
+							retrySafe: true,
+							nextStep: "retry"
+						})
+					)
+			}),
+			fixture,
+			process: makeOwnedProcessTreeTestLayer(() =>
+				Effect.succeed(testHandle(44, terminations))
+			)
+		});
+		const failure = yield* Effect.flip(
+			Effect.scoped(
+				Effect.flatMap(SupervisedEditorSession, (sessions) =>
+					sessions.acquire(request(fixture))
+				)
+			).pipe(Effect.provide(layer))
+		);
+		expect(failure.code).toBe("readiness_failed");
+		expect(failure.message).toContain("readinessTimeoutMs (1000 ms)");
+		expect(failure.recovery).toContain("readinessTimeoutMs");
+		expect(yield* Ref.get(terminations)).toEqual(["failed"]);
+		yield* Effect.promise(() => rm(fixture.root, { force: true, recursive: true }));
+	})
+);
+
 it.effect("cancellation during readiness tears down the acquired process", () =>
 	Effect.gen(function* () {
 		const readinessStarted = yield* Deferred.make<void>();

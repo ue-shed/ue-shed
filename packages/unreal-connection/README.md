@@ -94,3 +94,26 @@ A lost response, timeout or server failure can follow an applied mutation; those
 again. An explicitly idempotent read can return `nextStep: "retry"` for transient transport errors.
 Permanent refusals and malformed producer responses retain correction/escalation guidance;
 replay safety alone does not make another identical call useful.
+
+## Timeouts
+
+These calls set no timeout of their own, so they get the `RemoteControlClient` default. Each sends
+a stable `RemoteControlRequest.operation`, so a host can give one call more time without raising
+it for every call:
+
+| Operation                           | Call                                                          |
+| ----------------------------------- | ------------------------------------------------------------- |
+| `unreal.producer.inspect`           | `GetCapabilityManifest`, before every connection below        |
+| `unreal.authoring.list_tables`      | authoring `ListTableObjectPaths`                              |
+| `unreal.authoring.table_snapshot`   | authoring `GetTableSnapshot`                                  |
+| `unreal.authoring.apply`            | authoring `Apply`                                             |
+| `unreal.authoring.lookup_apply`     | authoring `LookupApplyResult`                                 |
+| `unreal.authoring.save`             | authoring `Save`                                              |
+| `unreal.authoring.actor_references` | `findUnrealActorsReferencingRow` (`FindActorsReferencingRow`) |
+| `unreal.automation.list_players`    | automation `ListPlayers`                                      |
+| `unreal.automation.inject_input`    | automation `InjectInput`                                      |
+| `unreal.automation.csv_profiler`    | automation `CsvProfiler`                                      |
+| `unreal.asset_navigation.locate`    | `locateUnrealAsset` (`LocateAsset`)                           |
+| `unreal.asset_navigation.open`      | `openUnrealAsset` (`OpenAsset`)                               |
+
+A large Apply or Save, or an actor-reference scan over a big world, can need more than the default.

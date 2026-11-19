@@ -81,7 +81,8 @@ controls PO/review writes separately; `reviewer` and `changeAuthor` supply attri
 
 `makeGameTextOperations(host)` adds plan/run/cancel and changed-file operations. Supply the workspace,
 selected-project state, explicit engine-root policy and progress notification hook, plus the
-`LocalizationOperations` service. Unreal remains a separately enabled capability.
+`LocalizationOperations` service. Unreal remains a separately enabled capability. Each step stops
+after 30 minutes; set `host.timeoutSeconds` (1 to 86400) when a gather on a big project needs longer.
 
 The underlying pipeline uses `GameTextIndexProgressReporter` for each operation; `workspace.progress`
 and `progressChanges` expose the workspace's latest `GameTextWorkspaceProgress`: a raw phase code

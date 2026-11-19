@@ -14,6 +14,7 @@ import {
 	LocalizationOperations,
 	LocalizationOperationError,
 	availableLocalizationOperations,
+	defaultLocalizationTimeoutSeconds,
 	localizationOperationError,
 	type LocalizationOperationPlan,
 	type LocalizationOperationReceipt,
@@ -51,6 +52,12 @@ export interface GameTextOperationsHost<ProgressError = never> {
 	) => Effect.Effect<void, ProgressError>;
 	/** The application recoveries tell the person to start or restart. Defaults to "the host". */
 	readonly appName?: string;
+	/**
+	 * Seconds each Unreal localization step may run (1 to 86,400). Default 1800 (30 minutes), from
+	 * `defaultLocalizationTimeoutSeconds`. Too low: a long gather stops with code `timeout`, its
+	 * process tree is stopped, and the recovery names this option.
+	 */
+	readonly timeoutSeconds?: number;
 }
 
 /** Plans, runs and cancels Unreal localization steps for the selected project. */
@@ -101,13 +108,19 @@ const failureMessages = {
 	config_changed: "The target's configuration changed after the file list was prepared.",
 	target_not_found: "The selected localization target was not found."
 } satisfies Record<LocalizationOperationError["code"], string>;
-function failure(error: LocalizationOperationError, appName: string): GameTextOperationFailure {
+function failure(
+	error: LocalizationOperationError,
+	appName: string,
+	timeoutSeconds: number
+): GameTextOperationFailure {
 	const recovery =
 		error.code === "engine_not_found" || error.code === "engine_ambiguous"
 			? `Install the engine associated with this project, or set UE_SHED_UNREAL_ENGINE_ROOT before starting ${appName}.`
 			: error.code === "termination_failed"
 				? `Stop the remaining Unreal process and restart ${appName} before retrying. Check the project files first.`
-				: error.recovery;
+				: error.code === "timeout"
+					? `The step ran past ${timeoutSeconds} seconds. Check the project files, then plan it again; the host can allow longer steps with GameTextOperationsHost.timeoutSeconds.`
+					: error.recovery;
 	return {
 		status: "failed",
 		code: error.code,
@@ -167,6 +180,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 	const gameText = host.workspace;
 	const project = host.project;
 	const appName = host.appName ?? "the host";
+	const timeoutSeconds = host.timeoutSeconds ?? defaultLocalizationTimeoutSeconds;
 	const scope = yield* Effect.scope;
 	const confirmation = yield* Ref.make<RetainedPlan | undefined>(undefined);
 	const receipt = yield* Ref.make<RetainedReceipt | undefined>(undefined);
@@ -269,6 +283,9 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 							projectRoot: current.project.projectRoot,
 							...(engineRoot !== undefined
 								? { explicitEngineRoot: engineRoot }
+								: undefined),
+							...(host.timeoutSeconds !== undefined
+								? { timeoutSeconds: host.timeoutSeconds }
 								: undefined)
 						};
 						const prepared = yield* runner.plan(runRequest);
@@ -299,7 +316,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 						return { status: "ready" as const, plan: view };
 					}).pipe(
 						Effect.catchTag("LocalizationOperationError", (error) =>
-							Effect.succeed(failure(error, appName))
+							Effect.succeed(failure(error, appName, timeoutSeconds))
 						)
 					)
 				).pipe(Effect.ensuring(gameText.endOperation));
@@ -406,7 +423,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 					return completed;
 				}).pipe(
 					Effect.catchTag("LocalizationOperationError", (error) =>
-						Effect.succeed(failure(error, appName))
+						Effect.succeed(failure(error, appName, timeoutSeconds))
 					)
 				);
 				const complete = execute.pipe(
@@ -424,7 +441,7 @@ export const makeGameTextOperations = Effect.fn("GameText.workspace.operations.m
 							const result: GameTextOperationResult = Exit.isSuccess(exit)
 								? exit.value
 								: terminationError
-									? failure(terminationError, appName)
+									? failure(terminationError, appName, timeoutSeconds)
 									: Exit.hasInterrupts(exit)
 										? { status: "cancelled" }
 										: failed(

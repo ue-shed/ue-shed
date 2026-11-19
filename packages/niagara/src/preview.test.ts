@@ -9,7 +9,8 @@ import {
 	type OwnedProcessTreeLaunchOptions
 } from "@ue-shed/engine";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Ref, Schema } from "effect";
+import { Deferred, Effect, Fiber, Layer, Ref, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { expect } from "vitest";
 import { NiagaraPreview, NiagaraPreviewError, NiagaraPreviewLive, publishRun } from "./preview.js";
 import {
@@ -520,4 +521,187 @@ it.effect("rejects an over-budget request before launching Unreal", () =>
 		expect(error).toBeInstanceOf(NiagaraPreviewError);
 		expect(error.code).toBe("invalid_request");
 	})
+);
+
+/** A project, engine and commandlet on disk, so a run gets as far as starting Unreal. */
+function installedProject(prefix: string) {
+	return Effect.gen(function* () {
+		const root = yield* Effect.acquireRelease(
+			Effect.promise(() => mkdtemp(join(tmpdir(), prefix))),
+			(path) => Effect.promise(() => rm(path, { force: true, recursive: true }))
+		);
+		const engineRoot = join(root, "engine");
+		const projectDescriptor = join(root, "project", "Fixture.uproject");
+		const executable = unrealEditorCommandletExecutable(engineRoot);
+		yield* Effect.promise(() => mkdir(dirname(executable), { recursive: true }));
+		yield* Effect.promise(() => mkdir(dirname(projectDescriptor), { recursive: true }));
+		yield* Effect.promise(() => writeFile(executable, ""));
+		yield* Effect.promise(() => writeFile(projectDescriptor, "{}"));
+		const engines = makeEngineInstallationDiscoveryTestLayer(() =>
+			Effect.succeed({ root: engineRoot, version: { major: 5, minor: 7, patch: 2 } })
+		);
+		return { engineRoot, engines, projectDescriptor, root };
+	});
+}
+
+it.effect("a stuck commandlet stops after the 30-minute default, naming the option", () =>
+	Effect.gen(function* () {
+		const project = yield* installedProject("ue-shed-niagara-timeout-test-");
+		const waiting = yield* Deferred.make<void>();
+		const terminations = yield* Ref.make(0);
+		const dependencies = Layer.merge(
+			project.engines,
+			makeOwnedProcessTreeTestLayer(() =>
+				Effect.succeed({
+					awaitExit: Deferred.succeed(waiting, undefined).pipe(
+						Effect.andThen(Effect.never)
+					),
+					pid: 46,
+					terminate: () =>
+						Ref.update(terminations, (count) => count + 1).pipe(
+							Effect.as({ exitCode: null, kind: "exited" as const, signal: null })
+						)
+				})
+			)
+		);
+		const fiber = yield* Effect.flatMap(NiagaraPreview, (preview) =>
+			preview.run({
+				explicitEngineRoot: project.engineRoot,
+				projectDescriptor: project.projectDescriptor,
+				runId,
+				systemObjectPath
+			})
+		).pipe(
+			Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)),
+			Effect.flip,
+			Effect.forkChild
+		);
+		yield* Deferred.await(waiting);
+		yield* TestClock.adjust("29 minutes");
+		expect(fiber.pollUnsafe()).toBeUndefined();
+		yield* TestClock.adjust("1 minute");
+		const error = yield* Fiber.join(fiber);
+		expect(error.code).toBe("process_timeout");
+		expect(error.message).toContain("commandletTimeoutMs (1800000 ms)");
+		expect(error.recovery).toContain("commandletTimeoutMs");
+		expect(yield* Ref.get(terminations)).toBe(1);
+	}).pipe(Effect.scoped)
+);
+
+it.effect("commandletTimeoutMs gives a cold shader compile longer", () =>
+	Effect.gen(function* () {
+		const project = yield* installedProject("ue-shed-niagara-timeout-test-");
+		const waiting = yield* Deferred.make<void>();
+		const dependencies = Layer.merge(
+			project.engines,
+			makeOwnedProcessTreeTestLayer(() =>
+				Effect.succeed({
+					awaitExit: Deferred.succeed(waiting, undefined).pipe(
+						Effect.andThen(Effect.never)
+					),
+					pid: 47,
+					terminate: () =>
+						Effect.succeed({ exitCode: null, kind: "exited" as const, signal: null })
+				})
+			)
+		);
+		const fiber = yield* Effect.flatMap(NiagaraPreview, (preview) =>
+			preview.run({
+				commandletTimeoutMs: 2 * 60 * 60_000,
+				explicitEngineRoot: project.engineRoot,
+				projectDescriptor: project.projectDescriptor,
+				runId,
+				systemObjectPath
+			})
+		).pipe(
+			Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)),
+			Effect.flip,
+			Effect.forkChild
+		);
+		yield* Deferred.await(waiting);
+		yield* TestClock.adjust("119 minutes");
+		expect(fiber.pollUnsafe()).toBeUndefined();
+		yield* TestClock.adjust("1 minute");
+		const error = yield* Fiber.join(fiber);
+		expect(error.code).toBe("process_timeout");
+		expect(error.message).toContain("commandletTimeoutMs (7200000 ms)");
+	}).pipe(Effect.scoped)
+);
+
+it.effect("sessionTimeoutMs bounds the wait for a host-owned session, naming the option", () =>
+	Effect.gen(function* () {
+		const project = yield* installedProject("ue-shed-niagara-session-timeout-test-");
+		const sessionDirectory = join(project.root, "session");
+		yield* Effect.promise(async () => {
+			await mkdir(sessionDirectory);
+			await writeFile(
+				join(sessionDirectory, "ready.json"),
+				JSON.stringify({ protocol: "ue-shed-niagara-session.v1" })
+			);
+		});
+		const dependencies = Layer.merge(
+			project.engines,
+			makeOwnedProcessTreeTestLayer(() => Effect.die("a session run must not launch"))
+		);
+		const fiber = yield* Effect.flatMap(NiagaraPreview, (preview) =>
+			preview.run({
+				explicitEngineRoot: project.engineRoot,
+				projectDescriptor: project.projectDescriptor,
+				runId,
+				sessionDirectory,
+				sessionTimeoutMs: 50,
+				systemObjectPath
+			})
+		).pipe(
+			Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)),
+			Effect.flip,
+			Effect.forkChild
+		);
+		// The request is published before the wait begins; wait for that filesystem boundary.
+		yield* Effect.promise(() =>
+			expect
+				.poll(
+					() =>
+						stat(join(sessionDirectory, `${runId}.request.json`)).then(
+							(details) => details.isFile(),
+							() => false
+						),
+					{ interval: 1 }
+				)
+				.toBe(true)
+		);
+		yield* TestClock.adjust("50 millis");
+		const error = yield* Fiber.join(fiber);
+		expect(error.code).toBe("process_timeout");
+		expect(error.message).toContain("sessionTimeoutMs (50 ms)");
+		expect(error.recovery).toContain("sessionTimeoutMs");
+		expect(
+			(yield* Effect.promise(() => stat(join(sessionDirectory, `${runId}.cancel`)))).isFile()
+		).toBe(true);
+	}).pipe(Effect.scoped)
+);
+
+it.effect("refuses a timeout option that is not a positive whole number before launching", () =>
+	Effect.gen(function* () {
+		const project = yield* installedProject("ue-shed-niagara-timeout-option-test-");
+		const dependencies = Layer.merge(
+			project.engines,
+			makeOwnedProcessTreeTestLayer(() => Effect.die("process launch must not run"))
+		);
+		for (const options of [{ commandletTimeoutMs: 0 }, { sessionTimeoutMs: 1.5 }]) {
+			const error = yield* Effect.flip(
+				Effect.flatMap(NiagaraPreview, (preview) =>
+					preview.run({
+						...options,
+						explicitEngineRoot: project.engineRoot,
+						projectDescriptor: project.projectDescriptor,
+						runId,
+						systemObjectPath
+					})
+				).pipe(Effect.provide(Layer.provideMerge(NiagaraPreviewLive, dependencies)))
+			);
+			expect(error.code).toBe("invalid_request");
+			expect(error.message).toContain(Object.keys(options)[0]);
+		}
+	}).pipe(Effect.scoped)
 );

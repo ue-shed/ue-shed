@@ -218,13 +218,45 @@ export function localizationFileChanges(
 	});
 }
 
+/** Bounds on the private commandlet log while a run tails it. */
+export interface LocalizationLogLimits {
+	/**
+	 * Bytes the private commandlet log may reach while it is tailed. Default 256 MiB. Too low: a
+	 * verbose gather is stopped mid-run with `limit_exceeded` naming `logLimits.maxBytes`, and
+	 * partial output may already exist.
+	 */
+	readonly maxBytes: number;
+}
+
+/** Default log bound: 256 MiB. */
+export const defaultLocalizationLogLimits: LocalizationLogLimits = {
+	maxBytes: 256 * 1024 * 1024
+};
+
+function logLimitExceeded(limits: LocalizationLogLimits): LocalizationOperationError {
+	const base = localizationOperationError("limit_exceeded");
+	return new LocalizationOperationError({
+		code: base.code,
+		message: `The commandlet log grew past logLimits.maxBytes (${limits.maxBytes} bytes).`,
+		recovery:
+			"Raise logLimits.maxBytes on makeLocalizationOperationsLayer, or lower the commandlet's log verbosity. Partial output may already exist; inspect it and plan again before retrying.",
+		retrySafe: base.retrySafe,
+		nextStep: base.nextStep,
+		logExcerpt: []
+	});
+}
+
 export const LocalizationLogChunk = Schema.Struct({ offset: Schema.Int, text: Schema.String });
 export type LocalizationLogChunk = typeof LocalizationLogChunk.Type;
-/** Incremental 64-KiB reads; reuse the decoder across reads and flush it when the process exits. */
+/**
+ * Incremental 64-KiB reads; reuse the decoder across reads and flush it when the process exits.
+ * A log larger than `limits.maxBytes` fails with `limit_exceeded`.
+ */
 export async function readLocalizationLogChunk(
 	path: string,
 	offset: number,
-	decoder = new TextDecoder()
+	decoder = new TextDecoder(),
+	limits: LocalizationLogLimits = defaultLocalizationLogLimits
 ): Promise<LocalizationLogChunk> {
 	let handle: FileHandle;
 	try {
@@ -235,7 +267,7 @@ export async function readLocalizationLogChunk(
 	}
 	try {
 		const info = await handle.stat();
-		if (info.size > 256 * 1024 * 1024) throw localizationOperationError("limit_exceeded");
+		if (info.size > limits.maxBytes) throw logLimitExceeded(limits);
 		const bytes = new Uint8Array(Math.min(64 * 1024, Math.max(0, info.size - offset)));
 		const read = await handle.read(bytes, 0, bytes.length, offset);
 		return {

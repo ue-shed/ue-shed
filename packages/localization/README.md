@@ -118,6 +118,20 @@ from `@ue-shed/localization/browser`, for hosts building their own review.
 `verifyLocalizationStringTableRedirect` checks runtime resolution or
 activates only a matching redirect already persisted under the connected project's Config folder.
 
+**Timeouts.** These editor calls set no timeout of their own, so they get the
+`RemoteControlClient` default. Each sends a stable `RemoteControlRequest.operation`, so a host can
+give one call more time without raising it for every call:
+
+| Operation                            | Call                                                                       |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| `game_text.actions.manifest`         | `runLocalizationTextActions` reads the capability manifest                 |
+| `game_text.actions.dry_run`          | `ApplyTextActions` with `mode: "dry_run"`                                  |
+| `game_text.actions.apply`            | `ApplyTextActions` with `mode: "apply"` (up to 256 actions, optional save) |
+| `unreal.producer.inspect`            | `verifyLocalizationStringTableRedirect` reads the manifest                 |
+| `localization.string_table.redirect` | `VerifyStringTableRedirect`                                                |
+
+An apply with `save: true` across many packages can need more than the default.
+
 `LocalizationOperations` / `LocalizationOperationsNodeLive` add an optional engine capability.
 `plan(request)` returns version-1 config, argument, step and files-to-write evidence without
 launching or creating a log directory. `run(request)` returns a bounded Effect stream of process
@@ -155,10 +169,12 @@ runner re-reads configs before launch and rejects changes from the discovered ta
 
 The commandlet writes a private log outside the project. It is tailed in 64-KiB chunks, with a
 64-event backpressure queue, at most 8192 characters of incomplete line and 40 private excerpt
-lines of 2048 characters each. Logs over 256 MiB fail explicitly. Receipts and failures name the
-retained log; hosts own retention and should keep it out of telemetry. Timeout defaults to 1800
-seconds (explicit range 1–86400). Ending or interrupting the stream terminates the owned process
-tree. Effect interruption remains interruption; a process reported as terminated returns the
+lines of 2048 characters each. A log over 256 MiB fails the run with `limit_exceeded`; hosts raise
+that with `makeLocalizationOperationsLayer({ logLimits: { maxBytes } })`. Receipts and failures
+name the retained log; hosts own retention and should keep it out of telemetry. Timeout defaults to
+`defaultLocalizationTimeoutSeconds` (1800 seconds; request `timeoutSeconds` from 1 to 86400).
+Ending or interrupting the stream terminates the owned process tree. Effect interruption remains
+interruption; a process reported as terminated returns the
 typed `cancelled` failure. Failed cleanup remains visible rather than silently accepting orphans.
 Nonzero exits, timeouts and cancellation are not safe automatic retries: inspect partial output
 and plan again. Editor/file locks are detected only when Unreal reports a sharing violation or
@@ -168,9 +184,10 @@ Receipts compare SHA-256 before/after across durable project files, including ch
 target. Unplanned changes produce `planning_defect` and named diagnostics. The plan explicitly
 lists excluded build/scratch directories (`Saved`, `Intermediate`, `DerivedDataCache`, `Binaries`,
 `.git`, `.vs`, `node_modules`, at any depth); those are outside this content audit. An audit is
-bounded to 100000 entries, 512 MiB per file and 2 GiB total, hashing in 64-KiB buffers. Schema,
-telemetry and error messages carry operation/count/code data; private paths and text occur only
-in explicit plans, receipts and log excerpts. No source-control switches or submissions are used.
+bounded by default to 1,000,000 entries, 512 MiB per file and 2 GiB total (`auditLimits`), hashing
+in 64-KiB buffers. Schema, telemetry and error messages carry operation/count/code data; private
+paths and text occur only in explicit plans, receipts and log excerpts. No source-control switches
+or submissions are used.
 
 CLI: `ue-shed loc run <operation> <project-root> --target <name> [--engine-root <path>] [--plan]
 [--timeout <seconds>] [--json]`. `--plan` prints JSON without launching. A run prints human step

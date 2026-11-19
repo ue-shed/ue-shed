@@ -169,3 +169,54 @@ for (const capability of ["game-text.actions.key-repairs.v1", "game-text.actions
 			}
 		})
 	);
+
+it.effect("names each editor call so a host can give it its own timeout", () =>
+	Effect.gen(function* () {
+		const operations: Array<string | undefined> = [];
+		for (const mode of ["dry_run", "apply"] as const)
+			yield* Effect.ignore(
+				runLocalizationTextActions({
+					endpoint: "http://fixture",
+					request: localizationTextActionsRequest({
+						mode,
+						actions: [
+							{
+								id: "key",
+								place: {
+									packageFile: "Content/Text.uasset",
+									objectPath: "/Game/Text.Text",
+									propertyPath: "Text"
+								},
+								expected: { namespace: "Words", key: "Old", source: "Source" },
+								edit: { kind: "regenerate_key" }
+							}
+						]
+					})
+				}).pipe(
+					Effect.provide(
+						makeRemoteControlClientTestLayer((call) =>
+							Effect.sync(() => {
+								operations.push(call.operation);
+								return {
+									schemaVersion: 1,
+									producerKind: "unreal_editor",
+									gameTextObjectPath:
+										"/Script/UEShedGameText.Default__UEShedGameTextLibrary",
+									capabilities: ["game-text.actions.v1"]
+								};
+							}).pipe(
+								Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
+								Effect.orDie
+							)
+						)
+					)
+				)
+			);
+		expect(operations).toEqual([
+			"game_text.actions.manifest",
+			"game_text.actions.dry_run",
+			"game_text.actions.manifest",
+			"game_text.actions.apply"
+		]);
+	})
+);

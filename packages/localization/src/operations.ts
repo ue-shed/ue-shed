@@ -34,7 +34,9 @@ import {
 	readLocalizationConfig,
 	snapshotLocalizationProject,
 	defaultLocalizationAuditLimits,
+	defaultLocalizationLogLimits,
 	type LocalizationAuditLimits,
+	type LocalizationLogLimits,
 	readLocalizationLogChunk,
 	localizationFileChanges
 } from "./operation-io.js";
@@ -82,12 +84,21 @@ export function makeLocalizationOperationsTestLayer(
 	return Layer.succeed(LocalizationOperations, LocalizationOperations.of(api));
 }
 
+/** Seconds a commandlet run may take when its request sets no `timeoutSeconds`: 30 minutes. */
+export const defaultLocalizationTimeoutSeconds = 1800;
+
 /**
  * Host options for commandlet runs. `auditLimits` bounds the before/after write audit; raise it
  * for projects whose audited files exceed `defaultLocalizationAuditLimits`.
  */
 export interface LocalizationOperationsOptions {
 	readonly auditLimits?: LocalizationAuditLimits;
+	/**
+	 * Bounds the private commandlet log while a run tails it. Default
+	 * `defaultLocalizationLogLimits` (256 MiB). Too low: a verbose gather on a large project is
+	 * stopped mid-run and fails with `limit_exceeded`, whose message names `logLimits.maxBytes`.
+	 */
+	readonly logLimits?: LocalizationLogLimits;
 }
 
 /**
@@ -102,6 +113,7 @@ export const makeLocalizationOperationsLayer = (
 		LocalizationOperations,
 		Effect.gen(function* () {
 			const auditLimits = options.auditLimits ?? defaultLocalizationAuditLimits;
+			const logLimits = options.logLimits ?? defaultLocalizationLogLimits;
 			const engines = yield* EngineInstallationDiscovery;
 			const processes = yield* OwnedProcessTree;
 			const prepare = Effect.fn("LocalizationOperations.plan")(function* (
@@ -275,7 +287,12 @@ export const makeLocalizationOperationsLayer = (
 							for (;;) {
 								const chunk = yield* Effect.tryPromise({
 									try: () =>
-										readLocalizationLogChunk(plan.logPath, offset, decoder),
+										readLocalizationLogChunk(
+											plan.logPath,
+											offset,
+											decoder,
+											logLimits
+										),
 									catch: localizationIOFailure
 								});
 								const exhausted = chunk.offset === offset;
@@ -325,7 +342,9 @@ export const makeLocalizationOperationsLayer = (
 							)
 						).pipe(
 							Effect.timeoutOrElse({
-								duration: Duration.seconds(request.timeoutSeconds ?? 1800),
+								duration: Duration.seconds(
+									request.timeoutSeconds ?? defaultLocalizationTimeoutSeconds
+								),
 								orElse: () => Effect.fail(localizationOperationError("timeout"))
 							}),
 							Effect.mapError(
@@ -450,8 +469,8 @@ export const makeLocalizationOperationsLayer = (
 
 /**
  * GatherText planner/runner over EngineInstallationDiscovery and OwnedProcessTree with the
- * default audit limits. Owns logs, deadlines and termination, rechecks configs and audits actual
- * writes against the reviewed plan.
+ * default audit and log limits. Owns logs, deadlines and termination, rechecks configs and audits
+ * actual writes against the reviewed plan.
  */
 export const LocalizationOperationsLive = makeLocalizationOperationsLayer();
 /**

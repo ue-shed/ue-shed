@@ -1,5 +1,63 @@
 # @ue-shed/cameras
 
+## 0.32.0
+
+### Minor Changes
+
+- 7e4aa1a: A long high-resolution capture no longer fails when one frame status check gets no answer within
+  30 seconds. Unreal answers nothing while it renders the screenshot warm-up and the shot in one call,
+  so a check could time out moments before the shot finished and fail the whole capture as
+  `render_connection_failed`. A check that times out is now sent again until the frame's deadline,
+  and a frame that really passes its deadline fails as `settling_timeout`. Hosts can set the per-call
+  limit (`requestTimeout`) and the deadline margin (`frameDeadlineMargin`) through new
+  `CameraRendererOptions` on `makeCameraRenderer` and `cameraRendererLayer`; both default to 30 seconds.
+
+    A slow renderer call no longer ends lease renewal for the rest of the session. A renewal that times
+    out is sent again until the lease would have run out; only then does the next frame fail, as
+    `lease_expired`. Map tile status polls get the same retry, and `runMapCapture` takes a
+    `batchDeadline` (default 15 minutes).
+
+    Hosts can raise any library's per-call Remote Control timeout. `makeRemoteControlClient` takes a
+    `minimumTimeout` floor and exact `operationTimeouts`, and `RemoteControlClientLive` reads the floor
+    from `UE_SHED_REMOTE_CONTROL_MINIMUM_TIMEOUT`. `captureReviewSet` and `runMapCapture` now honour
+    `UE_SHED_REMOTE_CONTROL_TIMEOUT` and the floor instead of fixed 10 second and 5 minute clients.
+
+    Captures can switch volumetric clouds off. Both camera renderer policies accept an optional `clouds`
+    boolean, advertised by `clouds` in `GetCameraRenderCapabilitiesV2`, and map capture 1.3 adds
+    `render.effects.clouds`. Absence keeps the editor's own setting, as before.
+
+- c76ef90: Map captures on slow editors or big maps no longer have to fit the plugin's fixed timing. Map capture
+  1.3 adds an optional `render.timing` to plans and requests: `frameTimeoutMs` (the 120 second deadline
+  for each tile or level render), `settleFrames` (128 per Lit tile, 3 per scene-capture tile),
+  `overviewFrames` (512 before the first Lit tile) and `screenshotWarmupFrames` (until now only the
+  global `r.HighResScreenshotDelay`). Lit, scene-capture and viewport high-resolution captures all use
+  them; each absent field keeps the old value.
+
+### Patch Changes
+
+- 477cad9: Big maps no longer lose data without saying so, and the limits that cut them can be raised.
+    - The observatory's actor catalog stops at 16,384 actors as before, but now reports how many it
+      left out: `WorldActorCatalog.omittedActors`, filled from the plugin's new `omittedActors` field on
+      snapshots and catalog streams. A host used to see a complete-looking list on bigger maps.
+    - World preparation counts actor descriptors and loaded actors up to 4,000,000. It used to refuse
+      worlds with more than 100,000.
+    - Camera render requests may be up to 4 MiB. Bigger requests (long paths or many tiles) used to fail
+      past 64K characters with a generic invalid-request error; an oversize request now says how big it
+      was and what the limit is.
+    - `AuthoringActorReferencesRequest` takes an optional `maxPropertyVisits` (1 to 100,000,000,
+      default 1,000,000). Actor reference scans on big worlds or actors with large arrays used to stop at
+      1,000,000 properties with no way to finish; the `scan_limit` error now names the limits to raise.
+
+- Updated dependencies [69aed82]
+- Updated dependencies [477cad9]
+- Updated dependencies [7e4aa1a]
+- Updated dependencies [1d5e291]
+- Updated dependencies [c76ef90]
+    - @ue-shed/protocol@0.32.0
+    - @ue-shed/world@0.32.0
+    - @ue-shed/unreal-connection@0.32.0
+    - @ue-shed/observability@0.32.0
+
 ## 0.31.0
 
 ### Patch Changes

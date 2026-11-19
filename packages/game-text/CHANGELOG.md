@@ -1,5 +1,76 @@
 # @ue-shed/game-text
 
+## 0.32.0
+
+### Minor Changes
+
+- 41e5407: Baselines, large packages, plugin installs and authoring Apply no longer fail on caps a host couldn't raise.
+    - Game Text baselines: `GameTextWorkspaceHost.baselineLimits` sets `maxEntries` (default 100,000)
+      and `maxFileBytes` (default 64 MiB, raised from 16 MiB). Saving used to fail at about 50,000
+      entries with only "The file operation failed.", because the 16 MiB file cap came before the entry
+      cap. Over either limit, the message now gives the sizes and names the option. `LocalizationBaseline`
+      no longer bounds `entries` in the schema; `createLocalizationBaseline`,
+      `indexedLocalizationBaseline` and `decodeLocalizationBaselineJson` take an optional
+      `LocalizationBaselineLimits` instead.
+    - WASM inspection: `maxInputBytes` and `maxOutputBytes` can now be raised up to 512 MiB
+      (`LIMIT_CEILING_BYTES`); they could only be lowered from 64 MiB, so large `.umap` files threw
+      `WasmInputLimitError`. Defaults are unchanged, and the limit errors name the option.
+    - Plugin cache: publish, lease and prune wait up to `pluginStoreLayer({ lockWait })` (default
+      10 minutes) for another live process holding the same variant's lock. They used to give up after
+      about 10 seconds while the other process was still extracting a release of up to 2 GiB, failing
+      with `PluginStorageFailure`. The timeout message names `lockWait`.
+    - Authoring Apply limits (1,024 commands, 1 MiB, 16 tables) are read from `[UEShed.Authoring]`
+      `MaxCommands`, `MaxPayloadBytes` and `MaxTables` in the project's editor config, by both the
+      capability manifest and Apply. They were literals typed separately in two plugins, so no project
+      could raise them. A refused Apply names the setting.
+
+- 69aed82: Big maps and projects no longer lose data without saying so.
+    - Game Text groups past the first 200 can be listed. A search request's new `groupOffset` asks for
+      the next page of up to 200 groups, and the answer's `groups.offset` says which page it is, with
+      `more` counting the groups after it. Requests without it list the first 200 as before.
+    - A Project Index refresh that sees more than 65,536 changed paths still reports
+      `complete: false` with empty lists, and now says how many changes there were in `total`. A host
+      that needs the paths after a branch switch or mass resave can raise the limit with the refresh
+      target's `maximumChanges` (up to 1,048,576; uasset-io v1.25). A summary that kept only the first
+      64 diagnostics now counts the rest in `omittedDiagnostics`.
+    - Map History no longer misses old moves and renames silently. When Perforce's filelog fills the
+      revision window for a file of the map's lineage, the history carries a
+      `map_lineage_may_be_incomplete` diagnostic, and the new `limits.maxFilelogRevisions` widens the
+      window (default `maxChangelists + maxDirectMapMoves + 2`, as before). The direct-move limit is
+      now `limits.maxDirectMapMoves` (default 16), and hitting it says to raise that limit instead of
+      suggesting a shorter range, which never helped.
+
+- 1d5e291: Long Unreal work on big projects no longer has to fail at a limit the host can't raise.
+    - A Game Text localization step that runs past 30 minutes no longer has to time out: set
+      `timeoutSeconds` on the host passed to `makeGameTextOperations`. The timeout's recovery names it.
+    - A verbose gather whose commandlet log passes 256 MiB no longer has to stop: raise it with
+      `makeLocalizationOperationsLayer({ logLimits: { maxBytes } })`. The failure now names
+      `logLimits.maxBytes`. `defaultLocalizationLogLimits` and `defaultLocalizationTimeoutSeconds` are
+      exported.
+    - A Niagara preview whose cold shader compile takes over 30 minutes no longer has to time out: pass
+      `commandletTimeoutMs`, or `sessionTimeoutMs` for a host-owned session, to `runNiagaraPreview`.
+      A session that returns no result in time now fails with `process_timeout` naming the option,
+      instead of a generic "session failed or was cancelled".
+    - A supervised editor's first open with an empty DDC no longer fails validation when given more
+      than an hour: `readinessTimeoutMs`, `readinessPollIntervalMs` and `terminationTimeoutMs` accept up
+      to 24 hours. A readiness timeout now names `readinessTimeoutMs`.
+    - Remote Control calls in `@ue-shed/unreal-connection` send stable operation names (for example
+      `unreal.authoring.apply`, `unreal.authoring.save`, `unreal.authoring.actor_references`) instead of
+      `remote_control.<Function>`, so a host can give one slow call more time. Both READMEs list the
+      names. An `UnrealConnectionError` from a failed call carries the new name in `operation`.
+
+### Patch Changes
+
+- Updated dependencies [69aed82]
+- Updated dependencies [477cad9]
+- Updated dependencies [7e4aa1a]
+- Updated dependencies [1d5e291]
+- Updated dependencies [c76ef90]
+    - @ue-shed/protocol@0.32.0
+    - @ue-shed/unreal-assets@0.32.0
+    - @ue-shed/unreal-connection@0.32.0
+    - @ue-shed/localization@0.32.0
+
 ## 0.31.0
 
 ### Patch Changes

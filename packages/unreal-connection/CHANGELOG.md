@@ -1,5 +1,58 @@
 # @ue-shed/unreal-connection
 
+## 0.32.0
+
+### Minor Changes
+
+- 7e4aa1a: A long high-resolution capture no longer fails when one frame status check gets no answer within
+  30 seconds. Unreal answers nothing while it renders the screenshot warm-up and the shot in one call,
+  so a check could time out moments before the shot finished and fail the whole capture as
+  `render_connection_failed`. A check that times out is now sent again until the frame's deadline,
+  and a frame that really passes its deadline fails as `settling_timeout`. Hosts can set the per-call
+  limit (`requestTimeout`) and the deadline margin (`frameDeadlineMargin`) through new
+  `CameraRendererOptions` on `makeCameraRenderer` and `cameraRendererLayer`; both default to 30 seconds.
+
+    A slow renderer call no longer ends lease renewal for the rest of the session. A renewal that times
+    out is sent again until the lease would have run out; only then does the next frame fail, as
+    `lease_expired`. Map tile status polls get the same retry, and `runMapCapture` takes a
+    `batchDeadline` (default 15 minutes).
+
+    Hosts can raise any library's per-call Remote Control timeout. `makeRemoteControlClient` takes a
+    `minimumTimeout` floor and exact `operationTimeouts`, and `RemoteControlClientLive` reads the floor
+    from `UE_SHED_REMOTE_CONTROL_MINIMUM_TIMEOUT`. `captureReviewSet` and `runMapCapture` now honour
+    `UE_SHED_REMOTE_CONTROL_TIMEOUT` and the floor instead of fixed 10 second and 5 minute clients.
+
+    Captures can switch volumetric clouds off. Both camera renderer policies accept an optional `clouds`
+    boolean, advertised by `clouds` in `GetCameraRenderCapabilitiesV2`, and map capture 1.3 adds
+    `render.effects.clouds`. Absence keeps the editor's own setting, as before.
+
+- 1d5e291: Long Unreal work on big projects no longer has to fail at a limit the host can't raise.
+    - A Game Text localization step that runs past 30 minutes no longer has to time out: set
+      `timeoutSeconds` on the host passed to `makeGameTextOperations`. The timeout's recovery names it.
+    - A verbose gather whose commandlet log passes 256 MiB no longer has to stop: raise it with
+      `makeLocalizationOperationsLayer({ logLimits: { maxBytes } })`. The failure now names
+      `logLimits.maxBytes`. `defaultLocalizationLogLimits` and `defaultLocalizationTimeoutSeconds` are
+      exported.
+    - A Niagara preview whose cold shader compile takes over 30 minutes no longer has to time out: pass
+      `commandletTimeoutMs`, or `sessionTimeoutMs` for a host-owned session, to `runNiagaraPreview`.
+      A session that returns no result in time now fails with `process_timeout` naming the option,
+      instead of a generic "session failed or was cancelled".
+    - A supervised editor's first open with an empty DDC no longer fails validation when given more
+      than an hour: `readinessTimeoutMs`, `readinessPollIntervalMs` and `terminationTimeoutMs` accept up
+      to 24 hours. A readiness timeout now names `readinessTimeoutMs`.
+    - Remote Control calls in `@ue-shed/unreal-connection` send stable operation names (for example
+      `unreal.authoring.apply`, `unreal.authoring.save`, `unreal.authoring.actor_references`) instead of
+      `remote_control.<Function>`, so a host can give one slow call more time. Both READMEs list the
+      names. An `UnrealConnectionError` from a failed call carries the new name in `operation`.
+
+### Patch Changes
+
+- Updated dependencies [69aed82]
+- Updated dependencies [477cad9]
+- Updated dependencies [7e4aa1a]
+- Updated dependencies [c76ef90]
+    - @ue-shed/protocol@0.32.0
+
 ## 0.31.0
 
 ### Patch Changes

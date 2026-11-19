@@ -1,5 +1,67 @@
 # @ue-shed/protocol
 
+## 0.32.0
+
+### Minor Changes
+
+- 69aed82: Big maps and projects no longer lose data without saying so.
+    - Game Text groups past the first 200 can be listed. A search request's new `groupOffset` asks for
+      the next page of up to 200 groups, and the answer's `groups.offset` says which page it is, with
+      `more` counting the groups after it. Requests without it list the first 200 as before.
+    - A Project Index refresh that sees more than 65,536 changed paths still reports
+      `complete: false` with empty lists, and now says how many changes there were in `total`. A host
+      that needs the paths after a branch switch or mass resave can raise the limit with the refresh
+      target's `maximumChanges` (up to 1,048,576; uasset-io v1.25). A summary that kept only the first
+      64 diagnostics now counts the rest in `omittedDiagnostics`.
+    - Map History no longer misses old moves and renames silently. When Perforce's filelog fills the
+      revision window for a file of the map's lineage, the history carries a
+      `map_lineage_may_be_incomplete` diagnostic, and the new `limits.maxFilelogRevisions` widens the
+      window (default `maxChangelists + maxDirectMapMoves + 2`, as before). The direct-move limit is
+      now `limits.maxDirectMapMoves` (default 16), and hitting it says to raise that limit instead of
+      suggesting a shorter range, which never helped.
+
+- 477cad9: Big maps no longer lose data without saying so, and the limits that cut them can be raised.
+    - The observatory's actor catalog stops at 16,384 actors as before, but now reports how many it
+      left out: `WorldActorCatalog.omittedActors`, filled from the plugin's new `omittedActors` field on
+      snapshots and catalog streams. A host used to see a complete-looking list on bigger maps.
+    - World preparation counts actor descriptors and loaded actors up to 4,000,000. It used to refuse
+      worlds with more than 100,000.
+    - Camera render requests may be up to 4 MiB. Bigger requests (long paths or many tiles) used to fail
+      past 64K characters with a generic invalid-request error; an oversize request now says how big it
+      was and what the limit is.
+    - `AuthoringActorReferencesRequest` takes an optional `maxPropertyVisits` (1 to 100,000,000,
+      default 1,000,000). Actor reference scans on big worlds or actors with large arrays used to stop at
+      1,000,000 properties with no way to finish; the `scan_limit` error now names the limits to raise.
+
+- 7e4aa1a: A long high-resolution capture no longer fails when one frame status check gets no answer within
+  30 seconds. Unreal answers nothing while it renders the screenshot warm-up and the shot in one call,
+  so a check could time out moments before the shot finished and fail the whole capture as
+  `render_connection_failed`. A check that times out is now sent again until the frame's deadline,
+  and a frame that really passes its deadline fails as `settling_timeout`. Hosts can set the per-call
+  limit (`requestTimeout`) and the deadline margin (`frameDeadlineMargin`) through new
+  `CameraRendererOptions` on `makeCameraRenderer` and `cameraRendererLayer`; both default to 30 seconds.
+
+    A slow renderer call no longer ends lease renewal for the rest of the session. A renewal that times
+    out is sent again until the lease would have run out; only then does the next frame fail, as
+    `lease_expired`. Map tile status polls get the same retry, and `runMapCapture` takes a
+    `batchDeadline` (default 15 minutes).
+
+    Hosts can raise any library's per-call Remote Control timeout. `makeRemoteControlClient` takes a
+    `minimumTimeout` floor and exact `operationTimeouts`, and `RemoteControlClientLive` reads the floor
+    from `UE_SHED_REMOTE_CONTROL_MINIMUM_TIMEOUT`. `captureReviewSet` and `runMapCapture` now honour
+    `UE_SHED_REMOTE_CONTROL_TIMEOUT` and the floor instead of fixed 10 second and 5 minute clients.
+
+    Captures can switch volumetric clouds off. Both camera renderer policies accept an optional `clouds`
+    boolean, advertised by `clouds` in `GetCameraRenderCapabilitiesV2`, and map capture 1.3 adds
+    `render.effects.clouds`. Absence keeps the editor's own setting, as before.
+
+- c76ef90: Map captures on slow editors or big maps no longer have to fit the plugin's fixed timing. Map capture
+  1.3 adds an optional `render.timing` to plans and requests: `frameTimeoutMs` (the 120 second deadline
+  for each tile or level render), `settleFrames` (128 per Lit tile, 3 per scene-capture tile),
+  `overviewFrames` (512 before the first Lit tile) and `screenshotWarmupFrames` (until now only the
+  global `r.HighResScreenshotDelay`). Lit, scene-capture and viewport high-resolution captures all use
+  them; each absent field keeps the old value.
+
 ## 0.31.0
 
 ### Minor Changes

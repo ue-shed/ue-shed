@@ -141,6 +141,7 @@ export {
 	MapCapturePlanId,
 	MapCaptureProject,
 	MapCaptureRenderPolicy,
+	MapCaptureTiming,
 	MapCaptureRunId,
 	MapCaptureWorldBounds,
 	MapTileArtifact,

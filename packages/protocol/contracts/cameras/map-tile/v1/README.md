@@ -11,7 +11,12 @@ optional `capture.visibility` / `capturePolicy.visibility` hide/protect lists. V
 minor 2 and the matching Cameras renderer. It applies before metering and to every batch, including
 the live preview; it never changes tile framing. Minor 3 adds optional `render.effects.clouds`,
 which every capture backend passes to the camera renderer as `renderer.clouds`; `false` keeps
-volumetric clouds out of the tiles and absence keeps the editor's setting.
+volumetric clouds out of the tiles and absence keeps the editor's setting. Minor 3 also adds
+optional `render.timing`: `frameTimeoutMs` (deadline for one tile or level render, default 120000),
+`settleFrames` (default 128 Lit, 3 scene capture or 1 observation, 1 viewport level),
+`overviewFrames` (Lit metering or initial view before the first tile, default 512) and
+`screenshotWarmupFrames` (viewport screenshots; default the engine's `r.HighResScreenshotDelay`).
+Each absent field keeps that default.
 
 Rows progress from world max-X toward min-X. Columns progress from world min-Y toward max-Y. The
 orientation is explicit and versioned. A level halves units-per-pixel and doubles rows and columns;

@@ -80,6 +80,7 @@ export async function version() {
 
 export {
 	DEFAULT_LIMITS,
+	LIMIT_CEILING_BYTES,
 	WasmInitializationError,
 	WasmInputLimitError,
 	WasmOutputLimitError,

@@ -6,6 +6,8 @@ export declare function createNodeRuntime(
 
 /** Default and maximum runtime limits; per-runtime options may only lower them. */
 export declare const DEFAULT_LIMITS: import("./types.js").RuntimeLimits;
+/** Largest `maxInputBytes` or `maxOutputBytes` a runtime accepts: 512 MiB. */
+export declare const LIMIT_CEILING_BYTES: number;
 export declare const limits: import("./types.js").RuntimeLimits;
 export declare const inspect: import("./types.js").WasmRuntime["inspect"];
 export declare const extractText: import("./types.js").WasmRuntime["extractText"];

@@ -6,6 +6,17 @@ contract over stock Remote Control. Apply preflights semantic fingerprints, supp
 canonical command shapes across several tables, restores every table if any command fails, and keeps
 a bounded operation-result cache so clients never need to replay uncertain mutation.
 
+One Apply holds at most 1,024 commands, 16 tables and 1 MiB of request characters by default. A
+project raises them in its editor config (for example `Config/DefaultEditor.ini`); UE Shed Core
+advertises the same values as the manifest's `authoringLimits`, so TypeScript callers follow them:
+
+```ini
+[UEShed.Authoring]
+MaxCommands=1024        ; 1 to 1000000
+MaxPayloadBytes=1048576 ; 1 to 268435456
+MaxTables=16            ; 1 to 10000
+```
+
 Snapshots include known field defaults from an independently initialized row struct, including
 native constructors and authored Blueprint struct defaults. Values use the same typed codec as
 rows and Apply. Properties the codec cannot fully represent retain `unknown` defaults.

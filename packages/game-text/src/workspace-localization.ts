@@ -71,7 +71,9 @@ import {
 import { Cause, Effect, Exit, Fiber, Ref, Result, Semaphore, type Scope } from "effect";
 import type { Layer } from "effect";
 import type { LocalizationFileAccess } from "@ue-shed/localization";
+import { DEFAULT_GAME_TEXT_BASELINE_MAX_FILE_BYTES } from "./workspace-host.js";
 import type {
+	GameTextBaselineLimits,
 	GameTextWorkspaceFileHooks,
 	GameTextWorkspaceHost,
 	GameTextWorkspaceHostFailure
@@ -134,6 +136,10 @@ const unreadLines = (error: GameTextIndexError) => ({
 });
 
 const isLocalizationReportError = Schema.is(LocalizationReportError);
+const mebibytes = (bytes: number) =>
+	bytes < 1024 * 1024
+		? `${bytes.toLocaleString("en-US")} bytes`
+		: `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 
 /** Every line of a target's join: the lines reports and key pairing read. */
 const indexedLines = (target: LocalizationJoin["target"]) => ({
@@ -198,6 +204,8 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 			readonly codeSource?: (
 				projectRoot: string
 			) => Effect.Effect<GameTextCodeSource | undefined>;
+			/** Baseline entry and file size limits; see `GameTextBaselineLimits`. */
+			readonly baselineLimits?: GameTextBaselineLimits;
 		} = { author: "game-text", localizationFiles: LocalizationFileAccessLive }
 	) {
 		const reader = yield* LocalizationEvidence;
@@ -815,6 +823,9 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				)
 			);
 		});
+		const baselineLimits = options.baselineLimits;
+		const maxFileBytes =
+			baselineLimits?.maxFileBytes ?? DEFAULT_GAME_TEXT_BASELINE_MAX_FILE_BYTES;
 		const reportFile = Effect.fn("GameText.workspace.localization.reportFile")(function* (
 			request: WorkspaceReportFileRequest,
 			dialog: Pick<GameTextWorkspaceFileHooks, "chooseFile" | "chooseSaveFile">,
@@ -853,10 +864,11 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				if ((yield* current(request.target)) !== retained)
 					return { status: "not_ready" as const };
 				if (request.operation === "compare_baseline") {
-					const bytes = yield* files.readFile(choice.path, {
-						maxBytes: 16 * 1024 * 1024
-					});
-					const decoded = decodeLocalizationBaselineJson(new TextDecoder().decode(bytes));
+					const bytes = yield* files.readFile(choice.path, { maxBytes: maxFileBytes });
+					const decoded = decodeLocalizationBaselineJson(
+						new TextDecoder().decode(bytes),
+						baselineLimits
+					);
 					if (Result.isFailure(decoded)) return reportFailure(decoded.failure);
 					const progress = yield* indexedLocalizationProgressReport(
 						index,
@@ -877,7 +889,11 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				}
 				const saved =
 					request.operation === "save_baseline"
-						? yield* indexedLocalizationBaseline(index, new Date().toISOString())
+						? yield* indexedLocalizationBaseline(
+								index,
+								new Date().toISOString(),
+								baselineLimits
+							)
 						: undefined;
 				const progress =
 					saved === undefined
@@ -912,8 +928,15 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 				});
 				if ((yield* current(request.target)) !== retained)
 					return { status: "not_ready" as const };
-				yield* files.writeFile(choice.path, new TextEncoder().encode(contents), {
-					maxBytes: 16 * 1024 * 1024,
+				const encoded = new TextEncoder().encode(contents);
+				if (encoded.byteLength > maxFileBytes)
+					return {
+						status: "failed" as const,
+						message: `The ${request.operation === "save_baseline" ? "baseline" : "report"} is ${mebibytes(encoded.byteLength)}; files are limited to ${mebibytes(maxFileBytes)}.`,
+						recovery: "Raise baselineLimits.maxFileBytes to save a file this size."
+					};
+				yield* files.writeFile(choice.path, encoded, {
+					maxBytes: maxFileBytes,
 					exclusive: request.operation === "save_baseline"
 				});
 				return {
@@ -938,7 +961,9 @@ export const makeGameTextWorkspaceLocalization = Effect.fn("GameText.workspace.l
 								: "The file operation failed.",
 							recovery: isLocalizationReportError(error)
 								? error.recovery
-								: "Choose a new destination for a baseline; existing files are never overwritten. Check permissions and try again."
+								: request.operation === "compare_baseline"
+									? `Check the file can be read. Baselines over ${mebibytes(maxFileBytes)} need a higher baselineLimits.maxFileBytes.`
+									: "Choose a new destination for a baseline; existing files are never overwritten. Check permissions and try again."
 						})
 				)
 			);

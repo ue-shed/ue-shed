@@ -36,6 +36,7 @@ import {
 	type PluginVariantReference,
 	type PluginDistributionLimits,
 	PluginReleaseSource,
+	PluginStorageFailure,
 	PluginStore,
 	httpPluginReleaseSourceLayer,
 	localPluginReleaseSourceLayer,
@@ -1299,6 +1300,47 @@ it.effect("preserves a lease when process liveness is indeterminate", () =>
 			distribution.verifyCached(source.releaseVersion)
 		).pipe(Effect.provide(layer));
 		expect(verified.releaseVersion).toBe(source.releaseVersion);
+	}).pipe(
+		Effect.ensuring(
+			Effect.promise(async () => {
+				while (roots.length > 0) await rm(roots.pop()!, { force: true, recursive: true });
+			})
+		)
+	)
+);
+
+it.effect("waits for a live process's cache lock up to lockWait", () =>
+	Effect.gen(function* () {
+		const source = yield* Effect.promise(() => fixture());
+		const cacheRoot = join(source.root, "lock-wait-cache");
+		const releaseSource = localPluginReleaseSourceLayer({ directory: source.root });
+		const withLockWait = (lockWait: string) =>
+			pluginDistributionLayer({}).pipe(
+				Layer.provide(Layer.merge(releaseSource, pluginStoreLayer({ cacheRoot, lockWait })))
+			);
+		const install = Effect.scoped(
+			Effect.flatMap(PluginDistribution, (distribution) =>
+				distribution.install(request(source.releaseVersion))
+			)
+		);
+		const installed = yield* install.pipe(Effect.provide(withLockWait("1 second")));
+		// This test process is alive, so the lock reads as held by a working owner.
+		const lock = join(cacheRoot, "locks", `${installed.variantIdentity}.lock`);
+		yield* Effect.promise(() => writeFile(lock, JSON.stringify({ pid: process.pid })));
+
+		const timedOut = yield* install.pipe(
+			Effect.provide(withLockWait("300 millis")),
+			Effect.flip
+		);
+		expect(timedOut).toBeInstanceOf(PluginStorageFailure);
+		expect(timedOut.message).toContain("Raise lockWait on pluginStoreLayer");
+
+		const released = setTimeout(() => void rm(lock, { force: true }), 400);
+		const waited = yield* install.pipe(
+			Effect.provide(withLockWait("10 seconds")),
+			Effect.ensuring(Effect.sync(() => clearTimeout(released)))
+		);
+		expect(waited.variantIdentity).toBe(installed.variantIdentity);
 	}).pipe(
 		Effect.ensuring(
 			Effect.promise(async () => {

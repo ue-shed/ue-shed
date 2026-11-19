@@ -115,6 +115,60 @@ describe("buildAnalysisPlan", () => {
 		]);
 	});
 
+	it("charts tables too big to spread into Math.min and Math.max", () => {
+		const rows = Array.from({ length: 300_000 }, (_, index) =>
+			row(
+				`Row${index}`,
+				index % 2 === 0 ? "Common" : "Rare",
+				String(index),
+				index / 2,
+				"Gear"
+			)
+		);
+		const plan = buildAnalysisPlan({
+			charts: [
+				{
+					bins: 4,
+					id: "price",
+					kind: "histogram",
+					title: "Price",
+					valueFieldName: "Price"
+				},
+				{
+					aggregate: "minimum",
+					categoryFieldName: "Rarity",
+					id: "lowest",
+					kind: "category-value",
+					title: "Lowest damage",
+					valueFieldName: "Damage"
+				},
+				{
+					aggregate: "maximum",
+					categoryFieldName: "Rarity",
+					id: "highest",
+					kind: "category-value",
+					title: "Highest damage",
+					valueFieldName: "Damage"
+				}
+			],
+			rows,
+			snapshot: items
+		});
+		const [histogram, lowest, highest] = plan.charts;
+		expect(histogram?.kind).toBe("histogram");
+		if (histogram?.kind !== "histogram") return;
+		expect(histogram.data).toHaveLength(4);
+		expect(histogram.data.reduce((total, bin) => total + bin.count, 0)).toBe(300_000);
+		expect(lowest?.data).toEqual([
+			{ label: "Rare", value: 0.5 },
+			{ label: "Common", value: 0 }
+		]);
+		expect(highest?.data).toEqual([
+			{ label: "Rare", value: 149_999.5 },
+			{ label: "Common", value: 149_999 }
+		]);
+	});
+
 	it("keeps specified charts first and does not repeat the same heuristic", () => {
 		const plan = buildAnalysisPlan({
 			charts: [

@@ -74,7 +74,9 @@ saved metadata. UE 5.8 adds property flags and map key descriptors. Empty bags h
 unknown custom versions remain explicit unsupported evidence. These values are parameters as saved,
 without StateTree/PCG evaluation.
 
-The default input and serialized-output limit is 64 MiB. The Rust adapter also bounds package
+The default input and serialized-output limit is 64 MiB. A runtime created with `maxInputBytes` or
+`maxOutputBytes` can raise either up to 512 MiB (`LIMIT_CEILING_BYTES`) for large `.umap` files, or
+lower it. The Rust adapter also bounds package
 exports and compact projection records. JavaScript rejects an oversized `Uint8Array` before
 wasm-bindgen copies it into WebAssembly linear memory, and Rust stops JSON serialization when the
 output cap is reached instead of first constructing an oversized string.

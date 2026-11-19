@@ -124,6 +124,24 @@ export interface GameTextWorkspaceFileHooks {
 	) => Effect.Effect<void, GameTextWorkspaceHostFailure>;
 }
 
+/** Default for `GameTextBaselineLimits.maxFileBytes`. */
+export const DEFAULT_GAME_TEXT_BASELINE_MAX_FILE_BYTES = 64 * 1024 * 1024;
+
+/** How big a localization baseline, and the baseline and report files, may be. */
+export interface GameTextBaselineLimits {
+	/**
+	 * The most manifest entries a saved or compared baseline may hold. Default 100,000. Too low:
+	 * saving or comparing a bigger target's baseline fails, naming both counts and this option.
+	 */
+	readonly maxEntries?: number;
+	/**
+	 * The most bytes of a baseline JSON or report CSV the workspace reads or writes. Default
+	 * 64 MiB; a baseline takes about 300 bytes per entry. Too low: saving fails, naming the file's
+	 * size and this option; comparing fails when the host's file hook refuses the read.
+	 */
+	readonly maxFileBytes?: number;
+}
+
 /** Everything a host supplies to run the Game Text workspace. */
 export interface GameTextWorkspaceHost {
 	readonly project: GameTextWorkspaceProject;
@@ -169,6 +187,8 @@ export interface GameTextWorkspaceHost {
 	readonly reviewer?: () => string;
 	/** Policy: the name change sets carry as their author. Defaults to `"game-text"`. */
 	readonly changeAuthor?: string;
+	/** Policy: how big a localization baseline, and the baseline or report file, may be. */
+	readonly baselineLimits?: GameTextBaselineLimits;
 	/**
 	 * Writable-file hook for localization files: the file access that writes PO edits and review
 	 * files. Defaults to `LocalizationFileAccessLive`.

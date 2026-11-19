@@ -1,4 +1,5 @@
 #include "UEShedAuthoringLibrary.h"
+#include "UEShedAuthoringLimits.h"
 
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/IAssetRegistry.h"
@@ -1629,9 +1630,12 @@ void UUEShedAuthoringLibrary::GetTableSnapshot(
 
 void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJson)
 {
-	if (RequestJson.Len() > 1024 * 1024)
+	const FUEShedAuthoringLimits Limits = UEShedReadAuthoringLimits();
+	if (RequestJson.Len() > Limits.MaxPayloadBytes)
 	{
-		ResultJson = ErrorJson(TEXT("request_too_large"), TEXT("Apply request exceeds one MiB"));
+		ResultJson = ErrorJson(TEXT("request_too_large"), FString::Printf(
+			TEXT("Apply request is %d characters; the limit is %d. Raise MaxPayloadBytes under [%s] in the project's editor config."),
+			RequestJson.Len(), Limits.MaxPayloadBytes, UEShedAuthoringLimitsSection));
 		return;
 	}
 	TSharedPtr<FJsonObject> Request;
@@ -1682,9 +1686,17 @@ void UUEShedAuthoringLibrary::Apply(const FString& RequestJson, FString& ResultJ
 	const TArray<TSharedPtr<FJsonValue>>* Commands;
 	if (!Request->TryGetArrayField(TEXT("tables"), TablePlans)
 		|| !Request->TryGetArrayField(TEXT("commands"), Commands)
-		|| TablePlans->Num() == 0 || TablePlans->Num() > 16 || Commands->Num() > 1024)
+		|| TablePlans->Num() == 0)
 	{
 		ResultJson = ErrorJson(TEXT("invalid_request"), TEXT("Apply plan limits are invalid"));
+		return;
+	}
+	if (TablePlans->Num() > Limits.MaxTables || Commands->Num() > Limits.MaxCommands)
+	{
+		ResultJson = ErrorJson(TEXT("invalid_request"), FString::Printf(
+			TEXT("Apply has %d tables and %d commands; the limits are %d and %d. Raise MaxTables or MaxCommands under [%s] in the project's editor config."),
+			TablePlans->Num(), Commands->Num(), Limits.MaxTables, Limits.MaxCommands,
+			UEShedAuthoringLimitsSection));
 		return;
 	}
 

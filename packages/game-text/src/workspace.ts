@@ -572,6 +572,7 @@ export const makeGameTextWorkspace = Effect.fn("GameText.workspace.make")(functi
 			author: host.changeAuthor ?? "game-text",
 			localizationFiles: host.localizationFiles ?? LocalizationFileAccessLive,
 			...(host.prepareWrites ? { prepareWrites: host.prepareWrites } : undefined),
+			...(host.baselineLimits ? { baselineLimits: host.baselineLimits } : undefined),
 			codeSource
 		}
 	).pipe(Effect.provideService(GameTextIndexProgressReporter, reportProgress));

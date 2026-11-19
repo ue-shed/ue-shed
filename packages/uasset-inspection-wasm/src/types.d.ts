@@ -534,7 +534,15 @@ export interface RuntimeLimits {
 }
 
 export interface RuntimeOptions {
+	/**
+	 * Largest package, in bytes, each call accepts: 1 to 512 MiB, default 64 MiB. Too low: big
+	 * packages throw `WasmInputLimitError` naming the size and this limit.
+	 */
 	readonly maxInputBytes?: number;
+	/**
+	 * Largest serialized result, in bytes: 1 to 512 MiB, default 64 MiB. Too low: big results throw
+	 * `WasmOutputLimitError` or return a `resource_limit` error.
+	 */
 	readonly maxOutputBytes?: number;
 }
 

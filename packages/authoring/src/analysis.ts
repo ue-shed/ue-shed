@@ -294,6 +294,21 @@ function categoryCountData(rows: readonly AuthoringRow[], fieldName: string): Ca
 		);
 }
 
+// A loop, not Math.min(...values): spreading a row-sized array overflows the call stack above
+// roughly 100k values.
+function extremes(values: readonly number[]): {
+	readonly minimum: number;
+	readonly maximum: number;
+} {
+	let minimum = Infinity;
+	let maximum = -Infinity;
+	for (const value of values) {
+		if (value < minimum) minimum = value;
+		if (value > maximum) maximum = value;
+	}
+	return { minimum, maximum };
+}
+
 function aggregateValues(values: readonly number[], aggregate: AnalysisChartAggregate): number {
 	switch (aggregate) {
 		case "average":
@@ -301,9 +316,9 @@ function aggregateValues(values: readonly number[], aggregate: AnalysisChartAggr
 		case "sum":
 			return values.reduce((total, value) => total + value, 0);
 		case "minimum":
-			return Math.min(...values);
+			return extremes(values).minimum;
 		case "maximum":
-			return Math.max(...values);
+			return extremes(values).maximum;
 	}
 }
 
@@ -338,8 +353,7 @@ function histogramData(
 		.map((row) => asNumber(fieldValue(row, fieldName)))
 		.filter((value): value is number => value !== null);
 	if (values.length === 0) return [];
-	const minimum = Math.min(...values);
-	const maximum = Math.max(...values);
+	const { minimum, maximum } = extremes(values);
 	if (minimum === maximum) {
 		return [{ count: values.length, label: formatNumber(minimum) }];
 	}

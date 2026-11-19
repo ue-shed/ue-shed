@@ -61,6 +61,7 @@ const allTests = [
 	"UEShed.Authoring.EditorNotifications",
 	"UEShed.Authoring.ActorReferences",
 	"UEShed.Authoring.ActorReferenceDepth",
+	"UEShed.Authoring.Limits",
 	"UEShed.GameText.ObjectProperties",
 	"UEShed.GameText.Authoring",
 	"UEShed.GameText.Blueprint",

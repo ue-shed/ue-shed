@@ -25,7 +25,8 @@
  * @typedef {{ inspect: BytesCall, extract_text: BytesCall, extract_textures: BytesCall,
  *   extract_level_sequences: BytesCall, extract_blueprints: BytesCall, version: () => string,
  *   extract_animations: BytesCall, extract_authoring_table: BytesCall,
- *   ParsedPackage: new (path: string, bytes: Uint8Array) => WasmPackageBinding }} WasmBinding
+ *   ParsedPackage: new (path: string, bytes: Uint8Array) => WasmPackageBinding,
+ *   set_limits?: (maxInputBytes: number, maxOutputBytes: number) => boolean }} WasmBinding
  */
 
 export const DEFAULT_LIMITS = Object.freeze({
@@ -35,12 +36,17 @@ export const DEFAULT_LIMITS = Object.freeze({
 	maxProjectionItems: 1_000_000
 });
 
+/** Largest `maxInputBytes` or `maxOutputBytes` a runtime accepts: 512 MiB. */
+export const LIMIT_CEILING_BYTES = 512 * 1024 * 1024;
+
 const textEncoder = new TextEncoder();
 
 export class WasmInputLimitError extends Error {
 	/** @param {number} actualBytes @param {number} maxBytes */
 	constructor(actualBytes, maxBytes) {
-		super(`WASM input is ${actualBytes} bytes; the configured limit is ${maxBytes} bytes.`);
+		super(
+			`WASM input is ${actualBytes} bytes; the configured limit is ${maxBytes} bytes. Raise maxInputBytes (up to 512 MiB) to inspect bigger packages.`
+		);
 		this.name = "WasmInputLimitError";
 		this.code = "UE_SHED_UASSET_WASM_INPUT_LIMIT";
 		this.actualBytes = actualBytes;
@@ -51,7 +57,9 @@ export class WasmInputLimitError extends Error {
 export class WasmOutputLimitError extends Error {
 	/** @param {number} actualBytes @param {number} maxBytes */
 	constructor(actualBytes, maxBytes) {
-		super(`WASM output is ${actualBytes} bytes; the configured limit is ${maxBytes} bytes.`);
+		super(
+			`WASM output is ${actualBytes} bytes; the configured limit is ${maxBytes} bytes. Raise maxOutputBytes (up to 512 MiB) for bigger results.`
+		);
 		this.name = "WasmOutputLimitError";
 		this.code = "UE_SHED_UASSET_WASM_OUTPUT_LIMIT";
 		this.actualBytes = actualBytes;
@@ -100,15 +108,33 @@ export function normalizeLimits(options = undefined) {
 
 /**
  * @param {number | undefined} value
- * @param {number} maximum
+ * @param {number} fallback
  * @param {string} name
  */
-function normalizeLimit(value, maximum, name) {
-	if (value === undefined) return maximum;
-	if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
-		throw new RangeError(`${name} must be an integer between 1 and ${maximum}.`);
+function normalizeLimit(value, fallback, name) {
+	if (value === undefined) return fallback;
+	if (!Number.isSafeInteger(value) || value < 1 || value > LIMIT_CEILING_BYTES) {
+		throw new RangeError(
+			`${name} must be an integer between 1 and ${LIMIT_CEILING_BYTES} (512 MiB).`
+		);
 	}
 	return value;
+}
+
+/**
+ * Gives the binding this runtime's limits before a call. Runtimes share one module instance and
+ * calls are synchronous, so each call sets them first. A binding without `set_limits` keeps its
+ * built-in 64 MiB limits.
+ *
+ * @template T
+ * @param {WasmBinding} binding
+ * @param {RuntimeLimits} limits
+ * @param {() => T} call
+ * @returns {T}
+ */
+function withLimits(binding, limits, call) {
+	binding.set_limits?.(limits.maxInputBytes, limits.maxOutputBytes);
+	return call();
 }
 
 /**
@@ -201,7 +227,7 @@ function createPackageHandle(
 			"the generated binding is missing the ParsedPackage export"
 		);
 	}
-	const raw = new binding.ParsedPackage(path, input);
+	const raw = withLimits(binding, limits, () => new binding.ParsedPackage(path, input));
 	let freed = false;
 	/** @returns {void} */
 	function free() {
@@ -223,7 +249,12 @@ function createPackageHandle(
 		}
 		return /** @type {T} */ (
 			/** @type {unknown} */ (
-				decodeResult(operation, call(), schemaVersion, limits.maxOutputBytes)
+				decodeResult(
+					operation,
+					withLimits(binding, limits, call),
+					schemaVersion,
+					limits.maxOutputBytes
+				)
 			)
 		);
 	}
@@ -281,7 +312,12 @@ export function createRuntime(binding, options = undefined) {
 			const input = assertInputBytes(bytes, limits.maxInputBytes);
 			return /** @type {InspectionResult} */ (
 				/** @type {unknown} */ (
-					decodeResult("inspect", binding.inspect(path, input), 8, limits.maxOutputBytes)
+					decodeResult(
+						"inspect",
+						withLimits(binding, limits, () => binding.inspect(path, input)),
+						8,
+						limits.maxOutputBytes
+					)
 				)
 			);
 		},
@@ -291,7 +327,7 @@ export function createRuntime(binding, options = undefined) {
 				/** @type {unknown} */ (
 					decodeResult(
 						"extractText",
-						binding.extract_text(path, input),
+						withLimits(binding, limits, () => binding.extract_text(path, input)),
 						1,
 						limits.maxOutputBytes
 					)
@@ -304,7 +340,7 @@ export function createRuntime(binding, options = undefined) {
 				/** @type {unknown} */ (
 					decodeResult(
 						"extractTextures",
-						binding.extract_textures(path, input),
+						withLimits(binding, limits, () => binding.extract_textures(path, input)),
 						1,
 						limits.maxOutputBytes
 					)
@@ -317,7 +353,9 @@ export function createRuntime(binding, options = undefined) {
 				/** @type {unknown} */ (
 					decodeResult(
 						"extractLevelSequences",
-						binding.extract_level_sequences(path, input),
+						withLimits(binding, limits, () =>
+							binding.extract_level_sequences(path, input)
+						),
 						1,
 						limits.maxOutputBytes
 					)
@@ -330,7 +368,7 @@ export function createRuntime(binding, options = undefined) {
 				/** @type {unknown} */ (
 					decodeResult(
 						"extractAnimations",
-						binding.extract_animations(path, input),
+						withLimits(binding, limits, () => binding.extract_animations(path, input)),
 						1,
 						limits.maxOutputBytes
 					)
@@ -343,7 +381,7 @@ export function createRuntime(binding, options = undefined) {
 				/** @type {unknown} */ (
 					decodeResult(
 						"extractBlueprints",
-						binding.extract_blueprints(path, input),
+						withLimits(binding, limits, () => binding.extract_blueprints(path, input)),
 						1,
 						limits.maxOutputBytes
 					)
@@ -356,7 +394,9 @@ export function createRuntime(binding, options = undefined) {
 				/** @type {unknown} */ (
 					decodeResult(
 						"extractAuthoringTable",
-						binding.extract_authoring_table(path, input),
+						withLimits(binding, limits, () =>
+							binding.extract_authoring_table(path, input)
+						),
 						1,
 						limits.maxOutputBytes
 					)

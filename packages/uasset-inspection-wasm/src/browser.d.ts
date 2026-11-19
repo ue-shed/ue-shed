@@ -12,6 +12,8 @@ export declare function createBrowserRuntime(
 export declare const initBrowser: typeof createBrowserRuntime;
 /** Default and maximum runtime limits; per-runtime options may only lower them. */
 export declare const DEFAULT_LIMITS: import("./types.js").RuntimeLimits;
+/** Largest `maxInputBytes` or `maxOutputBytes` a runtime accepts: 512 MiB. */
+export declare const LIMIT_CEILING_BYTES: number;
 export declare const limits: import("./types.js").RuntimeLimits;
 export declare function inspect(
 	path: string,

@@ -1,6 +1,6 @@
 //! WebAssembly adapter for the portable UAsset parser.
 
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell};
 use std::collections::HashSet;
 use std::io::{self, Write};
 
@@ -40,14 +40,43 @@ use uasset_parser::{archive, package, version};
 #[path = "../../uasset-parser/src/test_support.rs"]
 mod test_support;
 
-/// Maximum package size accepted by the public WASM boundary.
+/// Default package size accepted by the public WASM boundary, until [`set_limits`] changes it.
 ///
-/// JavaScript callers must enforce this limit before passing a typed array to wasm-bindgen. The
+/// JavaScript callers must enforce their limit before passing a typed array to wasm-bindgen. The
 /// Rust check remains authoritative for callers that use the generated binding directly.
 pub const MAX_INPUT_BYTES: usize = 64 * 1024 * 1024;
 
-/// Maximum serialized result size returned by the public WASM boundary.
+/// Default serialized result size returned by the public WASM boundary, until [`set_limits`]
+/// changes it.
 pub const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+
+/// Largest input or output limit [`set_limits`] accepts, leaving room in 32-bit WebAssembly memory
+/// (4 GiB) for the package's decoded exports and the serialized result.
+pub const LIMIT_CEILING_BYTES: usize = 512 * 1024 * 1024;
+
+thread_local! {
+    static LIMITS: Cell<(usize, usize)> = const { Cell::new((MAX_INPUT_BYTES, MAX_OUTPUT_BYTES)) };
+}
+
+fn max_input_bytes() -> usize {
+    LIMITS.with(|limits| limits.get().0)
+}
+
+fn max_output_bytes() -> usize {
+    LIMITS.with(|limits| limits.get().1)
+}
+
+/// Sets the input and serialized-output limits for the calls that follow, from 1 byte to
+/// [`LIMIT_CEILING_BYTES`]. Returns false, and keeps the current limits, for values outside it.
+#[wasm_bindgen]
+pub fn set_limits(max_input_bytes: usize, max_output_bytes: usize) -> bool {
+    let valid = |value: usize| (1..=LIMIT_CEILING_BYTES).contains(&value);
+    if !valid(max_input_bytes) || !valid(max_output_bytes) {
+        return false;
+    }
+    LIMITS.with(|limits| limits.set((max_input_bytes, max_output_bytes)));
+    true
+}
 
 /// Maximum number of exports decoded by one WASM operation.
 pub const MAX_EXPORTS: usize = 100_000;
@@ -322,7 +351,7 @@ fn inspect_impl(
             return serialize_bounded_generic(path, &ErrorOutput::package(path.to_owned(), error));
         }
     };
-    let mut writer = CappedWriter::new(MAX_OUTPUT_BYTES);
+    let mut writer = CappedWriter::new(max_output_bytes());
     match write_inspection_json_from_package_with_schemas(
         path,
         bytes,
@@ -797,8 +826,9 @@ pub fn version() -> String {
 #[wasm_bindgen]
 pub fn limits() -> String {
     serde_json::json!({
-        "max_input_bytes": MAX_INPUT_BYTES,
-        "max_output_bytes": MAX_OUTPUT_BYTES,
+        "max_input_bytes": max_input_bytes(),
+        "max_output_bytes": max_output_bytes(),
+        "limit_ceiling_bytes": LIMIT_CEILING_BYTES,
         "max_exports": MAX_EXPORTS,
         "max_projection_items": MAX_PROJECTION_ITEMS,
     })
@@ -1042,7 +1072,7 @@ fn package_error_kind_name(kind: PackageErrorKind) -> &'static str {
 }
 
 fn serialize_bounded_projection(path: &str, value: &impl Serialize) -> String {
-    match serialize_with_limit(value, MAX_OUTPUT_BYTES) {
+    match serialize_with_limit(value, max_output_bytes()) {
         Ok(output) => output,
         Err(SerializationFailure::LimitExceeded) => {
             serialize_projection_limit_error(path, "serialized projection exceeds the WASM limit")
@@ -1069,7 +1099,7 @@ fn serialize_projection_error_kind(
         kind,
         message: message.into(),
     };
-    serialize_with_limit(&output, MAX_OUTPUT_BYTES).unwrap_or_else(|failure| match failure {
+    serialize_with_limit(&output, max_output_bytes()).unwrap_or_else(|failure| match failure {
         SerializationFailure::LimitExceeded => PROJECTION_OUTPUT_LIMIT_ERROR.to_owned(),
         SerializationFailure::Internal(_) => PROJECTION_INTERNAL_ERROR.to_owned(),
     })
@@ -1089,14 +1119,14 @@ fn serialize_generic_error(path: &str, kind: &'static str, message: impl Into<St
         field: None,
         offset: None,
     };
-    serialize_with_limit(&output, MAX_OUTPUT_BYTES).unwrap_or_else(|failure| match failure {
+    serialize_with_limit(&output, max_output_bytes()).unwrap_or_else(|failure| match failure {
         SerializationFailure::LimitExceeded => GENERIC_OUTPUT_LIMIT_ERROR.to_owned(),
         SerializationFailure::Internal(_) => GENERIC_INTERNAL_ERROR.to_owned(),
     })
 }
 
 fn serialize_bounded_generic(path: &str, value: &impl Serialize) -> String {
-    match serialize_with_limit(value, MAX_OUTPUT_BYTES) {
+    match serialize_with_limit(value, max_output_bytes()) {
         Ok(output) => output,
         Err(SerializationFailure::LimitExceeded) => serialize_generic_error(
             path,
@@ -1195,11 +1225,12 @@ fn serialize_with_limit(
 }
 
 fn input_limit_error(schema_version: u8, path: &str, bytes: &[u8]) -> Option<String> {
-    (bytes.len() > MAX_INPUT_BYTES).then(|| {
+    let limit = max_input_bytes();
+    (bytes.len() > limit).then(|| {
         let message = format!(
             "input size {} exceeds the WASM limit of {} bytes",
             bytes.len(),
-            MAX_INPUT_BYTES
+            limit
         );
         if schema_version == 8 {
             serialize_generic_error(path, "resource_limit", message)
@@ -1217,7 +1248,7 @@ fn summary_export_count(bytes: &[u8]) -> Option<u64> {
 
 /// Whether input is within the size and export-count limits checked before a full parse.
 fn within_limits(bytes: &[u8]) -> bool {
-    bytes.len() <= MAX_INPUT_BYTES
+    bytes.len() <= max_input_bytes()
         && summary_export_count(bytes).is_none_or(|count| count <= MAX_EXPORTS as u64)
 }
 
@@ -1464,9 +1495,10 @@ mod tests {
     use uasset_parser::package::ObjectPath;
 
     use super::{
-        MAX_EXPORTS, MAX_INPUT_BYTES, MAX_PROJECTION_ITEMS, SerializationFailure, exceeds_limit,
-        extract_blueprints, extract_blueprints_from_package, extract_text_from_package, inspect,
-        limits, projection_export_limit, serialize_with_limit,
+        LIMIT_CEILING_BYTES, MAX_EXPORTS, MAX_INPUT_BYTES, MAX_OUTPUT_BYTES, MAX_PROJECTION_ITEMS,
+        SerializationFailure, exceeds_limit, extract_blueprints, extract_blueprints_from_package,
+        extract_text_from_package, inspect, limits, projection_export_limit, serialize_with_limit,
+        set_limits,
     };
 
     const BLUEPRINT_FIXTURE: &[u8] = include_bytes!(
@@ -1950,6 +1982,25 @@ mod tests {
             textures < package.exports.len(),
             "the fixture has other exports"
         );
+    }
+
+    #[test]
+    fn a_caller_can_raise_the_input_limit_up_to_the_ceiling() {
+        let bytes = vec![0; MAX_INPUT_BYTES + 1];
+        assert!(set_limits(MAX_INPUT_BYTES * 2, MAX_OUTPUT_BYTES));
+        let value: Value = serde_json::from_str(&inspect("large.uasset", &bytes)).expect("JSON");
+        // Past the size check: zeros are not a package, so parsing fails instead.
+        assert_eq!(value["status"], "error");
+        assert_ne!(value["kind"], "resource_limit");
+        let published: Value = serde_json::from_str(&limits()).expect("limits are JSON");
+        assert_eq!(published["max_input_bytes"], MAX_INPUT_BYTES * 2);
+        assert_eq!(published["limit_ceiling_bytes"], LIMIT_CEILING_BYTES);
+
+        assert!(!set_limits(0, MAX_OUTPUT_BYTES));
+        assert!(!set_limits(MAX_INPUT_BYTES, LIMIT_CEILING_BYTES + 1));
+        assert!(set_limits(MAX_INPUT_BYTES, MAX_OUTPUT_BYTES));
+        let value: Value = serde_json::from_str(&inspect("large.uasset", &bytes)).expect("JSON");
+        assert_eq!(value["kind"], "resource_limit");
     }
 
     #[test]

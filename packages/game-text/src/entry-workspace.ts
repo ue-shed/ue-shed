@@ -1,13 +1,17 @@
 // Named exports only. The Game Text workspace a host runs over its selected project (Plan 058 D10).
 
 export { makeGameTextWorkspace, type GameTextWorkspaceApi } from "./workspace.js";
-export { GameTextWorkspaceHostFailure } from "./workspace-host.js";
+export {
+	DEFAULT_GAME_TEXT_BASELINE_MAX_FILE_BYTES,
+	GameTextWorkspaceHostFailure
+} from "./workspace-host.js";
 export {
 	makeGameTextIdRepairs,
 	type GameTextIdRepairsApi,
 	type GameTextIdRepairsHost
 } from "./workspace-id-repairs.js";
 export type {
+	GameTextBaselineLimits,
 	GameTextWorkspaceFileChoice,
 	GameTextWorkspaceFileFilter,
 	GameTextWorkspaceFileHooks,

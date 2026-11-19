@@ -323,6 +323,36 @@ describe("localization progress and manifest baselines", () => {
 			)._tag
 		).toBe("Failure");
 	});
+	it("bounds baseline entries by a caller limit that names itself", () => {
+		const files = evidence([manifestEntry("A"), manifestEntry("B"), manifestEntry("C")]);
+		expect(() =>
+			createLocalizationBaseline(corpus(), files, "2026-10-07T00:00:00Z", { maxEntries: 2 })
+		).toThrowError(
+			expect.objectContaining({
+				code: "invalid_baseline",
+				message: "The baseline has 3 entries; the limit is 2.",
+				recovery: "Raise baselineLimits.maxEntries to work with a baseline this size."
+			})
+		);
+		const baseline = createLocalizationBaseline(corpus(), files, "2026-10-07T00:00:00Z", {
+			maxEntries: 3
+		});
+		expect(baseline.entries).toHaveLength(3);
+
+		// Past the 100,000 default: refused by default, read back when the caller raises it.
+		const [entry] = baseline.entries;
+		const big = JSON.stringify({
+			...baseline,
+			entries: Array.from({ length: 100_001 }, (_, index) => ({ ...entry, key: `K${index}` }))
+		});
+		const refused = decodeLocalizationBaselineJson(big);
+		expect(Result.isFailure(refused) && refused.failure.message).toBe(
+			"The baseline has 100,001 entries; the limit is 100,000."
+		);
+		expect(
+			success(decodeLocalizationBaselineJson(big, { maxEntries: 200_000 })).entries
+		).toHaveLength(100_001);
+	});
 	it("fingerprints exact source including opaque metadata, with stable object ordering", () => {
 		expect(localizationFingerprint("")).toBe(
 			"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

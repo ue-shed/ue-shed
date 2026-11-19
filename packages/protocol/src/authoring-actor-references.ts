@@ -12,11 +12,6 @@ export const AuthoringActorReferencesContract = Schema.Struct({
  * Asks the editor which loaded actors in one world reference a DataTable row through
  * `FDataTableRowHandle`. `rowName` is 1 to 1023 characters with no control characters;
  * `maxActors` (1 to 100000) and `maxResults` (1 to 10000) bound the scan.
- *
- * `maxPropertyVisits` (1 to 100000000, default 1000000) bounds the reflected properties the scan
- * reads across all actors and components. Big worlds or actors with large arrays reach the default
- * first; the result then has `isComplete: false` and a `scan_limit` error, and a higher value
- * finishes the scan. Plugins older than this field ignore it and keep the default.
  */
 export const AuthoringActorReferencesRequest = Schema.Struct({
 	contract: AuthoringActorReferencesContract,
@@ -29,6 +24,10 @@ export const AuthoringActorReferencesRequest = Schema.Struct({
 	),
 	maxActors: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100000 })),
 	maxResults: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10000 })),
+	/**
+	 * Reflected properties read across the scan, 1 to 100000000, default 1000000. Too low: the
+	 * result is partial with a `scan_limit` error. Older plugins ignore it and keep the default.
+	 */
 	maxPropertyVisits: Schema.optionalKey(
 		Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100000000 }))
 	)

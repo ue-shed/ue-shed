@@ -23,7 +23,14 @@ export const AuthoringActorReferencesRequest = Schema.Struct({
 		Schema.isPattern(/^[^\u0000-\u001f]*$/u)
 	),
 	maxActors: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100000 })),
-	maxResults: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10000 }))
+	maxResults: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 10000 })),
+	/**
+	 * Reflected properties read across the scan, 1 to 100000000, default 1000000. Too low: the
+	 * result is partial with a `scan_limit` error. Older plugins ignore it and keep the default.
+	 */
+	maxPropertyVisits: Schema.optionalKey(
+		Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100000000 }))
+	)
 }).annotate({ identifier: "AuthoringActorReferencesRequest" });
 export type AuthoringActorReferencesRequest = typeof AuthoringActorReferencesRequest.Type;
 

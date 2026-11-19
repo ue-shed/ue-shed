@@ -392,6 +392,10 @@ TSharedRef<FJsonObject> FUEShedObservatoryStreamService::BuildCatalogSnapshotJso
 	Snapshot->SetStringField(TEXT("mapPath"), World->GetOutermost()->GetName());
 	Snapshot->SetStringField(TEXT("worldKind"), bIsPie ? TEXT("pie") : TEXT("editor"));
 	Snapshot->SetNumberField(TEXT("worldSeconds"), World->GetTimeSeconds());
+	if (OmittedActors > 0)
+	{
+		Snapshot->SetNumberField(TEXT("omittedActors"), OmittedActors);
+	}
 	return Snapshot;
 }
 
@@ -404,13 +408,20 @@ void FUEShedObservatoryStreamService::RebuildCatalogIfNeeded(UWorld* World, bool
 
 	const bool bReplacingCatalog = CatalogRevision > 0;
 	Catalog.Reset();
+	OmittedActors = 0;
 	uint32 StreamIndex = 0;
-	for (TActorIterator<AActor> It(World); It && Catalog.Num() < MaxActors; ++It)
+	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		AActor* Actor = *It;
 		FBox Bounds;
 		if (!PassesActorFilter(Actor, Bounds))
 		{
+			continue;
+		}
+		// The stream format indexes at most MaxActors; count the rest so the catalog reports them.
+		if (Catalog.Num() >= MaxActors)
+		{
+			++OmittedActors;
 			continue;
 		}
 

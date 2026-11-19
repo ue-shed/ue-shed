@@ -93,7 +93,9 @@ void UUEShedObservatoryLibrary::GetActorSnapshot(FString& ResultJson)
 	TArray<TSharedPtr<FJsonValue>> Actors;
 	Actors.Reserve(256);
 	constexpr int32 MaxActors = 16384;
-	for (TActorIterator<AActor> It(World); It && Actors.Num() < MaxActors; ++It)
+	// Actors past the cap are counted, not listed, so a big map says what it left out.
+	int32 OmittedActors = 0;
+	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		AActor* Actor = *It;
 		if (Actor == nullptr || Actor->HasAnyFlags(RF_ClassDefaultObject | RF_Transient)
@@ -103,6 +105,11 @@ void UUEShedObservatoryLibrary::GetActorSnapshot(FString& ResultJson)
 		}
 		const FBox Box = Actor->GetComponentsBoundingBox(true, true);
 		if (!Box.IsValid) continue;
+		if (Actors.Num() >= MaxActors)
+		{
+			++OmittedActors;
+			continue;
+		}
 
 		const FString Path = Actor->GetPathName();
 		const TSharedRef<FJsonObject> Record = MakeShared<FJsonObject>();
@@ -127,6 +134,7 @@ void UUEShedObservatoryLibrary::GetActorSnapshot(FString& ResultJson)
 	Snapshot->SetNumberField(TEXT("sequence"), SnapshotSequence++);
 	Snapshot->SetStringField(TEXT("worldKind"), bIsPie ? TEXT("pie") : TEXT("editor"));
 	Snapshot->SetNumberField(TEXT("worldSeconds"), World->GetTimeSeconds());
+	if (OmittedActors > 0) Snapshot->SetNumberField(TEXT("omittedActors"), OmittedActors);
 
 	const TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
 	Root->SetStringField(TEXT("status"), TEXT("ready"));

@@ -65,6 +65,8 @@ private:
 
 	bool bActive = false;
 	bool bCatalogDirty = true;
+	/** Actors that passed the filter after the catalog reached MaxActors. */
+	int32 OmittedActors = 0;
 	bool bDelegatesBound = false;
 	int32 CadenceHz = 5;
 	double NextSampleSeconds = 0;

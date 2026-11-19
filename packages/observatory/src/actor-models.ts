@@ -38,6 +38,8 @@ export const WorldActorSnapshot = Schema.Struct({
 	capturedAt: Schema.String,
 	mapPath: Schema.NonEmptyString,
 	sequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+	/** Actors left out because the map has more than the 16,384 a snapshot or stream carries. */
+	omittedActors: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 	worldKind: Schema.Literals(["editor", "pie"]),
 	worldSeconds: Schema.Finite
 });

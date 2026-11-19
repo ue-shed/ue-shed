@@ -20,11 +20,11 @@ const catalogOwned = new Set([
 	"@opentelemetry/sdk-trace-node",
 	"@opentelemetry/sdk-trace-web",
 	"@opentelemetry/semantic-conventions",
+	"@solidjs/vite-plugin",
 	"@stylexjs/rollup-plugin",
 	"@stylexjs/stylex",
 	"effect",
-	"solid-js",
-	"vite-plugin-solid"
+	"solid-js"
 ]);
 
 const approvedRuntimeExits = new Set([

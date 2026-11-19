@@ -1,6 +1,6 @@
 import stylexModule, { type PluginOptions } from "@stylexjs/rollup-plugin";
 import type { Plugin } from "vite";
-import solid from "vite-plugin-solid";
+import solid from "@solidjs/vite-plugin";
 import { defineProject } from "vitest/config";
 
 function isStylexPluginFactory<Value>(
@@ -17,7 +17,7 @@ const stylex = (options: PluginOptions): Plugin => {
 };
 
 export default defineProject({
-	plugins: [solid({ hot: false }), stylex({ fileName: "stylex.css" })],
+	plugins: [solid({ refresh: false }), stylex({ fileName: "stylex.css" })],
 	// Packages that ship Solid source or import their own CSS must go through Vite, not Node.
 	ssr: { noExternal: ["@tanstack/charts", "peculiar-sheets", "@dschz/solid-flow"] },
 	test: {

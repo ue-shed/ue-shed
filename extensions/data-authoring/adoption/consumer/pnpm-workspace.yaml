@@ -20,24 +20,22 @@ catalog:
     "@stylexjs/rollup-plugin": "^0.19.0"
     "@stylexjs/stylex": "^0.19.0"
     "effect": "4.0.4"
-    "@solidjs/web": "2.0.0-rc.13"
-    "solid-js": "2.0.0-rc.13"
-    "vite-plugin-solid": "3.0.0-next.27"
+    "@solidjs/vite-plugin": "3.0.1"
+    "@solidjs/web": "2.0.3"
+    "solid-js": "2.0.3"
 
 minimumReleaseAgeExclude:
-    - "solid-js@2.0.0-rc.13"
-    - "@solidjs/web@2.0.0-rc.13"
-    - "@solidjs/signals@2.0.0-rc.13"
-    - "@solidjs/vite-plugin@3.0.0-next.47"
-    - "@solidjs/babel-plugin@2.0.0-rc.13"
-    - "@solidjs/compiler@2.0.0-rc.13"
-    - "@solidjs/compiler-darwin-arm64@2.0.0-rc.13"
-    - "@solidjs/compiler-darwin-x64@2.0.0-rc.13"
-    - "@solidjs/compiler-linux-arm64-gnu@2.0.0-rc.13"
-    - "@solidjs/compiler-linux-x64-gnu@2.0.0-rc.13"
-    - "@solidjs/compiler-wasm32-wasi@2.0.0-rc.13"
-    - "@solidjs/compiler-win32-x64-msvc@2.0.0-rc.13"
+    - "@solidjs/compiler@2.0.2"
+    - "@solidjs/compiler-darwin-arm64@2.0.2"
+    - "@solidjs/compiler-darwin-x64@2.0.2"
+    - "@solidjs/compiler-linux-arm64-gnu@2.0.2"
+    - "@solidjs/compiler-linux-x64-gnu@2.0.2"
+    - "@solidjs/compiler-wasm32-wasi@2.0.2"
+    - "@solidjs/compiler-win32-x64-msvc@2.0.2"
+    - "@solidjs/signals@2.0.3"
+    - "@solidjs/web@2.0.3"
+    - solid-js@2.0.3
     - peculiar-sheets@0.15.0
 
 overrides:
-    "@solidjs/signals": 2.0.0-rc.13
+    "@solidjs/signals": 2.0.3

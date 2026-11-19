@@ -4,18 +4,18 @@ Use SolidJS for maintained first-party UI.
 
 Solid is a view layer. Headless packages own domain state and changes.
 
-The maintained UI uses Solid `2.0.0-rc.13` with the matching `@solidjs/web` renderer. Import DOM
-rendering and JSX types from `@solidjs/web`; use it as `jsxImportSource`. Keep the compiler and
-Testing Library on their Solid 2 prerelease versions from the workspace lockfile.
+The maintained UI uses Solid `2.0.3` with the matching `@solidjs/web` renderer. Import DOM rendering
+and JSX types from `@solidjs/web` and use it as `jsxImportSource`. The workspace catalog pins the
+stable `@solidjs/vite-plugin`, which uses Solid's native JSX compiler. Component tests use the
+Solid 2 line of `@solidjs/testing-library`, currently `1.0.0-rc.2`.
 
-The `vite-plugin-solid` compatibility package delegates to `@solidjs/vite-plugin`. A workspace
-override pins it to `3.0.0-next.47`, which brings the rc.13 compiler and Babel plugin; without the
-override the lockfile keeps an older plugin and compiler. Solid's runtime is ESM-only as of rc.8,
-supported by the repository's Node 26 baseline.
+The root workspace and the Data Authoring adoption consumer pin `@solidjs/signals` to the same
+release as `solid-js` through an override. This keeps Peculiar Sheets' exact rc.9 peer from pulling
+in a second signals runtime.
 
-A second override pins `@solidjs/signals` to rc.13. Peculiar Sheets declares an exact rc.9 signals
-peer, and pnpm would otherwise install an unused rc.9 copy beside the real runtime. The Data
-Authoring adoption consumer carries the same override.
+The workspace patches Solid Flow's JSX entry to set up node and edge effects in their component
+bodies. Remove the patch when the published package includes the
+[upstream ref fix](https://github.com/dsnchz/solid-flow/commit/9a392b0d9a).
 
 Signal writes are batched until the next microtask. Pass new values directly to operations that
 run in the same event handler, and publish retained route state as it changes rather than waiting
@@ -27,13 +27,11 @@ Peculiar Sheets runs directly on Solid 2. Data Authoring mounts TanStack Charts 
 framework-neutral DOM host, with updates and disposal owned by the surrounding Solid 2 component.
 
 Peculiar Sheets `0.15.0` is compiled for Solid `2.0.0-rc.9` and declares exact rc.9 peers for
-`solid-js`, `@solidjs/web` and `@solidjs/signals`, so pnpm reports unmet peers on rc.13. The
-library's compiled output must match the renderer. Solid's renderer looks up delegated event
-handlers under a key that changed between release candidates: rc.7 used `$$<event>`, rc.9 through
-rc.13 use `_$$<event>`. A distribution built for another key renders correctly but silently drops
-keyboard, input, mouse and context-menu events. Before upgrading Solid, confirm the new renderer's
-key still matches the installed Peculiar Sheets build, or upgrade both together, and keep every
-consumer on a single Solid runtime.
+`solid-js`, `@solidjs/web` and `@solidjs/signals`, so pnpm reports unmet runtime and renderer peers
+on Solid 2.0.3. The grid and renderer both use `_$$<event>` as the delegated handler key. A
+distribution built for another key renders correctly but silently drops keyboard, input, mouse and
+context-menu events. When upgrading Solid, check that the renderer and grid still use the same key
+and share one Solid runtime.
 
 `extensions/data-authoring/src/peculiar-sheets-runtime.test.ts` guards this offline. It reads the
 renderer's `EVENT_KEY` from the installed `@solidjs/web` and requires every delegated handler in

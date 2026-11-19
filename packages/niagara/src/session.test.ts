@@ -5,7 +5,7 @@ import { Effect, Fiber } from "effect";
 import { it } from "@effect/vitest";
 import { TestClock } from "effect/testing";
 import { expect, test } from "vitest";
-import { submitNiagaraSessionRequest } from "./session.js";
+import { DEFAULT_NIAGARA_SESSION_TIMEOUT_MS, submitNiagaraSessionRequest } from "./session.js";
 
 const runId = "11111111-1111-4111-8111-111111111111";
 async function fixture() {
@@ -54,6 +54,7 @@ it.effect("a timeout leaves cancellation evidence for the producer", () =>
 		);
 		yield* TestClock.adjust("30 millis");
 		const failure = yield* Effect.flip(Fiber.join(fiber));
+		expect(failure._tag).toBe("NiagaraSessionTimeoutError");
 		expect(failure.message).toContain("timed out");
 		expect(
 			(yield* Effect.promise(() => stat(join(input.directory, runId + ".cancel")))).isFile()
@@ -103,4 +104,8 @@ test("mismatched result identity cannot publish", async () => {
 	await expect(Effect.runPromise(submitNiagaraSessionRequest(input))).rejects.toThrow(
 		"Invalid session result"
 	);
+});
+
+test("a run waits 30 minutes for the session by default", () => {
+	expect(DEFAULT_NIAGARA_SESSION_TIMEOUT_MS).toBe(30 * 60_000);
 });

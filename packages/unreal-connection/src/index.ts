@@ -56,6 +56,8 @@ export {
 } from "./selected-target.js";
 
 const coreObjectPath = "/Script/UEShedCore.Default__UEShedCoreLibrary";
+/** Operation name of every Core capability manifest read. */
+const manifestOperation = "unreal.producer.inspect";
 const assetNavigationCapability = "editor.asset-navigation.v1";
 const assetOpenCapability = "editor.asset-open.v1";
 const requiredCapabilities = [
@@ -233,12 +235,7 @@ export const findUnrealActorsReferencingRow = Effect.fn(
 		Schema.decodeUnknownEffect(AuthoringActorReferencesRequest)
 	);
 	const client = yield* RemoteControlClient;
-	const manifest = yield* decodeResult(
-		remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}, true),
-		endpoint,
-		"capability manifest",
-		decodeCompanionCapabilityManifest
-	);
+	const manifest = yield* readManifest(client, endpoint);
 	const objectPath = yield* requireCapability(
 		manifest,
 		"authoring.actor-references.v1",
@@ -250,6 +247,7 @@ export const findUnrealActorsReferencingRow = Effect.fn(
 			endpoint,
 			objectPath,
 			"FindActorsReferencingRow",
+			operation,
 			{
 				RequestJson: JSON.stringify(request)
 			},
@@ -278,15 +276,11 @@ export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutoma
 ) {
 	const endpoint = normalizedEndpoint(configuredEndpoint);
 	const client = yield* RemoteControlClient;
-	const manifest = yield* decodeResult(
-		remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}, true),
-		endpoint,
-		"capability manifest",
-		decodeCompanionCapabilityManifest
-	);
+	const manifest = yield* readManifest(client, endpoint);
 	const call = <A, DecodeError>(
 		capability: string,
 		functionName: string,
+		operation: string,
 		parameters: Schema.JsonObject,
 		decode: (input: Schema.Json) => Effect.Effect<A, DecodeError>,
 		isMutation: boolean
@@ -299,6 +293,7 @@ export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutoma
 						endpoint,
 						objectPath,
 						functionName,
+						operation,
 						parameters,
 						!isMutation
 					).pipe(
@@ -338,6 +333,7 @@ export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutoma
 		const result = yield* call(
 			"automation.players.v1",
 			"ListPlayers",
+			"unreal.automation.list_players",
 			{ RequestJson: JSON.stringify(request) },
 			decodeAutomationPlayersResult,
 			false
@@ -359,6 +355,7 @@ export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutoma
 		const result = yield* call(
 			"automation.input.v1",
 			"InjectInput",
+			"unreal.automation.inject_input",
 			{ RequestJson: JSON.stringify(request) },
 			decodeAutomationInputResult,
 			true
@@ -384,6 +381,7 @@ export const connectUnrealAutomation = Effect.fn("UnrealConnection.connectAutoma
 		return yield* call(
 			"automation.csv.v1",
 			"CsvProfiler",
+			"unreal.automation.csv_profiler",
 			{ RequestJson: JSON.stringify(request) },
 			decodeAutomationCsvResult,
 			request.command !== "status"
@@ -416,15 +414,40 @@ function connectionError(error: RemoteControlClientError): UnrealConnectionError
 	});
 }
 
+/** Reads the Core capability manifest; every manifest read shares one operation name. */
+function readManifest(
+	client: RemoteControlClientApi,
+	endpoint: string
+): Effect.Effect<CompanionCapabilityManifest, UnrealConnectionError> {
+	return decodeResult(
+		remoteCall(
+			client,
+			endpoint,
+			coreObjectPath,
+			"GetCapabilityManifest",
+			manifestOperation,
+			{},
+			true
+		),
+		endpoint,
+		"capability manifest",
+		decodeCompanionCapabilityManifest
+	);
+}
+
+/**
+ * One Remote Control call under a stable operation name, so a host can set its timeout through
+ * the client's per-operation settings. The README's Timeouts section lists the names.
+ */
 function remoteCall(
 	client: RemoteControlClientApi,
 	endpoint: string,
 	objectPath: string,
 	functionName: string,
+	operation: string,
 	parameters: Schema.JsonObject,
 	idempotent = false
 ): Effect.Effect<Schema.Json, UnrealConnectionError> {
-	const operation = `remote_control.${functionName}`;
 	return client
 		.request({ endpoint, functionName, objectPath, operation, parameters, idempotent })
 		.pipe(Effect.mapError(connectionError));
@@ -509,12 +532,7 @@ export function locateUnrealAsset(options: {
 	const endpoint = normalizedEndpoint(options.endpoint);
 	return Effect.gen(function* () {
 		const client = yield* RemoteControlClient;
-		const manifest = yield* decodeResult(
-			remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}, true),
-			endpoint,
-			"capability manifest",
-			decodeCompanionCapabilityManifest
-		);
+		const manifest = yield* readManifest(client, endpoint);
 		if (!manifest.capabilities.includes(assetNavigationCapability)) {
 			return yield* new UnrealCapabilityError({
 				capability: assetNavigationCapability,
@@ -530,10 +548,17 @@ export function locateUnrealAsset(options: {
 			});
 		}
 		return yield* decodeResult(
-			remoteCall(client, endpoint, manifest.assetNavigationObjectPath, "LocateAsset", {
-				BringToFront: options.bringToFront,
-				ObjectPath: options.objectPath
-			}),
+			remoteCall(
+				client,
+				endpoint,
+				manifest.assetNavigationObjectPath,
+				"LocateAsset",
+				"unreal.asset_navigation.locate",
+				{
+					BringToFront: options.bringToFront,
+					ObjectPath: options.objectPath
+				}
+			),
 			endpoint,
 			"asset location",
 			decodeEditorAssetLocateResult
@@ -563,12 +588,7 @@ export function openUnrealAsset(options: {
 	const endpoint = normalizedEndpoint(options.endpoint);
 	return Effect.gen(function* () {
 		const client = yield* RemoteControlClient;
-		const manifest = yield* decodeResult(
-			remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}, true),
-			endpoint,
-			"capability manifest",
-			decodeCompanionCapabilityManifest
-		);
+		const manifest = yield* readManifest(client, endpoint);
 		if (!manifest.capabilities.includes(assetOpenCapability)) {
 			return yield* new UnrealCapabilityError({
 				capability: assetOpenCapability,
@@ -584,10 +604,17 @@ export function openUnrealAsset(options: {
 			});
 		}
 		return yield* decodeResult(
-			remoteCall(client, endpoint, manifest.assetNavigationObjectPath, "OpenAsset", {
-				BringToFront: options.bringToFront,
-				ObjectPath: options.objectPath
-			}),
+			remoteCall(
+				client,
+				endpoint,
+				manifest.assetNavigationObjectPath,
+				"OpenAsset",
+				"unreal.asset_navigation.open",
+				{
+					BringToFront: options.bringToFront,
+					ObjectPath: options.objectPath
+				}
+			),
 			endpoint,
 			"asset opening",
 			decodeEditorAssetOpenResult
@@ -614,12 +641,7 @@ export function connectUnrealAuthoring(
 	const endpoint = normalizedEndpoint(configuredEndpoint);
 	return Effect.gen(function* () {
 		const client = yield* RemoteControlClient;
-		const manifest = yield* decodeResult(
-			remoteCall(client, endpoint, coreObjectPath, "GetCapabilityManifest", {}, true),
-			endpoint,
-			"capability manifest",
-			decodeCompanionCapabilityManifest
-		);
+		const manifest = yield* readManifest(client, endpoint);
 		const missing = requiredCapabilities.find(
 			(capability) => !manifest.capabilities.includes(capability)
 		);
@@ -651,14 +673,27 @@ export function connectUnrealAuthoring(
 			});
 		}
 		const authoringObjectPath = manifest.authoringObjectPath;
-		const call = (functionName: string, parameters: Schema.JsonObject, idempotent = false) =>
-			remoteCall(client, endpoint, authoringObjectPath, functionName, parameters, idempotent);
+		const call = (
+			functionName: string,
+			operation: string,
+			parameters: Schema.JsonObject,
+			idempotent = false
+		) =>
+			remoteCall(
+				client,
+				endpoint,
+				authoringObjectPath,
+				functionName,
+				operation,
+				parameters,
+				idempotent
+			);
 		return {
 			endpoint,
 			manifest,
 			listTableObjectPaths: Effect.suspend(() =>
 				decodeAuthoringResult(
-					call("ListTableObjectPaths", {}, true),
+					call("ListTableObjectPaths", "unreal.authoring.list_tables", {}, true),
 					endpoint,
 					"table list",
 					decodeAuthoringTableList
@@ -666,28 +701,40 @@ export function connectUnrealAuthoring(
 			),
 			getTableSnapshot: (objectPath) =>
 				decodeAuthoringResult(
-					call("GetTableSnapshot", { TableObjectPath: objectPath }, true),
+					call(
+						"GetTableSnapshot",
+						"unreal.authoring.table_snapshot",
+						{ TableObjectPath: objectPath },
+						true
+					),
 					endpoint,
 					"table snapshot",
 					decodeAuthoringTableSnapshot
 				),
 			apply: (request) =>
 				decodeAuthoringResult(
-					call("Apply", { RequestJson: JSON.stringify(request) }),
+					call("Apply", "unreal.authoring.apply", {
+						RequestJson: JSON.stringify(request)
+					}),
 					endpoint,
 					"Apply",
 					decodeAuthoringApplyResult
 				),
 			lookupApplyResult: (operationId) =>
 				decodeAuthoringResult(
-					call("LookupApplyResult", { OperationId: operationId }, true),
+					call(
+						"LookupApplyResult",
+						"unreal.authoring.lookup_apply",
+						{ OperationId: operationId },
+						true
+					),
 					endpoint,
 					"Apply lookup",
 					decodeAuthoringApplyResult
 				),
 			save: (request) =>
 				decodeAuthoringResult(
-					call("Save", { RequestJson: JSON.stringify(request) }),
+					call("Save", "unreal.authoring.save", { RequestJson: JSON.stringify(request) }),
 					endpoint,
 					"Save",
 					decodeAuthoringSaveResult
@@ -711,7 +758,7 @@ export const inspectUnrealProducer = Effect.fn("UnrealConnection.inspectProducer
 			objectPath: coreObjectPath,
 			functionName: "GetCapabilityManifest",
 			idempotent: true,
-			operation: "unreal.producer.inspect",
+			operation: manifestOperation,
 			parameters: {}
 		})
 		.pipe(Effect.flatMap(decodeCompanionCapabilityManifest));

@@ -71,7 +71,7 @@ export function localizationOperationError(
 		project_locked:
 			"Close the editor or release the lock, inspect partial output, then plan again before retrying.",
 		timeout:
-			"Inspect the private commandlet log and partial output; increase --timeout only after planning again.",
+			"Inspect the private commandlet log and partial output; raise timeoutSeconds (--timeout in the CLI) only after planning again.",
 		cancelled:
 			"The owned process has stopped. Inspect partial output and plan again before retrying.",
 		termination_failed:

@@ -49,7 +49,8 @@ import { processSupervisorExecutable, WINDOWS_SUPERVISOR_PACKAGE } from "./proce
 const BoundedString = Schema.NonEmptyString.check(Schema.isMaxLength(32_767));
 const BoundedCapability = Schema.NonEmptyString.check(Schema.isMaxLength(256));
 const HttpPort = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65_534 }));
-const Milliseconds = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3_600_000 }));
+/** Up to 24 hours, so a first open on an empty DDC can wait as long as it needs. */
+const Milliseconds = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400_000 }));
 const WindowsExitCode = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 4_294_967_295 }));
 const SupervisorMessage = Schema.Union([
 	Schema.Struct({
@@ -64,9 +65,9 @@ const SUPERVISOR_OUTPUT_LIMIT = 16_384;
 
 /**
  * Bounded project/plugin launch with readiness, capability and termination checks; timeouts are
- * milliseconds. `unattended` (`-unattended`) deletes unsaved-work recovery data, so it is refused
- * with `recovery_pending` while some exists; `window: "offscreen"` (`-RenderOffscreen`) is refused
- * on UE 4.27, which ignores it.
+ * 1 ms to 24 h. Too short a `readinessTimeoutMs` (default 3 min) fails a cold first open with
+ * `readiness_failed` naming it. `unattended` deletes recovery data, so it is refused with
+ * `recovery_pending` while some exists; `window: "offscreen"` is refused on UE 4.27.
  */
 export const SupervisedEditorSessionRequest = Schema.Struct({
 	explicitEngineRoot: Schema.optional(BoundedString),
@@ -316,12 +317,19 @@ function buildValidationError(cause: UnrealProjectLaunchError): SupervisedEditor
 	);
 }
 
-function readinessError(cause: EditorConnectionError): SupervisedEditorSessionError {
+function readinessError(
+	cause: EditorConnectionError,
+	readinessTimeoutMs: number
+): SupervisedEditorSessionError {
 	return sessionError(
 		"readiness_failed",
 		"readiness",
-		cause.message,
-		cause.recovery,
+		cause.code === "readiness_timeout"
+			? `The editor did not become ready within readinessTimeoutMs (${readinessTimeoutMs} ms).`
+			: cause.message,
+		cause.code === "readiness_timeout"
+			? `${cause.recovery} A first open with an empty DDC or shader cache can take longer: raise readinessTimeoutMs (up to 86,400,000 ms).`
+			: cause.recovery,
 		cause.retrySafe,
 		cause.nextStep,
 		cause
@@ -787,7 +795,7 @@ export const SupervisedEditorSessionLive = Layer.effect(
 						"invalid_request",
 						"validation",
 						"The supervised editor session request is invalid.",
-						"Provide bounded readiness settings, one project descriptor, and valid plugin descriptors.",
+						"Provide timeouts from 1 ms to 24 hours, one project descriptor, and valid plugin descriptors.",
 						false,
 						sessionNextStep.invalid_request,
 						cause
@@ -904,16 +912,19 @@ export const SupervisedEditorSessionLive = Layer.effect(
 			);
 			const logPath = request.logPath === undefined ? undefined : resolve(request.logPath);
 			const endpoint = `http://127.0.0.1:${request.remoteControlHttpPort}`;
+			const readinessTimeoutMs = request.readinessTimeoutMs ?? 180_000;
 			const readinessRequest: EditorReadinessRequest = {
 				endpoint,
 				...(request.expectedProjectName === undefined
 					? undefined
 					: { expectedProjectName: request.expectedProjectName }),
 				pollInterval: Duration.millis(request.readinessPollIntervalMs ?? 500),
-				timeout: Duration.millis(request.readinessTimeoutMs ?? 180_000)
+				timeout: Duration.millis(readinessTimeoutMs)
 			};
 			const manifest = yield* Effect.raceFirst(
-				connections.waitUntilReady(readinessRequest).pipe(Effect.mapError(readinessError)),
+				connections
+					.waitUntilReady(readinessRequest)
+					.pipe(Effect.mapError((cause) => readinessError(cause, readinessTimeoutMs))),
 				process.awaitExit.pipe(
 					Effect.flatMap((outcome) =>
 						Effect.fail(

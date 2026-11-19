@@ -17,10 +17,12 @@ import { LocalizationEvidence, LocalizationEvidenceNodeLive } from "./service.js
 import {
 	LocalizationOperations,
 	LocalizationOperationsLive,
+	defaultLocalizationTimeoutSeconds,
 	makeLocalizationOperationsLayer
 } from "./operations.js";
 import {
 	defaultLocalizationAuditLimits,
+	defaultLocalizationLogLimits,
 	readLocalizationLogChunk,
 	validateLocalizationOutputPath
 } from "./operation-io.js";
@@ -383,6 +385,62 @@ it.effect("nonzero exits expose only private bounded log excerpts and safe messa
 		})
 	)
 );
+it.effect("host log limits stop a run whose commandlet log outgrows them, naming the option", () =>
+	Effect.scoped(
+		Effect.gen(function* () {
+			const paths = yield* fixture();
+			const selected = yield* target(paths.project);
+			const terminated = yield* Ref.make(false);
+			const processes = makeOwnedProcessTreeTestLayer((options) =>
+				Effect.promise(async () => {
+					const logPath = options.args
+						.find((arg) => arg.startsWith("-abslog="))
+						?.slice(8);
+					if (!logPath) throw new Error("No private log argument.");
+					await writeFile(logPath, "LogInit: Display: verbose\n".repeat(64));
+					return {
+						pid: 12345,
+						awaitExit: Effect.never,
+						terminate: () =>
+							Ref.set(terminated, true).pipe(
+								Effect.as({
+									kind: "terminated",
+									reason: "cancelled",
+									exitCode: null,
+									signal: null
+								} satisfies OwnedProcessExit)
+							)
+					} satisfies OwnedProcessTreeHandle;
+				})
+			);
+			const layer = makeLocalizationOperationsLayer({ logLimits: { maxBytes: 1024 } }).pipe(
+				Layer.provide(
+					makeEngineInstallationDiscoveryTestLayer(() =>
+						Effect.succeed({
+							root: paths.engine,
+							version: { major: 4, minor: 27, patch: 2 }
+						})
+					)
+				),
+				Layer.provide(processes)
+			);
+			const error = yield* Effect.flatMap(LocalizationOperations, (service) =>
+				service
+					.run({ projectRoot: paths.project, target: selected, operation: "gather" })
+					.pipe(Stream.runDrain)
+			).pipe(Effect.provide(layer), Effect.flip);
+			expect(error.code).toBe("limit_exceeded");
+			expect(error.message).toContain("logLimits.maxBytes (1024 bytes)");
+			expect(error.recovery).toContain("logLimits.maxBytes");
+			expect(error.retrySafe).toBe(false);
+			expect(yield* Ref.get(terminated)).toBe(true);
+		})
+	)
+);
+it("keeps the 256 MiB log and 30-minute run defaults", () => {
+	expect(defaultLocalizationLogLimits).toEqual({ maxBytes: 256 * 1024 * 1024 });
+	expect(defaultLocalizationTimeoutSeconds).toBe(1800);
+});
 it("bounds incremental log reads and rejects output traversal", async () => {
 	const root = await mkdtemp(join(tmpdir(), "ue-shed-localization-log-test-"));
 	try {
@@ -399,6 +457,12 @@ it("bounds incremental log reads and rejects output traversal", async () => {
 		const prefix = await readLocalizationLogChunk(log, 0, decoder);
 		const suffix = await readLocalizationLogChunk(log, prefix.offset, decoder);
 		expect(prefix.text + suffix.text + decoder.decode()).toBe(text);
+		await expect(
+			readLocalizationLogChunk(log, 0, new TextDecoder(), { maxBytes: 1024 })
+		).rejects.toMatchObject({
+			code: "limit_exceeded",
+			message: expect.stringContaining("logLimits.maxBytes")
+		});
 		await expect(validateLocalizationOutputPath(root, "../escape.po")).rejects.toMatchObject({
 			code: "unsafe_path"
 		});

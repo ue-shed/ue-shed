@@ -72,7 +72,9 @@ an Effect scope, and reports readiness only after the expected Remote Control ca
 answers. POSIX uses a detached process group; Windows uses a private kill-on-close Job Object via
 the optional `@ue-shed/engine-win32-x64` package. Scope release, failure, or cancellation terminates
 only that owned process tree. The
-existing `UnrealProjectLauncher` remains detached for interactive use.
+existing `UnrealProjectLauncher` remains detached for interactive use. `readinessTimeoutMs`
+(default 3 minutes) and `terminationTimeoutMs` accept up to 24 hours, so a first open with an empty
+DDC can be given as long as it needs.
 
 ## License
 

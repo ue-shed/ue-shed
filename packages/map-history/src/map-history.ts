@@ -281,7 +281,7 @@ const reconstructScopedMapHistory = Effect.fn("MapHistory.reconstructScopedMapHi
 		});
 		const totalChangelists = selection.revisions.length;
 		const tree = yield* acquireHistoricalProjectTree;
-		const diagnostics: MapHistoryDiagnostic[] = [];
+		const diagnostics: MapHistoryDiagnostic[] = [...(lineage.diagnostics ?? [])];
 		let complete = true;
 		let materializedFiles = 0;
 		let previous: SavedWorld | undefined;

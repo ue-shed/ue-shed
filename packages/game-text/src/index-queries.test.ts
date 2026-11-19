@@ -99,7 +99,51 @@ describe("index queries", () => {
 		expect(request({ ...base, minGroupSize: 2 })).toBe(false);
 		expect(request({ ...base, group: "source", minGroupSize: 0 })).toBe(false);
 		expect(request({ ...base, group: "source", minGroupSize: 1.5 })).toBe(false);
+		expect(request({ ...base, group: "source", groupOffset: 200 })).toBe(true);
+		expect(request({ ...base, group: "source", groupOffset: 0 })).toBe(true);
+		expect(request({ ...base, groupOffset: 200 })).toBe(false);
+		expect(request({ ...base, group: "source", groupOffset: -1 })).toBe(false);
 	});
+
+	for (const [name, builder] of builders)
+		it(`pages groups past the first 200 through the ${name}`, async () => {
+			await Effect.runPromise(
+				Effect.scoped(
+					Effect.gen(function* () {
+						const fixture = yield* makeIndexRegressionFixture();
+						// 205 texts, one key each, so grouping by source has 205 groups.
+						fixture.update(
+							Array.from({ length: 205 }, (_, index) => {
+								const key = `K${String(index).padStart(3, "0")}`;
+								return text("UI", key, `Text ${key}`, key);
+							})
+						);
+						yield* Effect.gen(function* () {
+							const result = yield* (yield* GameTextIndexRefresh).refresh(
+								fixture.request
+							);
+							const groups = (patch: Partial<TextCorpusSearchRequest>) =>
+								result
+									.search({ query: "", pageSize: 1, group: "source", ...patch })
+									.pipe(Effect.map((page) => page.groups));
+							const first = yield* groups({});
+							expect(first?.entries).toHaveLength(200);
+							expect(first).toMatchObject({ by: "source", offset: 0, more: 5 });
+							expect(yield* groups({ groupOffset: 0 })).toEqual(first);
+							const second = yield* groups({ groupOffset: 200 });
+							expect(second).toMatchObject({ by: "source", offset: 200, more: 0 });
+							expect(second?.entries).toHaveLength(5);
+							const keys = new Set(
+								[...(first?.entries ?? []), ...(second?.entries ?? [])].map(
+									(entry) => entry.key
+								)
+							);
+							expect(keys.size).toBe(205);
+						}).pipe(Effect.provide(fixture.layer(fixture.source, builder)));
+					})
+				)
+			);
+		}, 120000);
 
 	for (const [name, builder] of builders)
 		it(`answers exact source, signal and source-group queries through the ${name}`, async () => {

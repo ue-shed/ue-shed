@@ -331,7 +331,7 @@ impl EngineQuery {
             Field::Findings => match self.request_findings(selection, cancelled)? {
                 Some(findings) => {
                     let rows = self.matching(&selection.without(by), cancelled)?;
-                    self.finding_groups(&rows, selection, &findings, None, cancelled)?
+                    self.finding_groups(&rows, selection, &findings, None, 0, cancelled)?
                 }
                 None => json!({"entries":[],"more":0}),
             },
@@ -369,6 +369,7 @@ impl EngineQuery {
             #[cfg(feature = "benchmark-timings")]
             let _span = crate::benchmark_timings::Span::new("searchGroups");
             let minimum = groups.min_size.unwrap_or(1) as usize;
+            let offset = groups.offset.unwrap_or(0) as usize;
             let mut value = if groups.by == Field::Findings {
                 match self.request_findings(selection, cancelled)? {
                     Some(findings) => self.finding_groups(
@@ -376,14 +377,23 @@ impl EngineQuery {
                         selection,
                         &findings,
                         Some(minimum),
+                        offset,
                         cancelled,
                     )?,
                     None => json!({"entries":[],"more":0}),
                 }
             } else {
-                self.aggregate(matched, selection, groups.by, Some(minimum), "", cancelled)?
+                self.aggregate_parts(
+                    &[(matched, selection)],
+                    groups.by,
+                    Some(minimum),
+                    offset,
+                    "",
+                    cancelled,
+                )?
             };
             value["by"] = serde_json::to_value(groups.by)?;
+            value["offset"] = json!(offset);
             result.groups = Some(value);
         }
         if let Some(facets) = &parts.facets {

@@ -11086,6 +11086,9 @@
 				},
 				"complete": {
 					"type": "boolean"
+				},
+				"total": {
+					"$ref": "#/$defs/UAssetIoNonNegativeInt"
 				}
 			},
 			"required": ["changed", "removed", "complete"],
@@ -11111,6 +11114,9 @@
 							"maxItems": 64
 						}
 					]
+				},
+				"omittedDiagnostics": {
+					"$ref": "#/$defs/UAssetIoNonNegativeInt"
 				},
 				"generation": {
 					"$ref": "#/$defs/UAssetIoPositiveInt"

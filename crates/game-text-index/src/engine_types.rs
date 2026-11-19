@@ -7,6 +7,8 @@ use serde_json::Value;
 #[cfg(test)]
 use ts_rs::TS;
 
+/// The most groups or facet values one answer lists. Groups page past it with `GroupsPart`'s
+/// `offset`; `more` counts the groups after the page.
 pub const MAX_GROUPS: usize = 200;
 /// The UTF-16 length of a group key: the bound on a stored ID, so a source group's key can always
 /// be opened again.
@@ -259,7 +261,8 @@ pub struct OpenGroupsPart {
     pub first_rows: u32,
 }
 
-/// The matching rows counted by group.
+/// The matching rows counted by group, a page of at most 200 groups in rank order. The answer's
+/// `offset` repeats the page's start and `more` counts the groups after it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(test, derive(TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -269,6 +272,11 @@ pub struct GroupsPart {
     /// Only groups holding at least this many matching rows.
     #[cfg_attr(test, ts(optional))]
     pub min_size: Option<u32>,
+    /// Groups skipped before the page, in rank order; 0 when absent. Ask for the next page at
+    /// this offset plus the page's length while `more` is above 0. An offset past the last group
+    /// lists none.
+    #[cfg_attr(test, ts(optional))]
+    pub offset: Option<u32>,
 }
 
 /// The parts of a query's answer; each is computed only when asked for.
@@ -333,7 +341,7 @@ pub struct QueryAnswer {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional, type = "JsonValue"))]
     pub problems: Option<Value>,
-    /// The groups, with the field they are `by`.
+    /// The groups, with the field they are `by` and the `offset` their page starts at.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(
         test,

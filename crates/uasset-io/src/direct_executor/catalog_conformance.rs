@@ -10,13 +10,15 @@ use crate::cancellation::CancellationToken;
 
 use super::catalog::{
     Catalog, CatalogError, CatalogStatus, Completeness, EdgeFilter, EntryKind, Generation,
-    HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint, PROJECT_INDEX_MAX_PAGE_SIZE,
-    PackageDependency, PackageSignature, ProjectId, QueryItem, QueryKind, QueryRequest,
-    RefreshChanges, RefreshSummary, StagedPackage, item_path, project_id_from_root,
+    HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint, PROJECT_INDEX_MAX_DIAGNOSTICS,
+    PROJECT_INDEX_MAX_PAGE_SIZE, PackageDependency, PackageSignature, ProjectId, QueryItem,
+    QueryKind, QueryRequest, RefreshChanges, RefreshSummary, StagedPackage, item_path,
+    project_id_from_root,
 };
 use super::checkpoint;
 use super::project_index::{
-    CatalogSnapshot, CoordinatorError, ProjectScanner, RefreshEvent, query, rebuild, refresh,
+    CatalogSnapshot, CoordinatorError, ProjectScanner, RefreshEvent, query, rebuild,
+    rebuild_listing_changes, refresh, refresh_listing_changes,
 };
 
 pub(crate) const FIXTURE_PROJECT_ROOT: &str = "C:/Fixture";
@@ -917,6 +919,7 @@ pub(crate) fn stale_index_profile_rebuilds_header_evidence_only<C: CatalogSnapsh
                 removed_packages: 0,
                 completeness: Completeness::Complete,
                 diagnostics: Vec::new(),
+                omitted_diagnostics: 0,
                 mounts: vec![MountPoint::game()],
             },
         )
@@ -1434,6 +1437,7 @@ pub(crate) fn refresh_reports_paths_changed_on_disk<C: CatalogSnapshot>(make: im
             ],
             removed: Vec::new(),
             complete: true,
+            total: 3,
         }
     );
     assert_eq!(
@@ -1468,8 +1472,88 @@ pub(crate) fn refresh_reports_paths_changed_on_disk<C: CatalogSnapshot>(make: im
             ],
             removed: vec!["Content/Data/DT_Items.uexp".to_owned()],
             complete: true,
+            total: 3,
         }
     );
+}
+
+/// Past its change limit a refresh lists no paths, says the report is incomplete and counts every
+/// change; a limit the changes fit in lists them all.
+pub(crate) fn change_reports_past_their_limit_count_the_changes<C: CatalogSnapshot>(
+    make: impl Fn() -> C,
+) {
+    let scanner = refresh_fixture();
+    let cancellation = CancellationToken::new();
+    let mut catalog = make();
+    let cut = completed_changes(
+        &refresh_listing_changes(
+            &mut catalog,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            2,
+            &cancellation,
+            |_| {},
+        )
+        .expect("refresh past the change limit"),
+    );
+    assert_eq!(
+        cut,
+        RefreshChanges {
+            base_generation: None,
+            changed: Vec::new(),
+            removed: Vec::new(),
+            complete: false,
+            total: 3,
+        }
+    );
+    let listed = completed_changes(
+        &rebuild_listing_changes(
+            &mut catalog,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            3,
+            &cancellation,
+            |_| {},
+        )
+        .expect("rebuild within the change limit"),
+    );
+    assert!(listed.complete);
+    assert_eq!(listed.total, 3);
+    assert_eq!(listed.changed.len(), 3);
+}
+
+/// A refresh keeps the first diagnostics and counts the rest, in its summary and in the status the
+/// Catalog reports afterwards.
+pub(crate) fn diagnostics_past_the_kept_ones_are_counted<C: CatalogSnapshot>(make: impl Fn() -> C) {
+    let mut catalog = make();
+    // No header fixtures: every package records a `header_read` diagnostic.
+    let failing = PROJECT_INDEX_MAX_DIAGNOSTICS + 6;
+    let scanner = FakeScanner {
+        entries: (0..failing)
+            .map(|index| package(&format!("Content/Failing/A{index:03}.uasset"), 1, 1))
+            .collect(),
+        ..Default::default()
+    };
+    let summary = completed_summary(
+        &refresh(
+            &mut catalog,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .expect("refresh with failed headers"),
+    );
+    assert_eq!(summary.completeness, Completeness::Partial);
+    assert_eq!(summary.diagnostics.len(), PROJECT_INDEX_MAX_DIAGNOSTICS);
+    assert_eq!(summary.omitted_diagnostics, 6);
+    match catalog.status() {
+        CatalogStatus::Ready { summary: stored } => {
+            assert_eq!(stored.diagnostics.len(), PROJECT_INDEX_MAX_DIAGNOSTICS);
+            assert_eq!(stored.omitted_diagnostics, 6);
+        }
+        CatalogStatus::Absent => panic!("the refresh committed a generation"),
+    }
 }
 
 macro_rules! catalog_conformance_tests {
@@ -1487,6 +1571,16 @@ macro_rules! catalog_conformance_tests {
             #[test]
             fn refresh_reports_paths_changed_on_disk() {
                 conformance::refresh_reports_paths_changed_on_disk($make);
+            }
+
+            #[test]
+            fn change_reports_past_their_limit_count_the_changes() {
+                conformance::change_reports_past_their_limit_count_the_changes($make);
+            }
+
+            #[test]
+            fn diagnostics_past_the_kept_ones_are_counted() {
+                conformance::diagnostics_past_the_kept_ones_are_counted($make);
             }
 
             #[test]

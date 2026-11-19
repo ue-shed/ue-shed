@@ -115,8 +115,9 @@ plugin whether or not the project enables it, it does not read `AdditionalPlugin
 names fold ASCII case only.
 
 A refresh that asks for `changes` lists the paths whose signature differs from the base generation
-(new or changed, sidecars included) and the paths it removed, up to 65,536 in total. Past that it
-sets `complete: false`, and the caller should treat the change set as unknown. Re-reading headers
+(new or changed, sidecars included) and the paths it removed, up to 65,536 in total or the
+request's `maximumChanges` (at most 1,048,576). Past that it sets `complete: false`, lists none and
+counts them in `total`, and the caller should treat the change set as unknown. Re-reading headers
 for a new profile is not a change on disk. A rebuild, or the first refresh of a new catalog, has no
 base generation, and every path counts as changed.
 

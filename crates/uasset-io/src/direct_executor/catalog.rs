@@ -18,11 +18,15 @@ pub const PROJECT_INDEX_MAX_PAGE_STRINGS: usize = PROJECT_INDEX_MAX_PAGE_SIZE * 
 /// still fit one dictionary page. A package with more records a header failure instead.
 pub const PROJECT_INDEX_MAX_DEPENDENCIES: usize =
     (PROJECT_INDEX_MAX_PAGE_STRINGS - PROJECT_INDEX_MAX_CLASSES) / 2;
+/// Diagnostics a refresh summary keeps; it counts the rest in `omitted_diagnostics`.
 pub const PROJECT_INDEX_MAX_DIAGNOSTICS: usize = 64;
 pub const PROJECT_INDEX_MAX_CLASSES: usize = 64;
 pub const PROJECT_INDEX_MAX_NAMES: usize = 64;
-/// Changed and removed paths one refresh reports; beyond this it reports only that there were more.
+/// Changed and removed paths one refresh lists by default; beyond its limit it reports only how
+/// many there were. A request's `maximumChanges` raises the limit.
 pub const PROJECT_INDEX_MAX_REPORTED_CHANGES: usize = 65_536;
+/// The most a request's `maximumChanges` may ask a refresh to list.
+pub const PROJECT_INDEX_MAX_REPORTED_CHANGES_LIMIT: usize = 1_048_576;
 
 /// Where Unreal mounts a content root: package names below `name` (`/Game/`) are files below the
 /// project-relative `path` (`Content/`). Both end with `/`.
@@ -131,7 +135,10 @@ pub struct RefreshSummary {
     pub changed_packages: u64,
     pub removed_packages: u64,
     pub completeness: Completeness,
+    /// The first `PROJECT_INDEX_MAX_DIAGNOSTICS` diagnostics the refresh recorded.
     pub diagnostics: Vec<CatalogDiagnostic>,
+    /// Diagnostics the refresh recorded past `PROJECT_INDEX_MAX_DIAGNOSTICS` and did not keep.
+    pub omitted_diagnostics: u64,
     /// The content roots this generation indexed, `/Game/` first.
     pub mounts: Vec<MountPoint>,
 }
@@ -145,8 +152,11 @@ pub struct RefreshChanges {
     pub changed: Vec<String>,
     /// Entries the base generation held that are gone.
     pub removed: Vec<String>,
-    /// False when there were more than `PROJECT_INDEX_MAX_REPORTED_CHANGES` and the lists stop.
+    /// False when there were more than the refresh's change limit (by default
+    /// `PROJECT_INDEX_MAX_REPORTED_CHANGES`); both lists are then empty.
     pub complete: bool,
+    /// Entries changed and removed in all, listed or not.
+    pub total: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

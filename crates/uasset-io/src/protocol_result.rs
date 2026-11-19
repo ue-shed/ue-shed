@@ -96,7 +96,15 @@ pub struct ProjectIndexSummary {
     #[serde(rename = "changedPackages")]
     pub changed_packages: u64,
     pub completeness: ProjectIndexCompleteness,
+    /// The first 64 diagnostics the refresh recorded.
     pub diagnostics: Vec<ProjectIndexDiagnostic>,
+    /// v1.25: diagnostics recorded past the first 64 and not listed; absent when none were.
+    #[serde(
+        default,
+        rename = "omittedDiagnostics",
+        skip_serializing_if = "is_zero"
+    )]
+    pub omitted_diagnostics: u64,
     pub generation: u64,
     #[serde(rename = "mapCount")]
     pub map_count: u64,
@@ -109,9 +117,14 @@ pub struct ProjectIndexSummary {
     /// v1.23: where Unreal mounts each indexed content root, `/Game/` first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mounts: Vec<ProjectIndexMount>,
-    /// v1.23: present when the refresh request asked for `changes`.
+    /// v1.23: present when the refresh request asked for `changes`. Boxed: it is the largest
+    /// part of a summary and most summaries carry none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub changes: Option<ProjectIndexChanges>,
+    pub changes: Option<Box<ProjectIndexChanges>>,
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }
 
 /// Package names below `name` (`/Game/`) are files below the project-relative `path` (`Content/`).
@@ -124,8 +137,8 @@ pub struct ProjectIndexMount {
 
 /// What a refresh saw change on disk since `baseGeneration`: packages and sidecars that are new
 /// or whose size or modified time changed, and those that are gone. Re-reading an entry for a newer
-/// index profile is not a change. When `complete` is false there were more than the report holds,
-/// and both lists are empty.
+/// index profile is not a change. When `complete` is false there were more than the request's
+/// `maximumChanges` (65,536 by default), both lists are empty and `total` counts the changes.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectIndexChanges {
@@ -138,6 +151,9 @@ pub struct ProjectIndexChanges {
     pub changed: Vec<String>,
     pub removed: Vec<String>,
     pub complete: bool,
+    /// v1.25: with `complete: false`, how many entries changed or were removed in all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
 }
 
 /// One package dependency with Unreal's `EDependencyProperty` bits, and the indexed package it

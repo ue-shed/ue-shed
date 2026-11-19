@@ -367,7 +367,8 @@ does not scrub every unused payload.
 
 Requests and responses use validated domain schemas. UTF-16 code units, including lone
 surrogates, survive the wire and dictionary boundaries. Search returns at most 50 rows and
-200 group entries; `minGroupSize` drops smaller groups before that bound and before `more`.
+200 group entries; `minGroupSize` drops smaller groups before that bound and before `more`, and
+`groupOffset` pages past it (`groups.offset` names the page, `more` counts the groups after it).
 Group keys, `openGroup` and `source` values hold at most 32,767 UTF-16 code units. A frame
 carries at most 8 MiB; bulk reads (the corpus, localization lines, aggregates and findings
 pages) stream as column batches with flow control, never as files

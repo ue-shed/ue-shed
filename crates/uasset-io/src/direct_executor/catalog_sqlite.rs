@@ -40,6 +40,9 @@ struct ManifestSummary {
     changed_packages: u64,
     completeness: String,
     diagnostics: Vec<ManifestDiagnostic>,
+    /// Diagnostics past the kept ones; absent from manifests written before it was counted.
+    #[serde(default)]
+    omitted_diagnostics: u64,
     generation: u64,
     map_count: u64,
     package_count: u64,
@@ -75,6 +78,7 @@ impl ManifestSummary {
                     retry_safe: diagnostic.retry_safe,
                 })
                 .collect(),
+            omitted_diagnostics: summary.omitted_diagnostics,
             generation: summary.generation.get(),
             map_count: summary.map_count,
             package_count: summary.package_count,
@@ -119,6 +123,7 @@ impl ManifestSummary {
                     retry_safe: diagnostic.retry_safe,
                 })
                 .collect(),
+            omitted_diagnostics: self.omitted_diagnostics,
             mounts: self.mount_points(),
         }
     }

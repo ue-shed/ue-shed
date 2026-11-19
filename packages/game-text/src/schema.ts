@@ -518,8 +518,9 @@ export const TextProblemCounts = Schema.Struct({
 export type TextProblemCounts = Schema.Schema.Type<typeof TextProblemCounts>;
 
 /**
- * Maximum group/facet entries returned in a page; TextGroupList.more reports omitted groups so
- * a bounded preview is not interpreted as exhaustive.
+ * Maximum group/facet entries returned in a page; TextGroupList.more reports the groups after the
+ * page so a bounded preview is not interpreted as exhaustive. A search request's `groupOffset`
+ * pages on through the groups.
  */
 export const MAX_TEXT_GROUPS = 200;
 
@@ -558,7 +559,7 @@ export type TextGroup = Schema.Schema.Type<typeof TextGroup>;
 /** The most groups one request lists the first rows of. */
 export const MAX_TEXT_OPEN_GROUPS = 20;
 
-/** Bounded entries, worst first, with how many more there are. */
+/** Bounded entries, worst first, with how many more follow them. */
 export const TextGroupList = Schema.Struct({
 	entries: Schema.Array(TextGroup).check(Schema.isMaxLength(MAX_TEXT_GROUPS)),
 	more: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -792,6 +793,15 @@ export const TextCorpusSearchRequest = Schema.Struct({
 	minGroupSize: Schema.optionalKey(
 		Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(0xffffffff))
 	),
+	/**
+	 * Groups to skip before the page of at most 200 (`MAX_TEXT_GROUPS`), in rank order; 0 when
+	 * absent. The answer's `groups.offset` repeats it and `groups.more` counts the groups after the
+	 * page: while `more` is above 0, ask again at `offset + entries.length`. An offset past the last
+	 * group lists none. Needs `group`.
+	 */
+	groupOffset: Schema.optionalKey(
+		Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(0xffffffff))
+	),
 	openGroup: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_TEXT_SOURCE_LENGTH))),
 	/**
 	 * Groups to list the first rows of, in this order: the answer's `openGroups` carries a page
@@ -818,6 +828,11 @@ export const TextCorpusSearchRequest = Schema.Struct({
 		request.minGroupSize === undefined || request.group !== undefined
 			? undefined
 			: "A minimum group size needs a group."
+	),
+	Schema.makeFilter((request) =>
+		request.groupOffset === undefined || request.group !== undefined
+			? undefined
+			: "A group offset needs a group."
 	),
 	Schema.makeFilter((request) =>
 		request.openGroups === undefined ||
@@ -883,8 +898,13 @@ export const TextCorpusSearchPage = Schema.Struct({
 	fileScope: Schema.optionalKey(TextFileScopeSummary),
 	/** Lines with each problem, over the request without its problem clauses. */
 	problems: Schema.optionalKey(TextProblemCounts),
-	/** Every group of the matching lines, when the request groups them. */
-	groups: Schema.optionalKey(Schema.Struct({ by: TextGroupBy, ...TextGroupList.fields })),
+	/**
+	 * A page of the matching lines' groups, when the request groups them: `offset` is the
+	 * request's `groupOffset` (0 when absent) and `more` counts the groups after the page.
+	 */
+	groups: Schema.optionalKey(
+		Schema.Struct({ by: TextGroupBy, offset: Count, ...TextGroupList.fields })
+	),
 	facets: Schema.optionalKey(TextFacets),
 	/** From a workspace: whether the page's finding fields are filled. */
 	findings: Schema.optionalKey(TextFindingsStatus),

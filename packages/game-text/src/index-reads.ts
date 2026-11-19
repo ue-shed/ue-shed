@@ -75,6 +75,7 @@ const { cursor: _cursor, pageSize: _pageSize, ...searchFields } = TextCorpusSear
 const {
 	group: _group,
 	minGroupSize: _minGroupSize,
+	groupOffset: _groupOffset,
 	openGroup: _openGroup,
 	facets: _facets,
 	localizationCursor: _localizationCursor,

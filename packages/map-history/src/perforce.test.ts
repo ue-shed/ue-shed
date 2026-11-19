@@ -233,6 +233,95 @@ describe("PerforceHistorySource", () => {
 		expect(infoCalls).toBe(2);
 	});
 
+	it("reports filelogs that fill their window and names the limit lineage moves exceed", async () => {
+		// The map moved twice: Old to Middle in 200, Middle to Current in 300.
+		const current = "//Depot/Main/Content/Maps/Current.umap";
+		const middle = "//Depot/Main/Content/Maps/Middle.umap";
+		const old = "//Depot/Main/Content/Maps/Old.umap";
+		const filelogs = {
+			[current]: {
+				depotFile: current,
+				rev0: "2",
+				change0: "310",
+				action0: "edit",
+				rev1: "1",
+				change1: "300",
+				action1: "move/add",
+				"how1,0": "moved from",
+				"file1,0": middle
+			},
+			[middle]: {
+				depotFile: middle,
+				rev0: "2",
+				change0: "300",
+				action0: "move/delete",
+				"how0,0": "moved into",
+				"file0,0": current,
+				rev1: "1",
+				change1: "200",
+				action1: "move/add",
+				"how1,0": "moved from",
+				"file1,0": old
+			},
+			[old]: {
+				depotFile: old,
+				rev0: "2",
+				change0: "200",
+				action0: "move/delete",
+				"how0,0": "moved into",
+				"file0,0": middle,
+				rev1: "1",
+				change1: "100",
+				action1: "add"
+			}
+		};
+		const filelog = (path: string) =>
+			Object.entries(filelogs).find(([depotPath]) => depotPath === path)?.[1];
+		const makeLayer: NonNullable<Parameters<typeof perforceHistorySourceLayer>[1]> = (
+			options
+		) => {
+			const executor = scriptedExecutor((invocation) => {
+				const args = commandArgs(invocation.args);
+				const path = args.at(-1) ?? "";
+				if (args.includes("filelog"))
+					return {
+						stdout: JSON.stringify({ code: "stat", ...filelog(path) }) + "\n"
+					};
+				return {
+					stdout:
+						JSON.stringify({
+							code: "stat",
+							depotFile: path,
+							clientFile: path.replace("//Depot/Main", "//example-client"),
+							path: path.replace("//Depot/Main", "D:/Perforce/ExampleProject")
+						}) + "\n"
+				};
+			});
+			return P4.layer.pipe(Layer.provideMerge(Layer.merge(configLayer(options), executor)));
+		};
+		const context = await Effect.runPromise(
+			Effect.scoped(Layer.build(perforceHistorySourceLayer({}, makeLayer)))
+		);
+		const resolveMapLineage = Context.get(context, PerforceHistorySource).resolveMapLineage;
+		if (resolveMapLineage === undefined) throw new Error("The live source resolves lineage.");
+		const lineage = (maxMoves: number, maxRevisionRecords: number) =>
+			resolveMapLineage({ depotPath: current, maxMoves, maxRevisionRecords });
+
+		const followed = await Effect.runPromise(lineage(16, 3));
+		expect(followed.moves.map((move) => move.change)).toEqual([200, 300]);
+		expect(followed.filelogsAtLimit).toBeUndefined();
+		// Two revisions a file fill a window of two: older moves may be out of sight.
+		expect((await Effect.runPromise(lineage(16, 2))).filelogsAtLimit).toEqual([
+			current,
+			middle,
+			old
+		]);
+		const limited = await Effect.runPromise(Effect.flip(lineage(1, 3)));
+		expect(limited.kind).toBe("map_lineage_limit");
+		expect(limited.message).toContain("limits.maxDirectMapMoves");
+		expect(limited.recovery).toContain("Raise limits.maxDirectMapMoves");
+	});
+
 	it("translates p4client values at the acquisition boundary", async () => {
 		const source = makePerforceHistorySource(backend());
 

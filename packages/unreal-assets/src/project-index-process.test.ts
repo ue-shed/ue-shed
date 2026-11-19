@@ -13,6 +13,7 @@ import {
 	ProjectIndexQuery,
 	projectIndexDependencyClosures,
 	queryProjectIndex,
+	rebuildProjectIndex,
 	refreshProjectIndex
 } from "./project-index.js";
 import { projectIndexProcessLayerWithConfig } from "./project-index-process.js";
@@ -166,6 +167,24 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 						item.kind === "package" ? item.packagePath : ""
 					)
 				).toContain(context);
+
+				// v1.25: past `maximumChanges` the report lists no paths and counts them; a
+				// rebuild reports every entry as changed.
+				const limited = yield* foldProjectIndexRefresh(
+					yield* Stream.runCollect(
+						rebuildProjectIndex({
+							projectRoot: fixtureRoot,
+							changes: true,
+							maximumChanges: 1
+						})
+					)
+				);
+				expect(limited.changes).toMatchObject({
+					changed: [],
+					removed: [],
+					complete: false
+				});
+				expect(limited.changes?.total).toBeGreaterThan(1);
 			}).pipe(Effect.provide(layer));
 
 			expect(new Set(queryWorkerPids).size).toBe(1);

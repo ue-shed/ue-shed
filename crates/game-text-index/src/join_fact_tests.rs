@@ -741,6 +741,76 @@ fn parts_compute_only_what_they_name_and_open_groups_list_their_first_rows() -> 
     Ok(())
 }
 
+/// Past the first 200 groups a request pages on with `offset`; without one it lists the first
+/// page as before.
+#[test]
+fn groups_page_past_the_first_two_hundred_with_an_offset() -> Result<()> {
+    let mut fixture = Fixture::new()?;
+    let names = (0..205).map(|n| format!("N{n:03}")).collect::<Vec<_>>();
+    let lines = names
+        .iter()
+        .map(|name| json!({"namespace":name,"key":"K","source":"Text","path":format!("/Game/Text/{name}.{name}.K")}))
+        .collect::<Vec<_>>();
+    fixture.file("Game.manifest", "manifest", &lines)?;
+    for name in ["en.archive", "de.archive"] {
+        fixture.file(name, "archive", &[])?;
+    }
+    for name in ["en.po", "de.po"] {
+        fixture.file(name, "po", &[])?;
+    }
+    let places = names
+        .iter()
+        .map(|name| json!({"namespace":name,"key":"K","source":"Text","object":format!("/Game/Text/{name}.{name}"),"property":"K"}))
+        .collect::<Vec<_>>();
+    fixture.packages(&places)?;
+    fixture.lines()?;
+    let cancelled = AtomicBool::new(false);
+    let query = EngineQuery::open(&fixture.configuration, None)?;
+    let groups = |part: Value| -> Result<Value> {
+        let page = query.query_page(
+            json!({"selection":{"target":"Game"},"parts":{"groups":part}}),
+            &cancelled,
+        )?;
+        Ok(page["groups"].clone())
+    };
+    let keys = |page: &Value| {
+        page["entries"]
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|entry| entry["key"].clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+    let first = groups(json!({"by":"namespace"}))?;
+    assert_eq!(keys(&first).len(), crate::engine_types::MAX_GROUPS);
+    assert_eq!(first["more"], 5);
+    assert_eq!(first["offset"], 0);
+    assert_eq!(groups(json!({"by":"namespace","offset":0}))?, first);
+    let second = groups(json!({"by":"namespace","offset":200}))?;
+    assert_eq!(second["offset"], 200);
+    assert_eq!(second["more"], 0);
+    let mut listed = keys(&first);
+    listed.extend(keys(&second));
+    let mut expected = names.iter().map(|name| json!(name)).collect::<Vec<_>>();
+    assert_eq!(listed.len(), expected.len());
+    listed.sort_by_key(|key| key.to_string());
+    expected.sort_by_key(|key| key.to_string());
+    assert_eq!(listed, expected, "the two pages list every group once");
+    // A page that starts inside the list overlaps the pages around it in rank order.
+    let middle = groups(json!({"by":"namespace","offset":199}))?;
+    assert_eq!(keys(&middle)[0], keys(&first)[199]);
+    assert_eq!(keys(&middle)[1], keys(&second)[0]);
+    assert_eq!(middle["more"], 0);
+    let past = groups(json!({"by":"namespace","offset":1000}))?;
+    assert_eq!(keys(&past).len(), 0);
+    assert_eq!(past["more"], 0);
+    assert_eq!(past["offset"], 1000);
+    Ok(())
+}
+
 #[test]
 fn a_page_without_counts_lists_what_a_counted_page_lists_and_fields_match_the_preview() -> Result<()>
 {

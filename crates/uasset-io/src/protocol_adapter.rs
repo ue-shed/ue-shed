@@ -334,8 +334,8 @@ impl Emitter {
                 },
             };
             &compatible
-        } else if self.contract.version.minor < 23
-            && let Some(stripped) = without_index_mounts_and_changes(result)
+        } else if self.contract.version.minor < 25
+            && let Some(stripped) = index_summary_for_minor(result, self.contract.version.minor)
         {
             compatible = stripped;
             &compatible
@@ -419,12 +419,20 @@ fn legacy_decode_error_result(result: &ResultFrame) -> Option<ResultFrame> {
     Some(compatible)
 }
 
-/// A Project Index summary without the v1.23 mount points and change report, for older clients.
-fn without_index_mounts_and_changes(result: &ResultFrame) -> Option<ResultFrame> {
+/// A Project Index summary without the fields introduced after `minor`, for older clients: the
+/// v1.25 omitted-diagnostic count and change total, and below v1.23 the mount points and change
+/// report.
+fn index_summary_for_minor(result: &ResultFrame, minor: u32) -> Option<ResultFrame> {
     let strip = |summary: &crate::protocol_result::ProjectIndexSummary| {
         let mut summary = summary.clone();
-        summary.mounts.clear();
-        summary.changes = None;
+        summary.omitted_diagnostics = 0;
+        if let Some(changes) = &mut summary.changes {
+            changes.total = None;
+        }
+        if minor < 23 {
+            summary.mounts.clear();
+            summary.changes = None;
+        }
         summary
     };
     match result {
@@ -837,6 +845,7 @@ fn execute_direct(
             project_root,
             plugins,
             changes,
+            maximum_changes,
         } => execute_project_index_refresh(
             emitter,
             cancellation,
@@ -846,6 +855,7 @@ fn execute_direct(
                 scope: index_scope(*plugins),
                 rebuild: false,
                 changes: *changes,
+                maximum_changes: change_limit(*maximum_changes),
             },
         ),
         Operation::ProjectIndexRebuild {
@@ -853,6 +863,7 @@ fn execute_direct(
             project_root,
             plugins,
             changes,
+            maximum_changes,
         } => execute_project_index_refresh(
             emitter,
             cancellation,
@@ -862,6 +873,7 @@ fn execute_direct(
                 scope: index_scope(*plugins),
                 rebuild: true,
                 changes: *changes,
+                maximum_changes: change_limit(*maximum_changes),
             },
         ),
         Operation::ProjectIndexCount {
@@ -961,6 +973,14 @@ fn index_scope(plugins: bool) -> direct_executor::IndexScope {
     } else {
         direct_executor::IndexScope::Content
     }
+}
+
+/// The request's `maximumChanges` (validated at decode), or the default report limit.
+fn change_limit(maximum_changes: Option<u32>) -> usize {
+    maximum_changes.map_or(
+        direct_executor::PROJECT_INDEX_MAX_REPORTED_CHANGES,
+        |maximum| maximum as usize,
+    )
 }
 
 fn execute_project_index_refresh(
@@ -1669,5 +1689,48 @@ mod tests {
         assert!(error.contains("protocol output exceeded"));
         assert_eq!(emitter.emitted_output_bytes, 0);
         assert_eq!(emitter.sequence, 0);
+    }
+
+    /// Clients before v1.25 never see the omitted-diagnostic count or the change total; before
+    /// v1.23 they see neither mounts nor the change report.
+    #[test]
+    fn index_summaries_drop_fields_newer_than_the_client() {
+        use crate::protocol::{Event, decode_event};
+        use crate::protocol_result::ResultFrame;
+
+        let event = decode_event(include_bytes!(
+            "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-incomplete-changes-summary-result-event.json"
+        ))
+        .expect("valid summary event");
+        let Event::Result { result, .. } = event else {
+            panic!("expected a result event");
+        };
+        let result = *result;
+        let summary = |minor| match super::index_summary_for_minor(&result, minor) {
+            Some(ResultFrame::ProjectIndexSummary { summary }) => summary,
+            other => panic!("expected a summary, got {other:?}"),
+        };
+        let ResultFrame::ProjectIndexSummary { summary: current } = &result else {
+            panic!("expected a summary");
+        };
+        assert_eq!(current.omitted_diagnostics, 6);
+        assert_eq!(
+            current.changes.as_ref().and_then(|changes| changes.total),
+            Some(70_002)
+        );
+        let before = summary(24);
+        assert_eq!(before.omitted_diagnostics, 0);
+        let changes = before
+            .changes
+            .as_ref()
+            .expect("v1.23 keeps the change report");
+        assert!(!changes.complete);
+        assert_eq!(changes.total, None);
+        assert!(!before.mounts.is_empty());
+        let oldest = summary(22);
+        assert!(oldest.changes.is_none() && oldest.mounts.is_empty());
+        let json = serde_json::to_value(&before).unwrap();
+        assert!(json.get("omittedDiagnostics").is_none());
+        assert!(json["changes"].get("total").is_none());
     }
 }

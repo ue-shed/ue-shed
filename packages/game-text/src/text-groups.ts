@@ -93,10 +93,11 @@ class Tallies {
 	}
 
 	/**
-	 * Worst first, then most lines needing work, then most lines, then by label. Groups under
-	 * `minSize` lines are left out, and not counted in `more`.
+	 * Worst first, then most lines needing work, then most lines, then by label: at most `max`
+	 * from the `offset`th on, with how many follow. Groups under `minSize` lines are left out,
+	 * and not counted in `more`.
 	 */
-	list(max = MAX_TEXT_GROUPS, minSize = 1): TextGroupList {
+	list(max = MAX_TEXT_GROUPS, minSize = 1, offset = 0): TextGroupList {
 		const sorted = [...this.#byKey.values()]
 			.filter((tally) => tally.count >= minSize)
 			.sort(
@@ -106,7 +107,7 @@ class Tallies {
 					right.count - left.count ||
 					(left.label < right.label ? -1 : left.label > right.label ? 1 : 0)
 			);
-		const entries = sorted.slice(0, max).map(
+		const entries = sorted.slice(offset, offset + max).map(
 			(tally): TextGroup => ({
 				key: tally.key,
 				label: tally.label,
@@ -115,19 +116,23 @@ class Tallies {
 				worst: TextProblem.literals[tally.worst] ?? "up_to_date"
 			})
 		);
-		return { entries, more: Math.max(0, sorted.length - entries.length) };
+		return { entries, more: Math.max(0, sorted.length - offset - entries.length) };
 	}
 }
 
-/** Every group of the given lines holding at least `minSize` of them. */
+/**
+ * The groups of the given lines holding at least `minSize` of them: a page of at most
+ * `MAX_TEXT_GROUPS` from the `offset`th in rank order, and how many follow it.
+ */
 export function textGroups(
 	facts: Iterable<TextFacts>,
 	by: TextGroupBy,
-	minSize = 1
+	minSize = 1,
+	offset = 0
 ): TextGroupList {
 	const tallies = new Tallies();
 	for (const item of facts) tallies.add(textGroupOf(item, by), item);
-	return tallies.list(MAX_TEXT_GROUPS, minSize);
+	return tallies.list(MAX_TEXT_GROUPS, minSize, offset);
 }
 
 /**

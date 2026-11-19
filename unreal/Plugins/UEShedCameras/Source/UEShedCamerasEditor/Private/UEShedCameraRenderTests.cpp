@@ -688,6 +688,74 @@ bool FUEShedMapMinorCompatibilityTest::RunTest(const FString &Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedMapTimingAndCloudsTest, "UEShed.Cameras.Rendering.MapTimingAndClouds",
+								 EAutomationTestFlags::EditorContext |
+									 EAutomationTestFlags::EngineFilter)
+
+bool FUEShedMapTimingAndCloudsTest::RunTest(const FString &Parameters)
+{
+	auto *World = GEditor->GetEditorWorldContext().World();
+	const auto Make = [World](const FString &Backend, int32 Minor) {
+		auto Request = UEShedCameraJson(TEXT(
+			R"({"contract":{"name":"ue-shed-map-tile-capture","version":{"major":1,"minor":0}},"operationId":"compatibility","correlationId":"compatibility","planId":"compatibility","runId":"compatibility","tilePixelSize":64,"gutterPixels":0,"capture":{"z":2000,"orientation":{"pitch":-90,"yaw":0,"roll":0},"dataLayers":{"mode":"unchanged"},"render":{"profile":"full_fidelity","lodPolicy":"natural","effects":{"fog":false,"volumetricFog":false}}},"tiles":[{"key":{"zoom":0,"row":0,"column":0},"unitsPerPixel":32,"worldBounds":{"minX":0,"minY":0,"maxX":2048,"maxY":2048}}]})"));
+		Request->SetStringField(TEXT("runId"), FGuid::NewGuid().ToString(EGuidFormats::Digits));
+		Request->SetStringField(TEXT("expectedMapPath"), World->GetOutermost()->GetName());
+		Request->SetStringField(TEXT("captureBackend"), Backend);
+		Request->GetObjectField(TEXT("contract"))->GetObjectField(TEXT("version"))->SetNumberField(TEXT("minor"), Minor);
+		const auto Render = Request->GetObjectField(TEXT("capture"))->GetObjectField(TEXT("render"));
+		Render->GetObjectField(TEXT("effects"))->SetBoolField(TEXT("clouds"), false);
+		Render->SetObjectField(TEXT("timing"),
+							   UEShedCameraJson(TEXT(R"({"frameTimeoutMs":60000,"settleFrames":2,"overviewFrames":2,"screenshotWarmupFrames":2})")));
+		return Request;
+	};
+	for (const FString Backend :
+		 {TEXT("scene_capture_tiles"), TEXT("viewport_high_resolution"), TEXT("lit_camera_tiles")})
+	{
+		FString Text;
+		UUEShedCameraReviewLibrary::CaptureMapTiles(UEShedCameraJsonText(Make(Backend, 2)), Text);
+		TestEqual(*(Backend + TEXT(": 1.3 fields need minor 3")), UEShedCameraJson(Text)->GetStringField(TEXT("status")),
+				  FString(TEXT("failed")));
+		const auto Request = Make(Backend, 3);
+		if (Backend == TEXT("lit_camera_tiles"))
+		{
+			UUEShedCameraReviewLibrary::BeginMapTileCapture(UEShedCameraJsonText(Request), Text);
+			const double Deadline = FPlatformTime::Seconds() + 120;
+			while (UEShedCameraJson(Text)->GetStringField(TEXT("state")) == TEXT("running") &&
+				   FPlatformTime::Seconds() < Deadline)
+			{
+				FSlateApplication::Get().OnPostTick().Broadcast(0.0f);
+				UUEShedCameraReviewLibrary::PollMapTileCapture(Request->GetStringField(TEXT("runId")), TEXT("compatibility"),
+															   Text);
+			}
+			Text = UEShedCameraJsonText(UEShedCameraJson(Text)->GetObjectField(TEXT("response")));
+			FString Release;
+			UUEShedCameraReviewLibrary::EndMapTileCapture(Request->GetStringField(TEXT("runId")), Release);
+		}
+		else
+			UUEShedCameraReviewLibrary::CaptureMapTiles(UEShedCameraJsonText(Request), Text);
+		const auto Response = UEShedCameraJson(Text);
+		TestEqual(*(Backend + TEXT(": ") + Text), Response->GetStringField(TEXT("status")), FString(TEXT("completed")));
+		int32 Checked = 0;
+		for (const auto &Tile : Response->GetArrayField(TEXT("results")))
+		{
+			const TSharedPtr<FJsonObject> *Evidence = nullptr;
+			if (!Tile->AsObject()->TryGetObjectField(TEXT("renderEvidence"), Evidence))
+				continue;
+			const auto Policy = (*Evidence)->GetObjectField(TEXT("policy"));
+			const auto Renderer = Policy->GetObjectField(TEXT("renderer"));
+			const auto Settling = Policy->GetObjectField(TEXT("settling"));
+			TestFalse(*(Backend + TEXT(": clouds off")), Renderer->GetBoolField(TEXT("clouds")));
+			TestEqual(*(Backend + TEXT(": settle frames")), Settling->GetIntegerField(TEXT("minimumFrames")), 2);
+			TestEqual(*(Backend + TEXT(": frame deadline")), Settling->GetIntegerField(TEXT("timeoutMs")), 60000);
+			if (Renderer->GetStringField(TEXT("kind")) == TEXT("editor_viewport"))
+				TestEqual(*(Backend + TEXT(": warm-up")), Renderer->GetIntegerField(TEXT("screenshotWarmupFrames")), 2);
+			++Checked;
+		}
+		TestTrue(*(Backend + TEXT(": render evidence was checked")), Checked > 0);
+	}
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FUEShedCameraRenderPreparationTest,
 								 "UEShed.Cameras.Rendering.PreparationAndWorldChange",
 								 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

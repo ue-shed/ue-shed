@@ -2,6 +2,7 @@
 #include "UEShedCameraRenderSession.h"
 #include "UEShedCameraReviewLibrary.h"
 #include "UEShedLitMapTileCapture.h"
+#include "UEShedMapTileTiming.h"
 #include "UEShedTransientCapture.h"
 
 #include "Async/Async.h"
@@ -180,7 +181,8 @@ struct FViewportHighResolutionTile
 
 bool CaptureViewportHighResolutionLevel(const TArray<TSharedPtr<FJsonValue>> &TileValues, int32 TilePixelSize,
 										int32 GutterPixels, double CaptureZ, bool bFog, bool bVolumetricFog,
-										TOptional<bool> Clouds, const FString &RenderProfile, const FString &RunId,
+										TOptional<bool> Clouds, const FUEShedMapTileTiming &Timing,
+										const FString &RenderProfile, const FString &RunId,
 										TArray<TSharedPtr<FJsonValue>> &OutTileResults, int32 &OutSucceeded,
 										int32 &OutFailed, FString &OutFailureCode, FString &OutFailureMessage,
 										FString &OutFailureRecovery, const TSharedPtr<FJsonObject>& Visibility)
@@ -303,6 +305,7 @@ bool CaptureViewportHighResolutionLevel(const TArray<TSharedPtr<FJsonValue>> &Ti
 	RendererPolicy->SetStringField(TEXT("vignette"), TEXT("project"));
 	if (RenderProfile == TEXT("observation"))
 		RendererPolicy->SetStringField(TEXT("profile"), TEXT("observation"));
+	UEShedApplyMapTileTiming(Timing, SessionRequest, 1);
 	TSharedPtr<FJsonObject> Error;
 	auto Renderer = FUEShedCameraRenderSession::Open(SessionRequest, Error);
 	if (!Renderer)
@@ -529,6 +532,21 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		}
 		Clouds = bClouds;
 	}
+	// Map capture 1.3 adds render.timing; each absent field keeps the backend default.
+	FUEShedMapTileTiming Timing;
+	if ((*Render)->HasField(TEXT("timing")))
+	{
+		const TSharedPtr<FJsonObject> *TimingObject = nullptr;
+		if (ContractMinor < 3 || !(*Render)->TryGetObjectField(TEXT("timing"), TimingObject) ||
+			!UEShedReadMapTileTiming(*TimingObject, Timing))
+		{
+			Fail(TEXT("invalid_request"),
+				 TEXT("render.timing requires map capture 1.3 and integer fields within the contract limits."),
+				 TEXT("Send contract 1.3 with frameTimeoutMs, settleFrames, overviewFrames or screenshotWarmupFrames, or omit timing."),
+				 false);
+			return;
+		}
+	}
 	if (DataLayerMode != TEXT("unchanged"))
 	{
 		Fail(TEXT("data_layer_policy_unsupported"),
@@ -614,7 +632,7 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 		FString FailureMessage;
 		FString FailureRecovery;
 		if (!CaptureViewportHighResolutionLevel(*Tiles, TilePixelSize, GutterPixels, CaptureZ, bFog,
-												bVolumetricFog, Clouds, RenderProfile, RunId, TileResults, Succeeded,
+												bVolumetricFog, Clouds, Timing, RenderProfile, RunId, TileResults, Succeeded,
 												Failed, FailureCode, FailureMessage, FailureRecovery, (*CapturePolicy)->HasField(TEXT("visibility")) ? (*CapturePolicy)->GetObjectField(TEXT("visibility")) : nullptr))
 		{
 			MapTileTopFailure(ResultJson, OperationId, CorrelationId, *FailureCode, *FailureMessage,
@@ -784,10 +802,8 @@ static void CaptureMapTilesInternal(const FString &RequestJson, FString &ResultJ
 				if (Clouds.IsSet())
 					R->SetBoolField(TEXT("clouds"), Clouds.GetValue());
 				R->SetNumberField(TEXT("lodDistanceScale"), LodDistanceScale);
-				P->GetObjectField(TEXT("settling"))
-					->SetNumberField(TEXT("minimumFrames"), RenderProfile == TEXT("observation")
-																? 1
-																: FullFidelityWarmupCaptures + 1);
+				UEShedApplyMapTileTiming(Timing, SessionRequest,
+										 RenderProfile == TEXT("observation") ? 1 : FullFidelityWarmupCaptures + 1);
 				TSharedPtr<FJsonObject> Error;
 				Renderer = FUEShedCameraRenderSession::Open(SessionRequest, Error);
 				RendererLod = LodDistanceScale;

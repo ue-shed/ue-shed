@@ -108,6 +108,33 @@ export const MapCaptureDataLayerPolicy = Schema.Union([
 	})
 ]);
 
+const frameCount = (maximum: number) => Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
+
+/**
+ * Per-frame timing for map capture 1.3. Every field is optional; an absent field keeps the
+ * backend's own default (shown on each field).
+ */
+export const MapCaptureTiming = Schema.Struct({
+	/** Deadline for one tile or level render, preparation to screenshot. Default 120000. */
+	frameTimeoutMs: Schema.optionalKey(
+		Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 900_000 }))
+	),
+	/** Frames settled before each capture. Default 128 Lit, 3 scene capture (1 observation), 1 viewport level. */
+	settleFrames: Schema.optionalKey(frameCount(4_096)),
+	/** Lit tiles: frames for exposure metering or the initial view before the first tile. Default 512. */
+	overviewFrames: Schema.optionalKey(frameCount(4_096)),
+	/** Viewport screenshots: high-resolution warm-up frames. Default: the engine's r.HighResScreenshotDelay. */
+	screenshotWarmupFrames: Schema.optionalKey(frameCount(256))
+});
+export type MapCaptureTiming = typeof MapCaptureTiming.Type;
+
+/** Fields a map capture render policy may carry only from contract 1.3. */
+const usesMinor3 = (render: {
+	readonly effects: { readonly clouds?: boolean };
+	readonly timing?: MapCaptureTiming;
+}) => render.effects.clouds !== undefined || render.timing !== undefined;
+const minor3Issue = "Cloud control and render timing require map capture 1.3.";
+
 /**
  * Scene-capture profile, effects, exposure and LOD policy. Per-level distance scaling
  * requires a bounded scale array; other LOD modes reject that extra policy.
@@ -129,6 +156,7 @@ export const MapCaptureRenderPolicy = Schema.Struct({
 		)
 	),
 	lodPolicy: Schema.Literals(["natural", "fixed_lod_zero", "per_level_distance_scale"]),
+	timing: Schema.optionalKey(MapCaptureTiming),
 	profile: Schema.Literals([
 		"full_fidelity",
 		"seam_stable",
@@ -190,8 +218,8 @@ export const MapCapturePlan = Schema.Struct({
 				: undefined
 		),
 		Schema.makeFilter((plan) =>
-			plan.capture.render.effects.clouds !== undefined && plan.contract.version.minor < 3
-				? "Cloud control requires map capture 1.3."
+			usesMinor3(plan.capture.render) && plan.contract.version.minor < 3
+				? minor3Issue
 				: undefined
 		),
 		Schema.makeFilter((plan) =>
@@ -285,11 +313,8 @@ export const MapTileCaptureRequest = Schema.Struct({
 					issue: "Authored visibility requires map capture 1.2.",
 					path: ["contract"]
 				};
-			if (
-				request.capture.render.effects.clouds !== undefined &&
-				request.contract.version.minor < 3
-			)
-				return { issue: "Cloud control requires map capture 1.3.", path: ["contract"] };
+			if (usesMinor3(request.capture.render) && request.contract.version.minor < 3)
+				return { issue: minor3Issue, path: ["contract"] };
 			const identities = request.tiles.map((tile) => mapTileKeyId(tile.key));
 			if (new Set(identities).size !== identities.length) {
 				return {
@@ -533,11 +558,8 @@ export const MapTilePyramidManifest = Schema.Struct({
 					issue: "Authored visibility requires map capture 1.2.",
 					path: ["contract"]
 				};
-			if (
-				manifest.capturePolicy.render.effects.clouds !== undefined &&
-				manifest.contract.version.minor < 3
-			)
-				return { issue: "Cloud control requires map capture 1.3.", path: ["contract"] };
+			if (usesMinor3(manifest.capturePolicy.render) && manifest.contract.version.minor < 3)
+				return { issue: minor3Issue, path: ["contract"] };
 			const expectedGrid = createMapTileGrid({
 				coarsestUnitsPerPixel: manifest.levels[0]!.unitsPerPixel,
 				levelCount: manifest.levels.length,

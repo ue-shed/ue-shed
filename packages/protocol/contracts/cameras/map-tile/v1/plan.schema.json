@@ -300,6 +300,48 @@
 							"type": "string",
 							"enum": ["natural", "fixed_lod_zero", "per_level_distance_scale"]
 						},
+						"timing": {
+							"type": "object",
+							"properties": {
+								"frameTimeoutMs": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 1000,
+											"maximum": 900000
+										}
+									]
+								},
+								"settleFrames": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 1,
+											"maximum": 4096
+										}
+									]
+								},
+								"overviewFrames": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 1,
+											"maximum": 4096
+										}
+									]
+								},
+								"screenshotWarmupFrames": {
+									"type": "integer",
+									"allOf": [
+										{
+											"minimum": 1,
+											"maximum": 256
+										}
+									]
+								}
+							},
+							"additionalProperties": false
+						},
 						"profile": {
 							"type": "string",
 							"enum": [

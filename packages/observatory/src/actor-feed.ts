@@ -384,6 +384,8 @@ const WireCatalog = Schema.Struct({
 	actors: Schema.Array(WireCatalogActor),
 	capturedAt: Schema.String,
 	mapPath: Schema.NonEmptyString,
+	/** Actors left out because the map has more than the 16,384 a snapshot or stream carries. */
+	omittedActors: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 	worldKind: Schema.Literals(["editor", "pie"]),
 	worldSeconds: Schema.Finite
 });
@@ -548,7 +550,8 @@ function buildCatalogFromReady(
 				revision,
 				sessionId,
 				worldKind: response.catalog.worldKind,
-				worldSeconds: response.catalog.worldSeconds
+				worldSeconds: response.catalog.worldSeconds,
+				omittedActors: response.catalog.omittedActors
 			});
 		},
 		catch: (cause) =>

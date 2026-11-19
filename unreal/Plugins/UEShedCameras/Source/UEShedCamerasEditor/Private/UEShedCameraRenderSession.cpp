@@ -164,6 +164,12 @@ bool Contract(const TSharedPtr<FJsonObject> &Value)
 		   Fields(Version, {TEXT("major"), TEXT("minor")}) && Number(Version, TEXT("major"), 1, 1) &&
 		   Number(Version, TEXT("minor"), 0, 0);
 }
+/** Oversize requests are refused with their size instead of failing to parse. */
+FString OversizeMessage(const FString &Text)
+{
+	return FString::Printf(TEXT("The request is %d characters; camera render requests are limited to %d."), Text.Len(),
+						   UEShedCameraMaxRequestCharacters);
+}
 TSharedPtr<FJsonObject> Failure(const FString &Session, const FString &Code, const FString &Message,
 								const FString &Restoration = TEXT("not_acquired"),
 								const FString &Operation = FString())
@@ -322,7 +328,7 @@ UDataLayerInstance *FindLayer(const UDataLayerManager *Manager, const FString &P
 TSharedPtr<FJsonObject> UEShedCameraJson(const FString &Text)
 {
 	TSharedPtr<FJsonObject> Out;
-	if (Text.Len() <= 65536)
+	if (Text.Len() <= UEShedCameraMaxRequestCharacters)
 		FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Out);
 	return Out;
 }
@@ -1529,10 +1535,26 @@ void UUEShedCameraRenderingLibrary::GetCameraRenderCapabilitiesV2(FString &Resul
 }
 void UUEShedCameraRenderingLibrary::PreflightCameraRender(const FString &RequestJson, FString &ResultJson)
 {
+	if (RequestJson.Len() > UEShedCameraMaxRequestCharacters)
+	{
+		TArray<TSharedPtr<FJsonValue>> Issues;
+		Issue(Issues, TEXT("invalid_policy"), TEXT("request"), *OversizeMessage(RequestJson),
+			  TEXT("Send shorter visibility lists or fewer regions."));
+		auto Out = Object();
+		Out->SetArrayField(TEXT("issues"), Issues);
+		Out->SetStringField(TEXT("status"), TEXT("blocked"));
+		ResultJson = UEShedCameraJsonText(Out);
+		return;
+	}
 	ResultJson = UEShedCameraJsonText(FUEShedCameraRenderSession::Preflight(UEShedCameraJson(RequestJson)));
 }
 void UUEShedCameraRenderingLibrary::BeginCameraRender(const FString &RequestJson, FString &ResultJson)
 {
+	if (RequestJson.Len() > UEShedCameraMaxRequestCharacters)
+	{
+		ResultJson = UEShedCameraJsonText(Failure(FString(), TEXT("invalid_policy"), OversizeMessage(RequestJson)));
+		return;
+	}
 	const auto Request = UEShedCameraJson(RequestJson);
 	TSharedPtr<FJsonObject> Error;
 	if (Owner && Owner->Id() == String(Request, TEXT("sessionId")))
@@ -1571,6 +1593,11 @@ TSharedPtr<FUEShedCameraRenderSession> RetainedSession(const FString &Id)
 }
 void UUEShedCameraRenderingLibrary::StartCameraFrame(const FString &RequestJson, FString &ResultJson)
 {
+	if (RequestJson.Len() > UEShedCameraMaxRequestCharacters)
+	{
+		ResultJson = UEShedCameraJsonText(Failure(FString(), TEXT("invalid_frame"), OversizeMessage(RequestJson)));
+		return;
+	}
 	auto Frame = UEShedCameraJson(RequestJson);
 	const FString Id = String(Frame, TEXT("sessionId"));
 	auto Session = RetainedSession(Id);

@@ -89,6 +89,16 @@ describe("automation and live reference wire contracts", () => {
 				maxResults: 10001
 			})
 		).toThrow();
+		expect(
+			decodeAuthoringActorReferencesRequest({ ...request, maxPropertyVisits: 100000000 })
+				.maxPropertyVisits
+		).toBe(100000000);
+		expect(decodeAuthoringActorReferencesRequest(request).maxPropertyVisits).toBeUndefined();
+		for (const maxPropertyVisits of [0, 1.5, 100000001]) {
+			expect(() =>
+				decodeAuthoringActorReferencesRequest({ ...request, maxPropertyVisits })
+			).toThrow();
+		}
 		expect(() =>
 			decodeActorReferencesRequest({
 				...request,

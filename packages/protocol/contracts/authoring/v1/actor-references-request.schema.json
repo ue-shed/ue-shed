@@ -89,6 +89,15 @@
 							"maximum": 10000
 						}
 					]
+				},
+				"maxPropertyVisits": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1,
+							"maximum": 100000000
+						}
+					]
 				}
 			},
 			"required": [

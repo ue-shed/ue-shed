@@ -5,6 +5,7 @@ import {
 	applyWorldObservationEvent,
 	CatalogRevision,
 	catalogFromSnapshot,
+	catalogFromWireEntries,
 	connectingState,
 	materializeObservedActor,
 	ObservationSessionId,
@@ -364,4 +365,28 @@ it("retains authored metadata through snapshot, catalog, and materialization", (
 	const entry = built.catalog.entries[0]!;
 	expect(entry).toMatchObject(metadata);
 	expect(materializeObservedActor(entry, built.transforms[0]!.transform)).toMatchObject(metadata);
+});
+
+describe("actors past the snapshot cap", () => {
+	it("reports how many a big map left out, and nothing otherwise", () => {
+		const big = WorldActorSnapshot.make({
+			...snapshot([actor("a", 0, 0)]),
+			omittedActors: 1200
+		});
+		expect(catalogFromSnapshot(big, sessionA, revision1).catalog.omittedActors).toBe(1200);
+		const small = catalogFromSnapshot(snapshot([actor("a", 0, 0)]), sessionA, revision1);
+		expect("omittedActors" in small.catalog).toBe(false);
+		expect(
+			catalogFromWireEntries({
+				actors: [],
+				capturedAt: "2026-07-21T00:00:00.000Z",
+				mapPath: "/Game/Fixture/Cameras/L_CameraLoad",
+				revision: revision1,
+				sessionId: sessionA,
+				worldKind: "editor",
+				worldSeconds: 0,
+				omittedActors: 7
+			}).catalog.omittedActors
+		).toBe(7);
+	});
 });

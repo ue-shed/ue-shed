@@ -372,7 +372,23 @@ bool FUEShedAuthoringActorReferencesTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Property exhaustion reports a scan diagnostic"),
 		PropertyBounded->GetArrayField(TEXT("errors"))[0]->AsObject()->GetStringField(TEXT("code")),
 		FString(TEXT("scan_limit")));
+	Request->SetNumberField(TEXT("maxPropertyVisits"), 100000000);
+	const TSharedPtr<FJsonObject> PropertyRaised = Scan(Request);
+	TestTrue(TEXT("A raised property budget completes the large scan"),
+		PropertyRaised->GetBoolField(TEXT("isComplete")));
+	TestEqual(TEXT("A raised property budget still finds every match"),
+		ResultPaths(PropertyRaised).Num(), Expected.Num());
 	NonMatch->Array.Empty();
+	Request->SetNumberField(TEXT("maxPropertyVisits"), 1);
+	TestFalse(TEXT("A lowered property budget reports partial"),
+		Scan(Request)->GetBoolField(TEXT("isComplete")));
+	for (const double Visits : { 0.0, 1.5, 100000001.0 })
+	{
+		Request->SetNumberField(TEXT("maxPropertyVisits"), Visits);
+		TestEqual(TEXT("Out-of-range property budgets are rejected"),
+			Scan(Request)->GetStringField(TEXT("status")), FString(TEXT("rejected")));
+	}
+	Request->RemoveField(TEXT("maxPropertyVisits"));
 	Request->SetStringField(TEXT("rowName"), TEXT("Missing"));
 	TestEqual(TEXT("Missing row is rejected"), Scan(Request)->GetStringField(TEXT("status")),
 		FString(TEXT("rejected")));

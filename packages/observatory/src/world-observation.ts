@@ -50,12 +50,24 @@ export const WorldActorCatalog = Schema.Struct({
 	capturedAt: Schema.String,
 	entries: Schema.Array(WorldActorCatalogEntry),
 	mapPath: Schema.NonEmptyString,
+	/** Actors left out because the map has more than the 16,384 a snapshot or stream carries. */
+	omittedActors: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 	revision: CatalogRevision,
 	sessionId: ObservationSessionId,
 	worldKind: Schema.Literals(["editor", "pie"]),
 	worldSeconds: Schema.Finite
 });
 export interface WorldActorCatalog extends Schema.Schema.Type<typeof WorldActorCatalog> {}
+
+/** Builds a catalog, recording omitted actors only when the producer left some out. */
+function makeCatalog(
+	fields: Omit<WorldActorCatalog, "omittedActors">,
+	omittedActors: number | undefined
+): WorldActorCatalog {
+	return WorldActorCatalog.make(
+		omittedActors === undefined ? fields : { ...fields, omittedActors }
+	);
+}
 
 export const WorldTransform = Schema.Struct({
 	location: WorldVector,
@@ -254,15 +266,18 @@ export function catalogFromSnapshot(
 		);
 	}
 	return {
-		catalog: WorldActorCatalog.make({
-			capturedAt: snapshot.capturedAt,
-			entries,
-			mapPath: snapshot.mapPath,
-			revision,
-			sessionId,
-			worldKind: snapshot.worldKind,
-			worldSeconds: snapshot.worldSeconds
-		}),
+		catalog: makeCatalog(
+			{
+				capturedAt: snapshot.capturedAt,
+				entries,
+				mapPath: snapshot.mapPath,
+				revision,
+				sessionId,
+				worldKind: snapshot.worldKind,
+				worldSeconds: snapshot.worldSeconds
+			},
+			snapshot.omittedActors
+		),
 		transforms
 	};
 }
@@ -475,6 +490,7 @@ export function catalogFromWireEntries(args: {
 	readonly sessionId: ObservationSessionId;
 	readonly worldKind: "editor" | "pie";
 	readonly worldSeconds: number;
+	readonly omittedActors?: number | undefined;
 }) {
 	const entries: Array<WorldActorCatalogEntry> = [];
 	const transforms: Array<WorldIndexedTransform> = [];
@@ -502,15 +518,18 @@ export function catalogFromWireEntries(args: {
 		);
 	}
 	return {
-		catalog: WorldActorCatalog.make({
-			capturedAt: args.capturedAt,
-			entries,
-			mapPath: args.mapPath,
-			revision: args.revision,
-			sessionId: args.sessionId,
-			worldKind: args.worldKind,
-			worldSeconds: args.worldSeconds
-		}),
+		catalog: makeCatalog(
+			{
+				capturedAt: args.capturedAt,
+				entries,
+				mapPath: args.mapPath,
+				revision: args.revision,
+				sessionId: args.sessionId,
+				worldKind: args.worldKind,
+				worldSeconds: args.worldSeconds
+			},
+			args.omittedActors
+		),
 		transforms
 	};
 }

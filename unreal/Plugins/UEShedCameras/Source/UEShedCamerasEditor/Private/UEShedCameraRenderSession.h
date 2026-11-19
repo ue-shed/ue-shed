@@ -38,6 +38,8 @@ class FUEShedCameraRenderSession : public TSharedFromThis<FUEShedCameraRenderSes
 	TUniquePtr<FState> State;
 };
 
+/** Longest request text the camera libraries parse. Two 256-actor visibility lists at the longest path fit. */
+constexpr int32 UEShedCameraMaxRequestCharacters = 4 * 1024 * 1024;
 TSharedPtr<FJsonObject> UEShedCameraJson(const FString &Text);
 FString UEShedCameraJsonText(const TSharedPtr<FJsonObject> &Value);
 TSharedPtr<FJsonObject> UEShedCameraContract();

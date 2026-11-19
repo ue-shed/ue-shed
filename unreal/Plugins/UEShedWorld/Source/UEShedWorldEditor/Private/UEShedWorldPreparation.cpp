@@ -449,6 +449,10 @@ FJson Select(FLease &Lease)
 {
 	UWorld *World = Lease.WorldPtr.Get();
 	const int32 Budget = Lease.Requirements->GetIntegerField(TEXT("maximumActors"));
+	// The inventory covers the whole world before targets are applied; maximumActors bounds what is
+	// selected. This guard only stops runaway memory, so a large World Partition map still prepares
+	// a small area.
+	constexpr int32 MaxInventory = 4000000;
 	TArray<FActor> Inventory;
 	if (auto *WP = World->GetWorldPartition())
 	{
@@ -459,9 +463,9 @@ FJson Select(FLease &Lease)
 			FActor A;
 			A.Handle = FWorldPartitionHandle(It->GetContainerInstance(), It->GetGuid());
 			Inventory.Add(MoveTemp(A));
-			if (Inventory.Num() > 100000)
+			if (Inventory.Num() > MaxInventory)
 				return Fail(TEXT("budget_exceeded"),
-							TEXT("Descriptor inventory exceeds the native scan limit."));
+							TEXT("The world has more than 4,000,000 actor descriptors, the native scan limit."));
 		}
 	}
 	else
@@ -472,9 +476,9 @@ FJson Select(FLease &Lease)
 			FActor A;
 			A.Direct = *It;
 			Inventory.Add(MoveTemp(A));
-			if (Inventory.Num() > 100000)
+			if (Inventory.Num() > MaxInventory)
 				return Fail(TEXT("budget_exceeded"),
-							TEXT("Actor inventory exceeds the native scan limit."));
+							TEXT("The world has more than 4,000,000 loaded actors, the native scan limit."));
 		}
 	TSet<FString> Selected;
 	auto Add = [&](const FActor &A, bool Dependency) {

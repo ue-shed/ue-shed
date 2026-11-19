@@ -55,10 +55,12 @@ it commits or rolls back. Row add, remove, rename and move send their own `RowLi
 including nested structs, static arrays, arrays, sets, and map keys and values. It does not load
 worlds or assets, switch editor worlds, or traverse unrelated UObject references.
 
-Results contain actor object paths, the scanned actor count, and `isComplete`. Depth (64), property
-visits (1000000), request characters (16384), and output path characters (4194304) are additionally
-bounded. A reached scan bound returns `status: "ok"`, `isComplete: false`, and a `scan_limit`
-diagnostic. Invalid targets or requests return `status: "rejected"` with typed errors. Results
+Results contain actor object paths, the scanned actor count, and `isComplete`. The optional
+`maxPropertyVisits` (1–100000000, default 1000000) bounds the reflected properties read across the
+whole scan; big worlds and actors with large arrays reach the default first. Depth (64), request
+characters (16384), and output path characters (4194304) are additionally bounded. A reached scan
+bound returns `status: "ok"`, `isComplete: false`, and a `scan_limit` diagnostic naming the limits a
+caller can raise. Invalid targets or requests return `status: "rejected"` with typed errors. Results
 describe currently loaded actors only; unloaded World Partition actors are outside this query.
 
 Requests are also capped at 16384 UTF-8 bytes, so multibyte characters cannot bypass the transport

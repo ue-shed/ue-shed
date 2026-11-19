@@ -22,7 +22,9 @@ namespace
 constexpr int32 MaxRequestCharacters = 16384;
 constexpr int32 MaxPathCharacters = 2048;
 constexpr int32 MaxPropertyDepth = 64;
-constexpr int32 MaxPropertyVisits = 1000000;
+// Property visits across one scan. A request raises it with maxPropertyVisits, up to the maximum.
+constexpr int32 DefaultPropertyVisits = 1000000;
+constexpr int32 MaxPropertyVisits = 100000000;
 constexpr int32 MaxResultPathCharacters = 4 * 1024 * 1024;
 
 TSharedRef<FJsonObject> ActorReferencesContract()
@@ -78,6 +80,7 @@ struct FRowReferenceScan
 {
 	const UDataTable* Table;
 	FName RowName;
+	int32 VisitBudget = DefaultPropertyVisits;
 	int32 Visits = 0;
 	bool bComplete = true;
 
@@ -89,7 +92,7 @@ struct FRowReferenceScan
 			{
 				if (ScanValue(*It, It->ContainerPtrToValuePtr<void>(Container, Index), Depth))
 					return true;
-				if (Visits >= MaxPropertyVisits) return false;
+				if (Visits >= VisitBudget) return false;
 			}
 		}
 		return false;
@@ -97,13 +100,13 @@ struct FRowReferenceScan
 
 	bool ScanValue(const FProperty* Property, const void* Value, int32 Depth)
 	{
-		if (Visits >= MaxPropertyVisits)
+		if (Visits >= VisitBudget)
 		{
 			bComplete = false;
 			return false;
 		}
 		++Visits;
-		if (Visits >= MaxPropertyVisits) bComplete = false;
+		if (Visits >= VisitBudget) bComplete = false;
 		if (Depth > MaxPropertyDepth)
 		{
 			bComplete = false;
@@ -124,7 +127,7 @@ struct FRowReferenceScan
 			for (int32 Index = 0; Index < Helper.Num(); ++Index)
 			{
 				if (ScanValue(Array->Inner, Helper.GetRawPtr(Index), Depth + 1)) return true;
-				if (Visits >= MaxPropertyVisits) break;
+				if (Visits >= VisitBudget) break;
 			}
 		}
 		else if (const FSetProperty* Set = CastField<FSetProperty>(Property))
@@ -135,7 +138,7 @@ struct FRowReferenceScan
 				if (Helper.IsValidIndex(Index)
 					&& ScanValue(Set->ElementProp, Helper.GetElementPtr(Index), Depth + 1)) return true;
 				if (!Helper.IsValidIndex(Index)) ++Visits;
-				if (Visits >= MaxPropertyVisits) break;
+				if (Visits >= VisitBudget) break;
 			}
 		}
 		else if (const FMapProperty* Map = CastField<FMapProperty>(Property))
@@ -147,12 +150,12 @@ struct FRowReferenceScan
 					&& (ScanValue(Map->KeyProp, Helper.GetKeyPtr(Index), Depth + 1)
 						|| ScanValue(Map->ValueProp, Helper.GetValuePtr(Index), Depth + 1))) return true;
 				if (!Helper.IsValidIndex(Index)) ++Visits;
-				if (Visits >= MaxPropertyVisits) break;
+				if (Visits >= VisitBudget) break;
 			}
 		}
 		// Reaching the exact visit budget is conservatively partial, even if a
 		// containing loop has no remaining properties.
-		if (Visits >= MaxPropertyVisits) bComplete = false;
+		if (Visits >= VisitBudget) bComplete = false;
 		return false;
 	}
 };
@@ -176,7 +179,7 @@ void UUEShedAuthoringLibrary::FindActorsReferencingRow(
 		Errors.Add(MakeShared<FJsonValueObject>(Error));
 	};
 	TSharedPtr<FJsonObject> Request;
-	int32 MaxActors = 0, MaxResults = 0;
+	int32 MaxActors = 0, MaxResults = 0, PropertyVisits = DefaultPropertyVisits;
 	if (RequestJson.Len() > MaxRequestCharacters
 		|| FTCHARToUTF8(*RequestJson, RequestJson.Len()).Length() > MaxRequestCharacters
 		|| !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(RequestJson), Request)
@@ -190,7 +193,9 @@ void UUEShedAuthoringLibrary::FindActorsReferencingRow(
 		|| !ReadBoundedString(Request, TEXT("rowName"), RowName, NAME_SIZE - 1)
 		|| !WorldPath.StartsWith(TEXT("/")) || !TablePath.StartsWith(TEXT("/"))
 		|| !ReadLimit(Request, TEXT("maxActors"), MaxActors, 100000)
-		|| !ReadLimit(Request, TEXT("maxResults"), MaxResults, 10000))
+		|| !ReadLimit(Request, TEXT("maxResults"), MaxResults, 10000)
+		|| (Request->HasField(TEXT("maxPropertyVisits"))
+			&& !ReadLimit(Request, TEXT("maxPropertyVisits"), PropertyVisits, MaxPropertyVisits)))
 	{
 		Reject(TEXT("invalid_request"), TEXT("Contract, explicit target, or scan limits are invalid."));
 	}
@@ -218,12 +223,12 @@ void UUEShedAuthoringLibrary::FindActorsReferencingRow(
 		else
 		{
 			bRejected = false;
-			FRowReferenceScan Scan { Table, FName(*RowName) };
+			FRowReferenceScan Scan { Table, FName(*RowName), PropertyVisits };
 			int32 PathCharacters = 0;
 			for (TActorIterator<AActor> It(World); It; ++It)
 			{
 				if (Scanned >= MaxActors || Paths.Num() >= MaxResults
-					|| Scan.Visits >= MaxPropertyVisits)
+					|| Scan.Visits >= Scan.VisitBudget)
 				{
 					Scan.bComplete = false;
 					break;
@@ -241,7 +246,7 @@ void UUEShedAuthoringLibrary::FindActorsReferencingRow(
 							bFound = true;
 							break;
 						}
-						if (Scan.Visits >= MaxPropertyVisits) break;
+						if (Scan.Visits >= Scan.VisitBudget) break;
 					}
 				}
 				if (bFound)
@@ -257,7 +262,8 @@ void UUEShedAuthoringLibrary::FindActorsReferencingRow(
 				}
 			}
 			bComplete = Scan.bComplete;
-			if (!bComplete) Reject(TEXT("scan_limit"), TEXT("Scan bounds reached; results are partial."));
+			if (!bComplete) Reject(TEXT("scan_limit"),
+				TEXT("Scan bounds reached; results are partial. Raise maxActors, maxResults or maxPropertyVisits."));
 		}
 	}
 	Result->SetStringField(TEXT("status"), bRejected ? TEXT("rejected") : TEXT("ok"));

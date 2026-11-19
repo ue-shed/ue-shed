@@ -33,7 +33,8 @@ export class RemoteControlClientError extends Schema.TaggedError<
 }) {}
 
 /**
- * One UFUNCTION call at an explicit editor endpoint. Timeout overrides the client's default;
+ * One UFUNCTION call at an explicit editor endpoint. Timeout replaces the client's default, but
+ * the host's `minimumTimeout` and `operationTimeouts` still apply (see `remoteControlTimeout`);
  * idempotent is an explicit caller guarantee used for recovery guidance. The adapter never
  * retries automatically.
  */
@@ -177,20 +178,50 @@ function transportError(request: RemoteControlRequest, cause: unknown): RemoteCo
 }
 
 /**
+ * Host timeout settings. Libraries choose per-call timeouts for their own calls; these let the
+ * host that knows its editor and project raise them without changing the library.
+ */
+export interface RemoteControlTimeoutSettings {
+	/** Timeout for calls that don't set their own. */
+	readonly defaultTimeout: Duration.Input;
+	/** No call waits less than this, whatever the library chose. For slow editors and big projects. */
+	readonly minimumTimeout?: Duration.Input;
+	/** Exact timeout by `RemoteControlRequest.operation`, overriding the library and the minimum. */
+	readonly operationTimeouts?: Readonly<Record<string, Duration.Input>>;
+}
+
+/** The timeout one call gets: the host's operation override, else the larger of call and floor. */
+export function remoteControlTimeout(
+	request: Pick<RemoteControlRequest, "operation" | "timeout">,
+	settings: RemoteControlTimeoutSettings
+): Duration.Duration {
+	const override =
+		request.operation === undefined
+			? undefined
+			: settings.operationTimeouts?.[request.operation];
+	if (override !== undefined) return Duration.fromInputUnsafe(override);
+	const chosen = Duration.fromInputUnsafe(request.timeout ?? settings.defaultTimeout);
+	return settings.minimumTimeout === undefined
+		? chosen
+		: Duration.max(chosen, Duration.fromInputUnsafe(settings.minimumTimeout));
+}
+
+/**
  * Creates the Effect HTTP adapter with a default timeout; each request scopes its client, checks
  * both JSON boundaries and never retries. `passphrase` is sent as Unreal's `Passphrase` header; a
  * restricted editor checks it on every request, local ones too, and answers 401 to a wrong one or
  * the built-in default (UE 5.7, 5.8). `headers` go on every request; their `Passphrase` wins.
  */
-export function makeRemoteControlClient(options: {
-	readonly defaultTimeout: Duration.Input;
-	readonly passphrase?: string;
-	readonly headers?: Readonly<Record<string, string>>;
-}): RemoteControlClientApi {
+export function makeRemoteControlClient(
+	options: RemoteControlTimeoutSettings & {
+		readonly passphrase?: string;
+		readonly headers?: Readonly<Record<string, string>>;
+	}
+): RemoteControlClientApi {
 	const request = Effect.fn("RemoteControlClient.request")(
 		function* (request: RemoteControlRequest) {
 			const endpoint = normalizedEndpoint(request.endpoint);
-			const timeout = request.timeout ?? options.defaultTimeout;
+			const timeout = remoteControlTimeout(request, options);
 			const response = yield* Effect.scoped(
 				Effect.acquireRelease(
 					Effect.try({
@@ -294,21 +325,38 @@ export function makeRemoteControlClient(options: {
 	return RemoteControlClient.of({ request });
 }
 
-const defaultTimeout = Config.Duration("UE_SHED_REMOTE_CONTROL_TIMEOUT").pipe(
-	Config.withDefault(Duration.seconds(10))
-);
+/**
+ * HTTP transport configured from the environment: UE_SHED_REMOTE_CONTROL_TIMEOUT (default
+ * `fallbackTimeout`) and UE_SHED_REMOTE_CONTROL_MINIMUM_TIMEOUT (optional floor), both Effect
+ * durations such as "2 minutes".
+ */
+export function remoteControlClientFromConfig(
+	fallbackTimeout: Duration.Input
+): Layer.Layer<RemoteControlClient, Config.ConfigError> {
+	return Layer.effect(
+		RemoteControlClient,
+		Effect.gen(function* () {
+			const defaultTimeout = yield* Config.Duration("UE_SHED_REMOTE_CONTROL_TIMEOUT").pipe(
+				Config.withDefault(Duration.fromInputUnsafe(fallbackTimeout))
+			);
+			const minimumTimeout = yield* Config.option(
+				Config.Duration("UE_SHED_REMOTE_CONTROL_MINIMUM_TIMEOUT")
+			);
+			return makeRemoteControlClient(
+				minimumTimeout._tag === "Some"
+					? { defaultTimeout, minimumTimeout: minimumTimeout.value }
+					: { defaultTimeout }
+			);
+		})
+	);
+}
 
 /**
- * Production HTTP transport. Reads UE_SHED_REMOTE_CONTROL_TIMEOUT as an Effect duration
- * (default 10 seconds); per-request timeouts override it. Each call owns and disposes its
+ * Production HTTP transport. Reads UE_SHED_REMOTE_CONTROL_TIMEOUT (default 10 seconds) and the
+ * optional UE_SHED_REMOTE_CONTROL_MINIMUM_TIMEOUT floor. Each call owns and disposes its
  * transport resources.
  */
-export const RemoteControlClientLive = Layer.effect(
-	RemoteControlClient,
-	Effect.gen(function* () {
-		return makeRemoteControlClient({ defaultTimeout: yield* defaultTimeout });
-	})
-);
+export const RemoteControlClientLive = remoteControlClientFromConfig("10 seconds");
 
 /**
  * Complete test implementation of the request port. The supplied handler owns responses, typed

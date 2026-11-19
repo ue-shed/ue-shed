@@ -7,7 +7,7 @@ import {
 	ErrorGuidanceFields
 } from "@ue-shed/protocol";
 import {
-	makeRemoteControlClient,
+	remoteControlClientFromConfig,
 	RemoteControlClient,
 	type RemoteControlClientApi,
 	type RemoteControlClientError
@@ -17,6 +17,7 @@ import {
 	Cause,
 	Clock,
 	Context,
+	Duration,
 	Effect,
 	Exit,
 	Layer,
@@ -140,15 +141,24 @@ export class MapTileCapturePort extends Context.Service<
 	MapTileCapturePortApi
 >()("@ue-shed/cameras/MapTileCapturePort") {}
 
+/** Host settings for the Remote Control tile adapter. Every field has a default. */
+export interface MapTileCaptureRemoteOptions {
+	/** Longest wait for one tile batch to finish, polling included. Default 15 minutes. */
+	readonly batchDeadline?: Duration.Input;
+}
+
 /**
  * Builds a Remote Control tile adapter with correlated operation polling and owned-run
  * release. Uses the supplied client/endpoint and verifies restoration when ending a started
- * run.
+ * run. A status poll that times out while the editor renders is sent again until the batch
+ * deadline.
  */
 export function makeMapTileCaptureRemotePort(
 	client: RemoteControlClientApi,
-	endpoint: string
+	endpoint: string,
+	options: MapTileCaptureRemoteOptions = {}
 ): MapTileCapturePortApi {
+	const batchDeadline = options.batchDeadline ?? "15 minutes";
 	const startedRuns = new Map<string, boolean>();
 	return {
 		release: Effect.fn("MapCapture.remoteRelease")(function* (runId: string) {
@@ -274,6 +284,11 @@ export function makeMapTileCaptureRemotePort(
 					parameters: { RunId: request.runId, OperationId: request.operationId }
 				})
 				.pipe(
+					// Unreal answers nothing while it renders; polling again changes nothing.
+					Effect.retry({
+						while: (error) => error.code === "request_timeout",
+						schedule: Schedule.spaced("200 millis")
+					}),
 					Effect.flatMap(decode),
 					Effect.tap((status) =>
 						status.state === "running" &&
@@ -294,7 +309,7 @@ export function makeMapTileCaptureRemotePort(
 						schedule: Schedule.spaced("200 millis"),
 						while: (status) => status.state === "running"
 					}),
-					Effect.timeout("15 minutes")
+					Effect.timeout(batchDeadline)
 				);
 			if (finished.state !== "finished")
 				return yield* Effect.die("Map capture polling ended without a terminal response.");
@@ -308,13 +323,14 @@ export function makeMapTileCaptureRemotePort(
  * RemoteControlClient; layer construction does not itself begin a capture.
  */
 export function mapTileCaptureRemotePortLayer(
-	endpoint: string
+	endpoint: string,
+	options?: MapTileCaptureRemoteOptions
 ): Layer.Layer<MapTileCapturePort, never, RemoteControlClient> {
 	return Layer.effect(
 		MapTileCapturePort,
 		Effect.gen(function* () {
 			const client = yield* RemoteControlClient;
-			return MapTileCapturePort.of(makeMapTileCaptureRemotePort(client, endpoint));
+			return MapTileCapturePort.of(makeMapTileCaptureRemotePort(client, endpoint, options));
 		})
 	);
 }
@@ -399,6 +415,8 @@ export interface RunMapCaptureOptions {
 	 */
 	readonly destination?: MapCaptureDestination;
 	readonly endpoint: string;
+	/** Longest wait for one tile batch. Default 15 minutes. */
+	readonly batchDeadline?: Duration.Input;
 	readonly levels?: ReadonlyArray<number>;
 	readonly onProgress?: (progress: MapCaptureRunProgress) => Effect.Effect<void>;
 	readonly planPath: string;
@@ -1091,15 +1109,19 @@ export const MapCaptureLive = Layer.effect(
 export function runMapCapture(
 	options: RunMapCaptureOptions
 ): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
-	const remoteClient = Layer.sync(RemoteControlClient, () =>
-		makeRemoteControlClient({ defaultTimeout: "5 minutes" })
-	);
+	// The host's UE_SHED_REMOTE_CONTROL_* settings apply; a malformed value is a host defect.
+	const remoteClient = remoteControlClientFromConfig("5 minutes").pipe(Layer.orDie);
 	return Effect.flatMap(MapCapture, (service) => service.run(options)).pipe(
 		Effect.provide(
 			Layer.provideMerge(
 				Layer.provideMerge(
 					Layer.provideMerge(MapCaptureLive, MapCaptureRepositoryLive),
-					mapTileCaptureRemotePortLayer(options.endpoint)
+					mapTileCaptureRemotePortLayer(
+						options.endpoint,
+						options.batchDeadline === undefined
+							? undefined
+							: { batchDeadline: options.batchDeadline }
+					)
 				),
 				remoteClient
 			)
@@ -1114,15 +1136,19 @@ export function runMapCapture(
 export function runMapCapturePlan(
 	options: RunMapCapturePlanOptions
 ): Effect.Effect<MapCaptureRunOutcome, MapCaptureRunError | MapCaptureStorageError> {
-	const remoteClient = Layer.sync(RemoteControlClient, () =>
-		makeRemoteControlClient({ defaultTimeout: "5 minutes" })
-	);
+	// The host's UE_SHED_REMOTE_CONTROL_* settings apply; a malformed value is a host defect.
+	const remoteClient = remoteControlClientFromConfig("5 minutes").pipe(Layer.orDie);
 	return Effect.flatMap(MapCapture, (service) => service.run(options)).pipe(
 		Effect.provide(
 			Layer.provideMerge(
 				Layer.provideMerge(
 					Layer.provideMerge(MapCaptureLive, MapCaptureRepositoryLive),
-					mapTileCaptureRemotePortLayer(options.endpoint)
+					mapTileCaptureRemotePortLayer(
+						options.endpoint,
+						options.batchDeadline === undefined
+							? undefined
+							: { batchDeadline: options.batchDeadline }
+					)
 				),
 				remoteClient
 			)

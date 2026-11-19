@@ -421,6 +421,39 @@ describe("shared renderer lifecycle", () => {
 			expect(h.calls.at(-1)).toBe("EndCameraRender");
 		})
 	);
+	for (const recovers of [true, false])
+		effectIt.effect(
+			recovers
+				? "keeps the lease when a renewal times out while the editor renders"
+				: "fails the next frame once renewals time out past the lease",
+			() =>
+				Effect.gen(function* () {
+					let begins = 0;
+					const h = harness((name) => {
+						if (name !== "BeginCameraRender") return undefined;
+						begins++;
+						// The first Begin opens the session; renewals follow.
+						if (begins === 1) return undefined;
+						return recovers && begins > 2 ? undefined : Effect.fail(noAnswer(name));
+					});
+					yield* Effect.scoped(
+						Effect.gen(function* () {
+							const session = yield* h.renderer.open(request);
+							yield* TestClock.adjust(request.leaseMs / 3);
+							yield* TestClock.adjust("200 millis");
+							if (!recovers) yield* TestClock.adjust(request.leaseMs);
+							const result = yield* session.capture(frame).pipe(Effect.result);
+							if (recovers) expect(result).toEqual(Result.succeed(captured));
+							else
+								expect(result).toMatchObject({
+									_tag: "Failure",
+									failure: { code: "lease_expired", nextStep: "reconcile" }
+								});
+						})
+					);
+					expect(begins).toBeGreaterThan(2);
+				})
+		);
 	it("does not release someone else's session after an explicit ownership rejection", async () => {
 		const h = harness((name) =>
 			name === "BeginCameraRender" ? Effect.succeed(failed("editor_busy")) : undefined

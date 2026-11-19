@@ -538,11 +538,29 @@ export function makeCameraRenderer(
 				retrySafe: false,
 				nextStep: "escalate"
 			});
+		// Repeating Begin renews the lease. Unreal answers nothing while it renders a long frame,
+		// so a renewal that times out is sent again until the lease it protects would have run out.
+		const leaseLapsed = new CameraRenderError({
+			code: "lease_expired",
+			operation: "open",
+			sessionId: request.sessionId,
+			message: `The editor did not answer lease renewals for session ${request.sessionId} before its ${Math.round(request.leaseMs / 1000)} second lease ran out.`,
+			recovery:
+				"Raise leaseMs or the renderer's requestTimeout, or keep the editor in the foreground. Inspect the native session before retrying.",
+			retrySafe: false,
+			nextStep: "reconcile"
+		});
 		yield* Effect.gen(function* () {
 			yield* Effect.sleep(request.leaseMs / 3);
 			const value = yield* call("open", request.sessionId, "BeginCameraRender", {
 				RequestJson: JSON.stringify(request)
-			});
+			}).pipe(
+				Effect.retry({ while: isRequestTimeout, schedule: Schedule.spaced("100 millis") }),
+				Effect.timeoutOrElse({
+					duration: request.leaseMs - request.leaseMs / 3,
+					orElse: () => Effect.fail(leaseLapsed)
+				})
+			);
 			const result = yield* decode(CameraRenderBeginResult, value);
 			if (result.status === "failed") return yield* nativeError("open", result);
 		}).pipe(

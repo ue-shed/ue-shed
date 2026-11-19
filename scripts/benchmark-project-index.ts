@@ -11,8 +11,12 @@ if (pnpmEntrypoint === undefined) {
 	throw new Error("Run the project-index benchmark through pnpm benchmark:project-index.");
 }
 
-function run(command: string, commandArguments: readonly string[]) {
-	const result = spawnSync(command, commandArguments, {
+const pnpmIsJavaScript = /\.(?:c|m)?js$/i.test(pnpmEntrypoint);
+const pnpmCommand = pnpmIsJavaScript ? process.execPath : pnpmEntrypoint;
+const pnpmPrefix = pnpmIsJavaScript ? [pnpmEntrypoint] : [];
+
+function runPnpm(pnpmArguments: readonly string[]) {
+	const result = spawnSync(pnpmCommand, [...pnpmPrefix, ...pnpmArguments], {
 		cwd: repositoryRoot,
 		encoding: "utf8",
 		stdio: "inherit",
@@ -23,10 +27,9 @@ function run(command: string, commandArguments: readonly string[]) {
 }
 
 if (shouldBuild) {
-	run(process.execPath, [pnpmEntrypoint, "--filter", "@ue-shed/unreal-assets", "build"]);
+	runPnpm(["--filter", "@ue-shed/unreal-assets", "build"]);
 }
-run(process.execPath, [
-	pnpmEntrypoint,
+runPnpm([
 	"--filter",
 	"@ue-shed/workbench",
 	"exec",

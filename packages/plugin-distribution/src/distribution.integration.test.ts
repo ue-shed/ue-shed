@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { crc32, deflateRawSync, gzipSync } from "node:zlib";
 import { it } from "@effect/vitest";
-import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
+import { Deferred, Duration, Effect, Fiber, Layer, Schema } from "effect";
 import { expect, vi } from "vitest";
 import {
 	ActiveLeasePreventsPrune,
@@ -1314,7 +1314,7 @@ it.effect("waits for a live process's cache lock up to lockWait", () =>
 		const source = yield* Effect.promise(() => fixture());
 		const cacheRoot = join(source.root, "lock-wait-cache");
 		const releaseSource = localPluginReleaseSourceLayer({ directory: source.root });
-		const withLockWait = (lockWait: string) =>
+		const withLockWait = (lockWait: Duration.Input) =>
 			pluginDistributionLayer({}).pipe(
 				Layer.provide(Layer.merge(releaseSource, pluginStoreLayer({ cacheRoot, lockWait })))
 			);

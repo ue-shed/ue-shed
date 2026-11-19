@@ -1,5 +1,5 @@
 #include "UEShedCoreLibrary.h"
-#include "UEShedAuthoringLimits.h"
+#include "UEShedMutationLimits.h"
 
 #include "Dom/JsonObject.h"
 #include "Misc/App.h"

@@ -1,5 +1,5 @@
 #include "UEShedAuthoringLibrary.h"
-#include "UEShedAuthoringLimits.h"
+#include "UEShedMutationLimits.h"
 
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/IAssetRegistry.h"

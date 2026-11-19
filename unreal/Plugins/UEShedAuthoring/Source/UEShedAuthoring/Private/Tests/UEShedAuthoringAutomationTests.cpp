@@ -1,5 +1,5 @@
 #include "UEShedAuthoringLibrary.h"
-#include "UEShedAuthoringLimits.h"
+#include "UEShedMutationLimits.h"
 #include "UEShedCoreLibrary.h"
 
 #if WITH_DEV_AUTOMATION_TESTS

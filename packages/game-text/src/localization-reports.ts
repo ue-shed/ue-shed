@@ -270,10 +270,9 @@ function baselineWith(
 }
 /**
  * Creates a target baseline from current corpus and manifest evidence with canonical
- * fingerprints. Missing/ambiguous manifests or unavailable portable word counts fail with
- * LocalizationReportError, as does a target with more entries than `limits.maxEntries`. An index
- * model gives the same baseline through `indexedLocalizationBaseline`, which fingerprints the
- * corpus in Rust.
+ * fingerprints. Missing/ambiguous manifests, unavailable portable word counts or more entries than
+ * `limits.maxEntries` fail with LocalizationReportError. `indexedLocalizationBaseline` is the same
+ * from an index model, fingerprinting the corpus in Rust.
  */
 export function createLocalizationBaseline(
 	corpus: TextCorpus,

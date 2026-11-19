@@ -296,10 +296,7 @@ function categoryCountData(rows: readonly AuthoringRow[], fieldName: string): Ca
 
 // A loop, not Math.min(...values): spreading a row-sized array overflows the call stack above
 // roughly 100k values.
-function extremes(values: readonly number[]): {
-	readonly minimum: number;
-	readonly maximum: number;
-} {
+function extremes(values: readonly number[]) {
 	let minimum = Infinity;
 	let maximum = -Infinity;
 	for (const value of values) {

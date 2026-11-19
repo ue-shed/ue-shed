@@ -1,15 +1,11 @@
 ---
-"@ue-shed/authoring": patch
 "@ue-shed/game-text": minor
 "@ue-shed/plugin-distribution": minor
 "@ue-shed/uasset-inspection-wasm": minor
 ---
 
-Big tables, baselines, packages and plugin installs no longer fail on caps a host couldn't raise.
+Baselines, large packages, plugin installs and authoring Apply no longer fail on caps a host couldn't raise.
 
-- Authoring analysis no longer crashes on tables with more than about 100,000 numeric rows. Minimum
-  and maximum charts and histograms spread every value into `Math.min`/`Math.max`, which threw
-  `RangeError: Maximum call stack size exceeded`.
 - Game Text baselines: `GameTextWorkspaceHost.baselineLimits` sets `maxEntries` (default 100,000)
   and `maxFileBytes` (default 64 MiB, raised from 16 MiB). Saving used to fail at about 50,000
   entries with only "The file operation failed.", because the 16 MiB file cap came before the entry

@@ -21,12 +21,13 @@
  *   WasmPackageBinding
  */
 
+/** @typedef {(maxInputBytes: number, maxOutputBytes: number) => boolean} SetLimits */
+
 /**
  * @typedef {{ inspect: BytesCall, extract_text: BytesCall, extract_textures: BytesCall,
  *   extract_level_sequences: BytesCall, extract_blueprints: BytesCall, version: () => string,
- *   extract_animations: BytesCall, extract_authoring_table: BytesCall,
- *   ParsedPackage: new (path: string, bytes: Uint8Array) => WasmPackageBinding,
- *   set_limits?: (maxInputBytes: number, maxOutputBytes: number) => boolean }} WasmBinding
+ *   extract_animations: BytesCall, extract_authoring_table: BytesCall, set_limits?: SetLimits,
+ *   ParsedPackage: new (path: string, bytes: Uint8Array) => WasmPackageBinding }} WasmBinding
  */
 
 export const DEFAULT_LIMITS = Object.freeze({
@@ -121,21 +122,12 @@ function normalizeLimit(value, fallback, name) {
 	return value;
 }
 
-/**
- * Gives the binding this runtime's limits before a call. Runtimes share one module instance and
- * calls are synchronous, so each call sets them first. A binding without `set_limits` keeps its
- * built-in 64 MiB limits.
- *
- * @template T
- * @param {WasmBinding} binding
- * @param {RuntimeLimits} limits
- * @param {() => T} call
- * @returns {T}
- */
-function withLimits(binding, limits, call) {
+// Runtimes share one module instance and calls are synchronous, so each call sets its limits first.
+/** @type {<T>(binding: WasmBinding, limits: RuntimeLimits, call: () => T) => T} */
+const withLimits = (binding, limits, call) => {
 	binding.set_limits?.(limits.maxInputBytes, limits.maxOutputBytes);
 	return call();
-}
+};
 
 /**
  * @param {unknown} bytes

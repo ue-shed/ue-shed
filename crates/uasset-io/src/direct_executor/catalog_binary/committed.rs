@@ -36,7 +36,7 @@ pub(super) enum Segment {
 pub(super) struct Committed {
     pub(super) base: Snapshot,
     pub(super) delta: Option<Snapshot>,
-    /// Set once the delta's tombstone counts were checked against the decoded base.
+    /// Set once the delta's tombstone counts were checked against the base rows they hide.
     tombstones_checked: OnceCell<()>,
 }
 
@@ -80,6 +80,14 @@ impl Committed {
             delta,
             tombstones_checked: OnceCell::new(),
         })
+    }
+
+    /// Releases each snapshot's decoded inventory chunks once more than `retained` are decoded.
+    pub(super) fn release_rows_over(&mut self, retained: usize) {
+        self.base.release_chunks_over(retained);
+        if let Some(delta) = &mut self.delta {
+            delta.release_chunks_over(retained);
+        }
     }
 
     /// The base rows the delta hides.
@@ -130,14 +138,16 @@ impl Committed {
         }
     }
 
-    /// The decoded base inventory; the first call checks the delta's tombstone counts against it.
-    pub(super) fn base_rows(&self) -> Result<&Rows, CatalogError> {
-        let rows = self.base.rows()?;
+    /// The base snapshot; the first call checks the delta's tombstone counts against the rows
+    /// they hide.
+    pub(super) fn base(&self) -> Result<&Snapshot, CatalogError> {
         if self.tombstones_checked.get().is_none() {
             let hidden = self.hidden();
+            self.base
+                .load_chunks(hidden.ids.iter().map(|id| *id as usize))?;
             let (mut packages, mut maps) = (0, 0);
             for id in &hidden.ids {
-                let entry = &rows.inventory[*id as usize];
+                let entry = self.base.entry(*id as usize)?;
                 packages += u64::from(entry.kind == EntryKind::Package);
                 maps += u64::from(entry.is_map);
             }
@@ -146,27 +156,27 @@ impl Committed {
             }
             let _ = self.tombstones_checked.set(());
         }
-        Ok(rows)
+        Ok(&self.base)
     }
 
-    /// The decoded rows of a segment.
-    pub(super) fn rows(&self, segment: Segment) -> Result<&Rows, CatalogError> {
+    /// A segment's snapshot, the base read as [`Committed::base`] reads it.
+    pub(super) fn rows(&self, segment: Segment) -> Result<&Snapshot, CatalogError> {
         match segment {
-            Segment::Base => self.base_rows(),
-            Segment::Delta => self.segment(Segment::Delta)?.rows(),
+            Segment::Base => self.base(),
+            Segment::Delta => self.segment(Segment::Delta),
         }
     }
 
     /// The live row at exactly `path`.
     pub(super) fn row_at(&self, path: &str) -> Result<Option<(Segment, usize)>, CatalogError> {
         if let Some(delta) = &self.delta
-            && let Some(id) = delta.rows()?.id_at(path)
+            && let Some(id) = delta.id_at(path)?
         {
             return Ok(Some((Segment::Delta, id)));
         }
         Ok(self
-            .base_rows()?
-            .id_at(path)
+            .base()?
+            .id_at(path)?
             .filter(|id| !self.hidden().hides(*id))
             .map(|id| (Segment::Base, id)))
     }
@@ -198,8 +208,8 @@ impl Committed {
         cursor: &str,
         limit: usize,
     ) -> Result<Vec<(Segment, usize)>, CatalogError> {
-        let base_rows = self.base_rows()?;
-        let after = base_rows.after(cursor);
+        let base_rows = self.base()?;
+        let after = base_rows.after(cursor)?;
         let Some(delta) = &self.delta else {
             return Ok(self
                 .base
@@ -218,14 +228,16 @@ impl Committed {
             .filter(|id| !hidden.hides(*id))
             .take(limit)
             .collect::<Vec<_>>();
-        let delta_rows = delta.rows()?;
-        let ours = delta.matches(kind, delta_rows.after(cursor), limit)?;
+        let ours = delta.matches(kind, delta.after(cursor)?, limit)?;
+        // The merge compares the paths of both lists' rows.
+        base_rows.load_chunks(base.iter().copied())?;
+        delta.load_chunks(ours.iter().copied())?;
         let mut merged = Vec::with_capacity(limit.min(base.len() + ours.len()));
         let (mut base, mut ours) = (base.into_iter().peekable(), ours.into_iter().peekable());
         while merged.len() < limit {
             let next = match (base.peek(), ours.peek()) {
                 (Some(b), Some(d)) => {
-                    if delta_rows.path(*d) < base_rows.path(*b) {
+                    if delta.path(*d)? < base_rows.path(*b)? {
                         ours.next().map(|id| (Segment::Delta, id))
                     } else {
                         base.next().map(|id| (Segment::Base, id))
@@ -240,9 +252,24 @@ impl Committed {
         Ok(merged)
     }
 
-    /// A row's path, from its decoded segment.
+    /// A row's path.
     pub(super) fn path(&self, segment: Segment, id: usize) -> Result<&str, CatalogError> {
-        Ok(self.rows(segment)?.path(id))
+        self.rows(segment)?.path(id)
+    }
+
+    /// Decodes the chunks of `rows` in each segment, in parallel where they are spread.
+    pub(super) fn load_rows(&self, rows: &[(Segment, usize)]) -> Result<(), CatalogError> {
+        for segment in [Segment::Base, Segment::Delta] {
+            let mut ids = rows
+                .iter()
+                .filter(|(row_segment, _)| *row_segment == segment)
+                .map(|(_, id)| *id)
+                .peekable();
+            if ids.peek().is_some() {
+                self.rows(segment)?.load_chunks(ids)?;
+            }
+        }
+        Ok(())
     }
 
     /// The bundle signatures of the packages at `rows` (a page, in path order): each package's
@@ -253,14 +280,14 @@ impl Committed {
         &self,
         rows: &[(Segment, usize)],
     ) -> Result<Vec<String>, CatalogError> {
-        let base = self.base_rows()?;
+        let base = self.base()?;
+        self.load_rows(rows)?;
         let Some(delta) = &self.delta else {
-            return Ok(rows
+            return rows
                 .iter()
                 .map(|(_, id)| base.bundle_signature(*id))
-                .collect());
+                .collect();
         };
-        let delta = delta.rows()?;
         let hidden = self.hidden();
         let stems = rows
             .iter()
@@ -270,10 +297,10 @@ impl Committed {
                 } else {
                     delta
                 }
-                .path(*id);
-                path.rsplit_once('.').map_or(path, |(stem, _)| stem)
+                .path(*id)?;
+                Ok(path.rsplit_once('.').map_or(path, |(stem, _)| stem))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, CatalogError>>()?;
         // Every sidecar of the page's packages sorts at or after the least `stem.` and before the
         // greatest `stem/`, so only that run of the other segment can hold one.
         let lowest = stems
@@ -284,26 +311,28 @@ impl Committed {
             .iter()
             .max_by(|a, b| cmp_joined(a, b'/', b, b'/'))
             .copied();
-        let window = |rows: &Rows| match (lowest, highest) {
-            (Some(lowest), Some(highest)) => {
-                let start = rows.before_joined(0..rows.inventory.len(), lowest, b'.');
-                start..rows.before_joined(start..rows.inventory.len(), highest, b'/')
-            }
-            _ => 0..0,
+        let window = |rows: &Snapshot| -> Result<std::ops::Range<usize>, CatalogError> {
+            Ok(match (lowest, highest) {
+                (Some(lowest), Some(highest)) => {
+                    let start = rows.before_joined(0..rows.row_count, lowest, b'.')?;
+                    start..rows.before_joined(start..rows.row_count, highest, b'/')?
+                }
+                _ => 0..0,
+            })
         };
-        let (base_window, delta_window) = (window(base), window(delta));
+        let (base_window, delta_window) = (window(base)?, window(delta)?);
         let mut signatures = Vec::with_capacity(rows.len());
         for ((segment, id), stem) in rows.iter().zip(stems) {
             let (own, own_hidden, other, other_hidden, other_window) = match segment {
                 Segment::Base => (base, Some(hidden), delta, None, &delta_window),
                 Segment::Delta => (delta, None, base, Some(hidden), &base_window),
             };
-            let entry = &own.inventory[*id];
+            let entry = own.entry(*id)?;
             let mut parts = [Some((entry.size, entry.modified_nanos)), None, None, None];
-            own.neighbour_parts(*id, stem, own_hidden, &mut parts);
+            own.neighbour_parts(*id, stem, own_hidden, &mut parts)?;
             if !other_window.is_empty() {
-                let start = other.before_joined(other_window.clone(), stem, b'.');
-                other.run_parts(start, stem, other_hidden, &mut parts);
+                let start = other.before_joined(other_window.clone(), stem, b'.')?;
+                other.run_parts(start, stem, other_hidden, &mut parts)?;
             }
             signatures.push(bundle_signature(parts));
         }
@@ -340,7 +369,7 @@ impl Committed {
                 pairs.sort_unstable();
                 (ids, positions) = pairs.into_iter().unzip();
             }
-            let snapshot = self.segment(segment)?;
+            let snapshot = self.rows(segment)?;
             let mut next = 0;
             snapshot.records(&ids, |id, header| {
                 let position = positions
@@ -357,6 +386,17 @@ impl Committed {
 
     /// Distinct live packages matching any of `filters`.
     pub(super) fn count(&self, filters: &[QueryKind]) -> Result<u64, CatalogError> {
+        // Every filter matches only packages, so an inventory filter matches every live one.
+        if filters
+            .iter()
+            .any(|filter| matches!(filter, QueryKind::Inventory))
+        {
+            return self
+                .counts()
+                .map(|(packages, _)| packages)
+                .ok_or_else(|| corrupt("tombstone counts exceed the base"));
+        }
+        self.base()?;
         let hidden = self.hidden();
         let mut count = 0;
         for (snapshot, hides) in std::iter::once((&self.base, true))
@@ -382,13 +422,12 @@ impl Committed {
         let rank = match (&self.delta, segment) {
             (None, _) => id,
             (Some(delta), Segment::Base) => {
-                let path = self.base_rows()?.path(id);
-                let rows = delta.rows()?;
-                id - hidden.before(id) + rows.before(path)
+                let path = self.base()?.path(id)?;
+                id - hidden.before(id) + delta.before(path)?
             }
             (Some(_), Segment::Delta) => {
                 let path = self.path(Segment::Delta, id)?;
-                let before = self.base_rows()?.before(path);
+                let before = self.base()?.before(path)?;
                 id + before - hidden.before(before)
             }
         };
@@ -446,7 +485,7 @@ impl DependencyGraph for MergedGraph<'_> {
     ) -> Result<Option<MergedNode>, CatalogError> {
         let committed = self.committed;
         if let Some((segment, id)) = committed.row_at(relative_path)?
-            && committed.rows(segment)?.inventory[id].kind == EntryKind::Package
+            && committed.rows(segment)?.entry(id)?.kind == EntryKind::Package
         {
             return committed.node(segment, id).map(Some);
         }
@@ -461,14 +500,14 @@ impl DependencyGraph for MergedGraph<'_> {
             }
             let rows = committed.rows(segment)?;
             let found = rows
-                .package_ids_ignoring_case(relative_path)
+                .package_ids_ignoring_case(relative_path)?
                 .into_iter()
                 .find(|id| segment == Segment::Delta || !hidden.hides(*id));
             if let Some(id) = found {
                 let better = match best {
                     None => true,
                     Some((other, other_id)) => {
-                        rows.path(id) < committed.rows(other)?.path(other_id)
+                        rows.path(id)? < committed.rows(other)?.path(other_id)?
                     }
                 };
                 if better {
@@ -501,7 +540,7 @@ impl DependencyGraph for MergedGraph<'_> {
             }
             ids.sort_unstable();
             let sorted = ids.iter().map(|(id, _)| *id).collect::<Vec<_>>();
-            let headers = self.committed.segment(segment)?.headers(&sorted)?;
+            let headers = self.committed.rows(segment)?.headers(&sorted)?;
             for ((_, position), header) in ids.into_iter().zip(headers) {
                 evidence[position] = header;
             }
@@ -542,117 +581,21 @@ impl DependencyGraph for MergedGraph<'_> {
     }
 }
 
-/// Finds base rows by path or id without decoding the whole inventory: the row index names the
-/// inventory offset of every `ROW_INDEX_INTERVAL`th row, and a lookup decodes only the stretch it
-/// needs. Uses the decoded inventory when it is already decoded.
-pub(super) struct BaseLookup<'a> {
-    snapshot: &'a Snapshot,
-    last: LastBlock,
-    bytes: Vec<u8>,
-}
-
 /// A base row found by a lookup: its id, path and entry.
 pub(super) type FoundRow = (usize, String, InventoryEntry);
 
-impl<'a> BaseLookup<'a> {
-    pub(super) fn new(snapshot: &'a Snapshot) -> Self {
-        Self {
-            snapshot,
-            last: LastBlock::default(),
-            bytes: Vec::new(),
-        }
-    }
-
-    /// The rows from checkpoint `checkpoint` to the next.
-    fn chunk(&mut self, checkpoint: usize) -> Result<Vec<FoundRow>, CatalogError> {
-        let snapshot = self.snapshot;
-        let index = snapshot.row_index()?;
-        let start = index.offsets[checkpoint];
-        let end = index
-            .offsets
-            .get(checkpoint + 1)
-            .copied()
-            .unwrap_or(snapshot.header.sections[INVENTORY].length);
-        snapshot.range_reusing(
-            &mut self.last,
-            INVENTORY,
-            start,
-            end - start,
-            &mut self.bytes,
-        )?;
-        let first = checkpoint * ROW_INDEX_INTERVAL;
-        let rows = (snapshot.row_count - first).min(ROW_INDEX_INTERVAL);
-        let mut d = Decoder::new(&self.bytes);
-        let mut found = Vec::with_capacity(rows);
-        for row in 0..rows {
-            let (path, entry) = inventory_row(&mut d, snapshot.header.sections[RECORDS].length)?;
-            if (row == 0 && path != index.paths.get(checkpoint))
-                || found
-                    .last()
-                    .is_some_and(|(_, last, _): &FoundRow| last.as_str() >= path)
-            {
-                return Err(corrupt("the row index does not match the inventory"));
-            }
-            found.push((first + row, path.to_owned(), entry));
-        }
-        d.finish()?;
-        Ok(found)
-    }
-
-    /// The row with id `id`.
-    pub(super) fn row(&mut self, id: usize) -> Result<FoundRow, CatalogError> {
-        if let Some(rows) = self.snapshot.rows.get() {
-            let entry = rows
-                .inventory
-                .get(id)
-                .ok_or_else(|| corrupt("invalid inventory id"))?;
-            return Ok((id, rows.path(id).to_owned(), entry.clone()));
-        }
-        self.chunk(id / ROW_INDEX_INTERVAL)?
-            .into_iter()
-            .find(|(found, ..)| *found == id)
-            .ok_or_else(|| corrupt("invalid inventory id"))
-    }
-
-    /// The rows whose paths start with `prefix`, in path order.
-    pub(super) fn with_prefix(&mut self, prefix: &str) -> Result<Vec<FoundRow>, CatalogError> {
-        if let Some(rows) = self.snapshot.rows.get() {
-            let mut found = Vec::new();
-            for id in rows.before(prefix)..rows.inventory.len() {
-                let path = rows.path(id);
-                if !path.starts_with(prefix) {
-                    break;
-                }
-                found.push((id, path.to_owned(), rows.inventory[id].clone()));
-            }
-            return Ok(found);
-        }
-        let index = self.snapshot.row_index()?;
-        let checkpoints = index.offsets.len();
-        // The last checkpoint at or before `prefix`: the first row at or after it is in its chunk
-        // or a later one.
-        let (mut low, mut high) = (0, checkpoints);
-        while low < high {
-            let middle = low + (high - low) / 2;
-            if index.paths.get(middle) <= prefix {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
-        }
-        let mut checkpoint = low.saturating_sub(1);
+impl Snapshot {
+    /// The rows whose paths start with `prefix`, in path order; only their chunks are decoded.
+    pub(super) fn rows_with_prefix(&self, prefix: &str) -> Result<Vec<FoundRow>, CatalogError> {
         let mut found = Vec::new();
-        while checkpoint < checkpoints {
-            for row in self.chunk(checkpoint)? {
-                if row.1.as_str() < prefix {
-                    continue;
-                }
-                if !row.1.starts_with(prefix) {
-                    return Ok(found);
-                }
-                found.push(row);
+        let mut id = self.before(prefix)?;
+        while id < self.row_count {
+            let (path, entry) = self.row(id)?;
+            if !path.starts_with(prefix) {
+                break;
             }
-            checkpoint += 1;
+            found.push((id, path.to_owned(), entry.clone()));
+            id += 1;
         }
         Ok(found)
     }

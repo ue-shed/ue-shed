@@ -815,11 +815,30 @@ export type ProtocolProcessFactory = (
 	options: { readonly signal: AbortSignal | undefined; readonly timeoutMs: number }
 ) => ProtocolProcess;
 
+/**
+ * Milliseconds mimalloc keeps freed pages before returning them, for one-shot and refresh workers:
+ * its default keeps a finished phase's pages resident while the next allocates (a large build's
+ * peak 690 to 440 MiB, ~2% slower). Query sessions keep the default; this slowed paging ~10%.
+ */
+const NATIVE_ALLOCATOR_PURGE_DELAY_MS = "0";
+
+/**
+ * @internal The environment a refreshing or one-shot native process starts with: `environment`
+ * itself, with the allocator's purge delay set unless the caller already chose one.
+ */
+export function nativeProcessEnvironment(
+	environment: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+	if (environment["MIMALLOC_PURGE_DELAY"] !== undefined) return environment;
+	return { ...environment, MIMALLOC_PURGE_DELAY: NATIVE_ALLOCATOR_PURGE_DELAY_MS };
+}
+
 function spawnProtocolProcess(
 	executable: string,
 	options: { readonly signal: AbortSignal | undefined; readonly timeoutMs: number }
 ): ProtocolProcess {
 	return spawn(executable, ["protocol"], {
+		env: nativeProcessEnvironment(),
 		signal: options.signal,
 		timeout: options.timeoutMs,
 		windowsHide: true
@@ -907,8 +926,14 @@ async function waitForProtocolClose(
 	}
 }
 
-function spawnProtocolSession(executable: string): ProtocolSessionProcess {
-	const child = spawn(executable, ["protocol-session"], { windowsHide: true });
+function spawnProtocolSession(
+	executable: string,
+	environment?: NodeJS.ProcessEnv
+): ProtocolSessionProcess {
+	const child = spawn(executable, ["protocol-session"], {
+		...(environment === undefined ? undefined : { env: environment }),
+		windowsHide: true
+	});
 	return {
 		get exitCode() {
 			return child.exitCode;
@@ -934,6 +959,14 @@ function spawnProtocolSession(executable: string): ProtocolSessionProcess {
 		stdout: child.stdout,
 		unref: () => child.unref()
 	};
+}
+
+/**
+ * @internal Session workers for Project Index refreshes, started with the allocator returning
+ * freed memory at once (see `nativeProcessEnvironment`).
+ */
+export function refreshProtocolSessionFactory(executable: string): ProtocolSessionProcessFactory {
+	return () => spawnProtocolSession(executable, nativeProcessEnvironment());
 }
 
 /** A scoped native protocol worker. Calls must be serialized by its owner. */

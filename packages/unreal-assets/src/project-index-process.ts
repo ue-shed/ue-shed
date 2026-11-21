@@ -43,6 +43,7 @@ import {
 import {
 	ProtocolStreamFailure,
 	type ProtocolEvent,
+	refreshProtocolSessionFactory,
 	UassetProtocolSession,
 	makeProtocolRequest,
 	runUassetProtocolEvents
@@ -811,7 +812,13 @@ const makeProcessService = Effect.fn("ProjectIndexProcess.make")(function* (
 	const worker: RefreshWorker = {
 		queue: new RefreshQueue(),
 		session: yield* Effect.acquireRelease(
-			Effect.sync(() => new UassetProtocolSession(configuration)),
+			Effect.sync(
+				() =>
+					new UassetProtocolSession(
+						configuration,
+						refreshProtocolSessionFactory(configuration.executable)
+					)
+			),
 			(session) => Effect.promise(() => session.close())
 		)
 	};

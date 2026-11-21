@@ -137,33 +137,37 @@ fn packages(listing: &SignatureArena) -> Vec<DiskPackage> {
     (0..listing.len())
         .filter(|row| listing.kind(*row) == EntryKind::Package)
         .map(|row| {
-            let path = listing.path(row);
-            let stem = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
+            let path = listing.path(row).to_string();
+            let stem = path
+                .rsplit_once('.')
+                .map_or(path.as_str(), |(stem, _)| stem);
             let mut parts = [
                 Some((listing.size(row), listing.modified_nanos(row))),
                 None,
                 None,
                 None,
             ];
-            let shares_stem = |other: &str| {
-                other.len() > stem.len()
-                    && other.starts_with(stem)
-                    && other.as_bytes()[stem.len()] == b'.'
+            // A sidecar's path is the stem, a `.`, and its extension.
+            let extension = |other: usize| {
+                listing
+                    .path(other)
+                    .strip_prefix(stem)
+                    .filter(|rest| rest.starts_with('.'))
             };
             let neighbours = (0..row)
                 .rev()
-                .take_while(|other| shares_stem(listing.path(*other)))
+                .map_while(|other| Some((other, extension(other)?)))
                 .chain(
-                    (row + 1..listing.len()).take_while(|other| shares_stem(listing.path(*other))),
+                    (row + 1..listing.len()).map_while(|other| Some((other, extension(other)?))),
                 );
-            for other in neighbours {
-                let extension = &listing.path(other)[stem.len() + 1..];
+            for (other, extension) in neighbours {
+                let extension = &extension[1..];
                 if let Some(slot) = SIDECARS.iter().position(|sidecar| *sidecar == extension) {
                     parts[slot + 1] = Some((listing.size(other), listing.modified_nanos(other)));
                 }
             }
             DiskPackage {
-                path: path.to_owned(),
+                path: path.clone(),
                 signature: bundle_signature(parts),
             }
         })

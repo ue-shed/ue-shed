@@ -219,6 +219,8 @@ fn visit_directory(
 ) -> Result<(), Failure> {
     checkpoint(cancellation, "discovery")?;
     let entries = fs::read_dir(directory).map_err(|error| discovery_failure(directory, error))?;
+    // The directory's path is stored once, with its first package or sidecar.
+    let mut stored = None;
     for entry in entries {
         checkpoint(cancellation, "discovery")?;
         if queue.stopped.load(Ordering::Relaxed) {
@@ -256,8 +258,10 @@ fn visit_directory(
             let metadata = entry
                 .metadata()
                 .map_err(|error| discovery_failure(&entry.path(), error))?;
-            signatures.push(
-                &[prefix, &name.to_string_lossy()],
+            let directory = *stored.get_or_insert_with(|| signatures.directory(prefix));
+            signatures.push_named(
+                directory,
+                &name.to_string_lossy(),
                 kind,
                 metadata.len(),
                 metadata_modified_nanos(&metadata),

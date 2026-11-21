@@ -366,7 +366,8 @@ pub(crate) fn open_root_filtered(
                     .find(|entry| entry.name == "join.meta")
                     .is_some_and(|entry| entry.raw <= 16 * 1024 * 1024)
                     && let Ok(bytes) = section(&layer, "join.meta")
-                    && let Ok(meta) = serde_json::from_slice::<Value>(&bytes)
+                    && let Ok(text) = std::str::from_utf8(&bytes)
+                    && let Ok(meta) = crate::json_value::parse(text)
                 {
                     if let Some(base) = meta["base"].as_str() {
                         needed_layers.insert(base.to_owned());
@@ -2146,12 +2147,14 @@ mod tests {
         let active_dep = dep_keys.last().unwrap().clone();
         let joined_raw = config.cache_root.join("joined.snapshot");
         let mut writer = Writer::new(&config.cache_root.join("p-joined")).unwrap();
-        let meta = serde_json::to_vec(&json!({
-            "version": 3,
-            "generation": store.root["generation"],
-            "dependencies": { "shard-0": active_dep },
-        }))
-        .unwrap();
+        // Include an escaped lone UTF-16 surrogate in `join.meta` to verify dependency
+        // selection uses the same surrogate-preserving decoder as `EngineReader`.
+        let meta = format!(
+            r#"{{"version":3,"generation":{},"surrogate":"\uD800","dependencies":{{"shard-0":{}}}}}"#,
+            serde_json::to_string(&store.root["generation"]).unwrap(),
+            serde_json::to_string(&active_dep).unwrap()
+        )
+        .into_bytes();
         let meta_id = writer.add("join.meta", 0, "", &meta, 0).unwrap();
         writer.finish(&joined_raw, &[meta_id]).unwrap();
         store

@@ -3,12 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assetReaderLayer } from "@ue-shed/unreal-assets";
-import { Effect, Layer, type Stream } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 import { GameTextIndexBuilder } from "./index-builder.js";
 import { GameTextIndexSource } from "./index-refresh.js";
 import { gameTextIndexSourceNodeLayer } from "./index-source-node.js";
 import { nativeIndexBuilderLayer } from "./native-index-builder.js";
+import { mountPackageTextEvent } from "./package-object-path.js";
 import { decodePackageTextColumns } from "./package-text-columns.js";
 import type { PackageTextRefreshInput } from "./package-text-layer.js";
 import { SharedIndex, sharedIndexNodeLayer } from "./shared-index.js";
@@ -37,7 +38,7 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 			cacheRoot: string,
 			native: boolean,
 			changedFiles?: readonly string[],
-			coldMinimumPackages: number | undefined = 1
+			coldMinimumPackages?: number
 		) =>
 			Effect.gen(function* () {
 				const source = yield* GameTextIndexSource;
@@ -45,6 +46,7 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 				const catalog = native ? yield* source.catalog!({ projectRoot }) : undefined;
 				const inventory = native ? [] : yield* source.inventory({ projectRoot });
 				const byPath = new Map(inventory.map((entry) => [entry.path, entry]));
+				let hostReadCalls = 0;
 				const input: PackageTextRefreshInput<
 					Stream.Error<ReturnType<typeof source.read>>,
 					never
@@ -52,14 +54,21 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 					...(catalog ? { catalog } : { inventory }),
 					...(changedFiles ? { changedFiles } : undefined),
 					...(coldMinimumPackages === undefined ? undefined : { coldMinimumPackages }),
-					read: (paths, signatures) =>
-						source.read(
-							projectRoot,
-							paths.map(
-								(path) =>
-									byPath.get(path) ?? { path, signature: signatures.get(path)! }
+					read: (paths, signatures) => {
+						hostReadCalls++;
+						return source
+							.read(
+								projectRoot,
+								paths.map(
+									(path) =>
+										byPath.get(path) ?? {
+											path,
+											signature: signatures.get(path)!
+										}
+								)
 							)
-						),
+							.pipe(Stream.map((event) => mountPackageTextEvent(projectRoot, event)));
+					},
 					stage: {
 						projectRoot,
 						read: (paths, directory, groups, snapshots) =>
@@ -94,14 +103,14 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 							};
 					return layers;
 				}).pipe(Effect.provide(sharedIndexNodeLayer(configuration)));
-				return { result, layers };
+				return { result, layers, hostReadCalls };
 			});
 		try {
 			const outcome = await Effect.runPromise(
 				Effect.scoped(
 					Effect.gen(function* () {
-						const host = yield* build(join(root, "host"), false);
-						const native = yield* build(join(root, "native"), true);
+						const host = yield* build(join(root, "host"), false, undefined, 1);
+						const native = yield* build(join(root, "native"), true, undefined, 1);
 						const nativeBelowThreshold = yield* build(
 							join(root, "native-below-threshold"),
 							true,
@@ -117,8 +126,8 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 							host,
 							native,
 							nativeBelowThreshold,
-							retained: yield* build(join(root, "native"), true, changed),
-							unchanged: yield* build(join(root, "native"), true)
+							retained: yield* build(join(root, "native"), true, changed, 1),
+							unchanged: yield* build(join(root, "native"), true, undefined, 1)
 						};
 					})
 				).pipe(Effect.provide(layer))
@@ -127,8 +136,10 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 			expect(outcome.native.layers).toEqual(outcome.host.layers);
 			expect(outcome.native.result.readPackages).toBeGreaterThan(0);
 			expect(outcome.native.result.readPackages).toBe(outcome.host.result.readPackages);
-			// A native-planned cold build below the default 256-package staging threshold still
-			// reads the binary plan file on the host rebuild path and publishes identical layers.
+			expect(outcome.native.hostReadCalls).toBe(0);
+			// A native-planned cold build below the default 256-package staging threshold must
+			// read the binary plan file on the host rebuild path and publish identical layers.
+			expect(outcome.nativeBelowThreshold.hostReadCalls).toBeGreaterThan(0);
 			expect(outcome.nativeBelowThreshold.layers).toEqual(outcome.host.layers);
 			expect(outcome.nativeBelowThreshold.result.readPackages).toBe(
 				outcome.host.result.readPackages

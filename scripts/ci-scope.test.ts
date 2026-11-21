@@ -14,8 +14,8 @@ import {
 } from "./ci-scope.ts";
 import type { WorkspaceManifest } from "./workspace-manifests.ts";
 
-const none = { uasset_io: false, uasset_libraries: false, catalog_oracle: false, site: false };
-const all = { uasset_io: true, uasset_libraries: true, catalog_oracle: true, site: true };
+const none = { uasset_io: false, uasset_libraries: false, site: false };
+const all = { uasset_io: true, uasset_libraries: true, site: true };
 const site = ["apps/site", "packages/ui", "packages/protocol", "extensions/data-authoring"];
 
 void test("planning and engine-only changes do not schedule unrelated portable native/browser lanes", () => {
@@ -48,7 +48,7 @@ void test("main and shared toolchain/dependency/workflow changes always exercise
 	}
 });
 
-void test("Game Text, native index and CLI changes exercise IO without the site or Catalog oracle", () => {
+void test("Game Text, native index and CLI changes exercise IO without the site", () => {
 	for (const file of [
 		"packages/game-text/src/entry-schema.ts",
 		"crates/game-text-index/src/lib.rs",
@@ -57,14 +57,11 @@ void test("Game Text, native index and CLI changes exercise IO without the site 
 		"crates/engine-process-supervisor/src/main.rs",
 		"apps/cli/src/localization.test.ts",
 		"scripts/native-game-text-join.test.ts",
-		"scripts/package-text-reader.test-support.ts"
+		"scripts/package-text-reader.test-support.ts",
+		"crates/uasset-io/src/direct_executor/catalog_binary.rs"
 	]) {
 		assert.deepEqual(selectCiScope([file], site, false), { ...none, uasset_io: true }, file);
 	}
-	assert.deepEqual(
-		selectCiScope(["crates/uasset-io/src/direct_executor/catalog_binary.rs"], site, false),
-		{ ...none, uasset_io: true, catalog_oracle: true }
-	);
 });
 
 void test("parser and saved-byte changes keep downstream IO and browser conformance", () => {
@@ -74,11 +71,7 @@ void test("parser and saved-byte changes keep downstream IO and browser conforma
 		"fixtures/unreal-project/Content/Fixture/Map.umap",
 		"scripts/build-uasset-wasm.ts"
 	]) {
-		assert.deepEqual(
-			selectCiScope([file], site, false),
-			{ ...all, catalog_oracle: false },
-			file
-		);
+		assert.deepEqual(selectCiScope([file], site, false), all, file);
 	}
 	assert.deepEqual(
 		selectCiScope(

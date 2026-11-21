@@ -226,7 +226,7 @@ to this plan.
   beside it as evidence. Object, import and export paths use the mounted name.
 - Remove the guessing in `packages/game-text/src/package-object-path.ts` once the reader is right.
 - Follow through catalog and project index (`crates/uasset-io/.../scanner.rs:90`, `catalog.rs:70`,
-  `catalog_sqlite.rs:637`, `project_io.rs:1297`, `packages/unreal-assets/src/project-index.ts:127,135`,
+  `project_io.rs:1297`, `packages/unreal-assets/src/project-index.ts:127,135`,
   `asset-reader.ts:369,441`), maps (`saved_world.rs:282`, `project_io.rs:2180-2196`,
   `level_sequence.rs:547`), inspection (`generic.rs`, `generic/json.rs`, `saved_inspection.rs`) and
   Game Text (`corpus.ts:186-215`, `representation-copies.ts:82-120`).

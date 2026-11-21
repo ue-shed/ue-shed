@@ -60,8 +60,7 @@ On pull requests, the UAsset library and IO suites run when their Rust, WASM, pa
 script, or fixture inputs change. Both share one `UAsset` job, so a run uses one setup and one boat
 start for them; the IO suite still runs when the library suite fails. Parser and inspection changes also trigger downstream IO
 conformance; WASM-package-only changes do not. The website browser lane follows the site's transitive workspace dependencies,
-saved fixtures, media, scripts and configuration. The SQLite Catalog oracle follows `crates/uasset-io`
-and shared build inputs instead of every IO consumer change. Pushes to `main` and manual workflow
+saved fixtures, media, scripts and configuration. Pushes to `main` and manual workflow
 dispatches run all lanes as a backstop. Native-reader CLI and fixture integration tests run in the
 conditional IO lane, not in the always-on repository suite. Run the complete portable gate locally with:
 
@@ -151,12 +150,12 @@ reads the remaining starts from boat's `GET /limits` with the `BOAT_API_KEY` sec
 hour's remaining starts cover the run's boat jobs plus a headroom of 6 for runs starting at the same
 time; otherwise, and whenever boat gives no answer or the secret is missing (as on pull requests
 from forks), those jobs use `ubuntu-24.04`. A job over boat's limit would otherwise wait until the
-window clears. Input selection, the website and Catalog lanes, and the aggregate status always use
+window clears. Input selection, the website lane, and the aggregate status always use
 `ubuntu-24.04` GitHub-hosted runners. Changes to the
 workflow itself enable both conditional UAsset suites. The aggregate status requires the repository job to succeed and accepts only success or
 an intentional skip from the conditional jobs, including the website lane. A failed selection job
-blocks the aggregate gate. The Catalog job runs its SQLite-specific suite and differential oracle;
-ordinary IO library tests remain in the IO suite instead of running twice. Rust compilation uses sccache
+blocks the aggregate gate. The binary Catalog's differential test against the in-memory reference
+Catalog runs in the IO suite with the other IO library tests. Rust compilation uses sccache
 with the GitHub Actions cache backend; pnpm uses the setup-node dependency cache. Evidence and failure diagnostics
 remain GitHub Actions artifacts.
 

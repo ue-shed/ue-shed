@@ -12,6 +12,9 @@ parser.add_argument("output", type=Path)
 parser.add_argument("--serialized-names", choices=["postings", "scan"], default="postings")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
+if not (root / "crates/uasset-io/src/direct_executor/catalog_sqlite.rs").is_file():
+    raise SystemExit("This experiment needs the retired SQLite Catalog oracle; "
+                     "run it from commit 4fe9c8e9 or earlier.")
 out = args.output.resolve()
 copy_source_snapshot(root, out)
 source = (root / "tools/benchmarks/catalog-manifest-research.rs").read_text(encoding="utf-8")

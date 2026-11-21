@@ -30,12 +30,8 @@ pub(crate) struct TaggedStreamReplay<'a> {
     /// The host filter every replayed record is decoded under, fixed for the replay's life.
     plan_filter: Option<&'a dyn crate::asset::PropertyDecodeFilter>,
     plans_ready: bool,
-    /// The filter lets declined records be left out of replayed streams.
-    omit_unrequested: bool,
-    /// Omission is on and the filter declines every record, so a match yields no records.
-    all_not_requested: bool,
-    /// How many records a match keeps: every record, or those the filter may request.
-    retained: usize,
+    /// How many records were not declined by header-only filter plans (independent of omission).
+    requested_count: usize,
 }
 
 impl<'a> TaggedStreamReplay<'a> {
@@ -101,9 +97,7 @@ impl<'a> TaggedStreamReplay<'a> {
             plan_package: None,
             plan_filter: None,
             plans_ready: false,
-            omit_unrequested: false,
-            all_not_requested: false,
-            retained: 0,
+            requested_count: 0,
         })
     }
 
@@ -119,7 +113,8 @@ impl<'a> TaggedStreamReplay<'a> {
         self
     }
 
-    // Cold, never-reused layouts do not need semantic plans.
+    // Cold, never-reused layouts do not need semantic plans. Plans are independent of whether
+    // the current decode permits omitting declined records; callers pass `omit_unrequested`.
     fn prepare_plans(&mut self) {
         if !self.plans_ready {
             if let Some(package) = self.plan_package {
@@ -130,12 +125,12 @@ impl<'a> TaggedStreamReplay<'a> {
                         self.plan_filter,
                     );
                 }
-                self.omit_unrequested = self
-                    .plan_filter
-                    .is_some_and(|filter| filter.omit_unrequested_records());
             }
-            self.retained = self.tags.iter().filter(|tag| !self.omits(tag.plan)).count();
-            self.all_not_requested = self.omit_unrequested && self.retained == 0;
+            self.requested_count = self
+                .tags
+                .iter()
+                .filter(|tag| !matches!(tag.plan, crate::codec::ReplayDecodePlan::NotRequested))
+                .count();
             self.plans_ready = true;
         }
     }
@@ -151,8 +146,9 @@ impl<'a> TaggedStreamReplay<'a> {
     }
 
     /// Whether a record with this plan is left out of replayed streams without being built.
-    fn omits(&self, plan: crate::codec::ReplayDecodePlan) -> bool {
-        self.omit_unrequested && matches!(plan, crate::codec::ReplayDecodePlan::NotRequested)
+    #[inline]
+    fn omits(omit_unrequested: bool, plan: crate::codec::ReplayDecodePlan) -> bool {
+        omit_unrequested && matches!(plan, crate::codec::ReplayDecodePlan::NotRequested)
     }
 
     /// A miss leaves the cursor untouched so the ordinary parser owns every diagnostic.
@@ -162,8 +158,10 @@ impl<'a> TaggedStreamReplay<'a> {
         reader: &mut Reader<'_>,
         path: &(impl fmt::Display + ?Sized),
     ) -> Option<PropertyStream> {
-        self.try_read_with(reader, path, |_, _| Ok::<(), super::PropertyError>(()))
-            .and_then(Result::ok)
+        self.try_read_with(reader, path, false, |_, _| {
+            Ok::<(), super::PropertyError>(())
+        })
+        .and_then(Result::ok)
     }
 
     /// Check every header before invoking the decoder on each record in its final slot.
@@ -171,6 +169,7 @@ impl<'a> TaggedStreamReplay<'a> {
         &mut self,
         reader: &mut Reader<'_>,
         path: &(impl fmt::Display + ?Sized),
+        omit_unrequested: bool,
         mut decode: impl FnMut(
             &mut super::PropertyRecord,
             crate::codec::ReplayDecodePlan,
@@ -222,14 +221,19 @@ impl<'a> TaggedStreamReplay<'a> {
             .ok()
         };
         let terminator = relocate(self.stream.terminator)?;
-        if self.all_not_requested {
+        if omit_unrequested && self.requested_count == 0 {
             *reader = probe;
             return Some(Ok(self.empty_stream(terminator)));
         }
-        let mut records = Vec::with_capacity(self.retained);
+        let capacity = if omit_unrequested {
+            self.requested_count
+        } else {
+            self.tags.len()
+        };
+        let mut records = Vec::with_capacity(capacity);
         for (record, tag) in self.stream.records.iter().zip(&self.tags) {
-            // Declined headers were validated above; their records are never built.
-            if self.omits(tag.plan) {
+            // Declined headers were validated above; their records are never built when omitting.
+            if Self::omits(omit_unrequested, tag.plan) {
                 continue;
             }
             let record = super::PropertyRecord {
@@ -251,7 +255,7 @@ impl<'a> TaggedStreamReplay<'a> {
                     *reader = probe;
                     return Some(Err(error));
                 }
-                if self.omit_unrequested && crate::codec::is_not_requested(record) {
+                if omit_unrequested && crate::codec::is_not_requested(record) {
                     records.pop();
                 }
             }
@@ -350,6 +354,7 @@ impl<'a> TaggedStreamReplay<'a> {
         &mut self,
         reader: &mut Reader<'_>,
         path: &(impl fmt::Display + ?Sized),
+        omit_unrequested: bool,
         mut decode: impl FnMut(
             &mut super::PropertyRecord,
             crate::codec::ReplayDecodePlan,
@@ -368,15 +373,20 @@ impl<'a> TaggedStreamReplay<'a> {
         };
         let (probe, terminator) = self.match_variable(reader, path, spans)?;
         self.prepare_plans();
-        if self.all_not_requested {
+        if omit_unrequested && self.requested_count == 0 {
             *reader = probe;
             return Some(Ok(self.empty_stream(terminator)));
         }
-        let mut records = Vec::with_capacity(self.retained);
+        let capacity = if omit_unrequested {
+            self.requested_count
+        } else {
+            self.tags.len()
+        };
+        let mut records = Vec::with_capacity(capacity);
         for ((original, tag), &(payload, flags)) in
             self.stream.records.iter().zip(&self.tags).zip(spans.iter())
         {
-            if self.omits(tag.plan) {
+            if Self::omits(omit_unrequested, tag.plan) {
                 continue;
             }
             records.push(super::PropertyRecord {
@@ -397,7 +407,7 @@ impl<'a> TaggedStreamReplay<'a> {
                     *reader = probe;
                     return Some(Err(error));
                 }
-                if self.omit_unrequested && crate::codec::is_not_requested(record) {
+                if omit_unrequested && crate::codec::is_not_requested(record) {
                     records.pop();
                 }
             }
@@ -418,16 +428,18 @@ pub(crate) fn read_with_any<E>(
     replays: &mut [TaggedStreamReplay<'_>],
     reader: &mut Reader<'_>,
     path: &(impl fmt::Display + ?Sized),
+    omit_unrequested: bool,
     decode: impl FnMut(&mut super::PropertyRecord, crate::codec::ReplayDecodePlan) -> Result<(), E>
     + Copy,
 ) -> Option<(usize, Result<PropertyStream, E>)> {
     for (slot, replay) in replays.iter_mut().enumerate() {
-        if let Some(stream) = replay.try_read_with(reader, path, decode) {
+        if let Some(stream) = replay.try_read_with(reader, path, omit_unrequested, decode) {
             return Some((slot, stream));
         }
     }
     for (slot, replay) in replays.iter_mut().enumerate() {
-        if let Some(stream) = replay.try_read_variable_with(reader, path, decode) {
+        if let Some(stream) = replay.try_read_variable_with(reader, path, omit_unrequested, decode)
+        {
             return Some((slot, stream));
         }
     }
@@ -760,7 +772,7 @@ mod transactional_replay_tests {
         let mut reader = Reader::new(&bytes);
         reader.seek(start, "Row").unwrap();
         let (slot, stream) =
-            read_with_any(&mut replays, &mut reader, "Row", keep).expect("a match");
+            read_with_any(&mut replays, &mut reader, "Row", false, keep).expect("a match");
         assert_eq!(slot, 1, "an exact layout is preferred over a variable one");
         assert_eq!(reader.tell(), bytes.len() as u64);
         let mut ordinary = Reader::new(&bytes);
@@ -785,7 +797,7 @@ mod transactional_replay_tests {
                 let mut replay = learn(&bytes, 0);
                 let mut reader = Reader::new(&mutated);
                 reader.seek(start, "Row").unwrap();
-                match replay.try_read_variable_with(&mut reader, "Row", keep) {
+                match replay.try_read_variable_with(&mut reader, "Row", false, keep) {
                     None => assert_eq!(reader.tell(), start),
                     Some(stream) => {
                         let mut ordinary = Reader::new(&mutated);
@@ -853,11 +865,11 @@ mod transactional_replay_tests {
             let mut reader = Reader::new(&bytes);
             reader.seek(first.len() as u64, "Row").unwrap();
             let exact_stream = replay
-                .try_read_with(&mut reader, "Row", decode)
+                .try_read_with(&mut reader, "Row", omit, decode)
                 .unwrap()
                 .unwrap();
             let variable_stream = replay
-                .try_read_variable_with(&mut reader, "Row", decode)
+                .try_read_variable_with(&mut reader, "Row", omit, decode)
                 .unwrap()
                 .unwrap();
             assert_eq!(reader.tell(), bytes.len() as u64);
@@ -899,13 +911,13 @@ mod transactional_replay_tests {
         let mut reader = Reader::new(&bytes);
         reader.seek(first.len() as u64, "Row").unwrap();
         let stream = replay
-            .try_read_with(&mut reader, "Row", keep)
+            .try_read_with(&mut reader, "Row", true, keep)
             .unwrap()
             .unwrap();
         assert!(stream.records.is_empty());
         assert_eq!(stream.terminator.end(), (first.len() + exact.len()) as u64);
         let stream = replay
-            .try_read_variable_with(&mut reader, "Row", keep)
+            .try_read_variable_with(&mut reader, "Row", true, keep)
             .unwrap()
             .unwrap();
         assert!(stream.records.is_empty());
@@ -920,7 +932,7 @@ mod transactional_replay_tests {
             .unwrap();
         assert!(
             replay
-                .try_read_variable_with(&mut reader, "Row", keep)
+                .try_read_variable_with(&mut reader, "Row", true, keep)
                 .is_none()
         );
         assert_eq!(reader.tell(), (first.len() + exact.len()) as u64);

@@ -960,6 +960,7 @@ fn decode_data_table_rows(
             &mut replays,
             reader,
             &format_args!("{object_path}.Rows[{index}].Value"),
+            scope.omits_unrequested(),
             decode,
         );
         let (mut row_properties, decoded) = if let Some((slot, stream)) = matched {
@@ -3702,6 +3703,7 @@ fn read_uobject_stream_with_replay<'a>(
                     replays,
                     reader,
                     export.object_path.as_str(),
+                    scope.omits_unrequested(),
                     decode,
                 ) {
                     replays[..=index].rotate_right(1);

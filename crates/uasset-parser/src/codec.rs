@@ -57,6 +57,12 @@ impl<'f> DecodeScope<'f> {
         }
     }
 
+    /// Whether this decode's filter allows omitting declined records.
+    #[inline]
+    pub(crate) fn omits_unrequested(self) -> bool {
+        self.omit_unrequested
+    }
+
     fn nested(self) -> Self {
         Self {
             depth: self.depth + 1,
@@ -2262,9 +2268,13 @@ impl<'a> ElementReplays<'a> {
             let decode = |record: &mut PropertyRecord, plan| {
                 decode_replayed_property_record(source, record, package, scope, plan)
             };
-            if let Some((slot, stream)) =
-                crate::property::read_with_any(&mut self.replays, payload, path, decode)
-            {
+            if let Some((slot, stream)) = crate::property::read_with_any(
+                &mut self.replays,
+                payload,
+                path,
+                scope.omits_unrequested(),
+                decode,
+            ) {
                 self.replays[..=slot].rotate_right(1);
                 self.misses = 0;
                 #[cfg(test)]

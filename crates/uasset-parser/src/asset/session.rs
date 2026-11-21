@@ -48,6 +48,13 @@ pub(super) struct SummaryFlags {
     pub(super) tail: TailSummary,
 }
 
+/// Package-only facts for one class path, valid for any schema provider.
+#[derive(Clone, Copy)]
+struct PackageClassFacts {
+    binary_only: bool,
+    graph_node_class: bool,
+}
+
 /// How exports of one class dispatch, and the native tail facts of their class.
 #[derive(Clone, Copy)]
 pub(super) struct ClassFacts {
@@ -62,7 +69,11 @@ const MAX_CACHED_CLASSES: usize = 4096;
 
 pub(super) struct SessionTables {
     pub(super) summary: SummaryFlags,
-    /// Facts per class index, with the class path they were computed for.
+    /// Whether `context.schemas` promised immutable answers for this session's lifetime.
+    stable_schemas: bool,
+    /// Package-only class facts per class index, with the class path they were computed for.
+    package_classes: FnvMap<PackageIndex, (ObjectPath, PackageClassFacts)>,
+    /// Full facts per class index, populated only when `stable_schemas` is true.
     classes: FnvMap<PackageIndex, (ObjectPath, ClassFacts)>,
     /// One flag per package name for the parser's own reads; only filtered decodes ask.
     pub(super) decoder_read_names: Option<Vec<bool>>,
@@ -81,6 +92,8 @@ impl SessionTables {
                 }),
                 tail: TailSummary::of(package),
             },
+            stable_schemas: context.schemas.has_stable_schemas(),
+            package_classes: FnvMap::default(),
             classes: FnvMap::default(),
             decoder_read_names: context
                 .property_filter
@@ -90,25 +103,56 @@ impl SessionTables {
 
     /// The facts of `export`'s class. An export whose class path differs from the one cached
     /// for its class index (possible only for exports built outside the package) is answered
-    /// without the cache.
+    /// without the cache. Schema-derived facts are cached only when the provider promises
+    /// immutable schemas for the session.
     pub(super) fn class_facts(
         &mut self,
         export: &Export,
         class_path: &ObjectPath,
         context: &AssetDecodeContext<'_>,
     ) -> ClassFacts {
-        if let Some((cached_path, facts)) = self.classes.get(&export.class_index) {
-            if cached_path == class_path {
-                return *facts;
+        if self.stable_schemas {
+            if let Some((cached_path, facts)) = self.classes.get(&export.class_index) {
+                if cached_path == class_path {
+                    return *facts;
+                }
+                return self.compute(export, class_path, context);
             }
-            return self.compute(export, class_path, context);
+            let facts = self.compute(export, class_path, context);
+            if self.classes.len() < MAX_CACHED_CLASSES {
+                self.classes
+                    .insert(export.class_index, (class_path.clone(), facts));
+            }
+            return facts;
         }
-        let facts = self.compute(export, class_path, context);
-        if self.classes.len() < MAX_CACHED_CLASSES {
-            self.classes
-                .insert(export.class_index, (class_path.clone(), facts));
+        let package_facts =
+            if let Some((cached_path, facts)) = self.package_classes.get(&export.class_index) {
+                if cached_path == class_path {
+                    *facts
+                } else {
+                    Self::compute_package_facts(class_path)
+                }
+            } else {
+                let facts = Self::compute_package_facts(class_path);
+                if self.package_classes.len() < MAX_CACHED_CLASSES {
+                    self.package_classes
+                        .insert(export.class_index, (class_path.clone(), facts));
+                }
+                facts
+            };
+        ClassFacts {
+            binary_only: package_facts.binary_only,
+            graph_node_class: package_facts.graph_node_class,
+            modeled: ModeledDispatch::of(context.schemas, class_path),
+            tail: ObjectTailFacts::of(export, context, self.summary.tail),
         }
-        facts
+    }
+
+    fn compute_package_facts(class_path: &ObjectPath) -> PackageClassFacts {
+        PackageClassFacts {
+            binary_only: is_binary_only_export_class(class_path.as_str()),
+            graph_node_class: is_blueprint_graph_node_class(class_path.as_str()),
+        }
     }
 
     fn compute(
@@ -117,9 +161,10 @@ impl SessionTables {
         class_path: &ObjectPath,
         context: &AssetDecodeContext<'_>,
     ) -> ClassFacts {
+        let package_facts = Self::compute_package_facts(class_path);
         ClassFacts {
-            binary_only: is_binary_only_export_class(class_path.as_str()),
-            graph_node_class: is_blueprint_graph_node_class(class_path.as_str()),
+            binary_only: package_facts.binary_only,
+            graph_node_class: package_facts.graph_node_class,
             modeled: ModeledDispatch::of(context.schemas, class_path),
             tail: ObjectTailFacts::of(export, context, self.summary.tail),
         }

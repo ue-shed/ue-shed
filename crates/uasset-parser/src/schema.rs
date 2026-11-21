@@ -269,9 +269,20 @@ pub trait SchemaProvider {
     fn class_is_a_str(&self, path: &str, base_path: &str) -> bool {
         self.class_is_a(&ObjectPath::new(path), base_path)
     }
+
+    /// Whether this provider returns the same class, struct and native-layout schemas for the
+    /// entire lifetime of a shared borrow. Returning `true` allows [`crate::asset::AssetDecodeSession`]
+    /// to cache schema-derived dispatch and native-tail facts across exports.
+    fn has_stable_schemas(&self) -> bool {
+        false
+    }
 }
 
 impl SchemaProvider for SourceModel {
+    fn has_stable_schemas(&self) -> bool {
+        true
+    }
+
     fn native_layout(&self, cpp_name: &str) -> Option<&NativeLayout> {
         self.native_layouts.get(cpp_name)
     }

@@ -272,6 +272,8 @@ impl SqliteCatalog {
 }
 
 impl Catalog for SqliteCatalog {
+    type Preparer = PlainEvidence;
+
     fn status(&self) -> CatalogStatus {
         self.manifest
             .as_ref()
@@ -395,6 +397,33 @@ impl Catalog for SqliteCatalog {
         self.writes.evidence_write_duration += started.elapsed();
         Ok(())
     }
+    fn evidence_preparer(&mut self, _token: &StagingToken) -> Result<PlainEvidence, CatalogError> {
+        Ok(PlainEvidence)
+    }
+
+    fn stage_prepared(
+        &mut self,
+        token: &StagingToken,
+        signature: &PackageSignature,
+        header: Option<HeaderEvidence>,
+    ) -> Result<(), CatalogError> {
+        self.stage_observed(
+            token,
+            StagedPackage {
+                signature: signature.clone(),
+                header,
+            },
+        )
+    }
+
+    fn release_prepared(
+        &mut self,
+        _token: &StagingToken,
+        _prepared: HeaderEvidence,
+    ) -> Result<(), CatalogError> {
+        Ok(())
+    }
+
     fn commit_refresh(
         &mut self,
         token: StagingToken,

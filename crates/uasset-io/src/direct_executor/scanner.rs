@@ -3,40 +3,61 @@
 mod discovery;
 mod plugins;
 
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
+use std::sync::{Condvar, Mutex, PoisonError};
 use std::time::UNIX_EPOCH;
 
 use uasset_inspection::package_header::{
-    LeadingHeader, MAX_HEADER_BYTES, MAX_SUMMARY_BYTES, parse_leading_header,
+    LeadingHeader, MAX_HEADER_BYTES, MAX_SUMMARY_BYTES, PackageHeaderData, parse_leading_header,
 };
-use uasset_parser::PackageSummary;
 use uasset_parser::package::{Package, PackageError, PackageErrorKind};
+use uasset_parser::{HeaderIndex, PackageSummary};
 
 use super::catalog::{
-    EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
+    EntryKind, EvidencePreparer, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
     PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DEPENDENCIES, PROJECT_INDEX_MAX_NAMES,
     PackageSignature, project_relative_path,
 };
 use super::catalog_dependencies::package_name_for_path;
-use super::project_index::{CoordinatorError, HeaderEvidenceSink, ProjectScanner, observe_header};
+use super::project_index::{
+    CoordinatorError, HeaderEvidenceSink, HeaderObservation, ProjectScanner, observe_header,
+};
 use super::{Failure, checkpoint};
 use crate::cancellation::CancellationToken;
 
 pub(crate) const PACKAGE_EXTENSIONS: &[&str] = &["uasset", "umap"];
 pub(crate) const SIDECAR_EXTENSIONS: &[&str] = &["uexp", "ubulk", "uptnl"];
 
-const HEADER_PROBE_BYTES: usize = 4 * 1024;
+/// The first read of a package: most saved headers end within it, so one read holds the whole
+/// header. Larger headers read the rest once the summary gives their size.
+const HEADER_PROBE_BYTES: usize = 16 * 1024;
+/// A header worker keeps a read buffer this large between packages; one that grew past it for a
+/// very large header gives the memory back.
+const HEADER_SCRATCH_RETAIN_BYTES: usize = 4 * 1024 * 1024;
 // Header parsing and post-read signature checks share these workers. Keep the same global
-// read-ahead bound when scaling up, and respect smaller hosts' available parallelism.
-const MAX_HEADER_WORKERS: usize = 16;
-/// Keep read-ahead bounded while allowing workers to continue during a Catalog batch flush.
+// read-ahead bound when scaling up, and respect smaller hosts' available parallelism. Header reads
+// wait mostly on the operating system's file opens and reads rather than the CPU, so more workers
+// than cores still help; past 24 the gain is small while each worker's string dictionary and
+// buffers still cost memory.
+const MAX_HEADER_WORKERS: usize = 24;
+/// Keep read-ahead bounded while allowing workers to continue during a Catalog batch flush:
+/// workers never read more than this many packages past the first one not yet delivered.
 const HEADER_RESULT_BUFFER: usize = 1_024;
-const HEADER_RESULT_BATCH: usize = 8;
+/// Packages a worker claims at once. Small enough that one slow package (a very large map)
+/// holds back only its own chunk while the other workers keep claiming.
+const HEADER_CHUNK: usize = 16;
+
+thread_local! {
+    /// Each header worker's read buffer, reused across the packages it reads. Its length is the
+    /// part already initialized, so reuse never zero-fills again.
+    static HEADER_SCRATCH: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
 
 #[derive(Clone)]
 pub(crate) struct FileSignature {
@@ -103,59 +124,65 @@ impl ProjectScanner for FilesystemProjectScanner {
 
     fn read_header_evidence(
         &self,
-        _project_root: &str,
+        project_root: &str,
         signature: &PackageSignature,
         cancellation: &CancellationToken,
     ) -> Result<HeaderEvidence, CoordinatorError> {
-        if signature.kind == EntryKind::Sidecar {
-            return Err(CoordinatorError::InvalidRequest {
-                message: format!(
-                    "sidecar entries do not have package header evidence: {}",
-                    signature.relative_path
-                ),
-            });
-        }
-        let path = Path::new(_project_root).join(&signature.relative_path);
-        let (package, header) = read_package_header_bytes(&path, signature.size, cancellation)?;
-        // Unreal names a package from its file location; the saved name can be stale.
-        let package_name = package_name_for_path(&self.mounts, &signature.relative_path)
-            .unwrap_or_else(|| package.summary.package_name.clone());
-        let dependencies = within_dependency_limit(
-            package
-                .asset_registry_dependencies(&header, &package_name)
-                .map_err(|error| header_failure(package_error_code(&error)))?,
-        )?;
-        let classes = bounded_header_values(
-            package
-                .exports
-                .iter()
-                .filter_map(|export| export.class_path.as_ref().map(|path| path.as_str())),
-            PROJECT_INDEX_MAX_CLASSES,
-        );
-        // The v1 profile keeps a bounded name-map sample for serialized-name queries.
-        let serialized_names = bounded_header_values(
-            package.names.iter().map(String::as_str),
-            PROJECT_INDEX_MAX_NAMES,
-        );
-        Ok(HeaderEvidence {
-            header_data: Some(
-                uasset_inspection::package_header::PackageHeaderData::from_package(&package),
-            ),
-            profile_version: INDEX_PROFILE_VERSION,
-            package_name: package.summary.package_name.clone(),
-            classes,
-            serialized_names,
-            dependencies,
-            failure_code: None,
+        let path = self.package_path(project_root, signature)?;
+        checkpoint(cancellation, "read")?;
+        let file_len = header_file_len(signature.size)?;
+        let mut file = File::open(&path).map_err(|_| header_failure("asset_io"))?;
+        Ok(HEADER_SCRATCH.with_borrow_mut(|scratch| {
+            let evidence =
+                self.header_evidence(&mut file, file_len, signature, scratch, cancellation);
+            release_large_scratch(scratch);
+            evidence
+        })?)
+    }
+
+    /// Reads the evidence and then the signature from the same open file, so a package costs one
+    /// open: the signature is the file's metadata after its header was read.
+    fn read_header_observation(
+        &self,
+        project_root: &str,
+        signature: &PackageSignature,
+        cancellation: &CancellationToken,
+    ) -> Result<HeaderObservation, CoordinatorError> {
+        let path = self.package_path(project_root, signature)?;
+        checkpoint(cancellation, "read")?;
+        let file_len = header_file_len(signature.size)?;
+        let mut file = File::open(&path).map_err(|_| header_failure("asset_io"))?;
+        let evidence = HEADER_SCRATCH.with_borrow_mut(|scratch| {
+            let evidence =
+                self.header_evidence(&mut file, file_len, signature, scratch, cancellation);
+            release_large_scratch(scratch);
+            evidence
+        })?;
+        checkpoint(cancellation, "read")?;
+        let observed = match file.metadata() {
+            Ok(metadata) if metadata.is_file() => Some(PackageSignature {
+                relative_path: project_relative_path(project_root, &path.to_string_lossy()),
+                kind: signature.kind,
+                size: metadata.len(),
+                modified_nanos: metadata_modified_nanos(&metadata),
+            }),
+            _ => None,
+        };
+        drop(file);
+        checkpoint(cancellation, "read")?;
+        Ok(HeaderObservation {
+            evidence,
+            signature: Ok(observed),
         })
     }
 
-    fn stream_header_evidence(
+    fn stream_header_evidence<P: EvidencePreparer>(
         &self,
         project_root: &str,
         signatures: &[PackageSignature],
         cancellation: &CancellationToken,
-        on_header: &mut HeaderEvidenceSink<'_>,
+        preparer: &P,
+        on_header: &mut HeaderEvidenceSink<'_, P::Prepared>,
     ) -> Result<(), CoordinatorError> {
         if signatures.is_empty() {
             return Ok(());
@@ -163,82 +190,92 @@ impl ProjectScanner for FilesystemProjectScanner {
         let worker_count = std::thread::available_parallelism()
             .map_or(4, std::num::NonZeroUsize::get)
             .min(MAX_HEADER_WORKERS)
-            .min(signatures.len());
-        let lane_capacity = (HEADER_RESULT_BUFFER / worker_count / HEADER_RESULT_BATCH).max(1);
-        let mut senders = Vec::with_capacity(worker_count);
-        let mut receivers = Vec::with_capacity(worker_count);
-        for _ in 0..worker_count {
-            let (sender, receiver) = sync_channel(lane_capacity);
-            senders.push(sender);
-            receivers.push(receiver);
-        }
+            .min(signatures.len().div_ceil(HEADER_CHUNK));
+        // Workers claim chunks in order from a shared cursor, never more than the read-ahead
+        // window past the first package not yet delivered, so a chunk held up by one slow
+        // package stalls neither the others nor memory. Results are delivered in order.
+        let claims = Mutex::new(HeaderClaims {
+            next: 0,
+            delivered: 0,
+            stopped: false,
+        });
         let stop = AtomicBool::new(false);
+        let claimed = Condvar::new();
+        let window_chunks = HEADER_RESULT_BUFFER.div_ceil(HEADER_CHUNK);
+        // One slot per chunk the window allows, so a send never waits for the consumer.
+        let (sender, receiver) = sync_channel(window_chunks + worker_count);
         let mut callback_error = None;
-        let mut pending = (0..worker_count)
-            .map(|_| Vec::new().into_iter())
-            .collect::<Vec<_>>();
         std::thread::scope(|scope| {
-            for (worker, sender) in senders.into_iter().enumerate() {
+            for _ in 0..worker_count {
                 let cancellation = cancellation.clone();
-                let stop = &stop;
+                let sender = sender.clone();
+                let (claims, claimed, stop) = (&claims, &claimed, &stop);
                 scope.spawn(move || {
-                    let mut batch = Vec::with_capacity(HEADER_RESULT_BATCH);
-                    for index in (worker..signatures.len()).step_by(worker_count) {
-                        if stop.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        let signature = &signatures[index];
-                        let result = observe_header(self, project_root, signature, &cancellation);
-                        batch.push((index, result));
-                        if batch.len() == HEADER_RESULT_BATCH {
-                            let ready = std::mem::replace(
-                                &mut batch,
-                                Vec::with_capacity(HEADER_RESULT_BATCH),
-                            );
-                            if sender.send(ready).is_err() {
-                                break;
+                    // A worker that unwinds stops the others, so none waits on a window that
+                    // will never move.
+                    let _stop_on_unwind = StopOnDrop {
+                        claims,
+                        claimed,
+                        stop,
+                    };
+                    // Chunks are claimed in order and delivered in order, so this worker's
+                    // prepared values reach the sink in the order it prepares them.
+                    let mut worker = preparer.worker();
+                    while let Some(start) = claim_chunk(claims, claimed, signatures.len()) {
+                        let end = (start + HEADER_CHUNK).min(signatures.len());
+                        let mut results = Vec::with_capacity(end - start);
+                        for signature in &signatures[start..end] {
+                            if stop.load(Ordering::Relaxed) {
+                                return;
                             }
+                            results.push(
+                                observe_header(self, project_root, signature, &cancellation)
+                                    .map(|observation| observation.prepare(preparer, &mut worker)),
+                            );
                         }
-                    }
-                    if !batch.is_empty() {
-                        let _ = sender.send(batch);
+                        if sender.send((start, results)).is_err() {
+                            return;
+                        }
                     }
                 });
             }
-            for (index, signature) in signatures.iter().enumerate() {
-                let lane = index % worker_count;
-                let received = if let Some(next) = pending[lane].next() {
-                    Ok(next)
-                } else {
-                    receivers[lane].recv().and_then(|batch| {
-                        pending[lane] = batch.into_iter();
-                        pending[lane].next().ok_or(std::sync::mpsc::RecvError)
-                    })
-                };
-                match received {
-                    Ok((received_index, result)) => {
-                        debug_assert_eq!(received_index, index);
-                        if callback_error.is_none()
-                            && let Err(error) = on_header(signature, result)
-                        {
-                            stop.store(true, Ordering::Relaxed);
-                            callback_error = Some(error);
+            drop(sender);
+            let mut ready = HashMap::new();
+            let mut next = 0;
+            'deliver: while next < signatures.len() {
+                let results = match ready.remove(&next) {
+                    Some(results) => results,
+                    None => match receiver.recv() {
+                        Ok((start, results)) => {
+                            ready.insert(start, results);
+                            continue;
                         }
+                        Err(_) => {
+                            callback_error = Some(CoordinatorError::Unavailable {
+                                message: "a Project Index header worker stopped unexpectedly"
+                                    .to_owned(),
+                            });
+                            break;
+                        }
+                    },
+                };
+                for result in results {
+                    if let Err(error) = on_header(&signatures[next], result) {
+                        callback_error = Some(error);
+                        break 'deliver;
                     }
-                    Err(_) if callback_error.is_some() => break,
-                    Err(_) => {
-                        stop.store(true, Ordering::Relaxed);
-                        callback_error = Some(CoordinatorError::Unavailable {
-                            message: "a Project Index header worker stopped unexpectedly"
-                                .to_owned(),
-                        });
-                        break;
-                    }
+                    next += 1;
                 }
+                claims
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .delivered = next;
+                claimed.notify_all();
             }
-            // A stopped lane can close before another lane has drained its read-ahead. Close
-            // all receivers before joining, so a worker blocked in send can also stop.
-            drop(receivers);
+            // Stop and release every worker before joining: one may wait on the window and
+            // another in a send.
+            stop_claims(&claims, &claimed, &stop);
+            drop(receiver);
         });
         match callback_error {
             Some(error) => Err(error),
@@ -279,6 +316,196 @@ impl ProjectScanner for FilesystemProjectScanner {
             modified_nanos: signature.modified_nanos,
         }))
     }
+}
+
+impl FilesystemProjectScanner {
+    fn package_path(
+        &self,
+        project_root: &str,
+        signature: &PackageSignature,
+    ) -> Result<PathBuf, CoordinatorError> {
+        if signature.kind == EntryKind::Sidecar {
+            return Err(CoordinatorError::InvalidRequest {
+                message: format!(
+                    "sidecar entries do not have package header evidence: {}",
+                    signature.relative_path
+                ),
+            });
+        }
+        Ok(Path::new(project_root).join(&signature.relative_path))
+    }
+
+    /// A package's index evidence from its open file, read into `scratch`.
+    fn header_evidence(
+        &self,
+        file: &mut File,
+        file_len: usize,
+        signature: &PackageSignature,
+        scratch: &mut Vec<u8>,
+        cancellation: &CancellationToken,
+    ) -> Result<HeaderEvidence, Failure> {
+        let (summary, header_len) = read_header_into(file, file_len, scratch, cancellation)?;
+        checkpoint(cancellation, "inspection")?;
+        let header = &scratch[..header_len];
+        let index = HeaderIndex::parse_with_summary(header, file_len, summary)
+            .map_err(|error| header_failure(package_error_code(&error)))?;
+        // Unreal names a package from its file location; the saved name can be stale.
+        let mounted_name = package_name_for_path(&self.mounts, &signature.relative_path);
+        let dependencies = within_dependency_limit(
+            index
+                .asset_registry_dependencies(
+                    header,
+                    mounted_name
+                        .as_deref()
+                        .unwrap_or(&index.summary.package_name),
+                )
+                .map_err(|error| header_failure(package_error_code(&error)))?,
+        )?;
+        let classes = index
+            .export_class_paths()
+            .map_err(|error| header_failure(package_error_code(&error)))?;
+        let classes = bounded_header_values(
+            classes.iter().map(String::as_str),
+            PROJECT_INDEX_MAX_CLASSES,
+        );
+        // The v1 profile keeps a bounded name-map sample for serialized-name queries.
+        let serialized_names = bounded_header_values(
+            index.names().iter().map(|name| name.as_ref()),
+            PROJECT_INDEX_MAX_NAMES,
+        );
+        Ok(HeaderEvidence {
+            header_data: Some(PackageHeaderData::from_header_index(&index)),
+            profile_version: INDEX_PROFILE_VERSION,
+            package_name: index.summary.package_name,
+            classes,
+            serialized_names,
+            dependencies,
+            failure_code: None,
+        })
+    }
+}
+
+/// Claims of a parallel header stream: the next chunk to claim, the packages delivered so far,
+/// and whether the stream stopped.
+struct HeaderClaims {
+    next: usize,
+    delivered: usize,
+    stopped: bool,
+}
+
+/// The next chunk's first package, once it is inside the read-ahead window; `None` when the
+/// stream is done or stopped.
+fn claim_chunk(claims: &Mutex<HeaderClaims>, claimed: &Condvar, len: usize) -> Option<usize> {
+    let mut state = claims.lock().unwrap_or_else(PoisonError::into_inner);
+    loop {
+        if state.stopped || state.next >= len {
+            return None;
+        }
+        if state.next < state.delivered + HEADER_RESULT_BUFFER {
+            let start = state.next;
+            state.next += HEADER_CHUNK;
+            return Some(start);
+        }
+        state = claimed.wait(state).unwrap_or_else(PoisonError::into_inner);
+    }
+}
+
+fn stop_claims(claims: &Mutex<HeaderClaims>, claimed: &Condvar, stop: &AtomicBool) {
+    stop.store(true, Ordering::Relaxed);
+    claims
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .stopped = true;
+    claimed.notify_all();
+}
+
+/// Stops a header stream when a worker unwinds, so no other worker waits on a window that
+/// will never move.
+struct StopOnDrop<'a> {
+    claims: &'a Mutex<HeaderClaims>,
+    claimed: &'a Condvar,
+    stop: &'a AtomicBool,
+}
+
+impl Drop for StopOnDrop<'_> {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            stop_claims(self.claims, self.claimed, self.stop);
+        }
+    }
+}
+
+fn header_file_len(size: u64) -> Result<usize, Failure> {
+    let file_len = usize::try_from(size).map_err(|_| header_failure("asset_resource_limit"))?;
+    if file_len == 0 {
+        return Err(header_failure("asset_malformed_data"));
+    }
+    Ok(file_len)
+}
+
+/// Gives back a header buffer that grew for an unusually large header.
+fn release_large_scratch(scratch: &mut Vec<u8>) {
+    if scratch.len() > HEADER_SCRATCH_RETAIN_BYTES {
+        scratch.truncate(HEADER_PROBE_BYTES);
+        scratch.shrink_to(HEADER_PROBE_BYTES);
+    }
+}
+
+/// Fills `scratch[from..to]` from the file, growing (and zero-filling) the buffer only past
+/// what earlier reads already initialized.
+fn read_span(
+    file: &mut File,
+    scratch: &mut Vec<u8>,
+    from: usize,
+    to: usize,
+) -> Result<(), Failure> {
+    if scratch.len() < to {
+        scratch.resize(to, 0);
+    }
+    file.read_exact(&mut scratch[from..to])
+        .map_err(|_| header_failure("asset_io"))
+}
+
+/// Reads a package's summary and then its whole header into `scratch[..header_len]`: one read
+/// of the probe window, then the rest of a larger header, or a doubling summary window while the
+/// summary does not yet parse (up to [`MAX_SUMMARY_BYTES`]).
+fn read_header_into(
+    file: &mut File,
+    file_len: usize,
+    scratch: &mut Vec<u8>,
+    cancellation: &CancellationToken,
+) -> Result<(PackageSummary, usize), Failure> {
+    checkpoint(cancellation, "read")?;
+    let mut prefix_len = HEADER_PROBE_BYTES.min(file_len);
+    read_span(file, scratch, 0, prefix_len)?;
+    checkpoint(cancellation, "read")?;
+    let summary = loop {
+        checkpoint(cancellation, "parsing")?;
+        match PackageSummary::parse_with_file_len(&scratch[..prefix_len], file_len) {
+            Ok(summary) => break summary,
+            Err(error)
+                if error.kind() == PackageErrorKind::MalformedData
+                    && prefix_len < MAX_SUMMARY_BYTES.min(file_len) =>
+            {
+                let next_len = (prefix_len * 2).min(MAX_SUMMARY_BYTES).min(file_len);
+                read_span(file, scratch, prefix_len, next_len)?;
+                checkpoint(cancellation, "read")?;
+                prefix_len = next_len;
+            }
+            Err(error) => return Err(header_failure(package_error_code(&error))),
+        }
+    };
+    checkpoint(cancellation, "parsing")?;
+    let header_len = usize::try_from(summary.total_header_size)
+        .map_err(|_| header_failure("asset_resource_limit"))?;
+    if header_len > MAX_HEADER_BYTES {
+        return Err(header_failure("asset_resource_limit"));
+    }
+    if header_len > prefix_len {
+        read_span(file, scratch, prefix_len, header_len)?;
+    }
+    checkpoint(cancellation, "read")?;
+    Ok((summary, header_len))
 }
 
 /// Every package and sidecar under the project's `Content`, as the Project Index enumerates them
@@ -416,51 +643,13 @@ pub(crate) fn read_package_header_bytes(
     cancellation: &CancellationToken,
 ) -> Result<(Package, Vec<u8>), Failure> {
     checkpoint(cancellation, "read")?;
-    let file_len = usize::try_from(size).map_err(|_| header_failure("asset_resource_limit"))?;
-    if file_len == 0 {
-        return Err(header_failure("asset_malformed_data"));
-    }
+    let file_len = header_file_len(size)?;
     let mut file = File::open(path).map_err(|_| header_failure("asset_io"))?;
-    let mut prefix_len = HEADER_PROBE_BYTES.min(file_len);
-    let mut bytes = vec![0; prefix_len];
-    file.read_exact(&mut bytes)
-        .map_err(|_| header_failure("asset_io"))?;
-    checkpoint(cancellation, "read")?;
-    let summary = loop {
-        checkpoint(cancellation, "parsing")?;
-        match PackageSummary::parse_with_file_len(&bytes, file_len) {
-            Ok(summary) => break summary,
-            Err(error)
-                if error.kind() == PackageErrorKind::MalformedData
-                    && prefix_len < MAX_SUMMARY_BYTES.min(file_len) =>
-            {
-                let next_len = (prefix_len * 2).min(MAX_SUMMARY_BYTES).min(file_len);
-                bytes.resize(next_len, 0);
-                file.read_exact(&mut bytes[prefix_len..])
-                    .map_err(|_| header_failure("asset_io"))?;
-                checkpoint(cancellation, "read")?;
-                prefix_len = next_len;
-            }
-            Err(error) => return Err(header_failure(package_error_code(&error))),
-        }
-    };
-    checkpoint(cancellation, "parsing")?;
-    let header_len = usize::try_from(summary.total_header_size)
-        .map_err(|_| header_failure("asset_resource_limit"))?;
-    if header_len > MAX_HEADER_BYTES {
-        return Err(header_failure("asset_resource_limit"));
-    }
-    if header_len > bytes.len() {
-        let previous_len = bytes.len();
-        bytes.resize(header_len, 0);
-        file.read_exact(&mut bytes[previous_len..])
-            .map_err(|_| header_failure("asset_io"))?;
-    } else {
-        bytes.truncate(header_len);
-    }
-    checkpoint(cancellation, "read")?;
+    let mut bytes = Vec::new();
+    let (summary, header_len) = read_header_into(&mut file, file_len, &mut bytes, cancellation)?;
+    bytes.truncate(header_len);
     checkpoint(cancellation, "inspection")?;
-    Package::parse_header(&bytes, file_len)
+    Package::parse_header_with_summary(&bytes, file_len, summary)
         .map(|package| (package, bytes))
         .map_err(|error| header_failure(package_error_code(&error)))
 }
@@ -593,7 +782,7 @@ mod tests {
         assert_eq!(failure.code, "dependencies_over_limit");
     }
     use crate::cancellation::CancellationToken;
-    use crate::direct_executor::catalog::{EntryKind, PackageSignature};
+    use crate::direct_executor::catalog::{EntryKind, PackageSignature, PlainEvidence};
 
     #[test]
     fn bounded_header_sample_preserves_order_uniqueness_and_late_small_values() {
@@ -671,6 +860,7 @@ mod tests {
                     "C:/Missing",
                     &signatures,
                     &CancellationToken::new(),
+                    &PlainEvidence,
                     &mut |signature, _| {
                         observed.push(signature.relative_path.clone());
                         Ok(())
@@ -703,6 +893,7 @@ mod tests {
                 "C:/Missing",
                 &signatures,
                 &CancellationToken::new(),
+                &PlainEvidence,
                 &mut |_, _| {
                     calls += 1;
                     Err(super::CoordinatorError::Unavailable {

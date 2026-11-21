@@ -171,6 +171,8 @@ pub enum CatalogStatus {
     Ready { summary: RefreshSummary },
 }
 
+/// An entry staged with its evidence as read; the refresh coordinator stages prepared evidence.
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagedPackage {
     pub signature: PackageSignature,
@@ -185,6 +187,34 @@ pub struct CatalogSnapshotEntry {
     pub signature: PackageSignature,
     pub header_profile_version: Option<u32>,
     pub header_failure: bool,
+}
+
+/// A committed entry borrowed from the Catalog for one comparison, as [`CatalogSnapshotEntry`]
+/// without copying its path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CommittedEntry<'a> {
+    pub relative_path: &'a str,
+    pub kind: EntryKind,
+    pub size: u64,
+    pub modified_nanos: u64,
+    pub header_profile_version: Option<u32>,
+    pub header_failure: bool,
+}
+
+impl CommittedEntry<'_> {
+    /// Whether this entry records exactly `signature`.
+    pub fn has_signature(&self, signature: &PackageSignature) -> bool {
+        self.relative_path == signature.relative_path
+            && self.kind == signature.kind
+            && self.size == signature.size
+            && self.modified_nanos == signature.modified_nanos
+    }
+}
+
+/// Whether a project-relative path names a map package (`.umap`, in any ASCII case).
+pub(crate) fn is_map_path(relative_path: &str) -> bool {
+    let bytes = relative_path.as_bytes();
+    bytes.len() >= 5 && bytes[bytes.len() - 5..].eq_ignore_ascii_case(b".umap")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -307,6 +337,37 @@ pub struct QueryPage {
     pub next_cursor: Option<String>,
 }
 
+/// A query page whose header items name classes and serialized names by ids into the page's own
+/// `strings`, so each distinct string is carried once.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedStringPage {
+    pub project_id: ProjectId,
+    pub generation: Generation,
+    pub items: Vec<SharedStringItem>,
+    pub next_cursor: Option<String>,
+    pub strings: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SharedStringItem {
+    Inventory {
+        package_path: String,
+        signature: String,
+        header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
+    },
+    Map {
+        map_path: String,
+        package_name: String,
+    },
+    Header {
+        header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
+        package_path: String,
+        package_name: String,
+        classes: Vec<u32>,
+        serialized_names: Vec<u32>,
+    },
+}
+
 #[derive(Debug)]
 pub enum CatalogError {
     InvalidRequest {
@@ -348,8 +409,42 @@ pub struct StagingToken {
     pub(crate) generation: Generation,
 }
 
+/// Prepares header evidence for staging on the header worker that read it, so the coordinator
+/// thread only hands prepared values to the Catalog. Each worker thread takes its own
+/// [`EvidencePreparer::Worker`]; every value a worker prepares must reach
+/// [`Catalog::stage_prepared`] or [`Catalog::release_prepared`], in the order it was prepared.
+pub trait EvidencePreparer: Sync {
+    type Worker;
+    type Prepared: Send;
+
+    fn worker(&self) -> Self::Worker;
+
+    fn prepare(&self, worker: &mut Self::Worker, evidence: HeaderEvidence) -> Self::Prepared;
+}
+
+/// Evidence staged as it was read, for adapters that keep [`HeaderEvidence`] itself.
+#[allow(dead_code)]
+pub struct PlainEvidence;
+
+impl EvidencePreparer for PlainEvidence {
+    type Worker = ();
+    type Prepared = HeaderEvidence;
+
+    fn worker(&self) {}
+
+    fn prepare(&self, _: &mut (), evidence: HeaderEvidence) -> HeaderEvidence {
+        evidence
+    }
+}
+
+/// What one adapter's preparer prepares.
+pub type Prepared<C> = <<C as Catalog>::Preparer as EvidencePreparer>::Prepared;
+
 /// Storage-neutral Catalog operations used by the refresh coordinator.
 pub trait Catalog {
+    /// Prepares the evidence header workers read for [`Catalog::stage_prepared`].
+    type Preparer: EvidencePreparer;
+
     fn status(&self) -> CatalogStatus;
 
     #[allow(dead_code)]
@@ -370,12 +465,52 @@ pub trait Catalog {
         relative_path: &str,
     ) -> Result<(), CatalogError>;
 
+    /// [`Catalog::observe_unchanged`] for the entry at `committed_index` in the committed view
+    /// the coordinator compared against (`CatalogSnapshot::with_committed_entries`), which is the
+    /// entry at `relative_path`. Adapters that keep that view can record the index alone.
+    fn observe_unchanged_committed(
+        &mut self,
+        token: &StagingToken,
+        relative_path: &str,
+        committed_index: usize,
+    ) -> Result<(), CatalogError> {
+        let _ = committed_index;
+        self.observe_unchanged(token, relative_path)
+    }
+
     /// Stage evidence for a new or changed entry.
+    #[allow(dead_code)]
     fn stage_observed(
         &mut self,
         token: &StagingToken,
         entry: StagedPackage,
     ) -> Result<(), CatalogError>;
+
+    /// The preparer the active refresh's header workers run.
+    fn evidence_preparer(&mut self, token: &StagingToken) -> Result<Self::Preparer, CatalogError>;
+
+    /// [`Catalog::stage_observed`] for evidence the active refresh's preparer prepared.
+    fn stage_prepared(
+        &mut self,
+        token: &StagingToken,
+        signature: &PackageSignature,
+        header: Option<Prepared<Self>>,
+    ) -> Result<(), CatalogError>;
+
+    /// Accounts for prepared evidence that will not be staged (a reread replaced it).
+    fn release_prepared(
+        &mut self,
+        token: &StagingToken,
+        prepared: Prepared<Self>,
+    ) -> Result<(), CatalogError>;
+
+    /// A promise for the rest of the refresh: no entry is observed unchanged any more, and each
+    /// staged entry's path follows the previous one's. Adapters may then write the next
+    /// generation as entries arrive; one that breaks the promise fails.
+    fn stage_in_path_order(&mut self, token: &StagingToken) -> Result<(), CatalogError> {
+        let _ = token;
+        Ok(())
+    }
 
     fn commit_refresh(
         &mut self,
@@ -535,6 +670,7 @@ pub(crate) fn parse_page_cursor(cursor: Option<&str>) -> Result<String, CatalogE
 }
 
 /// Every query item is keyed by its project-relative path, which is also the page cursor.
+#[allow(dead_code)]
 pub(crate) fn item_path(item: &QueryItem) -> &str {
     match item {
         QueryItem::Map { map_path, .. } => map_path.as_str(),
@@ -545,7 +681,33 @@ pub(crate) fn item_path(item: &QueryItem) -> &str {
 }
 
 /// Opaque package plus sidecar stamps; consumers may verify selected bundles without enumerating.
+///
+/// The JSON text of `[{"size":…,"modifiedMs":…} | null; 4]`, written directly: numbers are
+/// serialized by `serde_json` exactly as a `serde_json::Value` would print them.
 pub(crate) fn bundle_signature(parts: [Option<(u64, u64)>; 4]) -> String {
+    let mut out = Vec::with_capacity(160);
+    out.push(b'[');
+    for (index, part) in parts.iter().enumerate() {
+        if index > 0 {
+            out.push(b',');
+        }
+        match part {
+            Some((size, modified)) => {
+                out.extend_from_slice(br#"{"size":"#);
+                let _ = serde_json::to_writer(&mut out, &(*size as f64));
+                out.extend_from_slice(br#","modifiedMs":"#);
+                let _ = serde_json::to_writer(&mut out, &(*modified as f64 / 1_000_000.0));
+                out.push(b'}');
+            }
+            None => out.extend_from_slice(b"null"),
+        }
+    }
+    out.push(b']');
+    String::from_utf8(out).unwrap_or_else(|_| bundle_signature_value(parts))
+}
+
+/// The bundle signature built as a `serde_json::Value`: the reference `bundle_signature` matches.
+fn bundle_signature_value(parts: [Option<(u64, u64)>; 4]) -> String {
     serde_json::Value::Array(
         parts
             .iter()
@@ -559,6 +721,40 @@ pub(crate) fn bundle_signature(parts: [Option<(u64, u64)>; 4]) -> String {
             .collect(),
     )
     .to_string()
+}
+
+#[cfg(test)]
+mod bundle_signature_tests {
+    use super::{bundle_signature, bundle_signature_value};
+
+    #[test]
+    fn direct_bundle_signatures_match_the_json_value_form() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            state
+        };
+        let mut samples = vec![0, 1, 999_999, 1_000_000, u64::MAX, u64::MAX / 3, 1 << 53];
+        samples.extend((0..2000).map(|_| next()));
+        samples.extend((0..2000).map(|_| next() % 2_000_000_000_000_000_000));
+        for (index, value) in samples.iter().enumerate() {
+            let other = samples[(index * 7 + 3) % samples.len()];
+            for parts in [
+                [Some((*value, other)), None, Some((other, *value)), None],
+                [
+                    Some((other % 4096, *value)),
+                    Some((1, 2)),
+                    None,
+                    Some((*value, 0)),
+                ],
+                [None, None, None, None],
+            ] {
+                assert_eq!(bundle_signature(parts), bundle_signature_value(parts));
+            }
+        }
+    }
 }
 
 #[cfg(test)]

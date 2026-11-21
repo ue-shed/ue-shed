@@ -891,19 +891,16 @@ fn execute_direct(
             query,
             page_encoding,
         } => {
-            let page = if let Some(session) = query_session {
-                session.query(cache_root, query)?
-            } else {
-                let catalog = direct_executor::open_catalog_for_project_id(
-                    cache_root,
-                    direct_executor::query_project_id(query),
-                )?;
-                direct_executor::project_index_query_protocol(&catalog, query)?
-            };
+            let mut temporary = direct_executor::ProjectIndexQuerySession::default();
+            let session = query_session.unwrap_or(&mut temporary);
             let result = if page_encoding.is_some() {
-                ResultFrame::ProjectIndexDictionaryPage { page: page.into() }
+                ResultFrame::ProjectIndexDictionaryPage {
+                    page: session.query_dictionary(cache_root, query)?,
+                }
             } else {
-                ResultFrame::ProjectIndexPage { page }
+                ResultFrame::ProjectIndexPage {
+                    page: session.query(cache_root, query)?,
+                }
             };
             emit_typed_result(emitter, &result)?;
             Ok(false)

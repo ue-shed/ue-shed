@@ -41,6 +41,8 @@
 			"crates/unreal-code/src",
 			"crates/process-metrics/Cargo.toml",
 			"crates/process-metrics/src",
+			"crates/fast-fs/Cargo.toml",
+			"crates/fast-fs/src",
 			"packages/protocol/package.json",
 			"packages/protocol/tsconfig.json",
 			"packages/protocol/tsconfig.build.json",

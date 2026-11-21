@@ -146,6 +146,19 @@ pub trait ProjectScanner {
         Ok(BundleListing::Walk("scanner_lists_whole_projects"))
     }
 
+    /// The package and sidecar entries directly in each of `directories` (project-relative,
+    /// `/`-separated, without a trailing `/`), in path order, exactly as `enumerate` would list
+    /// them; or why they cannot be listed without walking the project.
+    fn list_directories(
+        &self,
+        project_root: &str,
+        directories: &[String],
+        cancellation: &CancellationToken,
+    ) -> Result<BundleListing, CoordinatorError> {
+        let _ = (project_root, directories, cancellation);
+        Ok(BundleListing::Walk("scanner_lists_whole_projects"))
+    }
+
     /// Whether a project-relative path names a file `enumerate` ignores (neither a package nor
     /// a sidecar), as opposed to a directory or a path that is gone.
     fn is_ignored_file(&self, project_root: &str, relative_path: &str) -> bool {
@@ -442,6 +455,8 @@ pub const PROJECT_INDEX_MAX_TARGETED_PATHS: usize = 4_096;
 pub enum RefreshReach {
     /// It looked only at the bundles of the paths the host said changed.
     Targeted,
+    /// It looked only at the directories the change journal said changed.
+    Journal,
     /// It walked every content root; with a reason when the host named changed paths but they
     /// could not be trusted alone.
     Walked(Option<&'static str>),
@@ -500,6 +515,97 @@ pub fn refresh_changed_paths<C: CatalogSnapshot, S: ProjectScanner>(
     .map(|events| (events, RefreshReach::Targeted))
 }
 
+/// A refresh told which directories changed (as the volume's change journal reports them, which
+/// names directories, not files). It lists those directories, compares every bundle they hold or
+/// held, and gives exactly what a full walk would; when it cannot be sure of that (as
+/// [`refresh_changed_paths`] decides), it walks the project instead and says why.
+pub fn refresh_changed_directories<C: CatalogSnapshot, S: ProjectScanner>(
+    catalog: &mut C,
+    scanner: &S,
+    project_root: &str,
+    directories: &[String],
+    maximum_changes: usize,
+    cancellation: &CancellationToken,
+    mut on_progress: impl FnMut(RefreshProgress),
+) -> Result<(Vec<RefreshEvent>, RefreshReach), CoordinatorError> {
+    let mut walk = |catalog: &mut C, reason: Option<&'static str>| {
+        run_refresh(
+            catalog,
+            scanner,
+            project_root,
+            false,
+            maximum_changes,
+            cancellation,
+            &mut on_progress,
+        )
+        .map(|events| (events, RefreshReach::Walked(reason)))
+    };
+    let mounts = scanner.mount_points();
+    let bounded = || {
+        if directories.len() > PROJECT_INDEX_MAX_TARGETED_PATHS {
+            Err("too_many_changed_directories")
+        } else {
+            Ok(())
+        }
+    };
+    let committed = match committed_plan(catalog, scanner, project_root, &mounts, bounded) {
+        Ok(committed) => committed,
+        Err(reason) => return walk(catalog, Some(reason)),
+    };
+    let in_content = |directory: &String| {
+        let directory = format!("{directory}/");
+        mounts
+            .iter()
+            .any(|mount| directory.starts_with(mount.path.as_str()))
+    };
+    if !directories.iter().all(in_content) {
+        return walk(catalog, Some("changed_path_outside_content"));
+    }
+    checkpoint(cancellation, "discovery")?;
+    let listed = match scanner.list_directories(project_root, directories, cancellation)? {
+        BundleListing::Entries(entries) => entries,
+        BundleListing::Walk(reason) => return walk(catalog, Some(reason)),
+    };
+    // Every bundle the directories hold now or held at the committed generation.
+    let mut stems = std::collections::BTreeSet::new();
+    for directory in directories {
+        checkpoint(cancellation, "read")?;
+        let prefix = format!("{directory}/");
+        catalog.visit_committed_prefix(&prefix, &mut |entry| {
+            let directly_in = entry
+                .relative_path
+                .get(prefix.len()..)
+                .is_some_and(|name| !name.contains('/'));
+            if directly_in && let Some(stem) = bundle_stem(entry.relative_path) {
+                stems.insert(stem.to_owned());
+            }
+            Ok(())
+        })?;
+    }
+    stems.extend(
+        listed
+            .iter()
+            .filter_map(|signature| bundle_stem(&signature.relative_path))
+            .map(str::to_owned),
+    );
+    let plan = TargetedPlan {
+        stems: stems.into_iter().collect(),
+        committed,
+    };
+    run_targeted_refresh(
+        catalog,
+        scanner,
+        project_root,
+        plan,
+        listed,
+        mounts,
+        maximum_changes,
+        cancellation,
+        &mut on_progress,
+    )
+    .map(|events| (events, RefreshReach::Journal))
+}
+
 /// What a targeted refresh starts from: the bundle stems to look at and the committed summary.
 struct TargetedPlan {
     stems: Vec<String>,
@@ -514,6 +620,28 @@ fn targeted_plan<C: CatalogSnapshot, S: ProjectScanner>(
     mounts: &[MountPoint],
     changed_paths: &[String],
 ) -> Result<TargetedPlan, &'static str> {
+    let committed = committed_plan(catalog, scanner, project_root, mounts, || {
+        if changed_paths.len() > PROJECT_INDEX_MAX_TARGETED_PATHS {
+            Err("too_many_changed_paths")
+        } else {
+            Ok(())
+        }
+    })?;
+    let stems = targeted_stems(scanner, project_root, mounts, changed_paths)?;
+    Ok(TargetedPlan { stems, committed })
+}
+
+/// The committed summary, when a refresh that looks only at some of the project can stand in
+/// for a walk: a complete generation of this project and these mount points, read with the
+/// current index profile. `bounded` checks the refresh's own size before the (slower) evidence
+/// check.
+fn committed_plan<C: CatalogSnapshot, S: ProjectScanner>(
+    catalog: &C,
+    scanner: &S,
+    project_root: &str,
+    mounts: &[MountPoint],
+    bounded: impl FnOnce() -> Result<(), &'static str>,
+) -> Result<RefreshSummary, &'static str> {
     let CatalogStatus::Ready { summary: committed } = catalog.status() else {
         return Err("no_committed_generation");
     };
@@ -526,14 +654,11 @@ fn targeted_plan<C: CatalogSnapshot, S: ProjectScanner>(
     if committed.mounts != mounts {
         return Err("mount_points_changed");
     }
-    if changed_paths.len() > PROJECT_INDEX_MAX_TARGETED_PATHS {
-        return Err("too_many_changed_paths");
-    }
+    bounded()?;
     if !catalog.committed_evidence_is_current().unwrap_or(false) {
         return Err("committed_evidence_is_outdated");
     }
-    let stems = targeted_stems(scanner, project_root, mounts, changed_paths)?;
-    Ok(TargetedPlan { stems, committed })
+    Ok(committed)
 }
 
 fn has_extension_in(path: &str, extensions: &[&str]) -> bool {
@@ -812,7 +937,7 @@ fn run_targeted_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             reason = "the token is set before the refresh body and taken only here or on failure"
         )]
         let staging = token.take().expect("staging token present for commit");
-        let summary = commit(catalog, staging, summary)?;
+        let summary = commit(catalog, staging, summary, false)?;
         events.push(RefreshEvent::Completed {
             summary,
             changes: changes.finish(),
@@ -955,7 +1080,7 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             reason = "the token is set before the refresh body and taken only here or on failure"
         )]
         let staging = token.take().expect("staging token present for commit");
-        let summary = commit(catalog, staging, summary)?;
+        let summary = commit(catalog, staging, summary, true)?;
         events.push(RefreshEvent::Completed {
             summary,
             changes: changes.finish(),
@@ -1068,7 +1193,9 @@ fn commit<C: Catalog>(
     catalog: &mut C,
     staging: StagingToken,
     mut summary: RefreshSummary,
+    walked: bool,
 ) -> Result<RefreshSummary, CoordinatorError> {
+    catalog.committing(&staging, walked);
     catalog.commit_refresh(staging, summary.clone())?;
     if let CatalogStatus::Ready { summary: committed } = catalog.status() {
         summary.inventory_digest = committed.inventory_digest;

@@ -1128,7 +1128,7 @@ fn emit_project_index_telemetry(
             json!({
                 "code": "project_index_metrics",
                 "message": format!(
-					"rebuild={} generation={} packages={} maps={} changed={} removed={} staged_rows={} committed_rows={} removed_rows={} evidence_write_ms={} storage_bytes={} duration_ms={} enumerating_ms={} comparing_ms={} reading_headers_ms={} committing_ms={} written_bytes={} delta={} targeted={} walked_because={}",
+					"rebuild={} generation={} packages={} maps={} changed={} removed={} staged_rows={} committed_rows={} removed_rows={} evidence_write_ms={} storage_bytes={} duration_ms={} enumerating_ms={} comparing_ms={} reading_headers_ms={} committing_ms={} written_bytes={} delta={} targeted={} walked_because={} journal={}",
                     output.rebuild,
                     output.summary.generation,
                     output.summary.package_count,
@@ -1148,7 +1148,8 @@ fn emit_project_index_telemetry(
                     output.write_counts.written_bytes,
                     u8::from(output.write_counts.delta),
                     u8::from(output.targeted),
-                    output.walked_because.unwrap_or("none")
+                    output.walked_because.unwrap_or("none"),
+                    u8::from(output.journal)
                 ),
                 "severity": "info"
             }),

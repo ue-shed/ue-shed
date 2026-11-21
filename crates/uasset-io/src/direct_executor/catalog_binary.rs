@@ -10,6 +10,7 @@
 //! delta; one that would make the delta too large writes a new base instead (compaction).
 use super::catalog::*;
 use super::catalog_dependencies::{DependencyGraph, dependency_page};
+use super::change_journal::ChangeJournal;
 use super::inventory_digest::{BundleWalker, InventorySum, bundle_stem, stem_sum};
 use super::project_index::{CatalogSnapshot, CoordinatorError};
 use atomic_write_file::AtomicWriteFile;
@@ -165,6 +166,10 @@ struct Manifest {
     previous_snapshot: Option<String>,
     previous_delta: Option<String>,
     summary: ManifestSummary,
+    /// The change journal position the generation's content was listed at, when its volumes
+    /// keep one; absent from manifests written before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    change_journal: Option<ChangeJournal>,
 }
 
 impl Manifest {
@@ -4224,8 +4229,21 @@ pub(crate) struct BinaryCatalog {
     delta_limits: DeltaLimits,
     /// Snapshots a long-lived process has verified, when it keeps a record of them.
     verified: Option<VerifiedSnapshots>,
+    /// The change journal positions the active refresh may keep; see [`JournalPlan`].
+    journal_plan: Option<JournalPlan>,
+    /// Whether the refresh about to commit walked every content root.
+    committing_walked: bool,
     #[cfg(test)]
     cleanup_root: Option<PathBuf>,
+}
+/// The change journal position a refresh's generation keeps. A walk keeps the position taken
+/// before it listed the roots; a refresh that looked only at what it was told changed keeps
+/// `targeted`, or, without one, the committed generation's: everything that changed since that
+/// position is still read next time. Without a plan no position is kept, and the next refresh
+/// walks.
+pub(crate) struct JournalPlan {
+    pub(crate) walked: Option<ChangeJournal>,
+    pub(crate) targeted: Option<ChangeJournal>,
 }
 /// How a catalog is opened: the writer verifies, locks and recovers; a query reader trusts the
 /// manifest; a status reader verifies but never locks or writes.
@@ -4305,9 +4323,19 @@ impl BinaryCatalog {
             writes: CatalogWriteCounts::default(),
             delta_limits: DeltaLimits::default(),
             verified: None,
+            journal_plan: None,
+            committing_walked: false,
             #[cfg(test)]
             cleanup_root: None,
         }
+    }
+    /// The change journal position the committed generation was listed at.
+    pub(crate) fn committed_change_journal(&self) -> Option<&ChangeJournal> {
+        self.manifest.as_ref()?.change_journal.as_ref()
+    }
+    /// Which change journal position the next commit keeps.
+    pub(crate) fn plan_change_journal(&mut self, plan: JournalPlan) {
+        self.journal_plan = Some(plan);
     }
     fn open_checked(
         root: &Path,
@@ -4408,6 +4436,8 @@ impl BinaryCatalog {
             writes: CatalogWriteCounts::default(),
             delta_limits: DeltaLimits::default(),
             verified,
+            journal_plan: None,
+            committing_walked: false,
             #[cfg(test)]
             cleanup_root: None,
         })
@@ -5020,6 +5050,17 @@ impl Catalog for BinaryCatalog {
                 )
             };
         drop(cached);
+        let change_journal = self.journal_plan.take().and_then(|plan| {
+            if self.committing_walked {
+                plan.walked
+            } else {
+                plan.targeted.or_else(|| {
+                    self.manifest
+                        .as_ref()
+                        .and_then(|manifest| manifest.change_journal.clone())
+                })
+            }
+        });
         let manifest = Manifest {
             manifest_schema_version: MANIFEST_SCHEMA_VERSION,
             snapshot_schema_version: SNAPSHOT_SCHEMA_VERSION,
@@ -5029,6 +5070,7 @@ impl Catalog for BinaryCatalog {
             previous_snapshot,
             previous_delta,
             summary: ManifestSummary::from_refresh(&summary, inventory),
+            change_journal,
         };
         if self.directory.join(MANIFEST_FILE).is_dir() {
             return Err(CatalogError::Unavailable {
@@ -5051,7 +5093,11 @@ impl Catalog for BinaryCatalog {
         self.manifest = Some(manifest);
         Ok(token.generation)
     }
+    fn committing(&mut self, _token: &StagingToken, walked: bool) {
+        self.committing_walked = walked;
+    }
     fn discard_refresh(&mut self, token: StagingToken) -> Result<(), CatalogError> {
+        self.journal_plan = None;
         if self.staging.is_some() {
             self.require_staging(&token)?;
             self.staging.take();

@@ -200,6 +200,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fast-fs"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "file-id"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -869,6 +876,7 @@ version = "0.32.0"
 dependencies = [
  "atomic-write-file",
  "crc32fast",
+ "fast-fs",
  "game-text-index",
  "mimalloc",
  "process-metrics",

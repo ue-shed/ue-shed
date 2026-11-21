@@ -362,6 +362,59 @@ impl ProjectScanner for FilesystemProjectScanner {
         Ok(BundleListing::Entries(entries))
     }
 
+    /// Lists each directory as the walk lists it: files only (directories are listed on their
+    /// own; symbolic links and junctions are not followed), packages and sidecars by name, with
+    /// the listing's metadata.
+    fn list_directories(
+        &self,
+        project_root: &str,
+        directories: &[String],
+        cancellation: &CancellationToken,
+    ) -> Result<BundleListing, CoordinatorError> {
+        let mut entries = Vec::new();
+        for directory in directories {
+            checkpoint(cancellation, "discovery")?;
+            let Ok(listing) = fs::read_dir(Path::new(project_root).join(directory)) else {
+                return Ok(BundleListing::Walk("changed_directory_unreadable"));
+            };
+            for entry in listing {
+                let Ok(entry) = entry else {
+                    return Ok(BundleListing::Walk("changed_directory_unreadable"));
+                };
+                let Ok(file_type) = entry.file_type() else {
+                    return Ok(BundleListing::Walk("changed_directory_unreadable"));
+                };
+                if !file_type.is_file() {
+                    continue;
+                }
+                let name = entry.file_name();
+                let kind = if is_package_path(Path::new(&name)) {
+                    EntryKind::Package
+                } else if is_sidecar_path(Path::new(&name)) {
+                    EntryKind::Sidecar
+                } else {
+                    continue;
+                };
+                let Ok(metadata) = entry.metadata() else {
+                    return Ok(BundleListing::Walk("changed_directory_unreadable"));
+                };
+                entries.push(PackageSignature {
+                    relative_path: format!(
+                        "{directory}/{}",
+                        name.to_string_lossy().replace('\\', "/")
+                    ),
+                    kind,
+                    size: metadata.len(),
+                    modified_nanos: metadata_modified_nanos(&metadata),
+                });
+            }
+        }
+        checkpoint(cancellation, "discovery")?;
+        entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        entries.dedup_by(|a, b| a.relative_path == b.relative_path);
+        Ok(BundleListing::Entries(entries))
+    }
+
     fn is_ignored_file(&self, project_root: &str, relative_path: &str) -> bool {
         fs::symlink_metadata(Path::new(project_root).join(relative_path))
             .is_ok_and(|metadata| metadata.is_file())

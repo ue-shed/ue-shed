@@ -128,6 +128,36 @@ mount points, more than 4,096 paths, a path that may be a directory, a `.uprojec
 path in another case than the content root or a directory on the way to it, or a plugin path in a
 plugin-inclusive index. The summary metrics say which (`targeted`, `walked_because`).
 
+## Change journal refresh
+
+A refresh told nothing (no `changedPaths`) reads the volume's change journal instead of walking,
+where there is one. The manifest keeps the journal position each generation's content roots were
+listed at (`change_journal`: each root's final path, volume and file id, and each volume's journal
+id and next position), taken before the walk or the read, so anything that changes while the roots
+are listed is read next time. A refresh given `changedPaths` keeps the committed position, which
+still covers everything it did not look at.
+
+The journal is read with `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` (`crates/fast-fs`), which needs no
+administrator rights but leaves names out of its records: each names the changed file and its
+parent directory by id. Each parent is opened by id and kept when its final path lies below a
+content root, so the refresh learns which directories changed, not which files. It lists those
+directories as the walk would and compares every bundle they hold now or held in the committed
+generation, then continues as a targeted refresh: the same result, change report and digest as a
+walk. A directory renamed, moved or deleted below a root falls back to a walk (its entries went
+with it), as does a parent that is gone with no record of where it was, a changed content root (a
+retargeted junction, a plugin root added or removed), a replaced or wrapped journal, more than
+16,384 directories to resolve or 4,096 changed, and every reason a targeted refresh walks;
+`walked_because` names it and `journal` says when the journal was used. A directory this user
+cannot open counts as outside the roots: listing the roots could not enter it either. Other
+platforms and file systems keep no journal, so their refreshes walk (`usn_unsupported`).
+
+Probes that did not pay for themselves: listing directories with `FindFirstFileExW`
+(`FindExInfoBasic`, with or without `FIND_FIRST_EX_LARGE_FETCH`) or `NtQueryDirectoryFile` on
+handles opened relative to their parent measured the same as `std::fs::read_dir` (the per
+directory open, query and close cost the same; the large fetch buffer was slower), and opening
+packages relative to a directory handle with `NtCreateFile` was about 7% slower than `File::open`
+with whole paths at 24 header workers.
+
 Header workers encode records as they read them. Each keeps its own string dictionary and writes
 records with its own string ids, sending with each record the strings it first met there; staging
 gives those strings their shared ids in staging order and rewrites the record's ids. Shared ids

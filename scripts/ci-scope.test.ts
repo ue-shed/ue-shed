@@ -54,6 +54,7 @@ void test("Game Text, native index and CLI changes exercise IO without the site"
 		"crates/game-text-index/src/lib.rs",
 		"crates/unreal-code/src/scanner.rs",
 		"crates/process-metrics/src/lib.rs",
+		"crates/fast-fs/src/usn_windows.rs",
 		"crates/engine-process-supervisor/src/main.rs",
 		"apps/cli/src/localization.test.ts",
 		"scripts/native-game-text-join.test.ts",

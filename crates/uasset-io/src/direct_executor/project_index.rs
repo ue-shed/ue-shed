@@ -4,14 +4,16 @@
 //! and bounded queries. Storage details stay behind the Catalog seam; filesystem details stay behind
 //! the ProjectScanner seam so coordinator tests can inject deterministic fixtures.
 
+use std::borrow::Cow;
+
 use crate::cancellation::CancellationToken;
 
 use super::catalog::{
     Catalog, CatalogDiagnostic, CatalogError, CatalogSnapshotEntry, CatalogStatus, CommittedEntry,
-    Completeness, EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
-    PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_NAMES,
-    PackageSignature, QueryPage, QueryRequest, RefreshChanges, RefreshSummary, StagedPackage,
-    is_map_path, project_id_for,
+    Completeness, EntryKind, EvidencePreparer, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope,
+    MountPoint, PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_NAMES,
+    PackageSignature, QueryPage, QueryRequest, RefreshChanges, RefreshSummary, is_map_path,
+    project_id_for,
 };
 use super::{Failure, checkpoint};
 
@@ -47,14 +49,28 @@ pub enum RefreshEvent {
 
 /// Evidence and the signature observed immediately after reading it. Keep signature failures
 /// separate: the coordinator propagates these, while header failures become partial evidence.
-pub struct HeaderObservation {
-    pub evidence: HeaderEvidence,
+pub struct HeaderObservation<E = HeaderEvidence> {
+    pub evidence: E,
     pub signature: Result<Option<PackageSignature>, CoordinatorError>,
 }
 
-pub type HeaderEvidenceSink<'a> = dyn FnMut(
+impl HeaderObservation {
+    /// The observation with its evidence prepared on the calling thread.
+    pub fn prepare<P: EvidencePreparer>(
+        self,
+        preparer: &P,
+        worker: &mut P::Worker,
+    ) -> HeaderObservation<P::Prepared> {
+        HeaderObservation {
+            evidence: preparer.prepare(worker, self.evidence),
+            signature: self.signature,
+        }
+    }
+}
+
+pub type HeaderEvidenceSink<'a, E> = dyn FnMut(
         &PackageSignature,
-        Result<HeaderObservation, CoordinatorError>,
+        Result<HeaderObservation<E>, CoordinatorError>,
     ) -> Result<(), CoordinatorError>
     + 'a;
 
@@ -83,19 +99,24 @@ pub trait ProjectScanner {
         cancellation: &CancellationToken,
     ) -> Result<HeaderEvidence, CoordinatorError>;
 
-    /// Stream headers with their post-read signatures in signature order. The default preserves
+    /// Stream headers with their post-read signatures in signature order, each prepared by
+    /// `preparer` on the thread that read it. Each thread uses one preparer worker, and a worker's
+    /// prepared values are delivered in the order it prepared them. The default preserves
     /// deterministic test scanners; filesystem adapters may read ahead with bounded parallelism.
-    fn stream_header_evidence(
+    fn stream_header_evidence<P: EvidencePreparer>(
         &self,
         project_root: &str,
         signatures: &[PackageSignature],
         cancellation: &CancellationToken,
-        on_header: &mut HeaderEvidenceSink<'_>,
+        preparer: &P,
+        on_header: &mut HeaderEvidenceSink<'_, P::Prepared>,
     ) -> Result<(), CoordinatorError> {
+        let mut worker = preparer.worker();
         for signature in signatures {
             on_header(
                 signature,
-                observe_header(self, project_root, signature, cancellation),
+                observe_header(self, project_root, signature, cancellation)
+                    .map(|observation| observation.prepare(preparer, &mut worker)),
             )?;
         }
         Ok(())
@@ -146,29 +167,29 @@ pub(crate) fn observe_header<S: ProjectScanner + ?Sized>(
 pub trait CatalogSnapshot: Catalog {
     fn committed_entries(&self) -> Result<Vec<CatalogSnapshotEntry>, CatalogError>;
 
-    /// Calls `visit` with the committed entries in path order. Adapters that hold their
-    /// committed inventory lend it without copying; the default copies `committed_entries`.
-    /// An entry's index here is the one `Catalog::observe_unchanged_committed` receives.
-    fn with_committed_entries<R>(
+    /// Calls `visit` with each committed entry in path order; an entry's position in this order
+    /// is the index `Catalog::observe_unchanged_committed` receives. Adapters may decode entries
+    /// as they visit them, so the committed inventory is never held whole; the default copies
+    /// `committed_entries`.
+    fn visit_committed_entries(
         &self,
-        visit: impl FnOnce(&[CommittedEntry<'_>]) -> R,
-    ) -> Result<R, CatalogError> {
+        visit: &mut dyn FnMut(CommittedEntry<'_>) -> Result<(), CoordinatorError>,
+    ) -> Result<(), CoordinatorError> {
         let mut entries = self.committed_entries()?;
         if !entries.is_sorted_by(|a, b| a.signature.relative_path <= b.signature.relative_path) {
             entries.sort_by(|a, b| a.signature.relative_path.cmp(&b.signature.relative_path));
         }
-        let borrowed = entries
-            .iter()
-            .map(|entry| CommittedEntry {
+        for entry in &entries {
+            visit(CommittedEntry {
                 relative_path: &entry.signature.relative_path,
                 kind: entry.signature.kind,
                 size: entry.signature.size,
                 modified_nanos: entry.signature.modified_nanos,
                 header_profile_version: entry.header_profile_version,
                 header_failure: entry.header_failure,
-            })
-            .collect::<Vec<_>>();
-        Ok(visit(&borrowed))
+            })?;
+        }
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -362,25 +383,24 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             0,
             Some(total_packages),
         );
-        // Compare against the committed entries in place: nothing committed is copied.
-        let comparison = catalog.with_committed_entries(|prior| {
-            compare(
-                prior,
-                &enumerated,
-                total_packages,
-                &mut changes,
-                cancellation,
-                &mut |completed| {
-                    emit_progress(
-                        &mut events,
-                        on_progress,
-                        RefreshPhase::Comparing,
-                        completed,
-                        Some(total_packages),
-                    );
-                },
-            )
-        })??;
+        // Compare against the committed entries as the Catalog visits them: nothing committed is
+        // copied or held whole.
+        let comparison = compare(
+            catalog,
+            &enumerated,
+            total_packages,
+            &mut changes,
+            cancellation,
+            &mut |completed| {
+                emit_progress(
+                    &mut events,
+                    on_progress,
+                    RefreshPhase::Comparing,
+                    completed,
+                    Some(total_packages),
+                );
+            },
+        )?;
         #[expect(
             clippy::expect_used,
             reason = "the token is set above and taken only at commit, after this borrow ends"
@@ -417,28 +437,36 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
                 changed_package_entries.push(signature);
             }
         }
-        for signature in changed_sidecars {
-            catalog.stage_observed(
-                staging,
-                StagedPackage {
-                    signature,
-                    header: None,
-                },
-            )?;
-        }
+        // Header workers prepare evidence for this Catalog as they read it; the coordinator only
+        // stages it. Each staged entry follows the previous one in path order, so changed
+        // sidecars are staged between the packages around them.
+        let preparer = catalog.evidence_preparer(staging)?;
+        let preparer = Normalizing(&preparer);
+        let mut coordinator_worker = preparer.worker();
+        catalog.stage_in_path_order(staging)?;
+        let mut sidecars = changed_sidecars.into_iter().peekable();
         let changed_packages = comparison.changed_packages;
         let mut completed_headers = 0_u64;
         scanner.stream_header_evidence(
             project_root,
             &changed_package_entries,
             cancellation,
+            &preparer,
             &mut |signature, header_result| {
                 checkpoint(cancellation, "inspection")?;
-                let staged = stage_with_initial_header(
+                while let Some(sidecar) =
+                    sidecars.next_if(|sidecar| sidecar.relative_path < signature.relative_path)
+                {
+                    catalog.stage_prepared(staging, &sidecar, None)?;
+                }
+                let (staged, header) = stage_with_initial_header(
                     scanner,
                     project_root,
                     signature,
                     header_result,
+                    &preparer,
+                    &mut coordinator_worker,
+                    &mut |released| Ok(catalog.release_prepared(staging, released)?),
                     cancellation,
                     &mut diagnostics,
                 )?;
@@ -452,10 +480,13 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
                         Some(changed_packages),
                     );
                 }
-                catalog.stage_observed(staging, staged)?;
+                catalog.stage_prepared(staging, &staged, Some(header))?;
                 Ok(())
             },
         )?;
+        for sidecar in sidecars {
+            catalog.stage_prepared(staging, &sidecar, None)?;
+        }
         drop(changed_package_entries);
 
         emit_progress(
@@ -515,10 +546,10 @@ struct Comparison {
     removed_packages: u64,
 }
 
-/// Merges the enumeration with the committed entries (both in path order): which entries reuse
-/// their committed evidence, what changed, and what was removed.
-fn compare(
-    prior: &[CommittedEntry<'_>],
+/// Merges the enumeration with the committed entries (both in path order) as the Catalog visits
+/// them: which entries reuse their committed evidence, what changed, and what was removed.
+fn compare<C: CatalogSnapshot>(
+    catalog: &C,
     enumerated: &[PackageSignature],
     total_packages: u64,
     changes: &mut ChangeReport,
@@ -533,46 +564,33 @@ fn compare(
         removed_packages: 0,
     };
     let mut completed_packages = 0_u64;
-    let mut cursor = 0;
-    for signature in enumerated {
+    // Records one enumerated entry against the committed entry at its path, if there is one.
+    let mut observe = |comparison: &mut Comparison,
+                       changes: &mut ChangeReport,
+                       signature: &PackageSignature,
+                       prior: Option<(u32, &CommittedEntry<'_>)>|
+     -> Result<(), CoordinatorError> {
         checkpoint(cancellation, "read")?;
         if signature.kind == EntryKind::Package {
             completed_packages += 1;
         }
-        while prior
-            .get(cursor)
-            .is_some_and(|entry| entry.relative_path < signature.relative_path.as_str())
-        {
-            cursor += 1;
-        }
-        let prior_entry = prior
-            .get(cursor)
-            .filter(|entry| entry.relative_path == signature.relative_path);
         // A changed file differs on disk; a reused profile or a failed read is re-read
         // without counting as a change.
-        if prior_entry.is_none_or(|prior| !prior.has_signature(signature)) {
+        if prior.is_none_or(|(_, prior)| !prior.has_signature(signature)) {
             changes.changed(&signature.relative_path);
         }
-        let can_reuse = prior_entry.is_some_and(|prior| {
-            prior.has_signature(signature)
-                && (signature.kind == EntryKind::Sidecar
-                    || (prior.header_profile_version == Some(INDEX_PROFILE_VERSION)
-                        && !prior.header_failure))
-        });
-        comparison.reuse.push(if can_reuse {
-            Some(
-                u32::try_from(cursor).map_err(|_| CoordinatorError::Unavailable {
-                    message: "the committed Project Index has more than u32::MAX entries"
-                        .to_owned(),
-                })?,
-            )
-        } else {
-            if signature.kind == EntryKind::Package {
-                comparison.changed_packages += 1;
-            }
-            None
-        });
-
+        let reuse = prior
+            .filter(|(_, prior)| {
+                prior.has_signature(signature)
+                    && (signature.kind == EntryKind::Sidecar
+                        || (prior.header_profile_version == Some(INDEX_PROFILE_VERSION)
+                            && !prior.header_failure))
+            })
+            .map(|(index, _)| index);
+        if reuse.is_none() && signature.kind == EntryKind::Package {
+            comparison.changed_packages += 1;
+        }
+        comparison.reuse.push(reuse);
         if signature.kind == EntryKind::Package {
             comparison.package_count += 1;
             if is_map_path(&signature.relative_path) {
@@ -582,54 +600,102 @@ fn compare(
         if should_emit_package_progress(completed_packages, total_packages) {
             on_progress(completed_packages);
         }
-    }
-
-    let mut observed = enumerated.iter().peekable();
-    for entry in prior {
-        while observed
-            .peek()
-            .is_some_and(|signature| signature.relative_path.as_str() < entry.relative_path)
+        Ok(())
+    };
+    let mut next = 0;
+    let mut index = 0_u32;
+    catalog.visit_committed_entries(&mut |prior| {
+        while let Some(signature) = enumerated
+            .get(next)
+            .filter(|signature| signature.relative_path.as_str() < prior.relative_path)
         {
-            observed.next();
+            observe(&mut comparison, changes, signature, None)?;
+            next += 1;
         }
-        let still_present = observed
-            .peek()
-            .is_some_and(|signature| signature.relative_path == entry.relative_path);
-        if !still_present {
-            changes.removed(entry.relative_path);
-            if entry.kind == EntryKind::Package {
+        let mut present = false;
+        while let Some(signature) = enumerated
+            .get(next)
+            .filter(|signature| signature.relative_path == prior.relative_path)
+        {
+            observe(&mut comparison, changes, signature, Some((index, &prior)))?;
+            present = true;
+            next += 1;
+        }
+        if !present {
+            changes.removed(prior.relative_path);
+            if prior.kind == EntryKind::Package {
                 comparison.removed_packages += 1;
             }
         }
+        index = index
+            .checked_add(1)
+            .ok_or_else(|| CoordinatorError::Unavailable {
+                message: "the committed Project Index has more than u32::MAX entries".to_owned(),
+            })?;
+        Ok(())
+    })?;
+    for signature in &enumerated[next..] {
+        observe(&mut comparison, changes, signature, None)?;
     }
     Ok(comparison)
 }
 
-fn stage_with_initial_header<S: ProjectScanner>(
+/// Evidence as every Project Index consumer reads it: the current profile, and at most the
+/// profile's classes and names. Header workers apply it before preparing evidence.
+fn normalize(evidence: &mut HeaderEvidence) {
+    evidence.profile_version = INDEX_PROFILE_VERSION;
+    evidence.classes.truncate(PROJECT_INDEX_MAX_CLASSES);
+    evidence.serialized_names.truncate(PROJECT_INDEX_MAX_NAMES);
+}
+
+/// A Catalog's preparer behind [`normalize`].
+struct Normalizing<'a, P>(&'a P);
+
+impl<P: EvidencePreparer> EvidencePreparer for Normalizing<'_, P> {
+    type Worker = P::Worker;
+    type Prepared = P::Prepared;
+
+    fn worker(&self) -> P::Worker {
+        self.0.worker()
+    }
+
+    fn prepare(&self, worker: &mut P::Worker, mut evidence: HeaderEvidence) -> P::Prepared {
+        normalize(&mut evidence);
+        self.0.prepare(worker, evidence)
+    }
+}
+
+/// The signature and prepared evidence to stage for one package: its first observation, or a
+/// reread when the package changed while it was read. Observations a reread replaces go to
+/// `release`, so their preparer worker's order is kept.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one package's revalidation needs the scanner, preparer and diagnostics together"
+)]
+fn stage_with_initial_header<'s, S: ProjectScanner, P: EvidencePreparer>(
     scanner: &S,
     project_root: &str,
-    signature: &PackageSignature,
-    first: Result<HeaderObservation, CoordinatorError>,
+    signature: &'s PackageSignature,
+    first: Result<HeaderObservation<P::Prepared>, CoordinatorError>,
+    preparer: &P,
+    worker: &mut P::Worker,
+    release: &mut dyn FnMut(P::Prepared) -> Result<(), CoordinatorError>,
     cancellation: &CancellationToken,
     diagnostics: &mut RefreshDiagnostics,
-) -> Result<StagedPackage, CoordinatorError> {
-    let mut current = signature.clone();
+) -> Result<(Cow<'s, PackageSignature>, P::Prepared), CoordinatorError> {
+    let mut current = Cow::Borrowed(signature);
     let mut next_header = Some(first);
     for _ in 0..MAX_SIGNATURE_REVALIDATION_ATTEMPTS {
         checkpoint(cancellation, "inspection")?;
-        let result = next_header
-            .take()
-            .unwrap_or_else(|| observe_header(scanner, project_root, &current, cancellation));
+        let result = next_header.take().unwrap_or_else(|| {
+            observe_header(scanner, project_root, &current, cancellation)
+                .map(|observation| observation.prepare(preparer, worker))
+        });
         let (header, revalidated) = match result {
             Ok(HeaderObservation {
-                mut evidence,
+                evidence,
                 signature,
-            }) => {
-                evidence.profile_version = INDEX_PROFILE_VERSION;
-                evidence.classes.truncate(PROJECT_INDEX_MAX_CLASSES);
-                evidence.serialized_names.truncate(PROJECT_INDEX_MAX_NAMES);
-                (evidence, signature)
-            }
+            }) => (evidence, signature),
             Err(CoordinatorError::Cancelled { message }) => {
                 return Err(CoordinatorError::Cancelled { message });
             }
@@ -643,29 +709,25 @@ fn stage_with_initial_header<S: ProjectScanner>(
                     ),
                     true,
                 );
-                return Ok(StagedPackage {
-                    signature: current,
-                    header: Some(HeaderEvidence {
-                        header_data: None,
-                        profile_version: INDEX_PROFILE_VERSION,
-                        package_name: String::new(),
-                        classes: Vec::new(),
-                        serialized_names: Vec::new(),
-                        dependencies: Vec::new(),
-                        failure_code: Some("header_read".to_owned()),
-                    }),
-                });
+                let failure = HeaderEvidence {
+                    header_data: None,
+                    profile_version: INDEX_PROFILE_VERSION,
+                    package_name: String::new(),
+                    classes: Vec::new(),
+                    serialized_names: Vec::new(),
+                    dependencies: Vec::new(),
+                    failure_code: Some("header_read".to_owned()),
+                };
+                return Ok((current, preparer.prepare(worker, failure)));
             }
         };
         checkpoint(cancellation, "read")?;
         match revalidated? {
-            Some(next) if next == current => {
-                return Ok(StagedPackage {
-                    signature: current,
-                    header: Some(header),
-                });
+            Some(next) if next == *current => return Ok((current, header)),
+            Some(next) => {
+                release(header)?;
+                current = Cow::Owned(next);
             }
-            Some(next) => current = next,
             None => {
                 push_diagnostic(
                     diagnostics,
@@ -808,6 +870,7 @@ mod tests {
     #[test]
     fn worker_signature_error_is_propagated_without_publishing_partial_evidence() {
         use super::*;
+        use crate::direct_executor::catalog::PlainEvidence;
         use crate::direct_executor::catalog_conformance::FakeScanner;
 
         let signature = PackageSignature {
@@ -837,6 +900,9 @@ mod tests {
             "C:/Fixture",
             &signature,
             first,
+            &PlainEvidence,
+            &mut (),
+            &mut |_| Ok(()),
             &CancellationToken::new(),
             &mut diagnostics,
         )

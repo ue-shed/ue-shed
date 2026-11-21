@@ -3,7 +3,7 @@
 //! All integers are little-endian. Incompatible derived caches are rebuilt, never migrated.
 use super::catalog::*;
 use super::catalog_dependencies::{DependencyGraph, dependency_page};
-use super::project_index::CatalogSnapshot;
+use super::project_index::{CatalogSnapshot, CoordinatorError};
 use atomic_write_file::AtomicWriteFile;
 use serde::{Deserialize, Serialize};
 use std::cell::{OnceCell, RefCell};
@@ -13,6 +13,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uasset_inspection::package_header::PackageHeaderData;
 
@@ -25,6 +26,7 @@ const MAGIC: &[u8; 8] = b"UESHC006";
 /// Posting kinds: exact export classes, serialized names, and dependency targets.
 const POSTING_KINDS: usize = 3;
 const CLASS_POSTINGS: u8 = 0;
+const NAME_POSTINGS: u8 = 1;
 const DEPENDENCY_POSTINGS: u8 = 2;
 const SECTIONS: usize = 5;
 const INVENTORY: usize = 0;
@@ -46,6 +48,10 @@ const COMPRESSION_BATCH_BYTES: usize = 256 * BLOCK_BYTES as usize;
 const MAX_CODEC_THREADS: usize = 16;
 /// Stored bytes one integrity pass reads at a time.
 const VERIFY_CHUNK_BYTES: usize = 1024 * 1024;
+/// Blocks a pass over a whole section decodes at once.
+const DECODE_BATCH_BLOCKS: usize = 256;
+/// Blocks a sequential section reader decodes at once.
+const SECTION_READ_BLOCKS: usize = 64;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CatalogWriteCounts {
@@ -351,6 +357,24 @@ impl Strings {
     }
 }
 
+/// Hashes a u32 string id with one multiplication: ids are dense, so this spreads them well.
+#[derive(Default)]
+struct IdHasher(u64);
+impl std::hash::Hasher for IdHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 = (self.0.rotate_left(8) ^ u64::from(*byte)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        }
+    }
+    fn write_u32(&mut self, value: u32) {
+        self.0 = u64::from(value).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+}
+type BuildIdHasher = std::hash::BuildHasherDefault<IdHasher>;
+
 /// Fast string hash for the writer's dictionary (not persisted).
 fn string_hash(bytes: &[u8]) -> u64 {
     const K: u64 = 0xf135_7aea_2e62_a9c5;
@@ -384,6 +408,15 @@ struct Dictionary {
     prior_lexicon: Vec<u32>,
 }
 impl Dictionary {
+    /// A dictionary with no strings, as each header worker starts with.
+    fn empty() -> Self {
+        Self {
+            table: StringTable::default(),
+            slots: vec![0; 1024],
+            prior: 0,
+            prior_lexicon: Vec::new(),
+        }
+    }
     fn new(prior: Option<&Strings>) -> Result<Self, CatalogError> {
         let (table, prior_lexicon) =
             prior.map_or_else(Default::default, |p| (p.table.clone(), p.lexicon.clone()));
@@ -421,7 +454,10 @@ impl Dictionary {
         }
     }
     fn intern(&mut self, value: &str) -> Result<u32, CatalogError> {
-        let hash = string_hash(value.as_bytes()) as u32;
+        self.intern_hashed(string_hash(value.as_bytes()) as u32, value)
+    }
+    /// [`Dictionary::intern`] for a value whose `string_hash` is already known.
+    fn intern_hashed(&mut self, hash: u32, value: &str) -> Result<u32, CatalogError> {
         let mask = self.slots.len() - 1;
         let mut slot = hash as usize & mask;
         loop {
@@ -449,10 +485,7 @@ impl Dictionary {
     }
     /// Every id in lexicon order: the committed order merged with the new strings, sorted.
     fn lexicon(&self) -> Vec<u32> {
-        let mut added = (self.prior as u32..self.table.len() as u32).collect::<Vec<_>>();
-        added.sort_unstable_by(|a, b| {
-            lexicon_order(self.table.get(*a as usize), self.table.get(*b as usize))
-        });
+        let added = sort_lexicon(&self.table, self.prior as u32..self.table.len() as u32);
         let mut lexicon = Vec::with_capacity(self.table.len());
         let (mut old, mut new) = (
             self.prior_lexicon.iter().peekable(),
@@ -490,20 +523,102 @@ impl Dictionary {
     }
 }
 
-/// One header record (section 4): package name, header data, failure, then classes, names and
-/// dependencies as shared-string ids.
-fn encode_record(
-    header: Option<&HeaderEvidence>,
-    dictionary: &mut Option<Dictionary>,
-    out: &mut Vec<u8>,
-) -> Result<(), CatalogError> {
-    out.push(u8::from(header.is_some()));
-    let Some(header) = header else {
-        return Ok(());
+/// The first eight bytes of a string, ASCII folded, as a big-endian number: ordering these orders
+/// the strings' folded bytes, except among strings that share them.
+fn folded_prefix(value: &str) -> u64 {
+    let mut prefix = [0; 8];
+    for (slot, byte) in prefix.iter_mut().zip(value.bytes()) {
+        *slot = byte.to_ascii_lowercase();
+    }
+    u64::from_be_bytes(prefix)
+}
+
+/// Strings below which [`sort_lexicon`] sorts on one thread.
+const PARALLEL_SORT_STRINGS: usize = 64 * 1024;
+
+/// The string ids `ids` in lexicon order. Large sets sort in runs on several threads, then the
+/// runs merge pairwise; a folded-prefix key decides most comparisons without reading the text.
+fn sort_lexicon(table: &StringTable, ids: std::ops::Range<u32>) -> Vec<u32> {
+    let mut keyed = ids
+        .map(|id| (folded_prefix(table.get(id as usize)), id))
+        .collect::<Vec<_>>();
+    let order = |a: &(u64, u32), b: &(u64, u32)| {
+        a.0.cmp(&b.0)
+            .then_with(|| lexicon_order(table.get(a.1 as usize), table.get(b.1 as usize)))
     };
-    let dictionary = dictionary
-        .as_mut()
-        .ok_or_else(|| corrupt("header staged without a dictionary"))?;
+    let threads = codec_threads(keyed.len() / (PARALLEL_SORT_STRINGS / 4));
+    if keyed.len() < PARALLEL_SORT_STRINGS || threads < 2 {
+        keyed.sort_unstable_by(order);
+        return keyed.into_iter().map(|(_, id)| id).collect();
+    }
+    let per_run = keyed.len().div_ceil(threads);
+    let mut runs = keyed
+        .chunks(per_run)
+        .map(<[(u64, u32)]>::to_vec)
+        .collect::<Vec<_>>();
+    drop(keyed);
+    std::thread::scope(|scope| {
+        for run in &mut runs {
+            scope.spawn(move || run.sort_unstable_by(order));
+        }
+    });
+    while runs.len() > 1 {
+        let pairs = std::mem::take(&mut runs);
+        let mut pairs = pairs.into_iter();
+        let mut merging = Vec::new();
+        while let Some(left) = pairs.next() {
+            match pairs.next() {
+                Some(right) => merging.push((left, right)),
+                None => runs.push(left),
+            }
+        }
+        let merged = std::thread::scope(|scope| {
+            merging
+                .into_iter()
+                .map(|(left, right)| {
+                    scope.spawn(move || {
+                        let mut out = Vec::with_capacity(left.len() + right.len());
+                        let (mut left, mut right) =
+                            (left.into_iter().peekable(), right.into_iter().peekable());
+                        while let (Some(a), Some(b)) = (left.peek(), right.peek()) {
+                            out.extend(if order(a, b) == std::cmp::Ordering::Less {
+                                left.next()
+                            } else {
+                                right.next()
+                            });
+                        }
+                        out.extend(left);
+                        out.extend(right);
+                        out
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|handle| handle.join())
+                .collect::<Vec<_>>()
+        });
+        for run in merged {
+            match run {
+                Ok(run) => runs.push(run),
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        }
+    }
+    runs.pop()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(_, id)| id)
+        .collect()
+}
+
+/// One header record (section 4): package name, header data, failure, then classes, names and
+/// dependencies as `dictionary` string ids. Returns where the class count starts in `out`.
+fn encode_header_record(
+    header: &HeaderEvidence,
+    dictionary: &mut Dictionary,
+    out: &mut Vec<u8>,
+) -> Result<usize, CatalogError> {
+    out.push(1);
     put_string(out, &header.package_name)?;
     out.push(u8::from(header.header_data.is_some()));
     if let Some(data) = &header.header_data {
@@ -513,6 +628,7 @@ fn encode_record(
     if let Some(code) = &header.failure_code {
         put_string(out, code)?;
     }
+    let ids_at = out.len();
     for values in [&header.classes, &header.serialized_names] {
         put32(out, values.len())?;
         for value in values {
@@ -524,7 +640,152 @@ fn encode_record(
         out.extend_from_slice(&dictionary.intern(&dependency.package)?.to_le_bytes());
         out.push(dependency.properties());
     }
+    Ok(ids_at)
+}
+
+/// The little-endian u32 at `at`.
+fn u32_at(bytes: &[u8], at: usize) -> Result<u32, CatalogError> {
+    bytes
+        .get(at..at + 4)
+        .and_then(|raw| raw.try_into().ok())
+        .map(u32::from_le_bytes)
+        .ok_or_else(|| corrupt("truncated prepared record"))
+}
+
+/// Rewrites a record's string ids (its classes, names and dependency targets, from `ids_at`)
+/// through `remap`.
+fn remap_record_ids(record: &mut [u8], ids_at: usize, remap: &[u32]) -> Result<(), CatalogError> {
+    let rewrite = |record: &mut [u8], at: usize| -> Result<(), CatalogError> {
+        let id = *remap
+            .get(u32_at(record, at)? as usize)
+            .ok_or_else(|| corrupt("prepared record names an unknown string"))?;
+        record[at..at + 4].copy_from_slice(&id.to_le_bytes());
+        Ok(())
+    };
+    let mut at = ids_at;
+    for _ in 0..2 {
+        let count = u32_at(record, at)? as usize;
+        at += 4;
+        for _ in 0..count {
+            rewrite(record, at)?;
+            at += 4;
+        }
+    }
+    let count = u32_at(record, at)? as usize;
+    at += 4;
+    for _ in 0..count {
+        rewrite(record, at)?;
+        at += 5;
+    }
+    if at != record.len() {
+        return Err(corrupt(
+            "prepared record does not end with its dependencies",
+        ));
+    }
     Ok(())
+}
+
+/// Encodes header evidence on the header workers. Each worker keeps its own string dictionary
+/// and writes records with its own string ids, sending with each record the strings it first met
+/// there. Staging gives those strings their shared ids in staging order, so shared ids are the
+/// same whichever worker read which package.
+pub(crate) struct BinaryPreparer {
+    workers: AtomicUsize,
+}
+
+/// One header worker's encoder: its strings, by its own ids.
+pub(crate) struct EncodingWorker {
+    slot: usize,
+    strings: Dictionary,
+}
+
+/// A record a header worker encoded, with its worker's string ids.
+pub(crate) struct EncodedHeader {
+    slot: usize,
+    /// The record, then each string the worker first met in it: hash, length and bytes.
+    bytes: Vec<u8>,
+    record_len: usize,
+    ids_at: usize,
+    /// The worker's id for the first of those strings, and how many there are.
+    first_string: usize,
+    new_strings: usize,
+    profile: u32,
+    failure: bool,
+    header_data: Option<PackageHeaderData>,
+}
+
+impl EvidencePreparer for BinaryPreparer {
+    type Worker = EncodingWorker;
+    type Prepared = Result<EncodedHeader, CatalogError>;
+
+    fn worker(&self) -> EncodingWorker {
+        EncodingWorker {
+            slot: self.workers.fetch_add(1, Ordering::Relaxed),
+            strings: Dictionary::empty(),
+        }
+    }
+
+    fn prepare(
+        &self,
+        worker: &mut EncodingWorker,
+        evidence: HeaderEvidence,
+    ) -> Result<EncodedHeader, CatalogError> {
+        let first_string = worker.strings.len();
+        let mut bytes = Vec::with_capacity(
+            evidence.package_name.len()
+                + 64
+                + 4 * (evidence.classes.len() + evidence.serialized_names.len())
+                + 5 * evidence.dependencies.len(),
+        );
+        let ids_at = encode_header_record(&evidence, &mut worker.strings, &mut bytes)?;
+        let record_len = bytes.len();
+        for id in first_string..worker.strings.len() {
+            let value = worker.strings.table.get(id);
+            bytes.extend_from_slice(&(string_hash(value.as_bytes()) as u32).to_le_bytes());
+            put_string(&mut bytes, value)?;
+        }
+        Ok(EncodedHeader {
+            slot: worker.slot,
+            bytes,
+            record_len,
+            ids_at,
+            first_string,
+            new_strings: worker.strings.len() - first_string,
+            profile: evidence.profile_version,
+            failure: evidence.failure_code.is_some(),
+            header_data: evidence.header_data,
+        })
+    }
+}
+
+/// Gives the strings `header`'s worker first met in it their shared ids, in order, extending the
+/// worker's map from its ids to shared ones.
+fn absorb_strings(
+    dictionary: &mut Dictionary,
+    remaps: &mut Vec<Vec<u32>>,
+    header: &EncodedHeader,
+) -> Result<(), CatalogError> {
+    if remaps.len() <= header.slot {
+        remaps.resize_with(header.slot + 1, Vec::new);
+    }
+    let remap = &mut remaps[header.slot];
+    if remap.len() != header.first_string {
+        return Err(corrupt(
+            "prepared evidence reached staging out of its worker's order",
+        ));
+    }
+    let mut d = Decoder::new(
+        header
+            .bytes
+            .get(header.record_len..)
+            .ok_or_else(|| corrupt("truncated prepared record"))?,
+    );
+    remap.reserve(header.new_strings);
+    for _ in 0..header.new_strings {
+        let hash = d.u32()?;
+        remap.push(dictionary.intern_hashed(hash, d.str()?)?);
+    }
+    d.finish()
 }
 
 /// A record's header, borrowed from its decoded bytes and checked: ids name shared strings.
@@ -976,7 +1237,10 @@ struct SectionWriter {
     blocks: Vec<u8>,
     ends: Vec<u64>,
     length: u64,
+    /// Checksum of the decoded bytes after `head`.
     hash: crc32fast::Hasher,
+    /// The first block, held raw until `finish` so its bytes can still be patched.
+    head: Option<Vec<u8>>,
 }
 impl SectionWriter {
     fn new() -> Self {
@@ -986,21 +1250,43 @@ impl SectionWriter {
             ends: Vec::new(),
             length: 0,
             hash: crc32fast::Hasher::new(),
+            head: None,
+        }
+    }
+    /// A writer whose first block can be patched until it finishes.
+    fn with_patchable_head() -> Self {
+        Self {
+            head: Some(Vec::new()),
+            ..Self::new()
         }
     }
     fn len(&self) -> u64 {
         self.length
     }
-    fn push(&mut self, bytes: &[u8]) -> Result<(), CatalogError> {
-        self.hash.update(bytes);
+    fn push(&mut self, mut bytes: &[u8]) -> Result<(), CatalogError> {
         self.length += bytes.len() as u64;
         if self.length > MAX_SECTION_BYTES {
             return Err(corrupt("Catalog section exceeds 512 MiB"));
         }
+        if let Some(head) = &mut self.head {
+            let room = (BLOCK_BYTES as usize - head.len()).min(bytes.len());
+            head.extend_from_slice(&bytes[..room]);
+            bytes = &bytes[room..];
+        }
+        self.hash.update(bytes);
         self.pending.extend_from_slice(bytes);
         if self.pending.len() >= COMPRESSION_BATCH_BYTES {
             self.flush(false)?;
         }
+        Ok(())
+    }
+    /// Overwrites bytes of the held first block.
+    fn patch_head(&mut self, offset: usize, bytes: &[u8]) -> Result<(), CatalogError> {
+        self.head
+            .as_mut()
+            .and_then(|head| head.get_mut(offset..offset + bytes.len()))
+            .ok_or_else(|| corrupt("patch outside a section's held first block"))?
+            .copy_from_slice(bytes);
         Ok(())
     }
     fn flush(&mut self, last: bool) -> Result<(), CatalogError> {
@@ -1018,6 +1304,21 @@ impl SectionWriter {
     }
     fn finish(mut self) -> Result<StoredSection, CatalogError> {
         self.flush(true)?;
+        if let Some(head) = self.head.take() {
+            let mut hash = crc32fast::Hasher::new();
+            hash.update(&head);
+            hash.combine(&self.hash);
+            self.hash = hash;
+            if !head.is_empty() {
+                let frame = compress_blocks(&head, COMPRESSION_LEVEL)?.concat();
+                let shift = frame.len() as u64;
+                self.blocks.splice(0..0, frame);
+                for end in &mut self.ends {
+                    *end += shift;
+                }
+                self.ends.insert(0, shift);
+            }
+        }
         let mut index = Vec::with_capacity(4 + self.ends.len() * 8);
         put32(&mut index, self.ends.len())?;
         for end in &self.ends {
@@ -1042,6 +1343,124 @@ fn encode_section(raw: &[u8]) -> Result<StoredSection, CatalogError> {
     let mut writer = SectionWriter::new();
     writer.push(raw)?;
     writer.finish()
+}
+
+impl StoredSection {
+    /// Each block's range in `blocks`, from the block index.
+    fn block_spans(&self) -> Result<Vec<(u64, u64)>, CatalogError> {
+        let mut d = Decoder::new(&self.index);
+        let count = d.count(8)?;
+        let mut spans = Vec::with_capacity(count);
+        let mut previous = 0;
+        for _ in 0..count {
+            let end = d.u64()?;
+            if end < previous || end > self.blocks.len() as u64 {
+                return Err(corrupt("invalid block index"));
+            }
+            spans.push((previous, end - previous));
+            previous = end;
+        }
+        d.finish()?;
+        Ok(spans)
+    }
+
+    /// Calls `visit` with each row's record, in row order, decoding the blocks a batch at a time.
+    /// `rows` holds each record's length.
+    fn for_each_record(
+        &self,
+        rows: &[RowShape],
+        mut visit: impl FnMut(u32, &RowShape, &[u8]) -> Result<(), CatalogError>,
+    ) -> Result<(), CatalogError> {
+        let spans = self.block_spans()?;
+        let length = self.header.length;
+        let (mut raw, mut raw_start, mut next_block, mut offset) = (Vec::new(), 0_u64, 0, 0_u64);
+        for (row, shape) in rows.iter().enumerate() {
+            let end = offset + u64::from(shape.len);
+            if raw_start + (raw.len() as u64) < end {
+                raw.drain(..(offset - raw_start) as usize);
+                raw_start = offset;
+                while raw_start + (raw.len() as u64) < end {
+                    let last = (next_block + DECODE_BATCH_BLOCKS).min(spans.len());
+                    if next_block == last {
+                        return Err(corrupt("records leave their section"));
+                    }
+                    let decoded = (next_block..last)
+                        .map(|block| block_length(length, block))
+                        .sum();
+                    raw.extend_from_slice(&decode_blocks(
+                        &self.blocks,
+                        0,
+                        &spans[next_block..last],
+                        decoded,
+                    )?);
+                    next_block = last;
+                }
+            }
+            let from = (offset - raw_start) as usize;
+            let row = u32::try_from(row).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+            visit(row, shape, &raw[from..from + shape.len as usize])?;
+            offset = end;
+        }
+        if offset != length {
+            return Err(corrupt("records do not fill their section"));
+        }
+        Ok(())
+    }
+}
+
+/// Writes `values` as one little-endian section at the file's position, compressing and writing
+/// a batch of blocks at a time: the block index is written last, over a placeholder, so the
+/// section is never held whole. Leaves the file positioned after the section.
+fn write_u32_section(file: &mut File, values: &[u32]) -> Result<SectionHeader, CatalogError> {
+    let length = values.len() as u64 * 4;
+    if length > MAX_SECTION_BYTES {
+        return Err(corrupt("Catalog section exceeds 512 MiB"));
+    }
+    let count = length.div_ceil(BLOCK_BYTES);
+    let index_len = 4 + count * 8;
+    let start = file
+        .stream_position()
+        .map_err(io_unavailable("seek binary snapshot"))?;
+    file.write_all(&vec![0; index_len as usize])
+        .map_err(io_unavailable("write binary section"))?;
+    let (mut hash, mut blocks_hash) = (crc32fast::Hasher::new(), crc32fast::Hasher::new());
+    let mut ends = Vec::with_capacity(count as usize);
+    let mut stored = 0_u64;
+    let mut raw = Vec::with_capacity(COMPRESSION_BATCH_BYTES.min(values.len() * 4));
+    for batch in values.chunks(COMPRESSION_BATCH_BYTES / 4) {
+        raw.clear();
+        for value in batch {
+            raw.extend_from_slice(&value.to_le_bytes());
+        }
+        hash.update(&raw);
+        for frame in compress_blocks(&raw, COMPRESSION_LEVEL)? {
+            file.write_all(&frame)
+                .map_err(io_unavailable("write binary section"))?;
+            blocks_hash.update(&frame);
+            stored += frame.len() as u64;
+            ends.push(stored);
+        }
+    }
+    let mut index = Vec::with_capacity(index_len as usize);
+    put32(&mut index, ends.len())?;
+    for end in &ends {
+        put64(&mut index, *end);
+    }
+    file.seek(SeekFrom::Start(start))
+        .map_err(io_unavailable("seek binary snapshot"))?;
+    file.write_all(&index)
+        .map_err(io_unavailable("write binary section"))?;
+    file.seek(SeekFrom::Start(start + index_len + stored))
+        .map_err(io_unavailable("seek binary snapshot"))?;
+    let mut stored_hash = crc32fast::Hasher::new();
+    stored_hash.update(&index);
+    stored_hash.combine(&blocks_hash);
+    Ok(SectionHeader {
+        stored: index_len + stored,
+        length,
+        hash: u64::from(hash.finalize()),
+        stored_hash: u64::from(stored_hash.finalize()),
+    })
 }
 
 fn checked_range(offset: u64, len: u64, total: u64) -> Result<(), CatalogError> {
@@ -1086,17 +1505,135 @@ enum SnapshotCheck {
 struct Snapshot {
     file: RefCell<File>,
     header: SnapshotHeader,
-    paths: StringTable,
-    inventory: Vec<InventoryEntry>,
+    /// Rows in the inventory, as its leading count says.
+    row_count: usize,
+    /// The decoded inventory, on first use. A writer compares with the committed inventory and
+    /// copies its kept rows as streams instead, so it never holds the inventory decoded.
+    rows: OnceCell<Rows>,
     /// File ranges of each section's blocks. Blocks are read and decoded for each query, so a
     /// later query still detects changed or truncated bytes.
     blocks: [Vec<(u64, u64)>; SECTIONS],
     /// The shared strings and posting directory, decoded on first use.
     strings: OnceCell<Strings>,
     postings: OnceCell<Vec<Posting>>,
+}
+
+/// A snapshot's decoded inventory: each row's path and entry, by row id in path order.
+struct Rows {
+    paths: StringTable,
+    inventory: Vec<InventoryEntry>,
     /// Package ids by the hash of their ASCII-folded path, then id (path order), built on the first
     /// lookup that ignores case. Lookups confirm the path, so a hash collision only costs a compare.
     folded_paths: RefCell<Option<Vec<(u64, u32)>>>,
+}
+
+impl Rows {
+    fn path(&self, id: usize) -> &str {
+        self.paths.get(id)
+    }
+    fn signature(&self, id: usize) -> PackageSignature {
+        let entry = &self.inventory[id];
+        PackageSignature {
+            relative_path: self.path(id).to_owned(),
+            kind: entry.kind,
+            size: entry.size,
+            modified_nanos: entry.modified_nanos,
+        }
+    }
+    /// The inventory id at exactly `path`.
+    fn id_at(&self, path: &str) -> Option<usize> {
+        let mut low = 0;
+        let mut high = self.inventory.len();
+        while low < high {
+            let middle = low + (high - low) / 2;
+            match self.path(middle).cmp(path) {
+                std::cmp::Ordering::Less => low = middle + 1,
+                std::cmp::Ordering::Greater => high = middle,
+                std::cmp::Ordering::Equal => return Some(middle),
+            }
+        }
+        None
+    }
+    /// The package at exactly a relative path, else, when `ignore_case`, the first package in path
+    /// order whose path matches without regard to ASCII case.
+    fn package_id_at(&self, path: &str, ignore_case: bool) -> Option<usize> {
+        if let Some(id) = self.id_at(path)
+            && self.inventory[id].kind == EntryKind::Package
+        {
+            return Some(id);
+        }
+        if !ignore_case {
+            return None;
+        }
+        let mut folded = self.folded_paths.borrow_mut();
+        let paths = folded.get_or_insert_with(|| {
+            let mut paths = self
+                .inventory
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| entry.kind == EntryKind::Package)
+                .filter_map(|(id, _)| Some((folded_hash(self.path(id)), u32::try_from(id).ok()?)))
+                .collect::<Vec<_>>();
+            paths.sort_unstable();
+            paths
+        });
+        let hash = folded_hash(path);
+        let start = paths.partition_point(|(other, _)| *other < hash);
+        paths[start..]
+            .iter()
+            .take_while(|(other, _)| *other == hash)
+            .map(|(_, id)| *id as usize)
+            .find(|id| self.path(*id).eq_ignore_ascii_case(path))
+    }
+    /// The bundle signature of the package at `id`: its own stamp, then each sidecar's. Sidecars
+    /// share the package's stem, so they sit beside it in path order.
+    fn bundle_signature(&self, id: usize) -> String {
+        let path = self.path(id);
+        let stem = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
+        let entry = &self.inventory[id];
+        let mut parts = [Some((entry.size, entry.modified_nanos)), None, None, None];
+        let shares_stem = |other: &str| {
+            other.len() > stem.len()
+                && other.starts_with(stem)
+                && other.as_bytes()[stem.len()] == b'.'
+        };
+        let mut look = |other_id: usize| {
+            let other = self.path(other_id);
+            let extension = &other[stem.len() + 1..];
+            if let Some(slot) = ["uexp", "ubulk", "uptnl"]
+                .iter()
+                .position(|sidecar| *sidecar == extension)
+            {
+                let entry = &self.inventory[other_id];
+                parts[slot + 1] = Some((entry.size, entry.modified_nanos));
+            }
+        };
+        let mut before = id;
+        while before > 0 && shares_stem(self.path(before - 1)) {
+            before -= 1;
+            look(before);
+        }
+        let mut after = id + 1;
+        while after < self.inventory.len() && shares_stem(self.path(after)) {
+            look(after);
+            after += 1;
+        }
+        bundle_signature(parts)
+    }
+    /// The first inventory id whose path is after `cursor`.
+    fn after(&self, cursor: &str) -> usize {
+        let mut low = 0;
+        let mut high = self.inventory.len();
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if self.path(middle) <= cursor {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        low
+    }
 }
 
 /// Each section's block file ranges.
@@ -1128,114 +1665,353 @@ fn open_snapshot_file(
     Ok((file, header, blocks))
 }
 
+/// A section's decoded bytes read front to back, a batch of blocks at a time, so a whole section
+/// is never held decoded. It keeps no reference to its snapshot, so a writer can keep one between
+/// calls. Values are parsed from each batch with a [`Decoder`].
+#[derive(Default)]
+struct SectionStream {
+    next_block: usize,
+    raw: Vec<u8>,
+    at: usize,
+    hash: crc32fast::Hasher,
+    /// Batches a helper thread decodes ahead (see [`with_section_prefetch`]): each batch's end
+    /// block and decoded bytes. Without it, batches are read and decoded on demand.
+    prefetched: Option<Receiver<SectionBatch>>,
+}
+
+/// One decoded batch of a section's blocks: the block after it, and its bytes.
+type SectionBatch = Result<(usize, Vec<u8>), CatalogError>;
+
+/// Reads and decodes `section`'s blocks a batch at a time from `file`, sending each batch to
+/// `batches`; stops at the first failure or once nothing receives the batches.
+fn send_section_batches(
+    mut file: File,
+    ranges: &[(u64, u64)],
+    length: u64,
+    batches: &SyncSender<SectionBatch>,
+) {
+    let mut next = 0;
+    while next < ranges.len() {
+        let last = (next + SECTION_READ_BLOCKS).min(ranges.len());
+        let batch = &ranges[next..last];
+        let start = batch[0].0;
+        let stored = batch.iter().map(|range| range.1).sum();
+        let decoded = (next..last).map(|block| block_length(length, block)).sum();
+        let result = read_range(&mut file, start, stored)
+            .and_then(|blocks| decode_blocks(&blocks, start, batch, decoded))
+            .map(|bytes| (last, bytes));
+        let failed = result.is_err();
+        if batches.send(result).is_err() || failed {
+            return;
+        }
+        next = last;
+    }
+}
+
+/// Runs `read` with a [`SectionStream`] over `section` whose batches a helper thread reads and
+/// decodes a batch or two ahead, so a pass over a whole section parses one batch while the next
+/// decodes. The helper reads through its own handle to the snapshot file, which `read` does not
+/// use meanwhile.
+fn with_section_prefetch<R>(
+    snapshot: &Snapshot,
+    section: usize,
+    read: impl FnOnce(SectionStream) -> Result<R, CatalogError>,
+) -> Result<R, CatalogError> {
+    let file = snapshot
+        .file
+        .borrow()
+        .try_clone()
+        .map_err(io_unavailable("open binary snapshot"))?;
+    let ranges = &snapshot.blocks[section];
+    let length = snapshot.header.sections[section].length;
+    std::thread::scope(|scope| {
+        let (sender, receiver) = sync_channel(2);
+        scope.spawn(move || send_section_batches(file, ranges, length, &sender));
+        // `read` drops the stream, and with it the receiver, before the helper is joined.
+        read(SectionStream {
+            prefetched: Some(receiver),
+            ..SectionStream::default()
+        })
+    })
+}
+impl SectionStream {
+    /// A decoder over at least `wanted` decoded bytes of `section` (fewer only at its end); report
+    /// what it read with [`SectionStream::consume`].
+    fn decoder(
+        &mut self,
+        snapshot: &Snapshot,
+        section: usize,
+        wanted: usize,
+    ) -> Result<Decoder<'_>, CatalogError> {
+        let ranges = &snapshot.blocks[section];
+        let length = snapshot.header.sections[section].length;
+        while self.raw.len() < self.at.saturating_add(wanted) && self.next_block < ranges.len() {
+            // Bytes consumed before they were decoded are skipped as they arrive.
+            let drained = self.at.min(self.raw.len());
+            self.raw.drain(..drained);
+            self.at -= drained;
+            let (last, decoded) = match &self.prefetched {
+                Some(batches) => batches
+                    .recv()
+                    .map_err(|_| corrupt("a section's blocks stopped decoding"))??,
+                None => {
+                    let last = (self.next_block + SECTION_READ_BLOCKS).min(ranges.len());
+                    let batch = &ranges[self.next_block..last];
+                    let start = batch[0].0;
+                    let stored = batch.iter().map(|range| range.1).sum();
+                    let blocks = read_range(&mut snapshot.file.borrow_mut(), start, stored)?;
+                    let decoded = (self.next_block..last)
+                        .map(|block| block_length(length, block))
+                        .sum();
+                    (last, decode_blocks(&blocks, start, batch, decoded)?)
+                }
+            };
+            self.hash.update(&decoded);
+            self.raw.extend_from_slice(&decoded);
+            self.next_block = last;
+        }
+        let rest = self
+            .raw
+            .get(self.at..)
+            .ok_or_else(|| corrupt("truncated binary section"))?;
+        Ok(Decoder::new(rest))
+    }
+    /// Marks `count` more bytes read; they may be past what is decoded yet.
+    fn consume(&mut self, count: usize) {
+        self.at += count;
+    }
+    /// Checks that every decoded byte of `section` was read, and its checksum.
+    fn finish(self, snapshot: &Snapshot, section: usize) -> Result<(), CatalogError> {
+        if self.next_block != snapshot.blocks[section].len() || self.at != self.raw.len() {
+            return Err(corrupt("trailing binary bytes"));
+        }
+        if u64::from(self.hash.finalize()) != snapshot.header.sections[section].hash {
+            return Err(corrupt("binary section checksum mismatch"));
+        }
+        Ok(())
+    }
+}
+
+/// The most bytes one inventory row can take besides its path.
+const INVENTORY_ROW_FIXED_BYTES: usize = 65;
+/// The fewest bytes one inventory row takes besides its path.
+const INVENTORY_ROW_MIN_BYTES: usize = 44;
+
+/// The committed inventory read one row at a time, checked as it is read: paths strictly
+/// ordered, ranges inside the records, and at the end the section's checksum and counts.
+struct InventoryStream {
+    stream: SectionStream,
+    /// Rows read so far, and the bytes of the last one, consumed when the next is read.
+    read: usize,
+    pending: usize,
+    last_path: String,
+    packages: u64,
+    maps: u64,
+}
+impl InventoryStream {
+    fn new() -> Self {
+        Self::over(SectionStream::default())
+    }
+    fn over(stream: SectionStream) -> Self {
+        Self {
+            stream,
+            read: 0,
+            // The row count, which `Snapshot::open` read.
+            pending: 4,
+            last_path: String::new(),
+            packages: 0,
+            maps: 0,
+        }
+    }
+    /// The next row's path and entry, or `None` after the last.
+    fn next<'s>(
+        &'s mut self,
+        snapshot: &Snapshot,
+    ) -> Result<Option<(&'s str, InventoryEntry)>, CatalogError> {
+        if self.read == snapshot.row_count {
+            self.stream.consume(std::mem::take(&mut self.pending));
+            return Ok(None);
+        }
+        let pending = std::mem::take(&mut self.pending);
+        self.stream.consume(pending);
+        let path_len = self.stream.decoder(snapshot, INVENTORY, 4)?.u32()? as usize;
+        let mut d = self.stream.decoder(
+            snapshot,
+            INVENTORY,
+            4 + path_len + INVENTORY_ROW_FIXED_BYTES,
+        )?;
+        let (path, entry) = inventory_row(&mut d, snapshot.header.sections[RECORDS].length)?;
+        if self.read > 0 && path <= self.last_path.as_str() {
+            return Err(corrupt("inventory paths must be strictly ordered"));
+        }
+        self.pending = d.position;
+        self.read += 1;
+        self.packages += u64::from(entry.kind == EntryKind::Package);
+        self.maps += u64::from(entry.is_map);
+        self.last_path.clear();
+        self.last_path.push_str(path);
+        Ok(Some((path, entry)))
+    }
+    /// Checks the whole inventory was read: its checksum and its package and map counts.
+    fn finish(mut self, snapshot: &Snapshot) -> Result<(), CatalogError> {
+        if self.read != snapshot.row_count {
+            return Err(corrupt("inventory ended before its rows"));
+        }
+        self.stream.consume(std::mem::take(&mut self.pending));
+        // Reading past the last row decodes any blocks left, so trailing bytes are found.
+        self.stream.decoder(snapshot, INVENTORY, usize::MAX)?;
+        let (packages, maps) = (self.packages, self.maps);
+        self.stream.finish(snapshot, INVENTORY)?;
+        if packages != snapshot.header.packages || maps != snapshot.header.maps {
+            return Err(corrupt("inventory counts do not match the snapshot header"));
+        }
+        Ok(())
+    }
+}
+
+/// One inventory row: its path and entry; its record range must lie in `records_length`.
+fn inventory_row<'d>(
+    d: &mut Decoder<'d>,
+    records_length: u64,
+) -> Result<(&'d str, InventoryEntry), CatalogError> {
+    let relative_path = d.str()?;
+    let kind = d.byte()?;
+    if kind > 1 {
+        return Err(corrupt("invalid entry kind"));
+    }
+    let kind = decode_kind(kind);
+    let size = d.u64()?;
+    let modified_nanos = d.u64()?;
+    let profile = if d.boolean()? { Some(d.u32()?) } else { None };
+    let failure = d.boolean()?;
+    let offset = d.u64()?;
+    let len = d.u32()?;
+    let hash = d.u64()?;
+    let header_data = if d.boolean()? {
+        Some(d.header_data()?)
+    } else {
+        None
+    };
+    checked_range(offset, u64::from(len), records_length)?;
+    Ok((
+        relative_path,
+        InventoryEntry {
+            kind,
+            size,
+            modified_nanos,
+            profile,
+            failure,
+            is_map: kind == EntryKind::Package && is_map_path(relative_path),
+            offset,
+            len,
+            checksum: hash,
+            header_data,
+        },
+    ))
+}
+
+/// Kept rows read from the committed inventory as they are copied, by ascending row id.
+#[derive(Default)]
+struct KeptRows {
+    rows: Option<InventoryStream>,
+    /// The row read last: its id, path and entry.
+    current: Option<(usize, String, InventoryEntry)>,
+}
+impl KeptRows {
+    /// Row `id`'s path and entry. Ids are asked in ascending order.
+    fn row<'a>(
+        &'a mut self,
+        snapshot: &'a Snapshot,
+        id: usize,
+    ) -> Result<(&'a str, &'a InventoryEntry), CatalogError> {
+        if let Some(rows) = snapshot.rows.get() {
+            let entry = rows
+                .inventory
+                .get(id)
+                .ok_or_else(|| corrupt("unchanged record missing from prior snapshot"))?;
+            return Ok((rows.path(id), entry));
+        }
+        if self
+            .current
+            .as_ref()
+            .is_none_or(|(current, ..)| *current != id)
+        {
+            let rows = self.rows.get_or_insert_with(InventoryStream::new);
+            if rows.read > id {
+                return Err(corrupt("kept rows were not copied in order"));
+            }
+            while rows.read < id {
+                rows.next(snapshot)?;
+            }
+            let (path, entry) = rows
+                .next(snapshot)?
+                .ok_or_else(|| corrupt("unchanged record missing from prior snapshot"))?;
+            let mut current_path = self
+                .current
+                .take()
+                .map(|(_, path, _)| path)
+                .unwrap_or_default();
+            current_path.clear();
+            current_path.push_str(path);
+            self.current = Some((id, current_path, entry));
+        }
+        self.current
+            .as_ref()
+            .map(|(_, path, entry)| (path.as_str(), entry))
+            .ok_or_else(|| corrupt("unchanged record missing from prior snapshot"))
+    }
+}
+
 impl Snapshot {
+    /// Opens a snapshot's header, block indexes and row count; the inventory is decoded on first
+    /// use.
     fn open(path: &Path, check: SnapshotCheck) -> Result<Self, CatalogError> {
         let (file, header, blocks) = open_snapshot_file(path, check)?;
         let mut snapshot = Self {
             file: RefCell::new(file),
             header,
-            paths: StringTable::default(),
-            inventory: Vec::new(),
+            row_count: 0,
+            rows: OnceCell::new(),
             blocks,
             strings: OnceCell::new(),
             postings: OnceCell::new(),
-            folded_paths: RefCell::new(None),
         };
-        let bytes = snapshot.section(INVENTORY)?;
-        let mut d = Decoder::new(&bytes);
-        let count = d.count(44)?;
-        snapshot.paths = StringTable::with_capacity(bytes.len() / 2, count);
-        snapshot.inventory = Vec::with_capacity(count);
-        let (mut packages, mut maps) = (0, 0);
-        for id in 0..count {
-            let relative_path = d.str()?;
-            if id > 0 && snapshot.paths.get(id - 1) >= relative_path {
-                return Err(corrupt("inventory paths must be strictly ordered"));
-            }
-            let kind = d.byte()?;
-            if kind > 1 {
-                return Err(corrupt("invalid entry kind"));
-            }
-            let kind = decode_kind(kind);
-            let size = d.u64()?;
-            let modified_nanos = d.u64()?;
-            let profile = if d.boolean()? { Some(d.u32()?) } else { None };
-            let failure = d.boolean()?;
-            let offset = d.u64()?;
-            let len = d.u32()?;
-            let hash = d.u64()?;
-            let header_data = if d.boolean()? {
-                Some(d.header_data()?)
-            } else {
-                None
-            };
-            checked_range(
-                offset,
-                u64::from(len),
-                snapshot.header.sections[RECORDS].length,
-            )?;
-            let is_map = kind == EntryKind::Package && is_map_path(relative_path);
-            packages += u64::from(kind == EntryKind::Package);
-            maps += u64::from(is_map);
-            snapshot.paths.push(relative_path)?;
-            snapshot.inventory.push(InventoryEntry {
-                kind,
-                size,
-                modified_nanos,
-                profile,
-                failure,
-                is_map,
-                offset,
-                len,
-                checksum: hash,
-                header_data,
-            });
+        let length = snapshot.header.sections[INVENTORY].length as usize;
+        let count = SectionStream::default()
+            .decoder(&snapshot, INVENTORY, 4)?
+            .u32()? as usize;
+        if count > length.saturating_sub(4) / INVENTORY_ROW_MIN_BYTES {
+            return Err(corrupt("impossible binary count"));
         }
-        d.finish()?;
-        if packages != snapshot.header.packages || maps != snapshot.header.maps {
-            return Err(corrupt("inventory counts do not match the snapshot header"));
-        }
+        snapshot.row_count = count;
         Ok(snapshot)
     }
-    fn path(&self, id: usize) -> &str {
-        self.paths.get(id)
-    }
-    fn signature(&self, id: usize) -> PackageSignature {
-        let entry = &self.inventory[id];
-        PackageSignature {
-            relative_path: self.path(id).to_owned(),
-            kind: entry.kind,
-            size: entry.size,
-            modified_nanos: entry.modified_nanos,
+    /// The decoded inventory, decoded and checked on first use.
+    fn rows(&self) -> Result<&Rows, CatalogError> {
+        if let Some(rows) = self.rows.get() {
+            return Ok(rows);
         }
-    }
-    /// The inventory id at exactly `path`.
-    fn id_at(&self, path: &str) -> Option<usize> {
-        let mut low = 0;
-        let mut high = self.inventory.len();
-        while low < high {
-            let middle = low + (high - low) / 2;
-            match self.path(middle).cmp(path) {
-                std::cmp::Ordering::Less => low = middle + 1,
-                std::cmp::Ordering::Greater => high = middle,
-                std::cmp::Ordering::Equal => return Some(middle),
+        let length = self.header.sections[INVENTORY].length as usize;
+        let count = self.row_count;
+        // Every row takes at least its fixed bytes, so the rest bounds the path text.
+        let mut paths = StringTable::with_capacity(
+            length.saturating_sub(4 + count * INVENTORY_ROW_MIN_BYTES),
+            count,
+        );
+        let mut inventory = Vec::with_capacity(count);
+        with_section_prefetch(self, INVENTORY, |stream| {
+            let mut stream = InventoryStream::over(stream);
+            while let Some((path, entry)) = stream.next(self)? {
+                paths.push(path)?;
+                inventory.push(entry);
             }
-        }
-        None
-    }
-    /// The first inventory id whose path is after `cursor`.
-    fn after(&self, cursor: &str) -> usize {
-        let mut low = 0;
-        let mut high = self.inventory.len();
-        while low < high {
-            let middle = low + (high - low) / 2;
-            if self.path(middle) <= cursor {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
-        }
-        low
+            stream.finish(self)
+        })?;
+        Ok(self.rows.get_or_init(|| Rows {
+            paths,
+            inventory,
+            folded_paths: RefCell::new(None),
+        }))
     }
     /// A whole section, decoded and checked.
     fn section(&self, index: usize) -> Result<Vec<u8>, CatalogError> {
@@ -1276,7 +2052,7 @@ impl Snapshot {
             let hash = d.u64()?;
             if kind as usize >= POSTING_KINDS
                 || u64::from(value) >= self.header.strings
-                || len as usize > self.inventory.len()
+                || len as usize > self.row_count
             {
                 return Err(corrupt("invalid posting metadata"));
             }
@@ -1360,7 +2136,7 @@ impl Snapshot {
         id: usize,
         bytes: &'b [u8],
     ) -> Result<Option<HeaderView<'b>>, CatalogError> {
-        let entry = &self.inventory[id];
+        let entry = &self.rows()?.inventory[id];
         if checksum(bytes) != entry.checksum {
             return Err(corrupt("record checksum mismatch"));
         }
@@ -1379,16 +2155,17 @@ impl Snapshot {
         ids: &[usize],
         mut visit: impl FnMut(usize, Option<HeaderView<'_>>) -> Result<(), CatalogError>,
     ) -> Result<(), CatalogError> {
+        let inventory = &self.rows()?.inventory;
         let mut last_block = LastBlock::default();
         let mut bytes = Vec::new();
         let mut first = 0;
         while first < ids.len() {
-            let entry = &self.inventory[ids[first]];
+            let entry = &inventory[ids[first]];
             let start = entry.offset;
             let mut end = start + u64::from(entry.len);
             let mut last = first + 1;
             while last < ids.len() {
-                let next = &self.inventory[ids[last]];
+                let next = &inventory[ids[last]];
                 let next_end = next.offset + u64::from(next.len);
                 if next.offset < end || next.offset - end > 4096 || next_end - start > 256 * 1024 {
                     break;
@@ -1400,7 +2177,7 @@ impl Snapshot {
             // survives the query: later queries must still detect changed or truncated bytes.
             self.range_reusing(&mut last_block, RECORDS, start, end - start, &mut bytes)?;
             for &id in &ids[first..last] {
-                let entry = &self.inventory[id];
+                let entry = &inventory[id];
                 let offset = (entry.offset - start) as usize;
                 let record = &bytes[offset..offset + entry.len as usize];
                 visit(id, self.check_record(id, record)?)?;
@@ -1414,7 +2191,8 @@ impl Snapshot {
         id: usize,
         header: Option<HeaderView<'_>>,
     ) -> Result<Option<HeaderEvidence>, CatalogError> {
-        let (Some(header), Some(profile_version)) = (header, self.inventory[id].profile) else {
+        let (Some(header), Some(profile_version)) = (header, self.rows()?.inventory[id].profile)
+        else {
             return Ok(None);
         };
         let strings = &self.strings()?.table;
@@ -1453,6 +2231,7 @@ impl Snapshot {
     #[cfg(test)]
     fn packed(&self, id: usize) -> Result<Option<HeaderEvidence>, CatalogError> {
         let entry = self
+            .rows()?
             .inventory
             .get(id)
             .ok_or_else(|| corrupt("invalid inventory id"))?;
@@ -1507,43 +2286,12 @@ impl Snapshot {
         let mut ids = Vec::with_capacity(posting.len as usize);
         for raw in bytes.as_chunks::<4>().0 {
             let id = u32::from_le_bytes(*raw) as usize;
-            if id >= self.inventory.len() || ids.last().is_some_and(|old| *old >= id) {
+            if id >= self.row_count || ids.last().is_some_and(|old| *old >= id) {
                 return Err(corrupt("invalid posting row order"));
             }
             ids.push(id);
         }
         Ok(ids)
-    }
-    /// The package at exactly a relative path, else, when `ignore_case`, the first package in path
-    /// order whose path matches without regard to ASCII case.
-    fn package_id_at(&self, path: &str, ignore_case: bool) -> Option<usize> {
-        if let Some(id) = self.id_at(path)
-            && self.inventory[id].kind == EntryKind::Package
-        {
-            return Some(id);
-        }
-        if !ignore_case {
-            return None;
-        }
-        let mut folded = self.folded_paths.borrow_mut();
-        let paths = folded.get_or_insert_with(|| {
-            let mut paths = self
-                .inventory
-                .iter()
-                .enumerate()
-                .filter(|(_, entry)| entry.kind == EntryKind::Package)
-                .filter_map(|(id, _)| Some((folded_hash(self.path(id)), u32::try_from(id).ok()?)))
-                .collect::<Vec<_>>();
-            paths.sort_unstable();
-            paths
-        });
-        let hash = folded_hash(path);
-        let start = paths.partition_point(|(other, _)| *other < hash);
-        paths[start..]
-            .iter()
-            .take_while(|(other, _)| *other == hash)
-            .map(|(_, id)| *id as usize)
-            .find(|id| self.path(*id).eq_ignore_ascii_case(path))
     }
     /// Packages whose dependency evidence names any of `package_names` in any ASCII case. Lists
     /// are read in stored order, so each posting block is decoded once.
@@ -1575,13 +2323,15 @@ impl Snapshot {
         limit: usize,
     ) -> Result<Vec<usize>, CatalogError> {
         if matches!(kind, QueryKind::Inventory) {
-            return Ok((after..self.inventory.len())
-                .filter(|&id| self.inventory[id].kind == EntryKind::Package)
+            let inventory = &self.rows()?.inventory;
+            return Ok((after..inventory.len())
+                .filter(|&id| inventory[id].kind == EntryKind::Package)
                 .take(limit)
                 .collect());
         }
         if matches!(kind, QueryKind::Maps) {
             return Ok(self
+                .rows()?
                 .inventory
                 .iter()
                 .enumerate()
@@ -1646,7 +2396,7 @@ impl Snapshot {
             let mut selected_count = 0;
             for raw in bytes.as_chunks::<4>().0 {
                 let id = u32::from_le_bytes(*raw) as usize;
-                if id >= self.inventory.len() || previous.is_some_and(|old| old >= id) {
+                if id >= self.row_count || previous.is_some_and(|old| old >= id) {
                     return Err(corrupt("invalid posting row order"));
                 }
                 previous = Some(id);
@@ -1664,51 +2414,32 @@ impl Snapshot {
         }
         Ok(ids)
     }
-    /// The bundle signature of the package at `id`: its own stamp, then each sidecar's. Sidecars
-    /// share the package's stem, so they sit beside it in path order.
-    fn bundle_signature(&self, id: usize) -> String {
-        let path = self.path(id);
-        let stem = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
-        let entry = &self.inventory[id];
-        let mut parts = [Some((entry.size, entry.modified_nanos)), None, None, None];
-        let shares_stem = |other: &str| {
-            other.len() > stem.len()
-                && other.starts_with(stem)
-                && other.as_bytes()[stem.len()] == b'.'
-        };
-        let mut look = |other_id: usize| {
-            let other = self.path(other_id);
-            let extension = &other[stem.len() + 1..];
-            if let Some(slot) = ["uexp", "ubulk", "uptnl"]
-                .iter()
-                .position(|sidecar| *sidecar == extension)
-            {
-                let entry = &self.inventory[other_id];
-                parts[slot + 1] = Some((entry.size, entry.modified_nanos));
-            }
-        };
-        let mut before = id;
-        while before > 0 && shares_stem(self.path(before - 1)) {
-            before -= 1;
-            look(before);
+}
+
+/// What an inventory row keeps of a staged record besides its signature.
+#[derive(Default)]
+struct RecordMeta {
+    profile: Option<u32>,
+    failure: bool,
+    header_data: Option<PackageHeaderData>,
+}
+impl RecordMeta {
+    #[allow(dead_code)]
+    fn of(header: &HeaderEvidence) -> Self {
+        Self {
+            profile: Some(header.profile_version),
+            failure: header.failure_code.is_some(),
+            header_data: header.header_data.clone(),
         }
-        let mut after = id + 1;
-        while after < self.inventory.len() && shares_stem(self.path(after)) {
-            look(after);
-            after += 1;
-        }
-        bundle_signature(parts)
     }
 }
 
 /// A changed entry staged for the next generation; its record is in `Staging::records`.
 struct StagedRecord {
     signature: PackageSignature,
-    profile: Option<u32>,
-    failure: bool,
-    header_data: Option<PackageHeaderData>,
+    meta: RecordMeta,
     offset: usize,
-    len: u32,
+    len: usize,
 }
 struct Staging {
     generation: Generation,
@@ -1721,6 +2452,459 @@ struct Staging {
     records: Vec<u8>,
     /// Committed strings and those staging added; loaded when the first header is staged.
     dictionary: Option<Dictionary>,
+    /// Each preparer worker's strings' shared ids, by the worker's own ids.
+    remaps: Vec<Vec<u32>>,
+    /// The record being staged, with shared string ids.
+    record: Vec<u8>,
+    /// Entries staged so far.
+    staged: u64,
+    /// Set once entries arrive in path order: the next generation, written as they arrive.
+    ordered: Option<OrderedRows>,
+}
+
+/// The next generation written in path order as entries are staged, with the kept rows copied
+/// in between; started at the first staged entry.
+struct OrderedRows {
+    next_kept: usize,
+    builder: Option<SnapshotBuilder>,
+}
+
+/// The committed strings and those staging added, loaded when the first header is staged.
+fn shared_dictionary<'d>(
+    dictionary: &'d mut Option<Dictionary>,
+    prior: Option<&Snapshot>,
+) -> Result<&'d mut Dictionary, CatalogError> {
+    if dictionary.is_none() {
+        let strings = prior.map(Snapshot::strings).transpose()?;
+        *dictionary = Some(Dictionary::new(strings)?);
+    }
+    dictionary
+        .as_mut()
+        .ok_or_else(|| corrupt("header staged without a dictionary"))
+}
+
+impl Staging {
+    /// Stages `self.record` for `signature`: written at once in path order, else kept for the
+    /// commit to sort.
+    fn stage_record(
+        &mut self,
+        prior: Option<&Snapshot>,
+        signature: &PackageSignature,
+        meta: RecordMeta,
+    ) -> Result<(), CatalogError> {
+        self.staged += 1;
+        let strings = string_count(self.dictionary.as_ref(), prior);
+        match &mut self.ordered {
+            Some(ordered) => {
+                let builder = ordered.builder.get_or_insert_with(SnapshotBuilder::new);
+                builder.copy_kept(
+                    prior,
+                    &self.kept,
+                    &mut ordered.next_kept,
+                    Some(&signature.relative_path),
+                )?;
+                builder.push_staged(signature, &meta, &self.record, strings)
+            }
+            None => {
+                let offset = self.records.len();
+                self.records.extend_from_slice(&self.record);
+                self.changed.push(StagedRecord {
+                    signature: signature.clone(),
+                    meta,
+                    offset,
+                    len: self.record.len(),
+                });
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Strings the next generation holds so far: the committed ones and those staging added.
+fn string_count(dictionary: Option<&Dictionary>, prior: Option<&Snapshot>) -> u64 {
+    dictionary.map_or_else(|| prior.map_or(0, |p| p.header.strings), |d| d.len() as u64)
+}
+
+/// One written row's record length, and whether the row is a package (only packages post).
+struct RowShape {
+    len: u32,
+    package: bool,
+}
+
+/// Writes the next generation's rows in path order: inventory rows and records are compressed a
+/// batch at a time as they arrive, and postings, strings and the directory are derived when it
+/// finishes, so neither the inventory nor the records are ever held whole.
+struct SnapshotBuilder {
+    /// The row count, then the rows; the count is patched in when the builder finishes.
+    inventory: SectionWriter,
+    payload: SectionWriter,
+    rows: Vec<RowShape>,
+    packages: u64,
+    maps: u64,
+    last_path: String,
+    /// One inventory row being encoded.
+    row: Vec<u8>,
+    last_block: LastBlock,
+    kept_record: Vec<u8>,
+    /// The committed rows kept rows are copied from.
+    kept_rows: KeptRows,
+    /// Rows posted under each (kind, string) key so far, and the last row each key counted.
+    counts: [Vec<u32>; POSTING_KINDS],
+    last_rows: [Vec<u32>; POSTING_KINDS],
+}
+
+impl SnapshotBuilder {
+    fn new() -> Self {
+        let mut inventory = SectionWriter::with_patchable_head();
+        // A Vec push cannot fail for four bytes, and the count is patched at the end.
+        let _ = inventory.push(&0_u32.to_le_bytes());
+        Self {
+            inventory,
+            payload: SectionWriter::new(),
+            rows: Vec::new(),
+            packages: 0,
+            maps: 0,
+            last_path: String::new(),
+            row: Vec::new(),
+            last_block: LastBlock::default(),
+            kept_record: Vec::new(),
+            kept_rows: KeptRows::default(),
+            counts: Default::default(),
+            last_rows: Default::default(),
+        }
+    }
+
+    /// Counts the posting keys a package record names, checking its string ids against the
+    /// `strings` the next generation holds so far. A key counts a row once.
+    fn count_postings(&mut self, record: &[u8], strings: u64) -> Result<(), CatalogError> {
+        let Some(header) = decode_record(record, strings)? else {
+            return Ok(());
+        };
+        let row =
+            u32::try_from(self.rows.len()).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+        let strings = usize::try_from(strings).map_err(|_| corrupt("too many strings"))?;
+        for (counts, last_rows) in self.counts.iter_mut().zip(&mut self.last_rows) {
+            if counts.len() < strings {
+                counts.resize(strings, 0);
+                last_rows.resize(strings, u32::MAX);
+            }
+        }
+        let (counts, last_rows) = (&mut self.counts, &mut self.last_rows);
+        let mut post = |kind: u8, value: u32| {
+            let (kind, value) = (kind as usize, value as usize);
+            if last_rows[kind][value] != row {
+                last_rows[kind][value] = row;
+                counts[kind][value] += 1;
+            }
+        };
+        header
+            .class_ids()
+            .for_each(|value| post(CLASS_POSTINGS, value));
+        header
+            .name_ids()
+            .for_each(|value| post(NAME_POSTINGS, value));
+        header
+            .dependency_ids()
+            .for_each(|(value, _)| post(DEPENDENCY_POSTINGS, value));
+        Ok(())
+    }
+
+    /// Appends one row, whose record names at most `strings` strings. Rows arrive in strictly
+    /// increasing path order.
+    fn push_row(
+        &mut self,
+        path: &str,
+        mut entry: InventoryEntry,
+        record: &[u8],
+        strings: u64,
+    ) -> Result<(), CatalogError> {
+        if !self.rows.is_empty() && path <= self.last_path.as_str() {
+            return Err(CatalogError::InvalidRequest {
+                message: format!("Catalog entries were staged out of path order at {path}"),
+            });
+        }
+        if entry.kind == EntryKind::Package {
+            self.count_postings(record, strings)?;
+        }
+        entry.offset = self.payload.len();
+        entry.len =
+            u32::try_from(record.len()).map_err(|_| corrupt("Catalog record exceeds u32"))?;
+        self.payload.push(record)?;
+        self.row.clear();
+        encode_inventory_entry(&mut self.row, path, &entry)?;
+        self.inventory.push(&self.row)?;
+        self.rows.push(RowShape {
+            len: entry.len,
+            package: entry.kind == EntryKind::Package,
+        });
+        self.packages += u64::from(entry.kind == EntryKind::Package);
+        self.maps += u64::from(entry.is_map);
+        self.last_path.clear();
+        self.last_path.push_str(path);
+        Ok(())
+    }
+
+    fn push_staged(
+        &mut self,
+        signature: &PackageSignature,
+        meta: &RecordMeta,
+        record: &[u8],
+        strings: u64,
+    ) -> Result<(), CatalogError> {
+        let path = signature.relative_path.as_str();
+        let entry = InventoryEntry {
+            kind: signature.kind,
+            size: signature.size,
+            modified_nanos: signature.modified_nanos,
+            profile: meta.profile,
+            failure: meta.failure,
+            is_map: signature.kind == EntryKind::Package && is_map_path(path),
+            offset: 0,
+            len: 0,
+            checksum: checksum(record),
+            header_data: meta.header_data.clone(),
+        };
+        self.push_row(path, entry, record, strings)
+    }
+
+    /// Copies the kept rows from `kept[*next..]` (committed ids, ascending) whose paths come
+    /// before `until`, or every one for `None`. A kept row at `until` itself is replaced by the
+    /// entry staged there, and skipped.
+    fn copy_kept(
+        &mut self,
+        prior: Option<&Snapshot>,
+        kept: &[u32],
+        next: &mut usize,
+        until: Option<&str>,
+    ) -> Result<(), CatalogError> {
+        let mut rows = std::mem::take(&mut self.kept_rows);
+        let copied = self.copy_kept_rows(&mut rows, prior, kept, next, until);
+        self.kept_rows = rows;
+        copied
+    }
+
+    fn copy_kept_rows(
+        &mut self,
+        rows: &mut KeptRows,
+        prior: Option<&Snapshot>,
+        kept: &[u32],
+        next: &mut usize,
+        until: Option<&str>,
+    ) -> Result<(), CatalogError> {
+        while let Some(&old) = kept.get(*next) {
+            let prior =
+                prior.ok_or_else(|| corrupt("unchanged record missing from prior snapshot"))?;
+            let (path, entry) = rows.row(prior, old as usize)?;
+            if let Some(until) = until
+                && path >= until
+            {
+                if path == until {
+                    *next += 1;
+                }
+                return Ok(());
+            }
+            *next += 1;
+            let mut record = std::mem::take(&mut self.kept_record);
+            prior.range_reusing(
+                &mut self.last_block,
+                RECORDS,
+                entry.offset,
+                u64::from(entry.len),
+                &mut record,
+            )?;
+            if checksum(&record) != entry.checksum {
+                return Err(corrupt("record checksum mismatch"));
+            }
+            let pushed = self.push_row(path, entry.clone(), &record, prior.header.strings);
+            self.kept_record = record;
+            pushed?;
+        }
+        Ok(())
+    }
+
+    /// Writes the snapshot to `file`: a placeholder header, then the sections in order, the
+    /// posting lists streamed as they are compressed; then the header over its placeholder.
+    /// Returns the row count and the header written.
+    fn finish(
+        self,
+        mut file: File,
+        dictionary: Option<Dictionary>,
+        prior: Option<&Snapshot>,
+    ) -> Result<(usize, SnapshotHeader), CatalogError> {
+        let Self {
+            mut inventory,
+            payload,
+            rows,
+            packages,
+            maps,
+            counts,
+            ..
+        } = self;
+        let string_count = string_count(dictionary.as_ref(), prior);
+        let row_count =
+            u32::try_from(rows.len()).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+        inventory.patch_head(0, &row_count.to_le_bytes())?;
+        let inventory = inventory.finish()?;
+        let payload = payload.finish()?;
+        // The posting lists are placed on one thread while the strings section is encoded.
+        let (postings, strings) = std::thread::scope(|scope| {
+            let postings = scope.spawn(|| Postings::build(&payload, &rows, string_count, counts));
+            let strings = match (&dictionary, prior) {
+                (Some(dictionary), _) => dictionary.encode().and_then(|raw| encode_section(&raw)),
+                // No string was added: the committed section is copied as stored.
+                (None, Some(prior)) => prior.stored_section(STRINGS),
+                (None, None) => encode_section(&0_u32.to_le_bytes()),
+            };
+            let postings = postings
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+            (postings, strings)
+        });
+        let (postings, strings) = (postings?, strings?);
+        drop(rows);
+        drop(dictionary);
+        let directory = encode_section(&postings.directory()?)?;
+        publication_checkpoint("snapshot_created")?;
+        file.write_all(&[0; HEADER_BYTES as usize])
+            .map_err(io_unavailable("write binary directory"))?;
+        publication_checkpoint("snapshot_partial")?;
+        for section in [&inventory, &strings, &directory] {
+            section.write(&mut file)?;
+        }
+        let lists = write_u32_section(&mut file, &postings.rows)?;
+        drop(postings);
+        payload.write(&mut file)?;
+        let header = SnapshotHeader {
+            sections: [
+                inventory.header,
+                strings.header,
+                directory.header,
+                lists,
+                payload.header,
+            ],
+            packages,
+            maps,
+            strings: string_count,
+        };
+        file.seek(SeekFrom::Start(0))
+            .map_err(io_unavailable("seek binary snapshot"))?;
+        file.write_all(&header.encode())
+            .map_err(io_unavailable("write binary directory"))?;
+        publication_checkpoint("before_sync")?;
+        file.sync_all()
+            .map_err(io_unavailable("sync binary snapshot"))?;
+        publication_checkpoint("after_sync")?;
+        Ok((row_count as usize, header))
+    }
+}
+
+/// The posting lists of the records written: under each (kind, string) key, in key order, the
+/// ascending rows whose package record names it. `rows[starts[key]..starts[key + 1]]` is a key's
+/// list, so the lists are one flat array, as the lists section stores them.
+struct Postings {
+    starts: Vec<u32>,
+    rows: Vec<u32>,
+    strings: usize,
+}
+
+impl Postings {
+    /// Places each key's rows, counted as the rows arrived, in one pass over the records: no
+    /// list grows on its own.
+    fn build(
+        payload: &StoredSection,
+        rows: &[RowShape],
+        strings: u64,
+        counts: [Vec<u32>; POSTING_KINDS],
+    ) -> Result<Self, CatalogError> {
+        let strings_len = usize::try_from(strings).map_err(|_| corrupt("too many strings"))?;
+        let keys = POSTING_KINDS * strings_len;
+        let mut starts = Vec::with_capacity(keys + 1);
+        let mut total = 0_u32;
+        for mut counts in counts {
+            counts.resize(strings_len, 0);
+            for count in counts {
+                starts.push(total);
+                total = total
+                    .checked_add(count)
+                    .ok_or_else(|| corrupt("Catalog count exceeds u32"))?;
+            }
+        }
+        starts.push(total);
+        let mut next = starts[..keys].to_vec();
+        let mut last = vec![u32::MAX; keys];
+        let mut placed = vec![0_u32; total as usize];
+        payload.for_each_record(rows, |row, shape, record| {
+            if shape.package {
+                record_keys(record, strings, strings_len, |key| {
+                    if last[key] != row {
+                        last[key] = row;
+                        if let Some(slot) = placed.get_mut(next[key] as usize) {
+                            *slot = row;
+                        }
+                        next[key] += 1;
+                    }
+                })?;
+            }
+            Ok(())
+        })?;
+        if next.iter().zip(&starts[1..]).any(|(next, end)| next != end) {
+            return Err(corrupt("records do not match their posting counts"));
+        }
+        Ok(Self {
+            starts,
+            rows: placed,
+            strings: strings_len,
+        })
+    }
+
+    /// The posting directory (section 2): each non-empty list's key, offset, length and checksum.
+    fn directory(&self) -> Result<Vec<u8>, CatalogError> {
+        let mut directory = Vec::new();
+        put32(&mut directory, 0)?;
+        let mut count = 0_usize;
+        let mut list = Vec::new();
+        for (key, bounds) in self.starts.windows(2).enumerate() {
+            let (start, end) = (bounds[0] as usize, bounds[1] as usize);
+            if start == end {
+                continue;
+            }
+            count += 1;
+            list.clear();
+            for row in &self.rows[start..end] {
+                list.extend_from_slice(&row.to_le_bytes());
+            }
+            directory.push((key / self.strings) as u8);
+            directory.extend_from_slice(&((key % self.strings) as u32).to_le_bytes());
+            put64(&mut directory, start as u64 * 4);
+            put32(&mut directory, end - start)?;
+            put64(&mut directory, checksum(&list));
+        }
+        let count = u32::try_from(count).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+        directory[..4].copy_from_slice(&count.to_le_bytes());
+        Ok(directory)
+    }
+}
+
+/// Calls `post` with each posting key a record names: its classes, names and dependency targets,
+/// keyed by kind and string id.
+fn record_keys(
+    record: &[u8],
+    strings: u64,
+    strings_len: usize,
+    mut post: impl FnMut(usize),
+) -> Result<(), CatalogError> {
+    if let Some(header) = decode_record(record, strings)? {
+        header
+            .class_ids()
+            .for_each(|value| post(CLASS_POSTINGS as usize * strings_len + value as usize));
+        header
+            .name_ids()
+            .for_each(|value| post(NAME_POSTINGS as usize * strings_len + value as usize));
+        header.dependency_ids().for_each(|(value, _)| {
+            post(DEPENDENCY_POSTINGS as usize * strings_len + value as usize)
+        });
+    }
+    Ok(())
 }
 struct Unpublished {
     path: PathBuf,
@@ -1916,6 +3100,144 @@ impl BinaryCatalog {
             cleanup_root: None,
         })
     }
+    /// One page of an inventory, map or posting query, its items built by `plain` (inventory and
+    /// map items) and `header` (each header item, from its path, record and the shared strings).
+    /// Callers have checked the request's identity, limit and generation.
+    fn page<I>(
+        &self,
+        request: &QueryRequest,
+        mut plain: impl FnMut(QueryItem) -> I,
+        mut header: impl FnMut(&str, &HeaderView<'_>, &StringTable) -> I,
+    ) -> Result<(Vec<I>, Option<String>), CatalogError> {
+        let cursor = parse_page_cursor(request.cursor.as_deref())?;
+        self.load()?;
+        let cached = self.snapshot.borrow();
+        let snapshot = cached
+            .as_ref()
+            .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
+        let rows = snapshot.rows()?;
+        let after = rows.after(&cursor);
+        let ids = snapshot.matches(&request.kind, after, request.limit + 1)?;
+        let more = ids.len() > request.limit;
+        let selected = &ids[..ids.len().min(request.limit)];
+        let mut items = Vec::with_capacity(selected.len());
+        match &request.kind {
+            // Inventory rows carry their header data: an inventory page reads no records.
+            QueryKind::Inventory => {
+                for &id in selected {
+                    items.push(plain(QueryItem::Inventory {
+                        package_path: rows.path(id).to_owned(),
+                        signature: rows.bundle_signature(id),
+                        header_data: rows.inventory[id].header_data.clone(),
+                    }));
+                }
+            }
+            // A map page needs only each record's package name.
+            QueryKind::Maps => snapshot.records(selected, |id, record| {
+                let path = rows.path(id);
+                items.push(plain(QueryItem::Map {
+                    package_name: record
+                        .map(|h| h.package_name)
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(path)
+                        .to_owned(),
+                    map_path: path.to_owned(),
+                }));
+                Ok(())
+            })?,
+            _ => {
+                let strings = &snapshot.strings()?.table;
+                snapshot.records(selected, |id, record| {
+                    let record =
+                        record.ok_or_else(|| corrupt("posting refers to missing header"))?;
+                    items.push(header(rows.path(id), &record, strings));
+                    Ok(())
+                })?;
+            }
+        }
+        let next_cursor = if more {
+            selected.last().map(|id| rows.path(*id).to_owned())
+        } else {
+            None
+        };
+        Ok((items, next_cursor))
+    }
+
+    /// [`Catalog::query`] for an inventory, map or posting query, with each header item's classes
+    /// and names as ids into the page's own strings, in first-use order: each distinct string is
+    /// copied once from the shared strings, and never hashed as text.
+    pub(crate) fn query_shared_strings(
+        &self,
+        request: &QueryRequest,
+    ) -> Result<SharedStringPage, CatalogError> {
+        let manifest = require_manifest(&self.manifest, &self.project_id, &request.project_id)?;
+        validate_page_limit(request.limit)?;
+        let generation = Generation::new(manifest.summary.generation);
+        if generation != request.expected_generation {
+            return Err(CatalogError::StaleGeneration {
+                expected: request.expected_generation,
+                actual: generation,
+            });
+        }
+        if matches!(
+            request.kind,
+            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. }
+        ) {
+            return Err(CatalogError::InvalidRequest {
+                message: "dependency pages name packages, not shared strings".into(),
+            });
+        }
+        let mut page_ids: std::collections::HashMap<u32, u32, BuildIdHasher> =
+            std::collections::HashMap::default();
+        let mut page_strings = Vec::new();
+        let (items, next_cursor) = self.page(
+            request,
+            |item| match item {
+                QueryItem::Inventory {
+                    package_path,
+                    signature,
+                    header_data,
+                } => SharedStringItem::Inventory {
+                    package_path,
+                    signature,
+                    header_data,
+                },
+                QueryItem::Map {
+                    map_path,
+                    package_name,
+                } => SharedStringItem::Map {
+                    map_path,
+                    package_name,
+                },
+                // `page` builds header items itself, and dependency items are refused above.
+                QueryItem::Header { .. } | QueryItem::Package { .. } => unreachable!(),
+            },
+            |path, header, strings| {
+                let mut page_id = |id: u32| {
+                    *page_ids.entry(id).or_insert_with(|| {
+                        page_strings.push(strings.get(id as usize).to_owned());
+                        // A page carries at most PROJECT_INDEX_MAX_PAGE_STRINGS strings.
+                        (page_strings.len() - 1) as u32
+                    })
+                };
+                SharedStringItem::Header {
+                    header_data: header.header_data.clone(),
+                    package_path: path.to_owned(),
+                    package_name: header.package_name.to_owned(),
+                    classes: header.class_ids().map(&mut page_id).collect(),
+                    serialized_names: header.name_ids().map(&mut page_id).collect(),
+                }
+            },
+        )?;
+        Ok(SharedStringPage {
+            project_id: request.project_id.clone(),
+            generation,
+            items,
+            next_cursor,
+            strings: page_strings,
+        })
+    }
+
     pub(crate) fn quarantined_from(&self) -> Option<&Path> {
         self.quarantined_from.as_deref()
     }
@@ -1962,7 +3284,15 @@ impl BinaryCatalog {
     }
 }
 
+fn observed_after_ordered_staging() -> CatalogError {
+    CatalogError::InvalidRequest {
+        message: "entries cannot be observed unchanged once staged in path order".into(),
+    }
+}
+
 impl Catalog for BinaryCatalog {
+    type Preparer = BinaryPreparer;
+
     fn status(&self) -> CatalogStatus {
         self.manifest
             .as_ref()
@@ -1979,8 +3309,9 @@ impl Catalog for BinaryCatalog {
         self.load().ok()?;
         let cached = self.snapshot.borrow();
         let snapshot = cached.as_ref()?;
-        let id = snapshot.id_at(path)?;
-        Some((snapshot.signature(id), snapshot.headers(&[id]).ok()?.pop()?))
+        let rows = snapshot.rows().ok()?;
+        let id = rows.id_at(path)?;
+        Some((rows.signature(id), snapshot.headers(&[id]).ok()?.pop()?))
     }
     fn begin_refresh(&mut self) -> Result<StagingToken, CatalogError> {
         if self.publication_uncertain {
@@ -2008,6 +3339,10 @@ impl Catalog for BinaryCatalog {
             changed: Vec::new(),
             records: Vec::new(),
             dictionary: None,
+            remaps: Vec::new(),
+            record: Vec::new(),
+            staged: 0,
+            ordered: None,
         });
         self.writes = CatalogWriteCounts::default();
         Ok(StagingToken { generation })
@@ -2015,12 +3350,14 @@ impl Catalog for BinaryCatalog {
     fn observe_unchanged(&mut self, token: &StagingToken, path: &str) -> Result<(), CatalogError> {
         self.require_staging(token)?;
         self.load()?;
-        let id = self
-            .snapshot
-            .borrow()
-            .as_ref()
-            .and_then(|snapshot| snapshot.id_at(path));
+        let id = match self.snapshot.borrow().as_ref() {
+            Some(snapshot) => snapshot.rows()?.id_at(path),
+            None => None,
+        };
         let staging = self.staging_mut()?;
+        if staging.ordered.is_some() {
+            return Err(observed_after_ordered_staging());
+        }
         match id.and_then(|id| u32::try_from(id).ok()) {
             Some(id) => staging.kept.push(id),
             None => staging.missing_unchanged = true,
@@ -2034,12 +3371,22 @@ impl Catalog for BinaryCatalog {
         committed_index: usize,
     ) -> Result<(), CatalogError> {
         self.require_staging(token)?;
+        // The index is the entry's position in `visit_committed_entries` over this snapshot; its
+        // path is checked when the inventory is decoded, its range always.
         let matches = self.snapshot.borrow().as_ref().is_some_and(|snapshot| {
-            committed_index < snapshot.inventory.len() && snapshot.path(committed_index) == path
+            committed_index < snapshot.row_count
+                && snapshot
+                    .rows
+                    .get()
+                    .is_none_or(|rows| rows.path(committed_index) == path)
         });
         match u32::try_from(committed_index) {
             Ok(id) if matches => {
-                self.staging_mut()?.kept.push(id);
+                let staging = self.staging_mut()?;
+                if staging.ordered.is_some() {
+                    return Err(observed_after_ordered_staging());
+                }
+                staging.kept.push(id);
                 Ok(())
             }
             _ => self.observe_unchanged(token, path),
@@ -2054,31 +3401,106 @@ impl Catalog for BinaryCatalog {
         let started = Instant::now();
         self.load()?;
         let snapshot = self.snapshot.borrow();
+        let prior = snapshot.as_ref();
         let staging = self.staging.as_mut().ok_or_else(no_staging)?;
-        if entry.header.is_some() && staging.dictionary.is_none() {
-            let prior = snapshot.as_ref().map(Snapshot::strings).transpose()?;
-            staging.dictionary = Some(Dictionary::new(prior)?);
-        }
-        let offset = staging.records.len();
-        encode_record(
-            entry.header.as_ref(),
-            &mut staging.dictionary,
-            &mut staging.records,
-        )?;
-        let len = u32::try_from(staging.records.len() - offset)
-            .map_err(|_| corrupt("Catalog record exceeds u32"))?;
-        let header = entry.header;
-        staging.changed.push(StagedRecord {
-            signature: entry.signature,
-            profile: header.as_ref().map(|h| h.profile_version),
-            failure: header.as_ref().is_some_and(|h| h.failure_code.is_some()),
-            header_data: header.and_then(|h| h.header_data),
-            offset,
-            len,
-        });
+        staging.record.clear();
+        let meta = match &entry.header {
+            None => {
+                staging.record.push(0);
+                RecordMeta::default()
+            }
+            Some(header) => {
+                let dictionary = shared_dictionary(&mut staging.dictionary, prior)?;
+                encode_header_record(header, dictionary, &mut staging.record)?;
+                RecordMeta::of(header)
+            }
+        };
+        staging.stage_record(prior, &entry.signature, meta)?;
         drop(snapshot);
         self.writes.staged_evidence_rows += 1;
         self.writes.evidence_write_duration += started.elapsed();
+        Ok(())
+    }
+    fn evidence_preparer(&mut self, token: &StagingToken) -> Result<BinaryPreparer, CatalogError> {
+        self.require_staging(token)?;
+        Ok(BinaryPreparer {
+            workers: AtomicUsize::new(0),
+        })
+    }
+    fn stage_prepared(
+        &mut self,
+        token: &StagingToken,
+        signature: &PackageSignature,
+        header: Option<Result<EncodedHeader, CatalogError>>,
+    ) -> Result<(), CatalogError> {
+        self.require_staging(token)?;
+        let started = Instant::now();
+        self.load()?;
+        let snapshot = self.snapshot.borrow();
+        let prior = snapshot.as_ref();
+        let staging = self.staging.as_mut().ok_or_else(no_staging)?;
+        staging.record.clear();
+        let meta = match header {
+            None => {
+                staging.record.push(0);
+                RecordMeta::default()
+            }
+            Some(prepared) => {
+                let prepared = prepared?;
+                let dictionary = shared_dictionary(&mut staging.dictionary, prior)?;
+                absorb_strings(dictionary, &mut staging.remaps, &prepared)?;
+                let record = prepared
+                    .bytes
+                    .get(..prepared.record_len)
+                    .ok_or_else(|| corrupt("truncated prepared record"))?;
+                staging.record.extend_from_slice(record);
+                remap_record_ids(
+                    &mut staging.record,
+                    prepared.ids_at,
+                    &staging.remaps[prepared.slot],
+                )?;
+                RecordMeta {
+                    profile: Some(prepared.profile),
+                    failure: prepared.failure,
+                    header_data: prepared.header_data,
+                }
+            }
+        };
+        staging.stage_record(prior, signature, meta)?;
+        drop(snapshot);
+        self.writes.staged_evidence_rows += 1;
+        self.writes.evidence_write_duration += started.elapsed();
+        Ok(())
+    }
+    fn release_prepared(
+        &mut self,
+        token: &StagingToken,
+        prepared: Result<EncodedHeader, CatalogError>,
+    ) -> Result<(), CatalogError> {
+        self.require_staging(token)?;
+        let prepared = prepared?;
+        self.load()?;
+        let snapshot = self.snapshot.borrow();
+        let staging = self.staging.as_mut().ok_or_else(no_staging)?;
+        let dictionary = shared_dictionary(&mut staging.dictionary, snapshot.as_ref())?;
+        absorb_strings(dictionary, &mut staging.remaps, &prepared)
+    }
+    fn stage_in_path_order(&mut self, token: &StagingToken) -> Result<(), CatalogError> {
+        self.require_staging(token)?;
+        let staging = self.staging_mut()?;
+        if staging.ordered.is_none() {
+            if staging.staged > 0 {
+                return Err(CatalogError::InvalidRequest {
+                    message: "entries were staged before staging in path order".into(),
+                });
+            }
+            staging.kept.sort_unstable();
+            staging.kept.dedup();
+            staging.ordered = Some(OrderedRows {
+                next_kept: 0,
+                builder: None,
+            });
+        }
         Ok(())
     }
     fn commit_refresh(
@@ -2100,14 +3522,14 @@ impl Catalog for BinaryCatalog {
         staging.kept.dedup();
         let mut cleanup = None;
         let reuse = self.manifest.is_some()
-            && staging.changed.is_empty()
+            && staging.staged == 0
             && !staging.missing_unchanged
             && summary.removed_packages == 0
             && self
                 .snapshot
                 .borrow()
                 .as_ref()
-                .is_some_and(|snapshot| snapshot.inventory.len() == staging.kept.len());
+                .is_some_and(|snapshot| snapshot.row_count == staging.kept.len());
         let (physical_snapshot, previous_snapshot) = if let Some(current) = &self.manifest
             && reuse
         {
@@ -2217,62 +3639,24 @@ impl Catalog for BinaryCatalog {
                 next_cursor,
             });
         }
-        let after = snapshot.after(&cursor);
-        let ids = snapshot.matches(&request.kind, after, request.limit + 1)?;
-        let more = ids.len() > request.limit;
-        let selected = &ids[..ids.len().min(request.limit)];
-        let mut items = Vec::with_capacity(selected.len());
-        match &request.kind {
-            // Inventory rows carry their header data: an inventory page reads no records.
-            QueryKind::Inventory => {
-                for &id in selected {
-                    items.push(QueryItem::Inventory {
-                        package_path: snapshot.path(id).to_owned(),
-                        signature: snapshot.bundle_signature(id),
-                        header_data: snapshot.inventory[id].header_data.clone(),
-                    });
-                }
-            }
-            // A map page needs only each record's package name.
-            QueryKind::Maps => snapshot.records(selected, |id, header| {
-                let path = snapshot.path(id);
-                items.push(QueryItem::Map {
-                    package_name: header
-                        .map(|h| h.package_name)
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or(path)
-                        .to_owned(),
-                    map_path: path.to_owned(),
-                });
-                Ok(())
-            })?,
-            _ => {
-                let strings = &snapshot.strings()?.table;
-                snapshot.records(selected, |id, header| {
-                    let header =
-                        header.ok_or_else(|| corrupt("posting refers to missing header"))?;
-                    items.push(QueryItem::Header {
-                        header_data: header.header_data.clone(),
-                        package_path: snapshot.path(id).to_owned(),
-                        package_name: header.package_name.to_owned(),
-                        classes: header
-                            .class_ids()
-                            .map(|id| strings.get(id as usize).to_owned())
-                            .collect(),
-                        serialized_names: header
-                            .name_ids()
-                            .map(|id| strings.get(id as usize).to_owned())
-                            .collect(),
-                    });
-                    Ok(())
-                })?;
-            }
-        }
-        let next_cursor = if more {
-            items.last().map(|i| item_path(i).to_owned())
-        } else {
-            None
-        };
+        drop(cached);
+        let (items, next_cursor) = self.page(
+            request,
+            |item| item,
+            |path, header, strings| QueryItem::Header {
+                header_data: header.header_data.clone(),
+                package_path: path.to_owned(),
+                package_name: header.package_name.to_owned(),
+                classes: header
+                    .class_ids()
+                    .map(|id| strings.get(id as usize).to_owned())
+                    .collect(),
+                serialized_names: header
+                    .name_ids()
+                    .map(|id| strings.get(id as usize).to_owned())
+                    .collect(),
+            },
+        )?;
         Ok(QueryPage {
             project_id: request.project_id.clone(),
             generation,
@@ -2300,10 +3684,10 @@ impl Catalog for BinaryCatalog {
             .as_ref()
             .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
         // One byte per inventory entry bounds union memory independently of match count.
-        let mut matched = vec![false; snapshot.inventory.len()];
+        let mut matched = vec![false; snapshot.row_count];
         let mut count = 0;
         for filter in &request.filters {
-            for id in snapshot.matches(filter, 0, snapshot.inventory.len())? {
+            for id in snapshot.matches(filter, 0, snapshot.row_count)? {
                 if !matched[id] {
                     matched[id] = true;
                     count += 1;
@@ -2335,11 +3719,18 @@ impl DependencyGraph for BinaryGraph<'_> {
         relative_path: &str,
         ignore_case: bool,
     ) -> Result<Option<usize>, CatalogError> {
-        Ok(self.snapshot.package_id_at(relative_path, ignore_case))
+        Ok(self
+            .snapshot
+            .rows()?
+            .package_id_at(relative_path, ignore_case))
     }
 
     fn package_path(&self, node: &usize) -> String {
-        self.snapshot.path(*node).to_owned()
+        // Nodes come from `package_at` and `referrers`, which decoded the inventory.
+        self.snapshot
+            .rows()
+            .map(|rows| rows.path(*node).to_owned())
+            .unwrap_or_default()
     }
 
     fn evidence(&self, nodes: &[usize]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
@@ -2370,55 +3761,71 @@ impl DependencyGraph for BinaryGraph<'_> {
 impl CatalogSnapshot for BinaryCatalog {
     fn committed_entries(&self) -> Result<Vec<CatalogSnapshotEntry>, CatalogError> {
         self.load()?;
-        Ok(self.snapshot.borrow().as_ref().map_or_else(Vec::new, |s| {
-            s.inventory
-                .iter()
-                .enumerate()
-                .map(|(id, e)| CatalogSnapshotEntry {
-                    signature: s.signature(id),
-                    header_profile_version: e.profile,
-                    header_failure: e.failure,
-                })
-                .collect()
-        }))
+        let cached = self.snapshot.borrow();
+        let Some(snapshot) = cached.as_ref() else {
+            return Ok(Vec::new());
+        };
+        let rows = snapshot.rows()?;
+        Ok(rows
+            .inventory
+            .iter()
+            .enumerate()
+            .map(|(id, e)| CatalogSnapshotEntry {
+                signature: rows.signature(id),
+                header_profile_version: e.profile,
+                header_failure: e.failure,
+            })
+            .collect())
     }
 
-    fn with_committed_entries<R>(
+    /// Decodes the committed inventory as it visits it, unless it is decoded already: a refresh
+    /// never holds it decoded.
+    fn visit_committed_entries(
         &self,
-        visit: impl FnOnce(&[CommittedEntry<'_>]) -> R,
-    ) -> Result<R, CatalogError> {
+        visit: &mut dyn FnMut(CommittedEntry<'_>) -> Result<(), CoordinatorError>,
+    ) -> Result<(), CoordinatorError> {
         self.load()?;
         let cached = self.snapshot.borrow();
-        let entries = cached.as_ref().map_or_else(Vec::new, |s| {
-            s.inventory
-                .iter()
-                .enumerate()
-                .map(|(id, e)| CommittedEntry {
-                    relative_path: s.path(id),
-                    kind: e.kind,
-                    size: e.size,
-                    modified_nanos: e.modified_nanos,
-                    header_profile_version: e.profile,
-                    header_failure: e.failure,
-                })
-                .collect()
-        });
-        Ok(visit(&entries))
+        let Some(snapshot) = cached.as_ref() else {
+            return Ok(());
+        };
+        fn committed<'a>(path: &'a str, entry: &InventoryEntry) -> CommittedEntry<'a> {
+            CommittedEntry {
+                relative_path: path,
+                kind: entry.kind,
+                size: entry.size,
+                modified_nanos: entry.modified_nanos,
+                header_profile_version: entry.profile,
+                header_failure: entry.failure,
+            }
+        }
+        if let Some(rows) = snapshot.rows.get() {
+            for (id, entry) in rows.inventory.iter().enumerate() {
+                visit(committed(rows.path(id), entry))?;
+            }
+            return Ok(());
+        }
+        let mut visited = Ok(());
+        with_section_prefetch(snapshot, INVENTORY, |stream| {
+            let mut stream = InventoryStream::over(stream);
+            while let Some((path, entry)) = stream.next(snapshot)? {
+                if let Err(error) = visit(committed(path, &entry)) {
+                    visited = Err(error);
+                    return Ok(());
+                }
+            }
+            stream.finish(snapshot)
+        })?;
+        visited
     }
-}
-
-/// Where a merged inventory row's record comes from.
-enum RecordSource {
-    Kept(usize),
-    Changed(usize),
 }
 
 /// Writes the next generation: kept rows (their records copied from the committed snapshot)
-/// merged in path order with the changed ones. Postings are derived from the records written,
-/// so the committed postings are never read. Records and postings are compressed batch by batch
-/// as they are produced. Returns the row count and the header written.
+/// merged in path order with the changed ones. Entries staged in path order were written as they
+/// arrived; others are sorted here, the last one staged for a path winning. Returns the row count
+/// and the header written.
 fn write_snapshot(
-    mut file: File,
+    file: File,
     staging: Staging,
     prior: Option<&Snapshot>,
 ) -> Result<(usize, SnapshotHeader), CatalogError> {
@@ -2428,6 +3835,7 @@ fn write_snapshot(
         changed,
         records,
         dictionary,
+        ordered,
         ..
     } = staging;
     if missing_unchanged {
@@ -2436,9 +3844,11 @@ fn write_snapshot(
     if !kept.is_empty() && prior.is_none() {
         return Err(corrupt("unchanged record missing from prior snapshot"));
     }
-    let string_count = match &dictionary {
-        Some(dictionary) => dictionary.len() as u64,
-        None => prior.map_or(0, |p| p.header.strings),
+    let (mut builder, mut next_kept) = match ordered {
+        Some(OrderedRows { next_kept, builder }) => {
+            (builder.unwrap_or_else(SnapshotBuilder::new), next_kept)
+        }
+        None => (SnapshotBuilder::new(), 0),
     };
     // Changed rows in path order; the last staged record for a path wins.
     let mut order = (0..changed.len()).collect::<Vec<_>>();
@@ -2457,171 +3867,26 @@ fn write_snapshot(
             false
         }
     });
-
-    let mut inventory = Vec::new();
-    put32(&mut inventory, 0)?;
-    let mut payload = SectionWriter::new();
-    let strings_len = usize::try_from(string_count).map_err(|_| corrupt("too many strings"))?;
-    // String IDs are dense and already validated. Index directly while building postings,
-    // avoiding a hash lookup for every class/name occurrence in the project.
-    let mut postings: [Vec<Vec<u32>>; POSTING_KINDS] =
-        std::array::from_fn(|_| vec![Vec::new(); strings_len]);
-    let mut last_block = LastBlock::default();
-    let mut kept_bytes = Vec::new();
-    let (mut packages, mut maps) = (0_u64, 0_u64);
-    let mut rows = 0_usize;
-    let (mut kept_cursor, mut changed_cursor) = (kept.iter().peekable(), order.iter().peekable());
-    loop {
-        let kept_path = kept_cursor
-            .peek()
-            .and_then(|id| Some(prior?.path(**id as usize)));
-        let changed_path = changed_cursor
-            .peek()
-            .map(|index| changed[**index].signature.relative_path.as_str());
-        let source = match (kept_path, changed_path) {
-            (None, None) => break,
-            (Some(_), None) => RecordSource::Kept(*kept_cursor.next().unwrap_or(&0) as usize),
-            (None, Some(_)) => RecordSource::Changed(*changed_cursor.next().unwrap_or(&0)),
-            (Some(kept_path), Some(changed_path)) => match kept_path.cmp(changed_path) {
-                std::cmp::Ordering::Less => {
-                    RecordSource::Kept(*kept_cursor.next().unwrap_or(&0) as usize)
-                }
-                std::cmp::Ordering::Greater => {
-                    RecordSource::Changed(*changed_cursor.next().unwrap_or(&0))
-                }
-                // A path staged again replaces its unchanged observation.
-                std::cmp::Ordering::Equal => {
-                    kept_cursor.next();
-                    RecordSource::Changed(*changed_cursor.next().unwrap_or(&0))
-                }
-            },
-        };
-        let id = u32::try_from(rows).map_err(|_| corrupt("Catalog count exceeds u32"))?;
-        let offset = payload.len();
-        let (path, mut entry, record): (&str, InventoryEntry, &[u8]) = match source {
-            RecordSource::Kept(old) => {
-                let prior = prior.ok_or_else(|| corrupt("unchanged record missing"))?;
-                let entry = prior
-                    .inventory
-                    .get(old)
-                    .ok_or_else(|| corrupt("unchanged record missing from prior snapshot"))?
-                    .clone();
-                prior.range_reusing(
-                    &mut last_block,
-                    RECORDS,
-                    entry.offset,
-                    u64::from(entry.len),
-                    &mut kept_bytes,
-                )?;
-                if checksum(&kept_bytes) != entry.checksum {
-                    return Err(corrupt("record checksum mismatch"));
-                }
-                (prior.path(old), entry, &kept_bytes)
-            }
-            RecordSource::Changed(index) => {
-                let staged = &changed[index];
-                let record = &records[staged.offset..staged.offset + staged.len as usize];
-                let path = staged.signature.relative_path.as_str();
-                let entry = InventoryEntry {
-                    kind: staged.signature.kind,
-                    size: staged.signature.size,
-                    modified_nanos: staged.signature.modified_nanos,
-                    profile: staged.profile,
-                    failure: staged.failure,
-                    is_map: staged.signature.kind == EntryKind::Package && is_map_path(path),
-                    offset: 0,
-                    len: staged.len,
-                    checksum: checksum(record),
-                    header_data: staged.header_data.clone(),
-                };
-                (path, entry, record)
-            }
-        };
-        if entry.kind == EntryKind::Package
-            && let Some(header) = decode_record(record, string_count)?
-        {
-            let mut post = |kind: usize, value: u32| {
-                let list = &mut postings[kind][value as usize];
-                if list.last() != Some(&id) {
-                    list.push(id);
-                }
-            };
-            header.class_ids().for_each(|value| post(0, value));
-            header.name_ids().for_each(|value| post(1, value));
-            header
-                .dependency_ids()
-                .for_each(|(value, _)| post(DEPENDENCY_POSTINGS as usize, value));
-        }
-        payload.push(record)?;
-        entry.offset = offset;
-        packages += u64::from(entry.kind == EntryKind::Package);
-        maps += u64::from(entry.is_map);
-        encode_inventory_entry(&mut inventory, path, &entry)?;
-        rows += 1;
+    for index in order {
+        let staged = &changed[index];
+        builder.copy_kept(
+            prior,
+            &kept,
+            &mut next_kept,
+            Some(&staged.signature.relative_path),
+        )?;
+        builder.push_staged(
+            &staged.signature,
+            &staged.meta,
+            &records[staged.offset..staged.offset + staged.len],
+            string_count(dictionary.as_ref(), prior),
+        )?;
     }
-    drop(kept_bytes);
-    drop(last_block);
     drop(records);
     drop(changed);
-    let row_count = u32::try_from(rows).map_err(|_| corrupt("Catalog count exceeds u32"))?;
-    inventory[..4].copy_from_slice(&row_count.to_le_bytes());
-    let payload = payload.finish()?;
-
-    let mut directory = Vec::new();
-    let mut lists = SectionWriter::new();
-    let posting_count = postings
-        .iter()
-        .flatten()
-        .filter(|ids| !ids.is_empty())
-        .count();
-    put32(&mut directory, posting_count)?;
-    let mut list_bytes = Vec::new();
-    for (kind, values) in postings.into_iter().enumerate() {
-        for (value, ids) in values.into_iter().enumerate() {
-            if ids.is_empty() {
-                continue;
-            }
-            list_bytes.clear();
-            for id in &ids {
-                list_bytes.extend_from_slice(&id.to_le_bytes());
-            }
-            directory.push(kind as u8);
-            directory.extend_from_slice(&(value as u32).to_le_bytes());
-            put64(&mut directory, lists.len());
-            put32(&mut directory, ids.len())?;
-            put64(&mut directory, checksum(&list_bytes));
-            lists.push(&list_bytes)?;
-        }
-    }
-    let lists = lists.finish()?;
-    let inventory = encode_section(&inventory)?;
-    let strings = match (&dictionary, prior) {
-        (Some(dictionary), _) => encode_section(&dictionary.encode()?)?,
-        // No string was added: the committed section is copied as stored.
-        (None, Some(prior)) => prior.stored_section(STRINGS)?,
-        (None, None) => encode_section(&0_u32.to_le_bytes())?,
-    };
-    drop(dictionary);
-    let directory = encode_section(&directory)?;
-    let sections = [inventory, strings, directory, lists, payload];
-    let header = SnapshotHeader {
-        sections: std::array::from_fn(|index| sections[index].header),
-        packages,
-        maps,
-        strings: string_count,
-    };
-    publication_checkpoint("snapshot_created")?;
-    file.write_all(&header.encode())
-        .map_err(io_unavailable("write binary directory"))?;
-    publication_checkpoint("snapshot_partial")?;
-    for section in &sections {
-        section.write(&mut file)?;
-    }
-    publication_checkpoint("before_sync")?;
-    file.sync_all()
-        .map_err(io_unavailable("sync binary snapshot"))?;
-    publication_checkpoint("after_sync")?;
-    Ok((rows, header))
+    builder.copy_kept(prior, &kept, &mut next_kept, None)?;
+    drop(kept);
+    builder.finish(file, dictionary, prior)
 }
 
 impl Snapshot {
@@ -2917,6 +4182,7 @@ mod tests {
         /// and every block's decoded checksum.
         fn open_fully(path: &Path) -> Result<Self, CatalogError> {
             let snapshot = Self::open(path, SnapshotCheck::Stored)?;
+            snapshot.rows()?;
             snapshot.strings()?;
             snapshot.postings()?;
             for index in [LISTS, RECORDS] {
@@ -2946,6 +4212,142 @@ mod tests {
         let mut file = header.encode();
         file.extend(out);
         file
+    }
+
+    #[test]
+    fn shared_string_pages_expand_to_the_plain_pages_in_first_use_order() {
+        let mut catalog = custom_catalog();
+        refresh(
+            &mut catalog,
+            &refresh_fixture(),
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let generation = catalog.committed_generation().unwrap();
+        let request = |kind: QueryKind, limit, cursor| QueryRequest {
+            project_id: fixture_project_id(),
+            expected_generation: generation,
+            kind,
+            limit,
+            cursor,
+        };
+        let names = catalog
+            .query(&request(
+                QueryKind::ClassPrefixes {
+                    values: vec![String::new()],
+                },
+                PROJECT_INDEX_MAX_PAGE_SIZE,
+                None,
+            ))
+            .unwrap()
+            .items
+            .into_iter()
+            .flat_map(|item| match item {
+                QueryItem::Header {
+                    serialized_names, ..
+                } => serialized_names,
+                _ => Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        assert!(!names.is_empty());
+        let kinds = [
+            QueryKind::Inventory,
+            QueryKind::Maps,
+            QueryKind::ClassPrefixes {
+                values: vec![String::new()],
+            },
+            QueryKind::ClassNameSuffixes {
+                values: vec![String::new()],
+            },
+            QueryKind::SerializedNames { values: names },
+        ];
+        for kind in kinds {
+            for limit in [1, 2, PROJECT_INDEX_MAX_PAGE_SIZE] {
+                let mut cursor = None;
+                loop {
+                    let plain = catalog
+                        .query(&request(kind.clone(), limit, cursor.clone()))
+                        .unwrap();
+                    let shared = catalog
+                        .query_shared_strings(&request(kind.clone(), limit, cursor))
+                        .unwrap();
+                    // Page strings are distinct and numbered in the order the page first uses
+                    // them, as a page interned from owned strings numbers them.
+                    let mut first_use = Vec::new();
+                    let expanded = shared
+                        .items
+                        .iter()
+                        .map(|item| match item.clone() {
+                            SharedStringItem::Inventory {
+                                package_path,
+                                signature,
+                                header_data,
+                            } => QueryItem::Inventory {
+                                package_path,
+                                signature,
+                                header_data,
+                            },
+                            SharedStringItem::Map {
+                                map_path,
+                                package_name,
+                            } => QueryItem::Map {
+                                map_path,
+                                package_name,
+                            },
+                            SharedStringItem::Header {
+                                header_data,
+                                package_path,
+                                package_name,
+                                classes,
+                                serialized_names,
+                            } => {
+                                for id in classes.iter().chain(&serialized_names) {
+                                    if !first_use.contains(id) {
+                                        first_use.push(*id);
+                                    }
+                                }
+                                let text = |ids: Vec<u32>| {
+                                    ids.into_iter()
+                                        .map(|id| shared.strings[id as usize].clone())
+                                        .collect()
+                                };
+                                QueryItem::Header {
+                                    header_data,
+                                    package_path,
+                                    package_name,
+                                    classes: text(classes),
+                                    serialized_names: text(serialized_names),
+                                }
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    assert_eq!(expanded, plain.items, "{kind:?} limit {limit}");
+                    assert_eq!(shared.next_cursor, plain.next_cursor);
+                    assert_eq!(
+                        first_use,
+                        (0..shared.strings.len() as u32).collect::<Vec<_>>()
+                    );
+                    cursor = plain.next_cursor;
+                    if cursor.is_none() {
+                        break;
+                    }
+                }
+            }
+        }
+        assert!(matches!(
+            catalog.query_shared_strings(&request(
+                QueryKind::Dependencies {
+                    paths: vec![],
+                    transitive: false,
+                    edges: EdgeFilter::default(),
+                },
+                1,
+                None,
+            )),
+            Err(CatalogError::InvalidRequest { .. })
+        ));
     }
 
     #[test]
@@ -3377,7 +4779,7 @@ mod tests {
         reader.load().unwrap();
         let snapshot = reader.snapshot.borrow();
         let snapshot = snapshot.as_ref().unwrap();
-        assert!(snapshot.packed(snapshot.inventory.len() - 1).is_err());
+        assert!(snapshot.packed(snapshot.row_count - 1).is_err());
         let mut recovered = BinaryCatalog::open(&root, &fixture_project_id()).unwrap();
         assert!(recovered.quarantined_from().is_some());
         assert_eq!(recovered.status(), CatalogStatus::Absent);

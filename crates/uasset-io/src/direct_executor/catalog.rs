@@ -171,6 +171,8 @@ pub enum CatalogStatus {
     Ready { summary: RefreshSummary },
 }
 
+/// An entry staged with its evidence as read; the refresh coordinator stages prepared evidence.
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagedPackage {
     pub signature: PackageSignature,
@@ -335,6 +337,37 @@ pub struct QueryPage {
     pub next_cursor: Option<String>,
 }
 
+/// A query page whose header items name classes and serialized names by ids into the page's own
+/// `strings`, so each distinct string is carried once.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedStringPage {
+    pub project_id: ProjectId,
+    pub generation: Generation,
+    pub items: Vec<SharedStringItem>,
+    pub next_cursor: Option<String>,
+    pub strings: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SharedStringItem {
+    Inventory {
+        package_path: String,
+        signature: String,
+        header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
+    },
+    Map {
+        map_path: String,
+        package_name: String,
+    },
+    Header {
+        header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
+        package_path: String,
+        package_name: String,
+        classes: Vec<u32>,
+        serialized_names: Vec<u32>,
+    },
+}
+
 #[derive(Debug)]
 pub enum CatalogError {
     InvalidRequest {
@@ -376,8 +409,42 @@ pub struct StagingToken {
     pub(crate) generation: Generation,
 }
 
+/// Prepares header evidence for staging on the header worker that read it, so the coordinator
+/// thread only hands prepared values to the Catalog. Each worker thread takes its own
+/// [`EvidencePreparer::Worker`]; every value a worker prepares must reach
+/// [`Catalog::stage_prepared`] or [`Catalog::release_prepared`], in the order it was prepared.
+pub trait EvidencePreparer: Sync {
+    type Worker;
+    type Prepared: Send;
+
+    fn worker(&self) -> Self::Worker;
+
+    fn prepare(&self, worker: &mut Self::Worker, evidence: HeaderEvidence) -> Self::Prepared;
+}
+
+/// Evidence staged as it was read, for adapters that keep [`HeaderEvidence`] itself.
+#[allow(dead_code)]
+pub struct PlainEvidence;
+
+impl EvidencePreparer for PlainEvidence {
+    type Worker = ();
+    type Prepared = HeaderEvidence;
+
+    fn worker(&self) {}
+
+    fn prepare(&self, _: &mut (), evidence: HeaderEvidence) -> HeaderEvidence {
+        evidence
+    }
+}
+
+/// What one adapter's preparer prepares.
+pub type Prepared<C> = <<C as Catalog>::Preparer as EvidencePreparer>::Prepared;
+
 /// Storage-neutral Catalog operations used by the refresh coordinator.
 pub trait Catalog {
+    /// Prepares the evidence header workers read for [`Catalog::stage_prepared`].
+    type Preparer: EvidencePreparer;
+
     fn status(&self) -> CatalogStatus;
 
     #[allow(dead_code)]
@@ -412,11 +479,38 @@ pub trait Catalog {
     }
 
     /// Stage evidence for a new or changed entry.
+    #[allow(dead_code)]
     fn stage_observed(
         &mut self,
         token: &StagingToken,
         entry: StagedPackage,
     ) -> Result<(), CatalogError>;
+
+    /// The preparer the active refresh's header workers run.
+    fn evidence_preparer(&mut self, token: &StagingToken) -> Result<Self::Preparer, CatalogError>;
+
+    /// [`Catalog::stage_observed`] for evidence the active refresh's preparer prepared.
+    fn stage_prepared(
+        &mut self,
+        token: &StagingToken,
+        signature: &PackageSignature,
+        header: Option<Prepared<Self>>,
+    ) -> Result<(), CatalogError>;
+
+    /// Accounts for prepared evidence that will not be staged (a reread replaced it).
+    fn release_prepared(
+        &mut self,
+        token: &StagingToken,
+        prepared: Prepared<Self>,
+    ) -> Result<(), CatalogError>;
+
+    /// A promise for the rest of the refresh: no entry is observed unchanged any more, and each
+    /// staged entry's path follows the previous one's. Adapters may then write the next
+    /// generation as entries arrive; one that breaks the promise fails.
+    fn stage_in_path_order(&mut self, token: &StagingToken) -> Result<(), CatalogError> {
+        let _ = token;
+        Ok(())
+    }
 
     fn commit_refresh(
         &mut self,
@@ -576,6 +670,7 @@ pub(crate) fn parse_page_cursor(cursor: Option<&str>) -> Result<String, CatalogE
 }
 
 /// Every query item is keyed by its project-relative path, which is also the page cursor.
+#[allow(dead_code)]
 pub(crate) fn item_path(item: &QueryItem) -> &str {
     match item {
         QueryItem::Map { map_path, .. } => map_path.as_str(),

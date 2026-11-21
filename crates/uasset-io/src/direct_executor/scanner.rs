@@ -20,7 +20,7 @@ use uasset_parser::package::{Package, PackageError, PackageErrorKind};
 use uasset_parser::{HeaderIndex, PackageSummary};
 
 use super::catalog::{
-    EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
+    EntryKind, EvidencePreparer, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
     PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DEPENDENCIES, PROJECT_INDEX_MAX_NAMES,
     PackageSignature, project_relative_path,
 };
@@ -41,8 +41,11 @@ const HEADER_PROBE_BYTES: usize = 16 * 1024;
 /// very large header gives the memory back.
 const HEADER_SCRATCH_RETAIN_BYTES: usize = 4 * 1024 * 1024;
 // Header parsing and post-read signature checks share these workers. Keep the same global
-// read-ahead bound when scaling up, and respect smaller hosts' available parallelism.
-const MAX_HEADER_WORKERS: usize = 16;
+// read-ahead bound when scaling up, and respect smaller hosts' available parallelism. Header reads
+// wait mostly on the operating system's file opens and reads rather than the CPU, so more workers
+// than cores still help; past 24 the gain is small while each worker's string dictionary and
+// buffers still cost memory.
+const MAX_HEADER_WORKERS: usize = 24;
 /// Keep read-ahead bounded while allowing workers to continue during a Catalog batch flush:
 /// workers never read more than this many packages past the first one not yet delivered.
 const HEADER_RESULT_BUFFER: usize = 1_024;
@@ -173,12 +176,13 @@ impl ProjectScanner for FilesystemProjectScanner {
         })
     }
 
-    fn stream_header_evidence(
+    fn stream_header_evidence<P: EvidencePreparer>(
         &self,
         project_root: &str,
         signatures: &[PackageSignature],
         cancellation: &CancellationToken,
-        on_header: &mut HeaderEvidenceSink<'_>,
+        preparer: &P,
+        on_header: &mut HeaderEvidenceSink<'_, P::Prepared>,
     ) -> Result<(), CoordinatorError> {
         if signatures.is_empty() {
             return Ok(());
@@ -214,6 +218,9 @@ impl ProjectScanner for FilesystemProjectScanner {
                         claimed,
                         stop,
                     };
+                    // Chunks are claimed in order and delivered in order, so this worker's
+                    // prepared values reach the sink in the order it prepares them.
+                    let mut worker = preparer.worker();
                     while let Some(start) = claim_chunk(claims, claimed, signatures.len()) {
                         let end = (start + HEADER_CHUNK).min(signatures.len());
                         let mut results = Vec::with_capacity(end - start);
@@ -221,12 +228,10 @@ impl ProjectScanner for FilesystemProjectScanner {
                             if stop.load(Ordering::Relaxed) {
                                 return;
                             }
-                            results.push(observe_header(
-                                self,
-                                project_root,
-                                signature,
-                                &cancellation,
-                            ));
+                            results.push(
+                                observe_header(self, project_root, signature, &cancellation)
+                                    .map(|observation| observation.prepare(preparer, &mut worker)),
+                            );
                         }
                         if sender.send((start, results)).is_err() {
                             return;
@@ -777,7 +782,7 @@ mod tests {
         assert_eq!(failure.code, "dependencies_over_limit");
     }
     use crate::cancellation::CancellationToken;
-    use crate::direct_executor::catalog::{EntryKind, PackageSignature};
+    use crate::direct_executor::catalog::{EntryKind, PackageSignature, PlainEvidence};
 
     #[test]
     fn bounded_header_sample_preserves_order_uniqueness_and_late_small_values() {
@@ -855,6 +860,7 @@ mod tests {
                     "C:/Missing",
                     &signatures,
                     &CancellationToken::new(),
+                    &PlainEvidence,
                     &mut |signature, _| {
                         observed.push(signature.relative_path.clone());
                         Ok(())
@@ -887,6 +893,7 @@ mod tests {
                 "C:/Missing",
                 &signatures,
                 &CancellationToken::new(),
+                &PlainEvidence,
                 &mut |_, _| {
                     calls += 1;
                     Err(super::CoordinatorError::Unavailable {

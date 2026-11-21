@@ -36,11 +36,14 @@ stored checksum, the package, map and shared-string counts, and a checksum of it
 
 Exact classes and serialized names have postings. Prefix and suffix queries inspect the class
 dictionary. Results follow relative-path order and hydrate bounded pages. Readers check the header
-and decode the inventory when opened and retain the physical file, even before their first query.
-The shared strings and posting directory are decoded and checked on first use; payloads and selected
-postings are checked when accessed. Refresh and status opens read every stored byte against the
-stored checksums (no block is decompressed for it) and compare the header's counts with the
-manifest summary; a refresh decodes only the inventory, and the rest only if it writes a new
+and the inventory's row count when opened and retain the physical file, even before their first
+query. The inventory, shared strings and posting directory are decoded and checked on first use;
+payloads and selected postings are checked when accessed. Dictionary pages number each distinct
+class and serialized name by its shared-string id, copying each string once rather than hashing its
+text. Refresh and status opens read every stored byte against the stored checksums (no block is
+decompressed for it) and compare the header's counts with the manifest summary. A refresh never
+holds the committed inventory decoded: it compares the enumeration with it, and copies its kept
+rows, as streams a batch of blocks at a time, and decodes the rest only if it writes a new
 generation.
 
 Package dependencies have a third posting kind, keyed by the dependency's package name (see
@@ -58,16 +61,27 @@ A warm no-op publishes generation metadata while reusing the physical snapshot w
 writes and without decoding anything beyond the inventory. Changed refreshes copy unchanged packed
 records block by block and derive every posting list from the records written, so committed
 postings are never read. They still write a complete new physical file; this is not an append log
-or an in-place update format. Records and posting lists are compressed in parallel batches as they
-are produced. New files are synced and reread against their stored checksums before manifest
-publication.
+or an in-place update format. New files are synced and reread against their stored checksums
+before manifest publication.
 
-Staging encodes changed records into one buffer as they arrive and records unchanged entries by
-their committed inventory id, then sorts the changed entries and merges them with the unchanged
-ones at commit. Repeated staging of a path keeps its last record. Shared strings keep their ids
-across generations; a refresh that adds none copies the committed strings section as stored.
-Posting construction indexes the dense string IDs directly; persisted ordering and encoding remain
-deterministic.
+Header workers encode records as they read them. Each keeps its own string dictionary and writes
+records with its own string ids, sending with each record the strings it first met there; staging
+gives those strings their shared ids in staging order and rewrites the record's ids. Shared ids
+therefore follow first use in path order, as if one thread had encoded every record, whichever
+worker read which package. A worker's records reach staging in the order it encoded them, including
+records a reread replaces, which are released rather than staged.
+
+The refresh coordinator stages entries in path order once it has recorded the unchanged ones, so
+the next generation is written as entries arrive: inventory rows and records are compressed a
+batch at a time, unchanged rows are copied in between, and each record's posting keys are counted.
+At commit the posting lists are placed in one flat array from those counts in one pass over the
+written records, while the shared strings encode beside it; sections are then written behind a
+placeholder header, the posting lists streamed as they compress, and the header written last.
+Neither the inventory, the records nor the posting lists are held whole. Entries staged outside
+path order (adapter tests do this) are buffered and sorted at commit instead, and a path staged
+again keeps its last record. Shared strings keep their ids across generations; a refresh that adds
+none copies the committed strings section as stored. Persisted ordering and encoding are
+deterministic and do not depend on how entries were staged.
 
 Interrupted unpublished files are removed on successful subsequent publication; writer opens also
 clean retired snapshots when a committed manifest exists. Invalid manifests or damaged snapshots

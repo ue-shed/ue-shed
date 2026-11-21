@@ -45,8 +45,7 @@ pub(crate) use project_index::RefreshProgress;
 pub(crate) use project_index_io::gathered;
 pub(crate) use project_index_io::{
     ProjectIndexQuerySession, ProjectIndexRefreshOutput, RefreshOptions, catalog_was_quarantined,
-    open_catalog, open_catalog_for_project_id, open_catalog_for_status, progress_phase,
-    query as project_index_query_protocol, query_project_id,
+    open_catalog, open_catalog_for_status, progress_phase,
     refresh as project_index_refresh_protocol, status as project_index_status_protocol,
 };
 pub(crate) use project_io::package_header_with_cancellation;

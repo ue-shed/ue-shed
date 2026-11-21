@@ -264,9 +264,32 @@ fn folded_hash(value: &str) -> u64 {
 }
 
 fn folded_order(left: &str, right: &str) -> std::cmp::Ordering {
-    left.bytes()
-        .map(|byte| byte.to_ascii_lowercase())
-        .cmp(right.bytes().map(|byte| byte.to_ascii_lowercase()))
+    let (left, right) = (left.as_bytes(), right.as_bytes());
+    // Bytes equal as written are equal folded, so folding starts where they first differ:
+    // neighbouring strings mostly share a long prefix (a package path), compared a word at a time.
+    let common = common_prefix_len(left, right);
+    left[common..]
+        .iter()
+        .map(u8::to_ascii_lowercase)
+        .cmp(right[common..].iter().map(u8::to_ascii_lowercase))
+}
+
+/// How many leading bytes `left` and `right` share.
+fn common_prefix_len(left: &[u8], right: &[u8]) -> usize {
+    let (left_words, _) = left.as_chunks::<8>();
+    let (right_words, _) = right.as_chunks::<8>();
+    let words = left_words
+        .iter()
+        .zip(right_words)
+        .take_while(|(left, right)| left == right)
+        .count();
+    let start = words * 8;
+    start
+        + left[start..]
+            .iter()
+            .zip(&right[start..])
+            .take_while(|(left, right)| left == right)
+            .count()
 }
 
 fn no_staging() -> CatalogError {
@@ -3627,6 +3650,106 @@ impl Drop for Unpublished {
     }
 }
 
+/// What identifies a physical snapshot file as it was checked: its path, length and times, and
+/// the fingerprint of its header, which holds every section's stored checksum.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SnapshotStamp {
+    path: PathBuf,
+    len: u64,
+    modified: Option<SystemTime>,
+    created: Option<SystemTime>,
+    header: u64,
+}
+
+impl SnapshotStamp {
+    fn of(path: &Path) -> Result<Self, CatalogError> {
+        let mut file = File::open(path).map_err(io_unavailable("open binary snapshot"))?;
+        let metadata = file
+            .metadata()
+            .map_err(io_unavailable("stat binary snapshot"))?;
+        let header = SnapshotHeader::decode(&read_range(&mut file, 0, HEADER_BYTES)?)?;
+        Ok(Self {
+            path: path.to_owned(),
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            created: metadata.created().ok(),
+            header: checksum(&header.encode()),
+        })
+    }
+}
+
+/// Snapshots this process has checked byte for byte against their stored checksums: on a
+/// writer or status open, or right after writing them. A snapshot file is never written again
+/// once published (a refresh writes a new file), so a long-lived process opening one whose stamp
+/// is unchanged checks its header, block indexes and inventory count, and each block it reads
+/// against that block's checksum, without reading every stored byte again. A new process starts
+/// with none, so it checks every byte as before.
+#[derive(Debug, Default)]
+pub(crate) struct VerifiedSnapshots {
+    stamps: std::collections::VecDeque<SnapshotStamp>,
+}
+
+/// A process keeps the stamps of its last few verified snapshots: a base and delta of each
+/// Catalog it refreshes.
+const MAX_VERIFIED_SNAPSHOTS: usize = 8;
+
+impl VerifiedSnapshots {
+    fn contains(&self, stamp: &SnapshotStamp) -> bool {
+        self.stamps.contains(stamp)
+    }
+
+    /// Records `stamp` as the most recently used, forgetting the least recently used past the
+    /// limit; a base stays recorded while each refresh writes a new delta over it.
+    fn record(&mut self, stamp: SnapshotStamp) {
+        self.stamps.retain(|known| known.path != stamp.path);
+        self.stamps.push_back(stamp);
+        while self.stamps.len() > MAX_VERIFIED_SNAPSHOTS {
+            self.stamps.pop_front();
+        }
+    }
+}
+
+/// A generation's snapshots opened with `check`; for `Stored` with a record of verified
+/// snapshots, snapshots whose stamps it holds are opened with `Header`, and the others are
+/// verified and recorded.
+fn open_committed(
+    directory: &Path,
+    manifest: &Manifest,
+    check: SnapshotCheck,
+    verified: Option<&mut VerifiedSnapshots>,
+) -> Result<Committed, CatalogError> {
+    let Some(verified) = verified.filter(|_| check == SnapshotCheck::Stored) else {
+        return Committed::open(directory, manifest, check);
+    };
+    let stamps = std::iter::once(&manifest.physical_snapshot)
+        .chain(manifest.delta_snapshot.as_ref())
+        .map(|name| SnapshotStamp::of(&directory.join(name)))
+        .collect::<Result<Vec<_>, _>>()?;
+    if stamps.iter().all(|stamp| verified.contains(stamp)) {
+        let committed = Committed::open(directory, manifest, SnapshotCheck::Header)?;
+        // The files opened are the ones stamped: their headers have not changed since.
+        let opened = std::iter::once(committed.base.fingerprint())
+            .chain(committed.delta.as_ref().map(Snapshot::fingerprint));
+        if opened.eq(stamps.iter().map(|stamp| stamp.header)) {
+            for stamp in stamps {
+                verified.record(stamp);
+            }
+            return Ok(committed);
+        }
+    }
+    let committed = Committed::open(directory, manifest, SnapshotCheck::Stored)?;
+    let opened = std::iter::once(committed.base.fingerprint())
+        .chain(committed.delta.as_ref().map(Snapshot::fingerprint))
+        .collect::<Vec<_>>();
+    // Record only what was stamped before the check and checked as stamped.
+    for (stamp, opened) in stamps.into_iter().zip(opened) {
+        if stamp.header == opened {
+            verified.record(stamp);
+        }
+    }
+    Ok(committed)
+}
+
 pub(crate) struct BinaryCatalog {
     // A sibling lock survives quarantine/clear; the OS releases it even on process termination.
     writer_lock: Option<File>,
@@ -3639,6 +3762,8 @@ pub(crate) struct BinaryCatalog {
     quarantined_from: Option<PathBuf>,
     writes: CatalogWriteCounts,
     delta_limits: DeltaLimits,
+    /// Snapshots a long-lived process has verified, when it keeps a record of them.
+    verified: Option<VerifiedSnapshots>,
     #[cfg(test)]
     cleanup_root: Option<PathBuf>,
 }
@@ -3659,13 +3784,26 @@ impl std::fmt::Debug for BinaryCatalog {
 }
 impl BinaryCatalog {
     pub(crate) fn open(root: &Path, project_id: &ProjectId) -> Result<Self, CatalogError> {
-        Self::open_checked(root, project_id, OpenMode::Writer)
+        Self::open_checked(root, project_id, OpenMode::Writer, None)
+    }
+    /// [`BinaryCatalog::open`] in a long-lived process that keeps `verified`; take it back
+    /// with [`BinaryCatalog::take_verified`].
+    pub(crate) fn open_with_verified(
+        root: &Path,
+        project_id: &ProjectId,
+        verified: VerifiedSnapshots,
+    ) -> Result<Self, CatalogError> {
+        Self::open_checked(root, project_id, OpenMode::Writer, Some(verified))
     }
     pub(crate) fn open_for_query(
         root: &Path,
         project_id: &ProjectId,
     ) -> Result<Self, CatalogError> {
-        Self::open_checked(root, project_id, OpenMode::Query)
+        Self::open_checked(root, project_id, OpenMode::Query, None)
+    }
+    /// The record of verified snapshots this catalog was opened with, with what it verified.
+    pub(crate) fn take_verified(&mut self) -> Option<VerifiedSnapshots> {
+        self.verified.take()
     }
     /// Reads the committed catalog for status: no writer lock, so a refresh in progress doesn't
     /// hide the last committed generation, and nothing on disk is created, cleaned or quarantined.
@@ -3673,8 +3811,19 @@ impl BinaryCatalog {
     pub(crate) fn open_for_status(
         root: &Path,
         project_id: &ProjectId,
+        verified: Option<&mut VerifiedSnapshots>,
     ) -> Result<Self, CatalogError> {
-        match Self::open_checked(root, project_id, OpenMode::Status) {
+        // A failed open drops the record; the next open verifies again.
+        let mut verified = verified;
+        let record = verified.as_deref_mut().map(std::mem::take);
+        let opened =
+            Self::open_checked(root, project_id, OpenMode::Status, record).map(|mut catalog| {
+                if let (Some(verified), Some(record)) = (verified, catalog.take_verified()) {
+                    *verified = record;
+                }
+                catalog
+            });
+        match opened {
             Err(CatalogError::Corrupt { .. }) => Ok(Self::unopened(
                 root.join(CATALOG_DIRECTORY)
                     .join(catalog_directory_name(project_id)),
@@ -3695,6 +3844,7 @@ impl BinaryCatalog {
             quarantined_from: None,
             writes: CatalogWriteCounts::default(),
             delta_limits: DeltaLimits::default(),
+            verified: None,
             #[cfg(test)]
             cleanup_root: None,
         }
@@ -3703,12 +3853,15 @@ impl BinaryCatalog {
         root: &Path,
         project_id: &ProjectId,
         mode: OpenMode,
+        mut verified: Option<VerifiedSnapshots>,
     ) -> Result<Self, CatalogError> {
         let directory = root
             .join(CATALOG_DIRECTORY)
             .join(catalog_directory_name(project_id));
         if mode == OpenMode::Status && !directory.is_dir() {
-            return Ok(Self::unopened(directory, project_id));
+            let mut unopened = Self::unopened(directory, project_id);
+            unopened.verified = verified;
+            return Ok(unopened);
         }
         if mode != OpenMode::Status
             && let Some(namespace) = directory.parent()
@@ -3756,7 +3909,7 @@ impl BinaryCatalog {
                 OpenMode::Query => SnapshotCheck::Header,
                 OpenMode::Writer | OpenMode::Status => SnapshotCheck::Stored,
             };
-            let committed = Committed::open(&directory, manifest_ref, check)?;
+            let committed = open_committed(&directory, manifest_ref, check, verified.as_mut())?;
             if mode != OpenMode::Query
                 && committed.counts()
                     != Some((
@@ -3794,6 +3947,7 @@ impl BinaryCatalog {
             quarantined_from,
             writes: CatalogWriteCounts::default(),
             delta_limits: DeltaLimits::default(),
+            verified,
             #[cfg(test)]
             cleanup_root: None,
         })
@@ -4361,6 +4515,14 @@ impl Catalog for BinaryCatalog {
                 // Reread the persisted bytes against their checksums before publication;
                 // included in commit timing.
                 verify_written(&path, &written.header)?;
+                // Every stored byte was just checked; a process that keeps a record need not
+                // check them again while the file is unchanged.
+                if let Some(verified) = &mut self.verified
+                    && let Ok(stamp) = SnapshotStamp::of(&path)
+                    && stamp.header == checksum(&written.header.encode())
+                {
+                    verified.record(stamp);
+                }
                 if written.counts != (summary.package_count, summary.map_count) {
                     return Err(CatalogError::InvalidRequest {
                         message: "the written generation's counts do not match its summary".into(),
@@ -5814,7 +5976,7 @@ mod tests {
         )
         .unwrap();
         let generation = catalog.committed_generation().unwrap();
-        let status = BinaryCatalog::open_for_status(&root, &fixture_project_id()).unwrap();
+        let status = BinaryCatalog::open_for_status(&root, &fixture_project_id(), None).unwrap();
         assert_eq!(status.committed_generation(), Some(generation));
         assert!(BinaryCatalog::open(&root, &fixture_project_id()).is_err());
         release_test_writer(&mut catalog);
@@ -5828,7 +5990,7 @@ mod tests {
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
-        let status = BinaryCatalog::open_for_status(&root, &fixture_project_id()).unwrap();
+        let status = BinaryCatalog::open_for_status(&root, &fixture_project_id(), None).unwrap();
         assert_eq!(status.committed_generation(), None);
         assert!(!root.exists());
     }
@@ -5906,6 +6068,149 @@ mod tests {
             .unwrap();
             assert_eq!(writer.committed_generation(), Some(generation.next()));
         }
+    }
+
+    /// Flips the last stored byte of the records of the catalog's base snapshot, keeping or
+    /// moving its modification time.
+    fn damage_records(directory: &Path, manifest: &Manifest, keep_modified: bool) {
+        let path = directory.join(&manifest.physical_snapshot);
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        let mut bytes = fs::read(&path).unwrap();
+        let header = SnapshotHeader::decode(&bytes[..HEADER_BYTES as usize]).unwrap();
+        let end = header.starts().unwrap()[RECORDS] + header.sections[RECORDS].stored;
+        bytes[end as usize - 1] ^= 0x40;
+        fs::write(&path, bytes).unwrap();
+        let file = File::options().write(true).open(&path).unwrap();
+        file.set_modified(if keep_modified {
+            modified
+        } else {
+            modified + Duration::from_secs(2)
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn folded_order_matches_folding_every_byte() {
+        let reference = |left: &str, right: &str| {
+            left.bytes()
+                .map(|byte| byte.to_ascii_lowercase())
+                .cmp(right.bytes().map(|byte| byte.to_ascii_lowercase()))
+        };
+        let stems = [
+            "",
+            "/Game/Characters/Hero/SK_Hero",
+            "/game/characters/hero/sk_hero",
+            "/Game/Characters/Hero/SK_Hero_Physics",
+            "/Game/Characters/Hero/SK_HERO",
+            "/Game/Characters/Hero/",
+            "/Game/Characters/Hero/Ä_Hero",
+            "/Script/Engine.DataTable",
+            "/Script/Engine.Datatable",
+            "a",
+            "A",
+            "_",
+            "Z_",
+        ];
+        let mut values = stems
+            .iter()
+            .map(|stem| stem.to_string())
+            .collect::<Vec<_>>();
+        for stem in stems {
+            for suffix in ["", "x", "X", "_1", "[", "a_b_c_d_e_f_g_h_i"] {
+                values.push(format!("{stem}{suffix}"));
+            }
+        }
+        for left in &values {
+            for right in &values {
+                assert_eq!(
+                    folded_order(left, right),
+                    reference(left, right),
+                    "{left} {right}"
+                );
+                assert_eq!(
+                    common_prefix_len(left.as_bytes(), right.as_bytes()),
+                    left.bytes()
+                        .zip(right.bytes())
+                        .take_while(|(a, b)| a == b)
+                        .count()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_recorded_snapshot_is_reverified_once_it_changes() {
+        // A process that recorded a snapshot as verified (here, as its writer wrote it) checks
+        // it in full again once its file changes: a refresh still quarantines the damage.
+        let mut writer = custom_catalog();
+        let root = writer.cleanup_root.as_ref().unwrap().clone();
+        writer.verified = Some(VerifiedSnapshots::default());
+        refresh(
+            &mut writer,
+            &refresh_fixture(),
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let record = writer.take_verified().unwrap();
+        let manifest = writer.manifest.clone().unwrap();
+        let base = SnapshotStamp::of(&writer.directory.join(&manifest.physical_snapshot)).unwrap();
+        assert!(record.contains(&base));
+        release_test_writer(&mut writer);
+        let mut reopened =
+            BinaryCatalog::open_with_verified(&root, &fixture_project_id(), record).unwrap();
+        assert!(reopened.quarantined_from().is_none());
+        let record = reopened.take_verified().unwrap();
+        release_test_writer(&mut reopened);
+        drop(reopened);
+        damage_records(&writer.directory, &manifest, false);
+        let mut status_record = VerifiedSnapshots::default();
+        status_record.record(base.clone());
+        let status =
+            BinaryCatalog::open_for_status(&root, &fixture_project_id(), Some(&mut status_record))
+                .unwrap();
+        assert_eq!(status.status(), CatalogStatus::Absent);
+        let recovered =
+            BinaryCatalog::open_with_verified(&root, &fixture_project_id(), record).unwrap();
+        assert!(recovered.quarantined_from().is_some());
+        assert_eq!(recovered.status(), CatalogStatus::Absent);
+    }
+
+    #[test]
+    fn a_recorded_unchanged_snapshot_is_not_reread() {
+        // The record is what lets a long-lived process skip the full check: damage that leaves
+        // the file's stamp as it was is found by a process without the record, and by the
+        // block checks of whatever reads the damaged block.
+        let mut writer = custom_catalog();
+        let root = writer.cleanup_root.as_ref().unwrap().clone();
+        writer.verified = Some(VerifiedSnapshots::default());
+        refresh(
+            &mut writer,
+            &refresh_fixture(),
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let record = writer.take_verified().unwrap();
+        let manifest = writer.manifest.clone().unwrap();
+        release_test_writer(&mut writer);
+        damage_records(&writer.directory, &manifest, true);
+        let mut reopened =
+            BinaryCatalog::open_with_verified(&root, &fixture_project_id(), record).unwrap();
+        assert!(reopened.quarantined_from().is_none());
+        assert!(reopened.committed_generation().is_some());
+        reopened.load().unwrap();
+        {
+            let committed = reopened.committed.borrow();
+            let snapshot = &committed.as_ref().unwrap().base;
+            assert!(snapshot.packed(snapshot.row_count - 1).is_err());
+        }
+        release_test_writer(&mut reopened);
+        drop(reopened);
+        let recovered = BinaryCatalog::open(&root, &fixture_project_id()).unwrap();
+        assert!(recovered.quarantined_from().is_some());
     }
 
     #[test]

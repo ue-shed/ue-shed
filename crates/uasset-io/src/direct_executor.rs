@@ -11,6 +11,7 @@ mod level_sequence;
 pub(crate) use level_sequence::level_sequence_with_cancellation;
 mod catalog;
 mod catalog_binary;
+pub(crate) use catalog_binary::VerifiedSnapshots;
 #[cfg(test)]
 mod catalog_conformance;
 mod catalog_dependencies;
@@ -23,6 +24,7 @@ mod project_index;
 mod project_index_io;
 mod project_io;
 mod scanner;
+mod signature_arena;
 pub(crate) use disk_changes::{DiskChecks, check_disk};
 
 use std::fs;
@@ -43,7 +45,7 @@ pub(crate) use project_index::RefreshProgress;
 pub(crate) use project_index_io::gathered;
 pub(crate) use project_index_io::{
     ProjectIndexQuerySession, ProjectIndexRefreshOutput, RefreshOptions, catalog_was_quarantined,
-    open_catalog, open_catalog_for_status, progress_phase,
+    open_catalog, open_catalog_for_status, open_catalog_with_verified, progress_phase,
     refresh as project_index_refresh_protocol, status as project_index_status_protocol,
 };
 pub(crate) use project_io::package_header_with_cancellation;

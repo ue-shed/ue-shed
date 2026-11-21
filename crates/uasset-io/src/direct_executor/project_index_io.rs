@@ -20,7 +20,7 @@ use super::catalog::{
     QueryItem, QueryKind, QueryRequest, RefreshChanges, RefreshSummary, SharedStringItem,
     project_id_for,
 };
-use super::catalog_binary::BinaryCatalog;
+use super::catalog_binary::{BinaryCatalog, VerifiedSnapshots};
 use super::project_index::{
     self, CoordinatorError, RefreshEvent, RefreshPhase, RefreshProgress, RefreshReach,
 };
@@ -45,6 +45,9 @@ pub(crate) struct ProjectIndexQuerySession {
     pub(crate) game_text: game_text_index::builder::BuildSession,
     /// The last `disk_changes` check, for its later pages.
     pub(crate) disk_checks: super::DiskChecks,
+    /// Snapshots this session has verified byte for byte, so its refreshes and status reads do
+    /// not reread unchanged ones.
+    pub(crate) verified_snapshots: VerifiedSnapshots,
     active: Option<ActiveQueryCatalog>,
 }
 
@@ -272,15 +275,36 @@ pub(crate) fn open_catalog(
     open_catalog_for_id(cache_root, &project_id_for(project_root, scope))
 }
 
+/// [`open_catalog`] in a long-lived process that keeps a record of verified snapshots; take it
+/// back from the catalog when it is done.
+pub(crate) fn open_catalog_with_verified(
+    cache_root: &str,
+    project_root: &str,
+    scope: IndexScope,
+    verified: VerifiedSnapshots,
+) -> Result<BinaryCatalog, Failure> {
+    BinaryCatalog::open_with_verified(
+        Path::new(cache_root),
+        &project_id_for(project_root, scope),
+        verified,
+    )
+    .map_err(catalog_to_failure)
+}
+
 /// The catalog as status reports it: the last committed generation, read without the writer
 /// lock and without creating or repairing anything on disk.
 pub(crate) fn open_catalog_for_status(
     cache_root: &str,
     project_root: &str,
     scope: IndexScope,
+    verified: Option<&mut VerifiedSnapshots>,
 ) -> Result<BinaryCatalog, Failure> {
-    BinaryCatalog::open_for_status(Path::new(cache_root), &project_id_for(project_root, scope))
-        .map_err(catalog_to_failure)
+    BinaryCatalog::open_for_status(
+        Path::new(cache_root),
+        &project_id_for(project_root, scope),
+        verified,
+    )
+    .map_err(catalog_to_failure)
 }
 
 pub(crate) fn open_catalog_for_id(

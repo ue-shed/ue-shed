@@ -21,14 +21,14 @@ struct Evidence {
 }
 
 fn bounded<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
-    let mut selected = std::collections::BTreeSet::new();
+    let mut selected: Vec<&str> = Vec::with_capacity(65);
     for value in values {
         if selected.len() == 64 && selected.last().is_some_and(|last| value >= *last) {
             continue;
         }
-        selected.insert(value);
-        if selected.len() > 64 {
-            selected.pop_last();
+        if let Err(at) = selected.binary_search(&value) {
+            selected.insert(at, value);
+            selected.truncate(64);
         }
     }
     selected.into_iter().map(str::to_owned).collect()

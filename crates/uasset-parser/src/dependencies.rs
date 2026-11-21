@@ -23,7 +23,7 @@ use std::borrow::Cow;
 
 use crate::archive::{NameRef, Reader};
 use crate::package::{
-    Import, Package, PackageError, PackageErrorKind, PackageIndex, PackageSummary,
+    Import, ImportLinks, Package, PackageError, PackageErrorKind, PackageIndex, PackageSummary,
 };
 use crate::version::PackageFlags;
 
@@ -82,8 +82,9 @@ impl PackageDependency {
 /// The header tables Unreal's dependency reader needs: the summary, the import map and the name
 /// map. `Package` and `HeaderIndex` both provide them, so both read dependencies identically.
 pub(crate) trait HeaderTables {
+    type Import: ImportLinks;
     fn summary(&self) -> &PackageSummary;
-    fn imports(&self) -> &[Import];
+    fn imports(&self) -> &[Self::Import];
     fn name_count(&self) -> usize;
     /// The name map entry at `index`, which is below `name_count`.
     fn name_text(&self, index: usize) -> &str;
@@ -114,6 +115,7 @@ pub(crate) trait HeaderTables {
 }
 
 impl HeaderTables for Package {
+    type Import = Import;
     fn summary(&self) -> &PackageSummary {
         &self.summary
     }
@@ -212,11 +214,11 @@ fn import_package_name<T: HeaderTables + ?Sized>(tables: &T, mut index: usize) -
     let names = |name: NameRef| tables.name(name).is_some() && !tables.is_none_name(name);
     for _ in 0..imports.len() {
         let import = imports.get(index)?;
-        if let Some(name) = import.package_name.filter(|name| names(*name)) {
+        if let Some(name) = import.package_name().filter(|name| names(*name)) {
             return Some(name);
         }
-        match import.outer_index {
-            PackageIndex::Null => return Some(import.object_name).filter(|name| names(*name)),
+        match import.outer_index() {
+            PackageIndex::Null => return Some(import.object_name()).filter(|name| names(*name)),
             PackageIndex::Import(outer) => index = usize::try_from(outer).ok()?,
             PackageIndex::Export(_) => return None,
         }

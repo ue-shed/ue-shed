@@ -57,9 +57,9 @@ impl ProjectScanner for FakeScanner {
         &self,
         _project_root: &str,
         cancellation: &CancellationToken,
-    ) -> Result<Vec<PackageSignature>, CoordinatorError> {
+    ) -> Result<crate::direct_executor::signature_arena::SignatureArena, CoordinatorError> {
         checkpoint(cancellation, "discovery")?;
-        Ok(self.entries.clone())
+        Ok(self.entries.iter().collect())
     }
 
     fn read_header_evidence(

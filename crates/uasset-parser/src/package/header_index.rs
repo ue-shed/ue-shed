@@ -3,26 +3,69 @@
 use std::borrow::Cow;
 
 use super::{
-    ChainsOnly, Export, Import, IndexPathResolver, PackageError, PackageErrorKind, PackageIndex,
-    PackageSummary, normalize_object_path, read_export_map, read_import_map, read_name_map,
-    resolve_every_index, summary_fits, walk_soft_object_path_list,
+    ChainsOnly, Export, ExportLinks, Import, ImportLinks, IndexPathResolver, ObjectPath,
+    PackageError, PackageErrorKind, PackageIndex, PackageSummary, normalize_object_path,
+    read_export_map_into, read_import_map_into, read_name_map, resolve_every_index,
+    resolve_name_ref_cow, summary_fits, walk_soft_object_path_list,
 };
-use crate::archive::Reader;
+use crate::archive::{NameRef, Reader};
 use crate::dependencies::{HeaderTables, PackageDependency, asset_registry_dependencies};
+
+/// What an index reads of an import: the links its object path and package are made of.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct IndexImport {
+    outer_index: PackageIndex,
+    object_name: NameRef,
+    package_name: Option<NameRef>,
+}
+
+/// What an index reads of an export: its links and its class.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct IndexExport {
+    class_index: PackageIndex,
+    outer_index: PackageIndex,
+    object_name: NameRef,
+}
+
+impl ImportLinks for IndexImport {
+    fn outer_index(&self) -> PackageIndex {
+        self.outer_index
+    }
+    fn object_name(&self) -> NameRef {
+        self.object_name
+    }
+    fn package_name(&self) -> Option<NameRef> {
+        self.package_name
+    }
+}
+
+impl ExportLinks for IndexExport {
+    fn outer_index(&self) -> PackageIndex {
+        self.outer_index
+    }
+    fn object_name(&self) -> NameRef {
+        self.object_name
+    }
+    fn class_index(&self) -> PackageIndex {
+        self.class_index
+    }
+}
 
 /// A package header as an index reads it: the summary, the name map, and the import and export
 /// maps, without the object paths [`super::Package`] builds for every import and export.
 ///
 /// It accepts and rejects exactly the headers [`super::Package::parse_header`] does: it reads the
 /// same tables (soft object paths included) and checks every outer chain the same way. Names
-/// borrow the header bytes when they are ASCII, and only export class paths are ever built, on
-/// request ([`HeaderIndex::export_class_paths`]).
+/// borrow the header bytes when they are ASCII, imports and exports keep only the links an index
+/// reads (a few words each, not the full entries), and only export class paths are ever built, on
+/// request
+/// ([`HeaderIndex::export_class_paths`]).
 #[derive(Debug)]
 pub struct HeaderIndex<'a> {
     pub summary: PackageSummary,
     names: Vec<Cow<'a, str>>,
-    imports: Vec<Import>,
-    exports: Vec<Export>,
+    imports: Vec<IndexImport>,
+    exports: Vec<IndexExport>,
 }
 
 impl<'a> HeaderIndex<'a> {
@@ -52,8 +95,31 @@ impl<'a> HeaderIndex<'a> {
         let names = read_name_map(&mut reader, &summary, |name| name)?;
         // Nothing reads the table here, but a malformed one fails the header as it does in full.
         walk_soft_object_path_list(source, &summary, |_| {})?;
-        let imports = read_import_map(&mut reader, &summary, names.len())?;
-        let exports = read_export_map(&mut reader, &summary, names.len(), file_len)?;
+        let mut imports = Vec::new();
+        read_import_map_into(
+            &mut reader,
+            &summary,
+            names.len(),
+            &mut imports,
+            |import: Import| IndexImport {
+                outer_index: import.outer_index,
+                object_name: import.object_name,
+                package_name: import.package_name,
+            },
+        )?;
+        let mut exports = Vec::new();
+        read_export_map_into(
+            &mut reader,
+            &summary,
+            names.len(),
+            file_len,
+            &mut exports,
+            |export: Export| IndexExport {
+                class_index: export.class_index,
+                outer_index: export.outer_index,
+                object_name: export.object_name,
+            },
+        )?;
         resolve_every_index(
             &mut IndexPathResolver::with_builder(ChainsOnly, &imports, &exports),
             |_, _| Ok(()),
@@ -72,17 +138,6 @@ impl<'a> HeaderIndex<'a> {
         &self.names
     }
 
-    #[must_use]
-    pub fn imports(&self) -> &[Import] {
-        &self.imports
-    }
-
-    /// The export map. Object and class paths are left empty.
-    #[must_use]
-    pub fn exports(&self) -> &[Export] {
-        &self.exports
-    }
-
     /// The class path of every export that has a class, as [`super::Export::class_path`] holds
     /// it, once per distinct class index, in class-index order. Only these chains are built.
     ///
@@ -98,27 +153,77 @@ impl<'a> HeaderIndex<'a> {
             .collect::<Vec<_>>();
         classes.sort_unstable();
         classes.dedup();
-        let mut resolver = IndexPathResolver::new(
-            &self.summary.package_name,
-            &self.names,
-            &self.imports,
-            &self.exports,
-        );
         classes
             .into_iter()
             .map(|class_index| {
-                resolver.ensure_resolved(class_index, "Exports.ClassIndex")?;
-                let path = resolver.resolved_path(class_index).ok_or_else(|| {
-                    PackageError::new(
-                        PackageErrorKind::MalformedData,
-                        None,
-                        "Exports.ClassIndex",
-                        "export class index did not resolve to an object path",
-                    )
-                })?;
-                Ok(normalize_object_path(path.clone()).into_string())
+                let mut path = String::new();
+                self.write_path(class_index, &mut path)?;
+                Ok(normalize_object_path(ObjectPath(path)).into_string())
             })
             .collect()
+    }
+
+    /// Writes the object path of a non-null `index` to `out` (replacing what it held), as
+    /// [`super::Package`] builds it for the import or export there: its outer's path, then its
+    /// own name. An accepted header's outer chains are in range, acyclic and within the depth
+    /// limit, so this recursion is bounded.
+    fn write_path(&self, index: PackageIndex, out: &mut String) -> Result<(), PackageError> {
+        let name = |name| resolve_name_ref_cow(&self.names, name);
+        let missing = || {
+            PackageError::new(
+                PackageErrorKind::MalformedData,
+                None,
+                "Exports.ClassIndex",
+                "export class index did not resolve to an object path",
+            )
+        };
+        match index {
+            PackageIndex::Null => return Err(missing()),
+            PackageIndex::Import(slot) => {
+                let import = self.imports.get(slot as usize).ok_or_else(missing)?;
+                let object_name = name(import.object_name)?;
+                match import.outer_index {
+                    PackageIndex::Null => {
+                        out.clear();
+                        if object_name == "None" {
+                            // An outermost `None` import has no path.
+                        } else if let Some(package) = import.package_name {
+                            out.push('/');
+                            out.push_str(&name(package)?);
+                            out.push('.');
+                            out.push_str(&object_name);
+                        } else {
+                            if !object_name.starts_with('/') {
+                                out.push('/');
+                            }
+                            out.push_str(&object_name);
+                        }
+                    }
+                    outer => {
+                        self.write_path(outer, out)?;
+                        if out.is_empty() || out == "/None" {
+                            out.clear();
+                        } else {
+                            out.push('.');
+                        }
+                        out.push_str(&object_name);
+                    }
+                }
+            }
+            PackageIndex::Export(slot) => {
+                let export = self.exports.get(slot as usize).ok_or_else(missing)?;
+                match export.outer_index {
+                    PackageIndex::Null => {
+                        out.clear();
+                        out.push_str(&self.summary.package_name);
+                    }
+                    outer => self.write_path(outer, out)?,
+                }
+                out.push('.');
+                out.push_str(&name(export.object_name)?);
+            }
+        }
+        Ok(())
     }
 
     /// [`super::Package::asset_registry_dependencies`] for this header.
@@ -136,10 +241,11 @@ impl<'a> HeaderIndex<'a> {
 }
 
 impl HeaderTables for HeaderIndex<'_> {
+    type Import = IndexImport;
     fn summary(&self) -> &PackageSummary {
         &self.summary
     }
-    fn imports(&self) -> &[Import] {
+    fn imports(&self) -> &[IndexImport] {
         &self.imports
     }
     fn name_count(&self) -> usize {

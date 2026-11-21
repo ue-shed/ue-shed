@@ -840,6 +840,9 @@ fn execute_direct(
                 cache_root,
                 project_root,
                 index_scope(*plugins),
+                query_session
+                    .as_deref_mut()
+                    .map(|session| &mut session.verified_snapshots),
             )?;
             let status = direct_executor::project_index_status_protocol(&catalog);
             emit_typed_result(emitter, &ResultFrame::ProjectIndexStatus { status })?;
@@ -857,6 +860,9 @@ fn execute_direct(
             cancellation,
             cache_root,
             project_root,
+            query_session
+                .as_deref_mut()
+                .map(|session| &mut session.verified_snapshots),
             direct_executor::RefreshOptions {
                 scope: index_scope(*plugins),
                 rebuild: false,
@@ -876,6 +882,9 @@ fn execute_direct(
             cancellation,
             cache_root,
             project_root,
+            query_session
+                .as_deref_mut()
+                .map(|session| &mut session.verified_snapshots),
             direct_executor::RefreshOptions {
                 scope: index_scope(*plugins),
                 rebuild: true,
@@ -993,9 +1002,20 @@ fn execute_project_index_refresh(
     cancellation: &CancellationToken,
     cache_root: &str,
     project_root: &str,
+    mut verified: Option<&mut direct_executor::VerifiedSnapshots>,
     options: direct_executor::RefreshOptions,
 ) -> Result<bool, Failure> {
-    let mut catalog = direct_executor::open_catalog(cache_root, project_root, options.scope)?;
+    // A session lends the refresh its record of verified snapshots and takes it back after; a
+    // failed open drops the record, so the next open verifies again.
+    let mut catalog = match verified.as_deref_mut() {
+        Some(record) => direct_executor::open_catalog_with_verified(
+            cache_root,
+            project_root,
+            options.scope,
+            std::mem::take(record),
+        )?,
+        None => direct_executor::open_catalog(cache_root, project_root, options.scope)?,
+    };
     if direct_executor::catalog_was_quarantined(&catalog) {
         emitter
             .emit(
@@ -1012,7 +1032,7 @@ fn execute_project_index_refresh(
     let worker_project_root = project_root.to_owned();
     let worker_cancellation = cancellation.clone();
     let worker = thread::spawn(move || {
-        direct_executor::project_index_refresh_protocol(
+        let result = direct_executor::project_index_refresh_protocol(
             &mut catalog,
             &worker_project_root,
             &options,
@@ -1020,7 +1040,8 @@ fn execute_project_index_refresh(
             |progress| {
                 let _ = progress_sender.send(progress);
             },
-        )
+        );
+        (result, catalog.take_verified())
     });
     let mut emission_error = None;
     loop {
@@ -1059,12 +1080,15 @@ fn execute_project_index_refresh(
             emission_error = Some(error);
         }
     }
-    let result = worker.join().map_err(|_| Failure {
+    let (result, record) = worker.join().map_err(|_| Failure {
         code: "process".to_owned(),
         message: "Project Index refresh worker thread panicked".to_owned(),
         retry_safe: false,
         ..Default::default()
     })?;
+    if let (Some(verified), Some(record)) = (verified, record) {
+        *verified = record;
+    }
     if let Some(error) = emission_error {
         return Err(error);
     }

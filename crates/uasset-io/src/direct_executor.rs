@@ -16,9 +16,6 @@ mod catalog_conformance;
 mod catalog_dependencies;
 #[cfg(test)]
 mod catalog_memory;
-#[allow(dead_code)]
-#[cfg(all(test, feature = "catalog-oracle"))]
-mod catalog_sqlite;
 mod disk_changes;
 mod inspection;
 mod project_index;

@@ -159,8 +159,7 @@ async function typescriptFiles(directory: string): Promise<string[]> {
  * storage-neutral so the same conformance suite runs unchanged against every adapter.
  */
 const CATALOG_STORAGE_ADAPTERS = new Set([
-	join("crates", "uasset-io", "src", "direct_executor", "catalog_binary.rs"),
-	join("crates", "uasset-io", "src", "direct_executor", "catalog_sqlite.rs")
+	join("crates", "uasset-io", "src", "direct_executor", "catalog_binary.rs")
 ]);
 
 async function checkCatalogStorageBoundary(failures: string[]) {
@@ -207,38 +206,10 @@ async function checkCatalogStorageBoundary(failures: string[]) {
 		join(repositoryRoot, "crates", "uasset-io", "Cargo.toml"),
 		"utf8"
 	);
-	if (/^duckdb\s*=/m.test(ioManifest)) {
-		failures.push("uasset-io must not retain the retired DuckDB dependency");
-	}
-	const sqlite = ioManifest.match(/^rusqlite = \{([^}]*)\}$/m)?.[1] ?? "";
-	if (!/version = "=\d+\.\d+\.\d+"/.test(sqlite)) {
-		failures.push("uasset-io must pin an exact rusqlite version");
-	}
-	if (!/default-features = false/.test(sqlite)) {
-		failures.push("uasset-io must disable rusqlite default features");
-	}
-	if (!/features\s*=\s*\[\s*"bundled"\s*\]/.test(sqlite)) {
-		failures.push("uasset-io must enable only SQLite's bundled engine");
-	}
-	if (
-		!/optional = true/.test(sqlite) ||
-		!/^catalog-oracle = \["dep:rusqlite"\]$/m.test(ioManifest)
-	) {
-		failures.push("uasset-io must keep SQLite behind its explicit test oracle feature");
-	}
-	if (/^default\s*=/m.test(ioManifest)) {
-		failures.push("uasset-io must not enable database features by default");
-	}
-	const modules = await readFile(
-		join(repositoryRoot, "crates", "uasset-io", "src", "direct_executor.rs"),
-		"utf8"
-	);
-	if (
-		!modules
-			.replaceAll("\r\n", "\n")
-			.includes('#[cfg(all(test, feature = "catalog-oracle"))]\nmod catalog_sqlite;')
-	) {
-		failures.push("the SQLite adapter must compile only in explicit oracle tests");
+	for (const retired of ["duckdb", "rusqlite"]) {
+		if (new RegExp(`^${retired}\\s*=`, "m").test(ioManifest)) {
+			failures.push(`uasset-io must not retain the retired ${retired} dependency`);
+		}
 	}
 	const dependencies = spawnSync(
 		"cargo",

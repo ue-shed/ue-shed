@@ -41,8 +41,8 @@ shell.
 
 GitHub Actions runs the portable gate; its repository and UAsset lanes use ephemeral boat.dev runners. Repository checks run
 on every pull request. On PRs, the UAsset lanes follow their Rust, WASM, package, contract, script and fixture
-inputs; parser and inspection changes also trigger downstream IO conformance. Website and Catalog
-oracle checks have separate input scopes. Pushes to `main` and manual dispatches run all lanes. Use `pnpm check`
+inputs; parser and inspection changes also trigger downstream IO conformance. Website checks have a
+separate input scope. Pushes to `main` and manual dispatches run all lanes. Use `pnpm check`
 for full local verification. During local iteration, use targeted checks for the surface you changed.
 Never describe a change as fully verified while a relevant targeted check or the portable CI gate is
 failing.

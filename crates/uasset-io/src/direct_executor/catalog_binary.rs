@@ -1,4 +1,4 @@
-//! Immutable binary Catalog. SQLite remains an opt-in test oracle.
+//! Immutable binary Catalog. `MemoryCatalog` is its differential test oracle.
 //! Five checksummed sections: inventory, shared strings, posting directory, postings, records.
 //! All integers are little-endian. Incompatible derived caches are rebuilt, never migrated.
 use super::catalog::*;
@@ -4916,17 +4916,25 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "catalog-oracle")]
-    fn deterministic_mutation_sequences_match_sqlite_on_every_page() {
+    fn deterministic_mutation_sequences_match_memory_catalog_on_every_page() {
         use crate::direct_executor::catalog_conformance::{
             FakeScanner, collect_pages, header, package, sidecar,
         };
-        use crate::direct_executor::catalog_sqlite::SqliteCatalog;
+        use crate::direct_executor::catalog_memory::MemoryCatalog;
         let mut binary = custom_catalog();
-        let root = binary.cleanup_root.as_ref().unwrap().clone();
-        let mut sqlite = SqliteCatalog::open(&root, &fixture_project_id()).unwrap();
+        let mut memory = MemoryCatalog::new();
         let mut state = std::collections::BTreeMap::new();
         let mut random = 0x123456789abcdef_u64;
+        let package_path = |id: u64| {
+            format!(
+                "Content/{id:04}.{}",
+                if id.is_multiple_of(9) {
+                    "umap"
+                } else {
+                    "uasset"
+                }
+            )
+        };
         for generation in 0..12 {
             for _ in 0..40 {
                 random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
@@ -4939,10 +4947,7 @@ mod tests {
             }
             let mut scanner = FakeScanner::default();
             for (&id, &version) in &state {
-                let path = format!(
-                    "Content/{id:04}.{}",
-                    if id % 9 == 0 { "umap" } else { "uasset" }
-                );
+                let path = package_path(id);
                 scanner.entries.push(package(&path, id + 1, version + 1));
                 if id % 13 != 0 || version % 2 == 1 {
                     let class = if version % 2 == 0 {
@@ -4950,19 +4955,30 @@ mod tests {
                     } else {
                         "/Script/Test.OtherWidget"
                     };
-                    scanner.headers.insert(
-                        path.clone(),
-                        header(
-                            &format!("/Game/{id}"),
-                            &[class, "NoDot", "Ã©.ðŸ”§"],
-                            &[
-                                "None",
-                                "Ã©",
-                                if id % 3 == 0 { "Rare" } else { "Common" },
-                                "None",
-                            ],
-                        ),
+                    let mut evidence = header(
+                        &format!("/Game/{id:04}"),
+                        &[class, "NoDot", "Ã©.ðŸ”§"],
+                        &[
+                            "None",
+                            "Ã©",
+                            if id % 3 == 0 { "Rare" } else { "Common" },
+                            "None",
+                        ],
                     );
+                    // Edges to present, deleted and differently cased packages, across Unreal's
+                    // hard/game/build property bits.
+                    evidence.dependencies = vec![
+                        PackageDependency::from_properties(
+                            format!("/Game/{:04}", (id * 7 + version) % 96),
+                            ((id + version) % 8) as u8,
+                        ),
+                        PackageDependency::from_properties(
+                            format!("/game/{:04}", (id + 1) % 96),
+                            3,
+                        ),
+                        PackageDependency::from_properties("/Script/Engine".into(), 3),
+                    ];
+                    scanner.headers.insert(path.clone(), evidence);
                 }
                 if id % 11 == 0 {
                     scanner
@@ -4980,20 +4996,22 @@ mod tests {
             )
             .unwrap();
             refresh(
-                &mut sqlite,
+                &mut memory,
                 &scanner,
                 FIXTURE_PROJECT_ROOT,
                 &CancellationToken::new(),
                 |_| {},
             )
             .unwrap();
-            assert_eq!(binary.status(), sqlite.status());
+            assert_eq!(binary.status(), memory.status());
             assert_eq!(
                 binary.committed_entries().unwrap(),
-                sqlite.committed_entries().unwrap()
+                memory.committed_entries().unwrap()
             );
             let current = binary.committed_generation().unwrap();
+            assert_eq!(memory.committed_generation(), Some(current));
             let kinds = [
+                QueryKind::Inventory,
                 QueryKind::Maps,
                 QueryKind::ExactClasses {
                     values: vec!["/Script/Test.Widget".into(), "NoDot".into()],
@@ -5027,27 +5045,62 @@ mod tests {
                 expected_generation: current,
                 filters: kinds.to_vec(),
             };
-            assert_eq!(binary.count(&union).unwrap(), sqlite.count(&union).unwrap());
-            for kind in kinds {
+            assert_eq!(binary.count(&union).unwrap(), memory.count(&union).unwrap());
+            for kind in &kinds {
                 let request = super::super::catalog::CountRequest {
                     filters: vec![kind.clone(), kind.clone()],
                     ..union.clone()
                 };
                 assert_eq!(
                     binary.count(&request).unwrap(),
-                    sqlite.count(&request).unwrap()
+                    memory.count(&request).unwrap()
                 );
+            }
+            // Seeds: a present package, another in a different ASCII case, and a path that may be
+            // deleted or never indexed.
+            let present = state.keys().copied().collect::<Vec<_>>();
+            let seeds = vec![
+                package_path(present[0]),
+                package_path(present[present.len() / 2]).to_ascii_lowercase(),
+                package_path((generation * 31 + 5) % 96),
+            ];
+            let hard = EdgeFilter {
+                hard: Some(true),
+                ..EdgeFilter::default()
+            };
+            let soft_game = EdgeFilter {
+                hard: Some(false),
+                game: Some(true),
+                ..EdgeFilter::default()
+            };
+            let mut graph_kinds = Vec::new();
+            for edges in [EdgeFilter::default(), hard, soft_game] {
+                for transitive in [false, true] {
+                    graph_kinds.push(QueryKind::Dependencies {
+                        paths: seeds.clone(),
+                        transitive,
+                        edges,
+                    });
+                    for classes in [vec![], vec!["/Script/Test.Widget".to_owned()]] {
+                        graph_kinds.push(QueryKind::Dependents {
+                            paths: seeds.clone(),
+                            transitive,
+                            edges,
+                            classes,
+                        });
+                    }
+                }
+            }
+            for kind in kinds.into_iter().chain(graph_kinds) {
                 for limit in [1, 7, 1024] {
                     assert_eq!(
                         collect_pages(&binary, current, kind.clone(), limit),
-                        collect_pages(&sqlite, current, kind.clone(), limit),
+                        collect_pages(&memory, current, kind.clone(), limit),
                         "generation {generation}, query {kind:?}, limit {limit}"
                     );
                 }
             }
         }
-        // Close both before their shared disposable root is removed on Windows.
-        drop(sqlite);
     }
 
     #[test]

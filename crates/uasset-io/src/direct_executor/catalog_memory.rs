@@ -1,4 +1,5 @@
-//! In-memory Catalog adapter for coordinator conformance tests.
+//! In-memory Catalog adapter for coordinator conformance tests, and the reference the binary
+//! Catalog is diffed against on every page.
 //!
 //! This adapter exercises the same refresh coordinator as production without naming SQL, journals,
 //! or migrations.

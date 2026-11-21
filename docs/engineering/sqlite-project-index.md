@@ -1,7 +1,8 @@
 # SQLite Project Index
 
 This records the SQLite baseline, superseded later on 2026-09-05 by the
-[binary Catalog](binary-project-index.md). SQLite remains an opt-in test oracle.
+[binary Catalog](binary-project-index.md). SQLite later served as an opt-in test oracle until the
+in-memory reference Catalog replaced it; `uasset-io` no longer has a SQLite adapter.
 
 The baseline used `rusqlite` 0.37.0
 and its bundled SQLite 3.50.2. `uasset-io` owns the

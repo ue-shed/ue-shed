@@ -159,8 +159,9 @@ The cache is disposable derived evidence, not an authoritative database. Format 
 under a new namespace (`catalogs-v4`). One OS-locked writer publishes immutable verified snapshots;
 readers keep their selected file. The public Catalog seam and protocol remain storage-neutral.
 
-SQLite is retained behind the explicit `catalog-oracle` test feature and a separate Depot job.
-Default builds and tests have no database engine dependency. Native IO requires Rust 1.89 for
+SQLite was first retained as an opt-in test oracle; the in-memory reference Catalog has since
+replaced it as the differential oracle in every default test run. No build or test has a
+database engine dependency. Native IO requires Rust 1.89 for
 standard file locks and adds pinned, permissively licensed Rust CRC32 checksumming.
 
 The [binary engineering guide](../engineering/binary-project-index.md) owns current behavior and

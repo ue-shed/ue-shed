@@ -159,21 +159,19 @@ separate timings and memory observations. The parser was not optimized in this c
 
 ## Validation and dependencies
 
-Normal builds and tests do not compile a database engine. The runtime crates are pinned
+No build or test compiles a database engine. The runtime crates are pinned
 `crc32fast` 1.5.0 (MIT OR Apache-2.0) and `zstd` 0.13 (MIT, already used by the Game Text index);
 the existing atomic manifest helper remains in use.
 
 ```sh
 cargo test --locked -p uasset-io --all-targets
-cargo test --locked -p uasset-io --all-targets --features catalog-oracle
 cargo tree --locked -p uasset-io -e normal
 ```
 
-`catalog-oracle` enables SQLite only for adapter and differential tests. GitHub Actions runs it in a separate
-conditional job so normal IO checks and release builds do not inherit the database build. The
-architecture gate verifies the default dependency tree and test-only module boundary.
+The architecture gate verifies that the native dependency tree has no database engine.
 
-Tests cover deterministic SQLite differential mutations and paging, unsigned signatures, damaged
+Tests cover deterministic mutations diffed against the in-memory reference Catalog on every query
+kind, page size, count and dependency walk, unsigned signatures, damaged
 files, impossible counts, bounded manifests, failed write/sync checkpoints, writer exclusion,
 quarantine, old readers, and process termination at six publication boundaries. Process-kill tests
 do not simulate a machine power failure or establish a long-duration durability soak.

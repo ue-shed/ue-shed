@@ -13,6 +13,9 @@ parser.add_argument("output", type=Path)
 parser.add_argument("--version", choices=["v1", "v2"], default="v1")
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
+if not (root / "crates/uasset-io/src/direct_executor/catalog_sqlite.rs").is_file():
+    raise SystemExit("This experiment needs the retired SQLite Catalog oracle; "
+                     "run it from commit 4fe9c8e9 or earlier.")
 out = args.output.resolve()
 copy_source_snapshot(root, out)
 

@@ -8,7 +8,6 @@ import { readWorkspaceManifests, type WorkspaceManifest } from "./workspace-mani
 export interface CiScope {
 	readonly uasset_io: boolean;
 	readonly uasset_libraries: boolean;
-	readonly catalog_oracle: boolean;
 	readonly site: boolean;
 }
 
@@ -82,7 +81,6 @@ export function selectCiScope(
 		uasset_io: io,
 		uasset_libraries:
 			libraries || files.some((path) => path.startsWith("packages/uasset-inspection-wasm/")),
-		catalog_oracle: all || files.some((path) => path.startsWith("crates/uasset-io/")),
 		site:
 			libraries ||
 			files.some(
@@ -207,7 +205,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 		}
 	}
 	const scope = reusePreviousRun
-		? { uasset_io: false, uasset_libraries: false, catalog_oracle: false, site: false }
+		? { uasset_io: false, uasset_libraries: false, site: false }
 		: selectCiScope(
 				files,
 				siteWorkspaceDirectories(readWorkspaceManifests(root)),

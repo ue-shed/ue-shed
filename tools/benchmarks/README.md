@@ -123,7 +123,8 @@ ordered query output with `compare_project_catalogs.py` as well.
 The [binary adapter](../../crates/uasset-io/src/direct_executor/catalog_binary.rs) is now the production
 backend. See [the storage guide](../../docs/engineering/binary-project-index.md) and
 [hardening measurements](../../docs/research/custom-catalog-hardening-2026-09-05.md). Normal builds and
-tests exclude SQLite; `cargo test -p uasset-io --all-targets --features catalog-oracle` runs the oracle.
+tests have no database engine; `cargo test -p uasset-io --all-targets` diffs the binary Catalog
+against the in-memory reference Catalog.
 
 The first prototype remains frozen below. `prepare_custom_catalog.py --version v2` selects the later
 research template with CRC32, bulk reuse, locks, and interruption tests. Its oracle feature is named
@@ -193,8 +194,12 @@ for measured gains, opening and mutation regressions, memory, storage, and valid
 
 ## Historical actual-project SQLite Catalog experiment
 
-SQLite is now a test oracle. See [the historical guide](../../docs/engineering/sqlite-project-index.md).
+SQLite is retired. See [the historical guide](../../docs/engineering/sqlite-project-index.md).
 This generator retains the earlier copy/rebase experiments for reproducibility.
+
+`prepare_sqlite_catalog.py` and `prepare_custom_catalog.py` patch a copy of the tree that still
+has the `catalog-oracle` SQLite adapter. Run them from commit `4fe9c8e9` or earlier; they stop
+with that instruction on a newer tree.
 
 `prepare_sqlite_catalog.py` prepares an isolated copy of the current Rust workspace, repository
 fixtures, and protocol contracts. It replaces only the native Catalog adapter in that copy. The scanner, coordinator, inspection, protocol, and showcase client remain shared.

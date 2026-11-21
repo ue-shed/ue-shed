@@ -7,7 +7,76 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use uasset_parser::{Package, PackageSummary};
+use uasset_parser::dependencies::PackageDependency;
+use uasset_parser::{HeaderIndex, Package, PackageError, PackageSummary};
+
+/// What the Project Index keeps from a header: classes and names (each its 64 smallest distinct
+/// values), dependencies and the text facts. `package_name` stands in for the mounted name.
+#[derive(Debug, PartialEq, Eq)]
+struct Evidence {
+    classes: Vec<String>,
+    names: Vec<String>,
+    dependencies: Vec<PackageDependency>,
+    has_text_property: bool,
+}
+
+fn bounded<'a>(values: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut selected = std::collections::BTreeSet::new();
+    for value in values {
+        if selected.len() == 64 && selected.last().is_some_and(|last| value >= *last) {
+            continue;
+        }
+        selected.insert(value);
+        if selected.len() > 64 {
+            selected.pop_last();
+        }
+    }
+    selected.into_iter().map(str::to_owned).collect()
+}
+
+/// The evidence as the scanner derived it before the header index: a full `Package`.
+fn package_evidence(bytes: &[u8], file_len: usize) -> Result<Evidence, PackageError> {
+    let package = Package::parse_header(bytes, file_len)?;
+    let dependencies = package.asset_registry_dependencies(bytes, &package.summary.package_name)?;
+    Ok(Evidence {
+        classes: bounded(
+            package
+                .exports
+                .iter()
+                .filter_map(|export| export.class_path.as_ref().map(|path| path.as_str())),
+        ),
+        names: bounded(package.names.iter().map(String::as_str)),
+        dependencies,
+        has_text_property: package.names.iter().any(|name| name == "TextProperty"),
+    })
+}
+
+/// The evidence as the scanner derives it now.
+fn index_evidence(bytes: &[u8], file_len: usize) -> Result<Evidence, PackageError> {
+    let header = HeaderIndex::parse(bytes, file_len)?;
+    let dependencies = header.asset_registry_dependencies(bytes, &header.summary.package_name)?;
+    let classes = header.export_class_paths()?;
+    Ok(Evidence {
+        classes: bounded(classes.iter().map(String::as_str)),
+        names: bounded(header.names().iter().map(|name| name.as_ref())),
+        dependencies,
+        has_text_property: header.names().iter().any(|name| name == "TextProperty"),
+    })
+}
+
+fn time_runs(headers: &[(Vec<u8>, usize)], parse: impl Fn(&[u8], usize)) -> Vec<f64> {
+    let mut samples = Vec::new();
+    for run in 0..12 {
+        let start = Instant::now();
+        for (bytes, file_len) in headers {
+            parse(black_box(bytes), *file_len);
+        }
+        if run >= 2 {
+            samples.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+    samples
+}
 
 fn discover(root: &Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> {
     for entry in fs::read_dir(root)? {
@@ -85,22 +154,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         headers.push((bytes, file_len));
     }
-    let mut samples = Vec::new();
-    for run in 0..12 {
-        let start = Instant::now();
-        for (bytes, file_len) in &headers {
-            black_box(Package::parse_header(black_box(bytes), *file_len)).ok();
-        }
-        if run >= 2 {
-            samples.push(start.elapsed().as_secs_f64() * 1000.0);
-        }
-    }
+    let samples = time_runs(&headers, |bytes, file_len| {
+        black_box(Package::parse_header(bytes, file_len)).ok();
+    });
+    // The two evidence paths must agree on every sampled header, failures included.
+    let mismatches = headers
+        .iter()
+        .filter(|(bytes, file_len)| {
+            package_evidence(bytes, *file_len).map_err(|error| error.kind())
+                != index_evidence(bytes, *file_len).map_err(|error| error.kind())
+        })
+        .count();
+    let package_evidence_samples = time_runs(&headers, |bytes, file_len| {
+        black_box(package_evidence(bytes, file_len)).ok();
+    });
+    let index_evidence_samples = time_runs(&headers, |bytes, file_len| {
+        black_box(index_evidence(bytes, file_len)).ok();
+    });
     println!(
         "{}",
         serde_json::json!({
             "discovered": paths.len(), "sampled": headers.len(), "headerBytes": bytes_loaded,
             "parseFailures": failures, "debugDigest": format!("{:016x}", digest.finish()),
-            "samplesMs": samples, "warmups": 2
+            "samplesMs": samples, "warmups": 2,
+            "evidenceMismatches": mismatches,
+            "packageEvidenceSamplesMs": package_evidence_samples,
+            "indexEvidenceSamplesMs": index_evidence_samples
         })
     );
     Ok(())

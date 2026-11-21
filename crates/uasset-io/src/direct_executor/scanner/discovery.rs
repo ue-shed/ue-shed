@@ -12,8 +12,12 @@ use super::{
 const MAX_WORKERS: usize = 32;
 const MAX_QUEUED_DIRECTORIES: usize = 1_024;
 
+/// A directory to list, with its project-relative path (`/`-separated, ending in `/`): the
+/// prefix of every entry below it.
+type Directory = (PathBuf, String);
+
 struct Work {
-    pending: Vec<PathBuf>,
+    pending: Vec<Directory>,
     active: usize,
     workers: usize,
     failure: Option<Failure>,
@@ -28,7 +32,7 @@ struct DirectoryQueue {
 }
 
 impl DirectoryQueue {
-    fn take(&self) -> Option<PathBuf> {
+    fn take(&self) -> Option<Directory> {
         let mut work = self.work.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
             if work.failure.is_some() {
@@ -49,7 +53,7 @@ impl DirectoryQueue {
     }
 
     /// Never wait for queue capacity: a full queue is traversed locally, avoiding producer deadlock.
-    fn offer(&self, path: PathBuf) -> Result<bool, PathBuf> {
+    fn offer(&self, path: Directory) -> Result<bool, Directory> {
         let mut work = self.work.lock().unwrap_or_else(PoisonError::into_inner);
         if work.pending.len() == self.capacity {
             return Err(path);
@@ -135,6 +139,17 @@ fn enumerate_roots(
     queue_capacity: usize,
 ) -> Result<Vec<PackageSignature>, Failure> {
     checkpoint(cancellation, "discovery")?;
+    // Each root's relative path is derived once; entries below it extend it by their names.
+    let roots = roots
+        .into_iter()
+        .map(|root| {
+            let mut prefix = project_relative_path(project_root, &root.to_string_lossy());
+            if !prefix.ends_with('/') {
+                prefix.push('/');
+            }
+            (root, prefix)
+        })
+        .collect();
     let queue = DirectoryQueue {
         work: Mutex::new(Work {
             pending: roots,
@@ -151,7 +166,7 @@ fn enumerate_roots(
     std::thread::scope(|scope| {
         // Start on the caller. Additional workers are created only when queued directories
         // outnumber idle workers, so a tiny or flat tree pays no fixed pool startup cost.
-        work_directories(scope, project_root, cancellation, &queue, &output);
+        work_directories(scope, cancellation, &queue, &output);
     });
     if let Some(error) = queue
         .work
@@ -169,19 +184,18 @@ fn enumerate_roots(
 
 fn work_directories<'scope, 'env: 'scope>(
     scope: &'scope std::thread::Scope<'scope, 'env>,
-    project_root: &'scope str,
     cancellation: &'scope CancellationToken,
     queue: &'scope DirectoryQueue,
     output: &'scope Mutex<Vec<PackageSignature>>,
 ) {
     let mut signatures = Vec::new();
     let spawn_worker = || {
-        scope.spawn(move || work_directories(scope, project_root, cancellation, queue, output));
+        scope.spawn(move || work_directories(scope, cancellation, queue, output));
     };
-    while let Some(directory) = queue.take() {
+    while let Some((directory, prefix)) = queue.take() {
         queue.finish(visit_directory(
             &directory,
-            project_root,
+            &prefix,
             cancellation,
             queue,
             &mut signatures,
@@ -196,7 +210,7 @@ fn work_directories<'scope, 'env: 'scope>(
 
 fn visit_directory(
     directory: &Path,
-    project_root: &str,
+    prefix: &str,
     cancellation: &CancellationToken,
     queue: &DirectoryQueue,
     signatures: &mut Vec<PackageSignature>,
@@ -210,17 +224,19 @@ fn visit_directory(
             return Ok(());
         }
         let entry = entry.map_err(|error| discovery_failure(directory, error))?;
-        let path = entry.path();
         let kind = entry
             .file_type()
-            .map_err(|error| discovery_failure(&path, error))?;
+            .map_err(|error| discovery_failure(&entry.path(), error))?;
+        // Decide from the name alone; most files are neither packages nor sidecars.
+        let name = entry.file_name();
         if kind.is_dir() {
-            match queue.offer(path) {
+            let child = (entry.path(), relative_path(prefix, &name, true));
+            match queue.offer(child) {
                 Ok(true) => spawn_worker(),
                 Ok(false) => {}
-                Err(path) => visit_directory(
+                Err((path, child_prefix)) => visit_directory(
                     &path,
-                    project_root,
+                    &child_prefix,
                     cancellation,
                     queue,
                     signatures,
@@ -228,9 +244,9 @@ fn visit_directory(
                 )?,
             }
         } else if kind.is_file() {
-            let kind = if is_package_path(&path) {
+            let kind = if is_package_path(Path::new(&name)) {
                 EntryKind::Package
-            } else if is_sidecar_path(&path) {
+            } else if is_sidecar_path(Path::new(&name)) {
                 EntryKind::Sidecar
             } else {
                 continue;
@@ -238,9 +254,9 @@ fn visit_directory(
             // Reuse enumeration metadata on Windows; do not reopen each file to stat it.
             let metadata = entry
                 .metadata()
-                .map_err(|error| discovery_failure(&path, error))?;
+                .map_err(|error| discovery_failure(&entry.path(), error))?;
             signatures.push(PackageSignature {
-                relative_path: project_relative_path(project_root, &path.to_string_lossy()),
+                relative_path: relative_path(prefix, &name, false),
                 kind,
                 size: metadata.len(),
                 modified_nanos: metadata_modified_nanos(&metadata),
@@ -248,6 +264,23 @@ fn visit_directory(
         }
     }
     Ok(())
+}
+
+/// An entry's project-relative path from its directory's: what `project_relative_path` gives for
+/// its full path, built in one allocation.
+fn relative_path(prefix: &str, name: &std::ffi::OsStr, directory: bool) -> String {
+    let name = name.to_string_lossy();
+    let mut path = String::with_capacity(prefix.len() + name.len() + usize::from(directory));
+    path.push_str(prefix);
+    if name.contains('\\') {
+        path.push_str(&name.replace('\\', "/"));
+    } else {
+        path.push_str(&name);
+    }
+    if directory {
+        path.push('/');
+    }
+    path
 }
 
 #[cfg(test)]

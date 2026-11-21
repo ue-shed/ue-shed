@@ -6,7 +6,7 @@ CLI, and Workbench use the same adapter; there is no runtime backend selector.
 
 ## Format and lifecycle
 
-The disposable cache lives under `catalogs-v7/<project-hash>`. An atomic JSON manifest selects a
+The disposable cache lives under `catalogs-v8/<project-hash>`. An atomic JSON manifest selects a
 physical snapshot and retains the previous snapshot. Existing SQLite, DuckDB and older `catalogs-v*`
 caches are ignored; the first refresh builds the new format from source. Old cache directories are
 not deleted or converted automatically.
@@ -21,23 +21,27 @@ Profile 3 adds each package's dependencies (see [Package dependencies](#package-
 
 The snapshot contains five length-delimited sections: compact inventory, shared strings and a
 sorted lexicon, posting directory, posting lists, and packed header records. Integers are
-little-endian, including the full unsigned file signatures. CRC32 checksums cover every decoded
-section and individual records/posting lists. These detect accidental corruption, not malicious
-changes. The file magic (`UESHC005`) versions the encoding; incompatible derived evidence is
-rebuilt.
+little-endian, including the full unsigned file signatures. Inventory rows also carry a copy of
+their record's 17-byte header data, so inventory pages read no records. CRC32 checksums cover every
+decoded section, every stored section, the header, and individual records/posting lists. These
+detect accidental corruption, not malicious changes. The file magic (`UESHC006`) versions the
+encoding; incompatible derived evidence is rebuilt.
 
-Sections are zstd-compressed (level 3). The first three, which readers decode whole when they
-open, are one frame each. Posting lists and header records, which queries read in ranges, are
-independent 64 KiB blocks behind an index of block end offsets, so a query decodes only the blocks
-its postings and record windows touch. A frame or block that does not compress smaller is stored
-raw. The header records each section's stored length, decoded length and decoded checksum. On a
-local UE 5.7 project with about 11,000 packages this takes the snapshot from 9.7 MB to 1.9 MB, for
-about 30 ms more per full refresh.
+Every section is zstd-compressed (level 3) as independent 64 KiB blocks behind an index of block end
+offsets, so a query decodes only the blocks its postings and record windows touch, and whole
+sections compress and decompress their blocks in parallel. A block that does not compress smaller is
+stored raw. The header records each section's stored length, decoded length, decoded checksum and
+stored checksum, the package, map and shared-string counts, and a checksum of itself. On a local UE
+5.7 project with about 11,000 packages compression takes the snapshot from 9.7 MB to 1.9 MB.
 
 Exact classes and serialized names have postings. Prefix and suffix queries inspect the class
-dictionary. Results follow relative-path order and hydrate bounded pages. Readers load metadata
-when opened and retain the physical file, even before their first query. Payloads and selected
-postings are checked when accessed. Refresh opens verify all section checksums and summary counts.
+dictionary. Results follow relative-path order and hydrate bounded pages. Readers check the header
+and decode the inventory when opened and retain the physical file, even before their first query.
+The shared strings and posting directory are decoded and checked on first use; payloads and selected
+postings are checked when accessed. Refresh and status opens read every stored byte against the
+stored checksums (no block is decompressed for it) and compare the header's counts with the
+manifest summary; a refresh decodes only the inventory, and the rest only if it writes a new
+generation.
 
 Package dependencies have a third posting kind, keyed by the dependency's package name (see
 below).
@@ -51,13 +55,19 @@ error rather than publishing from stale state. Native IO now requires Rust 1.89 
 locking; parsing and inspection retain their existing Rust requirement.
 
 A warm no-op publishes generation metadata while reusing the physical snapshot with no evidence
-writes. Changed refreshes reuse unchanged packed bytes and remap existing postings, adding/removing
-only affected memberships. They still write a complete new physical file; this is not an append
-log or an in-place update format. New files are synced and verified before manifest publication.
+writes and without decoding anything beyond the inventory. Changed refreshes copy unchanged packed
+records block by block and derive every posting list from the records written, so committed
+postings are never read. They still write a complete new physical file; this is not an append log
+or an in-place update format. Records and posting lists are compressed in parallel batches as they
+are produced. New files are synced and reread against their stored checksums before manifest
+publication.
 
-Staging appends changed records, then stably sorts and merges them with the observed paths at
-commit. Repeated staging of a path keeps its last record. Posting construction indexes the dense
-string IDs directly; persisted ordering and encoding remain deterministic.
+Staging encodes changed records into one buffer as they arrive and records unchanged entries by
+their committed inventory id, then sorts the changed entries and merges them with the unchanged
+ones at commit. Repeated staging of a path keeps its last record. Shared strings keep their ids
+across generations; a refresh that adds none copies the committed strings section as stored.
+Posting construction indexes the dense string IDs directly; persisted ordering and encoding remain
+deterministic.
 
 Interrupted unpublished files are removed on successful subsequent publication; writer opens also
 clean retired snapshots when a committed manifest exists. Invalid manifests or damaged snapshots

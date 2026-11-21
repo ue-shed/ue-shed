@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, IoHash, Reader, Span};
 use crate::version::{PackageFlags, VersionContext};
 
+mod header_index;
+
+pub use header_index::HeaderIndex;
+
 pub const PACKAGE_FILE_TAG: u32 = 0x9E2A_83C1;
 pub const PACKAGE_FILE_TAG_SWAPPED: u32 = 0xC183_2A9E;
 
@@ -405,11 +409,26 @@ impl Package {
     /// `file_len`.
     pub fn parse_header(source: &[u8], file_len: usize) -> Result<Self, PackageError> {
         let summary = PackageSummary::parse_with_file_len(source, file_len)?;
+        Self::parse_header_with_summary(source, file_len, summary)
+    }
+
+    /// [`Package::parse_header`] with the summary a caller already read from a prefix of
+    /// `source` (with the same `file_len`), so the summary is parsed once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error [`Package::parse_header`] would for the same bytes.
+    pub fn parse_header_with_summary(
+        source: &[u8],
+        file_len: usize,
+        summary: PackageSummary,
+    ) -> Result<Self, PackageError> {
+        summary_fits(&summary, source)?;
         let mut reader = Reader::new(source);
-        let names = read_name_map(&mut reader, &summary)?;
+        let names = read_name_map(&mut reader, &summary, Cow::into_owned)?;
         let soft_object_paths = read_soft_object_path_list(source, &summary, &names)?;
-        let mut imports = read_import_map(&mut reader, &summary, &names)?;
-        let mut exports = read_export_map(&mut reader, &summary, &names, file_len)?;
+        let mut imports = read_import_map(&mut reader, &summary, names.len())?;
+        let mut exports = read_export_map(&mut reader, &summary, names.len(), file_len)?;
 
         let resolved_paths =
             resolve_package_paths(&summary.package_name, &names, &imports, &exports)?;
@@ -515,6 +534,20 @@ impl Package {
     }
 }
 
+/// A summary read from a longer prefix of `source` is the one a parse of `source` itself reads
+/// exactly when it lies inside `source`; otherwise that parse runs out of bytes.
+fn summary_fits(summary: &PackageSummary, source: &[u8]) -> Result<(), PackageError> {
+    if summary.span.end() > crate::convert::u64_from_usize(source.len()) {
+        return Err(PackageError::new(
+            PackageErrorKind::MalformedData,
+            Some(crate::convert::u64_from_usize(source.len())),
+            "Summary",
+            "the package summary extends past the header bytes",
+        ));
+    }
+    Ok(())
+}
+
 struct ResolvedPackagePaths {
     imports: Vec<ObjectPath>,
     exports: Vec<ObjectPath>,
@@ -528,23 +561,11 @@ fn resolve_package_paths(
     exports: &[Export],
 ) -> Result<ResolvedPackagePaths, PackageError> {
     let mut resolver = IndexPathResolver::new(package_name, names, imports, exports);
-    for index in 0..imports.len() {
-        resolver.ensure_resolved(
-            PackageIndex::Import(crate::convert::u32_from_table_index(index)),
-            "Imports",
-        )?;
-    }
-
     let mut export_class_paths = Vec::with_capacity(exports.len());
-    for (index, export) in exports.iter().enumerate() {
-        resolver.ensure_resolved(
-            PackageIndex::Export(crate::convert::u32_from_table_index(index)),
-            "Exports",
-        )?;
-        let class_path = match export.class_index {
+    resolve_every_index(&mut resolver, |resolver, class_index| {
+        let class_path = match class_index {
             PackageIndex::Null => None,
             class_index => {
-                resolver.ensure_resolved(class_index, "Exports.ClassIndex")?;
                 let class_path = resolver.resolved_path(class_index).ok_or_else(|| {
                     PackageError::new(
                         PackageErrorKind::MalformedData,
@@ -557,7 +578,8 @@ fn resolve_package_paths(
             }
         };
         export_class_paths.push(class_path);
-    }
+        Ok(())
+    })?;
 
     let (import_object_paths, export_object_paths) = resolver.into_paths();
     Ok(ResolvedPackagePaths {
@@ -565,6 +587,33 @@ fn resolve_package_paths(
         exports: export_object_paths,
         export_classes: export_class_paths,
     })
+}
+
+/// Resolves every import, then every export and its class, in the order `Package::parse_header`
+/// has always resolved them, so both path builders reject the same headers with the same error.
+/// `on_export` sees each export's class index, resolved unless `Null`, in export order.
+fn resolve_every_index<B: PathBuilder>(
+    resolver: &mut IndexPathResolver<'_, B>,
+    mut on_export: impl FnMut(&IndexPathResolver<'_, B>, PackageIndex) -> Result<(), PackageError>,
+) -> Result<(), PackageError> {
+    for index in 0..resolver.imports.len() {
+        resolver.ensure_resolved(
+            PackageIndex::Import(crate::convert::u32_from_table_index(index)),
+            "Imports",
+        )?;
+    }
+    for index in 0..resolver.exports.len() {
+        resolver.ensure_resolved(
+            PackageIndex::Export(crate::convert::u32_from_table_index(index)),
+            "Exports",
+        )?;
+        let class_index = resolver.exports[index].class_index;
+        if class_index != PackageIndex::Null {
+            resolver.ensure_resolved(class_index, "Exports.ClassIndex")?;
+        }
+        on_export(resolver, class_index)?;
+    }
+    Ok(())
 }
 
 impl PackageSummary {
@@ -767,8 +816,8 @@ impl PackageSummary {
 
         let raw_generations = reader.read_tarray("Summary.Generations", 8, |reader, index| {
             Ok((
-                reader.read_i32(&format!("Summary.Generations[{index}].ExportCount"))?,
-                reader.read_i32(&format!("Summary.Generations[{index}].NameCount"))?,
+                reader.read_i32(&format_args!("Summary.Generations[{index}].ExportCount"))?,
+                reader.read_i32(&format_args!("Summary.Generations[{index}].NameCount"))?,
             ))
         })?;
         let generations = raw_generations
@@ -778,11 +827,11 @@ impl PackageSummary {
                 Ok(GenerationInfo {
                     export_count: checked_non_negative_i32(
                         export_count,
-                        &format!("Summary.Generations[{index}].ExportCount"),
+                        &format_args!("Summary.Generations[{index}].ExportCount"),
                     )?,
                     name_count: checked_non_negative_i32(
                         name_count,
-                        &format!("Summary.Generations[{index}].NameCount"),
+                        &format_args!("Summary.Generations[{index}].NameCount"),
                     )?,
                 })
             })
@@ -810,7 +859,7 @@ impl PackageSummary {
         let compression_flags = reader.read_u32("Summary.CompressionFlags")?;
         let compressed_chunks =
             reader.read_tarray("Summary.CompressedChunks", 16, |reader, index| {
-                reader.skip(16, &format!("Summary.CompressedChunks[{index}]"))?;
+                reader.skip(16, &format_args!("Summary.CompressedChunks[{index}]"))?;
                 Ok(())
             })?;
         if !compressed_chunks.is_empty() {
@@ -825,7 +874,7 @@ impl PackageSummary {
         let package_source = reader.read_u32("Summary.PackageSource")?;
         let _: Vec<String> =
             reader.read_tarray("Summary.AdditionalPackagesToCook", 4, |reader, index| {
-                reader.read_fstring(&format!("Summary.AdditionalPackagesToCook[{index}]"))
+                reader.read_fstring(&format_args!("Summary.AdditionalPackagesToCook[{index}]"))
             })?;
         if legacy_file_version > -7 {
             let allocation_count =
@@ -850,7 +899,7 @@ impl PackageSummary {
             .transpose()?;
         let chunk_ids = if versions.is_at_least_ue4(UE4_CHANGED_CHUNK_ID_TO_ARRAY) {
             reader.read_tarray("Summary.ChunkIDs", 4, |reader, index| {
-                reader.read_i32(&format!("Summary.ChunkIDs[{index}]"))
+                reader.read_i32(&format_args!("Summary.ChunkIDs[{index}]"))
             })?
         } else {
             Vec::new()
@@ -1102,8 +1151,8 @@ fn read_custom_versions(
 
 fn read_table(reader: &mut Reader<'_>, path: &str) -> Result<TableLocation, PackageError> {
     Ok(TableLocation {
-        count: read_non_negative_u32(reader, &format!("{path}.Count"))?,
-        offset: read_offset(reader, &format!("{path}.Offset"))?,
+        count: read_non_negative_u32(reader, &format_args!("{path}.Count"))?,
+        offset: read_offset(reader, &format_args!("{path}.Offset"))?,
     })
 }
 
@@ -1112,11 +1161,44 @@ fn read_soft_object_path_list(
     summary: &PackageSummary,
     names: &[String],
 ) -> Result<Vec<String>, PackageError> {
+    let mut paths = Vec::new();
+    walk_soft_object_path_list(source, summary, |entry| match entry {
+        SoftObjectPathEntry::Count(capacity) => paths.reserve_exact(capacity),
+        SoftObjectPathEntry::Path {
+            package,
+            asset,
+            sub_path,
+        } => {
+            let formatted = format_top_level_asset_path(names, package, asset, &sub_path);
+            paths.push(sanitize_soft_object_path_table_entry(formatted));
+        }
+    })?;
+    Ok(paths)
+}
+
+/// What `walk_soft_object_path_list` reads: the checked capacity, then each entry.
+enum SoftObjectPathEntry<'a> {
+    Count(usize),
+    Path {
+        package: crate::archive::NameRef,
+        asset: crate::archive::NameRef,
+        sub_path: Cow<'a, str>,
+    },
+}
+
+/// Reads the summary's soft object path table, as `read_soft_object_path_list` does, handing each
+/// entry's name references and subpath to `on_entry` (ASCII subpaths borrow `source`). Every
+/// entry is read and checked even when `on_entry` keeps nothing.
+fn walk_soft_object_path_list<'a>(
+    source: &'a [u8],
+    summary: &PackageSummary,
+    mut on_entry: impl FnMut(SoftObjectPathEntry<'a>),
+) -> Result<(), PackageError> {
     let Some(table) = summary.soft_object_paths.as_ref() else {
-        return Ok(Vec::new());
+        return Ok(());
     };
     if table.count == 0 {
-        return Ok(Vec::new());
+        return Ok(());
     }
 
     let count = usize::try_from(table.count).map_err(|error| {
@@ -1135,16 +1217,20 @@ fn read_soft_object_path_list(
     reader.seek(table.offset.get(), "Summary.SoftObjectPaths")?;
     let capacity =
         reader.checked_vec_capacity::<String>(count, 20, "Summary.SoftObjectPaths.Count")?;
-    let mut paths = Vec::with_capacity(capacity);
+    on_entry(SoftObjectPathEntry::Count(capacity));
     for index in 0..count {
-        let entry_path = format!("Summary.SoftObjectPaths[{index}]");
-        let package = reader.read_name_ref(&format!("{entry_path}.PackageName"))?;
-        let asset = reader.read_name_ref(&format!("{entry_path}.AssetName"))?;
-        let sub_path = reader.read_soft_object_subpath(&format!("{entry_path}.SubPath"))?;
-        let formatted = format_top_level_asset_path(names, package, asset, &sub_path);
-        paths.push(sanitize_soft_object_path_table_entry(formatted));
+        let entry_path = IndexedPath::new("Summary.SoftObjectPaths", index);
+        let package = reader.read_name_ref(&format_args!("{entry_path}.PackageName"))?;
+        let asset = reader.read_name_ref(&format_args!("{entry_path}.AssetName"))?;
+        let sub_path =
+            reader.read_soft_object_subpath_cow(&format_args!("{entry_path}.SubPath"))?;
+        on_entry(SoftObjectPathEntry::Path {
+            package,
+            asset,
+            sub_path,
+        });
     }
-    Ok(paths)
+    Ok(())
 }
 
 /// Formats an `FSoftObjectPath` from its `FTopLevelAssetPath` name parts and
@@ -1152,8 +1238,8 @@ fn read_soft_object_path_list(
 /// otherwise the result is `PackageName.AssetName[:SubPath]`. Name references
 /// that fail to resolve degrade to empty rather than failing the package parse,
 /// matching the header table's tolerance for placeholder entries.
-fn format_top_level_asset_path(
-    names: &[String],
+fn format_top_level_asset_path<S: AsRef<str>>(
+    names: &[S],
     package: crate::archive::NameRef,
     asset: crate::archive::NameRef,
     sub_path: &str,
@@ -1206,8 +1292,8 @@ fn read_optional_table(
     path: &str,
 ) -> Result<Option<TableLocation>, PackageError> {
     let count_offset = reader.tell();
-    let count = reader.read_i32(&format!("{path}.Count"))?;
-    let offset = read_offset(reader, &format!("{path}.Offset"))?;
+    let count = reader.read_i32(&format_args!("{path}.Count"))?;
+    let offset = read_offset(reader, &format_args!("{path}.Offset"))?;
     match count {
         -1 => Ok(None),
         0.. => Ok(Some(TableLocation {
@@ -1223,10 +1309,12 @@ fn read_optional_table(
     }
 }
 
-fn read_name_map(
-    reader: &mut Reader<'_>,
+/// The name map, each name kept as `keep` makes it: owned, or borrowed from the source when ASCII.
+fn read_name_map<'a, T>(
+    reader: &mut Reader<'a>,
     summary: &PackageSummary,
-) -> Result<Vec<String>, PackageError> {
+    keep: impl Fn(Cow<'a, str>) -> T,
+) -> Result<Vec<T>, PackageError> {
     reader.seek(summary.names.offset.get(), "Names")?;
     let count = usize::try_from(summary.names.count).map_err(|_| {
         PackageError::new(
@@ -1240,7 +1328,9 @@ fn read_name_map(
     let mut names = Vec::with_capacity(capacity);
 
     for index in 0..count {
-        names.push(reader.read_fstring(&format_args!("Names[{index}]"))?);
+        names.push(keep(
+            reader.read_fstring_cow(&format_args!("Names[{index}]"))?,
+        ));
         if summary.versions.is_at_least_ue4(UE4_NAME_HASHES_SERIALIZED) {
             reader.skip(4, &format_args!("Names[{index}].Hashes"))?;
         }
@@ -1268,7 +1358,7 @@ impl fmt::Display for IndexedPath<'_> {
 fn read_import_map(
     reader: &mut Reader<'_>,
     summary: &PackageSummary,
-    names: &[String],
+    names: usize,
 ) -> Result<Vec<Import>, PackageError> {
     reader.seek(summary.imports.offset.get(), "Imports")?;
     let count = usize::try_from(summary.imports.count).map_err(|_| {
@@ -1327,7 +1417,7 @@ fn read_import_map(
 fn read_export_map(
     reader: &mut Reader<'_>,
     summary: &PackageSummary,
-    names: &[String],
+    names: usize,
     file_len: usize,
 ) -> Result<Vec<Export>, PackageError> {
     reader.seek(summary.exports.offset.get(), "Exports")?;
@@ -1490,13 +1580,13 @@ fn read_archive_bool(
 }
 
 fn validate_name_ref(
-    names: &[String],
+    names: usize,
     name: crate::archive::NameRef,
     path: &(impl fmt::Display + ?Sized),
 ) -> Result<(), PackageError> {
     if usize::try_from(name.index().get())
         .ok()
-        .is_some_and(|index| index < names.len())
+        .is_some_and(|index| index < names)
     {
         Ok(())
     } else {
@@ -1509,19 +1599,19 @@ fn validate_name_ref(
     }
 }
 
-fn resolve_name_ref(
-    names: &[String],
+fn resolve_name_ref<S: AsRef<str>>(
+    names: &[S],
     name: crate::archive::NameRef,
 ) -> Result<String, PackageError> {
     resolve_name_ref_cow(names, name).map(Cow::into_owned)
 }
 
-fn resolve_name_ref_cow(
-    names: &[String],
+fn resolve_name_ref_cow<S: AsRef<str>>(
+    names: &[S],
     name: crate::archive::NameRef,
 ) -> Result<Cow<'_, str>, PackageError> {
-    validate_name_ref(names, name, "NameRef")?;
-    let base = &names[crate::convert::usize_from_u32(name.index().get())];
+    validate_name_ref(names.len(), name, "NameRef")?;
+    let base = names[crate::convert::usize_from_u32(name.index().get())].as_ref();
     if name.number() == 0 {
         Ok(Cow::Borrowed(base))
     } else {
@@ -1558,37 +1648,126 @@ fn join_object_path(outer: &str, name: &str) -> ObjectPath {
     ObjectPath(path)
 }
 
-enum PathResolution {
+enum PathResolution<P> {
     Unresolved,
     Resolving,
-    Resolved {
-        path: ObjectPath,
-        outer_depth: usize,
-    },
+    Resolved { path: P, outer_depth: usize },
 }
 
-struct IndexPathResolver<'a> {
+/// What a resolved package index records. Every builder sees the same walk, so the outer-chain
+/// checks (bounds, cycles, depth) reject the same headers whatever a builder keeps.
+trait PathBuilder {
+    type Path;
+    /// An import's path, given its outer's path (`None` when its outer is `Null`).
+    fn import_path(
+        &self,
+        import: &Import,
+        outer: Option<&Self::Path>,
+    ) -> Result<Self::Path, PackageError>;
+    /// An export's path, given its outer's path (`None` when its outer is `Null`).
+    fn export_path(
+        &self,
+        export: &Export,
+        outer: Option<&Self::Path>,
+    ) -> Result<Self::Path, PackageError>;
+}
+
+/// Builds each index's object path, as `Package` records them.
+struct ObjectPaths<'a, S> {
     package_name: &'a str,
-    names: &'a [String],
+    names: &'a [S],
+}
+
+impl<S: AsRef<str>> PathBuilder for ObjectPaths<'_, S> {
+    type Path = ObjectPath;
+
+    fn import_path(
+        &self,
+        import: &Import,
+        outer: Option<&ObjectPath>,
+    ) -> Result<ObjectPath, PackageError> {
+        let object_name = resolve_name_ref_cow(self.names, import.object_name)?;
+        Ok(match outer {
+            None => {
+                if object_name == "None" {
+                    ObjectPath(String::new())
+                } else if let Some(package_name_ref) = import.package_name {
+                    let package = resolve_name_ref_cow(self.names, package_name_ref)?;
+                    ObjectPath(format!("/{package}.{object_name}"))
+                } else if object_name.starts_with('/') {
+                    ObjectPath(object_name.into_owned())
+                } else {
+                    ObjectPath(format!("/{object_name}"))
+                }
+            }
+            Some(outer) if outer.as_str().is_empty() || outer.as_str() == "/None" => {
+                ObjectPath(object_name.into_owned())
+            }
+            Some(outer) => join_object_path(outer.as_str(), &object_name),
+        })
+    }
+
+    fn export_path(
+        &self,
+        export: &Export,
+        outer: Option<&ObjectPath>,
+    ) -> Result<ObjectPath, PackageError> {
+        let object_name = resolve_name_ref_cow(self.names, export.object_name)?;
+        Ok(join_object_path(
+            outer.map_or(self.package_name, ObjectPath::as_str),
+            &object_name,
+        ))
+    }
+}
+
+/// Records only that an index resolved: the outer-chain checks without building any path.
+struct ChainsOnly;
+
+impl PathBuilder for ChainsOnly {
+    type Path = ();
+
+    fn import_path(&self, _: &Import, _: Option<&()>) -> Result<(), PackageError> {
+        Ok(())
+    }
+
+    fn export_path(&self, _: &Export, _: Option<&()>) -> Result<(), PackageError> {
+        Ok(())
+    }
+}
+
+struct IndexPathResolver<'a, B: PathBuilder> {
+    builder: B,
     imports: &'a [Import],
     exports: &'a [Export],
-    import_paths: Vec<PathResolution>,
-    export_paths: Vec<PathResolution>,
+    import_paths: Vec<PathResolution<B::Path>>,
+    export_paths: Vec<PathResolution<B::Path>>,
     /// Deepest unresolved descent seen, so tests can prove the walk stays bounded (P2).
     #[cfg(test)]
     max_descent: usize,
 }
 
-impl<'a> IndexPathResolver<'a> {
+impl<'a, S: AsRef<str>> IndexPathResolver<'a, ObjectPaths<'a, S>> {
     fn new(
         package_name: &'a str,
-        names: &'a [String],
+        names: &'a [S],
         imports: &'a [Import],
         exports: &'a [Export],
     ) -> Self {
+        Self::with_builder(
+            ObjectPaths {
+                package_name,
+                names,
+            },
+            imports,
+            exports,
+        )
+    }
+}
+
+impl<'a, B: PathBuilder> IndexPathResolver<'a, B> {
+    fn with_builder(builder: B, imports: &'a [Import], exports: &'a [Export]) -> Self {
         Self {
-            package_name,
-            names,
+            builder,
             imports,
             exports,
             import_paths: (0..imports.len())
@@ -1667,31 +1846,16 @@ impl<'a> IndexPathResolver<'a> {
             PathResolution::Unresolved => {}
         }
         self.import_paths[slot] = PathResolution::Resolving;
-        let (object_name_ref, outer_index, package_name_ref) = {
-            let import = self.imports.get(slot).ok_or_else(|| {
-                PackageError::new(
-                    PackageErrorKind::MalformedData,
-                    None,
-                    path,
-                    format!("import index {import_index} is outside import map"),
-                )
-            })?;
-            (import.object_name, import.outer_index, import.package_name)
-        };
-        let object_name = resolve_name_ref_cow(self.names, object_name_ref)?;
-        let (resolved, outer_depth) = match outer_index {
-            PackageIndex::Null => {
-                if object_name == "None" {
-                    (ObjectPath(String::new()), 0)
-                } else if let Some(package_name_ref) = package_name_ref {
-                    let package = resolve_name_ref_cow(self.names, package_name_ref)?;
-                    (ObjectPath(format!("/{package}.{object_name}")), 0)
-                } else if object_name.starts_with('/') {
-                    (ObjectPath(object_name.into_owned()), 0)
-                } else {
-                    (ObjectPath(format!("/{object_name}")), 0)
-                }
-            }
+        let import = self.imports.get(slot).ok_or_else(|| {
+            PackageError::new(
+                PackageErrorKind::MalformedData,
+                None,
+                path,
+                format!("import index {import_index} is outside import map"),
+            )
+        })?;
+        let (resolved, outer_depth) = match import.outer_index {
+            PackageIndex::Null => (self.builder.import_path(import, None)?, 0),
             outer => {
                 self.resolve_outer(outer, path, descent)?;
                 let (outer, outer_depth) = self.resolved(outer).ok_or_else(|| {
@@ -1704,11 +1868,7 @@ impl<'a> IndexPathResolver<'a> {
                 })?;
                 let depth = outer_depth + 1;
                 self.validate_outer_depth(depth, path)?;
-                if outer.as_str().is_empty() || outer.as_str() == "/None" {
-                    (ObjectPath(object_name.into_owned()), depth)
-                } else {
-                    (join_object_path(outer.as_str(), &object_name), depth)
-                }
+                (self.builder.import_path(import, Some(outer))?, depth)
             }
         };
         self.import_paths[slot] = PathResolution::Resolved {
@@ -1746,20 +1906,16 @@ impl<'a> IndexPathResolver<'a> {
             PathResolution::Unresolved => {}
         }
         self.export_paths[slot] = PathResolution::Resolving;
-        let (object_name_ref, outer_index) = {
-            let export = self.exports.get(slot).ok_or_else(|| {
-                PackageError::new(
-                    PackageErrorKind::MalformedData,
-                    None,
-                    path,
-                    format!("export index {export_index} is outside export map"),
-                )
-            })?;
-            (export.object_name, export.outer_index)
-        };
-        let object_name = resolve_name_ref_cow(self.names, object_name_ref)?;
-        let (resolved, outer_depth) = match outer_index {
-            PackageIndex::Null => (join_object_path(self.package_name, &object_name), 0),
+        let export = self.exports.get(slot).ok_or_else(|| {
+            PackageError::new(
+                PackageErrorKind::MalformedData,
+                None,
+                path,
+                format!("export index {export_index} is outside export map"),
+            )
+        })?;
+        let (resolved, outer_depth) = match export.outer_index {
+            PackageIndex::Null => (self.builder.export_path(export, None)?, 0),
             outer => {
                 self.resolve_outer(outer, path, descent)?;
                 let (outer, outer_depth) = self.resolved(outer).ok_or_else(|| {
@@ -1772,7 +1928,7 @@ impl<'a> IndexPathResolver<'a> {
                 })?;
                 let depth = outer_depth + 1;
                 self.validate_outer_depth(depth, path)?;
-                (join_object_path(outer.as_str(), &object_name), depth)
+                (self.builder.export_path(export, Some(outer))?, depth)
             }
         };
         self.export_paths[slot] = PathResolution::Resolved {
@@ -1794,7 +1950,7 @@ impl<'a> IndexPathResolver<'a> {
         ))
     }
 
-    fn resolved(&self, index: PackageIndex) -> Option<(&ObjectPath, usize)> {
+    fn resolved(&self, index: PackageIndex) -> Option<(&B::Path, usize)> {
         let state = match index {
             PackageIndex::Null => return None,
             PackageIndex::Import(index) => self.import_paths.get(index as usize)?,
@@ -1806,12 +1962,12 @@ impl<'a> IndexPathResolver<'a> {
         }
     }
 
-    fn resolved_path(&self, index: PackageIndex) -> Option<&ObjectPath> {
+    fn resolved_path(&self, index: PackageIndex) -> Option<&B::Path> {
         self.resolved(index).map(|(path, _)| path)
     }
 
-    fn into_paths(self) -> (Vec<ObjectPath>, Vec<ObjectPath>) {
-        let finish = |states: Vec<PathResolution>| {
+    fn into_paths(self) -> (Vec<B::Path>, Vec<B::Path>) {
+        let finish = |states: Vec<PathResolution<B::Path>>| {
             states
                 .into_iter()
                 .map(|state| match state {
@@ -1857,7 +2013,10 @@ fn validate_export_span(
     Ok(())
 }
 
-fn read_offset(reader: &mut Reader<'_>, path: &str) -> Result<FileOffset, PackageError> {
+fn read_offset(
+    reader: &mut Reader<'_>,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<FileOffset, PackageError> {
     let offset = reader.tell();
     let value = reader.read_i32(path)?;
     if value < 0 {
@@ -1875,7 +2034,7 @@ fn read_offset(reader: &mut Reader<'_>, path: &str) -> Result<FileOffset, Packag
 
 fn read_optional_i32_offset(
     reader: &mut Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<Option<FileOffset>, PackageError> {
     let offset = reader.tell();
     let value = reader.read_i32(path)?;
@@ -1895,7 +2054,7 @@ fn read_optional_i32_offset(
 
 fn read_optional_offset(
     reader: &mut Reader<'_>,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<Option<FileOffset>, PackageError> {
     let offset = reader.tell();
     let value = reader.read_i64(path)?;
@@ -1927,7 +2086,10 @@ fn read_non_negative_u32(
     })
 }
 
-fn checked_non_negative_i32(value: i32, path: &str) -> Result<u32, PackageError> {
+fn checked_non_negative_i32(
+    value: i32,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<u32, PackageError> {
     u32::try_from(value).map_err(|_| {
         PackageError::new(
             PackageErrorKind::MalformedData,
@@ -1957,11 +2119,11 @@ fn read_non_negative_u64(
 
 fn read_engine_version(reader: &mut Reader<'_>, path: &str) -> Result<EngineVersion, PackageError> {
     Ok(EngineVersion {
-        major: reader.read_u16(&format!("{path}.Major"))?,
-        minor: reader.read_u16(&format!("{path}.Minor"))?,
-        patch: reader.read_u16(&format!("{path}.Patch"))?,
-        changelist: reader.read_u32(&format!("{path}.Changelist"))?,
-        branch: reader.read_fstring(&format!("{path}.Branch"))?,
+        major: reader.read_u16(&format_args!("{path}.Major"))?,
+        minor: reader.read_u16(&format_args!("{path}.Minor"))?,
+        patch: reader.read_u16(&format_args!("{path}.Patch"))?,
+        changelist: reader.read_u32(&format_args!("{path}.Changelist"))?,
+        branch: reader.read_fstring(&format_args!("{path}.Branch"))?,
     })
 }
 
@@ -2475,7 +2637,7 @@ mod tests {
 
     #[test]
     fn rejects_cyclic_package_index_outer_chain() {
-        let names = vec!["None".into(), "Self".into()];
+        let names: Vec<String> = vec!["None".into(), "Self".into()];
         let mut import = test_import("/Self.Self", "/Script/CoreUObject.Object", 1, None);
         import.outer_index = PackageIndex::Import(0);
         let imports = vec![import];
@@ -2491,7 +2653,7 @@ mod tests {
 
     #[test]
     fn rejects_deep_cached_package_index_outer_chain() {
-        let names = vec!["None".into(), "Node".into()];
+        let names: Vec<String> = vec!["None".into(), "Node".into()];
         let mut imports = Vec::with_capacity(MAX_OBJECT_PATH_DEPTH + 2);
         for index in 0..=MAX_OBJECT_PATH_DEPTH + 1 {
             let mut import = test_import("/Node", "/Script/CoreUObject.Object", 1, None);
@@ -2559,7 +2721,7 @@ mod tests {
 
     #[test]
     fn accepts_forward_unresolved_chain_at_the_depth_limit() {
-        let names = vec!["None".into(), "Node".into()];
+        let names: Vec<String> = vec!["None".into(), "Node".into()];
         let imports = forward_import_chain(MAX_OBJECT_PATH_DEPTH + 1);
         let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &imports, &[]);
 
@@ -2578,7 +2740,7 @@ mod tests {
 
     #[test]
     fn rejects_forward_unresolved_import_chain_before_descending_past_the_limit() {
-        let names = vec!["None".into(), "Node".into()];
+        let names: Vec<String> = vec!["None".into(), "Node".into()];
         let imports = forward_import_chain(MAX_OBJECT_PATH_DEPTH + 500);
         let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &imports, &[]);
 
@@ -2597,7 +2759,7 @@ mod tests {
 
     #[test]
     fn rejects_forward_unresolved_export_chain_before_descending_past_the_limit() {
-        let names = vec!["None".into(), "Node".into()];
+        let names: Vec<String> = vec!["None".into(), "Node".into()];
         let exports = forward_export_chain(MAX_OBJECT_PATH_DEPTH + 500);
         let mut resolver = IndexPathResolver::new("/Game/Test/Test", &names, &[], &exports);
 
@@ -2612,7 +2774,7 @@ mod tests {
 
     #[test]
     fn rejects_mixed_export_import_chain_before_descending_past_the_limit() {
-        let names = vec!["None".into(), "Node".into()];
+        let names: Vec<String> = vec!["None".into(), "Node".into()];
         let half = MAX_OBJECT_PATH_DEPTH;
         let mut exports = forward_export_chain(half);
         exports
@@ -2633,7 +2795,7 @@ mod tests {
 
     #[test]
     fn rejects_unresolved_chain_ending_at_a_deep_cached_parent() {
-        let names = vec!["None".into(), "Node".into()];
+        let names: Vec<String> = vec!["None".into(), "Node".into()];
         let cached_depth = MAX_OBJECT_PATH_DEPTH - 4;
         let fresh = 10;
         // Entries 0..fresh are fresh, entries fresh.. form a chain whose head sits at cached_depth.

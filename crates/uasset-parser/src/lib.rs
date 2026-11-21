@@ -21,4 +21,4 @@ mod test_support;
 
 pub use archive::{ArchiveError, ArchiveErrorKind, ArchiveLimits, Reader, Span};
 pub use asset::PropertyDecodeFilter;
-pub use package::{Package, PackageError, PackageErrorKind, PackageSummary};
+pub use package::{HeaderIndex, Package, PackageError, PackageErrorKind, PackageSummary};

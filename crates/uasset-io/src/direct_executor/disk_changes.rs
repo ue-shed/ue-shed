@@ -130,25 +130,38 @@ fn walk(project_root: &Path, cancellation: &CancellationToken) -> Result<Vec<Dis
     Ok(packages(&listing))
 }
 
-/// The listing's packages with their signatures. `listing` is in path order.
+/// The listing's packages with their signatures. `listing` is in path order, so a package's
+/// sidecars, which share its stem, sit beside it.
 fn packages(listing: &[PackageSignature]) -> Vec<DiskPackage> {
-    let stamp = |path: &str| {
-        listing
-            .binary_search_by(|entry| entry.relative_path.as_str().cmp(path))
-            .ok()
-            .map(|row| (listing[row].size, listing[row].modified_nanos))
-    };
     listing
         .iter()
-        .filter(|entry| entry.kind == EntryKind::Package)
-        .map(|entry| {
+        .enumerate()
+        .filter(|(_, entry)| entry.kind == EntryKind::Package)
+        .map(|(row, entry)| {
             let path = &entry.relative_path;
             let stem = path
                 .rsplit_once('.')
                 .map_or(path.as_str(), |(stem, _)| stem);
             let mut parts = [Some((entry.size, entry.modified_nanos)), None, None, None];
-            for (part, extension) in parts[1..].iter_mut().zip(SIDECARS) {
-                *part = stamp(&format!("{stem}.{extension}"));
+            let shares_stem = |other: &str| {
+                other.len() > stem.len()
+                    && other.starts_with(stem)
+                    && other.as_bytes()[stem.len()] == b'.'
+            };
+            let neighbours = listing[..row]
+                .iter()
+                .rev()
+                .take_while(|other| shares_stem(&other.relative_path))
+                .chain(
+                    listing[row + 1..]
+                        .iter()
+                        .take_while(|other| shares_stem(&other.relative_path)),
+                );
+            for other in neighbours {
+                let extension = &other.relative_path[stem.len() + 1..];
+                if let Some(slot) = SIDECARS.iter().position(|sidecar| *sidecar == extension) {
+                    parts[slot + 1] = Some((other.size, other.modified_nanos));
+                }
             }
             DiskPackage {
                 path: path.clone(),

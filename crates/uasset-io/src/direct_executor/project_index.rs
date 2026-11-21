@@ -7,11 +7,11 @@
 use crate::cancellation::CancellationToken;
 
 use super::catalog::{
-    Catalog, CatalogDiagnostic, CatalogError, CatalogSnapshotEntry, CatalogStatus, Completeness,
-    EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
+    Catalog, CatalogDiagnostic, CatalogError, CatalogSnapshotEntry, CatalogStatus, CommittedEntry,
+    Completeness, EntryKind, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
     PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_NAMES,
     PackageSignature, QueryPage, QueryRequest, RefreshChanges, RefreshSummary, StagedPackage,
-    project_id_for,
+    is_map_path, project_id_for,
 };
 use super::{Failure, checkpoint};
 
@@ -108,6 +108,29 @@ pub trait ProjectScanner {
         kind: EntryKind,
         cancellation: &CancellationToken,
     ) -> Result<Option<PackageSignature>, CoordinatorError>;
+
+    /// A package's evidence and the signature observed right after reading it. The default reads
+    /// the evidence and then rereads the signature; a filesystem adapter may take both from one
+    /// open file.
+    fn read_header_observation(
+        &self,
+        project_root: &str,
+        signature: &PackageSignature,
+        cancellation: &CancellationToken,
+    ) -> Result<HeaderObservation, CoordinatorError> {
+        let evidence = self.read_header_evidence(project_root, signature, cancellation)?;
+        checkpoint(cancellation, "read")?;
+        let signature = self.reread_signature(
+            project_root,
+            &signature.relative_path,
+            signature.kind,
+            cancellation,
+        );
+        Ok(HeaderObservation {
+            evidence,
+            signature,
+        })
+    }
 }
 
 pub(crate) fn observe_header<S: ProjectScanner + ?Sized>(
@@ -116,23 +139,37 @@ pub(crate) fn observe_header<S: ProjectScanner + ?Sized>(
     signature: &PackageSignature,
     cancellation: &CancellationToken,
 ) -> Result<HeaderObservation, CoordinatorError> {
-    let evidence = scanner.read_header_evidence(project_root, signature, cancellation)?;
-    checkpoint(cancellation, "read")?;
-    let signature = scanner.reread_signature(
-        project_root,
-        &signature.relative_path,
-        signature.kind,
-        cancellation,
-    );
-    Ok(HeaderObservation {
-        evidence,
-        signature,
-    })
+    scanner.read_header_observation(project_root, signature, cancellation)
 }
 
 /// Snapshot helper used by the coordinator to compute deletions without exposing SQL.
 pub trait CatalogSnapshot: Catalog {
     fn committed_entries(&self) -> Result<Vec<CatalogSnapshotEntry>, CatalogError>;
+
+    /// Calls `visit` with the committed entries in path order. Adapters that hold their
+    /// committed inventory lend it without copying; the default copies `committed_entries`.
+    /// An entry's index here is the one `Catalog::observe_unchanged_committed` receives.
+    fn with_committed_entries<R>(
+        &self,
+        visit: impl FnOnce(&[CommittedEntry<'_>]) -> R,
+    ) -> Result<R, CatalogError> {
+        let mut entries = self.committed_entries()?;
+        if !entries.is_sorted_by(|a, b| a.signature.relative_path <= b.signature.relative_path) {
+            entries.sort_by(|a, b| a.signature.relative_path.cmp(&b.signature.relative_path));
+        }
+        let borrowed = entries
+            .iter()
+            .map(|entry| CommittedEntry {
+                relative_path: &entry.signature.relative_path,
+                kind: entry.signature.kind,
+                size: entry.signature.size,
+                modified_nanos: entry.signature.modified_nanos,
+                header_profile_version: entry.header_profile_version,
+                header_failure: entry.header_failure,
+            })
+            .collect::<Vec<_>>();
+        Ok(visit(&borrowed))
+    }
 
     #[allow(dead_code)]
     fn committed_relative_paths(&self) -> Result<Vec<String>, CatalogError> {
@@ -295,20 +332,14 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
     let project_id = project_id_for(project_root, scanner.scope());
     let mut events = vec![RefreshEvent::Started { rebuild }];
     let base_generation = catalog.committed_generation();
-    let mut prior_entries = catalog.committed_entries()?;
-    prior_entries.sort_by(|a, b| a.signature.relative_path.cmp(&b.signature.relative_path));
     let mut token = Some(catalog.begin_refresh()?);
     let result = (|| {
-        #[expect(
-            clippy::expect_used,
-            reason = "the token is set above and taken only at commit, after this borrow ends"
-        )]
-        let staging = token
-            .as_ref()
-            .expect("staging token present for refresh body");
         checkpoint(cancellation, "discovery")?;
         let mut enumerated = scanner.enumerate(project_root, cancellation)?;
-        enumerated.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        // Scanners list in path order already; sort only when one did not.
+        if !enumerated.is_sorted_by(|a, b| a.relative_path <= b.relative_path) {
+            enumerated.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        }
         let total_packages = enumerated
             .iter()
             .filter(|entry| entry.kind == EntryKind::Package)
@@ -321,14 +352,8 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             Some(total_packages),
         );
 
-        let mut changed_packages = 0_u64;
-        let mut package_count = 0_u64;
-        let mut map_count = 0_u64;
         let mut diagnostics = RefreshDiagnostics::default();
-        let mut completed_packages = 0_u64;
-        let mut changed_entries = Vec::new();
         let mut changes = ChangeReport::new(base_generation, maximum_changes);
-        let mut prior_cursor = prior_entries.iter().peekable();
 
         emit_progress(
             &mut events,
@@ -337,79 +362,39 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             0,
             Some(total_packages),
         );
-        for signature in &enumerated {
-            checkpoint(cancellation, "read")?;
-            if signature.kind == EntryKind::Package {
-                completed_packages += 1;
-            }
-            while prior_cursor
-                .peek()
-                .is_some_and(|entry| entry.signature.relative_path < signature.relative_path)
-            {
-                prior_cursor.next();
-            }
-            let prior = prior_cursor
-                .peek()
-                .filter(|entry| entry.signature.relative_path == signature.relative_path);
-            // A changed file differs on disk; a reused profile or a failed read is re-read
-            // without counting as a change.
-            if prior.is_none_or(|prior| prior.signature != *signature) {
-                changes.changed(&signature.relative_path);
-            }
-            let can_reuse = prior.is_some_and(|prior| {
-                prior.signature == *signature
-                    && (signature.kind == EntryKind::Sidecar
-                        || (prior.header_profile_version == Some(INDEX_PROFILE_VERSION)
-                            && !prior.header_failure))
-            });
-
-            if can_reuse {
-                catalog.observe_unchanged(staging, &signature.relative_path)?;
-            } else {
-                if signature.kind == EntryKind::Package {
-                    changed_packages += 1;
-                }
-                changed_entries.push(signature.clone());
-            }
-
-            if signature.kind == EntryKind::Package {
-                package_count += 1;
-                if signature
-                    .relative_path
-                    .to_ascii_lowercase()
-                    .ends_with(".umap")
-                {
-                    map_count += 1;
-                }
-            }
-            if should_emit_package_progress(completed_packages, total_packages) {
-                emit_progress(
-                    &mut events,
-                    on_progress,
-                    RefreshPhase::Comparing,
-                    completed_packages,
-                    Some(total_packages),
-                );
-            }
-        }
-
-        let mut observed = enumerated.iter().peekable();
-        let mut removed_packages = 0_u64;
-        for entry in &prior_entries {
-            while observed
-                .peek()
-                .is_some_and(|signature| signature.relative_path < entry.signature.relative_path)
-            {
-                observed.next();
-            }
-            let still_present = observed
-                .peek()
-                .is_some_and(|signature| signature.relative_path == entry.signature.relative_path);
-            if !still_present {
-                changes.removed(&entry.signature.relative_path);
-                if entry.signature.kind == EntryKind::Package {
-                    removed_packages += 1;
-                }
+        // Compare against the committed entries in place: nothing committed is copied.
+        let comparison = catalog.with_committed_entries(|prior| {
+            compare(
+                prior,
+                &enumerated,
+                total_packages,
+                &mut changes,
+                cancellation,
+                &mut |completed| {
+                    emit_progress(
+                        &mut events,
+                        on_progress,
+                        RefreshPhase::Comparing,
+                        completed,
+                        Some(total_packages),
+                    );
+                },
+            )
+        })??;
+        #[expect(
+            clippy::expect_used,
+            reason = "the token is set above and taken only at commit, after this borrow ends"
+        )]
+        let staging = token
+            .as_ref()
+            .expect("staging token present for refresh body");
+        for (signature, reuse) in enumerated.iter().zip(&comparison.reuse) {
+            if let Some(committed_index) = reuse {
+                catalog.observe_unchanged_committed(
+                    staging,
+                    &signature.relative_path,
+                    *committed_index as usize,
+                )?;
             }
         }
 
@@ -418,23 +403,31 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             on_progress,
             RefreshPhase::ReadingHeaders,
             0,
-            Some(changed_packages),
+            Some(comparison.changed_packages),
         );
-        let mut completed_headers = 0_u64;
-        let mut changed_package_entries = Vec::with_capacity(changed_packages as usize);
-        for signature in changed_entries {
+        let mut changed_package_entries = Vec::with_capacity(comparison.changed_packages as usize);
+        let mut changed_sidecars = Vec::new();
+        for (signature, reuse) in enumerated.into_iter().zip(comparison.reuse) {
+            if reuse.is_some() {
+                continue;
+            }
             if signature.kind == EntryKind::Sidecar {
-                catalog.stage_observed(
-                    staging,
-                    StagedPackage {
-                        signature,
-                        header: None,
-                    },
-                )?;
+                changed_sidecars.push(signature);
             } else {
                 changed_package_entries.push(signature);
             }
         }
+        for signature in changed_sidecars {
+            catalog.stage_observed(
+                staging,
+                StagedPackage {
+                    signature,
+                    header: None,
+                },
+            )?;
+        }
+        let changed_packages = comparison.changed_packages;
+        let mut completed_headers = 0_u64;
         scanner.stream_header_evidence(
             project_root,
             &changed_package_entries,
@@ -463,21 +456,22 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
                 Ok(())
             },
         )?;
+        drop(changed_package_entries);
 
         emit_progress(
             &mut events,
             on_progress,
             RefreshPhase::Committing,
-            completed_packages,
+            total_packages,
             Some(total_packages),
         );
         let summary = RefreshSummary {
             project_id,
             generation: staging.generation,
-            package_count,
-            map_count,
+            package_count: comparison.package_count,
+            map_count: comparison.map_count,
             changed_packages,
-            removed_packages,
+            removed_packages: comparison.removed_packages,
             completeness: if diagnostics.kept.is_empty() {
                 Completeness::Complete
             } else {
@@ -509,6 +503,106 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             Err(error)
         }
     }
+}
+
+/// One enumeration compared with the committed entries.
+struct Comparison {
+    /// For each enumerated entry, the committed entry it reuses unchanged, else `None`.
+    reuse: Vec<Option<u32>>,
+    package_count: u64,
+    map_count: u64,
+    changed_packages: u64,
+    removed_packages: u64,
+}
+
+/// Merges the enumeration with the committed entries (both in path order): which entries reuse
+/// their committed evidence, what changed, and what was removed.
+fn compare(
+    prior: &[CommittedEntry<'_>],
+    enumerated: &[PackageSignature],
+    total_packages: u64,
+    changes: &mut ChangeReport,
+    cancellation: &CancellationToken,
+    on_progress: &mut dyn FnMut(u64),
+) -> Result<Comparison, CoordinatorError> {
+    let mut comparison = Comparison {
+        reuse: Vec::with_capacity(enumerated.len()),
+        package_count: 0,
+        map_count: 0,
+        changed_packages: 0,
+        removed_packages: 0,
+    };
+    let mut completed_packages = 0_u64;
+    let mut cursor = 0;
+    for signature in enumerated {
+        checkpoint(cancellation, "read")?;
+        if signature.kind == EntryKind::Package {
+            completed_packages += 1;
+        }
+        while prior
+            .get(cursor)
+            .is_some_and(|entry| entry.relative_path < signature.relative_path.as_str())
+        {
+            cursor += 1;
+        }
+        let prior_entry = prior
+            .get(cursor)
+            .filter(|entry| entry.relative_path == signature.relative_path);
+        // A changed file differs on disk; a reused profile or a failed read is re-read
+        // without counting as a change.
+        if prior_entry.is_none_or(|prior| !prior.has_signature(signature)) {
+            changes.changed(&signature.relative_path);
+        }
+        let can_reuse = prior_entry.is_some_and(|prior| {
+            prior.has_signature(signature)
+                && (signature.kind == EntryKind::Sidecar
+                    || (prior.header_profile_version == Some(INDEX_PROFILE_VERSION)
+                        && !prior.header_failure))
+        });
+        comparison.reuse.push(if can_reuse {
+            Some(
+                u32::try_from(cursor).map_err(|_| CoordinatorError::Unavailable {
+                    message: "the committed Project Index has more than u32::MAX entries"
+                        .to_owned(),
+                })?,
+            )
+        } else {
+            if signature.kind == EntryKind::Package {
+                comparison.changed_packages += 1;
+            }
+            None
+        });
+
+        if signature.kind == EntryKind::Package {
+            comparison.package_count += 1;
+            if is_map_path(&signature.relative_path) {
+                comparison.map_count += 1;
+            }
+        }
+        if should_emit_package_progress(completed_packages, total_packages) {
+            on_progress(completed_packages);
+        }
+    }
+
+    let mut observed = enumerated.iter().peekable();
+    for entry in prior {
+        while observed
+            .peek()
+            .is_some_and(|signature| signature.relative_path.as_str() < entry.relative_path)
+        {
+            observed.next();
+        }
+        let still_present = observed
+            .peek()
+            .is_some_and(|signature| signature.relative_path == entry.relative_path);
+        if !still_present {
+            changes.removed(entry.relative_path);
+            if entry.kind == EntryKind::Package {
+                comparison.removed_packages += 1;
+            }
+        }
+    }
+    Ok(comparison)
 }
 
 fn stage_with_initial_header<S: ProjectScanner>(

@@ -465,32 +465,57 @@ impl EngineSession {
                 };
                 // Load the persisted text-search arena before exposing a ready reader. This
                 // is measured as preparation, so the first typed term pays only matching work.
-                stage("sourceSearch", 0);
-                let source_started = Instant::now();
-                query.prepare_source_search(cancelled)?;
-                stage_seconds.insert(
-                    "source_search_prepare".into(),
-                    source_started.elapsed().as_secs_f64(),
-                );
                 // Summary counters no longer load the numeric query projection as a side effect.
                 // Keep that required preparation in opening instead of deferring it to page one.
-                stage("projection", 1);
-                let projection_started = Instant::now();
-                crate::engine_match::Projection::open(&query, cancelled)?;
-                stage_seconds.insert(
-                    "query_projection_prepare".into(),
-                    projection_started.elapsed().as_secs_f64(),
-                );
                 // Focus, cursors, picked lines and line details look rows up by ID; index the
                 // packed IDs and each unit's line once so none of them scans every row.
+                //
+                // The search arena and the projection are independent, so they load at once. Each
+                // ID index follows the preparation that caches its row count (line IDs reuse
+                // `line.source`, raw IDs reuse `raw.visible`), so neither column loads twice.
+                stage("sourceSearch", 0);
+                let timed = |work: &dyn Fn() -> Result<()>| {
+                    let started = Instant::now();
+                    work().map(|()| started.elapsed())
+                };
+                let ((source, line), (projection, raw)) = rayon::join(
+                    || {
+                        let source = timed(&|| query.prepare_source_search(cancelled));
+                        let line = source.is_ok().then(|| {
+                            let started = Instant::now();
+                            query
+                                .id_index_with_timings("line")
+                                .map(|(_, timings)| (timings, started.elapsed()))
+                        });
+                        (source, line)
+                    },
+                    || {
+                        let projection = timed(&|| {
+                            crate::engine_match::Projection::open(&query, cancelled).map(drop)
+                        });
+                        let raw = projection.is_ok().then(|| {
+                            let started = Instant::now();
+                            query
+                                .id_index_with_timings("raw")
+                                .map(|(_, timings)| (timings, started.elapsed()))
+                        });
+                        (projection, raw)
+                    },
+                );
+                // Report the first failure a sequential open would have hit.
+                stage_seconds.insert("source_search_prepare".into(), source?.as_secs_f64());
+                stage("projection", 1);
+                stage_seconds.insert("query_projection_prepare".into(), projection?.as_secs_f64());
                 stage("ids", 2);
-                let index_started = Instant::now();
-                let (_, raw) = query.id_index_with_timings("raw")?;
-                let (_, line) = query.id_index_with_timings("line")?;
+                let (raw, raw_elapsed) = raw.ok_or("Raw ID index was not prepared.")??;
+                let (line, line_elapsed) = line.ok_or("Line ID index was not prepared.")??;
+                let unit_lines_started = Instant::now();
                 let (_, unit_lines) = query.unit_lines_with_timings(cancelled)?;
+                // Stage durations are each stage's own work; overlapping stages may sum past the
+                // open's wall time. The ID total covers its load/build breakdown below.
                 stage_seconds.insert(
                     "id_index_prepare".into(),
-                    index_started.elapsed().as_secs_f64(),
+                    (raw_elapsed + line_elapsed + unit_lines_started.elapsed()).as_secs_f64(),
                 );
                 for (key, duration) in [
                     ("id_index_raw_load", raw.load),

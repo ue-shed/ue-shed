@@ -137,6 +137,7 @@ pub(crate) struct Joined {
     pub groups: Vec<Group>,
     pub order: Vec<u32>,
     pub raw_order: Vec<u32>,
+    pub package_order: Vec<u32>,
     pub unit: Vec<u32>,
     pub next: Vec<u32>,
     pub package_files: Vec<u32>,
@@ -219,6 +220,12 @@ fn shown_text(file: &FileColumns, row: usize) -> u32 {
     }][row]
 }
 pub(crate) fn ordinal(a: &str, b: &str) -> Ordering {
+    if a.is_ascii() && b.is_ascii() {
+        return a.as_bytes().cmp(b.as_bytes());
+    }
+    if !a.as_bytes().contains(&0xf3) && !b.as_bytes().contains(&0xf3) {
+        return a.encode_utf16().cmp(b.encode_utf16());
+    }
     if !a.chars().any(|c| ('\u{f0000}'..='\u{f0800}').contains(&c))
         && !b.chars().any(|c| ('\u{f0000}'..='\u{f0800}').contains(&c))
     {
@@ -230,21 +237,24 @@ pub(crate) fn ordinal(a: &str, b: &str) -> Ordering {
 }
 /// Match the scanner and TypeScript: separators end a component before filename suffixes.
 pub(crate) fn package_path_order(a: &[u8], b: &[u8]) -> Ordering {
-    a.iter()
-        .map(|byte| {
-            if matches!(byte, b'/' | b'\\') {
-                0
-            } else {
-                *byte
+    let min = a.len().min(b.len());
+    let mut i = 0;
+    while i + 8 <= min && a[i..i + 8] == b[i..i + 8] {
+        i += 8;
+    }
+    while i < min {
+        let ba = a[i];
+        let bb = b[i];
+        if ba != bb {
+            let na = if matches!(ba, b'/' | b'\\') { 0 } else { ba };
+            let nb = if matches!(bb, b'/' | b'\\') { 0 } else { bb };
+            if na != nb {
+                return na.cmp(&nb);
             }
-        })
-        .cmp(b.iter().map(|byte| {
-            if matches!(byte, b'/' | b'\\') {
-                0
-            } else {
-                *byte
-            }
-        }))
+        }
+        i += 1;
+    }
+    a.len().cmp(&b.len())
 }
 #[expect(
     clippy::expect_used,
@@ -594,10 +604,13 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     measure.mark("join.inputs");
     let mut stage = std::time::Instant::now();
     let empty = store.intern("identity", &[String::new()])?[0];
-    let mut strings = dictionary_bytes(&store.directory, &store.root)?
-        .into_iter()
-        .map(|bytes| crate::wtf8::Wtf8Buf::from_bytes(bytes).map(|value| value.into_view()))
-        .collect::<Result<Vec<_>>>()?;
+    let mut strings = {
+        use rayon::prelude::*;
+        dictionary_bytes(&store.directory, &store.root)?
+            .into_par_iter()
+            .map(|bytes| crate::wtf8::Wtf8Buf::from_bytes(bytes).map(|value| value.into_view()))
+            .collect::<Result<Vec<_>>>()?
+    };
     let load = |path: &str| {
         FileColumns::load(
             store,
@@ -633,19 +646,34 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
     measure.mark("join.load");
     let c = &packages.occurrence;
     let count = c[O_SOURCE].len();
-    let path_bytes = packages
-        .paths
-        .iter()
-        .map(|id| crate::wtf8::Wtf8Buf::from_view(&strings[*id as usize]))
-        .collect::<Vec<_>>();
-    let mut path_order = (0..packages.paths.len()).collect::<Vec<_>>();
-    path_order
-        .sort_by(|a, b| package_path_order(path_bytes[*a].as_bytes(), path_bytes[*b].as_bytes()));
-    let mut rank = vec![0; path_order.len()];
-    for (i, row) in path_order.iter().enumerate() {
-        rank[*row] = i;
+    let package_order = {
+        use rayon::prelude::*;
+        use std::borrow::Cow;
+        let path_bytes = packages
+            .paths
+            .par_iter()
+            .map(|&id| {
+                let s = &strings[id as usize];
+                if !s.as_bytes().contains(&0xf3) {
+                    Cow::Borrowed(s.as_bytes())
+                } else {
+                    Cow::Owned(crate::wtf8::Wtf8Buf::from_view(s).into_bytes())
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut order = (0..packages.paths.len() as u32).collect::<Vec<_>>();
+        order.par_sort_unstable_by(|&a, &b| {
+            package_path_order(
+                path_bytes[a as usize].as_ref(),
+                path_bytes[b as usize].as_ref(),
+            )
+        });
+        order
+    };
+    let mut rank = vec![0usize; package_order.len()];
+    for (i, &row) in package_order.iter().enumerate() {
+        rank[row as usize] = i;
     }
-    drop(path_bytes);
     let emission = |a: usize, b: usize| {
         (rank[packages.package_row[a] as usize], a)
             .cmp(&(rank[packages.package_row[b] as usize], b))
@@ -750,15 +778,26 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
                 }
             })
     };
-    let mut order = (0..count as u32).collect::<Vec<_>>();
-    order.sort_by(|a, b| {
-        compare(*a as usize, *b as usize).then_with(|| emission(*a as usize, *b as usize))
-    });
-    let mut raw_order = order.clone();
-    raw_order.sort_by(|a, b| {
-        compare_unit(&packages, &unit_ns, *a as usize, *b as usize, empty)
-            .then_with(|| emission(*a as usize, *b as usize))
-    });
+    let (order, raw_order) = {
+        use rayon::prelude::*;
+        let mut order = (0..count as u32).collect::<Vec<_>>();
+        let mut raw_order = (0..count as u32).collect::<Vec<_>>();
+        rayon::join(
+            || {
+                order.par_sort_unstable_by(|a, b| {
+                    compare(*a as usize, *b as usize)
+                        .then_with(|| emission(*a as usize, *b as usize))
+                });
+            },
+            || {
+                raw_order.par_sort_unstable_by(|a, b| {
+                    compare_unit(&packages, &unit_ns, *a as usize, *b as usize, empty)
+                        .then_with(|| emission(*a as usize, *b as usize))
+                });
+            },
+        );
+        (order, raw_order)
+    };
     let mut unit = vec![0; count];
     let mut next = vec![ABSENT; count];
     let mut start = 0;
@@ -890,6 +929,7 @@ pub fn refresh(store: &mut Store, input: &JoinInput) -> Result<JoinOutcome> {
         groups,
         order,
         raw_order,
+        package_order,
         unit,
         next,
         package_files,

@@ -17,7 +17,7 @@ use crate::schema::{SchemaProvider, embedded_source_model};
 pub(crate) fn read_layout(
     reader: &mut Reader<'_>,
     name: &str,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<NativeValue, PropertyError> {
     let layout = embedded_source_model().native_layout(name).ok_or_else(|| {
         error(
@@ -40,7 +40,7 @@ pub(crate) fn read_layout(
 
 fn error(
     reader: &Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
     kind: PropertyErrorKind,
     message: impl Into<String>,
 ) -> PropertyError {
@@ -113,7 +113,7 @@ pub(super) fn known_struct(
     name: &str,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     match name {
@@ -270,7 +270,7 @@ pub(super) fn generated_value(
     type_path: &str,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_path == "/Script/SlateCore.DeprecateSlateVector2D" {
@@ -312,7 +312,7 @@ pub(super) fn math_struct(
     name: &str,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     // UE 5.7/5.8 Math/{Vector,Vector2D,Vector4,Rotator,Quat,Plane}.h,
     // LARGE_WORLD_COORDINATES (1004); Box.h composes two vectors.
@@ -435,7 +435,7 @@ fn generated_struct(
     type_path: &str,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     let Some(layout) = embedded_source_model().native_layout(type_path) else {
         return Ok(None);
@@ -517,7 +517,7 @@ fn field<'a>(value: &'a PropertyValue, name: &str) -> Option<&'a PropertyValue> 
 fn validate_channel(
     value: &PropertyValue,
     reader: &Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<(), PropertyError> {
     let Some(PropertyValue::Array(times)) = field(value, "Times") else {
         unreachable!()
@@ -551,7 +551,7 @@ fn instanced(
     source: &[u8],
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Result<PropertyValue, PropertyError> {
     if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
@@ -726,7 +726,7 @@ mod tests {
             name,
             &mut Reader::new(bytes),
             package,
-            "test",
+            &"test",
             DecodeScope::root(None),
         )
         .map(Option::unwrap)
@@ -741,7 +741,7 @@ mod tests {
                 "/Script/CoreUObject.InstancedPropertyBag",
                 &mut Reader::new(bytes),
                 package,
-                "bag",
+                &"bag",
                 DecodeScope::root(None),
             )
         };
@@ -796,7 +796,7 @@ mod tests {
                 &bytes,
                 &mut Reader::new(&bytes),
                 &package,
-                "bag",
+                &"bag",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
                     filter: None,
@@ -858,7 +858,7 @@ mod tests {
         };
         times.pop();
         assert_eq!(
-            validate_channel(&value, &Reader::new(&[]), "test")
+            validate_channel(&value, &Reader::new(&[]), &"test")
                 .unwrap_err()
                 .kind(),
             PropertyErrorKind::MalformedData
@@ -897,7 +897,7 @@ mod tests {
             "MovieSceneFloatChannel",
             &mut reader,
             &package,
-            "Fixture.Channel",
+            &"Fixture.Channel",
             DecodeScope::root(None),
         )
         .unwrap()
@@ -918,7 +918,7 @@ mod tests {
                     "MovieSceneFloatChannel",
                     &mut Reader::new(&bytes[..end]),
                     &package,
-                    "Fixture.Channel",
+                    &"Fixture.Channel",
                     DecodeScope::root(None)
                 )
                 .is_err()
@@ -979,7 +979,7 @@ mod tests {
                             name,
                             &mut reader,
                             &package,
-                            "Fixture",
+                            &"Fixture",
                             DecodeScope::root(None)
                         )
                         .unwrap()
@@ -993,7 +993,7 @@ mod tests {
                                 name,
                                 &mut Reader::new(&bytes[..end]),
                                 &package,
-                                "Fixture",
+                                &"Fixture",
                                 DecodeScope::root(None)
                             )
                             .is_err()
@@ -1019,7 +1019,7 @@ mod tests {
                     "MovieSceneFloatChannel",
                     &mut reader,
                     &package,
-                    "Fixture",
+                    &"Fixture",
                     DecodeScope::root(None)
                 )
                 .is_err()
@@ -1064,7 +1064,7 @@ mod tests {
                 &bytes,
                 &mut Reader::new(&bytes),
                 &package,
-                "test",
+                &"test",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
                     filter: None,
@@ -1130,14 +1130,14 @@ mod tests {
                         &type_path,
                         &mut Reader::new(&bytes[..end]),
                         &package,
-                        "test"
+                        &"test"
                     )
                     .is_err(),
                     "{name}: {end}"
                 );
             }
             assert!(
-                generated_struct(&type_path, &mut Reader::new(&bytes), &package, "test")
+                generated_struct(&type_path, &mut Reader::new(&bytes), &package, &"test")
                     .unwrap()
                     .is_some()
             );
@@ -1146,7 +1146,7 @@ mod tests {
                     &format!("/Script/Project.{name}"),
                     &mut Reader::new(&bytes),
                     &package,
-                    "test"
+                    &"test"
                 )
                 .unwrap()
                 .is_none()
@@ -1159,7 +1159,7 @@ mod tests {
                     tags,
                     &mut Reader::new(&count.to_le_bytes()),
                     &package,
-                    "test"
+                    &"test"
                 )
                 .is_err()
             );
@@ -1167,8 +1167,8 @@ mod tests {
         let mut bad_name = 1_i32.to_le_bytes().to_vec();
         bad_name.extend_from_slice(&i32::MAX.to_le_bytes());
         bad_name.extend_from_slice(&0_i32.to_le_bytes());
-        assert!(generated_struct(tags, &mut Reader::new(&bad_name), &package, "test").is_err());
-        let empty = generated_struct(tags, &mut Reader::new(&[0; 4]), &package, "test")
+        assert!(generated_struct(tags, &mut Reader::new(&bad_name), &package, &"test").is_err());
+        let empty = generated_struct(tags, &mut Reader::new(&[0; 4]), &package, &"test")
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -1182,14 +1182,14 @@ mod tests {
                 "/Script/CoreUObject.Box",
                 &mut Reader::new(&bad_box),
                 &package,
-                "test"
+                &"test"
             )
             .is_err()
         );
         let mut older = package.clone();
         older.summary.versions.ue5 -= 1;
         assert_eq!(
-            generated_struct(tags, &mut Reader::new(&[0; 4]), &older, "test")
+            generated_struct(tags, &mut Reader::new(&[0; 4]), &older, &"test")
                 .unwrap_err()
                 .kind(),
             PropertyErrorKind::UnsupportedVersion

@@ -1,7 +1,7 @@
 //! Semantic property decoding seam.
 
 use std::borrow::Cow;
-use std::fmt::{self, Write};
+use std::fmt;
 
 mod legacy_structs;
 mod locators;
@@ -648,20 +648,18 @@ fn decode_typed_value(
     flags: PropertyTagFlags,
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &(impl fmt::Display + ?Sized),
+    path: &dyn fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
-    // Scalar leaves pass their error breadcrumb as `format_args!`: the reader
-    // only stringifies `path` when it actually fails, so the happy path is
-    // allocation-free. The container/struct arms below still need an owned
-    // `&str` for their deeper recursion, so they materialize `path` once.
+    // Every arm passes its error breadcrumb lazily: readers and nested decoders only
+    // stringify `path` when they actually fail, so the happy path is allocation-free.
     match type_spec.name {
         "OptionalProperty" => Ok(optionals::decode(
             source,
             type_spec.tree,
             payload,
             package,
-            &path.to_string(),
+            path,
             scope,
             ContainerSerializer::from_tag(package, flags),
         )),
@@ -714,11 +712,7 @@ fn decode_typed_value(
         "StrProperty" => Ok(Some(PropertyValue::String(
             payload.read_fstring(&format_args!("{path}.String"))?,
         ))),
-        "FieldPathProperty" => Ok(native_values::field_path(
-            payload,
-            package,
-            &path.to_string(),
-        )),
+        "FieldPathProperty" => Ok(native_values::field_path(payload, package, path)),
         "DelegateProperty"
         | "MulticastDelegateProperty"
         | "MulticastInlineDelegateProperty"
@@ -726,18 +720,17 @@ fn decode_typed_value(
             type_spec.name,
             payload,
             package,
-            &path.to_string(),
+            path,
         )),
         "TextProperty" => {
-            let path = path.to_string();
             if let Some(budget) = scope.formatted_text_budget {
                 let mut probe = payload.clone();
-                if let Some(text) = text_formats::read_text(&mut probe, package, &path, 0, budget) {
+                if let Some(text) = text_formats::read_text(&mut probe, package, path, 0, budget) {
                     *payload = probe;
                     return Ok(Some(PropertyValue::Text(Box::new(text))));
                 }
             }
-            decode_text_value(payload, package, &path)
+            decode_text_value(payload, package, path)
                 .map(|text| text.map(|text| PropertyValue::Text(Box::new(text))))
         }
         "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
@@ -748,58 +741,51 @@ fn decode_typed_value(
         "LazyObjectProperty" => Ok(Some(PropertyValue::Guid(
             payload.read_guid(&format_args!("{path}.Guid"))?,
         ))),
-        "SoftObjectProperty" | "SoftClassProperty" => {
-            let path = path.to_string();
-            Ok(Some(PropertyValue::SoftObjectPath(
-                decode_soft_object_path(payload, &path, package)?,
-            )))
-        }
+        "SoftObjectProperty" | "SoftClassProperty" => Ok(Some(PropertyValue::SoftObjectPath(
+            decode_soft_object_path(payload, path, package)?,
+        ))),
         "ArrayProperty" => {
-            let path = path.to_string();
             let serializer = ContainerSerializer::from_tag(package, flags);
             decode_array_value(
                 source,
                 type_spec.tree,
                 payload,
                 package,
-                &path,
+                path,
                 scope,
                 serializer,
             )
             .map(Some)
         }
         "SetProperty" => {
-            let path = path.to_string();
             let serializer = ContainerSerializer::from_tag(package, flags);
             decode_set_value(
                 source,
                 type_spec.tree,
                 payload,
                 package,
-                &path,
+                path,
                 scope,
                 serializer,
             )
             .map(Some)
         }
         "MapProperty" => {
-            let path = path.to_string();
             let serializer = ContainerSerializer::from_tag(package, flags);
             decode_map_value(
                 source,
                 type_spec.tree,
                 payload,
                 package,
-                &path,
+                path,
                 scope,
                 serializer,
             )
             .map(Some)
         }
         "StructProperty" => {
-            let path = path.to_string();
             let facts = struct_facts(package, type_spec);
-            decode_struct_value(source, type_spec, &facts, payload, package, &path, scope).map(Some)
+            decode_struct_value(source, type_spec, &facts, payload, package, path, scope).map(Some)
         }
         _ => Ok(None),
     }
@@ -812,7 +798,7 @@ fn decode_typed_value(
 /// package/asset FNames from 1007, followed by the subpath string.
 pub(super) fn decode_soft_object_path(
     payload: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
     package: &Package,
 ) -> Result<String, PropertyError> {
     // UE 5.7 LinkerLoad.cpp, ADD_SOFTOBJECTPATH_LIST (1008).
@@ -912,7 +898,7 @@ fn decode_binary_or_native_value(
     type_spec: TypeSpec<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &(impl fmt::Display + ?Sized),
+    path: &dyn fmt::Display,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_spec.name == "OptionalProperty" {
         return Ok(optionals::decode(
@@ -920,7 +906,7 @@ fn decode_binary_or_native_value(
             type_spec.tree,
             payload,
             package,
-            &path.to_string(),
+            path,
             scope,
             ContainerSerializer::BinaryOrNative,
         ));
@@ -941,19 +927,15 @@ fn decode_binary_or_native_value(
             type_spec.name,
             payload,
             package,
-            &path.to_string(),
+            path,
         ));
     }
     let type_tree = type_spec.tree;
     if type_spec.name == "StructProperty" {
-        // Native structs are the only branch that reads, and each read helper
-        // wants an owned `&str`; materialize the breadcrumb once here rather
-        // than per read.
-        let path = path.to_string();
-        if let Some(value) = locators::decode(source, type_tree, payload, package, &path, scope) {
+        if let Some(value) = locators::decode(source, type_tree, payload, package, path, scope) {
             return Ok(Some(value));
         }
-        if let Some(value) = native_values::optional_struct(type_tree, payload, package, &path) {
+        if let Some(value) = native_values::optional_struct(type_tree, payload, package, path) {
             return Ok(Some(value));
         }
         if let Some(value) = native_values::math_struct(
@@ -962,13 +944,13 @@ fn decode_binary_or_native_value(
                 .unwrap_or(""),
             payload,
             package,
-            &path,
+            path,
         )? {
             return Ok(Some(value));
         }
         if let Some(type_path) = resolve_struct_type_path(package, type_tree)
             && let Some(value) =
-                native_values::generated_value(source, type_path, payload, package, &path, scope)?
+                native_values::generated_value(source, type_path, payload, package, path, scope)?
         {
             return Ok(Some(value));
         }
@@ -978,39 +960,37 @@ fn decode_binary_or_native_value(
                 || !is_niagara_variable(name)
                 || has_niagara_identity(package, type_tree))
             && let Some(value) =
-                native_values::known_struct(source, name, payload, package, &path, scope)?
+                native_values::known_struct(source, name, payload, package, path, scope)?
         {
             return Ok(Some(value));
         }
         match struct_name.as_deref() {
             Some("IntPoint") => {
                 return Ok(Some(PropertyValue::IntPoint(decode_int_point_value(
-                    payload, &path,
+                    payload, path,
                 )?)));
             }
             Some("Guid") => {
-                return Ok(Some(PropertyValue::Guid(decode_guid_value(
-                    payload, &path,
-                )?)));
+                return Ok(Some(PropertyValue::Guid(decode_guid_value(payload, path)?)));
             }
             Some("Color") => {
                 return Ok(Some(PropertyValue::Color(decode_color_value(
-                    payload, &path,
+                    payload, path,
                 )?)));
             }
             Some("LinearColor") => {
                 return Ok(Some(PropertyValue::LinearColor(decode_linear_color_value(
-                    payload, &path,
+                    payload, path,
                 )?)));
             }
             Some("DateTime") => {
                 return Ok(Some(PropertyValue::DateTime(decode_date_time_value(
-                    payload, &path,
+                    payload, path,
                 )?)));
             }
             Some("MovieSceneFrameRange") => {
                 return Ok(Some(PropertyValue::FrameRange(decode_frame_range_value(
-                    payload, &path,
+                    payload, path,
                 )?)));
             }
             _ => {}
@@ -1020,7 +1000,10 @@ fn decode_binary_or_native_value(
     Ok(None)
 }
 
-fn decode_date_time_value(payload: &mut Reader<'_>, path: &str) -> Result<i64, PropertyError> {
+fn decode_date_time_value(
+    payload: &mut Reader<'_>,
+    path: &dyn std::fmt::Display,
+) -> Result<i64, PropertyError> {
     if payload.remaining() != 8 {
         return Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
@@ -1036,7 +1019,7 @@ fn decode_date_time_value(payload: &mut Reader<'_>, path: &str) -> Result<i64, P
 
 fn decode_int_point_value(
     payload: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<IntPointValue, PropertyError> {
     if payload.remaining() != 8 {
         return Err(PropertyError::new(
@@ -1099,7 +1082,7 @@ fn decode_array_value(
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
@@ -1172,7 +1155,7 @@ fn decode_array_elements(
     inner: TypeSpec<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
     count: usize,
     serializer: ContainerSerializer,
@@ -1184,7 +1167,7 @@ fn decode_array_elements(
         let capacity = payload.checked_vec_capacity::<PropertyValue>(
             count,
             minimum_serialized_size(inner.name, inner.tree),
-            &format!("{path}.Count"),
+            &format_args!("{path}.Count"),
         )?;
         let mut values = Vec::with_capacity(capacity);
         // Fixed-size scalars take decode_container_element's fixed-size branch with nothing
@@ -1204,7 +1187,7 @@ fn decode_array_elements(
                 return Ok(PropertyValue::Array(values));
             }
             for index in 0..count {
-                let element_path = ElementPath { path, index };
+                let element_path = ElementPath::new(path, "", index, "");
                 let mut element_payload = payload
                     .take_bounded(crate::convert::u64_from_usize(byte_count), &element_path)?;
                 let value = decode_typed_value(
@@ -1217,23 +1200,15 @@ fn decode_array_elements(
                     scope,
                 )?
                 .ok_or_else(|| {
-                    unsupported_container_type(
-                        payload,
-                        &element_path.to_string(),
-                        "array element",
-                        inner.name,
-                    )
+                    unsupported_container_type(payload, &element_path, "array element", inner.name)
                 })?;
                 values.push(value);
                 decoded_new_layout |= is_new_layout;
             }
             return Ok(PropertyValue::Array(values));
         }
-        let mut element_path = String::with_capacity(path.len() + 12);
         for index in 0..count {
-            element_path.clear();
-            write!(element_path, "{path}[{index}]")
-                .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
+            let element_path = ElementPath::new(path, "", index, "");
             values.push(
                 decode_container_element(
                     source,
@@ -1256,15 +1231,38 @@ fn decode_array_elements(
     result.map_err(|error| preserve_opaque_container(error, decoded_new_layout))
 }
 
-/// The `path[index]` breadcrumb of an array element, formatted only when an error needs it.
+/// The `{path}{field}[{index}]{suffix}` breadcrumb of a container element, formatted only when
+/// an error needs it.
 struct ElementPath<'a> {
-    path: &'a str,
+    path: &'a dyn fmt::Display,
+    field: &'static str,
     index: usize,
+    suffix: &'static str,
+}
+
+impl<'a> ElementPath<'a> {
+    fn new(
+        path: &'a dyn fmt::Display,
+        field: &'static str,
+        index: usize,
+        suffix: &'static str,
+    ) -> Self {
+        Self {
+            path,
+            field,
+            index,
+            suffix,
+        }
+    }
 }
 
 impl fmt::Display for ElementPath<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}[{}]", self.path, self.index)
+        write!(
+            formatter,
+            "{}{}[{}]{}",
+            self.path, self.field, self.index, self.suffix
+        )
     }
 }
 
@@ -1273,7 +1271,7 @@ fn decode_set_value(
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
@@ -1289,7 +1287,6 @@ fn decode_set_value(
         };
         let facts = struct_facts(package, element_spec);
 
-        let mut element_path = String::with_capacity(path.len() + 12);
         let is_new_layout = speculative_container_struct(package, element_type, serializer);
         let remove_count = payload.read_i32(&format_args!("{path}.ElementsToRemove.Count"))?;
         if remove_count < 0 {
@@ -1303,12 +1300,10 @@ fn decode_set_value(
         payload.checked_vec_capacity::<PropertyValue>(
             crate::convert::usize_from_checked(remove_count),
             minimum_serialized_size(&element_name, element_type),
-            &format!("{path}.ElementsToRemove.Count"),
+            &format_args!("{path}.ElementsToRemove.Count"),
         )?;
-        for index in 0..remove_count {
-            element_path.clear();
-            write!(element_path, "{path}.ElementsToRemove[{index}]")
-                .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
+        for index in 0..crate::convert::usize_from_checked(remove_count) {
+            let element_path = ElementPath::new(path, ".ElementsToRemove", index, "");
             decode_container_element(
                 source,
                 element_spec,
@@ -1329,13 +1324,11 @@ fn decode_set_value(
         let capacity = payload.checked_vec_capacity::<PropertyValue>(
             count,
             minimum_serialized_size(&element_name, element_type),
-            &format!("{path}.Elements.Count"),
+            &format_args!("{path}.Elements.Count"),
         )?;
         let mut values = Vec::with_capacity(capacity);
         for index in 0..count {
-            element_path.clear();
-            write!(element_path, "{path}.Elements[{index}]")
-                .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
+            let element_path = ElementPath::new(path, ".Elements", index, "");
             values.push(
                 decode_container_element(
                     source,
@@ -1363,7 +1356,7 @@ fn decode_map_value(
     type_tree: &PropertyTypeName,
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<PropertyValue, PropertyError> {
@@ -1385,7 +1378,6 @@ fn decode_map_value(
         };
         let value_facts = struct_facts(package, value_spec);
 
-        let mut element_path = String::with_capacity(path.len() + 12);
         let new_key_layout = speculative_container_struct(package, key_type, serializer);
         let new_value_layout = speculative_container_struct(package, value_type, serializer);
         let keys_to_remove = payload.read_i32(&format_args!("{path}.KeysToRemove.Count"))?;
@@ -1393,12 +1385,10 @@ fn decode_map_value(
             payload.checked_vec_capacity::<PropertyValue>(
                 crate::convert::usize_from_checked(keys_to_remove),
                 minimum_serialized_size(&key_name, key_type),
-                &format!("{path}.KeysToRemove.Count"),
+                &format_args!("{path}.KeysToRemove.Count"),
             )?;
-            for index in 0..keys_to_remove {
-                element_path.clear();
-                write!(element_path, "{path}.KeysToRemove[{index}]")
-                    .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
+            for index in 0..crate::convert::usize_from_checked(keys_to_remove) {
+                let element_path = ElementPath::new(path, ".KeysToRemove", index, "");
                 decode_container_element(
                     source,
                     key_spec,
@@ -1429,13 +1419,11 @@ fn decode_map_value(
         let capacity = payload.checked_vec_capacity::<MapEntry>(
             count,
             entry_minimum,
-            &format!("{path}.Entries.Count"),
+            &format_args!("{path}.Entries.Count"),
         )?;
         let mut entries = Vec::with_capacity(capacity);
         for index in 0..count {
-            element_path.clear();
-            write!(element_path, "{path}.Entries[{index}].Key")
-                .unwrap_or_else(|_| unreachable!("writing to a String cannot fail"));
+            let element_path = ElementPath::new(path, ".Entries", index, ".Key");
             let key = decode_container_element(
                 source,
                 key_spec,
@@ -1450,8 +1438,7 @@ fn decode_map_value(
                 unsupported_container_type(payload, &element_path, "map key", &key_name)
             })?;
             decoded_new_layout |= new_key_layout;
-            element_path.truncate(element_path.len() - "Key".len());
-            element_path.push_str("Value");
+            let element_path = ElementPath::new(path, ".Entries", index, ".Value");
             let value = decode_container_element(
                 source,
                 value_spec,
@@ -1480,7 +1467,7 @@ fn decode_container_element(
     facts: &StructFacts<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Result<Option<PropertyValue>, PropertyError> {
@@ -1872,7 +1859,7 @@ fn is_user_defined_struct_identity(package: &Package, type_tree: &PropertyTypeNa
 fn decode_container_binary_struct(
     name: &str,
     payload: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     let size = match name {
         "IntPoint" => 8,
@@ -1908,7 +1895,7 @@ fn unknown_layout_struct_name<'a>(
 
 fn unsupported_container_type(
     payload: &Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
     role: &str,
     type_name: &str,
 ) -> PropertyError {
@@ -1946,7 +1933,7 @@ fn fixed_serialized_size(type_name: &str, type_tree: &PropertyTypeName) -> Optio
 fn resolve_inner_type<'a>(
     package: &'a Package,
     type_tree: &'a PropertyTypeName,
-    path: &str,
+    path: &dyn std::fmt::Display,
     property_kind: &str,
 ) -> Result<(&'a PropertyTypeName, Cow<'a, str>), PropertyError> {
     let Some(inner_type) = type_tree.parameters.first() else {
@@ -1971,7 +1958,7 @@ fn resolve_inner_type<'a>(
 fn resolve_map_key_type<'a>(
     package: &'a Package,
     type_tree: &'a PropertyTypeName,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<(&'a PropertyTypeName, Cow<'a, str>), PropertyError> {
     let Some(key_type) = type_tree.parameters.first() else {
         return Err(PropertyError::new(
@@ -1995,7 +1982,7 @@ fn resolve_map_key_type<'a>(
 fn resolve_map_value_type<'a>(
     package: &'a Package,
     type_tree: &'a PropertyTypeName,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<(&'a PropertyTypeName, Cow<'a, str>), PropertyError> {
     let Some(value_type) = type_tree.parameters.get(1) else {
         return Err(PropertyError::new(
@@ -2022,7 +2009,7 @@ fn decode_struct_value(
     facts: &StructFacts<'_>,
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Result<PropertyValue, PropertyError> {
     if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
@@ -2083,7 +2070,7 @@ fn decode_struct_value(
 fn decode_data_table_row_handle(
     stream: &PropertyStream,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<PropertyValue, PropertyError> {
     let mut table = None;
     let mut row_name = None;
@@ -2130,7 +2117,7 @@ fn decode_data_table_row_handle(
 fn decode_text_value(
     payload: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<Option<TextValue>, PropertyError> {
     let _flags = payload.read_i32(&format_args!("{path}.Flags"))?;
     let history_type = payload.read_i8(&format_args!("{path}.HistoryType"))?;
@@ -2138,7 +2125,7 @@ fn decode_text_value(
     if history_type == -1 {
         // UE 4.27/5.3 Text.cpp, Dev-Editor CultureInvariantTextSerializationKeyStability (32).
         let has_culture_invariant = package.summary.has_culture_invariant_text()
-            && read_archive_bool(payload, &format!("{path}.CultureInvariant"))?;
+            && read_archive_bool(payload, &format_args!("{path}.CultureInvariant"))?;
         let source = if has_culture_invariant {
             payload.read_fstring(&format_args!("{path}.CultureInvariantString"))?
         } else {
@@ -2201,7 +2188,7 @@ fn decode_text_value(
 
 fn decode_guid_value(
     payload: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<crate::archive::Guid, PropertyError> {
     if payload.remaining() != 16 {
         return Err(PropertyError::new(
@@ -2216,7 +2203,7 @@ fn decode_guid_value(
 
 fn decode_frame_range_value(
     payload: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<FrameRangeValue, PropertyError> {
     if payload.remaining() != 10 {
         return Err(PropertyError::new(
@@ -2231,14 +2218,14 @@ fn decode_frame_range_value(
     }
 
     Ok(FrameRangeValue {
-        lower: decode_frame_range_bound(payload, &format!("{path}.LowerBound"))?,
-        upper: decode_frame_range_bound(payload, &format!("{path}.UpperBound"))?,
+        lower: decode_frame_range_bound(payload, &format_args!("{path}.LowerBound"))?,
+        upper: decode_frame_range_bound(payload, &format_args!("{path}.UpperBound"))?,
     })
 }
 
 fn decode_frame_range_bound(
     payload: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<FrameRangeBound, PropertyError> {
     let offset = payload.tell();
     let kind = match payload.read_u8(&format_args!("{path}.Type"))? {
@@ -2259,7 +2246,10 @@ fn decode_frame_range_bound(
 }
 
 /// `FColor` serializes its channels in `B, G, R, A` byte order.
-fn decode_color_value(payload: &mut Reader<'_>, path: &str) -> Result<ColorValue, PropertyError> {
+fn decode_color_value(
+    payload: &mut Reader<'_>,
+    path: &dyn std::fmt::Display,
+) -> Result<ColorValue, PropertyError> {
     if payload.remaining() != 4 {
         return Err(PropertyError::new(
             crate::property::PropertyErrorKind::MalformedData,
@@ -2278,7 +2268,7 @@ fn decode_color_value(payload: &mut Reader<'_>, path: &str) -> Result<ColorValue
 /// `FLinearColor` serializes four `f32` channels in `R, G, B, A` order.
 fn decode_linear_color_value(
     payload: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<LinearColorValue, PropertyError> {
     if payload.remaining() != 16 {
         return Err(PropertyError::new(
@@ -2329,7 +2319,10 @@ fn resolve_struct_type_name<'a>(
     package.resolve_name_cow(type_tree.parameters.first()?.name)
 }
 
-fn read_archive_bool(reader: &mut Reader<'_>, path: &str) -> Result<bool, PropertyError> {
+fn read_archive_bool(
+    reader: &mut Reader<'_>,
+    path: &dyn std::fmt::Display,
+) -> Result<bool, PropertyError> {
     let offset = reader.tell();
     match reader.read_u32(path)? {
         0 => Ok(false),
@@ -2749,10 +2742,7 @@ mod tests {
             let mut reference = Reader::new(&bytes);
             let mut expected = Vec::new();
             for index in 0..3 {
-                let path = ElementPath {
-                    path: "Array",
-                    index,
-                };
+                let path = ElementPath::new(&"Array", "", index, "");
                 let mut element = reference.take_bounded(size as u64, &path).unwrap();
                 expected.push(
                     decode_typed_value(
@@ -2807,7 +2797,7 @@ mod tests {
                         spec,
                         &mut payload,
                         &package,
-                        "Array",
+                        &"Array",
                         DecodeScope::root(None),
                         3,
                         serializer
@@ -2824,7 +2814,7 @@ mod tests {
                         spec,
                         &mut empty,
                         &package,
-                        "Array",
+                        &"Array",
                         DecodeScope::root(None),
                         0,
                         serializer
@@ -2866,10 +2856,7 @@ mod tests {
                 PropertyTagFlags::default(),
                 &mut reference,
                 &package,
-                &ElementPath {
-                    path: "Array",
-                    index: 0,
-                },
+                &ElementPath::new(&"Array", "", 0, ""),
                 DecodeScope::root(None),
             )
             .unwrap_err();
@@ -2879,7 +2866,7 @@ mod tests {
                 spec,
                 &mut payload,
                 &package,
-                "Array",
+                &"Array",
                 DecodeScope::root(None),
                 1,
                 ContainerSerializer::Tagged,
@@ -3302,7 +3289,7 @@ mod tests {
                     "/Script/CoreUObject.Vector3f",
                     &mut reader,
                     &package,
-                    "Fixture",
+                    &"Fixture",
                     DecodeScope::root(None),
                 )
                 .unwrap()
@@ -3532,7 +3519,7 @@ mod tests {
                 let mut older = package.clone();
                 older.summary.versions.ue5 = 0;
                 assert!(
-                    native_values::math_struct(name, &mut Reader::new(&bytes), &older, "Fixture")
+                    native_values::math_struct(name, &mut Reader::new(&bytes), &older, &"Fixture")
                         .unwrap()
                         .is_none()
                 );

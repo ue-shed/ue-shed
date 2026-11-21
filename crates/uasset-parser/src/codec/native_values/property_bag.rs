@@ -6,7 +6,7 @@ pub(super) fn decode(
     source: &[u8],
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Result<PropertyValue, PropertyError> {
     if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
@@ -230,7 +230,7 @@ fn generated<'a>(
     record: &'a PropertyValue,
     name: &str,
     reader: &Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<&'a PropertyValue, PropertyError> {
     field(record, name).ok_or_else(|| {
         error(
@@ -259,7 +259,7 @@ fn object(
     raw: i32,
     reader: &Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<PropertyValue, PropertyError> {
     let index = PackageIndex::from_raw(raw);
     if index != PackageIndex::Null && package.resolve_index_str(index).is_none() {
@@ -276,7 +276,7 @@ fn type_name(
     raw: i64,
     version: i32,
     reader: &Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<PropertyValue, PropertyError> {
     const BASE: &[&str] = &[
         "none",
@@ -326,11 +326,11 @@ mod tests {
             (20, 5, "uint64"),
         ] {
             assert_eq!(
-                type_name(raw, version, &reader, "type").unwrap(),
+                type_name(raw, version, &reader, &"type").unwrap(),
                 PropertyValue::String(expected.into())
             );
         }
-        assert!(type_name(18, 3, &reader, "type").is_err());
-        assert!(type_name(21, 5, &reader, "type").is_err());
+        assert!(type_name(18, 3, &reader, &"type").is_err());
+        assert!(type_name(21, 5, &reader, &"type").is_err());
     }
 }

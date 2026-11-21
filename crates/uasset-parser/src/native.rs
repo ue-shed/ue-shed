@@ -177,7 +177,7 @@ impl From<ArchiveError> for NativeError {
 pub fn decode_native(
     reader: &mut Reader<'_>,
     layout: &NativeLayout,
-    path: &str,
+    path: &(impl fmt::Display + ?Sized),
 ) -> Result<NativeValue, NativeError> {
     layout.minimum_size(0)?;
     decode(reader, layout, &path)

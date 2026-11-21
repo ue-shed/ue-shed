@@ -5303,6 +5303,199 @@ impl Catalog for BinaryCatalog {
 }
 
 impl BinaryCatalog {
+    /// The committed generation's complete inventory digest, read from its manifest without
+    /// decoding any snapshot chunks.
+    pub(crate) fn inventory_digest(
+        &self,
+        project_id: &ProjectId,
+        expected_generation: Generation,
+    ) -> Result<Option<String>, CatalogError> {
+        let manifest = require_manifest(&self.manifest, &self.project_id, project_id)?;
+        let generation = Generation::new(manifest.summary.generation);
+        if generation != expected_generation {
+            return Err(CatalogError::StaleGeneration {
+                expected: expected_generation,
+                actual: generation,
+            });
+        }
+        Ok((manifest.summary.completeness == "complete")
+            .then(|| {
+                manifest
+                    .summary
+                    .inventory()
+                    .map(|sum| sum.digest(manifest.summary.package_count))
+            })
+            .flatten())
+    }
+
+    /// Reads the entire committed generation's package-text inventory in path order directly from
+    /// the binary snapshot chunks, without paged query round-trips.
+    pub(crate) fn all_package_text_inventory(
+        &self,
+        project_id: &ProjectId,
+        expected_generation: Generation,
+        selected: impl Fn(Option<&uasset_inspection::package_header::PackageHeaderData>) -> bool + Sync,
+    ) -> Result<Vec<game_text_index::package_text_contract::PackageTextExpected>, CatalogError>
+    {
+        let manifest = require_manifest(&self.manifest, &self.project_id, project_id)?;
+        let generation = Generation::new(manifest.summary.generation);
+        if generation != expected_generation {
+            return Err(CatalogError::StaleGeneration {
+                expected: expected_generation,
+                actual: generation,
+            });
+        }
+        let result = (|| {
+            self.load()?;
+            let cached = self.committed.borrow();
+            let committed = cached
+                .as_ref()
+                .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
+            let base = committed.base()?;
+            base.load_all_chunks()?;
+            if let Some(delta) = &committed.delta {
+                delta.load_all_chunks()?;
+                let hidden = committed.hidden();
+                let mut rows = Vec::with_capacity(manifest.summary.package_count as usize);
+                let (mut b, mut d) = (0usize, 0usize);
+                while b < base.row_count || d < delta.row_count {
+                    while b < base.row_count
+                        && (hidden.hides(b) || base.entry(b)?.kind != EntryKind::Package)
+                    {
+                        b += 1;
+                    }
+                    while d < delta.row_count && delta.entry(d)?.kind != EntryKind::Package {
+                        d += 1;
+                    }
+                    let next = match (b < base.row_count, d < delta.row_count) {
+                        (true, true) => {
+                            if delta.path(d)? < base.path(b)? {
+                                let id = d;
+                                d += 1;
+                                (Segment::Delta, id)
+                            } else {
+                                let id = b;
+                                b += 1;
+                                (Segment::Base, id)
+                            }
+                        }
+                        (true, false) => {
+                            let id = b;
+                            b += 1;
+                            (Segment::Base, id)
+                        }
+                        (false, true) => {
+                            let id = d;
+                            d += 1;
+                            (Segment::Delta, id)
+                        }
+                        (false, false) => break,
+                    };
+                    rows.push(next);
+                }
+                let signatures = committed.bundle_signatures(&rows)?;
+                let mut inventory = Vec::with_capacity(rows.len());
+                for ((segment, id), signature) in rows.into_iter().zip(signatures) {
+                    let (path, entry) = committed.rows(segment)?.row(id)?;
+                    inventory.push(
+                        game_text_index::package_text_contract::PackageTextExpected {
+                            path: path.to_owned(),
+                            signature,
+                            selected: selected(entry.header_data.as_ref()),
+                        },
+                    );
+                }
+                return Ok(inventory);
+            }
+
+            // Common base-only path: every chunk is already decoded in memory, so build
+            // bundle signatures across chunk ranges in parallel without locking or RefCell.
+            let row_count = base.row_count;
+            let rows = base.rows()?;
+            let chunks = rows
+                .chunks
+                .iter()
+                .map(|cell| {
+                    cell.get()
+                        .ok_or_else(|| corrupt("decoded inventory chunk missing"))
+                })
+                .collect::<Result<Vec<&Chunk>, CatalogError>>()?;
+            if chunks.is_empty() {
+                return Ok(Vec::new());
+            }
+            let row_at = |id: usize| -> (&str, &InventoryEntry) {
+                let chunk = chunks[id / ROW_INDEX_INTERVAL];
+                let within = id % ROW_INDEX_INTERVAL;
+                (chunk.paths.get(within), &chunk.entries[within])
+            };
+            let threads = codec_threads(chunks.len());
+            let per_thread = chunks.len().div_ceil(threads).max(1);
+            let mut parts: Vec<Vec<game_text_index::package_text_contract::PackageTextExpected>> =
+                std::thread::scope(|scope| {
+                    let mut handles = Vec::new();
+                    for start_chunk in (0..chunks.len()).step_by(per_thread) {
+                        let end_chunk = (start_chunk + per_thread).min(chunks.len());
+                        let start_id = start_chunk * ROW_INDEX_INTERVAL;
+                        let end_id = (end_chunk * ROW_INDEX_INTERVAL).min(row_count);
+                        let selected_ref = &selected;
+                        handles.push(scope.spawn(move || {
+                            let mut out = Vec::with_capacity(end_id - start_id);
+                            for id in start_id..end_id {
+                                let (path, entry) = row_at(id);
+                                if entry.kind != EntryKind::Package {
+                                    continue;
+                                }
+                                let stem = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
+                                let mut parts =
+                                    [Some((entry.size, entry.modified_nanos)), None, None, None];
+                                let mut record_sidecar = |other: usize| {
+                                    let (other_path, other_entry) = row_at(other);
+                                    let ext = &other_path[stem.len() + 1..];
+                                    if let Some(slot) = super::inventory_digest::BUNDLE_SIDECARS
+                                        .iter()
+                                        .position(|sidecar| *sidecar == ext)
+                                    {
+                                        parts[slot + 1] =
+                                            Some((other_entry.size, other_entry.modified_nanos));
+                                    }
+                                };
+                                let mut before = id;
+                                while before > 0 && shares_stem(row_at(before - 1).0, stem) {
+                                    before -= 1;
+                                    record_sidecar(before);
+                                }
+                                let mut after = id + 1;
+                                while after < row_count && shares_stem(row_at(after).0, stem) {
+                                    record_sidecar(after);
+                                    after += 1;
+                                }
+                                out.push(
+                                    game_text_index::package_text_contract::PackageTextExpected {
+                                        path: path.to_owned(),
+                                        signature: bundle_signature(parts),
+                                        selected: selected_ref(entry.header_data.as_ref()),
+                                    },
+                                );
+                            }
+                            out
+                        }));
+                    }
+                    handles
+                        .into_iter()
+                        .map(|h| h.join().unwrap_or_else(|_| Vec::new()))
+                        .collect()
+                });
+            let total: usize = parts.iter().map(Vec::len).sum();
+            let mut inventory = Vec::with_capacity(total);
+            for mut part in parts.drain(..) {
+                inventory.append(&mut part);
+            }
+            Ok(inventory)
+        })();
+        self.release_rows();
+        result
+    }
+
     fn query_retaining(&self, request: &QueryRequest) -> Result<QueryPage, CatalogError> {
         let manifest = require_manifest(&self.manifest, &self.project_id, &request.project_id)?;
         validate_page_limit(request.limit)?;

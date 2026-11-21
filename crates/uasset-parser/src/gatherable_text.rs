@@ -4,6 +4,8 @@
 //! with one site context per key that uses it. Gather reads this table instead of the exports, so
 //! it is the authoritative list of localizable text a saved package contributes.
 
+use std::fmt;
+
 use crate::archive::{Guid, Reader};
 use crate::package::{Package, PackageError, PackageErrorKind, PackageSummary};
 use crate::version::PackageFlags;
@@ -95,16 +97,27 @@ fn read_entries(
     let capacity =
         reader.checked_vec_capacity::<GatherableText>(count, 16, "GatherableTextData.Count")?;
     let mut entries = Vec::with_capacity(capacity);
+    // Breadcrumbs render only when a read fails.
     for index in 0..count {
-        let path = format!("GatherableTextData[{index}]");
+        let path = Indexed {
+            parent: &"GatherableTextData",
+            field: "",
+            index,
+        };
         let namespace = reader.read_fstring(&format_args!("{path}.NamespaceName"))?;
         let text_source = reader.read_fstring(&format_args!("{path}.SourceData.SourceString"))?;
         skip_metadata_object(
             reader,
-            &format!("{path}.SourceData.SourceStringMetaData"),
+            &Field {
+                parent: &path,
+                field: ".SourceData.SourceStringMetaData",
+            },
             0,
         )?;
-        let sites_path = format!("{path}.SourceSiteContexts");
+        let sites_path = Field {
+            parent: &path,
+            field: ".SourceSiteContexts",
+        };
         let site_count = reader.read_count(&format_args!("{sites_path}.Count"))?;
         // Key, description, two bools and two metadata counts.
         let site_capacity = reader.checked_vec_capacity::<GatherableTextSite>(
@@ -114,16 +127,34 @@ fn read_entries(
         )?;
         let mut sites = Vec::with_capacity(site_capacity);
         for site in 0..site_count {
-            let path = format!("{sites_path}[{site}]");
+            let path = Indexed {
+                parent: &sites_path,
+                field: "",
+                index: site,
+            };
             let key = reader.read_fstring(&format_args!("{path}.KeyName"))?;
             let site_description = reader.read_fstring(&format_args!("{path}.SiteDescription"))?;
             let is_editor_only = reader.read_bool(&format_args!("{path}.IsEditorOnly"))?;
             let is_optional = reader.read_bool(&format_args!("{path}.IsOptional"))?;
             if site_dev_notes {
-                reader.read_fstring(&format_args!("{path}.DevNotes"))?;
+                reader.skip_fstring(&format_args!("{path}.DevNotes"))?;
             }
-            skip_metadata_object(reader, &format!("{path}.InfoMetaData"), 0)?;
-            skip_metadata_object(reader, &format!("{path}.KeyMetaData"), 0)?;
+            skip_metadata_object(
+                reader,
+                &Field {
+                    parent: &path,
+                    field: ".InfoMetaData",
+                },
+                0,
+            )?;
+            skip_metadata_object(
+                reader,
+                &Field {
+                    parent: &path,
+                    field: ".KeyMetaData",
+                },
+                0,
+            )?;
             sites.push(GatherableTextSite {
                 key,
                 site_description,
@@ -138,6 +169,31 @@ fn read_entries(
         });
     }
     Ok(entries)
+}
+
+/// The `{parent}{field}` breadcrumb, formatted only when an error needs it.
+struct Field<'a> {
+    parent: &'a dyn fmt::Display,
+    field: &'static str,
+}
+
+impl fmt::Display for Field<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}{}", self.parent, self.field)
+    }
+}
+
+/// The `{parent}{field}[{index}]` breadcrumb, formatted only when an error needs it.
+struct Indexed<'a> {
+    parent: &'a dyn fmt::Display,
+    field: &'static str,
+    index: usize,
+}
+
+impl fmt::Display for Indexed<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}{}[{}]", self.parent, self.field, self.index)
+    }
 }
 
 /// Whether Unreal's asset gather reads this package's saved gatherable text table.
@@ -214,15 +270,19 @@ pub fn strip_package_namespace(namespace: &str) -> &str {
 // InternationalizationMetadata.cpp: `int32 ValueCount`, then `FString Key` and a typed value each.
 fn skip_metadata_object(
     reader: &mut Reader<'_>,
-    path: &str,
+    path: &dyn fmt::Display,
     depth: usize,
 ) -> Result<(), PackageError> {
     let count = reader.read_count(&format_args!("{path}.ValueCount"))?;
     // Key length and value type.
     reader.checked_vec_capacity::<()>(count, 8, &format_args!("{path}.ValueCount"))?;
     for index in 0..count {
-        let path = format!("{path}.Values[{index}]");
-        reader.read_fstring(&format_args!("{path}.Key"))?;
+        let path = Indexed {
+            parent: path,
+            field: ".Values",
+            index,
+        };
+        reader.skip_fstring(&format_args!("{path}.Key"))?;
         skip_metadata_value(reader, &path, depth)?;
     }
     Ok(())
@@ -231,7 +291,7 @@ fn skip_metadata_object(
 // ELocMetadataType is an int32: None, Boolean, String, Array, Object.
 fn skip_metadata_value(
     reader: &mut Reader<'_>,
-    path: &str,
+    path: &dyn fmt::Display,
     depth: usize,
 ) -> Result<(), PackageError> {
     let type_offset = reader.tell();
@@ -249,16 +309,31 @@ fn skip_metadata_value(
             reader.read_bool(&format_args!("{path}.Value"))?;
         }
         2 => {
-            reader.read_fstring(&format_args!("{path}.Value"))?;
+            reader.skip_fstring(&format_args!("{path}.Value"))?;
         }
         3 => {
             let count = reader.read_count(&format_args!("{path}.Value.Count"))?;
             reader.checked_vec_capacity::<()>(count, 4, &format_args!("{path}.Value.Count"))?;
             for index in 0..count {
-                skip_metadata_value(reader, &format!("{path}.Value[{index}]"), depth + 1)?;
+                skip_metadata_value(
+                    reader,
+                    &Indexed {
+                        parent: path,
+                        field: ".Value",
+                        index,
+                    },
+                    depth + 1,
+                )?;
             }
         }
-        4 => skip_metadata_object(reader, &format!("{path}.Value"), depth + 1)?,
+        4 => skip_metadata_object(
+            reader,
+            &Field {
+                parent: path,
+                field: ".Value",
+            },
+            depth + 1,
+        )?,
         other => {
             return Err(PackageError::new(
                 PackageErrorKind::MalformedData,
@@ -448,7 +523,12 @@ mod tests {
         push_i32(&mut bytes, 1);
         push_fstring(&mut bytes, "Bad");
         push_i32(&mut bytes, 9);
-        assert!(read_entries(&mut Reader::new(&bytes), 1, false).is_err());
+        let error = read_entries(&mut Reader::new(&bytes), 1, false).unwrap_err();
+        assert_eq!(
+            error.path(),
+            "GatherableTextData[0].SourceData.SourceStringMetaData.Values[0].Type"
+        );
+        assert_eq!(error.detail(), "unknown localization metadata type 9");
 
         let mut bytes = Vec::new();
         push_fstring(&mut bytes, "UI");
@@ -459,7 +539,14 @@ mod tests {
             push_i32(&mut bytes, 4);
         }
         push_i32(&mut bytes, 0);
-        assert!(read_entries(&mut Reader::new(&bytes), 1, false).is_err());
+        let error = read_entries(&mut Reader::new(&bytes), 1, false).unwrap_err();
+        assert_eq!(
+            error.path(),
+            format!(
+                "GatherableTextData[0].SourceData.SourceStringMetaData.Values[0]{}",
+                ".Value.Values[0]".repeat(32)
+            )
+        );
     }
 
     #[test]

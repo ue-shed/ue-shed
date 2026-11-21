@@ -17,7 +17,7 @@ pub(super) fn decode(
     ty: &PropertyTypeName,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Option<PropertyValue> {
     if !applies(ty, package) || scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
@@ -233,7 +233,7 @@ mod tests {
                 &fragment_type(),
                 &mut reader,
                 &p,
-                "Fixture",
+                &"Fixture",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
                     filter: None,

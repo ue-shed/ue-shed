@@ -29,42 +29,73 @@ impl TextArena {
     ) -> Result<Self> {
         let dictionary_count = query.reader.dictionary_count()?;
         let mut seen = vec![false; dictionary_count];
-        let (ids, starts, bytes) = if query.reader.has_column(&format!("{prefix}.folded")) {
-            let ids = query.reader.column(&format!("{prefix}.ids"))?;
-            let starts = query.reader.column(&format!("{prefix}.starts"))?;
-            let bytes = query.reader.bytes(&format!("{prefix}.folded"))?;
-            require(
-                starts.len() == ids.len() + 1
-                    && starts.first() == Some(&0)
-                    && starts
-                        .last()
-                        .is_some_and(|last| *last as usize <= bytes.len())
-                    && starts.windows(2).all(|pair| pair[0] <= pair[1]),
-                "Invalid persisted search ranges.",
-            )?;
-            for (row, id) in ids.iter().enumerate() {
-                if row & 255 == 0 {
-                    checkpoint(cancelled)?;
+        let reader = &query.reader;
+        // The six sections are independent: load them at once, then check them in the order
+        // a sequential open would, so the first failure reported is unchanged.
+        let arena_present = reader.has_column(&format!("{prefix}.folded"));
+        let trigrams_present = reader.has_column(&format!("{prefix}.tri.keys"));
+        let ((ids, (starts, folded)), (keys, (offsets, postings))) = rayon::join(
+            || {
+                rayon::join(
+                    || arena_present.then(|| reader.column(&format!("{prefix}.ids"))),
+                    || {
+                        rayon::join(
+                            || arena_present.then(|| reader.column(&format!("{prefix}.starts"))),
+                            || arena_present.then(|| reader.bytes(&format!("{prefix}.folded"))),
+                        )
+                    },
+                )
+            },
+            || {
+                rayon::join(
+                    || trigrams_present.then(|| reader.column(&format!("{prefix}.tri.keys"))),
+                    || {
+                        rayon::join(
+                            || {
+                                trigrams_present
+                                    .then(|| reader.column(&format!("{prefix}.tri.offsets")))
+                            },
+                            || {
+                                trigrams_present
+                                    .then(|| reader.bytes(&format!("{prefix}.tri.postings")))
+                            },
+                        )
+                    },
+                )
+            },
+        );
+        let (ids, starts, bytes) =
+            if let (Some(ids), Some(starts), Some(bytes)) = (ids, starts, folded) {
+                let (ids, starts, bytes) = (ids?, starts?, bytes?);
+                require(
+                    starts.len() == ids.len() + 1
+                        && starts.first() == Some(&0)
+                        && starts
+                            .last()
+                            .is_some_and(|last| *last as usize <= bytes.len())
+                        && starts.windows(2).all(|pair| pair[0] <= pair[1]),
+                    "Invalid persisted search ranges.",
+                )?;
+                for (row, id) in ids.iter().enumerate() {
+                    if row & 255 == 0 {
+                        checkpoint(cancelled)?;
+                    }
+                    let slot = seen
+                        .get_mut(*id as usize)
+                        .ok_or("Search ID outside dictionary.")?;
+                    require(!*slot, "Duplicate search ID.")?;
+                    *slot = true;
                 }
-                let slot = seen
-                    .get_mut(*id as usize)
-                    .ok_or("Search ID outside dictionary.")?;
-                require(!*slot, "Duplicate search ID.")?;
-                *slot = true;
-            }
-            (ids, starts, bytes)
-        } else {
-            (Arc::from([]), Arc::from([0u32]), Arc::from([]))
-        };
-        let trigrams = if query.reader.has_column(&format!("{prefix}.tri.keys")) {
-            Some(Trigrams::new(
-                query.reader.column(&format!("{prefix}.tri.keys"))?,
-                query.reader.column(&format!("{prefix}.tri.offsets"))?,
-                query.reader.bytes(&format!("{prefix}.tri.postings"))?,
-            )?)
-        } else {
-            None
-        };
+                (ids, starts, bytes)
+            } else {
+                (Arc::from([]), Arc::from([0u32]), Arc::from([]))
+            };
+        let trigrams =
+            if let (Some(keys), Some(offsets), Some(postings)) = (keys, offsets, postings) {
+                Some(Trigrams::new(keys?, offsets?, postings?)?)
+            } else {
+                None
+            };
         // Walk references once per reader; only strings absent from the arena need decoding.
         let mut additions = Vec::new();
         for (row, id) in references.enumerate() {

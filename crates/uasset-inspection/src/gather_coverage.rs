@@ -4,7 +4,9 @@
 //! hold no text. The package's gatherable text table lists the localizable text it contributes, so
 //! text coverage is complete when every runtime entry in that table was decoded.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::borrow::Borrow;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 use uasset_parser::Package;
 use uasset_parser::gatherable_text::{
@@ -20,7 +22,7 @@ use crate::projection::{TextIdentity, TextLocation, TextOccurrence};
 /// `FPropertyLocalizationDataGatherer`), so a decoded key only covers the entry with the same
 /// source; a different source under the same key is separate text.
 #[derive(Clone, Debug, Default)]
-pub struct DecodedTextKeys(BTreeSet<(String, String, String)>);
+pub struct DecodedTextKeys(HashSet<TextKey>);
 
 impl DecodedTextKeys {
     pub fn record<'a>(&mut self, occurrences: impl IntoIterator<Item = &'a TextOccurrence>) {
@@ -32,17 +34,88 @@ impl DecodedTextKeys {
                     TextLocation::StringTableEntry { .. } => namespace,
                     _ => strip_package_namespace(namespace),
                 };
-                self.0
-                    .insert((namespace.to_owned(), key.clone(), occurrence.source.clone()));
+                let parts = (namespace, key.as_str(), occurrence.source.as_str());
+                if !self.0.contains(&parts as &dyn KeyParts) {
+                    self.0.insert(TextKey::new(parts));
+                }
             }
         }
     }
 
     fn contains(&self, namespace: &str, key: &str, source: &str) -> bool {
-        self.0
-            .contains(&(namespace.to_owned(), key.to_owned(), source.to_owned()))
+        self.0.contains(&(namespace, key, source) as &dyn KeyParts)
     }
 }
+
+/// An owned namespace, key and source, looked up by borrowed parts without allocating.
+#[derive(Clone, Debug)]
+struct TextKey {
+    namespace: String,
+    key: String,
+    source: String,
+}
+
+impl TextKey {
+    fn new((namespace, key, source): (&str, &str, &str)) -> Self {
+        Self {
+            namespace: namespace.to_owned(),
+            key: key.to_owned(),
+            source: source.to_owned(),
+        }
+    }
+}
+
+/// The namespace, key and source of a [`TextKey`] or of a borrowed lookup.
+trait KeyParts {
+    fn parts(&self) -> (&str, &str, &str);
+}
+
+impl KeyParts for TextKey {
+    fn parts(&self) -> (&str, &str, &str) {
+        (&self.namespace, &self.key, &self.source)
+    }
+}
+
+impl KeyParts for (&str, &str, &str) {
+    fn parts(&self) -> (&str, &str, &str) {
+        *self
+    }
+}
+
+impl<'a> Borrow<dyn KeyParts + 'a> for TextKey {
+    fn borrow(&self) -> &(dyn KeyParts + 'a) {
+        self
+    }
+}
+
+// `TextKey` and `dyn KeyParts` hash and compare through the same parts, as `Borrow` requires.
+impl Hash for dyn KeyParts + '_ {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.parts().hash(state);
+    }
+}
+
+impl PartialEq for dyn KeyParts + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.parts() == other.parts()
+    }
+}
+
+impl Eq for dyn KeyParts + '_ {}
+
+impl Hash for TextKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.parts().hash(state);
+    }
+}
+
+impl PartialEq for TextKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.parts() == other.parts()
+    }
+}
+
+impl Eq for TextKey {}
 
 /// Whether Unreal saved each gathered text as editor-only, keyed like [`DecodedTextKeys`].
 ///
@@ -51,22 +124,24 @@ impl DecodedTextKeys {
 /// editor-only data still collects text with at least one runtime site, so text is editor-only only
 /// when every site with its namespace, key and source is.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct GatherSiteAudience(BTreeMap<(String, String, String), bool>);
+pub struct GatherSiteAudience(HashMap<TextKey, bool>);
 
 impl GatherSiteAudience {
     #[must_use]
     pub fn from_entries(entries: &[GatherableText]) -> Self {
-        let mut sites = BTreeMap::new();
+        let mut sites = HashMap::<TextKey, bool>::new();
         for entry in entries {
             for site in &entry.sites {
-                sites
-                    .entry((
-                        entry.namespace.clone(),
-                        site.key.clone(),
-                        entry.source.clone(),
-                    ))
-                    .and_modify(|editor_only: &mut bool| *editor_only &= site.is_editor_only)
-                    .or_insert(site.is_editor_only);
+                let parts = (
+                    entry.namespace.as_str(),
+                    site.key.as_str(),
+                    entry.source.as_str(),
+                );
+                if let Some(editor_only) = sites.get_mut(&parts as &dyn KeyParts) {
+                    *editor_only &= site.is_editor_only;
+                } else {
+                    sites.insert(TextKey::new(parts), site.is_editor_only);
+                }
             }
         }
         Self(sites)
@@ -90,7 +165,7 @@ impl GatherSiteAudience {
             strip_package_namespace(namespace)
         };
         self.0
-            .get(&(namespace.to_owned(), key.to_owned(), source.to_owned()))
+            .get(&(namespace, key, source) as &dyn KeyParts)
             .copied()
     }
 }
@@ -164,15 +239,15 @@ pub fn gather_table(
     Ok(
         read_gatherable_text(source, &package.summary)?.map(|entries| GatherTable {
             audience: GatherSiteAudience::from_entries(&entries),
-            coverage: compare(entries, decoded),
+            coverage: compare(&entries, decoded),
         }),
     )
 }
 
-fn compare(entries: Vec<GatherableText>, decoded: &DecodedTextKeys) -> GatherCoverage {
+fn compare(entries: &[GatherableText], decoded: &DecodedTextKeys) -> GatherCoverage {
     let mut coverage = GatherCoverage::default();
     for entry in entries {
-        for site in entry.sites {
+        for site in &entry.sites {
             if site.is_editor_only {
                 continue;
             }
@@ -184,9 +259,9 @@ fn compare(entries: Vec<GatherableText>, decoded: &DecodedTextKeys) -> GatherCov
             if coverage.missing_samples.len() < MAX_MISSING_GATHERABLE_TEXT_SAMPLES {
                 coverage.missing_samples.push(MissingGatherableText {
                     namespace: entry.namespace.clone(),
-                    key: site.key,
+                    key: site.key.clone(),
                     source: entry.source.clone(),
-                    site_description: site.site_description,
+                    site_description: site.site_description.clone(),
                 });
             }
         }
@@ -258,7 +333,7 @@ mod tests {
     #[test]
     fn an_ftext_namespace_loses_only_its_package_marker() {
         let coverage = compare(
-            vec![entry("UI [Tutorial]", "Next", "K")],
+            &[entry("UI [Tutorial]", "Next", "K")],
             &decoded(&[occurrence(
                 "UI [Tutorial] [8D4F2A61B0C9E7F3]",
                 "K",
@@ -273,7 +348,7 @@ mod tests {
     #[test]
     fn a_string_table_namespace_is_compared_verbatim() {
         let coverage = compare(
-            vec![entry("Menu [Legacy]", "Quit", "Quit")],
+            &[entry("Menu [Legacy]", "Quit", "Quit")],
             &decoded(&[occurrence(
                 "Menu [Legacy]",
                 "Quit",
@@ -285,7 +360,7 @@ mod tests {
 
         // The authored suffix is part of the identity, so a different table stays missing.
         let coverage = compare(
-            vec![entry("Menu [Legacy]", "Quit", "Quit")],
+            &[entry("Menu [Legacy]", "Quit", "Quit")],
             &decoded(&[occurrence("Menu", "Quit", "Quit", string_table_row("Quit"))]),
         );
         assert_eq!(coverage.missing, 1);
@@ -296,7 +371,7 @@ mod tests {
     #[test]
     fn a_decoded_key_covers_only_its_own_source_string() {
         let coverage = compare(
-            vec![entry("UI", "Continue", "K"), entry("UI", "Delete", "K")],
+            &[entry("UI", "Continue", "K"), entry("UI", "Delete", "K")],
             &decoded(&[occurrence("UI", "K", "Continue", property())]),
         );
         assert_eq!((coverage.runtime_sites, coverage.missing), (2, 1));

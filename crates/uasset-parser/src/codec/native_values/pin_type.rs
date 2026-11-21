@@ -3,7 +3,7 @@ use super::*;
 pub(super) fn decode(
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<PropertyValue, PropertyError> {
     if !crate::asset::supports_blueprint_graph_package_version(&package.summary.versions)
         || !matches!(
@@ -123,7 +123,7 @@ fn validate_references(
     fields: &[NativeProperty],
     reader: &Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Result<(), PropertyError> {
     for field in fields {
         let valid = match &field.value {
@@ -201,10 +201,10 @@ mod tests {
                 &bytes[..]
             };
             let mut reader = Reader::new(bytes);
-            assert!(decode(&mut reader, &package, "Fixture").is_ok());
+            assert!(decode(&mut reader, &package, &"Fixture").is_ok());
             assert_eq!(reader.remaining(), 0);
             for end in 0..bytes.len() {
-                assert!(decode(&mut Reader::new(&bytes[..end]), &package, "Fixture").is_err());
+                assert!(decode(&mut Reader::new(&bytes[..end]), &package, &"Fixture").is_err());
             }
         }
     }
@@ -214,10 +214,10 @@ mod tests {
         let package = Package::parse(FIXTURE).unwrap();
         for map in [false, true] {
             let bytes = payload(map);
-            assert!(decode(&mut Reader::new(&bytes), &package, "pin").is_ok());
+            assert!(decode(&mut Reader::new(&bytes), &package, &"pin").is_ok());
             for end in 0..bytes.len() {
                 assert!(
-                    decode(&mut Reader::new(&bytes[..end]), &package, "pin").is_err(),
+                    decode(&mut Reader::new(&bytes[..end]), &package, &"pin").is_err(),
                     "{map} {end}"
                 );
             }
@@ -228,16 +228,16 @@ mod tests {
             ] {
                 let mut bad = bytes.clone();
                 bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-                assert!(decode(&mut Reader::new(&bad), &package, "pin").is_err());
+                assert!(decode(&mut Reader::new(&bad), &package, &"pin").is_err());
             }
             let mut bad = bytes.clone();
             bad[20] = 4;
-            assert!(decode(&mut Reader::new(&bad), &package, "pin").is_err());
+            assert!(decode(&mut Reader::new(&bad), &package, &"pin").is_err());
             if map {
                 for offset in [21, 37, 41] {
                     let mut bad = bytes.clone();
                     bad[offset..offset + 4].copy_from_slice(&i32::MAX.to_le_bytes());
-                    assert!(decode(&mut Reader::new(&bad), &package, "pin").is_err());
+                    assert!(decode(&mut Reader::new(&bad), &package, &"pin").is_err());
                 }
             }
             for words in [
@@ -250,7 +250,7 @@ mod tests {
                     .custom_versions
                     .retain(|v| [v.key.a, v.key.b, v.key.c, v.key.d] != words);
                 assert_eq!(
-                    decode(&mut Reader::new(&bytes), &old, "pin")
+                    decode(&mut Reader::new(&bytes), &old, &"pin")
                         .unwrap_err()
                         .kind(),
                     PropertyErrorKind::UnsupportedVersion
@@ -270,13 +270,13 @@ mod tests {
             let bytes = payload(map);
             let bytes = &bytes[..bytes.len() - 4];
             let mut reader = Reader::new(bytes);
-            assert!(decode(&mut reader, &package, "Fixture.PinType").is_ok());
+            assert!(decode(&mut reader, &package, &"Fixture.PinType").is_ok());
             assert_eq!(reader.remaining(), 0);
             assert!(
                 decode(
                     &mut Reader::new(&bytes[..bytes.len() - 1]),
                     &package,
-                    "Fixture.PinType"
+                    &"Fixture.PinType"
                 )
                 .is_err()
             );

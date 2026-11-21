@@ -8,7 +8,7 @@ pub(super) fn decode(
     ty: &PropertyTypeName,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
     serializer: ContainerSerializer,
 ) -> Option<PropertyValue> {
@@ -249,7 +249,7 @@ mod tests {
                 &ty(0, vec![ty(1, vec![])]),
                 &mut reader,
                 &p,
-                "Fixture",
+                &"Fixture",
                 DecodeScope::root(None),
                 ContainerSerializer::Tagged
             )
@@ -264,7 +264,7 @@ mod tests {
                 &ty(0, vec![ty(1, vec![])]),
                 &mut reader,
                 &p,
-                "Fixture",
+                &"Fixture",
                 DecodeScope::root(None),
                 ContainerSerializer::Tagged
             )

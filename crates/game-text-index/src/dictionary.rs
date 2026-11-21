@@ -350,6 +350,76 @@ pub(crate) fn segment(
         bytes,
     })
 }
+
+/// Encodes an in-memory sorted slice of WTF-8 strings directly into a dictionary segment snapshot
+/// without bouncing through a temporary staging file on disk.
+pub(crate) fn segment_from_slice(
+    values: &[Vec<u8>],
+    output: &Path,
+    domain: &str,
+    start: u32,
+    file: String,
+) -> Result<Segment> {
+    let mut w = Writer::new(&output.join(format!("{file}.payload")))?;
+    let mut order = Vec::new();
+    let mut frame = Vec::new();
+    let mut fences = Vec::with_capacity(values.len().div_ceil(64));
+    let mut offsets = Vec::with_capacity(values.len().div_ceil(64));
+    let mut frames = Vec::with_capacity(values.len().div_ceil(64));
+    let mut frame_id = 0u32;
+    let mut utf8_bytes = 0u64;
+    let level = match domain {
+        "paths" => 9,
+        "identity" => 6,
+        _ => 3,
+    };
+    let mut batch = FrameBatch::new(level);
+    for block in values.chunks(64) {
+        for value in block {
+            require(value.len() <= 1024 * 1024, "string cap")?;
+            crate::wtf8::validate(value)?;
+            utf8_bytes += value.len() as u64;
+        }
+        let encoded = a64(block)?;
+        if !frame.is_empty() && frame.len() + encoded.len() > 256 * 1024 {
+            batch.push(
+                &mut w,
+                &mut order,
+                format!("front.b{frame_id}"),
+                std::mem::take(&mut frame),
+            )?;
+            frame_id += 1;
+        }
+        offsets.push(frame.len() as u32);
+        frames.push(frame_id);
+        fences.push(block[0].clone());
+        frame.extend_from_slice(&encoded);
+    }
+    if !frame.is_empty() {
+        batch.push(&mut w, &mut order, format!("front.b{frame_id}"), frame)?;
+    }
+    batch.flush(&mut w, &mut order)?;
+    order.push(w.add(
+        "front.fences",
+        0,
+        "",
+        &crate::snapshot::string_block_bytes(&fences)?,
+        1,
+    )?);
+    order.push(w.column("front.offsets", &offsets)?);
+    order.push(w.column("front.frames", &frames)?);
+    order.push(w.column("front.masks", &vec![1; offsets.len()])?);
+    let bytes = w.finish(&output.join(&file), &order)?;
+    Ok(Segment {
+        file,
+        start,
+        count: u32::try_from(values.len())?,
+        domain: domain.into(),
+        domains: vec![domain.into()],
+        utf8_bytes,
+        bytes,
+    })
+}
 /// Output must be a fresh directory. Temporary runs are removed on completion or ordinary error.
 pub fn build(layers: &[LayerInput], output: &Path, run_bytes: usize) -> Result<Value> {
     build_configured(layers, output, run_bytes, None)

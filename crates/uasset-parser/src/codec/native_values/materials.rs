@@ -55,7 +55,7 @@ pub(super) fn optional(
     ty: &PropertyTypeName,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Option<PropertyValue> {
     if !applies(ty, package) {
         return None;
@@ -270,7 +270,7 @@ mod tests {
                         let (package, ty) = package(name, ue5, pins, color);
                         let bytes = bytes(name, pins >= 31, ue5 != 0 && color >= 171);
                         let mut reader = Reader::new(&bytes);
-                        let value = optional(&ty, &mut reader, &package, "Fixture").unwrap();
+                        let value = optional(&ty, &mut reader, &package, &"Fixture").unwrap();
                         assert_eq!(reader.remaining(), 0);
                         assert_eq!(
                             field(&value, "Expression"),
@@ -321,7 +321,7 @@ mod tests {
                         for end in 0..bytes.len() {
                             let mut reader = Reader::new(&bytes[..end]);
                             assert!(
-                                optional(&ty, &mut reader, &package, "Fixture").is_none(),
+                                optional(&ty, &mut reader, &package, &"Fixture").is_none(),
                                 "{name}: {end}"
                             );
                             assert_eq!(reader.tell(), 0);
@@ -362,7 +362,7 @@ mod tests {
             }
             let mut reader = Reader::new(&bytes);
             assert!(
-                optional(&ty, &mut reader, &package, "Fixture").is_none(),
+                optional(&ty, &mut reader, &package, &"Fixture").is_none(),
                 "case {index}"
             );
             assert_eq!(reader.tell(), 0);
@@ -372,7 +372,7 @@ mod tests {
             bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
             let mut reader = Reader::new(&bad);
             assert!(
-                optional(&ty, &mut reader, &original, "Fixture").is_none(),
+                optional(&ty, &mut reader, &original, &"Fixture").is_none(),
                 "offset {offset}"
             );
             assert_eq!(reader.tell(), 0);
@@ -398,7 +398,7 @@ mod tests {
                 },
                 &mut reader,
                 &package,
-                "Fixture",
+                &"Fixture",
                 DecodeScope::root(None),
                 2,
                 if ue5 == 0 {

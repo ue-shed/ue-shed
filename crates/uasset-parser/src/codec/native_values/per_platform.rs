@@ -11,7 +11,11 @@ enum Kind {
 }
 
 impl Kind {
-    fn value(self, reader: &mut Reader<'_>, path: &str) -> Result<PropertyValue, PropertyError> {
+    fn value(
+        self,
+        reader: &mut Reader<'_>,
+        path: &dyn std::fmt::Display,
+    ) -> Result<PropertyValue, PropertyError> {
         Ok(match self {
             Self::Float => PropertyValue::Float(reader.read_f32(path)?),
             Self::Int => PropertyValue::Int(i64::from(reader.read_i32(path)?)),
@@ -38,7 +42,7 @@ pub(super) fn optional(
     ty: &PropertyTypeName,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Option<PropertyValue> {
     let versions = &package.summary.versions;
     if versions.ue4 != crate::version::VersionContext::LATEST_SUPPORTED_UE4
@@ -76,7 +80,7 @@ pub(super) fn optional(
 fn decode(
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     kind: Kind,
 ) -> Result<PropertyValue, PropertyError> {
     // UE 4.27 Engine/Private/PerPlatformProperties.cpp and UE 5.7/5.8
@@ -84,14 +88,14 @@ fn decode(
     // archive bool, default value, then a native TMap<FName, Value> when false.
     // 5.8 calls the flag bStripSerializeAllProperties rather than bCooked, but
     // its physical meaning here is the same: whether the override map is absent.
-    let stripped = read_archive_bool(reader, &format!("{path}.StripOverrides"))?;
-    let default = kind.value(reader, &format!("{path}.Default"))?;
+    let stripped = read_archive_bool(reader, &format_args!("{path}.StripOverrides"))?;
+    let default = kind.value(reader, &format_args!("{path}.Default"))?;
     let mut fields = vec![
         named("OverridesSerialized", PropertyValue::Bool(!stripped)),
         named("Default", default),
     ];
     if !stripped {
-        let count = reader.read_count(&format!("{path}.PerPlatform.Count"))?;
+        let count = reader.read_count(&format_args!("{path}.PerPlatform.Count"))?;
         let minimum = if matches!(kind, Kind::FrameRate) {
             16
         } else {
@@ -191,7 +195,7 @@ mod tests {
                 for stripped in [false, true] {
                     let bytes = bytes(name, stripped);
                     let mut reader = Reader::new(&bytes);
-                    let value = optional(&ty, &mut reader, &package, "Fixture").unwrap();
+                    let value = optional(&ty, &mut reader, &package, &"Fixture").unwrap();
                     assert_eq!(reader.remaining(), 0, "{name} {version}");
                     assert_eq!(
                         field(&value, "OverridesSerialized"),
@@ -221,7 +225,7 @@ mod tests {
                     for end in 0..bytes.len() {
                         let mut reader = Reader::new(&bytes[..end]);
                         assert!(
-                            optional(&ty, &mut reader, &package, "Fixture").is_none(),
+                            optional(&ty, &mut reader, &package, &"Fixture").is_none(),
                             "{name} {version} {end}"
                         );
                         assert_eq!(reader.tell(), 0);
@@ -239,17 +243,17 @@ mod tests {
             let mut bad = bytes.clone();
             bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
             let mut reader = Reader::new(&bad);
-            assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+            assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
             assert_eq!(reader.tell(), 0);
         }
         ty.parameters[0].parameters[0].name = name_ref(3, 0);
         let mut reader = Reader::new(&bytes);
-        assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+        assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
         assert_eq!(reader.tell(), 0);
         ty.parameters[0].parameters[0].name = name_ref(2, 0);
         for version in [999, 1019] {
             package.summary.versions.ue5 = version;
-            assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+            assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
             assert_eq!(reader.tell(), 0);
         }
     }
@@ -272,7 +276,7 @@ mod tests {
             },
             &mut reader,
             &package,
-            "Fixture",
+            &"Fixture",
             DecodeScope::root(None),
             2,
             ContainerSerializer::Unknown,

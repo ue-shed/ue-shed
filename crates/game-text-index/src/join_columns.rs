@@ -18,7 +18,6 @@ use crate::snapshot::{Reader, integers};
 use crate::store::{Store, decode_ids, section};
 use crate::{Result, require};
 use serde_json::Value;
-use std::collections::BTreeMap;
 
 pub(crate) const NS: usize = 0;
 pub(crate) const KEY: usize = 1;
@@ -205,10 +204,19 @@ pub(crate) struct PackageColumns {
     pub status: Vec<u32>,
     pub coverage: Vec<u32>,
     pub relative_paths: Vec<String>,
-    pub statuses: BTreeMap<String, u32>,
+    pub statuses: rustc_hash::FxHashMap<String, u32>,
+}
+struct LoadedShard {
+    paths: Vec<u32>,
+    status: Vec<u32>,
+    starts: Vec<u32>,
+    occurrence: [Vec<u32>; 14],
+    relative_paths: Vec<String>,
+    status_keys: Vec<(String, u32)>,
 }
 impl PackageColumns {
     pub fn load(store: &Store, strings: &[String], project: &str, target: &Value) -> Result<Self> {
+        use rayon::prelude::*;
         let code = target["name"].as_str().map(code_layer);
         let mut names: Vec<_> = store.root["active"]
             .as_object()
@@ -218,72 +226,104 @@ impl PackageColumns {
             .cloned()
             .collect();
         names.sort();
+        let shards = names
+            .par_iter()
+            .map(|name| -> Result<LoadedShard> {
+                let (mut reader, record) = layer(store, name)?.ok_or("package shard absent")?;
+                let paths = column(&mut reader, &record, "package.path")?;
+                let status = column(&mut reader, &record, "package.status")?;
+                let starts = column(&mut reader, &record, "package.occurrence_start")?;
+                require(
+                    starts.len() == paths.len() + 1 && status.len() == paths.len(),
+                    "package range length",
+                )?;
+                let mut occurrence: [Vec<u32>; 14] = std::array::from_fn(|_| Vec::new());
+                for (field, field_name) in OCCURRENCE_FIELDS.iter().enumerate() {
+                    occurrence[field] =
+                        column(&mut reader, &record, &format!("occurrence.{field_name}"))?;
+                }
+                let occ_len = occurrence[O_SOURCE].len();
+                require(
+                    occurrence.iter().all(|v| v.len() == occ_len),
+                    "occurrence column lengths differ",
+                )?;
+                let mut relative_paths = Vec::with_capacity(paths.len());
+                let mut status_keys = Vec::with_capacity(paths.len());
+                for row in 0..paths.len() {
+                    require(
+                        starts[row] <= starts[row + 1] && starts[row + 1] as usize <= occ_len,
+                        "package occurrence range",
+                    )?;
+                    let next = if status[row] == 2 { 1 } else { status[row] };
+                    let path = relative_package(
+                        project,
+                        strings.get(paths[row] as usize).ok_or("package path ID")?,
+                    );
+                    let key = crate::join_policy::normalized(&path).to_lowercase();
+                    status_keys.push((key, next));
+                    relative_paths.push(path);
+                }
+                Ok(LoadedShard {
+                    paths,
+                    status,
+                    starts,
+                    occurrence,
+                    relative_paths,
+                    status_keys,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let total_packages: usize = shards.iter().map(|s| s.paths.len()).sum();
+        let total_occurrences: usize = shards.iter().map(|s| s.occurrence[O_SOURCE].len()).sum();
         let mut result = Self {
             names,
-            starts: Vec::new(),
-            occurrence: std::array::from_fn(|_| Vec::new()),
-            package_row: Vec::new(),
-            paths: Vec::new(),
-            status: Vec::new(),
-            coverage: Vec::new(),
-            relative_paths: Vec::new(),
-            statuses: BTreeMap::new(),
+            starts: Vec::with_capacity(shards.len() + 1),
+            occurrence: std::array::from_fn(|_| Vec::with_capacity(total_occurrences)),
+            package_row: vec![0; total_occurrences],
+            paths: Vec::with_capacity(total_packages),
+            status: Vec::with_capacity(total_packages),
+            coverage: Vec::with_capacity(total_occurrences),
+            relative_paths: Vec::with_capacity(total_packages),
+            statuses: rustc_hash::FxHashMap::with_capacity_and_hasher(
+                total_packages,
+                Default::default(),
+            ),
         };
-        for name in &result.names {
-            let (mut reader, record) = layer(store, name)?.ok_or("package shard absent")?;
-            let offset = result.occurrence[O_SOURCE].len();
+        let mut offset = 0usize;
+        for shard in shards {
             result.starts.push(offset as u32);
-            let paths = column(&mut reader, &record, "package.path")?;
-            let status = column(&mut reader, &record, "package.status")?;
-            let starts = column(&mut reader, &record, "package.occurrence_start")?;
-            require(
-                starts.len() == paths.len() + 1 && status.len() == paths.len(),
-                "package range length",
-            )?;
-
-            for (field, name) in OCCURRENCE_FIELDS.iter().enumerate() {
-                result.occurrence[field].extend(column(
-                    &mut reader,
-                    &record,
-                    &format!("occurrence.{name}"),
-                )?);
+            let occ_len = shard.occurrence[O_SOURCE].len();
+            for (dst, src) in result.occurrence.iter_mut().zip(shard.occurrence) {
+                dst.extend(src);
             }
-            let occurrence_count = result.occurrence[O_SOURCE].len();
-            result.package_row.resize(occurrence_count, 0);
-            for row in 0..paths.len() {
-                let package = result.paths.len() as u32;
-                let next = status[row];
-                let next = if next == 2 { 1 } else { next };
-                require(
-                    starts[row] <= starts[row + 1]
-                        && offset + starts[row + 1] as usize <= occurrence_count,
-                    "package occurrence range",
-                )?;
+            let base_package = result.paths.len() as u32;
+            for row in 0..shard.paths.len() {
+                let package = base_package + row as u32;
+                let next = if shard.status[row] == 2 {
+                    1
+                } else {
+                    shard.status[row]
+                };
                 result.package_row
-                    [offset + starts[row] as usize..offset + starts[row + 1] as usize]
+                    [offset + shard.starts[row] as usize..offset + shard.starts[row + 1] as usize]
                     .fill(package);
-                result.paths.push(paths[row]);
                 result.status.push(next);
-                let path = relative_package(
-                    project,
-                    strings.get(paths[row] as usize).ok_or("package path ID")?,
-                );
-                let key = crate::join_policy::normalized(&path).to_lowercase();
+            }
+            result.paths.extend(shard.paths);
+            result.relative_paths.extend(shard.relative_paths);
+            for (key, next) in shard.status_keys {
                 let previous = result.statuses.get(&key).copied();
                 if previous != Some(3) && !(previous == Some(1) && next == 0) {
                     result.statuses.insert(key, next);
                 }
-                result.relative_paths.push(path);
             }
+            offset += occ_len;
         }
-        result.starts.push(result.occurrence[O_SOURCE].len() as u32);
+        result.starts.push(offset as u32);
         let count = result.occurrence[O_SOURCE].len();
-        require(
-            result.occurrence.iter().all(|v| v.len() == count),
-            "occurrence column lengths differ",
-        )?;
         let policy = GatherPolicy::from_target(target)?;
-        let mut ratings = BTreeMap::<(u32, u32, u32), u32>::new();
+        let mut ratings = rustc_hash::FxHashMap::<(u32, u32, u32), u32>::default();
         for row in 0..count {
             let package = result.package_row[row];
             let class = result.occurrence[O_CLASS][row];

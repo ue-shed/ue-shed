@@ -48,7 +48,7 @@ pub(super) fn retry_record(
 pub(super) fn read_text(
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     depth: usize,
     budget: &Cell<usize>,
 ) -> Option<TextValue> {
@@ -131,7 +131,7 @@ pub(super) fn read_text(
 fn argument(
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     depth: usize,
     budget: &Cell<usize>,
 ) -> Option<TextFormatArgumentValue> {

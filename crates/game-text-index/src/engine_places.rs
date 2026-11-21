@@ -3,7 +3,9 @@ use crate::engine_query::EngineQuery;
 use crate::join_policy::file_key;
 use crate::wtf8::Wtf8Buf;
 use crate::{Result, require};
-use std::collections::{HashMap, HashSet};
+use rayon::prelude::*;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHasher};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub(crate) struct Arena {
@@ -12,10 +14,11 @@ pub(crate) struct Arena {
 }
 impl Arena {
     fn open(query: &EngineQuery, name: &str) -> Result<Self> {
-        let starts = query
-            .reader
-            .column(&format!("query.place.{name}_offsets"))?;
-        let bytes = query.reader.bytes(&format!("query.place.{name}_bytes"))?;
+        let (starts, bytes) = rayon::join(
+            || query.reader.column(&format!("query.place.{name}_offsets")),
+            || query.reader.bytes(&format!("query.place.{name}_bytes")),
+        );
+        let (starts, bytes) = (starts?, bytes?);
         require(
             starts.first() == Some(&0)
                 && starts
@@ -44,14 +47,86 @@ impl Arena {
     }
 }
 
+/// Label rows by their bytes: an open-addressed table of rows into the label arena, so no label
+/// is copied. Its size is a power of two, at least twice the labels; `EMPTY` marks a free slot.
+struct LabelIds {
+    slots: Vec<u32>,
+}
+
+const EMPTY: u32 = u32::MAX;
+
+fn label_hash(bytes: &[u8]) -> usize {
+    use std::hash::Hasher;
+    let mut hasher = FxHasher::default();
+    hasher.write(bytes);
+    hasher.finish() as usize
+}
+
+impl LabelIds {
+    /// Every label's row, rejecting a label that appears twice.
+    fn new(labels: &Arena) -> Result<Self> {
+        let count = labels.starts.len() - 1;
+        require(count < EMPTY as usize, "Too many place labels.")?;
+        let mut slots = vec![EMPTY; (count * 2).next_power_of_two().max(8)];
+        let mask = slots.len() - 1;
+        for row in 0..count as u32 {
+            let bytes = labels.get(row)?;
+            let mut slot = label_hash(bytes) & mask;
+            loop {
+                let held = slots[slot];
+                if held == EMPTY {
+                    slots[slot] = row;
+                    break;
+                }
+                require(labels.get(held)? != bytes, "Duplicate place label.")?;
+                slot = (slot + 1) & mask;
+            }
+        }
+        Ok(Self { slots })
+    }
+
+    /// The row of the label whose bytes are `wanted`.
+    fn get(&self, labels: &Arena, wanted: &[u8]) -> Option<u32> {
+        let mask = self.slots.len() - 1;
+        let mut slot = label_hash(wanted) & mask;
+        loop {
+            let held = self.slots[slot];
+            if held == EMPTY {
+                return None;
+            }
+            if labels.get(held).is_ok_and(|bytes| bytes == wanted) {
+                return Some(held);
+            }
+            slot = (slot + 1) & mask;
+        }
+    }
+}
+
+/// The projection's columns `Places::open` reads, in `Places` order.
+const COLUMNS: [&str; 13] = [
+    "file_ids",
+    "file_values",
+    "asset",
+    "namespace_ids",
+    "namespace_values",
+    "path_ids",
+    "occurrence_object",
+    "occurrence_package",
+    "rank",
+    "folder_starts",
+    "folder_keys",
+    "folder_labels",
+    "scanned_keys",
+];
+
 pub(crate) struct Places {
     pub labels: Arena,
-    label_ids: HashMap<Vec<u8>, u32>,
-    files: HashMap<u32, usize>,
+    label_ids: LabelIds,
+    files: FxHashMap<u32, usize>,
     pub file_values: Arc<[u32]>,
     pub assets: Arc<[u32]>,
-    namespaces: HashMap<u32, u32>,
-    paths: HashMap<u32, usize>,
+    namespaces: FxHashMap<u32, u32>,
+    paths: FxHashMap<u32, usize>,
     path: Arena,
     manifest: Arena,
     pub objects: Arc<[u32]>,
@@ -73,59 +148,87 @@ impl Places {
         if let Some(places) = query.places.get() {
             return Ok(places);
         }
-        let labels = Arena::open(query, "label")?;
-        let mut label_ids = HashMap::new();
-        for row in 0..labels.starts.len() - 1 {
-            require(
-                label_ids
-                    .insert(labels.get(row as u32)?.to_vec(), row as u32)
-                    .is_none(),
-                "Duplicate place label.",
-            )?;
-        }
-        let file_ids = query.reader.column("query.place.file_ids")?;
-        let file_values = query.reader.column("query.place.file_values")?;
-        let assets = query.reader.column("query.place.asset")?;
+        // The label table builds while the other columns load; every load is independent.
+        let (labels, (columns, arenas)) = rayon::join(
+            || -> Result<(Arena, LabelIds)> {
+                let labels = Arena::open(query, "label")?;
+                let label_ids = LabelIds::new(&labels)?;
+                Ok((labels, label_ids))
+            },
+            || {
+                rayon::join(
+                    || {
+                        COLUMNS
+                            .par_iter()
+                            .map(|name| query.reader.column(&format!("query.place.{name}")))
+                            .collect::<Result<Vec<_>>>()
+                    },
+                    || {
+                        ["path", "manifest"]
+                            .par_iter()
+                            .map(|name| Arena::open(query, name))
+                            .collect::<Result<Vec<_>>>()
+                    },
+                )
+            },
+        );
+        let (labels, label_ids) = labels?;
+        let [
+            file_ids,
+            file_values,
+            assets,
+            namespace_ids,
+            namespace_values,
+            path_ids,
+            objects,
+            packages,
+            rank,
+            folder_starts,
+            folder_keys,
+            folder_labels,
+            scanned_keys,
+        ]: [Arc<[u32]>; 13] = columns?.try_into().map_err(|_| "Invalid place columns.")?;
+        let [path, manifest]: [Arena; 2] =
+            arenas?.try_into().map_err(|_| "Invalid place arenas.")?;
         require(
             file_ids.len() == assets.len() && file_ids.len() == file_values.len(),
             "Invalid file projection.",
         )?;
-        let namespace_ids = query.reader.column("query.place.namespace_ids")?;
-        let namespace_values = query.reader.column("query.place.namespace_values")?;
         require(
             namespace_ids.len() == namespace_values.len(),
             "Invalid namespace projection.",
         )?;
-        let path_ids = query.reader.column("query.place.path_ids")?;
+        // Later duplicates replace earlier ones, as collecting into a map did.
+        let mut files = FxHashMap::with_capacity_and_hasher(file_ids.len(), FxBuildHasher);
+        for (row, id) in file_ids.iter().enumerate() {
+            files.insert(*id, row);
+        }
+        let mut namespaces =
+            FxHashMap::with_capacity_and_hasher(namespace_ids.len(), FxBuildHasher);
+        for (id, value) in namespace_ids.iter().zip(namespace_values.iter()) {
+            namespaces.insert(*id, *value);
+        }
+        let mut paths = FxHashMap::with_capacity_and_hasher(path_ids.len(), FxBuildHasher);
+        for (row, id) in path_ids.iter().enumerate() {
+            paths.insert(*id, row);
+        }
         let places = Arc::new(Self {
             labels,
             label_ids,
-            files: file_ids
-                .iter()
-                .enumerate()
-                .map(|(row, id)| (*id, row))
-                .collect(),
+            files,
             file_values,
             assets,
-            namespaces: namespace_ids
-                .iter()
-                .copied()
-                .zip(namespace_values.iter().copied())
-                .collect(),
-            paths: path_ids
-                .iter()
-                .enumerate()
-                .map(|(row, id)| (*id, row))
-                .collect(),
-            path: Arena::open(query, "path")?,
-            manifest: Arena::open(query, "manifest")?,
-            objects: query.reader.column("query.place.occurrence_object")?,
-            packages: query.reader.column("query.place.occurrence_package")?,
-            rank: query.reader.column("query.place.rank")?,
-            folder_starts: query.reader.column("query.place.folder_starts")?,
-            folder_keys: query.reader.column("query.place.folder_keys")?,
-            folder_labels: query.reader.column("query.place.folder_labels")?,
-            scanned_keys: query.reader.column("query.place.scanned_keys")?,
+            namespaces,
+            paths,
+            path,
+            manifest,
+            objects,
+            packages,
+            rank,
+            folder_starts,
+            folder_keys,
+            folder_labels,
+            scanned_keys,
         });
         Ok(query.places.store(places))
     }
@@ -139,8 +242,7 @@ impl Places {
                     value.clone()
                 };
                 self.label_ids
-                    .get(Wtf8Buf::from_view(&value).as_bytes())
-                    .copied()
+                    .get(&self.labels, Wtf8Buf::from_view(&value).as_bytes())
             })
             .collect()
     }

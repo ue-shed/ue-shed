@@ -103,33 +103,81 @@ pub(crate) struct Rows {
     pub files: Column,
     pub order: Column,
 }
+/// Columns a kind's rows read, each loaded on its own task. A source patch splices a kind's three
+/// source columns together, so they share one task and splice once.
+const ROW_COLUMNS: [&[&str]; 16] = [
+    &["visible"],
+    &["signals"],
+    &["origins"],
+    &["editing"],
+    &["notes"],
+    &["audience"],
+    &["identity"],
+    &["namespace"],
+    &["member_start"],
+    &["member_end"],
+    &["members"],
+    &["source_start", "source_end", "sources"],
+    &["file_start"],
+    &["file_end"],
+    &["files"],
+    &["representative"],
+];
+
 impl Rows {
-    fn open(query: &EngineQuery, kind: &str, cancelled: &AtomicBool) -> Result<Self> {
-        let mut rows = Self {
-            visible: query.column(kind, "visible")?,
-            signals: query.column(kind, "signals")?,
-            origins: query.column(kind, "origins")?,
-            editing: query.column(kind, "editing")?,
-            notes: query.column(kind, "notes")?,
-            audience: query.column(kind, "audience")?,
-            identity: query.column(kind, "identity")?,
+    /// A kind's rows, validated, and its representative column; `resolve` then completes them.
+    fn open(query: &EngineQuery, kind: &str, cancelled: &AtomicBool) -> Result<(Self, Column)> {
+        use rayon::prelude::*;
+        let order: &[&str] = if kind == "raw" { &["order"] } else { &[] };
+        let groups = ROW_COLUMNS
+            .iter()
+            .copied()
+            .chain([order])
+            .collect::<Vec<_>>();
+        let loaded = groups
+            .par_iter()
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|field| Ok((*field, query.column(kind, field)?)))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut columns = loaded
+            .into_iter()
+            .flatten()
+            .collect::<rustc_hash::FxHashMap<_, _>>();
+        let mut take = |field: &str| -> Result<Column> {
+            Ok(columns
+                .remove(field)
+                .ok_or("Query row column was not loaded.")?)
+        };
+        let rows = Self {
+            visible: take("visible")?,
+            signals: take("signals")?,
+            origins: take("origins")?,
+            editing: take("editing")?,
+            notes: take("notes")?,
+            audience: take("audience")?,
+            identity: take("identity")?,
             namespace_defined: Vec::new(),
-            namespace: query.column(kind, "namespace")?,
-            member_start: query.column(kind, "member_start")?,
-            member_end: query.column(kind, "member_end")?,
-            members: query.column(kind, "members")?,
-            source_start: query.column(kind, "source_start")?,
-            source_end: query.column(kind, "source_end")?,
-            sources: query.column(kind, "sources")?,
-            file_start: query.column(kind, "file_start")?,
-            file_end: query.column(kind, "file_end")?,
-            files: query.column(kind, "files")?,
+            namespace: take("namespace")?,
+            member_start: take("member_start")?,
+            member_end: take("member_end")?,
+            members: take("members")?,
+            source_start: take("source_start")?,
+            source_end: take("source_end")?,
+            sources: take("sources")?,
+            file_start: take("file_start")?,
+            file_end: take("file_end")?,
+            files: take("files")?,
             order: if kind == "raw" {
-                query.column(kind, "order")?
+                take("order")?
             } else {
                 Arc::from([])
             },
         };
+        let representatives = take("representative")?;
         let count = rows.visible.len();
         for column in [
             &rows.signals,
@@ -158,14 +206,20 @@ impl Rows {
         if kind == "raw" {
             permutation(&rows.order, count, cancelled)?;
         }
-        // Saved resolved/String Table identities with an empty key are presented as unresolved.
-        // Namespace predicates and groups must use that same interpretation, including old joins.
-        let representatives = query.column(kind, "representative")?;
         length(&representatives, count)?;
-        let keys = (0..query.package_count())
-            .map(|shard| query.package_column(shard, "occurrence.key"))
-            .collect::<Result<Vec<_>>>()?;
-        let empty_ids = query.reader.empty_string_ids()?;
+        Ok((rows, representatives))
+    }
+    /// Saved resolved/String Table identities with an empty key are presented as unresolved.
+    /// Namespace predicates and groups must use that same interpretation, including old joins.
+    fn resolve(
+        &mut self,
+        query: &EngineQuery,
+        representatives: &[u32],
+        keys: &[Column],
+        empty_ids: &std::collections::BTreeSet<u32>,
+        cancelled: &AtomicBool,
+    ) -> Result<()> {
+        self.namespace_defined.reserve_exact(representatives.len());
         for (row, member) in representatives.iter().enumerate() {
             if row & 255 == 0 {
                 checkpoint(cancelled)?;
@@ -174,10 +228,10 @@ impl Rows {
             let key = keys[shard]
                 .get(occurrence)
                 .ok_or("Namespace occurrence row")?;
-            rows.namespace_defined
-                .push(rows.identity[row] < 2 && !empty_ids.contains(key));
+            self.namespace_defined
+                .push(self.identity[row] < 2 && !empty_ids.contains(key));
         }
-        Ok(rows)
+        Ok(())
     }
     pub fn members(&self, row: usize) -> &[u32] {
         &self.members[self.member_start[row] as usize..self.member_end[row] as usize]
@@ -304,10 +358,112 @@ impl Projection {
             return Ok(value);
         }
         checkpoint(cancelled)?;
-        let raw = Rows::open(query, "raw", cancelled)?;
-        let slice = Rows::open(query, "slice", cancelled)?;
-        let slice_raw = query.column("slice", "raw")?;
-        let slice_line = query.column("slice", "line")?;
+        use rayon::prelude::*;
+        let mut names = [
+            "query.slice.raw",
+            "query.slice.line",
+            "query.line.starts",
+            "line.source",
+            "query.line.order",
+            "line.source_visible",
+            "line.notes",
+            "line.origins",
+            "line.editing",
+            "line.audience",
+            "line.key_change",
+            "line.key",
+            "line.namespace",
+            "line.file_start",
+            "line.file_end",
+            "facet.files",
+            "line.manifest_start",
+            "line.manifest_end",
+            "manifest.rows",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        for ci in 0..query.cultures.len() {
+            for field in ["state", "facts", "reasons", "review", "review_record"] {
+                names.push(format!("c{ci}.{field}"));
+            }
+        }
+        // Every column loads at once: both kinds' rows, the occurrence keys they resolve
+        // against, and the line and culture columns.
+        let ((raw, slice), (resolution, loaded)) = rayon::join(
+            || {
+                rayon::join(
+                    || Rows::open(query, "raw", cancelled),
+                    || Rows::open(query, "slice", cancelled),
+                )
+            },
+            || {
+                rayon::join(
+                    || {
+                        let (keys, empty_ids) = rayon::join(
+                            || {
+                                (0..query.package_count())
+                                    .into_par_iter()
+                                    .map(|shard| query.package_column(shard, "occurrence.key"))
+                                    .collect::<Result<Vec<_>>>()
+                            },
+                            || query.reader.empty_string_ids(),
+                        );
+                        Ok::<_, Error>((keys?, empty_ids?))
+                    },
+                    || {
+                        names
+                            .par_iter()
+                            .map(|name| query.reader.column(name))
+                            .collect::<Result<Vec<_>>>()
+                    },
+                )
+            },
+        );
+        let (mut raw, raw_representatives) = raw?;
+        let (mut slice, slice_representatives) = slice?;
+        let (keys, empty_ids) = resolution?;
+        let (raw_resolved, slice_resolved) = rayon::join(
+            || raw.resolve(query, &raw_representatives, &keys, &empty_ids, cancelled),
+            || slice.resolve(query, &slice_representatives, &keys, &empty_ids, cancelled),
+        );
+        raw_resolved?;
+        slice_resolved?;
+        drop(keys);
+        let mut loaded = loaded?.into_iter();
+        let mut next = || -> Result<Column> {
+            Ok(loaded
+                .next()
+                .ok_or("Query projection column was not loaded.")?)
+        };
+        let slice_raw = next()?;
+        let slice_line = next()?;
+        let starts = next()?;
+        let source = next()?;
+        let line_order = next()?;
+        let source_visible = next()?;
+        let notes = next()?;
+        let origins = next()?;
+        let editing = next()?;
+        let audience = next()?;
+        let key_change = next()?;
+        let key = next()?;
+        let namespace = next()?;
+        let file_start = next()?;
+        let file_end = next()?;
+        let files = next()?;
+        let manifest_start = next()?;
+        let manifest_end = next()?;
+        let manifest = next()?;
+        let mut cultures = Vec::with_capacity(query.cultures.len());
+        for _ in 0..query.cultures.len() {
+            cultures.push(Culture {
+                state: next()?,
+                facts: next()?,
+                reasons: next()?,
+                review: next()?,
+                review_record: next()?,
+            });
+        }
         length(&slice_raw, slice.visible.len())?;
         length(&slice_line, slice.visible.len())?;
         for (index, row) in slice_raw.iter().enumerate() {
@@ -319,8 +475,6 @@ impl Projection {
                 "Slice points outside raw units.",
             )?;
         }
-        let starts = query.column("line", "starts")?;
-        let source = query.reader.column("line.source")?;
         let count = source.len();
         require(
             starts.len() == count + 1
@@ -346,18 +500,8 @@ impl Projection {
                 }
             }
         }
-        let mut cultures = Vec::new();
-        for ci in 0..query.cultures.len() {
-            cultures.push(Culture {
-                state: query.reader.column(&format!("c{ci}.state"))?,
-                facts: query.reader.column(&format!("c{ci}.facts"))?,
-                reasons: query.reader.column(&format!("c{ci}.reasons"))?,
-                review: query.reader.column(&format!("c{ci}.review"))?,
-                review_record: query.reader.column(&format!("c{ci}.review_record"))?,
-            });
-        }
         let result = Arc::new(Self {
-            empty_ids: query.reader.empty_string_ids()?,
+            empty_ids,
             raw,
             slice,
             slice_raw,
@@ -367,21 +511,21 @@ impl Projection {
             flags,
             saved_visible,
             cultures,
-            order: query.column("line", "order")?,
-            source_visible: query.reader.column("line.source_visible")?,
-            notes: query.reader.column("line.notes")?,
-            origins: query.reader.column("line.origins")?,
-            editing: query.reader.column("line.editing")?,
-            audience: query.reader.column("line.audience")?,
-            key_change: query.reader.column("line.key_change")?,
-            key: query.reader.column("line.key")?,
-            namespace: query.reader.column("line.namespace")?,
-            file_start: query.reader.column("line.file_start")?,
-            file_end: query.reader.column("line.file_end")?,
-            files: query.reader.column("facet.files")?,
-            manifest_start: query.reader.column("line.manifest_start")?,
-            manifest_end: query.reader.column("line.manifest_end")?,
-            manifest: query.reader.column("manifest.rows")?,
+            order: line_order,
+            source_visible,
+            notes,
+            origins,
+            editing,
+            audience,
+            key_change,
+            key,
+            namespace,
+            file_start,
+            file_end,
+            files,
+            manifest_start,
+            manifest_end,
+            manifest,
         });
         for column in [
             &result.source_visible,

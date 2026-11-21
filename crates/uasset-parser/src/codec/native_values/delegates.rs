@@ -6,7 +6,7 @@ pub(in crate::codec) fn optional(
     name: &str,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Option<PropertyValue> {
     let multicast = match name {
         "DelegateProperty" => false,
@@ -40,7 +40,11 @@ pub(in crate::codec) fn optional(
     Some(value)
 }
 
-fn binding(reader: &mut Reader<'_>, package: &Package, path: &str) -> Option<PropertyValue> {
+fn binding(
+    reader: &mut Reader<'_>,
+    package: &Package,
+    path: &dyn std::fmt::Display,
+) -> Option<PropertyValue> {
     // UE 4.27/5.7/5.8 ScriptDelegates.h serializes weak Object then FunctionName.
     // ArchiveUObject.cpp serializes persistent weak pointers as UObject references:
     // a four-byte FPackageIndex in a classic saved package, not the in-memory weak handle.
@@ -115,7 +119,8 @@ mod tests {
                 let package = package(version, custom);
                 let bytes = binding_bytes(custom, false);
                 let mut reader = Reader::new(&bytes);
-                let value = optional("DelegateProperty", &mut reader, &package, "Fixture").unwrap();
+                let value =
+                    optional("DelegateProperty", &mut reader, &package, &"Fixture").unwrap();
                 assert_eq!(reader.remaining(), 0);
                 assert_eq!(
                     field(&value, "Object"),
@@ -128,7 +133,7 @@ mod tests {
                 for end in 0..bytes.len() {
                     let mut reader = Reader::new(&bytes[..end]);
                     assert!(
-                        optional("DelegateProperty", &mut reader, &package, "Fixture").is_none()
+                        optional("DelegateProperty", &mut reader, &package, &"Fixture").is_none()
                     );
                     assert_eq!(reader.tell(), 0);
                 }
@@ -136,7 +141,7 @@ mod tests {
                     let bytes = binding_bytes(custom, true);
                     let mut reader = Reader::new(&bytes);
                     assert!(
-                        optional("DelegateProperty", &mut reader, &package, "Fixture").is_none()
+                        optional("DelegateProperty", &mut reader, &package, &"Fixture").is_none()
                     );
                     assert_eq!(reader.tell(), 0);
                 }
@@ -160,7 +165,7 @@ mod tests {
                         bytes.extend(binding_bytes(custom, false));
                     }
                     let mut reader = Reader::new(&bytes);
-                    let value = optional(kind, &mut reader, &package, "Fixture").unwrap();
+                    let value = optional(kind, &mut reader, &package, &"Fixture").unwrap();
                     let Some(PropertyValue::Array(bindings)) = field(&value, "InvocationList")
                     else {
                         panic!("invocation list");
@@ -169,7 +174,7 @@ mod tests {
                     assert_eq!(reader.remaining(), 0);
                     for end in 0..bytes.len() {
                         let mut reader = Reader::new(&bytes[..end]);
-                        assert!(optional(kind, &mut reader, &package, "Fixture").is_none());
+                        assert!(optional(kind, &mut reader, &package, &"Fixture").is_none());
                         assert_eq!(reader.tell(), 0);
                     }
                 }
@@ -185,7 +190,7 @@ mod tests {
             let mut bad = bytes.clone();
             bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
             let mut reader = Reader::new(&bad);
-            assert!(optional("DelegateProperty", &mut reader, &package, "Fixture").is_none());
+            assert!(optional("DelegateProperty", &mut reader, &package, &"Fixture").is_none());
             assert_eq!(reader.tell(), 0);
         }
         for count in [-1_i32, i32::MAX] {
@@ -196,7 +201,7 @@ mod tests {
                     "MulticastInlineDelegateProperty",
                     &mut reader,
                     &package,
-                    "Fixture"
+                    &"Fixture"
                 )
                 .is_none()
             );

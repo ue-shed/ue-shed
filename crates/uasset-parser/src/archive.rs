@@ -606,34 +606,67 @@ impl<'a> Reader<'a> {
         self.read_framed_string(path, false)
     }
 
-    fn read_framed_string(
+    /// Validates and steps over an `FString` exactly as [`Reader::read_fstring`] reads it, with
+    /// the same errors, without building the decoded value.
+    pub fn skip_fstring(
         &mut self,
         path: &(impl fmt::Display + ?Sized),
-        require_terminator: bool,
-    ) -> Result<Cow<'a, str>, ArchiveError> {
+    ) -> Result<(), ArchiveError> {
+        let length_offset = self.position;
+        match self.read_string_frame(path)? {
+            StringFrame::Empty => Ok(()),
+            StringFrame::Ansi(code_units) => self
+                .read_ansi_content(code_units, length_offset, path, true)
+                .map(drop),
+            StringFrame::Wide(code_units) => {
+                let content = self.read_wide_content(code_units, length_offset, path, true)?;
+                if char::decode_utf16(wide_units(content)).any(|unit| unit.is_err()) {
+                    return Err(invalid_utf16(content, length_offset, path));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn read_string_frame(
+        &mut self,
+        path: &(impl fmt::Display + ?Sized),
+    ) -> Result<StringFrame, ArchiveError> {
         let length_offset = self.position;
         let signed_length = self.read_i32(&format_args!("{path}.Length"))?;
         match signed_length {
-            0 => Ok(Cow::Borrowed("")),
-            1.. => self.read_ansi_string(
-                crate::convert::u32_from_checked(signed_length),
-                length_offset,
-                path,
-                require_terminator,
-            ),
+            0 => Ok(StringFrame::Empty),
+            1.. => Ok(StringFrame::Ansi(crate::convert::u32_from_checked(
+                signed_length,
+            ))),
             i32::MIN => Err(ArchiveError::new(
                 ArchiveErrorKind::InvalidCount,
                 length_offset,
                 format_args!("{path}.Length"),
                 "wide string length cannot be i32::MIN",
             )),
-            _ => self
-                .read_wide_string(
-                    signed_length.unsigned_abs(),
-                    length_offset,
-                    path,
-                    require_terminator,
-                )
+            _ => Ok(StringFrame::Wide(signed_length.unsigned_abs())),
+        }
+    }
+
+    fn read_framed_string(
+        &mut self,
+        path: &(impl fmt::Display + ?Sized),
+        require_terminator: bool,
+    ) -> Result<Cow<'a, str>, ArchiveError> {
+        let length_offset = self.position;
+        match self.read_string_frame(path)? {
+            StringFrame::Empty => Ok(Cow::Borrowed("")),
+            StringFrame::Ansi(code_units) => {
+                // Unreal's serialized ANSI form is an 8-bit code-unit string. This
+                // one-to-one mapping is lossless for byte values and avoids assuming UTF-8.
+                // ASCII content (the common case) borrows the source bytes.
+                let content =
+                    self.read_ansi_content(code_units, length_offset, path, require_terminator)?;
+                Ok(encoding_rs::mem::decode_latin1(content))
+            }
+            StringFrame::Wide(code_units) => self
+                .read_wide_string(code_units, length_offset, path, require_terminator)
                 .map(Cow::Owned),
         }
     }
@@ -803,27 +836,24 @@ impl<'a> Reader<'a> {
         }
     }
 
-    fn read_ansi_string(
+    /// Reads an ANSI string's code units and returns its content without the terminator (or,
+    /// for unterminated framing, without trailing nulls).
+    fn read_ansi_content(
         &mut self,
         code_units: u32,
         length_offset: u64,
         path: &(impl fmt::Display + ?Sized),
         require_terminator: bool,
-    ) -> Result<Cow<'a, str>, ArchiveError> {
+    ) -> Result<&'a [u8], ArchiveError> {
         let code_units = self.validate_string_length(code_units, 1, length_offset, path)?;
         let bytes = self.read_bytes(code_units, &format_args!("{path}.Data"))?;
-
-        // Unreal's serialized ANSI form is an 8-bit code-unit string. This
-        // one-to-one mapping is lossless for byte values and avoids assuming UTF-8.
-        // ASCII content (the common case) borrows the source bytes.
-        let to_string = |content: &'a [u8]| encoding_rs::mem::decode_latin1(content);
 
         if !require_terminator {
             let end = bytes
                 .iter()
                 .rposition(|&byte| byte != 0)
                 .map_or(0, |i| i + 1);
-            return Ok(to_string(&bytes[..end]));
+            return Ok(&bytes[..end]);
         }
 
         let Some((&terminator, content)) = bytes.split_last() else {
@@ -842,7 +872,7 @@ impl<'a> Reader<'a> {
                 "ANSI FString does not end in a null byte",
             ));
         }
-        Ok(to_string(content))
+        Ok(content)
     }
 
     fn read_wide_string(
@@ -852,38 +882,42 @@ impl<'a> Reader<'a> {
         path: &(impl fmt::Display + ?Sized),
         require_terminator: bool,
     ) -> Result<String, ArchiveError> {
+        let content =
+            self.read_wide_content(code_units, length_offset, path, require_terminator)?;
+        // Decode straight from the little-endian bytes; the error path re-runs the standard
+        // decoder so its message is unchanged.
+        let mut decoded = String::with_capacity(content.len() / 2);
+        for unit in char::decode_utf16(wide_units(content)) {
+            match unit {
+                Ok(character) => decoded.push(character),
+                Err(_) => return Err(invalid_utf16(content, length_offset, path)),
+            }
+        }
+        Ok(decoded)
+    }
+
+    /// Reads a wide string's little-endian code units and returns the content bytes without the
+    /// terminator (or, for unterminated framing, without trailing null units).
+    fn read_wide_content(
+        &mut self,
+        code_units: u32,
+        length_offset: u64,
+        path: &(impl fmt::Display + ?Sized),
+        require_terminator: bool,
+    ) -> Result<&'a [u8], ArchiveError> {
         let capacity = self.validate_string_length(code_units, 2, length_offset, path)?;
-        let mut units = Vec::with_capacity(capacity);
         let bytes = self.read_bytes(capacity * 2, &format_args!("{path}.Data"))?;
-        #[expect(
-            clippy::chunks_exact_to_as_chunks,
-            reason = "keep the validated block on the same chunk iterator as scalar arrays"
-        )]
-        units.extend(
-            bytes
-                .chunks_exact(2)
-                .map(|unit| u16::from_le_bytes([unit[0], unit[1]])),
-        );
-        let decode = |content: &[u16]| {
-            String::from_utf16(content).map_err(|error| {
-                ArchiveError::new(
-                    ArchiveErrorKind::InvalidString,
-                    length_offset,
-                    path,
-                    format!("wide FString is invalid UTF-16: {error}"),
-                )
-            })
-        };
+        let (units, _) = bytes.as_chunks::<2>();
 
         if !require_terminator {
             let end = units
                 .iter()
-                .rposition(|&unit| unit != 0)
+                .rposition(|&unit| unit != [0, 0])
                 .map_or(0, |i| i + 1);
-            return decode(&units[..end]);
+            return Ok(&bytes[..end * 2]);
         }
 
-        let Some((&terminator, content)) = units.split_last() else {
+        let Some((&terminator, _)) = units.split_last() else {
             return Err(ArchiveError::new(
                 ArchiveErrorKind::MissingNullTerminator,
                 self.position,
@@ -891,7 +925,7 @@ impl<'a> Reader<'a> {
                 "non-empty wide FString has no payload",
             ));
         };
-        if terminator != 0 {
+        if terminator != [0, 0] {
             return Err(ArchiveError::new(
                 ArchiveErrorKind::MissingNullTerminator,
                 self.position - 2,
@@ -899,7 +933,7 @@ impl<'a> Reader<'a> {
                 "wide FString does not end in a null code unit",
             ));
         }
-        decode(content)
+        Ok(&bytes[..bytes.len() - 2])
     }
 
     fn validate_string_length(
@@ -952,6 +986,37 @@ impl<'a> Reader<'a> {
             .try_into()
             .map_err(|_| unreachable!("read_bytes returned the requested length"))
     }
+}
+
+/// An `FString` length prefix: empty, ANSI code-unit count, or wide code-unit count.
+enum StringFrame {
+    Empty,
+    Ansi(u32),
+    Wide(u32),
+}
+
+fn wide_units(bytes: &[u8]) -> impl Iterator<Item = u16> + '_ {
+    bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&unit| u16::from_le_bytes(unit))
+}
+
+/// The error `String::from_utf16` reports for invalid wide content, built only on failure.
+#[cold]
+fn invalid_utf16(
+    content: &[u8],
+    length_offset: u64,
+    path: &(impl fmt::Display + ?Sized),
+) -> ArchiveError {
+    let units = wide_units(content).collect::<Vec<_>>();
+    // `char::decode_utf16` and `String::from_utf16` agree on validity, so this always errs.
+    let detail = String::from_utf16(&units).err().map_or_else(
+        || "wide FString is invalid UTF-16".to_owned(),
+        |error| format!("wide FString is invalid UTF-16: {error}"),
+    );
+    ArchiveError::new(ArchiveErrorKind::InvalidString, length_offset, path, detail)
 }
 
 #[cfg(test)]
@@ -1170,6 +1235,45 @@ mod tests {
 
         let error = Reader::new(&bytes).read_fstring("Text").unwrap_err();
         assert_eq!(error.kind(), ArchiveErrorKind::InvalidString);
+        assert_eq!(
+            error.detail(),
+            "wide FString is invalid UTF-16: invalid utf-16: lone surrogate found"
+        );
+    }
+
+    #[test]
+    fn skip_fstring_validates_exactly_like_read_fstring() {
+        fn framed(length: i32, payload: &[u8]) -> Vec<u8> {
+            let mut bytes = length.to_le_bytes().to_vec();
+            bytes.extend_from_slice(payload);
+            bytes.extend_from_slice(b"trailing");
+            bytes
+        }
+        fn wide(units: &[u16]) -> Vec<u8> {
+            units.iter().flat_map(|unit| unit.to_le_bytes()).collect()
+        }
+        let cases = [
+            framed(0, b""),
+            framed(6, b"Hello\0"),
+            framed(4, &[0xE9, 0x80, 0xFF, 0]),
+            framed(3, b"abc"),
+            framed(1, b""),
+            framed(-6, &wide(&[0x48, 0xE9, 0xD834, 0xDD1E, 0x4E2D, 0])),
+            framed(-3, &wide(&[0xD800, 0x41, 0])),
+            framed(-2, &wide(&[0xDC00, 0])),
+            framed(-2, &wide(&[0x41, 0x42])),
+            framed(-1, &[0]),
+            framed(i32::MIN, b""),
+            framed(1_000_000, b"x\0"),
+            vec![1, 0],
+        ];
+        for bytes in cases {
+            let mut read = Reader::new(&bytes);
+            let mut skipped = Reader::new(&bytes);
+            let expected = read.read_fstring("Text").map(drop);
+            assert_eq!(skipped.skip_fstring("Text"), expected, "{bytes:?}");
+            assert_eq!(skipped.tell(), read.tell(), "{bytes:?}");
+        }
     }
 
     #[test]

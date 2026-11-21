@@ -270,9 +270,12 @@ pub trait SchemaProvider {
         self.class_is_a(&ObjectPath::new(path), base_path)
     }
 
-    /// Whether this provider returns the same class, struct and native-layout schemas for the
-    /// entire lifetime of a shared borrow. Returning `true` allows [`crate::asset::AssetDecodeSession`]
-    /// to cache schema-derived dispatch and native-tail facts across exports.
+    /// Whether this provider's answers for `find_struct`, `find_class`, `find_class_str`,
+    /// `native_layout`, and both ancestry queries (`class_is_a` and `class_is_a_str`, including
+    /// any overridden implementations) are immutable for the entire lifetime of a shared borrow.
+    /// Returning `true` allows [`crate::asset::AssetDecodeSession`] to cache schema-derived
+    /// dispatch, serialization-validation, and native-tail ancestry facts across exports.
+    /// Providers whose schemas or ancestry answers may change must leave this `false`.
     fn has_stable_schemas(&self) -> bool {
         false
     }

@@ -27,7 +27,7 @@ pub(crate) fn read_layout(
             format!("missing native layout {name}"),
         )
     })?;
-    decode_native(reader, layout, path).map_err(|failure| match failure {
+    crate::native::decode_native_layout(reader, layout, path).map_err(|failure| match failure {
         NativeError::Archive(failure) => failure.into(),
         NativeError::Layout(message) => error(
             reader,
@@ -448,18 +448,17 @@ fn generated_struct(
             "generated native properties require the verified UE 5.7 package revision",
         ));
     }
-    let value =
-        decode_native(reader, layout, path)
-            .map(property)
-            .map_err(|failure| match failure {
-                NativeError::Archive(failure) => PropertyError::from(failure),
-                NativeError::Layout(message) => error(
-                    reader,
-                    path,
-                    PropertyErrorKind::UnsupportedCapability,
-                    message,
-                ),
-            })?;
+    let value = crate::native::decode_native_layout(reader, layout, path)
+        .map(property)
+        .map_err(|failure| match failure {
+            NativeError::Archive(failure) => PropertyError::from(failure),
+            NativeError::Layout(message) => error(
+                reader,
+                path,
+                PropertyErrorKind::UnsupportedCapability,
+                message,
+            ),
+        })?;
     if type_path == "/Script/CoreUObject.Box"
         && !matches!(field(&value, "IsValid"), Some(PropertyValue::UInt(0 | 1)))
     {
@@ -799,8 +798,7 @@ mod tests {
                 &"bag",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
-                    filter: None,
-                    formatted_text_budget: None
+                    ..DecodeScope::root(None)
                 }
             )
             .unwrap_err()
@@ -1067,8 +1065,7 @@ mod tests {
                 &"test",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
-                    filter: None,
-                    formatted_text_budget: None
+                    ..DecodeScope::root(None)
                 }
             )
             .unwrap_err()

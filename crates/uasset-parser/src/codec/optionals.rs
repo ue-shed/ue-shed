@@ -59,6 +59,7 @@ pub(super) fn decode(
                 path,
                 scope.nested(),
                 serializer,
+                None,
             )
             .ok()??
         };

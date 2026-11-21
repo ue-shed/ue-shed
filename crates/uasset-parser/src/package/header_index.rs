@@ -3,8 +3,8 @@
 use std::borrow::Cow;
 
 use super::{
-    ChainsOnly, Export, ExportLinks, Import, ImportLinks, IndexPathResolver, ObjectPath,
-    PackageError, PackageErrorKind, PackageIndex, PackageSummary, normalize_object_path,
+    ChainsOnly, Export, ExportLinks, Import, ImportLinks, IndexPathResolver, PackageError,
+    PackageErrorKind, PackageIndex, PackageSummary, normalize_object_path_string,
     read_export_map_into, read_import_map_into, read_name_map, resolve_every_index,
     resolve_name_ref_cow, summary_fits, walk_soft_object_path_list,
 };
@@ -158,7 +158,7 @@ impl<'a> HeaderIndex<'a> {
             .map(|class_index| {
                 let mut path = String::new();
                 self.write_path(class_index, &mut path)?;
-                Ok(normalize_object_path(ObjectPath(path)).into_string())
+                Ok(normalize_object_path_string(path))
             })
             .collect()
     }

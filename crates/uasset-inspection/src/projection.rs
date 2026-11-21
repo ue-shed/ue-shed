@@ -37,6 +37,16 @@ impl PropertyDecodeFilter for TextDecodeFilter {
                 .resolve_name_str(record.name)
                 .is_some_and(|name| TEXT_PROJECTION_READ_PROPERTIES.contains(&name))
     }
+
+    // Reads only the record's name, type tree and struct GUID, and keeps no state.
+    fn depends_only_on_record_header(&self) -> bool {
+        true
+    }
+
+    // Text projection and Blueprint class identity skip `NotRequested` values entirely.
+    fn omit_unrequested_records(&self) -> bool {
+        true
+    }
 }
 
 /// The property path of a text literal in a compiled function's script bytecode.
@@ -192,7 +202,7 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             // If a graph's Nodes array itself was rejected, none of its pin streams can be
             // proven covered. Gather tables need not contain those editor-only occurrences.
             if object.properties.records.iter().any(|property| {
-                package.resolve_name_cow(property.name).as_deref() == Some("Nodes")
+                package.resolve_name_str(property.name) == Some("Nodes")
                     && !matches!(property.value, PropertyValue::Array(_))
             }) && (object.class_path.as_str() == uasset_parser::asset::ED_GRAPH_CLASS
                 || package.exports.iter().any(|export| {

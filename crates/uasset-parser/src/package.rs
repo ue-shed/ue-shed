@@ -289,6 +289,16 @@ impl ObjectPath {
         Self(value.into())
     }
 
+    /// A path copied from borrowed text.
+    pub(crate) fn from_str_ref(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+
+    /// The empty path, which does not allocate.
+    const fn empty() -> Self {
+        Self(String::new())
+    }
+
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -500,9 +510,15 @@ impl Package {
         }
     }
 
+    /// Whether a name reference resolves (`resolve_name(name).is_some()`), without rendering it.
+    #[must_use]
+    pub(crate) fn has_name(&self, name: crate::archive::NameRef) -> bool {
+        usize::try_from(name.index().get()).is_ok_and(|index| index < self.names.len())
+    }
+
     #[must_use]
     pub fn resolve_index(&self, index: PackageIndex) -> Option<ObjectPath> {
-        self.resolve_index_str(index).map(ObjectPath::new)
+        self.resolve_index_str(index).map(ObjectPath::from_str_ref)
     }
 
     /// Borrows a package index's path after package parsing has resolved the import and export maps.
@@ -1244,25 +1260,26 @@ fn format_top_level_asset_path<S: AsRef<str>>(
     asset: crate::archive::NameRef,
     sub_path: &str,
 ) -> String {
-    let resolve = |name| match resolve_name_ref(names, name) {
+    let resolve = |name| match resolve_name_ref_cow(names, name) {
         Ok(name) if name != "None" => name,
-        _ => String::new(),
+        _ => Cow::Borrowed(""),
     };
     let package = resolve(package);
     if package.is_empty() {
         return String::new();
     }
     let asset = resolve(asset);
-    let base = if asset.is_empty() {
-        package
-    } else {
-        format!("{package}.{asset}")
-    };
-    if sub_path.is_empty() {
-        base
-    } else {
-        format!("{base}:{sub_path}")
+    let mut path = String::with_capacity(package.len() + 1 + asset.len() + 1 + sub_path.len());
+    path.push_str(&package);
+    if !asset.is_empty() {
+        path.push('.');
+        path.push_str(&asset);
     }
+    if !sub_path.is_empty() {
+        path.push(':');
+        path.push_str(sub_path);
+    }
+    path
 }
 
 /// Editor packages should only store `/Package/Asset` literals (or empty) in the
@@ -1422,8 +1439,8 @@ fn read_import_map_into<T>(
             object_name,
             package_name,
             import_optional,
-            object_path: ObjectPath(String::new()),
-            class_path: ObjectPath(String::new()),
+            object_path: ObjectPath::empty(),
+            class_path: ObjectPath::empty(),
         }));
     }
     Ok(())
@@ -1568,7 +1585,7 @@ fn read_export_map_into<T>(
             generate_public_hash,
             script_serialization_start_offset,
             script_serialization_end_offset,
-            object_path: ObjectPath(String::new()),
+            object_path: ObjectPath::empty(),
             class_path: None,
         }));
     }
@@ -1658,18 +1675,32 @@ fn resolve_import_class_path(
 ) -> Result<ObjectPath, PackageError> {
     let package = resolve_name_ref_cow(names, import.class_package)?;
     let class = resolve_name_ref_cow(names, import.class_name)?;
-    Ok(normalize_object_path(ObjectPath(format!(
-        "/{package}.{class}"
-    ))))
+    let mut path = String::with_capacity(1 + package.len() + 1 + class.len());
+    path.push('/');
+    path.push_str(&package);
+    path.push('.');
+    path.push_str(&class);
+    Ok(ObjectPath(normalize_object_path_string(path)))
+}
+
+/// `path` without the `/None.` or `None.` prefix an unset package leaves.
+fn normalized_object_path(path: &str) -> &str {
+    path.strip_prefix("/None.")
+        .or_else(|| path.strip_prefix("None."))
+        .unwrap_or(path)
 }
 
 fn normalize_object_path(path: ObjectPath) -> ObjectPath {
-    if let Some(stripped) = path.0.strip_prefix("/None.") {
-        ObjectPath(stripped.to_owned())
-    } else if let Some(stripped) = path.0.strip_prefix("None.") {
-        ObjectPath(stripped.to_owned())
-    } else {
+    ObjectPath(normalize_object_path_string(path.0))
+}
+
+/// [`normalize_object_path`] over an owned string, reusing it when nothing is stripped.
+pub(crate) fn normalize_object_path_string(path: String) -> String {
+    let normalized = normalized_object_path(&path);
+    if normalized.len() == path.len() {
         path
+    } else {
+        normalized.to_owned()
     }
 }
 
@@ -1761,14 +1792,22 @@ impl<S: AsRef<str>> PathBuilder for ObjectPaths<'_, S> {
         Ok(match outer {
             None => {
                 if object_name == "None" {
-                    ObjectPath(String::new())
+                    ObjectPath::empty()
                 } else if let Some(package_name_ref) = import.package_name() {
                     let package = resolve_name_ref_cow(self.names, package_name_ref)?;
-                    ObjectPath(format!("/{package}.{object_name}"))
+                    let mut path = String::with_capacity(1 + package.len() + 1 + object_name.len());
+                    path.push('/');
+                    path.push_str(&package);
+                    path.push('.');
+                    path.push_str(&object_name);
+                    ObjectPath(path)
                 } else if object_name.starts_with('/') {
                     ObjectPath(object_name.into_owned())
                 } else {
-                    ObjectPath(format!("/{object_name}"))
+                    let mut path = String::with_capacity(1 + object_name.len());
+                    path.push('/');
+                    path.push_str(&object_name);
+                    ObjectPath(path)
                 }
             }
             Some(outer) if outer.as_str().is_empty() || outer.as_str() == "/None" => {
@@ -2305,7 +2344,7 @@ pub(crate) fn test_package(names: Vec<String>) -> Package {
 
 #[cfg(test)]
 pub(crate) fn test_object_path(path: &str) -> ObjectPath {
-    ObjectPath(path.to_owned())
+    ObjectPath::from_str_ref(path)
 }
 
 #[cfg(test)]
@@ -2348,8 +2387,8 @@ pub(crate) fn test_export(serial_size: u64, object_path: &str, class_path: &str)
         generate_public_hash: None,
         script_serialization_start_offset: None,
         script_serialization_end_offset: None,
-        object_path: ObjectPath(object_path.to_owned()),
-        class_path: Some(ObjectPath(class_path.to_owned())),
+        object_path: ObjectPath::from_str_ref(object_path),
+        class_path: Some(ObjectPath::from_str_ref(class_path)),
     }
 }
 

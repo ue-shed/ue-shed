@@ -11,11 +11,11 @@
 //! decoded as separate native evidence; remaining bytes are preserved as `tail_bytes`. A non-zero
 //! count means "undecoded native payload", not "failed parse".
 
-use std::collections::HashMap;
 use std::fmt;
 
 mod native_data;
 mod script;
+mod session;
 pub use script::{DecodedFunction, FUNCTION_CLASS, FunctionDecoder};
 
 use crate::archive::{ArchiveError, ArchiveErrorKind, Guid, NameRef, Span};
@@ -32,6 +32,32 @@ use crate::schema::{SchemaProvider, SerializationOperation};
 /// policy; the parser still decodes every property its own decoders read by name.
 pub trait PropertyDecodeFilter: Sync {
     fn decode(&self, package: &Package, record: &PropertyRecord) -> bool;
+
+    /// Whether [`PropertyDecodeFilter::decode`] is a pure function of the package and the
+    /// record's header: its name, type tree, array index, property GUID, struct GUID and
+    /// extensions, never its flags, payload span or value, with no state kept between calls.
+    ///
+    /// Only then may the parser reuse one answer for later records that repeat the same saved
+    /// header, instead of calling `decode` for each. The default, `false`, keeps one call per
+    /// record.
+    fn depends_only_on_record_header(&self) -> bool {
+        false
+    }
+
+    /// Whether the caller ignores `RawReason::NotRequested` records and permits the parser
+    /// to omit unrequested records from materialized property streams.
+    ///
+    /// The default (`false`) retains every record as `RawReason::NotRequested`, preserving
+    /// complete property envelopes. Callers that never inspect omitted records may return `true`.
+    ///
+    /// When `true`, a declined record is still read and validated from the saved stream, but is
+    /// left out of [`PropertyStream::records`]. A tagged struct element of an array, set or map
+    /// whose records are all declined becomes `PropertyValue::Raw` with
+    /// `RawReason::NotRequested` in its slot, so element indices are unchanged. Properties the
+    /// parser's own decoders read by name are always decoded and kept.
+    fn omit_unrequested_records(&self) -> bool {
+        false
+    }
 }
 
 // These names are read from decoded streams by parser helpers, independently of host policy.
@@ -61,9 +87,14 @@ pub struct AssetDecodeContext<'a> {
 
 /// Reuses validated property headers while decoding exports from one borrowed context.
 /// Values, native records, filters and failures are still evaluated for every export.
+///
+/// The session borrows its context, and so its package, for its whole life. Facts that depend
+/// only on that package (class dispatch, native tail predicates, version flags and the parser's
+/// own property names) are settled once and reused for every export.
 pub struct AssetDecodeSession<'a> {
     context: &'a AssetDecodeContext<'a>,
     streams: StreamReplayCache<'a>,
+    tables: session::SessionTables,
 }
 
 impl<'a> AssetDecodeSession<'a> {
@@ -71,16 +102,39 @@ impl<'a> AssetDecodeSession<'a> {
     pub fn new(context: &'a AssetDecodeContext<'a>) -> Self {
         Self {
             context,
-            streams: HashMap::new(),
+            streams: StreamReplayCache::default(),
+            tables: session::SessionTables::new(context),
         }
     }
 
     pub fn decode(&mut self, export: &Export) -> Result<Option<DecodedAsset>, AssetError> {
-        decode_export_with_replay(export, self.context, Some(&mut self.streams))
+        decode_export_with_replay(
+            export,
+            self.context,
+            Some((&mut self.streams, &mut self.tables)),
+        )
     }
 }
 
-type StreamReplayCache<'a> = HashMap<PackageIndex, StreamReplayState<'a>>;
+type StreamReplayCache<'a> = session::FnvMap<PackageIndex, StreamReplayState<'a>>;
+
+/// What a session lends one export's decode.
+struct SessionRefs<'s, 'a> {
+    streams: &'s mut StreamReplayCache<'a>,
+    facts: session::ClassFacts,
+    /// [`crate::codec::decoder_read_name_table`] of the session's package, when filtered.
+    names: Option<&'s [bool]>,
+}
+
+impl<'a> SessionRefs<'_, 'a> {
+    fn reborrow(&mut self) -> SessionRefs<'_, 'a> {
+        SessionRefs {
+            streams: self.streams,
+            facts: self.facts,
+            names: self.names,
+        }
+    }
+}
 
 enum StreamReplayState<'a> {
     Active {
@@ -209,7 +263,7 @@ fn graph_node_paths(
         .map(|(properties, _)| {
             let mut paths = std::collections::HashSet::new();
             for property in &properties.records {
-                if package.resolve_name(property.name).as_deref() != Some("Nodes") {
+                if package.resolve_name_str(property.name) != Some("Nodes") {
                     continue;
                 }
                 if let PropertyValue::Array(nodes) = &property.value {
@@ -834,7 +888,7 @@ impl AssetDecoder for DataTableDecoder {
 
         let object_guid = consume_inline_object_guid_footer(&mut reader, &export.object_path)?;
 
-        let rows = decode_data_table_rows(&mut reader, context, &export.object_path)?;
+        let rows = decode_data_table_rows(&mut reader, context, &export.object_path, None)?;
 
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -869,7 +923,9 @@ fn decode_data_table_rows(
     reader: &mut crate::archive::Reader<'_>,
     context: &AssetDecodeContext<'_>,
     object_path: &ObjectPath,
+    names: Option<&[bool]>,
 ) -> Result<Vec<DataTableRow>, AssetError> {
+    let scope = DecodeScope::root_with_names(context.property_filter, names);
     let row_count_offset = reader.tell();
     let row_count = reader.read_i32(&format_args!("{object_path}.Rows.Count"))?;
     if row_count < 0 {
@@ -891,31 +947,21 @@ fn decode_data_table_rows(
     let mut learning = true;
     for index in 0..row_count {
         let name = reader.read_name_ref(&format_args!("{object_path}.Rows[{index}].Name"))?;
-        let matched = replays.iter_mut().enumerate().find_map(|(slot, replay)| {
-            let decode = |record: &mut crate::property::PropertyRecord, plan| {
-                crate::codec::decode_replayed_property_record(
-                    context.source,
-                    record,
-                    context.package,
-                    DecodeScope::root(context.property_filter),
-                    plan,
-                )
-            };
-            replay
-                .try_read_with(
-                    reader,
-                    &format_args!("{object_path}.Rows[{index}].Value"),
-                    decode,
-                )
-                .or_else(|| {
-                    replay.try_read_variable_with(
-                        reader,
-                        &format_args!("{object_path}.Rows[{index}].Value"),
-                        decode,
-                    )
-                })
-                .map(|stream| (slot, stream))
-        });
+        let decode = |record: &mut crate::property::PropertyRecord, plan| {
+            crate::codec::decode_replayed_property_record(
+                context.source,
+                record,
+                context.package,
+                scope,
+                plan,
+            )
+        };
+        let matched = crate::property::read_with_any(
+            &mut replays,
+            reader,
+            &format_args!("{object_path}.Rows[{index}].Value"),
+            decode,
+        );
         let (mut row_properties, decoded) = if let Some((slot, stream)) = matched {
             replays[..=slot].rotate_right(1);
             misses = 0;
@@ -939,7 +985,7 @@ fn decode_data_table_rows(
                     &context.package.summary.versions,
                     &stream,
                 )
-                .map(|replay| replay.with_decode_plans(context.package))
+                .map(|replay| replay.with_decode_plans(context.package, context.property_filter))
                 {
                     if replays.len() == 4 {
                         replays.pop();
@@ -954,7 +1000,7 @@ fn decode_data_table_rows(
                 context.source,
                 &mut row_properties,
                 context.package,
-                DecodeScope::root(context.property_filter),
+                scope,
             )?;
         }
         rows.push(DataTableRow {
@@ -1302,9 +1348,8 @@ fn decode_enum_data(
     )?;
     let mut raw_entries = Vec::with_capacity(capacity);
     for index in 0..count {
-        let entry_path = format!("{object_path}.Names[{index}]");
-        let name = reader.read_name_ref(&format_args!("{entry_path}.Name"))?;
-        let value = reader.read_i64(&format_args!("{entry_path}.Value"))?;
+        let name = reader.read_name_ref(&format_args!("{object_path}.Names[{index}].Name"))?;
+        let value = reader.read_i64(&format_args!("{object_path}.Names[{index}].Value"))?;
         raw_entries.push((name, value));
     }
 
@@ -1430,7 +1475,7 @@ fn display_name_map(package: &Package, properties: &PropertyStream) -> Vec<(Name
     let Some(record) = properties
         .records
         .iter()
-        .find(|record| package.resolve_name(record.name).as_deref() == Some("DisplayNameMap"))
+        .find(|record| package.resolve_name_str(record.name) == Some("DisplayNameMap"))
     else {
         return Vec::new();
     };
@@ -1633,7 +1678,10 @@ fn read_field_at_depth(
         ));
     }
     let type_name = reader.read_name_ref(&format_args!("{path}.Type"))?;
-    let type_str = context.package.resolve_name(type_name).unwrap_or_default();
+    let type_str = context
+        .package
+        .resolve_name_cow(type_name)
+        .unwrap_or_default();
     if type_str == "None" || type_str.is_empty() {
         return Ok(None);
     }
@@ -1762,7 +1810,7 @@ fn read_field_metadata(
     for index in 0..count {
         let key = reader.read_name_ref(&format_args!("{path}.MetaData[{index}].Key"))?;
         let value = reader.read_fstring(&format_args!("{path}.MetaData[{index}].Value"))?;
-        if context.package.resolve_name(key).as_deref() == Some("DisplayName") {
+        if context.package.resolve_name_str(key) == Some("DisplayName") {
             display_name = Some(value);
         }
     }
@@ -2353,20 +2401,51 @@ fn read_ed_graph_pin_array(
         &format_args!("{path}.Count"),
     )?;
     let mut pins = Vec::with_capacity(capacity);
+    let layout = PinLayout::of(text.package);
     for index in 0..count {
         pins.push(read_ed_graph_pin(
             reader,
             &format_args!("{path}[{index}]"),
             text,
+            layout,
         )?);
     }
     Ok(pins)
+}
+
+/// The version-gated fields of every pin in one package, decided once per pin array.
+#[derive(Clone, Copy)]
+struct PinLayout {
+    omit_precision: bool,
+    has_source_index: bool,
+}
+
+impl PinLayout {
+    fn of(package: Option<&Package>) -> Self {
+        // UE 5.6–5.8 EdGraphPin.cpp gates SourceIndex at UE5Main=50 and the
+        // precision flag at UE5Release=36 independently of the saved package revision.
+        Self {
+            omit_precision: package.is_some_and(graph_omits_precision_flag),
+            has_source_index: package.is_none_or(|package| {
+                package.summary.versions.ue5 != 0
+                    && graph_custom_version(
+                        package,
+                        [0x697DD581, 0xE64F41AB, 0xAA4A51EC, 0xBEB7B628],
+                    )
+                    .map_or(
+                        matches!(package.summary.versions.ue5, 1012 | 1013 | 1017 | 1018),
+                        |version| version >= 50,
+                    )
+            }),
+        }
+    }
 }
 
 fn read_ed_graph_pin(
     reader: &mut crate::archive::Reader<'_>,
     path: &(impl fmt::Display + ?Sized),
     text: SavedText<'_>,
+    layout: PinLayout,
 ) -> Result<Option<EdGraphPin>, AssetError> {
     let Some(reference) = read_ed_graph_pin_reference(reader, &format_args!("{path}.Reference"))?
     else {
@@ -2384,17 +2463,10 @@ fn read_ed_graph_pin(
 
     let name = reader.read_name_ref(&format_args!("{path}.PinName"))?;
     let friendly_name = read_saved_text(reader, &format_args!("{path}.PinFriendlyName"), text)?;
-    // UE 5.6–5.8 EdGraphPin.cpp gates SourceIndex at UE5Main=50 and the
-    // precision flag at UE5Release=36 independently of the saved package revision.
-    let omit_precision = text.package.is_some_and(graph_omits_precision_flag);
-    let has_source_index = text.package.is_none_or(|package| {
-        package.summary.versions.ue5 != 0
-            && graph_custom_version(package, [0x697DD581, 0xE64F41AB, 0xAA4A51EC, 0xBEB7B628])
-                .map_or(
-                    matches!(package.summary.versions.ue5, 1012 | 1013 | 1017 | 1018),
-                    |version| version >= 50,
-                )
-    });
+    let PinLayout {
+        omit_precision,
+        has_source_index,
+    } = layout;
     let source_index = if !has_source_index {
         -1
     } else {
@@ -2813,7 +2885,7 @@ impl AssetDecoder for UObjectDecoder {
 fn decode_uobject_with_replay<'a>(
     export: &Export,
     context: &AssetDecodeContext<'a>,
-    streams: Option<&mut StreamReplayCache<'a>>,
+    session: Option<SessionRefs<'_, 'a>>,
 ) -> Result<DecodedAsset, AssetError> {
     let Some(class_path) = export.class_path.as_ref() else {
         return Err(AssetError::new(
@@ -2828,9 +2900,18 @@ fn decode_uobject_with_replay<'a>(
         ));
     }
 
-    let (properties, mut reader) = decode_uobject_properties_with_replay(export, context, streams)?;
+    let (streams, names, facts) = match session {
+        Some(session) => (
+            Some(session.streams),
+            session.names,
+            Some(session.facts.tail),
+        ),
+        None => (None, None, None),
+    };
+    let (properties, mut reader) =
+        decode_uobject_properties_with_replay(export, context, streams, names)?;
     let (object_guid, native_data, tail) =
-        native_data::object_tail(export, context, &properties, &mut reader)?;
+        native_data::object_tail(export, context, &properties, &mut reader, facts.as_ref())?;
 
     Ok(DecodedAsset::UObject(DecodedUObject {
         native_data,
@@ -2857,7 +2938,7 @@ pub fn decode_export(
 fn decode_export_with_replay<'a>(
     export: &Export,
     context: &AssetDecodeContext<'a>,
-    mut streams: Option<&mut StreamReplayCache<'a>>,
+    session: Option<(&mut StreamReplayCache<'a>, &mut session::SessionTables)>,
 ) -> Result<Option<DecodedAsset>, AssetError> {
     if export.serial_size == 0 {
         return Ok(None);
@@ -2865,7 +2946,20 @@ fn decode_export_with_replay<'a>(
     let Some(class_path) = export.class_path.as_ref() else {
         return Ok(None);
     };
-    if is_binary_only_export_class(class_path.as_str()) {
+    let mut has_blueprint_export = true;
+    let mut session = session.map(|(streams, tables)| {
+        let facts = tables.class_facts(export, class_path, context);
+        has_blueprint_export = tables.summary.has_blueprint_export;
+        SessionRefs {
+            streams,
+            facts,
+            names: tables.decoder_read_names.as_deref(),
+        }
+    });
+    if session.as_ref().map_or_else(
+        || is_binary_only_export_class(class_path.as_str()),
+        |session| session.facts.binary_only,
+    ) {
         return Ok(None);
     }
 
@@ -2877,15 +2971,26 @@ fn decode_export_with_replay<'a>(
 
     // The source model's generic UObject plan preserves the native pin stream as a tail.
     // Decode nodes before that fallback so text extraction can see their FText values.
-    if is_blueprint_graph_node_export(context, export) {
+    // Without any Blueprint export in the package, no export is Blueprint-owned, so only the
+    // class name can make a graph node.
+    let graph_node = match &session {
+        Some(session) => {
+            session.facts.graph_node_class
+                || (has_blueprint_export && is_blueprint_graph_node_export(context, export))
+        }
+        None => is_blueprint_graph_node_export(context, export),
+    };
+    if graph_node {
         return decode_saved_blueprint_graph_node(export, context)
             .map(DecodedAsset::BlueprintGraphNode)
             .map(Some);
     }
 
-    if let Some(decoded) =
-        decode_modeled_export_with_replay(export, context, streams.as_deref_mut())?
-    {
+    if let Some(decoded) = decode_modeled_export_with_replay(
+        export,
+        context,
+        session.as_mut().map(SessionRefs::reborrow),
+    )? {
         return Ok(Some(decoded));
     }
 
@@ -2914,7 +3019,7 @@ fn decode_export_with_replay<'a>(
         return AnimSequenceDecoder.decode(export, context).map(Some);
     }
     if UObjectDecoder.supports(class_path) {
-        return decode_uobject_with_replay(export, context, streams).map(Some);
+        return decode_uobject_with_replay(export, context, session).map(Some);
     }
     Ok(None)
 }
@@ -2935,7 +3040,7 @@ pub fn decode_modeled_export(
 fn decode_modeled_export_with_replay<'a>(
     export: &Export,
     context: &AssetDecodeContext<'a>,
-    streams: Option<&mut StreamReplayCache<'a>>,
+    session: Option<SessionRefs<'_, 'a>>,
 ) -> Result<Option<DecodedAsset>, AssetError> {
     if export.serial_size == 0 {
         return Ok(None);
@@ -2943,19 +3048,28 @@ fn decode_modeled_export_with_replay<'a>(
     let Some(class_path) = export.class_path.as_ref() else {
         return Ok(None);
     };
-    if is_binary_only_export_class(class_path.as_str())
-        || context.schemas.find_class(class_path).is_none()
-    {
+    let (dispatch, streams, names, tail_facts) = match session {
+        Some(session) => (
+            session.facts.modeled,
+            Some(session.streams),
+            session.names,
+            Some(session.facts.tail),
+        ),
+        None => (
+            ModeledDispatch::of(context.schemas, class_path),
+            None,
+            None,
+            None,
+        ),
+    };
+    let Some(plan) = dispatch.plan else {
         return Ok(None);
-    }
+    };
 
-    if context.schemas.class_is_a(class_path, DATATABLE_CLASS) {
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataTable)?;
-        let source = execute_source_serialization(export, context)?;
-        let kind = if context
-            .schemas
-            .class_is_a(class_path, COMPOSITE_DATATABLE_CLASS)
-        {
+    if plan == SourcePlanKind::DataTable {
+        dispatch.validate(context.schemas, class_path)?;
+        let source = execute_source_serialization(export, context, names)?;
+        let kind = if dispatch.composite {
             DataTableKind::Composite
         } else {
             DataTableKind::Plain
@@ -2978,9 +3092,9 @@ fn decode_modeled_export_with_replay<'a>(
             rows,
         })));
     }
-    if context.schemas.class_is_a(class_path, CURVETABLE_CLASS) {
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::CurveTable)?;
-        let mut source = execute_source_serialization(export, context)?;
+    if plan == SourcePlanKind::CurveTable {
+        dispatch.validate(context.schemas, class_path)?;
+        let mut source = execute_source_serialization(export, context, names)?;
         let curve_table = source.curve_table.take().ok_or_else(|| {
             AssetError::new(
                 AssetErrorKind::UnsupportedCapability,
@@ -2996,9 +3110,9 @@ fn decode_modeled_export_with_replay<'a>(
             rows: curve_table.rows,
         })));
     }
-    if context.schemas.class_is_a(class_path, STRINGTABLE_CLASS) {
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::StringTable)?;
-        let mut source = execute_source_serialization(export, context)?;
+    if plan == SourcePlanKind::StringTable {
+        dispatch.validate(context.schemas, class_path)?;
+        let mut source = execute_source_serialization(export, context, names)?;
         let string_table = source.string_table.take().ok_or_else(|| {
             AssetError::new(
                 AssetErrorKind::UnsupportedCapability,
@@ -3014,12 +3128,9 @@ fn decode_modeled_export_with_replay<'a>(
             metadata: string_table.metadata,
         })));
     }
-    if context
-        .schemas
-        .class_is_a(class_path, USERDEFINEDENUM_CLASS)
-    {
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Enum)?;
-        let mut source = execute_source_serialization(export, context)?;
+    if plan == SourcePlanKind::Enum {
+        dispatch.validate(context.schemas, class_path)?;
+        let mut source = execute_source_serialization(export, context, names)?;
         let enum_data = source.enum_data.take().ok_or_else(|| {
             AssetError::new(
                 AssetErrorKind::UnsupportedCapability,
@@ -3035,12 +3146,9 @@ fn decode_modeled_export_with_replay<'a>(
             entries: enum_data.entries,
         })));
     }
-    if context
-        .schemas
-        .class_is_a(class_path, USERDEFINEDSTRUCT_CLASS)
-    {
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Struct)?;
-        let mut source = execute_source_serialization(export, context)?;
+    if plan == SourcePlanKind::Struct {
+        dispatch.validate(context.schemas, class_path)?;
+        let mut source = execute_source_serialization(export, context, names)?;
         let fields = source.struct_fields.take().ok_or_else(|| {
             AssetError::new(
                 AssetErrorKind::UnsupportedCapability,
@@ -3073,9 +3181,9 @@ fn decode_modeled_export_with_replay<'a>(
             default_values,
         })));
     }
-    if context.schemas.class_is_a(class_path, SKELETON_CLASS) {
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::Skeleton)?;
-        let mut source = execute_source_serialization(export, context)?;
+    if plan == SourcePlanKind::Skeleton {
+        dispatch.validate(context.schemas, class_path)?;
+        let mut source = execute_source_serialization(export, context, names)?;
         let bones = source.skeleton_bones.take().ok_or_else(|| {
             AssetError::new(
                 AssetErrorKind::UnsupportedCapability,
@@ -3093,10 +3201,10 @@ fn decode_modeled_export_with_replay<'a>(
             tail: source.skeleton_tail,
         })));
     }
-    if context.schemas.class_is_a(class_path, ANIM_SEQUENCE_CLASS) {
+    if plan == SourcePlanKind::AnimSequence {
         validate_anim_sequence_boundary(context.package)?;
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::AnimSequence)?;
-        let mut source = execute_source_serialization(export, context)?;
+        dispatch.validate(context.schemas, class_path)?;
+        let mut source = execute_source_serialization(export, context, names)?;
         let skeleton_guid = source.animation_skeleton_guid.ok_or_else(|| {
             AssetError::new(
                 AssetErrorKind::UnsupportedCapability,
@@ -3124,9 +3232,9 @@ fn decode_modeled_export_with_replay<'a>(
             serialized_compressed_data: animation_data.serialized_compressed_data,
         })));
     }
-    if context.schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::DataAsset)?;
-        let source = execute_source_serialization(export, context)?;
+    if plan == SourcePlanKind::DataAsset {
+        dispatch.validate(context.schemas, class_path)?;
+        let source = execute_source_serialization(export, context, names)?;
         return Ok(Some(DecodedAsset::DataAsset(DecodedDataAsset {
             object_path: export.object_path.clone(),
             class_path: class_path.clone(),
@@ -3134,12 +3242,17 @@ fn decode_modeled_export_with_replay<'a>(
             properties: source.properties,
         })));
     }
-    if is_generic_uobject_class(class_path.as_str()) {
-        validate_source_serialization(context.schemas, class_path, SourcePlanKind::UObject)?;
+    if plan == SourcePlanKind::UObject {
+        dispatch.validate(context.schemas, class_path)?;
         let (properties, mut reader) =
-            decode_uobject_properties_with_replay(export, context, streams)?;
-        let (object_guid, native_data, tail) =
-            native_data::object_tail(export, context, &properties, &mut reader)?;
+            decode_uobject_properties_with_replay(export, context, streams, names)?;
+        let (object_guid, native_data, tail) = native_data::object_tail(
+            export,
+            context,
+            &properties,
+            &mut reader,
+            tail_facts.as_ref(),
+        )?;
         return Ok(Some(DecodedAsset::UObject(DecodedUObject {
             native_data,
             object_path: export.object_path.clone(),
@@ -3172,6 +3285,7 @@ struct SourceSerializationOutput {
 fn execute_source_serialization(
     export: &Export,
     context: &AssetDecodeContext<'_>,
+    names: Option<&[bool]>,
 ) -> Result<SourceSerializationOutput, AssetError> {
     let class_path = export.class_path.as_ref().ok_or_else(|| {
         AssetError::new(
@@ -3189,7 +3303,8 @@ fn execute_source_serialization(
         return Err(unsupported_source_plan(class_path, &schema.serialization));
     };
 
-    let (properties, mut reader) = decode_uobject_properties(export, context)?;
+    let (properties, mut reader) =
+        decode_uobject_properties_with_replay(export, context, None, names)?;
     let mut object_guid = None;
     let mut rows = None;
     let mut curve_table = None;
@@ -3220,6 +3335,7 @@ fn execute_source_serialization(
                     &mut reader,
                     context,
                     &export.object_path,
+                    names,
                 )?);
             }
             SerializationOperation::CurveTableRows if curve_table.is_none() => {
@@ -3355,7 +3471,7 @@ fn unsupported_source_plan(
     )
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 enum SourcePlanKind {
     AnimSequence,
     CurveTable,
@@ -3366,6 +3482,74 @@ enum SourcePlanKind {
     Struct,
     StringTable,
     UObject,
+}
+
+/// Which source-modeled plan owns a class, decided by the same checks, in the same order, that
+/// [`decode_modeled_export`] applies. A session settles it once per class.
+#[derive(Clone, Copy)]
+struct ModeledDispatch {
+    /// `None` when no source model owns the class, or it owns no supported plan.
+    plan: Option<SourcePlanKind>,
+    /// A DataTable plan's class derives from `CompositeDataTable`.
+    composite: bool,
+    /// [`validate_source_serialization`] accepts the class for `plan`.
+    plan_valid: bool,
+}
+
+impl ModeledDispatch {
+    fn of(schemas: &dyn SchemaProvider, class_path: &ObjectPath) -> Self {
+        let unowned = Self {
+            plan: None,
+            composite: false,
+            plan_valid: false,
+        };
+        if is_binary_only_export_class(class_path.as_str())
+            || schemas.find_class(class_path).is_none()
+        {
+            return unowned;
+        }
+        let plan = if schemas.class_is_a(class_path, DATATABLE_CLASS) {
+            SourcePlanKind::DataTable
+        } else if schemas.class_is_a(class_path, CURVETABLE_CLASS) {
+            SourcePlanKind::CurveTable
+        } else if schemas.class_is_a(class_path, STRINGTABLE_CLASS) {
+            SourcePlanKind::StringTable
+        } else if schemas.class_is_a(class_path, USERDEFINEDENUM_CLASS) {
+            SourcePlanKind::Enum
+        } else if schemas.class_is_a(class_path, USERDEFINEDSTRUCT_CLASS) {
+            SourcePlanKind::Struct
+        } else if schemas.class_is_a(class_path, SKELETON_CLASS) {
+            SourcePlanKind::Skeleton
+        } else if schemas.class_is_a(class_path, ANIM_SEQUENCE_CLASS) {
+            SourcePlanKind::AnimSequence
+        } else if schemas.class_is_a(class_path, DATA_ASSET_CLASS) {
+            SourcePlanKind::DataAsset
+        } else if is_generic_uobject_class(class_path.as_str()) {
+            SourcePlanKind::UObject
+        } else {
+            return unowned;
+        };
+        Self {
+            plan: Some(plan),
+            composite: plan == SourcePlanKind::DataTable
+                && schemas.class_is_a(class_path, COMPOSITE_DATATABLE_CLASS),
+            plan_valid: validate_source_serialization(schemas, class_path, plan).is_ok(),
+        }
+    }
+
+    /// [`validate_source_serialization`] for this plan: a settled pass, or the same error.
+    fn validate(
+        self,
+        schemas: &dyn SchemaProvider,
+        class_path: &ObjectPath,
+    ) -> Result<(), AssetError> {
+        match self.plan {
+            Some(plan) if !self.plan_valid => {
+                validate_source_serialization(schemas, class_path, plan)
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 fn validate_source_serialization(
@@ -3495,6 +3679,7 @@ fn read_uobject_stream_with_replay<'a>(
     export: &Export,
     context: &AssetDecodeContext<'a>,
     streams: &mut StreamReplayCache<'a>,
+    scope: DecodeScope<'_>,
 ) -> Result<(PropertyStream, bool), PropertyError> {
     // Keep a small set of layouts for default-omission and variable-width properties.
     // Metadata, class count and repeated unsuccessful learning are all bounded.
@@ -3502,24 +3687,26 @@ fn read_uobject_stream_with_replay<'a>(
     let learning = match streams.get_mut(&export.class_index) {
         Some(state) => match state {
             StreamReplayState::Active { replays, misses } => {
-                for index in 0..replays.len() {
-                    if let Some(stream) = replays[index].try_read_with(
-                        reader,
-                        export.object_path.as_str(),
-                        |record, plan| {
-                            crate::codec::decode_replayed_property_record(
-                                context.source,
-                                record,
-                                context.package,
-                                DecodeScope::root(context.property_filter),
-                                plan,
-                            )
-                        },
-                    ) {
-                        replays[..=index].rotate_right(1);
-                        *misses = 0;
-                        return Ok((stream?, true));
-                    }
+                let decode = |record: &mut PropertyRecord, plan| {
+                    crate::codec::decode_replayed_property_record(
+                        context.source,
+                        record,
+                        context.package,
+                        scope,
+                        plan,
+                    )
+                };
+                // Exact layouts first; then the same headers with other payload sizes
+                // (labels, text, arrays and structs vary between otherwise equal objects).
+                if let Some((index, stream)) = crate::property::read_with_any(
+                    replays,
+                    reader,
+                    export.object_path.as_str(),
+                    decode,
+                ) {
+                    replays[..=index].rotate_right(1);
+                    *misses = 0;
+                    return Ok((stream?, true));
                 }
                 *misses += 1;
                 if *misses >= 8 {
@@ -3548,7 +3735,7 @@ fn read_uobject_stream_with_replay<'a>(
             &context.package.summary.versions,
             &stream,
         )
-        .map(|replay| replay.with_decode_plans(context.package));
+        .map(|replay| replay.with_decode_plans(context.package, context.property_filter));
         if let Some(replay) = replay {
             match streams.get_mut(&export.class_index) {
                 Some(StreamReplayState::Active { replays, .. }) => {
@@ -3578,14 +3765,16 @@ fn decode_uobject_properties<'a>(
     export: &Export,
     context: &AssetDecodeContext<'a>,
 ) -> Result<(PropertyStream, crate::archive::Reader<'a>), AssetError> {
-    decode_uobject_properties_with_replay(export, context, None)
+    decode_uobject_properties_with_replay(export, context, None, None)
 }
 
 fn decode_uobject_properties_with_replay<'a>(
     export: &Export,
     context: &AssetDecodeContext<'a>,
     streams: Option<&mut StreamReplayCache<'a>>,
+    names: Option<&[bool]>,
 ) -> Result<(PropertyStream, crate::archive::Reader<'a>), AssetError> {
+    let scope = DecodeScope::root_with_names(context.property_filter, names);
     let mut reader = context.package.export_reader(context.source, export)?;
 
     // Consume the leading `UAssetImportData` JSON blob before the property stream.
@@ -3607,7 +3796,9 @@ fn decode_uobject_properties_with_replay<'a>(
     }
 
     let (mut properties, decoded) = match streams {
-        Some(streams) => read_uobject_stream_with_replay(&mut reader, export, context, streams)?,
+        Some(streams) => {
+            read_uobject_stream_with_replay(&mut reader, export, context, streams, scope)?
+        }
         None => (
             read_uobject_tagged_property_stream(
                 &mut reader,
@@ -3623,7 +3814,7 @@ fn decode_uobject_properties_with_replay<'a>(
             context.source,
             &mut properties,
             context.package,
-            DecodeScope::root(context.property_filter),
+            scope,
         )?;
     }
     native_data::property_guids(export, context, &mut properties);
@@ -3633,7 +3824,7 @@ fn decode_uobject_properties_with_replay<'a>(
             &mut properties,
             class,
             context.package,
-            DecodeScope::root(context.property_filter),
+            scope,
         );
     }
     Ok((properties, reader))
@@ -3737,11 +3928,11 @@ fn decode_simple_curve_keys(
     let Some(record) = stream
         .records
         .iter()
-        .find(|record| package.resolve_name(record.name).as_deref() == Some("Keys"))
+        .find(|record| package.resolve_name_str(record.name) == Some("Keys"))
     else {
         return Ok(Vec::new());
     };
-    if package.resolve_name(record.type_name.name).as_deref() != Some("ArrayProperty") {
+    if package.resolve_name_str(record.type_name.name) != Some("ArrayProperty") {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
             format!("{path}.Keys is not an ArrayProperty"),
@@ -3792,11 +3983,11 @@ fn decode_rich_curve_keys(
     let Some(record) = stream
         .records
         .iter()
-        .find(|record| package.resolve_name(record.name).as_deref() == Some("Keys"))
+        .find(|record| package.resolve_name_str(record.name) == Some("Keys"))
     else {
         return Ok(Vec::new());
     };
-    if package.resolve_name(record.type_name.name).as_deref() != Some("ArrayProperty") {
+    if package.resolve_name_str(record.type_name.name) != Some("ArrayProperty") {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
             format!("{path}.Keys is not an ArrayProperty"),
@@ -3853,7 +4044,7 @@ fn parent_tables_paths(package: &Package, properties: &PropertyStream) -> Vec<Ob
     let Some(record) = properties
         .records
         .iter()
-        .find(|record| package.resolve_name(record.name).as_deref() == Some("ParentTables"))
+        .find(|record| package.resolve_name_str(record.name) == Some("ParentTables"))
     else {
         return Vec::new();
     };
@@ -3879,7 +4070,7 @@ fn row_struct_path(package: &Package, properties: &PropertyStream) -> Option<Obj
     let record = properties
         .records
         .iter()
-        .find(|record| package.resolve_name(record.name).as_deref() == Some("RowStruct"))?;
+        .find(|record| package.resolve_name_str(record.name) == Some("RowStruct"))?;
     let PropertyValue::ObjectRef(index) = record.value else {
         return None;
     };
@@ -4822,7 +5013,7 @@ mod tests {
         assert!(!sequence.serialized_compressed_data);
         assert!(sequence.object_guid.is_none());
         assert!(sequence.properties.records.iter().any(|record| {
-            package.resolve_name(record.name).as_deref() == Some("SequenceLength")
+            package.resolve_name_str(record.name) == Some("SequenceLength")
                 && record.value == PropertyValue::Float(2.0)
         }));
     }

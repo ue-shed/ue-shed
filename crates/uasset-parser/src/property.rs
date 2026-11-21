@@ -9,7 +9,7 @@ use crate::package::PackageIndex;
 use crate::version::VersionContext;
 
 mod replay;
-pub(crate) use replay::TaggedStreamReplay;
+pub(crate) use replay::{TaggedStreamReplay, read_with_any};
 
 const UE5_PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION: i32 = 1011;
 const UE5_PROPERTY_TAG_COMPLETE_TYPE_NAME: i32 = 1012;

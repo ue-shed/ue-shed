@@ -236,8 +236,7 @@ mod tests {
                 &"Fixture",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
-                    filter: None,
-                    formatted_text_budget: None
+                    ..DecodeScope::root(None)
                 }
             )
             .is_none()

@@ -10,7 +10,10 @@ use std::path::{Path, PathBuf};
 use uasset_inspection::blueprint_classes::blueprint_classes;
 use uasset_inspection::projection::{TextDecodeFilter, project_text_asset};
 use uasset_parser::Package;
-use uasset_parser::asset::{AssetDecodeContext, decode_export};
+use uasset_parser::asset::{
+    AssetDecodeContext, AssetDecodeSession, PropertyDecodeFilter, decode_export,
+};
+use uasset_parser::property::PropertyRecord;
 use uasset_parser::schema::embedded_source_model;
 
 fn fixture_packages(directory: &Path, packages: &mut Vec<PathBuf>) {
@@ -127,4 +130,88 @@ fn text_filter_preserves_every_fixture_export_text_and_blueprint_classes() {
         "Text decode filter: {} fixture packages, {compared_exports} compared exports, {recovered_exports} exports failed unfiltered but succeeded filtered",
         paths.len()
     );
+}
+
+/// The text filter's decisions, keeping every declined record as `NotRequested`.
+struct CompleteTextFilter;
+
+impl PropertyDecodeFilter for CompleteTextFilter {
+    fn decode(&self, package: &Package, record: &PropertyRecord) -> bool {
+        TextDecodeFilter.decode(package, record)
+    }
+
+    fn depends_only_on_record_header(&self) -> bool {
+        TextDecodeFilter.depends_only_on_record_header()
+    }
+}
+
+/// Omitting declined records must not change any text projection fact: occurrences, every
+/// coverage gap in order, Blueprint classes and decode failures, statelessly and in sessions.
+#[test]
+fn omitting_declined_records_preserves_text_projection_exactly() {
+    assert!(TextDecodeFilter.omit_unrequested_records());
+    assert!(!CompleteTextFilter.omit_unrequested_records());
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+    let mut paths = Vec::new();
+    fixture_packages(&root, &mut paths);
+    paths.sort();
+    let mut compared = 0;
+    for path in &paths {
+        let bytes = fs::read(path).expect("fixture bytes");
+        let package =
+            Package::parse(&bytes).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        let complete = AssetDecodeContext {
+            source: &bytes,
+            package: &package,
+            schemas: embedded_source_model(),
+            property_filter: Some(&CompleteTextFilter),
+        };
+        let omitting = AssetDecodeContext {
+            property_filter: Some(&TextDecodeFilter),
+            ..complete
+        };
+        let mut complete_session = AssetDecodeSession::new(&complete);
+        let mut omitting_session = AssetDecodeSession::new(&omitting);
+        for export in &package.exports {
+            let label = format!("{}: {}", path.display(), export.object_path);
+            let expected = decode_export(export, &complete);
+            for actual in [
+                decode_export(export, &omitting),
+                omitting_session.decode(export),
+            ] {
+                match (&expected, actual) {
+                    (Ok(Some(expected)), Ok(Some(actual))) => {
+                        assert_eq!(
+                            project_text_asset(&package, &actual),
+                            project_text_asset(&package, expected),
+                            "{label}: projection"
+                        );
+                        assert_eq!(
+                            blueprint_classes(&package, &actual),
+                            blueprint_classes(&package, expected),
+                            "{label}: Blueprint classes"
+                        );
+                        compared += 1;
+                    }
+                    (Ok(None), Ok(None)) => {}
+                    (Err(expected), Err(actual)) => assert_eq!(
+                        format!("{actual:?}"),
+                        format!("{expected:?}"),
+                        "{label}: decode failure"
+                    ),
+                    (expected, actual) => {
+                        panic!("{label}: omission changed the decode: {expected:?} -> {actual:?}")
+                    }
+                }
+            }
+            // The complete filter in a session matches its stateless decode too.
+            let session = complete_session.decode(export);
+            assert_eq!(
+                format!("{session:?}"),
+                format!("{expected:?}"),
+                "{label}: session"
+            );
+        }
+    }
+    assert!(compared > 0);
 }

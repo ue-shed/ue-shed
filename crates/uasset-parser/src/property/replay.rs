@@ -27,7 +27,15 @@ pub(crate) struct TaggedStreamReplay<'a> {
     prefix_len: usize,
     stream: PropertyStream,
     plan_package: Option<&'a crate::package::Package>,
+    /// The host filter every replayed record is decoded under, fixed for the replay's life.
+    plan_filter: Option<&'a dyn crate::asset::PropertyDecodeFilter>,
     plans_ready: bool,
+    /// The filter lets declined records be left out of replayed streams.
+    omit_unrequested: bool,
+    /// Omission is on and the filter declines every record, so a match yields no records.
+    all_not_requested: bool,
+    /// How many records a match keeps: every record, or those the filter may request.
+    retained: usize,
 }
 
 impl<'a> TaggedStreamReplay<'a> {
@@ -91,12 +99,23 @@ impl<'a> TaggedStreamReplay<'a> {
             prefix_len,
             stream: stream.clone(),
             plan_package: None,
+            plan_filter: None,
             plans_ready: false,
+            omit_unrequested: false,
+            all_not_requested: false,
+            retained: 0,
         })
     }
 
-    pub(crate) fn with_decode_plans(mut self, package: &'a crate::package::Package) -> Self {
+    /// Prepares semantic plans against `package`, for records decoded under `filter`. Every
+    /// replayed record must be decoded with this same filter.
+    pub(crate) fn with_decode_plans(
+        mut self,
+        package: &'a crate::package::Package,
+        filter: Option<&'a dyn crate::asset::PropertyDecodeFilter>,
+    ) -> Self {
         self.plan_package = Some(package);
+        self.plan_filter = filter;
         self
     }
 
@@ -105,11 +124,35 @@ impl<'a> TaggedStreamReplay<'a> {
         if !self.plans_ready {
             if let Some(package) = self.plan_package {
                 for (tag, record) in self.tags.iter_mut().zip(&self.stream.records) {
-                    tag.plan = crate::codec::ReplayDecodePlan::prepare(package, record);
+                    tag.plan = crate::codec::ReplayDecodePlan::prepare_filtered(
+                        package,
+                        record,
+                        self.plan_filter,
+                    );
                 }
+                self.omit_unrequested = self
+                    .plan_filter
+                    .is_some_and(|filter| filter.omit_unrequested_records());
             }
+            self.retained = self.tags.iter().filter(|tag| !self.omits(tag.plan)).count();
+            self.all_not_requested = self.omit_unrequested && self.retained == 0;
             self.plans_ready = true;
         }
+    }
+
+    /// A matched stream whose every record the filter declined and omits: its headers were all
+    /// validated, and nothing is built or decoded for them.
+    fn empty_stream(&self, terminator: Span) -> PropertyStream {
+        PropertyStream {
+            class_extensions: self.stream.class_extensions.clone(),
+            records: Vec::new(),
+            terminator,
+        }
+    }
+
+    /// Whether a record with this plan is left out of replayed streams without being built.
+    fn omits(&self, plan: crate::codec::ReplayDecodePlan) -> bool {
+        self.omit_unrequested && matches!(plan, crate::codec::ReplayDecodePlan::NotRequested)
     }
 
     /// A miss leaves the cursor untouched so the ordinary parser owns every diagnostic.
@@ -178,8 +221,17 @@ impl<'a> TaggedStreamReplay<'a> {
             )
             .ok()
         };
-        let mut records = Vec::with_capacity(self.stream.records.len());
+        let terminator = relocate(self.stream.terminator)?;
+        if self.all_not_requested {
+            *reader = probe;
+            return Some(Ok(self.empty_stream(terminator)));
+        }
+        let mut records = Vec::with_capacity(self.retained);
         for (record, tag) in self.stream.records.iter().zip(&self.tags) {
+            // Declined headers were validated above; their records are never built.
+            if self.omits(tag.plan) {
+                continue;
+            }
             let record = super::PropertyRecord {
                 name: record.name,
                 type_name: record.type_name.clone(),
@@ -194,34 +246,43 @@ impl<'a> TaggedStreamReplay<'a> {
                 },
             };
             records.push(record);
-            if let Some(record) = records.last_mut()
-                && let Err(error) = decode(record, tag.plan)
-            {
-                *reader = probe;
-                return Some(Err(error));
+            if let Some(record) = records.last_mut() {
+                if let Err(error) = decode(record, tag.plan) {
+                    *reader = probe;
+                    return Some(Err(error));
+                }
+                if self.omit_unrequested && crate::codec::is_not_requested(record) {
+                    records.pop();
+                }
             }
         }
         let stream = PropertyStream {
             class_extensions: self.stream.class_extensions.clone(),
             records,
-            terminator: relocate(self.stream.terminator)?,
+            terminator,
         };
         *reader = probe;
         Some(Ok(stream))
     }
-    /// Validates an entire stream before values are decoded, allowing only payload size and bool value to vary.
-    pub(crate) fn try_read_variable(
+
+    /// Validates an entire stream before values are decoded, allowing only payload size and
+    /// bool value to vary. Every saved header, size and the terminator are checked before any
+    /// record is built, so a miss allocates nothing and leaves the cursor untouched.
+    ///
+    /// On a match, returns the advanced reader and terminator span, with each record's current
+    /// payload span and flags byte in `spans`.
+    fn match_variable<'r>(
         &self,
-        reader: &mut Reader<'_>,
+        reader: &Reader<'r>,
         path: &(impl fmt::Display + ?Sized),
-    ) -> Option<PropertyStream> {
+        spans: &mut [(Span, u8)],
+    ) -> Option<(Reader<'r>, Span)> {
         let mut probe = reader.clone();
         let prefix = probe.read_bytes(self.prefix_len, path).ok()?;
         if prefix != self.bytes.get(..self.prefix_len)? {
             return None;
         }
-        let mut records = Vec::with_capacity(self.stream.records.len());
-        for (original, tag) in self.stream.records.iter().zip(&self.tags) {
+        for (tag, slot) in self.tags.iter().zip(spans.iter_mut()) {
             let actual = probe.read_bytes(tag.expected.len(), path).ok()?;
             let flags = tag.flags_offset;
             let size_offset = flags.checked_sub(4)?;
@@ -235,19 +296,7 @@ impl<'a> TaggedStreamReplay<'a> {
             let size = u64::try_from(size).ok()?;
             let payload = Span::new(probe.tell(), size).ok()?;
             probe.skip(size, path).ok()?;
-            records.push(super::PropertyRecord {
-                name: original.name,
-                type_name: original.type_name.clone(),
-                array_index: original.array_index,
-                flags: PropertyTagFlags(*actual.get(flags)?),
-                property_guid: original.property_guid,
-                struct_guid: original.struct_guid,
-                extensions: original.extensions.clone(),
-                payload,
-                value: PropertyValue::Raw {
-                    reason: RawReason::UnsupportedType,
-                },
-            });
+            *slot = (payload, *actual.get(flags)?);
         }
         let start = probe.tell();
         let expected = self.bytes.get(self.terminator.clone())?;
@@ -255,15 +304,48 @@ impl<'a> TaggedStreamReplay<'a> {
             return None;
         }
         let terminator = Span::new(start, u64::try_from(expected.len()).ok()?).ok()?;
-        let stream = PropertyStream {
+        Some((probe, terminator))
+    }
+
+    /// [`TaggedStreamReplay::try_read_variable_with`] without plans or decoding: every record
+    /// keeps an undecoded value, as the ordinary reader returns it.
+    #[cfg(test)]
+    pub(crate) fn try_read_variable(
+        &self,
+        reader: &mut Reader<'_>,
+        path: &(impl fmt::Display + ?Sized),
+    ) -> Option<PropertyStream> {
+        let mut spans = vec![(Span::default(), 0_u8); self.tags.len()];
+        let (probe, terminator) = self.match_variable(reader, path, &mut spans)?;
+        let records = self
+            .stream
+            .records
+            .iter()
+            .zip(&spans)
+            .map(|(original, &(payload, flags))| super::PropertyRecord {
+                name: original.name,
+                type_name: original.type_name.clone(),
+                array_index: original.array_index,
+                flags: PropertyTagFlags(flags),
+                property_guid: original.property_guid,
+                struct_guid: original.struct_guid,
+                extensions: original.extensions.clone(),
+                payload,
+                value: PropertyValue::Raw {
+                    reason: RawReason::UnsupportedType,
+                },
+            })
+            .collect();
+        *reader = probe;
+        Some(PropertyStream {
             class_extensions: self.stream.class_extensions.clone(),
             records,
             terminator,
-        };
-        *reader = probe;
-        Some(stream)
+        })
     }
 
+    /// Matches a stream with the same headers and other payload sizes, then decodes each kept
+    /// record in its final slot. A miss allocates nothing and leaves the cursor untouched.
     pub(crate) fn try_read_variable_with<E>(
         &mut self,
         reader: &mut Reader<'_>,
@@ -273,15 +355,83 @@ impl<'a> TaggedStreamReplay<'a> {
             crate::codec::ReplayDecodePlan,
         ) -> Result<(), E>,
     ) -> Option<Result<PropertyStream, E>> {
-        let mut stream = self.try_read_variable(reader, path)?;
+        // Small layouts, nearly all of them, keep their spans on the stack.
+        const STACK_TAGS: usize = 64;
+        let count = self.tags.len();
+        let mut stack = [(Span::default(), 0_u8); STACK_TAGS];
+        let mut heap = Vec::new();
+        let spans: &mut [(Span, u8)] = if count <= STACK_TAGS {
+            &mut stack[..count]
+        } else {
+            heap.resize(count, (Span::default(), 0_u8));
+            &mut heap
+        };
+        let (probe, terminator) = self.match_variable(reader, path, spans)?;
         self.prepare_plans();
-        for (record, tag) in stream.records.iter_mut().zip(&self.tags) {
-            if let Err(error) = decode(record, tag.plan) {
-                return Some(Err(error));
+        if self.all_not_requested {
+            *reader = probe;
+            return Some(Ok(self.empty_stream(terminator)));
+        }
+        let mut records = Vec::with_capacity(self.retained);
+        for ((original, tag), &(payload, flags)) in
+            self.stream.records.iter().zip(&self.tags).zip(spans.iter())
+        {
+            if self.omits(tag.plan) {
+                continue;
+            }
+            records.push(super::PropertyRecord {
+                name: original.name,
+                type_name: original.type_name.clone(),
+                array_index: original.array_index,
+                flags: PropertyTagFlags(flags),
+                property_guid: original.property_guid,
+                struct_guid: original.struct_guid,
+                extensions: original.extensions.clone(),
+                payload,
+                value: PropertyValue::Raw {
+                    reason: RawReason::UnsupportedType,
+                },
+            });
+            if let Some(record) = records.last_mut() {
+                if let Err(error) = decode(record, tag.plan) {
+                    *reader = probe;
+                    return Some(Err(error));
+                }
+                if self.omit_unrequested && crate::codec::is_not_requested(record) {
+                    records.pop();
+                }
             }
         }
-        Some(Ok(stream))
+        *reader = probe;
+        Some(Ok(PropertyStream {
+            class_extensions: self.stream.class_extensions.clone(),
+            records,
+            terminator,
+        }))
     }
+}
+
+/// Tries every replay's exact layout first, then every replay's variable-width layout, so a
+/// later exact match is never shadowed by an earlier replay's costlier variable match.
+/// Returns the matching replay's slot. A miss leaves the cursor untouched.
+pub(crate) fn read_with_any<E>(
+    replays: &mut [TaggedStreamReplay<'_>],
+    reader: &mut Reader<'_>,
+    path: &(impl fmt::Display + ?Sized),
+    decode: impl FnMut(&mut super::PropertyRecord, crate::codec::ReplayDecodePlan) -> Result<(), E>
+    + Copy,
+) -> Option<(usize, Result<PropertyStream, E>)> {
+    for (slot, replay) in replays.iter_mut().enumerate() {
+        if let Some(stream) = replay.try_read_with(reader, path, decode) {
+            return Some((slot, stream));
+        }
+    }
+    for (slot, replay) in replays.iter_mut().enumerate() {
+        if let Some(stream) = replay.try_read_variable_with(reader, path, decode) {
+            return Some((slot, stream));
+        }
+    }
+    None
 }
 
 fn type_bytes(name: &PropertyTypeName) -> Option<usize> {
@@ -572,5 +722,207 @@ mod variable_replay_tests {
                 assert_eq!(format!("{a:?}|{actual:?}"), format!("{b:?}|{expected:?}"));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod transactional_replay_tests {
+    use super::*;
+    use crate::asset::PropertyDecodeFilter;
+    use crate::codec::{DecodeScope, ReplayDecodePlan, decode_replayed_property_record};
+    use crate::package::{Package, test_package};
+    use crate::property::{PropertyError, PropertyRecord, read_tagged_property_stream};
+    use crate::test_support::ue5_versions;
+
+    fn learn<'a>(bytes: &'a [u8], start: u64) -> TaggedStreamReplay<'a> {
+        let names = super::tests::names();
+        let mut reader = Reader::new(bytes);
+        reader.seek(start, "Row").unwrap();
+        let stream =
+            read_tagged_property_stream(&mut reader, &ue5_versions(), &names, "Row").unwrap();
+        TaggedStreamReplay::new(bytes, start, &ue5_versions(), &stream).unwrap()
+    }
+
+    fn keep(_: &mut PropertyRecord, _: ReplayDecodePlan) -> Result<(), PropertyError> {
+        Ok(())
+    }
+
+    #[test]
+    fn variable_misses_leave_the_cursor_and_later_exact_layouts_win() {
+        let short = super::tests::row(1, false, &[1]);
+        let long = super::tests::row(2, true, &[1, 2, 3]);
+        let target = super::tests::row(3, false, &[4, 5, 6]);
+        let bytes: Vec<_> = short.iter().chain(&long).chain(&target).copied().collect();
+        let mut replays = vec![learn(&bytes, 0), learn(&bytes, short.len() as u64)];
+        let start = (short.len() + long.len()) as u64;
+
+        // The first replay matches only by width; the second matches every byte.
+        let mut reader = Reader::new(&bytes);
+        reader.seek(start, "Row").unwrap();
+        let (slot, stream) =
+            read_with_any(&mut replays, &mut reader, "Row", keep).expect("a match");
+        assert_eq!(slot, 1, "an exact layout is preferred over a variable one");
+        assert_eq!(reader.tell(), bytes.len() as u64);
+        let mut ordinary = Reader::new(&bytes);
+        ordinary.seek(start, "Row").unwrap();
+        let expected = read_tagged_property_stream(
+            &mut ordinary,
+            &ue5_versions(),
+            &super::tests::names(),
+            "Row",
+        )
+        .unwrap();
+        assert_eq!(stream.unwrap(), expected);
+
+        // Every truncation and corruption either matches the ordinary parse or misses without
+        // moving the cursor.
+        for end in start as usize..bytes.len() {
+            for flip in [None, Some(end.saturating_sub(1))] {
+                let mut mutated = bytes[..end].to_vec();
+                if let Some(offset) = flip.filter(|offset| *offset >= start as usize) {
+                    mutated[offset] ^= 0x5a;
+                }
+                let mut replay = learn(&bytes, 0);
+                let mut reader = Reader::new(&mutated);
+                reader.seek(start, "Row").unwrap();
+                match replay.try_read_variable_with(&mut reader, "Row", keep) {
+                    None => assert_eq!(reader.tell(), start),
+                    Some(stream) => {
+                        let mut ordinary = Reader::new(&mutated);
+                        ordinary.seek(start, "Row").unwrap();
+                        let expected = read_tagged_property_stream(
+                            &mut ordinary,
+                            &ue5_versions(),
+                            &super::tests::names(),
+                            "Row",
+                        );
+                        assert_eq!(
+                            format!("{:?}", stream.unwrap()),
+                            format!("{:?}", expected.unwrap())
+                        );
+                        assert_eq!(reader.tell(), ordinary.tell());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Declines integers and arrays by header, optionally omitting them.
+    struct DeclineCounts {
+        omit: bool,
+    }
+
+    impl PropertyDecodeFilter for DeclineCounts {
+        fn decode(&self, package: &Package, record: &PropertyRecord) -> bool {
+            package.resolve_name_str(record.type_name.name) == Some("BoolProperty")
+        }
+
+        fn depends_only_on_record_header(&self) -> bool {
+            true
+        }
+
+        fn omit_unrequested_records(&self) -> bool {
+            self.omit
+        }
+    }
+
+    #[test]
+    fn omitting_replays_build_only_requested_records_on_exact_and_variable_matches() {
+        let package = test_package(super::tests::names());
+        let first = super::tests::row(1, false, &[1, 2]);
+        let exact = super::tests::row(5, true, &[3, 4]);
+        let variable = super::tests::row(6, false, &[7, 8, 9]);
+        let bytes: Vec<_> = first
+            .iter()
+            .chain(&exact)
+            .chain(&variable)
+            .copied()
+            .collect();
+        for omit in [false, true] {
+            let filter = DeclineCounts { omit };
+            let mut replay = learn(&bytes, 0).with_decode_plans(&package, Some(&filter));
+            let decode = |record: &mut PropertyRecord, plan| {
+                decode_replayed_property_record(
+                    &bytes,
+                    record,
+                    &package,
+                    DecodeScope::root(Some(&filter)),
+                    plan,
+                )
+            };
+            let mut reader = Reader::new(&bytes);
+            reader.seek(first.len() as u64, "Row").unwrap();
+            let exact_stream = replay
+                .try_read_with(&mut reader, "Row", decode)
+                .unwrap()
+                .unwrap();
+            let variable_stream = replay
+                .try_read_variable_with(&mut reader, "Row", decode)
+                .unwrap()
+                .unwrap();
+            assert_eq!(reader.tell(), bytes.len() as u64);
+            for (stream, flag) in [(exact_stream, true), (variable_stream, false)] {
+                let names: Vec<_> = stream
+                    .records
+                    .iter()
+                    .map(|record| package.resolve_name_str(record.name).unwrap())
+                    .collect();
+                if omit {
+                    assert_eq!(names, ["Enabled"]);
+                } else {
+                    assert_eq!(names, ["Count", "Enabled", "Values"]);
+                    assert!(crate::codec::is_not_requested(&stream.records[0]));
+                }
+                let enabled = stream
+                    .records
+                    .iter()
+                    .find(|record| package.resolve_name_str(record.name) == Some("Enabled"))
+                    .unwrap();
+                assert_eq!(enabled.value, PropertyValue::Bool(flag));
+            }
+        }
+
+        // Declining every record yields an empty, validated stream.
+        struct DeclineAll;
+        impl PropertyDecodeFilter for DeclineAll {
+            fn decode(&self, _: &Package, _: &PropertyRecord) -> bool {
+                false
+            }
+            fn depends_only_on_record_header(&self) -> bool {
+                true
+            }
+            fn omit_unrequested_records(&self) -> bool {
+                true
+            }
+        }
+        let mut replay = learn(&bytes, 0).with_decode_plans(&package, Some(&DeclineAll));
+        let mut reader = Reader::new(&bytes);
+        reader.seek(first.len() as u64, "Row").unwrap();
+        let stream = replay
+            .try_read_with(&mut reader, "Row", keep)
+            .unwrap()
+            .unwrap();
+        assert!(stream.records.is_empty());
+        assert_eq!(stream.terminator.end(), (first.len() + exact.len()) as u64);
+        let stream = replay
+            .try_read_variable_with(&mut reader, "Row", keep)
+            .unwrap()
+            .unwrap();
+        assert!(stream.records.is_empty());
+        assert_eq!(stream.terminator.end(), bytes.len() as u64);
+        // A corrupted terminator still misses.
+        let mut corrupted = bytes.clone();
+        let last = corrupted.len() - 8;
+        corrupted[last] ^= 1;
+        let mut reader = Reader::new(&corrupted);
+        reader
+            .seek((first.len() + exact.len()) as u64, "Row")
+            .unwrap();
+        assert!(
+            replay
+                .try_read_variable_with(&mut reader, "Row", keep)
+                .is_none()
+        );
+        assert_eq!(reader.tell(), (first.len() + exact.len()) as u64);
     }
 }

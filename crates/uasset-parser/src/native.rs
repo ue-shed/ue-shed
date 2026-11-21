@@ -65,6 +65,11 @@ impl NativeLayout {
         }
     }
 
+    /// The checks [`decode_native`] makes before it reads any byte.
+    pub(crate) fn validate(&self) -> Result<(), NativeError> {
+        self.minimum_size(0).map(|_| ())
+    }
+
     fn minimum_size(&self, depth: usize) -> Result<usize, NativeError> {
         if depth > 32 {
             return Err(NativeError::Layout(
@@ -179,7 +184,20 @@ pub fn decode_native(
     layout: &NativeLayout,
     path: &(impl fmt::Display + ?Sized),
 ) -> Result<NativeValue, NativeError> {
-    layout.minimum_size(0)?;
+    layout.validate()?;
+    decode(reader, layout, &path)
+}
+
+/// [`decode_native`], skipping validation for the immutable embedded model's own layouts, which
+/// were validated once when the model was indexed. Every other layout is validated as usual.
+pub(crate) fn decode_native_layout(
+    reader: &mut Reader<'_>,
+    layout: &NativeLayout,
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<NativeValue, NativeError> {
+    if !crate::schema::is_validated_embedded_layout(layout) {
+        layout.validate()?;
+    }
     decode(reader, layout, &path)
 }
 

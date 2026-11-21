@@ -855,3 +855,98 @@ it("P5 times out a request whose write never completes, and frees the session", 
 	expect(worker.killCalls).toBe(1);
 	await session.close();
 });
+
+/**
+ * A session worker that answers each request with its acceptance and then far more output than
+ * the host reads, and, as a real process does, reports closing only once its output pipes have
+ * closed.
+ */
+class ChattyProcess implements ProtocolSessionProcess {
+	readonly pid: number;
+	readonly stdin: Writable;
+	readonly stdout = new PassThrough();
+	readonly stderr = new PassThrough();
+	exitCode: number | null = null;
+	signalCode: string | null = null;
+	killed = false;
+	killCalls = 0;
+	private readonly closeListeners: Array<(code: number | null, signal: string | null) => void> =
+		[];
+
+	constructor(pid: number) {
+		this.pid = pid;
+		this.stdin = new Writable({
+			write: (chunk: Buffer, _encoding, callback) => {
+				// SAFETY: a session writes one request frame per write, and every frame carries
+				// its contract and request id.
+				const request = JSON.parse(chunk.toString("utf8")) as {
+					readonly contract: unknown;
+					readonly requestId: string;
+				};
+				const accepted = {
+					contract: request.contract,
+					kind: "accepted",
+					operation: "project_index_refresh",
+					requestId: request.requestId,
+					sequence: 0
+				};
+				this.stdout.write(`${JSON.stringify(accepted)}\n`);
+				// Progress the host has not read yet, past every stream buffer.
+				for (let line = 0; line < 2_048; line += 1)
+					this.stdout.write(`${"x".repeat(64)}\n`);
+				callback();
+			}
+		});
+		let open = 2;
+		const closed = () => {
+			open -= 1;
+			if (open === 0 && this.signalCode !== null)
+				for (const listener of this.closeListeners) listener(null, this.signalCode);
+		};
+		this.stdout.on("close", closed);
+		this.stderr.on("close", closed);
+	}
+
+	kill = (): boolean => {
+		this.killCalls += 1;
+		this.killed = true;
+		this.signalCode = "SIGTERM";
+		return true;
+	};
+
+	onClose(listener: (code: number | null, signal: string | null) => void): void {
+		this.closeListeners.push(listener);
+	}
+
+	onError(_listener: (cause: Error) => void): void {}
+
+	unref(): void {}
+}
+
+it("a request abandoned with unread output frees its session for the next one", async () => {
+	const workers = [new ChattyProcess(101), new ChattyProcess(102)];
+	const configuration = { executable: "chatty-reader", timeoutMs: 5_000 };
+	let started = 0;
+	const session = new UassetProtocolSession(configuration, () => {
+		const worker = workers[started];
+		started += 1;
+		if (worker === undefined) throw new Error("unexpected worker request");
+		return worker;
+	});
+	const request = makeProtocolRequest(
+		{ cacheRoot: "C:/Caches", kind: "project_index_refresh", projectRoot: "C:/Project" },
+		{ maximumOutputBytes: 1_048_576, timeoutMs: 5_000 }
+	);
+	for (const worker of workers) {
+		const controller = new AbortController();
+		const events = session.events({ request, signal: controller.signal, timeoutMs: 5_000 });
+		const first = await events.next();
+		expect(first.value).toMatchObject({ kind: "accepted" });
+		controller.abort();
+		await events.return(undefined);
+		expect(worker.killCalls).toBe(1);
+		expect(worker.stdout.destroyed).toBe(true);
+	}
+	expect(started).toBe(2);
+	await session.close();
+});

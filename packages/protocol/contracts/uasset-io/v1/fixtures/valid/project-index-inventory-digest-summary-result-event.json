@@ -1,0 +1,42 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 26
+		}
+	},
+	"kind": "result",
+	"requestId": "project-index-changed-paths-001",
+	"result": {
+		"kind": "project_index_summary",
+		"summary": {
+			"changedPackages": 2,
+			"completeness": "complete",
+			"diagnostics": [],
+			"generation": 5,
+			"mapCount": 1,
+			"packageCount": 42,
+			"projectId": "c:/project#plugins",
+			"removedPackages": 1,
+			"mounts": [
+				{
+					"name": "/Game/",
+					"path": "Content/"
+				},
+				{
+					"name": "/Fx_Library/",
+					"path": "Plugins/FxLibrary/Content/"
+				}
+			],
+			"changes": {
+				"baseGeneration": 4,
+				"changed": ["Content/Materials/M_Impact.uasset", "Content/Textures/T_Noise.uasset"],
+				"removed": ["Content/Textures/T_Removed.uasset"],
+				"complete": true
+			},
+			"inventoryDigest": "9f2c4e1ab7d05683c1e4f0a2b9d87e6c5a4f3e2d1c0b9a8f7e6d5c4b3a291807"
+		}
+	},
+	"sequence": 3
+}

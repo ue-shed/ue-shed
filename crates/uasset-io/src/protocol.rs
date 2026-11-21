@@ -37,6 +37,9 @@ pub struct ResourceLimits {
     pub timeout_ms: Option<u64>,
 }
 
+/// The most paths a v1.26 refresh's `changedPaths` may list.
+pub const MAX_CHANGED_PATHS: usize = 65_536;
+
 /// Upper bound on staging groups a package-text request may name.
 /// Most entries one `compare_blueprints` page returns.
 pub const MAX_BLUEPRINT_COMPARISON_PAGE: u32 = 1000;
@@ -182,6 +185,12 @@ pub enum Operation {
         /// 65,536 when absent. Past it the report lists none and counts them in `total`.
         #[serde(default, rename = "maximumChanges")]
         maximum_changes: Option<u32>,
+        /// v1.26: the files that changed since the last refresh, as a file watcher reports them
+        /// (project-relative or absolute). The refresh then looks only at those files' bundles
+        /// instead of walking the project; it walks anyway when it cannot be sure that gives the
+        /// same result. At most 65,536 paths.
+        #[serde(default, rename = "changedPaths")]
+        changed_paths: Option<Vec<String>>,
     },
     #[serde(rename = "project_index_rebuild")]
     ProjectIndexRebuild {
@@ -931,6 +940,7 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
             plugins,
             changes,
             maximum_changes,
+            ..
         }
         | Operation::ProjectIndexRebuild {
             cache_root,
@@ -943,6 +953,25 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
                 return Err(ProtocolError(
                     "plugin-inclusive indexes and change reports require uasset-io v1.23".into(),
                 ));
+            }
+            if let Operation::ProjectIndexRefresh {
+                changed_paths: Some(paths),
+                ..
+            } = &request.operation
+            {
+                if request.contract.version.minor < 26 {
+                    return Err(ProtocolError(
+                        "changedPaths requires uasset-io v1.26".into(),
+                    ));
+                }
+                if paths.len() > MAX_CHANGED_PATHS {
+                    return Err(ProtocolError(format!(
+                        "changedPaths lists at most {MAX_CHANGED_PATHS} paths"
+                    )));
+                }
+                for path in paths {
+                    validate_non_empty(path, "changedPaths")?;
+                }
             }
             if let Some(maximum) = maximum_changes {
                 if request.contract.version.minor < 25 {
@@ -1752,6 +1781,36 @@ mod game_text_contract_tests {
             .replace("1048576", "0");
         assert!(decode_request(zero.as_bytes()).is_err());
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-incomplete-changes-summary-result-event.json")).unwrap();
+    }
+
+    #[test]
+    fn changed_paths_need_minor_26_a_refresh_and_a_bound() {
+        use super::{MAX_CHANGED_PATHS, Operation, decode_event, decode_request};
+        const VALID: &[u8] = include_bytes!(
+            "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-changed-paths-refresh-request.json"
+        );
+        let request = decode_request(VALID).unwrap();
+        assert!(matches!(
+            request.operation,
+            Operation::ProjectIndexRefresh {
+                changed_paths: Some(ref paths),
+                ..
+            } if paths.len() == 3
+        ));
+        for invalid in [
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-changed-paths-request-old-minor.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-changed-paths-rebuild-request.json").as_slice(),
+        ] {
+            assert!(decode_request(invalid).is_err());
+        }
+        let text = String::from_utf8_lossy(VALID);
+        let empty = text.replace("\"Content/Maps/L_World.umap\"", "\"  \"");
+        assert!(decode_request(empty.as_bytes()).is_err());
+        let mut value: serde_json::Value = serde_json::from_slice(VALID).unwrap();
+        value["operation"]["changedPaths"] =
+            serde_json::json!(vec!["Content/A.uasset"; MAX_CHANGED_PATHS + 1]);
+        assert!(decode_request(&serde_json::to_vec(&value).unwrap()).is_err());
+        decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-inventory-digest-summary-result-event.json")).unwrap();
     }
 
     #[test]

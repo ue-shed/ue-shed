@@ -26,7 +26,8 @@ use super::catalog::{
 };
 use super::catalog_dependencies::package_name_for_path;
 use super::project_index::{
-    CoordinatorError, HeaderEvidenceSink, HeaderObservation, ProjectScanner, observe_header,
+    BundleListing, CoordinatorError, HeaderEvidenceSink, HeaderObservation, ProjectScanner,
+    observe_header,
 };
 use super::{Failure, checkpoint};
 use crate::cancellation::CancellationToken;
@@ -283,6 +284,85 @@ impl ProjectScanner for FilesystemProjectScanner {
         }
     }
 
+    /// Lists each hinted bundle's directory once, as the walk lists it, after checking every
+    /// directory on the way down exists with exactly the hinted spelling.
+    fn list_bundles(
+        &self,
+        project_root: &str,
+        stems: &[String],
+        cancellation: &CancellationToken,
+    ) -> Result<BundleListing, CoordinatorError> {
+        let mut directories: std::collections::BTreeMap<&str, Vec<&str>> =
+            std::collections::BTreeMap::new();
+        for stem in stems {
+            let Some((directory, name)) = stem.rsplit_once('/') else {
+                return Ok(BundleListing::Walk("changed_path_outside_content"));
+            };
+            directories.entry(directory).or_default().push(name);
+        }
+        let mut verified = BTreeSet::new();
+        let mut entries = Vec::new();
+        for (directory, mut names) in directories {
+            checkpoint(cancellation, "discovery")?;
+            if let Some(reason) = verify_directory(project_root, directory, &mut verified) {
+                return Ok(BundleListing::Walk(reason));
+            }
+            names.sort_unstable();
+            let Ok(listing) = fs::read_dir(Path::new(project_root).join(directory)) else {
+                return Ok(BundleListing::Walk("changed_directory_unreadable"));
+            };
+            for entry in listing {
+                let Ok(entry) = entry else {
+                    return Ok(BundleListing::Walk("changed_directory_unreadable"));
+                };
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                let Some((stem, _)) = name.rsplit_once('.') else {
+                    continue;
+                };
+                let kind = if is_package_path(Path::new(name.as_ref())) {
+                    EntryKind::Package
+                } else if is_sidecar_path(Path::new(name.as_ref())) {
+                    EntryKind::Sidecar
+                } else {
+                    continue;
+                };
+                if names.binary_search(&stem).is_err() {
+                    if names.iter().any(|hinted| hinted.eq_ignore_ascii_case(stem)) {
+                        return Ok(BundleListing::Walk("changed_path_case_differs"));
+                    }
+                    continue;
+                }
+                let Ok(file_type) = entry.file_type() else {
+                    return Ok(BundleListing::Walk("changed_directory_unreadable"));
+                };
+                if file_type.is_dir() {
+                    return Ok(BundleListing::Walk("changed_path_is_a_directory"));
+                }
+                if !file_type.is_file() {
+                    continue;
+                }
+                let Ok(metadata) = entry.metadata() else {
+                    return Ok(BundleListing::Walk("changed_directory_unreadable"));
+                };
+                entries.push(PackageSignature {
+                    relative_path: format!("{directory}/{}", name.replace('\\', "/")),
+                    kind,
+                    size: metadata.len(),
+                    modified_nanos: metadata_modified_nanos(&metadata),
+                });
+            }
+        }
+        checkpoint(cancellation, "discovery")?;
+        entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        Ok(BundleListing::Entries(entries))
+    }
+
+    fn is_ignored_file(&self, project_root: &str, relative_path: &str) -> bool {
+        fs::symlink_metadata(Path::new(project_root).join(relative_path))
+            .is_ok_and(|metadata| metadata.is_file())
+    }
+
     fn reread_signature(
         &self,
         project_root: &str,
@@ -316,6 +396,50 @@ impl ProjectScanner for FilesystemProjectScanner {
             modified_nanos: signature.modified_nanos,
         }))
     }
+}
+
+/// Why a hinted directory cannot be listed alone, or `None` when every directory from the project
+/// root down to it exists with exactly this spelling and the walk would enter it (a real
+/// directory, not a link). `verified` holds the directories already checked.
+fn verify_directory(
+    project_root: &str,
+    directory: &str,
+    verified: &mut BTreeSet<String>,
+) -> Option<&'static str> {
+    let mut parent = String::new();
+    for part in directory.split('/') {
+        let path = if parent.is_empty() {
+            part.to_owned()
+        } else {
+            format!("{parent}/{part}")
+        };
+        if !verified.contains(&path) {
+            let Ok(listing) = fs::read_dir(Path::new(project_root).join(&parent)) else {
+                return Some("changed_directory_missing");
+            };
+            let mut found = None;
+            for entry in listing.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name == part {
+                    found = Some(entry.file_type().is_ok_and(|kind| kind.is_dir()));
+                    break;
+                }
+                if name.eq_ignore_ascii_case(part) {
+                    found = Some(false);
+                }
+            }
+            match found {
+                Some(true) => {
+                    verified.insert(path.clone());
+                }
+                Some(false) => return Some("changed_path_case_differs"),
+                None => return Some("changed_directory_missing"),
+            }
+        }
+        parent = path;
+    }
+    None
 }
 
 impl FilesystemProjectScanner {

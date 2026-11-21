@@ -874,6 +874,7 @@ dependencies = [
  "process-metrics",
  "serde",
  "serde_json",
+ "sha2",
  "uasset-inspection",
  "uasset-parser",
  "unreal-code",

@@ -334,7 +334,7 @@ impl Emitter {
                 },
             };
             &compatible
-        } else if self.contract.version.minor < 25
+        } else if self.contract.version.minor < 26
             && let Some(stripped) = index_summary_for_minor(result, self.contract.version.minor)
         {
             compatible = stripped;
@@ -420,14 +420,17 @@ fn legacy_decode_error_result(result: &ResultFrame) -> Option<ResultFrame> {
 }
 
 /// A Project Index summary without the fields introduced after `minor`, for older clients: the
-/// v1.25 omitted-diagnostic count and change total, and below v1.23 the mount points and change
-/// report.
+/// v1.26 inventory digest, below v1.25 the omitted-diagnostic count and change total, and below
+/// v1.23 the mount points and change report.
 fn index_summary_for_minor(result: &ResultFrame, minor: u32) -> Option<ResultFrame> {
     let strip = |summary: &crate::protocol_result::ProjectIndexSummary| {
         let mut summary = summary.clone();
-        summary.omitted_diagnostics = 0;
-        if let Some(changes) = &mut summary.changes {
-            changes.total = None;
+        summary.inventory_digest = None;
+        if minor < 25 {
+            summary.omitted_diagnostics = 0;
+            if let Some(changes) = &mut summary.changes {
+                changes.total = None;
+            }
         }
         if minor < 23 {
             summary.mounts.clear();
@@ -525,12 +528,14 @@ fn execute_direct(
                 | Operation::ProjectIndexQuery { .. }
                 | Operation::ProjectIndexCount { .. }
                 | Operation::ProjectIndexStatus { .. }
+                | Operation::ProjectIndexRefresh { .. }
+                | Operation::ProjectIndexRebuild { .. }
                 | Operation::GameTextIndex { .. }
         )
     {
         return Err(Failure::new(
             "unsupported_session_operation",
-            "protocol-session accepts inspect, blueprint, compare_blueprints, authoring, package_header, and project index query/count/status operations",
+            "protocol-session accepts inspect, blueprint, compare_blueprints, authoring, package_header, and project index query/count/status/refresh/rebuild operations",
             false,
         ));
     }
@@ -846,6 +851,7 @@ fn execute_direct(
             plugins,
             changes,
             maximum_changes,
+            changed_paths,
         } => execute_project_index_refresh(
             emitter,
             cancellation,
@@ -856,6 +862,7 @@ fn execute_direct(
                 rebuild: false,
                 changes: *changes,
                 maximum_changes: change_limit(*maximum_changes),
+                changed_paths: changed_paths.clone().unwrap_or_default(),
             },
         ),
         Operation::ProjectIndexRebuild {
@@ -874,6 +881,7 @@ fn execute_direct(
                 rebuild: true,
                 changes: *changes,
                 maximum_changes: change_limit(*maximum_changes),
+                changed_paths: Vec::new(),
             },
         ),
         Operation::ProjectIndexCount {
@@ -1096,7 +1104,7 @@ fn emit_project_index_telemetry(
             json!({
                 "code": "project_index_metrics",
                 "message": format!(
-					"rebuild={} generation={} packages={} maps={} changed={} removed={} staged_rows={} committed_rows={} removed_rows={} evidence_write_ms={} storage_bytes={} duration_ms={} enumerating_ms={} comparing_ms={} reading_headers_ms={} committing_ms={}",
+					"rebuild={} generation={} packages={} maps={} changed={} removed={} staged_rows={} committed_rows={} removed_rows={} evidence_write_ms={} storage_bytes={} duration_ms={} enumerating_ms={} comparing_ms={} reading_headers_ms={} committing_ms={} written_bytes={} delta={} targeted={} walked_because={}",
                     output.rebuild,
                     output.summary.generation,
                     output.summary.package_count,
@@ -1112,7 +1120,11 @@ fn emit_project_index_telemetry(
                     output.phase_timings.enumerating_ms,
                     output.phase_timings.comparing_ms,
                     output.phase_timings.reading_headers_ms,
-                    output.phase_timings.committing_ms
+                    output.phase_timings.committing_ms,
+                    output.write_counts.written_bytes,
+                    u8::from(output.write_counts.delta),
+                    u8::from(output.targeted),
+                    output.walked_because.unwrap_or("none")
                 ),
                 "severity": "info"
             }),
@@ -1726,6 +1738,27 @@ mod tests {
         assert!(!before.mounts.is_empty());
         let oldest = summary(22);
         assert!(oldest.changes.is_none() && oldest.mounts.is_empty());
+        // v1.26 adds the inventory digest; v1.25 clients keep everything else.
+        let mut digested = result.clone();
+        if let ResultFrame::ProjectIndexSummary { summary } = &mut digested {
+            summary.inventory_digest = Some("ab".repeat(32));
+        }
+        let v25 = match super::index_summary_for_minor(&digested, 25) {
+            Some(ResultFrame::ProjectIndexSummary { summary }) => summary,
+            other => panic!("expected a summary, got {other:?}"),
+        };
+        assert_eq!(v25.inventory_digest, None);
+        assert_eq!(v25.omitted_diagnostics, 6);
+        assert_eq!(
+            v25.changes.as_ref().and_then(|changes| changes.total),
+            Some(70_002)
+        );
+        assert!(
+            serde_json::to_value(&v25)
+                .unwrap()
+                .get("inventoryDigest")
+                .is_none()
+        );
         let json = serde_json::to_value(&before).unwrap();
         assert!(json.get("omittedDiagnostics").is_none());
         assert!(json["changes"].get("total").is_none());

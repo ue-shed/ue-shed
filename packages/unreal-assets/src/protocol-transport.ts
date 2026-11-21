@@ -646,9 +646,20 @@ export function makeProtocolRequest(
 	if (operation.kind === "compare_blueprints") return { ...fields, operation };
 	if (operation.kind === "package_header") return { ...fields, operation };
 	// v1.23 Project Index shapes (plugin scope, change reports) are supersets of the older ones;
-	// a v1.25 refresh or rebuild also sets its change report limit.
+	// a v1.25 refresh or rebuild also sets its change report limit, and a v1.26 refresh names the
+	// paths that changed.
 	if (operation.kind === "project_index_refresh" || operation.kind === "project_index_rebuild") {
-		const { maximumChanges, ...rest } = operation;
+		const { maximumChanges, changedPaths, ...rest } = operation;
+		if (changedPaths !== undefined && rest.kind === "project_index_refresh")
+			return {
+				...fields,
+				operation: {
+					...rest,
+					kind: rest.kind,
+					...(maximumChanges === undefined ? undefined : { maximumChanges }),
+					changedPaths
+				}
+			};
 		return maximumChanges === undefined
 			? { ...fields, operation: rest }
 			: { ...fields, operation: { ...rest, maximumChanges } };
@@ -1085,6 +1096,11 @@ export class UassetProtocolSession {
 		if (child === undefined) return true;
 		this.terminating = true;
 		if (child.exitCode === null && child.signalCode === null) child.kill();
+		// Nothing reads a terminated worker's output again. Output it wrote before it was
+		// stopped (a long refresh's progress, say) would otherwise stay buffered, and the
+		// process never reports closing while its pipes hold unread data.
+		child.stdout?.destroy();
+		child.stderr?.destroy();
 		if (closePromise === undefined) return false;
 		const closed = await waitForProtocolClose(
 			closePromise,

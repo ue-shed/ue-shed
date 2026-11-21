@@ -1787,3 +1787,236 @@ fn project_index_walks_package_dependencies_and_reports_changes() {
 
     let _ = std::fs::remove_dir_all(&cache_root);
 }
+
+/// v1.26: a protocol session refreshes with the paths a file watcher saw change, looking only at
+/// their bundles, and every summary (counts, change report and inventory digest) and inventory
+/// page matches a full walk of the same files through edits, sidecar-only edits, deletes, re-adds
+/// and new packages. Paths it cannot trust alone make it walk.
+#[test]
+fn project_index_changed_paths_refresh_matches_a_full_walk() {
+    type Change = Box<dyn Fn()>;
+    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/unreal-project/Content/Fixture");
+    let root = std::env::temp_dir().join(format!(
+        "ue-shed-project-index-changed-paths-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("Project");
+    let content = project.join("Content").join("Assets");
+    std::fs::create_dir_all(&content).unwrap();
+    let copy = |from: &str, to: &str| {
+        std::fs::copy(fixtures.join(from), content.join(to)).unwrap();
+    };
+    copy("Animation/A_FixtureMotion.uasset", "A_Motion.uasset");
+    copy("Animation/SK_Fixture.uasset", "SK_Mesh.uasset");
+    copy("Offline/L_OfflineWorld.umap", "L_World.umap");
+    std::fs::write(content.join("SK_Mesh.uexp"), [1, 2, 3]).unwrap();
+    let (targeted_cache, walked_cache) = (root.join("targeted"), root.join("walked"));
+    let refresh = |cache: &std::path::Path, changed: Option<&[&str]>| {
+        let mut operation = serde_json::json!({
+            "kind": "project_index_refresh",
+            "cacheRoot": cache.to_string_lossy(),
+            "projectRoot": project.to_string_lossy(),
+            "changes": true
+        });
+        if let Some(changed) = changed {
+            operation["changedPaths"] = serde_json::json!(changed);
+        }
+        project_index_request_at(26, operation)
+    };
+    let mut child = Command::new(env!("CARGO_BIN_EXE_uasset"))
+        .arg("protocol-session")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("uasset protocol session starts");
+    let mut stdin = child.stdin.take().expect("session stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("session stdout"));
+    let mut session = |request: &Value| {
+        write_session_request(&mut stdin, request);
+        let events = read_session_events(&mut stdout);
+        assert_valid_events(&events);
+        assert_eq!(events.last().unwrap()["kind"], "completed", "{events:?}");
+        events
+    };
+    let metrics = |events: &[Value]| {
+        events
+            .iter()
+            .find(|event| event["code"] == "project_index_metrics")
+            .and_then(|event| event["message"].as_str())
+            .unwrap()
+            .to_owned()
+    };
+    let inventory = |events: &[Value], cache: &std::path::Path| {
+        let summary = &result_of(events, "project_index_summary")["summary"];
+        let (success, events, stderr) = run_request(project_index_request_at(
+            26,
+            serde_json::json!({
+                "kind": "project_index_query",
+                "cacheRoot": cache.to_string_lossy(),
+                "query": {
+                    "kind": "inventory",
+                    "projectId": summary["projectId"],
+                    "expectedGeneration": summary["generation"],
+                    "limit": 1024
+                }
+            }),
+        ));
+        assert!(success, "query failed: {stderr}");
+        result_of(&events, "project_index_page")["page"]["items"].clone()
+    };
+    // Both caches start from a full walk; a first refresh with paths walks for want of a base.
+    let first = session(&refresh(
+        &targeted_cache,
+        Some(&["Content/Assets/A_Motion.uasset"]),
+    ));
+    assert!(metrics(&first).contains("targeted=0 walked_because=no_committed_generation"));
+    let (success, walked, stderr) = run_request(refresh(&walked_cache, None));
+    assert!(success, "walk failed: {stderr}");
+    let digest = result_of(&first, "project_index_summary")["summary"]["inventoryDigest"].clone();
+    assert_eq!(digest.as_str().map(str::len), Some(64));
+    assert_eq!(
+        result_of(&first, "project_index_summary"),
+        result_of(&walked, "project_index_summary")
+    );
+    let set_modified = |path: std::path::PathBuf, seconds: u64| {
+        let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+            .unwrap();
+    };
+    let steps: Vec<(&str, Change, Vec<String>, bool)> = vec![
+        (
+            "a package edit",
+            Box::new({
+                let content = content.clone();
+                move || set_modified(content.join("A_Motion.uasset"), 1_700_000_000)
+            }),
+            vec!["Content/Assets/A_Motion.uasset".to_owned()],
+            true,
+        ),
+        (
+            "a sidecar-only edit, named absolutely",
+            Box::new({
+                let content = content.clone();
+                move || std::fs::write(content.join("SK_Mesh.uexp"), [1, 2, 3, 4]).unwrap()
+            }),
+            vec![content.join("SK_Mesh.uexp").to_string_lossy().into_owned()],
+            true,
+        ),
+        (
+            "a deleted bundle",
+            Box::new({
+                let content = content.clone();
+                move || {
+                    std::fs::remove_file(content.join("SK_Mesh.uasset")).unwrap();
+                    std::fs::remove_file(content.join("SK_Mesh.uexp")).unwrap();
+                }
+            }),
+            vec!["Content/Assets/SK_Mesh.uasset".to_owned()],
+            true,
+        ),
+        (
+            "a re-added package and a new map",
+            Box::new({
+                let content = content.clone();
+                let fixtures = fixtures.clone();
+                move || {
+                    std::fs::copy(
+                        fixtures.join("Animation/SK_Fixture.uasset"),
+                        content.join("SK_Mesh.uasset"),
+                    )
+                    .unwrap();
+                    std::fs::copy(
+                        fixtures.join("GameTextActions/Slice2/L_IdentityLevel.umap"),
+                        content.join("L_New.umap"),
+                    )
+                    .unwrap();
+                }
+            }),
+            vec![
+                "Content/Assets/SK_Mesh.uasset".to_owned(),
+                "Content/Assets/L_New.umap".to_owned(),
+                "Saved/Logs/Project.log".to_owned(),
+            ],
+            true,
+        ),
+        (
+            "a new directory, which needs a walk",
+            Box::new({
+                let content = content.clone();
+                let fixtures = fixtures.clone();
+                move || {
+                    std::fs::create_dir_all(content.join("Sub")).unwrap();
+                    std::fs::copy(
+                        fixtures.join("Animation/A_FixtureMotion.uasset"),
+                        content.join("Sub").join("A_Copy.uasset"),
+                    )
+                    .unwrap();
+                }
+            }),
+            vec!["Content/Assets/Sub".to_owned()],
+            false,
+        ),
+    ];
+    for (step, change, changed, targeted) in steps {
+        change();
+        let changed = changed.iter().map(String::as_str).collect::<Vec<_>>();
+        let events = session(&refresh(&targeted_cache, Some(&changed)));
+        let (success, walked, stderr) = run_request(refresh(&walked_cache, None));
+        assert!(success, "walk failed: {stderr}");
+        let metrics = metrics(&events);
+        assert_eq!(
+            metrics.contains("targeted=1"),
+            targeted,
+            "{step}: {metrics}"
+        );
+        assert_eq!(
+            result_of(&events, "project_index_summary"),
+            result_of(&walked, "project_index_summary"),
+            "{step}"
+        );
+        assert_eq!(
+            inventory(&events, &targeted_cache),
+            inventory(&walked, &walked_cache),
+            "{step}"
+        );
+        let summary = &result_of(&events, "project_index_summary")["summary"];
+        assert_ne!(summary["inventoryDigest"], digest, "{step}");
+        assert!(summary["inventoryDigest"].is_string(), "{step}");
+    }
+    // Older clients cannot name changed paths, and never see the digest.
+    let (success, events, _) = run_request(project_index_request_at(
+        25,
+        serde_json::json!({
+            "kind": "project_index_refresh",
+            "cacheRoot": targeted_cache.to_string_lossy(),
+            "projectRoot": project.to_string_lossy(),
+            "changedPaths": ["Content/Assets/A_Motion.uasset"]
+        }),
+    ));
+    assert!(!success || events.iter().any(|event| event["kind"] == "rejected"));
+    let (success, events, stderr) = run_request(project_index_request_at(
+        25,
+        serde_json::json!({
+            "kind": "project_index_refresh",
+            "cacheRoot": walked_cache.to_string_lossy(),
+            "projectRoot": project.to_string_lossy()
+        }),
+    ));
+    assert!(success, "{stderr}");
+    assert!(
+        result_of(&events, "project_index_summary")["summary"]
+            .get("inventoryDigest")
+            .is_none()
+    );
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = std::fs::remove_dir_all(root);
+}

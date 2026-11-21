@@ -280,6 +280,24 @@ list no longer hides how many problems were left out. Both fields are absent whe
 to count. The worker rejects `maximumChanges` below minor 25 and strips `total` and
 `omittedDiagnostics` from results for older minors.
 
+Minor version 1.26 makes a one-file edit cheap to index. `project_index_refresh` takes optional
+`changedPaths`, at most 65,536: the files that changed since the last refresh, as a file watcher
+reports them, project-relative or absolute. The worker then lists only those files' directories,
+compares only their bundles (a package and its sidecars) with the index and reads only the changed
+headers, instead of walking the project, and the summary, change report and pages are what a walk
+would give. It walks anyway when the paths alone could miss a change: no complete committed index,
+more than 4,096 paths, a path that may be a directory, a `.uproject` or `.uplugin`, changed mount
+points, or a path in another case than the files on disk. Name files, not the directories that
+hold them. `project_index_rebuild` does not take `changedPaths`. A complete summary (refresh,
+rebuild and status) carries `inventoryDigest`, the lowercase hex SHA-256 of every inventory fact:
+each package path, its own and its sidecars' sizes and modified times, and its header data. Equal
+digests mean equal inventories, whichever refreshes wrote them, so a host can tell whether the
+inventory changed without paging through it; a partial summary has none. From 1.26
+`protocol-session` also runs `project_index_refresh` and `project_index_rebuild`, so a host can
+keep one warm worker for refreshes; older workers fail them in a session with
+`unsupported_session_operation` before doing any work. The worker rejects `changedPaths` below
+minor 26 and strips `inventoryDigest` from results for older minors.
+
 ### Active package input budget
 
 `limits.maximumInFlightPackageBytes` is an optional positive integer byte limit for text and

@@ -19,6 +19,8 @@ export const PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
 export const PROJECT_INDEX_DEFAULT_MAXIMUM_CHANGES = 65_536;
 /** The most changed and removed paths a target's `maximumChanges` may ask for: 1,048,576. */
 export const PROJECT_INDEX_MAX_CHANGES = 1_048_576;
+/** The most paths a refresh target's `changedPaths` may list: 65,536. */
+export const PROJECT_INDEX_MAX_CHANGED_PATHS = 65_536;
 /**
  * Environment setting UE_SHED_PROJECT_INDEX_CACHE_ROOT used by ProjectIndexConfigLive. A host
  * may instead provide an explicit cache-root layer.
@@ -99,6 +101,14 @@ export const ProjectIndexRefreshTarget = Schema.Struct({
 	 */
 	maximumChanges: Schema.optionalKey(
 		Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: PROJECT_INDEX_MAX_CHANGES }))
+	),
+	/**
+	 * Files a watcher saw change since the last refresh: the refresh reads only their bundles, and
+	 * walks anyway when they could miss a change (a directory, a descriptor, over 4,096 paths). A
+	 * rebuild ignores them. Needs uasset-io v1.26.
+	 */
+	changedPaths: Schema.optionalKey(
+		Schema.Array(BoundedPath).check(Schema.isMaxLength(PROJECT_INDEX_MAX_CHANGED_PATHS))
 	)
 });
 /** A refresh or rebuild target, optionally asking for the paths that changed on disk. */
@@ -148,10 +158,9 @@ export const ProjectIndexChanges = Schema.Struct({
 export interface ProjectIndexChanges extends Schema.Schema.Type<typeof ProjectIndexChanges> {}
 
 /**
- * Committed catalog identity/generation, package/map counts, changed/removed counts and
- * bounded diagnostics. Partial completeness must remain visible to callers. With uasset-io
- * v1.23, `mounts` lists the indexed content roots, and a refresh that asked for `changes`
- * reports them. With v1.25, `omittedDiagnostics` counts the diagnostics past the first 64.
+ * Committed catalog identity/generation, counts and bounded diagnostics; partial completeness
+ * stays visible. v1.23 adds `mounts` and requested `changes`, v1.25 `omittedDiagnostics`, and
+ * v1.26 `inventoryDigest` on a complete summary.
  */
 export const ProjectIndexSummary = Schema.Struct({
 	changedPackages: NonNegativeInt,
@@ -167,7 +176,12 @@ export const ProjectIndexSummary = Schema.Struct({
 	projectId: ProjectIdentity,
 	removedPackages: NonNegativeInt,
 	mounts: Schema.optionalKey(Schema.Array(ProjectIndexMount)),
-	changes: Schema.optionalKey(ProjectIndexChanges)
+	changes: Schema.optionalKey(ProjectIndexChanges),
+	/**
+	 * SHA-256 of every inventory fact (paths, bundle stamps, header data) when complete: equal
+	 * digests mean equal inventories, so compare it instead of paging. Needs uasset-io v1.26.
+	 */
+	inventoryDigest: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u)))
 });
 /**
  * Committed catalog identity/generation, package/map counts, changed/removed counts and

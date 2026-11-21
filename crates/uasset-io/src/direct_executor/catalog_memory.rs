@@ -218,6 +218,9 @@ impl Catalog for MemoryCatalog {
             .unwrap_or_default();
         rows.retain(|path, _| staging.observed.contains(path));
         rows.extend(staging.rows);
+        let mut summary = summary;
+        summary.inventory_digest = (summary.completeness == super::catalog::Completeness::Complete)
+            .then(|| inventory_sum(&rows).digest(summary.package_count));
         self.ensure_project(summary.project_id.clone());
         self.committed = Some(CommittedState {
             generation: token.generation,
@@ -405,6 +408,46 @@ impl DependencyGraph for MemoryGraph<'_> {
     }
 }
 
+/// Each package's bundle parts, found by exact path as an inventory page finds them.
+fn bundle_parts(
+    rows: &BTreeMap<String, CommittedRow>,
+    row: &CommittedRow,
+) -> super::inventory_digest::BundleParts {
+    let path = &row.signature.relative_path;
+    let stem = path
+        .rsplit_once('.')
+        .map_or(path.as_str(), |(stem, _)| stem);
+    let paths = [
+        path.clone(),
+        format!("{stem}.uexp"),
+        format!("{stem}.ubulk"),
+        format!("{stem}.uptnl"),
+    ];
+    paths.map(|path| {
+        rows.get(&path)
+            .map(|row| (row.signature.size, row.signature.modified_nanos))
+    })
+}
+
+/// The inventory sum of every package, computed afresh: the reference the binary Catalog's
+/// incremental sums must match.
+fn inventory_sum(rows: &BTreeMap<String, CommittedRow>) -> super::inventory_digest::InventorySum {
+    let mut sum = super::inventory_digest::InventorySum::default();
+    for row in rows
+        .values()
+        .filter(|row| row.signature.kind == EntryKind::Package)
+    {
+        sum.add(&super::inventory_digest::inventory_leaf(
+            &row.signature.relative_path,
+            &bundle_parts(rows, row),
+            row.header
+                .as_ref()
+                .and_then(|header| header.header_data.as_ref()),
+        ));
+    }
+    sum
+}
+
 fn collect_items(rows: &BTreeMap<String, CommittedRow>, kind: &QueryKind) -> Vec<QueryItem> {
     match kind {
         QueryKind::Inventory => rows
@@ -412,22 +455,9 @@ fn collect_items(rows: &BTreeMap<String, CommittedRow>, kind: &QueryKind) -> Vec
             .filter(|row| row.signature.kind == EntryKind::Package)
             .map(|row| {
                 let path = &row.signature.relative_path;
-                let stem = path
-                    .rsplit_once('.')
-                    .map_or(path.as_str(), |(stem, _)| stem);
-                let paths = [
-                    path.clone(),
-                    format!("{stem}.uexp"),
-                    format!("{stem}.ubulk"),
-                    format!("{stem}.uptnl"),
-                ];
-                let parts = paths.map(|path| {
-                    rows.get(&path)
-                        .map(|row| (row.signature.size, row.signature.modified_nanos))
-                });
                 QueryItem::Inventory {
                     package_path: path.clone(),
-                    signature: super::catalog::bundle_signature(parts),
+                    signature: super::catalog::bundle_signature(bundle_parts(rows, row)),
                     header_data: row
                         .header
                         .as_ref()

@@ -12,9 +12,10 @@ use super::catalog::{
     Catalog, CatalogDiagnostic, CatalogError, CatalogSnapshotEntry, CatalogStatus, CommittedEntry,
     Completeness, EntryKind, EvidencePreparer, HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope,
     MountPoint, PROJECT_INDEX_MAX_CLASSES, PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_NAMES,
-    PackageSignature, QueryPage, QueryRequest, RefreshChanges, RefreshSummary, is_map_path,
-    project_id_for,
+    PackageSignature, QueryPage, QueryRequest, RefreshChanges, RefreshSummary, StagingPlan,
+    StagingToken, is_map_path, project_id_for,
 };
+use super::inventory_digest::bundle_stem;
 use super::{Failure, checkpoint};
 
 const MAX_SIGNATURE_REVALIDATION_ATTEMPTS: usize = 3;
@@ -130,6 +131,26 @@ pub trait ProjectScanner {
         cancellation: &CancellationToken,
     ) -> Result<Option<PackageSignature>, CoordinatorError>;
 
+    /// The package and sidecar entries on disk whose bundle stem (path without its last
+    /// extension) is one of `stems`, in path order, exactly as `enumerate` would list them; or
+    /// why they cannot be listed without walking the project. `stems` are sorted and unique.
+    fn list_bundles(
+        &self,
+        project_root: &str,
+        stems: &[String],
+        cancellation: &CancellationToken,
+    ) -> Result<BundleListing, CoordinatorError> {
+        let _ = (project_root, stems, cancellation);
+        Ok(BundleListing::Walk("scanner_lists_whole_projects"))
+    }
+
+    /// Whether a project-relative path names a file `enumerate` ignores (neither a package nor
+    /// a sidecar), as opposed to a directory or a path that is gone.
+    fn is_ignored_file(&self, project_root: &str, relative_path: &str) -> bool {
+        let _ = (project_root, relative_path);
+        false
+    }
+
     /// A package's evidence and the signature observed right after reading it. The default reads
     /// the evidence and then rereads the signature; a filesystem adapter may take both from one
     /// open file.
@@ -152,6 +173,15 @@ pub trait ProjectScanner {
             signature,
         })
     }
+}
+
+/// What a targeted refresh found for its hinted bundles.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BundleListing {
+    /// The entries on disk, in path order.
+    Entries(Vec<PackageSignature>),
+    /// The bundles cannot be listed alone; the refresh walks the project instead.
+    Walk(&'static str),
 }
 
 pub(crate) fn observe_header<S: ProjectScanner + ?Sized>(
@@ -179,8 +209,12 @@ pub trait CatalogSnapshot: Catalog {
         if !entries.is_sorted_by(|a, b| a.signature.relative_path <= b.signature.relative_path) {
             entries.sort_by(|a, b| a.signature.relative_path.cmp(&b.signature.relative_path));
         }
-        for entry in &entries {
+        for (handle, entry) in entries.iter().enumerate() {
             visit(CommittedEntry {
+                handle: u32::try_from(handle).map_err(|_| CoordinatorError::Unavailable {
+                    message: "the committed Project Index has more than u32::MAX entries"
+                        .to_owned(),
+                })?,
                 relative_path: &entry.signature.relative_path,
                 kind: entry.signature.kind,
                 size: entry.signature.size,
@@ -190,6 +224,58 @@ pub trait CatalogSnapshot: Catalog {
             })?;
         }
         Ok(())
+    }
+
+    /// Calls `visit` with each committed entry whose path starts with `prefix`, in path order.
+    /// The default visits every entry; adapters with an ordered index find the run directly.
+    fn visit_committed_prefix(
+        &self,
+        prefix: &str,
+        visit: &mut dyn FnMut(CommittedEntry<'_>) -> Result<(), CoordinatorError>,
+    ) -> Result<(), CoordinatorError> {
+        self.visit_committed_entries(&mut |entry| {
+            if entry.relative_path.starts_with(prefix) {
+                visit(entry)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Observes every committed entry unchanged except those with the given `handles` (sorted),
+    /// which the refresh replaces or removes. The default observes each entry it visits.
+    fn observe_unchanged_except(
+        &mut self,
+        token: &StagingToken,
+        handles: &[u32],
+    ) -> Result<(), CoordinatorError> {
+        let mut kept = Vec::new();
+        self.visit_committed_entries(&mut |entry| {
+            if handles.binary_search(&entry.handle).is_err() {
+                kept.push((entry.relative_path.to_owned(), entry.handle));
+            }
+            Ok(())
+        })?;
+        for (path, handle) in kept {
+            self.observe_unchanged_committed(token, &path, handle as usize)?;
+        }
+        Ok(())
+    }
+
+    /// Whether every committed package holds evidence a full walk would keep: read with the
+    /// current index profile, without a header failure. A targeted refresh rereads only what
+    /// changed, so it needs this to give what a full walk gives.
+    fn committed_evidence_is_current(&self) -> Result<bool, CoordinatorError> {
+        let mut current = true;
+        self.visit_committed_entries(&mut |entry| {
+            if entry.kind == EntryKind::Package
+                && (entry.header_failure
+                    || entry.header_profile_version != Some(INDEX_PROFILE_VERSION))
+            {
+                current = false;
+            }
+            Ok(())
+        })?;
+        Ok(current)
     }
 
     #[allow(dead_code)]
@@ -280,6 +366,7 @@ pub fn refresh<C: CatalogSnapshot, S: ProjectScanner>(
 
 /// A refresh that lists at most `maximum_changes` changed and removed paths. Past it the change
 /// report is incomplete: both lists are empty and `total` counts the changes.
+#[cfg(test)]
 pub fn refresh_listing_changes<C: CatalogSnapshot, S: ProjectScanner>(
     catalog: &mut C,
     scanner: &S,
@@ -339,6 +426,394 @@ pub fn rebuild_listing_changes<C: CatalogSnapshot, S: ProjectScanner>(
         cancellation,
         &mut on_progress,
     )
+}
+
+/// Paths a targeted refresh accepts; past this many it walks the project instead.
+pub const PROJECT_INDEX_MAX_TARGETED_PATHS: usize = 4_096;
+
+/// How a refresh found what changed on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefreshReach {
+    /// It looked only at the bundles of the paths the host said changed.
+    Targeted,
+    /// It walked every content root; with a reason when the host named changed paths but they
+    /// could not be trusted alone.
+    Walked(Option<&'static str>),
+}
+
+/// A refresh told which paths changed (as an operating system file watcher reports them). It
+/// lists, compares and reads only those paths' bundles (a package and its sidecars), and gives
+/// exactly what a full walk would. When it cannot be sure of that (no complete committed
+/// generation, a directory or descriptor among the paths, too many paths, changed mount points,
+/// or a scanner that cannot list bundles) it walks the project instead and says why.
+pub fn refresh_changed_paths<C: CatalogSnapshot, S: ProjectScanner>(
+    catalog: &mut C,
+    scanner: &S,
+    project_root: &str,
+    changed_paths: &[String],
+    maximum_changes: usize,
+    cancellation: &CancellationToken,
+    mut on_progress: impl FnMut(RefreshProgress),
+) -> Result<(Vec<RefreshEvent>, RefreshReach), CoordinatorError> {
+    let mut walk = |catalog: &mut C, reason: Option<&'static str>| {
+        run_refresh(
+            catalog,
+            scanner,
+            project_root,
+            false,
+            maximum_changes,
+            cancellation,
+            &mut on_progress,
+        )
+        .map(|events| (events, RefreshReach::Walked(reason)))
+    };
+    if changed_paths.is_empty() {
+        return walk(catalog, None);
+    }
+    let mounts = scanner.mount_points();
+    let plan = match targeted_plan(catalog, scanner, project_root, &mounts, changed_paths) {
+        Ok(plan) => plan,
+        Err(reason) => return walk(catalog, Some(reason)),
+    };
+    checkpoint(cancellation, "discovery")?;
+    let listed = match scanner.list_bundles(project_root, &plan.stems, cancellation)? {
+        BundleListing::Entries(entries) => entries,
+        BundleListing::Walk(reason) => return walk(catalog, Some(reason)),
+    };
+    run_targeted_refresh(
+        catalog,
+        scanner,
+        project_root,
+        plan,
+        listed,
+        mounts,
+        maximum_changes,
+        cancellation,
+        &mut on_progress,
+    )
+    .map(|events| (events, RefreshReach::Targeted))
+}
+
+/// What a targeted refresh starts from: the bundle stems to look at and the committed summary.
+struct TargetedPlan {
+    stems: Vec<String>,
+    committed: RefreshSummary,
+}
+
+/// The bundle stems `changed_paths` name, when a targeted refresh can stand in for a walk.
+fn targeted_plan<C: CatalogSnapshot, S: ProjectScanner>(
+    catalog: &C,
+    scanner: &S,
+    project_root: &str,
+    mounts: &[MountPoint],
+    changed_paths: &[String],
+) -> Result<TargetedPlan, &'static str> {
+    let CatalogStatus::Ready { summary: committed } = catalog.status() else {
+        return Err("no_committed_generation");
+    };
+    if committed.completeness != Completeness::Complete {
+        return Err("committed_generation_is_partial");
+    }
+    if committed.project_id != project_id_for(project_root, scanner.scope()) {
+        return Err("project_identity_changed");
+    }
+    if committed.mounts != mounts {
+        return Err("mount_points_changed");
+    }
+    if changed_paths.len() > PROJECT_INDEX_MAX_TARGETED_PATHS {
+        return Err("too_many_changed_paths");
+    }
+    if !catalog.committed_evidence_is_current().unwrap_or(false) {
+        return Err("committed_evidence_is_outdated");
+    }
+    let stems = targeted_stems(scanner, project_root, mounts, changed_paths)?;
+    Ok(TargetedPlan { stems, committed })
+}
+
+fn has_extension_in(path: &str, extensions: &[&str]) -> bool {
+    path.rsplit_once('.').is_some_and(|(_, extension)| {
+        !extension.contains('/')
+            && extensions
+                .iter()
+                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+    })
+}
+
+fn is_absolute_path(path: &str) -> bool {
+    path.starts_with('/') || path.as_bytes().get(1) == Some(&b':')
+}
+
+/// The sorted, unique bundle stems of `changed_paths`: each path relative to the project root,
+/// without its package or sidecar extension. Paths outside every content root are dropped; one
+/// that may name a directory, a descriptor, or a content root in another case is a reason to walk.
+fn targeted_stems<S: ProjectScanner>(
+    scanner: &S,
+    project_root: &str,
+    mounts: &[MountPoint],
+    changed_paths: &[String],
+) -> Result<Vec<String>, &'static str> {
+    use super::scanner::{PACKAGE_EXTENSIONS, SIDECAR_EXTENSIONS};
+    let mut stems = std::collections::BTreeSet::new();
+    for raw in changed_paths {
+        let mut owned = raw.replace('\\', "/");
+        if is_absolute_path(&owned) {
+            owned = super::catalog::project_relative_path(project_root, &owned);
+            if is_absolute_path(&owned) {
+                // Outside the project: no content root holds it.
+                continue;
+            }
+        }
+        let mut path = owned.as_str();
+        while let Some(rest) = path.strip_prefix("./") {
+            path = rest;
+        }
+        if path.is_empty() || path.ends_with('/') {
+            return Err("changed_path_is_a_directory");
+        }
+        if path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        {
+            return Err("changed_path_is_not_canonical");
+        }
+        if has_extension_in(path, &["uproject", "uplugin"]) {
+            return Err("descriptor_changed");
+        }
+        if !mounts
+            .iter()
+            .any(|mount| path.starts_with(mount.path.as_str()))
+        {
+            let differently_cased = mounts.iter().any(|mount| {
+                path.get(..mount.path.len())
+                    .is_some_and(|head| head.eq_ignore_ascii_case(&mount.path))
+            });
+            if differently_cased {
+                return Err("changed_path_case_differs");
+            }
+            let plugins = path
+                .get(..8)
+                .is_some_and(|head| head.eq_ignore_ascii_case("Plugins/"));
+            if plugins && scanner.scope() == IndexScope::ContentAndPlugins {
+                return Err("plugin_content_changed");
+            }
+            continue;
+        }
+        let asset = has_extension_in(path, PACKAGE_EXTENSIONS)
+            || has_extension_in(path, SIDECAR_EXTENSIONS);
+        if !asset {
+            if scanner.is_ignored_file(project_root, path) {
+                continue;
+            }
+            return Err("changed_path_may_be_a_directory");
+        }
+        if let Some(stem) = bundle_stem(path) {
+            stems.insert(stem.to_owned());
+        }
+    }
+    Ok(stems.into_iter().collect())
+}
+
+/// A committed entry of a hinted bundle, copied for comparison.
+struct CommittedBundleEntry {
+    handle: u32,
+    kind: EntryKind,
+    size: u64,
+    modified_nanos: u64,
+    reusable: bool,
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a targeted refresh takes the refresh's arguments and its plan"
+)]
+fn run_targeted_refresh<C: CatalogSnapshot, S: ProjectScanner>(
+    catalog: &mut C,
+    scanner: &S,
+    project_root: &str,
+    plan: TargetedPlan,
+    listed: Vec<PackageSignature>,
+    mounts: Vec<MountPoint>,
+    maximum_changes: usize,
+    cancellation: &CancellationToken,
+    on_progress: &mut impl FnMut(RefreshProgress),
+) -> Result<Vec<RefreshEvent>, CoordinatorError> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let TargetedPlan { stems, committed } = plan;
+    let mut events = vec![RefreshEvent::Started { rebuild: false }];
+    let base_generation = catalog.committed_generation();
+    // The committed entries of each hinted bundle, read before staging begins.
+    let mut prior = BTreeMap::new();
+    for stem in &stems {
+        checkpoint(cancellation, "read")?;
+        catalog.visit_committed_prefix(&format!("{stem}."), &mut |entry| {
+            if bundle_stem(entry.relative_path) == Some(stem.as_str()) {
+                prior.insert(
+                    entry.relative_path.to_owned(),
+                    CommittedBundleEntry {
+                        handle: entry.handle,
+                        kind: entry.kind,
+                        size: entry.size,
+                        modified_nanos: entry.modified_nanos,
+                        reusable: entry.kind == EntryKind::Sidecar
+                            || (entry.header_profile_version == Some(INDEX_PROFILE_VERSION)
+                                && !entry.header_failure),
+                    },
+                );
+            }
+            Ok(())
+        })?;
+    }
+    let stem_set = stems.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    let mut on_disk = listed
+        .into_iter()
+        .filter(|signature| {
+            bundle_stem(&signature.relative_path).is_some_and(|stem| stem_set.contains(stem))
+        })
+        .map(|signature| (signature.relative_path.clone(), signature))
+        .collect::<BTreeMap<_, _>>();
+    let listed_packages = on_disk
+        .values()
+        .filter(|signature| signature.kind == EntryKind::Package)
+        .count() as u64;
+    let mut token = Some(catalog.begin_refresh()?);
+    let result = (|| {
+        emit_progress(
+            &mut events,
+            on_progress,
+            RefreshPhase::Enumerating,
+            0,
+            Some(listed_packages),
+        );
+        emit_progress(
+            &mut events,
+            on_progress,
+            RefreshPhase::Comparing,
+            0,
+            Some(listed_packages),
+        );
+        let mut changes = ChangeReport::new(base_generation, maximum_changes);
+        let mut replaced = Vec::new();
+        let mut changed_package_entries = Vec::new();
+        let mut changed_sidecars = Vec::new();
+        let (mut package_count, mut map_count) = (committed.package_count, committed.map_count);
+        let (mut changed_packages, mut removed_packages) = (0_u64, 0_u64);
+        let paths = prior
+            .keys()
+            .chain(on_disk.keys())
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        for path in paths {
+            checkpoint(cancellation, "read")?;
+            let before = prior.get(&path);
+            if let Some(before) = before
+                && before.kind == EntryKind::Package
+            {
+                package_count = package_count.saturating_sub(1);
+                map_count = map_count.saturating_sub(u64::from(is_map_path(&path)));
+            }
+            let Some(after) = on_disk.remove(&path) else {
+                if let Some(before) = before {
+                    changes.removed(&path);
+                    replaced.push(before.handle);
+                    if before.kind == EntryKind::Package {
+                        removed_packages += 1;
+                    }
+                }
+                continue;
+            };
+            if after.kind == EntryKind::Package {
+                package_count += 1;
+                map_count += u64::from(is_map_path(&path));
+            }
+            let same = before.is_some_and(|before| {
+                before.kind == after.kind
+                    && before.size == after.size
+                    && before.modified_nanos == after.modified_nanos
+            });
+            if !same {
+                changes.changed(&path);
+            }
+            if same && before.is_some_and(|before| before.reusable) {
+                continue;
+            }
+            if let Some(before) = before {
+                replaced.push(before.handle);
+            }
+            if after.kind == EntryKind::Sidecar {
+                changed_sidecars.push(after);
+            } else {
+                changed_packages += 1;
+                changed_package_entries.push(after);
+            }
+        }
+        replaced.sort_unstable();
+        #[expect(
+            clippy::expect_used,
+            reason = "the token is set above and taken only at commit, after this borrow ends"
+        )]
+        let staging = token
+            .as_ref()
+            .expect("staging token present for refresh body");
+        catalog.observe_unchanged_except(staging, &replaced)?;
+        let mut diagnostics = RefreshDiagnostics::default();
+        stage_changes(
+            catalog,
+            scanner,
+            project_root,
+            staging,
+            changed_package_entries,
+            changed_sidecars,
+            &mounts,
+            &mut diagnostics,
+            &mut events,
+            on_progress,
+            cancellation,
+        )?;
+        emit_progress(
+            &mut events,
+            on_progress,
+            RefreshPhase::Committing,
+            package_count,
+            Some(package_count),
+        );
+        let summary = RefreshSummary {
+            project_id: committed.project_id.clone(),
+            generation: staging.generation,
+            package_count,
+            map_count,
+            changed_packages,
+            removed_packages,
+            completeness: if diagnostics.kept.is_empty() {
+                Completeness::Complete
+            } else {
+                Completeness::Partial
+            },
+            diagnostics: diagnostics.kept,
+            omitted_diagnostics: diagnostics.omitted,
+            mounts,
+            inventory_digest: None,
+        };
+        #[expect(
+            clippy::expect_used,
+            reason = "the token is set before the refresh body and taken only here or on failure"
+        )]
+        let staging = token.take().expect("staging token present for commit");
+        let summary = commit(catalog, staging, summary)?;
+        events.push(RefreshEvent::Completed {
+            summary,
+            changes: changes.finish(),
+        });
+        Ok(events)
+    })();
+    match result {
+        Ok(events) => Ok(events),
+        Err(error) => {
+            if let Some(staging) = token.take() {
+                let _ = catalog.discard_refresh(staging);
+            }
+            Err(error)
+        }
+    }
 }
 
 fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
@@ -417,14 +892,6 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
                 )?;
             }
         }
-
-        emit_progress(
-            &mut events,
-            on_progress,
-            RefreshPhase::ReadingHeaders,
-            0,
-            Some(comparison.changed_packages),
-        );
         let mut changed_package_entries = Vec::with_capacity(comparison.changed_packages as usize);
         let mut changed_sidecars = Vec::new();
         for (signature, reuse) in enumerated.into_iter().zip(comparison.reuse) {
@@ -437,58 +904,20 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
                 changed_package_entries.push(signature);
             }
         }
-        // Header workers prepare evidence for this Catalog as they read it; the coordinator only
-        // stages it. Each staged entry follows the previous one in path order, so changed
-        // sidecars are staged between the packages around them.
-        let preparer = catalog.evidence_preparer(staging)?;
-        let preparer = Normalizing(&preparer);
-        let mut coordinator_worker = preparer.worker();
-        catalog.stage_in_path_order(staging)?;
-        let mut sidecars = changed_sidecars.into_iter().peekable();
-        let changed_packages = comparison.changed_packages;
-        let mut completed_headers = 0_u64;
-        scanner.stream_header_evidence(
+        let mounts = scanner.mount_points();
+        stage_changes(
+            catalog,
+            scanner,
             project_root,
-            &changed_package_entries,
+            staging,
+            changed_package_entries,
+            changed_sidecars,
+            &mounts,
+            &mut diagnostics,
+            &mut events,
+            on_progress,
             cancellation,
-            &preparer,
-            &mut |signature, header_result| {
-                checkpoint(cancellation, "inspection")?;
-                while let Some(sidecar) =
-                    sidecars.next_if(|sidecar| sidecar.relative_path < signature.relative_path)
-                {
-                    catalog.stage_prepared(staging, &sidecar, None)?;
-                }
-                let (staged, header) = stage_with_initial_header(
-                    scanner,
-                    project_root,
-                    signature,
-                    header_result,
-                    &preparer,
-                    &mut coordinator_worker,
-                    &mut |released| Ok(catalog.release_prepared(staging, released)?),
-                    cancellation,
-                    &mut diagnostics,
-                )?;
-                completed_headers += 1;
-                if should_emit_package_progress(completed_headers, changed_packages) {
-                    emit_progress(
-                        &mut events,
-                        on_progress,
-                        RefreshPhase::ReadingHeaders,
-                        completed_headers,
-                        Some(changed_packages),
-                    );
-                }
-                catalog.stage_prepared(staging, &staged, Some(header))?;
-                Ok(())
-            },
         )?;
-        for sidecar in sidecars {
-            catalog.stage_prepared(staging, &sidecar, None)?;
-        }
-        drop(changed_package_entries);
-
         emit_progress(
             &mut events,
             on_progress,
@@ -501,7 +930,7 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             generation: staging.generation,
             package_count: comparison.package_count,
             map_count: comparison.map_count,
-            changed_packages,
+            changed_packages: comparison.changed_packages,
             removed_packages: comparison.removed_packages,
             completeness: if diagnostics.kept.is_empty() {
                 Completeness::Complete
@@ -510,14 +939,15 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             },
             diagnostics: diagnostics.kept,
             omitted_diagnostics: diagnostics.omitted,
-            mounts: scanner.mount_points(),
+            mounts,
+            inventory_digest: None,
         };
         #[expect(
             clippy::expect_used,
             reason = "the token is set before the refresh body and taken only here or on failure"
         )]
         let staging = token.take().expect("staging token present for commit");
-        catalog.commit_refresh(staging, summary.clone())?;
+        let summary = commit(catalog, staging, summary)?;
         events.push(RefreshEvent::Completed {
             summary,
             changes: changes.finish(),
@@ -534,6 +964,104 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             Err(error)
         }
     }
+}
+
+/// Reads and stages the changed packages (in path order, with the changed sidecars staged between
+/// them), after promising the Catalog that staging follows path order.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "staging needs the scanner, the Catalog, the refresh's reports and its cancellation"
+)]
+fn stage_changes<C: CatalogSnapshot, S: ProjectScanner>(
+    catalog: &mut C,
+    scanner: &S,
+    project_root: &str,
+    staging: &StagingToken,
+    changed_package_entries: Vec<PackageSignature>,
+    changed_sidecars: Vec<PackageSignature>,
+    mounts: &[MountPoint],
+    diagnostics: &mut RefreshDiagnostics,
+    events: &mut Vec<RefreshEvent>,
+    on_progress: &mut impl FnMut(RefreshProgress),
+    cancellation: &CancellationToken,
+) -> Result<(), CoordinatorError> {
+    let changed_packages = changed_package_entries.len() as u64;
+    emit_progress(
+        events,
+        on_progress,
+        RefreshPhase::ReadingHeaders,
+        0,
+        Some(changed_packages),
+    );
+    // Header workers prepare evidence for this Catalog as they read it; the coordinator only
+    // stages it. Each staged entry follows the previous one in path order, so changed sidecars
+    // are staged between the packages around them.
+    let preparer = catalog.evidence_preparer(staging)?;
+    let preparer = Normalizing(&preparer);
+    let mut coordinator_worker = preparer.worker();
+    catalog.stage_in_path_order(
+        staging,
+        &StagingPlan {
+            entries: changed_package_entries.len() + changed_sidecars.len(),
+            mounts,
+        },
+    )?;
+    let mut sidecars = changed_sidecars.into_iter().peekable();
+    let mut completed_headers = 0_u64;
+    scanner.stream_header_evidence(
+        project_root,
+        &changed_package_entries,
+        cancellation,
+        &preparer,
+        &mut |signature, header_result| {
+            checkpoint(cancellation, "inspection")?;
+            while let Some(sidecar) =
+                sidecars.next_if(|sidecar| sidecar.relative_path < signature.relative_path)
+            {
+                catalog.stage_prepared(staging, &sidecar, None)?;
+            }
+            let (staged, header) = stage_with_initial_header(
+                scanner,
+                project_root,
+                signature,
+                header_result,
+                &preparer,
+                &mut coordinator_worker,
+                &mut |released| Ok(catalog.release_prepared(staging, released)?),
+                cancellation,
+                diagnostics,
+            )?;
+            completed_headers += 1;
+            if should_emit_package_progress(completed_headers, changed_packages) {
+                emit_progress(
+                    events,
+                    on_progress,
+                    RefreshPhase::ReadingHeaders,
+                    completed_headers,
+                    Some(changed_packages),
+                );
+            }
+            catalog.stage_prepared(staging, &staged, Some(header))?;
+            Ok(())
+        },
+    )?;
+    for sidecar in sidecars {
+        catalog.stage_prepared(staging, &sidecar, None)?;
+    }
+    Ok(())
+}
+
+/// Commits `summary` and returns it as committed, with the inventory digest the Catalog computed.
+fn commit<C: Catalog>(
+    catalog: &mut C,
+    staging: StagingToken,
+    mut summary: RefreshSummary,
+) -> Result<RefreshSummary, CoordinatorError> {
+    catalog.commit_refresh(staging, summary.clone())?;
+    if let CatalogStatus::Ready { summary: committed } = catalog.status() {
+        summary.inventory_digest = committed.inventory_digest;
+    }
+    Ok(summary)
 }
 
 /// One enumeration compared with the committed entries.
@@ -603,7 +1131,6 @@ fn compare<C: CatalogSnapshot>(
         Ok(())
     };
     let mut next = 0;
-    let mut index = 0_u32;
     catalog.visit_committed_entries(&mut |prior| {
         while let Some(signature) = enumerated
             .get(next)
@@ -617,7 +1144,12 @@ fn compare<C: CatalogSnapshot>(
             .get(next)
             .filter(|signature| signature.relative_path == prior.relative_path)
         {
-            observe(&mut comparison, changes, signature, Some((index, &prior)))?;
+            observe(
+                &mut comparison,
+                changes,
+                signature,
+                Some((prior.handle, &prior)),
+            )?;
             present = true;
             next += 1;
         }
@@ -627,11 +1159,6 @@ fn compare<C: CatalogSnapshot>(
                 comparison.removed_packages += 1;
             }
         }
-        index = index
-            .checked_add(1)
-            .ok_or_else(|| CoordinatorError::Unavailable {
-                message: "the committed Project Index has more than u32::MAX entries".to_owned(),
-            })?;
         Ok(())
     })?;
     for signature in &enumerated[next..] {

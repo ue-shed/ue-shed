@@ -121,6 +121,15 @@ pub struct ProjectIndexSummary {
     /// part of a summary and most summaries carry none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changes: Option<Box<ProjectIndexChanges>>,
+    /// v1.26: the generation's inventory digest, lowercase hex SHA-256 of every inventory fact
+    /// (package paths, bundle stamps and header data); absent unless `completeness` is
+    /// `complete`. Equal digests mean equal inventories, whichever refreshes wrote them.
+    #[serde(
+        default,
+        rename = "inventoryDigest",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub inventory_digest: Option<String>,
 }
 
 fn is_zero(value: &u64) -> bool {

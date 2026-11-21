@@ -33,7 +33,12 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 				catalogTimeoutMs: 120_000
 			})
 		).pipe(Layer.provideMerge(assetReaderLayer({ executable: executable! })));
-		const build = (cacheRoot: string, native: boolean, changedFiles?: readonly string[]) =>
+		const build = (
+			cacheRoot: string,
+			native: boolean,
+			changedFiles?: readonly string[],
+			coldMinimumPackages: number | undefined = 1
+		) =>
 			Effect.gen(function* () {
 				const source = yield* GameTextIndexSource;
 				const builder = yield* GameTextIndexBuilder;
@@ -46,8 +51,7 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 				> = {
 					...(catalog ? { catalog } : { inventory }),
 					...(changedFiles ? { changedFiles } : undefined),
-					// Every changed shard is staged by the reader, as a cold build of a large project.
-					coldMinimumPackages: 1,
+					...(coldMinimumPackages === undefined ? undefined : { coldMinimumPackages }),
 					read: (paths, signatures) =>
 						source.read(
 							projectRoot,
@@ -98,6 +102,12 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 					Effect.gen(function* () {
 						const host = yield* build(join(root, "host"), false);
 						const native = yield* build(join(root, "native"), true);
+						const nativeBelowThreshold = yield* build(
+							join(root, "native-below-threshold"),
+							true,
+							undefined,
+							undefined
+						);
 						const changed = (yield* (yield* GameTextIndexSource).inventory({
 							projectRoot
 						}))
@@ -106,6 +116,7 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 						return {
 							host,
 							native,
+							nativeBelowThreshold,
 							retained: yield* build(join(root, "native"), true, changed),
 							unchanged: yield* build(join(root, "native"), true)
 						};
@@ -116,6 +127,12 @@ describe.skipIf(!executable)("package refresh planned by the native writer", () 
 			expect(outcome.native.layers).toEqual(outcome.host.layers);
 			expect(outcome.native.result.readPackages).toBeGreaterThan(0);
 			expect(outcome.native.result.readPackages).toBe(outcome.host.result.readPackages);
+			// A native-planned cold build below the default 256-package staging threshold still
+			// reads the binary plan file on the host rebuild path and publishes identical layers.
+			expect(outcome.nativeBelowThreshold.layers).toEqual(outcome.host.layers);
+			expect(outcome.nativeBelowThreshold.result.readPackages).toBe(
+				outcome.host.result.readPackages
+			);
 			// Named files that didn't change keep every shard's key.
 			expect(outcome.retained.result.published).toBe(false);
 			expect(outcome.retained.layers).toEqual(outcome.host.layers);

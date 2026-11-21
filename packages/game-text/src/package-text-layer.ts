@@ -192,12 +192,64 @@ interface PackageTextRefreshPlan {
 	readonly file?: string;
 }
 
+const BINARY_PLAN_MAGIC = new Uint8Array([0x55, 0x45, 0x50, 0x54, 0x30, 0x30, 0x30, 0x31, 0x0a]);
+const planUtf8 = new TextDecoder("utf-8", { fatal: true });
+
+function hasBinaryPlanMagic(bytes: Uint8Array): boolean {
+	if (bytes.length < BINARY_PLAN_MAGIC.length) return false;
+	for (let index = 0; index < BINARY_PLAN_MAGIC.length; index++) {
+		if (bytes[index] !== BINARY_PLAN_MAGIC[index]) return false;
+	}
+	return true;
+}
+
+function decodeBinaryPackageTextPlan(
+	bytes: Uint8Array
+): Map<string, PackageTextShardEntries["entries"]> {
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	const byGroup = new Map<string, PackageTextShardEntries["entries"]>();
+	let offset = BINARY_PLAN_MAGIC.length;
+	while (offset < bytes.length) {
+		if (offset + 12 > bytes.length) throw new Error("Truncated binary plan shard header.");
+		const group = view.getUint32(offset, true);
+		const count = view.getUint32(offset + 4, true);
+		const payloadLength = view.getUint32(offset + 8, true);
+		offset += 12;
+		const shardEnd = offset + payloadLength;
+		if (shardEnd > bytes.length) throw new Error("Truncated binary plan shard payload.");
+		const entries: { readonly entry: PackageTextInventoryEntry; readonly selected: boolean }[] =
+			[];
+		for (let index = 0; index < count; index++) {
+			if (offset + 9 > shardEnd) throw new Error("Truncated binary plan entry.");
+			const selectedByte = bytes[offset]!;
+			if (selectedByte !== 0 && selectedByte !== 1)
+				throw new Error("Invalid binary plan selection flag.");
+			offset += 1;
+			const pathLength = view.getUint32(offset, true);
+			offset += 4;
+			if (offset + pathLength + 4 > shardEnd) throw new Error("Truncated binary plan path.");
+			const path = planUtf8.decode(bytes.subarray(offset, offset + pathLength));
+			offset += pathLength;
+			const signatureLength = view.getUint32(offset, true);
+			offset += 4;
+			if (offset + signatureLength > shardEnd)
+				throw new Error("Truncated binary plan signature.");
+			const signature = planUtf8.decode(bytes.subarray(offset, offset + signatureLength));
+			offset += signatureLength;
+			entries.push({ entry: { path, signature }, selected: selectedByte === 1 });
+		}
+		if (offset !== shardEnd) throw new Error("Trailing bytes in binary plan shard.");
+		byGroup.set(shardName(group), entries);
+	}
+	return byGroup;
+}
+
 /** The changed shards with their entries: planned here, or read from the writer's plan file. */
 const shardEntries = Effect.fn("PackageText.planEntries")(function* (plan: PackageTextRefreshPlan) {
-	const byGroup = new Map<string, PackageTextShardEntries["entries"]>();
+	let byGroup = new Map<string, PackageTextShardEntries["entries"]>();
 	if (plan.file && plan.changed.some((shard) => !shard.entries)) {
-		const text = yield* Effect.tryPromise({
-			try: () => readFile(plan.file!, "utf8"),
+		const bytes = yield* Effect.tryPromise({
+			try: () => readFile(plan.file!),
 			catch: (cause) =>
 				snapshotFailure(
 					"package-text.plan",
@@ -205,20 +257,29 @@ const shardEntries = Effect.fn("PackageText.planEntries")(function* (plan: Packa
 					cause
 				)
 		});
-		for (const line of text.split("\n")) {
-			if (!line) continue;
-			const { group, expected } = yield* decodePackageTextPlanLine(line).pipe(
-				Effect.mapError((cause) =>
+		if (hasBinaryPlanMagic(bytes)) {
+			byGroup = yield* Effect.try({
+				try: () => decodeBinaryPackageTextPlan(bytes),
+				catch: (cause) =>
 					snapshotFailure("package-text.plan", "Invalid package text plan.", cause)
-				)
-			);
-			byGroup.set(
-				shardName(group),
-				expected.map(({ path, signature, selected }) => ({
-					entry: { path, signature },
-					selected
-				}))
-			);
+			});
+		} else {
+			const text = bytes.toString("utf8");
+			for (const line of text.split("\n")) {
+				if (!line) continue;
+				const { group, expected } = yield* decodePackageTextPlanLine(line).pipe(
+					Effect.mapError((cause) =>
+						snapshotFailure("package-text.plan", "Invalid package text plan.", cause)
+					)
+				);
+				byGroup.set(
+					shardName(group),
+					expected.map(({ path, signature, selected }) => ({
+						entry: { path, signature },
+						selected
+					}))
+				);
+			}
 		}
 	}
 	const shards: PackageTextShardEntries[] = [];

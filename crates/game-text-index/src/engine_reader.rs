@@ -2,7 +2,7 @@
 use crate::cache::{Lock, Once};
 use crate::dictionary_image::{self, SegmentImage, SegmentKey};
 use crate::snapshot::{Reader, integers};
-use crate::store::{Configuration, OpenedRoot, decode_ids, open_root_with_readers, section};
+use crate::store::{Configuration, OpenedRoot, decode_ids, open_root_filtered, section};
 use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result, require};
 use rustc_hash::FxHashMap;
@@ -186,12 +186,30 @@ impl EngineReader {
     }
 
     fn acquire(configuration: &Configuration, expected_joined: Option<&str>) -> Result<Self> {
+        let joined_field = configuration
+            .view_prefix
+            .as_deref()
+            .map_or_else(|| "joined".to_owned(), |prefix| format!("{prefix}joined"));
+        let invalidated_field = configuration.view_prefix.as_deref().map_or_else(
+            || "joined.invalidated".to_owned(),
+            |prefix| format!("{prefix}joined.invalidated"),
+        );
         let OpenedRoot {
             mut root,
             segments,
             mut layers,
             ..
-        } = open_root_with_readers(configuration)?;
+        } = open_root_filtered(configuration, |root| {
+            let active = root["active"].as_object()?;
+            if active.contains_key(&invalidated_field) {
+                return None;
+            }
+            let joined = active.get(&joined_field)?.as_str()?;
+            if expected_joined.is_some_and(|expected| expected != joined) {
+                return None;
+            }
+            Some(joined.to_owned())
+        })?;
         if let Some(prefix) = &configuration.view_prefix {
             let active = root["active"]
                 .as_object_mut()
@@ -255,7 +273,7 @@ impl EngineReader {
             segments,
             mut layers,
             ..
-        } = open_root_with_readers(configuration)?;
+        } = open_root_filtered(configuration, |_| Some(key.to_owned()))?;
         if root["layers"].get(key).is_none() {
             return Ok(None);
         }

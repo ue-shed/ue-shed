@@ -755,23 +755,16 @@ fn projection(
                     .all(|c| matches!(c, std::path::Component::Normal(_)))
                 && scanner::is_package_path(p)
         }) {
-        let project_root = PathBuf::from(&selection.project_root);
-        let _ = fs::canonicalize(&project_root).map_err(|error| Failure {
-            code: "discovery".to_owned(),
-            message: format!(
-                "scan requires a readable project root {}: {error}",
-                project_root.display()
-            ),
-            retry_safe: true,
-            ..Default::default()
-        })?;
-        // Keep exact shard-grouped order from the plan so at most a few shards stay live in RAM.
-        let joined: Vec<PathBuf> = planned_paths
-            .iter()
-            .map(|rel| project_root.join(rel))
-            .collect();
-        let roots = joined.clone();
-        (roots, joined)
+        // Canonicalize every planned package in parallel against the project root (rejecting
+        // symlinks or junctions that escape it) while keeping exact shard-grouped order from the
+        // plan so at most a few shards stay live in RAM.
+        let resolved = resolve_planned_package_paths(
+            selection,
+            cancellation,
+            if emit.is_some() { worker_count } else { 1 },
+        )?;
+        let roots = resolved.clone();
+        (roots, resolved)
     } else {
         let roots = if emit.is_some() {
             resolve_roots_with_concurrency(selection, cancellation, worker_count)?
@@ -1640,43 +1633,25 @@ fn package_changed_failure(expected: &Expected) -> Failure {
     }
 }
 
-fn verify_sidecars_with_primary(
-    path: &Path,
-    primary: (u64, u64),
-    expected: &Expected,
-) -> Result<(), Failure> {
-    let _span = game_text_index::scan_timings::Span::new("extract.verify");
-    let mut parts = [Some(primary), None, None, None];
-    for (part, extension) in parts[1..].iter_mut().zip(["uexp", "ubulk", "uptnl"]) {
-        let file = path.with_extension(extension);
-        *part = match fs::metadata(&file) {
-            Ok(metadata) => Some((metadata.len(), scanner::metadata_modified_nanos(&metadata))),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => {
-                return Err(Failure {
-                    code: "asset_io".to_owned(),
-                    message: format!("could not inspect bundle file {}: {error}", file.display()),
-                    retry_safe: true,
-                    ..Default::default()
-                });
-            }
-        };
-    }
-    if super::catalog::bundle_signature(parts) == expected.signature {
-        Ok(())
-    } else {
-        Err(package_changed_failure(expected))
-    }
-}
-
 /// Reads and projects one staged package with a single `File::open`: verifies the open file's
-/// size and mtime before and after reading (full TOCTOU protection on the read bytes), checks
-/// sidecars once against `expected.signature`, and reuses a bounded thread-local read buffer.
+/// size and mtime before and after reading (catching in-place mutation during the read), reuses
+/// a bounded thread-local read buffer, and verifies the live bundle at `path` after projection
+/// so atomic replacements during extraction fail with `package_changed`.
 fn project_one_staged_path(
     path: &Path,
     expected: &Expected,
     kind: ProjectionKind,
     cancellation: &CancellationToken,
+) -> Result<ProjectionWorkResult, Failure> {
+    project_one_staged_path_with_hook(path, expected, kind, cancellation, || Ok(()))
+}
+
+fn project_one_staged_path_with_hook(
+    path: &Path,
+    expected: &Expected,
+    kind: ProjectionKind,
+    cancellation: &CancellationToken,
+    after_read: impl FnOnce() -> Result<(), Failure>,
 ) -> Result<ProjectionWorkResult, Failure> {
     let mut measured_package = game_text_index::scan_timings::PackageTimer::new();
     let _span = game_text_index::scan_timings::Span::new("extract.package");
@@ -1769,7 +1744,7 @@ fn project_one_staged_path(
             }
             return Err(package_changed_failure(expected));
         }
-        if let Err(error) = verify_sidecars_with_primary(path, post_stamp, expected) {
+        if let Err(error) = after_read() {
             if bytes.capacity() > EXTRACT_SCRATCH_RETAIN_BYTES {
                 *bytes = Vec::new();
             }
@@ -1819,7 +1794,14 @@ fn project_one_staged_path(
         if bytes.capacity() > EXTRACT_SCRATCH_RETAIN_BYTES {
             *bytes = Vec::new();
         }
-        projected
+        let projected = projected?;
+        {
+            let _span = game_text_index::scan_timings::Span::new("extract.verify");
+            if bundle_signature(path)? != expected.signature {
+                return Err(package_changed_failure(expected));
+            }
+        }
+        Ok(projected)
     });
     reader_memory::checkpoint(MemoryStage::Release);
     result
@@ -2568,6 +2550,88 @@ fn save_scan_header_cache(
     })
     .map_err(io::Error::other)?;
     fs::write(path, rendered)
+}
+
+fn resolve_planned_package_paths(
+    selection: &ProjectSelection,
+    cancellation: &CancellationToken,
+    concurrency: usize,
+) -> Result<Vec<PathBuf>, Failure> {
+    checkpoint(cancellation, "discovery")?;
+    let project_root = PathBuf::from(&selection.project_root);
+    let Some(requested) = &selection.paths else {
+        return Ok(Vec::new());
+    };
+    let canonical_project_root = fs::canonicalize(&project_root).map_err(|error| Failure {
+        code: "discovery".to_owned(),
+        message: format!(
+            "scan requires a readable project root {}: {error}",
+            project_root.display()
+        ),
+        retry_safe: true,
+        ..Default::default()
+    })?;
+    let resolve = |requested: &str| -> Result<PathBuf, Failure> {
+        checkpoint(cancellation, "discovery")?;
+        let joined = project_root.join(requested);
+        let canonical = fs::canonicalize(&joined).map_err(|error| Failure {
+            code: "discovery".to_owned(),
+            message: format!("--path {} is not readable: {error}", joined.display()),
+            retry_safe: true,
+            ..Default::default()
+        })?;
+        if !canonical.starts_with(&canonical_project_root) {
+            return Err(Failure {
+                code: "invalid_request".to_owned(),
+                message: format!("--path {} is outside the project root", joined.display()),
+                retry_safe: false,
+                ..Default::default()
+            });
+        }
+        if !canonical.is_file() || !scanner::is_package_path(&canonical) {
+            return Err(Failure {
+                code: "invalid_request".to_owned(),
+                message: format!("--path {} is not a .uasset or .umap file", joined.display()),
+                retry_safe: false,
+                ..Default::default()
+            });
+        }
+        Ok(joined)
+    };
+    if requested.len() < 64 || concurrency <= 1 {
+        return requested.iter().map(|path| resolve(path)).collect();
+    }
+    let next = AtomicUsize::new(0);
+    let resolved = Mutex::new(
+        requested
+            .iter()
+            .map(|_| None::<Result<PathBuf, Failure>>)
+            .collect::<Vec<_>>(),
+    );
+    std::thread::scope(|scope| {
+        for _ in 0..concurrency.min(requested.len()) {
+            let next = &next;
+            let resolved = &resolved;
+            let resolve = &resolve;
+            scope.spawn(move || {
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(path) = requested.get(index) else {
+                        break;
+                    };
+                    let result = resolve(path);
+                    resolved.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(result);
+                }
+            });
+        }
+    });
+    checkpoint(cancellation, "discovery")?;
+    resolved
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner)
+        .into_iter()
+        .map(|value| value.unwrap_or_else(|| Err(workers_stopped())))
+        .collect()
 }
 
 fn resolve_roots(
@@ -3712,6 +3776,144 @@ mod tests {
         };
         stage("current", &|path| super::bundle_signature(path).unwrap()).unwrap();
         let failure = stage("changed", &|_| "[null,null,null,null]".to_owned()).unwrap_err();
+        assert_eq!(failure.code, "package_changed");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn planned_staging_rejects_path_resolving_outside_project_root() {
+        use crate::package_text_columns::{Expected, SnapshotRequest};
+        let mut request = text_projection_request(true);
+        request.contract.version.minor = 20;
+        let (fixture_root, fixture_paths) = match &request.operation {
+            crate::protocol::Operation::ExtractTextPackages { selection, .. } => (
+                std::path::PathBuf::from(&selection.project_root),
+                selection.paths.clone().unwrap(),
+            ),
+            _ => unreachable!(),
+        };
+        let source_asset = fixture_root.join(&fixture_paths[0]);
+        let base = std::env::temp_dir().join(format!("ue-shed-plan-escape-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let project = base.join("project");
+        let outside = base.join("outside");
+        let staging_dir = base.join("staging");
+        std::fs::create_dir_all(project.join("Content")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::create_dir_all(&staging_dir).unwrap();
+        let external_asset = outside.join("Escaped.uasset");
+        std::fs::copy(&source_asset, &external_asset).unwrap();
+        let link_dir = project.join("Content").join("Linked");
+        #[cfg(windows)]
+        {
+            let status = std::process::Command::new("cmd")
+                .args([
+                    "/C",
+                    "mklink",
+                    "/J",
+                    &link_dir.to_string_lossy(),
+                    &outside.to_string_lossy(),
+                ])
+                .status()
+                .expect("create directory junction");
+            assert!(status.success(), "mklink /J must succeed");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, &link_dir).expect("create directory symlink");
+        }
+        let linked_asset = link_dir.join("Escaped.uasset");
+        let plan = staging_dir.join("plan.ndjson");
+        let expected = vec![Expected {
+            path: "Content/Linked/Escaped.uasset".to_owned(),
+            signature: super::bundle_signature(&linked_asset).unwrap(),
+            selected: true,
+        }];
+        std::fs::write(
+            &plan,
+            format!(
+                "{}\n",
+                serde_json::json!({"group": 1, "expected": expected})
+            ),
+        )
+        .unwrap();
+        if let crate::protocol::Operation::ExtractTextPackages { selection, staging } =
+            &mut request.operation
+        {
+            selection.project_root = project.to_string_lossy().into_owned();
+            selection.paths = None;
+            *staging = Some(crate::protocol::PackageTextStaging {
+                directory: staging_dir.to_string_lossy().into_owned(),
+                groups: Vec::new(),
+                snapshots: Some(SnapshotRequest {
+                    rules: Vec::new(),
+                    record_files: Vec::new(),
+                    records: Vec::new(),
+                    plan_file: Some(plan.to_string_lossy().into_owned()),
+                    groups: vec![1],
+                    shards: Vec::new(),
+                }),
+            });
+        }
+        let failure =
+            super::extract_text_streaming(&request, &CancellationToken::new(), &mut |_| Ok(()))
+                .unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+        assert!(
+            failure.message.contains("outside the project root"),
+            "unexpected failure: {}",
+            failure.message
+        );
+        #[cfg(windows)]
+        {
+            let _ = std::fs::remove_dir(&link_dir);
+        }
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn staged_extraction_rejects_package_replaced_after_initial_read() {
+        use crate::package_text_columns::Expected;
+        let request = text_projection_request(true);
+        let (fixture_root, fixture_paths) = match &request.operation {
+            crate::protocol::Operation::ExtractTextPackages { selection, .. } => (
+                std::path::PathBuf::from(&selection.project_root),
+                selection.paths.clone().unwrap(),
+            ),
+            _ => unreachable!(),
+        };
+        let source_asset = fixture_root.join(&fixture_paths[0]);
+        let base =
+            std::env::temp_dir().join(format!("ue-shed-staged-replace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let target = base.join("Target.uasset");
+        std::fs::copy(&source_asset, &target).unwrap();
+        let expected = Expected {
+            path: "Content/Target.uasset".to_owned(),
+            signature: super::bundle_signature(&target).unwrap(),
+            selected: true,
+        };
+        let replacement = base.join("Target.replacement.uasset");
+        let mut modified = std::fs::read(&source_asset).unwrap();
+        modified.extend_from_slice(&[0u8; 32]);
+        std::fs::write(&replacement, &modified).unwrap();
+
+        let failure = match super::project_one_staged_path_with_hook(
+            &target,
+            &expected,
+            super::ProjectionKind::TextPackages,
+            &CancellationToken::new(),
+            || {
+                // Simulate an editor atomically replacing the package after our initial open+read.
+                std::fs::remove_file(&target).unwrap();
+                std::fs::rename(&replacement, &target).unwrap();
+                Ok(())
+            },
+        ) {
+            Err(failure) => failure,
+            Ok(_) => panic!("expected package_changed after replacement"),
+        };
         assert_eq!(failure.code, "package_changed");
         std::fs::remove_dir_all(&base).ok();
     }

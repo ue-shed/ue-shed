@@ -252,21 +252,62 @@ fn filename(name: &str, prefix: &str) -> Result<()> {
     )
 }
 pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
-    let opened = open_root_with_readers(configuration)?;
+    let opened = open_root_filtered(configuration, |_| None)?;
     Ok((opened.manifest, opened.root))
 }
-/// A validated root and the files it lists, held open: each dictionary segment in the root's
-/// order, and each layer by key.
+/// A validated root and the files a caller asked to retain: each dictionary segment in the root's
+/// order (when a joined layer was selected), and only the layers needed for that joined view.
 pub(crate) struct OpenedRoot {
     pub manifest: Value,
     pub root: Value,
     pub segments: Vec<Reader>,
     pub layers: std::collections::HashMap<String, Reader>,
 }
-/// `open_root`, keeping the segment and layer readers it validated so a caller need not open
-/// them again. Segments and layers open in parallel.
-pub(crate) fn open_root_with_readers(configuration: &Configuration) -> Result<OpenedRoot> {
+fn validate_layer(
+    directory: &Path,
+    root: &Value,
+    segment_count: u64,
+    record: &Value,
+) -> Result<Reader> {
+    let file = record["file"].as_str().ok_or("invalid layer name")?;
+    filename(file, "layer-")?;
+    let layer = Reader::open(&directory.join(file))?;
+    require(
+        layer
+            .entries
+            .iter()
+            .find(|entry| entry.name == "shared.meta")
+            .is_some_and(|entry| entry.raw <= 1024 * 1024),
+        "shared metadata bound",
+    )?;
+    let mut metadata: Value = serde_json::from_slice(&section(&layer, "shared.meta")?)?;
+    metadata["bytes"] = record["bytes"].clone();
+    require(
+        metadata == *record,
+        "shared layer metadata differs from root",
+    )?;
+    // `Reader::open` checked the file's length against its header.
+    require(
+        record["storeGeneration"] == root["generation"]
+            && record["segmentCount"]
+                .as_u64()
+                .is_some_and(|n| n <= segment_count)
+            && record["bytes"].as_u64() == Some(layer.file_len()),
+        "invalid layer dependency",
+    )?;
+    Ok(layer)
+}
+/// Validates the root as `open_root` does, closing validation-only readers immediately inside
+/// each worker so peak open file handles do not grow with unrelated retained history. When
+/// `select_joined(&root)` returns a joined layer key present in `root["layers"]`, retains only
+/// the dictionary segments and the layers that join depends on (`joined`, `base`, and
+/// `dependencies`).
+pub(crate) fn open_root_filtered(
+    configuration: &Configuration,
+    select_joined: impl FnOnce(&Value) -> Option<String>,
+) -> Result<OpenedRoot> {
     use rayon::prelude::*;
+    use std::collections::{HashMap, HashSet};
     let directory = configuration.directory()?;
     let manifest: Value =
         serde_json::from_slice(&bounded(&directory.join("manifest.json"), 1024 * 1024)?)?;
@@ -283,6 +324,7 @@ pub(crate) fn open_root_with_readers(configuration: &Configuration) -> Result<Op
     let mut reader = Reader::open(&directory.join(physical))?;
     reader.verify()?;
     let root: Value = serde_json::from_slice(&section(&reader, "index.meta")?)?;
+    drop(reader);
     require(
         root["version"] == 2
             && root["active"].is_object()
@@ -309,57 +351,83 @@ pub(crate) fn open_root_with_readers(configuration: &Configuration) -> Result<Op
         segment_files.push(file);
     }
     let segment_count = segments.len() as u64;
-    let records = root["layers"]
-        .as_object()
-        .ok_or("invalid layers")?
-        .iter()
-        .collect::<Vec<_>>();
+    let layer_map = root["layers"].as_object().ok_or("invalid layers")?;
+    let selected_joined = select_joined(&root).filter(|key| layer_map.contains_key(key));
+    let mut retained_joined: Option<(String, Reader)> = None;
+    let mut joined_error: Option<crate::Error> = None;
+    let mut needed_layers: HashSet<String> = HashSet::new();
+    if let Some(joined_key) = selected_joined {
+        let record = &layer_map[&joined_key];
+        match validate_layer(&directory, &root, segment_count, record) {
+            Ok(layer) => {
+                if layer
+                    .entries
+                    .iter()
+                    .find(|entry| entry.name == "join.meta")
+                    .is_some_and(|entry| entry.raw <= 16 * 1024 * 1024)
+                    && let Ok(bytes) = section(&layer, "join.meta")
+                    && let Ok(meta) = serde_json::from_slice::<Value>(&bytes)
+                {
+                    if let Some(base) = meta["base"].as_str() {
+                        needed_layers.insert(base.to_owned());
+                    }
+                    if let Some(deps) = meta["dependencies"].as_object() {
+                        for key in deps.values().filter_map(Value::as_str) {
+                            needed_layers.insert(key.to_owned());
+                        }
+                    }
+                }
+                needed_layers.remove(&joined_key);
+                retained_joined = Some((joined_key, layer));
+            }
+            Err(error) => {
+                joined_error = Some(error);
+            }
+        }
+    }
+    let retain_segments = retained_joined.is_some();
+    let skip_key = retained_joined.as_ref().map(|(key, _)| key.as_str());
+    let records = layer_map.iter().collect::<Vec<_>>();
     let (segments, layers) = rayon::join(
-        || {
-            segment_files
-                .par_iter()
-                .map(|file| Reader::open(&directory.join(file)))
-                .collect::<Result<Vec<_>>>()
+        || -> Result<Vec<Reader>> {
+            if retain_segments {
+                segment_files
+                    .par_iter()
+                    .map(|file| Reader::open(&directory.join(file)))
+                    .collect::<Result<Vec<_>>>()
+            } else {
+                segment_files
+                    .par_iter()
+                    .try_for_each(|file| Reader::open(&directory.join(file)).map(|_| ()))?;
+                Ok(Vec::new())
+            }
         },
-        || {
+        || -> Result<HashMap<String, Reader>> {
             records
                 .par_iter()
-                .map(|(key, record)| -> Result<(String, Reader)> {
-                    let file = record["file"].as_str().ok_or("invalid layer name")?;
-                    filename(file, "layer-")?;
-                    let layer = Reader::open(&directory.join(file))?;
-                    require(
-                        layer
-                            .entries
-                            .iter()
-                            .find(|entry| entry.name == "shared.meta")
-                            .is_some_and(|entry| entry.raw <= 1024 * 1024),
-                        "shared metadata bound",
-                    )?;
-                    let mut metadata: Value =
-                        serde_json::from_slice(&section(&layer, "shared.meta")?)?;
-                    metadata["bytes"] = record["bytes"].clone();
-                    require(
-                        metadata == **record,
-                        "shared layer metadata differs from root",
-                    )?;
-                    // `Reader::open` checked the file's length against its header.
-                    require(
-                        record["storeGeneration"] == root["generation"]
-                            && record["segmentCount"]
-                                .as_u64()
-                                .is_some_and(|n| n <= segment_count)
-                            && record["bytes"].as_u64() == Some(layer.file_len()),
-                        "invalid layer dependency",
-                    )?;
-                    Ok(((*key).clone(), layer))
+                .filter(|(key, _)| Some(key.as_str()) != skip_key)
+                .try_fold(HashMap::new, |mut retained, (key, record)| {
+                    let layer = validate_layer(&directory, &root, segment_count, record)?;
+                    if needed_layers.contains(key.as_str()) {
+                        retained.insert((*key).clone(), layer);
+                    }
+                    Ok(retained)
                 })
-                .collect::<Result<std::collections::HashMap<_, _>>>()
+                .try_reduce(HashMap::new, |mut acc, next| {
+                    acc.extend(next);
+                    Ok(acc)
+                })
         },
     );
     // Segment failures report first, as when segments were opened before layers.
     let segments = segments?;
-    let layers = layers?;
+    if let Some(error) = joined_error {
+        return Err(error);
+    }
+    let mut layers = layers?;
+    if let Some((key, layer)) = retained_joined {
+        layers.insert(key, layer);
+    }
     for key in root["active"].as_object().ok_or("invalid active")?.values() {
         require(
             root["layers"]
@@ -2055,6 +2123,58 @@ mod tests {
         drop(current);
         drop(old_reader);
         drop(store);
+        fs::remove_dir_all(config.cache_root).unwrap();
+    }
+
+    #[test]
+    fn open_root_filtered_retains_only_selected_join_layers() {
+        let config = configuration();
+        fs::create_dir_all(&config.cache_root).unwrap();
+        let mut store = Store::writer(config.clone()).unwrap();
+        let mut dep_keys = Vec::new();
+        for index in 0..6 {
+            let raw = config.cache_root.join(format!("shard-{index}.snapshot"));
+            let mut writer = Writer::new(&config.cache_root.join(format!("p-{index}"))).unwrap();
+            let id = writer
+                .add("entry.value", 0, "", format!("v-{index}").as_bytes(), 0)
+                .unwrap();
+            writer.finish(&raw, &[id]).unwrap();
+            let key = format!("shard-key-{index}");
+            store.publish_local("shard-0", &key, &raw).unwrap();
+            dep_keys.push(key);
+        }
+        let active_dep = dep_keys.last().unwrap().clone();
+        let joined_raw = config.cache_root.join("joined.snapshot");
+        let mut writer = Writer::new(&config.cache_root.join("p-joined")).unwrap();
+        let meta = serde_json::to_vec(&json!({
+            "version": 3,
+            "generation": store.root["generation"],
+            "dependencies": { "shard-0": active_dep },
+        }))
+        .unwrap();
+        let meta_id = writer.add("join.meta", 0, "", &meta, 0).unwrap();
+        writer.finish(&joined_raw, &[meta_id]).unwrap();
+        store
+            .publish_local("joined", "joined-key-active", &joined_raw)
+            .unwrap();
+        assert_eq!(store.root["layers"].as_object().unwrap().len(), 7);
+        drop(store);
+
+        let validation_only = open_root_filtered(&config, |_| None).unwrap();
+        assert!(validation_only.layers.is_empty());
+        assert!(validation_only.segments.is_empty());
+
+        let selected = open_root_filtered(&config, |root| {
+            root["active"]["joined"].as_str().map(str::to_owned)
+        })
+        .unwrap();
+        let mut retained_keys = selected.layers.keys().cloned().collect::<Vec<_>>();
+        retained_keys.sort();
+        let mut expected_keys = vec![active_dep, "joined-key-active".to_owned()];
+        expected_keys.sort();
+        assert_eq!(retained_keys, expected_keys);
+
+        drop(selected);
         fs::remove_dir_all(config.cache_root).unwrap();
     }
 }

@@ -2020,3 +2020,218 @@ fn project_index_changed_paths_refresh_matches_a_full_walk() {
     );
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// A refresh told nothing reads the volume change journal (where one is kept) for the
+/// directories that changed since the committed generation was listed, and gives exactly what a
+/// full walk gives: the same summary, changes and inventory. A directory renamed below a content
+/// root is a reason to walk.
+#[test]
+fn project_index_change_journal_refresh_matches_a_full_walk() {
+    type Change = Box<dyn Fn()>;
+    let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/unreal-project/Content/Fixture");
+    let root = std::env::temp_dir().join(format!(
+        "ue-shed-project-index-change-journal-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let project = root.join("Project");
+    let content = project.join("Content").join("Assets");
+    let plugin = project.join("Plugins").join("Extra");
+    std::fs::create_dir_all(&content).unwrap();
+    std::fs::create_dir_all(plugin.join("Content").join("Maps")).unwrap();
+    std::fs::write(
+        plugin.join("Extra.uplugin"),
+        r#"{"FileVersion": 3, "CanContainContent": true}"#,
+    )
+    .unwrap();
+    std::fs::copy(
+        fixtures.join("Animation/A_FixtureMotion.uasset"),
+        content.join("A_Motion.uasset"),
+    )
+    .unwrap();
+    std::fs::copy(
+        fixtures.join("Animation/SK_Fixture.uasset"),
+        content.join("SK_Mesh.uasset"),
+    )
+    .unwrap();
+    std::fs::write(content.join("SK_Mesh.uexp"), [1, 2, 3]).unwrap();
+    std::fs::copy(
+        fixtures.join("Offline/L_OfflineWorld.umap"),
+        plugin.join("Content/Maps/L_World.umap"),
+    )
+    .unwrap();
+    let (journal_cache, walked_cache) = (root.join("journal"), root.join("walked"));
+    let refresh = |cache: &std::path::Path, walk: bool| {
+        let mut operation = serde_json::json!({
+            "kind": "project_index_refresh",
+            "cacheRoot": cache.to_string_lossy(),
+            "projectRoot": project.to_string_lossy(),
+            "plugins": true,
+            "changes": true
+        });
+        if walk {
+            // A changed descriptor makes the refresh walk, whatever the journal says.
+            operation["changedPaths"] = serde_json::json!(["Project.uproject"]);
+        }
+        let (success, events, stderr) = run_request(project_index_request_at(26, operation));
+        assert!(success, "refresh failed: {stderr}");
+        events
+    };
+    let metrics = |events: &[Value]| {
+        events
+            .iter()
+            .find(|event| event["code"] == "project_index_metrics")
+            .and_then(|event| event["message"].as_str())
+            .unwrap()
+            .to_owned()
+    };
+    let inventory = |events: &[Value], cache: &std::path::Path| {
+        let summary = &result_of(events, "project_index_summary")["summary"];
+        let (success, events, stderr) = run_request(project_index_request_at(
+            26,
+            serde_json::json!({
+                "kind": "project_index_query",
+                "cacheRoot": cache.to_string_lossy(),
+                "query": {
+                    "kind": "inventory",
+                    "projectId": summary["projectId"],
+                    "expectedGeneration": summary["generation"],
+                    "limit": 1024
+                }
+            }),
+        ));
+        assert!(success, "query failed: {stderr}");
+        result_of(&events, "project_index_page")["page"]["items"].clone()
+    };
+    let first = refresh(&journal_cache, false);
+    assert!(
+        metrics(&first).contains("targeted=0 walked_because=no_committed_generation journal=0"),
+        "{}",
+        metrics(&first)
+    );
+    refresh(&walked_cache, true);
+    let set_modified = |path: std::path::PathBuf, seconds: u64| {
+        let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+            .unwrap();
+    };
+    let journal = cfg!(windows);
+    let steps: Vec<(&str, Change, bool)> = vec![
+        ("nothing changed", Box::new(|| {}), journal),
+        (
+            "a package edit",
+            Box::new({
+                let content = content.clone();
+                move || set_modified(content.join("A_Motion.uasset"), 1_700_000_000)
+            }),
+            journal,
+        ),
+        (
+            "a sidecar-only edit",
+            Box::new({
+                let content = content.clone();
+                move || std::fs::write(content.join("SK_Mesh.uexp"), [1, 2, 3, 4]).unwrap()
+            }),
+            journal,
+        ),
+        (
+            "a new package in a plugin",
+            Box::new({
+                let plugin = plugin.clone();
+                let fixtures = fixtures.clone();
+                move || {
+                    std::fs::copy(
+                        fixtures.join("GameTextActions/Slice2/L_IdentityLevel.umap"),
+                        plugin.join("Content/Maps/L_New.umap"),
+                    )
+                    .unwrap();
+                }
+            }),
+            journal,
+        ),
+        (
+            "a deleted bundle",
+            Box::new({
+                let content = content.clone();
+                move || {
+                    std::fs::remove_file(content.join("SK_Mesh.uasset")).unwrap();
+                    std::fs::remove_file(content.join("SK_Mesh.uexp")).unwrap();
+                }
+            }),
+            journal,
+        ),
+        (
+            "a renamed package",
+            Box::new({
+                let content = content.clone();
+                move || {
+                    std::fs::rename(
+                        content.join("A_Motion.uasset"),
+                        content.join("A_Renamed.uasset"),
+                    )
+                    .unwrap();
+                }
+            }),
+            journal,
+        ),
+        (
+            "a new directory with a package",
+            Box::new({
+                let content = content.clone();
+                let fixtures = fixtures.clone();
+                move || {
+                    std::fs::create_dir_all(content.join("Sub")).unwrap();
+                    std::fs::copy(
+                        fixtures.join("Animation/A_FixtureMotion.uasset"),
+                        content.join("Sub").join("A_Copy.uasset"),
+                    )
+                    .unwrap();
+                }
+            }),
+            journal,
+        ),
+        (
+            "a renamed directory, which needs a walk",
+            Box::new({
+                let content = content.clone();
+                move || std::fs::rename(content.join("Sub"), content.join("Moved")).unwrap()
+            }),
+            false,
+        ),
+        ("nothing changed after the walk", Box::new(|| {}), journal),
+    ];
+    for (step, change, by_journal) in steps {
+        change();
+        let events = refresh(&journal_cache, false);
+        let walked = refresh(&walked_cache, true);
+        let metrics = metrics(&events);
+        assert_eq!(
+            metrics.contains("journal=1"),
+            by_journal,
+            "{step}: {metrics}"
+        );
+        assert_eq!(
+            metrics.contains("targeted=1"),
+            by_journal,
+            "{step}: {metrics}"
+        );
+        if !by_journal && journal {
+            assert!(
+                metrics.contains("walked_because=directory_moved_or_deleted"),
+                "{step}: {metrics}"
+            );
+        }
+        assert_eq!(
+            result_of(&events, "project_index_summary"),
+            result_of(&walked, "project_index_summary"),
+            "{step}"
+        );
+        assert_eq!(
+            inventory(&events, &journal_cache),
+            inventory(&walked, &walked_cache),
+            "{step}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(root);
+}

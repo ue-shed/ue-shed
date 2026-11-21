@@ -296,7 +296,10 @@ inventory changed without paging through it; a partial summary has none. From 1.
 `protocol-session` also runs `project_index_refresh` and `project_index_rebuild`, so a host can
 keep one warm worker for refreshes; older workers fail them in a session with
 `unsupported_session_operation` before doing any work. The worker rejects `changedPaths` below
-minor 26 and strips `inventoryDigest` from results for older minors.
+minor 26 and strips `inventoryDigest` from results for older minors. A refresh without
+`changedPaths` on a Windows volume that keeps a change journal reads the journal for the content
+directories that changed since the committed index was listed, instead of walking, and gives what
+a walk would give; it walks whenever the journal cannot say. Requests and results are unchanged.
 
 ### Active package input budget
 

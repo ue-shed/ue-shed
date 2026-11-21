@@ -11,6 +11,7 @@ repository = "https://github.com/ue-shed/ue-shed"
 game-text-index = { path = "../game-text-index" }
 atomic-write-file = { version = "=0.3.0", default-features = false }
 crc32fast = "=1.5.0"
+fast-fs = { path = "../fast-fs" }
 mimalloc = { version = "=0.1.52", default-features = false }
 process-metrics = { path = "../process-metrics" }
 serde = { version = "1.0", features = ["derive"] }

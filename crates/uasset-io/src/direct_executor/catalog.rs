@@ -525,6 +525,13 @@ pub trait Catalog {
         Ok(())
     }
 
+    /// Says, just before [`Catalog::commit_refresh`], whether the refresh walked every content
+    /// root (`walked`) or looked only at what it was told changed. An adapter that keeps the
+    /// change journal position a generation was listed at chooses which to keep from it.
+    fn committing(&mut self, token: &StagingToken, walked: bool) {
+        let _ = (token, walked);
+    }
+
     fn commit_refresh(
         &mut self,
         token: StagingToken,

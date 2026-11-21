@@ -16,13 +16,15 @@ use crate::protocol_result::{
 
 use super::Failure;
 use super::catalog::{
-    CatalogError, CatalogStatus, Completeness, EdgeFilter, Generation, IndexScope, ProjectId,
-    QueryItem, QueryKind, QueryRequest, RefreshChanges, RefreshSummary, SharedStringItem,
-    project_id_for,
+    Catalog, CatalogError, CatalogStatus, Completeness, EdgeFilter, Generation, IndexScope,
+    ProjectId, QueryItem, QueryKind, QueryRequest, RefreshChanges, RefreshSummary,
+    SharedStringItem, project_id_for,
 };
-use super::catalog_binary::{BinaryCatalog, VerifiedSnapshots};
+use super::catalog_binary::{BinaryCatalog, JournalPlan, VerifiedSnapshots};
+use super::change_journal;
 use super::project_index::{
-    self, CoordinatorError, RefreshEvent, RefreshPhase, RefreshProgress, RefreshReach,
+    self, CoordinatorError, ProjectScanner, RefreshEvent, RefreshPhase, RefreshProgress,
+    RefreshReach,
 };
 use super::scanner::FilesystemProjectScanner;
 
@@ -34,9 +36,13 @@ pub(crate) struct ProjectIndexRefreshOutput {
     pub(crate) duration_ms: u64,
     pub(crate) storage_bytes: u64,
     pub(crate) rebuild: bool,
-    /// Whether the refresh looked only at the host's changed paths.
+    /// Whether the refresh looked only at the host's changed paths or the change journal's
+    /// changed directories.
     pub(crate) targeted: bool,
-    /// Why a refresh given changed paths walked the project instead.
+    /// Whether the volume change journal said what changed.
+    pub(crate) journal: bool,
+    /// Why a refresh walked the project instead: the host's changed paths could not be trusted
+    /// alone, or, given none, the change journal could not say what changed.
     pub(crate) walked_because: Option<&'static str>,
 }
 
@@ -491,7 +497,16 @@ pub(crate) fn refresh(
         phase_started = Instant::now();
         on_progress(progress);
     };
+    // A walk keeps the change journal position taken before it lists the content roots.
+    let mounts = scanner.mount_points();
+    let plan_walk = |catalog: &mut BinaryCatalog| {
+        catalog.plan_change_journal(JournalPlan {
+            walked: change_journal::capture(project_root, &mounts),
+            targeted: None,
+        });
+    };
     let (events, reach) = if rebuild {
+        plan_walk(catalog);
         project_index::rebuild_listing_changes(
             catalog,
             &scanner,
@@ -501,7 +516,46 @@ pub(crate) fn refresh(
             &mut record_progress,
         )
         .map(|events| (events, RefreshReach::Walked(None)))
+    } else if options.changed_paths.is_empty() {
+        let changed = match catalog.committed_change_journal() {
+            None if catalog.committed_generation().is_none() => Err("no_committed_generation"),
+            None => Err("no_change_journal"),
+            Some(since) => change_journal::changed_directories(project_root, &mounts, since),
+        };
+        match changed {
+            Ok((directories, next)) => {
+                // `next` was taken before the changed directories are listed, and so before any
+                // walk this refresh falls back to.
+                catalog.plan_change_journal(JournalPlan {
+                    walked: Some(next.clone()),
+                    targeted: Some(next),
+                });
+                project_index::refresh_changed_directories(
+                    catalog,
+                    &scanner,
+                    project_root,
+                    &directories,
+                    options.maximum_changes,
+                    cancellation,
+                    &mut record_progress,
+                )
+            }
+            Err(reason) => {
+                plan_walk(catalog);
+                project_index::refresh_changed_paths(
+                    catalog,
+                    &scanner,
+                    project_root,
+                    &[],
+                    options.maximum_changes,
+                    cancellation,
+                    &mut record_progress,
+                )
+                .map(|(events, _)| (events, RefreshReach::Walked(Some(reason))))
+            }
+        }
     } else {
+        plan_walk(catalog);
         project_index::refresh_changed_paths(
             catalog,
             &scanner,
@@ -554,10 +608,11 @@ pub(crate) fn refresh(
         duration_ms: started.elapsed().as_millis() as u64,
         storage_bytes: catalog.storage_bytes(),
         rebuild,
-        targeted: reach == RefreshReach::Targeted,
+        targeted: matches!(reach, RefreshReach::Targeted | RefreshReach::Journal),
+        journal: reach == RefreshReach::Journal,
         walked_because: match reach {
             RefreshReach::Walked(reason) => reason,
-            RefreshReach::Targeted => None,
+            RefreshReach::Targeted | RefreshReach::Journal => None,
         },
     })
 }

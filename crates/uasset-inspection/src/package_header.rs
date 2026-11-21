@@ -129,12 +129,28 @@ pub struct PackageHeaderData {
 impl PackageHeaderData {
     #[must_use]
     pub fn from_package(package: &Package) -> Self {
-        let table = package.summary.gatherable_text_data;
+        Self::from_summary(
+            &package.summary,
+            package.names.iter().any(|name| name == "TextProperty"),
+        )
+    }
+
+    /// The same data from a header read for indexing.
+    #[must_use]
+    pub fn from_header_index(header: &uasset_parser::HeaderIndex<'_>) -> Self {
+        Self::from_summary(
+            &header.summary,
+            header.names().iter().any(|name| name == "TextProperty"),
+        )
+    }
+
+    fn from_summary(summary: &PackageSummary, has_text_property: bool) -> Self {
+        let table = summary.gatherable_text_data;
         Self {
-            package_flags: package.summary.versions.package_flags.bits(),
+            package_flags: summary.versions.package_flags.bits(),
             gatherable_text_data_count: table.map_or(0, |table| table.count),
             gatherable_text_data_offset: table.map_or(0, |table| table.offset.get()),
-            has_text_property: package.names.iter().any(|name| name == "TextProperty"),
+            has_text_property,
         }
     }
 }

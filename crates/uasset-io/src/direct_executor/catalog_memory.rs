@@ -8,8 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::catalog::{
     Catalog, CatalogError, CatalogSnapshotEntry, CatalogStatus, EntryKind, Generation,
-    HeaderEvidence, MountPoint, PackageSignature, ProjectId, QueryItem, QueryKind, QueryPage,
-    QueryRequest, RefreshSummary, StagedPackage, StagingToken, class_name, item_path,
+    HeaderEvidence, MountPoint, PackageSignature, PlainEvidence, ProjectId, QueryItem, QueryKind,
+    QueryPage, QueryRequest, RefreshSummary, StagedPackage, StagingToken, class_name, item_path,
     parse_page_cursor, validate_page_limit,
 };
 use super::catalog_dependencies::{DependencyGraph, dependency_page};
@@ -66,6 +66,8 @@ impl MemoryCatalog {
 }
 
 impl Catalog for MemoryCatalog {
+    type Preparer = PlainEvidence;
+
     fn status(&self) -> CatalogStatus {
         match &self.committed {
             Some(state) => CatalogStatus::Ready {
@@ -156,6 +158,33 @@ impl Catalog for MemoryCatalog {
                 header: entry.header,
             },
         );
+        Ok(())
+    }
+
+    fn evidence_preparer(&mut self, _token: &StagingToken) -> Result<PlainEvidence, CatalogError> {
+        Ok(PlainEvidence)
+    }
+
+    fn stage_prepared(
+        &mut self,
+        token: &StagingToken,
+        signature: &PackageSignature,
+        header: Option<HeaderEvidence>,
+    ) -> Result<(), CatalogError> {
+        self.stage_observed(
+            token,
+            StagedPackage {
+                signature: signature.clone(),
+                header,
+            },
+        )
+    }
+
+    fn release_prepared(
+        &mut self,
+        _token: &StagingToken,
+        _prepared: HeaderEvidence,
+    ) -> Result<(), CatalogError> {
         Ok(())
     }
 

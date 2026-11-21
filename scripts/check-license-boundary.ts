@@ -34,16 +34,15 @@ export const rustDependencyLicenses: Record<string, string> = Object.assign(
 	licensed("BSD-3-Clause", "atomic-write-file"),
 	licensed(
 		"MIT",
-		"cfg_aliases engine-process-supervisor libmimalloc-sys libsqlite3-sys mimalloc rusqlite nix uasset-inspection uasset-io uasset-parser uasset-source-gen zmij"
+		"cfg_aliases engine-process-supervisor libmimalloc-sys mimalloc nix uasset-inspection uasset-io uasset-parser uasset-source-gen zmij"
 	),
 	licensed(
 		"MIT OR Apache-2.0",
-		"bitflags cc cfg-if crc32fast find-msvc-tools getrandom hashbrown hashlink itoa libc once_cell pkg-config ppv-lite86 proc-macro2 quote rand rand_chacha rand_core rustversion scopeguard serde serde_core serde_derive serde_json shlex simdutf8 smallvec syn windows-link windows-sys"
+		"bitflags cc cfg-if crc32fast find-msvc-tools getrandom hashbrown itoa libc once_cell pkg-config ppv-lite86 proc-macro2 quote rand rand_chacha rand_core rustversion scopeguard serde serde_core serde_derive serde_json shlex simdutf8 smallvec syn windows-link windows-sys"
 	),
 	licensed("MIT OR Apache-2.0 OR LGPL-2.1-or-later", "r-efi"),
-	licensed("MIT/Apache-2.0", "core_detect fallible-iterator fallible-streaming-iterator vcpkg"),
+	licensed("MIT/Apache-2.0", "core_detect"),
 	licensed("Unlicense OR MIT", "memchr termcolor winapi-util"),
-	licensed("Zlib", "foldhash"),
 	licensed("Unlicense OR MIT", "aho-corasick"),
 	licensed(
 		"MIT OR Apache-2.0",

@@ -1,5 +1,6 @@
 //! Bounded byte access and Unreal primitive wire decoding.
 
+use std::borrow::Cow;
 use std::{fmt, mem::size_of};
 
 /// An absolute, half-open byte range in the source file.
@@ -569,24 +570,17 @@ impl<'a> Reader<'a> {
         &mut self,
         path: &(impl fmt::Display + ?Sized),
     ) -> Result<String, ArchiveError> {
-        let length_offset = self.position;
-        let signed_length = self.read_i32(&format_args!("{path}.Length"))?;
-        match signed_length {
-            0 => Ok(String::new()),
-            1.. => self.read_ansi_string(
-                crate::convert::u32_from_checked(signed_length),
-                length_offset,
-                path,
-                true,
-            ),
-            i32::MIN => Err(ArchiveError::new(
-                ArchiveErrorKind::InvalidCount,
-                length_offset,
-                format_args!("{path}.Length"),
-                "wide string length cannot be i32::MIN",
-            )),
-            _ => self.read_wide_string(signed_length.unsigned_abs(), length_offset, path, true),
-        }
+        self.read_fstring_cow(path).map(Cow::into_owned)
+    }
+
+    /// Reads an `FString` like [`Reader::read_fstring`], borrowing the source bytes when the
+    /// string is ASCII. Latin-1 and UTF-16 strings are decoded into an owned value; validation
+    /// and errors are those of [`Reader::read_fstring`].
+    pub fn read_fstring_cow(
+        &mut self,
+        path: &(impl fmt::Display + ?Sized),
+    ) -> Result<Cow<'a, str>, ArchiveError> {
+        self.read_framed_string(path, true)
     }
 
     /// Reads an `FSoftObjectPath` subpath string from the package summary table.
@@ -601,15 +595,31 @@ impl<'a> Reader<'a> {
         &mut self,
         path: &(impl fmt::Display + ?Sized),
     ) -> Result<String, ArchiveError> {
+        self.read_soft_object_subpath_cow(path).map(Cow::into_owned)
+    }
+
+    /// [`Reader::read_soft_object_subpath`] borrowing ASCII text from the source.
+    pub(crate) fn read_soft_object_subpath_cow(
+        &mut self,
+        path: &(impl fmt::Display + ?Sized),
+    ) -> Result<Cow<'a, str>, ArchiveError> {
+        self.read_framed_string(path, false)
+    }
+
+    fn read_framed_string(
+        &mut self,
+        path: &(impl fmt::Display + ?Sized),
+        require_terminator: bool,
+    ) -> Result<Cow<'a, str>, ArchiveError> {
         let length_offset = self.position;
         let signed_length = self.read_i32(&format_args!("{path}.Length"))?;
         match signed_length {
-            0 => Ok(String::new()),
+            0 => Ok(Cow::Borrowed("")),
             1.. => self.read_ansi_string(
                 crate::convert::u32_from_checked(signed_length),
                 length_offset,
                 path,
-                false,
+                require_terminator,
             ),
             i32::MIN => Err(ArchiveError::new(
                 ArchiveErrorKind::InvalidCount,
@@ -617,7 +627,14 @@ impl<'a> Reader<'a> {
                 format_args!("{path}.Length"),
                 "wide string length cannot be i32::MIN",
             )),
-            _ => self.read_wide_string(signed_length.unsigned_abs(), length_offset, path, false),
+            _ => self
+                .read_wide_string(
+                    signed_length.unsigned_abs(),
+                    length_offset,
+                    path,
+                    require_terminator,
+                )
+                .map(Cow::Owned),
         }
     }
 
@@ -792,13 +809,14 @@ impl<'a> Reader<'a> {
         length_offset: u64,
         path: &(impl fmt::Display + ?Sized),
         require_terminator: bool,
-    ) -> Result<String, ArchiveError> {
+    ) -> Result<Cow<'a, str>, ArchiveError> {
         let code_units = self.validate_string_length(code_units, 1, length_offset, path)?;
         let bytes = self.read_bytes(code_units, &format_args!("{path}.Data"))?;
 
         // Unreal's serialized ANSI form is an 8-bit code-unit string. This
         // one-to-one mapping is lossless for byte values and avoids assuming UTF-8.
-        let to_string = |content: &[u8]| encoding_rs::mem::decode_latin1(content).into_owned();
+        // ASCII content (the common case) borrows the source bytes.
+        let to_string = |content: &'a [u8]| encoding_rs::mem::decode_latin1(content);
 
         if !require_terminator {
             let end = bytes

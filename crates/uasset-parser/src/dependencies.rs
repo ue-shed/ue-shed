@@ -19,8 +19,12 @@
 //! (`Package.Relocation`, off by default in UE 5.8). Searchable-name and manage dependencies are
 //! other Asset Registry categories, not package dependencies.
 
-use crate::archive::Reader;
-use crate::package::{Package, PackageError, PackageErrorKind, PackageIndex};
+use std::borrow::Cow;
+
+use crate::archive::{NameRef, Reader};
+use crate::package::{
+    Import, Package, PackageError, PackageErrorKind, PackageIndex, PackageSummary,
+};
 use crate::version::PackageFlags;
 
 const UE4_ADD_STRING_ASSET_REFERENCES_MAP: i32 = 384;
@@ -75,6 +79,55 @@ impl PackageDependency {
     }
 }
 
+/// The header tables Unreal's dependency reader needs: the summary, the import map and the name
+/// map. `Package` and `HeaderIndex` both provide them, so both read dependencies identically.
+pub(crate) trait HeaderTables {
+    fn summary(&self) -> &PackageSummary;
+    fn imports(&self) -> &[Import];
+    fn name_count(&self) -> usize;
+    /// The name map entry at `index`, which is below `name_count`.
+    fn name_text(&self, index: usize) -> &str;
+
+    /// A name reference as `Package::resolve_name` renders it, borrowing unnumbered names.
+    fn name(&self, name: NameRef) -> Option<Cow<'_, str>> {
+        let index = usize::try_from(name.index().get()).ok()?;
+        if index >= self.name_count() {
+            return None;
+        }
+        let base = self.name_text(index);
+        Some(if name.number() == 0 {
+            Cow::Borrowed(base)
+        } else {
+            Cow::Owned(format!("{base}_{}", name.number() - 1))
+        })
+    }
+
+    /// Whether a name reference renders as `None`. A numbered name renders as `Base_N`, never as
+    /// `None`, so only an unnumbered reference to a `None` entry does.
+    fn is_none_name(&self, name: NameRef) -> bool {
+        name.number() == 0
+            && usize::try_from(name.index().get())
+                .ok()
+                .filter(|index| *index < self.name_count())
+                .is_some_and(|index| self.name_text(index) == "None")
+    }
+}
+
+impl HeaderTables for Package {
+    fn summary(&self) -> &PackageSummary {
+        &self.summary
+    }
+    fn imports(&self) -> &[Import] {
+        &self.imports
+    }
+    fn name_count(&self) -> usize {
+        self.names.len()
+    }
+    fn name_text(&self, index: usize) -> &str {
+        &self.names[index]
+    }
+}
+
 impl Package {
     /// This package's dependencies as Unreal's Asset Registry records them.
     ///
@@ -95,246 +148,268 @@ impl Package {
         source: &[u8],
         package_name: &str,
     ) -> Result<Vec<PackageDependency>, PackageError> {
-        let soft = self.read_soft_package_references(source)?;
-        let flags = self.read_dependency_flags(source, soft.len())?;
-        let world = ExternalActorWorld::of(package_name);
+        asset_registry_dependencies(self, source, package_name)
+    }
+}
 
-        let mut dependencies = Vec::with_capacity(self.imports.len() + soft.len());
-        for index in 0..self.imports.len() {
-            let Some(package) = self.import_package_name(index) else {
-                continue;
-            };
+/// [`Package::asset_registry_dependencies`] for any header tables.
+pub(crate) fn asset_registry_dependencies<'t, T: HeaderTables + ?Sized>(
+    tables: &'t T,
+    source: &'t [u8],
+    package_name: &str,
+) -> Result<Vec<PackageDependency>, PackageError> {
+    let soft = read_soft_package_references(tables, source)?;
+    let flags = read_dependency_flags(tables, source, soft.len())?;
+    let world = ExternalActorWorld::of(package_name);
+    let imports = tables.imports();
+
+    // Many imports name the same package. Read each package name reference and game flag
+    // once: the result keeps one entry per target and property set either way.
+    let mut roots = (0..imports.len())
+        .filter_map(|index| {
+            let name = import_package_name(tables, index)?;
             let used_in_game = flags
                 .import_used_in_game
                 .get(index)
                 .copied()
                 .unwrap_or(true);
-            dependencies.push(PackageDependency {
-                game: used_in_game && !world.contains(&package),
-                package,
-                hard: true,
-                build: false,
-            });
-        }
-        for (index, package) in soft.into_iter().enumerate() {
-            let used_in_game = flags.soft_used_in_game.get(index).copied().unwrap_or(true);
-            dependencies.push(PackageDependency {
-                game: used_in_game && !world.contains(&package),
-                package,
-                hard: false,
-                build: false,
-            });
-        }
-        for package in flags.build {
-            if !world.contains(&package) {
-                dependencies.push(PackageDependency {
-                    package,
-                    hard: false,
-                    game: false,
-                    build: true,
-                });
-            }
-        }
-        Ok(registry_dependencies(dependencies, package_name))
-    }
-
-    /// UE 5.8 `FPackageDependencyData::GetImportPackageName`. Imports that name no package
-    /// (a broken outer chain, or `None`) give no dependency.
-    fn import_package_name(&self, mut index: usize) -> Option<String> {
-        for _ in 0..self.imports.len() {
-            let import = self.imports.get(index)?;
-            if let Some(name) = import
-                .package_name
-                .and_then(|name| self.resolve_name(name))
-                .filter(|name| name != "None")
-            {
-                return Some(name);
-            }
-            match import.outer_index {
-                PackageIndex::Null => {
-                    return self
-                        .resolve_name(import.object_name)
-                        .filter(|name| name != "None");
-                }
-                PackageIndex::Import(outer) => index = usize::try_from(outer).ok()?,
-                PackageIndex::Export(_) => return None,
-            }
-        }
-        None
-    }
-
-    /// UE 5.8 `FPackageReader::SerializeSoftPackageReferenceList`.
-    fn read_soft_package_references(&self, source: &[u8]) -> Result<Vec<String>, PackageError> {
-        let versions = &self.summary.versions;
-        let Some(table) = self.summary.soft_package_references else {
-            return Ok(Vec::new());
-        };
-        if !versions.is_at_least_ue4(UE4_ADD_STRING_ASSET_REFERENCES_MAP)
-            || table.offset.get() == 0
-            || table.count == 0
-        {
-            return Ok(Vec::new());
-        }
-        let mut reader = Reader::new(source);
-        reader.seek(table.offset.get(), "SoftPackageReferences")?;
-        let count = crate::convert::usize_from_u32(table.count);
-        let capacity =
-            reader.checked_vec_capacity::<String>(count, 1, "SoftPackageReferences.Count")?;
-        let mut references = Vec::with_capacity(capacity);
-        for index in 0..count {
-            if versions.is_at_least_ue4(UE4_ADDED_SOFT_OBJECT_PATH) {
-                let name = reader.read_name_ref(&format_args!("SoftPackageReferences[{index}]"))?;
-                let name = self.resolve_name(name).ok_or_else(|| {
-                    PackageError::new(
-                        PackageErrorKind::MalformedData,
-                        Some(reader.tell()),
-                        format_args!("SoftPackageReferences[{index}]"),
-                        "soft package reference is outside the name map",
-                    )
-                })?;
-                references.push(name);
-            } else {
-                // Older packages saved object paths; Unreal keeps their package part.
-                let path = reader.read_fstring(&format_args!("SoftPackageReferences[{index}]"))?;
-                let package = path
-                    .split_once('.')
-                    .map_or(path.as_str(), |(package, _)| package);
-                references.push(package.to_owned());
-            }
-        }
-        Ok(references)
-    }
-
-    /// UE 5.8 `ReadPackageDataMain` (only its leading offset) and `ReadPackageDataDependencies`.
-    fn read_dependency_flags(
-        &self,
-        source: &[u8],
-        soft_count: usize,
-    ) -> Result<DependencyFlags, PackageError> {
-        let summary = &self.summary;
-        let all_game = || DependencyFlags {
-            import_used_in_game: vec![true; self.imports.len()],
-            soft_used_in_game: vec![true; soft_count],
-            build: Vec::new(),
-        };
-        let pre_dependency_format = !summary
-            .versions
-            .is_at_least_ue4(UE4_ASSETREGISTRY_DEPENDENCYFLAGS)
-            || summary
-                .versions
-                .package_flags
-                .contains(PackageFlags::FILTER_EDITOR_ONLY);
-        let registry_offset = summary.asset_registry_data_offset.get();
-        if pre_dependency_format || registry_offset == 0 {
-            return Ok(all_game());
-        }
-        let mut reader = Reader::new(source);
-        reader.seek(registry_offset, "AssetRegistryData")?;
-        let offset = reader.read_i64("AssetRegistryData.DependencyDataOffset")?;
-        if offset == -1 {
-            return Ok(all_game());
-        }
-        let offset = u64::try_from(offset).map_err(|_| {
-            PackageError::new(
-                PackageErrorKind::MalformedData,
-                Some(registry_offset),
-                "AssetRegistryData.DependencyDataOffset",
-                format!("negative dependency data offset {offset}"),
-            )
-        })?;
-        reader.seek(offset, "AssetRegistryDependencyData")?;
-        let import_used_in_game =
-            read_bit_array(&mut reader, "AssetRegistryDependencyData.ImportUsedInGame")?;
-        let soft_used_in_game = read_bit_array(
-            &mut reader,
-            "AssetRegistryDependencyData.SoftPackageUsedInGame",
-        )?;
-        let mut build = Vec::new();
-        if summary
-            .versions
-            .is_at_least_ue5(UE5_ASSETREGISTRY_PACKAGEBUILDDEPENDENCIES)
-        {
-            let count =
-                reader.read_count("AssetRegistryDependencyData.ExtraPackageDependencies")?;
-            let capacity = reader.checked_vec_capacity::<String>(
-                count,
-                12,
-                "AssetRegistryDependencyData.ExtraPackageDependencies",
-            )?;
-            build.reserve(capacity);
-            for index in 0..count {
-                let path = format!("AssetRegistryDependencyData.ExtraPackageDependencies[{index}]");
-                let name = reader.read_name_ref(&path)?;
-                let _flags = reader.read_u32(&path)?;
-                let name = self.resolve_name(name).ok_or_else(|| {
-                    PackageError::new(
-                        PackageErrorKind::MalformedData,
-                        Some(reader.tell()),
-                        path.as_str(),
-                        "build dependency is outside the name map",
-                    )
-                })?;
-                build.push(name);
-            }
-        }
-        if import_used_in_game.len() != self.imports.len() || soft_used_in_game.len() != soft_count
-        {
-            return Err(PackageError::new(
-                PackageErrorKind::MalformedData,
-                Some(offset),
-                "AssetRegistryDependencyData",
-                format!(
-                    "dependency flags cover {} imports and {} soft references, the header has {} and {soft_count}",
-                    import_used_in_game.len(),
-                    soft_used_in_game.len(),
-                    self.imports.len()
-                ),
-            ));
-        }
-        Ok(DependencyFlags {
-            import_used_in_game,
-            soft_used_in_game,
-            build,
+            Some((name, used_in_game))
         })
+        .collect::<Vec<_>>();
+    roots.sort_unstable();
+    roots.dedup();
+
+    let mut dependencies: Vec<(Cow<'t, str>, u8)> =
+        Vec::with_capacity(roots.len() + soft.len() + flags.build.len());
+    for (name, used_in_game) in roots {
+        let Some(package) = tables.name(name) else {
+            continue;
+        };
+        let game = used_in_game && !world.contains(&package);
+        dependencies.push((package, properties(true, game, false)));
     }
+    for (index, package) in soft.into_iter().enumerate() {
+        let used_in_game = flags.soft_used_in_game.get(index).copied().unwrap_or(true);
+        let game = used_in_game && !world.contains(&package);
+        dependencies.push((package, properties(false, game, false)));
+    }
+    for package in flags.build {
+        if !world.contains(&package) {
+            dependencies.push((package, properties(false, false, true)));
+        }
+    }
+    Ok(registry_dependencies(dependencies, package_name))
 }
 
-struct DependencyFlags {
+const fn properties(hard: bool, game: bool, build: bool) -> u8 {
+    (hard as u8) | (game as u8) << 1 | (build as u8) << 2
+}
+
+/// UE 5.8 `FPackageDependencyData::GetImportPackageName`: the name reference naming an import's
+/// package. Imports that name no package (a broken outer chain, or `None`) give no dependency.
+fn import_package_name<T: HeaderTables + ?Sized>(tables: &T, mut index: usize) -> Option<NameRef> {
+    let imports = tables.imports();
+    let names = |name: NameRef| tables.name(name).is_some() && !tables.is_none_name(name);
+    for _ in 0..imports.len() {
+        let import = imports.get(index)?;
+        if let Some(name) = import.package_name.filter(|name| names(*name)) {
+            return Some(name);
+        }
+        match import.outer_index {
+            PackageIndex::Null => return Some(import.object_name).filter(|name| names(*name)),
+            PackageIndex::Import(outer) => index = usize::try_from(outer).ok()?,
+            PackageIndex::Export(_) => return None,
+        }
+    }
+    None
+}
+
+/// UE 5.8 `FPackageReader::SerializeSoftPackageReferenceList`.
+fn read_soft_package_references<'t, T: HeaderTables + ?Sized>(
+    tables: &'t T,
+    source: &'t [u8],
+) -> Result<Vec<Cow<'t, str>>, PackageError> {
+    let versions = &tables.summary().versions;
+    let Some(table) = tables.summary().soft_package_references else {
+        return Ok(Vec::new());
+    };
+    if !versions.is_at_least_ue4(UE4_ADD_STRING_ASSET_REFERENCES_MAP)
+        || table.offset.get() == 0
+        || table.count == 0
+    {
+        return Ok(Vec::new());
+    }
+    let mut reader = Reader::new(source);
+    reader.seek(table.offset.get(), "SoftPackageReferences")?;
+    let count = crate::convert::usize_from_u32(table.count);
+    let capacity =
+        reader.checked_vec_capacity::<String>(count, 1, "SoftPackageReferences.Count")?;
+    let mut references = Vec::with_capacity(capacity);
+    for index in 0..count {
+        if versions.is_at_least_ue4(UE4_ADDED_SOFT_OBJECT_PATH) {
+            let name = reader.read_name_ref(&format_args!("SoftPackageReferences[{index}]"))?;
+            let name = tables.name(name).ok_or_else(|| {
+                PackageError::new(
+                    PackageErrorKind::MalformedData,
+                    Some(reader.tell()),
+                    format_args!("SoftPackageReferences[{index}]"),
+                    "soft package reference is outside the name map",
+                )
+            })?;
+            references.push(name);
+        } else {
+            // Older packages saved object paths; Unreal keeps their package part.
+            let path = reader.read_fstring_cow(&format_args!("SoftPackageReferences[{index}]"))?;
+            references.push(match path {
+                Cow::Borrowed(path) => Cow::Borrowed(package_part(path)),
+                Cow::Owned(path) => Cow::Owned(package_part(&path).to_owned()),
+            });
+        }
+    }
+    Ok(references)
+}
+
+/// An object path's package: the part before its first `.`.
+fn package_part(path: &str) -> &str {
+    path.split_once('.').map_or(path, |(package, _)| package)
+}
+
+/// UE 5.8 `ReadPackageDataMain` (only its leading offset) and `ReadPackageDataDependencies`.
+fn read_dependency_flags<'t, T: HeaderTables + ?Sized>(
+    tables: &'t T,
+    source: &[u8],
+    soft_count: usize,
+) -> Result<DependencyFlags<'t>, PackageError> {
+    let summary = tables.summary();
+    let import_count = tables.imports().len();
+    let all_game = || DependencyFlags {
+        import_used_in_game: vec![true; import_count],
+        soft_used_in_game: vec![true; soft_count],
+        build: Vec::new(),
+    };
+    let pre_dependency_format = !summary
+        .versions
+        .is_at_least_ue4(UE4_ASSETREGISTRY_DEPENDENCYFLAGS)
+        || summary
+            .versions
+            .package_flags
+            .contains(PackageFlags::FILTER_EDITOR_ONLY);
+    let registry_offset = summary.asset_registry_data_offset.get();
+    if pre_dependency_format || registry_offset == 0 {
+        return Ok(all_game());
+    }
+    let mut reader = Reader::new(source);
+    reader.seek(registry_offset, "AssetRegistryData")?;
+    let offset = reader.read_i64("AssetRegistryData.DependencyDataOffset")?;
+    if offset == -1 {
+        return Ok(all_game());
+    }
+    let offset = u64::try_from(offset).map_err(|_| {
+        PackageError::new(
+            PackageErrorKind::MalformedData,
+            Some(registry_offset),
+            "AssetRegistryData.DependencyDataOffset",
+            format!("negative dependency data offset {offset}"),
+        )
+    })?;
+    reader.seek(offset, "AssetRegistryDependencyData")?;
+    let import_used_in_game =
+        read_bit_array(&mut reader, "AssetRegistryDependencyData.ImportUsedInGame")?;
+    let soft_used_in_game = read_bit_array(
+        &mut reader,
+        "AssetRegistryDependencyData.SoftPackageUsedInGame",
+    )?;
+    let mut build = Vec::new();
+    if summary
+        .versions
+        .is_at_least_ue5(UE5_ASSETREGISTRY_PACKAGEBUILDDEPENDENCIES)
+    {
+        let count = reader.read_count("AssetRegistryDependencyData.ExtraPackageDependencies")?;
+        let capacity = reader.checked_vec_capacity::<String>(
+            count,
+            12,
+            "AssetRegistryDependencyData.ExtraPackageDependencies",
+        )?;
+        build.reserve(capacity);
+        for index in 0..count {
+            let path =
+                format_args!("AssetRegistryDependencyData.ExtraPackageDependencies[{index}]");
+            let name = reader.read_name_ref(&path)?;
+            let _flags = reader.read_u32(&path)?;
+            let name = tables.name(name).ok_or_else(|| {
+                PackageError::new(
+                    PackageErrorKind::MalformedData,
+                    Some(reader.tell()),
+                    path,
+                    "build dependency is outside the name map",
+                )
+            })?;
+            build.push(name);
+        }
+    }
+    if import_used_in_game.len() != import_count || soft_used_in_game.len() != soft_count {
+        return Err(PackageError::new(
+            PackageErrorKind::MalformedData,
+            Some(offset),
+            "AssetRegistryDependencyData",
+            format!(
+                "dependency flags cover {} imports and {} soft references, the header has {} and {soft_count}",
+                import_used_in_game.len(),
+                soft_used_in_game.len(),
+                import_count
+            ),
+        ));
+    }
+    Ok(DependencyFlags {
+        import_used_in_game,
+        soft_used_in_game,
+        build,
+    })
+}
+
+struct DependencyFlags<'t> {
     import_used_in_game: Vec<bool>,
     soft_used_in_game: Vec<bool>,
-    build: Vec<String>,
+    build: Vec<Cow<'t, str>>,
 }
 
 /// `UAssetRegistryImpl::DependencyDataGathered`: drop hard dependencies on the skipped script
 /// packages and dependencies on the package itself, then keep each target and property set once
-/// (`FPackageFlagSet`). Names compare without regard to ASCII case, as `FName` does.
+/// (`FPackageFlagSet`). Names compare without regard to ASCII case, as `FName` does. Only the
+/// kept targets are copied out.
 fn registry_dependencies(
-    mut dependencies: Vec<PackageDependency>,
+    mut dependencies: Vec<(Cow<'_, str>, u8)>,
     package_name: &str,
 ) -> Vec<PackageDependency> {
-    dependencies.retain(|dependency| {
-        !(dependency.hard
+    dependencies.retain(|(package, properties)| {
+        !(properties & 1 != 0
             && SKIPPED_SCRIPT_PACKAGES
                 .iter()
-                .any(|skipped| skipped.eq_ignore_ascii_case(&dependency.package)))
-            && !dependency.package.eq_ignore_ascii_case(package_name)
+                .any(|skipped| skipped.eq_ignore_ascii_case(package)))
+            && !package.eq_ignore_ascii_case(package_name)
     });
-    let key = |dependency: &PackageDependency| {
-        (
-            dependency.package.to_ascii_lowercase(),
-            dependency.properties(),
-        )
-    };
-    dependencies.sort_by(|left, right| {
-        key(left)
-            .cmp(&key(right))
-            .then_with(|| left.package.cmp(&right.package))
+    // Ordered by the ASCII-folded target, then properties, then exact spelling: the order of
+    // `(target.to_ascii_lowercase(), properties)` without lowercasing every comparison.
+    dependencies.sort_by(|(left, left_properties), (right, right_properties)| {
+        folded_order(left, right)
+            .then(left_properties.cmp(right_properties))
+            .then_with(|| left.cmp(right))
     });
-    dependencies.dedup_by(|later, earlier| {
-        later.properties() == earlier.properties()
-            && later.package.eq_ignore_ascii_case(&earlier.package)
+    dependencies.dedup_by(|(later, later_properties), (earlier, earlier_properties)| {
+        later_properties == earlier_properties && later.eq_ignore_ascii_case(earlier)
     });
     dependencies
+        .into_iter()
+        .map(|(package, properties)| {
+            PackageDependency::from_properties(package.into_owned(), properties)
+        })
+        .collect()
+}
+
+fn folded_order(left: &str, right: &str) -> std::cmp::Ordering {
+    left.bytes()
+        .map(|byte| byte.to_ascii_lowercase())
+        .cmp(right.bytes().map(|byte| byte.to_ascii_lowercase()))
 }
 
 /// The external-actor rule of `LoadDependenciesFromPackageHeader`: an external actor package
@@ -530,7 +605,7 @@ mod tests {
     #[test]
     fn targets_keep_each_property_set_once_without_regard_to_case() {
         let dependencies = registry_dependencies(
-            vec![
+            [
                 dependency("/Game/B", true, true),
                 dependency("/game/b", true, true),
                 dependency("/Game/B", true, false),
@@ -538,7 +613,13 @@ mod tests {
                 dependency("/script/engine", true, true),
                 dependency("/Script/Engine", false, true),
                 dependency("/Game/Self", true, true),
-            ],
+            ]
+            .into_iter()
+            .map(|dependency| {
+                let properties = dependency.properties();
+                (Cow::Owned(dependency.package), properties)
+            })
+            .collect(),
             "/Game/self",
         );
         assert_eq!(

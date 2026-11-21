@@ -10,14 +10,15 @@ use crate::cancellation::CancellationToken;
 use crate::protocol::ProjectIndexQuery as ProtocolQuery;
 use crate::protocol_result::{
     ProjectIndexChanges, ProjectIndexCompleteness, ProjectIndexDependency, ProjectIndexDiagnostic,
-    ProjectIndexItem, ProjectIndexMount, ProjectIndexPage, ProjectIndexStatusPayload,
-    ProjectIndexSummary,
+    ProjectIndexDictionaryItem, ProjectIndexDictionaryPage, ProjectIndexItem, ProjectIndexMount,
+    ProjectIndexPage, ProjectIndexStatusPayload, ProjectIndexSummary,
 };
 
 use super::Failure;
 use super::catalog::{
     CatalogError, CatalogStatus, Completeness, EdgeFilter, Generation, IndexScope, ProjectId,
-    QueryItem, QueryKind, QueryRequest, RefreshChanges, RefreshSummary, project_id_for,
+    QueryItem, QueryKind, QueryRequest, RefreshChanges, RefreshSummary, SharedStringItem,
+    project_id_for,
 };
 use super::catalog_binary::BinaryCatalog;
 use super::project_index::{self, CoordinatorError, RefreshEvent, RefreshPhase, RefreshProgress};
@@ -170,6 +171,20 @@ impl ProjectIndexQuerySession {
         let project_id = query_project_id(query);
         let expected_generation = query_expected_generation(query);
         query_catalog(
+            self.catalog(cache_root, project_id, expected_generation)?,
+            query,
+        )
+    }
+
+    /// [`ProjectIndexQuerySession::query`] as a dictionary page.
+    pub(crate) fn query_dictionary(
+        &mut self,
+        cache_root: &str,
+        query: &ProtocolQuery,
+    ) -> Result<ProjectIndexDictionaryPage, Failure> {
+        let project_id = query_project_id(query);
+        let expected_generation = query_expected_generation(query);
+        query_dictionary(
             self.catalog(cache_root, project_id, expected_generation)?,
             query,
         )
@@ -338,11 +353,64 @@ pub(crate) fn status(catalog: &BinaryCatalog) -> ProjectIndexStatusPayload {
     }
 }
 
-pub(crate) fn query(
+/// A query page with its strings shared page-wide. Header pages name each distinct class and
+/// serialized name once, by the Catalog's own string ids; dependency pages share their strings
+/// once they are built.
+pub(crate) fn query_dictionary(
     catalog: &BinaryCatalog,
     query: &ProtocolQuery,
-) -> Result<ProjectIndexPage, Failure> {
-    query_catalog(catalog, query)
+) -> Result<ProjectIndexDictionaryPage, Failure> {
+    let request = to_catalog_query(query)?;
+    if matches!(
+        request.kind,
+        QueryKind::Dependencies { .. } | QueryKind::Dependents { .. }
+    ) {
+        return query_catalog(catalog, query).map(Into::into);
+    }
+    let page = catalog
+        .query_shared_strings(&request)
+        .map_err(catalog_to_failure)?;
+    Ok(ProjectIndexDictionaryPage {
+        generation: page.generation.get(),
+        items: page
+            .items
+            .into_iter()
+            .map(|item| match item {
+                SharedStringItem::Inventory {
+                    package_path,
+                    signature,
+                    header_data,
+                } => ProjectIndexDictionaryItem::Inventory {
+                    package_path,
+                    signature,
+                    header_data,
+                },
+                SharedStringItem::Map {
+                    map_path,
+                    package_name,
+                } => ProjectIndexDictionaryItem::Map {
+                    map_path,
+                    package_name,
+                },
+                SharedStringItem::Header {
+                    header_data,
+                    package_path,
+                    package_name,
+                    classes,
+                    serialized_names,
+                } => ProjectIndexDictionaryItem::Header {
+                    header_data,
+                    classes,
+                    package_name,
+                    package_path,
+                    serialized_names,
+                },
+            })
+            .collect(),
+        next_cursor: page.next_cursor,
+        project_id: page.project_id.to_string(),
+        strings: page.strings,
+    })
 }
 
 fn query_catalog(

@@ -91,23 +91,19 @@ pub struct ProjectIndexDictionaryPage {
 
 impl From<ProjectIndexPage> for ProjectIndexDictionaryPage {
     fn from(page: ProjectIndexPage) -> Self {
-        let mut strings = Vec::new();
-        let mut ids = HashMap::new();
-        let mut intern = |values: Vec<String>| {
-            values
-                .into_iter()
-                .map(|value| {
-                    *ids.entry(value).or_insert_with_key(|value| {
-                        #[expect(
-                            clippy::expect_used,
-                            reason = "a Project Index page is bounded far below u32::MAX strings"
-                        )]
-                        let id = u32::try_from(strings.len()).expect("bounded Project Index page");
-                        strings.push(value.clone());
-                        id
-                    })
-                })
-                .collect()
+        // Each distinct string moves into the map once, keyed by itself; the page's string list
+        // is taken from the map at the end, so no string is copied.
+        let mut ids: HashMap<String, u32> = HashMap::new();
+        let mut intern_one = |value: String| {
+            let next = ids.len();
+            *ids.entry(value).or_insert_with(|| {
+                #[expect(
+                    clippy::expect_used,
+                    reason = "a Project Index page is bounded far below u32::MAX strings"
+                )]
+                let id = u32::try_from(next).expect("bounded Project Index page");
+                id
+            })
         };
         let items = page
             .items
@@ -137,10 +133,10 @@ impl From<ProjectIndexPage> for ProjectIndexDictionaryPage {
                     serialized_names,
                 } => ProjectIndexDictionaryItem::Header {
                     header_data,
-                    classes: intern(classes),
+                    classes: classes.into_iter().map(&mut intern_one).collect(),
                     package_name,
                     package_path,
-                    serialized_names: intern(serialized_names),
+                    serialized_names: serialized_names.into_iter().map(&mut intern_one).collect(),
                 },
                 ProjectIndexItem::Package {
                     classes,
@@ -149,12 +145,12 @@ impl From<ProjectIndexPage> for ProjectIndexDictionaryPage {
                     package_name,
                     package_path,
                 } => ProjectIndexDictionaryItem::Package {
-                    classes: intern(classes),
+                    classes: classes.into_iter().map(&mut intern_one).collect(),
                     dependencies: dependencies
                         .into_iter()
                         .map(|dependency| ProjectIndexDictionaryDependency {
-                            package: intern(vec![dependency.package])[0],
-                            package_path: dependency.package_path.map(|path| intern(vec![path])[0]),
+                            package: intern_one(dependency.package),
+                            package_path: dependency.package_path.map(&mut intern_one),
                             hard: dependency.hard,
                             game: dependency.game,
                             build: dependency.build,
@@ -166,6 +162,10 @@ impl From<ProjectIndexPage> for ProjectIndexDictionaryPage {
                 },
             })
             .collect();
+        let mut strings = vec![String::new(); ids.len()];
+        for (value, id) in ids {
+            strings[id as usize] = value;
+        }
         Self {
             generation: page.generation,
             items,

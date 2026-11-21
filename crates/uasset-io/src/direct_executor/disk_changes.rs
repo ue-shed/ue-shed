@@ -16,8 +16,9 @@ use game_text_index::store::Configuration;
 use game_text_index::{Error, ErrorCode, Result};
 
 use super::Failure;
-use super::catalog::{EntryKind, PackageSignature, bundle_signature};
+use super::catalog::{EntryKind, bundle_signature};
 use super::scanner::enumerate_content;
+use super::signature_arena::SignatureArena;
 use crate::cancellation::CancellationToken;
 
 /// Threads the walk uses at most, so a check stays light beside an editor or a scan.
@@ -132,39 +133,37 @@ fn walk(project_root: &Path, cancellation: &CancellationToken) -> Result<Vec<Dis
 
 /// The listing's packages with their signatures. `listing` is in path order, so a package's
 /// sidecars, which share its stem, sit beside it.
-fn packages(listing: &[PackageSignature]) -> Vec<DiskPackage> {
-    listing
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| entry.kind == EntryKind::Package)
-        .map(|(row, entry)| {
-            let path = &entry.relative_path;
-            let stem = path
-                .rsplit_once('.')
-                .map_or(path.as_str(), |(stem, _)| stem);
-            let mut parts = [Some((entry.size, entry.modified_nanos)), None, None, None];
+fn packages(listing: &SignatureArena) -> Vec<DiskPackage> {
+    (0..listing.len())
+        .filter(|row| listing.kind(*row) == EntryKind::Package)
+        .map(|row| {
+            let path = listing.path(row);
+            let stem = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
+            let mut parts = [
+                Some((listing.size(row), listing.modified_nanos(row))),
+                None,
+                None,
+                None,
+            ];
             let shares_stem = |other: &str| {
                 other.len() > stem.len()
                     && other.starts_with(stem)
                     && other.as_bytes()[stem.len()] == b'.'
             };
-            let neighbours = listing[..row]
-                .iter()
+            let neighbours = (0..row)
                 .rev()
-                .take_while(|other| shares_stem(&other.relative_path))
+                .take_while(|other| shares_stem(listing.path(*other)))
                 .chain(
-                    listing[row + 1..]
-                        .iter()
-                        .take_while(|other| shares_stem(&other.relative_path)),
+                    (row + 1..listing.len()).take_while(|other| shares_stem(listing.path(*other))),
                 );
             for other in neighbours {
-                let extension = &other.relative_path[stem.len() + 1..];
+                let extension = &listing.path(other)[stem.len() + 1..];
                 if let Some(slot) = SIDECARS.iter().position(|sidecar| *sidecar == extension) {
-                    parts[slot + 1] = Some((other.size, other.modified_nanos));
+                    parts[slot + 1] = Some((listing.size(other), listing.modified_nanos(other)));
                 }
             }
             DiskPackage {
-                path: path.clone(),
+                path: path.to_owned(),
                 signature: bundle_signature(parts),
             }
         })

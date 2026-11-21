@@ -1,11 +1,12 @@
-//! Bounded parallel discovery; directory work is shared, signatures stay worker-local.
+//! Bounded parallel discovery; directory work is shared, signatures stay worker-local until
+//! each worker's arena joins the result.
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, PoisonError};
 
 use super::{
-    CancellationToken, EntryKind, Failure, PackageSignature, checkpoint, discovery_failure,
+    CancellationToken, EntryKind, Failure, SignatureArena, checkpoint, discovery_failure,
     is_package_path, is_sidecar_path, metadata_modified_nanos, project_relative_path,
 };
 
@@ -88,7 +89,7 @@ pub(super) fn enumerate(
     project_root: &str,
     further_roots: &[PathBuf],
     cancellation: &CancellationToken,
-) -> Result<Vec<PackageSignature>, Failure> {
+) -> Result<SignatureArena, Failure> {
     let workers = std::thread::available_parallelism()
         .map_or(4, std::num::NonZeroUsize::get)
         .min(MAX_WORKERS);
@@ -108,7 +109,7 @@ pub(super) fn enumerate_bounded(
     project_root: &str,
     cancellation: &CancellationToken,
     maximum_workers: usize,
-) -> Result<Vec<PackageSignature>, Failure> {
+) -> Result<SignatureArena, Failure> {
     let workers = std::thread::available_parallelism()
         .map_or(4, std::num::NonZeroUsize::get)
         .min(maximum_workers)
@@ -121,7 +122,7 @@ fn enumerate_with_limits(
     cancellation: &CancellationToken,
     workers: usize,
     queue_capacity: usize,
-) -> Result<Vec<PackageSignature>, Failure> {
+) -> Result<SignatureArena, Failure> {
     enumerate_roots(
         project_root,
         vec![Path::new(project_root).join("Content")],
@@ -137,7 +138,7 @@ fn enumerate_roots(
     cancellation: &CancellationToken,
     workers: usize,
     queue_capacity: usize,
-) -> Result<Vec<PackageSignature>, Failure> {
+) -> Result<SignatureArena, Failure> {
     checkpoint(cancellation, "discovery")?;
     // Each root's relative path is derived once; entries below it extend it by their names.
     let roots = roots
@@ -162,7 +163,7 @@ fn enumerate_roots(
         capacity: queue_capacity,
         maximum_workers: workers,
     };
-    let output = Mutex::new(Vec::new());
+    let output = Mutex::new(SignatureArena::default());
     std::thread::scope(|scope| {
         // Start on the caller. Additional workers are created only when queued directories
         // outnumber idle workers, so a tiny or flat tree pays no fixed pool startup cost.
@@ -178,7 +179,7 @@ fn enumerate_roots(
     }
     checkpoint(cancellation, "discovery")?;
     let mut signatures = output.into_inner().unwrap_or_else(PoisonError::into_inner);
-    signatures.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    signatures.sort_by_path();
     Ok(signatures)
 }
 
@@ -186,9 +187,9 @@ fn work_directories<'scope, 'env: 'scope>(
     scope: &'scope std::thread::Scope<'scope, 'env>,
     cancellation: &'scope CancellationToken,
     queue: &'scope DirectoryQueue,
-    output: &'scope Mutex<Vec<PackageSignature>>,
+    output: &'scope Mutex<SignatureArena>,
 ) {
-    let mut signatures = Vec::new();
+    let mut signatures = SignatureArena::default();
     let spawn_worker = || {
         scope.spawn(move || work_directories(scope, cancellation, queue, output));
     };
@@ -205,7 +206,7 @@ fn work_directories<'scope, 'env: 'scope>(
     output
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .append(&mut signatures);
+        .append(signatures);
 }
 
 fn visit_directory(
@@ -213,7 +214,7 @@ fn visit_directory(
     prefix: &str,
     cancellation: &CancellationToken,
     queue: &DirectoryQueue,
-    signatures: &mut Vec<PackageSignature>,
+    signatures: &mut SignatureArena,
     spawn_worker: &impl Fn(),
 ) -> Result<(), Failure> {
     checkpoint(cancellation, "discovery")?;
@@ -230,7 +231,7 @@ fn visit_directory(
         // Decide from the name alone; most files are neither packages nor sidecars.
         let name = entry.file_name();
         if kind.is_dir() {
-            let child = (entry.path(), relative_path(prefix, &name, true));
+            let child = (entry.path(), directory_prefix(prefix, &name));
             match queue.offer(child) {
                 Ok(true) => spawn_worker(),
                 Ok(false) => {}
@@ -255,31 +256,29 @@ fn visit_directory(
             let metadata = entry
                 .metadata()
                 .map_err(|error| discovery_failure(&entry.path(), error))?;
-            signatures.push(PackageSignature {
-                relative_path: relative_path(prefix, &name, false),
+            signatures.push(
+                &[prefix, &name.to_string_lossy()],
                 kind,
-                size: metadata.len(),
-                modified_nanos: metadata_modified_nanos(&metadata),
-            });
+                metadata.len(),
+                metadata_modified_nanos(&metadata),
+            );
         }
     }
     Ok(())
 }
 
-/// An entry's project-relative path from its directory's: what `project_relative_path` gives for
-/// its full path, built in one allocation.
-fn relative_path(prefix: &str, name: &std::ffi::OsStr, directory: bool) -> String {
+/// A child directory's project-relative prefix from its parent's: what `project_relative_path`
+/// gives for its full path, with a trailing `/`, built in one allocation.
+fn directory_prefix(prefix: &str, name: &std::ffi::OsStr) -> String {
     let name = name.to_string_lossy();
-    let mut path = String::with_capacity(prefix.len() + name.len() + usize::from(directory));
+    let mut path = String::with_capacity(prefix.len() + name.len() + 1);
     path.push_str(prefix);
     if name.contains('\\') {
         path.push_str(&name.replace('\\', "/"));
     } else {
         path.push_str(&name);
     }
-    if directory {
-        path.push('/');
-    }
+    path.push('/');
     path
 }
 
@@ -335,7 +334,7 @@ mod tests {
                 return Ok(());
             };
             let metadata = entry.metadata().unwrap();
-            expected.push(PackageSignature {
+            expected.push(super::super::PackageSignature {
                 relative_path: project_relative_path(&root, &path.to_string_lossy()),
                 kind,
                 size: metadata.len(),
@@ -350,7 +349,7 @@ mod tests {
                 let actual =
                     enumerate_with_limits(&root, &CancellationToken::new(), workers, capacity)
                         .unwrap();
-                assert_eq!(actual, expected);
+                assert_eq!(actual.to_signatures(), expected);
                 assert_eq!(actual.len(), 96 * 5);
             }
         }

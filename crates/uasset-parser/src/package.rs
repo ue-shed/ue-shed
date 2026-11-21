@@ -592,9 +592,9 @@ fn resolve_package_paths(
 /// Resolves every import, then every export and its class, in the order `Package::parse_header`
 /// has always resolved them, so both path builders reject the same headers with the same error.
 /// `on_export` sees each export's class index, resolved unless `Null`, in export order.
-fn resolve_every_index<B: PathBuilder>(
-    resolver: &mut IndexPathResolver<'_, B>,
-    mut on_export: impl FnMut(&IndexPathResolver<'_, B>, PackageIndex) -> Result<(), PackageError>,
+fn resolve_every_index<B: PathBuilder, I: ImportLinks, E: ExportLinks>(
+    resolver: &mut IndexPathResolver<'_, B, I, E>,
+    mut on_export: impl FnMut(&IndexPathResolver<'_, B, I, E>, PackageIndex) -> Result<(), PackageError>,
 ) -> Result<(), PackageError> {
     for index in 0..resolver.imports.len() {
         resolver.ensure_resolved(
@@ -607,7 +607,7 @@ fn resolve_every_index<B: PathBuilder>(
             PackageIndex::Export(crate::convert::u32_from_table_index(index)),
             "Exports",
         )?;
-        let class_index = resolver.exports[index].class_index;
+        let class_index = resolver.exports[index].class_index();
         if class_index != PackageIndex::Null {
             resolver.ensure_resolved(class_index, "Exports.ClassIndex")?;
         }
@@ -1360,6 +1360,20 @@ fn read_import_map(
     summary: &PackageSummary,
     names: usize,
 ) -> Result<Vec<Import>, PackageError> {
+    let mut imports = Vec::new();
+    read_import_map_into(reader, summary, names, &mut imports, |import| import)?;
+    Ok(imports)
+}
+
+/// Reads and checks the import map as [`read_import_map`] does, appending what `keep` makes of
+/// each import to `imports`.
+fn read_import_map_into<T>(
+    reader: &mut Reader<'_>,
+    summary: &PackageSummary,
+    names: usize,
+    imports: &mut Vec<T>,
+    keep: impl Fn(Import) -> T,
+) -> Result<(), PackageError> {
     reader.seek(summary.imports.offset.get(), "Imports")?;
     let count = usize::try_from(summary.imports.count).map_err(|_| {
         PackageError::new(
@@ -1369,8 +1383,9 @@ fn read_import_map(
             "import count does not fit in usize",
         )
     })?;
+    // The bound is the full import's, whatever `keep` makes, so both reads reject the same counts.
     let capacity = reader.checked_vec_capacity::<Import>(count, 28, "Imports.Count")?;
-    let mut imports = Vec::with_capacity(capacity);
+    imports.reserve(capacity);
 
     for index in 0..count {
         let path = IndexedPath::new("Imports", index);
@@ -1400,7 +1415,7 @@ fn read_import_map(
             .then(|| read_archive_bool(reader, &format_args!("{path}.bImportOptional")))
             .transpose()?;
 
-        imports.push(Import {
+        imports.push(keep(Import {
             class_package,
             class_name,
             outer_index,
@@ -1409,9 +1424,9 @@ fn read_import_map(
             import_optional,
             object_path: ObjectPath(String::new()),
             class_path: ObjectPath(String::new()),
-        });
+        }));
     }
-    Ok(imports)
+    Ok(())
 }
 
 fn read_export_map(
@@ -1420,6 +1435,23 @@ fn read_export_map(
     names: usize,
     file_len: usize,
 ) -> Result<Vec<Export>, PackageError> {
+    let mut exports = Vec::new();
+    read_export_map_into(reader, summary, names, file_len, &mut exports, |export| {
+        export
+    })?;
+    Ok(exports)
+}
+
+/// Reads and checks the export map as [`read_export_map`] does, appending what `keep` makes of
+/// each export to `exports`.
+fn read_export_map_into<T>(
+    reader: &mut Reader<'_>,
+    summary: &PackageSummary,
+    names: usize,
+    file_len: usize,
+    exports: &mut Vec<T>,
+    keep: impl Fn(Export) -> T,
+) -> Result<(), PackageError> {
     reader.seek(summary.exports.offset.get(), "Exports")?;
     let count = usize::try_from(summary.exports.count).map_err(|_| {
         PackageError::new(
@@ -1429,8 +1461,9 @@ fn read_export_map(
             "export count does not fit in usize",
         )
     })?;
+    // The bound is the full export's, whatever `keep` makes, so both reads reject the same counts.
     let capacity = reader.checked_vec_capacity::<Export>(count, 64, "Exports.Count")?;
-    let mut exports = Vec::with_capacity(capacity);
+    exports.reserve(capacity);
 
     for index in 0..count {
         let path = IndexedPath::new("Exports", index);
@@ -1516,7 +1549,7 @@ fn read_export_map(
             &path,
         )?;
 
-        exports.push(Export {
+        exports.push(keep(Export {
             class_index,
             super_index,
             template_index,
@@ -1537,9 +1570,9 @@ fn read_export_map(
             script_serialization_end_offset,
             object_path: ObjectPath(String::new()),
             class_path: None,
-        });
+        }));
     }
-    Ok(exports)
+    Ok(())
 }
 
 fn read_export_serial_location(
@@ -1654,20 +1687,58 @@ enum PathResolution<P> {
     Resolved { path: P, outer_depth: usize },
 }
 
+/// The fields of an import that its object path and outer chain are made of.
+pub(crate) trait ImportLinks {
+    fn outer_index(&self) -> PackageIndex;
+    fn object_name(&self) -> crate::archive::NameRef;
+    fn package_name(&self) -> Option<crate::archive::NameRef>;
+}
+
+/// The fields of an export that its object path, outer chain and class are made of.
+pub(crate) trait ExportLinks {
+    fn outer_index(&self) -> PackageIndex;
+    fn object_name(&self) -> crate::archive::NameRef;
+    fn class_index(&self) -> PackageIndex;
+}
+
+impl ImportLinks for Import {
+    fn outer_index(&self) -> PackageIndex {
+        self.outer_index
+    }
+    fn object_name(&self) -> crate::archive::NameRef {
+        self.object_name
+    }
+    fn package_name(&self) -> Option<crate::archive::NameRef> {
+        self.package_name
+    }
+}
+
+impl ExportLinks for Export {
+    fn outer_index(&self) -> PackageIndex {
+        self.outer_index
+    }
+    fn object_name(&self) -> crate::archive::NameRef {
+        self.object_name
+    }
+    fn class_index(&self) -> PackageIndex {
+        self.class_index
+    }
+}
+
 /// What a resolved package index records. Every builder sees the same walk, so the outer-chain
 /// checks (bounds, cycles, depth) reject the same headers whatever a builder keeps.
 trait PathBuilder {
     type Path;
     /// An import's path, given its outer's path (`None` when its outer is `Null`).
-    fn import_path(
+    fn import_path<I: ImportLinks>(
         &self,
-        import: &Import,
+        import: &I,
         outer: Option<&Self::Path>,
     ) -> Result<Self::Path, PackageError>;
     /// An export's path, given its outer's path (`None` when its outer is `Null`).
-    fn export_path(
+    fn export_path<E: ExportLinks>(
         &self,
-        export: &Export,
+        export: &E,
         outer: Option<&Self::Path>,
     ) -> Result<Self::Path, PackageError>;
 }
@@ -1681,17 +1752,17 @@ struct ObjectPaths<'a, S> {
 impl<S: AsRef<str>> PathBuilder for ObjectPaths<'_, S> {
     type Path = ObjectPath;
 
-    fn import_path(
+    fn import_path<I: ImportLinks>(
         &self,
-        import: &Import,
+        import: &I,
         outer: Option<&ObjectPath>,
     ) -> Result<ObjectPath, PackageError> {
-        let object_name = resolve_name_ref_cow(self.names, import.object_name)?;
+        let object_name = resolve_name_ref_cow(self.names, import.object_name())?;
         Ok(match outer {
             None => {
                 if object_name == "None" {
                     ObjectPath(String::new())
-                } else if let Some(package_name_ref) = import.package_name {
+                } else if let Some(package_name_ref) = import.package_name() {
                     let package = resolve_name_ref_cow(self.names, package_name_ref)?;
                     ObjectPath(format!("/{package}.{object_name}"))
                 } else if object_name.starts_with('/') {
@@ -1707,12 +1778,12 @@ impl<S: AsRef<str>> PathBuilder for ObjectPaths<'_, S> {
         })
     }
 
-    fn export_path(
+    fn export_path<E: ExportLinks>(
         &self,
-        export: &Export,
+        export: &E,
         outer: Option<&ObjectPath>,
     ) -> Result<ObjectPath, PackageError> {
-        let object_name = resolve_name_ref_cow(self.names, export.object_name)?;
+        let object_name = resolve_name_ref_cow(self.names, export.object_name())?;
         Ok(join_object_path(
             outer.map_or(self.package_name, ObjectPath::as_str),
             &object_name,
@@ -1726,19 +1797,19 @@ struct ChainsOnly;
 impl PathBuilder for ChainsOnly {
     type Path = ();
 
-    fn import_path(&self, _: &Import, _: Option<&()>) -> Result<(), PackageError> {
+    fn import_path<I: ImportLinks>(&self, _: &I, _: Option<&()>) -> Result<(), PackageError> {
         Ok(())
     }
 
-    fn export_path(&self, _: &Export, _: Option<&()>) -> Result<(), PackageError> {
+    fn export_path<E: ExportLinks>(&self, _: &E, _: Option<&()>) -> Result<(), PackageError> {
         Ok(())
     }
 }
 
-struct IndexPathResolver<'a, B: PathBuilder> {
+struct IndexPathResolver<'a, B: PathBuilder, I = Import, E = Export> {
     builder: B,
-    imports: &'a [Import],
-    exports: &'a [Export],
+    imports: &'a [I],
+    exports: &'a [E],
     import_paths: Vec<PathResolution<B::Path>>,
     export_paths: Vec<PathResolution<B::Path>>,
     /// Deepest unresolved descent seen, so tests can prove the walk stays bounded (P2).
@@ -1764,8 +1835,8 @@ impl<'a, S: AsRef<str>> IndexPathResolver<'a, ObjectPaths<'a, S>> {
     }
 }
 
-impl<'a, B: PathBuilder> IndexPathResolver<'a, B> {
-    fn with_builder(builder: B, imports: &'a [Import], exports: &'a [Export]) -> Self {
+impl<'a, B: PathBuilder, I: ImportLinks, E: ExportLinks> IndexPathResolver<'a, B, I, E> {
+    fn with_builder(builder: B, imports: &'a [I], exports: &'a [E]) -> Self {
         Self {
             builder,
             imports,
@@ -1854,7 +1925,7 @@ impl<'a, B: PathBuilder> IndexPathResolver<'a, B> {
                 format!("import index {import_index} is outside import map"),
             )
         })?;
-        let (resolved, outer_depth) = match import.outer_index {
+        let (resolved, outer_depth) = match import.outer_index() {
             PackageIndex::Null => (self.builder.import_path(import, None)?, 0),
             outer => {
                 self.resolve_outer(outer, path, descent)?;
@@ -1914,7 +1985,7 @@ impl<'a, B: PathBuilder> IndexPathResolver<'a, B> {
                 format!("export index {export_index} is outside export map"),
             )
         })?;
-        let (resolved, outer_depth) = match export.outer_index {
+        let (resolved, outer_depth) = match export.outer_index() {
             PackageIndex::Null => (self.builder.export_path(export, None)?, 0),
             outer => {
                 self.resolve_outer(outer, path, descent)?;

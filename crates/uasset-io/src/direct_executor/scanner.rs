@@ -29,6 +29,7 @@ use super::project_index::{
     BundleListing, CoordinatorError, HeaderEvidenceSink, HeaderObservation, ProjectScanner,
     observe_header,
 };
+pub(crate) use super::signature_arena::SignatureArena;
 use super::{Failure, checkpoint};
 use crate::cancellation::CancellationToken;
 
@@ -115,7 +116,7 @@ impl ProjectScanner for FilesystemProjectScanner {
         &self,
         project_root: &str,
         cancellation: &CancellationToken,
-    ) -> Result<Vec<PackageSignature>, CoordinatorError> {
+    ) -> Result<SignatureArena, CoordinatorError> {
         let further_roots = self.mounts[1..]
             .iter()
             .map(|mount| Path::new(project_root).join(&mount.path))
@@ -180,18 +181,19 @@ impl ProjectScanner for FilesystemProjectScanner {
     fn stream_header_evidence<P: EvidencePreparer>(
         &self,
         project_root: &str,
-        signatures: &[PackageSignature],
+        signatures: &SignatureArena,
+        entries: &[u32],
         cancellation: &CancellationToken,
         preparer: &P,
         on_header: &mut HeaderEvidenceSink<'_, P::Prepared>,
     ) -> Result<(), CoordinatorError> {
-        if signatures.is_empty() {
+        if entries.is_empty() {
             return Ok(());
         }
         let worker_count = std::thread::available_parallelism()
             .map_or(4, std::num::NonZeroUsize::get)
             .min(MAX_HEADER_WORKERS)
-            .min(signatures.len().div_ceil(HEADER_CHUNK));
+            .min(entries.len().div_ceil(HEADER_CHUNK));
         // Workers claim chunks in order from a shared cursor, never more than the read-ahead
         // window past the first package not yet delivered, so a chunk held up by one slow
         // package stalls neither the others nor memory. Results are delivered in order.
@@ -222,17 +224,19 @@ impl ProjectScanner for FilesystemProjectScanner {
                     // Chunks are claimed in order and delivered in order, so this worker's
                     // prepared values reach the sink in the order it prepares them.
                     let mut worker = preparer.worker();
-                    while let Some(start) = claim_chunk(claims, claimed, signatures.len()) {
-                        let end = (start + HEADER_CHUNK).min(signatures.len());
+                    while let Some(start) = claim_chunk(claims, claimed, entries.len()) {
+                        let end = (start + HEADER_CHUNK).min(entries.len());
                         let mut results = Vec::with_capacity(end - start);
-                        for signature in &signatures[start..end] {
+                        for &entry in &entries[start..end] {
                             if stop.load(Ordering::Relaxed) {
                                 return;
                             }
-                            results.push(
-                                observe_header(self, project_root, signature, &cancellation)
-                                    .map(|observation| observation.prepare(preparer, &mut worker)),
-                            );
+                            // Only the packages in flight hold their signatures as strings.
+                            let signature = signatures.signature(entry as usize);
+                            let observed =
+                                observe_header(self, project_root, &signature, &cancellation)
+                                    .map(|observation| observation.prepare(preparer, &mut worker));
+                            results.push((signature, observed));
                         }
                         if sender.send((start, results)).is_err() {
                             return;
@@ -243,7 +247,7 @@ impl ProjectScanner for FilesystemProjectScanner {
             drop(sender);
             let mut ready = HashMap::new();
             let mut next = 0;
-            'deliver: while next < signatures.len() {
+            'deliver: while next < entries.len() {
                 let results = match ready.remove(&next) {
                     Some(results) => results,
                     None => match receiver.recv() {
@@ -260,8 +264,8 @@ impl ProjectScanner for FilesystemProjectScanner {
                         }
                     },
                 };
-                for result in results {
-                    if let Err(error) = on_header(&signatures[next], result) {
+                for (signature, result) in results {
+                    if let Err(error) = on_header(&signature, result) {
                         callback_error = Some(error);
                         break 'deliver;
                     }
@@ -485,13 +489,14 @@ impl FilesystemProjectScanner {
                 )
                 .map_err(|error| header_failure(package_error_code(&error)))?,
         )?;
-        let classes = index
+        // Each distinct class path once, the profile's first in order, as
+        // `bounded_header_values` keeps them, without copying them again.
+        let mut classes = index
             .export_class_paths()
             .map_err(|error| header_failure(package_error_code(&error)))?;
-        let classes = bounded_header_values(
-            classes.iter().map(String::as_str),
-            PROJECT_INDEX_MAX_CLASSES,
-        );
+        classes.sort_unstable();
+        classes.dedup();
+        classes.truncate(PROJECT_INDEX_MAX_CLASSES);
         // The v1 profile keeps a bounded name-map sample for serialized-name queries.
         let serialized_names = bounded_header_values(
             index.names().iter().map(|name| name.as_ref()),
@@ -638,7 +643,7 @@ pub(crate) fn enumerate_content(
     project_root: &str,
     cancellation: &CancellationToken,
     maximum_workers: usize,
-) -> Result<Vec<PackageSignature>, Failure> {
+) -> Result<SignatureArena, Failure> {
     discovery::enumerate_bounded(project_root, cancellation, maximum_workers)
 }
 
@@ -860,14 +865,16 @@ fn bounded_header_values<'a>(values: impl Iterator<Item = &'a str>, limit: usize
     if limit == 0 {
         return Vec::new();
     }
-    let mut selected = BTreeSet::new();
+    // A sorted run of at most `limit` values: most values are past its last once it is full,
+    // and the rest are inserted by binary search, without a tree node each.
+    let mut selected: Vec<&str> = Vec::with_capacity(limit.min(128) + 1);
     for value in values {
         if selected.len() == limit && selected.last().is_some_and(|last| value >= *last) {
             continue;
         }
-        selected.insert(value);
-        if selected.len() > limit {
-            selected.pop_last();
+        if let Err(at) = selected.binary_search(&value) {
+            selected.insert(at, value);
+            selected.truncate(limit);
         }
     }
     selected.into_iter().map(str::to_owned).collect()
@@ -889,7 +896,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        FilesystemProjectScanner, PROJECT_INDEX_MAX_DEPENDENCIES, ProjectScanner,
+        FilesystemProjectScanner, PROJECT_INDEX_MAX_DEPENDENCIES, ProjectScanner, SignatureArena,
         bounded_header_values, within_dependency_limit,
     };
 
@@ -942,7 +949,8 @@ mod tests {
         let scanner = FilesystemProjectScanner::content();
         let entries = scanner
             .enumerate(&project_root.to_string_lossy(), &CancellationToken::new())
-            .expect("enumerate Content");
+            .expect("enumerate Content")
+            .to_signatures();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].relative_path, "Content/Data/DT_Items.uasset");
         assert_eq!(entries[0].kind, EntryKind::Package);
@@ -979,10 +987,13 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let mut observed = Vec::new();
+            let arena = signatures.iter().collect::<SignatureArena>();
+            let entries = (0..count).collect::<Vec<u32>>();
             scanner
                 .stream_header_evidence(
                     "C:/Missing",
-                    &signatures,
+                    &arena,
+                    &entries,
                     &CancellationToken::new(),
                     &PlainEvidence,
                     &mut |signature, _| {
@@ -1012,10 +1023,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let mut calls = 0;
+        let arena = signatures.iter().collect::<SignatureArena>();
+        let entries = (0..4096).collect::<Vec<u32>>();
         let error = FilesystemProjectScanner::content()
             .stream_header_evidence(
                 "C:/Missing",
-                &signatures,
+                &arena,
+                &entries,
                 &CancellationToken::new(),
                 &PlainEvidence,
                 &mut |_, _| {

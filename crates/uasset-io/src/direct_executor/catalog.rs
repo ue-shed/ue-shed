@@ -208,16 +208,6 @@ pub struct CommittedEntry<'a> {
     pub header_failure: bool,
 }
 
-impl CommittedEntry<'_> {
-    /// Whether this entry records exactly `signature`.
-    pub fn has_signature(&self, signature: &PackageSignature) -> bool {
-        self.relative_path == signature.relative_path
-            && self.kind == signature.kind
-            && self.size == signature.size
-            && self.modified_nanos == signature.modified_nanos
-    }
-}
-
 /// Whether a project-relative path names a map package (`.umap`, in any ASCII case).
 pub(crate) fn is_map_path(relative_path: &str) -> bool {
     let bytes = relative_path.as_bytes();

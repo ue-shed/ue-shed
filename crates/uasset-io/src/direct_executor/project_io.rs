@@ -50,6 +50,7 @@ use crate::protocol_result::{
 };
 use crate::reader_memory::{self, Stage as MemoryStage};
 
+mod hardcoded_probe;
 mod projection_budget;
 use projection_budget::JobQueue;
 
@@ -736,6 +737,7 @@ fn projection(
         );
     }
     checkpoint(cancellation, "discovery")?;
+    let hardcoded_probe = hardcoded_probe::Probe::new(&selection.project_root);
     let memory_probe = reader_memory::Probe::new(staging.is_some());
     let worker_count = request
         .limits
@@ -796,7 +798,15 @@ fn projection(
         if let Some(groups) = &staging_groups {
             groups.verify(&paths[index])?;
         }
-        let result = project_one_path(&paths[index], kind, &filters, cancellation)?;
+        let result = project_one_path(
+            &paths[index],
+            kind,
+            &filters,
+            cancellation,
+            hardcoded_probe
+                .as_ref()
+                .and_then(|probe| probe.counts.as_ref()),
+        )?;
         if let Some(groups) = &staging_groups {
             groups.verify(&paths[index])?;
         }
@@ -948,6 +958,15 @@ fn projection(
     results.push(summary_result);
     checkpoint(cancellation, "inspection")?;
     let partial = failed_assets > 0 || partial_assets > 0;
+    if let Some(probe) = hardcoded_probe {
+        probe.finish().map_err(|_| {
+            Failure::new(
+                "probe_output",
+                "could not write anonymous probe counts",
+                false,
+            )
+        })?;
+    }
     Ok(ProjectionOutput {
         results,
         summary,
@@ -1492,6 +1511,7 @@ fn project_one_path(
     kind: ProjectionKind,
     filters: &ScanFilters,
     cancellation: &CancellationToken,
+    probe: Option<&Mutex<hardcoded_probe::Counts>>,
 ) -> Result<ProjectionWorkResult, Failure> {
     let mut measured_package = game_text_index::scan_timings::PackageTimer::new();
     let _span = game_text_index::scan_timings::Span::new("extract.package");
@@ -1598,7 +1618,7 @@ fn project_one_path(
             _ => "Other",
         };
     }
-    let result = project_parsed_package(kind, path_string, &bytes, &package, cancellation);
+    let result = project_parsed_package(kind, path_string, &bytes, &package, cancellation, probe);
     reader_memory::checkpoint(MemoryStage::Release);
     result
 }
@@ -1634,6 +1654,7 @@ fn project_parsed_package(
     bytes: &[u8],
     package: &Package,
     cancellation: &CancellationToken,
+    probe: Option<&Mutex<hardcoded_probe::Counts>>,
 ) -> Result<ProjectionWorkResult, Failure> {
     let _span = game_text_index::scan_timings::Span::new("extract.text");
     checkpoint(cancellation, "parsing")?;
@@ -1695,6 +1716,14 @@ fn project_parsed_package(
         match decoded {
             Ok(Some(asset)) => match kind {
                 ProjectionKind::Text | ProjectionKind::TextPackages => {
+                    if let Some(probe) = probe {
+                        let class = record.asset_class.as_deref().unwrap_or("Unknown");
+                        let class = class.rsplit('.').next().unwrap_or(class);
+                        probe
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .asset(package, &asset, export, class);
+                    }
                     if matches!(kind, ProjectionKind::TextPackages)
                         && let Some(classes) = blueprint_classes(package, &asset)
                     {
@@ -3114,6 +3143,7 @@ mod tests {
                     &bytes,
                     &package,
                     &CancellationToken::new(),
+                    None,
                 )
                 .unwrap();
                 assert_eq!(output.partial, damage != "decoded", "{damage}");
@@ -3903,6 +3933,7 @@ mod tests {
                 &source,
                 &package,
                 &crate::cancellation::CancellationToken::new(),
+                None,
             )
             .unwrap();
             let ResultFrame::ExtractTextPackages {

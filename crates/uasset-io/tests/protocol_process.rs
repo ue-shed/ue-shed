@@ -1372,6 +1372,80 @@ fn project_index_refresh_emits_bounded_summary_without_inventory() {
     assert_eq!(limited_events.last().unwrap()["kind"], "failed");
     assert_eq!(limited_events.last().unwrap()["code"], "output_limit");
 
+    // v1.27: a union pages each package its filters match once, and `fields` leaves out what it
+    // does not name.
+    let header_paths = |request: &Value| {
+        let (success, events, stderr) = run_request(request.clone());
+        assert!(success, "header query failed: {stderr}");
+        assert_valid_events(&events);
+        assert_eq!(events.last().unwrap()["kind"], "completed", "{events:?}");
+        events[1]["result"]["page"]["items"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+    let mut every = dictionary_request.clone();
+    every["operation"]["query"]["limit"] = serde_json::json!(1024);
+    let named = header_paths(&every);
+    let mut classes = every.clone();
+    classes["operation"]["query"]["kind"] = serde_json::json!("class_prefixes");
+    classes["operation"]["query"]["values"] = serde_json::json!(["/Script/"]);
+    let classed = header_paths(&classes);
+    let mut union = every.clone();
+    union["contract"]["version"]["minor"] = serde_json::json!(27);
+    union["operation"]["query"] = serde_json::json!({
+        "kind": "union",
+        "expectedGeneration": every["operation"]["query"]["expectedGeneration"],
+        "limit": 1024,
+        "projectId": project_id,
+        "filters": [
+            { "kind": "serialized_names", "values": ["None"] },
+            { "kind": "class_prefixes", "values": ["/Script/"] }
+        ],
+        "fields": ["classes", "matchedSerializedNames"]
+    });
+    let united = header_paths(&union);
+    let mut expected = named
+        .iter()
+        .chain(&classed)
+        .map(|item| item["packagePath"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    expected.sort();
+    expected.dedup();
+    assert!(!expected.is_empty());
+    assert_eq!(
+        united
+            .iter()
+            .map(|item| item["packagePath"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    for item in &united {
+        assert!(item["classes"].is_array());
+        assert!(item.get("headerData").is_none());
+        let names = item["serializedNames"].as_array().unwrap();
+        assert!(names.len() <= 1, "only the asked-for name: {item}");
+    }
+    let mut old_union = union.clone();
+    old_union["contract"]["version"]["minor"] = serde_json::json!(26);
+    let (success, old_events, _) = run_request(old_union);
+    assert!(!success || old_events.iter().any(|event| event["kind"] == "rejected"));
+    assert!(!old_events.iter().any(|event| event["kind"] == "accepted"));
+    let mut bare = every.clone();
+    bare["contract"]["version"]["minor"] = serde_json::json!(27);
+    bare["operation"]["query"]["fields"] = serde_json::json!([]);
+    let bare_items = header_paths(&bare);
+    assert_eq!(bare_items.len(), named.len());
+    for item in &bare_items {
+        let keys = item
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(keys, ["kind", "packageName", "packagePath"], "{item}");
+    }
+
     let stale_request = project_index_request(serde_json::json!({
         "kind": "project_index_query",
         "cacheRoot": cache_root.to_string_lossy(),

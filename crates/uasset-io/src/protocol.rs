@@ -240,6 +240,66 @@ pub enum ProjectIndexFilter {
     SerializedNames { values: Vec<String> },
 }
 
+/// v1.27: one filter of a union query.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ProjectIndexHeaderFilter {
+    ExactClasses { values: Vec<String> },
+    ClassPrefixes { values: Vec<String> },
+    ClassNameSuffixes { values: Vec<String> },
+    SerializedNames { values: Vec<String> },
+}
+
+impl ProjectIndexHeaderFilter {
+    pub fn values(&self) -> &[String] {
+        match self {
+            Self::ExactClasses { values }
+            | Self::ClassPrefixes { values }
+            | Self::ClassNameSuffixes { values }
+            | Self::SerializedNames { values } => values,
+        }
+    }
+}
+
+/// v1.27: a header field a header query's items carry. `matchedSerializedNames` keeps only the
+/// serialized names the query's serialized-name filters ask for.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+pub enum ProjectIndexHeaderField {
+    #[serde(rename = "classes")]
+    Classes,
+    #[serde(rename = "serializedNames")]
+    SerializedNames,
+    #[serde(rename = "matchedSerializedNames")]
+    MatchedSerializedNames,
+    #[serde(rename = "headerData")]
+    HeaderData,
+}
+
+/// The most filters one v1.27 union query takes.
+pub const PROJECT_INDEX_MAX_UNION_FILTERS: usize = 16;
+
+impl ProjectIndexQuery {
+    /// The header fields a v1.27 query names; `None` when it names none (every field).
+    pub fn fields(&self) -> Option<&[ProjectIndexHeaderField]> {
+        match self {
+            Self::ExactClasses { fields, .. }
+            | Self::ClassPrefixes { fields, .. }
+            | Self::ClassNameSuffixes { fields, .. }
+            | Self::SerializedNames { fields, .. }
+            | Self::Union { fields, .. } => fields.as_deref(),
+            Self::Inventory { .. }
+            | Self::Maps { .. }
+            | Self::Dependencies { .. }
+            | Self::Dependents { .. } => None,
+        }
+    }
+
+    /// Whether the query uses a v1.27 shape: a union, or header fields.
+    pub fn needs_minor_27(&self) -> bool {
+        matches!(self, Self::Union { .. }) || self.fields().is_some()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub enum ProjectIndexPageEncoding {
     #[serde(rename = "dictionary")]
@@ -276,6 +336,9 @@ pub enum ProjectIndexQuery {
         #[serde(rename = "projectId")]
         project_id: String,
         values: Vec<String>,
+        /// v1.27: the header fields each item carries; absent for all of them.
+        #[serde(default)]
+        fields: Option<Vec<ProjectIndexHeaderField>>,
     },
     #[serde(rename = "class_prefixes")]
     ClassPrefixes {
@@ -286,6 +349,9 @@ pub enum ProjectIndexQuery {
         #[serde(rename = "projectId")]
         project_id: String,
         values: Vec<String>,
+        /// v1.27: the header fields each item carries; absent for all of them.
+        #[serde(default)]
+        fields: Option<Vec<ProjectIndexHeaderField>>,
     },
     #[serde(rename = "class_name_suffixes")]
     ClassNameSuffixes {
@@ -296,6 +362,9 @@ pub enum ProjectIndexQuery {
         #[serde(rename = "projectId")]
         project_id: String,
         values: Vec<String>,
+        /// v1.27: the header fields each item carries; absent for all of them.
+        #[serde(default)]
+        fields: Option<Vec<ProjectIndexHeaderField>>,
     },
     #[serde(rename = "serialized_names")]
     SerializedNames {
@@ -306,6 +375,22 @@ pub enum ProjectIndexQuery {
         #[serde(rename = "projectId")]
         project_id: String,
         values: Vec<String>,
+        /// v1.27: the header fields each item carries; absent for all of them.
+        #[serde(default)]
+        fields: Option<Vec<ProjectIndexHeaderField>>,
+    },
+    /// v1.27: header items for the packages any of `filters` matches, each once, in path order.
+    #[serde(rename = "union")]
+    Union {
+        cursor: Option<String>,
+        #[serde(rename = "expectedGeneration")]
+        expected_generation: u64,
+        limit: u32,
+        #[serde(rename = "projectId")]
+        project_id: String,
+        filters: Vec<ProjectIndexHeaderFilter>,
+        #[serde(default)]
+        fields: Option<Vec<ProjectIndexHeaderField>>,
     },
     /// v1.23: the packages at `paths` with their dependencies; with `transitive`, also every
     /// indexed package they reach through dependencies `edges` accepts.
@@ -1003,6 +1088,11 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
                     "dependency queries require uasset-io v1.23".into(),
                 ));
             }
+            if query.needs_minor_27() && request.contract.version.minor < 27 {
+                return Err(ProtocolError(
+                    "union queries and header fields require uasset-io v1.27".into(),
+                ));
+            }
             validate_non_empty(cache_root, "cacheRoot")?;
             validate_project_index_query(query)
         }
@@ -1045,7 +1135,51 @@ fn validate_request(request: &Request) -> Result<(), ProtocolError> {
 const PROJECT_INDEX_MAX_PAGE_SIZE: u32 = 1024;
 const PROJECT_INDEX_MAX_DEPENDENCY_PATHS: usize = 1024;
 
+fn validate_query_values(values: &[String]) -> Result<(), ProtocolError> {
+    if values.is_empty() || values.len() > 64 {
+        return Err(ProtocolError(
+            "Project Index query values must contain between 1 and 64 entries".to_owned(),
+        ));
+    }
+    for value in values {
+        validate_non_empty(value, "query value")?;
+    }
+    Ok(())
+}
+
+fn validate_header_fields(fields: &[ProjectIndexHeaderField]) -> Result<(), ProtocolError> {
+    for (index, field) in fields.iter().enumerate() {
+        if fields[..index].contains(field) {
+            return Err(ProtocolError(
+                "Project Index header fields must not repeat".to_owned(),
+            ));
+        }
+    }
+    if fields.contains(&ProjectIndexHeaderField::SerializedNames)
+        && fields.contains(&ProjectIndexHeaderField::MatchedSerializedNames)
+    {
+        return Err(ProtocolError(
+            "Project Index header fields take serializedNames or matchedSerializedNames, not both"
+                .to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), ProtocolError> {
+    if let Some(fields) = query.fields() {
+        validate_header_fields(fields)?;
+    }
+    if let ProjectIndexQuery::Union { filters, .. } = query {
+        if filters.is_empty() || filters.len() > PROJECT_INDEX_MAX_UNION_FILTERS {
+            return Err(ProtocolError(format!(
+                "union queries take between 1 and {PROJECT_INDEX_MAX_UNION_FILTERS} filters"
+            )));
+        }
+        for filter in filters {
+            validate_query_values(filter.values())?;
+        }
+    }
     if let ProjectIndexQuery::Dependencies { paths, .. }
     | ProjectIndexQuery::Dependents { paths, .. } = query
     {
@@ -1077,6 +1211,7 @@ fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), Protoco
             limit,
             project_id,
             values,
+            ..
         }
         | ProjectIndexQuery::ClassPrefixes {
             cursor,
@@ -1084,6 +1219,7 @@ fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), Protoco
             limit,
             project_id,
             values,
+            ..
         }
         | ProjectIndexQuery::ClassNameSuffixes {
             cursor,
@@ -1091,6 +1227,7 @@ fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), Protoco
             limit,
             project_id,
             values,
+            ..
         }
         | ProjectIndexQuery::SerializedNames {
             cursor,
@@ -1098,6 +1235,7 @@ fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), Protoco
             limit,
             project_id,
             values,
+            ..
         } => (
             project_id,
             *expected_generation,
@@ -1106,6 +1244,13 @@ fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), Protoco
             Some(values.as_slice()),
         ),
         ProjectIndexQuery::Dependencies {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            ..
+        }
+        | ProjectIndexQuery::Union {
             cursor,
             expected_generation,
             limit,
@@ -1142,14 +1287,7 @@ fn validate_project_index_query(query: &ProjectIndexQuery) -> Result<(), Protoco
         validate_non_empty(cursor, "cursor")?;
     }
     if let Some(values) = values {
-        if values.is_empty() || values.len() > 64 {
-            return Err(ProtocolError(
-                "Project Index query values must contain between 1 and 64 entries".to_owned(),
-            ));
-        }
-        for value in values {
-            validate_non_empty(value, "query value")?;
-        }
+        validate_query_values(values)?;
     }
     Ok(())
 }
@@ -1293,7 +1431,7 @@ fn validate_result_frame(result: &ResultFrame) -> Result<(), ProtocolError> {
                     } => {
                         validate_non_empty(package_name, "packageName")?;
                         validate_non_empty(package_path, "packagePath")?;
-                        for references in [classes, serialized_names] {
+                        for references in [classes, serialized_names].into_iter().flatten() {
                             if references.len() > 64
                                 || references
                                     .iter()
@@ -1811,6 +1949,97 @@ mod game_text_contract_tests {
             serde_json::json!(vec!["Content/A.uasset"; MAX_CHANGED_PATHS + 1]);
         assert!(decode_request(&serde_json::to_vec(&value).unwrap()).is_err());
         decode_event(include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-inventory-digest-summary-result-event.json")).unwrap();
+    }
+
+    #[test]
+    fn unions_and_header_fields_need_minor_27_and_valid_fields() {
+        use super::{
+            Event, Operation, ProjectIndexHeaderField, ProjectIndexHeaderFilter, ProjectIndexQuery,
+            decode_event, decode_request,
+        };
+        use crate::protocol_result::{ProjectIndexDictionaryItem, ResultFrame};
+        const UNION: &[u8] = include_bytes!(
+            "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-union-query-request.json"
+        );
+        const PROJECTED: &[u8] = include_bytes!(
+            "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-projected-query-request.json"
+        );
+        let Operation::ProjectIndexQuery { query, .. } = decode_request(UNION).unwrap().operation
+        else {
+            panic!("union query");
+        };
+        let ProjectIndexQuery::Union {
+            ref filters,
+            fields: Some(ref fields),
+            ..
+        } = query
+        else {
+            panic!("union query");
+        };
+        assert_eq!(filters.len(), 4);
+        assert!(matches!(
+            filters[3],
+            ProjectIndexHeaderFilter::SerializedNames { .. }
+        ));
+        assert_eq!(
+            fields.as_slice(),
+            [
+                ProjectIndexHeaderField::Classes,
+                ProjectIndexHeaderField::MatchedSerializedNames
+            ]
+        );
+        let Operation::ProjectIndexQuery { query, .. } =
+            decode_request(PROJECTED).unwrap().operation
+        else {
+            panic!("projected query");
+        };
+        assert_eq!(
+            query.fields(),
+            Some([ProjectIndexHeaderField::Classes].as_slice())
+        );
+        for invalid in [
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-union-query-request-old-minor.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-projected-query-request-old-minor.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-union-query-request-maps-filter.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-union-query-request-no-filters.json").as_slice(),
+            include_bytes!("../../../packages/protocol/contracts/uasset-io/v1/fixtures/invalid/project-index-projected-query-request-repeated-field.json").as_slice(),
+        ] {
+            assert!(decode_request(invalid).is_err());
+        }
+        let mut value: serde_json::Value = serde_json::from_slice(UNION).unwrap();
+        value["operation"]["query"]["fields"] =
+            serde_json::json!(["serializedNames", "matchedSerializedNames"]);
+        assert!(decode_request(&serde_json::to_vec(&value).unwrap()).is_err());
+        value["operation"]["query"]["fields"] = serde_json::json!([]);
+        assert!(decode_request(&serde_json::to_vec(&value).unwrap()).is_ok());
+        value["operation"]["query"]["filters"] = serde_json::json!(vec![
+            serde_json::json!({"kind": "exact_classes", "values": ["A"]});
+            17
+        ]);
+        assert!(decode_request(&serde_json::to_vec(&value).unwrap()).is_err());
+        // A plain query with no fields still decodes at every minor.
+        let plain = String::from_utf8_lossy(PROJECTED)
+            .replace("\"fields\": [\"classes\"],", "")
+            .replace("\"minor\": 27", "\"minor\": 3");
+        assert!(decode_request(plain.as_bytes()).is_ok());
+        let Event::Result { result, .. } = decode_event(include_bytes!(
+            "../../../packages/protocol/contracts/uasset-io/v1/fixtures/valid/project-index-projected-dictionary-page-result-event.json"
+        ))
+        .unwrap() else {
+            panic!("projected page");
+        };
+        let ResultFrame::ProjectIndexDictionaryPage { page } = *result else {
+            panic!("projected page");
+        };
+        assert!(matches!(
+            page.items[2],
+            ProjectIndexDictionaryItem::Header {
+                classes: None,
+                serialized_names: None,
+                header_data: None,
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -9,7 +9,10 @@ import {
 	countProjectIndex,
 	foldProjectIndexRefresh,
 	getProjectIndexStatus,
+	type ProjectIndexCursor,
+	ProjectIndexFilter,
 	ProjectIndexGeneration,
+	type ProjectIndexHeader,
 	ProjectIndexQuery,
 	projectIndexDependencyClosures,
 	queryProjectIndex,
@@ -239,5 +242,101 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 				expect(() => process.kill(sessionPid, 0)).toThrow();
 			}
 		}).pipe(Effect.scoped)
+	);
+
+	effectIt.effect(
+		"pages a union with only the fields it asks for, as its filters' pages give",
+		() =>
+			Effect.gen(function* () {
+				const cacheRoot = yield* Effect.promise(() =>
+					mkdtemp(join(tmpdir(), "ue-shed-project-index-union-"))
+				);
+				yield* Effect.addFinalizer(() =>
+					Effect.promise(() => rm(cacheRoot, { recursive: true, force: true }))
+				);
+				const layer = projectIndexProcessLayerWithConfig({
+					cacheRoot,
+					executable: executable!,
+					timeoutMs: 120_000
+				});
+				yield* Effect.gen(function* () {
+					const summary = yield* foldProjectIndexRefresh(
+						yield* Stream.runCollect(refreshProjectIndex({ projectRoot: fixtureRoot }))
+					);
+					const base = {
+						expectedGeneration: summary.generation,
+						limit: 3,
+						projectId: summary.projectId
+					};
+					// Every page of a query, three items at a time so cursors are crossed.
+					const headers = Effect.fn(function* (
+						make: (cursor: ProjectIndexCursor | undefined) => ProjectIndexQuery
+					) {
+						const items: ProjectIndexHeader[] = [];
+						let cursor: ProjectIndexCursor | undefined;
+						do {
+							const page = yield* queryProjectIndex(make(cursor));
+							for (const item of page.items)
+								if (item.kind === "header") items.push(item);
+							cursor = page.nextCursor;
+						} while (cursor !== undefined);
+						return items;
+					});
+					const at = (cursor: ProjectIndexCursor | undefined) =>
+						cursor === undefined ? base : { ...base, cursor };
+					const exact = ProjectIndexFilter.cases.ExactClasses.make({
+						values: ["/Script/Engine.DataTable"]
+					});
+					const suffixes = ProjectIndexFilter.cases.ClassNameSuffixes.make({
+						values: ["Table"]
+					});
+					const names = ProjectIndexFilter.cases.SerializedNames.make({
+						values: ["None"]
+					});
+					const separate = new Map<string, ProjectIndexHeader>();
+					for (const filter of [exact, suffixes, names])
+						for (const item of yield* headers((cursor) => ({
+							...filter,
+							...at(cursor)
+						})))
+							separate.set(item.packagePath, item);
+					expect(separate.size).toBeGreaterThan(1);
+					const union = yield* headers((cursor) =>
+						ProjectIndexQuery.cases.Union.make({
+							...at(cursor),
+							filters: [exact, suffixes, names],
+							fields: ["classes", "matchedSerializedNames"]
+						})
+					);
+					expect(union.map((item) => item.packagePath)).toEqual(
+						[...separate.keys()].sort((left, right) => (left < right ? -1 : 1))
+					);
+					for (const item of union) {
+						const whole = separate.get(item.packagePath);
+						expect(item).toEqual({
+							classes: whole?.classes,
+							kind: "header",
+							packageName: whole?.packageName,
+							packagePath: item.packagePath,
+							serializedNames: whole?.serializedNames.filter(
+								(name) => name === "None"
+							)
+						});
+					}
+					const bare = yield* headers((cursor) =>
+						ProjectIndexQuery.cases.ExactClasses.make({
+							...at(cursor),
+							values: exact.values,
+							fields: []
+						})
+					);
+					expect(bare.length).toBeGreaterThan(0);
+					for (const item of bare) {
+						expect(item.classes).toEqual([]);
+						expect(item.serializedNames).toEqual([]);
+						expect(item.headerData).toBeUndefined();
+					}
+				}).pipe(Effect.provide(layer));
+			}).pipe(Effect.scoped)
 	);
 });

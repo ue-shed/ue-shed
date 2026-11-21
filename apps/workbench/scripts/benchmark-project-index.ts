@@ -1,11 +1,13 @@
 import { BenchmarkMeasurementError } from "../../../scripts/benchmark-errors.js";
 import { execFile, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { cpus, platform, release, tmpdir, totalmem } from "node:os";
 import { performance } from "node:perf_hooks";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	ProjectIndexFilter,
 	ProjectIndexQuery,
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	SAVED_TABLE_SCAN_CLASSES,
@@ -22,6 +24,7 @@ import {
 	type ProjectIndex,
 	type ProjectIndexQuery as ProjectIndexQueryValue,
 	type ProjectIndexSummary,
+	type SavedAssetHeader,
 	type SavedAssetScan
 } from "@ue-shed/unreal-assets";
 import { STRING_TABLE_CLASS, TEXT_PROPERTY_NAME } from "@ue-shed/game-text/index";
@@ -56,8 +59,16 @@ const defaultReader = join(
 );
 const isString = Schema.is(Schema.String);
 
+/**
+ * `sweep` asks one query per filter with every header field; `union` asks the same filters as
+ * one v1.27 union carrying only classes and the matched serialized names. Both fold into the same
+ * candidate sets, which the evidence digests so runs can be compared.
+ */
+type QueryMode = "sweep" | "union";
+
 interface BenchmarkOptions {
 	readonly buildReader: boolean;
+	readonly queries: QueryMode;
 	readonly mutationProjectRoot?: string;
 	readonly output?: string;
 	readonly projectRoot: string;
@@ -75,6 +86,21 @@ interface IndexObservation {
 	readonly packageCount: number;
 	readonly queryPages: number;
 	readonly removedPackages: number;
+	readonly candidates: CandidateObservation;
+}
+
+interface CandidateSet {
+	readonly count: number;
+	readonly sha256: string;
+}
+
+interface CandidateObservation {
+	readonly dataTables: CandidateSet;
+	readonly enhancedInput: CandidateSet;
+	readonly headers: CandidateSet;
+	readonly stringTables: CandidateSet;
+	readonly textProperty: CandidateSet;
+	readonly textures: CandidateSet;
 }
 
 interface NativeRefreshTiming {
@@ -132,6 +158,7 @@ Options:
   --no-build                  Reuse the existing reader instead of building the release target
   --runs <count>              Timed samples per state (default 3)
   --warmups <count>           Untimed warmups for warm states (default 1)
+  --queries <sweep|union>     One query per filter (default), or one union with only the fields read
   --output <path>             Write complete JSON evidence to this path
   --help                      Print this message
 
@@ -162,6 +189,7 @@ function parseArguments(arguments_: readonly string[]): BenchmarkOptions | undef
 	let buildReader = true;
 	let runs = 3;
 	let warmups = 1;
+	let queries: QueryMode = "sweep";
 	for (let index = 0; index < arguments_.length; index += 1) {
 		const argument = arguments_[index];
 		if (argument === "--") continue;
@@ -196,6 +224,14 @@ function parseArguments(arguments_: readonly string[]): BenchmarkOptions | undef
 			index += 1;
 			continue;
 		}
+		if (argument === "--queries") {
+			const value = optionValue(arguments_, index, argument);
+			if (value !== "sweep" && value !== "union")
+				throw new Error("--queries must be sweep or union.");
+			queries = value;
+			index += 1;
+			continue;
+		}
 		if (argument === "--output") {
 			output = resolve(repositoryRoot, optionValue(arguments_, index, argument));
 			index += 1;
@@ -209,6 +245,7 @@ function parseArguments(arguments_: readonly string[]): BenchmarkOptions | undef
 		...(mutationProjectRoot === undefined ? undefined : { mutationProjectRoot }),
 		...(output === undefined ? undefined : { output }),
 		projectRoot,
+		queries,
 		reader,
 		runs,
 		warmups
@@ -366,12 +403,63 @@ function isEnhancedInputHeader(header: ProjectIndexHeader): boolean {
 	});
 }
 
+/** A path-free digest of candidate packages: their sorted paths, each with its sorted classes. */
+function candidateSet(headers: readonly SavedAssetHeader[]): CandidateSet {
+	const hash = createHash("sha256");
+	for (const header of [...headers].sort((left, right) =>
+		left.path < right.path ? -1 : left.path > right.path ? 1 : 0
+	)) {
+		hash.update(header.path);
+		for (const exported of header.exports) hash.update(`\0${exported.class_path ?? ""}`);
+		hash.update("\n");
+	}
+	return { count: headers.length, sha256: hash.digest("hex") };
+}
+
+function candidateObservation(scan: SavedAssetScan): CandidateObservation {
+	const headers = scan.assets.flatMap((entry) =>
+		entry.depth === "header" ? [entry.header] : []
+	);
+	const withClass = (classes: readonly string[]) =>
+		candidateSet(
+			headers.filter((header) =>
+				header.exports.some(
+					(exported) =>
+						exported.class_path !== undefined && classes.includes(exported.class_path)
+				)
+			)
+		);
+	return {
+		dataTables: withClass(SAVED_TABLE_SCAN_CLASSES),
+		enhancedInput: candidateSet(
+			headers.filter((header) =>
+				isEnhancedInputHeader({
+					classes: header.exports.flatMap((exported) =>
+						exported.class_path === undefined ? [] : [exported.class_path]
+					),
+					kind: "header",
+					packageName: header.package.name,
+					packagePath: header.path,
+					serializedNames: []
+				})
+			)
+		),
+		headers: candidateSet(headers),
+		stringTables: withClass([STRING_TABLE_CLASS]),
+		textProperty: candidateSet(
+			headers.filter((header) => header.matched_names?.includes(TEXT_PROPERTY_NAME) === true)
+		),
+		textures: withClass([TEXTURE_CLASS])
+	};
+}
+
 function indexObservation(
 	summary: ProjectIndexSummary,
 	scan: SavedAssetScan,
 	queryPages: number
 ): IndexObservation {
 	return {
+		candidates: candidateObservation(scan),
 		changedPackages: summary.changedPackages,
 		emittedHeaders: scan.assets.length,
 		generation: summary.generation,
@@ -553,56 +641,72 @@ async function runProjectIndex(
 					...(cursor === undefined ? undefined : { cursor })
 				})
 			);
-			const exactClasses = yield* queryPages((cursor) =>
-				ProjectIndexQuery.cases.ExactClasses.make({
-					expectedGeneration: summary.generation,
-					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-					projectId: summary.projectId,
-					values: [...SAVED_TABLE_SCAN_CLASSES, STRING_TABLE_CLASS, TEXTURE_CLASS],
-					...(cursor === undefined ? undefined : { cursor })
-				})
+			const page = (cursor: ProjectIndexCursor | undefined) => ({
+				expectedGeneration: summary.generation,
+				limit: PROJECT_INDEX_MAX_PAGE_SIZE,
+				projectId: summary.projectId,
+				...(cursor === undefined ? undefined : { cursor })
+			});
+			const tableClasses = [...SAVED_TABLE_SCAN_CLASSES, STRING_TABLE_CLASS, TEXTURE_CLASS];
+			const headerPages: readonly QueryPages[] =
+				options.queries === "union"
+					? [
+							yield* queryPages((cursor) =>
+								ProjectIndexQuery.cases.Union.make({
+									...page(cursor),
+									filters: [
+										ProjectIndexFilter.cases.ExactClasses.make({
+											values: tableClasses
+										}),
+										ProjectIndexFilter.cases.ClassPrefixes.make({
+											values: [ENHANCED_INPUT_CLASS_PREFIX]
+										}),
+										ProjectIndexFilter.cases.ClassNameSuffixes.make({
+											values: [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES]
+										}),
+										ProjectIndexFilter.cases.SerializedNames.make({
+											values: [TEXT_PROPERTY_NAME]
+										})
+									],
+									fields: ["classes", "matchedSerializedNames"]
+								})
+							)
+						]
+					: [
+							yield* queryPages((cursor) =>
+								ProjectIndexQuery.cases.ExactClasses.make({
+									...page(cursor),
+									values: tableClasses
+								})
+							),
+							yield* queryPages((cursor) =>
+								ProjectIndexQuery.cases.ClassPrefixes.make({
+									...page(cursor),
+									values: [ENHANCED_INPUT_CLASS_PREFIX]
+								})
+							),
+							yield* queryPages((cursor) =>
+								ProjectIndexQuery.cases.ClassNameSuffixes.make({
+									...page(cursor),
+									values: [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES]
+								})
+							),
+							yield* queryPages((cursor) =>
+								ProjectIndexQuery.cases.SerializedNames.make({
+									...page(cursor),
+									values: [TEXT_PROPERTY_NAME]
+								})
+							)
+						];
+			const queryMs = [maps, ...headerPages].reduce(
+				(total, pages) => total + pages.queryMs,
+				0
 			);
-			const enhancedPrefixes = yield* queryPages((cursor) =>
-				ProjectIndexQuery.cases.ClassPrefixes.make({
-					expectedGeneration: summary.generation,
-					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-					projectId: summary.projectId,
-					values: [ENHANCED_INPUT_CLASS_PREFIX],
-					...(cursor === undefined ? undefined : { cursor })
-				})
-			);
-			const enhancedSuffixes = yield* queryPages((cursor) =>
-				ProjectIndexQuery.cases.ClassNameSuffixes.make({
-					expectedGeneration: summary.generation,
-					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-					projectId: summary.projectId,
-					values: [...ENHANCED_INPUT_CLASS_NAME_SUFFIXES],
-					...(cursor === undefined ? undefined : { cursor })
-				})
-			);
-			const serializedNames = yield* queryPages((cursor) =>
-				ProjectIndexQuery.cases.SerializedNames.make({
-					expectedGeneration: summary.generation,
-					limit: PROJECT_INDEX_MAX_PAGE_SIZE,
-					projectId: summary.projectId,
-					values: [TEXT_PROPERTY_NAME],
-					...(cursor === undefined ? undefined : { cursor })
-				})
-			);
-			const queryMs =
-				maps.queryMs +
-				exactClasses.queryMs +
-				enhancedPrefixes.queryMs +
-				enhancedSuffixes.queryMs +
-				serializedNames.queryMs;
 
 			const foldingStarted = performance.now();
-			const headers = [
-				...exactClasses.items,
-				...enhancedPrefixes.items,
-				...enhancedSuffixes.items,
-				...serializedNames.items
-			].filter((item): item is ProjectIndexHeader => item.kind === "header");
+			const headers = headerPages
+				.flatMap((pages) => pages.items)
+				.filter((item): item is ProjectIndexHeader => item.kind === "header");
 			const index = headerScanFromProjectIndex(projectRoot, summary, headers);
 			const foldingMs = performance.now() - foldingStarted;
 
@@ -627,12 +731,7 @@ async function runProjectIndex(
 			return {
 				index,
 				...(inputPackages === undefined ? undefined : { inputPackages }),
-				queryPages:
-					maps.pages +
-					exactClasses.pages +
-					enhancedPrefixes.pages +
-					enhancedSuffixes.pages +
-					serializedNames.pages,
+				queryPages: [maps, ...headerPages].reduce((total, pages) => total + pages.pages, 0),
 				summary,
 				timings: {
 					foldingMs,
@@ -830,6 +929,7 @@ export async function main(arguments_: readonly string[] = process.argv.slice(2)
 			configuration: {
 				mutationScenarios:
 					mutationTarget === undefined ? "not_requested" : "disposable_project",
+				queries: options.queries,
 				reader: basename(options.reader),
 				readerBuild: options.buildReader ? ("performed" as const) : ("skipped" as const),
 				runs: options.runs,

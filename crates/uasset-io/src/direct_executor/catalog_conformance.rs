@@ -11,10 +11,10 @@ use crate::cancellation::CancellationToken;
 use super::catalog::CatalogSnapshotEntry;
 use super::catalog::{
     Catalog, CatalogError, CatalogStatus, Completeness, EdgeFilter, EntryKind, Generation,
-    HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint, PROJECT_INDEX_MAX_DIAGNOSTICS,
-    PROJECT_INDEX_MAX_PAGE_SIZE, PackageDependency, PackageSignature, ProjectId, QueryItem,
-    QueryKind, QueryRequest, RefreshChanges, RefreshSummary, StagedPackage, item_path,
-    project_id_from_root,
+    HeaderEvidence, HeaderFields, INDEX_PROFILE_VERSION, IndexScope, MountPoint,
+    PROJECT_INDEX_MAX_DIAGNOSTICS, PROJECT_INDEX_MAX_PAGE_SIZE, PackageDependency,
+    PackageSignature, ProjectId, QueryItem, QueryKind, QueryRequest, RefreshChanges,
+    RefreshSummary, StagedPackage, item_path, project_id_from_root,
 };
 use super::checkpoint;
 use super::project_index::{
@@ -206,6 +206,7 @@ pub(crate) fn request(
         kind,
         limit,
         cursor,
+        fields: HeaderFields::ALL,
     }
 }
 
@@ -216,11 +217,28 @@ pub(crate) fn collect_pages<C: Catalog>(
     kind: QueryKind,
     limit: usize,
 ) -> Vec<QueryItem> {
+    collect_projected_pages(catalog, generation, kind, limit, HeaderFields::ALL)
+}
+
+/// [`collect_pages`] with header items projected to `fields`.
+pub(crate) fn collect_projected_pages<C: Catalog>(
+    catalog: &C,
+    generation: Generation,
+    kind: QueryKind,
+    limit: usize,
+    fields: HeaderFields,
+) -> Vec<QueryItem> {
     let mut items = Vec::new();
     let mut cursor = None;
     loop {
-        let page = query(catalog, &request(generation, kind.clone(), limit, cursor))
-            .expect("bounded query page");
+        let page = query(
+            catalog,
+            &QueryRequest {
+                fields,
+                ..request(generation, kind.clone(), limit, cursor)
+            },
+        )
+        .expect("bounded query page");
         assert!(
             page.items.len() <= limit,
             "page exceeded the requested limit"
@@ -1088,6 +1106,7 @@ pub(crate) fn inventory_retains_package_and_sidecar_signatures<C: CatalogSnapsho
         kind: QueryKind::Inventory,
         limit: 1,
         cursor: None,
+        fields: HeaderFields::ALL,
     });
     assert!(matches!(page, Err(CatalogError::StaleGeneration { .. })));
 }
@@ -1255,6 +1274,7 @@ fn summary_pages<C: Catalog>(
                 kind: kind.clone(),
                 limit,
                 cursor,
+                fields: HeaderFields::ALL,
             },
         )
         .expect("dependency page");

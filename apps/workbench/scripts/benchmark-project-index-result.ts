@@ -21,7 +21,25 @@ export const BenchmarkDistribution = Schema.Struct({
 });
 export interface BenchmarkDistribution extends Schema.Schema.Type<typeof BenchmarkDistribution> {}
 
+const Sha256 = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/u));
+
+/** One candidate set: how many packages, and a digest of their sorted paths and classes. */
+export const BenchmarkCandidateSet = Schema.Struct({
+	count: NonNegativeInt,
+	sha256: Sha256
+});
+
+export const BenchmarkCandidates = Schema.Struct({
+	dataTables: BenchmarkCandidateSet,
+	enhancedInput: BenchmarkCandidateSet,
+	headers: BenchmarkCandidateSet,
+	stringTables: BenchmarkCandidateSet,
+	textProperty: BenchmarkCandidateSet,
+	textures: BenchmarkCandidateSet
+});
+
 export const BenchmarkIndexObservation = Schema.Struct({
+	candidates: Schema.optionalKey(BenchmarkCandidates),
 	changedPackages: NonNegativeInt,
 	emittedHeaders: NonNegativeInt,
 	generation: PositiveInt,
@@ -84,6 +102,7 @@ export const ProjectIndexBenchmarkEvidence = Schema.Struct({
 	generatedAt: UtcTimestamp,
 	configuration: Schema.Struct({
 		mutationScenarios: Schema.Literals(["not_requested", "disposable_project"]),
+		queries: Schema.optionalKey(Schema.Literals(["sweep", "union"])),
 		reader: NonEmptyBoundedString,
 		readerBuild: Schema.Literals(["performed", "skipped"]),
 		runs: PositiveInt,

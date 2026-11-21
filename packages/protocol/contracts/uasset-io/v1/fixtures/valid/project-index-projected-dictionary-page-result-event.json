@@ -1,0 +1,45 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 27
+		}
+	},
+	"kind": "result",
+	"requestId": "project-index-union-001",
+	"result": {
+		"kind": "project_index_dictionary_page",
+		"page": {
+			"generation": 3,
+			"items": [
+				{
+					"classes": [0],
+					"kind": "header",
+					"packageName": "/Game/Data/DT_Items",
+					"packagePath": "Content/Data/DT_Items.uasset",
+					"serializedNames": [1]
+				},
+				{
+					"classes": [2],
+					"kind": "header",
+					"packageName": "/Game/Input/IA_Jump",
+					"packagePath": "Content/Input/IA_Jump.uasset",
+					"serializedNames": []
+				},
+				{
+					"kind": "header",
+					"packageName": "/Game/UI/W_Title",
+					"packagePath": "Content/UI/W_Title.uasset"
+				}
+			],
+			"projectId": "fixture-project",
+			"strings": [
+				"/Script/Engine.DataTable",
+				"TextProperty",
+				"/Script/EnhancedInput.InputAction"
+			]
+		}
+	},
+	"sequence": 1
+}

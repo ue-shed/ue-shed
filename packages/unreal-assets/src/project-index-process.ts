@@ -2,6 +2,8 @@ import type {
 	UAssetIoOperation,
 	UAssetIoProjectIndexDependencyQuery,
 	UAssetIoProjectIndexEdges,
+	UAssetIoProjectIndexHeaderFilter,
+	UAssetIoProjectIndexProjectedQuery,
 	UAssetIoProjectIndexQuery,
 	UAssetIoProjectIndexFilter
 } from "@ue-shed/protocol";
@@ -11,6 +13,7 @@ import { DEFAULT_CATALOG_TIMEOUT_MS, MAX_PROTOCOL_OUTPUT_BYTES } from "./asset-r
 import {
 	type ProjectIndexCount,
 	type ProjectIndexFilter,
+	type ProjectIndexHeaderFilter,
 	ProjectIndexCountResult,
 	decodeProjectIndexCount,
 	type ProjectIndexCacheRoot,
@@ -27,9 +30,11 @@ import {
 	ProjectIndexCacheRoot as CacheRootSchema,
 	ProjectIndexConfig,
 	ProjectIndexRefreshEvent,
+	ProjectIndexIncompatibleWorker,
 	ProjectIndexRefreshFailed,
 	ProjectIndexUnavailable,
 	decodeProjectIndexPage,
+	projectProjectIndexHeader,
 	projectIndexConfigLayer,
 	isProjectIndexError
 } from "./project-index.js";
@@ -171,9 +176,25 @@ const toWireEdges = (edges: ProjectIndexEdges): UAssetIoProjectIndexEdges => ({
 	...(edges.build === undefined ? undefined : { build: edges.build })
 });
 
-const toWireQuery = (
-	request: ProjectIndexQuery
-): UAssetIoProjectIndexQuery | UAssetIoProjectIndexDependencyQuery => {
+type WireQuery =
+	| UAssetIoProjectIndexQuery
+	| UAssetIoProjectIndexDependencyQuery
+	| UAssetIoProjectIndexProjectedQuery;
+
+const toWireHeaderFilter = (filter: ProjectIndexHeaderFilter): UAssetIoProjectIndexHeaderFilter => {
+	switch (filter._tag) {
+		case "ExactClasses":
+			return { kind: "exact_classes", values: [...filter.values] };
+		case "ClassPrefixes":
+			return { kind: "class_prefixes", values: [...filter.values] };
+		case "ClassNameSuffixes":
+			return { kind: "class_name_suffixes", values: [...filter.values] };
+		case "SerializedNames":
+			return { kind: "serialized_names", values: [...filter.values] };
+	}
+};
+
+const toWireQuery = (request: ProjectIndexQuery): WireQuery => {
 	const base = {
 		expectedGeneration: request.expectedGeneration,
 		limit: request.limit,
@@ -185,14 +206,37 @@ const toWireQuery = (
 			return { kind: "inventory", ...base };
 		case "Maps":
 			return { kind: "maps", ...base };
-		case "ExactClasses":
-			return { kind: "exact_classes", ...base, values: [...request.values] };
-		case "ClassPrefixes":
-			return { kind: "class_prefixes", ...base, values: [...request.values] };
-		case "ClassNameSuffixes":
-			return { kind: "class_name_suffixes", ...base, values: [...request.values] };
-		case "SerializedNames":
-			return { kind: "serialized_names", ...base, values: [...request.values] };
+		case "ExactClasses": {
+			const query = { kind: "exact_classes" as const, ...base, values: [...request.values] };
+			return request.fields === undefined ? query : { ...query, fields: [...request.fields] };
+		}
+		case "ClassPrefixes": {
+			const query = { kind: "class_prefixes" as const, ...base, values: [...request.values] };
+			return request.fields === undefined ? query : { ...query, fields: [...request.fields] };
+		}
+		case "ClassNameSuffixes": {
+			const query = {
+				kind: "class_name_suffixes" as const,
+				...base,
+				values: [...request.values]
+			};
+			return request.fields === undefined ? query : { ...query, fields: [...request.fields] };
+		}
+		case "SerializedNames": {
+			const query = {
+				kind: "serialized_names" as const,
+				...base,
+				values: [...request.values]
+			};
+			return request.fields === undefined ? query : { ...query, fields: [...request.fields] };
+		}
+		case "Union":
+			return {
+				kind: "union",
+				...base,
+				filters: request.filters.map(toWireHeaderFilter),
+				...(request.fields === undefined ? undefined : { fields: [...request.fields] })
+			};
 		case "Dependencies":
 		case "Dependents": {
 			const walk = {
@@ -213,10 +257,12 @@ const toWireQuery = (
 	}
 };
 
-const isDependencyQuery = (
-	query: UAssetIoProjectIndexQuery | UAssetIoProjectIndexDependencyQuery
-): query is UAssetIoProjectIndexDependencyQuery =>
+const isDependencyQuery = (query: WireQuery): query is UAssetIoProjectIndexDependencyQuery =>
 	query.kind === "dependencies" || query.kind === "dependents";
+
+/** A v1.27 query: a union, or a header query that names its fields. */
+const isProjectedQuery = (query: WireQuery): query is UAssetIoProjectIndexProjectedQuery =>
+	query.kind === "union" || ("fields" in query && query.fields !== undefined);
 
 /** The query operation for a domain query, in the request shape its contract minor allows. */
 const toQueryOperation = (
@@ -224,6 +270,8 @@ const toQueryOperation = (
 	request: ProjectIndexQuery
 ): UAssetIoOperation => {
 	const query = toWireQuery(request);
+	if (isProjectedQuery(query))
+		return { cacheRoot, kind: "project_index_query", pageEncoding: "dictionary", query };
 	return isDependencyQuery(query)
 		? { cacheRoot, kind: "project_index_query", pageEncoding: "dictionary", query }
 		: { cacheRoot, kind: "project_index_query", pageEncoding: "dictionary", query };
@@ -295,16 +343,20 @@ const makeRequest = (
 
 /**
  * The contract minor an operation's request names: the oldest that carries it (v1.23 for
- * dependency walks), and v1.26 for status, refresh and rebuild, whose summaries carry the
- * inventory digest from v1.26 on. A worker that predates a minor still serves a request that
- * uses none of that minor's fields.
+ * dependency walks, v1.27 for unions and header fields), and v1.26 for status, refresh and
+ * rebuild, whose summaries carry the inventory digest from v1.26 on. A worker that predates a
+ * minor still serves a request that uses none of that minor's fields.
  */
 const contractMinorFor = (operation: UAssetIoOperation): number => {
 	switch (operation.kind) {
 		case "project_index_count":
 			return 4;
 		case "project_index_query":
-			return isDependencyQuery(operation.query) ? 23 : 9;
+			return isProjectedQuery(operation.query)
+				? 27
+				: isDependencyQuery(operation.query)
+					? 23
+					: 9;
 		case "project_index_status":
 		case "project_index_refresh":
 		case "project_index_rebuild":
@@ -702,6 +754,39 @@ async function collectQuery(
 	return page;
 }
 
+/**
+ * A worker older than v1.27 rejects a header query's `fields`. The same query without them reads
+ * every field, and the host leaves out what the query did not ask for, so the page is the one a
+ * v1.27 worker gives. A union needs v1.27 itself: it fails with the worker's incompatibility.
+ */
+const withoutFields = (
+	request: ProjectIndexQuery,
+	incompatible: ProjectIndexIncompatibleWorker,
+	collect: (request: ProjectIndexQuery) => Effect.Effect<ProjectIndexPage, ProjectIndexError>
+): Effect.Effect<ProjectIndexPage, ProjectIndexError> => {
+	if (
+		(request._tag !== "ExactClasses" &&
+			request._tag !== "ClassPrefixes" &&
+			request._tag !== "ClassNameSuffixes" &&
+			request._tag !== "SerializedNames") ||
+		request.fields === undefined
+	)
+		return Effect.fail(incompatible);
+	const { fields: _fields, ...whole } = request;
+	return collect(whole).pipe(
+		Effect.map(
+			(page): ProjectIndexPage => ({
+				generation: page.generation,
+				items: page.items.map((item) =>
+					item.kind === "header" ? projectProjectIndexHeader(item, request) : item
+				),
+				projectId: page.projectId,
+				...(page.nextCursor === undefined ? undefined : { nextCursor: page.nextCursor })
+			})
+		)
+	);
+};
+
 const decodeCountResult = Schema.decodeUnknownExit(ProjectIndexCountResult);
 
 async function collectCount(
@@ -827,12 +912,18 @@ const makeProcessService = Effect.fn("ProjectIndexProcess.make")(function* (
 	const rebuild = (target: ProjectIndexRefreshTarget) =>
 		refreshStream(configuration, worker, cacheRoot, target, "rebuild");
 
-	const query = Effect.fn("ProjectIndexProcess.query")(function* (request: ProjectIndexQuery) {
-		const page = yield* mutex.withPermits(1)(
+	const collect = (request: ProjectIndexQuery) =>
+		mutex.withPermits(1)(
 			Effect.tryPromise({
 				try: (signal) => collectQuery(configuration, session, cacheRoot, request, signal),
 				catch: (cause) => mapStreamFailure(cause, true)
 			}).pipe(Effect.withSpan("unreal_assets.project_index_query"))
+		);
+	const query = Effect.fn("ProjectIndexProcess.query")(function* (request: ProjectIndexQuery) {
+		const page = yield* collect(request).pipe(
+			Effect.catchTag("ProjectIndexIncompatibleWorker", (incompatible) =>
+				withoutFields(request, incompatible, collect)
+			)
 		);
 		return yield* decodeProjectIndexPage(page);
 	});

@@ -61,6 +61,10 @@ const POSTING_ENTRY_BYTES: usize = 25;
 /// The most adjacent inventory blocks one thread decodes as one run when chunks are loaded
 /// together.
 const LOAD_RUN_BLOCKS: usize = 8;
+/// Most distinct record blocks a query page decodes at once: 4 MiB of decoded records.
+const RECORD_BATCH_BLOCKS: usize = 64;
+/// Fewest record blocks one decoding thread takes, so a thread does more than it costs to start.
+const RECORD_BLOCKS_PER_THREAD: usize = 8;
 /// A refresh writes a delta while the delta's entries and the base rows it hides stay at most
 /// this many, and at most `DELTA_LIMIT_PERMILLE` thousandths of the base; past either it compacts
 /// into a new base.
@@ -2994,8 +2998,8 @@ impl Snapshot {
         mut visit: impl FnMut(usize, Option<HeaderView<'_>>) -> Result<(), CatalogError>,
     ) -> Result<(), CatalogError> {
         self.load_chunks(ids.iter().copied())?;
-        let mut last_block = LastBlock::default();
-        let mut bytes = Vec::new();
+        // Page-local windows of nearby records: (first id, past the last id, byte range).
+        let mut windows = Vec::new();
         let mut first = 0;
         while first < ids.len() {
             let entry = self.entry(ids[first])?;
@@ -3011,18 +3015,142 @@ impl Snapshot {
                 end = next_end;
                 last += 1;
             }
-            // A page-local window avoids one seek/read/allocation per nearby record. Nothing
-            // survives the query: later queries must still detect changed or truncated bytes.
-            self.range_reusing(&mut last_block, RECORDS, start, end - start, &mut bytes)?;
-            for &id in &ids[first..last] {
-                let entry = self.entry(id)?;
-                let offset = (entry.offset - start) as usize;
-                let record = &bytes[offset..offset + entry.len as usize];
-                visit(id, self.check_record(id, record)?)?;
-            }
+            checked_range(start, end - start, self.header.sections[RECORDS].length)?;
+            windows.push((first, last, start, end));
             first = last;
         }
+        // A page's records are spread over many compressed blocks. Each batch of windows reads
+        // its distinct blocks on this thread and decodes them on several, then visits the
+        // windows in order. Nothing survives the query: later queries must still detect changed
+        // or truncated bytes, and a batch bounds the decoded bytes held at once.
+        let mut bytes = Vec::new();
+        let mut next_window = 0;
+        while next_window < windows.len() {
+            let mut blocks = BTreeSet::new();
+            let mut batch_end = next_window;
+            while batch_end < windows.len() && blocks.len() < RECORD_BATCH_BLOCKS {
+                let (_, _, start, end) = windows[batch_end];
+                if end > start {
+                    blocks.extend(start / BLOCK_BYTES..=(end - 1) / BLOCK_BYTES);
+                }
+                batch_end += 1;
+            }
+            let blocks = blocks.into_iter().collect::<Vec<_>>();
+            let decoded = self.decode_section_blocks(RECORDS, &blocks)?;
+            for &(first, last, start, end) in &windows[next_window..batch_end] {
+                bytes.clear();
+                if end > start {
+                    for block in start / BLOCK_BYTES..=(end - 1) / BLOCK_BYTES {
+                        let data = blocks
+                            .binary_search(&block)
+                            .ok()
+                            .and_then(|position| decoded.get(position))
+                            .ok_or_else(|| corrupt("binary range leaves its section"))?;
+                        let base = block * BLOCK_BYTES;
+                        let from = start.max(base) - base;
+                        let to = end.min(base + data.len() as u64) - base;
+                        bytes.extend_from_slice(
+                            data.get(from as usize..to as usize)
+                                .ok_or_else(|| corrupt("binary range leaves its section"))?,
+                        );
+                    }
+                }
+                if bytes.len() as u64 != end - start {
+                    return Err(corrupt("binary range leaves its section"));
+                }
+                for &id in &ids[first..last] {
+                    let entry = self.entry(id)?;
+                    let offset = (entry.offset - start) as usize;
+                    let record = &bytes[offset..offset + entry.len as usize];
+                    visit(id, self.check_record(id, record)?)?;
+                }
+            }
+            next_window = batch_end;
+        }
         Ok(())
+    }
+    /// The decoded bytes of `blocks` (ascending) of section `index`. The stored bytes are read
+    /// on this thread, adjacent blocks in one read; several threads decode them when there are
+    /// enough.
+    fn decode_section_blocks(
+        &self,
+        index: usize,
+        blocks: &[u64],
+    ) -> Result<Vec<Vec<u8>>, CatalogError> {
+        let length = self.header.sections[index].length;
+        let ranges = blocks
+            .iter()
+            .map(|&block| {
+                let position = usize::try_from(block).map_err(|_| corrupt("invalid block"))?;
+                let range = *self.blocks[index]
+                    .get(position)
+                    .ok_or_else(|| corrupt("binary range leaves its section"))?;
+                let decoded = usize::try_from(block_length(length, position))
+                    .map_err(|_| corrupt("block too large"))?;
+                Ok((range, decoded))
+            })
+            .collect::<Result<Vec<_>, CatalogError>>()?;
+        let mut runs = Vec::new();
+        let mut first = 0;
+        while first < ranges.len() {
+            // Blocks stored back to back in the file are read together.
+            let start = ranges[first].0.0;
+            let mut end = start + ranges[first].0.1;
+            let mut last = first + 1;
+            while last < ranges.len() && ranges[last].0.0 == end {
+                end += ranges[last].0.1;
+                last += 1;
+            }
+            runs.push((
+                start,
+                last,
+                read_range(&mut self.file.borrow_mut(), start, end - start)?,
+            ));
+            first = last;
+        }
+        let mut stored = Vec::with_capacity(ranges.len());
+        let mut run = 0;
+        for (position, &((offset, size), decoded)) in ranges.iter().enumerate() {
+            while runs[run].1 <= position {
+                run += 1;
+            }
+            let (start, _, bytes) = &runs[run];
+            let from = (offset - start) as usize;
+            let block = bytes
+                .get(from..from + size as usize)
+                .ok_or_else(|| corrupt("binary range leaves its section"))?;
+            stored.push((block, decoded));
+        }
+        let decode = |part: &[(&[u8], usize)]| {
+            let mut decompressor = None;
+            part.iter()
+                .map(|&(stored, decoded)| {
+                    let mut out = vec![0; decoded];
+                    decode_block_into(stored, &mut out, &mut decompressor)?;
+                    Ok(out)
+                })
+                .collect::<Result<Vec<_>, CatalogError>>()
+        };
+        let threads = codec_threads(stored.len() * 4 / RECORD_BLOCKS_PER_THREAD);
+        if threads == 1 {
+            return decode(&stored);
+        }
+        let per_thread = stored.len().div_ceil(threads);
+        std::thread::scope(|scope| {
+            let workers = stored
+                .chunks(per_thread)
+                .map(|part| scope.spawn(move || decode(part)))
+                .collect::<Vec<_>>();
+            workers
+                .into_iter()
+                .map(|worker| {
+                    worker
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .collect::<Result<Vec<_>, CatalogError>>()
+        })
+        .map(|parts| parts.into_iter().flatten().collect())
     }
     fn expand_header(
         &self,
@@ -3149,6 +3277,58 @@ impl Snapshot {
         ids.dedup();
         Ok(ids)
     }
+    /// Adds the indices of the postings a header filter (or every filter of a union) reads.
+    fn select_postings(
+        &self,
+        kind: &QueryKind,
+        selected: &mut BTreeSet<usize>,
+    ) -> Result<(), CatalogError> {
+        match kind {
+            QueryKind::ExactClasses { values } | QueryKind::SerializedNames { values } => {
+                let tag = u8::from(matches!(kind, QueryKind::SerializedNames { .. }));
+                for value in values {
+                    if let Some(id) = self.string_id(value)?
+                        && let Some(index) = self.posting_index(tag, id)?
+                    {
+                        selected.insert(index);
+                    }
+                }
+            }
+            QueryKind::ClassPrefixes { values } | QueryKind::ClassNameSuffixes { values } => {
+                let strings = &self.strings()?.table;
+                let postings = self.postings()?;
+                for (index, posting) in postings.iter().enumerate().take_while(|(_, p)| p.kind == 0)
+                {
+                    let text = strings.get(posting.value as usize);
+                    if values.iter().any(|value| {
+                        if matches!(kind, QueryKind::ClassPrefixes { .. }) {
+                            text.starts_with(value.as_str())
+                        } else {
+                            class_name(text).ends_with(value.as_str())
+                        }
+                    }) {
+                        selected.insert(index);
+                    }
+                }
+            }
+            QueryKind::Union { filters } => {
+                for filter in filters {
+                    self.select_postings(filter, selected)?;
+                }
+            }
+            QueryKind::Maps | QueryKind::Inventory => {
+                return Err(CatalogError::InvalidRequest {
+                    message: "inventory and map queries do not match postings".into(),
+                });
+            }
+            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. } => {
+                return Err(CatalogError::InvalidRequest {
+                    message: "dependency queries walk the graph; they do not match postings".into(),
+                });
+            }
+        }
+        Ok(())
+    }
     fn matches(
         &self,
         kind: &QueryKind,
@@ -3179,40 +3359,7 @@ impl Snapshot {
         }
         let postings = self.postings()?;
         let mut selected = BTreeSet::new();
-        match kind {
-            QueryKind::ExactClasses { values } | QueryKind::SerializedNames { values } => {
-                let tag = u8::from(matches!(kind, QueryKind::SerializedNames { .. }));
-                for value in values {
-                    if let Some(id) = self.string_id(value)?
-                        && let Some(index) = self.posting_index(tag, id)?
-                    {
-                        selected.insert(index);
-                    }
-                }
-            }
-            QueryKind::ClassPrefixes { values } | QueryKind::ClassNameSuffixes { values } => {
-                let strings = &self.strings()?.table;
-                for (index, posting) in postings.iter().enumerate().take_while(|(_, p)| p.kind == 0)
-                {
-                    let text = strings.get(posting.value as usize);
-                    if values.iter().any(|value| {
-                        if matches!(kind, QueryKind::ClassPrefixes { .. }) {
-                            text.starts_with(value.as_str())
-                        } else {
-                            class_name(text).ends_with(value.as_str())
-                        }
-                    }) {
-                        selected.insert(index);
-                    }
-                }
-            }
-            QueryKind::Maps | QueryKind::Inventory => unreachable!(),
-            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. } => {
-                return Err(CatalogError::InvalidRequest {
-                    message: "dependency queries walk the graph; they do not match postings".into(),
-                });
-            }
-        }
+        self.select_postings(kind, &mut selected)?;
         let mut ids = Vec::new();
         let mut bytes = Vec::new();
         let mut last = LastBlock::default();
@@ -4558,6 +4705,9 @@ impl BinaryCatalog {
                 message: "dependency pages name packages, not shared strings".into(),
             });
         }
+        validate_union_filters(&request.kind)?;
+        let fields = request.fields;
+        let matched = request.kind.serialized_name_values();
         let two_segments = manifest.delta_snapshot.is_some();
         let mut page_ids: std::collections::HashMap<u64, u32, BuildIdHasher> =
             std::collections::HashMap::default();
@@ -4603,12 +4753,29 @@ impl BinaryCatalog {
                         page_id
                     })
                 };
+                // A field the request leaves out is never copied or given a page string.
                 SharedStringItem::Header {
-                    header_data: header.header_data.clone(),
+                    header_data: if fields.header_data {
+                        header.header_data.clone()
+                    } else {
+                        None
+                    },
                     package_path: path.to_owned(),
                     package_name: header.package_name.to_owned(),
-                    classes: header.class_ids().map(&mut page_id).collect(),
-                    serialized_names: header.name_ids().map(&mut page_id).collect(),
+                    classes: if fields.classes {
+                        header.class_ids().map(&mut page_id).collect()
+                    } else {
+                        Vec::new()
+                    },
+                    serialized_names: match fields.serialized_names {
+                        NameField::All => header.name_ids().map(&mut page_id).collect(),
+                        NameField::Matched => header
+                            .name_ids()
+                            .filter(|id| matched.contains(&strings.get(*id as usize)))
+                            .map(&mut page_id)
+                            .collect(),
+                        NameField::Omitted => Vec::new(),
+                    },
                 }
             },
         )?;
@@ -5169,21 +5336,38 @@ impl BinaryCatalog {
                 next_cursor,
             });
         }
+        validate_union_filters(&request.kind)?;
+        let fields = request.fields;
+        let matched = request.kind.serialized_name_values();
         let (items, next_cursor) = self.page(
             request,
             |item| item,
-            |path, header, strings, _| QueryItem::Header {
-                header_data: header.header_data.clone(),
-                package_path: path.to_owned(),
-                package_name: header.package_name.to_owned(),
-                classes: header
-                    .class_ids()
-                    .map(|id| strings.get(id as usize).to_owned())
-                    .collect(),
-                serialized_names: header
-                    .name_ids()
-                    .map(|id| strings.get(id as usize).to_owned())
-                    .collect(),
+            |path, header, strings, _| {
+                let text = |id: u32| strings.get(id as usize);
+                QueryItem::Header {
+                    header_data: if fields.header_data {
+                        header.header_data.clone()
+                    } else {
+                        None
+                    },
+                    package_path: path.to_owned(),
+                    package_name: header.package_name.to_owned(),
+                    classes: if fields.classes {
+                        header.class_ids().map(|id| text(id).to_owned()).collect()
+                    } else {
+                        Vec::new()
+                    },
+                    serialized_names: match fields.serialized_names {
+                        NameField::All => header.name_ids().map(|id| text(id).to_owned()).collect(),
+                        NameField::Matched => header
+                            .name_ids()
+                            .map(text)
+                            .filter(|name| matched.contains(name))
+                            .map(str::to_owned)
+                            .collect(),
+                        NameField::Omitted => Vec::new(),
+                    },
+                }
             },
         )?;
         Ok(QueryPage {
@@ -6068,6 +6252,7 @@ mod tests {
             kind,
             limit,
             cursor,
+            fields: HeaderFields::ALL,
         };
         let names = catalog
             .query(&request(
@@ -6236,6 +6421,7 @@ mod tests {
                     },
                     limit: 10,
                     cursor: None,
+                    fields: HeaderFields::ALL,
                 })
                 .unwrap();
             assert_eq!(page.items.len(), expected, "{name}");
@@ -6937,6 +7123,7 @@ mod tests {
                 kind,
                 limit,
                 cursor: (!cursor.is_empty()).then(|| cursor.to_owned()),
+                fields: HeaderFields::ALL,
             })
         };
         let decoded = |catalog: &BinaryCatalog| {
@@ -7028,11 +7215,110 @@ mod tests {
         mutation_sequence(6, 12, &[7, 300]);
     }
 
+    /// Every header filter of the mutation sequence's queries, as one union's filters.
+    fn kinds_for_union(generation: u64) -> Vec<QueryKind> {
+        vec![
+            QueryKind::ExactClasses {
+                values: vec!["/Script/Test.Widget".into(), "NoDot".into()],
+            },
+            QueryKind::ClassPrefixes {
+                values: vec!["/Script/Test.".into(), "\u{e9}".into()],
+            },
+            QueryKind::ClassNameSuffixes {
+                values: vec!["Widget".into(), "\u{1f527}".into()],
+            },
+            QueryKind::SerializedNames {
+                values: vec!["None".into(), "None".into()],
+            },
+            QueryKind::SerializedNames {
+                values: vec!["Rare".into(), "absent".into()],
+            },
+            QueryKind::SerializedNames {
+                values: vec!["\u{e9}".into(), format!("V{}", generation / 2)],
+            },
+            QueryKind::SerializedNames { values: vec![] },
+        ]
+    }
+
+    /// Every dictionary page of a query, expanded to plain items. Each page names exactly the
+    /// strings its items use.
+    fn collect_shared_pages(
+        catalog: &BinaryCatalog,
+        generation: Generation,
+        kind: QueryKind,
+        limit: usize,
+        fields: HeaderFields,
+    ) -> Vec<QueryItem> {
+        let mut items = Vec::new();
+        let mut cursor = None;
+        loop {
+            let page = catalog
+                .query_shared_strings(&QueryRequest {
+                    project_id: fixture_project_id(),
+                    expected_generation: generation,
+                    kind: kind.clone(),
+                    limit,
+                    cursor,
+                    fields,
+                })
+                .unwrap();
+            let text = |ids: Vec<u32>| -> Vec<String> {
+                ids.into_iter()
+                    .map(|id| page.strings[id as usize].clone())
+                    .collect()
+            };
+            let mut used = BTreeSet::new();
+            for item in page.items.iter().cloned() {
+                items.push(match item {
+                    SharedStringItem::Inventory {
+                        package_path,
+                        signature,
+                        header_data,
+                    } => QueryItem::Inventory {
+                        package_path,
+                        signature,
+                        header_data,
+                    },
+                    SharedStringItem::Map {
+                        map_path,
+                        package_name,
+                    } => QueryItem::Map {
+                        map_path,
+                        package_name,
+                    },
+                    SharedStringItem::Header {
+                        header_data,
+                        package_path,
+                        package_name,
+                        classes,
+                        serialized_names,
+                    } => {
+                        used.extend(classes.iter().chain(&serialized_names).copied());
+                        QueryItem::Header {
+                            header_data,
+                            package_path,
+                            package_name,
+                            classes: text(classes),
+                            serialized_names: text(serialized_names),
+                        }
+                    }
+                });
+            }
+            assert_eq!(used.len(), page.strings.len());
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        items
+    }
+
     /// Runs `generations` refreshes of random mutations, with `fillers` unchanging packages after
     /// each changing one, and compares every page of `page_limits` with the memory Catalog.
     fn mutation_sequence(fillers: u64, generations: u64, page_limits: &[usize]) {
         use crate::direct_executor::catalog_conformance::{
-            FakeScanner, collect_pages, completed_changes, header, package, sidecar,
+            FakeScanner, collect_pages, collect_projected_pages, completed_changes, header,
+            package, sidecar,
         };
         use crate::direct_executor::catalog_memory::MemoryCatalog;
         use crate::direct_executor::project_index::{RefreshReach, refresh_changed_paths};
@@ -7366,6 +7652,113 @@ mod tests {
                     }
                 }
             }
+            // Unions page each matching package once, and projections leave out exactly the
+            // fields they omit, in plain and dictionary pages, across base and delta.
+            let unions = [
+                QueryKind::Union {
+                    filters: vec![
+                        QueryKind::ExactClasses {
+                            values: vec!["/Script/Test.Widget".into(), "NoDot".into()],
+                        },
+                        QueryKind::SerializedNames {
+                            values: vec!["Rare".into(), "absent".into()],
+                        },
+                    ],
+                },
+                QueryKind::Union {
+                    filters: vec![
+                        QueryKind::ClassPrefixes {
+                            values: vec!["/Script/Test.".into()],
+                        },
+                        QueryKind::ClassNameSuffixes {
+                            values: vec!["Widget".into()],
+                        },
+                        QueryKind::SerializedNames {
+                            values: vec![format!("V{}", generation / 2), "None".into()],
+                        },
+                    ],
+                },
+                QueryKind::Union {
+                    filters: vec![QueryKind::ExactClasses { values: vec![] }],
+                },
+                QueryKind::Union {
+                    filters: kinds_for_union(generation),
+                },
+            ];
+            let projections = [
+                HeaderFields::ALL,
+                HeaderFields {
+                    classes: true,
+                    serialized_names: NameField::Omitted,
+                    header_data: false,
+                },
+                HeaderFields {
+                    classes: false,
+                    serialized_names: NameField::Matched,
+                    header_data: true,
+                },
+                HeaderFields {
+                    classes: true,
+                    serialized_names: NameField::Matched,
+                    header_data: false,
+                },
+                HeaderFields {
+                    classes: false,
+                    serialized_names: NameField::Omitted,
+                    header_data: false,
+                },
+            ];
+            let projected_kinds = unions.iter().cloned().chain([
+                QueryKind::ExactClasses {
+                    values: vec!["/Script/Test.Widget".into()],
+                },
+                QueryKind::SerializedNames {
+                    values: vec!["None".into(), "Rare".into(), "Common".into()],
+                },
+            ]);
+            for kind in projected_kinds {
+                for fields in projections {
+                    for &limit in page_limits {
+                        let expected =
+                            collect_projected_pages(&memory, current, kind.clone(), limit, fields);
+                        for catalog in [&binary, &targeted, &reader] {
+                            assert_eq!(
+                                collect_projected_pages(
+                                    catalog,
+                                    current,
+                                    kind.clone(),
+                                    limit,
+                                    fields
+                                ),
+                                expected,
+                                "generation {generation}, query {kind:?}, {fields:?}, limit {limit}"
+                            );
+                            assert_eq!(
+                                collect_shared_pages(catalog, current, kind.clone(), limit, fields),
+                                expected,
+                                "generation {generation}, dictionary {kind:?}, {fields:?}, limit {limit}"
+                            );
+                        }
+                    }
+                }
+            }
+            // A union is the path-ordered, deduplicated union of its filters' pages.
+            for kind in &unions {
+                let QueryKind::Union { filters } = kind else {
+                    unreachable!()
+                };
+                let mut separate = filters
+                    .iter()
+                    .flat_map(|filter| collect_pages(&binary, current, filter.clone(), 1024))
+                    .collect::<Vec<_>>();
+                separate.sort_by(|left, right| item_path(left).cmp(item_path(right)));
+                separate.dedup();
+                assert_eq!(
+                    collect_pages(&targeted, current, kind.clone(), 7),
+                    separate,
+                    "generation {generation}, {kind:?}"
+                );
+            }
             // Dictionary pages carry each distinct string once, across base and delta.
             for kind in [
                 QueryKind::ClassPrefixes {
@@ -7384,6 +7777,7 @@ mod tests {
                             kind: kind.clone(),
                             limit: 7,
                             cursor,
+                            fields: HeaderFields::ALL,
                         })
                         .unwrap();
                     let distinct = page.strings.iter().collect::<BTreeSet<_>>();

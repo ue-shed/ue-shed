@@ -1,0 +1,44 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 27
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"cacheRoot": "C:/Caches/project-index",
+		"kind": "project_index_query",
+		"pageEncoding": "dictionary",
+		"query": {
+			"expectedGeneration": 3,
+			"fields": ["classes", "matchedSerializedNames"],
+			"filters": [
+				{
+					"kind": "exact_classes",
+					"values": ["/Script/Engine.DataTable", "/Script/Engine.StringTable"]
+				},
+				{
+					"kind": "class_prefixes",
+					"values": ["/Script/EnhancedInput."]
+				},
+				{
+					"kind": "class_name_suffixes",
+					"values": ["InputAction"]
+				},
+				{
+					"kind": "serialized_names",
+					"values": ["TextProperty"]
+				}
+			],
+			"kind": "union",
+			"limit": 1024,
+			"projectId": "fixture-project"
+		}
+	},
+	"requestId": "project-index-union-001"
+}

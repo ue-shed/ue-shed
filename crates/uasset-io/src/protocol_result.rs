@@ -228,13 +228,20 @@ pub enum ProjectIndexItem {
             rename = "headerData"
         )]
         header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
-        classes: Vec<String>,
+        /// v1.27: absent when the query's `fields` leave the field out.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        classes: Option<Vec<String>>,
         #[serde(rename = "packageName")]
         package_name: String,
         #[serde(rename = "packagePath")]
         package_path: String,
-        #[serde(rename = "serializedNames")]
-        serialized_names: Vec<String>,
+        /// v1.27: absent when the query's `fields` leave the field out.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            rename = "serializedNames"
+        )]
+        serialized_names: Option<Vec<String>>,
     },
     /// v1.23: a package from a `dependencies` or `dependents` query, named as Unreal mounts it.
     #[serde(rename = "package")]

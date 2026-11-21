@@ -69,6 +69,42 @@ below).
 Count requests union up to 16 filters against that same generation. They read checked postings
 and inventory IDs without hydrating headers; a package matching several filters counts once.
 
+## Unions and header fields
+
+A `union` query (uasset-io v1.27) pages the packages any of up to 16 header filters matches, each
+once, in path order. It selects the postings of every filter into one set and merges their rows
+as a single filter does, so base and delta segments, hidden rows, cursors and page bounds behave
+exactly as for one filter. A host that needs several filters makes one pass instead of one query
+per filter followed by a merge.
+
+Header queries take `fields`, the header fields each item carries. A field left out is never
+copied from a record, never given a page string and never serialized: `classes` alone sends no
+serialized names, and `matchedSerializedNames` keeps only the names the query's serialized-name
+filters ask for, so a host still learns which packages matched a name. Records are still read
+and checked whole; only what the page carries changes. Without `fields` a page is unchanged.
+`MemoryCatalog` projects the same way, and the mutation sequence compares unions and projections
+with it on every page, plain and dictionary, across bases, deltas and compaction.
+
+A page's records sit in compressed blocks spread over the records section. A page groups its
+record windows into batches of up to 64 distinct blocks (4 MiB decoded), reads each batch's
+blocks with one read per run of blocks stored back to back, and decodes them on several threads.
+Nothing is kept between queries.
+
+On the TypeScript side a dictionary page frame is validated once. A hand-written walk applies
+the frame's exact wire rules (exact keys, trimmed non-empty strings, safe non-negative integers,
+list bounds) and falls back to the schema for any frame it does not accept, so invalid frames are
+reported as before. Expansion then checks only the domain bounds the wire leaves open (path,
+string, cursor, signature and failure lengths) and the references, in the same pass that
+resolves them, instead of walking the page through a second schema. Both are tested against the
+schemas they replace on mutated and generated pages.
+
+On a project of about 800,000 packages, the benchmark's five queries (maps, four header filters;
+23,006 header packages, 17.1 MB of frames) went from 411 ms to 213 ms warm with the same pages and
+bytes. Asking the same filters as one union with `classes` and `matchedSerializedNames` takes
+171 ms and 6.8 MB, folds in 26 ms instead of 99 ms, and holds about 200 MiB of Node memory instead
+of about 290 MiB, with the same DataTable, StringTable, `TextProperty`, texture and Enhanced Input
+packages and classes. The query worker's peak memory is unchanged.
+
 A sibling OS file lock excludes other writers and survives quarantine/clear operations. Readers
 do not take that lock. Process termination releases it. A second writer receives a typed unavailable
 error rather than publishing from stale state. Native IO now requires Rust 1.89 for standard file

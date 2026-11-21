@@ -7,7 +7,10 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::cancellation::CancellationToken;
-use crate::protocol::ProjectIndexQuery as ProtocolQuery;
+use crate::protocol::{
+    ProjectIndexHeaderField as ProtocolHeaderField,
+    ProjectIndexHeaderFilter as ProtocolHeaderFilter, ProjectIndexQuery as ProtocolQuery,
+};
 use crate::protocol_result::{
     ProjectIndexChanges, ProjectIndexCompleteness, ProjectIndexDependency, ProjectIndexDiagnostic,
     ProjectIndexDictionaryItem, ProjectIndexDictionaryPage, ProjectIndexItem, ProjectIndexMount,
@@ -16,9 +19,9 @@ use crate::protocol_result::{
 
 use super::Failure;
 use super::catalog::{
-    Catalog, CatalogError, CatalogStatus, Completeness, EdgeFilter, Generation, IndexScope,
-    ProjectId, QueryItem, QueryKind, QueryRequest, RefreshChanges, RefreshSummary,
-    SharedStringItem, project_id_for,
+    Catalog, CatalogError, CatalogStatus, Completeness, EdgeFilter, Generation, HeaderFields,
+    IndexScope, NameField, ProjectId, QueryItem, QueryKind, QueryRequest, RefreshChanges,
+    RefreshSummary, SharedStringItem, project_id_for,
 };
 use super::catalog_binary::{BinaryCatalog, JournalPlan, VerifiedSnapshots};
 use super::change_journal;
@@ -153,6 +156,7 @@ impl ProjectIndexQuerySession {
                     kind: QueryKind::Inventory,
                     limit: super::catalog::PROJECT_INDEX_MAX_PAGE_SIZE,
                     cursor,
+                    fields: super::catalog::HeaderFields::ALL,
                 })
                 .map_err(catalog_to_failure)?;
             for item in page.items {
@@ -342,6 +346,7 @@ pub(crate) fn query_project_id(query: &ProtocolQuery) -> &str {
         | ProtocolQuery::ClassPrefixes { project_id, .. }
         | ProtocolQuery::ClassNameSuffixes { project_id, .. }
         | ProtocolQuery::SerializedNames { project_id, .. }
+        | ProtocolQuery::Union { project_id, .. }
         | ProtocolQuery::Dependencies { project_id, .. }
         | ProtocolQuery::Dependents { project_id, .. } => project_id,
     }
@@ -370,6 +375,10 @@ fn query_expected_generation(query: &ProtocolQuery) -> u64 {
             ..
         }
         | ProtocolQuery::SerializedNames {
+            expected_generation,
+            ..
+        }
+        | ProtocolQuery::Union {
             expected_generation,
             ..
         }
@@ -410,6 +419,7 @@ pub(crate) fn query_dictionary(
     let page = catalog
         .query_shared_strings(&request)
         .map_err(catalog_to_failure)?;
+    let fields = request.fields;
     Ok(ProjectIndexDictionaryPage {
         generation: page.generation.get(),
         items: page
@@ -440,10 +450,11 @@ pub(crate) fn query_dictionary(
                     serialized_names,
                 } => ProjectIndexDictionaryItem::Header {
                     header_data,
-                    classes,
+                    classes: fields.classes.then_some(classes),
                     package_name,
                     package_path,
-                    serialized_names,
+                    serialized_names: (fields.serialized_names != NameField::Omitted)
+                        .then_some(serialized_names),
                 },
             })
             .collect(),
@@ -461,7 +472,11 @@ fn query_catalog(
     let page = project_index::query(catalog, &request).map_err(coordinator_to_failure)?;
     Ok(ProjectIndexPage {
         generation: page.generation.get(),
-        items: page.items.into_iter().map(to_protocol_item).collect(),
+        items: page
+            .items
+            .into_iter()
+            .map(|item| to_protocol_item(item, request.fields))
+            .collect(),
         next_cursor: page.next_cursor,
         project_id: page.project_id.to_string(),
     })
@@ -658,6 +673,7 @@ fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
             limit,
             project_id,
             values,
+            ..
         } => (
             project_id,
             *expected_generation,
@@ -673,6 +689,7 @@ fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
             limit,
             project_id,
             values,
+            ..
         } => (
             project_id,
             *expected_generation,
@@ -688,6 +705,7 @@ fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
             limit,
             project_id,
             values,
+            ..
         } => (
             project_id,
             *expected_generation,
@@ -703,6 +721,7 @@ fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
             limit,
             project_id,
             values,
+            ..
         } => (
             project_id,
             *expected_generation,
@@ -710,6 +729,22 @@ fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
             cursor.clone(),
             QueryKind::SerializedNames {
                 values: values.clone(),
+            },
+        ),
+        ProtocolQuery::Union {
+            cursor,
+            expected_generation,
+            limit,
+            project_id,
+            filters,
+            ..
+        } => (
+            project_id,
+            *expected_generation,
+            *limit,
+            cursor.clone(),
+            QueryKind::Union {
+                filters: filters.iter().map(to_header_filter).collect(),
             },
         ),
         ProtocolQuery::Dependencies {
@@ -759,7 +794,40 @@ fn to_catalog_query(query: &ProtocolQuery) -> Result<QueryRequest, Failure> {
         kind,
         limit: limit as usize,
         cursor,
+        fields: query.fields().map_or(HeaderFields::ALL, to_header_fields),
     })
+}
+
+fn to_header_filter(filter: &ProtocolHeaderFilter) -> QueryKind {
+    match filter {
+        ProtocolHeaderFilter::ExactClasses { values } => QueryKind::ExactClasses {
+            values: values.clone(),
+        },
+        ProtocolHeaderFilter::ClassPrefixes { values } => QueryKind::ClassPrefixes {
+            values: values.clone(),
+        },
+        ProtocolHeaderFilter::ClassNameSuffixes { values } => QueryKind::ClassNameSuffixes {
+            values: values.clone(),
+        },
+        ProtocolHeaderFilter::SerializedNames { values } => QueryKind::SerializedNames {
+            values: values.clone(),
+        },
+    }
+}
+
+/// The Catalog projection for a v1.27 `fields` list: exactly the named fields.
+fn to_header_fields(fields: &[ProtocolHeaderField]) -> HeaderFields {
+    HeaderFields {
+        classes: fields.contains(&ProtocolHeaderField::Classes),
+        serialized_names: if fields.contains(&ProtocolHeaderField::SerializedNames) {
+            NameField::All
+        } else if fields.contains(&ProtocolHeaderField::MatchedSerializedNames) {
+            NameField::Matched
+        } else {
+            NameField::Omitted
+        },
+        header_data: fields.contains(&ProtocolHeaderField::HeaderData),
+    }
 }
 
 fn to_edge_filter(edges: &crate::protocol::ProjectIndexEdges) -> EdgeFilter {
@@ -821,7 +889,7 @@ fn to_protocol_diagnostic(
     }
 }
 
-fn to_protocol_item(item: QueryItem) -> ProjectIndexItem {
+fn to_protocol_item(item: QueryItem, fields: HeaderFields) -> ProjectIndexItem {
     match item {
         QueryItem::Inventory {
             package_path,
@@ -847,10 +915,11 @@ fn to_protocol_item(item: QueryItem) -> ProjectIndexItem {
             serialized_names,
         } => ProjectIndexItem::Header {
             header_data,
-            classes,
+            classes: fields.classes.then_some(classes),
             package_name,
             package_path,
-            serialized_names,
+            serialized_names: (fields.serialized_names != NameField::Omitted)
+                .then_some(serialized_names),
         },
         QueryItem::Package {
             package_path,

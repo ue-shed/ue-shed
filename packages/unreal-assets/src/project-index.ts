@@ -28,6 +28,8 @@ export const PROJECT_INDEX_MAX_CHANGED_PATHS = 65_536;
 export const PROJECT_INDEX_CACHE_ROOT_ENV = "UE_SHED_PROJECT_INDEX_CACHE_ROOT";
 /** Package paths one dependency or dependents query starts from: 1 to 1,024. */
 export const PROJECT_INDEX_MAX_DEPENDENCY_PATHS = 1024;
+/** Filters one `Union` query takes: 1 to 16. */
+export const PROJECT_INDEX_MAX_UNION_FILTERS = 16;
 
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
@@ -253,23 +255,6 @@ const DependencyQueryFields = {
 };
 
 /**
- * Bounded generation-bound page query; cursors are opaque. `Dependencies` and `Dependents`
- * (uasset-io v1.23) return `package` items; `Dependents` accepts deleted paths, and its `classes`
- * filter results without narrowing the walk.
- */
-export const ProjectIndexQuery = Schema.TaggedUnion({
-	Inventory: QueryBase,
-	Maps: QueryBase,
-	ExactClasses: { ...QueryBase, values: QueryValues },
-	ClassPrefixes: { ...QueryBase, values: QueryValues },
-	ClassNameSuffixes: { ...QueryBase, values: QueryValues },
-	SerializedNames: { ...QueryBase, values: QueryValues },
-	Dependencies: DependencyQueryFields,
-	Dependents: { ...DependencyQueryFields, classes: Schema.optionalKey(QueryValues) }
-});
-export type ProjectIndexQuery = typeof ProjectIndexQuery.Type;
-
-/**
  * Map/class/serialized-name filter used by distinct-package counts. Values describe header
  * evidence, not a resolved Unreal inheritance graph.
  */
@@ -281,6 +266,75 @@ export const ProjectIndexFilter = Schema.TaggedUnion({
 	SerializedNames: { values: QueryValues }
 });
 export type ProjectIndexFilter = typeof ProjectIndexFilter.Type;
+
+/** A filter that matches header evidence: any `ProjectIndexFilter` except `Maps`. */
+export const ProjectIndexHeaderFilter = Schema.Union([
+	ProjectIndexFilter.cases.ExactClasses,
+	ProjectIndexFilter.cases.ClassPrefixes,
+	ProjectIndexFilter.cases.ClassNameSuffixes,
+	ProjectIndexFilter.cases.SerializedNames
+]);
+export type ProjectIndexHeaderFilter = typeof ProjectIndexHeaderFilter.Type;
+
+/**
+ * A header field a header query asks for. `matchedSerializedNames` fills `serializedNames` with
+ * only the names the query's serialized-name filters ask for.
+ */
+export const ProjectIndexHeaderField = Schema.Literals([
+	"classes",
+	"serializedNames",
+	"matchedSerializedNames",
+	"headerData"
+]);
+export type ProjectIndexHeaderField = typeof ProjectIndexHeaderField.Type;
+
+/**
+ * The header fields a header query's items carry, each at most once and not both
+ * `serializedNames` and `matchedSerializedNames`. Absent carries every field. A field left out
+ * is an empty `classes` or `serializedNames`, or no `headerData`: ask only for what you read.
+ * Needs uasset-io v1.27; on an older worker the adapter reads every field and leaves out the rest.
+ */
+export const ProjectIndexHeaderFields = Schema.Array(ProjectIndexHeaderField).check(
+	Schema.isMaxLength(3),
+	Schema.isUnique(),
+	Schema.makeFilter(
+		(fields: readonly ProjectIndexHeaderField[]) =>
+			!(fields.includes("serializedNames") && fields.includes("matchedSerializedNames")) ||
+			"Ask for serializedNames or matchedSerializedNames, not both."
+	)
+);
+export type ProjectIndexHeaderFields = typeof ProjectIndexHeaderFields.Type;
+
+const HeaderQueryFields = {
+	...QueryBase,
+	values: QueryValues,
+	fields: Schema.optionalKey(ProjectIndexHeaderFields)
+};
+
+/**
+ * Bounded generation-bound page query; cursors are opaque. `Dependencies` and `Dependents`
+ * (v1.23) return `package` items; `Dependents`' `classes` filter results, not the walk. `Union`
+ * (v1.27) pages the packages any header filter matches, each once, in path order.
+ */
+export const ProjectIndexQuery = Schema.TaggedUnion({
+	Inventory: QueryBase,
+	Maps: QueryBase,
+	ExactClasses: HeaderQueryFields,
+	ClassPrefixes: HeaderQueryFields,
+	ClassNameSuffixes: HeaderQueryFields,
+	SerializedNames: HeaderQueryFields,
+	Union: {
+		...QueryBase,
+		filters: Schema.Array(ProjectIndexHeaderFilter).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(PROJECT_INDEX_MAX_UNION_FILTERS)
+		),
+		fields: Schema.optionalKey(ProjectIndexHeaderFields)
+	},
+	Dependencies: DependencyQueryFields,
+	Dependents: { ...DependencyQueryFields, classes: Schema.optionalKey(QueryValues) }
+});
+export type ProjectIndexQuery = typeof ProjectIndexQuery.Type;
 
 /** Count distinct packages matching any filter in one generation. */
 export const ProjectIndexCount = Schema.Struct({
@@ -414,6 +468,50 @@ export const ProjectIndexPage = Schema.Struct({
  * fixed for the full page sequence; refresh invalidates old cursors.
  */
 export interface ProjectIndexPage extends Schema.Schema.Type<typeof ProjectIndexPage> {}
+
+/** @internal The serialized names a header query's filters ask for. */
+export function projectIndexQueryNames(request: ProjectIndexQuery): readonly string[] {
+	if (request._tag === "SerializedNames") return request.values;
+	if (request._tag !== "Union") return [];
+	return request.filters.flatMap((filter) =>
+		filter._tag === "SerializedNames" ? filter.values : []
+	);
+}
+
+/**
+ * @internal A header as a query's `fields` carry it, as the native index projects it: a field left
+ * out is empty, or absent for `headerData`. A query without `fields` keeps the header whole.
+ */
+export function projectProjectIndexHeader(
+	header: ProjectIndexHeader,
+	request: ProjectIndexQuery
+): ProjectIndexHeader {
+	if (
+		request._tag !== "ExactClasses" &&
+		request._tag !== "ClassPrefixes" &&
+		request._tag !== "ClassNameSuffixes" &&
+		request._tag !== "SerializedNames" &&
+		request._tag !== "Union"
+	)
+		return header;
+	const fields = request.fields;
+	if (fields === undefined) return header;
+	const names = projectIndexQueryNames(request);
+	const projected: ProjectIndexHeader = {
+		classes: fields.includes("classes") ? header.classes : [],
+		kind: "header",
+		packageName: header.packageName,
+		packagePath: header.packagePath,
+		serializedNames: fields.includes("serializedNames")
+			? header.serializedNames
+			: fields.includes("matchedSerializedNames")
+				? header.serializedNames.filter((name) => names.includes(name))
+				: []
+	};
+	return fields.includes("headerData") && header.headerData !== undefined
+		? Object.assign(projected, { headerData: header.headerData })
+		: projected;
+}
 
 const ErrorFields = {
 	...ErrorGuidanceFields,

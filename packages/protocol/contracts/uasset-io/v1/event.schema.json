@@ -11251,7 +11251,7 @@
 					]
 				}
 			},
-			"required": ["classes", "kind", "packageName", "packagePath", "serializedNames"],
+			"required": ["kind", "packageName", "packagePath"],
 			"additionalProperties": false
 		},
 		"UAssetIoProjectIndexDependency": {
@@ -11412,7 +11412,7 @@
 					]
 				}
 			},
-			"required": ["classes", "kind", "packageName", "packagePath", "serializedNames"],
+			"required": ["kind", "packageName", "packagePath"],
 			"additionalProperties": false
 		},
 		"UAssetIoProjectIndexDictionaryPackage": {

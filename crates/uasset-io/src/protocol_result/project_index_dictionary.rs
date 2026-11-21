@@ -35,13 +35,20 @@ pub enum ProjectIndexDictionaryItem {
             rename = "headerData"
         )]
         header_data: Option<uasset_inspection::package_header::PackageHeaderData>,
-        classes: Vec<u32>,
+        /// v1.27: absent when the query's `fields` leave the field out.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        classes: Option<Vec<u32>>,
         #[serde(rename = "packageName")]
         package_name: String,
         #[serde(rename = "packagePath")]
         package_path: String,
-        #[serde(rename = "serializedNames")]
-        serialized_names: Vec<u32>,
+        /// v1.27: absent when the query's `fields` leave the field out.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            rename = "serializedNames"
+        )]
+        serialized_names: Option<Vec<u32>>,
     },
     /// v1.23: a dependency query package; classes and dependency names are page strings.
     #[serde(rename = "package")]
@@ -133,10 +140,12 @@ impl From<ProjectIndexPage> for ProjectIndexDictionaryPage {
                     serialized_names,
                 } => ProjectIndexDictionaryItem::Header {
                     header_data,
-                    classes: classes.into_iter().map(&mut intern_one).collect(),
+                    classes: classes
+                        .map(|classes| classes.into_iter().map(&mut intern_one).collect()),
                     package_name,
                     package_path,
-                    serialized_names: serialized_names.into_iter().map(&mut intern_one).collect(),
+                    serialized_names: serialized_names
+                        .map(|names| names.into_iter().map(&mut intern_one).collect()),
                 },
                 ProjectIndexItem::Package {
                     classes,
@@ -253,8 +262,8 @@ mod tests {
                     }),
                     package_name: format!("/Game/A{i}"),
                     package_path: format!("Content/A{i}.uasset"),
-                    classes: vec!["名前".into(), "Café".into(), "名前".into()],
-                    serialized_names: vec!["Café".into(), format!("Unique{i}")],
+                    classes: Some(vec!["名前".into(), "Café".into(), "名前".into()]),
+                    serialized_names: Some(vec!["Café".into(), format!("Unique{i}")]),
                 })
                 .collect(),
         };
@@ -283,18 +292,15 @@ mod tests {
                 panic!("header");
             };
             assert_eq!(original_data, compact_data);
-            assert_eq!(
-                classes,
-                &c.iter()
-                    .map(|id| compact.strings[*id as usize].clone())
-                    .collect::<Vec<_>>()
-            );
-            assert_eq!(
-                serialized_names,
-                &n.iter()
-                    .map(|id| compact.strings[*id as usize].clone())
-                    .collect::<Vec<_>>()
-            );
+            let expand = |ids: &Option<Vec<u32>>| {
+                ids.as_ref().map(|ids| {
+                    ids.iter()
+                        .map(|id| compact.strings[*id as usize].clone())
+                        .collect::<Vec<_>>()
+                })
+            };
+            assert_eq!(classes, &expand(c));
+            assert_eq!(serialized_names, &expand(n));
             assert_eq!((package_name, package_path), (name, path));
         }
     }

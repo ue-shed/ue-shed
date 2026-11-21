@@ -12,6 +12,7 @@ import {
 	SavedWorldProgress,
 	UAssetIoEvent,
 	type UAssetIoOperation,
+	type UAssetIoProjectIndexProjectedQuery,
 	type UAssetIoRequest,
 	type UAssetIoResult
 } from "@ue-shed/protocol";
@@ -26,6 +27,7 @@ import type {
 	SavedWorldProgressStore,
 	ScanProgressStore
 } from "./asset-reader.js";
+import { isValidProjectIndexDictionaryPageEvent } from "./project-index-wire-validation.js";
 import { readerPathKey, uniqueRequestPathIndices } from "./protocol-path-identity.js";
 import {
 	MAX_PROTOCOL_REQUEST_BYTES,
@@ -85,6 +87,9 @@ const isProjectIndexPageFrame = Schema.is(
 
 /** @internal Validate one exact wire event through the measured type-side path. */
 export function validateProtocolEvent<Input>(input: Input, frameCharacters: number): ProtocolEvent {
+	// A dictionary page is most of a Project Index query's bytes. Its exact rules are checked in
+	// one walk; a frame the walk does not accept still goes through the schema below.
+	if (isValidProjectIndexDictionaryPageEvent(input)) return input;
 	// Project Index strings usually already satisfy the decoded type (including trimming). Type-side
 	// validation avoids repeating those transformations; the fallback still normalizes wire input.
 	// Their bounded 1–3 MB frames benefit below the general large-frame threshold.
@@ -669,9 +674,17 @@ export function makeProtocolRequest(
 		const { query, ...rest } = operation;
 		if (query.kind === "dependencies" || query.kind === "dependents")
 			return { ...fields, operation: { ...rest, query } };
+		// v1.27 unions and header queries that name their fields.
+		if (isProjectedQuery(query)) return { ...fields, operation: { ...rest, query } };
 		return { ...fields, operation: { ...rest, query } };
 	}
 	return { ...fields, operation };
+}
+
+function isProjectedQuery(
+	query: Extract<UAssetIoOperation, { readonly kind: "project_index_query" }>["query"]
+): query is UAssetIoProjectIndexProjectedQuery {
+	return query.kind === "union" || ("fields" in query && query.fields !== undefined);
 }
 
 function protocolPhase(

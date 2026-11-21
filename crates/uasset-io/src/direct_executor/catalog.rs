@@ -232,6 +232,11 @@ pub enum QueryKind {
     SerializedNames {
         values: Vec<String>,
     },
+    /// Packages any of `filters` matches, each once, in path order (v1.27). Each filter is an
+    /// exact-class, class-prefix, class-name-suffix or serialized-name filter.
+    Union {
+        filters: Vec<QueryKind>,
+    },
     /// The packages at `paths`, and with `transitive` every indexed package they reach through
     /// dependencies `edges` accepts.
     Dependencies {
@@ -275,6 +280,132 @@ pub struct ResolvedDependency {
     pub package_path: Option<String>,
 }
 
+/// The most filters one union query takes.
+pub const PROJECT_INDEX_MAX_UNION_FILTERS: usize = 16;
+
+impl QueryKind {
+    /// Whether this kind matches header evidence, and so may be a union filter.
+    pub fn is_header_filter(&self) -> bool {
+        matches!(
+            self,
+            Self::ExactClasses { .. }
+                | Self::ClassPrefixes { .. }
+                | Self::ClassNameSuffixes { .. }
+                | Self::SerializedNames { .. }
+        )
+    }
+
+    /// Whether `classes` and `serialized_names` satisfy this header filter (or any filter of a
+    /// union). Other kinds match no header. The memory Catalog's reference for posting matches.
+    #[cfg(test)]
+    pub fn matches_header(&self, classes: &[String], serialized_names: &[String]) -> bool {
+        match self {
+            Self::ExactClasses { values } => values
+                .iter()
+                .any(|value| classes.iter().any(|class| class == value)),
+            Self::ClassPrefixes { values } => values.iter().any(|prefix| {
+                classes
+                    .iter()
+                    .any(|class| class.starts_with(prefix.as_str()))
+            }),
+            Self::ClassNameSuffixes { values } => values.iter().any(|suffix| {
+                classes
+                    .iter()
+                    .any(|class| class_name(class).ends_with(suffix.as_str()))
+            }),
+            Self::SerializedNames { values } => values
+                .iter()
+                .any(|value| serialized_names.iter().any(|name| name == value)),
+            Self::Union { filters } => filters
+                .iter()
+                .any(|filter| filter.matches_header(classes, serialized_names)),
+            Self::Inventory | Self::Maps | Self::Dependencies { .. } | Self::Dependents { .. } => {
+                false
+            }
+        }
+    }
+
+    /// The serialized names this query asks for, for `NameField::Matched`.
+    pub fn serialized_name_values(&self) -> Vec<&str> {
+        match self {
+            Self::SerializedNames { values } => values.iter().map(String::as_str).collect(),
+            Self::Union { filters } => filters
+                .iter()
+                .flat_map(Self::serialized_name_values)
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+}
+
+/// Which serialized names a header item carries.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NameField {
+    /// Every serialized name the header recorded.
+    #[default]
+    All,
+    /// Only the names the query's serialized-name filters ask for, in header order.
+    Matched,
+    /// None: the item carries no serialized names.
+    Omitted,
+}
+
+/// Which header fields a header page carries (v1.27). The default carries all of them; a field
+/// left out is empty in a Catalog item and absent from the wire.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeaderFields {
+    pub classes: bool,
+    pub serialized_names: NameField,
+    pub header_data: bool,
+}
+
+impl Default for HeaderFields {
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
+impl HeaderFields {
+    pub const ALL: Self = Self {
+        classes: true,
+        serialized_names: NameField::All,
+        header_data: true,
+    };
+
+    /// A header item's fields as this projection keeps them; `matched` are the query's
+    /// serialized-name values. The memory Catalog's reference projection.
+    #[cfg(test)]
+    pub fn project(
+        &self,
+        matched: &[&str],
+        header_data: Option<&uasset_inspection::package_header::PackageHeaderData>,
+        classes: &[String],
+        serialized_names: &[String],
+    ) -> (
+        Option<uasset_inspection::package_header::PackageHeaderData>,
+        Vec<String>,
+        Vec<String>,
+    ) {
+        (
+            header_data.filter(|_| self.header_data).cloned(),
+            if self.classes {
+                classes.to_vec()
+            } else {
+                Vec::new()
+            },
+            match self.serialized_names {
+                NameField::All => serialized_names.to_vec(),
+                NameField::Matched => serialized_names
+                    .iter()
+                    .filter(|name| matched.contains(&name.as_str()))
+                    .cloned()
+                    .collect(),
+                NameField::Omitted => Vec::new(),
+            },
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueryRequest {
     pub project_id: ProjectId,
@@ -282,6 +413,8 @@ pub struct QueryRequest {
     pub kind: QueryKind,
     pub limit: usize,
     pub cursor: Option<String>,
+    /// Which fields header items carry; inventory, map and package items ignore it.
+    pub fields: HeaderFields,
 }
 
 /// Count the union of filters in one immutable generation, without materializing evidence.
@@ -556,6 +689,11 @@ pub trait Catalog {
                     kind: kind.clone(),
                     limit: PROJECT_INDEX_MAX_PAGE_SIZE,
                     cursor,
+                    fields: HeaderFields {
+                        classes: false,
+                        serialized_names: NameField::Omitted,
+                        header_data: false,
+                    },
                 })?;
                 for item in page.items {
                     paths.insert(match item {
@@ -588,11 +726,31 @@ pub fn validate_count_filters(filters: &[QueryKind]) -> Result<(), CatalogError>
     if filters.iter().any(|filter| {
         matches!(
             filter,
-            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. }
+            QueryKind::Dependencies { .. } | QueryKind::Dependents { .. } | QueryKind::Union { .. }
         )
     }) {
         return Err(CatalogError::InvalidRequest {
-            message: "dependency queries are not count filters".into(),
+            message: "dependency and union queries are not count filters".into(),
+        });
+    }
+    Ok(())
+}
+
+/// Reject a union that is empty, too long, or names a filter other than a header filter.
+pub(crate) fn validate_union_filters(kind: &QueryKind) -> Result<(), CatalogError> {
+    let QueryKind::Union { filters } = kind else {
+        return Ok(());
+    };
+    if filters.is_empty() || filters.len() > PROJECT_INDEX_MAX_UNION_FILTERS {
+        return Err(CatalogError::InvalidRequest {
+            message: format!(
+                "union queries take between 1 and {PROJECT_INDEX_MAX_UNION_FILTERS} filters"
+            ),
+        });
+    }
+    if !filters.iter().all(QueryKind::is_header_filter) {
+        return Err(CatalogError::InvalidRequest {
+            message: "union filters match header classes or serialized names".into(),
         });
     }
     Ok(())

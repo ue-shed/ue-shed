@@ -1,0 +1,31 @@
+{
+	"contract": {
+		"name": "uasset-io",
+		"version": {
+			"major": 1,
+			"minor": 27
+		}
+	},
+	"limits": {
+		"maximumOutputBytes": 1048576,
+		"timeoutMs": 30000
+	},
+	"operation": {
+		"cacheRoot": "C:/Caches/project-index",
+		"kind": "project_index_query",
+		"pageEncoding": "dictionary",
+		"query": {
+			"expectedGeneration": 3,
+			"fields": ["classes", "matchedSerializedNames"],
+			"filters": [
+				{
+					"kind": "maps"
+				}
+			],
+			"kind": "union",
+			"limit": 1024,
+			"projectId": "fixture-project"
+		}
+	},
+	"requestId": "project-index-union-003"
+}

@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::catalog::{
     Catalog, CatalogError, CatalogSnapshotEntry, CatalogStatus, EntryKind, Generation,
     HeaderEvidence, MountPoint, PackageSignature, PlainEvidence, ProjectId, QueryItem, QueryKind,
-    QueryPage, QueryRequest, RefreshSummary, StagedPackage, StagingToken, class_name, item_path,
+    QueryPage, QueryRequest, RefreshSummary, StagedPackage, StagingToken, item_path,
     parse_page_cursor, validate_page_limit,
 };
 use super::catalog_dependencies::{DependencyGraph, dependency_page};
@@ -278,7 +278,8 @@ impl Catalog for MemoryCatalog {
                 next_cursor,
             });
         }
-        let items = collect_items(&state.rows, &request.kind);
+        super::catalog::validate_union_filters(&request.kind)?;
+        let items = collect_items(&state.rows, request);
         let mut page_items: Vec<QueryItem> = items
             .into_iter()
             .filter(|item| item_path(item) > after.as_str())
@@ -448,8 +449,8 @@ fn inventory_sum(rows: &BTreeMap<String, CommittedRow>) -> super::inventory_dige
     sum
 }
 
-fn collect_items(rows: &BTreeMap<String, CommittedRow>, kind: &QueryKind) -> Vec<QueryItem> {
-    match kind {
+fn collect_items(rows: &BTreeMap<String, CommittedRow>, request: &QueryRequest) -> Vec<QueryItem> {
+    match &request.kind {
         QueryKind::Inventory => rows
             .values()
             .filter(|row| row.signature.kind == EntryKind::Package)
@@ -485,50 +486,40 @@ fn collect_items(rows: &BTreeMap<String, CommittedRow>, kind: &QueryKind) -> Vec
                     .unwrap_or_else(|| row.signature.relative_path.clone()),
             })
             .collect(),
-        QueryKind::ExactClasses { values } => header_items(rows, |header| {
-            values
-                .iter()
-                .any(|value| header.classes.iter().any(|class| class == value))
-        }),
-        QueryKind::ClassPrefixes { values } => header_items(rows, |header| {
-            values
-                .iter()
-                .any(|prefix| header.classes.iter().any(|class| class.starts_with(prefix)))
-        }),
-        QueryKind::ClassNameSuffixes { values } => header_items(rows, |header| {
-            values.iter().any(|suffix| {
-                header
-                    .classes
-                    .iter()
-                    .any(|class| class_name(class).ends_with(suffix))
-            })
-        }),
-        QueryKind::SerializedNames { values } => header_items(rows, |header| {
-            values
-                .iter()
-                .any(|value| header.serialized_names.iter().any(|name| name == value))
-        }),
+        kind @ (QueryKind::ExactClasses { .. }
+        | QueryKind::ClassPrefixes { .. }
+        | QueryKind::ClassNameSuffixes { .. }
+        | QueryKind::SerializedNames { .. }
+        | QueryKind::Union { .. }) => header_items(rows, kind, request),
         QueryKind::Dependencies { .. } | QueryKind::Dependents { .. } => Vec::new(),
     }
 }
 
 fn header_items(
     rows: &BTreeMap<String, CommittedRow>,
-    predicate: impl Fn(&HeaderEvidence) -> bool,
+    kind: &QueryKind,
+    request: &QueryRequest,
 ) -> Vec<QueryItem> {
+    let matched = kind.serialized_name_values();
     rows.values()
         .filter(|row| row.signature.kind == EntryKind::Package)
         .filter_map(|row| {
             let header = row.header.as_ref()?;
-            if !predicate(header) {
+            if !kind.matches_header(&header.classes, &header.serialized_names) {
                 return None;
             }
+            let (header_data, classes, serialized_names) = request.fields.project(
+                &matched,
+                header.header_data.as_ref(),
+                &header.classes,
+                &header.serialized_names,
+            );
             Some(QueryItem::Header {
-                header_data: header.header_data.clone(),
+                header_data,
                 package_path: row.signature.relative_path.clone(),
                 package_name: header.package_name.clone(),
-                classes: header.classes.clone(),
-                serialized_names: header.serialized_names.clone(),
+                classes,
+                serialized_names,
             })
         })
         .collect()

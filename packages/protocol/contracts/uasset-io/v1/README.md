@@ -301,6 +301,23 @@ minor 26 and strips `inventoryDigest` from results for older minors. A refresh w
 directories that changed since the committed index was listed, instead of walking, and gives what
 a walk would give; it walks whenever the journal cannot say. Requests and results are unchanged.
 
+Minor version 1.27 lets a header query ask for less. `project_index_query` takes a `union` query:
+1 to 16 `filters`, each an `exact_classes`, `class_prefixes`, `class_name_suffixes` or
+`serialized_names` filter with 1 to 64 values. It pages the packages any filter matches, each once,
+in path order, with the same cursor, page bound and generation check as the other kinds, so a host
+that needs several filters makes one pass instead of a query per filter and a merge. Header queries
+(`exact_classes`, `class_prefixes`, `class_name_suffixes`, `serialized_names` and `union`) take
+optional `fields`, the header fields each item carries: `classes`, `serializedNames`,
+`matchedSerializedNames` and `headerData`, each at most once, and not both `serializedNames` and
+`matchedSerializedNames`. `matchedSerializedNames` fills `serializedNames` with only the names the
+query's `serialized_names` filters ask for, in header order, so a host can tell which packages
+matched a name without receiving every name. A field `fields` leaves out is absent from every item
+(`classes` and `serializedNames` are therefore optional in header items) and never enters the
+page's `strings`; `[]` carries only `kind`, `packageName` and `packagePath`. Without `fields` an item
+carries every field, as before. The worker rejects `union` and `fields` below minor 27, before
+`accepted`. A host whose worker predates 1.27 can send the same header query without `fields` and
+drop what it did not ask for; a union has no such fallback.
+
 ### Active package input budget
 
 `limits.maximumInFlightPackageBytes` is an optional positive integer byte limit for text and

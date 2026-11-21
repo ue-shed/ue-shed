@@ -131,7 +131,7 @@ const UAssetIoProjectIndexQueryBase = {
  * One page request against a single Project Index generation. A generation other than
  * `expectedGeneration` fails the request with a stale-generation failure. `limit` is 1 to 1,024
  * items, `cursor` is the previous page's opaque `nextCursor`, and filtering kinds take 1 to 64
- * non-empty values.
+ * non-empty values. Header `fields` need v1.27 (`UAssetIoProjectIndexProjectedQuery`).
  */
 export const UAssetIoProjectIndexQuery = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("inventory"), ...UAssetIoProjectIndexQueryBase }),
@@ -142,22 +142,26 @@ export const UAssetIoProjectIndexQuery = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("exact_classes"),
 		...UAssetIoProjectIndexQueryBase,
-		values: ProjectIndexQueryValues
+		values: ProjectIndexQueryValues,
+		fields: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("class_prefixes"),
 		...UAssetIoProjectIndexQueryBase,
-		values: ProjectIndexQueryValues
+		values: ProjectIndexQueryValues,
+		fields: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("class_name_suffixes"),
 		...UAssetIoProjectIndexQueryBase,
-		values: ProjectIndexQueryValues
+		values: ProjectIndexQueryValues,
+		fields: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("serialized_names"),
 		...UAssetIoProjectIndexQueryBase,
-		values: ProjectIndexQueryValues
+		values: ProjectIndexQueryValues,
+		fields: Schema.optionalKey(Schema.Never)
 	})
 ]).annotate({ identifier: "UAssetIoProjectIndexQuery" });
 export type UAssetIoProjectIndexQuery = Schema.Schema.Type<typeof UAssetIoProjectIndexQuery>;
@@ -213,6 +217,81 @@ export const UAssetIoProjectIndexFilter = Schema.Union([
 	Schema.Struct({ kind: Schema.Literal("serialized_names"), values: ProjectIndexQueryValues })
 ]);
 export type UAssetIoProjectIndexFilter = typeof UAssetIoProjectIndexFilter.Type;
+
+/** The most filters one v1.27 `union` query takes. */
+export const UASSET_IO_PROJECT_INDEX_MAX_UNION_FILTERS = 16;
+
+/** v1.27: one filter of a `union` query, a header filter with 1 to 64 non-empty values. */
+export const UAssetIoProjectIndexHeaderFilter = Schema.Union([
+	Schema.Struct({ kind: Schema.Literal("exact_classes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("class_prefixes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("class_name_suffixes"), values: ProjectIndexQueryValues }),
+	Schema.Struct({ kind: Schema.Literal("serialized_names"), values: ProjectIndexQueryValues })
+]).annotate({ identifier: "UAssetIoProjectIndexHeaderFilter" });
+export type UAssetIoProjectIndexHeaderFilter = typeof UAssetIoProjectIndexHeaderFilter.Type;
+
+/**
+ * v1.27: a header field a header query's items carry. `matchedSerializedNames` carries only the
+ * serialized names the query's serialized-name filters ask for, in `serializedNames`.
+ */
+export const UAssetIoProjectIndexHeaderField = Schema.Literals([
+	"classes",
+	"serializedNames",
+	"matchedSerializedNames",
+	"headerData"
+]).annotate({ identifier: "UAssetIoProjectIndexHeaderField" });
+export type UAssetIoProjectIndexHeaderField = typeof UAssetIoProjectIndexHeaderField.Type;
+
+/**
+ * v1.27: the header fields each item carries, at most once each; the worker also rejects
+ * `serializedNames` with `matchedSerializedNames`. An empty list carries only paths and names.
+ */
+const ProjectIndexHeaderFields = Schema.Array(UAssetIoProjectIndexHeaderField).check(
+	Schema.isMaxLength(3),
+	Schema.isUnique()
+);
+
+/**
+ * v1.27 header queries. A `union` pages the packages any of its 1 to 16 `filters` matches, each
+ * once, in path order. `fields` names the header fields each item carries; a field left out is
+ * absent from every item, so it is neither read into the page's `strings` nor sent.
+ */
+export const UAssetIoProjectIndexProjectedQuery = Schema.Union([
+	Schema.Struct({
+		kind: Schema.Literal("exact_classes"),
+		...UAssetIoProjectIndexQueryBase,
+		values: ProjectIndexQueryValues,
+		fields: ProjectIndexHeaderFields
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("class_prefixes"),
+		...UAssetIoProjectIndexQueryBase,
+		values: ProjectIndexQueryValues,
+		fields: ProjectIndexHeaderFields
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("class_name_suffixes"),
+		...UAssetIoProjectIndexQueryBase,
+		values: ProjectIndexQueryValues,
+		fields: ProjectIndexHeaderFields
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("serialized_names"),
+		...UAssetIoProjectIndexQueryBase,
+		values: ProjectIndexQueryValues,
+		fields: ProjectIndexHeaderFields
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("union"),
+		...UAssetIoProjectIndexQueryBase,
+		filters: Schema.Array(UAssetIoProjectIndexHeaderFilter).check(
+			Schema.isMinLength(1),
+			Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_UNION_FILTERS)
+		),
+		fields: Schema.optionalKey(ProjectIndexHeaderFields)
+	})
+]).annotate({ identifier: "UAssetIoProjectIndexProjectedQuery" });
+export type UAssetIoProjectIndexProjectedQuery = typeof UAssetIoProjectIndexProjectedQuery.Type;
 
 /**
  * Body of a v1.4 `project_index_count` request: 1 to 16 filters evaluated against
@@ -329,15 +408,16 @@ export interface UAssetIoProjectIndexMap extends Schema.Schema.Type<
 /**
  * Compact header evidence for a package in a query page, with at most 64 classes and 64
  * serialized names. `headerData` needs minor 9 or later; its absence is an upgrade requirement,
- * not evidence that the package holds no text.
+ * not evidence that the package holds no text. A v1.27 query's `fields` may leave out `classes`,
+ * `serializedNames` and `headerData`; they are present otherwise.
  */
 export const UAssetIoProjectIndexHeader = Schema.Struct({
 	headerData: Schema.optionalKey(PackageHeaderData),
-	classes: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)),
+	classes: Schema.optionalKey(Schema.Array(NonEmptyString).check(Schema.isMaxLength(64))),
 	kind: Schema.Literal("header"),
 	packageName: NonEmptyString,
 	packagePath: NonEmptyString,
-	serializedNames: Schema.Array(NonEmptyString).check(Schema.isMaxLength(64))
+	serializedNames: Schema.optionalKey(Schema.Array(NonEmptyString).check(Schema.isMaxLength(64)))
 }).annotate({ identifier: "UAssetIoProjectIndexHeader" });
 export interface UAssetIoProjectIndexHeader extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexHeader
@@ -418,8 +498,8 @@ export interface UAssetIoProjectIndexPage extends Schema.Schema.Type<
 
 const UAssetIoProjectIndexDictionaryHeader = Schema.Struct({
 	...UAssetIoProjectIndexHeader.fields,
-	classes: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64)),
-	serializedNames: Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64))
+	classes: Schema.optionalKey(Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64))),
+	serializedNames: Schema.optionalKey(Schema.Array(NonNegativeInt).check(Schema.isMaxLength(64)))
 }).annotate({ identifier: "UAssetIoProjectIndexDictionaryHeader" });
 
 const UAssetIoProjectIndexDictionaryPackage = Schema.Struct({
@@ -651,6 +731,13 @@ const ProjectIndexDependencyOperation = Schema.Union([
 		query: UAssetIoProjectIndexDependencyQuery
 	})
 ]);
+/** v1.27: a union query, or a header query that names its `fields`. */
+const ProjectIndexProjectedQueryOperation = Schema.Struct({
+	cacheRoot: NonEmptyString,
+	kind: Schema.Literal("project_index_query"),
+	pageEncoding: Schema.optionalKey(Schema.Literal("dictionary")),
+	query: UAssetIoProjectIndexProjectedQuery
+}).annotate({ identifier: "UAssetIoProjectIndexProjectedQueryOperation" });
 const ProjectIndexMaximumChanges = Schema.Int.check(
 	Schema.isBetween({ minimum: 1, maximum: UASSET_IO_PROJECT_INDEX_MAX_CHANGES })
 ).annotate({ identifier: "UAssetIoProjectIndexMaximumChanges" });
@@ -704,6 +791,7 @@ export const UAssetIoOperation = Schema.Union([
 	...ProjectIndexDependencyOperation.members,
 	...ProjectIndexChangeLimitOperation.members,
 	ProjectIndexChangedPathsOperation,
+	ProjectIndexProjectedQueryOperation,
 	CompareBlueprintsOperation,
 	PackageHeaderOperation,
 	StagedPackageTextOperation,
@@ -808,6 +896,18 @@ export const UAssetIoRequest = Schema.Union([
 			})
 		).annotate({ identifier: "UAssetIoProjectIndexChangedPathsContract" }),
 		operation: ProjectIndexChangedPathsOperation
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(27))
+				})
+			})
+		).annotate({ identifier: "UAssetIoProjectIndexProjectedQueryContract" }),
+		operation: ProjectIndexProjectedQueryOperation
 	}),
 	Schema.Struct({
 		...RequestFields,

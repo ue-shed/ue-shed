@@ -398,6 +398,9 @@
 									"maxItems": 64
 								}
 							]
+						},
+						"fields": {
+							"not": {}
 						}
 					},
 					"required": ["kind", "expectedGeneration", "limit", "projectId", "values"],
@@ -443,6 +446,9 @@
 									"maxItems": 64
 								}
 							]
+						},
+						"fields": {
+							"not": {}
 						}
 					},
 					"required": ["kind", "expectedGeneration", "limit", "projectId", "values"],
@@ -488,6 +494,9 @@
 									"maxItems": 64
 								}
 							]
+						},
+						"fields": {
+							"not": {}
 						}
 					},
 					"required": ["kind", "expectedGeneration", "limit", "projectId", "values"],
@@ -533,6 +542,9 @@
 									"maxItems": 64
 								}
 							]
+						},
+						"fields": {
+							"not": {}
 						}
 					},
 					"required": ["kind", "expectedGeneration", "limit", "projectId", "values"],
@@ -811,6 +823,482 @@
 				}
 			},
 			"required": ["kind", "cacheRoot", "projectRoot", "changedPaths"],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexProjectedQueryContract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["uasset-io"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "integer",
+							"allOf": [
+								{
+									"minimum": 27
+								}
+							]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"UAssetIoProjectIndexHeaderField": {
+			"type": "string",
+			"enum": ["classes", "serializedNames", "matchedSerializedNames", "headerData"]
+		},
+		"UAssetIoProjectIndexHeaderFilter": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["exact_classes"]
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "values"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["class_prefixes"]
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "values"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["class_name_suffixes"]
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "values"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["serialized_names"]
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						}
+					},
+					"required": ["kind", "values"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"UAssetIoProjectIndexProjectedQuery": {
+			"anyOf": [
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["exact_classes"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 1024
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"fields": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoProjectIndexHeaderField"
+							},
+							"uniqueItems": true,
+							"allOf": [
+								{
+									"maxItems": 3
+								}
+							]
+						}
+					},
+					"required": [
+						"kind",
+						"expectedGeneration",
+						"limit",
+						"projectId",
+						"values",
+						"fields"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["class_prefixes"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 1024
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"fields": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoProjectIndexHeaderField"
+							},
+							"uniqueItems": true,
+							"allOf": [
+								{
+									"maxItems": 3
+								}
+							]
+						}
+					},
+					"required": [
+						"kind",
+						"expectedGeneration",
+						"limit",
+						"projectId",
+						"values",
+						"fields"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["class_name_suffixes"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 1024
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"fields": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoProjectIndexHeaderField"
+							},
+							"uniqueItems": true,
+							"allOf": [
+								{
+									"maxItems": 3
+								}
+							]
+						}
+					},
+					"required": [
+						"kind",
+						"expectedGeneration",
+						"limit",
+						"projectId",
+						"values",
+						"fields"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["serialized_names"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 1024
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"values": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoNonEmptyString"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 64
+								}
+							]
+						},
+						"fields": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoProjectIndexHeaderField"
+							},
+							"uniqueItems": true,
+							"allOf": [
+								{
+									"maxItems": 3
+								}
+							]
+						}
+					},
+					"required": [
+						"kind",
+						"expectedGeneration",
+						"limit",
+						"projectId",
+						"values",
+						"fields"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"kind": {
+							"type": "string",
+							"enum": ["union"]
+						},
+						"cursor": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"expectedGeneration": {
+							"$ref": "#/$defs/UAssetIoPositiveInt"
+						},
+						"limit": {
+							"type": "integer",
+							"allOf": [
+								{
+									"exclusiveMinimum": 0
+								},
+								{
+									"maximum": 1024
+								}
+							]
+						},
+						"projectId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"filters": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoProjectIndexHeaderFilter"
+							},
+							"allOf": [
+								{
+									"minItems": 1
+								},
+								{
+									"maxItems": 16
+								}
+							]
+						},
+						"fields": {
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/UAssetIoProjectIndexHeaderField"
+							},
+							"uniqueItems": true,
+							"allOf": [
+								{
+									"maxItems": 3
+								}
+							]
+						}
+					},
+					"required": ["kind", "expectedGeneration", "limit", "projectId", "filters"],
+					"additionalProperties": false
+				}
+			]
+		},
+		"UAssetIoProjectIndexProjectedQueryOperation": {
+			"type": "object",
+			"properties": {
+				"cacheRoot": {
+					"$ref": "#/$defs/UAssetIoNonEmptyString"
+				},
+				"kind": {
+					"type": "string",
+					"enum": ["project_index_query"]
+				},
+				"pageEncoding": {
+					"type": "string",
+					"enum": ["dictionary"]
+				},
+				"query": {
+					"$ref": "#/$defs/UAssetIoProjectIndexProjectedQuery"
+				}
+			},
+			"required": ["cacheRoot", "kind", "query"],
 			"additionalProperties": false
 		},
 		"UAssetIoBlueprintComparisonContract": {
@@ -4882,6 +5370,25 @@
 						},
 						"operation": {
 							"$ref": "#/$defs/UAssetIoProjectIndexChangedPathsOperation"
+						}
+					},
+					"required": ["limits", "requestId", "contract", "operation"],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"properties": {
+						"limits": {
+							"$ref": "#/$defs/UAssetIoResourceLimits"
+						},
+						"requestId": {
+							"$ref": "#/$defs/UAssetIoNonEmptyString"
+						},
+						"contract": {
+							"$ref": "#/$defs/UAssetIoProjectIndexProjectedQueryContract"
+						},
+						"operation": {
+							"$ref": "#/$defs/UAssetIoProjectIndexProjectedQueryOperation"
 						}
 					},
 					"required": ["limits", "requestId", "contract", "operation"],

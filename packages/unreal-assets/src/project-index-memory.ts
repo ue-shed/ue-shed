@@ -6,6 +6,7 @@ import {
 	type ProjectIndexCursor,
 	type ProjectIndexGeneration,
 	type ProjectIndexHeader,
+	type ProjectIndexHeaderFilter,
 	type ProjectIndexInventory,
 	type ProjectIndexItem,
 	type ProjectIndexMap,
@@ -27,7 +28,8 @@ import {
 	ProjectIndexStaleGeneration,
 	PROJECT_INDEX_MAX_PAGE_SIZE,
 	decodeProjectIndexQuery,
-	projectIndexConfigLayer
+	projectIndexConfigLayer,
+	projectProjectIndexHeader
 } from "./project-index.js";
 
 /**
@@ -79,8 +81,13 @@ const className = (classPath: string): string => {
 	return separator === -1 ? classPath : classPath.slice(separator + 1);
 };
 
-const matchesHeader = (request: ProjectIndexQuery, header: ProjectIndexHeader): boolean => {
+const matchesHeader = (
+	request: ProjectIndexQuery | ProjectIndexHeaderFilter,
+	header: ProjectIndexHeader
+): boolean => {
 	switch (request._tag) {
+		case "Union":
+			return request.filters.some((filter) => matchesHeader(filter, header));
 		case "Inventory":
 			return false;
 		case "Maps":
@@ -317,7 +324,9 @@ const makeMemoryService = (state: Ref.Ref<MemoryState>): ProjectIndexApi => {
 					? catalog.maps
 					: decoded._tag === "Dependencies" || decoded._tag === "Dependents"
 						? walkPackages(catalog.packages, decoded)
-						: catalog.headers.filter((header) => matchesHeader(decoded, header));
+						: catalog.headers
+								.filter((header) => matchesHeader(decoded, header))
+								.map((header) => projectProjectIndexHeader(header, decoded));
 		return yield* pageItems(
 			items,
 			decoded,

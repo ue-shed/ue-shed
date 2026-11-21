@@ -11094,6 +11094,14 @@
 			"required": ["changed", "removed", "complete"],
 			"additionalProperties": false
 		},
+		"UAssetIoProjectIndexInventoryDigest": {
+			"type": "string",
+			"allOf": [
+				{
+					"pattern": "^[0-9a-f]{64}$"
+				}
+			]
+		},
 		"UAssetIoProjectIndexSummary": {
 			"type": "object",
 			"properties": {
@@ -11141,6 +11149,9 @@
 				},
 				"changes": {
 					"$ref": "#/$defs/UAssetIoProjectIndexChanges"
+				},
+				"inventoryDigest": {
+					"$ref": "#/$defs/UAssetIoProjectIndexInventoryDigest"
 				}
 			},
 			"required": [

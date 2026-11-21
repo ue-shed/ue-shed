@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cancellation::CancellationToken;
 
+use super::catalog::CatalogSnapshotEntry;
 use super::catalog::{
     Catalog, CatalogError, CatalogStatus, Completeness, EdgeFilter, EntryKind, Generation,
     HeaderEvidence, INDEX_PROFILE_VERSION, IndexScope, MountPoint, PROJECT_INDEX_MAX_DIAGNOSTICS,
@@ -17,8 +18,9 @@ use super::catalog::{
 };
 use super::checkpoint;
 use super::project_index::{
-    CatalogSnapshot, CoordinatorError, ProjectScanner, RefreshEvent, query, rebuild,
-    rebuild_listing_changes, refresh, refresh_listing_changes,
+    BundleListing, CatalogSnapshot, CoordinatorError, ProjectScanner, RefreshEvent, RefreshReach,
+    query, rebuild, rebuild_listing_changes, refresh, refresh_changed_paths,
+    refresh_listing_changes,
 };
 
 pub(crate) const FIXTURE_PROJECT_ROOT: &str = "C:/Fixture";
@@ -36,6 +38,8 @@ pub(crate) struct FakeScanner {
     pub(crate) plugin_mounts: Vec<MountPoint>,
     /// The Catalog identity scope; adapters opened for the fixture project expect `Content`.
     pub(crate) scope: IndexScope,
+    /// Files the walk ignores (neither packages nor sidecars).
+    pub(crate) ignored_files: BTreeSet<String>,
 }
 
 impl ProjectScanner for FakeScanner {
@@ -77,6 +81,30 @@ impl ProjectScanner for FakeScanner {
             .ok_or_else(|| CoordinatorError::Unavailable {
                 message: format!("missing header fixture for {}", signature.relative_path),
             })
+    }
+
+    fn is_ignored_file(&self, _project_root: &str, relative_path: &str) -> bool {
+        self.ignored_files.contains(relative_path)
+    }
+
+    fn list_bundles(
+        &self,
+        _project_root: &str,
+        stems: &[String],
+        cancellation: &CancellationToken,
+    ) -> Result<BundleListing, CoordinatorError> {
+        checkpoint(cancellation, "discovery")?;
+        let mut entries = self
+            .entries
+            .iter()
+            .filter(|entry| {
+                super::inventory_digest::bundle_stem(&entry.relative_path)
+                    .is_some_and(|stem| stems.binary_search_by(|s| s.as_str().cmp(stem)).is_ok())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        Ok(BundleListing::Entries(entries))
     }
 
     fn reread_signature(
@@ -921,6 +949,7 @@ pub(crate) fn stale_index_profile_rebuilds_header_evidence_only<C: CatalogSnapsh
                 diagnostics: Vec::new(),
                 omitted_diagnostics: 0,
                 mounts: vec![MountPoint::game()],
+                inventory_digest: None,
             },
         )
         .expect("commit narrow evidence");
@@ -1556,6 +1585,460 @@ pub(crate) fn diagnostics_past_the_kept_ones_are_counted<C: CatalogSnapshot>(mak
     }
 }
 
+/// Every page of the query kinds a refresh comparison checks, and the committed entries.
+fn every_page<C: CatalogSnapshot>(catalog: &C) -> (Vec<CatalogSnapshotEntry>, Vec<Vec<QueryItem>>) {
+    let generation = catalog
+        .committed_generation()
+        .expect("committed generation");
+    let kinds = [
+        QueryKind::Inventory,
+        QueryKind::Maps,
+        QueryKind::ClassPrefixes {
+            values: vec![String::new()],
+        },
+        QueryKind::SerializedNames {
+            values: vec!["TextProperty".to_owned(), "Name".to_owned()],
+        },
+    ];
+    let pages = kinds
+        .into_iter()
+        .map(|kind| collect_pages(catalog, generation, kind, 2))
+        .collect();
+    (
+        catalog.committed_entries().expect("committed entries"),
+        pages,
+    )
+}
+
+/// A targeted refresh told which paths changed gives exactly what a full walk gives (summary,
+/// digest, change report, entries and pages) through edits, sidecar-only edits, deletes, re-adds
+/// and new packages, and reads only the headers of the packages that changed.
+pub(crate) fn targeted_refreshes_match_full_walks<C: CatalogSnapshot>(make: impl Fn() -> C) {
+    let cancellation = CancellationToken::new();
+    let mut targeted = make();
+    let mut walked = make();
+    let mut scanner = refresh_fixture();
+    scanner
+        .entries
+        .push(package("Content/Data/DT_Other.uasset", 7, 7));
+    scanner
+        .entries
+        .push(sidecar("Content/Data/DT_Other.ubulk", 3, 7));
+    scanner.headers.insert(
+        "Content/Data/DT_Other.uasset".to_owned(),
+        header(
+            "/Game/Data/DT_Other",
+            &["/Script/Engine.DataTable"],
+            &["Name"],
+        ),
+    );
+    for catalog in [&mut targeted, &mut walked] {
+        refresh(
+            catalog,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            &cancellation,
+            |_| {},
+        )
+        .expect("initial refresh");
+    }
+    let set_header = |scanner: &mut FakeScanner, path: &str, name: &str, flags: u32| {
+        let mut evidence = header(name, &["/Script/Engine.DataTable"], &["TextProperty"]);
+        evidence.header_data = Some(uasset_inspection::package_header::PackageHeaderData {
+            package_flags: flags,
+            gatherable_text_data_count: flags,
+            gatherable_text_data_offset: 64,
+            has_text_property: true,
+        });
+        scanner.headers.insert(path.to_owned(), evidence);
+    };
+    type Step = (
+        &'static str,
+        Box<dyn Fn(&mut FakeScanner)>,
+        Vec<String>,
+        u64,
+    );
+    let steps: Vec<Step> = vec![
+        (
+            "a package edit",
+            Box::new(move |scanner: &mut FakeScanner| {
+                let entry = scanner
+                    .entries
+                    .iter_mut()
+                    .find(|entry| entry.relative_path == "Content/Data/DT_Items.uasset")
+                    .unwrap();
+                entry.size += 1;
+                set_header(
+                    scanner,
+                    "Content/Data/DT_Items.uasset",
+                    "/Game/Data/DT_Items",
+                    4,
+                );
+            }),
+            vec!["Content/Data/DT_Items.uasset".to_owned()],
+            1,
+        ),
+        (
+            "a sidecar-only edit, named by an absolute path with backslashes",
+            Box::new(|scanner: &mut FakeScanner| {
+                scanner
+                    .entries
+                    .iter_mut()
+                    .find(|entry| entry.relative_path == "Content/Data/DT_Items.uexp")
+                    .unwrap()
+                    .modified_nanos += 5;
+            }),
+            vec![format!(
+                "{FIXTURE_PROJECT_ROOT}\\Content\\Data\\DT_Items.uexp"
+            )],
+            0,
+        ),
+        (
+            "a deleted bundle, with unchanged and unrelated paths",
+            Box::new(|scanner: &mut FakeScanner| {
+                scanner
+                    .entries
+                    .retain(|entry| !entry.relative_path.starts_with("Content/Data/DT_Other."));
+            }),
+            vec![
+                "Content/Data/DT_Other.uasset".to_owned(),
+                "./Content/Data/DT_Other.ubulk".to_owned(),
+                "Content/Maps/L_Fixture.umap".to_owned(),
+                "Config/DefaultGame.ini".to_owned(),
+                "Content/Data/DT_Other.uasset".to_owned(),
+            ],
+            0,
+        ),
+        (
+            "a re-added bundle with a new header",
+            Box::new(move |scanner: &mut FakeScanner| {
+                scanner
+                    .entries
+                    .push(package("Content/Data/DT_Other.uasset", 9, 9));
+                scanner
+                    .entries
+                    .push(sidecar("Content/Data/DT_Other.ubulk", 4, 9));
+                set_header(
+                    scanner,
+                    "Content/Data/DT_Other.uasset",
+                    "/Game/Data/DT_Other",
+                    2,
+                );
+            }),
+            vec!["Content/Data/DT_Other.ubulk".to_owned()],
+            1,
+        ),
+        (
+            "a new map and a removed sidecar",
+            Box::new(|scanner: &mut FakeScanner| {
+                scanner
+                    .entries
+                    .push(package("Content/Maps/L_New.umap", 3, 3));
+                scanner.headers.insert(
+                    "Content/Maps/L_New.umap".to_owned(),
+                    header("/Game/Maps/L_New", &["/Script/Engine.World"], &[]),
+                );
+                scanner
+                    .entries
+                    .retain(|entry| entry.relative_path != "Content/Data/DT_Items.uexp");
+            }),
+            vec![
+                "Content/Maps/L_New.umap".to_owned(),
+                "Content/Data/DT_Items.uexp".to_owned(),
+            ],
+            1,
+        ),
+        (
+            "nothing changed",
+            Box::new(|_: &mut FakeScanner| {}),
+            vec!["Content/Maps/L_New.umap".to_owned()],
+            0,
+        ),
+    ];
+    for (step, change, changed_paths, expected_reads) in steps {
+        change(&mut scanner);
+        let reads = scanner.header_reads.get();
+        let (events, reach) = refresh_changed_paths(
+            &mut targeted,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            &changed_paths,
+            super::catalog::PROJECT_INDEX_MAX_REPORTED_CHANGES,
+            &cancellation,
+            |_| {},
+        )
+        .expect("targeted refresh");
+        assert_eq!(reach, RefreshReach::Targeted, "{step}");
+        assert_eq!(scanner.header_reads.get() - reads, expected_reads, "{step}");
+        let walked_events = refresh(
+            &mut walked,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            &cancellation,
+            |_| {},
+        )
+        .expect("walked refresh");
+        assert_eq!(
+            completed_summary(&events),
+            completed_summary(&walked_events),
+            "{step}"
+        );
+        assert!(
+            completed_summary(&events).inventory_digest.is_some(),
+            "{step}"
+        );
+        assert_eq!(
+            completed_changes(&events),
+            completed_changes(&walked_events),
+            "{step}"
+        );
+        assert_eq!(targeted.status(), walked.status(), "{step}");
+        assert_eq!(every_page(&targeted), every_page(&walked), "{step}");
+    }
+}
+
+/// A refresh given changed paths walks the project whenever the paths alone could miss a change.
+pub(crate) fn targeted_refresh_walks_when_unsure<C: CatalogSnapshot>(make: impl Fn() -> C) {
+    let cancellation = CancellationToken::new();
+    let mut catalog = make();
+    let mut scanner = refresh_fixture();
+    let run = |catalog: &mut C, scanner: &FakeScanner, paths: &[&str]| {
+        let paths = paths
+            .iter()
+            .map(|path| (*path).to_owned())
+            .collect::<Vec<_>>();
+        refresh_changed_paths(
+            catalog,
+            scanner,
+            FIXTURE_PROJECT_ROOT,
+            &paths,
+            super::catalog::PROJECT_INDEX_MAX_REPORTED_CHANGES,
+            &cancellation,
+            |_| {},
+        )
+        .expect("refresh")
+        .1
+    };
+    assert_eq!(
+        run(&mut catalog, &scanner, &["Content/Maps/L_Fixture.umap"]),
+        RefreshReach::Walked(Some("no_committed_generation"))
+    );
+    assert_eq!(run(&mut catalog, &scanner, &[]), RefreshReach::Walked(None));
+    for (paths, reason) in [
+        (vec!["Content/Data/"], "changed_path_is_a_directory"),
+        (vec!["Content/Data"], "changed_path_may_be_a_directory"),
+        (
+            vec!["Content/../Content/A.uasset"],
+            "changed_path_is_not_canonical",
+        ),
+        (vec!["Fixture.uproject"], "descriptor_changed"),
+        (
+            vec!["content/Maps/L_Fixture.umap"],
+            "changed_path_case_differs",
+        ),
+    ] {
+        assert_eq!(
+            run(&mut catalog, &scanner, &paths),
+            RefreshReach::Walked(Some(reason)),
+            "{paths:?}"
+        );
+    }
+    let many = (0..=super::project_index::PROJECT_INDEX_MAX_TARGETED_PATHS)
+        .map(|index| format!("Content/P{index}.uasset"))
+        .collect::<Vec<_>>();
+    let many = many.iter().map(String::as_str).collect::<Vec<_>>();
+    assert_eq!(
+        run(&mut catalog, &scanner, &many),
+        RefreshReach::Walked(Some("too_many_changed_paths"))
+    );
+    // A file the walk ignores, and a path outside every content root, change nothing.
+    scanner
+        .ignored_files
+        .insert("Content/Data/readme.txt".to_owned());
+    assert_eq!(
+        run(
+            &mut catalog,
+            &scanner,
+            &["Content/Data/readme.txt", "Saved/Logs/Fixture.log"]
+        ),
+        RefreshReach::Targeted
+    );
+    // A partial generation holds header failures only a walk rereads.
+    scanner
+        .fail_after_header
+        .insert("Content/Maps/L_Fixture.umap".to_owned());
+    scanner.entries[0].modified_nanos += 1;
+    assert_eq!(
+        run(&mut catalog, &scanner, &["Content/Maps/L_Fixture.umap"]),
+        RefreshReach::Targeted
+    );
+    assert_eq!(
+        run(&mut catalog, &scanner, &["Content/Data/DT_Items.uasset"]),
+        RefreshReach::Walked(Some("committed_generation_is_partial"))
+    );
+    scanner.fail_after_header.clear();
+    run(&mut catalog, &scanner, &[]);
+    // Mount points that changed need a walk.
+    scanner.plugin_mounts.push(MountPoint {
+        name: "/Extra/".to_owned(),
+        path: "Plugins/Extra/Content/".to_owned(),
+    });
+    assert_eq!(
+        run(&mut catalog, &scanner, &["Content/Maps/L_Fixture.umap"]),
+        RefreshReach::Walked(Some("mount_points_changed"))
+    );
+}
+
+/// The inventory digest depends on the inventory alone: the same files give the same digest after
+/// a first refresh, a no-op refresh, edits that are undone, and a rebuild; any change to a package
+/// path, a sidecar's size or time, or header data changes it.
+pub(crate) fn inventory_digest_depends_only_on_the_inventory<C: CatalogSnapshot>(
+    make: impl Fn() -> C,
+) {
+    let cancellation = CancellationToken::new();
+    let digest = |catalog: &C| match catalog.status() {
+        CatalogStatus::Ready { summary } => summary.inventory_digest.expect("complete digest"),
+        CatalogStatus::Absent => panic!("no committed generation"),
+    };
+    let mut scanner = refresh_fixture();
+    let data = uasset_inspection::package_header::PackageHeaderData {
+        package_flags: 1,
+        gatherable_text_data_count: 2,
+        gatherable_text_data_offset: 3,
+        has_text_property: true,
+    };
+    scanner
+        .headers
+        .get_mut("Content/Data/DT_Items.uasset")
+        .unwrap()
+        .header_data = Some(data.clone());
+    let original = scanner.entries.clone();
+    let mut catalog = make();
+    refresh(
+        &mut catalog,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &cancellation,
+        |_| {},
+    )
+    .unwrap();
+    let first = digest(&catalog);
+    assert_eq!(first.len(), 64);
+    refresh(
+        &mut catalog,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &cancellation,
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(digest(&catalog), first, "a no-op refresh");
+    let mut seen = vec![first.clone()];
+    type Change = (&'static str, Box<dyn Fn(&mut FakeScanner)>);
+    let changes: Vec<Change> = vec![
+        (
+            "a package path",
+            Box::new(|scanner: &mut FakeScanner| {
+                let entry = scanner
+                    .entries
+                    .iter_mut()
+                    .find(|entry| entry.relative_path == "Content/Maps/L_Fixture.umap")
+                    .unwrap();
+                entry.relative_path = "Content/Maps/L_Moved.umap".to_owned();
+                let evidence = scanner.headers["Content/Maps/L_Fixture.umap"].clone();
+                scanner
+                    .headers
+                    .insert("Content/Maps/L_Moved.umap".to_owned(), evidence);
+            }),
+        ),
+        (
+            "a sidecar's size",
+            Box::new(|scanner: &mut FakeScanner| scanner.entries[2].size += 1),
+        ),
+        (
+            "a sidecar's modified time",
+            Box::new(|scanner: &mut FakeScanner| scanner.entries[2].modified_nanos += 1),
+        ),
+        (
+            "header data",
+            Box::new(|scanner: &mut FakeScanner| {
+                scanner.entries[1].modified_nanos += 1;
+                scanner
+                    .headers
+                    .get_mut("Content/Data/DT_Items.uasset")
+                    .unwrap()
+                    .header_data
+                    .as_mut()
+                    .unwrap()
+                    .package_flags ^= 0x40000;
+            }),
+        ),
+    ];
+    for (what, change) in changes {
+        let mut changed = refresh_fixture();
+        changed.headers = scanner.headers.clone();
+        changed.entries = original.clone();
+        change(&mut changed);
+        refresh(
+            &mut catalog,
+            &changed,
+            FIXTURE_PROJECT_ROOT,
+            &cancellation,
+            |_| {},
+        )
+        .unwrap();
+        let after = digest(&catalog);
+        assert!(!seen.contains(&after), "changing {what} changed the digest");
+        seen.push(after);
+        // Undoing the change gives the first digest back, generations later.
+        refresh(
+            &mut catalog,
+            &scanner,
+            FIXTURE_PROJECT_ROOT,
+            &cancellation,
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(digest(&catalog), first, "undoing {what}");
+    }
+    rebuild(
+        &mut catalog,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &cancellation,
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(digest(&catalog), first, "a rebuild");
+    let mut fresh = make();
+    refresh(
+        &mut fresh,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &cancellation,
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(digest(&fresh), first, "another Catalog");
+    // A partial generation has no digest.
+    scanner
+        .fail_after_header
+        .insert("Content/Maps/L_Fixture.umap".to_owned());
+    scanner.entries[0].modified_nanos += 1;
+    refresh(
+        &mut catalog,
+        &scanner,
+        FIXTURE_PROJECT_ROOT,
+        &cancellation,
+        |_| {},
+    )
+    .unwrap();
+    match catalog.status() {
+        CatalogStatus::Ready { summary } => assert_eq!(summary.inventory_digest, None),
+        CatalogStatus::Absent => panic!("no committed generation"),
+    }
+}
+
 macro_rules! catalog_conformance_tests {
     ($module:ident, $make:expr) => {
         mod $module {
@@ -1651,6 +2134,21 @@ macro_rules! catalog_conformance_tests {
             #[test]
             fn stale_index_profile_rebuilds_header_evidence_only() {
                 conformance::stale_index_profile_rebuilds_header_evidence_only($make);
+            }
+
+            #[test]
+            fn targeted_refreshes_match_full_walks() {
+                conformance::targeted_refreshes_match_full_walks($make);
+            }
+
+            #[test]
+            fn targeted_refresh_walks_when_unsure() {
+                conformance::targeted_refresh_walks_when_unsure($make);
+            }
+
+            #[test]
+            fn inventory_digest_depends_only_on_the_inventory() {
+                conformance::inventory_digest_depends_only_on_the_inventory($make);
             }
         }
     };

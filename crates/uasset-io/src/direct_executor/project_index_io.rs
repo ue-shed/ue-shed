@@ -21,7 +21,9 @@ use super::catalog::{
     project_id_for,
 };
 use super::catalog_binary::BinaryCatalog;
-use super::project_index::{self, CoordinatorError, RefreshEvent, RefreshPhase, RefreshProgress};
+use super::project_index::{
+    self, CoordinatorError, RefreshEvent, RefreshPhase, RefreshProgress, RefreshReach,
+};
 use super::scanner::FilesystemProjectScanner;
 
 pub(crate) struct ProjectIndexRefreshOutput {
@@ -32,6 +34,10 @@ pub(crate) struct ProjectIndexRefreshOutput {
     pub(crate) duration_ms: u64,
     pub(crate) storage_bytes: u64,
     pub(crate) rebuild: bool,
+    /// Whether the refresh looked only at the host's changed paths.
+    pub(crate) targeted: bool,
+    /// Why a refresh given changed paths walked the project instead.
+    pub(crate) walked_because: Option<&'static str>,
 }
 
 #[derive(Default)]
@@ -252,6 +258,10 @@ pub(crate) struct CatalogWriteEvidence {
     pub(crate) committed_evidence_rows: u64,
     pub(crate) removed_evidence_rows: u64,
     pub(crate) evidence_write_ms: u64,
+    /// Bytes of the snapshot file the commit wrote.
+    pub(crate) written_bytes: u64,
+    /// Whether the commit wrote a delta over the committed base.
+    pub(crate) delta: bool,
 }
 
 pub(crate) fn open_catalog(
@@ -434,6 +444,8 @@ pub(crate) struct RefreshOptions {
     pub(crate) changes: bool,
     /// The most changed and removed paths the report lists before it only counts them.
     pub(crate) maximum_changes: usize,
+    /// The files a watcher saw change; empty to walk the project.
+    pub(crate) changed_paths: Vec<String>,
 }
 
 pub(crate) fn refresh(
@@ -455,7 +467,7 @@ pub(crate) fn refresh(
         phase_started = Instant::now();
         on_progress(progress);
     };
-    let events = if rebuild {
+    let (events, reach) = if rebuild {
         project_index::rebuild_listing_changes(
             catalog,
             &scanner,
@@ -464,11 +476,13 @@ pub(crate) fn refresh(
             cancellation,
             &mut record_progress,
         )
+        .map(|events| (events, RefreshReach::Walked(None)))
     } else {
-        project_index::refresh_listing_changes(
+        project_index::refresh_changed_paths(
             catalog,
             &scanner,
             project_root,
+            &options.changed_paths,
             options.maximum_changes,
             cancellation,
             &mut record_progress,
@@ -509,11 +523,18 @@ pub(crate) fn refresh(
             committed_evidence_rows: writes.committed_evidence_rows,
             removed_evidence_rows: writes.removed_evidence_rows,
             evidence_write_ms: writes.evidence_write_duration.as_millis() as u64,
+            written_bytes: writes.written_bytes,
+            delta: writes.delta,
         },
         phase_timings,
         duration_ms: started.elapsed().as_millis() as u64,
         storage_bytes: catalog.storage_bytes(),
         rebuild,
+        targeted: reach == RefreshReach::Targeted,
+        walked_because: match reach {
+            RefreshReach::Walked(reason) => reason,
+            RefreshReach::Targeted => None,
+        },
     })
 }
 
@@ -707,6 +728,7 @@ fn to_protocol_summary(summary: RefreshSummary) -> ProjectIndexSummary {
             })
             .collect(),
         changes: None,
+        inventory_digest: summary.inventory_digest,
     }
 }
 

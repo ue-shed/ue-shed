@@ -96,6 +96,15 @@ export const UASSET_IO_PROJECT_INDEX_MAX_DIAGNOSTICS = 64;
 export const UASSET_IO_PROJECT_INDEX_DEFAULT_MAXIMUM_CHANGES = 65_536;
 /** The most changed and removed paths a request's `maximumChanges` may ask for: 1,048,576. */
 export const UASSET_IO_PROJECT_INDEX_MAX_CHANGES = 1_048_576;
+/** The most paths a v1.26 refresh's `changedPaths` may list: 65,536. */
+export const UASSET_IO_PROJECT_INDEX_MAX_CHANGED_PATHS = 65_536;
+/** The most changed paths a refresh looks at alone; past 4,096 it walks the project. */
+export const UASSET_IO_PROJECT_INDEX_MAX_TARGETED_PATHS = 4_096;
+
+/** v1.26: a generation's inventory digest, lowercase hex SHA-256 of every inventory fact. */
+const ProjectIndexInventoryDigest = Schema.String.check(
+	Schema.isPattern(/^[0-9a-f]{64}$/u)
+).annotate({ identifier: "UAssetIoProjectIndexInventoryDigest" });
 
 const ProjectIndexPageLimit = Schema.Int.check(
 	Schema.isGreaterThan(0),
@@ -271,9 +280,8 @@ export interface UAssetIoProjectIndexChanges extends Schema.Schema.Type<
 
 /**
  * Outcome of the last committed refresh; queries name its `generation`. `completeness` is
- * `partial` when a diagnostic was recorded (at most 64 are kept; from v1.25 `omittedDiagnostics`
- * counts the rest and is absent when none were left out). From v1.23 it lists `mounts`, and
- * `changes` when the refresh asked for them.
+ * `partial` when a diagnostic was recorded (64 kept; v1.25 `omittedDiagnostics` counts the rest).
+ * v1.23 adds `mounts` and requested `changes`; v1.26 adds `inventoryDigest` when complete.
  */
 export const UAssetIoProjectIndexSummary = Schema.Struct({
 	changedPackages: NonNegativeInt,
@@ -288,7 +296,8 @@ export const UAssetIoProjectIndexSummary = Schema.Struct({
 	projectId: NonEmptyString,
 	removedPackages: NonNegativeInt,
 	mounts: Schema.optionalKey(Schema.Array(UAssetIoProjectIndexMount)),
-	changes: Schema.optionalKey(UAssetIoProjectIndexChanges)
+	changes: Schema.optionalKey(UAssetIoProjectIndexChanges),
+	inventoryDigest: Schema.optionalKey(ProjectIndexInventoryDigest)
 }).annotate({ identifier: "UAssetIoProjectIndexSummary" });
 export interface UAssetIoProjectIndexSummary extends Schema.Schema.Type<
 	typeof UAssetIoProjectIndexSummary
@@ -556,14 +565,16 @@ const ExistingOperation = Schema.Union([
 		...UAssetIoProjectIndexTarget,
 		plugins: Schema.optionalKey(Schema.Never),
 		changes: Schema.optionalKey(Schema.Never),
-		maximumChanges: Schema.optionalKey(Schema.Never)
+		maximumChanges: Schema.optionalKey(Schema.Never),
+		changedPaths: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("project_index_rebuild"),
 		...UAssetIoProjectIndexTarget,
 		plugins: Schema.optionalKey(Schema.Never),
 		changes: Schema.optionalKey(Schema.Never),
-		maximumChanges: Schema.optionalKey(Schema.Never)
+		maximumChanges: Schema.optionalKey(Schema.Never),
+		changedPaths: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		cacheRoot: NonEmptyString,
@@ -622,14 +633,16 @@ const ProjectIndexDependencyOperation = Schema.Union([
 		...UAssetIoProjectIndexTarget,
 		plugins: Schema.optionalKey(Schema.Boolean),
 		changes: Schema.optionalKey(Schema.Boolean),
-		maximumChanges: Schema.optionalKey(Schema.Never)
+		maximumChanges: Schema.optionalKey(Schema.Never),
+		changedPaths: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("project_index_rebuild"),
 		...UAssetIoProjectIndexTarget,
 		plugins: Schema.optionalKey(Schema.Boolean),
 		changes: Schema.optionalKey(Schema.Boolean),
-		maximumChanges: Schema.optionalKey(Schema.Never)
+		maximumChanges: Schema.optionalKey(Schema.Never),
+		changedPaths: Schema.optionalKey(Schema.Never)
 	}),
 	Schema.Struct({
 		cacheRoot: NonEmptyString,
@@ -649,7 +662,8 @@ const ProjectIndexChangeLimitFields = {
 	 * The most changed and removed paths the change report lists, 1 to 1,048,576; 65,536 when
 	 * absent. Past it the report says `complete: false`, lists none and counts them in `total`.
 	 */
-	maximumChanges: ProjectIndexMaximumChanges
+	maximumChanges: ProjectIndexMaximumChanges,
+	changedPaths: Schema.optionalKey(Schema.Never)
 };
 /**
  * v1.25: a refresh or rebuild that sets `maximumChanges`, the change report's limit. A host that
@@ -666,6 +680,21 @@ const ProjectIndexChangeLimitOperation = Schema.Union([
 	})
 ]);
 /**
+ * v1.26: a refresh told which files changed (as a file watcher reports them). It reads only those
+ * files' bundles, with a walk's result, and walks anyway when the paths alone could miss a change
+ * (a directory, a descriptor, more than 4,096 paths). Name files, not their directories.
+ */
+const ProjectIndexChangedPathsOperation = Schema.Struct({
+	kind: Schema.Literal("project_index_refresh"),
+	...UAssetIoProjectIndexTarget,
+	plugins: Schema.optionalKey(Schema.Boolean),
+	changes: Schema.optionalKey(Schema.Boolean),
+	maximumChanges: Schema.optionalKey(ProjectIndexMaximumChanges),
+	changedPaths: Schema.Array(NonEmptyString).check(
+		Schema.isMaxLength(UASSET_IO_PROJECT_INDEX_MAX_CHANGED_PATHS)
+	)
+}).annotate({ identifier: "UAssetIoProjectIndexChangedPathsOperation" });
+/**
  * Every operation a request can carry, discriminated by `kind`. String fields are trimmed and
  * must be non-empty; an explicit empty `paths` array selects zero work, not the project root.
  */
@@ -674,6 +703,7 @@ export const UAssetIoOperation = Schema.Union([
 	...ExistingOperation.members,
 	...ProjectIndexDependencyOperation.members,
 	...ProjectIndexChangeLimitOperation.members,
+	ProjectIndexChangedPathsOperation,
 	CompareBlueprintsOperation,
 	PackageHeaderOperation,
 	StagedPackageTextOperation,
@@ -766,6 +796,18 @@ export const UAssetIoRequest = Schema.Union([
 			})
 		).annotate({ identifier: "UAssetIoProjectIndexChangeLimitContract" }),
 		operation: ProjectIndexChangeLimitOperation
+	}),
+	Schema.Struct({
+		...RequestFields,
+		contract: UAssetIoContract.pipe(
+			Schema.fieldsAssign({
+				version: Schema.Struct({
+					major: Schema.Literal(1),
+					minor: Schema.Int.check(Schema.isGreaterThanOrEqualTo(26))
+				})
+			})
+		).annotate({ identifier: "UAssetIoProjectIndexChangedPathsContract" }),
+		operation: ProjectIndexChangedPathsOperation
 	}),
 	Schema.Struct({
 		...RequestFields,

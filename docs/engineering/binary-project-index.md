@@ -6,10 +6,11 @@ CLI, and Workbench use the same adapter; there is no runtime backend selector.
 
 ## Format and lifecycle
 
-The disposable cache lives under `catalogs-v8/<project-hash>`. An atomic JSON manifest selects a
-physical snapshot and retains the previous snapshot. Existing SQLite, DuckDB and older `catalogs-v*`
-caches are ignored; the first refresh builds the new format from source. Old cache directories are
-not deleted or converted automatically.
+The disposable cache lives under `catalogs-v9/<project-hash>`. An atomic JSON manifest selects a
+base snapshot and, when there is one, a delta snapshot over it, and retains the previous
+generation's base and delta. Existing SQLite, DuckDB and older `catalogs-v*` caches are ignored;
+the first refresh builds the new format from source. Old cache directories are not deleted or
+converted automatically.
 
 Header profile 3 includes raw package flags, gatherable-text summary count/offset, and an exact
 `TextProperty` probe over the complete name map. Plain and dictionary header pages expose this
@@ -19,13 +20,14 @@ with `headerData: true` and exposes the projection in `package.header_data`. The
 require no payload read, and remain generic inspection evidence rather than Game Text policy.
 Profile 3 adds each package's dependencies (see [Package dependencies](#package-dependencies)).
 
-The snapshot contains five length-delimited sections: compact inventory, shared strings and a
-sorted lexicon, posting directory, posting lists, and packed header records. Integers are
-little-endian, including the full unsigned file signatures. Inventory rows also carry a copy of
-their record's 17-byte header data, so inventory pages read no records. CRC32 checksums cover every
-decoded section, every stored section, the header, and individual records/posting lists. These
-detect accidental corruption, not malicious changes. The file magic (`UESHC006`) versions the
-encoding; incompatible derived evidence is rebuilt.
+The snapshot contains seven length-delimited sections: compact inventory, shared strings and a
+sorted lexicon, posting directory, posting lists, packed header records, a sparse row index (the
+path and inventory offset of every 128th row), and tombstones. Integers are little-endian,
+including the full unsigned file signatures. Inventory rows also carry a copy of their record's
+17-byte header data, so inventory pages read no records. CRC32 checksums cover every decoded
+section, every stored section, the header, and individual records/posting lists. These detect
+accidental corruption, not malicious changes. The file magic (`UESHC007`) versions the encoding;
+incompatible derived evidence is rebuilt.
 
 Every section is zstd-compressed (level 3) as independent 64 KiB blocks behind an index of block end
 offsets, so a query decodes only the blocks its postings and record windows touch, and whole
@@ -57,12 +59,59 @@ do not take that lock. Process termination releases it. A second writer receives
 error rather than publishing from stale state. Native IO now requires Rust 1.89 for standard file
 locking; parsing and inspection retain their existing Rust requirement.
 
-A warm no-op publishes generation metadata while reusing the physical snapshot with no evidence
-writes and without decoding anything beyond the inventory. Changed refreshes copy unchanged packed
-records block by block and derive every posting list from the records written, so committed
-postings are never read. They still write a complete new physical file; this is not an append log
-or an in-place update format. New files are synced and reread against their stored checksums
-before manifest publication.
+A warm no-op publishes generation metadata while reusing the physical snapshots with no evidence
+writes and without decoding anything beyond the inventory. New files are synced and reread against
+their stored checksums before manifest publication.
+
+## Base and delta snapshots
+
+A small refresh writes only a delta. A delta is a complete snapshot of its own (rows, strings,
+postings, records and row index) holding every entry the generation added or replaced since the
+base, and its tombstones section names the base rows the generation no longer holds (removed or
+replaced), with the fingerprint of the base header it belongs to and how many packages and maps it
+hides. Readers merge the base's live rows with the delta's in path order; the two never share a
+path. Inventory, map and posting pages, cursors, counts, bundle signatures (a package's sidecars
+may sit in the other snapshot), dictionary pages (a string in both snapshots is carried once) and
+dependency walks all read the merged generation. Status and writer opens check the delta against
+its base and the summary's counts against both.
+
+Each delta replaces the previous one: it carries the previous delta's surviving rows (their
+records copied as stored, its strings kept with their ids) and the refresh's changes. A refresh
+writes a delta while the delta's entries plus the base rows it hides stay within 16,384 and 5% of
+the base, with the same mount points, and while the delta carries at most 262,144 strings;
+otherwise it compacts into a new base, copying the base's live records and remapping the delta's
+into the base's strings. A rebuild always writes a base. A changed refresh that writes a base
+copies unchanged packed records block by block and derives every posting list from the records
+written, so committed postings are never read. On a project of about 800,000 packages a one-file
+edit writes a delta of a few kilobytes instead of a 185 MB base.
+
+A writer finds base rows by path or id through the row index, decoding only the stretch of
+inventory it needs, so a delta commit and a targeted refresh never decode the whole base
+inventory. The writer open still reads every stored byte of both snapshots against their stored
+checksums.
+
+## Inventory digest
+
+Each complete summary carries `inventoryDigest`, a SHA-256 over every inventory fact: each
+package's path, its bundle stamps (its own and its `.uexp`, `.ubulk` and `.uptnl` size and modified
+time) and its 17-byte header data. Each package contributes a leaf (the SHA-256 of its facts);
+leaves are summed as 256-bit integers, and the digest is the SHA-256 of the package count and the
+sum. The manifest keeps the sum, so a delta commit subtracts the old leaves of the bundles it
+touched and adds the new ones instead of reading every package, and a base commit sums its leaves
+as it writes its rows. The digest depends only on the facts: a fresh build, a warm no-op, deltas,
+compaction and a rebuild of the same files give the same digest. A partial summary has none.
+
+## Targeted refresh
+
+A refresh may name the files that changed (`changedPaths`, as an operating system file watcher
+reports them). It then lists only those files' directories, compares only their bundles (a package
+and its sidecars, whatever case its extensions use) with the committed entries, reads only the
+changed packages' headers, and commits as a delta; the result, change report and digest are what a
+full walk would give. It walks instead when it cannot be sure of that: no committed generation, a
+partial one (only a walk rereads header failures), evidence from an older index profile, changed
+mount points, more than 4,096 paths, a path that may be a directory, a `.uproject` or `.uplugin`, a
+path in another case than the content root or a directory on the way to it, or a plugin path in a
+plugin-inclusive index. The summary metrics say which (`targeted`, `walked_because`).
 
 Header workers encode records as they read them. Each keeps its own string dictionary and writes
 records with its own string ids, sending with each record the strings it first met there; staging
@@ -84,7 +133,8 @@ none copies the committed strings section as stored. Persisted ordering and enco
 deterministic and do not depend on how entries were staged.
 
 Interrupted unpublished files are removed on successful subsequent publication; writer opens also
-clean retired snapshots when a committed manifest exists. Invalid manifests or damaged snapshots
+clean retired snapshots (bases and deltas the manifest no longer names) when a committed manifest
+exists. Invalid manifests or damaged snapshots
 are quarantined by writers and rebuilt. Query opens report errors without mutating the cache.
 An error during atomic manifest publication preserves the candidate snapshot and requires reopening
 the writer: rename may have succeeded before a later sync error. Cleanup owns a filename only after
@@ -150,7 +200,7 @@ base generation, and every path counts as changed.
 The manifest is capped at 1 MiB and each binary section at 512 MiB. Decoders validate lengths,
 counts, IDs, ordering, UTF-8, and booleans before use. These are implementation limits, not an
 unbounded storage promise. Builds retain staging and indexes in memory. Unused dictionary strings
-remain until a full rebuild. Open handles can delay physical storage reclamation.
+remain until the next base is written. Open handles can delay physical storage reclamation.
 
 The hardening measurements show faster fresh builds and query workloads, approximately tied warm
 refresh, and smaller caches. Single-package repair and short-lived catalog opens remain slower
@@ -171,7 +221,9 @@ cargo tree --locked -p uasset-io -e normal
 The architecture gate verifies that the native dependency tree has no database engine.
 
 Tests cover deterministic mutations diffed against the in-memory reference Catalog on every query
-kind, page size, count and dependency walk, unsigned signatures, damaged
+kind, page size, count and dependency walk through a base, many deltas, compaction and further
+deltas (walked and targeted refreshes side by side), every conformance scenario run again with
+deltas forced, unsigned signatures, damaged
 files, impossible counts, bounded manifests, failed write/sync checkpoints, writer exclusion,
 quarantine, old readers, and process termination at six publication boundaries. Process-kill tests
 do not simulate a machine power failure or establish a long-duration durability soak.

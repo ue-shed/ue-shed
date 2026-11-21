@@ -18,6 +18,7 @@ mod catalog_dependencies;
 mod catalog_memory;
 mod disk_changes;
 mod inspection;
+mod inventory_digest;
 mod project_index;
 mod project_index_io;
 mod project_io;

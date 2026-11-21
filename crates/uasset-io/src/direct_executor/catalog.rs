@@ -141,6 +141,9 @@ pub struct RefreshSummary {
     pub omitted_diagnostics: u64,
     /// The content roots this generation indexed, `/Game/` first.
     pub mounts: Vec<MountPoint>,
+    /// The canonical digest of every inventory fact (package paths, bundle stamps and header
+    /// data) when the generation is complete; set by the Catalog when it commits.
+    pub inventory_digest: Option<String>,
 }
 
 /// What a refresh saw change on disk since the generation it started from.
@@ -193,6 +196,10 @@ pub struct CatalogSnapshotEntry {
 /// without copying its path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CommittedEntry<'a> {
+    /// The Catalog's opaque name for this entry in the committed generation, which
+    /// `Catalog::observe_unchanged_committed` and `CatalogSnapshot::observe_unchanged_except`
+    /// receive back.
+    pub handle: u32,
     pub relative_path: &'a str,
     pub kind: EntryKind,
     pub size: u64,
@@ -403,6 +410,15 @@ impl fmt::Display for CatalogError {
 
 impl std::error::Error for CatalogError {}
 
+/// What the rest of a refresh will stage, promised when it starts staging in path order.
+#[derive(Clone, Copy, Debug)]
+pub struct StagingPlan<'a> {
+    /// Entries (packages and sidecars) the refresh will stage.
+    pub entries: usize,
+    /// The content roots the next generation indexes.
+    pub mounts: &'a [MountPoint],
+}
+
 /// Opaque staging token. Adapters may embed generation bookkeeping; callers must not inspect it.
 #[derive(Debug)]
 pub struct StagingToken {
@@ -506,9 +522,14 @@ pub trait Catalog {
 
     /// A promise for the rest of the refresh: no entry is observed unchanged any more, and each
     /// staged entry's path follows the previous one's. Adapters may then write the next
-    /// generation as entries arrive; one that breaks the promise fails.
-    fn stage_in_path_order(&mut self, token: &StagingToken) -> Result<(), CatalogError> {
-        let _ = token;
+    /// generation as entries arrive; one that breaks the promise fails. `plan` says how much the
+    /// refresh will stage, so an adapter can choose how to write it.
+    fn stage_in_path_order(
+        &mut self,
+        token: &StagingToken,
+        plan: &StagingPlan<'_>,
+    ) -> Result<(), CatalogError> {
+        let _ = (token, plan);
         Ok(())
     }
 

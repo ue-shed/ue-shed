@@ -228,12 +228,39 @@ const toQueryOperation = (
 		: { cacheRoot, kind: "project_index_query", pageEncoding: "dictionary", query };
 };
 
-/** Scope and change fields for a target; present only when set, so older workers still serve plain requests. */
-const scopeFields = (target: ProjectIndexRefreshTarget) => ({
-	...(target.plugins === undefined ? undefined : { plugins: target.plugins }),
-	...(target.changes === undefined ? undefined : { changes: target.changes }),
-	...(target.maximumChanges === undefined ? undefined : { maximumChanges: target.maximumChanges })
-});
+/**
+ * The refresh or rebuild operation for a target. Scope, change and path fields are present only
+ * when set, so older workers still serve plain requests; a rebuild walks the project regardless
+ * of changed paths.
+ */
+const refreshOperation = (
+	cacheRoot: ProjectIndexCacheRoot,
+	target: ProjectIndexRefreshTarget,
+	operation: "refresh" | "rebuild"
+): UAssetIoOperation => {
+	const fields = {
+		cacheRoot,
+		projectRoot: target.projectRoot,
+		...(target.plugins === undefined ? undefined : { plugins: target.plugins }),
+		...(target.changes === undefined ? undefined : { changes: target.changes })
+	};
+	const { maximumChanges } = target;
+	const changedPaths = operation === "refresh" ? (target.changedPaths ?? []) : [];
+	if (changedPaths.length > 0)
+		return {
+			...fields,
+			kind: "project_index_refresh",
+			...(maximumChanges === undefined ? undefined : { maximumChanges }),
+			changedPaths: [...changedPaths]
+		};
+	if (operation === "rebuild")
+		return maximumChanges === undefined
+			? { ...fields, kind: "project_index_rebuild" }
+			: { ...fields, kind: "project_index_rebuild", maximumChanges };
+	return maximumChanges === undefined
+		? { ...fields, kind: "project_index_refresh" }
+		: { ...fields, kind: "project_index_refresh", maximumChanges };
+};
 
 const toWireFilter = (filter: ProjectIndexFilter): UAssetIoProjectIndexFilter => {
 	switch (filter._tag) {
@@ -266,8 +293,10 @@ const makeRequest = (
 	);
 
 /**
- * The oldest contract minor that carries an operation: v1.23 for dependency walks, scopes and
- * changes, v1.25 for a change report limit.
+ * The contract minor an operation's request names: the oldest that carries it (v1.23 for
+ * dependency walks), and v1.26 for status, refresh and rebuild, whose summaries carry the
+ * inventory digest from v1.26 on. A worker that predates a minor still serves a request that
+ * uses none of that minor's fields.
  */
 const contractMinorFor = (operation: UAssetIoOperation): number => {
 	switch (operation.kind) {
@@ -278,11 +307,7 @@ const contractMinorFor = (operation: UAssetIoOperation): number => {
 		case "project_index_status":
 		case "project_index_refresh":
 		case "project_index_rebuild":
-			return "maximumChanges" in operation
-				? 25
-				: "plugins" in operation || "changes" in operation
-					? 23
-					: 1;
+			return 26;
 		default:
 			return 1;
 	}
@@ -349,8 +374,98 @@ const recordRefreshMetrics = (
 		...(extras.quarantined ? [Metric.update(projectIndexQuarantines, 1)] : [])
 	]).pipe(Effect.asVoid);
 
+/**
+ * Lets refreshes through one at a time, in order. A caller that aborts while it waits leaves at
+ * once; the next caller still waits for the refresh ahead of it.
+ */
+class RefreshQueue {
+	private tail: Promise<void> = Promise.resolve();
+
+	async enter(signal: AbortSignal | undefined): Promise<() => void> {
+		const ahead = this.tail;
+		let leave!: () => void;
+		const left = new Promise<void>((resolve) => {
+			leave = resolve;
+		});
+		this.tail = ahead.then(() => left);
+		try {
+			await untilAborted(ahead, signal);
+		} catch (cause) {
+			leave();
+			throw cause;
+		}
+		return leave;
+	}
+}
+
+/** `promise`, or a rejection as soon as `signal` aborts. */
+function untilAborted(promise: Promise<void>, signal: AbortSignal | undefined): Promise<void> {
+	if (signal === undefined) return promise;
+	if (signal.aborted)
+		return Promise.reject(new ProtocolStreamFailure("process", "Protocol aborted"));
+	return new Promise<void>((resolvePromise, rejectPromise) => {
+		const onAbort = () =>
+			rejectPromise(new ProtocolStreamFailure("process", "Protocol aborted"));
+		signal.addEventListener("abort", onAbort, { once: true });
+		promise.then(
+			() => {
+				signal.removeEventListener("abort", onAbort);
+				resolvePromise();
+			},
+			(cause: unknown) => {
+				signal.removeEventListener("abort", onAbort);
+				rejectPromise(cause);
+			}
+		);
+	});
+}
+
+/** The refresh worker: a long-lived session that only refreshes, so queries never wait on one. */
+interface RefreshWorker {
+	readonly queue: RefreshQueue;
+	readonly session: UassetProtocolSession;
+}
+
+/**
+ * The events of one refresh from the refresh session. A worker that predates session refreshes
+ * rejects the request before doing any work; it is asked again through a one-off process.
+ */
+async function* refreshProtocolEvents(
+	configuration: ProjectIndexProcessConfiguration,
+	worker: RefreshWorker,
+	request: ReturnType<typeof makeRequest>,
+	signal: AbortSignal | undefined
+): AsyncGenerator<ProtocolEvent> {
+	const leave = await worker.queue.enter(signal);
+	try {
+		let unsupported = false;
+		for await (const event of worker.session.events({
+			request,
+			signal,
+			telemetryOperation: "project_index",
+			timeoutMs: configuration.timeoutMs
+		})) {
+			if (event.kind === "failed" && event.code === "unsupported_session_operation") {
+				unsupported = true;
+				continue;
+			}
+			if (!unsupported) yield event;
+		}
+		if (unsupported)
+			yield* runUassetProtocolEvents({
+				configuration,
+				request,
+				signal,
+				timeoutMs: configuration.timeoutMs
+			});
+	} finally {
+		leave();
+	}
+}
+
 async function* refreshEventStream(
 	configuration: ProjectIndexProcessConfiguration,
+	worker: RefreshWorker,
 	cacheRoot: ProjectIndexCacheRoot,
 	target: ProjectIndexRefreshTarget,
 	operation: "refresh" | "rebuild",
@@ -358,12 +473,7 @@ async function* refreshEventStream(
 ): AsyncGenerator<ProjectIndexRefreshEvent, void, void> {
 	yield ProjectIndexRefreshEvent.cases.Started.make({ operation });
 	const request = makeRequest(
-		{
-			cacheRoot,
-			kind: operation === "rebuild" ? "project_index_rebuild" : "project_index_refresh",
-			projectRoot: target.projectRoot,
-			...scopeFields(target)
-		},
+		refreshOperation(cacheRoot, target, operation),
 		configuration.timeoutMs
 	);
 	let sawAccepted = false;
@@ -371,12 +481,7 @@ async function* refreshEventStream(
 	let metrics: ReturnType<typeof parseMetricsDiagnostic> = null;
 	let summary: ProjectIndexSummary | undefined;
 	try {
-		for await (const event of runUassetProtocolEvents({
-			configuration,
-			request,
-			signal,
-			timeoutMs: configuration.timeoutMs
-		})) {
+		for await (const event of refreshProtocolEvents(configuration, worker, request, signal)) {
 			if (event.kind === "accepted") {
 				sawAccepted = true;
 				continue;
@@ -667,6 +772,7 @@ async function collectCount(
 
 function refreshStream(
 	configuration: ProjectIndexProcessConfiguration,
+	worker: RefreshWorker,
 	cacheRoot: ProjectIndexCacheRoot,
 	target: ProjectIndexRefreshTarget,
 	operation: "refresh" | "rebuild"
@@ -674,6 +780,7 @@ function refreshStream(
 	const controller = new AbortController();
 	const events = refreshEventStream(
 		configuration,
+		worker,
 		cacheRoot,
 		target,
 		operation,
@@ -698,10 +805,20 @@ const makeProcessService = Effect.fn("ProjectIndexProcess.make")(function* (
 		Effect.sync(() => new UassetProtocolSession(configuration)),
 		(session) => Effect.promise(() => session.close())
 	);
+	// Refreshes run in a session of their own: the worker stays warm between edits, and a long
+	// refresh never holds up a query. Refreshes take turns; an aborted one ends its worker, and
+	// the next refresh starts another.
+	const worker: RefreshWorker = {
+		queue: new RefreshQueue(),
+		session: yield* Effect.acquireRelease(
+			Effect.sync(() => new UassetProtocolSession(configuration)),
+			(session) => Effect.promise(() => session.close())
+		)
+	};
 	const refresh = (target: ProjectIndexRefreshTarget) =>
-		refreshStream(configuration, cacheRoot, target, "refresh");
+		refreshStream(configuration, worker, cacheRoot, target, "refresh");
 	const rebuild = (target: ProjectIndexRefreshTarget) =>
-		refreshStream(configuration, cacheRoot, target, "rebuild");
+		refreshStream(configuration, worker, cacheRoot, target, "rebuild");
 
 	const query = Effect.fn("ProjectIndexProcess.query")(function* (request: ProjectIndexQuery) {
 		const page = yield* mutex.withPermits(1)(

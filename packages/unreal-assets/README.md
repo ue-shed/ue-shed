@@ -122,6 +122,14 @@ when there are more, `complete` is false, the lists are empty and `total` counts
 summary that kept only the first 64 diagnostics counts the rest in `omittedDiagnostics`. The walk does not apply `CoreRedirects`, mounts every content plugin whether or not the
 project enables it, and does not read `AdditionalPluginDirectories`.
 
+A host with a file watcher passes the files it saw change as `changedPaths` on a refresh target
+(uasset-io v1.26). The refresh then looks only at those files and their sidecars instead of walking
+the project, with the same result, and walks anyway when the paths alone could miss a change (a
+directory, a `.uproject` or `.uplugin`, more than 4,096 paths). Refreshes run in a worker session of
+their own, kept warm between edits, so a refresh never delays a query. A complete summary carries
+`inventoryDigest`, a SHA-256 of every inventory fact: compare it with the last one you saw instead
+of paging through the inventory.
+
 The process and compatibility boundary for read-only inspection of saved Unreal asset packages. It
 discovers a compatible `uasset` executable, validates its versioned CLI JSON output, and returns
 normalized package evidence with explicit partial and unsupported results.

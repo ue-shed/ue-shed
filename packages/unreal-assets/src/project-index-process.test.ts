@@ -28,7 +28,9 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 				mkdtemp(join(tmpdir(), "ue-shed-project-index-ts-"))
 			);
 			const queryWorkerPids: number[] = [];
+			const refreshWorkerPids: number[] = [];
 			let observeQueryWorkers = false;
+			let observeRefreshWorkers = false;
 			yield* Effect.addFinalizer(() =>
 				Effect.promise(() => rm(cacheRoot, { recursive: true, force: true }))
 			);
@@ -39,6 +41,9 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 				protocolObserver: (event) => {
 					if (observeQueryWorkers && event.kind === "worker_started") {
 						queryWorkerPids.push(event.pid);
+					}
+					if (observeRefreshWorkers && event.kind === "worker_started") {
+						refreshWorkerPids.push(event.pid);
 					}
 				},
 				timeoutMs: 120_000
@@ -185,6 +190,46 @@ describe.skipIf(!executable)("Project Index process adapter", () => {
 					complete: false
 				});
 				expect(limited.changes?.total).toBeGreaterThan(1);
+				expect(limited.inventoryDigest).toMatch(/^[0-9a-f]{64}$/u);
+
+				// v1.26: refreshes reuse one warm worker, and a refresh told which paths changed
+				// looks only at them. The inventory digest depends only on the inventory.
+				observeRefreshWorkers = true;
+				const hinted = yield* foldProjectIndexRefresh(
+					yield* Stream.runCollect(
+						refreshProjectIndex({
+							projectRoot: fixtureRoot,
+							changes: true,
+							changedPaths: [context, "Saved/Logs/Fixture.log"]
+						})
+					)
+				);
+				const walked = yield* foldProjectIndexRefresh(
+					yield* Stream.runCollect(refreshProjectIndex({ projectRoot: fixtureRoot }))
+				);
+				observeRefreshWorkers = false;
+				expect(hinted.changes).toEqual({
+					baseGeneration: limited.generation,
+					changed: [],
+					removed: [],
+					complete: true
+				});
+				expect(hinted.inventoryDigest).toBe(limited.inventoryDigest);
+				expect(walked.inventoryDigest).toBe(limited.inventoryDigest);
+				expect(refreshWorkerPids.length).toBe(2);
+				expect(new Set(refreshWorkerPids).size).toBe(1);
+
+				// A refresh abandoned part way ends its worker; the next refresh starts another and
+				// commits normally.
+				const abandoned = yield* Stream.runCollect(
+					refreshProjectIndex({ projectRoot: fixtureRoot }).pipe(Stream.take(2))
+				);
+				expect(abandoned.length).toBe(2);
+				const resumed = yield* foldProjectIndexRefresh(
+					yield* Stream.runCollect(refreshProjectIndex({ projectRoot: fixtureRoot }))
+				);
+				expect(resumed.inventoryDigest).toBe(limited.inventoryDigest);
+				expect(resumed.packageCount).toBe(limited.packageCount);
 			}).pipe(Effect.provide(layer));
 
 			expect(new Set(queryWorkerPids).size).toBe(1);

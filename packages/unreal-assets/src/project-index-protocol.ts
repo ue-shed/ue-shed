@@ -76,6 +76,9 @@ export function decodeProjectIndexWireSummary(
 		projectId: ProjectIdentity.make(summary.projectId),
 		removedPackages: summary.removedPackages,
 		...(summary.mounts === undefined ? undefined : { mounts: summary.mounts }),
+		...(summary.inventoryDigest === undefined
+			? undefined
+			: { inventoryDigest: summary.inventoryDigest }),
 		...(changes === undefined
 			? undefined
 			: {

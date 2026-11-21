@@ -1,8 +1,16 @@
 //! Immutable binary Catalog. `MemoryCatalog` is its differential test oracle.
-//! Five checksummed sections: inventory, shared strings, posting directory, postings, records.
-//! All integers are little-endian. Incompatible derived caches are rebuilt, never migrated.
+//! Seven checksummed sections: inventory, shared strings, posting directory, postings, records,
+//! a sparse row index, and tombstones. All integers are little-endian. Incompatible derived caches
+//! are rebuilt, never migrated.
+//!
+//! A committed generation is a base snapshot, optionally with one delta snapshot. A delta is a
+//! complete snapshot of its own (its rows, strings, postings and records) holding the entries a
+//! refresh added or replaced since the base, and tombstones naming the base rows it hides. Readers
+//! merge the base's live rows with the delta's in path order. A small refresh rewrites only the
+//! delta; one that would make the delta too large writes a new base instead (compaction).
 use super::catalog::*;
 use super::catalog_dependencies::{DependencyGraph, dependency_page};
+use super::inventory_digest::{BundleWalker, InventorySum, bundle_stem, stem_sum};
 use super::project_index::{CatalogSnapshot, CoordinatorError};
 use atomic_write_file::AtomicWriteFile;
 use serde::{Deserialize, Serialize};
@@ -17,23 +25,40 @@ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uasset_inspection::package_header::PackageHeaderData;
 
-const CATALOG_DIRECTORY: &str = "catalogs-v8";
+mod committed;
+use committed::{BaseLookup, Committed, MergedGraph, Segment};
+
+const CATALOG_DIRECTORY: &str = "catalogs-v9";
 const MANIFEST_FILE: &str = "manifest.json";
-const MANIFEST_SCHEMA_VERSION: u32 = 1;
-const SNAPSHOT_SCHEMA_VERSION: u32 = 4;
+const MANIFEST_SCHEMA_VERSION: u32 = 2;
+const SNAPSHOT_SCHEMA_VERSION: u32 = 5;
 const MAX_QUARANTINE_ATTEMPTS: u32 = 8;
-const MAGIC: &[u8; 8] = b"UESHC006";
+const MAGIC: &[u8; 8] = b"UESHC007";
 /// Posting kinds: exact export classes, serialized names, and dependency targets.
 const POSTING_KINDS: usize = 3;
 const CLASS_POSTINGS: u8 = 0;
 const NAME_POSTINGS: u8 = 1;
 const DEPENDENCY_POSTINGS: u8 = 2;
-const SECTIONS: usize = 5;
+const SECTIONS: usize = 7;
 const INVENTORY: usize = 0;
 const STRINGS: usize = 1;
 const DIRECTORY: usize = 2;
 const LISTS: usize = 3;
 const RECORDS: usize = 4;
+/// Every `ROW_INDEX_INTERVAL`th row's path and inventory offset, so a writer finds the rows at a
+/// path without decoding the whole inventory.
+const ROW_INDEX: usize = 5;
+/// A delta's hidden base rows; a base holds none.
+const TOMBSTONES: usize = 6;
+const ROW_INDEX_INTERVAL: usize = 128;
+/// A refresh writes a delta while the delta's entries and the base rows it hides stay at most
+/// this many, and at most `DELTA_LIMIT_PERMILLE` thousandths of the base; past either it compacts
+/// into a new base.
+const DELTA_LIMIT_ENTRIES: usize = 16_384;
+const DELTA_LIMIT_PERMILLE: usize = 50;
+/// Strings a delta may carry before it compacts: a delta keeps the strings of entries it no
+/// longer holds until then.
+const DELTA_LIMIT_STRINGS: u64 = 262_144;
 /// The magic; each section's stored length, decoded length, decoded checksum and stored
 /// checksum; the package, map and shared-string counts; then a checksum of all of it.
 const HEADER_BYTES: u64 = 8 + SECTIONS as u64 * 32 + 3 * 8 + 8;
@@ -48,6 +73,8 @@ const COMPRESSION_BATCH_BYTES: usize = 256 * BLOCK_BYTES as usize;
 const MAX_CODEC_THREADS: usize = 16;
 /// Stored bytes one integrity pass reads at a time.
 const VERIFY_CHUNK_BYTES: usize = 1024 * 1024;
+/// Stored bytes one thread of an integrity pass checks as one piece.
+const VERIFY_PIECE_BYTES: u64 = 8 * 1024 * 1024;
 /// Blocks a pass over a whole section decodes at once.
 const DECODE_BATCH_BLOCKS: usize = 256;
 /// Blocks a sequential section reader decodes at once.
@@ -59,6 +86,28 @@ pub(crate) struct CatalogWriteCounts {
     pub(crate) committed_evidence_rows: u64,
     pub(crate) removed_evidence_rows: u64,
     pub(crate) evidence_write_duration: Duration,
+    /// Bytes of the snapshot file the commit wrote (none for a reused generation).
+    pub(crate) written_bytes: u64,
+    /// Whether the commit wrote a delta rather than a base.
+    pub(crate) delta: bool,
+}
+
+/// When a refresh writes a delta instead of a new base.
+#[derive(Clone, Copy, Debug)]
+struct DeltaLimits {
+    entries: usize,
+    permille: usize,
+    strings: u64,
+}
+
+impl Default for DeltaLimits {
+    fn default() -> Self {
+        Self {
+            entries: DELTA_LIMIT_ENTRIES,
+            permille: DELTA_LIMIT_PERMILLE,
+            strings: DELTA_LIMIT_STRINGS,
+        }
+    }
 }
 
 // Historical manifest scaffolding for the 2026-09-05 adapter experiments.
@@ -88,6 +137,10 @@ struct ManifestSummary {
     package_count: u64,
     removed_packages: u64,
     mounts: Vec<ManifestMount>,
+    /// The index profile every committed package's evidence was read with.
+    index_profile: u32,
+    /// The sum of the generation's inventory leaves (see `inventory_digest`), as hex.
+    inventory_sum: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -95,14 +148,33 @@ struct Manifest {
     manifest_schema_version: u32,
     snapshot_schema_version: u32,
     project_id: String,
+    /// The base snapshot.
     physical_snapshot: String,
+    /// The delta over the base, when there is one.
+    delta_snapshot: Option<String>,
+    /// The base and delta the previous generation named, kept for readers that opened it.
     previous_snapshot: Option<String>,
+    previous_delta: Option<String>,
     summary: ManifestSummary,
 }
 
+impl Manifest {
+    /// Every snapshot file the manifest names.
+    fn files(&self) -> [Option<&str>; 4] {
+        [
+            Some(self.physical_snapshot.as_str()),
+            self.delta_snapshot.as_deref(),
+            self.previous_snapshot.as_deref(),
+            self.previous_delta.as_deref(),
+        ]
+    }
+}
+
 impl ManifestSummary {
-    fn from_refresh(summary: &RefreshSummary) -> Self {
+    fn from_refresh(summary: &RefreshSummary, inventory: InventorySum) -> Self {
         Self {
+            index_profile: INDEX_PROFILE_VERSION,
+            inventory_sum: inventory.to_hex(),
             changed_packages: summary.changed_packages,
             completeness: match summary.completeness {
                 Completeness::Complete => "complete".to_owned(),
@@ -167,7 +239,14 @@ impl ManifestSummary {
                 .collect(),
             omitted_diagnostics: self.omitted_diagnostics,
             mounts: self.mount_points(),
+            inventory_digest: (self.completeness == "complete")
+                .then(|| self.inventory().map(|sum| sum.digest(self.package_count)))
+                .flatten(),
         }
+    }
+
+    fn inventory(&self) -> Option<InventorySum> {
+        InventorySum::from_hex(&self.inventory_sum)
     }
 }
 
@@ -291,6 +370,19 @@ impl<'a> Decoder<'a> {
     }
 }
 
+/// Whether `path` sorts before `stem` followed by `joint`, without building that string.
+fn path_before_joined(path: &str, stem: &str, joint: u8) -> bool {
+    let (path, stem) = (path.as_bytes(), stem.as_bytes());
+    let common = path.len().min(stem.len());
+    match path[..common].cmp(&stem[..common]) {
+        std::cmp::Ordering::Less => true,
+        std::cmp::Ordering::Greater => false,
+        // `path` continues past `stem`: compare its next byte with the joint; a tie leaves
+        // `path` longer, so after. A `path` no longer than `stem` comes before it and its joint.
+        std::cmp::Ordering::Equal => path.get(stem.len()).is_none_or(|next| *next < joint),
+    }
+}
+
 /// Strings in one arena: string `i` is `text[ends[i - 1]..ends[i]]`. One allocation for any
 /// number of strings, and no per-string header.
 #[derive(Clone, Debug, Default)]
@@ -371,6 +463,10 @@ impl std::hash::Hasher for IdHasher {
     }
     fn write_u32(&mut self, value: u32) {
         self.0 = u64::from(value).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+    /// A string id with its segment above it, as dictionary pages key strings.
+    fn write_u64(&mut self, value: u64) {
+        self.0 = (value ^ value >> 32).wrapping_mul(0x9e37_79b9_7f4a_7c15);
     }
 }
 type BuildIdHasher = std::hash::BuildHasherDefault<IdHasher>;
@@ -1472,24 +1568,123 @@ fn checked_range(offset: u64, len: u64, total: u64) -> Result<(), CatalogError> 
 
 /// Reads every stored byte of the snapshot once and checks it against the header's stored
 /// checksums: whatever changed on disk since the snapshot was written is found without
-/// decoding a single block.
-fn verify_stored(file: &mut File, header: &SnapshotHeader) -> Result<(), CatalogError> {
+/// decoding a single block. Sections are split into pieces that several threads read through
+/// handles of their own and checksum; the pieces' checksums combine in order.
+fn verify_stored(
+    path: &Path,
+    file: &mut File,
+    header: &SnapshotHeader,
+) -> Result<(), CatalogError> {
     let starts = header.starts()?;
-    let mut buffer = Vec::new();
-    for (section, start) in header.sections.iter().zip(starts) {
-        let mut hash = crc32fast::Hasher::new();
+    let mut pieces = Vec::new();
+    for (index, (section, start)) in header.sections.iter().zip(starts).enumerate() {
         let mut done = 0;
         while done < section.stored {
-            let chunk = (section.stored - done).min(VERIFY_CHUNK_BYTES as u64);
-            read_range_into(file, start + done, chunk, &mut buffer)?;
-            hash.update(&buffer);
-            done += chunk;
+            let length = (section.stored - done).min(VERIFY_PIECE_BYTES);
+            pieces.push((index, start + done, length));
+            done += length;
         }
+    }
+    let threads = std::thread::available_parallelism()
+        .map_or(4, std::num::NonZeroUsize::get)
+        .min(MAX_CODEC_THREADS)
+        .min(pieces.len())
+        .max(1);
+    // Each thread reads through its own handle, so reads do not queue on one file position.
+    // A snapshot that cannot be opened again (it was just retired) is read through `file`.
+    let handles = (1..threads)
+        .map(|_| File::open(path))
+        .collect::<Result<Vec<_>, _>>();
+    let hashes = match handles {
+        Ok(handles) if threads > 1 => {
+            let next = AtomicUsize::new(0);
+            let results = Mutex::new(vec![None; pieces.len()]);
+            let failure = Mutex::new(None);
+            std::thread::scope(|scope| {
+                for mut handle in
+                    std::iter::once(file.try_clone()).chain(handles.into_iter().map(Ok))
+                {
+                    let (pieces, next, results, failure) = (&pieces, &next, &results, &failure);
+                    scope.spawn(move || {
+                        let mut buffer = Vec::new();
+                        let handle = match handle.as_mut() {
+                            Ok(handle) => handle,
+                            Err(_) => return,
+                        };
+                        loop {
+                            let index = next.fetch_add(1, Ordering::Relaxed);
+                            let Some(&(_, offset, length)) = pieces.get(index) else {
+                                return;
+                            };
+                            let hash = checksum_range(handle, offset, length, &mut buffer);
+                            match hash {
+                                Ok(hash) => {
+                                    results
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                        [index] = Some(hash);
+                                }
+                                Err(error) => {
+                                    *failure
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                                        Some(error);
+                                    return;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+            if let Some(error) = failure
+                .into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+            {
+                return Err(error);
+            }
+            results
+                .into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        }
+        _ => {
+            let mut buffer = Vec::new();
+            pieces
+                .iter()
+                .map(|&(_, offset, length)| {
+                    checksum_range(file, offset, length, &mut buffer).map(Some)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    };
+    let mut combined = vec![crc32fast::Hasher::new(); SECTIONS];
+    for (&(section, ..), hash) in pieces.iter().zip(hashes) {
+        let hash = hash.ok_or_else(|| corrupt("a section piece was not checked"))?;
+        combined[section].combine(&hash);
+    }
+    for (hash, section) in combined.into_iter().zip(&header.sections) {
         if u64::from(hash.finalize()) != section.stored_hash {
             return Err(corrupt("binary section checksum mismatch"));
         }
     }
     Ok(())
+}
+
+/// The checksum of `length` stored bytes at `offset`, read a chunk at a time into `buffer`.
+fn checksum_range(
+    file: &mut File,
+    offset: u64,
+    length: u64,
+    buffer: &mut Vec<u8>,
+) -> Result<crc32fast::Hasher, CatalogError> {
+    let mut hash = crc32fast::Hasher::new();
+    let mut done = 0;
+    while done < length {
+        let chunk = (length - done).min(VERIFY_CHUNK_BYTES as u64);
+        read_range_into(file, offset + done, chunk, buffer)?;
+        hash.update(buffer);
+        done += chunk;
+    }
+    Ok(hash)
 }
 
 /// How much a snapshot open checks before it is used.
@@ -1502,9 +1697,119 @@ enum SnapshotCheck {
     Stored,
 }
 
+/// The base rows a delta hides (section 6), or none for a base.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Tombstones {
+    /// For a delta, the fingerprint of the base it belongs to.
+    base: Option<u64>,
+    /// Hidden packages and maps.
+    packages: u64,
+    maps: u64,
+    /// Hidden base row ids, ascending.
+    ids: Vec<u32>,
+}
+
+impl Tombstones {
+    fn encode(&self) -> Result<Vec<u8>, CatalogError> {
+        let mut out = Vec::with_capacity(29 + self.ids.len() * 4);
+        match self.base {
+            None => out.push(0),
+            Some(base) => {
+                out.push(1);
+                put64(&mut out, base);
+                put64(&mut out, self.packages);
+                put64(&mut out, self.maps);
+                put32(&mut out, self.ids.len())?;
+                for id in &self.ids {
+                    out.extend_from_slice(&id.to_le_bytes());
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Self, CatalogError> {
+        let mut d = Decoder::new(bytes);
+        let tombstones = if d.boolean()? {
+            let base = Some(d.u64()?);
+            let packages = d.u64()?;
+            let maps = d.u64()?;
+            let count = d.count(4)?;
+            let mut ids: Vec<u32> = Vec::with_capacity(count);
+            for _ in 0..count {
+                let id = d.u32()?;
+                if ids.last().is_some_and(|last| *last >= id) {
+                    return Err(corrupt("tombstones must be strictly ordered"));
+                }
+                ids.push(id);
+            }
+            if maps > packages || packages > ids.len() as u64 {
+                return Err(corrupt("invalid tombstone counts"));
+            }
+            Self {
+                base,
+                packages,
+                maps,
+                ids,
+            }
+        } else {
+            Self::default()
+        };
+        d.finish()?;
+        Ok(tombstones)
+    }
+
+    fn hides(&self, id: usize) -> bool {
+        u32::try_from(id).is_ok_and(|id| self.ids.binary_search(&id).is_ok())
+    }
+
+    /// Hidden rows before row `id`.
+    fn before(&self, id: usize) -> usize {
+        self.ids.partition_point(|hidden| (*hidden as usize) < id)
+    }
+}
+
+/// The decoded row index (section 5): the path and inventory offset of every
+/// `ROW_INDEX_INTERVAL`th row, from row 0.
+struct RowIndex {
+    offsets: Vec<u64>,
+    paths: StringTable,
+}
+
+impl RowIndex {
+    fn decode(bytes: &[u8], rows: usize, inventory_length: u64) -> Result<Self, CatalogError> {
+        let mut d = Decoder::new(bytes);
+        let count = d.count(16)?;
+        if count != rows.div_ceil(ROW_INDEX_INTERVAL) {
+            return Err(corrupt("row index does not match the inventory"));
+        }
+        let mut offsets: Vec<u64> = Vec::with_capacity(count);
+        let mut paths = StringTable::with_capacity(bytes.len(), count);
+        for checkpoint in 0..count {
+            let row = d.u32()? as usize;
+            let offset = d.u64()?;
+            let path = d.str()?;
+            if row != checkpoint * ROW_INDEX_INTERVAL
+                || offset >= inventory_length
+                || offsets.last().is_some_and(|last| *last >= offset)
+                || (checkpoint > 0 && paths.get(checkpoint - 1) >= path)
+            {
+                return Err(corrupt("invalid row index"));
+            }
+            offsets.push(offset);
+            paths.push(path)?;
+        }
+        d.finish()?;
+        Ok(Self { offsets, paths })
+    }
+}
+
 struct Snapshot {
     file: RefCell<File>,
     header: SnapshotHeader,
+    /// The rows this snapshot hides in its base, when it is a delta.
+    tombstones: Tombstones,
+    row_index: OnceCell<RowIndex>,
     /// Rows in the inventory, as its leading count says.
     row_count: usize,
     /// The decoded inventory, on first use. A writer compares with the committed inventory and
@@ -1554,17 +1859,8 @@ impl Rows {
         }
         None
     }
-    /// The package at exactly a relative path, else, when `ignore_case`, the first package in path
-    /// order whose path matches without regard to ASCII case.
-    fn package_id_at(&self, path: &str, ignore_case: bool) -> Option<usize> {
-        if let Some(id) = self.id_at(path)
-            && self.inventory[id].kind == EntryKind::Package
-        {
-            return Some(id);
-        }
-        if !ignore_case {
-            return None;
-        }
+    /// The packages whose paths match `path` without regard to ASCII case, in path order.
+    fn package_ids_ignoring_case(&self, path: &str) -> Vec<usize> {
         let mut folded = self.folded_paths.borrow_mut();
         let paths = folded.get_or_insert_with(|| {
             let mut paths = self
@@ -1583,7 +1879,22 @@ impl Rows {
             .iter()
             .take_while(|(other, _)| *other == hash)
             .map(|(_, id)| *id as usize)
-            .find(|id| self.path(*id).eq_ignore_ascii_case(path))
+            .filter(|id| self.path(*id).eq_ignore_ascii_case(path))
+            .collect()
+    }
+    /// The first inventory id whose path is at or after `path`.
+    fn before(&self, path: &str) -> usize {
+        let mut low = 0;
+        let mut high = self.inventory.len();
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if self.path(middle) < path {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        low
     }
     /// The bundle signature of the package at `id`: its own stamp, then each sidecar's. Sidecars
     /// share the package's stem, so they sit beside it in path order.
@@ -1592,33 +1903,77 @@ impl Rows {
         let stem = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
         let entry = &self.inventory[id];
         let mut parts = [Some((entry.size, entry.modified_nanos)), None, None, None];
-        let shares_stem = |other: &str| {
-            other.len() > stem.len()
-                && other.starts_with(stem)
-                && other.as_bytes()[stem.len()] == b'.'
-        };
-        let mut look = |other_id: usize| {
-            let other = self.path(other_id);
-            let extension = &other[stem.len() + 1..];
-            if let Some(slot) = ["uexp", "ubulk", "uptnl"]
-                .iter()
-                .position(|sidecar| *sidecar == extension)
-            {
-                let entry = &self.inventory[other_id];
-                parts[slot + 1] = Some((entry.size, entry.modified_nanos));
-            }
-        };
+        self.neighbour_parts(id, stem, None, &mut parts);
+        bundle_signature(parts)
+    }
+    /// Whether `path` is in the run of paths that start with `stem.`.
+    fn shares_stem(path: &str, stem: &str) -> bool {
+        path.len() > stem.len() && path.starts_with(stem) && path.as_bytes()[stem.len()] == b'.'
+    }
+    /// Records row `other`'s stamp in `parts` when it is one of `stem`'s sidecars.
+    fn sidecar_part(&self, other: usize, stem: &str, parts: &mut [Option<(u64, u64)>; 4]) {
+        let extension = &self.path(other)[stem.len() + 1..];
+        if let Some(slot) = super::inventory_digest::BUNDLE_SIDECARS
+            .iter()
+            .position(|sidecar| *sidecar == extension)
+        {
+            let entry = &self.inventory[other];
+            parts[slot + 1] = Some((entry.size, entry.modified_nanos));
+        }
+    }
+    /// Fills `parts` from the sidecars of `stem` beside row `id`, skipping `hidden` rows.
+    fn neighbour_parts(
+        &self,
+        id: usize,
+        stem: &str,
+        hidden: Option<&Tombstones>,
+        parts: &mut [Option<(u64, u64)>; 4],
+    ) {
+        let live = |other: usize| hidden.is_none_or(|hidden| !hidden.hides(other));
         let mut before = id;
-        while before > 0 && shares_stem(self.path(before - 1)) {
+        while before > 0 && Self::shares_stem(self.path(before - 1), stem) {
             before -= 1;
-            look(before);
+            if live(before) {
+                self.sidecar_part(before, stem, parts);
+            }
         }
         let mut after = id + 1;
-        while after < self.inventory.len() && shares_stem(self.path(after)) {
-            look(after);
+        while after < self.inventory.len() && Self::shares_stem(self.path(after), stem) {
+            if live(after) {
+                self.sidecar_part(after, stem, parts);
+            }
             after += 1;
         }
-        bundle_signature(parts)
+    }
+    /// Fills `parts` from the sidecars of `stem` in the run of rows from `start`, skipping
+    /// `hidden` rows.
+    fn run_parts(
+        &self,
+        start: usize,
+        stem: &str,
+        hidden: Option<&Tombstones>,
+        parts: &mut [Option<(u64, u64)>; 4],
+    ) {
+        let mut other = start;
+        while other < self.inventory.len() && Self::shares_stem(self.path(other), stem) {
+            if hidden.is_none_or(|hidden| !hidden.hides(other)) {
+                self.sidecar_part(other, stem, parts);
+            }
+            other += 1;
+        }
+    }
+    /// The first row in `range` whose path is at or after `stem` followed by `joint`.
+    fn before_joined(&self, range: std::ops::Range<usize>, stem: &str, joint: u8) -> usize {
+        let (mut low, mut high) = (range.start, range.end);
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if path_before_joined(self.path(middle), stem, joint) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        low
     }
     /// The first inventory id whose path is after `cursor`.
     fn after(&self, cursor: &str) -> usize {
@@ -1654,7 +2009,7 @@ fn open_snapshot_file(
         return Err(corrupt("snapshot length does not match its directory"));
     }
     if check == SnapshotCheck::Stored {
-        verify_stored(&mut file, &header)?;
+        verify_stored(path, &mut file, &header)?;
     }
     let starts = header.starts()?;
     let mut blocks: BlockRanges = Default::default();
@@ -1869,7 +2224,9 @@ impl InventoryStream {
     }
 }
 
-/// One inventory row: its path and entry; its record range must lie in `records_length`.
+/// One inventory row: its path and entry; its record range must lie in `records_length`. Inlined
+/// into the loops that decode a whole inventory, which run it for every row.
+#[inline(always)]
 fn inventory_row<'d>(
     d: &mut Decoder<'d>,
     records_length: u64,
@@ -1970,6 +2327,8 @@ impl Snapshot {
         let mut snapshot = Self {
             file: RefCell::new(file),
             header,
+            tombstones: Tombstones::default(),
+            row_index: OnceCell::new(),
             row_count: 0,
             rows: OnceCell::new(),
             blocks,
@@ -1984,7 +2343,26 @@ impl Snapshot {
             return Err(corrupt("impossible binary count"));
         }
         snapshot.row_count = count;
+        snapshot.tombstones = Tombstones::decode(&snapshot.section(TOMBSTONES)?)?;
         Ok(snapshot)
+    }
+    /// A fingerprint of this snapshot: the checksum of its header, which checksums every section.
+    fn fingerprint(&self) -> u64 {
+        checksum(&self.header.encode())
+    }
+    fn is_delta(&self) -> bool {
+        self.tombstones.base.is_some()
+    }
+    fn row_index(&self) -> Result<&RowIndex, CatalogError> {
+        if let Some(index) = self.row_index.get() {
+            return Ok(index);
+        }
+        let index = RowIndex::decode(
+            &self.section(ROW_INDEX)?,
+            self.row_count,
+            self.header.sections[INVENTORY].length,
+        )?;
+        Ok(self.row_index.get_or_init(|| index))
     }
     /// The decoded inventory, decoded and checked on first use.
     fn rows(&self) -> Result<&Rows, CatalogError> {
@@ -2441,16 +2819,26 @@ struct StagedRecord {
     offset: usize,
     len: usize,
 }
+/// Whether a commit writes a new base or a delta over the committed base.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WriteMode {
+    Full,
+    Delta,
+}
+
 struct Staging {
     generation: Generation,
-    /// Committed inventory ids observed unchanged.
+    /// Committed handles observed unchanged.
     kept: Vec<u32>,
+    /// Set when the refresh carries every committed entry except these handles.
+    except: Option<Vec<u32>>,
     /// Set when a path observed unchanged is not in the committed inventory.
     missing_unchanged: bool,
     changed: Vec<StagedRecord>,
     /// Encoded records of `changed`, back to back.
     records: Vec<u8>,
-    /// Committed strings and those staging added; loaded when the first header is staged.
+    /// Strings of the snapshot being written, with the strings of its prior first (the base's for
+    /// a base, the delta's for a delta); loaded when the first header is staged.
     dictionary: Option<Dictionary>,
     /// Each preparer worker's strings' shared ids, by the worker's own ids.
     remaps: Vec<Vec<u32>>,
@@ -2458,25 +2846,54 @@ struct Staging {
     record: Vec<u8>,
     /// Entries staged so far.
     staged: u64,
+    /// What the next generation carries; settled when staging starts in path order, or at commit.
+    carry: Option<Carry>,
+    mode: WriteMode,
+    /// For a base absorbing a delta: the base's id for each of the delta's strings.
+    delta_remap: Option<Vec<u32>>,
     /// Set once entries arrive in path order: the next generation, written as they arrive.
     ordered: Option<OrderedRows>,
 }
 
-/// The next generation written in path order as entries are staged, with the kept rows copied
+/// The next generation written in path order as entries are staged, with the carried rows copied
 /// in between; started at the first staged entry.
 struct OrderedRows {
-    next_kept: usize,
+    cursor: KeptCursor,
     builder: Option<SnapshotBuilder>,
 }
 
-/// The committed strings and those staging added, loaded when the first header is staged.
+/// The snapshot whose strings and records a write in `mode` extends: the base for a base, the
+/// delta (if any) for a delta.
+fn mode_prior(mode: WriteMode, committed: Option<&Committed>) -> Option<&Snapshot> {
+    match mode {
+        WriteMode::Full => committed.map(|committed| &committed.base),
+        WriteMode::Delta => committed.and_then(|committed| committed.delta.as_ref()),
+    }
+}
+
+/// The strings of the snapshot being written, loaded when first needed: its prior's, and for a
+/// base absorbing a delta, the delta's too (giving `delta_remap`).
 fn shared_dictionary<'d>(
     dictionary: &'d mut Option<Dictionary>,
-    prior: Option<&Snapshot>,
+    delta_remap: &mut Option<Vec<u32>>,
+    mode: WriteMode,
+    committed: Option<&Committed>,
 ) -> Result<&'d mut Dictionary, CatalogError> {
     if dictionary.is_none() {
+        let prior = mode_prior(mode, committed);
         let strings = prior.map(Snapshot::strings).transpose()?;
-        *dictionary = Some(Dictionary::new(strings)?);
+        let mut shared = Dictionary::new(strings)?;
+        if mode == WriteMode::Full
+            && let Some(delta) = committed.and_then(|committed| committed.delta.as_ref())
+        {
+            let table = &delta.strings()?.table;
+            let mut remap = Vec::with_capacity(table.len());
+            for id in 0..table.len() {
+                remap.push(shared.intern(table.get(id))?);
+            }
+            *delta_remap = Some(remap);
+        }
+        *dictionary = Some(shared);
     }
     dictionary
         .as_mut()
@@ -2484,25 +2901,80 @@ fn shared_dictionary<'d>(
 }
 
 impl Staging {
+    /// Settles what the next generation carries, from the observations so far.
+    fn settle_carry(&mut self) -> &Carry {
+        if self.carry.is_none() {
+            let carry = match self.except.take() {
+                Some(except) => Carry::AllExcept(except),
+                None => {
+                    let mut kept = std::mem::take(&mut self.kept);
+                    // Observations arrive in ordered runs. Sort once; dedup keeps set semantics
+                    // for repeated observations.
+                    kept.sort_unstable();
+                    kept.dedup();
+                    Carry::Kept(kept)
+                }
+            };
+            self.carry = Some(carry);
+        }
+        self.carry.get_or_insert(Carry::Kept(Vec::new()))
+    }
+
+    /// The source a writer copies carried rows from.
+    fn kept_source<'a>(
+        carry: &'a Carry,
+        mode: WriteMode,
+        delta_remap: Option<&'a [u32]>,
+        dictionary: Option<&Dictionary>,
+        committed: Option<&'a Committed>,
+    ) -> KeptSource<'a> {
+        KeptSource {
+            committed,
+            carry,
+            mode,
+            delta_remap,
+            strings: string_count(dictionary, mode_prior(mode, committed)),
+        }
+    }
+
     /// Stages `self.record` for `signature`: written at once in path order, else kept for the
     /// commit to sort.
     fn stage_record(
         &mut self,
-        prior: Option<&Snapshot>,
+        committed: Option<&Committed>,
         signature: &PackageSignature,
         meta: RecordMeta,
     ) -> Result<(), CatalogError> {
         self.staged += 1;
-        let strings = string_count(self.dictionary.as_ref(), prior);
+        let strings = string_count(self.dictionary.as_ref(), mode_prior(self.mode, committed));
         match &mut self.ordered {
             Some(ordered) => {
-                let builder = ordered.builder.get_or_insert_with(SnapshotBuilder::new);
-                builder.copy_kept(
-                    prior,
-                    &self.kept,
-                    &mut ordered.next_kept,
-                    Some(&signature.relative_path),
-                )?;
+                if self.mode == WriteMode::Full
+                    && self.delta_remap.is_none()
+                    && committed.is_some_and(|committed| committed.delta.is_some())
+                {
+                    shared_dictionary(
+                        &mut self.dictionary,
+                        &mut self.delta_remap,
+                        self.mode,
+                        committed,
+                    )?;
+                }
+                let carry = self
+                    .carry
+                    .as_ref()
+                    .ok_or_else(|| corrupt("staging in path order without a settled carry"))?;
+                let source = Self::kept_source(
+                    carry,
+                    self.mode,
+                    self.delta_remap.as_deref(),
+                    self.dictionary.as_ref(),
+                    committed,
+                );
+                let builder = ordered
+                    .builder
+                    .get_or_insert_with(|| SnapshotBuilder::new(self.mode));
+                builder.copy_kept(&source, &mut ordered.cursor, Some(&signature.relative_path))?;
                 builder.push_staged(signature, &meta, &self.record, strings)
             }
             None => {
@@ -2544,17 +3016,35 @@ struct SnapshotBuilder {
     last_path: String,
     /// One inventory row being encoded.
     row: Vec<u8>,
+    /// The block last read from the base's records, and from the delta's.
     last_block: LastBlock,
+    delta_last_block: LastBlock,
     kept_record: Vec<u8>,
-    /// The committed rows kept rows are copied from.
-    kept_rows: KeptRows,
     /// Rows posted under each (kind, string) key so far, and the last row each key counted.
     counts: [Vec<u32>; POSTING_KINDS],
     last_rows: [Vec<u32>; POSTING_KINDS],
+    /// The row index's checkpoints so far (section 5, without its count).
+    row_index: Vec<u8>,
+    /// Sums inventory leaves as rows arrive, for a base.
+    walker: Option<BundleWalker>,
+    /// Every row written, for a delta, so its commit can update the inventory sum.
+    recorded: Option<Vec<RecordedRow>>,
+}
+
+/// A row a delta writer wrote, kept for the inventory sum: whether the refresh staged it (rather
+/// than copying it from the previous delta).
+struct RecordedRow {
+    path: String,
+    kind: EntryKind,
+    size: u64,
+    modified_nanos: u64,
+    header_data: Option<PackageHeaderData>,
+    staged: bool,
 }
 
 impl SnapshotBuilder {
-    fn new() -> Self {
+    /// A writer for a base (which sums its inventory leaves) or a delta (which records its rows).
+    fn new(mode: WriteMode) -> Self {
         let mut inventory = SectionWriter::with_patchable_head();
         // A Vec push cannot fail for four bytes, and the count is patched at the end.
         let _ = inventory.push(&0_u32.to_le_bytes());
@@ -2567,10 +3057,13 @@ impl SnapshotBuilder {
             last_path: String::new(),
             row: Vec::new(),
             last_block: LastBlock::default(),
+            delta_last_block: LastBlock::default(),
             kept_record: Vec::new(),
-            kept_rows: KeptRows::default(),
             counts: Default::default(),
             last_rows: Default::default(),
+            row_index: Vec::new(),
+            walker: (mode == WriteMode::Full).then(BundleWalker::default),
+            recorded: (mode == WriteMode::Delta).then(Vec::new),
         }
     }
 
@@ -2617,6 +3110,7 @@ impl SnapshotBuilder {
         mut entry: InventoryEntry,
         record: &[u8],
         strings: u64,
+        staged: bool,
     ) -> Result<(), CatalogError> {
         if !self.rows.is_empty() && path <= self.last_path.as_str() {
             return Err(CatalogError::InvalidRequest {
@@ -2625,6 +3119,26 @@ impl SnapshotBuilder {
         }
         if entry.kind == EntryKind::Package {
             self.count_postings(record, strings)?;
+        }
+        if self.rows.len().is_multiple_of(ROW_INDEX_INTERVAL) {
+            put32(&mut self.row_index, self.rows.len())?;
+            put64(&mut self.row_index, self.inventory.len());
+            put_string(&mut self.row_index, path)?;
+        }
+        let package = entry.kind == EntryKind::Package;
+        let stamp = (entry.size, entry.modified_nanos);
+        if let Some(walker) = &mut self.walker {
+            walker.push(path, package, stamp, entry.header_data.as_ref());
+        }
+        if let Some(recorded) = &mut self.recorded {
+            recorded.push(RecordedRow {
+                path: path.to_owned(),
+                kind: entry.kind,
+                size: entry.size,
+                modified_nanos: entry.modified_nanos,
+                header_data: entry.header_data.clone(),
+                staged,
+            });
         }
         entry.offset = self.payload.len();
         entry.len =
@@ -2664,62 +3178,117 @@ impl SnapshotBuilder {
             checksum: checksum(record),
             header_data: meta.header_data.clone(),
         };
-        self.push_row(path, entry, record, strings)
+        self.push_row(path, entry, record, strings, true)
     }
 
-    /// Copies the kept rows from `kept[*next..]` (committed ids, ascending) whose paths come
-    /// before `until`, or every one for `None`. A kept row at `until` itself is replaced by the
-    /// entry staged there, and skipped.
+    /// Copies the carried committed rows whose paths come before `until` (every one for `None`),
+    /// in path order: live base rows (for a base) and delta rows. A carried row at `until` itself
+    /// is replaced by the entry staged there, and skipped.
     fn copy_kept(
         &mut self,
-        prior: Option<&Snapshot>,
-        kept: &[u32],
-        next: &mut usize,
+        source: &KeptSource<'_>,
+        cursor: &mut KeptCursor,
         until: Option<&str>,
     ) -> Result<(), CatalogError> {
-        let mut rows = std::mem::take(&mut self.kept_rows);
-        let copied = self.copy_kept_rows(&mut rows, prior, kept, next, until);
-        self.kept_rows = rows;
-        copied
+        let Some(committed) = source.committed else {
+            return if source.carry.carries_nothing() {
+                Ok(())
+            } else {
+                Err(corrupt("unchanged record missing from prior snapshot"))
+            };
+        };
+        loop {
+            if source.mode == WriteMode::Full {
+                cursor.fill_base(committed, source.carry)?;
+            }
+            let delta = cursor.peek_delta(committed, source.carry)?;
+            let delta_rows = match (&committed.delta, delta) {
+                (Some(snapshot), Some(_)) => Some(snapshot.rows()?),
+                _ => None,
+            };
+            let from_delta = match (&cursor.base_peek, delta, delta_rows) {
+                (None, None, _) => return Ok(()),
+                (Some(_), None, _) => false,
+                (None, Some(_), _) => true,
+                (Some((_, base_path, _)), Some(id), Some(rows)) => {
+                    rows.path(id) < base_path.as_str()
+                }
+                (Some(_), Some(_), None) => false,
+            };
+            let mut record = std::mem::take(&mut self.kept_record);
+            let copied = if from_delta {
+                let (Some(snapshot), Some(rows), Some(id)) = (&committed.delta, delta_rows, delta)
+                else {
+                    return Err(corrupt("unchanged record missing from prior snapshot"));
+                };
+                let path = rows.path(id);
+                if let Some(until) = until
+                    && path >= until
+                {
+                    if path == until {
+                        cursor.next_delta += 1;
+                    }
+                    self.kept_record = record;
+                    return Ok(());
+                }
+                cursor.next_delta += 1;
+                let entry = &rows.inventory[id];
+                snapshot.range_reusing(
+                    &mut self.delta_last_block,
+                    RECORDS,
+                    entry.offset,
+                    u64::from(entry.len),
+                    &mut record,
+                )?;
+                if checksum(&record) != entry.checksum {
+                    return Err(corrupt("record checksum mismatch"));
+                }
+                if let Some(remap) = source.delta_remap
+                    && let Some(ids_at) = record_ids_at(&record)?
+                {
+                    remap_record_ids(&mut record, ids_at, remap)?;
+                }
+                let mut entry = entry.clone();
+                entry.checksum = checksum(&record);
+                self.push_row(path, entry, &record, source.strings, false)
+            } else {
+                let Some((id, path, entry)) = cursor.base_peek.take() else {
+                    return Err(corrupt("unchanged record missing from prior snapshot"));
+                };
+                if let Some(until) = until
+                    && path.as_str() >= until
+                {
+                    if path != until {
+                        cursor.base_peek = Some((id, path, entry));
+                    }
+                    self.kept_record = record;
+                    return Ok(());
+                }
+                committed.base.range_reusing(
+                    &mut self.last_block,
+                    RECORDS,
+                    entry.offset,
+                    u64::from(entry.len),
+                    &mut record,
+                )?;
+                if checksum(&record) != entry.checksum {
+                    return Err(corrupt("record checksum mismatch"));
+                }
+                self.push_row(&path, entry, &record, source.strings, false)
+            };
+            self.kept_record = record;
+            copied?;
+        }
     }
 
-    fn copy_kept_rows(
-        &mut self,
-        rows: &mut KeptRows,
-        prior: Option<&Snapshot>,
-        kept: &[u32],
-        next: &mut usize,
-        until: Option<&str>,
-    ) -> Result<(), CatalogError> {
-        while let Some(&old) = kept.get(*next) {
-            let prior =
-                prior.ok_or_else(|| corrupt("unchanged record missing from prior snapshot"))?;
-            let (path, entry) = rows.row(prior, old as usize)?;
-            if let Some(until) = until
-                && path >= until
-            {
-                if path == until {
-                    *next += 1;
-                }
-                return Ok(());
-            }
-            *next += 1;
-            let mut record = std::mem::take(&mut self.kept_record);
-            prior.range_reusing(
-                &mut self.last_block,
-                RECORDS,
-                entry.offset,
-                u64::from(entry.len),
-                &mut record,
-            )?;
-            if checksum(&record) != entry.checksum {
-                return Err(corrupt("record checksum mismatch"));
-            }
-            let pushed = self.push_row(path, entry.clone(), &record, prior.header.strings);
-            self.kept_record = record;
-            pushed?;
-        }
-        Ok(())
+    /// The inventory leaves summed so far (a base writer only).
+    fn take_inventory_sum(&mut self) -> Option<InventorySum> {
+        self.walker.take().map(BundleWalker::finish)
+    }
+
+    /// The rows written so far (a delta writer only).
+    fn take_recorded(&mut self) -> Vec<RecordedRow> {
+        self.recorded.take().unwrap_or_default()
     }
 
     /// Writes the snapshot to `file`: a placeholder header, then the sections in order, the
@@ -2730,6 +3299,7 @@ impl SnapshotBuilder {
         mut file: File,
         dictionary: Option<Dictionary>,
         prior: Option<&Snapshot>,
+        tombstones: &Tombstones,
     ) -> Result<(usize, SnapshotHeader), CatalogError> {
         let Self {
             mut inventory,
@@ -2738,6 +3308,7 @@ impl SnapshotBuilder {
             packages,
             maps,
             counts,
+            row_index,
             ..
         } = self;
         let string_count = string_count(dictionary.as_ref(), prior);
@@ -2764,6 +3335,15 @@ impl SnapshotBuilder {
         drop(rows);
         drop(dictionary);
         let directory = encode_section(&postings.directory()?)?;
+        let mut index = Vec::with_capacity(4 + row_index.len());
+        put32(
+            &mut index,
+            (row_count as usize).div_ceil(ROW_INDEX_INTERVAL),
+        )?;
+        index.extend_from_slice(&row_index);
+        drop(row_index);
+        let index = encode_section(&index)?;
+        let hidden = encode_section(&tombstones.encode()?)?;
         publication_checkpoint("snapshot_created")?;
         file.write_all(&[0; HEADER_BYTES as usize])
             .map_err(io_unavailable("write binary directory"))?;
@@ -2773,7 +3353,9 @@ impl SnapshotBuilder {
         }
         let lists = write_u32_section(&mut file, &postings.rows)?;
         drop(postings);
-        payload.write(&mut file)?;
+        for section in [&payload, &index, &hidden] {
+            section.write(&mut file)?;
+        }
         let header = SnapshotHeader {
             sections: [
                 inventory.header,
@@ -2781,6 +3363,8 @@ impl SnapshotBuilder {
                 directory.header,
                 lists,
                 payload.header,
+                index.header,
+                hidden.header,
             ],
             packages,
             maps,
@@ -2795,6 +3379,120 @@ impl SnapshotBuilder {
             .map_err(io_unavailable("sync binary snapshot"))?;
         publication_checkpoint("after_sync")?;
         Ok((row_count as usize, header))
+    }
+}
+
+/// Where a record's string ids start (its class count), or `None` for a record without a header.
+fn record_ids_at(record: &[u8]) -> Result<Option<usize>, CatalogError> {
+    let mut d = Decoder::new(record);
+    if !d.boolean()? {
+        return Ok(None);
+    }
+    d.str()?;
+    if d.boolean()? {
+        d.header_data()?;
+    }
+    if d.boolean()? {
+        d.str()?;
+    }
+    Ok(Some(d.position))
+}
+
+/// Which committed entries the next generation carries, by handle: a base row's id, or the
+/// base's row count plus a delta row's id.
+#[derive(Debug)]
+enum Carry {
+    /// The entries observed unchanged.
+    Kept(Vec<u32>),
+    /// Every committed entry except these.
+    AllExcept(Vec<u32>),
+}
+
+impl Carry {
+    fn keeps(&self, handle: u32) -> bool {
+        match self {
+            Self::Kept(handles) => handles.binary_search(&handle).is_ok(),
+            Self::AllExcept(handles) => handles.binary_search(&handle).is_err(),
+        }
+    }
+
+    fn carries_nothing(&self) -> bool {
+        matches!(self, Self::Kept(handles) if handles.is_empty())
+    }
+
+    /// How many carried handles fall in `range`, of `live` live entries there.
+    fn count_in(&self, range: std::ops::Range<u32>, live: usize) -> usize {
+        let within = |handles: &[u32]| {
+            handles.partition_point(|handle| *handle < range.end)
+                - handles.partition_point(|handle| *handle < range.start)
+        };
+        match self {
+            Self::Kept(handles) => within(handles),
+            Self::AllExcept(handles) => live.saturating_sub(within(handles)),
+        }
+    }
+}
+
+/// What a writer copies carried rows from.
+struct KeptSource<'a> {
+    committed: Option<&'a Committed>,
+    carry: &'a Carry,
+    mode: WriteMode,
+    /// The next base's string id for each delta string id, when a base absorbs the delta.
+    delta_remap: Option<&'a [u32]>,
+    /// Strings the copied records may name.
+    strings: u64,
+}
+
+/// How far a writer has copied carried rows: the base rows read so far and the next one carried,
+/// and the next delta row.
+#[derive(Default)]
+struct KeptCursor {
+    base_rows: KeptRows,
+    next_base: usize,
+    base_peek: Option<(usize, String, InventoryEntry)>,
+    next_delta: usize,
+}
+
+impl KeptCursor {
+    /// Reads the next carried live base row into `base_peek`, unless it holds one.
+    fn fill_base(&mut self, committed: &Committed, carry: &Carry) -> Result<(), CatalogError> {
+        if self.base_peek.is_some() {
+            return Ok(());
+        }
+        let hidden = committed.hidden();
+        while self.next_base < committed.base.row_count {
+            let id = self.next_base;
+            self.next_base += 1;
+            if hidden.hides(id) || !carry.keeps(id as u32) {
+                continue;
+            }
+            let (path, entry) = self.base_rows.row(&committed.base, id)?;
+            self.base_peek = Some((id, path.to_owned(), entry.clone()));
+            return Ok(());
+        }
+        Ok(())
+    }
+
+    /// The next carried delta row's id, if any.
+    fn peek_delta(
+        &mut self,
+        committed: &Committed,
+        carry: &Carry,
+    ) -> Result<Option<usize>, CatalogError> {
+        let Some(delta) = &committed.delta else {
+            return Ok(None);
+        };
+        let offset = committed.base.row_count;
+        while self.next_delta < delta.row_count {
+            let handle = u32::try_from(offset + self.next_delta)
+                .map_err(|_| corrupt("Catalog count exceeds u32"))?;
+            if carry.keeps(handle) {
+                return Ok(Some(self.next_delta));
+            }
+            self.next_delta += 1;
+        }
+        Ok(None)
     }
 }
 
@@ -2936,10 +3634,11 @@ pub(crate) struct BinaryCatalog {
     directory: PathBuf,
     project_id: ProjectId,
     manifest: Option<Manifest>,
-    snapshot: RefCell<Option<Snapshot>>,
+    committed: RefCell<Option<Committed>>,
     staging: Option<Staging>,
     quarantined_from: Option<PathBuf>,
     writes: CatalogWriteCounts,
+    delta_limits: DeltaLimits,
     #[cfg(test)]
     cleanup_root: Option<PathBuf>,
 }
@@ -2991,10 +3690,11 @@ impl BinaryCatalog {
             directory,
             project_id: project_id.clone(),
             manifest: None,
-            snapshot: RefCell::new(None),
+            committed: RefCell::new(None),
             staging: None,
             quarantined_from: None,
             writes: CatalogWriteCounts::default(),
+            delta_limits: DeltaLimits::default(),
             #[cfg(test)]
             cleanup_root: None,
         }
@@ -3041,38 +3741,35 @@ impl BinaryCatalog {
                 m.summary.generation == 0
                     || m.summary.map_count > m.summary.package_count
                     || !matches!(m.summary.completeness.as_str(), "complete" | "partial")
+                    || m.summary.inventory().is_none()
             }) {
                 return Err(corrupt("invalid Catalog summary"));
             }
             let Some(manifest_ref) = &manifest else {
                 return Ok((manifest, None));
             };
-            let path = directory.join(&manifest_ref.physical_snapshot);
             // Writers and status verify every stored byte; neither decodes more than a writer
-            // needs to compare (the inventory) or status needs at all (the header).
-            let (header, snapshot) = match mode {
-                OpenMode::Status => (open_snapshot_file(&path, SnapshotCheck::Stored)?.1, None),
-                // Pin the physical file when opening a reader, including readers that have not
-                // issued their first query yet. Later publication may unlink retired names.
-                OpenMode::Query => {
-                    let snapshot = Snapshot::open(&path, SnapshotCheck::Header)?;
-                    (snapshot.header.clone(), Some(snapshot))
-                }
-                OpenMode::Writer => {
-                    let snapshot = Snapshot::open(&path, SnapshotCheck::Stored)?;
-                    (snapshot.header.clone(), Some(snapshot))
-                }
+            // needs to compare (the inventory) or status needs at all (headers and tombstones).
+            // A query reader pins the physical files when it opens, before its first query, so
+            // later publication may unlink retired names.
+            let check = match mode {
+                OpenMode::Query => SnapshotCheck::Header,
+                OpenMode::Writer | OpenMode::Status => SnapshotCheck::Stored,
             };
+            let committed = Committed::open(&directory, manifest_ref, check)?;
             if mode != OpenMode::Query
-                && (header.packages != manifest_ref.summary.package_count
-                    || header.maps != manifest_ref.summary.map_count)
+                && committed.counts()
+                    != Some((
+                        manifest_ref.summary.package_count,
+                        manifest_ref.summary.map_count,
+                    ))
             {
                 return Err(corrupt("manifest summary does not match its snapshot"));
             }
-            Ok((manifest, snapshot))
+            Ok((manifest, (mode != OpenMode::Status).then_some(committed)))
         })();
-        let (manifest, snapshot, quarantined_from) = match opened {
-            Ok((manifest, snapshot)) => (manifest, snapshot, None),
+        let (manifest, committed, quarantined_from) = match opened {
+            Ok((manifest, committed)) => (manifest, committed, None),
             Err(CatalogError::Corrupt { .. }) if mode == OpenMode::Writer => {
                 let quarantine = quarantine_directory(&directory)?;
                 fs::create_dir_all(&directory)
@@ -3092,71 +3789,82 @@ impl BinaryCatalog {
             directory,
             project_id: project_id.clone(),
             manifest,
-            snapshot: RefCell::new(snapshot),
+            committed: RefCell::new(committed),
             staging: None,
             quarantined_from,
             writes: CatalogWriteCounts::default(),
+            delta_limits: DeltaLimits::default(),
             #[cfg(test)]
             cleanup_root: None,
         })
     }
     /// One page of an inventory, map or posting query, its items built by `plain` (inventory and
-    /// map items) and `header` (each header item, from its path, record and the shared strings).
-    /// Callers have checked the request's identity, limit and generation.
+    /// map items) and `header` (each header item, from its path, record, the shared strings of
+    /// its segment, and the segment). Callers have checked the request's identity, limit and
+    /// generation.
     fn page<I>(
         &self,
         request: &QueryRequest,
         mut plain: impl FnMut(QueryItem) -> I,
-        mut header: impl FnMut(&str, &HeaderView<'_>, &StringTable) -> I,
+        mut header: impl FnMut(&str, &HeaderView<'_>, &StringTable, Segment) -> I,
     ) -> Result<(Vec<I>, Option<String>), CatalogError> {
         let cursor = parse_page_cursor(request.cursor.as_deref())?;
         self.load()?;
-        let cached = self.snapshot.borrow();
-        let snapshot = cached
+        let cached = self.committed.borrow();
+        let committed = cached
             .as_ref()
             .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
-        let rows = snapshot.rows()?;
-        let after = rows.after(&cursor);
-        let ids = snapshot.matches(&request.kind, after, request.limit + 1)?;
+        let ids = committed.page_ids(&request.kind, &cursor, request.limit + 1)?;
         let more = ids.len() > request.limit;
         let selected = &ids[..ids.len().min(request.limit)];
-        let mut items = Vec::with_capacity(selected.len());
+        let mut items = (0..selected.len()).map(|_| None).collect::<Vec<_>>();
         match &request.kind {
             // Inventory rows carry their header data: an inventory page reads no records.
             QueryKind::Inventory => {
-                for &id in selected {
-                    items.push(plain(QueryItem::Inventory {
+                let signatures = committed.bundle_signatures(selected)?;
+                for ((position, &(segment, id)), signature) in
+                    selected.iter().enumerate().zip(signatures)
+                {
+                    let rows = committed.rows(segment)?;
+                    items[position] = Some(plain(QueryItem::Inventory {
                         package_path: rows.path(id).to_owned(),
-                        signature: rows.bundle_signature(id),
+                        signature,
                         header_data: rows.inventory[id].header_data.clone(),
                     }));
                 }
             }
             // A map page needs only each record's package name.
-            QueryKind::Maps => snapshot.records(selected, |id, record| {
-                let path = rows.path(id);
-                items.push(plain(QueryItem::Map {
-                    package_name: record
-                        .map(|h| h.package_name)
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or(path)
-                        .to_owned(),
-                    map_path: path.to_owned(),
-                }));
+            QueryKind::Maps => {
+                committed.records(selected, |position, _, id, record, snapshot| {
+                    let path = snapshot.rows()?.path(id);
+                    items[position] = Some(plain(QueryItem::Map {
+                        package_name: record
+                            .map(|h| h.package_name)
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or(path)
+                            .to_owned(),
+                        map_path: path.to_owned(),
+                    }));
+                    Ok(())
+                })?
+            }
+            _ => committed.records(selected, |position, segment, id, record, snapshot| {
+                let record = record.ok_or_else(|| corrupt("posting refers to missing header"))?;
+                let strings = &snapshot.strings()?.table;
+                items[position] =
+                    Some(header(snapshot.rows()?.path(id), &record, strings, segment));
                 Ok(())
             })?,
-            _ => {
-                let strings = &snapshot.strings()?.table;
-                snapshot.records(selected, |id, record| {
-                    let record =
-                        record.ok_or_else(|| corrupt("posting refers to missing header"))?;
-                    items.push(header(rows.path(id), &record, strings));
-                    Ok(())
-                })?;
-            }
         }
+        let items = items
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| corrupt("a page row has no record"))?;
         let next_cursor = if more {
-            selected.last().map(|id| rows.path(*id).to_owned())
+            selected
+                .last()
+                .map(|(segment, id)| committed.path(*segment, *id).map(str::to_owned))
+                .transpose()?
         } else {
             None
         };
@@ -3165,7 +3873,8 @@ impl BinaryCatalog {
 
     /// [`Catalog::query`] for an inventory, map or posting query, with each header item's classes
     /// and names as ids into the page's own strings, in first-use order: each distinct string is
-    /// copied once from the shared strings, and never hashed as text.
+    /// copied once from the shared strings, and never hashed as text unless the generation has a
+    /// delta, whose strings may repeat the base's.
     pub(crate) fn query_shared_strings(
         &self,
         request: &QueryRequest,
@@ -3187,8 +3896,11 @@ impl BinaryCatalog {
                 message: "dependency pages name packages, not shared strings".into(),
             });
         }
-        let mut page_ids: std::collections::HashMap<u32, u32, BuildIdHasher> =
+        let two_segments = manifest.delta_snapshot.is_some();
+        let mut page_ids: std::collections::HashMap<u64, u32, BuildIdHasher> =
             std::collections::HashMap::default();
+        let mut page_texts: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
         let mut page_strings = Vec::new();
         let (items, next_cursor) = self.page(
             request,
@@ -3212,12 +3924,21 @@ impl BinaryCatalog {
                 // `page` builds header items itself, and dependency items are refused above.
                 QueryItem::Header { .. } | QueryItem::Package { .. } => unreachable!(),
             },
-            |path, header, strings| {
+            |path, header, strings, segment| {
                 let mut page_id = |id: u32| {
-                    *page_ids.entry(id).or_insert_with(|| {
-                        page_strings.push(strings.get(id as usize).to_owned());
+                    let key = u64::from(segment == Segment::Delta) << 32 | u64::from(id);
+                    *page_ids.entry(key).or_insert_with(|| {
+                        let text = strings.get(id as usize);
+                        if two_segments && let Some(existing) = page_texts.get(text) {
+                            return *existing;
+                        }
+                        page_strings.push(text.to_owned());
                         // A page carries at most PROJECT_INDEX_MAX_PAGE_STRINGS strings.
-                        (page_strings.len() - 1) as u32
+                        let page_id = (page_strings.len() - 1) as u32;
+                        if two_segments {
+                            page_texts.insert(text.to_owned(), page_id);
+                        }
+                        page_id
                     })
                 };
                 SharedStringItem::Header {
@@ -3255,11 +3976,12 @@ impl BinaryCatalog {
             .sum()
     }
     fn load(&self) -> Result<(), CatalogError> {
-        if self.snapshot.borrow().is_none()
+        if self.committed.borrow().is_none()
             && let Some(manifest) = &self.manifest
         {
-            *self.snapshot.borrow_mut() = Some(Snapshot::open(
-                &self.directory.join(&manifest.physical_snapshot),
+            *self.committed.borrow_mut() = Some(Committed::open(
+                &self.directory,
+                manifest,
                 SnapshotCheck::Header,
             )?);
         }
@@ -3282,11 +4004,63 @@ impl BinaryCatalog {
             })
         }
     }
+    /// Records one handle observed unchanged.
+    fn observe_handle(&mut self, handle: Option<u32>) -> Result<(), CatalogError> {
+        let staging = self.staging_mut()?;
+        if staging.ordered.is_some() || staging.except.is_some() {
+            return Err(observed_after_ordered_staging());
+        }
+        match handle {
+            Some(handle) => staging.kept.push(handle),
+            None => staging.missing_unchanged = true,
+        }
+        Ok(())
+    }
 }
 
 fn observed_after_ordered_staging() -> CatalogError {
     CatalogError::InvalidRequest {
         message: "entries cannot be observed unchanged once staged in path order".into(),
+    }
+}
+
+/// Whether the next generation is written as a delta over the committed base: when one is
+/// committed with the same mount points, and the delta's entries plus the base rows it hides stay
+/// within `limits`.
+fn choose_mode(
+    committed: Option<&Committed>,
+    manifest: Option<&Manifest>,
+    carry: &Carry,
+    plan: &StagingPlan<'_>,
+    limits: DeltaLimits,
+) -> WriteMode {
+    let (Some(committed), Some(manifest)) = (committed, manifest) else {
+        return WriteMode::Full;
+    };
+    if manifest.summary.mount_points() != plan.mounts {
+        return WriteMode::Full;
+    }
+    let base_rows = committed.base.row_count;
+    let Ok(base_end) = u32::try_from(base_rows) else {
+        return WriteMode::Full;
+    };
+    let live_base = base_rows - committed.hidden().ids.len();
+    let delta_rows = committed.delta.as_ref().map_or(0, |delta| delta.row_count);
+    let carried_base = carry.count_in(0..base_end, live_base);
+    let carried_delta = carry.count_in(base_end..u32::MAX, delta_rows);
+    let hidden = base_rows.saturating_sub(carried_base);
+    let total = hidden + carried_delta + plan.entries;
+    let strings = committed
+        .delta
+        .as_ref()
+        .map_or(0, |delta| delta.header.strings);
+    if total <= limits.entries
+        && total.saturating_mul(1000) <= base_rows.saturating_mul(limits.permille)
+        && strings <= limits.strings
+    {
+        WriteMode::Delta
+    } else {
+        WriteMode::Full
     }
 }
 
@@ -3307,11 +4081,19 @@ impl Catalog for BinaryCatalog {
     }
     fn lookup_committed(&self, path: &str) -> Option<(PackageSignature, Option<HeaderEvidence>)> {
         self.load().ok()?;
-        let cached = self.snapshot.borrow();
-        let snapshot = cached.as_ref()?;
-        let rows = snapshot.rows().ok()?;
-        let id = rows.id_at(path)?;
-        Some((rows.signature(id), snapshot.headers(&[id]).ok()?.pop()?))
+        let cached = self.committed.borrow();
+        let committed = cached.as_ref()?;
+        let (segment, id) = committed.row_at(path).ok()??;
+        let rows = committed.rows(segment).ok()?;
+        Some((
+            rows.signature(id),
+            committed
+                .segment(segment)
+                .ok()?
+                .headers(&[id])
+                .ok()?
+                .pop()?,
+        ))
     }
     fn begin_refresh(&mut self) -> Result<StagingToken, CatalogError> {
         if self.publication_uncertain {
@@ -3335,6 +4117,7 @@ impl Catalog for BinaryCatalog {
         self.staging = Some(Staging {
             generation,
             kept: Vec::new(),
+            except: None,
             missing_unchanged: false,
             changed: Vec::new(),
             records: Vec::new(),
@@ -3342,6 +4125,9 @@ impl Catalog for BinaryCatalog {
             remaps: Vec::new(),
             record: Vec::new(),
             staged: 0,
+            carry: None,
+            mode: WriteMode::Full,
+            delta_remap: None,
             ordered: None,
         });
         self.writes = CatalogWriteCounts::default();
@@ -3350,19 +4136,14 @@ impl Catalog for BinaryCatalog {
     fn observe_unchanged(&mut self, token: &StagingToken, path: &str) -> Result<(), CatalogError> {
         self.require_staging(token)?;
         self.load()?;
-        let id = match self.snapshot.borrow().as_ref() {
-            Some(snapshot) => snapshot.rows()?.id_at(path),
+        let handle = match self.committed.borrow().as_ref() {
+            Some(committed) => committed
+                .row_at(path)?
+                .map(|(segment, id)| committed.handle(segment, id))
+                .transpose()?,
             None => None,
         };
-        let staging = self.staging_mut()?;
-        if staging.ordered.is_some() {
-            return Err(observed_after_ordered_staging());
-        }
-        match id.and_then(|id| u32::try_from(id).ok()) {
-            Some(id) => staging.kept.push(id),
-            None => staging.missing_unchanged = true,
-        }
-        Ok(())
+        self.observe_handle(handle)
     }
     fn observe_unchanged_committed(
         &mut self,
@@ -3371,24 +4152,26 @@ impl Catalog for BinaryCatalog {
         committed_index: usize,
     ) -> Result<(), CatalogError> {
         self.require_staging(token)?;
-        // The index is the entry's position in `visit_committed_entries` over this snapshot; its
-        // path is checked when the inventory is decoded, its range always.
-        let matches = self.snapshot.borrow().as_ref().is_some_and(|snapshot| {
-            committed_index < snapshot.row_count
-                && snapshot
-                    .rows
-                    .get()
-                    .is_none_or(|rows| rows.path(committed_index) == path)
+        // The index is the entry's handle from `visit_committed_entries` over this generation;
+        // its path is checked when the inventory is decoded, its range always.
+        let matches = self.committed.borrow().as_ref().is_some_and(|committed| {
+            committed_index < committed.handle_count()
+                && match committed.row_of(committed_index as u32) {
+                    (Segment::Base, id) => {
+                        !committed.hidden().hides(id)
+                            && committed
+                                .base
+                                .rows
+                                .get()
+                                .is_none_or(|rows| rows.path(id) == path)
+                    }
+                    (Segment::Delta, id) => committed.delta.as_ref().is_some_and(|delta| {
+                        delta.rows.get().is_none_or(|rows| rows.path(id) == path)
+                    }),
+                }
         });
         match u32::try_from(committed_index) {
-            Ok(id) if matches => {
-                let staging = self.staging_mut()?;
-                if staging.ordered.is_some() {
-                    return Err(observed_after_ordered_staging());
-                }
-                staging.kept.push(id);
-                Ok(())
-            }
+            Ok(handle) if matches => self.observe_handle(Some(handle)),
             _ => self.observe_unchanged(token, path),
         }
     }
@@ -3400,8 +4183,8 @@ impl Catalog for BinaryCatalog {
         self.require_staging(token)?;
         let started = Instant::now();
         self.load()?;
-        let snapshot = self.snapshot.borrow();
-        let prior = snapshot.as_ref();
+        let cached = self.committed.borrow();
+        let committed = cached.as_ref();
         let staging = self.staging.as_mut().ok_or_else(no_staging)?;
         staging.record.clear();
         let meta = match &entry.header {
@@ -3410,13 +4193,18 @@ impl Catalog for BinaryCatalog {
                 RecordMeta::default()
             }
             Some(header) => {
-                let dictionary = shared_dictionary(&mut staging.dictionary, prior)?;
+                let dictionary = shared_dictionary(
+                    &mut staging.dictionary,
+                    &mut staging.delta_remap,
+                    staging.mode,
+                    committed,
+                )?;
                 encode_header_record(header, dictionary, &mut staging.record)?;
                 RecordMeta::of(header)
             }
         };
-        staging.stage_record(prior, &entry.signature, meta)?;
-        drop(snapshot);
+        staging.stage_record(committed, &entry.signature, meta)?;
+        drop(cached);
         self.writes.staged_evidence_rows += 1;
         self.writes.evidence_write_duration += started.elapsed();
         Ok(())
@@ -3436,8 +4224,8 @@ impl Catalog for BinaryCatalog {
         self.require_staging(token)?;
         let started = Instant::now();
         self.load()?;
-        let snapshot = self.snapshot.borrow();
-        let prior = snapshot.as_ref();
+        let cached = self.committed.borrow();
+        let committed = cached.as_ref();
         let staging = self.staging.as_mut().ok_or_else(no_staging)?;
         staging.record.clear();
         let meta = match header {
@@ -3447,7 +4235,12 @@ impl Catalog for BinaryCatalog {
             }
             Some(prepared) => {
                 let prepared = prepared?;
-                let dictionary = shared_dictionary(&mut staging.dictionary, prior)?;
+                let dictionary = shared_dictionary(
+                    &mut staging.dictionary,
+                    &mut staging.delta_remap,
+                    staging.mode,
+                    committed,
+                )?;
                 absorb_strings(dictionary, &mut staging.remaps, &prepared)?;
                 let record = prepared
                     .bytes
@@ -3466,8 +4259,8 @@ impl Catalog for BinaryCatalog {
                 }
             }
         };
-        staging.stage_record(prior, signature, meta)?;
-        drop(snapshot);
+        staging.stage_record(committed, signature, meta)?;
+        drop(cached);
         self.writes.staged_evidence_rows += 1;
         self.writes.evidence_write_duration += started.elapsed();
         Ok(())
@@ -3480,24 +4273,38 @@ impl Catalog for BinaryCatalog {
         self.require_staging(token)?;
         let prepared = prepared?;
         self.load()?;
-        let snapshot = self.snapshot.borrow();
+        let cached = self.committed.borrow();
         let staging = self.staging.as_mut().ok_or_else(no_staging)?;
-        let dictionary = shared_dictionary(&mut staging.dictionary, snapshot.as_ref())?;
+        let dictionary = shared_dictionary(
+            &mut staging.dictionary,
+            &mut staging.delta_remap,
+            staging.mode,
+            cached.as_ref(),
+        )?;
         absorb_strings(dictionary, &mut staging.remaps, &prepared)
     }
-    fn stage_in_path_order(&mut self, token: &StagingToken) -> Result<(), CatalogError> {
+    fn stage_in_path_order(
+        &mut self,
+        token: &StagingToken,
+        plan: &StagingPlan<'_>,
+    ) -> Result<(), CatalogError> {
         self.require_staging(token)?;
-        let staging = self.staging_mut()?;
+        self.load()?;
+        let cached = self.committed.borrow();
+        let limits = self.delta_limits;
+        let manifest = self.manifest.as_ref();
+        let staging = self.staging.as_mut().ok_or_else(no_staging)?;
         if staging.ordered.is_none() {
             if staging.staged > 0 {
                 return Err(CatalogError::InvalidRequest {
                     message: "entries were staged before staging in path order".into(),
                 });
             }
-            staging.kept.sort_unstable();
-            staging.kept.dedup();
+            let carry = staging.settle_carry();
+            let mode = choose_mode(cached.as_ref(), manifest, carry, plan, limits);
+            staging.mode = mode;
             staging.ordered = Some(OrderedRows {
-                next_kept: 0,
+                cursor: KeptCursor::default(),
                 builder: None,
             });
         }
@@ -3516,52 +4323,79 @@ impl Catalog for BinaryCatalog {
         }
         self.load()?;
         let mut staging = self.staging.take().ok_or_else(no_staging)?;
-        // Observations arrive in ordered runs. Sort once; dedup retains set semantics for
-        // repeated observations.
-        staging.kept.sort_unstable();
-        staging.kept.dedup();
-        let mut cleanup = None;
+        let cached = self.committed.borrow();
+        let committed = cached.as_ref();
+        let carry = staging.settle_carry();
+        let carries_everything = committed.is_some_and(|committed| match carry {
+            Carry::Kept(handles) => handles.len() == committed.live_count(),
+            Carry::AllExcept(handles) => handles.is_empty(),
+        });
         let reuse = self.manifest.is_some()
             && staging.staged == 0
             && !staging.missing_unchanged
             && summary.removed_packages == 0
-            && self
-                .snapshot
-                .borrow()
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.row_count == staging.kept.len());
-        let (physical_snapshot, previous_snapshot) = if let Some(current) = &self.manifest
-            && reuse
-        {
-            (
-                current.physical_snapshot.clone(),
-                current.previous_snapshot.clone(),
-            )
-        } else {
-            let started = Instant::now();
-            let physical = snapshot_file_name(token.generation);
-            let path = self.directory.join(&physical);
-            let (file, guard) = create_unpublished(&path)?;
-            cleanup = Some(guard);
-            let (count, header) = write_snapshot(file, staging, self.snapshot.borrow().as_ref())?;
-            // Reread the persisted bytes against their checksums before publication; included
-            // in commit timing.
-            verify_written(&path, &header)?;
-            self.writes.committed_evidence_rows = count as u64;
-            self.writes.removed_evidence_rows = summary.removed_packages;
-            self.writes.evidence_write_duration += started.elapsed();
-            (
-                physical,
-                self.manifest.as_ref().map(|m| m.physical_snapshot.clone()),
-            )
-        };
+            && carries_everything;
+        let mut cleanup = None;
+        let (physical_snapshot, delta_snapshot, previous_snapshot, previous_delta, inventory) =
+            if let Some(current) = &self.manifest
+                && reuse
+            {
+                (
+                    current.physical_snapshot.clone(),
+                    current.delta_snapshot.clone(),
+                    current.previous_snapshot.clone(),
+                    current.previous_delta.clone(),
+                    current
+                        .summary
+                        .inventory()
+                        .ok_or_else(|| corrupt("invalid Catalog summary"))?,
+                )
+            } else {
+                let started = Instant::now();
+                let mode = staging.mode;
+                let name = snapshot_file_name(token.generation, mode);
+                let path = self.directory.join(&name);
+                let (file, guard) = create_unpublished(&path)?;
+                cleanup = Some(guard);
+                let written = write_snapshot(file, staging, committed, self.manifest.as_ref())?;
+                // Reread the persisted bytes against their checksums before publication;
+                // included in commit timing.
+                verify_written(&path, &written.header)?;
+                if written.counts != (summary.package_count, summary.map_count) {
+                    return Err(CatalogError::InvalidRequest {
+                        message: "the written generation's counts do not match its summary".into(),
+                    });
+                }
+                self.writes.committed_evidence_rows = written.rows as u64;
+                self.writes.removed_evidence_rows = summary.removed_packages;
+                self.writes.written_bytes = written.header.file_len()?;
+                self.writes.delta = mode == WriteMode::Delta;
+                self.writes.evidence_write_duration += started.elapsed();
+                let previous = self.manifest.as_ref();
+                let (physical, delta) = match (mode, previous) {
+                    (WriteMode::Delta, Some(current)) => {
+                        (current.physical_snapshot.clone(), Some(name))
+                    }
+                    _ => (name, None),
+                };
+                (
+                    physical,
+                    delta,
+                    previous.map(|m| m.physical_snapshot.clone()),
+                    previous.and_then(|m| m.delta_snapshot.clone()),
+                    written.inventory,
+                )
+            };
+        drop(cached);
         let manifest = Manifest {
             manifest_schema_version: MANIFEST_SCHEMA_VERSION,
             snapshot_schema_version: SNAPSHOT_SCHEMA_VERSION,
             project_id: self.project_id.to_string(),
             physical_snapshot,
+            delta_snapshot,
             previous_snapshot,
-            summary: ManifestSummary::from_refresh(&summary),
+            previous_delta,
+            summary: ManifestSummary::from_refresh(&summary, inventory),
         };
         if self.directory.join(MANIFEST_FILE).is_dir() {
             return Err(CatalogError::Unavailable {
@@ -3579,7 +4413,7 @@ impl Catalog for BinaryCatalog {
             return Err(error);
         }
         publication_checkpoint("after_manifest")?;
-        self.snapshot.take();
+        self.committed.take();
         cleanup_retired_snapshots(&self.directory, &manifest);
         self.manifest = Some(manifest);
         Ok(token.generation)
@@ -3598,7 +4432,7 @@ impl Catalog for BinaryCatalog {
             });
         }
         self.staging.take();
-        self.snapshot.take();
+        self.committed.take();
         quarantine_directory(&self.directory)?;
         fs::create_dir_all(&self.directory).map_err(io_unavailable("recreate binary Catalog"))?;
         self.manifest = None;
@@ -3618,16 +4452,16 @@ impl Catalog for BinaryCatalog {
         }
         let cursor = parse_page_cursor(request.cursor.as_deref())?;
         self.load()?;
-        let cached = self.snapshot.borrow();
-        let snapshot = cached
-            .as_ref()
-            .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
         if matches!(
             request.kind,
             QueryKind::Dependencies { .. } | QueryKind::Dependents { .. }
         ) {
-            let graph = BinaryGraph {
-                snapshot,
+            let cached = self.committed.borrow();
+            let committed = cached
+                .as_ref()
+                .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
+            let graph = MergedGraph {
+                committed,
                 mounts: manifest.summary.mount_points(),
             };
             let (items, next_cursor) =
@@ -3639,11 +4473,10 @@ impl Catalog for BinaryCatalog {
                 next_cursor,
             });
         }
-        drop(cached);
         let (items, next_cursor) = self.page(
             request,
             |item| item,
-            |path, header, strings| QueryItem::Header {
+            |path, header, strings, _| QueryItem::Header {
                 header_data: header.header_data.clone(),
                 package_path: path.to_owned(),
                 package_name: header.package_name.to_owned(),
@@ -3679,176 +4512,284 @@ impl Catalog for BinaryCatalog {
             });
         }
         self.load()?;
-        let cached = self.snapshot.borrow();
-        let snapshot = cached
+        let cached = self.committed.borrow();
+        let committed = cached
             .as_ref()
             .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
-        // One byte per inventory entry bounds union memory independently of match count.
-        let mut matched = vec![false; snapshot.row_count];
-        let mut count = 0;
-        for filter in &request.filters {
-            for id in snapshot.matches(filter, 0, snapshot.row_count)? {
-                if !matched[id] {
-                    matched[id] = true;
-                    count += 1;
-                }
-            }
-        }
         Ok(super::catalog::CountResult {
             project_id: request.project_id.clone(),
             generation,
-            count,
+            count: committed.count(&request.filters)?,
         })
     }
 }
-/// One loaded snapshot read as a dependency graph: inventory ids are nodes, in path order.
-struct BinaryGraph<'a> {
-    snapshot: &'a Snapshot,
-    mounts: Vec<MountPoint>,
+
+fn committed_entry<'a>(handle: u32, path: &'a str, entry: &InventoryEntry) -> CommittedEntry<'a> {
+    CommittedEntry {
+        handle,
+        relative_path: path,
+        kind: entry.kind,
+        size: entry.size,
+        modified_nanos: entry.modified_nanos,
+        header_profile_version: entry.profile,
+        header_failure: entry.failure,
+    }
 }
 
-impl DependencyGraph for BinaryGraph<'_> {
-    type Node = usize;
+/// Delta rows visited between base rows, as a merge in path order visits them.
+struct DeltaVisits<'a> {
+    rows: Option<&'a Rows>,
+    next: usize,
+    offset: usize,
+}
 
-    fn mount_points(&self) -> &[MountPoint] {
-        &self.mounts
-    }
-
-    fn package_at(
-        &self,
-        relative_path: &str,
-        ignore_case: bool,
-    ) -> Result<Option<usize>, CatalogError> {
-        Ok(self
-            .snapshot
-            .rows()?
-            .package_id_at(relative_path, ignore_case))
-    }
-
-    fn package_path(&self, node: &usize) -> String {
-        // Nodes come from `package_at` and `referrers`, which decoded the inventory.
-        self.snapshot
-            .rows()
-            .map(|rows| rows.path(*node).to_owned())
-            .unwrap_or_default()
-    }
-
-    fn evidence(&self, nodes: &[usize]) -> Result<Vec<Option<HeaderEvidence>>, CatalogError> {
-        self.snapshot.headers(nodes)
-    }
-
-    fn referrers(&self, package_names: &[String]) -> Result<Vec<usize>, CatalogError> {
-        self.snapshot.referrers(package_names)
-    }
-
-    fn class_members(
-        &self,
-        classes: &[String],
-    ) -> Result<std::collections::HashSet<usize>, CatalogError> {
-        let mut members = std::collections::HashSet::new();
-        let mut last = LastBlock::default();
-        for class in classes {
-            if let Some(id) = self.snapshot.string_id(class)?
-                && let Some(index) = self.snapshot.posting_index(CLASS_POSTINGS, id)?
-            {
-                members.extend(self.snapshot.posting_ids_reusing(&mut last, index)?);
-            }
+impl DeltaVisits<'_> {
+    /// Visits the delta rows before `until` (all of the rest for `None`).
+    fn before(
+        &mut self,
+        until: Option<&str>,
+        visit: &mut dyn FnMut(CommittedEntry<'_>) -> Result<(), CoordinatorError>,
+    ) -> Result<(), CoordinatorError> {
+        let Some(rows) = self.rows else {
+            return Ok(());
+        };
+        while self.next < rows.inventory.len()
+            && until.is_none_or(|until| rows.path(self.next) < until)
+        {
+            let handle = u32::try_from(self.offset + self.next)
+                .map_err(|_| corrupt("Catalog count exceeds u32"))?;
+            visit(committed_entry(
+                handle,
+                rows.path(self.next),
+                &rows.inventory[self.next],
+            ))?;
+            self.next += 1;
         }
-        Ok(members)
+        Ok(())
     }
 }
 
 impl CatalogSnapshot for BinaryCatalog {
     fn committed_entries(&self) -> Result<Vec<CatalogSnapshotEntry>, CatalogError> {
-        self.load()?;
-        let cached = self.snapshot.borrow();
-        let Some(snapshot) = cached.as_ref() else {
-            return Ok(Vec::new());
-        };
-        let rows = snapshot.rows()?;
-        Ok(rows
-            .inventory
-            .iter()
-            .enumerate()
-            .map(|(id, e)| CatalogSnapshotEntry {
-                signature: rows.signature(id),
-                header_profile_version: e.profile,
-                header_failure: e.failure,
-            })
-            .collect())
+        let mut entries = Vec::new();
+        self.visit_committed_entries(&mut |entry| {
+            entries.push(CatalogSnapshotEntry {
+                signature: PackageSignature {
+                    relative_path: entry.relative_path.to_owned(),
+                    kind: entry.kind,
+                    size: entry.size,
+                    modified_nanos: entry.modified_nanos,
+                },
+                header_profile_version: entry.header_profile_version,
+                header_failure: entry.header_failure,
+            });
+            Ok(())
+        })
+        .map_err(|error| match error {
+            CoordinatorError::Catalog(error) => error,
+            other => CatalogError::Unavailable {
+                message: other.to_string(),
+            },
+        })?;
+        Ok(entries)
     }
 
-    /// Decodes the committed inventory as it visits it, unless it is decoded already: a refresh
-    /// never holds it decoded.
+    /// Decodes the committed base inventory as it visits it, unless it is decoded already: a
+    /// refresh never holds it decoded. Delta rows are merged in between, and hidden base rows
+    /// skipped.
     fn visit_committed_entries(
         &self,
         visit: &mut dyn FnMut(CommittedEntry<'_>) -> Result<(), CoordinatorError>,
     ) -> Result<(), CoordinatorError> {
         self.load()?;
-        let cached = self.snapshot.borrow();
-        let Some(snapshot) = cached.as_ref() else {
+        let cached = self.committed.borrow();
+        let Some(committed) = cached.as_ref() else {
             return Ok(());
         };
-        fn committed<'a>(path: &'a str, entry: &InventoryEntry) -> CommittedEntry<'a> {
-            CommittedEntry {
-                relative_path: path,
-                kind: entry.kind,
-                size: entry.size,
-                modified_nanos: entry.modified_nanos,
-                header_profile_version: entry.profile,
-                header_failure: entry.failure,
-            }
-        }
-        if let Some(rows) = snapshot.rows.get() {
-            for (id, entry) in rows.inventory.iter().enumerate() {
-                visit(committed(rows.path(id), entry))?;
-            }
-            return Ok(());
-        }
-        let mut visited = Ok(());
-        with_section_prefetch(snapshot, INVENTORY, |stream| {
-            let mut stream = InventoryStream::over(stream);
-            while let Some((path, entry)) = stream.next(snapshot)? {
-                if let Err(error) = visit(committed(path, &entry)) {
-                    visited = Err(error);
+        let base = &committed.base;
+        let hidden = &committed.hidden().ids;
+        let mut delta = DeltaVisits {
+            rows: committed.delta.as_ref().map(Snapshot::rows).transpose()?,
+            next: 0,
+            offset: base.row_count,
+        };
+        let mut next_hidden = 0;
+        let mut on_base =
+            |id: usize,
+             path: &str,
+             entry: &InventoryEntry,
+             visit: &mut dyn FnMut(CommittedEntry<'_>) -> Result<(), CoordinatorError>|
+             -> Result<(), CoordinatorError> {
+                delta.before(Some(path), visit)?;
+                if hidden
+                    .get(next_hidden)
+                    .is_some_and(|hidden| *hidden as usize == id)
+                {
+                    next_hidden += 1;
                     return Ok(());
                 }
+                let handle = u32::try_from(id).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+                visit(committed_entry(handle, path, entry))
+            };
+        if let Some(rows) = base.rows.get() {
+            for (id, entry) in rows.inventory.iter().enumerate() {
+                on_base(id, rows.path(id), entry, visit)?;
             }
-            stream.finish(snapshot)
-        })?;
-        visited
+        } else {
+            let mut visited = Ok(());
+            with_section_prefetch(base, INVENTORY, |stream| {
+                let mut stream = InventoryStream::over(stream);
+                let mut id = 0;
+                while let Some((path, entry)) = stream.next(base)? {
+                    if let Err(error) = on_base(id, path, &entry, visit) {
+                        visited = Err(error);
+                        return Ok(());
+                    }
+                    id += 1;
+                }
+                stream.finish(base)
+            })?;
+            visited?;
+        }
+        delta.before(None, visit)
+    }
+
+    /// Finds the run through the base's row index and the delta's decoded rows, without decoding
+    /// the base inventory.
+    fn visit_committed_prefix(
+        &self,
+        prefix: &str,
+        visit: &mut dyn FnMut(CommittedEntry<'_>) -> Result<(), CoordinatorError>,
+    ) -> Result<(), CoordinatorError> {
+        self.load()?;
+        let cached = self.committed.borrow();
+        let Some(committed) = cached.as_ref() else {
+            return Ok(());
+        };
+        let hidden = committed.hidden();
+        let base = BaseLookup::new(&committed.base)
+            .with_prefix(prefix)?
+            .into_iter()
+            .filter(|(id, ..)| !hidden.hides(*id))
+            .collect::<Vec<_>>();
+        let delta_rows = committed.delta.as_ref().map(Snapshot::rows).transpose()?;
+        let mut delta = DeltaVisits {
+            rows: delta_rows,
+            next: delta_rows.map_or(0, |rows| rows.before(prefix)),
+            offset: committed.base.row_count,
+        };
+        let mut through_prefix =
+            |visit: &mut dyn FnMut(CommittedEntry<'_>) -> Result<(), CoordinatorError>,
+             until: Option<&str>|
+             -> Result<(), CoordinatorError> {
+                delta.before(until, &mut |entry| {
+                    if entry.relative_path.starts_with(prefix) {
+                        visit(entry)
+                    } else {
+                        Ok(())
+                    }
+                })
+            };
+        for (id, path, entry) in &base {
+            through_prefix(visit, Some(path))?;
+            let handle = u32::try_from(*id).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+            visit(committed_entry(handle, path, entry))?;
+        }
+        // The delta rows after the base's, up to the first past the run.
+        let end = delta_rows.map_or(0, |rows| {
+            let mut end = delta.next;
+            while end < rows.inventory.len() && rows.path(end).starts_with(prefix) {
+                end += 1;
+            }
+            end
+        });
+        while delta.next < end {
+            let rows = delta.rows.ok_or_else(|| corrupt("missing delta rows"))?;
+            let id = delta.next;
+            let handle = u32::try_from(delta.offset + id)
+                .map_err(|_| corrupt("Catalog count exceeds u32"))?;
+            visit(committed_entry(handle, rows.path(id), &rows.inventory[id]))?;
+            delta.next += 1;
+        }
+        Ok(())
+    }
+
+    fn observe_unchanged_except(
+        &mut self,
+        token: &StagingToken,
+        handles: &[u32],
+    ) -> Result<(), CoordinatorError> {
+        self.require_staging(token)?;
+        let staging = self.staging_mut()?;
+        if staging.ordered.is_some() || staging.except.is_some() || !staging.kept.is_empty() {
+            return Err(observed_after_ordered_staging().into());
+        }
+        let mut handles = handles.to_vec();
+        handles.sort_unstable();
+        handles.dedup();
+        staging.except = Some(handles);
+        Ok(())
+    }
+
+    /// A complete generation holds no header failure, and every commit records the profile all
+    /// its evidence was read with.
+    fn committed_evidence_is_current(&self) -> Result<bool, CoordinatorError> {
+        Ok(self.manifest.as_ref().is_some_and(|manifest| {
+            manifest.summary.completeness == "complete"
+                && manifest.summary.index_profile == INDEX_PROFILE_VERSION
+        }))
     }
 }
 
-/// Writes the next generation: kept rows (their records copied from the committed snapshot)
-/// merged in path order with the changed ones. Entries staged in path order were written as they
-/// arrived; others are sorted here, the last one staged for a path winning. Returns the row count
-/// and the header written.
+/// A snapshot written for a commit.
+struct Written {
+    rows: usize,
+    header: SnapshotHeader,
+    /// The generation's package and map counts with this snapshot.
+    counts: (u64, u64),
+    /// The generation's inventory sum.
+    inventory: InventorySum,
+}
+
+/// Writes the next generation's snapshot: for a base, the carried rows (base and delta records
+/// copied) merged in path order with the changed ones; for a delta, the carried delta rows and the
+/// changed ones, with tombstones for every base row the generation no longer carries. Entries
+/// staged in path order were written as they arrived; others are sorted here, the last one staged
+/// for a path winning.
 fn write_snapshot(
     file: File,
     staging: Staging,
-    prior: Option<&Snapshot>,
-) -> Result<(usize, SnapshotHeader), CatalogError> {
+    committed: Option<&Committed>,
+    manifest: Option<&Manifest>,
+) -> Result<Written, CatalogError> {
     let Staging {
-        kept,
         missing_unchanged,
         changed,
         records,
-        dictionary,
+        mut dictionary,
         ordered,
+        carry,
+        mode,
+        mut delta_remap,
         ..
     } = staging;
     if missing_unchanged {
         return Err(corrupt("unchanged record missing from prior snapshot"));
     }
-    if !kept.is_empty() && prior.is_none() {
+    let carry = carry.ok_or_else(|| corrupt("a commit without a settled carry"))?;
+    if committed.is_none() && !carry.carries_nothing() {
         return Err(corrupt("unchanged record missing from prior snapshot"));
     }
-    let (mut builder, mut next_kept) = match ordered {
-        Some(OrderedRows { next_kept, builder }) => {
-            (builder.unwrap_or_else(SnapshotBuilder::new), next_kept)
-        }
-        None => (SnapshotBuilder::new(), 0),
+    // A base that absorbs a delta copies the delta's records into its own strings.
+    if mode == WriteMode::Full && committed.is_some_and(|committed| committed.delta.is_some()) {
+        shared_dictionary(&mut dictionary, &mut delta_remap, mode, committed)?;
+    }
+    let (mut builder, mut cursor) = match ordered {
+        Some(OrderedRows { cursor, builder }) => (
+            builder.unwrap_or_else(|| SnapshotBuilder::new(mode)),
+            cursor,
+        ),
+        None => (SnapshotBuilder::new(mode), KeptCursor::default()),
     };
     // Changed rows in path order; the last staged record for a path wins.
     let mut order = (0..changed.len()).collect::<Vec<_>>();
@@ -3869,24 +4810,214 @@ fn write_snapshot(
     });
     for index in order {
         let staged = &changed[index];
-        builder.copy_kept(
-            prior,
-            &kept,
-            &mut next_kept,
-            Some(&staged.signature.relative_path),
-        )?;
+        let source = Staging::kept_source(
+            &carry,
+            mode,
+            delta_remap.as_deref(),
+            dictionary.as_ref(),
+            committed,
+        );
+        builder.copy_kept(&source, &mut cursor, Some(&staged.signature.relative_path))?;
         builder.push_staged(
             &staged.signature,
             &staged.meta,
             &records[staged.offset..staged.offset + staged.len],
-            string_count(dictionary.as_ref(), prior),
+            source.strings,
         )?;
     }
     drop(records);
     drop(changed);
-    builder.copy_kept(prior, &kept, &mut next_kept, None)?;
-    drop(kept);
-    builder.finish(file, dictionary, prior)
+    let source = Staging::kept_source(
+        &carry,
+        mode,
+        delta_remap.as_deref(),
+        dictionary.as_ref(),
+        committed,
+    );
+    builder.copy_kept(&source, &mut cursor, None)?;
+    drop(cursor);
+    let prior = mode_prior(mode, committed);
+    match mode {
+        WriteMode::Full => {
+            let inventory = builder.take_inventory_sum().unwrap_or_default();
+            let (rows, header) = builder.finish(file, dictionary, prior, &Tombstones::default())?;
+            Ok(Written {
+                rows,
+                counts: (header.packages, header.maps),
+                header,
+                inventory,
+            })
+        }
+        WriteMode::Delta => {
+            let committed = committed.ok_or_else(|| corrupt("a delta needs a committed base"))?;
+            let manifest = manifest.ok_or_else(|| corrupt("a delta needs a committed base"))?;
+            let recorded = builder.take_recorded();
+            let (tombstones, inventory) = delta_tombstones(committed, &carry, &recorded, manifest)?;
+            drop(recorded);
+            let (rows, header) = builder.finish(file, dictionary, prior, &tombstones)?;
+            let base = &committed.base.header;
+            let counts = (
+                (base.packages - tombstones.packages) + header.packages,
+                (base.maps - tombstones.maps) + header.maps,
+            );
+            Ok(Written {
+                rows,
+                header,
+                counts,
+                inventory,
+            })
+        }
+    }
+}
+
+/// A found row as the inventory sum reads it.
+type DigestEntry<'a> = (&'a str, bool, (u64, u64), Option<&'a PackageHeaderData>);
+
+fn digest_entry((_, path, entry): &committed::FoundRow) -> DigestEntry<'_> {
+    (
+        path.as_str(),
+        entry.kind == EntryKind::Package,
+        (entry.size, entry.modified_nanos),
+        entry.header_data.as_ref(),
+    )
+}
+
+/// A delta's tombstones (every base row the next generation does not carry) and the next
+/// generation's inventory sum, updated from the committed one: each bundle whose entries the
+/// refresh changed has its old leaves subtracted and its new ones added.
+fn delta_tombstones(
+    committed: &Committed,
+    carry: &Carry,
+    recorded: &[RecordedRow],
+    manifest: &Manifest,
+) -> Result<(Tombstones, InventorySum), CatalogError> {
+    let base = &committed.base;
+    let old = committed.hidden();
+    let base_rows =
+        u32::try_from(base.row_count).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+    let mut ids = Vec::new();
+    let mut newly = Vec::new();
+    match carry {
+        Carry::Kept(handles) => {
+            let mut kept = handles
+                .iter()
+                .copied()
+                .take_while(|handle| *handle < base_rows)
+                .peekable();
+            let mut hidden = old.ids.iter().copied().peekable();
+            for id in 0..base_rows {
+                let carried = kept.next_if_eq(&id).is_some();
+                if hidden.next_if_eq(&id).is_some() {
+                    ids.push(id);
+                } else if !carried {
+                    ids.push(id);
+                    newly.push(id);
+                }
+            }
+        }
+        Carry::AllExcept(handles) => {
+            newly.extend(
+                handles
+                    .iter()
+                    .copied()
+                    .take_while(|handle| *handle < base_rows)
+                    .filter(|handle| !old.hides(*handle as usize)),
+            );
+            ids = old.ids.clone();
+            ids.extend(&newly);
+            ids.sort_unstable();
+        }
+    }
+    let mut lookup = BaseLookup::new(base);
+    let mut stems = BTreeSet::new();
+    let (mut packages, mut maps) = (old.packages, old.maps);
+    for id in &newly {
+        let (_, path, entry) = lookup.row(*id as usize)?;
+        packages += u64::from(entry.kind == EntryKind::Package);
+        maps += u64::from(entry.is_map);
+        if let Some(stem) = bundle_stem(&path) {
+            stems.insert(stem.to_owned());
+        }
+    }
+    let old_rows = committed.delta.as_ref().map(Snapshot::rows).transpose()?;
+    if let Some(rows) = old_rows {
+        for id in 0..rows.inventory.len() {
+            let handle = u32::try_from(base.row_count + id)
+                .map_err(|_| corrupt("Catalog count exceeds u32"))?;
+            if !carry.keeps(handle)
+                && let Some(stem) = bundle_stem(rows.path(id))
+            {
+                stems.insert(stem.to_owned());
+            }
+        }
+    }
+    for row in recorded.iter().filter(|row| row.staged) {
+        if let Some(stem) = bundle_stem(&row.path) {
+            stems.insert(stem.to_owned());
+        }
+    }
+    let mut inventory = manifest
+        .summary
+        .inventory()
+        .ok_or_else(|| corrupt("invalid Catalog summary"))?;
+    for stem in &stems {
+        let prefix = format!("{stem}.");
+        let found = lookup.with_prefix(&prefix)?;
+        let old_delta = old_rows.into_iter().flat_map(|rows| {
+            (rows.before(&prefix)..rows.inventory.len())
+                .take_while(|id| rows.path(*id).starts_with(prefix.as_str()))
+                .map(|id| {
+                    let entry = &rows.inventory[id];
+                    (
+                        rows.path(id),
+                        entry.kind == EntryKind::Package,
+                        (entry.size, entry.modified_nanos),
+                        entry.header_data.as_ref(),
+                    )
+                })
+        });
+        let before = stem_sum(
+            stem,
+            found
+                .iter()
+                .filter(|(id, ..)| !old.hides(*id))
+                .map(digest_entry)
+                .chain(old_delta),
+        );
+        let start = recorded.partition_point(|row| row.path.as_str() < prefix.as_str());
+        let new_delta = recorded[start..]
+            .iter()
+            .take_while(|row| row.path.starts_with(prefix.as_str()))
+            .map(|row| {
+                (
+                    row.path.as_str(),
+                    row.kind == EntryKind::Package,
+                    (row.size, row.modified_nanos),
+                    row.header_data.as_ref(),
+                )
+            });
+        let after = stem_sum(
+            stem,
+            found
+                .iter()
+                .filter(|(id, ..)| {
+                    u32::try_from(*id).is_ok_and(|id| ids.binary_search(&id).is_err())
+                })
+                .map(digest_entry)
+                .chain(new_delta),
+        );
+        inventory.remove(&before);
+        inventory.absorb(&after);
+    }
+    Ok((
+        Tombstones {
+            base: Some(base.fingerprint()),
+            packages,
+            maps,
+            ids,
+        },
+        inventory,
+    ))
 }
 
 impl Snapshot {
@@ -4017,19 +5148,26 @@ fn read_and_verify_manifest(
     if manifest.manifest_schema_version != MANIFEST_SCHEMA_VERSION
         || manifest.snapshot_schema_version != SNAPSHOT_SCHEMA_VERSION
         || manifest.project_id != project_id.as_str()
-        || !valid_snapshot_name(&manifest.physical_snapshot)
         || manifest
-            .previous_snapshot
-            .as_deref()
-            .is_some_and(|name| !valid_snapshot_name(name))
+            .files()
+            .into_iter()
+            .flatten()
+            .any(|name| !valid_snapshot_name(name))
     {
         return Err(CatalogError::Corrupt {
             message: "the binary Catalog manifest is incompatible or belongs to another project"
                 .to_owned(),
         });
     }
-    let snapshot = directory.join(&manifest.physical_snapshot);
-    if !snapshot.is_file() {
+    let current = [
+        Some(&manifest.physical_snapshot),
+        manifest.delta_snapshot.as_ref(),
+    ];
+    if current
+        .into_iter()
+        .flatten()
+        .any(|name| !directory.join(name).is_file())
+    {
         return Err(CatalogError::Corrupt {
             message: "the binary Catalog manifest names a missing snapshot".to_owned(),
         });
@@ -4056,10 +5194,7 @@ fn require_manifest<'a>(
 }
 
 fn cleanup_retired_snapshots(directory: &Path, manifest: &Manifest) {
-    let retained = [
-        Some(manifest.physical_snapshot.as_str()),
-        manifest.previous_snapshot.as_deref(),
-    ];
+    let retained = manifest.files();
     let Ok(entries) = fs::read_dir(directory) else {
         return;
     };
@@ -4074,20 +5209,24 @@ fn cleanup_retired_snapshots(directory: &Path, manifest: &Manifest) {
     }
 }
 
-fn snapshot_file_name(generation: Generation) -> String {
+fn snapshot_file_name(generation: Generation, mode: WriteMode) -> String {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
+    let kind = match mode {
+        WriteMode::Full => "snapshot",
+        WriteMode::Delta => "delta",
+    };
     format!(
-        "snapshot-{}-{}-{nonce}.catalog",
+        "{kind}-{}-{}-{nonce}.catalog",
         generation.get(),
         std::process::id()
     )
 }
 
 fn valid_snapshot_name(name: &str) -> bool {
-    name.starts_with("snapshot-")
+    (name.starts_with("snapshot-") || name.starts_with("delta-"))
         && name.ends_with(".catalog")
         && name
             .chars()
@@ -4142,7 +5281,7 @@ fn io_unavailable(operation: &'static str) -> impl FnOnce(std::io::Error) -> Cat
 impl Drop for BinaryCatalog {
     fn drop(&mut self) {
         self.staging.take();
-        self.snapshot.take();
+        self.committed.take();
         self.writer_lock.take();
         if let Some(root) = self.cleanup_root.take() {
             let _ = fs::remove_dir_all(root);
@@ -4176,6 +5315,19 @@ mod tests {
         catalog
     }
     catalog_conformance_tests!(binary, custom_catalog);
+
+    /// A Catalog that writes a delta whenever a base is committed, so every conformance scenario
+    /// also runs against merged base and delta segments.
+    fn delta_catalog() -> BinaryCatalog {
+        let mut catalog = custom_catalog();
+        catalog.delta_limits = DeltaLimits {
+            entries: usize::MAX,
+            permille: usize::MAX / 1000,
+            strings: u64::MAX,
+        };
+        catalog
+    }
+    catalog_conformance_tests!(binary_delta, delta_catalog);
 
     impl Snapshot {
         /// Every check a snapshot has: every stored byte, every section decoded and validated,
@@ -4385,6 +5537,7 @@ mod tests {
                     diagnostics: vec![],
                     omitted_diagnostics: 0,
                     mounts: vec![MountPoint::game()],
+                    inventory_digest: None,
                 },
             )
             .unwrap();
@@ -4490,8 +5643,8 @@ mod tests {
             }),
             Err(CatalogError::StaleGeneration { .. })
         ));
-        let snapshot = catalog.snapshot.borrow();
-        let snapshot = snapshot.as_ref().unwrap();
+        let committed = catalog.committed.borrow();
+        let snapshot = &committed.as_ref().unwrap().base;
         // A byte of the first class posting: in place when its block is stored raw, else the
         // block's frame magic.
         let posting = snapshot
@@ -4621,7 +5774,7 @@ mod tests {
                 manifest["summary"]["package_count"] = 999999.into();
                 fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
             }
-            owner.snapshot.take();
+            owner.committed.take();
             // Model a descriptor alias still alive during an unrelated process spawn.
             let _inherited = owner.writer_lock.as_ref().unwrap().try_clone().unwrap();
             release_test_writer(&mut owner);
@@ -4771,14 +5924,17 @@ mod tests {
             .directory
             .join(&writer.manifest.as_ref().unwrap().physical_snapshot);
         let mut bytes = fs::read(&path).unwrap();
-        *bytes.last_mut().unwrap() ^= 0x40;
+        // The last stored byte of the records.
+        let header = SnapshotHeader::decode(&bytes[..HEADER_BYTES as usize]).unwrap();
+        let end = header.starts().unwrap()[RECORDS] + header.sections[RECORDS].stored;
+        bytes[end as usize - 1] ^= 0x40;
         fs::write(&path, bytes).unwrap();
-        writer.snapshot.take();
+        writer.committed.take();
         release_test_writer(&mut writer);
         let reader = BinaryCatalog::open_for_query(&root, &fixture_project_id()).unwrap();
         reader.load().unwrap();
-        let snapshot = reader.snapshot.borrow();
-        let snapshot = snapshot.as_ref().unwrap();
+        let committed = reader.committed.borrow();
+        let snapshot = &committed.as_ref().unwrap().base;
         assert!(snapshot.packed(snapshot.row_count - 1).is_err());
         let mut recovered = BinaryCatalog::open(&root, &fixture_project_id()).unwrap();
         assert!(recovered.quarantined_from().is_some());
@@ -4857,7 +6013,7 @@ mod tests {
                     )
                     .unwrap();
                 }
-                owner.snapshot.take();
+                owner.committed.take();
                 release_test_writer(&mut owner);
                 let marker = root.join("checkpoint");
                 let mut child = Child(
@@ -4918,12 +6074,27 @@ mod tests {
     #[test]
     fn deterministic_mutation_sequences_match_memory_catalog_on_every_page() {
         use crate::direct_executor::catalog_conformance::{
-            FakeScanner, collect_pages, header, package, sidecar,
+            FakeScanner, collect_pages, completed_changes, header, package, sidecar,
         };
         use crate::direct_executor::catalog_memory::MemoryCatalog;
+        use crate::direct_executor::project_index::{RefreshReach, refresh_changed_paths};
+        // Limits small enough that the sequence writes deltas over several generations, compacts
+        // when they grow, and writes deltas over the new base again.
+        let limits = DeltaLimits {
+            entries: 40,
+            permille: 1000,
+            strings: u64::MAX,
+        };
+        // `binary` walks the project; `targeted` is told the changed paths.
         let mut binary = custom_catalog();
+        binary.delta_limits = limits;
+        let mut targeted = custom_catalog();
+        targeted.delta_limits = limits;
         let mut memory = MemoryCatalog::new();
+        // Package id -> its version, sidecar id -> its own version, and orphan sidecars.
         let mut state = std::collections::BTreeMap::new();
+        let mut sidecars = std::collections::BTreeMap::new();
+        let mut orphans = std::collections::BTreeSet::new();
         let mut random = 0x123456789abcdef_u64;
         let package_path = |id: u64| {
             format!(
@@ -4935,21 +6106,49 @@ mod tests {
                 }
             )
         };
-        for generation in 0..12 {
-            for _ in 0..40 {
+        let mut writes = Vec::new();
+        let mut previous_complete = false;
+        for generation in 0..30_u64 {
+            let mutations = match generation {
+                0 => 80,
+                generation if generation % 10 == 9 => 30,
+                _ => 1 + random % 5,
+            };
+            let mut changed_paths = Vec::new();
+            for _ in 0..mutations {
                 random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
                 let id = (random >> 32) % 96;
-                if random.is_multiple_of(7) {
-                    state.remove(&id);
-                } else {
-                    state.insert(id, generation);
+                changed_paths.push(package_path(id));
+                changed_paths.push(format!("Content/{id:04}.uexp"));
+                match random % 11 {
+                    // A delete, of the package and its sidecar.
+                    0 | 1 => {
+                        state.remove(&id);
+                        sidecars.remove(&id);
+                    }
+                    // A sidecar-only edit (or a sidecar added to a package without one).
+                    2 | 3 if state.contains_key(&id) => {
+                        sidecars.insert(id, generation);
+                    }
+                    // An orphan sidecar toggled, with no package beside it.
+                    4 => {
+                        changed_paths.push(format!("Content/Orphan{id:04}.ubulk"));
+                        if !orphans.remove(&id) {
+                            orphans.insert(id);
+                        }
+                    }
+                    // An add, re-add or edit.
+                    _ => {
+                        state.insert(id, generation);
+                    }
                 }
             }
             let mut scanner = FakeScanner::default();
             for (&id, &version) in &state {
                 let path = package_path(id);
                 scanner.entries.push(package(&path, id + 1, version + 1));
-                if id % 13 != 0 || version % 2 == 1 {
+                // Early generations hold header failures, which only a walk rereads.
+                if id % 13 != 0 || version % 2 == 1 || generation >= 5 {
                     let class = if version % 2 == 0 {
                         "/Script/Test.Widget"
                     } else {
@@ -4963,8 +6162,15 @@ mod tests {
                             "Ã©",
                             if id % 3 == 0 { "Rare" } else { "Common" },
                             "None",
+                            &format!("V{version}"),
                         ],
                     );
+                    evidence.header_data = Some(PackageHeaderData {
+                        package_flags: (id * 31 + version) as u32,
+                        gatherable_text_data_count: version as u32,
+                        gatherable_text_data_offset: id,
+                        has_text_property: id.is_multiple_of(2),
+                    });
                     // Edges to present, deleted and differently cased packages, across Unreal's
                     // hard/game/build property bits.
                     evidence.dependencies = vec![
@@ -4980,34 +6186,102 @@ mod tests {
                     ];
                     scanner.headers.insert(path.clone(), evidence);
                 }
-                if id % 11 == 0 {
+                if id % 11 == 0 || sidecars.contains_key(&id) {
+                    let stamp = sidecars.get(&id).copied().unwrap_or(version);
                     scanner
                         .entries
-                        .push(sidecar(&format!("Content/{id:04}.uexp"), 5, version + 1));
+                        .push(sidecar(&format!("Content/{id:04}.uexp"), 5, stamp + 1));
                 }
             }
+            for id in &orphans {
+                scanner
+                    .entries
+                    .push(sidecar(&format!("Content/Orphan{id:04}.ubulk"), 7, *id + 1));
+            }
             scanner.entries.reverse();
-            refresh(
+            let cancellation = CancellationToken::new();
+            let walked = refresh(
                 &mut binary,
                 &scanner,
                 FIXTURE_PROJECT_ROOT,
-                &CancellationToken::new(),
+                &cancellation,
                 |_| {},
             )
             .unwrap();
+            // Hints repeat paths, name unchanged and missing ones, and some absolutely.
+            if generation % 3 == 1
+                && let Some(first) = changed_paths.first().cloned()
+            {
+                changed_paths.push(format!("{FIXTURE_PROJECT_ROOT}/{first}"));
+                changed_paths.push("Content/0050.uasset".into());
+            }
+            let (hinted, reach) = refresh_changed_paths(
+                &mut targeted,
+                &scanner,
+                FIXTURE_PROJECT_ROOT,
+                &changed_paths,
+                PROJECT_INDEX_MAX_REPORTED_CHANGES,
+                &cancellation,
+                |_| {},
+            )
+            .unwrap();
+            assert_eq!(
+                reach,
+                if generation == 0 {
+                    RefreshReach::Walked(Some("no_committed_generation"))
+                } else if !previous_complete {
+                    RefreshReach::Walked(Some("committed_generation_is_partial"))
+                } else {
+                    RefreshReach::Targeted
+                },
+                "generation {generation}"
+            );
+            assert_eq!(
+                completed_changes(&hinted),
+                completed_changes(&walked),
+                "generation {generation}"
+            );
             refresh(
                 &mut memory,
                 &scanner,
                 FIXTURE_PROJECT_ROOT,
-                &CancellationToken::new(),
+                &cancellation,
                 |_| {},
             )
             .unwrap();
-            assert_eq!(binary.status(), memory.status());
-            assert_eq!(
-                binary.committed_entries().unwrap(),
-                memory.committed_entries().unwrap()
+            for catalog in [&binary, &targeted] {
+                let counts = catalog.write_counts();
+                writes.push((
+                    generation,
+                    std::ptr::eq(catalog, &targeted),
+                    counts.delta,
+                    counts.written_bytes,
+                ));
+            }
+            // The digest (in each status) depends only on the inventory, however it was written.
+            let status = memory.status();
+            let CatalogStatus::Ready { summary } = &status else {
+                panic!("generation {generation} committed");
+            };
+            previous_complete = summary.completeness == Completeness::Complete;
+            assert_eq!(summary.inventory_digest.is_some(), previous_complete);
+            assert!(
+                generation < 5 || previous_complete,
+                "generation {generation}"
             );
+            let reader = BinaryCatalog::open_for_query(
+                binary.cleanup_root.as_ref().unwrap(),
+                &fixture_project_id(),
+            )
+            .unwrap();
+            for catalog in [&binary, &targeted, &reader] {
+                assert_eq!(catalog.status(), status, "generation {generation}");
+                assert_eq!(
+                    catalog.committed_entries().unwrap(),
+                    memory.committed_entries().unwrap(),
+                    "generation {generation}"
+                );
+            }
             let current = binary.committed_generation().unwrap();
             assert_eq!(memory.committed_generation(), Some(current));
             let kinds = [
@@ -5036,7 +6310,7 @@ mod tests {
                     values: vec!["Rare".into(), "absent".into()],
                 },
                 QueryKind::SerializedNames {
-                    values: vec!["Ã©".into()],
+                    values: vec!["Ã©".into(), format!("V{}", generation / 2)],
                 },
                 QueryKind::SerializedNames { values: vec![] },
             ];
@@ -5045,16 +6319,21 @@ mod tests {
                 expected_generation: current,
                 filters: kinds.to_vec(),
             };
-            assert_eq!(binary.count(&union).unwrap(), memory.count(&union).unwrap());
-            for kind in &kinds {
-                let request = super::super::catalog::CountRequest {
-                    filters: vec![kind.clone(), kind.clone()],
-                    ..union.clone()
-                };
+            for catalog in [&binary, &targeted, &reader] {
                 assert_eq!(
-                    binary.count(&request).unwrap(),
-                    memory.count(&request).unwrap()
+                    catalog.count(&union).unwrap(),
+                    memory.count(&union).unwrap()
                 );
+                for kind in &kinds {
+                    let request = super::super::catalog::CountRequest {
+                        filters: vec![kind.clone(), kind.clone()],
+                        ..union.clone()
+                    };
+                    assert_eq!(
+                        catalog.count(&request).unwrap(),
+                        memory.count(&request).unwrap()
+                    );
+                }
             }
             // Seeds: a present package, another in a different ASCII case, and a path that may be
             // deleted or never indexed.
@@ -5093,13 +6372,67 @@ mod tests {
             }
             for kind in kinds.into_iter().chain(graph_kinds) {
                 for limit in [1, 7, 1024] {
-                    assert_eq!(
-                        collect_pages(&binary, current, kind.clone(), limit),
-                        collect_pages(&memory, current, kind.clone(), limit),
-                        "generation {generation}, query {kind:?}, limit {limit}"
-                    );
+                    let expected = collect_pages(&memory, current, kind.clone(), limit);
+                    for catalog in [&binary, &targeted, &reader] {
+                        assert_eq!(
+                            collect_pages(catalog, current, kind.clone(), limit),
+                            expected,
+                            "generation {generation}, query {kind:?}, limit {limit}"
+                        );
+                    }
                 }
             }
+            // Dictionary pages carry each distinct string once, across base and delta.
+            for kind in [
+                QueryKind::ClassPrefixes {
+                    values: vec!["".into()],
+                },
+                QueryKind::SerializedNames {
+                    values: vec!["None".into(), "Rare".into(), "Common".into()],
+                },
+            ] {
+                let mut cursor = None;
+                loop {
+                    let page = targeted
+                        .query_shared_strings(&QueryRequest {
+                            project_id: fixture_project_id(),
+                            expected_generation: current,
+                            kind: kind.clone(),
+                            limit: 7,
+                            cursor,
+                        })
+                        .unwrap();
+                    let distinct = page.strings.iter().collect::<BTreeSet<_>>();
+                    assert_eq!(
+                        distinct.len(),
+                        page.strings.len(),
+                        "generation {generation}"
+                    );
+                    cursor = page.next_cursor;
+                    if cursor.is_none() {
+                        break;
+                    }
+                }
+            }
+        }
+        // Both catalogs wrote deltas over several generations, compacted into a new base once the
+        // delta grew past its limit, and wrote deltas over the new base again.
+        for targeted_catalog in [false, true] {
+            let sequence = writes
+                .iter()
+                .filter(|(_, which, _, bytes)| *which == targeted_catalog && *bytes > 0)
+                .map(|(generation, _, delta, _)| (*generation, *delta))
+                .collect::<Vec<_>>();
+            let consecutive_deltas = sequence.windows(2).any(|pair| pair[0].1 && pair[1].1);
+            let compaction = sequence
+                .windows(2)
+                .position(|pair| pair[0].1 && !pair[1].1 && pair[1].0 > 0);
+            assert!(consecutive_deltas, "{sequence:?}");
+            let compaction = compaction.expect("a delta compacted into a base");
+            assert!(
+                sequence[compaction + 1..].iter().any(|(_, delta)| *delta),
+                "a delta after compaction: {sequence:?}"
+            );
         }
     }
 

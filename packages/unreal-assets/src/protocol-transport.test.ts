@@ -8,6 +8,7 @@ import {
 	invokeProtocolSessionSingle,
 	invokeProtocolScan,
 	makeProtocolRequest,
+	nativeProcessEnvironment,
 	type ProtocolProcessFactory,
 	type ProtocolSessionProcess,
 	ProtocolStreamFailure,
@@ -221,6 +222,25 @@ class StalledInputProcess implements ProtocolSessionProcess {
 		for (const listener of this.errorListeners) listener(cause);
 	}
 }
+
+it("starts native workers with the allocator's purge delay unless the caller set one", () => {
+	const inherited = { PATH: "/bin" };
+	expect(nativeProcessEnvironment(inherited)).toEqual({
+		PATH: "/bin",
+		MIMALLOC_PURGE_DELAY: "0"
+	});
+	// The caller's environment is copied, never changed.
+	expect(inherited).toEqual({ PATH: "/bin" });
+	const chosen = { PATH: "/bin", MIMALLOC_PURGE_DELAY: "250" };
+	expect(nativeProcessEnvironment(chosen)).toBe(chosen);
+	// An empty value is still the caller's choice.
+	expect(nativeProcessEnvironment({ MIMALLOC_PURGE_DELAY: "" })).toEqual({
+		MIMALLOC_PURGE_DELAY: ""
+	});
+	expect(nativeProcessEnvironment()["MIMALLOC_PURGE_DELAY"]).toBe(
+		process.env["MIMALLOC_PURGE_DELAY"] ?? "0"
+	);
+});
 
 it("terminates a session when stdin rejects while the worker remains alive", async () => {
 	const assetPath = "C:/Fixture/BP_Stalled.uasset";

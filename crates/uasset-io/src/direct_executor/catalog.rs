@@ -5,6 +5,8 @@
 
 use std::fmt;
 
+pub(crate) use super::signature_arena::SplitPath;
+
 pub use uasset_parser::dependencies::PackageDependency;
 
 /// Versioned set of package-header probes shared by current Project Index consumers. Profile 3
@@ -477,11 +479,11 @@ pub trait Catalog {
     fn observe_unchanged_committed(
         &mut self,
         token: &StagingToken,
-        relative_path: &str,
+        relative_path: SplitPath<'_>,
         committed_index: usize,
     ) -> Result<(), CatalogError> {
         let _ = committed_index;
-        self.observe_unchanged(token, relative_path)
+        self.observe_unchanged(token, &relative_path.to_string())
     }
 
     /// Stage evidence for a new or changed entry.

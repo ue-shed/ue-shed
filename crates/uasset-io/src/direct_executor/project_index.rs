@@ -16,7 +16,7 @@ use super::catalog::{
     StagingToken, is_map_path, project_id_for,
 };
 use super::inventory_digest::bundle_stem;
-use super::signature_arena::SignatureArena;
+use super::signature_arena::{SignatureArena, SplitPath};
 use super::{Failure, checkpoint};
 
 const MAX_SIGNATURE_REVALIDATION_ATTEMPTS: usize = 3;
@@ -258,7 +258,11 @@ pub trait CatalogSnapshot: Catalog {
             Ok(())
         })?;
         for (path, handle) in kept {
-            self.observe_unchanged_committed(token, &path, handle as usize)?;
+            let path = SplitPath {
+                head: "",
+                tail: &path,
+            };
+            self.observe_unchanged_committed(token, path, handle as usize)?;
         }
         Ok(())
     }
@@ -1022,7 +1026,9 @@ fn stage_changes<C: CatalogSnapshot, S: ProjectScanner>(
         &mut |signature, header_result| {
             checkpoint(cancellation, "inspection")?;
             while let Some(&sidecar) = sidecars.next_if(|&&sidecar| {
-                signatures.path(sidecar as usize) < signature.relative_path.as_str()
+                signatures
+                    .cmp_path(sidecar as usize, &signature.relative_path)
+                    .is_lt()
             }) {
                 catalog.stage_prepared(staging, &signatures.signature(sidecar as usize), None)?;
             }
@@ -1119,7 +1125,7 @@ fn compare<C: CatalogSnapshot>(
         // A changed file differs on disk; a reused profile or a failed read is re-read
         // without counting as a change.
         if !unchanged {
-            changes.changed(path);
+            changes.changed(&path);
         }
         let reuse = prior
             .filter(|prior| {
@@ -1135,7 +1141,7 @@ fn compare<C: CatalogSnapshot>(
         comparison.reuse.push(reuse);
         if kind == EntryKind::Package {
             comparison.package_count += 1;
-            if is_map_path(path) {
+            if path.ends_with_ignore_ascii_case(".umap") {
                 comparison.map_count += 1;
             }
         }
@@ -1146,12 +1152,12 @@ fn compare<C: CatalogSnapshot>(
     };
     let mut next = 0;
     catalog.visit_committed_entries(&mut |prior| {
-        while next < enumerated.len() && enumerated.path(next) < prior.relative_path {
+        while next < enumerated.len() && enumerated.cmp_path(next, prior.relative_path).is_lt() {
             observe(&mut comparison, changes, next, None)?;
             next += 1;
         }
         let mut present = false;
-        while next < enumerated.len() && enumerated.path(next) == prior.relative_path {
+        while next < enumerated.len() && enumerated.cmp_path(next, prior.relative_path).is_eq() {
             observe(&mut comparison, changes, next, Some(&prior))?;
             present = true;
             next += 1;
@@ -1313,10 +1319,10 @@ impl ChangeReport {
         }
     }
 
-    fn changed(&mut self, path: &str) {
+    fn changed(&mut self, path: &impl std::fmt::Display) {
         self.changes.total += 1;
         if self.has_room() {
-            self.changes.changed.push(path.to_owned());
+            self.changes.changed.push(path.to_string());
         }
     }
 

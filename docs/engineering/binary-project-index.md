@@ -6,7 +6,7 @@ CLI, and Workbench use the same adapter; there is no runtime backend selector.
 
 ## Format and lifecycle
 
-The disposable cache lives under `catalogs-v9/<project-hash>`. An atomic JSON manifest selects a
+The disposable cache lives under `catalogs-v10/<project-hash>`. An atomic JSON manifest selects a
 base snapshot and, when there is one, a delta snapshot over it, and retains the previous
 generation's base and delta. Existing SQLite, DuckDB and older `catalogs-v*` caches are ignored;
 the first refresh builds the new format from source. Old cache directories are not deleted or
@@ -21,32 +21,47 @@ require no payload read, and remain generic inspection evidence rather than Game
 Profile 3 adds each package's dependencies (see [Package dependencies](#package-dependencies)).
 
 The snapshot contains seven length-delimited sections: compact inventory, shared strings and a
-sorted lexicon, posting directory, posting lists, packed header records, a sparse row index (the
-path and inventory offset of every 128th row), and tombstones. Integers are little-endian,
-including the full unsigned file signatures. Inventory rows also carry a copy of their record's
-17-byte header data, so inventory pages read no records. CRC32 checksums cover every decoded
-section, every stored section, the header, and individual records/posting lists. These detect
-accidental corruption, not malicious changes. The file magic (`UESHC007`) versions the encoding;
-incompatible derived evidence is rebuilt.
+sorted lexicon, posting directory, posting lists, packed header records, a sparse row index, and
+tombstones. The row index divides the inventory into chunks of 128 rows and records, for each
+chunk, its first row's path, its inventory offset and the checksum of its decoded bytes; then the
+ids of the map rows. Integers are little-endian, including the full unsigned file signatures.
+Inventory rows also carry a copy of their record's 17-byte header data, so inventory pages read no
+records. CRC32 checksums cover every decoded section, every stored section, the header, and
+individual records/posting lists. These detect accidental corruption, not malicious changes. The
+file magic (`UESHC008`) versions the encoding; incompatible derived evidence is rebuilt.
 
 Every section is zstd-compressed (level 3) as independent 64 KiB blocks behind an index of block end
 offsets, so a query decodes only the blocks its postings and record windows touch, and whole
 sections compress and decompress their blocks in parallel. A block that does not compress smaller is
 stored raw. The header records each section's stored length, decoded length, decoded checksum and
 stored checksum, the package, map and shared-string counts, and a checksum of itself. On a local UE
-5.7 project with about 11,000 packages compression takes the snapshot from 9.7 MB to 1.9 MB.
+5.7 project with about 11,000 packages compression takes the snapshot from 9.7 MB to 1.9 MB. On a
+project of about 800,000 packages a reader's first inventory or map page takes about 5–8 ms and its
+first class or serialized-name page 30–45 ms, against 120–165 ms when the whole inventory was
+decoded first.
 
 Exact classes and serialized names have postings. Prefix and suffix queries inspect the class
 dictionary. Results follow relative-path order and hydrate bounded pages. Readers check the header
 and the inventory's row count when opened and retain the physical file, even before their first
-query. The inventory, shared strings and posting directory are decoded and checked on first use;
-payloads and selected postings are checked when accessed. Dictionary pages number each distinct
-class and serialized name by its shared-string id, copying each string once rather than hashing its
-text. Refresh and status opens read every stored byte against the stored checksums (no block is
-decompressed for it) and compare the header's counts with the manifest summary. A refresh never
-holds the committed inventory decoded: it compares the enumeration with it, and copies its kept
-rows, as streams a batch of blocks at a time, and decodes the rest only if it writes a new
-generation.
+query. A query never decodes the whole inventory: it finds a cursor by searching the row index's
+paths and decoding the one chunk the cursor falls in, reads map pages from the row index's map
+list, and decodes only the chunks holding the rows a page returns (with the neighbouring chunk when
+a package's sidecars continue into it), several threads decoding a page's spread-out chunks
+together. Each chunk is checked as it is decoded: its checksum, its paths ordered from its
+row-index path to before the next chunk's, its map rows against the list, and its record ranges. A
+reader keeps the chunks it decoded between queries until it holds 2,048 (about 260,000 rows); past
+that a query's end releases them, so paging through a whole inventory never holds it all decoded.
+Shared strings and the posting directory are decoded and checked on first use, their checksums,
+UTF-8, lexicon order and directory entries checked on several threads; payloads and selected
+postings are checked when accessed. Dictionary pages number each distinct class and serialized name
+by its shared-string id, copying each string once rather than hashing its text. Refresh and status
+opens read every stored byte against the stored checksums (no block is decompressed for it) and
+compare the header's counts with the manifest summary. A refresh never holds the committed
+inventory decoded: it compares the enumeration with it, and copies its kept rows, as streams a
+batch of blocks at a time, and decodes the rest only if it writes a new generation. The walk lists
+the project with each directory's path stored once and each file's name beside it, and compares and
+orders those paths as their two parts without joining them; a path is built whole only for a
+package whose header is read.
 
 Package dependencies have a third posting kind, keyed by the dependency's package name (see
 below).

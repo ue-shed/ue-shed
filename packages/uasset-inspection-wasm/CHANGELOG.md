@@ -1,5 +1,16 @@
 # @ue-shed/uasset-inspection-wasm
 
+## 0.33.0
+
+### Patch Changes
+
+- Faster saved-package decoding in `uasset-parser` and `uasset-inspection` with unchanged output:
+  container struct replay, reusable decode session tables (honoring dynamic schema providers and
+  per-decode omission policy), optional filtered record omission, zero-allocation property tag
+  fast-skip, lean `EdGraphPin` decoding, and in-place package path normalization. On large Blueprint
+  and level packages this cuts allocated bytes by about 31%, peak live memory by about 20%, and
+  decode time by about 16%.
+
 ## 0.32.0
 
 ### Minor Changes

@@ -1,5 +1,84 @@
 # @ue-shed/uasset-win32-x64
 
+## 0.33.0
+
+### Minor Changes
+
+- a565b73: A one-file edit no longer rewrites the whole Project Index. A small refresh writes a delta of the
+  entries it changed over the committed snapshot, and compacts into a new snapshot once the delta
+  grows past 16,384 entries or 5% of the index. A refresh target can name the files a watcher saw
+  change (`changedPaths`, uasset-io v1.26): the refresh then looks only at those files and their
+  sidecars instead of walking the project, with the same result, and walks anyway when the paths
+  alone could miss a change. A complete summary carries `inventoryDigest`, a SHA-256 of every
+  inventory fact, so a host can tell whether the inventory changed without paging through it.
+  Refreshes run in a worker session of their own that stays warm between edits. The cache moves to
+  `catalogs-v9`; the first refresh rebuilds it.
+- f5c9c09: Project Index queries can ask for less. uasset-io v1.27 adds a `union` query that pages the
+  packages any of up to 16 header filters matches, each once, in path order, and lets header queries
+  name the `fields` their items carry (`classes`, `serializedNames`, `matchedSerializedNames`,
+  `headerData`). `@ue-shed/unreal-assets` adds `ProjectIndexQuery.cases.Union` and an optional
+  `fields` on header queries; a field a query leaves out is empty in its items. On a worker older
+  than v1.27 a header query with `fields` reads every field and the adapter leaves out the rest; a
+  union fails as `ProjectIndexIncompatibleWorker`. Header items in v1.27 pages may omit `classes` and
+  `serializedNames`.
+
+    Every query page also decodes faster: the host validates a dictionary page frame in one walk and
+    expands it in one pass instead of two schema walks, and the worker decodes a page's record blocks
+    on several threads. On a project of about 800,000 packages a five-filter sweep drops from about
+    410 ms to 210 ms with the same frames; as one union with only classes and matched names it takes
+    about 170 ms, sends 6.8 MB instead of 17.1 MB and holds about 90 MiB less Node memory.
+
+### Patch Changes
+
+- Faster Game Text scanning, snapshot publication, delta planning, and localization import with
+  unchanged output and `UESHT004` format compatibility:
+    - Parallelized `extract_text_packages` and `join` with heaviest-first shard staging, streaming
+      package-text extraction, surrogate-preserving `join.meta` decoding, and O(1) warm-open witness
+      reuse.
+    - Bounded Catalog change log (`changes.json`) and delta shard planning (`try_plan_delta`) that
+      rekeys only affected shards (up to 32 shards, resolving sidecar edits case-insensitively to exact
+      Catalog package paths and falling back to a full plan once the shard budget is exceeded).
+    - In-memory `snapshot::Writer` buffering up to 32 MiB before spilling to a temp file, with
+      pre-write structural validation and without redundant release-mode post-write reread passes.
+    - Single-pass `.po` string decoding and per-batch project-root canonicalization during localization
+      import.
+
+    On a project of about 780,000 packages (about 10,800 text-bearing packages), cold Game Text
+    preparation drops from about 41.5 s to 13.2 s (3.1× faster) with bit-exact output parity.
+
+- a52dfe7: A Project Index refresh told nothing about what changed (a host that starts cold, or one whose
+  file watcher missed a source control sync) no longer walks the whole project on Windows. Each
+  generation now records the NTFS change journal position its content was listed at, and the next
+  such refresh reads the journal, without administrator rights, for the content directories that
+  changed since, then lists and compares only those, with the same result, change report and
+  `inventoryDigest` as a walk. On a project of about 800,000 packages an unchanged refresh drops from
+  about 1 s and 150 MB to about 30 ms and 24 MB, and a one-file edit from about 1.3 s to about 40 ms.
+  It walks as before when the journal cannot say: another platform or file system, a journal that was
+  replaced or has wrapped, a directory renamed, moved or deleted below a content root, a changed
+  content root, or more than 4,096 changed directories; `walked_because` says why. The cache format
+  is unchanged.
+- Project Index builds and refreshes stream snapshots directly, move string interning onto header
+  workers, and share paths and signatures through a compact arena (`SignatureArena`) and slim
+  `HeaderIndex` tables. Persistent refresh sessions reuse verified snapshot state across calls, and
+  the retired SQLite Catalog oracle is replaced by an in-memory differential test (dropping the
+  `rusqlite` native dependency).
+- acd93eb: Project Index queries no longer decode the whole inventory before their first page. The snapshot's
+  row index now records a checksum for each 128-row chunk of the inventory and lists the map rows, so
+  a query decodes only the chunks its cursor and its matches fall in: on a project of about 800,000
+  packages the first inventory or map page drops from about 120 ms to under 10 ms, and the first
+  class or name page from about 160 ms to 30–45 ms, with a fraction of the memory. A refresh keeps
+  each directory's path once instead of every file's whole path, which takes about 50 MB off an
+  unchanged refresh of the same project. One-shot native workers and the Project Index refresh
+  worker start with the allocator returning freed memory at once (`MIMALLOC_PURGE_DELAY=0`) unless the
+  environment already sets it, which lowers a full build's peak memory by about a third. The cache
+  moves to `catalogs-v10`; the first refresh rebuilds it.
+- Faster saved-package decoding in `uasset-parser` and `uasset-inspection` with unchanged output:
+  container struct replay, reusable decode session tables (honoring dynamic schema providers and
+  per-decode omission policy), optional filtered record omission, zero-allocation property tag
+  fast-skip, lean `EdGraphPin` decoding, and in-place package path normalization. On large Blueprint
+  and level packages this cuts allocated bytes by about 31%, peak live memory by about 20%, and
+  decode time by about 16%.
+
 ## 0.32.0
 
 ### Minor Changes

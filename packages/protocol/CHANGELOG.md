@@ -1,5 +1,51 @@
 # @ue-shed/protocol
 
+## 0.33.0
+
+### Minor Changes
+
+- a565b73: A one-file edit no longer rewrites the whole Project Index. A small refresh writes a delta of the
+  entries it changed over the committed snapshot, and compacts into a new snapshot once the delta
+  grows past 16,384 entries or 5% of the index. A refresh target can name the files a watcher saw
+  change (`changedPaths`, uasset-io v1.26): the refresh then looks only at those files and their
+  sidecars instead of walking the project, with the same result, and walks anyway when the paths
+  alone could miss a change. A complete summary carries `inventoryDigest`, a SHA-256 of every
+  inventory fact, so a host can tell whether the inventory changed without paging through it.
+  Refreshes run in a worker session of their own that stays warm between edits. The cache moves to
+  `catalogs-v9`; the first refresh rebuilds it.
+- f5c9c09: Project Index queries can ask for less. uasset-io v1.27 adds a `union` query that pages the
+  packages any of up to 16 header filters matches, each once, in path order, and lets header queries
+  name the `fields` their items carry (`classes`, `serializedNames`, `matchedSerializedNames`,
+  `headerData`). `@ue-shed/unreal-assets` adds `ProjectIndexQuery.cases.Union` and an optional
+  `fields` on header queries; a field a query leaves out is empty in its items. On a worker older
+  than v1.27 a header query with `fields` reads every field and the adapter leaves out the rest; a
+  union fails as `ProjectIndexIncompatibleWorker`. Header items in v1.27 pages may omit `classes` and
+  `serializedNames`.
+
+    Every query page also decodes faster: the host validates a dictionary page frame in one walk and
+    expands it in one pass instead of two schema walks, and the worker decodes a page's record blocks
+    on several threads. On a project of about 800,000 packages a five-filter sweep drops from about
+    410 ms to 210 ms with the same frames; as one union with only classes and matched names it takes
+    about 170 ms, sends 6.8 MB instead of 17.1 MB and holds about 90 MiB less Node memory.
+
+### Patch Changes
+
+- Faster Game Text scanning, snapshot publication, delta planning, and localization import with
+  unchanged output and `UESHT004` format compatibility:
+    - Parallelized `extract_text_packages` and `join` with heaviest-first shard staging, streaming
+      package-text extraction, surrogate-preserving `join.meta` decoding, and O(1) warm-open witness
+      reuse.
+    - Bounded Catalog change log (`changes.json`) and delta shard planning (`try_plan_delta`) that
+      rekeys only affected shards (up to 32 shards, resolving sidecar edits case-insensitively to exact
+      Catalog package paths and falling back to a full plan once the shard budget is exceeded).
+    - In-memory `snapshot::Writer` buffering up to 32 MiB before spilling to a temp file, with
+      pre-write structural validation and without redundant release-mode post-write reread passes.
+    - Single-pass `.po` string decoding and per-batch project-root canonicalization during localization
+      import.
+
+    On a project of about 780,000 packages (about 10,800 text-bearing packages), cold Game Text
+    preparation drops from about 41.5 s to 13.2 s (3.1× faster) with bit-exact output parity.
+
 ## 0.32.0
 
 ### Minor Changes

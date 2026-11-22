@@ -258,7 +258,12 @@ struct PlanCatalogView<'a> {
 impl game_text_index::package_text_plan::PlanCatalog for PlanCatalogView<'_> {
     fn changes_since(&mut self, since: &str) -> Option<std::collections::BTreeSet<String>> {
         self.catalog
-            .changes_since(&self.project_id, self.generation, since)
+            .changes_since(
+                &self.project_id,
+                self.generation,
+                since,
+                Some(game_text_index::package_text_plan::MAXIMUM_DELTA_SHARDS),
+            )
             .ok()
             .flatten()
     }

@@ -5356,16 +5356,19 @@ impl BinaryCatalog {
 
     /// The package paths added, changed, removed, or affected by a sidecar change after the
     /// generation whose inventory digest was `since`, up to the committed generation; `None` when
-    /// the Catalog's change log cannot say exactly.
+    /// the Catalog's change log cannot say exactly or when `max_shards` is exceeded.
     ///
     /// Changed or removed sidecars are resolved against the committed generation to every live
     /// package sharing their exact stem (regardless of package extension casing), rather than
-    /// guessing lowercase `.uasset`/`.umap` paths.
+    /// guessing lowercase `.uasset`/`.umap` paths. When `max_shards` is set, resolution stops as
+    /// soon as the known package paths exceed that shard budget, skipping sidecar chunk reads on
+    /// broad refreshes that would fall back to a full inventory scan anyway.
     pub(crate) fn changes_since(
         &self,
         project_id: &ProjectId,
         expected_generation: Generation,
         since: &str,
+        max_shards: Option<usize>,
     ) -> Result<Option<std::collections::BTreeSet<String>>, CatalogError> {
         let manifest = require_manifest(&self.manifest, &self.project_id, project_id)?;
         let generation = Generation::new(manifest.summary.generation);
@@ -5380,6 +5383,21 @@ impl BinaryCatalog {
         }) else {
             return Ok(None);
         };
+        let mut shard_mask = [0u64; 4];
+        let mut shard_count = 0usize;
+        let mut within_budget = |path: &str| -> bool {
+            let Some(limit) = max_shards else {
+                return true;
+            };
+            let group = game_text_index::package_text_plan::shard(path);
+            let word = &mut shard_mask[group >> 6];
+            let bit = 1u64 << (group & 63);
+            if *word & bit == 0 {
+                *word |= bit;
+                shard_count += 1;
+            }
+            shard_count <= limit
+        };
         let mut resolved = std::collections::BTreeSet::new();
         let mut sidecar_stems = std::collections::BTreeSet::new();
         for raw_path in raw_changes {
@@ -5391,10 +5409,14 @@ impl BinaryCatalog {
             {
                 sidecar_stems.insert(stem.to_owned());
             } else {
+                if !within_budget(&path) {
+                    return Ok(None);
+                }
                 resolved.insert(path);
             }
         }
         if !sidecar_stems.is_empty() {
+            let mut exceeded = false;
             let lookup = (|| {
                 self.load()?;
                 let cached = self.committed.borrow();
@@ -5402,12 +5424,21 @@ impl BinaryCatalog {
                     .as_ref()
                     .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
                 for stem in &sidecar_stems {
-                    resolved.extend(committed.live_packages_with_stem(stem)?);
+                    for path in committed.live_packages_with_stem(stem)? {
+                        if !within_budget(&path) {
+                            exceeded = true;
+                            return Ok(());
+                        }
+                        resolved.insert(path);
+                    }
                 }
                 Ok::<(), CatalogError>(())
             })();
             self.release_rows();
             lookup?;
+            if exceeded {
+                return Ok(None);
+            }
         }
         Ok(Some(resolved))
     }
@@ -7690,7 +7721,9 @@ mod tests {
                 .map(|entry| (entry.path.as_str(), entry))
                 .collect::<std::collections::BTreeMap<_, _>>();
             for catalog in catalogs {
-                let changes = catalog.changes_since(&project, current, since).unwrap();
+                let changes = catalog
+                    .changes_since(&project, current, since, None)
+                    .unwrap();
                 if back == 0 && digest.is_some() {
                     assert!(changes.is_some(), "generation {generation}");
                 }
@@ -8400,7 +8433,12 @@ mod tests {
         impl game_text_index::package_text_plan::PlanCatalog for DirectPlanCatalog<'_> {
             fn changes_since(&mut self, since: &str) -> Option<BTreeSet<String>> {
                 self.catalog
-                    .changes_since(&self.project, self.generation, since)
+                    .changes_since(
+                        &self.project,
+                        self.generation,
+                        since,
+                        Some(game_text_index::package_text_plan::MAXIMUM_DELTA_SHARDS),
+                    )
                     .ok()
                     .flatten()
             }
@@ -8610,12 +8648,24 @@ mod tests {
         assert_ne!(digest1, digest2);
 
         let resolved = catalog
-            .changes_since(&project, gen2, &digest1)
+            .changes_since(
+                &project,
+                gen2,
+                &digest1,
+                Some(game_text_index::package_text_plan::MAXIMUM_DELTA_SHARDS),
+            )
             .unwrap()
             .unwrap();
         assert_eq!(
             resolved,
             BTreeSet::from(["Content/A.UASSET".to_owned(), "Content/B.UMap".to_owned()])
+        );
+        // Exceeding `max_shards` during sidecar resolution returns `None` early.
+        assert_eq!(
+            catalog
+                .changes_since(&project, gen2, &digest1, Some(1))
+                .unwrap(),
+            None
         );
 
         let delta_plan_file = store_root.join("plan-2-delta.bin");

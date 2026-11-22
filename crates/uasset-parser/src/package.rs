@@ -590,7 +590,10 @@ fn resolve_package_paths(
                         "export class index did not resolve to an object path",
                     )
                 })?;
-                Some(normalize_object_path(class_path.clone()))
+                // Copy the normalized text once instead of cloning, then normalizing, the path.
+                Some(ObjectPath::from_str_ref(normalized_object_path(
+                    class_path.as_str(),
+                )))
             }
         };
         export_class_paths.push(class_path);
@@ -1343,12 +1346,14 @@ fn read_name_map<'a, T>(
     })?;
     let capacity = reader.checked_vec_capacity::<String>(count, 4, "Names.Count")?;
     let mut names = Vec::with_capacity(capacity);
+    let has_hashes = summary.versions.is_at_least_ue4(UE4_NAME_HASHES_SERIALIZED);
 
     for index in 0..count {
+        // ASCII names borrow the source until `keep` copies them once, at their exact length.
         names.push(keep(
             reader.read_fstring_cow(&format_args!("Names[{index}]"))?,
         ));
-        if summary.versions.is_at_least_ue4(UE4_NAME_HASHES_SERIALIZED) {
+        if has_hashes {
             reader.skip(4, &format_args!("Names[{index}].Hashes"))?;
         }
     }
@@ -1694,14 +1699,13 @@ fn normalize_object_path(path: ObjectPath) -> ObjectPath {
     ObjectPath(normalize_object_path_string(path.0))
 }
 
-/// [`normalize_object_path`] over an owned string, reusing it when nothing is stripped.
-pub(crate) fn normalize_object_path_string(path: String) -> String {
-    let normalized = normalized_object_path(&path);
-    if normalized.len() == path.len() {
-        path
-    } else {
-        normalized.to_owned()
+/// [`normalize_object_path`] over an owned string, stripping any prefix in place.
+pub(crate) fn normalize_object_path_string(mut path: String) -> String {
+    let stripped = path.len() - normalized_object_path(&path).len();
+    if stripped != 0 {
+        path.replace_range(..stripped, "");
     }
+    path
 }
 
 fn join_object_path(outer: &str, name: &str) -> ObjectPath {
@@ -2631,6 +2635,81 @@ mod tests {
         assert_eq!(
             normalize_object_path(ObjectPath::new("None./Game/Maps/L_Example.Actor")),
             ObjectPath::new("/Game/Maps/L_Example.Actor")
+        );
+        for unchanged in ["", "/None", "None", "/Game/None.Actor", "/NoneX.Actor"] {
+            assert_eq!(
+                normalize_object_path_string(unchanged.to_owned()),
+                unchanged
+            );
+        }
+        // A stripped prefix is removed in place, keeping the string's buffer.
+        let path = String::from("/None./Game/Maps/L_Example.Actor");
+        let buffer = path.as_ptr();
+        let normalized = normalize_object_path_string(path);
+        assert_eq!(normalized, "/Game/Maps/L_Example.Actor");
+        assert_eq!(normalized.as_ptr(), buffer);
+    }
+
+    /// Children are joined to their outer's unnormalized path and normalized once at the end;
+    /// export classes copy their class's normalized path.
+    #[test]
+    fn resolved_paths_and_export_classes_normalize_none_prefixes_once() {
+        let names: Vec<String> = ["None", "Obj", "/Script/Engine", "Class", "Child"]
+            .map(str::to_owned)
+            .to_vec();
+        let name = |index| crate::test_support::name_ref(index, 0);
+        let import = |object_name, package_name, outer_index| Import {
+            outer_index,
+            ..test_import("", "", object_name, package_name)
+        };
+        let imports = vec![
+            import(0, None, PackageIndex::Null),
+            import(2, None, PackageIndex::Null),
+            import(3, None, PackageIndex::Import(1)),
+            import(1, Some(0), PackageIndex::Null),
+            import(4, None, PackageIndex::Import(3)),
+        ];
+        let export = |object_name, class_index, outer_index| Export {
+            object_name: name(object_name),
+            class_index,
+            outer_index,
+            ..test_export(1, "", "")
+        };
+        let exports = vec![
+            export(1, PackageIndex::Import(2), PackageIndex::Null),
+            export(4, PackageIndex::Import(4), PackageIndex::Import(3)),
+            export(1, PackageIndex::Import(3), PackageIndex::Export(1)),
+            export(4, PackageIndex::Null, PackageIndex::Import(0)),
+        ];
+        let resolved = resolve_package_paths("/Game/Test", &names, &imports, &exports).unwrap();
+        let normalized = |paths: Vec<ObjectPath>| {
+            paths
+                .into_iter()
+                .map(|path| normalize_object_path(path).into_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            normalized(resolved.imports),
+            [
+                "",
+                "/Script/Engine",
+                "/Script/Engine.Class",
+                "Obj",
+                "Obj.Child"
+            ]
+        );
+        assert_eq!(
+            normalized(resolved.exports),
+            ["/Game/Test.Obj", "Obj.Child", "Obj.Child.Obj", ".Child"]
+        );
+        assert_eq!(
+            resolved.export_classes,
+            [
+                Some(ObjectPath::new("/Script/Engine.Class")),
+                Some(ObjectPath::new("Obj.Child")),
+                Some(ObjectPath::new("Obj")),
+                None,
+            ]
         );
     }
 

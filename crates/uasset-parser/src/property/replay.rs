@@ -17,6 +17,8 @@ struct Tag<'a> {
     expected: &'a [u8],
     flags_offset: usize,
     plan: crate::codec::ReplayDecodePlan,
+    /// This tag's record in the learned stream; `None` for a tag learned without a record.
+    record: Option<usize>,
 }
 
 pub(crate) struct TaggedStreamReplay<'a> {
@@ -26,6 +28,9 @@ pub(crate) struct TaggedStreamReplay<'a> {
     terminator: Range<usize>,
     prefix_len: usize,
     stream: PropertyStream,
+    /// Some tags were learned without records. Such a layout can only replay decodes that omit
+    /// declined records, as its tags' records could not be built.
+    has_skipped: bool,
     plan_package: Option<&'a crate::package::Package>,
     /// The host filter every replayed record is decoded under, fixed for the replay's life.
     plan_filter: Option<&'a dyn crate::asset::PropertyDecodeFilter>,
@@ -35,15 +40,32 @@ pub(crate) struct TaggedStreamReplay<'a> {
 }
 
 impl<'a> TaggedStreamReplay<'a> {
-    /// Capture an undecoded, successfully parsed struct/row stream. Its package, names and
-    /// version must stay borrowed for the replay's lifetime; values are decoded on every use.
+    /// [`TaggedStreamReplay::with_skipped`] for a stream read with no tags skipped.
+    #[cfg(test)]
     pub(crate) fn new(
         source: &'a [u8],
         start: u64,
         versions: &VersionContext,
         stream: &PropertyStream,
     ) -> Option<Self> {
-        if versions.uses_legacy_property_tags() || stream.records.len() > MAX_HEADER_BYTES / 12 {
+        Self::with_skipped(source, start, versions, stream, &[])
+    }
+
+    /// Capture an undecoded, successfully parsed struct/row stream. Its package, names and
+    /// version must stay borrowed for the replay's lifetime; values are decoded on every use.
+    ///
+    /// `skipped` holds the tags the read stepped over without records, in stream order. Each
+    /// joins the layout as a header the decode filter declines: it is checked on every match
+    /// and never built, and such a layout replays only decodes that omit declined records.
+    pub(crate) fn with_skipped(
+        source: &'a [u8],
+        start: u64,
+        versions: &VersionContext,
+        stream: &PropertyStream,
+        skipped: &[super::SkippedTag],
+    ) -> Option<Self> {
+        let tag_count = stream.records.len().checked_add(skipped.len())?;
+        if versions.uses_legacy_property_tags() || tag_count > MAX_HEADER_BYTES / 12 {
             return None;
         }
         let bytes = source
@@ -54,35 +76,65 @@ impl<'a> TaggedStreamReplay<'a> {
             1 + usize::from(extensions.overridable_operation.is_some())
         });
         let mut header_bytes = terminator.len().checked_add(prefix_len)?;
-        let mut tags = Vec::with_capacity(stream.records.len());
+        let mut tags = Vec::with_capacity(tag_count);
         let mut position = prefix_len;
-        for record in &stream.records {
-            if !matches!(
-                record.value,
-                PropertyValue::Raw {
-                    reason: RawReason::UnsupportedType
+        let mut records = stream.records.iter().enumerate().peekable();
+        let mut skipped = skipped.iter().peekable();
+        loop {
+            // Both lists are in stream order; the next tag is whichever payload comes first.
+            let take_skipped = match (records.peek(), skipped.peek()) {
+                (None, None) => break,
+                (Some(_), None) => false,
+                (None, Some(_)) => true,
+                (Some((_, record)), Some(tag)) => tag.payload.offset() < record.payload.offset(),
+            };
+            let (payload, flags_offset, flags, record) = if take_skipped {
+                let tag = skipped.next()?;
+                if relative(tag.start)? != position {
+                    return None;
                 }
-            ) {
-                return None;
-            }
-            let range = position..relative(record.payload.offset())?;
+                (
+                    tag.payload,
+                    usize::try_from(tag.flags_offset).ok()?,
+                    tag.flags,
+                    None,
+                )
+            } else {
+                let (index, record) = records.next()?;
+                if !matches!(
+                    record.value,
+                    PropertyValue::Raw {
+                        reason: RawReason::UnsupportedType
+                    }
+                ) {
+                    return None;
+                }
+                // Name (8 bytes), complete type tree, payload size (4 bytes), then flags.
+                let flags_offset = 12_usize.checked_add(type_bytes(&record.type_name)?)?;
+                (record.payload, flags_offset, record.flags.0, Some(index))
+            };
+            let range = position..relative(payload.offset())?;
             let expected = bytes.get(range.clone())?;
             header_bytes = header_bytes.checked_add(expected.len())?;
             if header_bytes > MAX_HEADER_BYTES {
                 return None;
             }
-            // Name (8 bytes), complete type tree, payload size (4 bytes), then flags.
-            let flags_offset = 12_usize.checked_add(type_bytes(&record.type_name)?)?;
-            if *expected.get(flags_offset)? != record.flags.0 {
+            if *expected.get(flags_offset)? != flags {
                 return None;
             }
             tags.push(Tag {
                 range,
                 expected,
                 flags_offset,
-                plan: crate::codec::ReplayDecodePlan::Ordinary,
+                // A skipped tag's filter answer is fixed by its header, which every match repeats.
+                plan: if record.is_some() {
+                    crate::codec::ReplayDecodePlan::Ordinary
+                } else {
+                    crate::codec::ReplayDecodePlan::NotRequested
+                },
+                record,
             });
-            position = relative(record.payload.end())?;
+            position = relative(payload.end())?;
         }
         if position != terminator.start {
             return None;
@@ -94,6 +146,7 @@ impl<'a> TaggedStreamReplay<'a> {
             terminator,
             prefix_len,
             stream: stream.clone(),
+            has_skipped: tag_count != stream.records.len(),
             plan_package: None,
             plan_filter: None,
             plans_ready: false,
@@ -118,7 +171,12 @@ impl<'a> TaggedStreamReplay<'a> {
     fn prepare_plans(&mut self) {
         if !self.plans_ready {
             if let Some(package) = self.plan_package {
-                for (tag, record) in self.tags.iter_mut().zip(&self.stream.records) {
+                for tag in &mut self.tags {
+                    // A tag learned without a record keeps its `NotRequested` plan.
+                    let Some(record) = tag.record.and_then(|index| self.stream.records.get(index))
+                    else {
+                        continue;
+                    };
                     tag.plan = crate::codec::ReplayDecodePlan::prepare_filtered(
                         package,
                         record,
@@ -175,7 +233,9 @@ impl<'a> TaggedStreamReplay<'a> {
             crate::codec::ReplayDecodePlan,
         ) -> Result<(), E>,
     ) -> Option<Result<PropertyStream, E>> {
-        if u64::try_from(self.bytes.len()).ok()? > reader.remaining() {
+        if (self.has_skipped && !omit_unrequested)
+            || u64::try_from(self.bytes.len()).ok()? > reader.remaining()
+        {
             return None;
         }
         let start = reader.tell();
@@ -231,11 +291,12 @@ impl<'a> TaggedStreamReplay<'a> {
             self.tags.len()
         };
         let mut records = Vec::with_capacity(capacity);
-        for (record, tag) in self.stream.records.iter().zip(&self.tags) {
+        for tag in &self.tags {
             // Declined headers were validated above; their records are never built when omitting.
             if Self::omits(omit_unrequested, tag.plan) {
                 continue;
             }
+            let record = self.stream.records.get(tag.record?)?;
             let record = super::PropertyRecord {
                 name: record.name,
                 type_name: record.type_name.clone(),
@@ -319,6 +380,9 @@ impl<'a> TaggedStreamReplay<'a> {
         reader: &mut Reader<'_>,
         path: &(impl fmt::Display + ?Sized),
     ) -> Option<PropertyStream> {
+        if self.has_skipped {
+            return None;
+        }
         let mut spans = vec![(Span::default(), 0_u8); self.tags.len()];
         let (probe, terminator) = self.match_variable(reader, path, &mut spans)?;
         let records = self
@@ -360,6 +424,9 @@ impl<'a> TaggedStreamReplay<'a> {
             crate::codec::ReplayDecodePlan,
         ) -> Result<(), E>,
     ) -> Option<Result<PropertyStream, E>> {
+        if self.has_skipped && !omit_unrequested {
+            return None;
+        }
         // Small layouts, nearly all of them, keep their spans on the stack.
         const STACK_TAGS: usize = 64;
         let count = self.tags.len();
@@ -383,12 +450,11 @@ impl<'a> TaggedStreamReplay<'a> {
             self.tags.len()
         };
         let mut records = Vec::with_capacity(capacity);
-        for ((original, tag), &(payload, flags)) in
-            self.stream.records.iter().zip(&self.tags).zip(spans.iter())
-        {
+        for (tag, &(payload, flags)) in self.tags.iter().zip(spans.iter()) {
             if Self::omits(omit_unrequested, tag.plan) {
                 continue;
             }
+            let original = self.stream.records.get(tag.record?)?;
             records.push(super::PropertyRecord {
                 name: original.name,
                 type_name: original.type_name.clone(),
@@ -733,6 +799,89 @@ mod variable_replay_tests {
                 let b = decode_property_stream_values(&bytes, expected, &package);
                 assert_eq!(format!("{a:?}|{actual:?}"), format!("{b:?}|{expected:?}"));
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod skipped_replay_tests {
+    use super::*;
+    use crate::archive::NameRef;
+    use crate::codec::ReplayDecodePlan;
+    use crate::property::{
+        PropertyError, PropertyRecord, SkippedTag, TagSkip, read_tagged_property_stream_with,
+    };
+    use crate::test_support::ue5_versions;
+
+    /// Skips the `Count` and `Enabled` scalars of the shared test rows (type names 2 and 4).
+    struct SkipScalars;
+
+    impl TagSkip for SkipScalars {
+        const ACTIVE: bool = true;
+
+        fn skips(&self, _name: NameRef, top_type: NameRef) -> bool {
+            matches!(top_type.index().get(), 2 | 4)
+        }
+    }
+
+    fn keep(_: &mut PropertyRecord, _: ReplayDecodePlan) -> Result<(), PropertyError> {
+        Ok(())
+    }
+
+    fn read_skipping(
+        bytes: &[u8],
+        start: u64,
+        skipped: &mut Vec<SkippedTag>,
+    ) -> (PropertyStream, u64) {
+        let mut reader = Reader::new(bytes);
+        reader.seek(start, "Row").unwrap();
+        let stream = read_tagged_property_stream_with(
+            &mut reader,
+            &ue5_versions(),
+            &super::tests::names(),
+            "Row",
+            &SkipScalars,
+            Some(skipped),
+        )
+        .unwrap();
+        (stream, reader.tell())
+    }
+
+    #[test]
+    fn layouts_learned_with_skipped_tags_replay_only_omitting_decodes() {
+        let first = super::tests::row(42, false, &[1, 2]);
+        let same_width = super::tests::row(7, true, &[-1, 99]);
+        let wider = super::tests::row(9, false, &[3, 4, 5]);
+        let mut renamed = super::tests::row(8, false, &[6, 7]);
+        renamed[0] = 3; // `Count` is now named `Enabled`: a skipped header changed.
+        let rows = [&first, &same_width, &wider, &renamed];
+        let bytes: Vec<u8> = rows.iter().flat_map(|row| row.iter().copied()).collect();
+        let mut skipped = Vec::new();
+        let (initial, _) = read_skipping(&bytes, 0, &mut skipped);
+        assert_eq!((initial.records.len(), skipped.len()), (1, 2));
+        let mut replays = vec![
+            TaggedStreamReplay::with_skipped(&bytes, 0, &ue5_versions(), &initial, &skipped)
+                .unwrap(),
+        ];
+
+        let mut start = first.len() as u64;
+        // A changed skipped header must miss like any other header change.
+        for (row, matches) in [(&same_width, true), (&wider, true), (&renamed, false)] {
+            let mut reader = Reader::new(&bytes);
+            reader.seek(start, "Row").unwrap();
+            // Records for skipped tags cannot be built, so a decode keeping them misses.
+            assert!(read_with_any(&mut replays, &mut reader, "Row", false, keep).is_none());
+            assert_eq!(reader.tell(), start);
+            let (expected, end) = read_skipping(&bytes, start, &mut Vec::new());
+            let replayed = read_with_any(&mut replays, &mut reader, "Row", true, keep);
+            assert_eq!(replayed.is_some(), matches);
+            if let Some((_, stream)) = replayed {
+                assert_eq!(stream.unwrap(), expected);
+                assert_eq!(reader.tell(), end);
+            } else {
+                assert_eq!(reader.tell(), start);
+            }
+            start += row.len() as u64;
         }
     }
 }

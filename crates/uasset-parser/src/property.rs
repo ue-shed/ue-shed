@@ -475,6 +475,65 @@ pub fn read_uobject_tagged_property_stream(
     Ok(stream)
 }
 
+/// [`read_uobject_tagged_property_stream`] that steps over the tags `tags` skips; see
+/// [`read_tagged_property_stream_with`].
+pub(crate) fn read_uobject_tagged_property_stream_with<T: TagSkip>(
+    reader: &mut Reader<'_>,
+    versions: &VersionContext,
+    names: &[String],
+    path: &(impl fmt::Display + ?Sized),
+    tags: &T,
+    skipped: Option<&mut Vec<SkippedTag>>,
+) -> Result<PropertyStream, PropertyError> {
+    validate_tagged_property_versions(versions, reader.tell(), path)?;
+    let class_extensions = versions
+        .is_at_least_ue5(UE5_PROPERTY_TAG_EXTENSION_AND_OVERRIDABLE_SERIALIZATION)
+        .then(|| {
+            read_class_serialization_control_extensions(
+                reader,
+                &format_args!("{path}.SerializationControlExtensions"),
+            )
+        })
+        .transpose()?;
+    let mut stream =
+        read_tagged_property_stream_with(reader, versions, names, path, tags, skipped)?;
+    stream.class_extensions = class_extensions;
+    Ok(stream)
+}
+
+/// Decides, from a tag's name and top-level type alone, which tags a tagged-property read
+/// validates and steps over without building a [`PropertyRecord`].
+pub(crate) trait TagSkip {
+    /// Whether any tag may be skipped. `false` compiles the skip checks away.
+    const ACTIVE: bool;
+
+    fn skips(&self, name: NameRef, top_type: NameRef) -> bool;
+}
+
+/// Builds every tag: the ordinary reader.
+pub(crate) struct KeepAllTags;
+
+impl TagSkip for KeepAllTags {
+    const ACTIVE: bool = false;
+
+    #[inline(always)]
+    fn skips(&self, _name: NameRef, _top_type: NameRef) -> bool {
+        false
+    }
+}
+
+/// The saved header of a modern tag that was validated and stepped over without a record.
+/// Replays learn from these, so later streams repeating the header match without building it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SkippedTag {
+    /// Absolute offset of the tag's name.
+    pub(crate) start: u64,
+    /// Offset of the flags byte from `start`.
+    pub(crate) flags_offset: u64,
+    pub(crate) flags: u8,
+    pub(crate) payload: Span,
+}
+
 /// Parses a versioned tagged-property stream until `NAME_None`.
 ///
 /// The reader must already be bounded to the containing export or row stream.
@@ -490,6 +549,20 @@ pub fn read_tagged_property_stream(
     versions: &VersionContext,
     names: &[String],
     path: &(impl fmt::Display + ?Sized),
+) -> Result<PropertyStream, PropertyError> {
+    read_tagged_property_stream_with(reader, versions, names, path, &KeepAllTags, None)
+}
+
+/// [`read_tagged_property_stream`] that validates every tag `tags` skips exactly as the
+/// ordinary reader does, with the same errors in the same order, and steps over its payload
+/// without building a record or its type tree. Modern skipped tags are appended to `skipped`.
+pub(crate) fn read_tagged_property_stream_with<T: TagSkip>(
+    reader: &mut Reader<'_>,
+    versions: &VersionContext,
+    names: &[String],
+    path: &(impl fmt::Display + ?Sized),
+    tags: &T,
+    mut skipped: Option<&mut Vec<SkippedTag>>,
 ) -> Result<PropertyStream, PropertyError> {
     validate_tagged_property_versions(versions, reader.tell(), path)?;
     let legacy = versions.uses_legacy_property_tags();
@@ -512,15 +585,32 @@ pub fn read_tagged_property_stream(
             });
         }
 
+        // Both tag forms store the top-level type name next. An unreadable one is never
+        // skipped, so the ordinary reader reports it.
+        let skip = T::ACTIVE
+            && reader
+                .peek_name_ref()
+                .is_some_and(|ty| tags.skips(name, ty));
+
         // UE 4.27/5.0/5.3 PropertyTag.cpp; UE 5.7 LoadPropertyTagNoFullType,
         // PROPERTY_TAG_COMPLETE_TYPE_NAME (1012).
         if legacy {
-            records.push(read_legacy_property_tag(
-                reader, versions, names, name, path,
-            )?);
+            let record = read_legacy_property_tag_impl(reader, versions, names, name, path, !skip)?;
+            if !skip {
+                records.push(record);
+            }
             continue;
         }
-        let type_name = read_property_type_name(reader, names, &format_args!("{path}.Tag.Type"))?;
+        let type_name = if skip {
+            skip_property_type_name(reader, names, &format_args!("{path}.Tag.Type"))?;
+            None
+        } else {
+            Some(read_property_type_name(
+                reader,
+                names,
+                &format_args!("{path}.Tag.Type"),
+            )?)
+        };
         let size_offset = reader.tell();
         let size = reader.read_i32(&format_args!("{path}.Tag.Size"))?;
         if size < 0 {
@@ -554,6 +644,18 @@ pub fn read_tagged_property_stream(
 
         let payload = Span::new(reader.tell(), payload_size)?;
         reader.skip(payload_size, &format_args!("{path}.Tag.Payload"))?;
+        let Some(type_name) = type_name else {
+            if let Some(skipped) = skipped.as_deref_mut() {
+                skipped.push(SkippedTag {
+                    start: tag_start,
+                    // The name, the type tree and the 4-byte size precede the flags byte.
+                    flags_offset: size_offset + 4 - tag_start,
+                    flags: flags.0,
+                    payload,
+                });
+            }
+            continue;
+        };
         records.push(PropertyRecord {
             name,
             type_name,
@@ -596,6 +698,19 @@ pub(crate) fn read_legacy_property_tag(
     name: NameRef,
     path: &(impl fmt::Display + ?Sized),
 ) -> Result<PropertyRecord, PropertyError> {
+    read_legacy_property_tag_impl(reader, versions, names, name, path, true)
+}
+
+/// Reads a legacy tag. Without `keep_type_parameters` every field is still read and validated,
+/// but type parameters are not collected, so a tag the caller discards allocates nothing.
+fn read_legacy_property_tag_impl(
+    reader: &mut Reader<'_>,
+    versions: &VersionContext,
+    names: &[String],
+    name: NameRef,
+    path: &(impl fmt::Display + ?Sized),
+    keep_type_parameters: bool,
+) -> Result<PropertyRecord, PropertyError> {
     validate_name_ref(names, name, &format_args!("{path}.Tag.Name"))?;
     let type_ref = reader.read_name_ref(&format_args!("{path}.Tag.Type"))?;
     validate_name_ref(names, type_ref, path)?;
@@ -630,11 +745,12 @@ pub(crate) fn read_legacy_property_tag(
             if type_text != "StructProperty" {
                 validate_name_ref(names, parameter, path)?;
             }
-            if type_text != "ByteProperty"
-                || parameter.number() != 0
-                || names
-                    .get(parameter.index().get() as usize)
-                    .is_none_or(|name| name != "None")
+            if keep_type_parameters
+                && (type_text != "ByteProperty"
+                    || parameter.number() != 0
+                    || names
+                        .get(parameter.index().get() as usize)
+                        .is_none_or(|name| name != "None"))
             {
                 type_name.parameters.push(PropertyTypeName {
                     name: parameter,
@@ -778,6 +894,67 @@ fn read_property_type_name_at_depth(
         )?);
     }
     Ok(PropertyTypeName { name, parameters })
+}
+
+/// Validates and steps over a type tree exactly as [`read_property_type_name`] reads it, with the
+/// same depth, count, budget and name checks and the same errors, without building it.
+fn skip_property_type_name(
+    reader: &mut Reader<'_>,
+    names: &[String],
+    path: &(impl fmt::Display + ?Sized),
+) -> Result<(), PropertyError> {
+    skip_property_type_name_at_depth(reader, names, path, 0)
+}
+
+fn skip_property_type_name_at_depth(
+    reader: &mut Reader<'_>,
+    names: &[String],
+    path: &(impl fmt::Display + ?Sized),
+    depth: usize,
+) -> Result<(), PropertyError> {
+    if depth >= MAX_PROPERTY_TYPE_DEPTH {
+        return Err(PropertyError::new(
+            PropertyErrorKind::MalformedData,
+            Some(reader.tell()),
+            path.to_string(),
+            format!("property type-name nesting exceeds depth limit {MAX_PROPERTY_TYPE_DEPTH}"),
+        ));
+    }
+    let inner_count = if let Some((_, inner_count)) = reader.try_read_type_header(names.len()) {
+        if inner_count == 0 {
+            return Ok(());
+        }
+        inner_count
+    } else {
+        let name = reader.read_name_ref(&format_args!("{path}.Name"))?;
+        validate_name_ref(names, name, &format_args!("{path}.Name"))?;
+        let inner_count_offset = reader.tell();
+        let inner_count = reader.read_i32(&format_args!("{path}.InnerCount"))?;
+        if inner_count < 0 {
+            return Err(PropertyError::new(
+                PropertyErrorKind::MalformedData,
+                Some(inner_count_offset),
+                format!("{path}.InnerCount"),
+                format!("type-name inner count must be non-negative, got {inner_count}"),
+            ));
+        }
+        crate::convert::usize_from_checked(inner_count)
+    };
+    // The budget check the reader applies before reserving the parameter vector.
+    reader.checked_vec_capacity::<PropertyTypeName>(
+        inner_count,
+        12,
+        &format_args!("{path}.InnerCount"),
+    )?;
+    for index in 0..inner_count {
+        skip_property_type_name_at_depth(
+            reader,
+            names,
+            &format_args!("{path}.Parameters[{index}]"),
+            depth + 1,
+        )?;
+    }
+    Ok(())
 }
 
 fn read_property_extensions(
@@ -1487,6 +1664,7 @@ mod type_prefix_tests {
         let names = ["None", "IntProperty", "ArrayProperty"]
             .map(str::to_owned)
             .to_vec();
+        let mut skipped = actual.clone();
         let a = read_property_type_name_at_depth(&mut actual, &names, "Type", depth);
         let b = read_property_type_name_reference(&mut expected, &names, "Type", depth);
         assert_eq!(
@@ -1495,6 +1673,14 @@ mod type_prefix_tests {
             "wire={wire:02x?} offset={offset} length={length} depth={depth}"
         );
         assert_eq!(actual.tell(), expected.tell());
+        // Skipping validates exactly as reading does: same error, or success at the same cursor.
+        let s = skip_property_type_name_at_depth(&mut skipped, &names, "Type", depth);
+        assert_eq!(
+            format!("{:?}", s.err()),
+            format!("{:?}", b.err()),
+            "skip: wire={wire:02x?} offset={offset} length={length} depth={depth}"
+        );
+        assert_eq!(skipped.tell(), expected.tell());
     }
 
     #[test]
@@ -1544,6 +1730,262 @@ mod type_prefix_tests {
                 ..ArchiveLimits::default()
             };
             check(&bytes, 1, bytes.len(), 0, limits);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tag_skip_tests {
+    use super::*;
+    use crate::test_support::{
+        TypeParam, push_i32, ue5_versions, write_legacy_property_tag, write_property_tag,
+        write_property_terminator, write_type_name,
+    };
+
+    /// Skips tags whose top-level type is one of `types`.
+    struct SkipTypes<'a> {
+        names: &'a [String],
+        types: &'a [&'a str],
+    }
+
+    impl TagSkip for SkipTypes<'_> {
+        const ACTIVE: bool = true;
+
+        fn skips(&self, _name: NameRef, top_type: NameRef) -> bool {
+            top_type.number() == 0
+                && self
+                    .names
+                    .get(top_type.index().get() as usize)
+                    .is_some_and(|name| self.types.contains(&name.as_str()))
+        }
+    }
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    /// The skipping reader returns the ordinary stream without the skipped records, reports
+    /// each modern skipped header, and fails with the same error at the same cursor.
+    fn assert_skip_parity(
+        bytes: &[u8],
+        versions: &VersionContext,
+        names: &[String],
+        types: &[&str],
+        root: bool,
+    ) {
+        let tags = SkipTypes { names, types };
+        let mut full_reader = Reader::new(bytes);
+        let mut skip_reader = Reader::new(bytes);
+        let mut skipped = Vec::new();
+        let (full, lean) = if root {
+            (
+                read_uobject_tagged_property_stream(&mut full_reader, versions, names, "Object"),
+                read_uobject_tagged_property_stream_with(
+                    &mut skip_reader,
+                    versions,
+                    names,
+                    "Object",
+                    &tags,
+                    Some(&mut skipped),
+                ),
+            )
+        } else {
+            (
+                read_tagged_property_stream(&mut full_reader, versions, names, "Row"),
+                read_tagged_property_stream_with(
+                    &mut skip_reader,
+                    versions,
+                    names,
+                    "Row",
+                    &tags,
+                    Some(&mut skipped),
+                ),
+            )
+        };
+        match (full, lean) {
+            (Ok(full), Ok(lean)) => {
+                let (dropped, kept): (Vec<_>, Vec<_>) = full
+                    .records
+                    .into_iter()
+                    .partition(|record| tags.skips(record.name, record.type_name.name));
+                assert_eq!(lean.records, kept, "{bytes:02x?}");
+                assert_eq!(lean.terminator, full.terminator);
+                assert_eq!(lean.class_extensions, full.class_extensions);
+                if versions.uses_legacy_property_tags() {
+                    assert!(skipped.is_empty());
+                } else {
+                    let expected: Vec<_> = dropped
+                        .iter()
+                        .map(|record| (record.payload, record.flags.0))
+                        .collect();
+                    let actual: Vec<_> =
+                        skipped.iter().map(|tag| (tag.payload, tag.flags)).collect();
+                    assert_eq!(actual, expected);
+                    for tag in &skipped {
+                        assert_eq!(bytes[(tag.start + tag.flags_offset) as usize], tag.flags);
+                    }
+                }
+            }
+            (Err(full), Err(lean)) => {
+                assert_eq!(format!("{lean:?}"), format!("{full:?}"), "{bytes:02x?}");
+            }
+            (full, lean) => panic!("skip changed the outcome: {full:?} -> {lean:?}"),
+        }
+        assert_eq!(skip_reader.tell(), full_reader.tell());
+    }
+
+    /// Every truncation and single-byte corruption of `bytes`.
+    fn variants(bytes: &[u8]) -> Vec<Vec<u8>> {
+        let mut variants = vec![bytes.to_vec()];
+        variants.extend((0..bytes.len()).map(|length| bytes[..length].to_vec()));
+        for index in 0..bytes.len() {
+            for mask in [0x01, 0x80, 0xFF] {
+                let mut corrupt = bytes.to_vec();
+                corrupt[index] ^= mask;
+                variants.push(corrupt);
+            }
+        }
+        variants
+    }
+
+    #[test]
+    fn modern_skip_matches_the_ordinary_reader_on_valid_and_malformed_streams() {
+        let names = names(&[
+            "None",
+            "IntProperty",
+            "ArrayProperty",
+            "Value",
+            "Other",
+            "StructProperty",
+            "Vector",
+            "/Script/CoreUObject",
+            "BoolProperty",
+        ]);
+        let scalar = |type_index| TypeParam {
+            type_index,
+            parameters: Vec::new(),
+        };
+        let mut stream = Vec::new();
+        write_property_tag(&mut stream, 3, &scalar(1), 0, &7_i32.to_le_bytes());
+        // An IntProperty with every optional tag field.
+        push_i32(&mut stream, 4);
+        push_i32(&mut stream, 0);
+        write_type_name(&mut stream, &scalar(1));
+        push_i32(&mut stream, 4);
+        stream.push(
+            TAG_FLAG_HAS_ARRAY_INDEX
+                | TAG_FLAG_HAS_PROPERTY_GUID
+                | TAG_FLAG_HAS_PROPERTY_EXTENSIONS,
+        );
+        push_i32(&mut stream, 2);
+        for word in [1_i32, 2, 3, 4] {
+            push_i32(&mut stream, word);
+        }
+        stream.extend([PROPERTY_EXTENSION_OVERRIDABLE_INFORMATION, 3, 1, 0, 0, 0]);
+        stream.extend(9_i32.to_le_bytes());
+        let array = TypeParam {
+            type_index: 2,
+            parameters: vec![scalar(1)],
+        };
+        let mut payload = Vec::new();
+        push_i32(&mut payload, 1);
+        push_i32(&mut payload, 5);
+        write_property_tag(&mut stream, 4, &array, 0, &payload);
+        let vector = TypeParam {
+            type_index: 5,
+            parameters: vec![TypeParam {
+                type_index: 6,
+                parameters: vec![scalar(7)],
+            }],
+        };
+        write_property_tag(&mut stream, 3, &vector, 0, &[0; 24]);
+        write_property_tag(&mut stream, 4, &scalar(8), TAG_FLAG_BOOL_TRUE, &[]);
+        write_property_terminator(&mut stream, 0);
+        let mut root = vec![CLASS_EXTENSION_OVERRIDABLE_SERIALIZATION_INFORMATION, 4];
+        root.extend(&stream);
+
+        let versions = ue5_versions();
+        for types in [
+            &[][..],
+            &["IntProperty"],
+            &["IntProperty", "BoolProperty"],
+            &[
+                "IntProperty",
+                "ArrayProperty",
+                "StructProperty",
+                "BoolProperty",
+            ],
+        ] {
+            for bytes in variants(&stream) {
+                assert_skip_parity(&bytes, &versions, &names, types, false);
+            }
+            for bytes in variants(&root) {
+                assert_skip_parity(&bytes, &versions, &names, types, true);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_skip_matches_the_ordinary_reader_on_valid_and_malformed_streams() {
+        let names = names(&[
+            "None",
+            "Value",
+            "IntProperty",
+            "StructProperty",
+            "BoolProperty",
+            "ByteProperty",
+            "Vector",
+            "ExampleEnum",
+        ]);
+        for ue5 in [0, 1011] {
+            let versions = VersionContext {
+                ue5,
+                ..ue5_versions()
+            };
+            let suffix = |extras: &mut Vec<u8>| {
+                extras.push(1); // HasPropertyGuid
+                for word in [5_i32, 6, 7, 8] {
+                    push_i32(extras, word);
+                }
+                if ue5 == 1011 {
+                    extras.extend([PROPERTY_EXTENSION_OVERRIDABLE_INFORMATION, 2, 1, 0, 0, 0]);
+                }
+            };
+            let mut stream = Vec::new();
+            let mut extras = Vec::new();
+            suffix(&mut extras);
+            write_legacy_property_tag(&mut stream, 1, 2, &extras, &3_i32.to_le_bytes());
+            let mut extras = Vec::new();
+            push_i32(&mut extras, 6); // struct name
+            push_i32(&mut extras, 0);
+            for word in [1_i32, 2, 3, 4] {
+                push_i32(&mut extras, word); // struct GUID
+            }
+            suffix(&mut extras);
+            write_legacy_property_tag(&mut stream, 1, 3, &extras, &[0; 12]);
+            let mut extras = vec![1]; // bool value
+            suffix(&mut extras);
+            write_legacy_property_tag(&mut stream, 1, 4, &extras, &[]);
+            let mut extras = Vec::new();
+            push_i32(&mut extras, 7); // enum name
+            push_i32(&mut extras, 0);
+            suffix(&mut extras);
+            write_legacy_property_tag(&mut stream, 1, 5, &extras, &[0; 8]);
+            write_property_terminator(&mut stream, 0);
+            for types in [
+                &[][..],
+                &["IntProperty", "BoolProperty"],
+                &[
+                    "IntProperty",
+                    "StructProperty",
+                    "BoolProperty",
+                    "ByteProperty",
+                ],
+            ] {
+                for bytes in variants(&stream) {
+                    assert_skip_parity(&bytes, &versions, &names, types, false);
+                }
+            }
         }
     }
 }

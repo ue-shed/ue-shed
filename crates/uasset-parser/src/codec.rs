@@ -73,16 +73,108 @@ impl<'f> DecodeScope<'f> {
     /// [`is_decoder_read_property`], from the session's name table when it has one.
     #[inline]
     fn is_decoder_read(self, package: &Package, record: &PropertyRecord) -> bool {
+        self.is_decoder_read_name(package, record.name)
+    }
+
+    /// Whether the parser's own decoders read properties named `name`.
+    #[inline]
+    fn is_decoder_read_name(self, package: &Package, name: crate::archive::NameRef) -> bool {
         match self.decoder_read_names {
             Some(names) => {
-                record.name.number() == 0
-                    && usize::try_from(record.name.index().get())
+                name.number() == 0
+                    && usize::try_from(name.index().get())
                         .ok()
                         .and_then(|index| names.get(index))
                         .is_some_and(|read| *read)
             }
-            None => is_decoder_read_property(package, record),
+            None => is_decoder_read_name(package, name),
         }
+    }
+}
+
+/// Skips the tags a filter that omits declined records can never request, judged from the tag's
+/// name and top-level type before its record is built. A skipped record would have been decoded
+/// as `RawReason::NotRequested` and then omitted, so the decoded stream is unchanged.
+struct UnrequestedTags<'s> {
+    package: &'s Package,
+    filter: &'s dyn PropertyDecodeFilter,
+    scope: DecodeScope<'s>,
+}
+
+impl<'s> UnrequestedTags<'s> {
+    /// The skipper for tagged streams decoded under `scope`, when its filter omits declined
+    /// records. Otherwise every declined record stays in the stream and must be built.
+    #[inline]
+    fn of(package: &'s Package, scope: DecodeScope<'s>) -> Option<Self> {
+        let filter = scope.filter.filter(|_| scope.omit_unrequested)?;
+        Some(Self {
+            package,
+            filter,
+            scope,
+        })
+    }
+}
+
+impl crate::property::TagSkip for UnrequestedTags<'_> {
+    const ACTIVE: bool = true;
+
+    #[inline]
+    fn skips(&self, name: crate::archive::NameRef, top_type: crate::archive::NameRef) -> bool {
+        !self.filter.may_decode_tag(self.package, name, top_type)
+            && !self.scope.is_decoder_read_name(self.package, name)
+    }
+}
+
+/// Reads a struct or row tagged stream whose records will be decoded under `scope`. When the
+/// scope omits declined records, tags its filter can never request are validated and stepped
+/// over without building records; modern ones are appended to `skipped` for replay learning.
+///
+/// The result, once decoded under `scope`, equals that of [`read_tagged_property_stream`].
+pub(crate) fn read_tagged_stream_for_scope(
+    reader: &mut Reader<'_>,
+    package: &Package,
+    scope: DecodeScope<'_>,
+    path: &(impl fmt::Display + ?Sized),
+    skipped: Option<&mut Vec<crate::property::SkippedTag>>,
+) -> Result<PropertyStream, PropertyError> {
+    let versions = &package.summary.versions;
+    match UnrequestedTags::of(package, scope) {
+        Some(tags) => crate::property::read_tagged_property_stream_with(
+            reader,
+            versions,
+            &package.names,
+            path,
+            &tags,
+            skipped,
+        ),
+        None => read_tagged_property_stream(reader, versions, &package.names, path),
+    }
+}
+
+/// [`read_tagged_stream_for_scope`] for a root UObject stream.
+pub(crate) fn read_uobject_tagged_stream_for_scope(
+    reader: &mut Reader<'_>,
+    package: &Package,
+    scope: DecodeScope<'_>,
+    path: &(impl fmt::Display + ?Sized),
+    skipped: Option<&mut Vec<crate::property::SkippedTag>>,
+) -> Result<PropertyStream, PropertyError> {
+    let versions = &package.summary.versions;
+    match UnrequestedTags::of(package, scope) {
+        Some(tags) => crate::property::read_uobject_tagged_property_stream_with(
+            reader,
+            versions,
+            &package.names,
+            path,
+            &tags,
+            skipped,
+        ),
+        None => crate::property::read_uobject_tagged_property_stream(
+            reader,
+            versions,
+            &package.names,
+            path,
+        ),
     }
 }
 
@@ -344,8 +436,13 @@ pub(crate) fn decode_property_record_filtered(
 /// Whether the parser's own decoders read this property, whatever the host filter decides.
 #[inline]
 fn is_decoder_read_property(package: &Package, record: &PropertyRecord) -> bool {
+    is_decoder_read_name(package, record.name)
+}
+
+#[inline]
+fn is_decoder_read_name(package: &Package, name: crate::archive::NameRef) -> bool {
     package
-        .resolve_name_str(record.name)
+        .resolve_name_str(name)
         .is_some_and(|name| crate::asset::DECODER_READ_PROPERTIES.contains(&name))
 }
 
@@ -2194,7 +2291,7 @@ fn decode_struct_value<'a>(
     let (mut stream, decoded) = match element {
         Some(replays) => replays.read(source, payload, package, nested, path)?,
         None => (
-            read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?,
+            read_tagged_stream_for_scope(payload, package, nested, path, None)?,
             false,
         ),
     };
@@ -2237,6 +2334,8 @@ struct ElementReplays<'a> {
     misses: u8,
     learning: bool,
     exhausted: bool,
+    /// Tags the last learning read stepped over, reused across elements.
+    skipped: Vec<crate::property::SkippedTag>,
 }
 
 impl<'a> ElementReplays<'a> {
@@ -2283,17 +2382,27 @@ impl<'a> ElementReplays<'a> {
             }
         }
         let start = payload.tell();
-        let stream =
-            read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?;
+        self.skipped.clear();
+        let stream = read_tagged_stream_for_scope(
+            payload,
+            package,
+            scope,
+            path,
+            self.learning.then_some(&mut self.skipped),
+        )?;
         if self.learning {
             self.misses += 1;
             if self.misses >= 8 {
                 self.learning = false;
                 self.exhausted = true;
                 self.replays.clear();
-            } else if let Some(replay) =
-                TaggedStreamReplay::new(source, start, &package.summary.versions, &stream)
-            {
+            } else if let Some(replay) = TaggedStreamReplay::with_skipped(
+                source,
+                start,
+                &package.summary.versions,
+                &stream,
+                &self.skipped,
+            ) {
                 if self.replays.len() == 4 {
                     self.replays.pop();
                 }

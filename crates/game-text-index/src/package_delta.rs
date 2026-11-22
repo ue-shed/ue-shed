@@ -653,6 +653,16 @@ pub(crate) mod tests {
         key: &str,
         packages: &[(String, String, Vec<String>)],
     ) -> PathBuf {
+        shard_with_statuses(directory, key, packages, &vec![0; packages.len()])
+    }
+
+    /// [`shard`] with each package's `package.status`.
+    pub(crate) fn shard_with_statuses(
+        directory: &Path,
+        key: &str,
+        packages: &[(String, String, Vec<String>)],
+        statuses: &[u32],
+    ) -> PathBuf {
         let file = directory.join(format!("{key}.snapshot"));
         let mut writer = Writer::new(&directory.join(format!("{}.payload", token()))).unwrap();
         let mut order = Vec::new();
@@ -697,7 +707,7 @@ pub(crate) mod tests {
             starts.push(starts.last().unwrap() + sources.len() as u32);
         }
         for (name, values) in [
-            ("package.status", vec![0; packages.len()]),
+            ("package.status", statuses.to_vec()),
             ("package.occurrence_start", starts),
             ("package.gap_start", vec![0; packages.len() + 1]),
             ("package.missing_start", vec![0; packages.len() + 1]),

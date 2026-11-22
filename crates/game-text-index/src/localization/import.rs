@@ -7,7 +7,7 @@ use serde_json::json;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::{self, File, Metadata};
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::time::{Instant, UNIX_EPOCH};
 
@@ -222,8 +222,11 @@ fn layer_strings(layers: &[&SourceLayer]) -> Result<usize> {
     }
     Ok(total)
 }
+/// Reads and parses one file. `root` is its canonical project root, or `None` when that could not
+/// be resolved; the batch resolves each distinct root once.
 fn read(
     input: &Input,
+    root: Option<&Path>,
     cached: &BTreeMap<String, u64>,
 ) -> Parsed<(PreparedFile, Option<Arc<super::columns::LocalLayer>>)> {
     let file = &input.relative_path;
@@ -238,8 +241,7 @@ fn read(
             "",
         )
     };
-    let root = fs::canonicalize(&input.project_root)
-        .map_err(|_| failure(file, "directory_unreadable", ""))?;
+    let root = root.ok_or_else(|| failure(file, "directory_unreadable", ""))?;
     let actual = fs::canonicalize(&input.file).map_err(io_error)?;
     if !actual.starts_with(root) {
         return Err(failure(file, "unsafe_path", ""));
@@ -267,16 +269,21 @@ fn read(
             &format!(" at byte offset {}", bytes.len()),
         ));
     }
-    if bytes.len() as u64 != before.len()
-        || changed(&before, &handle.metadata().map_err(io_error)?)
-        || changed(&before, &fs::metadata(&actual).map_err(io_error)?)
-    {
+    if bytes.len() as u64 != before.len() {
         return Err(failure(file, "file_changed", ""));
     }
     let content_hash = digest(&bytes);
     let key = content_key(&input.options, &content_hash)
         .map_err(|_| failure(file, "invalid_schema", ""))?;
     let existing = cached.get(&key);
+    // A file that changed while it was read fails as changed before it is parsed. Retained
+    // content is not parsed, so the checks after parsing alone cover it.
+    if existing.is_none()
+        && (changed(&before, &handle.metadata().map_err(io_error)?)
+            || changed(&before, &fs::metadata(&actual).map_err(io_error)?))
+    {
+        return Err(failure(file, "file_changed", ""));
+    }
     let layer = if existing.is_none() {
         Some(Arc::new(parse_bytes_with_chunk(
             &bytes,
@@ -346,6 +353,14 @@ pub(crate) fn import(
         .map(|(i, input)| (i, fs::metadata(&input.file).map_or(u64::MAX, |m| m.len())))
         .collect::<Vec<_>>();
     pending.sort_by_key(|(_, bytes)| std::cmp::Reverse(*bytes));
+    let roots = request
+        .files
+        .iter()
+        .map(|input| input.project_root.as_path())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(|root| (root, fs::canonicalize(root).ok()))
+        .collect::<BTreeMap<_, _>>();
     let queue = Mutex::new(Queue {
         pending: pending.into(),
         bytes: 0,
@@ -362,7 +377,7 @@ pub(crate) fn import(
     let mut prepared = (0..request.files.len()).map(|_| None).collect::<Vec<_>>();
     std::thread::scope(|scope| -> Result<()> {
         for _ in 0..count {
-            let (tx, queue, ready, cached) = (tx.clone(), &queue, &ready, &cached);
+            let (tx, queue, ready, cached, roots) = (tx.clone(), &queue, &ready, &cached, &roots);
             scope.spawn(move || {
                 loop {
                     let (row, bytes) = {
@@ -394,7 +409,11 @@ pub(crate) fn import(
                     let result = {
                         let _span =
                             crate::scan_timings::Span::new("localization.parse_file_parallel");
-                        read(&request.files[row], cached)
+                        let input = &request.files[row];
+                        let root = roots
+                            .get(input.project_root.as_path())
+                            .and_then(Option::as_deref);
+                        read(input, root, cached)
                     };
                     {
                         let mut state = queue

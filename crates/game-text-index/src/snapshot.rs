@@ -216,6 +216,12 @@ pub fn strings(bytes: &[u8]) -> Result<Vec<String>> {
         .collect()
 }
 pub fn strings_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
+    let mut out = Vec::new();
+    visit_strings(bytes, |value| out.push(value.to_vec()))?;
+    Ok(out)
+}
+/// Validates a string block as [`strings_bytes`] does and passes each value to `visit`.
+fn visit_strings(bytes: &[u8], mut visit: impl FnMut(&[u8])) -> Result<()> {
     require(bytes.len() >= 8, "truncated string block")?;
     let n = u32::from_le_bytes(bytes[..4].try_into()?) as usize;
     let start = 8 + n * 4;
@@ -225,7 +231,6 @@ pub fn strings_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
         offsets[0] == 0 && offsets[n] as usize == bytes.len() - start,
         "invalid string endpoints",
     )?;
-    let mut out = Vec::with_capacity(n);
     for pair in offsets.windows(2) {
         require(
             pair[0] <= pair[1]
@@ -235,13 +240,57 @@ pub fn strings_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
         )?;
         let value = &bytes[start + pair[0] as usize..start + pair[1] as usize];
         crate::wtf8::validate(value)?;
-        out.push(value.to_vec());
+        visit(value);
     }
-    Ok(out)
+    Ok(())
+}
+/// Stored section bytes a writer keeps in memory before it spills them to its payload file.
+/// Most snapshots are a few MiB, so they never create, copy back or delete a payload file.
+const MEMORY_PAYLOAD: usize = 32 * 1024 * 1024;
+enum Payload {
+    /// Each entry's stored bytes, by entry ID.
+    Memory {
+        sections: Vec<Vec<u8>>,
+        bytes: usize,
+    },
+    /// A file created at the writer's path, which the writer deletes when dropped.
+    File(File),
+}
+/// What [`Reader::load`] would check of a section's raw bytes beyond its codec and checksum,
+/// recorded when the writer still holds them so publication need not read the file back.
+#[derive(Default)]
+struct SectionFacts {
+    /// The largest string ID of a kind 3 section.
+    largest_id: Option<u32>,
+    /// Why a kind 4 section is not a valid string block.
+    invalid_strings: Option<crate::Error>,
+}
+impl SectionFacts {
+    fn of(kind: u32, raw: &[u8]) -> Self {
+        match kind {
+            3 => Self {
+                largest_id: raw
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|b| u32::from_le_bytes(*b))
+                    .max(),
+                invalid_strings: None,
+            },
+            4 => Self {
+                largest_id: None,
+                invalid_strings: visit_strings(raw, |_| {}).err(),
+            },
+            _ => Self::default(),
+        }
+    }
 }
 pub struct Writer {
     path: PathBuf,
-    payload: File,
+    payload: Payload,
+    /// Stored bytes held in memory before the payload spills; [`MEMORY_PAYLOAD`] outside tests.
+    spill_above: usize,
+    facts: Vec<SectionFacts>,
     pub entries: Vec<Entry>,
 }
 fn check_section(name: &str, kind: u32, domain: &str, raw: &[u8]) -> Result<()> {
@@ -255,18 +304,48 @@ fn check_section(name: &str, kind: u32, domain: &str, raw: &[u8]) -> Result<()> 
     )
 }
 impl Writer {
+    /// A writer whose payload, once it outgrows memory, spills to `path`. Like creating that file
+    /// exclusively, this fails when `path` already exists.
     pub fn new(path: &Path) -> Result<Self> {
         let _span = crate::scan_timings::Span::new("snapshot.create");
-        let payload = OpenOptions::new()
+        match fs::symlink_metadata(path) {
+            Ok(_) => return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists).into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        Ok(Self {
+            path: path.to_owned(),
+            payload: Payload::Memory {
+                sections: Vec::new(),
+                bytes: 0,
+            },
+            spill_above: MEMORY_PAYLOAD,
+            facts: Vec::new(),
+            entries: Vec::new(),
+        })
+    }
+    /// Moves the in-memory sections to the payload file at the writer's path.
+    fn spill(&mut self) -> Result<()> {
+        let Payload::Memory { sections, .. } = &mut self.payload else {
+            return Ok(());
+        };
+        let _span = crate::scan_timings::Span::new("snapshot.spill");
+        let sections = std::mem::take(sections);
+        let file = OpenOptions::new()
             .create_new(true)
             .read(true)
             .write(true)
-            .open(path)?;
-        Ok(Self {
-            path: path.to_owned(),
-            payload,
-            entries: Vec::new(),
-        })
+            .open(&self.path)?;
+        let written = (|| {
+            let mut out = std::io::BufWriter::with_capacity(256 * 1024, &file);
+            for section in &sections {
+                out.write_all(section)?;
+            }
+            out.flush()
+        })();
+        // The writer owns the file even when writing failed, so dropping it deletes the file.
+        self.payload = Payload::File(file);
+        Ok(written?)
     }
     pub fn add(
         &mut self,
@@ -278,7 +357,14 @@ impl Writer {
     ) -> Result<usize> {
         check_section(name, kind, domain, raw)?;
         let encoded = encode_section(kind, raw, level)?;
-        self.append(name, kind, domain, raw, encoded)
+        self.append(
+            name,
+            kind,
+            domain,
+            raw,
+            encoded,
+            SectionFacts::of(kind, raw),
+        )
     }
     /// `add` for many sections at once: they are encoded in parallel and stored in order.
     pub fn add_all(&mut self, sections: &[(&str, u32, &str, &[u8], i32)]) -> Result<Vec<usize>> {
@@ -294,7 +380,14 @@ impl Writer {
             .iter()
             .zip(encoded)
             .map(|((name, kind, domain, raw, _), encoded)| {
-                self.append(name, *kind, domain, raw, encoded)
+                self.append(
+                    name,
+                    *kind,
+                    domain,
+                    raw,
+                    encoded,
+                    SectionFacts::of(*kind, raw),
+                )
             })
             .collect()
     }
@@ -305,11 +398,33 @@ impl Writer {
         domain: &str,
         raw: &[u8],
         (bytes, codec): (Vec<u8>, u32),
+        facts: SectionFacts,
     ) -> Result<usize> {
         let _span = crate::scan_timings::Span::new("snapshot.payload_write");
-        let offset = self.payload.stream_position()?;
-        self.payload.write_all(&bytes)?;
+        if let Payload::Memory { bytes: held, .. } = &self.payload
+            && *held + bytes.len() > self.spill_above
+        {
+            self.spill()?;
+        }
+        let stored = bytes.len() as u32;
+        let offset = match &mut self.payload {
+            Payload::Memory {
+                sections,
+                bytes: held,
+            } => {
+                let offset = *held as u64;
+                *held += bytes.len();
+                sections.push(bytes);
+                offset
+            }
+            Payload::File(file) => {
+                let offset = file.stream_position()?;
+                file.write_all(&bytes)?;
+                offset
+            }
+        };
         let id = self.entries.len();
+        self.facts.push(facts);
         self.entries.push(Entry {
             name: name.into(),
             kind,
@@ -317,7 +432,7 @@ impl Writer {
             strings: 0,
             codec,
             offset,
-            stored: bytes.len() as u32,
+            stored,
             raw: raw.len() as u32,
             count: (raw.len() / if matches!(kind, 2 | 3) { 4 } else { 1 }) as u32,
             crc: crc32fast::hash(raw),
@@ -337,7 +452,15 @@ impl Writer {
         strings: u32,
     ) -> Result<usize> {
         check_section(name, kind, domain, raw)?;
-        let id = self.append(name, kind, domain, raw, (raw.to_vec(), CODEC_RAW))?;
+        // Staged files are never verified, so their sections need no facts.
+        let id = self.append(
+            name,
+            kind,
+            domain,
+            raw,
+            (raw.to_vec(), CODEC_RAW),
+            SectionFacts::default(),
+        )?;
         self.entries[id].strings = strings;
         Ok(id)
     }
@@ -382,6 +505,9 @@ impl Writer {
         put(&mut header, 28, crc);
         let crc = crc32fast::hash(&header[..32]);
         put(&mut header, 32, crc);
+        if durable {
+            self.check(&header, offset, order)?;
+        }
         let write_span = crate::scan_timings::Span::new("snapshot.final_write");
         // Buffered, so thousands of small sections and their padding cost few write calls.
         let mut out = std::io::BufWriter::with_capacity(
@@ -394,8 +520,13 @@ impl Writer {
         out.write_all(&header)?;
         for &id in order {
             let e = &self.entries[id];
-            self.payload.seek(SeekFrom::Start(e.offset))?;
-            std::io::copy(&mut (&mut self.payload).take(u64::from(e.stored)), &mut out)?;
+            match &mut self.payload {
+                Payload::Memory { sections, .. } => out.write_all(&sections[id])?,
+                Payload::File(file) => {
+                    file.seek(SeekFrom::Start(e.offset))?;
+                    std::io::copy(&mut (&mut *file).take(u64::from(e.stored)), &mut out)?;
+                }
+            }
             out.write_all(&[0; 3][..(4 - e.stored as usize % 4) % 4])?;
         }
         let out = out
@@ -408,15 +539,45 @@ impl Writer {
         }
         drop(out);
         WRITTEN_BYTES.fetch_add(offset, std::sync::atomic::Ordering::Relaxed);
-        if durable {
+        // Release builds trust the codec round trip the tests prove here on every durable write.
+        if durable && cfg!(debug_assertions) {
             Reader::open(output)?.verify()?;
         }
         Ok(offset)
     }
+    /// What reading a durable file back would reject, checked before it is written: its header
+    /// and directory as [`Reader::open`] validates them, and each section's raw bytes as
+    /// [`Reader::load`] does. Stored bytes are not decoded again; their codecs are deterministic.
+    fn check(&mut self, header: &[u8], length: u64, order: &[usize]) -> Result<()> {
+        let _span = crate::scan_timings::Span::new("snapshot.check");
+        header_fields(&header[..48])?;
+        let entries = directory(&header[..48], &header[48..], length)?;
+        for (e, &id) in entries.iter().zip(order) {
+            let facts = &mut self.facts[id];
+            if e.kind == 3 {
+                require(
+                    facts.largest_id.is_none_or(|largest| largest < e.strings),
+                    "string ID bounds",
+                )?;
+            }
+            if e.kind == 4
+                && let Some(error) = facts.invalid_strings.take()
+            {
+                return Err(crate::Error::with_source(
+                    crate::ErrorCode::InvalidCache,
+                    format!("Invalid snapshot string section {}.", e.name),
+                    error,
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 impl Drop for Writer {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        if matches!(self.payload, Payload::File(_)) {
+            let _ = fs::remove_file(&self.path);
+        }
     }
 }
 fn put(b: &mut [u8], p: usize, n: u32) {
@@ -508,122 +669,12 @@ impl Reader {
         let mut file = File::open(path)?;
         let mut h = [0; 48];
         file.read_exact(&mut h)?;
-        require(
-            &h[..8] == b"UESHT004"
-                && get(&h, 8) == 4
-                && get(&h, 32) == crc32fast::hash(&h[..32])
-                && h[36..].iter().all(|&x| x == 0),
-            "invalid header",
-        )?;
-        let n = get(&h, 12) as usize;
-        require(
-            n > 0 && n <= 1_048_576 && get(&h, 24) as usize == 48 + n * 96,
-            "invalid directory count",
-        )?;
-        let length = u64::from_le_bytes(h[16..24].try_into()?);
-        require(
-            length == file.metadata()?.len() && length <= 16 * 1024u64.pow(3),
-            "file length",
-        )?;
+        let (n, length) = header_fields(&h)?;
+        require(length == file.metadata()?.len(), "file length")?;
         let mut b = vec![0; n * 96];
         file.read_exact(&mut b)?;
         INDEX_BYTES.fetch_add((48 + b.len()) as u64, std::sync::atomic::Ordering::Relaxed);
-        require(get(&h, 28) == crc32fast::hash(&b), "directory CRC")?;
-        let mut entries = Vec::with_capacity(n);
-        let mut seen = std::collections::HashSet::new();
-        let mut domain_counts = std::collections::HashMap::new();
-        let mut offset = 48 + n as u64 * 96;
-        for d in b.as_chunks::<96>().0 {
-            let domain = name(&d[64..88])?;
-            let name = name(&d[..32])?;
-            let e = Entry {
-                name,
-                domain,
-                kind: get(d, 32),
-                codec: get(d, 36),
-                offset: u64::from_le_bytes(d[40..48].try_into()?),
-                stored: get(d, 48),
-                raw: get(d, 52),
-                count: get(d, 56),
-                crc: get(d, 60),
-                strings: get(d, 88),
-            };
-            require(
-                e.offset == offset
-                    && e.raw as usize <= MAX_SECTION
-                    && e.stored as usize <= MAX_SECTION
-                    && e.kind <= 4
-                    && (e.codec <= CODEC_ZSTD
-                        || (matches!(e.codec, CODEC_SHUFFLED | CODEC_DELTA)
-                            && matches!(e.kind, 2 | 3)))
-                    && get(d, 92) == 0,
-                "invalid section",
-            )?;
-            require(
-                valid_name(&e.name, 31) && seen.insert(e.name.clone()),
-                "invalid/duplicate section name",
-            )?;
-            if matches!(e.kind, 3 | 4) {
-                require(
-                    valid_name(&e.domain, 23) && e.strings > 0 && e.strings <= 64_000_000,
-                    "invalid string domain/count",
-                )?;
-                require(
-                    domain_counts
-                        .insert(e.domain.clone(), e.strings)
-                        .is_none_or(|old| old == e.strings),
-                    "inconsistent domain count",
-                )?;
-            } else {
-                require(e.domain.is_empty() && e.strings == 0, "unexpected domain")?;
-            }
-            require(
-                if e.codec == 0 {
-                    e.raw == e.stored
-                } else {
-                    e.stored < e.raw
-                },
-                "compression lengths",
-            )?;
-            require(
-                u64::from(e.count) * if matches!(e.kind, 2 | 3) { 4 } else { 1 }
-                    == u64::from(e.raw),
-                "column width",
-            )?;
-            offset += (u64::from(e.stored) + 3) & !3;
-            require(offset <= length, "section bounds")?;
-            entries.push(e);
-        }
-        require(offset == length, "trailing bytes")?;
-        let domains: std::collections::BTreeSet<_> = entries
-            .iter()
-            .filter(|e| e.kind == 3 || e.kind == 4)
-            .map(|e| e.domain.as_str())
-            .collect();
-        for domain in domains {
-            let blocks: Vec<_> = entries
-                .iter()
-                .filter(|e| e.kind == 4 && e.domain == domain)
-                .collect();
-            let starts = entries
-                .iter()
-                .find(|e| e.name == format!("{domain}.starts"))
-                .ok_or("missing block index")?;
-            require(
-                !blocks.is_empty() && starts.kind == 2 && starts.count as usize == blocks.len(),
-                "invalid block index",
-            )?;
-            for (i, block) in blocks.iter().enumerate() {
-                require(block.name == format!("{domain}.b{i}"), "invalid block name")?;
-                if i > 0 {
-                    let previous = blocks[i - 1];
-                    require(
-                        block.offset == previous.offset + ((u64::from(previous.stored) + 3) & !3),
-                        "noncontiguous domain",
-                    )?;
-                }
-            }
-        }
+        let entries = directory(&h, &b, length)?;
         Ok(Self {
             file: Some(file),
             file_len: length,
@@ -710,6 +761,124 @@ impl Reader {
             })
     }
 }
+/// The section count and file length a 48-byte header declares, once its fields are valid.
+fn header_fields(h: &[u8]) -> Result<(usize, u64)> {
+    require(
+        &h[..8] == b"UESHT004"
+            && get(h, 8) == 4
+            && get(h, 32) == crc32fast::hash(&h[..32])
+            && h[36..].iter().all(|&x| x == 0),
+        "invalid header",
+    )?;
+    let n = get(h, 12) as usize;
+    require(
+        n > 0 && n <= 1_048_576 && get(h, 24) as usize == 48 + n * 96,
+        "invalid directory count",
+    )?;
+    let length = u64::from_le_bytes(h[16..24].try_into()?);
+    require(length <= 16 * 1024u64.pow(3), "file length")?;
+    Ok((n, length))
+}
+/// The entries of directory `b` under header `h` in a file of `length` bytes.
+fn directory(h: &[u8], b: &[u8], length: u64) -> Result<Vec<Entry>> {
+    let n = b.len() / 96;
+    require(get(h, 28) == crc32fast::hash(b), "directory CRC")?;
+    let mut entries = Vec::with_capacity(n);
+    let mut seen = std::collections::HashSet::new();
+    let mut domain_counts = std::collections::HashMap::new();
+    let mut offset = 48 + n as u64 * 96;
+    for d in b.as_chunks::<96>().0 {
+        let domain = name(&d[64..88])?;
+        let name = name(&d[..32])?;
+        let e = Entry {
+            name,
+            domain,
+            kind: get(d, 32),
+            codec: get(d, 36),
+            offset: u64::from_le_bytes(d[40..48].try_into()?),
+            stored: get(d, 48),
+            raw: get(d, 52),
+            count: get(d, 56),
+            crc: get(d, 60),
+            strings: get(d, 88),
+        };
+        require(
+            e.offset == offset
+                && e.raw as usize <= MAX_SECTION
+                && e.stored as usize <= MAX_SECTION
+                && e.kind <= 4
+                && (e.codec <= CODEC_ZSTD
+                    || (matches!(e.codec, CODEC_SHUFFLED | CODEC_DELTA)
+                        && matches!(e.kind, 2 | 3)))
+                && get(d, 92) == 0,
+            "invalid section",
+        )?;
+        require(
+            valid_name(&e.name, 31) && seen.insert(e.name.clone()),
+            "invalid/duplicate section name",
+        )?;
+        if matches!(e.kind, 3 | 4) {
+            require(
+                valid_name(&e.domain, 23) && e.strings > 0 && e.strings <= 64_000_000,
+                "invalid string domain/count",
+            )?;
+            require(
+                domain_counts
+                    .insert(e.domain.clone(), e.strings)
+                    .is_none_or(|old| old == e.strings),
+                "inconsistent domain count",
+            )?;
+        } else {
+            require(e.domain.is_empty() && e.strings == 0, "unexpected domain")?;
+        }
+        require(
+            if e.codec == 0 {
+                e.raw == e.stored
+            } else {
+                e.stored < e.raw
+            },
+            "compression lengths",
+        )?;
+        require(
+            u64::from(e.count) * if matches!(e.kind, 2 | 3) { 4 } else { 1 } == u64::from(e.raw),
+            "column width",
+        )?;
+        offset += (u64::from(e.stored) + 3) & !3;
+        require(offset <= length, "section bounds")?;
+        entries.push(e);
+    }
+    require(offset == length, "trailing bytes")?;
+    let domains: std::collections::BTreeSet<_> = entries
+        .iter()
+        .filter(|e| e.kind == 3 || e.kind == 4)
+        .map(|e| e.domain.as_str())
+        .collect();
+    for domain in domains {
+        let blocks: Vec<_> = entries
+            .iter()
+            .filter(|e| e.kind == 4 && e.domain == domain)
+            .collect();
+        let starts = entries
+            .iter()
+            .find(|e| e.name == format!("{domain}.starts"))
+            .ok_or("missing block index")?;
+        require(
+            !blocks.is_empty() && starts.kind == 2 && starts.count as usize == blocks.len(),
+            "invalid block index",
+        )?;
+        for (i, block) in blocks.iter().enumerate() {
+            require(block.name == format!("{domain}.b{i}"), "invalid block name")?;
+            if i > 0 {
+                let previous = blocks[i - 1];
+                require(
+                    block.offset == previous.offset + ((u64::from(previous.stored) + 3) & !3),
+                    "noncontiguous domain",
+                )?;
+            }
+        }
+    }
+    Ok(entries)
+}
 fn name(b: &[u8]) -> Result<String> {
     let n = b.iter().position(|&x| x == 0).ok_or("name padding")?;
     require(b[n..].iter().all(|&x| x == 0), "name padding")?;
@@ -760,6 +929,96 @@ mod tests {
         changed.push(0);
         fs::write(&path, &changed).unwrap();
         assert!(Reader::open(&path).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    fn sample_sections(w: &mut Writer) -> Vec<usize> {
+        let strings = ["", "alpha", "é𝄞"].map(String::from);
+        let block = w
+            .add(
+                "source.b0",
+                4,
+                "source",
+                &string_block(&strings).unwrap(),
+                3,
+            )
+            .unwrap();
+        w.entries[block].strings = 3;
+        let starts = w.column("source.starts", &[0]).unwrap();
+        let ids = w
+            .add("entry.source", 3, "source", &u32_bytes(&[2, 0, 1, 2]), 1)
+            .unwrap();
+        w.entries[ids].strings = 3;
+        let values = w.column("values", &(0..5000).collect::<Vec<_>>()).unwrap();
+        let text = w.add("meta", 0, "", b"{\"odd\":1}", 0).unwrap();
+        vec![text, block, starts, ids, values]
+    }
+    #[test]
+    fn spilled_and_in_memory_payloads_write_identical_files() {
+        let root = crate::test_directory("snapshot-spill");
+        fs::create_dir_all(&root).unwrap();
+        let mut files = Vec::new();
+        for spill_above in [MEMORY_PAYLOAD, 0, 12] {
+            let payload = root.join(format!("{spill_above}.payload"));
+            let mut w = Writer::new(&payload).unwrap();
+            w.spill_above = spill_above;
+            let order = sample_sections(&mut w);
+            assert_eq!(payload.exists(), spill_above != MEMORY_PAYLOAD);
+            let file = root.join(format!("{spill_above}.snapshot"));
+            w.finish(&file, &order).unwrap();
+            assert!(!payload.exists());
+            files.push(fs::read(file).unwrap());
+        }
+        assert_eq!(files[0], files[1]);
+        assert_eq!(files[0], files[2]);
+        let mut w = Writer::new(&root.join("staged.payload")).unwrap();
+        w.spill_above = 0;
+        let id = w
+            .add_staged("values", 2, "", &u32_bytes(&[1, 2]), 0)
+            .unwrap();
+        w.finish_staged(&root.join("staged.snapshot"), &[id])
+            .unwrap();
+        assert!(!root.join("staged.payload").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn durable_writes_reject_what_reading_back_would_without_leaving_a_file() {
+        let root = crate::test_directory("snapshot-check");
+        fs::create_dir_all(&root).unwrap();
+        let output = root.join("rejected.snapshot");
+        let mut w = Writer::new(&root.join("ids.payload")).unwrap();
+        let mut order = sample_sections(&mut w);
+        let ids = order[3];
+        w.entries[ids].strings = 2;
+        w.entries[order[1]].strings = 2;
+        let error = w.finish(&output, &order).unwrap_err();
+        assert_eq!(error.to_string(), "string ID bounds");
+        assert!(!output.exists());
+
+        let mut w = Writer::new(&root.join("block.payload")).unwrap();
+        let block = w.add("source.b0", 4, "source", &[0; 12], 3).unwrap();
+        w.entries[block].strings = 1;
+        let starts = w.column("source.starts", &[0]).unwrap();
+        let error = w.finish(&output, &[block, starts]).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Invalid snapshot string section source.b0.: "),
+            "{error}"
+        );
+        assert!(!output.exists());
+
+        let mut w = Writer::new(&root.join("names.payload")).unwrap();
+        order = vec![w.column("values", &[1]).unwrap()];
+        order.push(order[0]);
+        let error = w.finish(&output, &order).unwrap_err();
+        assert_eq!(error.to_string(), "invalid/duplicate section name");
+        assert!(!output.exists());
+
+        let mut w = Writer::new(&root.join("staged.payload")).unwrap();
+        let id = w
+            .add_staged("ids", 3, "source", &u32_bytes(&[9]), 1)
+            .unwrap();
+        w.finish_staged(&output, &[id]).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

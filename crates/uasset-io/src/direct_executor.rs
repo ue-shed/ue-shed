@@ -11,6 +11,7 @@ mod level_sequence;
 pub(crate) use level_sequence::level_sequence_with_cancellation;
 mod catalog;
 mod catalog_binary;
+mod catalog_changes;
 mod change_journal;
 pub(crate) use catalog_binary::VerifiedSnapshots;
 #[cfg(test)]

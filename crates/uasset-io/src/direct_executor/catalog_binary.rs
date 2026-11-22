@@ -4380,6 +4380,8 @@ pub(crate) struct BinaryCatalog {
     journal_plan: Option<JournalPlan>,
     /// Whether the refresh about to commit walked every content root.
     committing_walked: bool,
+    /// The generation and inventory digest the last commit replaced, for its change record.
+    committed_from: Option<(u64, String)>,
     #[cfg(test)]
     cleanup_root: Option<PathBuf>,
 }
@@ -4472,6 +4474,7 @@ impl BinaryCatalog {
             verified: None,
             journal_plan: None,
             committing_walked: false,
+            committed_from: None,
             #[cfg(test)]
             cleanup_root: None,
         }
@@ -4585,6 +4588,7 @@ impl BinaryCatalog {
             verified,
             journal_plan: None,
             committing_walked: false,
+            committed_from: None,
             #[cfg(test)]
             cleanup_root: None,
         })
@@ -5144,6 +5148,10 @@ impl Catalog for BinaryCatalog {
             });
         }
         self.load()?;
+        self.committed_from = None;
+        let committed_from = self.manifest.as_ref().and_then(|manifest| {
+            manifest_digest(manifest).map(|digest| (manifest.summary.generation, digest))
+        });
         let mut staging = self.staging.take().ok_or_else(no_staging)?;
         let cached = self.committed.borrow();
         let committed = cached.as_ref();
@@ -5258,7 +5266,32 @@ impl Catalog for BinaryCatalog {
         self.committed.take();
         cleanup_retired_snapshots(&self.directory, &manifest);
         self.manifest = Some(manifest);
+        self.committed_from = committed_from;
         Ok(token.generation)
+    }
+    fn committed_changes(&mut self, changes: &super::catalog::RefreshChanges) {
+        let from = self.committed_from.take();
+        let record = from.and_then(|(base_generation, base_digest)| {
+            let manifest = self.manifest.as_ref()?;
+            let generation = manifest.summary.generation;
+            (changes.complete
+                && changes.base_generation.map(Generation::get) == Some(base_generation)
+                && base_generation.checked_add(1) == Some(generation))
+            .then_some(())?;
+            Some(super::catalog_changes::ChangeRecord {
+                generation,
+                base_digest,
+                digest: manifest_digest(manifest)?,
+                changed: changes.changed.clone(),
+                removed: changes.removed.clone(),
+            })
+        });
+        // Without this generation's record no reader may chain across it.
+        let kept = record
+            .is_some_and(|record| super::catalog_changes::append(&self.directory, record).is_ok());
+        if !kept {
+            super::catalog_changes::clear(&self.directory);
+        }
     }
     fn committing(&mut self, _token: &StagingToken, walked: bool) {
         self.committing_walked = walked;
@@ -5318,14 +5351,152 @@ impl BinaryCatalog {
                 actual: generation,
             });
         }
-        Ok((manifest.summary.completeness == "complete")
-            .then(|| {
-                manifest
-                    .summary
-                    .inventory()
-                    .map(|sum| sum.digest(manifest.summary.package_count))
-            })
-            .flatten())
+        Ok(manifest_digest(manifest))
+    }
+
+    /// The package paths added, changed, removed, or affected by a sidecar change after the
+    /// generation whose inventory digest was `since`, up to the committed generation; `None` when
+    /// the Catalog's change log cannot say exactly or when `max_shards` is exceeded.
+    ///
+    /// Changed or removed sidecars are resolved against the committed generation to every live
+    /// package sharing their exact stem (regardless of package extension casing), rather than
+    /// guessing lowercase `.uasset`/`.umap` paths. When `max_shards` is set, resolution stops as
+    /// soon as the known package paths exceed that shard budget, skipping sidecar chunk reads on
+    /// broad refreshes that would fall back to a full inventory scan anyway.
+    pub(crate) fn changes_since(
+        &self,
+        project_id: &ProjectId,
+        expected_generation: Generation,
+        since: &str,
+        max_shards: Option<usize>,
+    ) -> Result<Option<std::collections::BTreeSet<String>>, CatalogError> {
+        let manifest = require_manifest(&self.manifest, &self.project_id, project_id)?;
+        let generation = Generation::new(manifest.summary.generation);
+        if generation != expected_generation {
+            return Err(CatalogError::StaleGeneration {
+                expected: expected_generation,
+                actual: generation,
+            });
+        }
+        let Some(raw_changes) = manifest_digest(manifest).and_then(|digest| {
+            super::catalog_changes::since(&self.directory, since, generation.get(), &digest)
+        }) else {
+            return Ok(None);
+        };
+        let mut shard_mask = [0u64; 4];
+        let mut shard_count = 0usize;
+        let mut within_budget = |path: &str| -> bool {
+            let Some(limit) = max_shards else {
+                return true;
+            };
+            let group = game_text_index::package_text_plan::shard(path);
+            let word = &mut shard_mask[group >> 6];
+            let bit = 1u64 << (group & 63);
+            if *word & bit == 0 {
+                *word |= bit;
+                shard_count += 1;
+            }
+            shard_count <= limit
+        };
+        let mut resolved = std::collections::BTreeSet::new();
+        let mut sidecar_stems = std::collections::BTreeSet::new();
+        for raw_path in raw_changes {
+            let path = raw_path.replace('\\', "/");
+            if let Some((stem, ext)) = path.rsplit_once('.')
+                && super::inventory_digest::BUNDLE_SIDECARS
+                    .iter()
+                    .any(|sidecar| ext.eq_ignore_ascii_case(sidecar))
+            {
+                sidecar_stems.insert(stem.to_owned());
+            } else {
+                if !within_budget(&path) {
+                    return Ok(None);
+                }
+                resolved.insert(path);
+            }
+        }
+        if !sidecar_stems.is_empty() {
+            let mut exceeded = false;
+            let lookup = (|| {
+                self.load()?;
+                let cached = self.committed.borrow();
+                let committed = cached
+                    .as_ref()
+                    .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
+                for stem in &sidecar_stems {
+                    for path in committed.live_packages_with_stem(stem)? {
+                        if !within_budget(&path) {
+                            exceeded = true;
+                            return Ok(());
+                        }
+                        resolved.insert(path);
+                    }
+                }
+                Ok::<(), CatalogError>(())
+            })();
+            self.release_rows();
+            lookup?;
+            if exceeded {
+                return Ok(None);
+            }
+        }
+        Ok(Some(resolved))
+    }
+
+    /// The packages at `paths` the committed generation holds, in path order, as
+    /// [`BinaryCatalog::all_package_text_inventory`] lists them; paths that hold no package are
+    /// left out.
+    pub(crate) fn package_text_entries(
+        &self,
+        project_id: &ProjectId,
+        expected_generation: Generation,
+        paths: &std::collections::BTreeSet<String>,
+        selected: impl Fn(Option<&uasset_inspection::package_header::PackageHeaderData>) -> bool,
+    ) -> Result<Vec<game_text_index::package_text_contract::PackageTextExpected>, CatalogError>
+    {
+        let manifest = require_manifest(&self.manifest, &self.project_id, project_id)?;
+        let generation = Generation::new(manifest.summary.generation);
+        if generation != expected_generation {
+            return Err(CatalogError::StaleGeneration {
+                expected: expected_generation,
+                actual: generation,
+            });
+        }
+        let result = (|| {
+            self.load()?;
+            let cached = self.committed.borrow();
+            let committed = cached
+                .as_ref()
+                .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
+            let mut rows = Vec::new();
+            for path in paths {
+                if let Some(row) = committed.row_at(path)? {
+                    rows.push(row);
+                }
+            }
+            committed.load_rows(&rows)?;
+            let mut packages = Vec::with_capacity(rows.len());
+            for &(segment, id) in &rows {
+                if committed.rows(segment)?.row(id)?.1.kind == EntryKind::Package {
+                    packages.push((segment, id));
+                }
+            }
+            let signatures = committed.bundle_signatures(&packages)?;
+            let mut inventory = Vec::with_capacity(packages.len());
+            for ((segment, id), signature) in packages.into_iter().zip(signatures) {
+                let (path, entry) = committed.rows(segment)?.row(id)?;
+                inventory.push(
+                    game_text_index::package_text_contract::PackageTextExpected {
+                        path: path.to_owned(),
+                        signature,
+                        selected: selected(entry.header_data.as_ref()),
+                    },
+                );
+            }
+            Ok(inventory)
+        })();
+        self.release_rows();
+        result
     }
 
     /// Reads the entire committed generation's package-text inventory in path order directly from
@@ -6229,6 +6400,18 @@ fn read_and_verify_manifest(
         });
     }
     Ok(Some(manifest))
+}
+
+/// A complete generation's inventory digest, from its manifest.
+fn manifest_digest(manifest: &Manifest) -> Option<String> {
+    (manifest.summary.completeness == "complete")
+        .then(|| {
+            manifest
+                .summary
+                .inventory()
+                .map(|sum| sum.digest(manifest.summary.package_count))
+        })
+        .flatten()
 }
 
 fn require_manifest<'a>(
@@ -7506,6 +7689,71 @@ mod tests {
         items
     }
 
+    /// The change log against whole inventories: from each of the last few complete generations,
+    /// every package whose package-text entry differs now is among the resolved changes, and the
+    /// targeted entries of those changes are the inventory's. The generation right after a
+    /// complete one always has its changes.
+    fn check_package_text_changes(
+        catalogs: &[&BinaryCatalog],
+        history: &mut Vec<(
+            Option<String>,
+            Vec<game_text_index::package_text_contract::PackageTextExpected>,
+        )>,
+        generation: u64,
+    ) {
+        use crate::direct_executor::project_index_io::gathered;
+        let project = fixture_project_id();
+        let current = catalogs[0].committed_generation().unwrap();
+        let inventory = catalogs[0]
+            .all_package_text_inventory(&project, current, gathered)
+            .unwrap();
+        let digest = catalogs[0].inventory_digest(&project, current).unwrap();
+        let now = inventory
+            .iter()
+            .map(|entry| (entry.path.as_str(), entry))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        for (back, (since, before)) in history.iter().rev().enumerate().take(4) {
+            let Some(since) = since else {
+                continue;
+            };
+            let then = before
+                .iter()
+                .map(|entry| (entry.path.as_str(), entry))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            for catalog in catalogs {
+                let changes = catalog
+                    .changes_since(&project, current, since, None)
+                    .unwrap();
+                if back == 0 && digest.is_some() {
+                    assert!(changes.is_some(), "generation {generation}");
+                }
+                let Some(changes) = changes else {
+                    continue;
+                };
+                for path in then.keys().chain(now.keys()) {
+                    if then.get(path) != now.get(path) {
+                        assert!(
+                            changes.contains(*path),
+                            "generation {generation}, {back} back: {path}"
+                        );
+                    }
+                }
+                assert_eq!(
+                    catalog
+                        .package_text_entries(&project, current, &changes, gathered)
+                        .unwrap(),
+                    inventory
+                        .iter()
+                        .filter(|entry| changes.contains(&entry.path))
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    "generation {generation}, {back} back"
+                );
+            }
+        }
+        history.push((digest, inventory));
+    }
+
     /// Runs `generations` refreshes of random mutations, with `fillers` unchanging packages after
     /// each changing one, and compares every page of `page_limits` with the memory Catalog.
     fn mutation_sequence(fillers: u64, generations: u64, page_limits: &[usize]) {
@@ -7545,6 +7793,7 @@ mod tests {
         };
         let mut writes = Vec::new();
         let mut previous_complete = false;
+        let mut package_text_history = Vec::new();
         for generation in 0..generations {
             let mutations = match generation {
                 0 => 80,
@@ -7745,6 +7994,11 @@ mod tests {
                     "generation {generation}"
                 );
             }
+            check_package_text_changes(
+                &[&binary, &targeted, &reader],
+                &mut package_text_history,
+                generation,
+            );
             let current = binary.committed_generation().unwrap();
             assert_eq!(memory.committed_generation(), Some(current));
             let kinds = [
@@ -8162,5 +8416,293 @@ mod tests {
         );
         assert!(matches!(catalog.status(), CatalogStatus::Absent));
         assert_eq!(fs::read_dir(&catalog.directory).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn sidecar_only_edit_resolves_uppercase_and_mixed_case_packages_for_delta_plan() {
+        use crate::direct_executor::catalog_conformance::{FakeScanner, header, package, sidecar};
+        use crate::direct_executor::project_index::refresh_changed_paths;
+        use crate::direct_executor::project_index_io::gathered;
+
+        struct DirectPlanCatalog<'a> {
+            catalog: &'a BinaryCatalog,
+            project: ProjectId,
+            generation: Generation,
+        }
+
+        impl game_text_index::package_text_plan::PlanCatalog for DirectPlanCatalog<'_> {
+            fn changes_since(&mut self, since: &str) -> Option<BTreeSet<String>> {
+                self.catalog
+                    .changes_since(
+                        &self.project,
+                        self.generation,
+                        since,
+                        Some(game_text_index::package_text_plan::MAXIMUM_DELTA_SHARDS),
+                    )
+                    .ok()
+                    .flatten()
+            }
+            fn entries(
+                &mut self,
+                paths: &BTreeSet<String>,
+            ) -> Option<Vec<game_text_index::package_text_contract::PackageTextExpected>>
+            {
+                self.catalog
+                    .package_text_entries(&self.project, self.generation, paths, gathered)
+                    .ok()
+            }
+        }
+
+        let project = fixture_project_id();
+        let mut catalog = custom_catalog();
+        let make_header = |pkg_name: &str, gatherable: bool| {
+            let mut evidence = header(pkg_name, &["/Script/Test.Widget"], &["None"]);
+            evidence.header_data = Some(PackageHeaderData {
+                package_flags: if gatherable { 0x40000 } else { 0 },
+                gatherable_text_data_count: u32::from(gatherable),
+                gatherable_text_data_offset: u64::from(gatherable),
+                has_text_property: gatherable,
+            });
+            evidence
+        };
+        let make_scanner = |a_sidecar: (u64, u64), b_sidecar: (u64, u64)| {
+            let mut scanner = FakeScanner::default();
+            scanner.entries.push(package("Content/A.UASSET", 100, 10));
+            scanner
+                .headers
+                .insert("Content/A.UASSET".into(), make_header("/Game/A", true));
+            scanner
+                .entries
+                .push(sidecar("Content/A.uexp", a_sidecar.0, a_sidecar.1));
+            scanner.entries.push(package("Content/B.UMap", 200, 10));
+            scanner
+                .headers
+                .insert("Content/B.UMap".into(), make_header("/Game/B", true));
+            scanner
+                .entries
+                .push(sidecar("Content/B.ubulk", b_sidecar.0, b_sidecar.1));
+            scanner.entries.push(package("Content/C.uasset", 300, 10));
+            scanner
+                .headers
+                .insert("Content/C.uasset".into(), make_header("/Game/C", false));
+            scanner
+        };
+
+        let scanner1 = make_scanner((50, 10), (60, 10));
+        refresh(
+            &mut catalog,
+            &scanner1,
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let gen1 = catalog.committed_generation().unwrap();
+        let digest1 = catalog.inventory_digest(&project, gen1).unwrap().unwrap();
+        let inv1 = catalog
+            .all_package_text_inventory(&project, gen1, gathered)
+            .unwrap();
+
+        let store_root = catalog.directory.join("game-text-cache");
+        fs::create_dir_all(&store_root).unwrap();
+        let config = game_text_index::store::Configuration {
+            cache_root: store_root.clone(),
+            project_key: "test-project".into(),
+            target_key: "game".into(),
+            shared_project: true,
+            view_prefix: None,
+        };
+        let catalog_cache_root = catalog.directory.to_string_lossy().into_owned();
+        let make_request = |plan_file: PathBuf, generation: u64| {
+            game_text_index::package_text_contract::PackageTextPlanRequest {
+                cache_root: catalog_cache_root.clone(),
+                project_id: project.to_string(),
+                generation,
+                format: "package-text-v2".into(),
+                policy_json: "[1,[\"en\"]]".into(),
+                plan_file: plan_file.to_string_lossy().into_owned(),
+                changed_files: None,
+            }
+        };
+
+        let mut build = game_text_index::builder::BuildSession::default();
+        build
+            .execute(&game_text_index::builder::BuildRequest::Begin {
+                configuration: config.clone(),
+            })
+            .unwrap();
+        let req1 = make_request(store_root.join("plan-1.bin"), gen1.get());
+        let plan1 = build
+            .plan_packages_with_digest(&config, &req1, inv1.clone(), Some(&digest1))
+            .unwrap()
+            .plan
+            .unwrap();
+        build
+            .execute(&game_text_index::builder::BuildRequest::End {
+                configuration: config.clone(),
+            })
+            .unwrap();
+        // Publish each planned shard into the store with matching key and stored packages so
+        // `try_plan_packages_delta` validates the active shard keys against the witness.
+        let mut store = game_text_index::store::Store::writer(config.clone()).unwrap();
+        for shard in &plan1.changed {
+            let entries = inv1
+                .iter()
+                .filter(|entry| {
+                    game_text_index::package_text_plan::shard(&entry.path) as u32 == shard.group
+                })
+                .collect::<Vec<_>>();
+            let shard_path = store_root.join(format!("staged-{}.snapshot", shard.group));
+            let payload_path = store_root.join(format!("staged-{}.payload", shard.group));
+            let mut writer = game_text_index::snapshot::Writer::new(&payload_path).unwrap();
+            let paths_bytes = game_text_index::snapshot::string_block(
+                &entries.iter().map(|e| e.path.clone()).collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let sigs_bytes = game_text_index::snapshot::string_block(
+                &entries
+                    .iter()
+                    .map(|e| e.signature.clone())
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let path_block = writer.add("paths.b0", 4, "paths", &paths_bytes, 1).unwrap();
+            writer.entries[path_block].strings = entries.len() as u32;
+            let path_starts = writer.column("paths.starts", &[0]).unwrap();
+            let sig_block = writer
+                .add("signatures.b0", 4, "signatures", &sigs_bytes, 1)
+                .unwrap();
+            writer.entries[sig_block].strings = entries.len() as u32;
+            let sig_starts = writer.column("signatures.starts", &[0]).unwrap();
+            let ids = (0..entries.len() as u32).collect::<Vec<_>>();
+            let p_col = writer
+                .add(
+                    "package.path",
+                    3,
+                    "paths",
+                    &game_text_index::snapshot::u32_bytes(&ids),
+                    1,
+                )
+                .unwrap();
+            writer.entries[p_col].strings = entries.len() as u32;
+            let s_col = writer
+                .add(
+                    "package.signature",
+                    3,
+                    "signatures",
+                    &game_text_index::snapshot::u32_bytes(&ids),
+                    1,
+                )
+                .unwrap();
+            writer.entries[s_col].strings = entries.len() as u32;
+            let statuses = entries
+                .iter()
+                .map(|e| if e.selected { 0u32 } else { 2u32 })
+                .collect::<Vec<_>>();
+            let st_col = writer.column("package.status", &statuses).unwrap();
+            let order = vec![
+                path_block,
+                path_starts,
+                sig_block,
+                sig_starts,
+                p_col,
+                s_col,
+                st_col,
+            ];
+            writer.finish_staged(&shard_path, &order).unwrap();
+            store
+                .publish_local(
+                    &format!("package-text.{}", shard.group),
+                    &shard.key,
+                    &shard_path,
+                )
+                .unwrap();
+        }
+        drop(store);
+        // Re-plan gen1 once after publishing so the witness records the active shard hash.
+        build
+            .execute(&game_text_index::builder::BuildRequest::Begin {
+                configuration: config.clone(),
+            })
+            .unwrap();
+        let req1_witness = make_request(store_root.join("plan-1b.bin"), gen1.get());
+        build
+            .plan_packages_with_digest(&config, &req1_witness, inv1, Some(&digest1))
+            .unwrap();
+
+        // Generation 2: edit ONLY `Content/A.uexp` and `Content/B.ubulk`; neither package file
+        // itself changed.
+        let scanner2 = make_scanner((77, 20), (88, 20));
+        refresh_changed_paths(
+            &mut catalog,
+            &scanner2,
+            FIXTURE_PROJECT_ROOT,
+            &["Content/A.uexp".into(), "Content/B.ubulk".into()],
+            PROJECT_INDEX_MAX_REPORTED_CHANGES,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let gen2 = catalog.committed_generation().unwrap();
+        let digest2 = catalog.inventory_digest(&project, gen2).unwrap().unwrap();
+        assert_ne!(digest1, digest2);
+
+        let resolved = catalog
+            .changes_since(
+                &project,
+                gen2,
+                &digest1,
+                Some(game_text_index::package_text_plan::MAXIMUM_DELTA_SHARDS),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            resolved,
+            BTreeSet::from(["Content/A.UASSET".to_owned(), "Content/B.UMap".to_owned()])
+        );
+        // Exceeding `max_shards` during sidecar resolution returns `None` early.
+        assert_eq!(
+            catalog
+                .changes_since(&project, gen2, &digest1, Some(1))
+                .unwrap(),
+            None
+        );
+
+        let delta_plan_file = store_root.join("plan-2-delta.bin");
+        let full_plan_file = store_root.join("plan-2-full.bin");
+        let req_delta = make_request(delta_plan_file.clone(), gen2.get());
+        let mut plan_catalog = DirectPlanCatalog {
+            catalog: &catalog,
+            project: project.clone(),
+            generation: gen2,
+        };
+        let delta_plan = build
+            .try_plan_packages_delta(&config, &req_delta, &digest2, &mut plan_catalog)
+            .unwrap()
+            .expect("delta plan should succeed for resolved uppercase/mixed-case sidecar edits")
+            .plan
+            .unwrap();
+
+        let inv2 = catalog
+            .all_package_text_inventory(&project, gen2, gathered)
+            .unwrap();
+        let req_full = make_request(full_plan_file.clone(), gen2.get());
+        let full_plan = build
+            .plan_packages_with_digest(&config, &req_full, inv2, Some(&digest2))
+            .unwrap()
+            .plan
+            .unwrap();
+
+        assert_eq!(delta_plan, full_plan);
+        assert_eq!(
+            fs::read(&delta_plan_file).unwrap(),
+            fs::read(&full_plan_file).unwrap()
+        );
+        let expected_groups: BTreeSet<u32> = ["Content/A.UASSET", "Content/B.UMap"]
+            .into_iter()
+            .map(|p| game_text_index::package_text_plan::shard(p) as u32)
+            .collect();
+        let changed_groups: BTreeSet<u32> = delta_plan.changed.iter().map(|s| s.group).collect();
+        assert_eq!(changed_groups, expected_groups);
     }
 }

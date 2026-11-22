@@ -3,7 +3,8 @@ use crate::join::{Joined, ordinal};
 use crate::join_columns::*;
 use crate::join_policy::*;
 use crate::{Result, require};
-use std::collections::{BTreeSet, HashSet};
+use rustc_hash::FxHashSet;
+use std::collections::BTreeSet;
 const FIELDS: [&str; 19] = [
     "representative",
     "identity",
@@ -33,11 +34,17 @@ pub(crate) fn packed(values: &[String]) -> Result<(Vec<u32>, Vec<u32>)> {
 
 /// The values' WTF-8 bytes end to end, and where each starts.
 fn packed_bytes(values: &[String]) -> Result<(Vec<u8>, Vec<u32>)> {
-    let mut bytes = Vec::new();
-    let mut starts = Vec::new();
+    // A view's WTF-8 bytes differ from its UTF-8 only where it escapes a code unit, which
+    // starts with 0xf3; other values are copied as they are.
+    let mut bytes = Vec::with_capacity(values.iter().map(String::len).sum());
+    let mut starts = Vec::with_capacity(values.len() + 1);
     for value in values {
         starts.push(bytes.len() as u32);
-        bytes.extend_from_slice(crate::wtf8::Wtf8Buf::from_view(value).as_bytes());
+        if value.as_bytes().contains(&0xf3) {
+            bytes.extend_from_slice(crate::wtf8::Wtf8Buf::from_view(value).as_bytes());
+        } else {
+            bytes.extend_from_slice(value.as_bytes());
+        }
         require(
             bytes.len() <= u32::MAX as usize,
             "query IDs exceed u32 range",
@@ -61,12 +68,14 @@ fn arena(
     domain: &str,
     ids: BTreeSet<u32>,
 ) -> Result<()> {
+    use rayon::prelude::*;
     let ids = ids.into_iter().collect::<Vec<_>>();
-    let (bytes, starts) = packed_bytes(
-        &ids.iter()
-            .map(|id| j.string(*id).to_lowercase())
-            .collect::<Vec<_>>(),
-    )?;
+    let folded = ids
+        .par_iter()
+        .map(|id| j.string(*id).to_lowercase())
+        .collect::<Vec<_>>();
+    let (bytes, starts) = packed_bytes(&folded)?;
+    drop(folded);
     let (keys, offsets, postings) = crate::text_trigrams::build(&starts, &bytes)?;
     result.push((format!("{prefix}.ids"), domain.into(), ids));
     result.push((format!("{prefix}.starts"), String::new(), starts));
@@ -111,6 +120,9 @@ struct Entries {
     members: Vec<u32>,
     sources: Vec<u32>,
     files: Vec<u32>,
+    /// Scratch sets `add` clears and reuses for each row.
+    values_seen: FxHashSet<u32>,
+    paths_seen: FxHashSet<u32>,
 }
 impl Entries {
     fn new(count: usize) -> Self {
@@ -119,6 +131,8 @@ impl Entries {
             members: Vec::new(),
             sources: Vec::new(),
             files: Vec::new(),
+            values_seen: FxHashSet::default(),
+            paths_seen: FxHashSet::default(),
         }
     }
     #[allow(clippy::too_many_arguments)]
@@ -141,9 +155,11 @@ impl Entries {
         self.c[5][row] = self.members.len() as u32;
         self.c[7][row] = self.sources.len() as u32;
         self.c[9][row] = self.files.len() as u32;
-        let mut values = HashSet::new();
+        let mut values = std::mem::take(&mut self.values_seen);
+        values.clear();
         let mut paths = Vec::new();
-        let mut paths_seen = HashSet::new();
+        let mut paths_seen = std::mem::take(&mut self.paths_seen);
+        paths_seen.clear();
         let mut flags = 0;
         let mut origins = 0;
         let mut audience = 0;
@@ -185,8 +201,13 @@ impl Entries {
                 notes = 1;
             }
         }
-        let mut values = values.into_iter().collect::<Vec<_>>();
-        values.sort_by(|a, b| ordinal(j.string(*a), j.string(*b)));
+        self.paths_seen = paths_seen;
+        let mut sorted = values.drain().collect::<Vec<_>>();
+        self.values_seen = values;
+        let values = {
+            sorted.sort_by(|a, b| ordinal(j.string(*a), j.string(*b)));
+            sorted
+        };
         let mut longest = "";
         let mut longest_length = 0;
         let mut visible = false;
@@ -279,14 +300,16 @@ pub(crate) fn columns(j: &Joined, target: &str) -> Result<Vec<Column>> {
     Ok(result)
 }
 fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>> {
+    use rayon::prelude::*;
     let mut measure = crate::scan_timings::Cursor::new();
     let count = j.groups.len();
     let mut occurrence_line = vec![0; j.order.len()];
     // A line holding several resolved texts conflicts; every unit on it carries the fact.
     let mut conflicting = vec![false; count];
     let c = &j.packages.occurrence;
+    let mut sources = FxHashSet::default();
     for (row, g) in j.groups.iter().enumerate() {
-        let mut sources = HashSet::new();
+        sources.clear();
         for i in &j.order[g.os..g.oe] {
             let i = *i as usize;
             occurrence_line[i] = row as u32;
@@ -312,22 +335,34 @@ fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>>
         .iter()
         .map(|r| j.unit_ids[*r as usize].to_owned())
         .collect::<Vec<_>>();
-    let mut line_starts = vec![0];
-    let mut representatives = Vec::new();
+    let mut line_starts = Vec::with_capacity(count + 1);
+    line_starts.push(0);
+    let mut representatives = Vec::with_capacity(raw_representatives.len());
+    let mut seen_units = FxHashSet::default();
     for g in &j.groups {
-        let mut rows = j.order[g.os..g.oe]
-            .iter()
-            .map(|i| j.unit[*i as usize])
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        rows.sort_by(|a, b| {
-            ordinal(
-                &names[raw_index[*a as usize] as usize],
-                &names[raw_index[*b as usize] as usize],
-            )
-        });
-        representatives.extend(rows);
+        let slice = &j.order[g.os..g.oe];
+        if slice.len() <= 1 {
+            for &i in slice {
+                representatives.push(j.unit[i as usize]);
+            }
+        } else {
+            seen_units.clear();
+            let start = representatives.len();
+            for &i in slice {
+                let u = j.unit[i as usize];
+                if seen_units.insert(u) {
+                    representatives.push(u);
+                }
+            }
+            if representatives.len() - start > 1 {
+                representatives[start..].sort_by(|a, b| {
+                    ordinal(
+                        &names[raw_index[*a as usize] as usize],
+                        &names[raw_index[*b as usize] as usize],
+                    )
+                });
+            }
+        }
         line_starts.push(representatives.len() as u32);
     }
     // Both projections read the completed membership tables and own their output columns.
@@ -385,25 +420,27 @@ fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>>
         line_starts.clone(),
     ));
     measure.mark("query.raw_ids");
-    let mut line_names = Vec::new();
     let target_view = crate::wtf8::Wtf8Buf::from_utf8(target).to_view();
-    for row in 0..count {
-        let identity = if line_starts[row] != line_starts[row + 1]
-            && j.string(j.line[crate::join::L_KEY][row]).is_empty()
-        {
-            format!(
-                "unresolved:{}",
-                names[raw_index[representatives[line_starts[row] as usize] as usize] as usize]
-            )
-        } else {
-            crate::wtf8::Wtf8Buf::from_utf8(&crate::wtf8::view_json(&serde_json::json!([
-                j.string(j.line[crate::join::L_NS][row]),
-                j.string(j.line[crate::join::L_KEY][row])
-            ]))?)
-            .to_view()
-        };
-        line_names.push(format!("{target_view}:{identity}"));
-    }
+    let line_names = (0..count)
+        .into_par_iter()
+        .map(|row| -> Result<String> {
+            let identity = if line_starts[row] != line_starts[row + 1]
+                && j.string(j.line[crate::join::L_KEY][row]).is_empty()
+            {
+                format!(
+                    "unresolved:{}",
+                    names[raw_index[representatives[line_starts[row] as usize] as usize] as usize]
+                )
+            } else {
+                crate::wtf8::Wtf8Buf::from_utf8(&crate::wtf8::view_json(&serde_json::json!([
+                    j.string(j.line[crate::join::L_NS][row]),
+                    j.string(j.line[crate::join::L_KEY][row])
+                ]))?)
+                .to_view()
+            };
+            Ok(format!("{target_view}:{identity}"))
+        })
+        .collect::<Result<Vec<_>>>()?;
     let (bytes, starts) = packed(&line_names)?;
     result.push(("query.line.id_utf8".into(), String::new(), bytes));
     result.push(("query.line.id_starts".into(), String::new(), starts));
@@ -411,20 +448,11 @@ fn columns_without_translations(j: &Joined, target: &str) -> Result<Vec<Column>>
     crate::join::sort_by_locale(&mut line_order, &line_names);
     result.push(("query.line.order".into(), String::new(), line_order));
     measure.mark("query.line_ids");
-    let paths = j
-        .packages
-        .paths
-        .iter()
-        .map(|id| crate::wtf8::Wtf8Buf::from_view(j.string(*id)))
-        .collect::<Vec<_>>();
-    let mut package_order = (0..paths.len() as u32).collect::<Vec<_>>();
-    package_order.sort_by(|a, b| {
-        crate::join::package_path_order(
-            paths[*a as usize].as_bytes(),
-            paths[*b as usize].as_bytes(),
-        )
-    });
-    result.push(("query.package.order".into(), String::new(), package_order));
+    result.push((
+        "query.package.order".into(),
+        String::new(),
+        j.package_order.clone(),
+    ));
     // Query opens consume persisted folded bytes rather than rebuilding a source arena in JS.
     // Keep IDs as real shared string columns so coordinated compaction remaps them atomically.
     measure.mark("query.package_order");

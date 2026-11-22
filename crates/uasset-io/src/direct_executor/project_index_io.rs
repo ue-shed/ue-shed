@@ -138,48 +138,35 @@ impl ProjectIndexQuerySession {
         })
     }
 
+    /// The Catalog generation's complete inventory digest, read from its manifest without decoding
+    /// any snapshot chunks.
+    pub(crate) fn package_text_inventory_digest(
+        &mut self,
+        request: &game_text_index::package_text_contract::PackageTextPlanRequest,
+    ) -> Result<Option<String>, Failure> {
+        let catalog = self.catalog(&request.cache_root, &request.project_id, request.generation)?;
+        catalog
+            .inventory_digest(
+                &ProjectId::new(&request.project_id),
+                Generation::new(request.generation),
+            )
+            .map_err(catalog_to_failure)
+    }
+
     /// The Catalog generation's packages for a package-text plan: each path, bundle signature,
     /// and whether Unreal's gatherer reads it, from its header.
     pub(crate) fn package_text_inventory(
         &mut self,
         request: &game_text_index::package_text_contract::PackageTextPlanRequest,
     ) -> Result<Vec<game_text_index::package_text_contract::PackageTextExpected>, Failure> {
-        use super::catalog::{Catalog, QueryRequest};
         let catalog = self.catalog(&request.cache_root, &request.project_id, request.generation)?;
-        let mut inventory = Vec::new();
-        let mut cursor = None;
-        loop {
-            let page = catalog
-                .query(&QueryRequest {
-                    project_id: ProjectId::new(&request.project_id),
-                    expected_generation: Generation::new(request.generation),
-                    kind: QueryKind::Inventory,
-                    limit: super::catalog::PROJECT_INDEX_MAX_PAGE_SIZE,
-                    cursor,
-                    fields: super::catalog::HeaderFields::ALL,
-                })
-                .map_err(catalog_to_failure)?;
-            for item in page.items {
-                if let QueryItem::Inventory {
-                    package_path,
-                    signature,
-                    header_data,
-                } = item
-                {
-                    inventory.push(
-                        game_text_index::package_text_contract::PackageTextExpected {
-                            path: package_path,
-                            signature,
-                            selected: gathered(header_data.as_ref()),
-                        },
-                    );
-                }
-            }
-            cursor = page.next_cursor;
-            if cursor.is_none() {
-                return Ok(inventory);
-            }
-        }
+        catalog
+            .all_package_text_inventory(
+                &ProjectId::new(&request.project_id),
+                Generation::new(request.generation),
+                gathered,
+            )
+            .map_err(catalog_to_failure)
     }
 
     pub(crate) fn query(

@@ -994,7 +994,7 @@ impl AssetDecoder for CurveTableDecoder {
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
         let footer_offset = reader.tell();
-        let footer = reader.read_i32(&format!("{}.ExportFooter", export.object_path))?;
+        let footer = reader.read_i32(&format_args!("{}.ExportFooter", export.object_path))?;
         if footer != 0 {
             return Err(AssetError::new(
                 AssetErrorKind::MalformedData,
@@ -1032,7 +1032,7 @@ fn decode_curve_table_data(
     object_path: &ObjectPath,
 ) -> Result<SourceCurveTableData, AssetError> {
     let row_count_offset = reader.tell();
-    let row_count = reader.read_i32(&format!("{object_path}.Rows.Count"))?;
+    let row_count = reader.read_i32(&format_args!("{object_path}.Rows.Count"))?;
     if row_count < 0 {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
@@ -1040,7 +1040,7 @@ fn decode_curve_table_data(
         ));
     }
 
-    let raw_mode = reader.read_u8(&format!("{object_path}.Mode"))?;
+    let raw_mode = reader.read_u8(&format_args!("{object_path}.Mode"))?;
     let mode = match raw_mode {
         0 => CurveTableMode::Empty,
         1 => CurveTableMode::SimpleCurves,
@@ -1055,17 +1055,17 @@ fn decode_curve_table_data(
     let capacity = reader.checked_vec_capacity::<CurveTableRow>(
         crate::convert::usize_from_checked(row_count),
         16,
-        &format!("{object_path}.Rows.Count"),
+        &format_args!("{object_path}.Rows.Count"),
     )?;
     let mut rows = Vec::with_capacity(capacity);
     for index in 0..row_count {
         let row_path = format!("{object_path}.Rows[{index}]");
-        let name = reader.read_name_ref(&format!("{row_path}.Name"))?;
+        let name = reader.read_name_ref(&format_args!("{row_path}.Name"))?;
         let stream = read_tagged_property_stream(
             reader,
             &context.package.summary.versions,
             &context.package.names,
-            &format!("{row_path}.Curve"),
+            &format_args!("{row_path}.Curve"),
         )?;
         let keys = match mode {
             CurveTableMode::Empty => Vec::new(),
@@ -1151,7 +1151,7 @@ impl AssetDecoder for StringTableDecoder {
 
         let (_properties, mut reader) = decode_uobject_properties(export, context)?;
         let footer_offset = reader.tell();
-        let footer = reader.read_i32(&format!("{}.ExportFooter", export.object_path))?;
+        let footer = reader.read_i32(&format_args!("{}.ExportFooter", export.object_path))?;
         if footer != 0 {
             return Err(AssetError::new(
                 AssetErrorKind::MalformedData,
@@ -1189,14 +1189,26 @@ struct SourceStringTableData {
     metadata: StringTableMetadata,
 }
 
+/// The `{object_path}.MetaData[{index}]` breadcrumb, formatted only when a read fails.
+struct MetaDataPath<'a> {
+    object_path: &'a ObjectPath,
+    index: usize,
+}
+
+impl fmt::Display for MetaDataPath<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}.MetaData[{}]", self.object_path, self.index)
+    }
+}
+
 fn decode_string_table_data(
     reader: &mut crate::archive::Reader<'_>,
     package: &Package,
     object_path: &ObjectPath,
 ) -> Result<SourceStringTableData, AssetError> {
-    let namespace = reader.read_fstring(&format!("{object_path}.Namespace"))?;
+    let namespace = reader.read_fstring(&format_args!("{object_path}.Namespace"))?;
     let entry_count_offset = reader.tell();
-    let entry_count = reader.read_i32(&format!("{object_path}.Entries.Count"))?;
+    let entry_count = reader.read_i32(&format_args!("{object_path}.Entries.Count"))?;
     if entry_count < 0 {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
@@ -1206,15 +1218,15 @@ fn decode_string_table_data(
     let capacity = reader.checked_vec_capacity::<StringTableEntry>(
         crate::convert::usize_from_checked(entry_count),
         8,
-        &format!("{object_path}.Entries.Count"),
+        &format_args!("{object_path}.Entries.Count"),
     )?;
     let mut entries = Vec::with_capacity(capacity);
     for index in 0..entry_count {
-        let entry_path = format!("{object_path}.Entries[{index}]");
-        let key = reader.read_fstring(&format!("{entry_path}.Key"))?;
-        let source = reader.read_fstring(&format!("{entry_path}.SourceString"))?;
+        let key = reader.read_fstring(&format_args!("{object_path}.Entries[{index}].Key"))?;
+        let source =
+            reader.read_fstring(&format_args!("{object_path}.Entries[{index}].SourceString"))?;
         let dev_notes = if package.summary.has_text_dev_notes() {
-            reader.read_fstring(&format!("{object_path}.Entries[{index}].DevNotes"))?
+            reader.read_fstring(&format_args!("{object_path}.Entries[{index}].DevNotes"))?
         } else {
             String::new()
         };
@@ -1225,17 +1237,22 @@ fn decode_string_table_data(
         });
     }
 
-    let raw_metadata =
-        reader.read_tarray(&format!("{object_path}.MetaData"), 8, |reader, index| {
-            let path = format!("{object_path}.MetaData[{index}]");
-            let key = reader.read_fstring(&format!("{path}.Key"))?;
-            let fields = reader.read_tarray(&format!("{path}.Value"), 12, |reader, index| {
-                let name = reader.read_name_ref(&format!("{path}.Value[{index}].Key"))?;
-                let value = reader.read_fstring(&format!("{path}.Value[{index}].Value"))?;
-                Ok((name, value))
-            })?;
+    let raw_metadata = reader.read_tarray(
+        &format_args!("{object_path}.MetaData"),
+        8,
+        |reader, index| {
+            let path = MetaDataPath { object_path, index };
+            let key = reader.read_fstring(&format_args!("{path}.Key"))?;
+            let fields =
+                reader.read_tarray(&format_args!("{path}.Value"), 12, |reader, index| {
+                    let name = reader.read_name_ref(&format_args!("{path}.Value[{index}].Key"))?;
+                    let value =
+                        reader.read_fstring(&format_args!("{path}.Value[{index}].Value"))?;
+                    Ok((name, value))
+                })?;
             Ok((key, fields))
-        })?;
+        },
+    )?;
     let mut metadata = StringTableMetadata::new();
     for (key, fields) in raw_metadata {
         let mut resolved = std::collections::BTreeMap::new();
@@ -1271,7 +1288,7 @@ fn decode_enum_data(
     // `UEnum::Serialize` writes the names as `int32 Num` followed by
     // `Num` × (`FName`, `int64`) pairs, then a `uint8 CppForm`.
     let count_offset = reader.tell();
-    let count = reader.read_i32(&format!("{object_path}.Names.Count"))?;
+    let count = reader.read_i32(&format_args!("{object_path}.Names.Count"))?;
     if count < 0 {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
@@ -1281,18 +1298,18 @@ fn decode_enum_data(
     let capacity = reader.checked_vec_capacity::<(NameRef, i64)>(
         crate::convert::usize_from_checked(count),
         16,
-        &format!("{object_path}.Names.Count"),
+        &format_args!("{object_path}.Names.Count"),
     )?;
     let mut raw_entries = Vec::with_capacity(capacity);
     for index in 0..count {
         let entry_path = format!("{object_path}.Names[{index}]");
-        let name = reader.read_name_ref(&format!("{entry_path}.Name"))?;
-        let value = reader.read_i64(&format!("{entry_path}.Value"))?;
+        let name = reader.read_name_ref(&format_args!("{entry_path}.Name"))?;
+        let value = reader.read_i64(&format_args!("{entry_path}.Value"))?;
         raw_entries.push((name, value));
     }
 
     let cpp_form_offset = reader.tell();
-    let raw_form = reader.read_u8(&format!("{object_path}.CppForm"))?;
+    let raw_form = reader.read_u8(&format_args!("{object_path}.CppForm"))?;
     let cpp_form = enum_cpp_form(raw_form, cpp_form_offset)?;
     skip_enum_underlying_type(reader, context, object_path)?;
 
@@ -1340,7 +1357,7 @@ fn skip_enum_underlying_type(
         return Ok(());
     }
     let offset = reader.tell();
-    let underlying = reader.read_u8(&format!("{object_path}.UnderlyingType"))?;
+    let underlying = reader.read_u8(&format_args!("{object_path}.UnderlyingType"))?;
     // `UEnum::EUnderlyingType`: int8 through uint64.
     if underlying > 7 {
         return Err(AssetError::new(
@@ -1376,7 +1393,7 @@ impl AssetDecoder for EnumDecoder {
 
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
         let footer_offset = reader.tell();
-        let footer = reader.read_i32(&format!("{}.ExportFooter", export.object_path))?;
+        let footer = reader.read_i32(&format_args!("{}.ExportFooter", export.object_path))?;
         if footer != 0 {
             return Err(AssetError::new(
                 AssetErrorKind::MalformedData,
@@ -1463,7 +1480,7 @@ impl AssetDecoder for StructDecoder {
         let (properties, mut reader) = decode_uobject_properties(export, context)?;
 
         let footer_offset = reader.tell();
-        let footer = reader.read_i32(&format!("{}.ExportFooter", export.object_path))?;
+        let footer = reader.read_i32(&format_args!("{}.ExportFooter", export.object_path))?;
         if footer != 0 {
             return Err(AssetError::new(
                 AssetErrorKind::MalformedData,
@@ -1509,8 +1526,8 @@ fn decode_struct_definition(
     // FStructScriptLoader reads the bytecode and serialized-storage sizes.
     // User-defined structs should not carry script, but preserve the legacy
     // rejection boundary if malformed input claims that they do.
-    let bytecode_size = reader.read_i32(&format!("{object_path}.ScriptBytecodeSize"))?;
-    let storage_size = reader.read_i32(&format!("{object_path}.ScriptStorageSize"))?;
+    let bytecode_size = reader.read_i32(&format_args!("{object_path}.ScriptBytecodeSize"))?;
+    let storage_size = reader.read_i32(&format_args!("{object_path}.ScriptStorageSize"))?;
     if bytecode_size != 0 || storage_size != 0 {
         return Err(AssetError::new(
             AssetErrorKind::UnsupportedCapability,
@@ -1531,15 +1548,15 @@ fn decode_struct_members(
     // UStruct::Serialize tail. SuperStruct is an FPackageIndex; user structs
     // have no super, so it is null (0). Children is a TArray<UField*>; user
     // structs carry their members as ChildProperties (FFields), not UFields.
-    let _super_struct = reader.read_i32(&format!("{object_path}.SuperStruct"))?;
-    let child_count = reader.read_count(&format!("{object_path}.Children.Count"))?;
+    let _super_struct = reader.read_i32(&format_args!("{object_path}.SuperStruct"))?;
+    let child_count = reader.read_count(&format_args!("{object_path}.Children.Count"))?;
     reader.checked_vec_capacity::<PackageIndex>(child_count, 4, object_path.as_str())?;
     for index in 0..child_count {
-        reader.read_i32(&format!("{object_path}.Children[{index}]"))?;
+        reader.read_i32(&format_args!("{object_path}.Children[{index}]"))?;
     }
 
     let field_count_offset = reader.tell();
-    let field_count = reader.read_i32(&format!("{object_path}.ChildProperties.Count"))?;
+    let field_count = reader.read_i32(&format_args!("{object_path}.ChildProperties.Count"))?;
     if field_count < 0 {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
@@ -1549,7 +1566,7 @@ fn decode_struct_members(
     let capacity = reader.checked_vec_capacity::<StructField>(
         crate::convert::usize_from_checked(field_count),
         1,
-        &format!("{object_path}.ChildProperties.Count"),
+        &format_args!("{object_path}.ChildProperties.Count"),
     )?;
     let mut fields = Vec::with_capacity(capacity);
     for index in 0..field_count {
@@ -1566,7 +1583,7 @@ fn decode_struct_flags(
     object_path: &ObjectPath,
 ) -> Result<u32, AssetError> {
     reader
-        .read_u32(&format!("{object_path}.StructFlags"))
+        .read_u32(&format_args!("{object_path}.StructFlags"))
         .map_err(Into::into)
 }
 
@@ -1579,7 +1596,7 @@ fn decode_struct_default_instance(
         reader,
         &context.package.summary.versions,
         &context.package.names,
-        &format!("{object_path}.DefaultInstance"),
+        &format_args!("{object_path}.DefaultInstance"),
     )?;
     decode_property_stream_values_at_depth(
         context.source,
@@ -1615,25 +1632,26 @@ fn read_field_at_depth(
             format!("struct field nesting exceeds depth limit {MAX_FIELD_DEPTH} at {path}"),
         ));
     }
-    let type_name = reader.read_name_ref(&format!("{path}.Type"))?;
+    let type_name = reader.read_name_ref(&format_args!("{path}.Type"))?;
     let type_str = context.package.resolve_name(type_name).unwrap_or_default();
     if type_str == "None" || type_str.is_empty() {
         return Ok(None);
     }
 
     // FField::Serialize: name, flags, then (uncooked) the metadata map.
-    let name = reader.read_name_ref(&format!("{path}.Name"))?;
-    let _flags = reader.read_u32(&format!("{path}.Flags"))?;
+    let name = reader.read_name_ref(&format_args!("{path}.Name"))?;
+    let _flags = reader.read_u32(&format_args!("{path}.Flags"))?;
     let display_name = read_field_metadata(reader, context, path)?;
 
     // FProperty::Serialize.
-    let _array_dim = reader.read_i32(&format!("{path}.ArrayDim"))?;
-    let _element_size = reader.read_i32(&format!("{path}.ElementSize"))?;
-    let _property_flags = reader.read_u64(&format!("{path}.PropertyFlags"))?;
+    let _array_dim = reader.read_i32(&format_args!("{path}.ArrayDim"))?;
+    let _element_size = reader.read_i32(&format_args!("{path}.ElementSize"))?;
+    let _property_flags = reader.read_u64(&format_args!("{path}.PropertyFlags"))?;
     // FProperty::RepIndex is a uint16 (serialized as a default 0 on save).
-    let _rep_index = reader.read_u16(&format!("{path}.RepIndex"))?;
-    let _rep_notify = reader.read_name_ref(&format!("{path}.RepNotifyFunc"))?;
-    let _bp_rep_condition = reader.read_u8(&format!("{path}.BlueprintReplicationCondition"))?;
+    let _rep_index = reader.read_u16(&format_args!("{path}.RepIndex"))?;
+    let _rep_notify = reader.read_name_ref(&format_args!("{path}.RepNotifyFunc"))?;
+    let _bp_rep_condition =
+        reader.read_u8(&format_args!("{path}.BlueprintReplicationCondition"))?;
 
     // Type-specific tail.
     let referenced_path = read_field_type_tail(reader, context, path, &type_str, depth)?;
@@ -1658,14 +1676,14 @@ fn read_field_type_tail(
     let read_ref = |reader: &mut crate::archive::Reader<'_>,
                     field: &str|
      -> Result<Option<ObjectPath>, AssetError> {
-        let raw = reader.read_i32(&format!("{path}.{field}"))?;
+        let raw = reader.read_i32(&format_args!("{path}.{field}"))?;
         Ok(context.package.resolve_index(PackageIndex::from_raw(raw)))
     };
 
     match type_str {
         "BoolProperty" => {
             // FieldSize, ByteOffset, ByteMask, FieldMask, BoolSize, NativeBool: u8 each.
-            reader.skip(6, &format!("{path}.BoolLayout"))?;
+            reader.skip(6, &format_args!("{path}.BoolLayout"))?;
             Ok(None)
         }
         "ByteProperty" => read_ref(reader, "Enum"),
@@ -1696,7 +1714,7 @@ fn read_field_type_tail(
         | "MulticastSparseDelegateProperty" => read_ref(reader, "SignatureFunction"),
         // FFieldPathProperty::Serialize: the FFieldClass, saved as its name.
         "FieldPathProperty" => {
-            reader.read_name_ref(&format!("{path}.PropertyClass"))?;
+            reader.read_name_ref(&format_args!("{path}.PropertyClass"))?;
             Ok(None)
         }
         "ArrayProperty" => {
@@ -1729,11 +1747,11 @@ fn read_field_metadata(
     context: &AssetDecodeContext<'_>,
     path: &str,
 ) -> Result<Option<String>, AssetError> {
-    let has_metadata = reader.read_u32(&format!("{path}.HasMetaData"))?;
+    let has_metadata = reader.read_u32(&format_args!("{path}.HasMetaData"))?;
     if has_metadata == 0 {
         return Ok(None);
     }
-    let count = reader.read_i32(&format!("{path}.MetaData.Count"))?;
+    let count = reader.read_i32(&format_args!("{path}.MetaData.Count"))?;
     if count < 0 {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
@@ -1742,8 +1760,8 @@ fn read_field_metadata(
     }
     let mut display_name = None;
     for index in 0..count {
-        let key = reader.read_name_ref(&format!("{path}.MetaData[{index}].Key"))?;
-        let value = reader.read_fstring(&format!("{path}.MetaData[{index}].Value"))?;
+        let key = reader.read_name_ref(&format_args!("{path}.MetaData[{index}].Key"))?;
+        let value = reader.read_fstring(&format_args!("{path}.MetaData[{index}].Value"))?;
         if context.package.resolve_name(key).as_deref() == Some("DisplayName") {
             display_name = Some(value);
         }
@@ -1812,7 +1830,7 @@ fn decode_skeleton_reference_pose(
     let value = crate::codec::native_values::property(crate::codec::native_values::read_layout(
         reader,
         "FReferenceSkeletonPose",
-        path.as_str(),
+        &path.as_str(),
     )?);
     let PropertyValue::NativeStruct { fields } = &value else {
         unreachable!()
@@ -1871,7 +1889,7 @@ fn decode_skeleton_reference_bones(
         .package_flags
         .contains(crate::version::PackageFlags::FILTER_EDITOR_ONLY);
     let count_offset = reader.tell();
-    let count = reader.read_i32(&format!("{object_path}.ReferenceSkeleton.Num"))?;
+    let count = reader.read_i32(&format_args!("{object_path}.ReferenceSkeleton.Num"))?;
     if count < 0 {
         return Err(AssetError::new(
             AssetErrorKind::MalformedData,
@@ -1881,15 +1899,15 @@ fn decode_skeleton_reference_bones(
     let capacity = reader.checked_vec_capacity::<SkeletonBone>(
         crate::convert::usize_from_checked(count),
         if editor_data_present { 16 } else { 12 },
-        &format!("{object_path}.ReferenceSkeleton.Num"),
+        &format_args!("{object_path}.ReferenceSkeleton.Num"),
     )?;
     let mut bones = Vec::with_capacity(capacity);
     for index in 0..count {
         let path = format!("{object_path}.ReferenceSkeleton.Bones[{index}]");
-        let name = reader.read_name_ref(&format!("{path}.Name"))?;
-        let parent_index = reader.read_i32(&format!("{path}.ParentIndex"))?;
+        let name = reader.read_name_ref(&format_args!("{path}.Name"))?;
+        let parent_index = reader.read_i32(&format_args!("{path}.ParentIndex"))?;
         if editor_data_present {
-            reader.read_fstring(&format!("{path}.ExportName"))?;
+            reader.read_fstring(&format_args!("{path}.ExportName"))?;
         }
         bones.push(SkeletonBone { name, parent_index });
     }
@@ -1988,7 +2006,7 @@ fn decode_animation_skeleton_guid(
     object_path: &ObjectPath,
 ) -> Result<Guid, AssetError> {
     reader
-        .read_guid(&format!("{object_path}.SkeletonGuid"))
+        .read_guid(&format_args!("{object_path}.SkeletonGuid"))
         .map_err(AssetError::from)
 }
 
@@ -2004,15 +2022,15 @@ fn decode_anim_sequence_uncooked_data(
     object_path: &ObjectPath,
 ) -> Result<SourceAnimSequenceData, AssetError> {
     let global_strip_flags = reader
-        .read_u8(&format!("{object_path}.StripFlags.Global"))
+        .read_u8(&format_args!("{object_path}.StripFlags.Global"))
         .map_err(AssetError::from)?;
     let class_strip_flags = reader
-        .read_u8(&format!("{object_path}.StripFlags.Class"))
+        .read_u8(&format_args!("{object_path}.StripFlags.Class"))
         .map_err(AssetError::from)?;
 
     let legacy_raw_track_count = if global_strip_flags & STRIP_EDITOR_ONLY == 0 {
         let count = reader
-            .read_i32(&format!("{object_path}.RawAnimationData.Num"))
+            .read_i32(&format_args!("{object_path}.RawAnimationData.Num"))
             .map_err(AssetError::from)?;
         if count < 0 {
             return Err(AssetError::new(
@@ -2034,7 +2052,7 @@ fn decode_anim_sequence_uncooked_data(
     }
 
     let serialize_compressed_data = reader
-        .read_u32(&format!("{object_path}.SerializeCompressedData"))
+        .read_u32(&format_args!("{object_path}.SerializeCompressedData"))
         .map_err(AssetError::from)?;
     let serialized_compressed_data = match serialize_compressed_data {
         0 => false,
@@ -2070,13 +2088,13 @@ fn consume_inline_object_guid_footer(
 ) -> Result<Option<Guid>, AssetError> {
     let offset = reader.tell();
     let marker = reader
-        .read_i32(&format!("{object_path}.ExportFooter.HasObjectGuid"))
+        .read_i32(&format_args!("{object_path}.ExportFooter.HasObjectGuid"))
         .map_err(AssetError::from)?;
     match marker {
         0 => Ok(None),
         1 => Ok(Some(
             reader
-                .read_guid(&format!("{object_path}.ExportFooter.ObjectGuid"))
+                .read_guid(&format_args!("{object_path}.ExportFooter.ObjectGuid"))
                 .map_err(AssetError::from)?,
         )),
         other => Err(AssetError::new(
@@ -2294,14 +2312,15 @@ fn read_editable_user_pin_array(
     // UK2Node_EditablePinBase::Serialize and operator<<(FUserPinInfo&).
     // DesiredPinDirection is TEnumAsByte serialized as uint8 in these versions.
     let path = format!("{object_path}.UserDefinedPins");
-    let count = reader.read_count(&format!("{path}.Count"))?;
+    let count = reader.read_count(&format_args!("{path}.Count"))?;
     let capacity = reader.checked_vec_capacity::<EdGraphUserPin>(count, 8, &path)?;
     let mut pins = Vec::with_capacity(capacity);
     for index in 0..count {
         let path = format!("{path}[{index}]");
-        let name = reader.read_name_ref(&format!("{path}.PinName"))?;
-        let pin_type = read_ed_graph_pin_type(reader, &format!("{path}.PinType"), omit_precision)?;
-        let direction = reader.read_u8(&format!("{path}.DesiredPinDirection"))?;
+        let name = reader.read_name_ref(&format_args!("{path}.PinName"))?;
+        let pin_type =
+            read_ed_graph_pin_type(reader, &format_args!("{path}.PinType"), omit_precision)?;
+        let direction = reader.read_u8(&format_args!("{path}.DesiredPinDirection"))?;
         // EEdGraphPinDirection also defines EGPD_MAX (2); FUserPinInfo initializes
         // its desired direction to that sentinel and repairs it on load.
         if direction > 2 {
@@ -2310,7 +2329,7 @@ fn read_editable_user_pin_array(
                 format!("{path}: invalid pin direction {direction}"),
             ));
         }
-        let default_value = reader.read_fstring(&format!("{path}.PinDefaultValue"))?;
+        let default_value = reader.read_fstring(&format_args!("{path}.PinDefaultValue"))?;
         pins.push(EdGraphUserPin {
             name,
             pin_type,
@@ -3583,7 +3602,7 @@ fn decode_uobject_properties_with_replay<'a>(
             .is_some_and(|class| is_asset_import_data_class(class.as_str()))
     {
         reader
-            .read_fstring(&format!("{}.AssetImportData.Json", export.object_path))
+            .read_fstring(&format_args!("{}.AssetImportData.Json", export.object_path))
             .map_err(AssetError::from)?;
     }
 
@@ -3629,7 +3648,7 @@ fn consume_uobject_export_footer(
     if reader.remaining() == 4 {
         let offset = reader.tell();
         let footer = reader
-            .read_i32(&format!("{object_path}.ExportFooter"))
+            .read_i32(&format_args!("{object_path}.ExportFooter"))
             .map_err(AssetError::from)?;
         if footer != 0 {
             return Err(AssetError::new(
@@ -3642,7 +3661,7 @@ fn consume_uobject_export_footer(
     if reader.remaining() == 20 {
         let offset = reader.tell();
         let has_guid = reader
-            .read_i32(&format!("{object_path}.ExportFooter.HasObjectGuid"))
+            .read_i32(&format_args!("{object_path}.ExportFooter.HasObjectGuid"))
             .map_err(AssetError::from)?;
         if has_guid != 1 {
             return Err(AssetError::new(
@@ -3653,7 +3672,7 @@ fn consume_uobject_export_footer(
             ));
         }
         let guid = reader
-            .read_guid(&format!("{object_path}.ExportFooter.ObjectGuid"))
+            .read_guid(&format_args!("{object_path}.ExportFooter.ObjectGuid"))
             .map_err(AssetError::from)?;
         return Ok(Some(guid));
     }
@@ -3684,7 +3703,7 @@ fn consume_uobject_export_footer_lenient(
         0 => Ok((None, empty)),
         4 => {
             let footer = reader
-                .read_i32(&format!("{object_path}.ExportFooter"))
+                .read_i32(&format_args!("{object_path}.ExportFooter"))
                 .map_err(AssetError::from)?;
             if footer == 0 {
                 Ok((None, empty))
@@ -3694,11 +3713,11 @@ fn consume_uobject_export_footer_lenient(
         }
         20 => {
             let has_guid = reader
-                .read_i32(&format!("{object_path}.ExportFooter.HasObjectGuid"))
+                .read_i32(&format_args!("{object_path}.ExportFooter.HasObjectGuid"))
                 .map_err(AssetError::from)?;
             if has_guid == 1 {
                 let guid = reader
-                    .read_guid(&format!("{object_path}.ExportFooter.ObjectGuid"))
+                    .read_guid(&format_args!("{object_path}.ExportFooter.ObjectGuid"))
                     .map_err(AssetError::from)?;
                 Ok((Some(guid), empty))
             } else {

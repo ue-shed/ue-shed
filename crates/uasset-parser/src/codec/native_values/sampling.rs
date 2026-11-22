@@ -6,7 +6,7 @@ pub(super) fn optional(
     ty: &PropertyTypeName,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Option<PropertyValue> {
     let versions = &package.summary.versions;
     if versions.ue4 != crate::version::VersionContext::LATEST_SUPPORTED_UE4
@@ -33,7 +33,10 @@ pub(super) fn optional(
     Some(value)
 }
 
-fn decode(reader: &mut Reader<'_>, path: &str) -> Result<PropertyValue, PropertyError> {
+fn decode(
+    reader: &mut Reader<'_>,
+    path: &dyn std::fmt::Display,
+) -> Result<PropertyValue, PropertyError> {
     // UE 4.27/5.7/5.8 SkeletalMeshSampling.cpp:
     // FSkeletalMeshSamplingLODBuiltData::Serialize delegates to its sampler.
     // WeightedRandomSampler.cpp writes Prob, Alias, TotalWeight. MemoryImage.h
@@ -58,7 +61,7 @@ fn decode(reader: &mut Reader<'_>, path: &str) -> Result<PropertyValue, Property
 
 fn array(
     reader: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
     kind: ScalarKind,
 ) -> Result<PropertyValue, PropertyError> {
     let count = reader.read_count(path)?;
@@ -128,7 +131,7 @@ mod tests {
             let (package, ty) = package(version);
             for bytes in [bytes(), vec![0; 12]] {
                 let mut reader = Reader::new(&bytes);
-                let value = optional(&ty, &mut reader, &package, "Fixture").unwrap();
+                let value = optional(&ty, &mut reader, &package, &"Fixture").unwrap();
                 assert_eq!(reader.remaining(), 0);
                 let sampler = field(&value, "AreaWeightedTriangleSampler").unwrap();
                 let nonempty = bytes.len() != 12;
@@ -155,7 +158,7 @@ mod tests {
                 for end in 0..bytes.len() {
                     let mut reader = Reader::new(&bytes[..end]);
                     assert!(
-                        optional(&ty, &mut reader, &package, "Fixture").is_none(),
+                        optional(&ty, &mut reader, &package, &"Fixture").is_none(),
                         "{version} {end}"
                     );
                     assert_eq!(reader.tell(), 0);
@@ -173,18 +176,18 @@ mod tests {
                 let mut bad = bytes.clone();
                 bad[offset..offset + 4].copy_from_slice(&count.to_le_bytes());
                 let mut reader = Reader::new(&bad);
-                assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+                assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
                 assert_eq!(reader.tell(), 0);
             }
         }
         let mut reader = Reader::new(&bytes);
         ty.parameters[0].parameters[0].name = name_ref(3, 0);
-        assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+        assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
         assert_eq!(reader.tell(), 0);
         ty.parameters[0].parameters[0].name = name_ref(2, 0);
         for version in [999, 1019] {
             package.summary.versions.ue5 = version;
-            assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+            assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
             assert_eq!(reader.tell(), 0);
         }
     }
@@ -204,7 +207,7 @@ mod tests {
                 },
                 &mut reader,
                 &package,
-                "Fixture",
+                &"Fixture",
                 DecodeScope::root(None),
                 2,
                 if version == 0 {

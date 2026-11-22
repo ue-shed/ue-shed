@@ -225,7 +225,7 @@ fn element(
                 Err(invalid_element(reader))
             }
         }
-        Element::Text => decode_text_value(reader, package, "DeclaredContainer.Text")?
+        Element::Text => decode_text_value(reader, package, &"DeclaredContainer.Text")?
             .map(|value| PropertyValue::Text(Box::new(value)))
             .ok_or_else(|| invalid_element(reader)),
         Element::NiagaraVariable | Element::NiagaraVariableBase => {
@@ -238,7 +238,7 @@ fn element(
                 },
                 reader,
                 package,
-                "DeclaredContainer.Variable",
+                &"DeclaredContainer.Variable",
                 scope,
             )?
             .map_or_else(|| tagged(source, reader, package, scope), Ok)
@@ -865,17 +865,17 @@ mod tests {
         };
         let expected = PropertyValue::Struct(Box::new(stream.clone()));
         assert_eq!(
-            decode_data_table_row_handle(&stream, &package, "Fixture").unwrap(),
+            decode_data_table_row_handle(&stream, &package, &"Fixture").unwrap(),
             expected
         );
         let mut row = record(0, 2, 0);
         row.value = PropertyValue::Name(name_ref(3, 0));
         stream.records.push(row);
         assert!(matches!(
-            decode_data_table_row_handle(&stream, &package, "Fixture").unwrap(),
+            decode_data_table_row_handle(&stream, &package, &"Fixture").unwrap(),
             PropertyValue::Struct(ref saved) if saved.records.len() == 1
         ));
         stream.records[0].value = PropertyValue::Int(1);
-        assert!(decode_data_table_row_handle(&stream, &package, "Fixture").is_err());
+        assert!(decode_data_table_row_handle(&stream, &package, &"Fixture").is_err());
     }
 }

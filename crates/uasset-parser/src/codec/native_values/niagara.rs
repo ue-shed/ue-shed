@@ -17,7 +17,7 @@ pub(in crate::codec) fn decode(
     name: &str,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if package.summary.versions.ue5 != 0 {
@@ -41,7 +41,7 @@ fn decode_record(
     name: &str,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     scope: DecodeScope<'_>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     // UE 4.27 / 5.6–5.8 Niagara/Private/NiagaraModule.cpp, FNiagaraVariableBase::Serialize,
@@ -146,7 +146,7 @@ mod tests {
                         name,
                         &mut reader,
                         &package,
-                        "Fixture",
+                        &"Fixture",
                         DecodeScope::root(None)
                     )
                     .unwrap()
@@ -161,7 +161,7 @@ mod tests {
                             name,
                             &mut reader,
                             &package,
-                            "Fixture",
+                            &"Fixture",
                             DecodeScope::root(None)
                         )
                         .unwrap()
@@ -178,7 +178,7 @@ mod tests {
                         name,
                         &mut reader,
                         &package,
-                        "Fixture",
+                        &"Fixture",
                         DecodeScope::root(None)
                     )
                     .unwrap()
@@ -239,7 +239,7 @@ mod tests {
                     name,
                     &mut reader,
                     &package,
-                    "Fixture",
+                    &"Fixture",
                     DecodeScope::root(None)
                 )
                 .unwrap()
@@ -253,7 +253,7 @@ mod tests {
                         name,
                         &mut Reader::new(&bytes[..end]),
                         &package,
-                        "Fixture",
+                        &"Fixture",
                         DecodeScope::root(None)
                     )
                     .is_err(),
@@ -269,7 +269,7 @@ mod tests {
                     name,
                     &mut reader,
                     &old,
-                    "Fixture",
+                    &"Fixture",
                     DecodeScope::root(None)
                 )
                 .unwrap()
@@ -289,7 +289,7 @@ mod tests {
                     name,
                     &mut Reader::new(&bytes),
                     &ue5,
-                    "Fixture",
+                    &"Fixture",
                     DecodeScope::root(None)
                 )
                 .unwrap()
@@ -303,7 +303,7 @@ mod tests {
                     name,
                     &mut Reader::new(&invalid),
                     &package,
-                    "Fixture",
+                    &"Fixture",
                     DecodeScope::root(None)
                 )
                 .is_err()

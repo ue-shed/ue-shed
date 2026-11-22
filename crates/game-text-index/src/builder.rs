@@ -449,6 +449,48 @@ impl BuildSession {
         request: &crate::package_text_contract::PackageTextPlanRequest,
         inventory: Vec<crate::package_text_contract::PackageTextExpected>,
     ) -> Result<BuildOutcome> {
+        self.plan_packages_with_digest(configuration, request, inventory, None)
+    }
+
+    /// Returns an unchanged empty plan in O(1) when `catalog_digest` matches the exact active
+    /// package-text shards recorded for this format and policy, avoiding a Catalog inventory read.
+    pub fn try_plan_packages_unchanged(
+        &mut self,
+        configuration: &Configuration,
+        request: &crate::package_text_contract::PackageTextPlanRequest,
+        catalog_digest: &str,
+    ) -> Result<Option<BuildOutcome>> {
+        let (active, store) = self.leased.as_ref().ok_or(crate::Error::new(
+            crate::ErrorCode::InvalidInput,
+            "call begin in a protocol session first",
+        ))?;
+        require(
+            active == configuration,
+            crate::Error::new(
+                crate::ErrorCode::InvalidInput,
+                "request belongs to another build lease",
+            ),
+        )?;
+        let Some(plan) =
+            crate::package_text_plan::try_plan_unchanged(store, request, catalog_digest)?
+        else {
+            return Ok(None);
+        };
+        let mut outcome = BuildOutcome::new("plan_packages");
+        outcome.plan = Some(Box::new(plan));
+        outcome.stage_seconds.insert("plan.keys".into(), 0.0);
+        Ok(Some(outcome))
+    }
+
+    /// Plans a package-text refresh of `inventory` against the leased store and records the
+    /// `catalog_digest` witness when provided.
+    pub fn plan_packages_with_digest(
+        &mut self,
+        configuration: &Configuration,
+        request: &crate::package_text_contract::PackageTextPlanRequest,
+        inventory: Vec<crate::package_text_contract::PackageTextExpected>,
+        catalog_digest: Option<&str>,
+    ) -> Result<BuildOutcome> {
         let (active, store) = self.leased.as_ref().ok_or(crate::Error::new(
             crate::ErrorCode::InvalidInput,
             "call begin in a protocol session first",
@@ -462,8 +504,11 @@ impl BuildSession {
         )?;
         let started = std::time::Instant::now();
         let mut outcome = BuildOutcome::new("plan_packages");
-        outcome.plan = Some(Box::new(crate::package_text_plan::plan(
-            store, request, inventory,
+        outcome.plan = Some(Box::new(crate::package_text_plan::plan_with_digest(
+            store,
+            request,
+            inventory,
+            catalog_digest,
         )?));
         outcome
             .stage_seconds

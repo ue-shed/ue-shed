@@ -178,7 +178,9 @@ jobs:
               run: pnpm install --frozen-lockfile
             - name: Install Chromium for browser tests
               if: needs.changes.outputs.uasset_libraries == 'true'
-              run: pnpm --filter @ue-shed/workbench exec playwright install --with-deps --only-shell chromium
+              run: |
+                  sudo apt-get update -qq --allow-releaseinfo-change
+                  pnpm --filter @ue-shed/workbench exec playwright install --with-deps --only-shell chromium
             - name: Build TypeScript packages
               id: build
               shell: bash
@@ -221,7 +223,8 @@ jobs:
               shell: bash
               run: |
                   set -o pipefail
-                  sudo apt-get update -qq
+                  mkdir -p evidence
+                  sudo apt-get update -qq --allow-releaseinfo-change
                   sudo apt-get install -y -qq --no-install-recommends gcc-mingw-w64-x86-64
                   rustup target add x86_64-pc-windows-gnu
                   pnpm run uasset:check:windows-layout 2>&1 | tee evidence/uasset-windows-layout.log

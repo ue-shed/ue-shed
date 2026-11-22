@@ -550,15 +550,48 @@ fn execute_direct(
             ) = (query_session.as_deref_mut(), build)
             {
                 let started = std::time::Instant::now();
-                let inventory = session.package_text_inventory(request)?;
-                let catalog = started.elapsed().as_secs_f64();
-                session
-                    .game_text
-                    .plan_packages(configuration, request, inventory)
-                    .map(|mut outcome| {
-                        outcome.stage_seconds.insert("plan.catalog".into(), catalog);
-                        outcome
-                    })
+                let digest = session.package_text_inventory_digest(request)?;
+                if let Some(digest_ref) = digest.as_deref() {
+                    match session.game_text.try_plan_packages_unchanged(
+                        configuration,
+                        request,
+                        digest_ref,
+                    ) {
+                        Ok(Some(mut outcome)) => {
+                            outcome
+                                .stage_seconds
+                                .insert("plan.catalog".into(), started.elapsed().as_secs_f64());
+                            Ok(outcome)
+                        }
+                        Ok(None) => {
+                            let inventory = session.package_text_inventory(request)?;
+                            let catalog = started.elapsed().as_secs_f64();
+                            session
+                                .game_text
+                                .plan_packages_with_digest(
+                                    configuration,
+                                    request,
+                                    inventory,
+                                    Some(digest_ref),
+                                )
+                                .map(|mut outcome| {
+                                    outcome.stage_seconds.insert("plan.catalog".into(), catalog);
+                                    outcome
+                                })
+                        }
+                        Err(error) => Err(error),
+                    }
+                } else {
+                    let inventory = session.package_text_inventory(request)?;
+                    let catalog = started.elapsed().as_secs_f64();
+                    session
+                        .game_text
+                        .plan_packages_with_digest(configuration, request, inventory, None)
+                        .map(|mut outcome| {
+                            outcome.stage_seconds.insert("plan.catalog".into(), catalog);
+                            outcome
+                        })
+                }
             } else if let (
                 Some(session),
                 game_text_index::builder::BuildRequest::PublishCode {

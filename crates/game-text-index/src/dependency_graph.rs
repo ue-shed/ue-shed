@@ -413,17 +413,21 @@ impl Graph {
                 .collect::<Result<_>>()?,
         };
         order.push(writer.add("graph.meta", 0, "", &serde_json::to_vec(&meta)?, 1)?);
-        for (name, values) in columns {
-            for (page, values) in values.chunks(PAGE).enumerate() {
-                order.push(writer.add(
-                    &format!("{name}.p{page}"),
-                    2,
-                    "",
-                    &encode_ids(values),
-                    1,
-                )?);
-            }
-        }
+        let pages = columns
+            .into_iter()
+            .flat_map(|(name, values)| {
+                values
+                    .chunks(PAGE)
+                    .enumerate()
+                    .map(|(page, chunk)| (format!("{name}.p{page}"), encode_ids(chunk)))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let sections = pages
+            .iter()
+            .map(|(name, bytes)| (name.as_str(), 2u32, "", bytes.as_slice(), 1))
+            .collect::<Vec<_>>();
+        order.extend(writer.add_all(&sections)?);
         writer.finish(&store.directory.join(&base), &order)?;
         let (pages, count) = Pages::open(&store.directory.join(&base), generation)?;
         Ok(Self {

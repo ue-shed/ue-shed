@@ -163,7 +163,10 @@ const approvedEnvironmentAdapters = new Set([
 	// The synthetic benchmark forwards the process environment to its Playwright child.
 	"packages/observatory/scripts/benchmark.ts",
 	// The desktop benchmark forwards the process environment to the Electron it launches.
-	"apps/workbench/scripts/benchmark-game-text-desktop.ts"
+	"apps/workbench/scripts/benchmark-game-text-desktop.ts",
+	// The native protocol transport forwards the host environment (with MIMALLOC_PURGE_DELAY)
+	// when spawning one-shot and refresh workers.
+	"packages/unreal-assets/src/protocol-transport.ts"
 ]);
 const approvedRawFetchAdapters = new Set([
 	// Only the bundled public sample is fetched; selected files are read locally and transferred.
@@ -250,6 +253,9 @@ const approvedResourceAdapters = new Set([
 	"packages/plugin-distribution/src/store.ts",
 	// The saved-asset protocol transport owns and cancels the bounded native child process.
 	"packages/unreal-assets/src/protocol-transport.ts",
+	// The Project Index process adapter's refresh queue removes its AbortSignal listener on
+	// every settlement path before the owning Effect scope ends.
+	"packages/unreal-assets/src/project-index-process.ts",
 	// The Game Text engine session owns its child process and the stuck-cancel timers; the client
 	// layer acquires and closes it with its scope.
 	"packages/unreal-assets/src/game-text-engine-session.ts",

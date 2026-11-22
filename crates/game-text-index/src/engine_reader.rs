@@ -2,7 +2,7 @@
 use crate::cache::{Lock, Once};
 use crate::dictionary_image::{self, SegmentImage, SegmentKey};
 use crate::snapshot::{Reader, integers};
-use crate::store::{Configuration, decode_ids, open_root, section};
+use crate::store::{Configuration, OpenedRoot, decode_ids, open_root_filtered, section};
 use crate::wtf8::Wtf8Buf;
 use crate::{Error, ErrorCode, Result, require};
 use rustc_hash::FxHashMap;
@@ -98,18 +98,23 @@ fn parse(bytes: &[u8]) -> Result<Value> {
     crate::json_value::parse(std::str::from_utf8(bytes)?)
 }
 
-fn open_layer(directory: &Path, root: &Value, key: &str) -> Result<Layer> {
+/// A layer the root lists, with the reader its validation opened.
+fn take_layer(root: &Value, readers: &mut HashMap<String, Reader>, key: &str) -> Result<Layer> {
     let record = root["layers"]
         .get(key)
         .ok_or("Missing query input layer.")?
         .clone();
-    let reader = Reader::open(&directory.join(text(&record, "file")?))?;
+    let reader = readers.remove(key).ok_or("Missing query input layer.")?;
     Ok(Layer { reader, record })
 }
 
 /// A joined layer and its bounded metadata.
-fn open_joined(directory: &Path, root: &Value, key: &str) -> Result<(Layer, Value)> {
-    let joined = open_layer(directory, root, key)?;
+fn open_joined(
+    root: &Value,
+    readers: &mut HashMap<String, Reader>,
+    key: &str,
+) -> Result<(Layer, Value)> {
+    let joined = take_layer(root, readers, key)?;
     require(
         joined
             .reader
@@ -123,6 +128,15 @@ fn open_joined(directory: &Path, root: &Value, key: &str) -> Result<(Layer, Valu
     Ok((joined, meta))
 }
 
+/// A joined layer and the root's other readers, opened and validated with the root.
+struct Opened {
+    joined_key: String,
+    joined: Layer,
+    meta: Value,
+    layers: HashMap<String, Reader>,
+    segments: Vec<Reader>,
+}
+
 /// A joined layer the store retains, opened with the root that lists it, before its inputs are.
 pub(crate) struct Retained {
     directory: std::path::PathBuf,
@@ -131,6 +145,9 @@ pub(crate) struct Retained {
     key: String,
     joined: Layer,
     pub meta: Value,
+    /// The root's other layers and its dictionary segments, opened when the root was validated.
+    layers: HashMap<String, Reader>,
+    segments: Vec<Reader>,
 }
 
 impl Retained {
@@ -169,7 +186,30 @@ impl EngineReader {
     }
 
     fn acquire(configuration: &Configuration, expected_joined: Option<&str>) -> Result<Self> {
-        let (_, mut root) = open_root(configuration)?;
+        let joined_field = configuration
+            .view_prefix
+            .as_deref()
+            .map_or_else(|| "joined".to_owned(), |prefix| format!("{prefix}joined"));
+        let invalidated_field = configuration.view_prefix.as_deref().map_or_else(
+            || "joined.invalidated".to_owned(),
+            |prefix| format!("{prefix}joined.invalidated"),
+        );
+        let OpenedRoot {
+            mut root,
+            segments,
+            mut layers,
+            ..
+        } = open_root_filtered(configuration, |root| {
+            let active = root["active"].as_object()?;
+            if active.contains_key(&invalidated_field) {
+                return None;
+            }
+            let joined = active.get(&joined_field)?.as_str()?;
+            if expected_joined.is_some_and(|expected| expected != joined) {
+                return None;
+            }
+            Some(joined.to_owned())
+        })?;
         if let Some(prefix) = &configuration.view_prefix {
             let active = root["active"]
                 .as_object_mut()
@@ -201,7 +241,7 @@ impl EngineReader {
         )?;
         let generation = text(&root, "generation")?;
         let directory = configuration.directory()?;
-        let (joined, meta) = open_joined(&directory, &root, &joined_key)?;
+        let (joined, meta) = open_joined(&root, &mut layers, &joined_key)?;
         require(
             meta["generation"] == generation,
             Error::new(
@@ -210,7 +250,17 @@ impl EngineReader {
             ),
         )?;
         Self::assemble(
-            &directory, &root, joined_key, joined, meta, generation, true,
+            &directory,
+            &root,
+            Opened {
+                joined_key,
+                joined,
+                meta,
+                layers,
+                segments,
+            },
+            generation,
+            true,
         )
     }
 
@@ -218,18 +268,25 @@ impl EngineReader {
     /// the store no longer lists it. Neither it nor its inputs need be active: it is an earlier
     /// generation of a target, opened to compare with the current one.
     pub(crate) fn retained(configuration: &Configuration, key: &str) -> Result<Option<Retained>> {
-        let (_, root) = open_root(configuration)?;
+        let OpenedRoot {
+            root,
+            segments,
+            mut layers,
+            ..
+        } = open_root_filtered(configuration, |_| Some(key.to_owned()))?;
         if root["layers"].get(key).is_none() {
             return Ok(None);
         }
         let directory = configuration.directory()?;
-        let (joined, meta) = open_joined(&directory, &root, key)?;
+        let (joined, meta) = open_joined(&root, &mut layers, key)?;
         Ok(Some(Retained {
             directory,
             root,
             key: key.to_owned(),
             joined,
             meta,
+            layers,
+            segments,
         }))
     }
 
@@ -240,9 +297,13 @@ impl EngineReader {
         Self::assemble(
             &retained.directory,
             &retained.root,
-            retained.key,
-            retained.joined,
-            retained.meta,
+            Opened {
+                joined_key: retained.key,
+                joined: retained.joined,
+                meta: retained.meta,
+                layers: retained.layers,
+                segments: retained.segments,
+            },
             generation,
             false,
         )
@@ -253,12 +314,17 @@ impl EngineReader {
     fn assemble(
         directory: &Path,
         root: &Value,
-        joined_key: String,
-        joined: Layer,
-        meta: Value,
+        opened: Opened,
         generation: String,
         active: bool,
     ) -> Result<Self> {
+        let Opened {
+            joined_key,
+            joined,
+            meta,
+            layers: mut readers,
+            segments: segment_readers,
+        } = opened;
         require(
             matches!(meta["version"].as_u64(), Some(3 | 4)),
             "Unsupported joined metadata version.",
@@ -305,35 +371,53 @@ impl EngineReader {
         }
         let mut layers = HashMap::from([(joined_key.clone(), joined)]);
         for key in wanted {
-            if !layers.contains_key(&key) {
-                layers.insert(key.clone(), open_layer(directory, root, &key)?);
+            if let std::collections::hash_map::Entry::Vacant(entry) = layers.entry(key) {
+                let layer = take_layer(root, &mut readers, entry.key())?;
+                entry.insert(layer);
             }
         }
-        let mut segments = Vec::new();
-        for record in root["segments"]
+        // The root's other layers were only validated; close them now.
+        drop(readers);
+        let records = root["segments"]
             .as_array()
-            .ok_or("Invalid dictionary segments.")?
-        {
-            let path = directory.join(text(record, "file")?);
-            let reader = Reader::open(&path)?;
-            let offsets = integers(&section(&reader, "front.offsets")?)?;
-            let frames = integers(&section(&reader, "front.frames")?)?;
-            let start = u32::try_from(record["start"].as_u64().ok_or("Invalid segment start.")?)?;
-            let count = u32::try_from(record["count"].as_u64().ok_or("Invalid segment count.")?)?;
-            require(
-                offsets.len() == frames.len() && offsets.len() == (count as usize).div_ceil(64),
-                "Invalid dictionary fence lengths.",
-            )?;
-            segments.push(Segment {
-                key: (path, start, count),
-                start,
-                count,
-                reader,
-                offsets,
-                frames,
-                image: OnceLock::new(),
-            });
-        }
+            .ok_or("Invalid dictionary segments.")?;
+        require(
+            records.len() == segment_readers.len(),
+            "Invalid dictionary segments.",
+        )?;
+        let segments = {
+            use rayon::prelude::*;
+            records
+                .par_iter()
+                .zip(segment_readers.into_par_iter())
+                .map(|(record, reader)| -> Result<Segment> {
+                    let path = directory.join(text(record, "file")?);
+                    let (offsets, frames) = rayon::join(
+                        || -> Result<Vec<u32>> { integers(&section(&reader, "front.offsets")?) },
+                        || -> Result<Vec<u32>> { integers(&section(&reader, "front.frames")?) },
+                    );
+                    let (offsets, frames) = (offsets?, frames?);
+                    let start =
+                        u32::try_from(record["start"].as_u64().ok_or("Invalid segment start.")?)?;
+                    let count =
+                        u32::try_from(record["count"].as_u64().ok_or("Invalid segment count.")?)?;
+                    require(
+                        offsets.len() == frames.len()
+                            && offsets.len() == (count as usize).div_ceil(64),
+                        "Invalid dictionary fence lengths.",
+                    )?;
+                    Ok(Segment {
+                        key: (path, start, count),
+                        start,
+                        count,
+                        reader,
+                        offsets,
+                        frames,
+                        image: OnceLock::new(),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
         Ok(Self {
             evaluation: Lock::default(),
             generation,
@@ -713,17 +797,37 @@ impl EngineReader {
             return Ok(ids);
         }
         // Each immutable segment is sorted by WTF-8 bytes. If it contains an empty string,
-        // that string is first in the segment, at its own append-history-dependent global ID.
-        let starts = self
-            .segments
-            .iter()
-            .filter(|s| s.count > 0)
-            .map(|s| s.start)
-            .collect::<Vec<_>>();
+        // that string is first in the segment (`local == 0`). Check block 0 directly without
+        // imaging all dictionary segments.
         let mut ids = BTreeSet::new();
-        for start in starts {
-            if self.string(start)?.is_empty() {
-                ids.insert(start);
+        for segment in &self.segments {
+            if segment.count == 0 {
+                continue;
+            }
+            if let Some(image) = segment.image.get() {
+                if image.get(0)?.is_empty() {
+                    ids.insert(segment.start);
+                }
+                continue;
+            }
+            let frame = *segment
+                .frames
+                .first()
+                .ok_or("Empty dictionary segment frames.")?;
+            let data = section(&segment.reader, &format!("front.b{frame}"))?;
+            let start = *segment
+                .offsets
+                .first()
+                .ok_or("Empty dictionary segment offsets.")? as usize;
+            let end = if segment.frames.get(1) == Some(&frame) {
+                segment.offsets[1] as usize
+            } else {
+                data.len()
+            };
+            let block = data.get(start..end).ok_or("Dictionary block 0 bounds.")?;
+            let first = crate::store::decode_a64_bytes(block)?;
+            if first.first().is_some_and(Vec::is_empty) {
+                ids.insert(segment.start);
             }
         }
         Ok(self.empty_ids.store(Arc::new(ids)))

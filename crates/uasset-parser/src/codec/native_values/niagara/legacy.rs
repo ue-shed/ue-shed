@@ -210,7 +210,7 @@ fn record_value(
                     &name,
                     &mut elements,
                     package,
-                    "NiagaraDeclaredRecord",
+                    &"NiagaraDeclaredRecord",
                     scope,
                 )
                 .ok()??,
@@ -227,7 +227,7 @@ fn record_value(
             &name,
             &mut reader,
             package,
-            "NiagaraDeclaredRecord",
+            &"NiagaraDeclaredRecord",
             scope,
         )
         .ok()??

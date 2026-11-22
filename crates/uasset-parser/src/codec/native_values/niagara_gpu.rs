@@ -42,7 +42,7 @@ pub(super) fn optional(
     ty: &PropertyTypeName,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Option<PropertyValue> {
     if !applies(ty, package) {
         return None;
@@ -87,13 +87,21 @@ pub(super) fn optional(
     Some(value)
 }
 
-fn name(reader: &mut Reader<'_>, package: &Package, path: &str) -> Option<PropertyValue> {
+fn name(
+    reader: &mut Reader<'_>,
+    package: &Package,
+    path: &dyn std::fmt::Display,
+) -> Option<PropertyValue> {
     let name = reader.read_name_ref(path).ok()?;
     package.resolve_name_cow(name)?;
     Some(PropertyValue::Name(name))
 }
 
-fn reference(reader: &mut Reader<'_>, package: &Package, path: &str) -> Option<PropertyValue> {
+fn reference(
+    reader: &mut Reader<'_>,
+    package: &Package,
+    path: &dyn std::fmt::Display,
+) -> Option<PropertyValue> {
     // NiagaraCoreModule.cpp, UE5.7/5.8: FName then persistent UObject reference.
     let name = name(reader, package, path)?;
     let object = PackageIndex::from_raw(reader.read_i32(path).ok()?);
@@ -111,7 +119,7 @@ fn reference(reader: &mut Reader<'_>, package: &Package, path: &str) -> Option<P
 fn function(
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
     version: i32,
 ) -> Option<PropertyValue> {
     // NiagaraShader.cpp, all three engines; Tuple.h serializes Key then Value.
@@ -252,7 +260,7 @@ mod tests {
                 let (package, ty) = package(ue5, version);
                 let bytes = bytes(ue5, version);
                 let mut reader = Reader::new(&bytes);
-                let value = optional(&ty, &mut reader, &package, "Fixture").unwrap();
+                let value = optional(&ty, &mut reader, &package, &"Fixture").unwrap();
                 assert_eq!(reader.remaining(), 0);
                 assert_eq!(
                     field(&value, "DataInterfaceHLSLSymbol"),
@@ -284,7 +292,7 @@ mod tests {
                 for end in 0..bytes.len() {
                     let mut reader = Reader::new(&bytes[..end]);
                     assert!(
-                        optional(&ty, &mut reader, &package, "Fixture").is_none(),
+                        optional(&ty, &mut reader, &package, &"Fixture").is_none(),
                         "{ue5}, {version}, {end}"
                     );
                     assert_eq!(reader.tell(), 0);
@@ -300,7 +308,7 @@ mod tests {
                     },
                     &mut reader,
                     &package,
-                    "Fixture",
+                    &"Fixture",
                     DecodeScope::root(None),
                     2,
                     if ue5 == 0 {
@@ -321,12 +329,12 @@ mod tests {
         let (mut package, mut ty) = package(1018, 93);
         package.names[1] = "NiagaraDataInterfaceGeneratedFunction".into();
         let bytes = function_bytes(1018, 93);
-        assert!(optional(&ty, &mut Reader::new(&bytes), &package, "Fixture").is_some());
+        assert!(optional(&ty, &mut Reader::new(&bytes), &package, &"Fixture").is_some());
         for offset in [0, 4] {
             let mut bad = bytes.clone();
             bad[offset..offset + 4].copy_from_slice(&(-1_i32).to_le_bytes());
             let mut reader = Reader::new(&bad);
-            assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+            assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
             assert_eq!(reader.tell(), 0);
         }
         package.names[1] = "NiagaraVariableCommonReference".into();
@@ -335,7 +343,7 @@ mod tests {
             .into_iter()
             .flat_map(i32::to_le_bytes)
             .collect::<Vec<_>>();
-        let value = optional(&ty, &mut Reader::new(&bytes), &package, "Fixture").unwrap();
+        let value = optional(&ty, &mut Reader::new(&bytes), &package, &"Fixture").unwrap();
         assert_eq!(
             field(&value, "UnderlyingType"),
             Some(&PropertyValue::ObjectRef(PackageIndex::Null))
@@ -344,7 +352,7 @@ mod tests {
             let mut bad = bytes.clone();
             bad[offset..offset + 4].copy_from_slice(&i32::MAX.to_le_bytes());
             let mut reader = Reader::new(&bad);
-            assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+            assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
             assert_eq!(reader.tell(), 0);
         }
     }
@@ -363,7 +371,7 @@ mod tests {
                 _ => package.summary.versions.ue5 = 1019,
             }
             let mut reader = Reader::new(&bytes);
-            assert!(optional(&ty, &mut reader, &package, "Fixture").is_none());
+            assert!(optional(&ty, &mut reader, &package, &"Fixture").is_none());
             assert_eq!(reader.tell(), 0);
         }
         let count_at = bytes.len() - function_bytes(1018, 93).len() - 4;
@@ -371,7 +379,7 @@ mod tests {
             let mut bad = bytes.clone();
             bad[count_at..count_at + 4].copy_from_slice(&count.to_le_bytes());
             let mut reader = Reader::new(&bad);
-            assert!(optional(&original_ty, &mut reader, &original, "Fixture").is_none());
+            assert!(optional(&original_ty, &mut reader, &original, &"Fixture").is_none());
             assert_eq!(reader.tell(), 0);
         }
     }

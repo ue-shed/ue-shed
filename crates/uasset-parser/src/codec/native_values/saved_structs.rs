@@ -6,7 +6,7 @@ pub(in crate::codec) fn optional_struct(
     ty: &PropertyTypeName,
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Option<PropertyValue> {
     let identity = ty.parameters.first()?;
     let name = package.resolve_name_cow(identity.name)?;
@@ -53,7 +53,10 @@ pub(super) fn named(name: &'static str, value: PropertyValue) -> NativeProperty 
     }
 }
 
-fn spline(reader: &mut Reader<'_>, path: &str) -> Result<PropertyValue, PropertyError> {
+fn spline(
+    reader: &mut Reader<'_>,
+    path: &dyn std::fmt::Display,
+) -> Result<PropertyValue, PropertyError> {
     // UE 5.7 Curves/Spline.cpp FSpline::SerializeLoad/Save and FLegacySpline::Serialize;
     // UE 5.8 Curves/Spline.cpp and Curves/Splines/TangentSpline.cpp retain variant 1
     // as FLegacyTangentSpline. Variant 0 has no data. Other implementations stay opaque.
@@ -88,7 +91,7 @@ fn spline(reader: &mut Reader<'_>, path: &str) -> Result<PropertyValue, Property
 
 fn interp_curve(
     reader: &mut Reader<'_>,
-    path: &str,
+    path: &dyn std::fmt::Display,
     components: usize,
 ) -> Result<PropertyValue, PropertyError> {
     // Core/Public/Math/InterpCurve{,Point}.h operator<<, UE 5.7/5.8:
@@ -137,7 +140,7 @@ fn interp_curve(
 pub(in crate::codec) fn field_path(
     reader: &mut Reader<'_>,
     package: &Package,
-    path: &str,
+    path: &dyn std::fmt::Display,
 ) -> Option<PropertyValue> {
     let has_owner = matches!(
         custom_version(package, [0x601D1886, 0xAC644F84, 0xAA16D3DE, 0x0DEAC7D6]),
@@ -221,12 +224,12 @@ mod tests {
         for version in [1017, 1018] {
             package.summary.versions.ue5 = version;
             let mut reader = Reader::new(&bytes);
-            assert!(optional_struct(&ty(1, 2), &mut reader, &package, "Fixture.Spline").is_some());
+            assert!(optional_struct(&ty(1, 2), &mut reader, &package, &"Fixture.Spline").is_some());
             assert_eq!(reader.remaining(), 0);
             for end in 0..bytes.len() {
                 let mut reader = Reader::new(&bytes[..end]);
                 assert!(
-                    optional_struct(&ty(1, 2), &mut reader, &package, "Fixture.Spline").is_none(),
+                    optional_struct(&ty(1, 2), &mut reader, &package, &"Fixture.Spline").is_none(),
                     "{end}"
                 );
                 assert_eq!(reader.tell(), 0);
@@ -235,17 +238,17 @@ mod tests {
         for version in [0, 1016, 1019] {
             package.summary.versions.ue5 = version;
             let mut reader = Reader::new(&bytes);
-            assert!(optional_struct(&ty(1, 2), &mut reader, &package, "Fixture.Spline").is_none());
+            assert!(optional_struct(&ty(1, 2), &mut reader, &package, &"Fixture.Spline").is_none());
             assert_eq!(reader.tell(), 0);
         }
         package.summary.versions.ue5 = 1018;
         assert!(
-            optional_struct(&ty(1, 3), &mut Reader::new(&bytes), &package, "Fixture").is_none()
+            optional_struct(&ty(1, 3), &mut Reader::new(&bytes), &package, &"Fixture").is_none()
         );
         let mut reader = Reader::new(&[2]);
-        assert!(optional_struct(&ty(1, 2), &mut reader, &package, "Fixture").is_none());
+        assert!(optional_struct(&ty(1, 2), &mut reader, &package, &"Fixture").is_none());
         assert_eq!(reader.tell(), 0);
-        assert!(optional_struct(&ty(1, 2), &mut Reader::new(&[0]), &package, "Fixture").is_some());
+        assert!(optional_struct(&ty(1, 2), &mut Reader::new(&[0]), &package, &"Fixture").is_some());
     }
 
     #[test]
@@ -259,12 +262,12 @@ mod tests {
         for version in [1016, 1017, 1018] {
             package.summary.versions.ue5 = version;
             let mut reader = Reader::new(&[99]);
-            assert!(optional_struct(&ty(1, 2), &mut reader, &package, "Fixture").is_some());
+            assert!(optional_struct(&ty(1, 2), &mut reader, &package, &"Fixture").is_some());
             assert_eq!(reader.tell(), 0);
-            assert!(optional_struct(&ty(1, 3), &mut reader, &package, "Fixture").is_none());
+            assert!(optional_struct(&ty(1, 3), &mut reader, &package, &"Fixture").is_none());
         }
         package.summary.versions.ue5 = 999;
-        assert!(optional_struct(&ty(1, 2), &mut Reader::new(&[]), &package, "Fixture").is_none());
+        assert!(optional_struct(&ty(1, 2), &mut Reader::new(&[]), &package, &"Fixture").is_none());
     }
 
     #[test]
@@ -278,15 +281,15 @@ mod tests {
             package.summary.versions.ue5 = version;
             text_version(&mut package, Some(33), 0);
             let mut reader = Reader::new(&bytes);
-            assert!(field_path(&mut reader, &package, "Fixture").is_some());
+            assert!(field_path(&mut reader, &package, &"Fixture").is_some());
             assert_eq!(reader.remaining(), 0);
             for end in 0..bytes.len() {
                 let mut reader = Reader::new(&bytes[..end]);
-                assert!(field_path(&mut reader, &package, "Fixture").is_none());
+                assert!(field_path(&mut reader, &package, &"Fixture").is_none());
                 assert_eq!(reader.tell(), 0);
             }
             text_version(&mut package, Some(32), 0);
-            assert!(field_path(&mut Reader::new(&bytes), &package, "Fixture").is_none());
+            assert!(field_path(&mut Reader::new(&bytes), &package, &"Fixture").is_none());
         }
     }
 
@@ -320,7 +323,7 @@ mod tests {
                     let expected = fortnite.is_some_and(|version| version >= 33)
                         || release.is_some_and(|version| version >= 30);
                     let mut reader = Reader::new(&bytes);
-                    let value = field_path(&mut reader, &package, "Fixture");
+                    let value = field_path(&mut reader, &package, &"Fixture");
                     assert_eq!(
                         value.is_some(),
                         expected,
@@ -354,12 +357,12 @@ mod tests {
                 let mut bad = bytes.clone();
                 bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
                 let mut reader = Reader::new(&bad);
-                assert!(field_path(&mut reader, &package, "Fixture").is_none());
+                assert!(field_path(&mut reader, &package, &"Fixture").is_none());
                 assert_eq!(reader.tell(), 0);
             }
             let empty = [0; 8];
             let mut reader = Reader::new(&empty);
-            let value = field_path(&mut reader, &package, "Fixture").unwrap();
+            let value = field_path(&mut reader, &package, &"Fixture").unwrap();
             assert_eq!(field(&value, "Path"), Some(&PropertyValue::Array(vec![])));
             assert_eq!(reader.remaining(), 0);
         }

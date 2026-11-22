@@ -4,7 +4,7 @@
 //! one against the segment's FSST symbol table, so a lookup decodes only the string it wants.
 //! Segment files never change, so each is imaged once and shared by every reader that pins it.
 use crate::snapshot::Reader;
-use crate::store::{decode_a64_bytes, section};
+use crate::store::{decode_a64_each, section};
 use crate::{Result, require};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -23,16 +23,37 @@ pub(crate) struct SegmentImage {
     bytes: Vec<u8>,
 }
 
+/// One frame's strings in ID order, end to end in one buffer.
+struct FrameStrings {
+    bytes: Vec<u8>,
+    /// Each string's end in `bytes`.
+    ends: Vec<usize>,
+}
+
+impl FrameStrings {
+    fn iter(&self) -> impl Iterator<Item = &[u8]> {
+        let mut begin = 0;
+        self.ends.iter().map(move |&end| {
+            let value = &self.bytes[begin..end];
+            begin = end;
+            value
+        })
+    }
+}
+
 /// One frame's strings in ID order: the frame is expanded once and its blocks decoded.
 fn frame_strings(
     reader: &Reader,
     offsets: &[u32],
     frames: &[u32],
     blocks: std::ops::Range<usize>,
-) -> Result<Vec<Vec<u8>>> {
+) -> Result<FrameStrings> {
     let frame = frames[blocks.start];
     let bytes = section(reader, &format!("front.b{frame}"))?;
-    let mut strings = Vec::new();
+    let mut strings = FrameStrings {
+        bytes: Vec::with_capacity(bytes.len()),
+        ends: Vec::with_capacity(blocks.len() * 64),
+    };
     for block in blocks.clone() {
         let start = *offsets
             .get(block)
@@ -42,9 +63,14 @@ fn frame_strings(
         } else {
             bytes.len()
         };
-        strings.extend(decode_a64_bytes(
+        decode_a64_each(
             bytes.get(start..end).ok_or("Dictionary block range.")?,
-        )?);
+            |value| {
+                strings.bytes.extend_from_slice(value);
+                strings.ends.push(strings.bytes.len());
+                Ok(())
+            },
+        )?;
     }
     Ok(strings)
 }
@@ -72,19 +98,34 @@ impl SegmentImage {
             .par_iter()
             .enumerate()
             .filter(|(index, _)| (*index as u32).is_multiple_of(TRAINING_STRIDE))
-            .map(|(_, run)| frame_strings(reader, offsets, frames, run.clone()))
+            .map(|(index, run)| {
+                frame_strings(reader, offsets, frames, run.clone()).map(|strings| (index, strings))
+            })
             .collect::<Result<Vec<_>>>()?;
-        let compressor =
-            fsst::Compressor::train(&training.iter().flatten().map(Vec::as_slice).collect());
-        drop(training);
+        let compressor = fsst::Compressor::train(
+            &training
+                .iter()
+                .flat_map(|(_, strings)| strings.iter())
+                .collect(),
+        );
+        // The training frames are compressed as they are, not expanded a second time.
+        let mut expanded = (0..runs.len()).map(|_| None).collect::<Vec<_>>();
+        for (index, strings) in training {
+            expanded[index] = Some(strings);
+        }
         // Each frame's string lengths and compressed bytes.
         let compressed = runs
             .par_iter()
-            .map(|run| -> Result<(Vec<u32>, Vec<u8>)> {
-                let mut lengths = Vec::new();
+            .zip(expanded.into_par_iter())
+            .map(|(run, expanded)| -> Result<(Vec<u32>, Vec<u8>)> {
+                let strings = match expanded {
+                    Some(strings) => strings,
+                    None => frame_strings(reader, offsets, frames, run.clone())?,
+                };
+                let mut lengths = Vec::with_capacity(strings.ends.len());
                 let mut bytes = Vec::new();
-                for value in frame_strings(reader, offsets, frames, run.clone())? {
-                    let encoded = compressor.compress(&value);
+                for value in strings.iter() {
+                    let encoded = compressor.compress(value);
                     lengths.push(u32::try_from(encoded.len())?);
                     bytes.extend_from_slice(&encoded);
                 }

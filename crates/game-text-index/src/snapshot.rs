@@ -94,9 +94,21 @@ pub(crate) fn encode_section(kind: u32, raw: &[u8], level: i32) -> Result<(Vec<u
             CODEC_SHUFFLED
         };
         let sample = &raw[..raw.len().min(SHUFFLE_SAMPLE)];
-        if measured_compress(&transform(candidate, sample), level)?.len()
-            < measured_compress(sample, level)?.len()
-        {
+        let candidate_compressed = measured_compress(&transform(candidate, sample), level)?;
+        let raw_compressed = measured_compress(sample, level)?;
+        if raw.len() <= SHUFFLE_SAMPLE {
+            let (best, best_codec) = if candidate_compressed.len() < raw_compressed.len() {
+                (candidate_compressed, candidate)
+            } else {
+                (raw_compressed, CODEC_ZSTD)
+            };
+            return Ok(if best.len() < raw.len() {
+                (best, best_codec)
+            } else {
+                (raw.to_vec(), CODEC_RAW)
+            });
+        }
+        if candidate_compressed.len() < raw_compressed.len() {
             codec = candidate;
         }
     }
@@ -371,10 +383,14 @@ impl Writer {
         let crc = crc32fast::hash(&header[..32]);
         put(&mut header, 32, crc);
         let write_span = crate::scan_timings::Span::new("snapshot.final_write");
-        let mut out = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(output)?;
+        // Buffered, so thousands of small sections and their padding cost few write calls.
+        let mut out = std::io::BufWriter::with_capacity(
+            256 * 1024,
+            OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(output)?,
+        );
         out.write_all(&header)?;
         for &id in order {
             let e = &self.entries[id];
@@ -382,6 +398,9 @@ impl Writer {
             std::io::copy(&mut (&mut self.payload).take(u64::from(e.stored)), &mut out)?;
             out.write_all(&[0; 3][..(4 - e.stored as usize % 4) % 4])?;
         }
+        let out = out
+            .into_inner()
+            .map_err(std::io::IntoInnerError::into_error)?;
         drop(write_span);
         if durable {
             let _span = crate::scan_timings::Span::new("snapshot.fsync");
@@ -415,6 +434,9 @@ static LOADS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0
 static STORED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static RAW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static VERIFIES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Sections [`Reader::verify`] decompresses at once: enough to overlap I/O and checksums while
+/// keeping peak memory near four sections instead of one per pool thread.
+const VERIFY_WORKERS: usize = 4;
 static INDEX_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static WRITTEN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Default)]
@@ -451,6 +473,8 @@ pub fn io_metrics() -> IoMetrics {
 
 pub struct Reader {
     file: Option<File>,
+    /// The file's length, which `open` checked against its header; 0 for an in-memory layer.
+    file_len: u64,
     memory: Option<std::sync::Arc<crate::localization::columns::LocalLayer>>,
     pub entries: Vec<Entry>,
 }
@@ -473,6 +497,7 @@ impl Reader {
     pub(crate) fn memory(layer: std::sync::Arc<crate::localization::columns::LocalLayer>) -> Self {
         Self {
             file: None,
+            file_len: 0,
             entries: layer.columns.iter().map(|c| c.entry.clone()).collect(),
             memory: Some(layer),
         }
@@ -601,9 +626,14 @@ impl Reader {
         }
         Ok(Self {
             file: Some(file),
+            file_len: length,
             entries,
             memory: None,
         })
+    }
+    /// The file's length in bytes, as `open` validated it; 0 for an in-memory layer.
+    pub fn file_len(&self) -> u64 {
+        self.file_len
     }
     pub fn load(&self, id: usize) -> Result<Vec<u8>> {
         if let Some(memory) = &self.memory {
@@ -615,20 +645,20 @@ impl Reader {
         LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         STORED.fetch_add(e.stored as u64, std::sync::atomic::Ordering::Relaxed);
         RAW.fetch_add(e.raw as u64, std::sync::atomic::Ordering::Relaxed);
-        let mut b = vec![0; e.stored as usize];
+        let stored = e.stored as usize;
+        let padded = (stored + 3) & !3;
+        let mut b = vec![0; padded];
         {
             let _span = crate::scan_timings::Span::new("snapshot.read");
             read_exact_at(file, &mut b, e.offset)?;
         }
+        require(b[stored..].iter().all(|&x| x == 0), "padding")?;
+        b.truncate(stored);
         let raw = decode_section(e.codec, b, e.raw as usize)?;
         require(
             raw.len() == e.raw as usize && crc32fast::hash(&raw) == e.crc,
             "section CRC/length",
         )?;
-        let mut pad = [0; 3];
-        let n = (4 - e.stored as usize % 4) % 4;
-        read_exact_at(file, &mut pad[..n], e.offset + u64::from(e.stored))?;
-        require(pad[..n].iter().all(|&x| x == 0), "padding")?;
         if e.kind == 4 {
             strings_bytes(&raw).map_err(|error| {
                 crate::Error::with_source(
@@ -649,10 +679,35 @@ impl Reader {
     pub fn verify(&mut self) -> Result<()> {
         let _span = crate::scan_timings::Span::new("snapshot.verify");
         VERIFIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        for id in 0..self.entries.len() {
-            self.load(id)?;
+        if self.entries.len() <= 1 {
+            for id in 0..self.entries.len() {
+                self.load(id)?;
+            }
+            return Ok(());
         }
-        Ok(())
+        // Sections load at explicit offsets, so they verify concurrently. Each load holds its
+        // decompressed section until checked, so at most `VERIFY_WORKERS` run at once to bound
+        // peak memory; workers take the next section from a shared cursor to stay balanced.
+        use rayon::prelude::*;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let reader = &*self;
+        let count = reader.entries.len();
+        let next = AtomicUsize::new(0);
+        (0..VERIFY_WORKERS.min(count))
+            .into_par_iter()
+            .try_for_each(|_| {
+                loop {
+                    let id = next.fetch_add(1, Ordering::Relaxed);
+                    if id >= count {
+                        return Ok(());
+                    }
+                    if let Err(error) = reader.load(id) {
+                        // Stop the other workers at their next section.
+                        next.store(count, Ordering::Relaxed);
+                        return Err(error);
+                    }
+                }
+            })
     }
 }
 fn name(b: &[u8]) -> Result<String> {

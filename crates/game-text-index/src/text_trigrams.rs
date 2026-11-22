@@ -5,8 +5,40 @@ use crate::engine_match::checkpoint;
 use crate::{Result, require};
 use std::sync::{Arc, atomic::AtomicBool};
 
-/// Every possible trigram: one entry each in the build's tables.
-const TRIGRAMS: usize = 1 << 24;
+/// Pages of a trigram table: one per leading byte pair.
+const PAGES: usize = 1 << 16;
+/// A page directory entry for a byte pair no trigram has started with yet.
+const UNALLOCATED: u32 = u32::MAX;
+
+/// Per-trigram build state, `(last, cursor)`, held only for the byte pairs that start a trigram:
+/// a directory by the first two bytes points at 256-entry pages by the third. Real text uses a
+/// small share of the 65,536 pairs, so this is a few MiB where dense tables were 128 MiB.
+struct Table {
+    directory: Vec<u32>,
+    pages: Vec<[(u32, u32); 256]>,
+}
+
+impl Table {
+    fn new() -> Self {
+        Self {
+            directory: vec![UNALLOCATED; PAGES],
+            pages: Vec::new(),
+        }
+    }
+
+    /// A trigram's `(last, cursor)`, allocating its page on first use. A `u32` directory holds
+    /// the index of every one of the at most 65,536 pages.
+    fn entry(&mut self, trigram: u32) -> &mut (u32, u32) {
+        let pair = (trigram >> 8) as usize;
+        let mut page = self.directory[pair];
+        if page == UNALLOCATED {
+            page = self.pages.len() as u32;
+            self.pages.push([(0, 0); 256]);
+            self.directory[pair] = page;
+        }
+        &mut self.pages[page as usize][(trigram & 255) as usize]
+    }
+}
 
 fn key(bytes: &[u8]) -> u32 {
     (u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2])
@@ -26,24 +58,25 @@ fn put_varint(out: &mut [u8], at: &mut u32, mut value: u32) {
     *at += 1;
 }
 
-/// Calls `visit` once for each trigram a string holds, in arena order, with the trigram and its
-/// posting's delta: the distance from the previous string that held it, or from 0. `last` holds,
-/// per trigram, one past the last position visited.
+/// Calls `visit` once for each trigram a string holds, in arena order, with the trigram, its
+/// posting's delta (the distance from the previous string that held it, or from 0) and its
+/// cursor. Each trigram's `last` in `table` holds one past the last position visited.
 fn each_posting(
     starts: &[u32],
     bytes: &[u8],
-    last: &mut [u32],
-    mut visit: impl FnMut(usize, u32) -> Result<()>,
+    table: &mut Table,
+    mut visit: impl FnMut(u32, u32, &mut u32) -> Result<()>,
 ) -> Result<()> {
     for position in 0..u32::try_from(starts.len().saturating_sub(1))? {
         let text = bytes
             .get(starts[position as usize] as usize..starts[position as usize + 1] as usize)
             .ok_or("Arena range outside its bytes.")?;
         for window in text.windows(3) {
-            let trigram = key(window) as usize;
-            if last[trigram] != position + 1 {
-                visit(trigram, position - last[trigram].saturating_sub(1))?;
-                last[trigram] = position + 1;
+            let trigram = key(window);
+            let (last, cursor) = table.entry(trigram);
+            if *last != position + 1 {
+                visit(trigram, position - last.saturating_sub(1), cursor)?;
+                *last = position + 1;
             }
         }
     }
@@ -53,38 +86,38 @@ fn each_posting(
 /// The arena's sorted distinct trigrams, each one's range in the postings, and the postings: the
 /// positions of the strings that hold it, ascending, as delta-encoded varints. Two passes over
 /// the arena, sizing each trigram's postings and then writing them in place, so the build holds
-/// the postings and two tables of one entry per possible trigram, not an entry per occurrence.
+/// the postings and a table entry per trigram in use, not an entry per occurrence.
 pub(crate) fn build(starts: &[u32], bytes: &[u8]) -> Result<(Vec<u32>, Vec<u32>, Vec<u8>)> {
-    let mut last = vec![0u32; TRIGRAMS];
-    // Each trigram's postings length, then its write cursor.
-    let mut cursor = vec![0u32; TRIGRAMS];
+    // Each trigram's last position, and its postings length, then its write cursor.
+    let mut table = Table::new();
     let mut keys = Vec::new();
-    each_posting(starts, bytes, &mut last, |trigram, delta| {
-        if cursor[trigram] == 0 {
-            keys.push(trigram as u32);
+    each_posting(starts, bytes, &mut table, |trigram, delta, cursor| {
+        if *cursor == 0 {
+            keys.push(trigram);
         }
-        cursor[trigram] = cursor[trigram]
+        *cursor = cursor
             .checked_add(varint_len(delta))
             .ok_or("Trigram postings past 4 GiB.")?;
         Ok(())
     })?;
-    // Visit only used entries; the other dense slots remain zero between passes.
+    // Visit only used entries; the others remain zero between passes.
     keys.sort_unstable();
     let mut offsets = Vec::with_capacity(keys.len() + 1);
     let mut total = 0u32;
     for trigram in &keys {
-        let length = &mut cursor[*trigram as usize];
+        let (last, length) = table.entry(*trigram);
         offsets.push(total);
+        let start = total;
         total = total
             .checked_add(*length)
             .ok_or("Trigram postings past 4 GiB.")?;
-        *length = offsets[offsets.len() - 1];
-        last[*trigram as usize] = 0;
+        *length = start;
+        *last = 0;
     }
     offsets.push(total);
     let mut postings = vec![0u8; total as usize];
-    each_posting(starts, bytes, &mut last, |trigram, delta| {
-        put_varint(&mut postings, &mut cursor[trigram], delta);
+    each_posting(starts, bytes, &mut table, |_, delta, cursor| {
+        put_varint(&mut postings, cursor, delta);
         Ok(())
     })?;
     Ok((keys, offsets, postings))
@@ -209,6 +242,67 @@ mod tests {
         for (at, positions) in expected.values().enumerate() {
             assert_eq!(&index.positions(at)?, positions);
         }
+        Ok(())
+    }
+
+    /// The build's output from first principles: sorted trigrams, then each one's positions as
+    /// delta-encoded varints, end to end.
+    fn reference(starts: &[u32], bytes: &[u8]) -> (Vec<u32>, Vec<u32>, Vec<u8>) {
+        let mut positions = BTreeMap::<u32, Vec<u32>>::new();
+        for position in 0..starts.len() - 1 {
+            let text = &bytes[starts[position] as usize..starts[position + 1] as usize];
+            for window in text.windows(3) {
+                let list = positions.entry(key(window)).or_default();
+                if list.last() != Some(&(position as u32)) {
+                    list.push(position as u32);
+                }
+            }
+        }
+        let (mut offsets, mut postings) = (vec![0], Vec::new());
+        for list in positions.values() {
+            let mut previous = 0;
+            for position in list {
+                let mut value = position - previous;
+                previous = *position;
+                while value >= 0x80 {
+                    postings.push(value as u8 | 0x80);
+                    value >>= 7;
+                }
+                postings.push(value as u8);
+            }
+            offsets.push(postings.len() as u32);
+        }
+        (positions.into_keys().collect(), offsets, postings)
+    }
+
+    #[test]
+    fn sparse_tables_build_exactly_the_reference_index() -> Result<()> {
+        // Strings over many leading byte pairs, so the build allocates many pages.
+        let mut seed = 0x2545_f491_u32;
+        let mut texts = Vec::new();
+        for length in 0..3000usize {
+            let text = (0..length % 41)
+                .map(|_| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 17;
+                    seed ^= seed << 5;
+                    (seed >> 24) as u8
+                })
+                .collect::<Vec<_>>();
+            texts.push(text);
+            if length % 7 == 0 {
+                texts.push(b"repeated text repeated".to_vec());
+            }
+        }
+        texts.extend((0..=255u8).map(|byte| vec![byte; 5]));
+        let mut bytes = Vec::new();
+        let mut starts = vec![0];
+        for text in &texts {
+            bytes.extend_from_slice(text);
+            starts.push(bytes.len() as u32);
+        }
+        assert_eq!(build(&starts, &bytes)?, reference(&starts, &bytes));
+        assert_eq!(build(&[0], &[])?, (Vec::new(), vec![0], Vec::new()));
         Ok(())
     }
 

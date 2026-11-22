@@ -1,5 +1,76 @@
 //! Package-text local columns, matching packages/game-text/src/package-text-columns.ts.
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
+
+#[derive(Default)]
+struct FnvHasher(u64);
+impl Hasher for FnvHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        let mut h = if self.0 == 0 {
+            0xcbf2_9ce4_8422_2325
+        } else {
+            self.0
+        };
+        for &b in bytes {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+        self.0 = h;
+    }
+}
+type FastHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FnvHasher>>;
+
+const S_PACKAGE_PATH: usize = 0;
+const S_PACKAGE_SIGNATURE: usize = 1;
+const S_PACKAGE_ERROR: usize = 2;
+const S_OCCURRENCE_SOURCE: usize = 3;
+const S_OCCURRENCE_NOTES: usize = 4;
+const S_OCCURRENCE_NAMESPACE: usize = 5;
+const S_OCCURRENCE_KEY: usize = 6;
+const S_OCCURRENCE_OBJECT: usize = 7;
+const S_OCCURRENCE_PROPERTY: usize = 8;
+const S_OCCURRENCE_CLASS: usize = 9;
+const S_OCCURRENCE_ROW: usize = 10;
+const S_GAP_OBJECT: usize = 11;
+const S_GAP_PROPERTY: usize = 12;
+const S_MISSING_NAMESPACE: usize = 13;
+const S_MISSING_KEY: usize = 14;
+const S_MISSING_SOURCE: usize = 15;
+const S_MISSING_SITE: usize = 16;
+const S_COPY_OBJECT: usize = 17;
+const S_COPY_SOURCE: usize = 18;
+const S_COPY_CLASS: usize = 19;
+const S_PACKAGE_BLUEPRINTS: usize = 20;
+const S_PACKAGE_NAME: usize = 21;
+const S_PACKAGE_ASSET_CLASS: usize = 22;
+
+const N_PACKAGE_STATUS: usize = 0;
+const N_PACKAGE_BYTES_LOW: usize = 1;
+const N_PACKAGE_BYTES_HIGH: usize = 2;
+const N_PACKAGE_DECODE_ERRORS: usize = 3;
+const N_PACKAGE_OCCURRENCE_START: usize = 4;
+const N_PACKAGE_GAP_START: usize = 5;
+const N_PACKAGE_GAP0: usize = 6;
+const N_PACKAGE_GAP1: usize = 7;
+const N_PACKAGE_GAP2: usize = 8;
+const N_PACKAGE_GAP3: usize = 9;
+const N_PACKAGE_GATHER: usize = 10;
+const N_PACKAGE_GATHER_SITES: usize = 11;
+const N_PACKAGE_GATHER_MISSING: usize = 12;
+const N_PACKAGE_MISSING_START: usize = 13;
+const N_OCCURRENCE_IDENTITY: usize = 14;
+const N_OCCURRENCE_LOCATION: usize = 15;
+const N_OCCURRENCE_EDITABLE: usize = 16;
+const N_OCCURRENCE_GATHER: usize = 17;
+const N_OCCURRENCE_AUDIENCE: usize = 18;
+const N_OCCURRENCE_COPIES: usize = 19;
+const N_COPY_KIND: usize = 20;
+const N_GAP_REASON: usize = 21;
 
 use game_text_index::snapshot::{self, Writer};
 use game_text_index::wtf8::{self, Wtf8Buf};
@@ -229,17 +300,22 @@ const NUMBERS: [&str; 22] = [
 #[derive(Default)]
 struct Table {
     values: Vec<String>,
-    ids: HashMap<String, u32>,
+    ids: FastHashMap<String, u32>,
 }
 impl Table {
+    #[inline]
+    fn wtf8_len(value: &str) -> usize {
+        if !value.as_bytes().contains(&0xf3) {
+            value.len()
+        } else {
+            Wtf8Buf::from_view(value).as_bytes().len()
+        }
+    }
     fn intern(&mut self, value: &str) -> Result<u32> {
         if let Some(id) = self.ids.get(value) {
             return Ok(*id);
         }
-        require(
-            Wtf8Buf::from_view(value).as_bytes().len() <= 1024 * 1024,
-            "string exceeds 1 MiB",
-        )?;
+        require(Self::wtf8_len(value) <= 1024 * 1024, "string exceeds 1 MiB")?;
         require(self.values.len() < 64_000_000, "string count exceeds cap")?;
         let id = self.values.len() as u32;
         self.values.push(value.to_owned());
@@ -250,7 +326,8 @@ impl Table {
 
 pub struct Columns {
     tables: [Table; 3],
-    values: HashMap<&'static str, Vec<u32>>,
+    string_cols: [Vec<u32>; 23],
+    number_cols: [Vec<u32>; 22],
     occurrences: u32,
     gaps: u32,
     missing: u32,
@@ -258,8 +335,6 @@ pub struct Columns {
 impl Columns {
     pub fn resident_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
-            + self.values.capacity()
-                * (std::mem::size_of::<&str>() + std::mem::size_of::<Vec<u32>>())
             + self
                 .tables
                 .iter()
@@ -271,8 +346,9 @@ impl Columns {
                 })
                 .sum::<usize>()
             + self
-                .values
-                .values()
+                .string_cols
+                .iter()
+                .chain(self.number_cols.iter())
                 .map(|v| v.capacity() * 4)
                 .sum::<usize>()
     }
@@ -280,31 +356,32 @@ impl Columns {
     pub fn append(&mut self, other: Self) -> Result<()> {
         let mut maps: [Vec<u32>; 3] = std::array::from_fn(|_| Vec::new());
         for (domain, table) in other.tables.into_iter().enumerate() {
+            maps[domain].reserve(table.values.len());
             for text in table.values {
                 maps[domain].push(self.tables[domain].intern(&text)?);
             }
         }
-        for (name, values) in other.values {
-            let domain = STRINGS
-                .iter()
-                .find(|(field, _)| *field == name)
-                .map(|(_, d)| *d);
-            let offset = match name {
-                "package.occurrence_start" => self.occurrences,
-                "package.gap_start" => self.gaps,
-                "package.missing_start" => self.missing,
+        for (idx, values) in other.string_cols.into_iter().enumerate() {
+            let map = &maps[STRINGS[idx].1];
+            let dst = &mut self.string_cols[idx];
+            dst.reserve(values.len());
+            for value in values {
+                dst.push(*map.get(value as usize).ok_or("invalid local string ID")?);
+            }
+        }
+        for (idx, values) in other.number_cols.into_iter().enumerate() {
+            let offset = match idx {
+                N_PACKAGE_OCCURRENCE_START => self.occurrences,
+                N_PACKAGE_GAP_START => self.gaps,
+                N_PACKAGE_MISSING_START => self.missing,
                 _ => 0,
             };
-            for value in values {
-                self.number(
-                    name,
-                    match domain {
-                        Some(d) => *maps[d]
-                            .get(value as usize)
-                            .ok_or("invalid local string ID")?,
-                        None => value + offset,
-                    },
-                );
+            let dst = &mut self.number_cols[idx];
+            dst.reserve(values.len());
+            if offset == 0 {
+                dst.extend(values);
+            } else {
+                dst.extend(values.into_iter().map(|v| v + offset));
             }
         }
         self.occurrences += other.occurrences;
@@ -319,40 +396,51 @@ impl Columns {
         }
         Ok(Self {
             tables,
-            values: STRINGS
-                .iter()
-                .map(|(name, _)| *name)
-                .chain(NUMBERS)
-                .filter(|n| !n.is_empty())
-                .map(|name| (name, Vec::new()))
-                .collect(),
+            string_cols: std::array::from_fn(|_| Vec::new()),
+            number_cols: std::array::from_fn(|_| Vec::new()),
             occurrences: 0,
             gaps: 0,
             missing: 0,
         })
     }
-    #[expect(
-        clippy::expect_used,
-        reason = "only constant fields in STRINGS and NUMBERS are written"
-    )]
-    fn number(&mut self, field: &'static str, value: u32) {
-        self.values
-            .get_mut(field)
-            .expect("known column")
-            .push(value);
+    #[inline]
+    fn number(&mut self, col: usize, value: u32) {
+        self.number_cols[col].push(value);
     }
-    #[expect(
-        clippy::expect_used,
-        reason = "only constant fields in STRINGS are interned"
-    )]
-    fn string(&mut self, field: &'static str, value: &str) -> Result<()> {
-        let domain = STRINGS
-            .iter()
-            .find(|(name, _)| *name == field)
-            .expect("known string field")
-            .1;
-        let id = self.tables[domain].intern(value)?;
-        self.number(field, id);
+    #[inline]
+    fn string(&mut self, col: usize, value: &str) -> Result<()> {
+        let domain = STRINGS[col].1;
+        let id = if value.is_empty() {
+            0
+        } else {
+            self.tables[domain].intern(value)?
+        };
+        self.string_cols[col].push(id);
+        Ok(())
+    }
+    /// Direct fast path for `Evidence::NotGatherable` entries (typically 98%+ of a project).
+    pub fn feed_not_gatherable(&mut self, path: &str, signature: &str) -> Result<()> {
+        let _span = game_text_index::scan_timings::Span::new("extract.columns");
+        self.string(S_PACKAGE_PATH, path)?;
+        self.string(S_PACKAGE_SIGNATURE, signature)?;
+        self.string_cols[S_PACKAGE_ERROR].push(0);
+        self.string_cols[S_PACKAGE_NAME].push(0);
+        self.string_cols[S_PACKAGE_ASSET_CLASS].push(0);
+        self.string_cols[S_PACKAGE_BLUEPRINTS].push(0);
+        self.number_cols[N_PACKAGE_STATUS].push(2);
+        self.number_cols[N_PACKAGE_BYTES_LOW].push(0);
+        self.number_cols[N_PACKAGE_BYTES_HIGH].push(0);
+        self.number_cols[N_PACKAGE_DECODE_ERRORS].push(0);
+        self.number_cols[N_PACKAGE_OCCURRENCE_START].push(self.occurrences);
+        self.number_cols[N_PACKAGE_GAP_START].push(self.gaps);
+        self.number_cols[N_PACKAGE_MISSING_START].push(self.missing);
+        self.number_cols[N_PACKAGE_GATHER].push(0);
+        self.number_cols[N_PACKAGE_GATHER_SITES].push(0);
+        self.number_cols[N_PACKAGE_GATHER_MISSING].push(0);
+        self.number_cols[N_PACKAGE_GAP0].push(0);
+        self.number_cols[N_PACKAGE_GAP1].push(0);
+        self.number_cols[N_PACKAGE_GAP2].push(0);
+        self.number_cols[N_PACKAGE_GAP3].push(0);
         Ok(())
     }
     pub fn feed(&mut self, stored: Stored, rules: &[AudienceRule]) -> Result<()> {
@@ -361,10 +449,10 @@ impl Columns {
         if let Evidence::Package { record, .. } = &mut evidence {
             copies::fold(record)?;
         }
-        self.string("package.path", &stored.path)?;
-        self.string("package.signature", &stored.signature)?;
+        self.string(S_PACKAGE_PATH, &stored.path)?;
+        self.string(S_PACKAGE_SIGNATURE, &stored.signature)?;
         self.string(
-            "package.error",
+            S_PACKAGE_ERROR,
             &if let Evidence::Error {
                 json: Some(json), ..
             } = &evidence
@@ -382,15 +470,15 @@ impl Columns {
             None
         };
         self.string(
-            "package.name",
+            S_PACKAGE_NAME,
             record.and_then(|r| r.package_name.as_deref()).unwrap_or(""),
         )?;
         self.string(
-            "package.asset_class",
+            S_PACKAGE_ASSET_CLASS,
             record.and_then(|r| r.asset_class.as_deref()).unwrap_or(""),
         )?;
         self.number(
-            "package.status",
+            N_PACKAGE_STATUS,
             match &evidence {
                 Evidence::Package { record, .. } => {
                     u32::from(record.status == ProjectionStatus::Partial)
@@ -400,17 +488,17 @@ impl Columns {
             },
         );
         let bytes = record.map_or(0, |r| r.file_bytes);
-        self.number("package.bytes_low", bytes as u32);
-        self.number("package.bytes_high", (bytes >> 32) as u32);
+        self.number(N_PACKAGE_BYTES_LOW, bytes as u32);
+        self.number(N_PACKAGE_BYTES_HIGH, (bytes >> 32) as u32);
         self.number(
-            "package.decode_errors",
+            N_PACKAGE_DECODE_ERRORS,
             record.map_or(0, |r| r.decode_errors as u32),
         );
-        self.number("package.occurrence_start", self.occurrences);
-        self.number("package.gap_start", self.gaps);
-        self.number("package.missing_start", self.missing);
+        self.number(N_PACKAGE_OCCURRENCE_START, self.occurrences);
+        self.number(N_PACKAGE_GAP_START, self.gaps);
+        self.number(N_PACKAGE_MISSING_START, self.missing);
         self.string(
-            "package.blueprints",
+            S_PACKAGE_BLUEPRINTS,
             &match record {
                 Some(r) if !r.blueprint_classes.is_empty() => {
                     if let Evidence::Package {
@@ -430,36 +518,32 @@ impl Columns {
             },
         )?;
         let gather = record.and_then(|r| r.gather_coverage.as_ref());
-        self.number("package.gather", u32::from(gather.is_some()));
+        self.number(N_PACKAGE_GATHER, u32::from(gather.is_some()));
         self.number(
-            "package.gather_sites",
+            N_PACKAGE_GATHER_SITES,
             gather.map_or(0, |g| g.runtime_sites as u32),
         );
         self.number(
-            "package.gather_missing",
+            N_PACKAGE_GATHER_MISSING,
             gather.map_or(0, |g| g.missing as u32),
         );
         let counts = record.map(|r| &r.gap_counts);
-        for (field, count) in [
-            (
-                "package.gap0",
-                counts.map_or(0, |c| c.unsupported_text_history),
-            ),
-            (
-                "package.gap1",
-                counts.map_or(0, |c| c.legacy_container_element_without_type_information),
-            ),
-            (
-                "package.gap2",
-                counts.map_or(0, |c| c.feature_unavailable_for_engine_version),
-            ),
-            (
-                "package.gap3",
-                counts.map_or(0, |c| c.property_decoder_rejected),
-            ),
-        ] {
-            self.number(field, count as u32);
-        }
+        self.number(
+            N_PACKAGE_GAP0,
+            counts.map_or(0, |c| c.unsupported_text_history) as u32,
+        );
+        self.number(
+            N_PACKAGE_GAP1,
+            counts.map_or(0, |c| c.legacy_container_element_without_type_information) as u32,
+        );
+        self.number(
+            N_PACKAGE_GAP2,
+            counts.map_or(0, |c| c.feature_unavailable_for_engine_version) as u32,
+        );
+        self.number(
+            N_PACKAGE_GAP3,
+            counts.map_or(0, |c| c.property_decoder_rejected) as u32,
+        );
         let Some(record) = record else {
             return Ok(());
         };
@@ -488,27 +572,23 @@ impl Columns {
                 _ => String::new(),
             };
             let row = if location == 3 { line.as_str() } else { row };
-            for (field, text) in [
-                ("occurrence.source", occurrence.source.as_str()),
-                ("occurrence.notes", occurrence.dev_notes.as_str()),
-                ("occurrence.namespace", namespace),
-                ("occurrence.key", key),
-                ("occurrence.object", object),
-                ("occurrence.property", property),
-                ("occurrence.class", class),
-                ("occurrence.row", row),
-            ] {
-                self.string(field, text)?;
-            }
-            self.number("occurrence.identity", identity);
-            self.number("occurrence.location", location);
+            self.string(S_OCCURRENCE_SOURCE, occurrence.source.as_str())?;
+            self.string(S_OCCURRENCE_NOTES, occurrence.dev_notes.as_str())?;
+            self.string(S_OCCURRENCE_NAMESPACE, namespace)?;
+            self.string(S_OCCURRENCE_KEY, key)?;
+            self.string(S_OCCURRENCE_OBJECT, object)?;
+            self.string(S_OCCURRENCE_PROPERTY, property)?;
+            self.string(S_OCCURRENCE_CLASS, class)?;
+            self.string(S_OCCURRENCE_ROW, row)?;
+            self.number(N_OCCURRENCE_IDENTITY, identity);
+            self.number(N_OCCURRENCE_LOCATION, location);
             self.number(
-                "occurrence.editable",
+                N_OCCURRENCE_EDITABLE,
                 u32::from(occurrence.edit_capability == EditCapability::SourceEditable),
             );
             // 3 marks code text the target leaves out; the join rates it outside the target.
             self.number(
-                "occurrence.gather",
+                N_OCCURRENCE_GATHER,
                 if occurrence.left_out {
                     3
                 } else {
@@ -518,7 +598,7 @@ impl Columns {
                 },
             );
             self.number(
-                "occurrence.audience",
+                N_OCCURRENCE_AUDIENCE,
                 audience::classify_folded(occurrence, rules),
             );
             // package-text-columns.ts:118-133, 300-323: copies share source/class IDs and are sparse.
@@ -527,7 +607,7 @@ impl Columns {
                 .iter()
                 .any(|c| c.source != occurrence.source && c.kind != CopyKind::Skeleton);
             self.number(
-                "occurrence.copies",
+                N_OCCURRENCE_COPIES,
                 if occurrence.copies.is_empty() {
                     0
                 } else {
@@ -539,10 +619,10 @@ impl Columns {
             for copy in &occurrence.copies {
                 let same_source = copy.source == occurrence.source;
                 let same_class = location == 0 && copy.class_path.as_deref() == Some(class);
-                self.string("copy.object", &copy.object_path)?;
-                self.string("copy.source", if same_source { "" } else { &copy.source })?;
+                self.string(S_COPY_OBJECT, &copy.object_path)?;
+                self.string(S_COPY_SOURCE, if same_source { "" } else { &copy.source })?;
                 self.string(
-                    "copy.class",
+                    S_COPY_CLASS,
                     if same_class {
                         ""
                     } else {
@@ -550,7 +630,7 @@ impl Columns {
                     },
                 )?;
                 self.number(
-                    "copy.kind",
+                    N_COPY_KIND,
                     copy.kind.code()
                         | if same_source { 4 } else { 0 }
                         | copy
@@ -562,10 +642,10 @@ impl Columns {
             self.occurrences += 1;
         }
         for gap in &record.gap_samples {
-            self.string("gap.object", &gap.object_path)?;
-            self.string("gap.property", &gap.property_path)?;
+            self.string(S_GAP_OBJECT, &gap.object_path)?;
+            self.string(S_GAP_PROPERTY, &gap.property_path)?;
             self.number(
-                "gap.reason",
+                N_GAP_REASON,
                 match gap.reason {
                     TextCoverageGapReason::UnsupportedTextHistory => 0,
                     TextCoverageGapReason::LegacyContainerElementWithoutTypeInformation => 1,
@@ -577,25 +657,21 @@ impl Columns {
         }
         if let Some(gather) = gather {
             for sample in &gather.missing_samples {
-                for (field, text) in [
-                    ("missing.namespace", &sample.namespace),
-                    ("missing.key", &sample.key),
-                    ("missing.source", &sample.source),
-                    ("missing.site", &sample.site),
-                ] {
-                    self.string(field, text)?;
-                }
+                self.string(S_MISSING_NAMESPACE, &sample.namespace)?;
+                self.string(S_MISSING_KEY, &sample.key)?;
+                self.string(S_MISSING_SOURCE, &sample.source)?;
+                self.string(S_MISSING_SITE, &sample.site)?;
                 self.missing += 1;
             }
         }
         Ok(())
     }
     pub fn finish(mut self) -> Result<Vec<Column>> {
-        self.number("package.occurrence_start", self.occurrences);
-        self.number("package.gap_start", self.gaps);
-        self.number("package.missing_start", self.missing);
+        self.number(N_PACKAGE_OCCURRENCE_START, self.occurrences);
+        self.number(N_PACKAGE_GAP_START, self.gaps);
+        self.number(N_PACKAGE_MISSING_START, self.missing);
         let counts = self.tables.each_ref().map(|t| t.values.len() as u32);
-        let mut columns = Vec::new();
+        let mut columns = Vec::with_capacity(64);
         for (domain, table) in DOMAINS.into_iter().zip(self.tables) {
             let mut start = 0;
             let mut starts = Vec::new();
@@ -603,7 +679,7 @@ impl Columns {
                 let mut end = start;
                 let mut bytes = 8;
                 while end < table.values.len() {
-                    let next = Wtf8Buf::from_view(&table.values[end]).as_bytes().len() + 4;
+                    let next = Table::wtf8_len(&table.values[end]) + 4;
                     if end > start && bytes + next > snapshot::BLOCK_BYTES {
                         break;
                     }
@@ -619,7 +695,13 @@ impl Columns {
                     bytes: snapshot::string_block_bytes(
                         &table.values[start..end]
                             .iter()
-                            .map(|s| Wtf8Buf::from_view(s).into_bytes())
+                            .map(|s| {
+                                if !s.as_bytes().contains(&0xf3) {
+                                    s.as_bytes().to_vec()
+                                } else {
+                                    Wtf8Buf::from_view(s).into_bytes()
+                                }
+                            })
                             .collect::<Vec<_>>(),
                     )?,
                 });
@@ -633,22 +715,22 @@ impl Columns {
                 bytes: snapshot::u32_bytes(&starts),
             });
         }
-        for name in STRINGS
-            .iter()
-            .map(|(name, _)| *name)
-            .chain(NUMBERS)
-            .filter(|n| !n.is_empty())
-        {
-            let domain = STRINGS
-                .iter()
-                .find(|(field, _)| *field == name)
-                .map(|(_, d)| *d);
+        for ((name, domain), values) in STRINGS.iter().zip(self.string_cols) {
             columns.push(Column {
-                name: name.into(),
-                kind: if domain.is_some() { 3 } else { 2 },
-                domain: domain.map_or("", |d| DOMAINS[d]).into(),
-                strings: domain.map_or(0, |d| counts[d]),
-                bytes: snapshot::u32_bytes(self.values.get(name).ok_or("missing column")?),
+                name: (*name).into(),
+                kind: 3,
+                domain: DOMAINS[*domain].into(),
+                strings: counts[*domain],
+                bytes: snapshot::u32_bytes(&values),
+            });
+        }
+        for (name, values) in NUMBERS.iter().zip(self.number_cols) {
+            columns.push(Column {
+                name: (*name).into(),
+                kind: 2,
+                domain: String::new(),
+                strings: 0,
+                bytes: snapshot::u32_bytes(&values),
             });
         }
         Ok(columns)

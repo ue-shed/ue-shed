@@ -252,6 +252,62 @@ fn filename(name: &str, prefix: &str) -> Result<()> {
     )
 }
 pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
+    let opened = open_root_filtered(configuration, |_| None)?;
+    Ok((opened.manifest, opened.root))
+}
+/// A validated root and the files a caller asked to retain: each dictionary segment in the root's
+/// order (when a joined layer was selected), and only the layers needed for that joined view.
+pub(crate) struct OpenedRoot {
+    pub manifest: Value,
+    pub root: Value,
+    pub segments: Vec<Reader>,
+    pub layers: std::collections::HashMap<String, Reader>,
+}
+fn validate_layer(
+    directory: &Path,
+    root: &Value,
+    segment_count: u64,
+    record: &Value,
+) -> Result<Reader> {
+    let file = record["file"].as_str().ok_or("invalid layer name")?;
+    filename(file, "layer-")?;
+    let layer = Reader::open(&directory.join(file))?;
+    require(
+        layer
+            .entries
+            .iter()
+            .find(|entry| entry.name == "shared.meta")
+            .is_some_and(|entry| entry.raw <= 1024 * 1024),
+        "shared metadata bound",
+    )?;
+    let mut metadata: Value = serde_json::from_slice(&section(&layer, "shared.meta")?)?;
+    metadata["bytes"] = record["bytes"].clone();
+    require(
+        metadata == *record,
+        "shared layer metadata differs from root",
+    )?;
+    // `Reader::open` checked the file's length against its header.
+    require(
+        record["storeGeneration"] == root["generation"]
+            && record["segmentCount"]
+                .as_u64()
+                .is_some_and(|n| n <= segment_count)
+            && record["bytes"].as_u64() == Some(layer.file_len()),
+        "invalid layer dependency",
+    )?;
+    Ok(layer)
+}
+/// Validates the root as `open_root` does, closing validation-only readers immediately inside
+/// each worker so peak open file handles do not grow with unrelated retained history. When
+/// `select_joined(&root)` returns a joined layer key present in `root["layers"]`, retains only
+/// the dictionary segments and the layers that join depends on (`joined`, `base`, and
+/// `dependencies`).
+pub(crate) fn open_root_filtered(
+    configuration: &Configuration,
+    select_joined: impl FnOnce(&Value) -> Option<String>,
+) -> Result<OpenedRoot> {
+    use rayon::prelude::*;
+    use std::collections::{HashMap, HashSet};
     let directory = configuration.directory()?;
     let manifest: Value =
         serde_json::from_slice(&bounded(&directory.join("manifest.json"), 1024 * 1024)?)?;
@@ -268,6 +324,7 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
     let mut reader = Reader::open(&directory.join(physical))?;
     reader.verify()?;
     let root: Value = serde_json::from_slice(&section(&reader, "index.meta")?)?;
+    drop(reader);
     require(
         root["version"] == 2
             && root["active"].is_object()
@@ -278,6 +335,7 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
     let segments = root["segments"].as_array().ok_or("invalid segments")?;
     require(segments.len() <= 256, "segment count exceeds limit")?;
     let mut end = 0u64;
+    let mut segment_files = Vec::with_capacity(segments.len());
     for segment in segments {
         require(
             segment["start"].as_u64() == Some(end),
@@ -290,34 +348,86 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
         require(end <= u64::from(u32::MAX), "dictionary exceeds ID range")?;
         let file = segment["file"].as_str().ok_or("invalid segment name")?;
         filename(file, "strings-")?;
-        Reader::open(&directory.join(file))?;
+        segment_files.push(file);
     }
-    for record in root["layers"].as_object().ok_or("invalid layers")?.values() {
-        let file = record["file"].as_str().ok_or("invalid layer name")?;
-        filename(file, "layer-")?;
-        let layer = Reader::open(&directory.join(file))?;
-        require(
-            layer
-                .entries
-                .iter()
-                .find(|entry| entry.name == "shared.meta")
-                .is_some_and(|entry| entry.raw <= 1024 * 1024),
-            "shared metadata bound",
-        )?;
-        let mut metadata: Value = serde_json::from_slice(&section(&layer, "shared.meta")?)?;
-        metadata["bytes"] = record["bytes"].clone();
-        require(
-            metadata == *record,
-            "shared layer metadata differs from root",
-        )?;
-        require(
-            record["storeGeneration"] == root["generation"]
-                && record["segmentCount"]
-                    .as_u64()
-                    .is_some_and(|n| n <= segments.len() as u64)
-                && record["bytes"].as_u64() == Some(fs::metadata(directory.join(file))?.len()),
-            "invalid layer dependency",
-        )?;
+    let segment_count = segments.len() as u64;
+    let layer_map = root["layers"].as_object().ok_or("invalid layers")?;
+    let selected_joined = select_joined(&root).filter(|key| layer_map.contains_key(key));
+    let mut retained_joined: Option<(String, Reader)> = None;
+    let mut joined_error: Option<crate::Error> = None;
+    let mut needed_layers: HashSet<String> = HashSet::new();
+    if let Some(joined_key) = selected_joined {
+        let record = &layer_map[&joined_key];
+        match validate_layer(&directory, &root, segment_count, record) {
+            Ok(layer) => {
+                if layer
+                    .entries
+                    .iter()
+                    .find(|entry| entry.name == "join.meta")
+                    .is_some_and(|entry| entry.raw <= 16 * 1024 * 1024)
+                    && let Ok(bytes) = section(&layer, "join.meta")
+                    && let Ok(text) = std::str::from_utf8(&bytes)
+                    && let Ok(meta) = crate::json_value::parse(text)
+                {
+                    if let Some(base) = meta["base"].as_str() {
+                        needed_layers.insert(base.to_owned());
+                    }
+                    if let Some(deps) = meta["dependencies"].as_object() {
+                        for key in deps.values().filter_map(Value::as_str) {
+                            needed_layers.insert(key.to_owned());
+                        }
+                    }
+                }
+                needed_layers.remove(&joined_key);
+                retained_joined = Some((joined_key, layer));
+            }
+            Err(error) => {
+                joined_error = Some(error);
+            }
+        }
+    }
+    let retain_segments = retained_joined.is_some();
+    let skip_key = retained_joined.as_ref().map(|(key, _)| key.as_str());
+    let records = layer_map.iter().collect::<Vec<_>>();
+    let (segments, layers) = rayon::join(
+        || -> Result<Vec<Reader>> {
+            if retain_segments {
+                segment_files
+                    .par_iter()
+                    .map(|file| Reader::open(&directory.join(file)))
+                    .collect::<Result<Vec<_>>>()
+            } else {
+                segment_files
+                    .par_iter()
+                    .try_for_each(|file| Reader::open(&directory.join(file)).map(|_| ()))?;
+                Ok(Vec::new())
+            }
+        },
+        || -> Result<HashMap<String, Reader>> {
+            records
+                .par_iter()
+                .filter(|(key, _)| Some(key.as_str()) != skip_key)
+                .try_fold(HashMap::new, |mut retained, (key, record)| {
+                    let layer = validate_layer(&directory, &root, segment_count, record)?;
+                    if needed_layers.contains(key.as_str()) {
+                        retained.insert((*key).clone(), layer);
+                    }
+                    Ok(retained)
+                })
+                .try_reduce(HashMap::new, |mut acc, next| {
+                    acc.extend(next);
+                    Ok(acc)
+                })
+        },
+    );
+    // Segment failures report first, as when segments were opened before layers.
+    let segments = segments?;
+    if let Some(error) = joined_error {
+        return Err(error);
+    }
+    let mut layers = layers?;
+    if let Some((key, layer)) = retained_joined {
+        layers.insert(key, layer);
     }
     for key in root["active"].as_object().ok_or("invalid active")?.values() {
         require(
@@ -327,7 +437,12 @@ pub fn open_root(configuration: &Configuration) -> Result<(Value, Value)> {
             "missing active layer",
         )?;
     }
-    Ok((manifest, root))
+    Ok(OpenedRoot {
+        manifest,
+        root,
+        segments,
+        layers,
+    })
 }
 fn varint(bytes: &[u8], position: &mut usize) -> Result<u32> {
     let mut value = 0;
@@ -349,10 +464,19 @@ pub fn decode_a64(bytes: &[u8]) -> Result<Vec<String>> {
         .collect()
 }
 pub fn decode_a64_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
+    let mut values = Vec::new();
+    decode_a64_each(bytes, |value| {
+        values.push(value.to_vec());
+        Ok(())
+    })?;
+    Ok(values)
+}
+/// Calls `each` with every string of an A64 block in order, decoded into one reused buffer.
+/// The block's trailing bytes are checked after its last string.
+pub fn decode_a64_each(bytes: &[u8], mut each: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
     let mut position = 0;
     let count = varint(bytes, &mut position)?;
     require(count > 0 && count <= 64, "A64 count")?;
-    let mut values = Vec::new();
     let mut previous = Vec::<u8>::new();
     for _ in 0..count {
         let tag = *bytes.get(position).ok_or("missing A64 tag")?;
@@ -370,18 +494,17 @@ pub fn decode_a64_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
             } else {
                 0
             };
-            previous = (0..32)
-                .map(|i| {
-                    let n = (guid[i / 2] >> if i % 2 == 0 { 4 } else { 0 }) & 15;
-                    if n < 10 {
-                        b'0' + n
-                    } else if mask & (1 << i) != 0 {
-                        b'A' + n - 10
-                    } else {
-                        b'a' + n - 10
-                    }
-                })
-                .collect();
+            previous.clear();
+            previous.extend((0..32).map(|i| {
+                let n = (guid[i / 2] >> if i % 2 == 0 { 4 } else { 0 }) & 15;
+                if n < 10 {
+                    b'0' + n
+                } else if mask & (1 << i) != 0 {
+                    b'A' + n - 10
+                } else {
+                    b'a' + n - 10
+                }
+            }));
             position += if tag == 2 { 20 } else { 16 };
         } else {
             let prefix = varint(bytes, &mut position)? as usize;
@@ -399,10 +522,9 @@ pub fn decode_a64_bytes(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
             position += suffix;
         }
         crate::wtf8::validate(&previous)?;
-        values.push(previous.clone());
+        each(&previous)?;
     }
-    require(position == bytes.len(), "trailing A64 bytes")?;
-    Ok(values)
+    require(position == bytes.len(), "trailing A64 bytes")
 }
 pub fn dictionary_strings(directory: &Path, root: &Value) -> Result<Vec<String>> {
     dictionary_bytes(directory, root)?
@@ -415,9 +537,15 @@ pub fn full_dictionary_reads() -> u64 {
     FULL_DICTIONARY_READS.load(Ordering::Relaxed)
 }
 pub fn dictionary_bytes(directory: &Path, root: &Value) -> Result<Vec<Vec<u8>>> {
+    use rayon::prelude::*;
     FULL_DICTIONARY_READS.fetch_add(1, Ordering::Relaxed);
-    let mut values = Vec::new();
-    for segment in root["segments"].as_array().ok_or("invalid dictionary")? {
+    let segments = root["segments"].as_array().ok_or("invalid dictionary")?;
+    let total: usize = segments
+        .iter()
+        .map(|s| s["count"].as_u64().unwrap_or(0) as usize)
+        .sum();
+    let mut values = Vec::with_capacity(total);
+    for segment in segments {
         require(
             segment["start"].as_u64() == Some(values.len() as u64),
             "dictionary range",
@@ -428,31 +556,43 @@ pub fn dictionary_bytes(directory: &Path, root: &Value) -> Result<Vec<Vec<u8>>> 
         let frames = integers(&section(&reader, "front.frames")?)?;
         require(offsets.len() == frames.len(), "front directory lengths")?;
         let begin = values.len();
-        let mut current = u32::MAX;
-        let mut data = Vec::new();
+        let mut runs: Vec<(u32, std::ops::Range<usize>)> = Vec::new();
         for (block, &frame) in frames.iter().enumerate() {
-            if current != frame {
-                data = section(&reader, &format!("front.b{frame}"))?;
-                current = frame;
+            match runs.last_mut() {
+                Some((last_frame, range)) if *last_frame == frame => range.end = block + 1,
+                _ => runs.push((frame, block..block + 1)),
             }
-            let end = if frames.get(block + 1) == Some(&frame) {
-                offsets[block + 1] as usize
-            } else {
-                data.len()
-            };
-            values.extend(
-                decode_a64_bytes(
-                    data.get(offsets[block] as usize..end)
-                        .ok_or("front block bounds")?,
-                )
-                .map_err(|error| {
-                    crate::Error::with_source(
-                        crate::ErrorCode::InvalidCache,
-                        format!("Invalid dictionary section front.b{frame}."),
-                        error,
-                    )
-                })?,
-            );
+        }
+        let decoded_runs = runs
+            .par_iter()
+            .map(|(frame, range)| -> Result<Vec<Vec<u8>>> {
+                let data = section(&reader, &format!("front.b{frame}"))?;
+                let mut out = Vec::with_capacity(range.len() * 64);
+                for block in range.clone() {
+                    let end = if block + 1 < range.end {
+                        offsets[block + 1] as usize
+                    } else {
+                        data.len()
+                    };
+                    out.extend(
+                        decode_a64_bytes(
+                            data.get(offsets[block] as usize..end)
+                                .ok_or("front block bounds")?,
+                        )
+                        .map_err(|error| {
+                            crate::Error::with_source(
+                                crate::ErrorCode::InvalidCache,
+                                format!("Invalid dictionary section front.b{frame}."),
+                                error,
+                            )
+                        })?,
+                    );
+                }
+                Ok(out)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        for run in decoded_runs {
+            values.extend(run);
         }
         require(
             values.len() - begin == segment["count"].as_u64().ok_or("dictionary count")? as usize,
@@ -868,39 +1008,21 @@ impl Store {
             )?;
             let base = u32::try_from(lookup.len())?;
             let file = format!("strings-{}.snapshot", token());
-            let raw = self.directory.join(format!("{}.tmp", token()));
-            let mut stream = BufWriter::with_capacity(
-                crate::snapshot::BLOCK_BYTES,
-                OpenOptions::new().create_new(true).write(true).open(&raw)?,
-            );
-            for value in &missing {
-                require(value.len() <= 1024 * 1024, "string cap")?;
-                stream.write_all(&(value.len() as u32).to_le_bytes())?;
-                crate::wtf8::validate(value)?;
-                stream.write_all(value)?;
-            }
-            stream.flush()?;
-            drop(stream);
-            measure.mark("intern.stage_strings");
-            let segment = dictionary::segment(
-                &raw,
-                &self.directory,
-                domain,
-                base,
-                missing.len() as u32,
-                file,
-            );
-            fs::remove_file(raw)?;
+            let segment =
+                dictionary::segment_from_slice(&missing, &self.directory, domain, base, file)?;
             self.root["segments"]
                 .as_array_mut()
                 .ok_or("segments")?
-                .push(serde_json::to_value(segment?)?);
+                .push(serde_json::to_value(segment)?);
             measure.mark("intern.encode_segment");
+            let lengths = self
+                .dictionary_lengths
+                .as_mut()
+                .ok_or("dictionary lengths absent")?;
+            lengths.reserve(missing.len());
+            lookup.reserve(missing.len());
             for (row, value) in missing.into_iter().enumerate() {
-                self.dictionary_lengths
-                    .as_mut()
-                    .ok_or("dictionary lengths absent")?
-                    .push(value.len() as u32);
+                lengths.push(value.len() as u32);
                 lookup.insert(value, base + row as u32);
             }
             measure.mark("intern.extend_lookup");
@@ -1064,11 +1186,76 @@ impl Store {
         if self.root["segments"].as_array().ok_or("segments")?.len() + domains.len() > 256 {
             self.compact(true)?;
         }
-        for domain in domain_order {
-            let values = domains.remove(&domain).ok_or("cold domain absent")?;
-            // Domain order and byte order assign the same IDs as ordinary bulk interning.
-            self.intern_bytes_with_order(&domain, &values, true)?;
+        // Intern all cold domains together: assign contiguous ID ranges in domain order, encode
+        // every domain's dictionary segment in parallel directly from memory, and skip building
+        // unused per-value return vectors.
+        require(!self.uncertain, "writer closed")?;
+        if self.dictionary.is_none() {
+            let loaded = dictionary_bytes(&self.directory, &self.root)?;
+            self.dictionary_lengths = Some(loaded.iter().map(|s| s.len() as u32).collect());
+            self.dictionary = Some(
+                loaded
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, s)| (s, i as u32))
+                    .collect(),
+            );
         }
+        let lookup = self.dictionary.as_mut().ok_or("dictionary absent")?;
+        let lengths = self
+            .dictionary_lengths
+            .as_mut()
+            .ok_or("dictionary lengths absent")?;
+        let mut to_encode: Vec<(String, u32, String, Vec<Vec<u8>>)> = Vec::new();
+        let mut next_base = u32::try_from(lookup.len())?;
+        for domain in domain_order {
+            require(domain.len() <= 23, "invalid domain")?;
+            let values = domains.remove(&domain).ok_or("cold domain absent")?;
+            self.localization_lookups += values.len() as u64;
+            let missing: Vec<Vec<u8>> = values
+                .into_iter()
+                .filter(|s| !lookup.contains_key(s))
+                .collect();
+            if missing.is_empty() {
+                continue;
+            }
+            let base = next_base;
+            let count = u32::try_from(missing.len())?;
+            next_base = next_base
+                .checked_add(count)
+                .ok_or("dictionary ID overflow")?;
+            lengths.reserve(missing.len());
+            lookup.reserve(missing.len());
+            for (row, value) in missing.iter().enumerate() {
+                lengths.push(value.len() as u32);
+                lookup.insert(value.clone(), base + row as u32);
+            }
+            let file = format!("strings-{}.snapshot", token());
+            to_encode.push((domain, base, file, missing));
+        }
+        let existing_segments = self.root["segments"].as_array().ok_or("segments")?.len();
+        require(
+            existing_segments + to_encode.len() <= 256,
+            "dictionary requires compaction",
+        )?;
+        let directory_for_segments = self.directory.clone();
+        let encoded_segments = to_encode
+            .par_iter()
+            .map(|(domain, base, file, missing)| {
+                dictionary::segment_from_slice(
+                    missing,
+                    &directory_for_segments,
+                    domain,
+                    *base,
+                    file.clone(),
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let segments_arr = self.root["segments"].as_array_mut().ok_or("segments")?;
+        for segment in encoded_segments {
+            segments_arr.push(serde_json::to_value(segment)?);
+        }
+        drop(to_encode);
         measure.mark("publication.intern_strings");
         let segments = self.root["segments"].as_array().ok_or("segments")?.len();
         // New layers that replace nothing and reuse nothing are independent files: encode them
@@ -1937,6 +2124,60 @@ mod tests {
         drop(current);
         drop(old_reader);
         drop(store);
+        fs::remove_dir_all(config.cache_root).unwrap();
+    }
+
+    #[test]
+    fn open_root_filtered_retains_only_selected_join_layers() {
+        let config = configuration();
+        fs::create_dir_all(&config.cache_root).unwrap();
+        let mut store = Store::writer(config.clone()).unwrap();
+        let mut dep_keys = Vec::new();
+        for index in 0..6 {
+            let raw = config.cache_root.join(format!("shard-{index}.snapshot"));
+            let mut writer = Writer::new(&config.cache_root.join(format!("p-{index}"))).unwrap();
+            let id = writer
+                .add("entry.value", 0, "", format!("v-{index}").as_bytes(), 0)
+                .unwrap();
+            writer.finish(&raw, &[id]).unwrap();
+            let key = format!("shard-key-{index}");
+            store.publish_local("shard-0", &key, &raw).unwrap();
+            dep_keys.push(key);
+        }
+        let active_dep = dep_keys.last().unwrap().clone();
+        let joined_raw = config.cache_root.join("joined.snapshot");
+        let mut writer = Writer::new(&config.cache_root.join("p-joined")).unwrap();
+        // Include an escaped lone UTF-16 surrogate in `join.meta` to verify dependency
+        // selection uses the same surrogate-preserving decoder as `EngineReader`.
+        let meta = format!(
+            r#"{{"version":3,"generation":{},"surrogate":"\uD800","dependencies":{{"shard-0":{}}}}}"#,
+            serde_json::to_string(&store.root["generation"]).unwrap(),
+            serde_json::to_string(&active_dep).unwrap()
+        )
+        .into_bytes();
+        let meta_id = writer.add("join.meta", 0, "", &meta, 0).unwrap();
+        writer.finish(&joined_raw, &[meta_id]).unwrap();
+        store
+            .publish_local("joined", "joined-key-active", &joined_raw)
+            .unwrap();
+        assert_eq!(store.root["layers"].as_object().unwrap().len(), 7);
+        drop(store);
+
+        let validation_only = open_root_filtered(&config, |_| None).unwrap();
+        assert!(validation_only.layers.is_empty());
+        assert!(validation_only.segments.is_empty());
+
+        let selected = open_root_filtered(&config, |root| {
+            root["active"]["joined"].as_str().map(str::to_owned)
+        })
+        .unwrap();
+        let mut retained_keys = selected.layers.keys().cloned().collect::<Vec<_>>();
+        retained_keys.sort();
+        let mut expected_keys = vec![active_dep, "joined-key-active".to_owned()];
+        expected_keys.sort();
+        assert_eq!(retained_keys, expected_keys);
+
+        drop(selected);
         fs::remove_dir_all(config.cache_root).unwrap();
     }
 }

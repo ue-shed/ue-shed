@@ -23,7 +23,7 @@ fn malformed(offset: u64, message: impl Into<String>) -> PackageError {
 }
 
 fn layout(reader: &mut Reader<'_>, name: &str) -> Result<PropertyValue, PackageError> {
-    read_layout(reader, name, "Package.MetaData")
+    read_layout(reader, name, &"Package.MetaData")
         .map(property)
         .map_err(|error| {
             PackageError::new(

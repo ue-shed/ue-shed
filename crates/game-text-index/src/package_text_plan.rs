@@ -166,6 +166,15 @@ pub fn shard_plans(
     shard_plans_sorted(sorted, request)
 }
 
+/// Whether `path` names a package sidecar (`.uexp`, `.ubulk`, `.uptnl`, ASCII case-insensitive).
+fn is_sidecar_path(path: &str) -> bool {
+    path.rsplit_once('.').is_some_and(|(_, ext)| {
+        ext.eq_ignore_ascii_case("uexp")
+            || ext.eq_ignore_ascii_case("ubulk")
+            || ext.eq_ignore_ascii_case("uptnl")
+    })
+}
+
 /// A changed file as the package it belongs to: a sidecar names its `.uasset` and `.umap`.
 fn changed_packages(changed: &[String]) -> BTreeSet<String> {
     let mut packages = BTreeSet::new();
@@ -343,8 +352,10 @@ fn write_plan_witness(
 
 /// The Catalog a delta plan reads. Each answer is exact or `None`, which plans every shard.
 pub trait PlanCatalog {
-    /// The entries (packages and sidecars) added, changed or removed since the inventory whose
-    /// digest was `since`.
+    /// The exact package paths added, changed, removed, or affected by a sidecar change since the
+    /// inventory whose digest was `since`. Sidecar changes must already be resolved to their
+    /// actual Catalog package paths (preserving exact extension casing); any unresolved sidecar
+    /// path causes [`try_plan_delta`] to fall back to a full plan.
     fn changes_since(&mut self, since: &str) -> Option<BTreeSet<String>>;
     /// The inventory's packages at `paths`, in path order; a path holding no package is left out.
     fn entries(&mut self, paths: &BTreeSet<String>) -> Option<Vec<Expected>>;
@@ -387,7 +398,17 @@ pub(crate) fn try_plan_delta(
     let Some(changes) = catalog.changes_since(&witness.inventory_digest) else {
         return Ok(None);
     };
-    let changed = changed_packages(&changes.into_iter().collect::<Vec<_>>());
+    let mut changed = BTreeSet::new();
+    for path in changes {
+        let normalized = path.replace('\\', "/");
+        // Never synthesize lowercase `.uasset`/`.umap` guesses for an unresolved sidecar: a package
+        // with uppercase or mixed-case extension (e.g. `.UASSET`) would be missed and leave stale
+        // shards behind an updated witness digest.
+        if is_sidecar_path(&normalized) {
+            return Ok(None);
+        }
+        changed.insert(normalized);
+    }
     let groups = changed
         .iter()
         .map(|path| shard(path) as u32)
@@ -1106,24 +1127,39 @@ mod tests {
             e.signature = signature(3);
         });
         planner.delta(&flipped_off, Some(&[&path(10)]))?.unwrap();
-        // Several shards at once, including a sidecar's package, a deleted map and unchanged or
-        // non-package entries the Catalog also logged.
+        // Several shards at once, including resolved package paths (with uppercase/mixed-case
+        // extensions), a deleted map, and unchanged or non-package entries the Catalog also logged.
         let mut several = edited(&base, &path(20), |e| e.signature = signature(4));
         several = edited(&several, &path(21), |e| e.signature = signature(5));
         several.retain(|e| e.path != "Content/Map.umap");
+        several.push(entry("Content/Upper.UASSET", &signature(6), true));
+        several.sort_by(|a, b| a.path.cmp(&b.path));
         let plan = planner
             .delta(
                 &several,
                 Some(&[
                     &path(20),
-                    "Content/P021.uexp",
-                    "Content/Map.ubulk",
+                    &path(21),
+                    "Content/Map.umap",
+                    "Content/Upper.UASSET",
                     &path(22),
                     "Content/Readme.txt",
                 ]),
             )?
             .unwrap();
-        assert!(plan.changed.len() + plan.removed.len() >= 2);
+        assert!(plan.changed.len() + plan.removed.len() >= 3);
+        // An unresolved sidecar path from PlanCatalog must fall back to a full plan instead of
+        // guessing lowercase `.uasset`/`.umap`.
+        assert!(
+            planner
+                .delta(&several, Some(&["Content/P021.uexp"]))?
+                .is_none()
+        );
+        assert!(
+            planner
+                .delta(&several, Some(&["Content/P021.UEXP"]))?
+                .is_none()
+        );
         // No change at all.
         assert!(planner.delta(&base, Some(&[]))?.unwrap().changed.is_empty());
         Ok(())

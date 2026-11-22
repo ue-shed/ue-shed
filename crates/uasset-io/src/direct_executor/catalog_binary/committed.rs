@@ -181,6 +181,39 @@ impl Committed {
             .map(|id| (Segment::Base, id)))
     }
 
+    /// Every live package path whose bundle stem is exactly `stem`, regardless of package
+    /// extension casing (for example `.uasset`, `.UASSET`, `.UMap`).
+    pub(super) fn live_packages_with_stem(&self, stem: &str) -> Result<Vec<String>, CatalogError> {
+        let mut paths = Vec::new();
+        let base = self.base()?;
+        let hidden = self.hidden();
+        let mut collect = |snapshot: &Snapshot,
+                           hidden: Option<&Tombstones>|
+         -> Result<(), CatalogError> {
+            let mut id = snapshot.before_joined(0..snapshot.row_count, stem, b'.')?;
+            while id < snapshot.row_count {
+                let path = snapshot.path(id)?;
+                if !shares_stem(path, stem) {
+                    break;
+                }
+                if hidden.is_none_or(|hidden| !hidden.hides(id)) && bundle_stem(path) == Some(stem)
+                {
+                    let (path, entry) = snapshot.row(id)?;
+                    if entry.kind == EntryKind::Package {
+                        paths.push(path.to_owned());
+                    }
+                }
+                id += 1;
+            }
+            Ok(())
+        };
+        collect(base, Some(hidden))?;
+        if let Some(delta) = &self.delta {
+            collect(delta, None)?;
+        }
+        Ok(paths)
+    }
+
     /// The handle of a row.
     pub(super) fn handle(&self, segment: Segment, id: usize) -> Result<u32, CatalogError> {
         let handle = match segment {

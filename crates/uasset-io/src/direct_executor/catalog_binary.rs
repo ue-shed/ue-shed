@@ -5354,9 +5354,13 @@ impl BinaryCatalog {
         Ok(manifest_digest(manifest))
     }
 
-    /// The entries (packages and sidecars) changed or removed after the generation whose
-    /// inventory digest was `since`, up to the committed generation; `None` when the Catalog's
-    /// change log cannot say exactly.
+    /// The package paths added, changed, removed, or affected by a sidecar change after the
+    /// generation whose inventory digest was `since`, up to the committed generation; `None` when
+    /// the Catalog's change log cannot say exactly.
+    ///
+    /// Changed or removed sidecars are resolved against the committed generation to every live
+    /// package sharing their exact stem (regardless of package extension casing), rather than
+    /// guessing lowercase `.uasset`/`.umap` paths.
     pub(crate) fn changes_since(
         &self,
         project_id: &ProjectId,
@@ -5371,9 +5375,41 @@ impl BinaryCatalog {
                 actual: generation,
             });
         }
-        Ok(manifest_digest(manifest).and_then(|digest| {
+        let Some(raw_changes) = manifest_digest(manifest).and_then(|digest| {
             super::catalog_changes::since(&self.directory, since, generation.get(), &digest)
-        }))
+        }) else {
+            return Ok(None);
+        };
+        let mut resolved = std::collections::BTreeSet::new();
+        let mut sidecar_stems = std::collections::BTreeSet::new();
+        for raw_path in raw_changes {
+            let path = raw_path.replace('\\', "/");
+            if let Some((stem, ext)) = path.rsplit_once('.')
+                && super::inventory_digest::BUNDLE_SIDECARS
+                    .iter()
+                    .any(|sidecar| ext.eq_ignore_ascii_case(sidecar))
+            {
+                sidecar_stems.insert(stem.to_owned());
+            } else {
+                resolved.insert(path);
+            }
+        }
+        if !sidecar_stems.is_empty() {
+            let lookup = (|| {
+                self.load()?;
+                let cached = self.committed.borrow();
+                let committed = cached
+                    .as_ref()
+                    .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
+                for stem in &sidecar_stems {
+                    resolved.extend(committed.live_packages_with_stem(stem)?);
+                }
+                Ok::<(), CatalogError>(())
+            })();
+            self.release_rows();
+            lookup?;
+        }
+        Ok(Some(resolved))
     }
 
     /// The packages at `paths` the committed generation holds, in path order, as
@@ -7622,25 +7658,8 @@ mod tests {
         items
     }
 
-    /// Each package a changed entry names: itself, or a sidecar's `.uasset` and `.umap`.
-    fn changed_package_paths(changes: &BTreeSet<String>) -> BTreeSet<String> {
-        let mut packages = BTreeSet::new();
-        for path in changes {
-            match path.rsplit_once('.') {
-                Some((stem, "uexp" | "ubulk" | "uptnl")) => {
-                    packages.insert(format!("{stem}.uasset"));
-                    packages.insert(format!("{stem}.umap"));
-                }
-                _ => {
-                    packages.insert(path.clone());
-                }
-            }
-        }
-        packages
-    }
-
     /// The change log against whole inventories: from each of the last few complete generations,
-    /// every package whose package-text entry differs now is among the logged changes, and the
+    /// every package whose package-text entry differs now is among the resolved changes, and the
     /// targeted entries of those changes are the inventory's. The generation right after a
     /// complete one always has its changes.
     fn check_package_text_changes(
@@ -7678,22 +7697,21 @@ mod tests {
                 let Some(changes) = changes else {
                     continue;
                 };
-                let packages = changed_package_paths(&changes);
                 for path in then.keys().chain(now.keys()) {
                     if then.get(path) != now.get(path) {
                         assert!(
-                            packages.contains(*path),
+                            changes.contains(*path),
                             "generation {generation}, {back} back: {path}"
                         );
                     }
                 }
                 assert_eq!(
                     catalog
-                        .package_text_entries(&project, current, &packages, gathered)
+                        .package_text_entries(&project, current, &changes, gathered)
                         .unwrap(),
                     inventory
                         .iter()
-                        .filter(|entry| packages.contains(&entry.path))
+                        .filter(|entry| changes.contains(&entry.path))
                         .cloned()
                         .collect::<Vec<_>>(),
                     "generation {generation}, {back} back"
@@ -8365,5 +8383,276 @@ mod tests {
         );
         assert!(matches!(catalog.status(), CatalogStatus::Absent));
         assert_eq!(fs::read_dir(&catalog.directory).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn sidecar_only_edit_resolves_uppercase_and_mixed_case_packages_for_delta_plan() {
+        use crate::direct_executor::catalog_conformance::{FakeScanner, header, package, sidecar};
+        use crate::direct_executor::project_index::refresh_changed_paths;
+        use crate::direct_executor::project_index_io::gathered;
+
+        struct DirectPlanCatalog<'a> {
+            catalog: &'a BinaryCatalog,
+            project: ProjectId,
+            generation: Generation,
+        }
+
+        impl game_text_index::package_text_plan::PlanCatalog for DirectPlanCatalog<'_> {
+            fn changes_since(&mut self, since: &str) -> Option<BTreeSet<String>> {
+                self.catalog
+                    .changes_since(&self.project, self.generation, since)
+                    .ok()
+                    .flatten()
+            }
+            fn entries(
+                &mut self,
+                paths: &BTreeSet<String>,
+            ) -> Option<Vec<game_text_index::package_text_contract::PackageTextExpected>>
+            {
+                self.catalog
+                    .package_text_entries(&self.project, self.generation, paths, gathered)
+                    .ok()
+            }
+        }
+
+        let project = fixture_project_id();
+        let mut catalog = custom_catalog();
+        let make_header = |pkg_name: &str, gatherable: bool| {
+            let mut evidence = header(pkg_name, &["/Script/Test.Widget"], &["None"]);
+            evidence.header_data = Some(PackageHeaderData {
+                package_flags: if gatherable { 0x40000 } else { 0 },
+                gatherable_text_data_count: u32::from(gatherable),
+                gatherable_text_data_offset: u64::from(gatherable),
+                has_text_property: gatherable,
+            });
+            evidence
+        };
+        let make_scanner = |a_sidecar: (u64, u64), b_sidecar: (u64, u64)| {
+            let mut scanner = FakeScanner::default();
+            scanner.entries.push(package("Content/A.UASSET", 100, 10));
+            scanner
+                .headers
+                .insert("Content/A.UASSET".into(), make_header("/Game/A", true));
+            scanner
+                .entries
+                .push(sidecar("Content/A.uexp", a_sidecar.0, a_sidecar.1));
+            scanner.entries.push(package("Content/B.UMap", 200, 10));
+            scanner
+                .headers
+                .insert("Content/B.UMap".into(), make_header("/Game/B", true));
+            scanner
+                .entries
+                .push(sidecar("Content/B.ubulk", b_sidecar.0, b_sidecar.1));
+            scanner.entries.push(package("Content/C.uasset", 300, 10));
+            scanner
+                .headers
+                .insert("Content/C.uasset".into(), make_header("/Game/C", false));
+            scanner
+        };
+
+        let scanner1 = make_scanner((50, 10), (60, 10));
+        refresh(
+            &mut catalog,
+            &scanner1,
+            FIXTURE_PROJECT_ROOT,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let gen1 = catalog.committed_generation().unwrap();
+        let digest1 = catalog.inventory_digest(&project, gen1).unwrap().unwrap();
+        let inv1 = catalog
+            .all_package_text_inventory(&project, gen1, gathered)
+            .unwrap();
+
+        let store_root = catalog.directory.join("game-text-cache");
+        fs::create_dir_all(&store_root).unwrap();
+        let config = game_text_index::store::Configuration {
+            cache_root: store_root.clone(),
+            project_key: "test-project".into(),
+            target_key: "game".into(),
+            shared_project: true,
+            view_prefix: None,
+        };
+        let catalog_cache_root = catalog.directory.to_string_lossy().into_owned();
+        let make_request = |plan_file: PathBuf, generation: u64| {
+            game_text_index::package_text_contract::PackageTextPlanRequest {
+                cache_root: catalog_cache_root.clone(),
+                project_id: project.to_string(),
+                generation,
+                format: "package-text-v2".into(),
+                policy_json: "[1,[\"en\"]]".into(),
+                plan_file: plan_file.to_string_lossy().into_owned(),
+                changed_files: None,
+            }
+        };
+
+        let mut build = game_text_index::builder::BuildSession::default();
+        build
+            .execute(&game_text_index::builder::BuildRequest::Begin {
+                configuration: config.clone(),
+            })
+            .unwrap();
+        let req1 = make_request(store_root.join("plan-1.bin"), gen1.get());
+        let plan1 = build
+            .plan_packages_with_digest(&config, &req1, inv1.clone(), Some(&digest1))
+            .unwrap()
+            .plan
+            .unwrap();
+        build
+            .execute(&game_text_index::builder::BuildRequest::End {
+                configuration: config.clone(),
+            })
+            .unwrap();
+        // Publish each planned shard into the store with matching key and stored packages so
+        // `try_plan_packages_delta` validates the active shard keys against the witness.
+        let mut store = game_text_index::store::Store::writer(config.clone()).unwrap();
+        for shard in &plan1.changed {
+            let entries = inv1
+                .iter()
+                .filter(|entry| {
+                    game_text_index::package_text_plan::shard(&entry.path) as u32 == shard.group
+                })
+                .collect::<Vec<_>>();
+            let shard_path = store_root.join(format!("staged-{}.snapshot", shard.group));
+            let payload_path = store_root.join(format!("staged-{}.payload", shard.group));
+            let mut writer = game_text_index::snapshot::Writer::new(&payload_path).unwrap();
+            let paths_bytes = game_text_index::snapshot::string_block(
+                &entries.iter().map(|e| e.path.clone()).collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let sigs_bytes = game_text_index::snapshot::string_block(
+                &entries
+                    .iter()
+                    .map(|e| e.signature.clone())
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let path_block = writer.add("paths.b0", 4, "paths", &paths_bytes, 1).unwrap();
+            writer.entries[path_block].strings = entries.len() as u32;
+            let path_starts = writer.column("paths.starts", &[0]).unwrap();
+            let sig_block = writer
+                .add("signatures.b0", 4, "signatures", &sigs_bytes, 1)
+                .unwrap();
+            writer.entries[sig_block].strings = entries.len() as u32;
+            let sig_starts = writer.column("signatures.starts", &[0]).unwrap();
+            let ids = (0..entries.len() as u32).collect::<Vec<_>>();
+            let p_col = writer
+                .add(
+                    "package.path",
+                    3,
+                    "paths",
+                    &game_text_index::snapshot::u32_bytes(&ids),
+                    1,
+                )
+                .unwrap();
+            writer.entries[p_col].strings = entries.len() as u32;
+            let s_col = writer
+                .add(
+                    "package.signature",
+                    3,
+                    "signatures",
+                    &game_text_index::snapshot::u32_bytes(&ids),
+                    1,
+                )
+                .unwrap();
+            writer.entries[s_col].strings = entries.len() as u32;
+            let statuses = entries
+                .iter()
+                .map(|e| if e.selected { 0u32 } else { 2u32 })
+                .collect::<Vec<_>>();
+            let st_col = writer.column("package.status", &statuses).unwrap();
+            let order = vec![
+                path_block,
+                path_starts,
+                sig_block,
+                sig_starts,
+                p_col,
+                s_col,
+                st_col,
+            ];
+            writer.finish_staged(&shard_path, &order).unwrap();
+            store
+                .publish_local(
+                    &format!("package-text.{}", shard.group),
+                    &shard.key,
+                    &shard_path,
+                )
+                .unwrap();
+        }
+        drop(store);
+        // Re-plan gen1 once after publishing so the witness records the active shard hash.
+        build
+            .execute(&game_text_index::builder::BuildRequest::Begin {
+                configuration: config.clone(),
+            })
+            .unwrap();
+        let req1_witness = make_request(store_root.join("plan-1b.bin"), gen1.get());
+        build
+            .plan_packages_with_digest(&config, &req1_witness, inv1, Some(&digest1))
+            .unwrap();
+
+        // Generation 2: edit ONLY `Content/A.uexp` and `Content/B.ubulk`; neither package file
+        // itself changed.
+        let scanner2 = make_scanner((77, 20), (88, 20));
+        refresh_changed_paths(
+            &mut catalog,
+            &scanner2,
+            FIXTURE_PROJECT_ROOT,
+            &["Content/A.uexp".into(), "Content/B.ubulk".into()],
+            PROJECT_INDEX_MAX_REPORTED_CHANGES,
+            &CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap();
+        let gen2 = catalog.committed_generation().unwrap();
+        let digest2 = catalog.inventory_digest(&project, gen2).unwrap().unwrap();
+        assert_ne!(digest1, digest2);
+
+        let resolved = catalog
+            .changes_since(&project, gen2, &digest1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            resolved,
+            BTreeSet::from(["Content/A.UASSET".to_owned(), "Content/B.UMap".to_owned()])
+        );
+
+        let delta_plan_file = store_root.join("plan-2-delta.bin");
+        let full_plan_file = store_root.join("plan-2-full.bin");
+        let req_delta = make_request(delta_plan_file.clone(), gen2.get());
+        let mut plan_catalog = DirectPlanCatalog {
+            catalog: &catalog,
+            project: project.clone(),
+            generation: gen2,
+        };
+        let delta_plan = build
+            .try_plan_packages_delta(&config, &req_delta, &digest2, &mut plan_catalog)
+            .unwrap()
+            .expect("delta plan should succeed for resolved uppercase/mixed-case sidecar edits")
+            .plan
+            .unwrap();
+
+        let inv2 = catalog
+            .all_package_text_inventory(&project, gen2, gathered)
+            .unwrap();
+        let req_full = make_request(full_plan_file.clone(), gen2.get());
+        let full_plan = build
+            .plan_packages_with_digest(&config, &req_full, inv2, Some(&digest2))
+            .unwrap()
+            .plan
+            .unwrap();
+
+        assert_eq!(delta_plan, full_plan);
+        assert_eq!(
+            fs::read(&delta_plan_file).unwrap(),
+            fs::read(&full_plan_file).unwrap()
+        );
+        let expected_groups: BTreeSet<u32> = ["Content/A.UASSET", "Content/B.UMap"]
+            .into_iter()
+            .map(|p| game_text_index::package_text_plan::shard(p) as u32)
+            .collect();
+        let changed_groups: BTreeSet<u32> = delta_plan.changed.iter().map(|s| s.group).collect();
+        assert_eq!(changed_groups, expected_groups);
     }
 }

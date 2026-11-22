@@ -1,5 +1,14 @@
 # @ue-shed/blueprints
 
+## 0.33.0
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies [a565b73]
+- Updated dependencies [f5c9c09]
+    - @ue-shed/protocol@0.33.0
+
 ## 0.32.0
 
 ### Patch Changes

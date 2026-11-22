@@ -1,5 +1,36 @@
 # @ue-shed/game-text
 
+## 0.33.0
+
+### Patch Changes
+
+- Faster Game Text scanning, snapshot publication, delta planning, and localization import with
+  unchanged output and `UESHT004` format compatibility:
+    - Parallelized `extract_text_packages` and `join` with heaviest-first shard staging, streaming
+      package-text extraction, surrogate-preserving `join.meta` decoding, and O(1) warm-open witness
+      reuse.
+    - Bounded Catalog change log (`changes.json`) and delta shard planning (`try_plan_delta`) that
+      rekeys only affected shards (up to 32 shards, resolving sidecar edits case-insensitively to exact
+      Catalog package paths and falling back to a full plan once the shard budget is exceeded).
+    - In-memory `snapshot::Writer` buffering up to 32 MiB before spilling to a temp file, with
+      pre-write structural validation and without redundant release-mode post-write reread passes.
+    - Single-pass `.po` string decoding and per-batch project-root canonicalization during localization
+      import.
+
+    On a project of about 780,000 packages (about 10,800 text-bearing packages), cold Game Text
+    preparation drops from about 41.5 s to 13.2 s (3.1× faster) with bit-exact output parity.
+
+- Updated dependencies
+- Updated dependencies [a52dfe7]
+- Updated dependencies
+- Updated dependencies [a565b73]
+- Updated dependencies [acd93eb]
+- Updated dependencies [f5c9c09]
+    - @ue-shed/protocol@0.33.0
+    - @ue-shed/unreal-assets@0.33.0
+    - @ue-shed/localization@0.33.0
+    - @ue-shed/unreal-connection@0.33.0
+
 ## 0.32.0
 
 ### Minor Changes

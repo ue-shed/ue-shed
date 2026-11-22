@@ -26,9 +26,9 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.51.0",
+		"@solidjs/vite-plugin": "catalog:",
 		"@stylexjs/rollup-plugin": "catalog:",
 		"vite": "^8.1.4",
-		"vite-plugin-solid": "catalog:",
 		"wrangler": "^4.119.0"
 	}
 }

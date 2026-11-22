@@ -144,7 +144,8 @@
 		"@effect/vitest": "catalog:",
 		"@manypkg/get-packages": "3.1.0",
 		"@oxlint/plugins": "1.90.0",
-		"@solidjs/testing-library": "1.0.0-beta.3",
+		"@solidjs/testing-library": "1.0.0-rc.2",
+		"@solidjs/vite-plugin": "catalog:",
 		"@solidjs/web": "catalog:",
 		"@stylexjs/rollup-plugin": "catalog:",
 		"@testing-library/user-event": "^14.6.1",
@@ -160,7 +161,6 @@
 		"tsrs": "0.21.0-ts7.1.0-beta",
 		"tsx": "^4.21.0",
 		"typescript": "npm:@typescript/typescript6@^6.0.2",
-		"vite-plugin-solid": "catalog:",
 		"vitest": "^5.0.4"
 	},
 	"engines": {

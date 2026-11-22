@@ -633,6 +633,53 @@ pub(super) fn bundle_signature(path: &Path) -> Result<String, Failure> {
     Ok(super::catalog::bundle_signature(parts))
 }
 
+/// The bytes of a bundle signature's files: the sum of its parts' `size` fields. Only a
+/// scheduling estimate, so a size it cannot read counts as 0.
+fn signature_bytes(signature: &str) -> u64 {
+    signature
+        .split(r#"{"size":"#)
+        .skip(1)
+        .map(|rest| {
+            let end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            rest[..end].parse::<u64>().unwrap_or(0)
+        })
+        .fold(0, u64::saturating_add)
+}
+
+/// The selected packages of planned shards and each one's group, in reading order: shards stay
+/// contiguous, so only a few shard builders are open at once, but the shards with the most
+/// package bytes come first, and within a shard its largest packages. The longest reads then
+/// start early instead of finishing last while the other workers idle. Ties keep plan order.
+/// Each shard snapshot sorts its packages by path, so this order changes no snapshot.
+fn heaviest_first(shards: &[(u32, Vec<Expected>)]) -> (Vec<String>, Vec<u32>) {
+    let mut order = shards
+        .iter()
+        .map(|(group, expected)| {
+            let mut selected = expected
+                .iter()
+                .filter(|entry| entry.selected)
+                .map(|entry| (signature_bytes(&entry.signature), entry))
+                .collect::<Vec<_>>();
+            selected.sort_by_key(|&(bytes, _)| std::cmp::Reverse(bytes));
+            let total = selected
+                .iter()
+                .fold(0, |total: u64, &(bytes, _)| total.saturating_add(bytes));
+            (total, *group, selected)
+        })
+        .collect::<Vec<_>>();
+    order.sort_by_key(|&(total, _, _)| std::cmp::Reverse(total));
+    order
+        .into_iter()
+        .flat_map(|(_, group, selected)| {
+            selected
+                .into_iter()
+                .map(move |(_, entry)| (entry.path.clone(), group))
+        })
+        .unzip()
+}
+
 /// A staging request that names a plan file, as the request listing its shards' entries and
 /// selected paths would: the reader reads them from the file `plan_packages` wrote.
 fn planned_staging(
@@ -655,14 +702,7 @@ fn planned_staging(
                 retry_safe: false,
                 ..Default::default()
             })?;
-    let mut paths = Vec::new();
-    let mut groups = Vec::new();
-    for (group, expected) in &shards {
-        for entry in expected.iter().filter(|entry| entry.selected) {
-            paths.push(entry.path.clone());
-            groups.push(*group);
-        }
-    }
+    let (paths, groups) = heaviest_first(&shards);
     let mut request = snapshots.clone();
     request.plan_file = None;
     request.groups = Vec::new();
@@ -3778,6 +3818,61 @@ mod tests {
         let failure = stage("changed", &|_| "[null,null,null,null]".to_owned()).unwrap_err();
         assert_eq!(failure.code, "package_changed");
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn planned_reads_take_heaviest_shards_and_packages_first_keeping_shards_contiguous() {
+        use crate::package_text_columns::Expected;
+        let signature = |primary: u64, sidecar: Option<u64>| {
+            crate::direct_executor::catalog::bundle_signature([
+                Some((primary, 1_700_000_000_000_000_000)),
+                sidecar.map(|size| (size, 5)),
+                None,
+                None,
+            ])
+        };
+        assert_eq!(super::signature_bytes(&signature(300, Some(45))), 345);
+        assert_eq!(super::signature_bytes("[null,null,null,null]"), 0);
+        let entry = |path: &str, bytes: u64, selected: bool| Expected {
+            path: path.to_owned(),
+            signature: signature(bytes, None),
+            selected,
+        };
+        let shards = vec![
+            (
+                4,
+                vec![
+                    entry("A/small.uasset", 10, true),
+                    entry("A/huge.uasset", 900, false),
+                    entry("A/mid.uasset", 20, true),
+                ],
+            ),
+            (
+                9,
+                vec![
+                    entry("B/one.uasset", 50, true),
+                    entry("B/two.uasset", 50, true),
+                    entry("B/three.uasset", 60, true),
+                ],
+            ),
+            (2, vec![entry("C/tie.uasset", 30, true)]),
+            (7, vec![entry("D/tie.uasset", 30, true)]),
+            (5, vec![entry("E/none.uasset", 70, false)]),
+        ];
+        let (paths, groups) = super::heaviest_first(&shards);
+        assert_eq!(
+            paths,
+            [
+                "B/three.uasset",
+                "B/one.uasset",
+                "B/two.uasset",
+                "A/mid.uasset",
+                "A/small.uasset",
+                "C/tie.uasset",
+                "D/tie.uasset",
+            ]
+        );
+        assert_eq!(groups, [9, 9, 9, 4, 4, 2, 7]);
     }
 
     #[test]

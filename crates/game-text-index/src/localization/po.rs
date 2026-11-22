@@ -11,13 +11,32 @@ fn decode(value: &str) -> String {
     if !value.contains('\\') {
         return value.into();
     }
-    // packages/localization/src/po.ts:28-36: replacement order includes literal backslashes.
-    value
-        .replace("\\t", "\t")
-        .replace("\\n", "\n")
-        .replace("\\r", "\r")
-        .replace("\\\"", "\"")
-        .replace("\\\\", "\\")
+    // packages/localization/src/po.ts:28-36 chains five replacements: `\t`, `\n`, `\r`, `\"`, then
+    // `\\`. The first four each pair a backslash with a non-backslash, so together they replace
+    // every backslash directly followed by `t`, `n`, `r` or `"` in the original text, whatever
+    // precedes it (so `\\n` decodes to a backslash and a newline). The remaining backslashes keep
+    // their original runs, and the final pass halves each run of `k` into `ceil(k / 2)`.
+    let mut decoded = String::with_capacity(value.len());
+    let mut run = 0usize;
+    for character in value.chars() {
+        if character == '\\' {
+            run += 1;
+            continue;
+        }
+        let escaped = match character {
+            't' if run > 0 => Some('\t'),
+            'n' if run > 0 => Some('\n'),
+            'r' if run > 0 => Some('\r'),
+            '"' if run > 0 => Some('"'),
+            _ => None,
+        };
+        let literal = if escaped.is_some() { run - 1 } else { run };
+        decoded.extend(std::iter::repeat_n('\\', literal.div_ceil(2)));
+        decoded.push(escaped.unwrap_or(character));
+        run = 0;
+    }
+    decoded.extend(std::iter::repeat_n('\\', run.div_ceil(2)));
+    decoded
 }
 fn quoted(value: &str, file: &str, line: usize) -> Parsed<String> {
     if !value.starts_with('"') {
@@ -378,4 +397,62 @@ pub(super) fn parse_po_outcome(
         Ok(())
     })();
     (PoDocument { rows, format }, result.err())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode;
+
+    /// The chained replacements from packages/localization/src/po.ts:28-36, kept as the oracle.
+    fn chained(value: &str) -> String {
+        value
+            .replace("\\t", "\t")
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\")
+    }
+
+    #[test]
+    fn single_pass_decode_matches_chained_replacements_exhaustively() {
+        let alphabet = ['\\', 't', 'n', 'r', '"', 'x'];
+        let mut frontier = vec![String::new()];
+        let mut checked = 1usize;
+        assert_eq!(decode(""), chained(""));
+        for _ in 0..6 {
+            frontier = frontier
+                .iter()
+                .flat_map(|prefix| {
+                    alphabet.iter().map(move |character| {
+                        let mut next = prefix.clone();
+                        next.push(*character);
+                        next
+                    })
+                })
+                .collect();
+            for input in &frontier {
+                assert_eq!(decode(input), chained(input), "input {input:?}");
+            }
+            checked += frontier.len();
+        }
+        assert_eq!(checked, 55_987);
+        for input in [
+            "é\\\\nü",
+            "\\\\\\\"日本\\",
+            "a\\\\\\\\tb",
+            "\\x\\\\\\\\\\r",
+            "\\\\\\\\\\",
+        ] {
+            assert_eq!(decode(input), chained(input), "input {input:?}");
+        }
+    }
+
+    #[test]
+    fn decode_keeps_the_literal_backslash_caveat() {
+        assert_eq!(decode("\\\\n"), "\\\n");
+        assert_eq!(decode("\\\\\\\\"), "\\\\");
+        assert_eq!(decode("\\\\\\"), "\\\\");
+        assert_eq!(decode("a\\x"), "a\\x");
+        assert_eq!(decode("plain"), "plain");
+    }
 }

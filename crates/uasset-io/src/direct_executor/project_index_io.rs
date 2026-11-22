@@ -74,24 +74,41 @@ impl ProjectIndexQuerySession {
         project_id: &str,
         expected_generation: u64,
     ) -> Result<&BinaryCatalog, Failure> {
-        let requires_open = self.active.as_ref().is_none_or(|active| {
-            active.cache_root != cache_root
-                || active.project_id != project_id
-                || active.expected_generation != expected_generation
-        });
-        if requires_open {
-            self.active = None;
-        }
-        let active = match self.active.take() {
-            Some(active) => active,
-            None => ActiveQueryCatalog {
-                cache_root: cache_root.to_owned(),
-                expected_generation,
-                project_id: project_id.to_owned(),
-                catalog: open_catalog_for_project_id(cache_root, project_id)?,
-            },
+        open_active(
+            &mut self.active,
+            cache_root,
+            project_id,
+            expected_generation,
+        )
+    }
+
+    /// Plans a package-text refresh from the last recorded plan, reading only the Catalog
+    /// entries that changed since; `None` when the plan needs the whole inventory.
+    pub(crate) fn try_plan_packages_delta(
+        &mut self,
+        configuration: &game_text_index::store::Configuration,
+        request: &game_text_index::package_text_contract::PackageTextPlanRequest,
+        catalog_digest: &str,
+    ) -> game_text_index::Result<Option<game_text_index::builder::BuildOutcome>> {
+        // A Catalog that cannot open now fails the same way in the full plan that follows.
+        let Ok(catalog) = open_active(
+            &mut self.active,
+            &request.cache_root,
+            &request.project_id,
+            request.generation,
+        ) else {
+            return Ok(None);
         };
-        Ok(&self.active.insert(active).catalog)
+        self.game_text.try_plan_packages_delta(
+            configuration,
+            request,
+            catalog_digest,
+            &mut PlanCatalogView {
+                catalog,
+                project_id: ProjectId::new(&request.project_id),
+                generation: Generation::new(request.generation),
+            },
+        )
     }
 
     pub(crate) fn count(
@@ -204,6 +221,58 @@ const REQUIRES_LOCALIZATION_GATHER: u32 = 0x0004_0000;
 /// gather, or holding a current gather table. A package without header evidence is read, as one
 /// that failed its header is.
 /// Whether Unreal's gatherer reads a package, from its header: the Catalog's selection.
+fn open_active<'a>(
+    active: &'a mut Option<ActiveQueryCatalog>,
+    cache_root: &str,
+    project_id: &str,
+    expected_generation: u64,
+) -> Result<&'a BinaryCatalog, Failure> {
+    let requires_open = active.as_ref().is_none_or(|active| {
+        active.cache_root != cache_root
+            || active.project_id != project_id
+            || active.expected_generation != expected_generation
+    });
+    if requires_open {
+        *active = None;
+    }
+    let opened = match active.take() {
+        Some(opened) => opened,
+        None => ActiveQueryCatalog {
+            cache_root: cache_root.to_owned(),
+            expected_generation,
+            project_id: project_id.to_owned(),
+            catalog: open_catalog_for_project_id(cache_root, project_id)?,
+        },
+    };
+    Ok(&active.insert(opened).catalog)
+}
+
+/// A committed Catalog generation as a delta plan reads it. A read that fails answers `None`,
+/// so the full plan that follows reports the failure.
+struct PlanCatalogView<'a> {
+    catalog: &'a BinaryCatalog,
+    project_id: ProjectId,
+    generation: Generation,
+}
+
+impl game_text_index::package_text_plan::PlanCatalog for PlanCatalogView<'_> {
+    fn changes_since(&mut self, since: &str) -> Option<std::collections::BTreeSet<String>> {
+        self.catalog
+            .changes_since(&self.project_id, self.generation, since)
+            .ok()
+            .flatten()
+    }
+
+    fn entries(
+        &mut self,
+        paths: &std::collections::BTreeSet<String>,
+    ) -> Option<Vec<game_text_index::package_text_contract::PackageTextExpected>> {
+        self.catalog
+            .package_text_entries(&self.project_id, self.generation, paths, gathered)
+            .ok()
+    }
+}
+
 pub(crate) fn gathered(
     header: Option<&uasset_inspection::package_header::PackageHeaderData>,
 ) -> bool {

@@ -563,22 +563,37 @@ fn execute_direct(
                                 .insert("plan.catalog".into(), started.elapsed().as_secs_f64());
                             Ok(outcome)
                         }
-                        Ok(None) => {
-                            let inventory = session.package_text_inventory(request)?;
-                            let catalog = started.elapsed().as_secs_f64();
-                            session
-                                .game_text
-                                .plan_packages_with_digest(
-                                    configuration,
-                                    request,
-                                    inventory,
-                                    Some(digest_ref),
-                                )
-                                .map(|mut outcome| {
-                                    outcome.stage_seconds.insert("plan.catalog".into(), catalog);
-                                    outcome
-                                })
-                        }
+                        Ok(None) => match session.try_plan_packages_delta(
+                            configuration,
+                            request,
+                            digest_ref,
+                        ) {
+                            Ok(Some(mut outcome)) => {
+                                outcome
+                                    .stage_seconds
+                                    .insert("plan.catalog".into(), started.elapsed().as_secs_f64());
+                                Ok(outcome)
+                            }
+                            Ok(None) => {
+                                let inventory = session.package_text_inventory(request)?;
+                                let catalog = started.elapsed().as_secs_f64();
+                                session
+                                    .game_text
+                                    .plan_packages_with_digest(
+                                        configuration,
+                                        request,
+                                        inventory,
+                                        Some(digest_ref),
+                                    )
+                                    .map(|mut outcome| {
+                                        outcome
+                                            .stage_seconds
+                                            .insert("plan.catalog".into(), catalog);
+                                        outcome
+                                    })
+                            }
+                            Err(error) => Err(error),
+                        },
                         Err(error) => Err(error),
                     }
                 } else {

@@ -4380,6 +4380,8 @@ pub(crate) struct BinaryCatalog {
     journal_plan: Option<JournalPlan>,
     /// Whether the refresh about to commit walked every content root.
     committing_walked: bool,
+    /// The generation and inventory digest the last commit replaced, for its change record.
+    committed_from: Option<(u64, String)>,
     #[cfg(test)]
     cleanup_root: Option<PathBuf>,
 }
@@ -4472,6 +4474,7 @@ impl BinaryCatalog {
             verified: None,
             journal_plan: None,
             committing_walked: false,
+            committed_from: None,
             #[cfg(test)]
             cleanup_root: None,
         }
@@ -4585,6 +4588,7 @@ impl BinaryCatalog {
             verified,
             journal_plan: None,
             committing_walked: false,
+            committed_from: None,
             #[cfg(test)]
             cleanup_root: None,
         })
@@ -5144,6 +5148,10 @@ impl Catalog for BinaryCatalog {
             });
         }
         self.load()?;
+        self.committed_from = None;
+        let committed_from = self.manifest.as_ref().and_then(|manifest| {
+            manifest_digest(manifest).map(|digest| (manifest.summary.generation, digest))
+        });
         let mut staging = self.staging.take().ok_or_else(no_staging)?;
         let cached = self.committed.borrow();
         let committed = cached.as_ref();
@@ -5258,7 +5266,32 @@ impl Catalog for BinaryCatalog {
         self.committed.take();
         cleanup_retired_snapshots(&self.directory, &manifest);
         self.manifest = Some(manifest);
+        self.committed_from = committed_from;
         Ok(token.generation)
+    }
+    fn committed_changes(&mut self, changes: &super::catalog::RefreshChanges) {
+        let from = self.committed_from.take();
+        let record = from.and_then(|(base_generation, base_digest)| {
+            let manifest = self.manifest.as_ref()?;
+            let generation = manifest.summary.generation;
+            (changes.complete
+                && changes.base_generation.map(Generation::get) == Some(base_generation)
+                && base_generation.checked_add(1) == Some(generation))
+            .then_some(())?;
+            Some(super::catalog_changes::ChangeRecord {
+                generation,
+                base_digest,
+                digest: manifest_digest(manifest)?,
+                changed: changes.changed.clone(),
+                removed: changes.removed.clone(),
+            })
+        });
+        // Without this generation's record no reader may chain across it.
+        let kept = record
+            .is_some_and(|record| super::catalog_changes::append(&self.directory, record).is_ok());
+        if !kept {
+            super::catalog_changes::clear(&self.directory);
+        }
     }
     fn committing(&mut self, _token: &StagingToken, walked: bool) {
         self.committing_walked = walked;
@@ -5318,14 +5351,85 @@ impl BinaryCatalog {
                 actual: generation,
             });
         }
-        Ok((manifest.summary.completeness == "complete")
-            .then(|| {
-                manifest
-                    .summary
-                    .inventory()
-                    .map(|sum| sum.digest(manifest.summary.package_count))
-            })
-            .flatten())
+        Ok(manifest_digest(manifest))
+    }
+
+    /// The entries (packages and sidecars) changed or removed after the generation whose
+    /// inventory digest was `since`, up to the committed generation; `None` when the Catalog's
+    /// change log cannot say exactly.
+    pub(crate) fn changes_since(
+        &self,
+        project_id: &ProjectId,
+        expected_generation: Generation,
+        since: &str,
+    ) -> Result<Option<std::collections::BTreeSet<String>>, CatalogError> {
+        let manifest = require_manifest(&self.manifest, &self.project_id, project_id)?;
+        let generation = Generation::new(manifest.summary.generation);
+        if generation != expected_generation {
+            return Err(CatalogError::StaleGeneration {
+                expected: expected_generation,
+                actual: generation,
+            });
+        }
+        Ok(manifest_digest(manifest).and_then(|digest| {
+            super::catalog_changes::since(&self.directory, since, generation.get(), &digest)
+        }))
+    }
+
+    /// The packages at `paths` the committed generation holds, in path order, as
+    /// [`BinaryCatalog::all_package_text_inventory`] lists them; paths that hold no package are
+    /// left out.
+    pub(crate) fn package_text_entries(
+        &self,
+        project_id: &ProjectId,
+        expected_generation: Generation,
+        paths: &std::collections::BTreeSet<String>,
+        selected: impl Fn(Option<&uasset_inspection::package_header::PackageHeaderData>) -> bool,
+    ) -> Result<Vec<game_text_index::package_text_contract::PackageTextExpected>, CatalogError>
+    {
+        let manifest = require_manifest(&self.manifest, &self.project_id, project_id)?;
+        let generation = Generation::new(manifest.summary.generation);
+        if generation != expected_generation {
+            return Err(CatalogError::StaleGeneration {
+                expected: expected_generation,
+                actual: generation,
+            });
+        }
+        let result = (|| {
+            self.load()?;
+            let cached = self.committed.borrow();
+            let committed = cached
+                .as_ref()
+                .ok_or_else(|| corrupt("binary Catalog snapshot is not loaded"))?;
+            let mut rows = Vec::new();
+            for path in paths {
+                if let Some(row) = committed.row_at(path)? {
+                    rows.push(row);
+                }
+            }
+            committed.load_rows(&rows)?;
+            let mut packages = Vec::with_capacity(rows.len());
+            for &(segment, id) in &rows {
+                if committed.rows(segment)?.row(id)?.1.kind == EntryKind::Package {
+                    packages.push((segment, id));
+                }
+            }
+            let signatures = committed.bundle_signatures(&packages)?;
+            let mut inventory = Vec::with_capacity(packages.len());
+            for ((segment, id), signature) in packages.into_iter().zip(signatures) {
+                let (path, entry) = committed.rows(segment)?.row(id)?;
+                inventory.push(
+                    game_text_index::package_text_contract::PackageTextExpected {
+                        path: path.to_owned(),
+                        signature,
+                        selected: selected(entry.header_data.as_ref()),
+                    },
+                );
+            }
+            Ok(inventory)
+        })();
+        self.release_rows();
+        result
     }
 
     /// Reads the entire committed generation's package-text inventory in path order directly from
@@ -6229,6 +6333,18 @@ fn read_and_verify_manifest(
         });
     }
     Ok(Some(manifest))
+}
+
+/// A complete generation's inventory digest, from its manifest.
+fn manifest_digest(manifest: &Manifest) -> Option<String> {
+    (manifest.summary.completeness == "complete")
+        .then(|| {
+            manifest
+                .summary
+                .inventory()
+                .map(|sum| sum.digest(manifest.summary.package_count))
+        })
+        .flatten()
 }
 
 fn require_manifest<'a>(
@@ -7506,6 +7622,87 @@ mod tests {
         items
     }
 
+    /// Each package a changed entry names: itself, or a sidecar's `.uasset` and `.umap`.
+    fn changed_package_paths(changes: &BTreeSet<String>) -> BTreeSet<String> {
+        let mut packages = BTreeSet::new();
+        for path in changes {
+            match path.rsplit_once('.') {
+                Some((stem, "uexp" | "ubulk" | "uptnl")) => {
+                    packages.insert(format!("{stem}.uasset"));
+                    packages.insert(format!("{stem}.umap"));
+                }
+                _ => {
+                    packages.insert(path.clone());
+                }
+            }
+        }
+        packages
+    }
+
+    /// The change log against whole inventories: from each of the last few complete generations,
+    /// every package whose package-text entry differs now is among the logged changes, and the
+    /// targeted entries of those changes are the inventory's. The generation right after a
+    /// complete one always has its changes.
+    fn check_package_text_changes(
+        catalogs: &[&BinaryCatalog],
+        history: &mut Vec<(
+            Option<String>,
+            Vec<game_text_index::package_text_contract::PackageTextExpected>,
+        )>,
+        generation: u64,
+    ) {
+        use crate::direct_executor::project_index_io::gathered;
+        let project = fixture_project_id();
+        let current = catalogs[0].committed_generation().unwrap();
+        let inventory = catalogs[0]
+            .all_package_text_inventory(&project, current, gathered)
+            .unwrap();
+        let digest = catalogs[0].inventory_digest(&project, current).unwrap();
+        let now = inventory
+            .iter()
+            .map(|entry| (entry.path.as_str(), entry))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        for (back, (since, before)) in history.iter().rev().enumerate().take(4) {
+            let Some(since) = since else {
+                continue;
+            };
+            let then = before
+                .iter()
+                .map(|entry| (entry.path.as_str(), entry))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            for catalog in catalogs {
+                let changes = catalog.changes_since(&project, current, since).unwrap();
+                if back == 0 && digest.is_some() {
+                    assert!(changes.is_some(), "generation {generation}");
+                }
+                let Some(changes) = changes else {
+                    continue;
+                };
+                let packages = changed_package_paths(&changes);
+                for path in then.keys().chain(now.keys()) {
+                    if then.get(path) != now.get(path) {
+                        assert!(
+                            packages.contains(*path),
+                            "generation {generation}, {back} back: {path}"
+                        );
+                    }
+                }
+                assert_eq!(
+                    catalog
+                        .package_text_entries(&project, current, &packages, gathered)
+                        .unwrap(),
+                    inventory
+                        .iter()
+                        .filter(|entry| packages.contains(&entry.path))
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                    "generation {generation}, {back} back"
+                );
+            }
+        }
+        history.push((digest, inventory));
+    }
+
     /// Runs `generations` refreshes of random mutations, with `fillers` unchanging packages after
     /// each changing one, and compares every page of `page_limits` with the memory Catalog.
     fn mutation_sequence(fillers: u64, generations: u64, page_limits: &[usize]) {
@@ -7545,6 +7742,7 @@ mod tests {
         };
         let mut writes = Vec::new();
         let mut previous_complete = false;
+        let mut package_text_history = Vec::new();
         for generation in 0..generations {
             let mutations = match generation {
                 0 => 80,
@@ -7745,6 +7943,11 @@ mod tests {
                     "generation {generation}"
                 );
             }
+            check_package_text_changes(
+                &[&binary, &targeted, &reader],
+                &mut package_text_history,
+                generation,
+            );
             let current = binary.committed_generation().unwrap();
             assert_eq!(memory.committed_generation(), Some(current));
             let kinds = [

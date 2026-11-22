@@ -671,6 +671,13 @@ pub trait Catalog {
         summary: RefreshSummary,
     ) -> Result<Generation, CatalogError>;
 
+    /// What the refresh [`Catalog::commit_refresh`] just committed changed, relative to the
+    /// generation before it. An adapter may keep it so a reader can tell what changed since an
+    /// earlier generation without reading every entry; keeping it is best effort.
+    fn committed_changes(&mut self, changes: &RefreshChanges) {
+        let _ = changes;
+    }
+
     fn discard_refresh(&mut self, token: StagingToken) -> Result<(), CatalogError>;
 
     fn clear_for_rebuild(&mut self) -> Result<(), CatalogError>;

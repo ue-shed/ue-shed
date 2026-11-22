@@ -937,11 +937,9 @@ fn run_targeted_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             reason = "the token is set before the refresh body and taken only here or on failure"
         )]
         let staging = token.take().expect("staging token present for commit");
-        let summary = commit(catalog, staging, summary, false)?;
-        events.push(RefreshEvent::Completed {
-            summary,
-            changes: changes.finish(),
-        });
+        let changes = changes.finish();
+        let summary = commit(catalog, staging, summary, false, &changes)?;
+        events.push(RefreshEvent::Completed { summary, changes });
         Ok(events)
     })();
     match result {
@@ -1080,11 +1078,9 @@ fn run_refresh<C: CatalogSnapshot, S: ProjectScanner>(
             reason = "the token is set before the refresh body and taken only here or on failure"
         )]
         let staging = token.take().expect("staging token present for commit");
-        let summary = commit(catalog, staging, summary, true)?;
-        events.push(RefreshEvent::Completed {
-            summary,
-            changes: changes.finish(),
-        });
+        let changes = changes.finish();
+        let summary = commit(catalog, staging, summary, true, &changes)?;
+        events.push(RefreshEvent::Completed { summary, changes });
         Ok(events)
     })();
 
@@ -1194,9 +1190,11 @@ fn commit<C: Catalog>(
     staging: StagingToken,
     mut summary: RefreshSummary,
     walked: bool,
+    changes: &RefreshChanges,
 ) -> Result<RefreshSummary, CoordinatorError> {
     catalog.committing(&staging, walked);
     catalog.commit_refresh(staging, summary.clone())?;
+    catalog.committed_changes(changes);
     if let CatalogStatus::Ready { summary: committed } = catalog.status() {
         summary.inventory_digest = committed.inventory_digest;
     }

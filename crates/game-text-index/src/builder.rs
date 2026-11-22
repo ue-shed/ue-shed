@@ -482,6 +482,40 @@ impl BuildSession {
         Ok(Some(outcome))
     }
 
+    /// Plans a package-text refresh from the last recorded plan, rekeying only the shards of the
+    /// packages `catalog` says changed since; `None` when a full plan is needed.
+    pub fn try_plan_packages_delta(
+        &mut self,
+        configuration: &Configuration,
+        request: &crate::package_text_contract::PackageTextPlanRequest,
+        catalog_digest: &str,
+        catalog: &mut dyn crate::package_text_plan::PlanCatalog,
+    ) -> Result<Option<BuildOutcome>> {
+        let (active, store) = self.leased.as_ref().ok_or(crate::Error::new(
+            crate::ErrorCode::InvalidInput,
+            "call begin in a protocol session first",
+        ))?;
+        require(
+            active == configuration,
+            crate::Error::new(
+                crate::ErrorCode::InvalidInput,
+                "request belongs to another build lease",
+            ),
+        )?;
+        let started = std::time::Instant::now();
+        let Some(plan) =
+            crate::package_text_plan::try_plan_delta(store, request, catalog_digest, catalog)?
+        else {
+            return Ok(None);
+        };
+        let mut outcome = BuildOutcome::new("plan_packages");
+        outcome.plan = Some(Box::new(plan));
+        outcome
+            .stage_seconds
+            .insert("plan.keys".into(), started.elapsed().as_secs_f64());
+        Ok(Some(outcome))
+    }
+
     /// Plans a package-text refresh of `inventory` against the leased store and records the
     /// `catalog_digest` witness when provided.
     pub fn plan_packages_with_digest(

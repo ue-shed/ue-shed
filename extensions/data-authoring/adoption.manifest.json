@@ -106,6 +106,7 @@
 			"packages/unreal-assets/src/project-index-page-validation.ts",
 			"packages/unreal-assets/src/project-index-process.ts",
 			"packages/unreal-assets/src/project-index-protocol.ts",
+			"packages/unreal-assets/src/project-index-wire-validation.ts",
 			"packages/unreal-connection/package.json",
 			"packages/unreal-connection/tsconfig.json",
 			"packages/unreal-connection/tsconfig.build.json",

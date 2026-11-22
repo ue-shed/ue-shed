@@ -11,8 +11,7 @@
   sidecars instead of walking the project, with the same result, and walks anyway when the paths
   alone could miss a change. A complete summary carries `inventoryDigest`, a SHA-256 of every
   inventory fact, so a host can tell whether the inventory changed without paging through it.
-  Refreshes run in a worker session of their own that stays warm between edits. The cache moves to
-  `catalogs-v9`; the first refresh rebuilds it.
+  Refreshes run in a worker session of their own that stays warm between edits.
 - f5c9c09: Project Index queries can ask for less. uasset-io v1.27 adds a `union` query that pages the
   packages any of up to 16 header filters matches, each once, in path order, and lets header queries
   name the `fields` their items carry (`classes`, `serializedNames`, `matchedSerializedNames`,

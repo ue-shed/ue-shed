@@ -5,7 +5,7 @@ mod class;
 mod object;
 use crate::native::{NativeError, NativeValue, decode_native};
 pub(super) use class::property_guids;
-pub(super) use object::decode as object_tail;
+pub(super) use object::{ObjectTailFacts, TailSummary, decode as object_tail};
 
 fn modeled_data(
     reader: &mut crate::archive::Reader<'_>,
@@ -17,10 +17,12 @@ fn modeled_data(
         .schemas
         .native_layout(cpp_name)
         .ok_or_else(|| invalid_layout(path, cpp_name))?;
-    decode_native(reader, layout, path.as_str()).map_err(|error| match error {
-        NativeError::Archive(error) => error.into(),
-        NativeError::Layout(message) => invalid_layout(path, &message),
-    })
+    crate::native::decode_native_layout(reader, layout, path.as_str()).map_err(
+        |error| match error {
+            NativeError::Archive(error) => error.into(),
+            NativeError::Layout(message) => invalid_layout(path, &message),
+        },
+    )
 }
 
 fn invalid_layout(path: &ObjectPath, field: &str) -> AssetError {

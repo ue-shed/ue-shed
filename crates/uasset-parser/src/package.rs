@@ -289,6 +289,16 @@ impl ObjectPath {
         Self(value.into())
     }
 
+    /// A path copied from borrowed text.
+    pub(crate) fn from_str_ref(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+
+    /// The empty path, which does not allocate.
+    const fn empty() -> Self {
+        Self(String::new())
+    }
+
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -500,9 +510,15 @@ impl Package {
         }
     }
 
+    /// Whether a name reference resolves (`resolve_name(name).is_some()`), without rendering it.
+    #[must_use]
+    pub(crate) fn has_name(&self, name: crate::archive::NameRef) -> bool {
+        usize::try_from(name.index().get()).is_ok_and(|index| index < self.names.len())
+    }
+
     #[must_use]
     pub fn resolve_index(&self, index: PackageIndex) -> Option<ObjectPath> {
-        self.resolve_index_str(index).map(ObjectPath::new)
+        self.resolve_index_str(index).map(ObjectPath::from_str_ref)
     }
 
     /// Borrows a package index's path after package parsing has resolved the import and export maps.
@@ -574,7 +590,10 @@ fn resolve_package_paths(
                         "export class index did not resolve to an object path",
                     )
                 })?;
-                Some(normalize_object_path(class_path.clone()))
+                // Copy the normalized text once instead of cloning, then normalizing, the path.
+                Some(ObjectPath::from_str_ref(normalized_object_path(
+                    class_path.as_str(),
+                )))
             }
         };
         export_class_paths.push(class_path);
@@ -1244,25 +1263,26 @@ fn format_top_level_asset_path<S: AsRef<str>>(
     asset: crate::archive::NameRef,
     sub_path: &str,
 ) -> String {
-    let resolve = |name| match resolve_name_ref(names, name) {
+    let resolve = |name| match resolve_name_ref_cow(names, name) {
         Ok(name) if name != "None" => name,
-        _ => String::new(),
+        _ => Cow::Borrowed(""),
     };
     let package = resolve(package);
     if package.is_empty() {
         return String::new();
     }
     let asset = resolve(asset);
-    let base = if asset.is_empty() {
-        package
-    } else {
-        format!("{package}.{asset}")
-    };
-    if sub_path.is_empty() {
-        base
-    } else {
-        format!("{base}:{sub_path}")
+    let mut path = String::with_capacity(package.len() + 1 + asset.len() + 1 + sub_path.len());
+    path.push_str(&package);
+    if !asset.is_empty() {
+        path.push('.');
+        path.push_str(&asset);
     }
+    if !sub_path.is_empty() {
+        path.push(':');
+        path.push_str(sub_path);
+    }
+    path
 }
 
 /// Editor packages should only store `/Package/Asset` literals (or empty) in the
@@ -1326,12 +1346,14 @@ fn read_name_map<'a, T>(
     })?;
     let capacity = reader.checked_vec_capacity::<String>(count, 4, "Names.Count")?;
     let mut names = Vec::with_capacity(capacity);
+    let has_hashes = summary.versions.is_at_least_ue4(UE4_NAME_HASHES_SERIALIZED);
 
     for index in 0..count {
+        // ASCII names borrow the source until `keep` copies them once, at their exact length.
         names.push(keep(
             reader.read_fstring_cow(&format_args!("Names[{index}]"))?,
         ));
-        if summary.versions.is_at_least_ue4(UE4_NAME_HASHES_SERIALIZED) {
+        if has_hashes {
             reader.skip(4, &format_args!("Names[{index}].Hashes"))?;
         }
     }
@@ -1422,8 +1444,8 @@ fn read_import_map_into<T>(
             object_name,
             package_name,
             import_optional,
-            object_path: ObjectPath(String::new()),
-            class_path: ObjectPath(String::new()),
+            object_path: ObjectPath::empty(),
+            class_path: ObjectPath::empty(),
         }));
     }
     Ok(())
@@ -1568,7 +1590,7 @@ fn read_export_map_into<T>(
             generate_public_hash,
             script_serialization_start_offset,
             script_serialization_end_offset,
-            object_path: ObjectPath(String::new()),
+            object_path: ObjectPath::empty(),
             class_path: None,
         }));
     }
@@ -1658,19 +1680,32 @@ fn resolve_import_class_path(
 ) -> Result<ObjectPath, PackageError> {
     let package = resolve_name_ref_cow(names, import.class_package)?;
     let class = resolve_name_ref_cow(names, import.class_name)?;
-    Ok(normalize_object_path(ObjectPath(format!(
-        "/{package}.{class}"
-    ))))
+    let mut path = String::with_capacity(1 + package.len() + 1 + class.len());
+    path.push('/');
+    path.push_str(&package);
+    path.push('.');
+    path.push_str(&class);
+    Ok(ObjectPath(normalize_object_path_string(path)))
+}
+
+/// `path` without the `/None.` or `None.` prefix an unset package leaves.
+fn normalized_object_path(path: &str) -> &str {
+    path.strip_prefix("/None.")
+        .or_else(|| path.strip_prefix("None."))
+        .unwrap_or(path)
 }
 
 fn normalize_object_path(path: ObjectPath) -> ObjectPath {
-    if let Some(stripped) = path.0.strip_prefix("/None.") {
-        ObjectPath(stripped.to_owned())
-    } else if let Some(stripped) = path.0.strip_prefix("None.") {
-        ObjectPath(stripped.to_owned())
-    } else {
-        path
+    ObjectPath(normalize_object_path_string(path.0))
+}
+
+/// [`normalize_object_path`] over an owned string, stripping any prefix in place.
+pub(crate) fn normalize_object_path_string(mut path: String) -> String {
+    let stripped = path.len() - normalized_object_path(&path).len();
+    if stripped != 0 {
+        path.replace_range(..stripped, "");
     }
+    path
 }
 
 fn join_object_path(outer: &str, name: &str) -> ObjectPath {
@@ -1761,14 +1796,22 @@ impl<S: AsRef<str>> PathBuilder for ObjectPaths<'_, S> {
         Ok(match outer {
             None => {
                 if object_name == "None" {
-                    ObjectPath(String::new())
+                    ObjectPath::empty()
                 } else if let Some(package_name_ref) = import.package_name() {
                     let package = resolve_name_ref_cow(self.names, package_name_ref)?;
-                    ObjectPath(format!("/{package}.{object_name}"))
+                    let mut path = String::with_capacity(1 + package.len() + 1 + object_name.len());
+                    path.push('/');
+                    path.push_str(&package);
+                    path.push('.');
+                    path.push_str(&object_name);
+                    ObjectPath(path)
                 } else if object_name.starts_with('/') {
                     ObjectPath(object_name.into_owned())
                 } else {
-                    ObjectPath(format!("/{object_name}"))
+                    let mut path = String::with_capacity(1 + object_name.len());
+                    path.push('/');
+                    path.push_str(&object_name);
+                    ObjectPath(path)
                 }
             }
             Some(outer) if outer.as_str().is_empty() || outer.as_str() == "/None" => {
@@ -2305,7 +2348,7 @@ pub(crate) fn test_package(names: Vec<String>) -> Package {
 
 #[cfg(test)]
 pub(crate) fn test_object_path(path: &str) -> ObjectPath {
-    ObjectPath(path.to_owned())
+    ObjectPath::from_str_ref(path)
 }
 
 #[cfg(test)]
@@ -2348,8 +2391,8 @@ pub(crate) fn test_export(serial_size: u64, object_path: &str, class_path: &str)
         generate_public_hash: None,
         script_serialization_start_offset: None,
         script_serialization_end_offset: None,
-        object_path: ObjectPath(object_path.to_owned()),
-        class_path: Some(ObjectPath(class_path.to_owned())),
+        object_path: ObjectPath::from_str_ref(object_path),
+        class_path: Some(ObjectPath::from_str_ref(class_path)),
     }
 }
 
@@ -2592,6 +2635,81 @@ mod tests {
         assert_eq!(
             normalize_object_path(ObjectPath::new("None./Game/Maps/L_Example.Actor")),
             ObjectPath::new("/Game/Maps/L_Example.Actor")
+        );
+        for unchanged in ["", "/None", "None", "/Game/None.Actor", "/NoneX.Actor"] {
+            assert_eq!(
+                normalize_object_path_string(unchanged.to_owned()),
+                unchanged
+            );
+        }
+        // A stripped prefix is removed in place, keeping the string's buffer.
+        let path = String::from("/None./Game/Maps/L_Example.Actor");
+        let buffer = path.as_ptr();
+        let normalized = normalize_object_path_string(path);
+        assert_eq!(normalized, "/Game/Maps/L_Example.Actor");
+        assert_eq!(normalized.as_ptr(), buffer);
+    }
+
+    /// Children are joined to their outer's unnormalized path and normalized once at the end;
+    /// export classes copy their class's normalized path.
+    #[test]
+    fn resolved_paths_and_export_classes_normalize_none_prefixes_once() {
+        let names: Vec<String> = ["None", "Obj", "/Script/Engine", "Class", "Child"]
+            .map(str::to_owned)
+            .to_vec();
+        let name = |index| crate::test_support::name_ref(index, 0);
+        let import = |object_name, package_name, outer_index| Import {
+            outer_index,
+            ..test_import("", "", object_name, package_name)
+        };
+        let imports = vec![
+            import(0, None, PackageIndex::Null),
+            import(2, None, PackageIndex::Null),
+            import(3, None, PackageIndex::Import(1)),
+            import(1, Some(0), PackageIndex::Null),
+            import(4, None, PackageIndex::Import(3)),
+        ];
+        let export = |object_name, class_index, outer_index| Export {
+            object_name: name(object_name),
+            class_index,
+            outer_index,
+            ..test_export(1, "", "")
+        };
+        let exports = vec![
+            export(1, PackageIndex::Import(2), PackageIndex::Null),
+            export(4, PackageIndex::Import(4), PackageIndex::Import(3)),
+            export(1, PackageIndex::Import(3), PackageIndex::Export(1)),
+            export(4, PackageIndex::Null, PackageIndex::Import(0)),
+        ];
+        let resolved = resolve_package_paths("/Game/Test", &names, &imports, &exports).unwrap();
+        let normalized = |paths: Vec<ObjectPath>| {
+            paths
+                .into_iter()
+                .map(|path| normalize_object_path(path).into_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            normalized(resolved.imports),
+            [
+                "",
+                "/Script/Engine",
+                "/Script/Engine.Class",
+                "Obj",
+                "Obj.Child"
+            ]
+        );
+        assert_eq!(
+            normalized(resolved.exports),
+            ["/Game/Test.Obj", "Obj.Child", "Obj.Child.Obj", ".Child"]
+        );
+        assert_eq!(
+            resolved.export_classes,
+            [
+                Some(ObjectPath::new("/Script/Engine.Class")),
+                Some(ObjectPath::new("Obj.Child")),
+                Some(ObjectPath::new("Obj")),
+                None,
+            ]
         );
     }
 

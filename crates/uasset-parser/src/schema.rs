@@ -137,10 +137,15 @@ pub fn embedded_source_model() -> &'static SourceModel {
 
 // Only the immutable embedded model can retain this index. Public custom models keep scans.
 struct BuiltinSchemaIndex {
+    /// Schemas bucketed by path length, in model order, so a lookup compares only paths of
+    /// the same length and returns the first schema a vector scan would find.
     classes: Vec<Vec<(&'static str, usize)>>,
     structs: Vec<Vec<(&'static str, usize)>>,
     longest_class: usize,
     longest_struct: usize,
+    /// Sorted addresses of the embedded native layouts that pass [`NativeLayout`] validation,
+    /// so decoding them can skip revalidating an immutable layout on every export.
+    validated_layouts: Box<[usize]>,
 }
 static BUILTIN_SCHEMA_INDEX: Lazy<BuiltinSchemaIndex> = Lazy::new(|| {
     let model = &*DEFAULT_SOURCE_MODEL;
@@ -160,21 +165,19 @@ static BUILTIN_SCHEMA_INDEX: Lazy<BuiltinSchemaIndex> = Lazy::new(|| {
         }
         structs[path.len()].push((path, i));
     }
+    let mut validated_layouts: Vec<usize> = model
+        .native_layouts
+        .values()
+        .filter(|layout| layout.validate().is_ok())
+        .map(|layout| std::ptr::from_ref(layout).addr())
+        .collect();
+    validated_layouts.sort_unstable();
     BuiltinSchemaIndex {
+        longest_class: classes.len().saturating_sub(1),
+        longest_struct: structs.len().saturating_sub(1),
         classes,
         structs,
-        longest_class: model
-            .classes
-            .iter()
-            .map(|value| value.path.as_str().len())
-            .max()
-            .unwrap_or(0),
-        longest_struct: model
-            .structs
-            .iter()
-            .map(|value| value.path.as_str().len())
-            .max()
-            .unwrap_or(0),
+        validated_layouts: validated_layouts.into_boxed_slice(),
     }
 });
 impl BuiltinSchemaIndex {
@@ -204,6 +207,17 @@ fn builtin_schema_index(model: &SourceModel) -> Option<&'static BuiltinSchemaInd
     Lazy::get(&DEFAULT_SOURCE_MODEL)
         .filter(|builtin| std::ptr::eq(*builtin, model))
         .map(|_| &*BUILTIN_SCHEMA_INDEX)
+}
+
+/// Whether `layout` is one of the embedded model's own layouts and has already passed the
+/// validation [`crate::native::decode_native`] performs. The embedded model is immutable, so
+/// identity proves the layout is unchanged since it was validated.
+pub(crate) fn is_validated_embedded_layout(layout: &NativeLayout) -> bool {
+    Lazy::get(&DEFAULT_SOURCE_MODEL).is_some()
+        && BUILTIN_SCHEMA_INDEX
+            .validated_layouts
+            .binary_search(&std::ptr::from_ref(layout).addr())
+            .is_ok()
 }
 
 /// Source-derived UE 5.8 property-bag fragments whose framing differs from the baseline.
@@ -243,9 +257,35 @@ pub trait SchemaProvider {
         }
         false
     }
+
+    /// [`SchemaProvider::find_class`] for a borrowed path. Providers that can look a path up
+    /// without building an [`ObjectPath`] override this; the default delegates.
+    fn find_class_str(&self, path: &str) -> Option<&ClassSchema> {
+        self.find_class(&ObjectPath::new(path))
+    }
+
+    /// [`SchemaProvider::class_is_a`] for a borrowed path. The default delegates, so a provider
+    /// that overrides `class_is_a` keeps its answer here.
+    fn class_is_a_str(&self, path: &str, base_path: &str) -> bool {
+        self.class_is_a(&ObjectPath::new(path), base_path)
+    }
+
+    /// Whether this provider's answers for `find_struct`, `find_class`, `find_class_str`,
+    /// `native_layout`, and both ancestry queries (`class_is_a` and `class_is_a_str`, including
+    /// any overridden implementations) are immutable for the entire lifetime of a shared borrow.
+    /// Returning `true` allows [`crate::asset::AssetDecodeSession`] to cache schema-derived
+    /// dispatch, serialization-validation, and native-tail ancestry facts across exports.
+    /// Providers whose schemas or ancestry answers may change must leave this `false`.
+    fn has_stable_schemas(&self) -> bool {
+        false
+    }
 }
 
 impl SchemaProvider for SourceModel {
+    fn has_stable_schemas(&self) -> bool {
+        true
+    }
+
     fn native_layout(&self, cpp_name: &str) -> Option<&NativeLayout> {
         self.native_layouts.get(cpp_name)
     }
@@ -259,10 +299,34 @@ impl SchemaProvider for SourceModel {
     }
 
     fn find_class(&self, path: &ObjectPath) -> Option<&ClassSchema> {
+        self.find_class_str(path.as_str())
+    }
+
+    fn find_class_str(&self, path: &str) -> Option<&ClassSchema> {
         if let Some(index) = builtin_schema_index(self) {
-            return index.class(path.as_str()).and_then(|i| self.classes.get(i));
+            return index.class(path).and_then(|i| self.classes.get(i));
         }
-        self.classes.iter().find(|schema| schema.path == *path)
+        self.classes
+            .iter()
+            .find(|schema| schema.path.as_str() == path)
+    }
+
+    // The same walk as the default `class_is_a`, over borrowed paths.
+    fn class_is_a_str(&self, path: &str, base_path: &str) -> bool {
+        let mut current = Some(path);
+        for _ in 0..64 {
+            let Some(path) = current else {
+                return false;
+            };
+            if path == base_path {
+                return true;
+            }
+            current = self
+                .find_class_str(path)
+                .and_then(|schema| schema.super_path.as_ref())
+                .map(ObjectPath::as_str);
+        }
+        false
     }
 }
 

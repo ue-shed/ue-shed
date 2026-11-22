@@ -16,8 +16,8 @@ use crate::package::{Package, PackageIndex};
 use crate::property::{
     ColorValue, DataTableRowHandleValue, FrameRangeBound, FrameRangeValue, IntPointValue,
     LinearColorValue, MapEntry, PropertyError, PropertyRecord, PropertyStream, PropertyTagFlags,
-    PropertyTypeName, PropertyValue, RangeBoundKind, RawReason, RotatorValue, TextHistory,
-    TextValue, VectorValue, read_tagged_property_stream,
+    PropertyTypeName, PropertyValue, RangeBoundKind, RawReason, RotatorValue, TaggedStreamReplay,
+    TextHistory, TextValue, VectorValue, read_tagged_property_stream,
 };
 
 /// UE `INDEX_NONE` marks a full container replace in map property payloads.
@@ -30,24 +30,173 @@ pub(crate) struct DecodeScope<'f> {
     pub(crate) depth: usize,
     pub(crate) filter: Option<&'f dyn PropertyDecodeFilter>,
     formatted_text_budget: Option<&'f std::cell::Cell<usize>>,
+    /// The filter's [`PropertyDecodeFilter::omit_unrequested_records`] answer, asked once.
+    omit_unrequested: bool,
+    /// Whether each package name is one of [`crate::asset::DECODER_READ_PROPERTIES`], indexed by
+    /// name-map entry. A session builds it once for its package; without it, names are compared.
+    decoder_read_names: Option<&'f [bool]>,
 }
 
 impl<'f> DecodeScope<'f> {
     pub(crate) fn root(filter: Option<&'f dyn PropertyDecodeFilter>) -> Self {
+        Self::root_with_names(filter, None)
+    }
+
+    /// A root scope that answers decoder-owned name checks from `decoder_read_names`, which must
+    /// be [`decoder_read_name_table`] of the package being decoded.
+    pub(crate) fn root_with_names(
+        filter: Option<&'f dyn PropertyDecodeFilter>,
+        decoder_read_names: Option<&'f [bool]>,
+    ) -> Self {
         Self {
             depth: 0,
             filter,
             formatted_text_budget: None,
+            omit_unrequested: filter.is_some_and(|filter| filter.omit_unrequested_records()),
+            decoder_read_names,
         }
+    }
+
+    /// Whether this decode's filter allows omitting declined records.
+    #[inline]
+    pub(crate) fn omits_unrequested(self) -> bool {
+        self.omit_unrequested
     }
 
     fn nested(self) -> Self {
         Self {
             depth: self.depth + 1,
-            filter: self.filter,
-            formatted_text_budget: self.formatted_text_budget,
+            ..self
         }
     }
+
+    /// [`is_decoder_read_property`], from the session's name table when it has one.
+    #[inline]
+    fn is_decoder_read(self, package: &Package, record: &PropertyRecord) -> bool {
+        self.is_decoder_read_name(package, record.name)
+    }
+
+    /// Whether the parser's own decoders read properties named `name`.
+    #[inline]
+    fn is_decoder_read_name(self, package: &Package, name: crate::archive::NameRef) -> bool {
+        match self.decoder_read_names {
+            Some(names) => {
+                name.number() == 0
+                    && usize::try_from(name.index().get())
+                        .ok()
+                        .and_then(|index| names.get(index))
+                        .is_some_and(|read| *read)
+            }
+            None => is_decoder_read_name(package, name),
+        }
+    }
+}
+
+/// Skips the tags a filter that omits declined records can never request, judged from the tag's
+/// name and top-level type before its record is built. A skipped record would have been decoded
+/// as `RawReason::NotRequested` and then omitted, so the decoded stream is unchanged.
+struct UnrequestedTags<'s> {
+    package: &'s Package,
+    filter: &'s dyn PropertyDecodeFilter,
+    scope: DecodeScope<'s>,
+}
+
+impl<'s> UnrequestedTags<'s> {
+    /// The skipper for tagged streams decoded under `scope`, when its filter omits declined
+    /// records. Otherwise every declined record stays in the stream and must be built.
+    #[inline]
+    fn of(package: &'s Package, scope: DecodeScope<'s>) -> Option<Self> {
+        let filter = scope.filter.filter(|_| scope.omit_unrequested)?;
+        Some(Self {
+            package,
+            filter,
+            scope,
+        })
+    }
+}
+
+impl crate::property::TagSkip for UnrequestedTags<'_> {
+    const ACTIVE: bool = true;
+
+    #[inline]
+    fn skips(&self, name: crate::archive::NameRef, top_type: crate::archive::NameRef) -> bool {
+        !self.filter.may_decode_tag(self.package, name, top_type)
+            && !self.scope.is_decoder_read_name(self.package, name)
+    }
+}
+
+/// Reads a struct or row tagged stream whose records will be decoded under `scope`. When the
+/// scope omits declined records, tags its filter can never request are validated and stepped
+/// over without building records; modern ones are appended to `skipped` for replay learning.
+///
+/// The result, once decoded under `scope`, equals that of [`read_tagged_property_stream`].
+pub(crate) fn read_tagged_stream_for_scope(
+    reader: &mut Reader<'_>,
+    package: &Package,
+    scope: DecodeScope<'_>,
+    path: &(impl fmt::Display + ?Sized),
+    skipped: Option<&mut Vec<crate::property::SkippedTag>>,
+) -> Result<PropertyStream, PropertyError> {
+    let versions = &package.summary.versions;
+    match UnrequestedTags::of(package, scope) {
+        Some(tags) => crate::property::read_tagged_property_stream_with(
+            reader,
+            versions,
+            &package.names,
+            path,
+            &tags,
+            skipped,
+        ),
+        None => read_tagged_property_stream(reader, versions, &package.names, path),
+    }
+}
+
+/// [`read_tagged_stream_for_scope`] for a root UObject stream.
+pub(crate) fn read_uobject_tagged_stream_for_scope(
+    reader: &mut Reader<'_>,
+    package: &Package,
+    scope: DecodeScope<'_>,
+    path: &(impl fmt::Display + ?Sized),
+    skipped: Option<&mut Vec<crate::property::SkippedTag>>,
+) -> Result<PropertyStream, PropertyError> {
+    let versions = &package.summary.versions;
+    match UnrequestedTags::of(package, scope) {
+        Some(tags) => crate::property::read_uobject_tagged_property_stream_with(
+            reader,
+            versions,
+            &package.names,
+            path,
+            &tags,
+            skipped,
+        ),
+        None => crate::property::read_uobject_tagged_property_stream(
+            reader,
+            versions,
+            &package.names,
+            path,
+        ),
+    }
+}
+
+/// One flag per package name: whether the parser's own decoders read properties of that name.
+/// Numbered names never match, as [`Package::resolve_name_str`] does not resolve them.
+pub(crate) fn decoder_read_name_table(package: &Package) -> Vec<bool> {
+    package
+        .names
+        .iter()
+        .map(|name| crate::asset::DECODER_READ_PROPERTIES.contains(&name.as_str()))
+        .collect()
+}
+
+/// Whether a decoded record holds only the host filter's refusal.
+#[inline]
+pub(crate) fn is_not_requested(record: &PropertyRecord) -> bool {
+    matches!(
+        record.value,
+        PropertyValue::Raw {
+            reason: RawReason::NotRequested
+        }
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -257,6 +406,10 @@ pub(crate) fn decode_property_stream_values_at_depth(
     for record in &mut stream.records {
         decode_property_record_filtered(source, record, package, scope)?;
     }
+    if scope.omit_unrequested {
+        // Every header was read and validated above; only the refusals are dropped.
+        stream.records.retain(|record| !is_not_requested(record));
+    }
     Ok(())
 }
 
@@ -268,10 +421,7 @@ pub(crate) fn decode_property_record_filtered(
     scope: DecodeScope<'_>,
 ) -> Result<(), PropertyError> {
     let requested = scope.filter.is_none_or(|filter| {
-        package
-            .resolve_name_str(record.name)
-            .is_some_and(|name| crate::asset::DECODER_READ_PROPERTIES.contains(&name))
-            || filter.decode(package, record)
+        scope.is_decoder_read(package, record) || filter.decode(package, record)
     });
     if requested {
         decode_property_record(source, record, package, scope)?;
@@ -281,6 +431,19 @@ pub(crate) fn decode_property_record_filtered(
         };
     }
     Ok(())
+}
+
+/// Whether the parser's own decoders read this property, whatever the host filter decides.
+#[inline]
+fn is_decoder_read_property(package: &Package, record: &PropertyRecord) -> bool {
+    is_decoder_read_name(package, record.name)
+}
+
+#[inline]
+fn is_decoder_read_name(package: &Package, name: crate::archive::NameRef) -> bool {
+    package
+        .resolve_name_str(name)
+        .is_some_and(|name| crate::asset::DECODER_READ_PROPERTIES.contains(&name))
 }
 
 /// Semantic work resolved once for a layout whose serialized headers match exactly.
@@ -297,9 +460,33 @@ pub(crate) enum ReplayDecodePlan {
     Name,
     Enum,
     String,
+    UInt8,
+    UInt32,
+    Int64,
+    UInt64,
+    /// A host filter whose answer depends only on the header declined this record, and the
+    /// parser reads none of its own properties from it.
+    NotRequested,
 }
 
 impl ReplayDecodePlan {
+    /// [`ReplayDecodePlan::prepare`], also settling the host filter's answer once when the filter
+    /// declares it depends only on the record header, which every replay of a layout repeats.
+    pub(crate) fn prepare_filtered(
+        package: &Package,
+        record: &PropertyRecord,
+        filter: Option<&dyn PropertyDecodeFilter>,
+    ) -> Self {
+        if let Some(filter) = filter
+            && filter.depends_only_on_record_header()
+            && !is_decoder_read_property(package, record)
+            && !filter.decode(package, record)
+        {
+            return Self::NotRequested;
+        }
+        Self::prepare(package, record)
+    }
+
     pub(crate) fn prepare(package: &Package, record: &PropertyRecord) -> Self {
         if record.flags.is_skipped() {
             return Self::Ordinary;
@@ -334,6 +521,11 @@ impl ReplayDecodePlan {
             (Some("BoolProperty"), 0) => Self::Bool,
             (Some("NameProperty"), 8) => Self::Name,
             (Some("EnumProperty" | "ByteProperty"), 8) => Self::Enum,
+            // `decode_typed_value` reads a one-byte `ByteProperty` payload as a plain byte.
+            (Some("UInt8Property" | "ByteProperty"), 1) => Self::UInt8,
+            (Some("UInt32Property"), 4) => Self::UInt32,
+            (Some("Int64Property"), 8) => Self::Int64,
+            (Some("UInt64Property"), 8) => Self::UInt64,
             (Some("StrProperty"), _) => Self::String,
             _ => Self::Ordinary,
         }
@@ -349,12 +541,11 @@ pub(crate) fn decode_replayed_property_record(
     scope: DecodeScope<'_>,
     plan: ReplayDecodePlan,
 ) -> Result<(), PropertyError> {
-    let requested = scope.filter.is_none_or(|filter| {
-        package
-            .resolve_name_str(record.name)
-            .is_some_and(|name| crate::asset::DECODER_READ_PROPERTIES.contains(&name))
-            || filter.decode(package, record)
-    });
+    // A prepared `NotRequested` already holds this filter's answer for this header.
+    let requested = !matches!(plan, ReplayDecodePlan::NotRequested)
+        && scope.filter.is_none_or(|filter| {
+            scope.is_decoder_read(package, record) || filter.decode(package, record)
+        });
     if !requested {
         record.value = PropertyValue::Raw {
             reason: RawReason::NotRequested,
@@ -362,7 +553,7 @@ pub(crate) fn decode_replayed_property_record(
         return Ok(());
     }
     let value = match plan {
-        ReplayDecodePlan::Ordinary => None,
+        ReplayDecodePlan::Ordinary | ReplayDecodePlan::NotRequested => None,
         ReplayDecodePlan::Name | ReplayDecodePlan::Enum | ReplayDecodePlan::String => (|| {
             let mut payload = Reader::new(source)
                 .bounded(record.payload, "Property.Payload")
@@ -419,6 +610,14 @@ pub(crate) fn decode_replayed_property_record(
         }
         ReplayDecodePlan::Bool => exact_scalar_bytes::<0>(source, record.payload)
             .map(|_| PropertyValue::Bool(record.flags.bool_value())),
+        ReplayDecodePlan::UInt8 => exact_scalar_bytes::<1>(source, record.payload)
+            .map(|bytes| PropertyValue::UInt(u64::from(bytes[0]))),
+        ReplayDecodePlan::UInt32 => exact_scalar_bytes::<4>(source, record.payload)
+            .map(|bytes| PropertyValue::UInt(u64::from(u32::from_le_bytes(bytes)))),
+        ReplayDecodePlan::Int64 => exact_scalar_bytes::<8>(source, record.payload)
+            .map(|bytes| PropertyValue::Int(i64::from_le_bytes(bytes))),
+        ReplayDecodePlan::UInt64 => exact_scalar_bytes::<8>(source, record.payload)
+            .map(|bytes| PropertyValue::UInt(u64::from_le_bytes(bytes))),
     };
     if let Some(value) = value {
         record.value = value;
@@ -785,7 +984,10 @@ fn decode_typed_value(
         }
         "StructProperty" => {
             let facts = struct_facts(package, type_spec);
-            decode_struct_value(source, type_spec, &facts, payload, package, path, scope).map(Some)
+            decode_struct_value(
+                source, type_spec, &facts, payload, package, path, scope, None,
+            )
+            .map(Some)
         }
         _ => Ok(None),
     }
@@ -1163,6 +1365,8 @@ fn decode_array_elements(
     let facts = struct_facts(package, inner);
     let mut decoded_new_layout = false;
     let is_new_layout = speculative_container_struct(package, inner.tree, serializer);
+    let mut replays = ElementReplays::default();
+    replays.learn_for(ElementReplays::eligible(package, inner, scope), count);
     let result = (|| {
         let capacity = payload.checked_vec_capacity::<PropertyValue>(
             count,
@@ -1219,6 +1423,7 @@ fn decode_array_elements(
                     &element_path,
                     scope,
                     serializer,
+                    Some(&mut replays),
                 )?
                 .ok_or_else(|| {
                     unsupported_container_type(payload, &element_path, "array element", inner.name)
@@ -1288,6 +1493,8 @@ fn decode_set_value(
         let facts = struct_facts(package, element_spec);
 
         let is_new_layout = speculative_container_struct(package, element_type, serializer);
+        let eligible = ElementReplays::eligible(package, element_spec, scope);
+        let mut replays = ElementReplays::default();
         let remove_count = payload.read_i32(&format_args!("{path}.ElementsToRemove.Count"))?;
         if remove_count < 0 {
             return Err(PropertyError::new(
@@ -1302,6 +1509,7 @@ fn decode_set_value(
             minimum_serialized_size(&element_name, element_type),
             &format_args!("{path}.ElementsToRemove.Count"),
         )?;
+        replays.learn_for(eligible, crate::convert::usize_from_checked(remove_count));
         for index in 0..crate::convert::usize_from_checked(remove_count) {
             let element_path = ElementPath::new(path, ".ElementsToRemove", index, "");
             decode_container_element(
@@ -1313,6 +1521,7 @@ fn decode_set_value(
                 &element_path,
                 scope,
                 serializer,
+                Some(&mut replays),
             )?
             .ok_or_else(|| {
                 unsupported_container_type(payload, &element_path, "set element", &element_name)
@@ -1327,6 +1536,7 @@ fn decode_set_value(
             &format_args!("{path}.Elements.Count"),
         )?;
         let mut values = Vec::with_capacity(capacity);
+        replays.learn_for(eligible, count);
         for index in 0..count {
             let element_path = ElementPath::new(path, ".Elements", index, "");
             values.push(
@@ -1339,6 +1549,7 @@ fn decode_set_value(
                     &element_path,
                     scope,
                     serializer,
+                    Some(&mut replays),
                 )?
                 .ok_or_else(|| {
                     unsupported_container_type(payload, &element_path, "set element", &element_name)
@@ -1380,6 +1591,10 @@ fn decode_map_value(
 
         let new_key_layout = speculative_container_struct(package, key_type, serializer);
         let new_value_layout = speculative_container_struct(package, value_type, serializer);
+        let keys_eligible = ElementReplays::eligible(package, key_spec, scope);
+        let values_eligible = ElementReplays::eligible(package, value_spec, scope);
+        let mut key_replays = ElementReplays::default();
+        let mut value_replays = ElementReplays::default();
         let keys_to_remove = payload.read_i32(&format_args!("{path}.KeysToRemove.Count"))?;
         if keys_to_remove > 0 {
             payload.checked_vec_capacity::<PropertyValue>(
@@ -1387,6 +1602,10 @@ fn decode_map_value(
                 minimum_serialized_size(&key_name, key_type),
                 &format_args!("{path}.KeysToRemove.Count"),
             )?;
+            key_replays.learn_for(
+                keys_eligible,
+                crate::convert::usize_from_checked(keys_to_remove),
+            );
             for index in 0..crate::convert::usize_from_checked(keys_to_remove) {
                 let element_path = ElementPath::new(path, ".KeysToRemove", index, "");
                 decode_container_element(
@@ -1398,6 +1617,7 @@ fn decode_map_value(
                     &element_path,
                     scope,
                     serializer,
+                    Some(&mut key_replays),
                 )?
                 .ok_or_else(|| {
                     unsupported_container_type(payload, &element_path, "map key", &key_name)
@@ -1422,6 +1642,8 @@ fn decode_map_value(
             &format_args!("{path}.Entries.Count"),
         )?;
         let mut entries = Vec::with_capacity(capacity);
+        key_replays.learn_for(keys_eligible, count);
+        value_replays.learn_for(values_eligible, count);
         for index in 0..count {
             let element_path = ElementPath::new(path, ".Entries", index, ".Key");
             let key = decode_container_element(
@@ -1433,6 +1655,7 @@ fn decode_map_value(
                 &element_path,
                 scope,
                 serializer,
+                Some(&mut key_replays),
             )?
             .ok_or_else(|| {
                 unsupported_container_type(payload, &element_path, "map key", &key_name)
@@ -1448,6 +1671,7 @@ fn decode_map_value(
                 &element_path,
                 scope,
                 serializer,
+                Some(&mut value_replays),
             )?
             .ok_or_else(|| {
                 unsupported_container_type(payload, &element_path, "map value", &value_name)
@@ -1460,16 +1684,19 @@ fn decode_map_value(
     result.map_err(|error| preserve_opaque_container(error, decoded_new_layout))
 }
 
+/// Decodes one container element. `element` is the container's replay of its tagged struct
+/// elements; it is `Some` exactly when the value occupies an array, set or map slot.
 #[allow(clippy::too_many_arguments)]
-fn decode_container_element(
-    source: &[u8],
+fn decode_container_element<'a>(
+    source: &'a [u8],
     type_spec: TypeSpec<'_>,
     facts: &StructFacts<'_>,
     payload: &mut Reader<'_>,
-    package: &Package,
+    package: &'a Package,
     path: &dyn std::fmt::Display,
-    scope: DecodeScope<'_>,
+    scope: DecodeScope<'a>,
     serializer: ContainerSerializer,
+    element: Option<&mut ElementReplays<'a>>,
 ) -> Result<Option<PropertyValue>, PropertyError> {
     if type_spec.name == "OptionalProperty" {
         return Ok(optionals::decode(
@@ -1483,8 +1710,10 @@ fn decode_container_element(
         ));
     }
     if type_spec.is_user_defined_struct() {
-        return decode_struct_value(source, type_spec, facts, payload, package, path, scope)
-            .map(Some);
+        return decode_struct_value(
+            source, type_spec, facts, payload, package, path, scope, element,
+        )
+        .map(Some);
     }
     if type_spec.name == "StructProperty" {
         let math_name = &facts.math_name;
@@ -1530,11 +1759,13 @@ fn decode_container_element(
         if package.summary.versions.uses_legacy_property_tags()
             && type_spec.tree.parameters.is_empty()
         {
-            return decode_struct_value(source, type_spec, facts, payload, package, path, scope)
-                .map(Some)
-                .map_err(|error| {
-                    error.with_raw_reason(RawReason::LegacyContainerElementWithoutTypeInformation)
-                });
+            return decode_struct_value(
+                source, type_spec, facts, payload, package, path, scope, element,
+            )
+            .map(Some)
+            .map_err(|error| {
+                error.with_raw_reason(RawReason::LegacyContainerElementWithoutTypeInformation)
+            });
         }
     }
     // FBoolProperty::SerializeItem writes uint8 in containers (UE 5.7/5.8).
@@ -1618,7 +1849,7 @@ fn decode_container_element(
             ContainerSerializer::Tagged => {}
             _ if facts.tagged_fallback && struct_name != "AnimNotifyEvent" => {
                 return decode_struct_value(
-                    source, type_spec, facts, payload, package, path, scope,
+                    source, type_spec, facts, payload, package, path, scope, element,
                 )
                 .map(Some)
                 .map_err(|error| {
@@ -1649,7 +1880,7 @@ fn decode_container_element(
             // but a failure marks the owning property as skipped instead of failing the export.
             ContainerSerializer::Unknown => {
                 return decode_struct_value(
-                    source, type_spec, facts, payload, package, path, scope,
+                    source, type_spec, facts, payload, package, path, scope, element,
                 )
                 .map(Some)
                 .map_err(|error| {
@@ -1669,8 +1900,10 @@ fn decode_container_element(
     }
 
     if type_spec.name == "StructProperty" {
-        return decode_struct_value(source, type_spec, facts, payload, package, path, scope)
-            .map(Some);
+        return decode_struct_value(
+            source, type_spec, facts, payload, package, path, scope, element,
+        )
+        .map(Some);
     }
     decode_typed_value(
         source,
@@ -2003,14 +2236,18 @@ fn resolve_map_value_type<'a>(
     Ok((value_type, value_name))
 }
 
-fn decode_struct_value(
-    source: &[u8],
+/// Decodes a struct value. `element` is `Some` for an array, set or map element, and replays the
+/// container's earlier tagged element layouts before the ordinary tagged reader.
+#[allow(clippy::too_many_arguments)]
+fn decode_struct_value<'a>(
+    source: &'a [u8],
     type_spec: TypeSpec<'_>,
     facts: &StructFacts<'_>,
     payload: &mut Reader<'_>,
-    package: &Package,
+    package: &'a Package,
     path: &dyn std::fmt::Display,
-    scope: DecodeScope<'_>,
+    scope: DecodeScope<'a>,
+    element: Option<&mut ElementReplays<'a>>,
 ) -> Result<PropertyValue, PropertyError> {
     if scope.depth >= MAX_PROPERTY_DECODE_DEPTH {
         return Err(PropertyError::new(
@@ -2049,22 +2286,132 @@ fn decode_struct_value(
             return Ok(value);
         }
     }
-    let mut stream =
-        read_tagged_property_stream(payload, &package.summary.versions, &package.names, path)?;
-    decode_property_stream_values_at_depth(source, &mut stream, package, scope.nested())?;
+    let nested = scope.nested();
+    let is_element = element.is_some();
+    let (mut stream, decoded) = match element {
+        Some(replays) => replays.read(source, payload, package, nested, path)?,
+        None => (
+            read_tagged_stream_for_scope(payload, package, nested, path, None)?,
+            false,
+        ),
+    };
+    if !decoded {
+        decode_property_stream_values_at_depth(source, &mut stream, package, nested)?;
+    }
     if !type_spec.is_user_defined_struct() {
-        legacy_structs::declared_containers(
-            source,
-            &mut stream,
-            type_tree,
-            package,
-            scope.nested(),
-        );
+        legacy_structs::declared_containers(source, &mut stream, type_tree, package, nested);
     }
     if !type_spec.is_user_defined_struct() && struct_name.as_deref() == Some("DataTableRowHandle") {
         return decode_data_table_row_handle(&stream, package, path);
     }
+    // With omission allowed, an element whose saved properties were all declined keeps only
+    // its slot, so container indices are unchanged and nothing is boxed for it.
+    if is_element
+        && scope.omit_unrequested
+        && stream.records.is_empty()
+        && stream.class_extensions.is_none()
+    {
+        return Ok(PropertyValue::Raw {
+            reason: RawReason::NotRequested,
+        });
+    }
     Ok(PropertyValue::Struct(Box::new(stream)))
+}
+
+// Test hooks: disable element replay on this thread to decode a reference, and count hits.
+#[cfg(test)]
+thread_local! {
+    static ELEMENT_REPLAY_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static ELEMENT_REPLAY_HITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Replays of one container's tagged struct elements, which usually repeat a few saved layouts.
+/// Bounded as DataTable rows are: four layouts, and learning stops after eight straight misses.
+/// Every match is checked against the element's own bytes; a miss reads it ordinarily.
+#[derive(Default)]
+struct ElementReplays<'a> {
+    replays: Vec<TaggedStreamReplay<'a>>,
+    misses: u8,
+    learning: bool,
+    exhausted: bool,
+    /// Tags the last learning read stepped over, reused across elements.
+    skipped: Vec<crate::property::SkippedTag>,
+}
+
+impl<'a> ElementReplays<'a> {
+    /// Whether elements of this type may reach a replayable tagged stream: modern tagged
+    /// structs below the depth limit. Native and binary layouts never reach the tagged reader.
+    fn eligible(package: &Package, type_spec: TypeSpec<'_>, scope: DecodeScope<'_>) -> bool {
+        type_spec.name == "StructProperty"
+            && !package.summary.versions.uses_legacy_property_tags()
+            && scope.depth < MAX_PROPERTY_DECODE_DEPTH
+    }
+
+    /// Learns layouts only for the next `count` elements when there are at least two of them;
+    /// one element has nothing to repeat.
+    fn learn_for(&mut self, eligible: bool, count: usize) {
+        #[cfg(test)]
+        let eligible = eligible && !ELEMENT_REPLAY_DISABLED.with(std::cell::Cell::get);
+        self.learning = eligible && count >= 2 && !self.exhausted;
+    }
+
+    fn read(
+        &mut self,
+        source: &'a [u8],
+        payload: &mut Reader<'_>,
+        package: &'a Package,
+        scope: DecodeScope<'a>,
+        path: &dyn fmt::Display,
+    ) -> Result<(PropertyStream, bool), PropertyError> {
+        if !self.replays.is_empty() {
+            let decode = |record: &mut PropertyRecord, plan| {
+                decode_replayed_property_record(source, record, package, scope, plan)
+            };
+            if let Some((slot, stream)) = crate::property::read_with_any(
+                &mut self.replays,
+                payload,
+                path,
+                scope.omits_unrequested(),
+                decode,
+            ) {
+                self.replays[..=slot].rotate_right(1);
+                self.misses = 0;
+                #[cfg(test)]
+                ELEMENT_REPLAY_HITS.with(|hits| hits.set(hits.get() + 1));
+                return Ok((stream?, true));
+            }
+        }
+        let start = payload.tell();
+        self.skipped.clear();
+        let stream = read_tagged_stream_for_scope(
+            payload,
+            package,
+            scope,
+            path,
+            self.learning.then_some(&mut self.skipped),
+        )?;
+        if self.learning {
+            self.misses += 1;
+            if self.misses >= 8 {
+                self.learning = false;
+                self.exhausted = true;
+                self.replays.clear();
+            } else if let Some(replay) = TaggedStreamReplay::with_skipped(
+                source,
+                start,
+                &package.summary.versions,
+                &stream,
+                &self.skipped,
+            ) {
+                if self.replays.len() == 4 {
+                    self.replays.pop();
+                }
+                self.replays
+                    .insert(0, replay.with_decode_plans(package, scope.filter));
+            }
+        }
+        Ok((stream, false))
+    }
 }
 
 fn decode_data_table_row_handle(
@@ -7087,6 +7434,663 @@ mod prepared_filter_tests {
                 actual_filter.0.load(std::sync::atomic::Ordering::Relaxed),
                 expected_filter.0.load(std::sync::atomic::Ordering::Relaxed)
             );
+        }
+    }
+
+    /// Declines every integer, by header alone, and says so.
+    struct SkipIntegers;
+    impl PropertyDecodeFilter for SkipIntegers {
+        fn decode(&self, package: &Package, record: &PropertyRecord) -> bool {
+            package.resolve_name_str(record.type_name.name) != Some("IntProperty")
+        }
+
+        fn depends_only_on_record_header(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn header_only_filters_settle_once_and_other_filters_are_asked_per_record() {
+        let reserved = crate::asset::DECODER_READ_PROPERTIES[0];
+        let package = test_package(
+            ["None", "Value", reserved, "IntProperty", "BoolProperty"]
+                .map(str::to_owned)
+                .into(),
+        );
+        let source: Vec<_> = (0i32..64).flat_map(i32::to_le_bytes).collect();
+        let pure = SkipIntegers;
+        let stateful = Alternating::default();
+        for index in 0u8..64 {
+            let is_bool = index % 3 == 0;
+            let record = PropertyRecord {
+                name: name_ref(
+                    if index % 5 == 0 { 2 } else { 1 },
+                    if index % 7 == 0 { 1 } else { 0 },
+                ),
+                type_name: PropertyTypeName {
+                    name: name_ref(if is_bool { 4 } else { 3 }, 0),
+                    parameters: vec![],
+                },
+                array_index: 0,
+                flags: PropertyTagFlags(index),
+                property_guid: None,
+                struct_guid: None,
+                extensions: None,
+                payload: Span::new(u64::from(index) * 4, if is_bool { 0 } else { 4 }).unwrap(),
+                value: PropertyValue::Raw {
+                    reason: RawReason::UnsupportedType,
+                },
+            };
+            // A filter that does not declare header purity is never settled in advance.
+            assert!(!matches!(
+                ReplayDecodePlan::prepare_filtered(&package, &record, Some(&stateful)),
+                ReplayDecodePlan::NotRequested
+            ));
+            assert_eq!(stateful.0.load(std::sync::atomic::Ordering::Relaxed), 0);
+
+            let plan = ReplayDecodePlan::prepare_filtered(&package, &record, Some(&pure));
+            let requested =
+                is_decoder_read_property(&package, &record) || pure.decode(&package, &record);
+            assert_eq!(matches!(plan, ReplayDecodePlan::NotRequested), !requested);
+            let scope = DecodeScope::root(Some(&pure));
+            let mut actual = record.clone();
+            let mut expected = record;
+            let actual_result =
+                decode_replayed_property_record(&source, &mut actual, &package, scope, plan);
+            let expected_result = if requested {
+                decode_property_record_reference(&source, &mut expected, &package, scope)
+            } else {
+                expected.value = PropertyValue::Raw {
+                    reason: RawReason::NotRequested,
+                };
+                Ok(())
+            };
+            assert_eq!(
+                format!("{actual_result:?}|{actual:?}"),
+                format!("{expected_result:?}|{expected:?}")
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod element_replay_tests {
+    use super::*;
+    use crate::package::test_package;
+    use crate::test_support::{
+        TypeParam, name_ref, push_f32, push_fstring, push_i32, write_property_tag,
+        write_property_terminator,
+    };
+
+    const NONE: i32 = 0;
+    const ITEMS: i32 = 1;
+    const ARRAY: i32 = 2;
+    const STRUCT: i32 = 3;
+    const ENTRY: i32 = 4;
+    const MODULE: i32 = 5;
+    const COUNT: i32 = 6;
+    const INT: i32 = 7;
+    const LABEL: i32 = 8;
+    const STR: i32 = 9;
+    const FLAG: i32 = 10;
+    const BOOL: i32 = 11;
+    const SET: i32 = 12;
+    const MAP: i32 = 13;
+    const ROW_NAME: i32 = 14;
+    const NAME: i32 = 15;
+    const EXTRA: i32 = 16;
+    const FLOAT: i32 = 17;
+    const BYTES: i32 = 18;
+    const UINT32: i32 = 19;
+    const WIDE: i32 = 20;
+    const INT64: i32 = 21;
+    const SMALL: i32 = 22;
+    const BYTE: i32 = 23;
+
+    fn package() -> Package {
+        test_package(
+            [
+                "None",
+                "Items",
+                "ArrayProperty",
+                "StructProperty",
+                "Entry",
+                "/Script/Fixture",
+                "Count",
+                "IntProperty",
+                "Label",
+                "StrProperty",
+                "Flag",
+                "BoolProperty",
+                "SetProperty",
+                "MapProperty",
+                crate::asset::DECODER_READ_PROPERTIES[9],
+                "NameProperty",
+                "Extra",
+                "FloatProperty",
+                "Bytes",
+                "UInt32Property",
+                "Wide",
+                "Int64Property",
+                "Small",
+                "ByteProperty",
+            ]
+            .map(str::to_owned)
+            .into(),
+        )
+    }
+
+    fn scalar(type_index: i32) -> TypeParam {
+        TypeParam {
+            type_index,
+            parameters: Vec::new(),
+        }
+    }
+
+    fn entry_type() -> TypeParam {
+        TypeParam {
+            type_index: STRUCT,
+            parameters: vec![TypeParam {
+                type_index: ENTRY,
+                parameters: vec![scalar(MODULE)],
+            }],
+        }
+    }
+
+    fn entry_tree() -> PropertyTypeName {
+        fn convert(param: &TypeParam) -> PropertyTypeName {
+            PropertyTypeName {
+                name: name_ref(param.type_index, 0),
+                parameters: param.parameters.iter().map(convert).collect(),
+            }
+        }
+        convert(&entry_type())
+    }
+
+    /// The saved fields of one `Entry` element. Each shape is a distinct header layout.
+    #[derive(Clone, Copy)]
+    struct Entry<'s> {
+        count: i32,
+        label: &'s str,
+        flag: bool,
+        row: bool,
+        /// How many `Extra` float tags follow; each count is its own header layout.
+        extras: u8,
+        scalars: bool,
+    }
+
+    impl Entry<'_> {
+        fn plain(count: i32, label: &str) -> Entry<'_> {
+            Entry {
+                count,
+                label,
+                flag: count % 2 == 0,
+                row: false,
+                extras: 0,
+                scalars: false,
+            }
+        }
+
+        fn bytes(self) -> Vec<u8> {
+            let mut bytes = Vec::new();
+            write_property_tag(
+                &mut bytes,
+                COUNT,
+                &scalar(INT),
+                0,
+                &self.count.to_le_bytes(),
+            );
+            let mut label = Vec::new();
+            push_fstring(&mut label, self.label);
+            write_property_tag(&mut bytes, LABEL, &scalar(STR), 0, &label);
+            write_property_tag(
+                &mut bytes,
+                FLAG,
+                &scalar(BOOL),
+                if self.flag { 0x10 } else { 0 },
+                &[],
+            );
+            if self.row {
+                let mut name = Vec::new();
+                push_i32(&mut name, ENTRY);
+                push_i32(&mut name, 0);
+                write_property_tag(&mut bytes, ROW_NAME, &scalar(NAME), 0, &name);
+            }
+            for extra in 0..self.extras {
+                let mut value = Vec::new();
+                push_f32(&mut value, f32::from(extra) + self.count as f32);
+                write_property_tag(&mut bytes, EXTRA, &scalar(FLOAT), 0, &value);
+            }
+            if self.scalars {
+                let wide = i64::from(self.count) << 33;
+                write_property_tag(&mut bytes, BYTES, &scalar(UINT32), 0, &7_u32.to_le_bytes());
+                write_property_tag(&mut bytes, WIDE, &scalar(INT64), 0, &wide.to_le_bytes());
+                write_property_tag(&mut bytes, SMALL, &scalar(BYTE), 0, &[self.count as u8]);
+            }
+            write_property_terminator(&mut bytes, NONE);
+            bytes
+        }
+    }
+
+    fn array(entries: &[Entry<'_>]) -> Vec<u8> {
+        let mut payload = Vec::new();
+        push_i32(&mut payload, entries.len() as i32);
+        for entry in entries {
+            payload.extend(entry.bytes());
+        }
+        payload
+    }
+
+    fn set(removed: &[Entry<'_>], entries: &[Entry<'_>]) -> Vec<u8> {
+        let mut payload = Vec::new();
+        push_i32(&mut payload, removed.len() as i32);
+        for entry in removed {
+            payload.extend(entry.bytes());
+        }
+        payload.extend(array(entries));
+        payload
+    }
+
+    fn map(removed: &[Entry<'_>], entries: &[(Entry<'_>, Entry<'_>)]) -> Vec<u8> {
+        let mut payload = Vec::new();
+        push_i32(&mut payload, removed.len() as i32);
+        for entry in removed {
+            payload.extend(entry.bytes());
+        }
+        push_i32(&mut payload, entries.len() as i32);
+        for (key, value) in entries {
+            payload.extend(key.bytes());
+            payload.extend(value.bytes());
+        }
+        payload
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Container {
+        Array,
+        Set,
+        Map,
+    }
+
+    /// Declines scalar text-free fields (or every field), by header alone or per record.
+    struct Decline {
+        all: bool,
+        header_only: bool,
+        omit: bool,
+    }
+
+    impl PropertyDecodeFilter for Decline {
+        fn decode(&self, package: &Package, record: &PropertyRecord) -> bool {
+            !self.all
+                && !matches!(
+                    package.resolve_name_str(record.type_name.name),
+                    Some("IntProperty" | "StrProperty" | "FloatProperty" | "Int64Property")
+                )
+        }
+
+        fn depends_only_on_record_header(&self) -> bool {
+            self.header_only
+        }
+
+        fn omit_unrequested_records(&self) -> bool {
+            self.omit
+        }
+    }
+
+    /// Decodes one container record holding `payload`, with or without element replay, and
+    /// returns its value (or error) with the number of replayed elements.
+    fn decode(
+        container: Container,
+        payload: &[u8],
+        filter: Option<&dyn PropertyDecodeFilter>,
+        replay: bool,
+    ) -> (Result<PropertyValue, PropertyError>, usize) {
+        let package = package();
+        let (type_index, parameters) = match container {
+            Container::Array => (ARRAY, vec![entry_tree()]),
+            Container::Set => (SET, vec![entry_tree()]),
+            Container::Map => (MAP, vec![entry_tree(), entry_tree()]),
+        };
+        let mut record = PropertyRecord {
+            name: name_ref(ITEMS, 0),
+            type_name: PropertyTypeName {
+                name: name_ref(type_index, 0),
+                parameters,
+            },
+            array_index: 0,
+            flags: PropertyTagFlags(0),
+            property_guid: None,
+            struct_guid: None,
+            extensions: None,
+            payload: crate::archive::Span::new(0, payload.len() as u64).unwrap(),
+            value: PropertyValue::Raw {
+                reason: RawReason::UnsupportedType,
+            },
+        };
+        ELEMENT_REPLAY_DISABLED.with(|disabled| disabled.set(!replay));
+        ELEMENT_REPLAY_HITS.with(|hits| hits.set(0));
+        let result =
+            decode_property_record(payload, &mut record, &package, DecodeScope::root(filter))
+                .map(|()| record.value);
+        ELEMENT_REPLAY_DISABLED.with(|disabled| disabled.set(false));
+        (result, ELEMENT_REPLAY_HITS.with(std::cell::Cell::get))
+    }
+
+    /// What omission must produce from the complete filtered value: declined records dropped
+    /// everywhere, and container elements left with no records kept only as their slot.
+    fn omitted(value: PropertyValue, element: bool) -> PropertyValue {
+        match value {
+            PropertyValue::Array(values) => {
+                PropertyValue::Array(values.into_iter().map(|v| omitted(v, true)).collect())
+            }
+            PropertyValue::Set(values) => {
+                PropertyValue::Set(values.into_iter().map(|v| omitted(v, true)).collect())
+            }
+            PropertyValue::Map(entries) => PropertyValue::Map(
+                entries
+                    .into_iter()
+                    .map(|entry| MapEntry {
+                        key: omitted(entry.key, true),
+                        value: omitted(entry.value, true),
+                    })
+                    .collect(),
+            ),
+            PropertyValue::Struct(mut stream) => {
+                stream.records.retain(|record| !is_not_requested(record));
+                for record in &mut stream.records {
+                    let value = std::mem::replace(
+                        &mut record.value,
+                        PropertyValue::Raw {
+                            reason: RawReason::UnsupportedType,
+                        },
+                    );
+                    record.value = omitted(value, false);
+                }
+                if element && stream.records.is_empty() && stream.class_extensions.is_none() {
+                    PropertyValue::Raw {
+                        reason: RawReason::NotRequested,
+                    }
+                } else {
+                    PropertyValue::Struct(stream)
+                }
+            }
+            other => other,
+        }
+    }
+
+    fn filters() -> Vec<Decline> {
+        let mut filters = Vec::new();
+        for all in [false, true] {
+            for header_only in [false, true] {
+                for omit in [false, true] {
+                    filters.push(Decline {
+                        all,
+                        header_only,
+                        omit,
+                    });
+                }
+            }
+        }
+        filters
+    }
+
+    /// Replay must equal the ordinary reader for every filter, and omission must equal the
+    /// complete filtered value with declined records removed.
+    fn assert_parity(container: Container, payload: &[u8]) -> usize {
+        let (expected, _) = decode(container, payload, None, false);
+        let (actual, hits) = decode(container, payload, None, true);
+        assert_eq!(
+            format!("{actual:?}"),
+            format!("{expected:?}"),
+            "{container:?}"
+        );
+        for filter in filters() {
+            let (expected, _) = decode(container, payload, Some(&filter), false);
+            let (actual, filtered_hits) = decode(container, payload, Some(&filter), true);
+            assert_eq!(
+                format!("{actual:?}"),
+                format!("{expected:?}"),
+                "{container:?} all={} header_only={} omit={}",
+                filter.all,
+                filter.header_only,
+                filter.omit
+            );
+            assert_eq!(filtered_hits, hits, "replay does not depend on the filter");
+            if filter.omit {
+                let complete = Decline {
+                    omit: false,
+                    ..filter
+                };
+                let (complete, _) = decode(container, payload, Some(&complete), true);
+                assert_eq!(
+                    format!("{actual:?}"),
+                    format!("{:?}", complete.map(|value| omitted(value, false))),
+                    "{container:?} omission all={} header_only={}",
+                    filter.all,
+                    filter.header_only
+                );
+            }
+        }
+        hits
+    }
+
+    #[test]
+    fn struct_arrays_sets_and_maps_replay_exact_and_variable_layouts_like_the_ordinary_reader() {
+        let exact: Vec<_> = (0..6).map(|count| Entry::plain(count, "ab")).collect();
+        let variable: Vec<_> = ["", "a", "abc", "a longer label", "x", "yz"]
+            .iter()
+            .enumerate()
+            .map(|(count, label)| Entry::plain(count as i32, label))
+            .collect();
+        for entries in [&exact, &variable] {
+            assert_eq!(
+                assert_parity(Container::Array, &array(entries)),
+                entries.len() - 1
+            );
+            assert_eq!(
+                assert_parity(Container::Set, &set(&entries[..2], &entries[2..])),
+                entries.len() - 1
+            );
+            let pairs: Vec<_> = entries.iter().map(|entry| (*entry, *entry)).collect();
+            // Keys and values replay separately: removed keys teach the entry keys.
+            assert_eq!(
+                assert_parity(Container::Map, &map(&entries[..2], &pairs)),
+                2 * entries.len()
+            );
+        }
+    }
+
+    #[test]
+    fn single_elements_and_empty_containers_do_not_learn() {
+        let one = [Entry::plain(1, "only")];
+        assert_eq!(assert_parity(Container::Array, &array(&one)), 0);
+        assert_eq!(assert_parity(Container::Array, &array(&[])), 0);
+        assert_eq!(assert_parity(Container::Set, &set(&[], &one)), 0);
+        assert_eq!(
+            assert_parity(Container::Map, &map(&[], &[(one[0], one[0])])),
+            0
+        );
+    }
+
+    #[test]
+    fn heterogeneous_elements_fall_back_and_stop_learning_after_repeated_misses() {
+        let shape = |extras: u8| Entry {
+            extras,
+            row: extras.is_multiple_of(2),
+            scalars: extras.is_multiple_of(3),
+            ..Entry::plain(i32::from(extras), "label")
+        };
+        // Alternating layouts are cached side by side and keep matching.
+        let alternating: Vec<_> = (0..8).map(|index| shape(index % 2)).collect();
+        assert_eq!(assert_parity(Container::Array, &array(&alternating)), 6);
+        let pairs: Vec<_> = alternating.iter().map(|entry| (*entry, shape(5))).collect();
+        assert_eq!(assert_parity(Container::Map, &map(&[], &pairs)), 6 + 7);
+        // Eight straight misses stop learning; later repeats of a seen layout read ordinarily.
+        let distinct: Vec<_> = (0..8).chain([0, 0, 1, 1]).map(shape).collect();
+        assert_eq!(assert_parity(Container::Array, &array(&distinct)), 0);
+        // A fifth layout evicts the least recently matched one.
+        let evicting: Vec<_> = [0, 1, 2, 3, 0, 4, 0, 1].into_iter().map(shape).collect();
+        assert_eq!(assert_parity(Container::Array, &array(&evicting)), 2);
+    }
+
+    #[test]
+    fn replayed_scalars_and_decoder_reads_match_ordinary_values() {
+        let entries: Vec<_> = (0..5)
+            .map(|count| Entry {
+                row: true,
+                scalars: true,
+                extras: 1,
+                ..Entry::plain(count, "scalars")
+            })
+            .collect();
+        assert_eq!(assert_parity(Container::Array, &array(&entries)), 4);
+        // Every field declined: the decoder-owned name keeps its record in every element.
+        let filter = Decline {
+            all: true,
+            header_only: true,
+            omit: true,
+        };
+        let (value, _) = decode(Container::Array, &array(&entries), Some(&filter), true);
+        let PropertyValue::Array(values) = value.unwrap() else {
+            panic!("array")
+        };
+        assert_eq!(values.len(), entries.len());
+        for value in values {
+            let PropertyValue::Struct(stream) = value else {
+                panic!("decoder-owned field must keep its element")
+            };
+            assert_eq!(stream.records.len(), 1);
+            assert_eq!(
+                stream.records[0].value,
+                PropertyValue::Name(name_ref(ENTRY, 0))
+            );
+        }
+    }
+
+    #[test]
+    fn omitted_elements_keep_their_indices() {
+        let entries: Vec<_> = (0..4)
+            .map(|count| Entry {
+                row: count == 2,
+                ..Entry::plain(count, "kept")
+            })
+            .collect();
+        let filter = Decline {
+            all: true,
+            header_only: true,
+            omit: true,
+        };
+        let (value, hits) = decode(Container::Array, &array(&entries), Some(&filter), true);
+        assert!(hits > 0);
+        let PropertyValue::Array(values) = value.unwrap() else {
+            panic!("array")
+        };
+        let not_requested = PropertyValue::Raw {
+            reason: RawReason::NotRequested,
+        };
+        assert_eq!(values.len(), 4);
+        assert_eq!(values[0], not_requested);
+        assert_eq!(values[1], not_requested);
+        assert!(matches!(&values[2], PropertyValue::Struct(stream) if stream.records.len() == 1));
+        assert_eq!(values[3], not_requested);
+    }
+
+    fn fixture_packages(directory: &std::path::Path, packages: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                fixture_packages(&path, packages);
+            } else if matches!(
+                path.extension().and_then(|value| value.to_str()),
+                Some("uasset" | "umap")
+            ) {
+                packages.push(path);
+            }
+        }
+    }
+
+    /// Saved packages: replayed container elements decode exactly as the ordinary reader does,
+    /// with and without a filter that omits declined records.
+    #[test]
+    fn fixture_exports_decode_identically_with_and_without_element_replay() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+        let mut paths = Vec::new();
+        fixture_packages(&root, &mut paths);
+        paths.sort();
+        let filter = Decline {
+            all: false,
+            header_only: true,
+            omit: true,
+        };
+        let mut hits = 0;
+        for path in &paths {
+            let bytes = std::fs::read(path).unwrap();
+            let Ok(package) = Package::parse(&bytes) else {
+                continue;
+            };
+            for property_filter in [None, Some(&filter as &dyn PropertyDecodeFilter)] {
+                let context = crate::asset::AssetDecodeContext {
+                    source: &bytes,
+                    package: &package,
+                    schemas: crate::schema::embedded_source_model(),
+                    property_filter,
+                };
+                for export in &package.exports {
+                    ELEMENT_REPLAY_DISABLED.with(|disabled| disabled.set(true));
+                    let expected = crate::asset::decode_export(export, &context);
+                    ELEMENT_REPLAY_DISABLED.with(|disabled| disabled.set(false));
+                    ELEMENT_REPLAY_HITS.with(|hits| hits.set(0));
+                    let actual = crate::asset::decode_export(export, &context);
+                    hits += ELEMENT_REPLAY_HITS.with(std::cell::Cell::get);
+                    assert_eq!(
+                        format!("{actual:?}"),
+                        format!("{expected:?}"),
+                        "{}: {}",
+                        path.display(),
+                        export.object_path
+                    );
+                }
+            }
+        }
+        assert!(hits > 0, "fixtures must exercise element replay");
+    }
+
+    #[test]
+    fn malformed_elements_keep_the_ordinary_diagnostics() {
+        let entries: Vec<_> = ["a", "bc", "a", "def"]
+            .iter()
+            .enumerate()
+            .map(|(count, label)| Entry::plain(count as i32, label))
+            .collect();
+        let pairs: Vec<_> = entries.iter().map(|entry| (*entry, *entry)).collect();
+        let filters = filters();
+        for (container, payload) in [
+            (Container::Array, array(&entries)),
+            (Container::Set, set(&entries[..1], &entries[1..])),
+            (Container::Map, map(&[], &pairs)),
+        ] {
+            let mut mutations: Vec<Vec<u8>> = (0..payload.len())
+                .map(|end| payload[..end].to_vec())
+                .collect();
+            for offset in 4..payload.len() {
+                for mask in [0x01, 0x10, 0x80, 0xff] {
+                    let mut bytes = payload.clone();
+                    bytes[offset] ^= mask;
+                    mutations.push(bytes);
+                }
+            }
+            for mutation in &mutations {
+                for filter in [None, Some(&filters[3]), Some(&filters[7])] {
+                    let filter = filter.map(|filter| filter as &dyn PropertyDecodeFilter);
+                    let (expected, _) = decode(container, mutation, filter, false);
+                    let (actual, _) = decode(container, mutation, filter, true);
+                    assert_eq!(
+                        format!("{actual:?}"),
+                        format!("{expected:?}"),
+                        "{container:?}"
+                    );
+                }
+            }
         }
     }
 }

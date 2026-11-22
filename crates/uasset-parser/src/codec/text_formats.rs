@@ -36,9 +36,8 @@ pub(super) fn retry_record(
             name: record.name,
         },
         DecodeScope {
-            depth: scope.depth,
-            filter: scope.filter,
             formatted_text_budget: Some(&budget),
+            ..scope
         },
     )
     .ok()??;

@@ -31,12 +31,9 @@ pub(crate) fn property_guids(
     // PropertyGuids is TMap<FName, FGuid>. PropertyMap.cpp omits the struct identity
     // in legacy tags; this exact owning declaration supplies it without guessing.
     for record in &mut properties.records {
-        if context.package.resolve_name(record.name).as_deref() != Some("PropertyGuids")
-            || context
-                .package
-                .resolve_name(record.type_name.name)
-                .as_deref()
-                != Some("MapProperty")
+        // No numbered name renders as these unsuffixed names, so borrow-only lookups agree.
+        if context.package.resolve_name_str(record.name) != Some("PropertyGuids")
+            || context.package.resolve_name_str(record.type_name.name) != Some("MapProperty")
             || !matches!(record.value, PropertyValue::Raw { .. })
         {
             continue;
@@ -67,7 +64,7 @@ fn read_property_guids(
         )?;
         for _ in 0..removed {
             let name = reader.read_name_ref("PropertyGuids.RemovedKey")?;
-            if context.package.resolve_name(name).is_none() {
+            if !context.package.has_name(name) {
                 return Err(invalid_layout(
                     &ObjectPath::new("PropertyGuids"),
                     "removed key",
@@ -81,7 +78,7 @@ fn read_property_guids(
     let mut entries = Vec::with_capacity(capacity);
     for _ in 0..count {
         let name = reader.read_name_ref("PropertyGuids.Key")?;
-        if context.package.resolve_name(name).is_none() {
+        if !context.package.has_name(name) {
             return Err(invalid_layout(&ObjectPath::new("PropertyGuids"), "key"));
         }
         entries.push(crate::property::MapEntry {
@@ -153,13 +150,13 @@ pub(super) fn decode(
                 .collect(),
         ),
     }];
-    let count = reader.read_count(&format!("{path}.FuncMap.Count"))?;
+    let count = reader.read_count(&format_args!("{path}.FuncMap.Count"))?;
     let capacity =
         reader.checked_vec_capacity::<crate::property::MapEntry>(count, 12, path.as_str())?;
     let mut functions = Vec::with_capacity(capacity);
     for index in 0..count {
-        let name = reader.read_name_ref(&format!("{path}.FuncMap[{index}].Name"))?;
-        if context.package.resolve_name(name).is_none() {
+        let name = reader.read_name_ref(&format_args!("{path}.FuncMap[{index}].Name"))?;
+        if !context.package.has_name(name) {
             return Err(invalid_layout(path, "function name"));
         }
         let function = reference(reader, context, path, "Function")?;
@@ -182,8 +179,8 @@ pub(super) fn decode(
     });
     for field in ["ClassConfigName", "ClassGeneratedBy"] {
         let value = if field == "ClassConfigName" {
-            let name = reader.read_name_ref(&format!("{path}.{field}"))?;
-            if context.package.resolve_name(name).is_none() {
+            let name = reader.read_name_ref(&format_args!("{path}.{field}"))?;
+            if !context.package.has_name(name) {
                 return Err(invalid_layout(path, field));
             }
             PropertyValue::Name(name)
@@ -195,7 +192,7 @@ pub(super) fn decode(
             value,
         });
     }
-    let count = reader.read_count(&format!("{path}.Interfaces.Count"))?;
+    let count = reader.read_count(&format_args!("{path}.Interfaces.Count"))?;
     let capacity = reader.checked_vec_capacity::<PropertyValue>(count, 12, path.as_str())?;
     let mut interfaces = Vec::with_capacity(capacity);
     for _ in 0..count {
@@ -224,11 +221,11 @@ pub(super) fn decode(
         name: Cow::Borrowed("DeprecatedForceScriptOrder"),
         value: PropertyValue::Bool(read_archive_bool(reader, path.as_str())?),
     });
-    let dummy = reader.read_name_ref(&format!("{path}.Dummy"))?;
-    if context.package.resolve_name(dummy).as_deref() != Some("None") {
+    let dummy = reader.read_name_ref(&format_args!("{path}.Dummy"))?;
+    if context.package.resolve_name_str(dummy) != Some("None") {
         return Err(invalid_layout(path, "class dummy name"));
     }
-    if read_archive_bool(reader, &format!("{path}.Cooked"))? {
+    if read_archive_bool(reader, &format_args!("{path}.Cooked"))? {
         return Err(invalid_layout(path, "cooked class"));
     }
     data.push(NativeProperty {
@@ -244,8 +241,8 @@ fn reference(
     path: &ObjectPath,
     field: &str,
 ) -> Result<PropertyValue, AssetError> {
-    let index = read_package_index(reader, &format!("{path}.{field}"))?;
-    if index != PackageIndex::Null && context.package.resolve_index(index).is_none() {
+    let index = read_package_index(reader, &format_args!("{path}.{field}"))?;
+    if index != PackageIndex::Null && context.package.resolve_index_str(index).is_none() {
         return Err(invalid_layout(path, field));
     }
     Ok(PropertyValue::ObjectRef(index))
@@ -305,7 +302,8 @@ mod tests {
                         &export,
                         &context,
                         &properties,
-                        &mut Reader::new(&bytes[..end])
+                        &mut Reader::new(&bytes[..end]),
+                        None
                     )
                     .is_ok()
                 );
@@ -406,6 +404,7 @@ mod tests {
                 &context,
                 &properties,
                 &mut Reader::new(&bytes),
+                None,
             )
             .unwrap();
             assert!(native.is_some());

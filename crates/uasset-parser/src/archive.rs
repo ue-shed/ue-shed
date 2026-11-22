@@ -519,6 +519,26 @@ impl<'a> Reader<'a> {
         ))
     }
 
+    /// The well-formed name reference at the cursor, without advancing or validating it against a
+    /// name map. `None` when fewer than 8 bytes remain or either half is negative.
+    #[inline]
+    pub(crate) fn peek_name_ref(&self) -> Option<NameRef> {
+        if self.remaining() < 8 {
+            return None;
+        }
+        let start = usize::try_from(self.position).ok()?;
+        let bytes = self.source.get(start..)?.first_chunk::<8>()?;
+        let index = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let number = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        if (index | number) & 0x8000_0000 != 0 {
+            return None;
+        }
+        Some(NameRef {
+            index: NameIndex(index),
+            number,
+        })
+    }
+
     pub fn read_name_ref(
         &mut self,
         path: &(impl fmt::Display + ?Sized),

@@ -38,13 +38,9 @@ pub(super) fn decode(
         "None" => {}
         // UniversalObjectLocatorModule.cpp and Engine/Private/UnrealEngine.cpp.
         "subobj" | "uobj" | "actor" | "asset" | "animinst" => {
-            let mut payload = read_tagged_property_stream(
-                &mut probe,
-                &package.summary.versions,
-                &package.names,
-                path,
-            )
-            .ok()?;
+            let mut payload =
+                read_tagged_stream_for_scope(&mut probe, package, scope.nested(), path, None)
+                    .ok()?;
             decode_property_stream_values_at_depth(source, &mut payload, package, scope.nested())
                 .ok()?;
             fields.push(NativeProperty {
@@ -236,8 +232,7 @@ mod tests {
                 &"Fixture",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
-                    filter: None,
-                    formatted_text_budget: None
+                    ..DecodeScope::root(None)
                 }
             )
             .is_none()

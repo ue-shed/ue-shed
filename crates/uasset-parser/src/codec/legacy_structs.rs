@@ -187,12 +187,8 @@ fn tagged(
             "property nesting limit",
         ));
     }
-    let mut stream = read_tagged_property_stream(
-        reader,
-        &package.summary.versions,
-        &package.names,
-        "DeclaredContainer",
-    )?;
+    let mut stream =
+        read_tagged_stream_for_scope(reader, package, scope.nested(), "DeclaredContainer", None)?;
     decode_property_stream_values_at_depth(source, &mut stream, package, scope.nested())?;
     Ok(PropertyValue::Struct(Box::new(stream)))
 }

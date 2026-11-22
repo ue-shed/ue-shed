@@ -77,10 +77,10 @@ impl AssetDecoder for FunctionDecoder {
         let mut reader = context
             .package
             .export_reader(context.source, export)?
-            .bounded(object.tail, &format!("{path}.UStruct"))?;
+            .bounded(object.tail, &format_args!("{path}.UStruct"))?;
         // The generic tail starts at UObject::Serialize's object GUID flag, as a struct's does.
         let footer_offset = reader.tell();
-        let footer = reader.read_i32(&format!("{path}.ExportFooter"))?;
+        let footer = reader.read_i32(&format_args!("{path}.ExportFooter"))?;
         if footer != 0 {
             return Err(AssetError::new(
                 AssetErrorKind::MalformedData,
@@ -90,23 +90,23 @@ impl AssetDecoder for FunctionDecoder {
             ));
         }
         decode_struct_members(&mut reader, context, path)?;
-        let _bytecode_size = reader.read_i32(&format!("{path}.ScriptBytecodeSize"))?;
+        let _bytecode_size = reader.read_i32(&format_args!("{path}.ScriptBytecodeSize"))?;
         let storage_offset = reader.tell();
-        let storage_size = reader.read_i32(&format!("{path}.ScriptStorageSize"))?;
+        let storage_size = reader.read_i32(&format_args!("{path}.ScriptStorageSize"))?;
         let storage_size = u64::try_from(storage_size).map_err(|_| {
             AssetError::new(
                 AssetErrorKind::MalformedData,
                 format!("negative script storage size {storage_size} at byte {storage_offset}"),
             )
         })?;
-        let script = reader.take_bounded(storage_size, &format!("{path}.Script"))?;
+        let script = reader.take_bounded(storage_size, &format_args!("{path}.Script"))?;
         let script_texts = ScriptWalk::new(script, context, path.as_str()).texts()?;
 
         // UFunction::Serialize after UStruct: flags, the unused replication offset of network
         // functions, then the event graph fast-call target.
-        let flags = reader.read_u32(&format!("{path}.FunctionFlags"))?;
+        let flags = reader.read_u32(&format_args!("{path}.FunctionFlags"))?;
         if flags & FUNC_NET != 0 {
-            reader.read_i16(&format!("{path}.RepOffset"))?;
+            reader.read_i16(&format_args!("{path}.RepOffset"))?;
         }
         if context
             .package
@@ -114,8 +114,8 @@ impl AssetDecoder for FunctionDecoder {
             .versions
             .is_at_least_ue4(UE4_SERIALIZE_BLUEPRINT_EVENTGRAPH_FASTCALLS_IN_UFUNCTION)
         {
-            reader.read_i32(&format!("{path}.EventGraphFunction"))?;
-            reader.read_i32(&format!("{path}.EventGraphCallOffset"))?;
+            reader.read_i32(&format_args!("{path}.EventGraphFunction"))?;
+            reader.read_i32(&format_args!("{path}.EventGraphCallOffset"))?;
         }
         if reader.remaining() != 0 {
             return Err(AssetError::new(
@@ -280,6 +280,16 @@ struct ScriptWalk<'r, 'a> {
     texts: Vec<TextValue>,
 }
 
+/// `{path}.Script@{offset}`, formatted lazily so successful reads never allocate it.
+#[derive(Clone, Copy)]
+struct ScriptAt<'a>(&'a str, u64);
+
+impl std::fmt::Display for ScriptAt<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}.Script@{}", self.0, self.1)
+    }
+}
+
 impl<'r, 'a> ScriptWalk<'r, 'a> {
     fn new(
         reader: crate::archive::Reader<'r>,
@@ -331,8 +341,9 @@ impl<'r, 'a> ScriptWalk<'r, 'a> {
         )
     }
 
-    fn at(&self) -> String {
-        format!("{}.Script@{}", self.path, self.reader.tell())
+    /// The breadcrumb of the next read, rendered only if that read fails.
+    fn at(&self) -> ScriptAt<'a> {
+        ScriptAt(self.path, self.reader.tell())
     }
 
     fn skip(&mut self, bytes: u64) -> Result<(), AssetError> {

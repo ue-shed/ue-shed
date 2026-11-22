@@ -10,6 +10,7 @@ use std::fmt::{self, Write};
 
 use serde::Serialize;
 
+use uasset_parser::archive::NameRef;
 use uasset_parser::asset::{
     ANIM_SEQUENCE_CLASS, CURVETABLE_CLASS, DecodedAsset, DecodedUObject, PropertyDecodeFilter,
     SKELETON_CLASS, USERDEFINEDENUM_CLASS, USERDEFINEDSTRUCT_CLASS,
@@ -27,16 +28,49 @@ const TEXT_PROJECTION_READ_PROPERTIES: &[&str] = &[
 ];
 
 /// Materializes tagged properties needed by text projection and Blueprint class identity.
+///
+/// Blueprint graph pins keep only their `FText` fields: see
+/// [`PropertyDecodeFilter::omit_non_text_pin_fields`].
 pub struct TextDecodeFilter;
 
 impl PropertyDecodeFilter for TextDecodeFilter {
     fn decode(&self, package: &Package, record: &PropertyRecord) -> bool {
         type_may_contain_text(package, &record.type_name)
             || record.struct_guid.is_some_and(|guid| !guid.is_zero())
-            || package
-                .resolve_name_str(record.name)
-                .is_some_and(|name| TEXT_PROJECTION_READ_PROPERTIES.contains(&name))
+            || is_text_projection_read_property(package, record.name)
     }
+
+    // Reads only the record's name, type tree and struct GUID, and keeps no state.
+    fn depends_only_on_record_header(&self) -> bool {
+        true
+    }
+
+    // Text projection and Blueprint class identity skip `NotRequested` values entirely.
+    fn omit_unrequested_records(&self) -> bool {
+        true
+    }
+
+    // `decode` declines a record exactly when its type is text-free, it has no user struct GUID,
+    // and its name is not read by name. A text-free top-level type is text-free whatever its
+    // parameters, and only `StructProperty` tags carry struct GUIDs.
+    fn may_decode_tag(&self, package: &Package, name: NameRef, top_type: NameRef) -> bool {
+        !package
+            .resolve_name_cow(top_type)
+            .as_deref()
+            .is_some_and(is_text_free_property_type)
+            || is_text_projection_read_property(package, name)
+    }
+
+    // `project_text_asset` reads only `friendly_name` and `default_text_value` from pins.
+    fn omit_non_text_pin_fields(&self) -> bool {
+        true
+    }
+}
+
+fn is_text_projection_read_property(package: &Package, name: NameRef) -> bool {
+    package
+        .resolve_name_str(name)
+        .is_some_and(|name| TEXT_PROJECTION_READ_PROPERTIES.contains(&name))
 }
 
 /// The property path of a text literal in a compiled function's script bytecode.
@@ -192,7 +226,7 @@ pub fn project_text_asset(package: &Package, asset: &DecodedAsset) -> TextAssetP
             // If a graph's Nodes array itself was rejected, none of its pin streams can be
             // proven covered. Gather tables need not contain those editor-only occurrences.
             if object.properties.records.iter().any(|property| {
-                package.resolve_name_cow(property.name).as_deref() == Some("Nodes")
+                package.resolve_name_str(property.name) == Some("Nodes")
                     && !matches!(property.value, PropertyValue::Array(_))
             }) && (object.class_path.as_str() == uasset_parser::asset::ED_GRAPH_CLASS
                 || package.exports.iter().any(|export| {
@@ -697,12 +731,11 @@ fn legacy_tail_may_contain_text(package: &Package, object: &DecodedUObject) -> b
         ))
 }
 
-/// Unknown structs stay text-capable. Core math and paths use fixed native layouts
-/// (NoExportTypes.h / SoftObjectPath.cpp, UE 4.27 and 5.7). User struct GUIDs override names.
-fn type_may_contain_text(package: &Package, ty: &PropertyTypeName) -> bool {
-    match package.resolve_name_cow(ty.name).as_deref() {
-        Some(
-            "BoolProperty"
+/// Property types that hold no `FText` whatever their type parameters.
+fn is_text_free_property_type(name: &str) -> bool {
+    matches!(
+        name,
+        "BoolProperty"
             | "ByteProperty"
             | "EnumProperty"
             | "IntProperty"
@@ -727,8 +760,15 @@ fn type_may_contain_text(package: &Package, ty: &PropertyTypeName) -> bool {
             | "MulticastDelegateProperty"
             | "MulticastInlineDelegateProperty"
             | "MulticastSparseDelegateProperty"
-            | "FieldPathProperty",
-        ) => false,
+            | "FieldPathProperty"
+    )
+}
+
+/// Unknown structs stay text-capable. Core math and paths use fixed native layouts
+/// (NoExportTypes.h / SoftObjectPath.cpp, UE 4.27 and 5.7). User struct GUIDs override names.
+fn type_may_contain_text(package: &Package, ty: &PropertyTypeName) -> bool {
+    match package.resolve_name_cow(ty.name).as_deref() {
+        Some(name) if is_text_free_property_type(name) => false,
         Some("ArrayProperty" | "SetProperty" | "OptionalProperty") => ty
             .parameters
             .first()

@@ -27,7 +27,7 @@ pub(crate) fn read_layout(
             format!("missing native layout {name}"),
         )
     })?;
-    decode_native(reader, layout, path).map_err(|failure| match failure {
+    crate::native::decode_native_layout(reader, layout, path).map_err(|failure| match failure {
         NativeError::Archive(failure) => failure.into(),
         NativeError::Layout(message) => error(
             reader,
@@ -448,18 +448,17 @@ fn generated_struct(
             "generated native properties require the verified UE 5.7 package revision",
         ));
     }
-    let value =
-        decode_native(reader, layout, path)
-            .map(property)
-            .map_err(|failure| match failure {
-                NativeError::Archive(failure) => PropertyError::from(failure),
-                NativeError::Layout(message) => error(
-                    reader,
-                    path,
-                    PropertyErrorKind::UnsupportedCapability,
-                    message,
-                ),
-            })?;
+    let value = crate::native::decode_native_layout(reader, layout, path)
+        .map(property)
+        .map_err(|failure| match failure {
+            NativeError::Archive(failure) => PropertyError::from(failure),
+            NativeError::Layout(message) => error(
+                reader,
+                path,
+                PropertyErrorKind::UnsupportedCapability,
+                message,
+            ),
+        })?;
     if type_path == "/Script/CoreUObject.Box"
         && !matches!(field(&value, "IsValid"), Some(PropertyValue::UInt(0 | 1)))
     {
@@ -639,12 +638,8 @@ fn instanced(
             // A self-describing tagged stream can be decoded without external project source.
             // Other custom native structs retain their bounded span instead of guessing a layout.
             let attempt = (|| {
-                let mut stream = read_tagged_property_stream(
-                    &mut inner,
-                    &package.summary.versions,
-                    &package.names,
-                    path,
-                )?;
+                let mut stream =
+                    read_tagged_stream_for_scope(&mut inner, package, scope.nested(), path, None)?;
                 decode_property_stream_values_at_depth(
                     source,
                     &mut stream,
@@ -799,8 +794,7 @@ mod tests {
                 &"bag",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
-                    filter: None,
-                    formatted_text_budget: None
+                    ..DecodeScope::root(None)
                 }
             )
             .unwrap_err()
@@ -1067,8 +1061,7 @@ mod tests {
                 &"test",
                 DecodeScope {
                     depth: MAX_PROPERTY_DECODE_DEPTH,
-                    filter: None,
-                    formatted_text_budget: None
+                    ..DecodeScope::root(None)
                 }
             )
             .unwrap_err()

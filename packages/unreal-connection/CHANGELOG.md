@@ -1,5 +1,11 @@
 # @ue-shed/unreal-connection
 
+## 0.33.1
+
+### Patch Changes
+
+- @ue-shed/protocol@0.33.1
+
 ## 0.33.0
 
 ### Patch Changes

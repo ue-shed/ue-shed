@@ -1606,6 +1606,67 @@ impl StoredSection {
         }
         Ok(())
     }
+
+    /// Calls `visit` with consecutive batches of rows, in row order: each batch's first row, its
+    /// rows, and their records back to back. A batch ends once it holds `target` record bytes,
+    /// so at most about `target` bytes plus one decode pass are held. A failure to decode is
+    /// reported after the rows before it are visited, as [`Self::for_each_record`] reports it.
+    fn for_each_batch(
+        &self,
+        rows: &[RowShape],
+        target: usize,
+        mut visit: impl FnMut(usize, &[RowShape], &[u8]) -> Result<(), CatalogError>,
+    ) -> Result<(), CatalogError> {
+        let spans = self.block_spans()?;
+        let length = self.header.length;
+        let (mut raw, mut raw_start, mut next_block, mut offset) = (Vec::new(), 0_u64, 0, 0_u64);
+        // The batch's first row and where its records start.
+        let (mut first, mut first_offset) = (0, 0_u64);
+        for (row, shape) in rows.iter().enumerate() {
+            if row > first && offset - first_offset >= target as u64 {
+                let to = (offset - raw_start) as usize;
+                visit(
+                    first,
+                    &rows[first..row],
+                    &raw[(first_offset - raw_start) as usize..to],
+                )?;
+                raw.drain(..to);
+                (raw_start, first, first_offset) = (offset, row, offset);
+            }
+            let end = offset + u64::from(shape.len);
+            while raw_start + (raw.len() as u64) < end {
+                let last = (next_block + DECODE_BATCH_BLOCKS).min(spans.len());
+                let decoded = if next_block == last {
+                    Err(corrupt("records leave their section"))
+                } else {
+                    let decoded = (next_block..last)
+                        .map(|block| block_length(length, block))
+                        .sum();
+                    decode_blocks(&self.blocks, 0, &spans[next_block..last], decoded)
+                };
+                match decoded {
+                    Ok(decoded) => raw.extend_from_slice(&decoded),
+                    Err(error) => {
+                        if row > first {
+                            let (from, to) = (first_offset - raw_start, offset - raw_start);
+                            visit(first, &rows[first..row], &raw[from as usize..to as usize])?;
+                        }
+                        return Err(error);
+                    }
+                }
+                next_block = last;
+            }
+            offset = end;
+        }
+        if rows.len() > first {
+            let (from, to) = (first_offset - raw_start, offset - raw_start);
+            visit(first, &rows[first..], &raw[from as usize..to as usize])?;
+        }
+        if offset != length {
+            return Err(corrupt("records do not fill their section"));
+        }
+        Ok(())
+    }
 }
 
 /// Writes `values` as one little-endian section at the file's position, compressing and writing
@@ -4140,14 +4201,103 @@ struct Postings {
     strings: usize,
 }
 
+/// Rows below which postings are placed on one thread: spawning costs more than it saves.
+const PARALLEL_POSTING_ROWS: usize = 4096;
+/// Posting entries below which postings are placed on one thread.
+const PARALLEL_POSTING_ENTRIES: u32 = 16_384;
+/// Decoded record bytes one parallel placement pass holds. A record names at most one key per
+/// four bytes, so a pass holds at most twice this in (key, row) pairs.
+const POSTING_BATCH_BYTES: usize = 16 * 1024 * 1024;
+/// Keys below which the posting directory is encoded on one thread.
+const PARALLEL_DIRECTORY_KEYS: usize = 65_536;
+
+/// How posting lists are placed: on one thread in one pass over the records, or a batch of
+/// records at a time across `threads` threads; `Auto` places large catalogs in parallel.
+#[derive(Clone, Copy, Debug)]
+enum Placement {
+    Auto,
+    Serial,
+    Parallel { threads: usize, batch_bytes: usize },
+}
+
+/// Threads for a parallel posting pass.
+fn posting_threads() -> usize {
+    std::thread::available_parallelism()
+        .map_or(4, std::num::NonZeroUsize::get)
+        .clamp(1, MAX_CODEC_THREADS)
+}
+
+/// Splits keys `0..keys` into `parts` contiguous ranges of about equal `weight`, a nondecreasing
+/// cumulative weight with `weight(keys)` the whole. Returns the `parts + 1` range bounds.
+fn balanced_bounds(keys: usize, parts: usize, weight: impl Fn(usize) -> u64) -> Vec<usize> {
+    let parts = parts.max(1);
+    let whole = weight(keys);
+    let mut bounds = Vec::with_capacity(parts + 1);
+    let mut previous = 0;
+    bounds.push(previous);
+    for part in 1..parts {
+        let target = whole * part as u64 / parts as u64;
+        // The first key at or past the target.
+        let (mut low, mut high) = (previous, keys);
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if weight(middle) < target {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        previous = low;
+        bounds.push(previous);
+    }
+    bounds.push(keys);
+    bounds
+}
+
+/// Splits `values` into the consecutive pieces `bounds` marks.
+fn split_by_bounds<'v, T>(mut values: &'v mut [T], bounds: &[usize]) -> Vec<&'v mut [T]> {
+    let mut pieces = Vec::with_capacity(bounds.len().saturating_sub(1));
+    for range in bounds.windows(2) {
+        let (piece, rest) = std::mem::take(&mut values).split_at_mut(range[1] - range[0]);
+        pieces.push(piece);
+        values = rest;
+    }
+    pieces
+}
+
+/// The CRC-32 of `rows` as little-endian bytes, as the lists section stores them, converted
+/// through a stack buffer.
+fn list_checksum(rows: &[u32]) -> u64 {
+    const ROWS: usize = 1024;
+    let mut hasher = crc32fast::Hasher::new();
+    let mut buffer = [0_u8; ROWS * 4];
+    for chunk in rows.chunks(ROWS) {
+        for (bytes, row) in buffer.as_chunks_mut::<4>().0.iter_mut().zip(chunk) {
+            bytes.copy_from_slice(&row.to_le_bytes());
+        }
+        hasher.update(&buffer[..chunk.len() * 4]);
+    }
+    u64::from(hasher.finalize())
+}
+
 impl Postings {
-    /// Places each key's rows, counted as the rows arrived, in one pass over the records: no
-    /// list grows on its own.
+    /// Places each key's rows, counted as the rows arrived: no list grows on its own. Large
+    /// catalogs are placed in parallel, with the same result as one pass.
     fn build(
         payload: &StoredSection,
         rows: &[RowShape],
         strings: u64,
         counts: [Vec<u32>; POSTING_KINDS],
+    ) -> Result<Self, CatalogError> {
+        Self::build_with(payload, rows, strings, counts, Placement::Auto)
+    }
+
+    fn build_with(
+        payload: &StoredSection,
+        rows: &[RowShape],
+        strings: u64,
+        counts: [Vec<u32>; POSTING_KINDS],
+        placement: Placement,
     ) -> Result<Self, CatalogError> {
         let strings_len = usize::try_from(strings).map_err(|_| corrupt("too many strings"))?;
         let keys = POSTING_KINDS * strings_len;
@@ -4163,23 +4313,35 @@ impl Postings {
             }
         }
         starts.push(total);
-        let mut next = starts[..keys].to_vec();
-        let mut last = vec![u32::MAX; keys];
         let mut placed = vec![0_u32; total as usize];
-        payload.for_each_record(rows, |row, shape, record| {
-            if shape.package {
-                record_keys(record, strings, strings_len, |key| {
-                    if last[key] != row {
-                        last[key] = row;
-                        if let Some(slot) = placed.get_mut(next[key] as usize) {
-                            *slot = row;
-                        }
-                        next[key] += 1;
-                    }
-                })?;
+        let placement = match placement {
+            Placement::Auto
+                if rows.len() >= PARALLEL_POSTING_ROWS && total >= PARALLEL_POSTING_ENTRIES =>
+            {
+                Placement::Parallel {
+                    threads: posting_threads(),
+                    batch_bytes: POSTING_BATCH_BYTES,
+                }
             }
-            Ok(())
-        })?;
+            Placement::Auto => Placement::Serial,
+            placement => placement,
+        };
+        let next = match placement {
+            // Pairs hold keys as u32.
+            Placement::Parallel {
+                threads,
+                batch_bytes,
+            } if threads > 1 && u32::try_from(keys).is_ok() => place_parallel(
+                payload,
+                rows,
+                strings,
+                &starts,
+                &mut placed,
+                threads,
+                batch_bytes,
+            )?,
+            _ => place_serial(payload, rows, strings, &starts, &mut placed)?,
+        };
         if next.iter().zip(&starts[1..]).any(|(next, end)| next != end) {
             return Err(corrupt("records do not match their posting counts"));
         }
@@ -4192,30 +4354,258 @@ impl Postings {
 
     /// The posting directory (section 2): each non-empty list's key, offset, length and checksum.
     fn directory(&self) -> Result<Vec<u8>, CatalogError> {
-        let mut directory = Vec::new();
-        put32(&mut directory, 0)?;
+        self.directory_with(posting_threads(), PARALLEL_DIRECTORY_KEYS)
+    }
+
+    /// [`Self::directory`], encoded as `threads` key ranges in parallel once there are
+    /// `parallel_keys` keys; the ranges' entries are joined in key order.
+    fn directory_with(
+        &self,
+        threads: usize,
+        parallel_keys: usize,
+    ) -> Result<Vec<u8>, CatalogError> {
+        let keys = self.starts.len().saturating_sub(1);
+        let threads = if keys < parallel_keys {
+            1
+        } else {
+            threads.max(1)
+        };
+        // A range's work is its keys and its entries.
+        let bounds = balanced_bounds(keys, threads, |key| {
+            u64::from(self.starts[key]) + key as u64
+        });
+        let parts = if threads == 1 {
+            vec![self.directory_entries(0, keys)]
+        } else {
+            std::thread::scope(|scope| {
+                let workers = bounds
+                    .windows(2)
+                    .map(|range| {
+                        let (first, end) = (range[0], range[1]);
+                        scope.spawn(move || self.directory_entries(first, end))
+                    })
+                    .collect::<Vec<_>>();
+                workers
+                    .into_iter()
+                    .map(|worker| {
+                        worker
+                            .join()
+                            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
+        let parts = parts
+            .into_iter()
+            .collect::<Result<Vec<_>, CatalogError>>()?;
+        let count = parts.iter().map(|(count, _)| count).sum::<usize>();
+        let count = u32::try_from(count).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+        let mut directory =
+            Vec::with_capacity(4 + parts.iter().map(|(_, bytes)| bytes.len()).sum::<usize>());
+        directory.extend_from_slice(&count.to_le_bytes());
+        for (_, bytes) in &parts {
+            directory.extend_from_slice(bytes);
+        }
+        Ok(directory)
+    }
+
+    /// The directory entries of the non-empty lists among keys `first..end`, and their count.
+    fn directory_entries(
+        &self,
+        first: usize,
+        end: usize,
+    ) -> Result<(usize, Vec<u8>), CatalogError> {
         let mut count = 0_usize;
-        let mut list = Vec::new();
-        for (key, bounds) in self.starts.windows(2).enumerate() {
-            let (start, end) = (bounds[0] as usize, bounds[1] as usize);
+        let mut entries = Vec::new();
+        for key in first..end {
+            let (start, end) = (self.starts[key] as usize, self.starts[key + 1] as usize);
             if start == end {
                 continue;
             }
             count += 1;
-            list.clear();
-            for row in &self.rows[start..end] {
-                list.extend_from_slice(&row.to_le_bytes());
-            }
-            directory.push((key / self.strings) as u8);
-            directory.extend_from_slice(&((key % self.strings) as u32).to_le_bytes());
-            put64(&mut directory, start as u64 * 4);
-            put32(&mut directory, end - start)?;
-            put64(&mut directory, checksum(&list));
+            entries.push((key / self.strings) as u8);
+            entries.extend_from_slice(&((key % self.strings) as u32).to_le_bytes());
+            put64(&mut entries, start as u64 * 4);
+            put32(&mut entries, end - start)?;
+            put64(&mut entries, list_checksum(&self.rows[start..end]));
         }
-        let count = u32::try_from(count).map_err(|_| corrupt("Catalog count exceeds u32"))?;
-        directory[..4].copy_from_slice(&count.to_le_bytes());
-        Ok(directory)
+        Ok((count, entries))
     }
+}
+
+/// Places every package record's rows in one pass, in row order. Returns each key's next
+/// position, which ends at the next key's start when the counts were right.
+fn place_serial(
+    payload: &StoredSection,
+    rows: &[RowShape],
+    strings: u64,
+    starts: &[u32],
+    placed: &mut [u32],
+) -> Result<Vec<u32>, CatalogError> {
+    let keys = starts.len() - 1;
+    let strings_len = keys / POSTING_KINDS;
+    let mut next = starts[..keys].to_vec();
+    let mut last = vec![u32::MAX; keys];
+    payload.for_each_record(rows, |row, shape, record| {
+        if shape.package {
+            record_keys(record, strings, strings_len, |key| {
+                if last[key] != row {
+                    last[key] = row;
+                    if let Some(slot) = placed.get_mut(next[key] as usize) {
+                        *slot = row;
+                    }
+                    next[key] += 1;
+                }
+            })?;
+        }
+        Ok(())
+    })?;
+    Ok(next)
+}
+
+/// [`place_serial`], a bounded batch of records at a time. The keys are split into `threads`
+/// ranges of about equal entries, each owning its piece of `placed`. Per batch, threads collect
+/// each record's distinct keys as (key, row) pairs from contiguous runs of rows, sorted into the
+/// key ranges; then each range's thread places its pairs, run by run in row order, so every
+/// list is ascending exactly as one pass places it.
+fn place_parallel(
+    payload: &StoredSection,
+    rows: &[RowShape],
+    strings: u64,
+    starts: &[u32],
+    placed: &mut [u32],
+    threads: usize,
+    batch_bytes: usize,
+) -> Result<Vec<u32>, CatalogError> {
+    let keys = starts.len() - 1;
+    let strings_len = keys / POSTING_KINDS;
+    let ranges = balanced_bounds(keys, threads, |key| u64::from(starts[key]));
+    let entries = ranges
+        .iter()
+        .map(|&key| starts[key] as usize)
+        .collect::<Vec<_>>();
+    let mut next = starts[..keys].to_vec();
+    // The pairs each run collected for each key range, kept between batches for their capacity.
+    let mut pairs = vec![vec![Vec::<(u32, u32)>::new(); threads]; threads];
+    payload.for_each_batch(rows, batch_bytes, |first, shapes, bytes| {
+        let runs = split_runs(first, shapes, bytes, threads);
+        for run in &mut pairs {
+            run.iter_mut().for_each(Vec::clear);
+        }
+        let collected = std::thread::scope(|scope| {
+            let workers = runs
+                .into_iter()
+                .zip(pairs.iter_mut())
+                .map(|((first, shapes, bytes), out)| {
+                    let ranges = &ranges;
+                    scope.spawn(move || {
+                        collect_pairs(first, shapes, bytes, strings, strings_len, ranges, out)
+                    })
+                })
+                .collect::<Vec<_>>();
+            workers
+                .into_iter()
+                .map(|worker| {
+                    worker
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .collect::<Vec<_>>()
+        });
+        // The earliest run's failure is the earliest row's, as one pass reports it.
+        for result in collected {
+            result?;
+        }
+        let pairs = &pairs;
+        std::thread::scope(|scope| {
+            let pieces = split_by_bounds(&mut *placed, &entries)
+                .into_iter()
+                .zip(split_by_bounds(&mut next, &ranges));
+            for (range, (placed, next)) in pieces.enumerate() {
+                let (first_key, base) = (ranges[range], entries[range]);
+                scope.spawn(move || {
+                    for run in pairs {
+                        for &(key, row) in &run[range] {
+                            let key = key as usize;
+                            let at = &mut next[key - first_key];
+                            // A key with more rows than counted is reported once all are read.
+                            if *at < starts[key + 1] {
+                                placed[*at as usize - base] = row;
+                            }
+                            *at += 1;
+                        }
+                    }
+                });
+            }
+        });
+        Ok(())
+    })?;
+    Ok(next)
+}
+
+/// Splits a batch's rows into at most `parts` contiguous runs of about equal record bytes:
+/// each run's first row, its rows, and their records.
+fn split_runs<'r>(
+    first: usize,
+    shapes: &'r [RowShape],
+    bytes: &'r [u8],
+    parts: usize,
+) -> Vec<(usize, &'r [RowShape], &'r [u8])> {
+    let share = bytes.len().div_ceil(parts.max(1)).max(1);
+    let mut runs = Vec::with_capacity(parts);
+    let (mut run_row, mut run_byte, mut offset) = (0, 0, 0);
+    for (row, shape) in shapes.iter().enumerate() {
+        offset += shape.len as usize;
+        if offset >= share * (runs.len() + 1) && runs.len() + 1 < parts {
+            runs.push((
+                first + run_row,
+                &shapes[run_row..=row],
+                &bytes[run_byte..offset],
+            ));
+            (run_row, run_byte) = (row + 1, offset);
+        }
+    }
+    if run_row < shapes.len() {
+        runs.push((first + run_row, &shapes[run_row..], &bytes[run_byte..]));
+    }
+    runs
+}
+
+/// Collects each package record's distinct posting keys among `shapes` as (key, row) pairs, in
+/// row order, into `out` by the key range `ranges` puts each in.
+fn collect_pairs(
+    first: usize,
+    shapes: &[RowShape],
+    bytes: &[u8],
+    strings: u64,
+    strings_len: usize,
+    ranges: &[usize],
+    out: &mut [Vec<(u32, u32)>],
+) -> Result<(), CatalogError> {
+    let mut distinct = Vec::new();
+    let mut offset = 0;
+    for (index, shape) in shapes.iter().enumerate() {
+        let record = &bytes[offset..offset + shape.len as usize];
+        offset += shape.len as usize;
+        let row = u32::try_from(first + index).map_err(|_| corrupt("Catalog count exceeds u32"))?;
+        if !shape.package {
+            continue;
+        }
+        // A record can name a key more than once; its row is posted once.
+        distinct.clear();
+        record_keys(record, strings, strings_len, |key| distinct.push(key))?;
+        distinct.sort_unstable();
+        distinct.dedup();
+        let mut range = 0;
+        for &key in &distinct {
+            while key >= ranges[range + 1] {
+                range += 1;
+            }
+            // Keys fit u32: the parallel placement is only chosen when they do.
+            out[range].push((key as u32, row));
+        }
+    }
+    Ok(())
 }
 
 /// Calls `post` with each posting key a record names: its classes, names and dependency targets,
@@ -8704,5 +9094,305 @@ mod tests {
             .collect();
         let changed_groups: BTreeSet<u32> = delta_plan.changed.iter().map(|s| s.group).collect();
         assert_eq!(changed_groups, expected_groups);
+    }
+
+    /// Synthetic rows for posting placement: each row a package record (its class, name and
+    /// dependency ids) or `None` for a non-package row with filler bytes.
+    struct SyntheticRows {
+        payload: StoredSection,
+        rows: Vec<RowShape>,
+        strings: u64,
+        counts: [Vec<u32>; POSTING_KINDS],
+    }
+
+    type SyntheticRecord = (Vec<u32>, Vec<u32>, Vec<(u32, u8)>);
+
+    fn package_record(classes: &[u32], names: &[u32], dependencies: &[(u32, u8)]) -> Vec<u8> {
+        let mut out = vec![1];
+        put_string(&mut out, "/Game/Synthetic").unwrap();
+        out.extend([0, 0]);
+        for ids in [classes, names] {
+            put32(&mut out, ids.len()).unwrap();
+            for id in ids {
+                out.extend_from_slice(&id.to_le_bytes());
+            }
+        }
+        put32(&mut out, dependencies.len()).unwrap();
+        for (id, properties) in dependencies {
+            out.extend_from_slice(&id.to_le_bytes());
+            out.push(*properties);
+        }
+        out
+    }
+
+    /// Stores `records` as a payload section, with the posting counts the builder would have
+    /// counted for them (records that do not decode count nothing).
+    fn synthetic_rows(records: &[Option<Vec<u8>>], strings: u64) -> SyntheticRows {
+        let mut writer = SectionWriter::new();
+        let mut rows = Vec::new();
+        let strings_len = strings as usize;
+        let mut counts: [Vec<u32>; POSTING_KINDS] = Default::default();
+        for counts in &mut counts {
+            counts.resize(strings_len, 0);
+        }
+        for (index, record) in records.iter().enumerate() {
+            let (bytes, package) = match record {
+                Some(bytes) => (bytes.clone(), true),
+                None => (vec![0xAB; index % 37], false),
+            };
+            if package {
+                let mut keys = Vec::new();
+                if record_keys(&bytes, strings, strings_len, |key| keys.push(key)).is_ok() {
+                    keys.sort_unstable();
+                    keys.dedup();
+                    for key in keys {
+                        counts[key / strings_len][key % strings_len] += 1;
+                    }
+                }
+            }
+            writer.push(&bytes).unwrap();
+            rows.push(RowShape {
+                len: bytes.len() as u32,
+                package,
+            });
+        }
+        SyntheticRows {
+            payload: writer.finish().unwrap(),
+            rows,
+            strings,
+            counts,
+        }
+    }
+
+    /// Deterministic records with repeated ids inside a record, one hot name every package
+    /// names, and many cold keys.
+    fn generated_records(count: usize, strings: u32, seed: u64) -> Vec<Option<Vec<u8>>> {
+        let mut state = seed;
+        let mut next = move |bound: u32| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((state >> 33) % u64::from(bound)) as u32
+        };
+        (0..count)
+            .map(|_| {
+                if next(7) == 0 {
+                    return None;
+                }
+                let classes = (0..1 + next(4)).map(|_| next(8)).collect::<Vec<_>>();
+                let mut names = (0..next(60)).map(|_| next(strings)).collect::<Vec<_>>();
+                names.push(0);
+                names.push(0);
+                if let Some(&repeat) = names.first() {
+                    names.push(repeat);
+                }
+                let dependencies = (0..next(20))
+                    .map(|_| (next(strings), next(8) as u8))
+                    .collect::<Vec<_>>();
+                Some(package_record(&classes, &names, &dependencies))
+            })
+            .collect()
+    }
+
+    fn records_of(records: &[SyntheticRecord]) -> Vec<Option<Vec<u8>>> {
+        records
+            .iter()
+            .map(|(classes, names, dependencies)| {
+                Some(package_record(classes, names, dependencies))
+            })
+            .collect()
+    }
+
+    /// The directory as one pass encoded it before it was split by key range: the reference
+    /// every directory must equal byte for byte.
+    fn reference_directory(postings: &Postings) -> Vec<u8> {
+        let mut directory = Vec::new();
+        put32(&mut directory, 0).unwrap();
+        let mut count = 0_u32;
+        let mut list = Vec::new();
+        for (key, bounds) in postings.starts.windows(2).enumerate() {
+            let (start, end) = (bounds[0] as usize, bounds[1] as usize);
+            if start == end {
+                continue;
+            }
+            count += 1;
+            list.clear();
+            for row in &postings.rows[start..end] {
+                list.extend_from_slice(&row.to_le_bytes());
+            }
+            directory.push((key / postings.strings) as u8);
+            directory.extend_from_slice(&((key % postings.strings) as u32).to_le_bytes());
+            put64(&mut directory, start as u64 * 4);
+            put32(&mut directory, end - start).unwrap();
+            put64(&mut directory, checksum(&list));
+        }
+        directory[..4].copy_from_slice(&count.to_le_bytes());
+        directory
+    }
+
+    type PlacementOutcome = Result<(Vec<u32>, Vec<u32>), String>;
+
+    fn place(synthetic: &SyntheticRows, placement: Placement) -> PlacementOutcome {
+        Postings::build_with(
+            &synthetic.payload,
+            &synthetic.rows,
+            synthetic.strings,
+            synthetic.counts.clone(),
+            placement,
+        )
+        .map(|postings| {
+            let directory = reference_directory(&postings);
+            assert_eq!(postings.directory().unwrap(), directory);
+            for threads in [2, 3, 16] {
+                assert_eq!(postings.directory_with(threads, 0).unwrap(), directory);
+            }
+            (postings.starts, postings.rows)
+        })
+        .map_err(|error| format!("{error:?}"))
+    }
+
+    /// Every placement of `synthetic` (one pass, the automatic choice, and parallel passes over
+    /// several thread counts and batch sizes) has the same outcome. Returns it.
+    fn assert_placements_agree(synthetic: &SyntheticRows, batches: &[usize]) -> PlacementOutcome {
+        let serial = place(synthetic, Placement::Serial);
+        assert_eq!(place(synthetic, Placement::Auto), serial);
+        for threads in [2, 3, 5, 16] {
+            for &batch_bytes in batches {
+                let parallel = Placement::Parallel {
+                    threads,
+                    batch_bytes,
+                };
+                assert_eq!(
+                    place(synthetic, parallel),
+                    serial,
+                    "{threads} threads, {batch_bytes}-byte batches"
+                );
+            }
+        }
+        serial
+    }
+
+    #[test]
+    fn parallel_postings_match_one_pass_on_small_catalogs() {
+        for strings in [0, 1, 10] {
+            assert_placements_agree(&synthetic_rows(&[], strings), &[1, 4096]).unwrap();
+        }
+        let one = records_of(&[(vec![2, 2], vec![1, 3, 1], vec![(3, 1), (3, 2), (4, 0)])]);
+        let outcome = assert_placements_agree(&synthetic_rows(&one, 5), &[1, 4096]).unwrap();
+        assert_eq!(outcome.1, vec![0, 0, 0, 0, 0]);
+        let few = generated_records(40, 50, 7);
+        assert_placements_agree(&synthetic_rows(&few, 50), &[1, 64, 4096]).unwrap();
+        // Non-package rows only.
+        assert_placements_agree(&synthetic_rows(&[None, None, None], 3), &[1, 4096]).unwrap();
+    }
+
+    #[test]
+    fn parallel_postings_match_one_pass_across_batches() {
+        let records = generated_records(12_000, 3_000, 11);
+        let synthetic = synthetic_rows(&records, 3_000);
+        let (starts, placed) =
+            assert_placements_agree(&synthetic, &[4096, 64 * 1024, usize::MAX]).unwrap();
+        assert!(
+            placed.len() > usize::from(u16::MAX),
+            "enough entries to place in parallel"
+        );
+        // The hot name lists every package row, ascending.
+        let hot = NAME_POSTINGS as usize * 3_000;
+        let list = &placed[starts[hot] as usize..starts[hot + 1] as usize];
+        assert_eq!(
+            list.len(),
+            records.iter().filter(|record| record.is_some()).count()
+        );
+        assert!(list.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn parallel_postings_match_one_pass_across_decode_passes() {
+        // More records than one decode pass holds.
+        let mut records = generated_records(60_000, 20_000, 23);
+        let filler = (0..300).collect::<Vec<_>>();
+        for record in records.iter_mut().step_by(3) {
+            *record = Some(package_record(&[1], &filler, &[]));
+        }
+        let synthetic = synthetic_rows(&records, 20_000);
+        assert!(synthetic.payload.header.length > BLOCK_BYTES * DECODE_BATCH_BLOCKS as u64);
+        assert_placements_agree(&synthetic, &[1024 * 1024, POSTING_BATCH_BYTES]).unwrap();
+    }
+
+    #[test]
+    fn parallel_postings_report_the_failure_one_pass_reports() {
+        let records = generated_records(9_000, 500, 31);
+        let mut corrupt_records = records.clone();
+        // An id past the strings, then a dependency with invalid properties further on.
+        corrupt_records[3_001] = Some(package_record(&[1], &[600], &[]));
+        corrupt_records[8_000] = Some(package_record(&[1], &[2], &[(3, 9)]));
+        let synthetic = synthetic_rows(&corrupt_records, 500);
+        let error = assert_placements_agree(&synthetic, &[4096, usize::MAX]).unwrap_err();
+        assert!(error.contains("invalid evidence string id"), "{error}");
+
+        // A row counted once too often or once too few.
+        for delta in [1_i64, -1] {
+            let mut synthetic = synthetic_rows(&records, 500);
+            let count = &mut synthetic.counts[NAME_POSTINGS as usize][0];
+            *count = (i64::from(*count) + delta) as u32;
+            let error = assert_placements_agree(&synthetic, &[4096]).unwrap_err();
+            assert!(
+                error.contains("do not match their posting counts"),
+                "{error}"
+            );
+        }
+
+        // Rows that run past the section, after a corrupt record and on their own.
+        let mut synthetic = synthetic_rows(&corrupt_records, 500);
+        synthetic.rows.push(RowShape {
+            len: 64,
+            package: true,
+        });
+        let error = assert_placements_agree(&synthetic, &[4096]).unwrap_err();
+        assert!(error.contains("invalid evidence string id"), "{error}");
+        let mut synthetic = synthetic_rows(&records, 500);
+        synthetic.rows.push(RowShape {
+            len: 64,
+            package: true,
+        });
+        let error = assert_placements_agree(&synthetic, &[4096]).unwrap_err();
+        assert!(error.contains("records leave their section"), "{error}");
+
+        // Rows that stop short of the section: a non-package record past the last row.
+        let mut extended = records.clone();
+        extended.push(None);
+        let mut synthetic = synthetic_rows(&extended, 500);
+        assert!(synthetic.rows.pop().is_some_and(|row| row.len > 0));
+        let error = assert_placements_agree(&synthetic, &[4096]).unwrap_err();
+        assert!(
+            error.contains("records do not fill their section"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn list_checksums_match_the_stored_bytes() {
+        for len in [1, 1023, 1024, 1025, 5000] {
+            let rows = (0..len)
+                .map(|row: u32| row.wrapping_mul(2_654_435_761))
+                .collect::<Vec<_>>();
+            let bytes = rows
+                .iter()
+                .flat_map(|row| row.to_le_bytes())
+                .collect::<Vec<_>>();
+            assert_eq!(list_checksum(&rows), checksum(&bytes));
+        }
+    }
+
+    #[test]
+    fn balanced_bounds_cover_every_key_in_order() {
+        let starts = [0_u64, 0, 0, 90, 90, 95, 100];
+        for parts in [1, 2, 3, 7, 16] {
+            let bounds = balanced_bounds(6, parts, |key| starts[key]);
+            assert_eq!(bounds.len(), parts + 1);
+            assert_eq!((bounds[0], bounds[parts]), (0, 6));
+            assert!(bounds.windows(2).all(|pair| pair[0] <= pair[1]));
+        }
+        assert_eq!(balanced_bounds(0, 4, |_| 0), vec![0; 5]);
     }
 }

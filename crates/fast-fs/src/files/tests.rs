@@ -156,7 +156,17 @@ fn fast_listing(directory: &Path) -> BTreeMap<std::ffi::OsString, Listed> {
 fn assert_listings_match(directory: &Path) -> usize {
     let expected = std_listing(directory);
     let actual = fast_listing(directory);
-    assert_eq!(actual, expected, "listing of {}", directory.display());
+    if actual != expected {
+        // On Windows, NTFS can lazily propagate a freshly written child's directory timestamp to
+        // the parent index between two consecutive listings; re-reading confirms the file system
+        // moved rather than the listing disagreeing with `read_dir`.
+        assert_eq!(
+            actual,
+            std_listing(directory),
+            "listing of {}",
+            directory.display()
+        );
+    }
     let mut compared = expected.len();
     for listed in expected.values() {
         if listed.kind == DirEntryKind::Directory {

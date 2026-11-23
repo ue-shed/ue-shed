@@ -5,6 +5,7 @@
 //! anything else made absolute with `GetFullPathNameW` and given the verbatim `\\?\` prefix, so
 //! paths past `MAX_PATH` open too.
 
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io;
@@ -50,6 +51,38 @@ const READ_ACCESS: u32 = FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
 const LIST_BUFFER_WORDS: usize = 64 * 1024 / size_of::<u64>();
 /// Shorter paths (with their terminating nul) go to `CreateFileW` as given when absolute.
 const LEGACY_MAX_PATH: usize = 248;
+
+thread_local! {
+    /// Per-thread 64 KiB listing buffer reused across directories. Taken while listing so a
+    /// recursive `visit_dir_entries` inside a visitor falls back to a fresh buffer safely.
+    static LIST_BUFFER: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
+}
+
+struct PooledListBuffer(Vec<u64>);
+
+impl PooledListBuffer {
+    fn take() -> Self {
+        let mut buffer = LIST_BUFFER.with(|slot| std::mem::take(&mut *slot.borrow_mut()));
+        if buffer.len() < LIST_BUFFER_WORDS {
+            buffer.resize(LIST_BUFFER_WORDS, 0);
+        }
+        Self(buffer)
+    }
+}
+
+impl Drop for PooledListBuffer {
+    fn drop(&mut self) {
+        let mut buffer = std::mem::take(&mut self.0);
+        if buffer.len() == LIST_BUFFER_WORDS {
+            let _ = LIST_BUFFER.try_with(|slot| {
+                let mut pooled = slot.borrow_mut();
+                if pooled.is_empty() {
+                    *pooled = std::mem::take(&mut buffer);
+                }
+            });
+        }
+    }
+}
 
 // `FileStandardInfo` is read into `[u64; 3]`, so its `BOOLEAN` fields are never read as `bool`.
 const _: () = assert!(size_of::<FILE_STANDARD_INFO>() == size_of::<[u64; 3]>());
@@ -128,7 +161,8 @@ pub(crate) fn visit_dir_entries(
         }
     })?;
     let directory_file = File::from(handle);
-    let mut buffer = vec![0_u64; LIST_BUFFER_WORDS];
+    let mut pooled = PooledListBuffer::take();
+    let buffer = &mut pooled.0;
     let mut name = Vec::new();
     let mut first = true;
     loop {
@@ -222,7 +256,7 @@ fn read_entry(entry: &[u8], name: &mut Vec<u16>) -> Option<(Listed, usize)> {
     Some((
         Listed {
             kind,
-            size: size as u64,
+            size: u64::try_from(size).unwrap_or(0),
             modified_nanos: filetime_nanos(modified),
         },
         next,

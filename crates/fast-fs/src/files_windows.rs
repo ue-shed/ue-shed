@@ -19,9 +19,8 @@ use windows_sys::Wdk::Storage::FileSystem::{
     FILE_FULL_DIR_INFORMATION, FileFullDirectoryInformation, NtQueryDirectoryFile,
 };
 use windows_sys::Win32::Foundation::{
-    ERROR_ACCESS_DENIED, ERROR_DIRECTORY, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND,
-    ERROR_WRITE_PROTECT, FILETIME, NTSTATUS, RtlNtStatusToDosError, STATUS_NO_MORE_FILES,
-    STATUS_NO_SUCH_FILE,
+    ERROR_DIRECTORY, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, FILETIME, NTSTATUS,
+    RtlNtStatusToDosError, STATUS_NO_MORE_FILES, STATUS_NO_SUCH_FILE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
@@ -89,9 +88,9 @@ const _: () = assert!(size_of::<FILE_STANDARD_INFO>() == size_of::<[u64; 3]>());
 const _: () = assert!(offset_of!(FILE_STANDARD_INFO, EndOfFile) == size_of::<u64>());
 
 pub(crate) fn open_read_no_atime(path: &Path) -> io::Result<File> {
-    let path = wide_path(path)?;
+    let wide = wide_path(path)?;
     let handle = match open_handle(
-        &path,
+        &wide,
         READ_ACCESS | FILE_WRITE_ATTRIBUTES,
         FILE_FLAG_SEQUENTIAL_SCAN,
     ) {
@@ -101,15 +100,11 @@ pub(crate) fn open_read_no_atime(path: &Path) -> io::Result<File> {
             unsafe { SetFileTime(handle.as_raw_handle(), null(), &PRESERVE_TIME, null()) };
             handle
         }
-        // An access list without the attributes right, or a read-only volume.
-        Err(error)
-            if error.raw_os_error().is_some_and(|code| {
-                code == ERROR_ACCESS_DENIED as i32 || code == ERROR_WRITE_PROTECT as i32
-            }) =>
-        {
-            open_handle(&path, READ_ACCESS, FILE_FLAG_SEQUENTIAL_SCAN)?
-        }
-        Err(error) => return Err(error),
+        // Any refusal on the opt-in open (including SMB access-based enumeration returning
+        // `STATUS_OBJECT_NAME_NOT_FOUND` when `FILE_WRITE_ATTRIBUTES` is denied, ACLs without
+        // write-attributes, or read-only volumes) falls back to `File::open` so the optimization
+        // can never make a readable file unreadable.
+        Err(_) => return File::open(path),
     };
     Ok(File::from(handle))
 }

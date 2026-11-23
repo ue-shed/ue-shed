@@ -325,11 +325,23 @@ fn reads_match_the_standard_library() {
             .unwrap();
         assert_eq!(bytes, fs::read(&path).unwrap());
     }
-    for path in [directory.0.join("missing.uasset"), directory.0.clone()] {
-        let expected = File::open(&path).map(|_| ()).unwrap_err();
-        let actual = open_read_no_atime(&path).map(|_| ()).unwrap_err();
-        assert_eq!(actual.kind(), expected.kind(), "{}", path.display());
-        assert_eq!(actual.raw_os_error(), expected.raw_os_error());
+    let missing = directory.0.join("missing.uasset");
+    let expected = File::open(&missing).map(|_| ()).unwrap_err();
+    let actual = open_read_no_atime(&missing).map(|_| ()).unwrap_err();
+    assert_eq!(actual.kind(), expected.kind(), "{}", missing.display());
+    assert_eq!(actual.raw_os_error(), expected.raw_os_error());
+
+    // Opening a directory fails on Windows and succeeds on Unix; match `File::open` either way.
+    match (File::open(&directory.0), open_read_no_atime(&directory.0)) {
+        (Ok(_), Ok(_)) => {}
+        (Err(expected), Err(actual)) => {
+            assert_eq!(actual.kind(), expected.kind(), "{}", directory.0.display());
+            assert_eq!(actual.raw_os_error(), expected.raw_os_error());
+        }
+        (expected, actual) => panic!(
+            "open mismatch for {}: std={expected:?}, fast={actual:?}",
+            directory.0.display()
+        ),
     }
 }
 

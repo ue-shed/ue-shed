@@ -4485,13 +4485,11 @@ fn place_parallel(
         .map(|&key| starts[key] as usize)
         .collect::<Vec<_>>();
     let mut next = starts[..keys].to_vec();
-    // The pairs each run collected for each key range, kept between batches for their capacity.
-    let mut pairs = vec![vec![Vec::<(u32, u32)>::new(); threads]; threads];
     payload.for_each_batch(rows, batch_bytes, |first, shapes, bytes| {
         let runs = split_runs(first, shapes, bytes, threads);
-        for run in &mut pairs {
-            run.iter_mut().for_each(Vec::clear);
-        }
+        // Allocated per batch and dropped at batch end so skewed batches concentrated in different
+        // key ranges cannot accumulate the sum of every range's peak buffer capacity.
+        let mut pairs = vec![vec![Vec::<(u32, u32)>::new(); threads]; runs.len()];
         let collected = std::thread::scope(|scope| {
             let workers = runs
                 .into_iter()
@@ -9304,6 +9302,27 @@ mod tests {
             records.iter().filter(|record| record.is_some()).count()
         );
         assert!(list.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn parallel_postings_match_one_pass_across_skewed_batches() {
+        // Consecutive groups of rows concentrate in disjoint key ranges, exercising per-batch
+        // scratch release when different shards are hot in different batches.
+        let shards = 8_u32;
+        let keys_per_shard = 64_u32;
+        let strings = shards * keys_per_shard;
+        let mut records = Vec::with_capacity(4_800);
+        for shard in 0..shards {
+            let base = shard * keys_per_shard;
+            let names = (base..base + 32).collect::<Vec<_>>();
+            for row in 0..600_u32 {
+                let class = base + (row % keys_per_shard);
+                let dep = (base + ((row + 7) % keys_per_shard), 1);
+                records.push(Some(package_record(&[class], &names, &[dep])));
+            }
+        }
+        let synthetic = synthetic_rows(&records, u64::from(strings));
+        assert_placements_agree(&synthetic, &[4096, 32 * 1024]).unwrap();
     }
 
     #[test]

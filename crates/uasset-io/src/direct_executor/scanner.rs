@@ -133,7 +133,8 @@ impl ProjectScanner for FilesystemProjectScanner {
         let path = self.package_path(project_root, signature)?;
         checkpoint(cancellation, "read")?;
         let file_len = header_file_len(signature.size)?;
-        let mut file = File::open(&path).map_err(|_| header_failure("asset_io"))?;
+        let mut file =
+            fast_fs::open_read_no_atime(&path).map_err(|_| header_failure("asset_io"))?;
         Ok(HEADER_SCRATCH.with_borrow_mut(|scratch| {
             let evidence =
                 self.header_evidence(&mut file, file_len, signature, scratch, cancellation);
@@ -153,7 +154,8 @@ impl ProjectScanner for FilesystemProjectScanner {
         let path = self.package_path(project_root, signature)?;
         checkpoint(cancellation, "read")?;
         let file_len = header_file_len(signature.size)?;
-        let mut file = File::open(&path).map_err(|_| header_failure("asset_io"))?;
+        let mut file =
+            fast_fs::open_read_no_atime(&path).map_err(|_| header_failure("asset_io"))?;
         let evidence = HEADER_SCRATCH.with_borrow_mut(|scratch| {
             let evidence =
                 self.header_evidence(&mut file, file_len, signature, scratch, cancellation);
@@ -161,12 +163,12 @@ impl ProjectScanner for FilesystemProjectScanner {
             evidence
         })?;
         checkpoint(cancellation, "read")?;
-        let observed = match file.metadata() {
-            Ok(metadata) if metadata.is_file() => Some(PackageSignature {
-                relative_path: project_relative_path(project_root, &path.to_string_lossy()),
+        let observed = match fast_fs::file_signature(&file) {
+            Ok(Some((size, modified_nanos))) => Some(PackageSignature {
+                relative_path: observed_relative_path(project_root, signature, &path),
                 kind: signature.kind,
-                size: metadata.len(),
-                modified_nanos: metadata_modified_nanos(&metadata),
+                size,
+                modified_nanos,
             }),
             _ => None,
         };
@@ -826,7 +828,7 @@ pub(crate) fn read_package_header_bytes(
 ) -> Result<(Package, Vec<u8>), Failure> {
     checkpoint(cancellation, "read")?;
     let file_len = header_file_len(size)?;
-    let mut file = File::open(path).map_err(|_| header_failure("asset_io"))?;
+    let mut file = fast_fs::open_read_no_atime(path).map_err(|_| header_failure("asset_io"))?;
     let mut bytes = Vec::new();
     let (summary, header_len) = read_header_into(&mut file, file_len, &mut bytes, cancellation)?;
     bytes.truncate(header_len);
@@ -856,7 +858,7 @@ pub(crate) fn read_leading_package_header(
             true,
         )
     };
-    let mut file = File::open(path).map_err(io_failure)?;
+    let mut file = fast_fs::open_read_no_atime(path).map_err(io_failure)?;
     let supplied = file.metadata().map_err(io_failure)?.len();
     if file_bytes == 0 || supplied > file_bytes {
         return Err(Failure::new(
@@ -891,6 +893,25 @@ pub(crate) fn read_leading_package_header(
             }
             read => return Ok(read),
         }
+    }
+}
+
+/// The project-relative path of the file opened at `path` (`project_root` joined with the
+/// signature's path): what `project_relative_path` gives for it. A plain relative path (no
+/// backslash, drive or root) below a root that `Path::join` separates from it comes back
+/// unchanged, so it is reused rather than rebuilt per package; anything else is rebuilt.
+fn observed_relative_path(project_root: &str, signature: &PackageSignature, path: &Path) -> String {
+    let relative = signature.relative_path.as_str();
+    let plain = !relative.is_empty()
+        && !relative.starts_with('/')
+        && !relative.contains(['\\', ':'])
+        && !project_root.ends_with(':')
+        // `Path::join` rewrites what it appends to a verbatim (`\\?\`) root.
+        && !project_root.starts_with(r"\\?\");
+    if plain {
+        relative.to_owned()
+    } else {
+        project_relative_path(project_root, &path.to_string_lossy())
     }
 }
 
@@ -964,6 +985,56 @@ mod tests {
         let failure = within_dependency_limit(vec![(); PROJECT_INDEX_MAX_DEPENDENCIES + 1])
             .expect_err("over the limit");
         assert_eq!(failure.code, "dependencies_over_limit");
+    }
+
+    #[test]
+    fn an_observed_relative_path_is_what_project_relative_path_gives() {
+        let roots = [
+            "",
+            ".",
+            "/",
+            "C:",
+            "C:/",
+            "C:\\",
+            "C:/Project",
+            "C:\\Project\\",
+            "c:/project//",
+            "/project",
+            "relative/project/",
+            "\\\\?\\C:\\Project",
+            "\\\\?\\UNC\\server\\share\\Project",
+            "//?/C:/Project",
+            "\\\\.\\C:\\Project",
+            "\\\\server\\share\\Project",
+        ];
+        let relatives = [
+            "",
+            "Content/Asset.uasset",
+            "Content//Maps/L_Level.umap",
+            "./Content/Asset.uasset",
+            "Content/../Asset.uasset",
+            "Content\\Asset.uasset",
+            "/Content/Asset.uasset",
+            "C:/Elsewhere/Asset.uasset",
+            "C:Content/Asset.uasset",
+            "Content/Ünïcödé ✓.uasset",
+        ];
+        for root in roots {
+            for relative in relatives {
+                let signature = PackageSignature {
+                    relative_path: relative.to_owned(),
+                    kind: EntryKind::Package,
+                    size: 0,
+                    modified_nanos: 0,
+                };
+                let path = std::path::Path::new(root).join(relative);
+                assert_eq!(
+                    super::observed_relative_path(root, &signature, &path),
+                    super::project_relative_path(root, &path.to_string_lossy()),
+                    "root {root:?}, relative {relative:?}"
+                );
+            }
+        }
     }
     use crate::cancellation::CancellationToken;
     use crate::direct_executor::catalog::{EntryKind, PackageSignature, PlainEvidence};

@@ -1,13 +1,14 @@
 //! Bounded parallel discovery; directory work is shared, signatures stay worker-local until
 //! each worker's arena joins the result.
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, PoisonError};
 
+use fast_fs::DirEntryKind;
+
 use super::{
     CancellationToken, EntryKind, Failure, SignatureArena, checkpoint, discovery_failure,
-    is_package_path, is_sidecar_path, metadata_modified_nanos, project_relative_path,
+    is_package_path, is_sidecar_path, project_relative_path,
 };
 
 const MAX_WORKERS: usize = 32;
@@ -218,22 +219,51 @@ fn visit_directory(
     spawn_worker: &impl Fn(),
 ) -> Result<(), Failure> {
     checkpoint(cancellation, "discovery")?;
-    let entries = fs::read_dir(directory).map_err(|error| discovery_failure(directory, error))?;
     // The directory's path is stored once, with its first package or sidecar.
     let mut stored = None;
-    for entry in entries {
-        checkpoint(cancellation, "discovery")?;
-        if queue.stopped.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-        let entry = entry.map_err(|error| discovery_failure(directory, error))?;
-        let kind = entry
-            .file_type()
-            .map_err(|error| discovery_failure(&entry.path(), error))?;
-        // Decide from the name alone; most files are neither packages nor sidecars.
-        let name = entry.file_name();
-        if kind.is_dir() {
-            let child = (entry.path(), directory_prefix(prefix, &name));
+    // Why the walk stops; the listing itself only reports its own errors.
+    let mut failure = None;
+    fast_fs::visit_dir_entries(directory, |entry| {
+        let visited = visit_entry(
+            &entry,
+            prefix,
+            cancellation,
+            queue,
+            signatures,
+            spawn_worker,
+            &mut stored,
+        );
+        Ok(visited.unwrap_or_else(|error| {
+            failure = Some(error);
+            false
+        }))
+    })
+    .map_err(|error| discovery_failure(directory, error))?;
+    failure.map_or(Ok(()), Err)
+}
+
+/// One entry of a listed directory; `Ok(false)` once the walk has stopped elsewhere.
+fn visit_entry(
+    entry: &fast_fs::DirEntryInfo<'_>,
+    prefix: &str,
+    cancellation: &CancellationToken,
+    queue: &DirectoryQueue,
+    signatures: &mut SignatureArena,
+    spawn_worker: &impl Fn(),
+    stored: &mut Option<u32>,
+) -> Result<bool, Failure> {
+    checkpoint(cancellation, "discovery")?;
+    if queue.stopped.load(Ordering::Relaxed) {
+        return Ok(false);
+    }
+    let kind = entry
+        .kind()
+        .map_err(|error| discovery_failure(&entry.path(), error))?;
+    // Decide from the name alone; most files are neither packages nor sidecars.
+    let name = entry.file_name();
+    match kind {
+        DirEntryKind::Directory => {
+            let child = (entry.path(), directory_prefix(prefix, name));
             match queue.offer(child) {
                 Ok(true) => spawn_worker(),
                 Ok(false) => {}
@@ -246,29 +276,32 @@ fn visit_directory(
                     spawn_worker,
                 )?,
             }
-        } else if kind.is_file() {
-            let kind = if is_package_path(Path::new(&name)) {
+        }
+        DirEntryKind::File => {
+            let kind = if is_package_path(Path::new(name)) {
                 EntryKind::Package
-            } else if is_sidecar_path(Path::new(&name)) {
+            } else if is_sidecar_path(Path::new(name)) {
                 EntryKind::Sidecar
             } else {
-                continue;
+                return Ok(true);
             };
-            // Reuse enumeration metadata on Windows; do not reopen each file to stat it.
-            let metadata = entry
-                .metadata()
+            // Windows listings carry size and modification time; do not reopen a file to stat it.
+            let (size, modified_nanos) = entry
+                .signature()
                 .map_err(|error| discovery_failure(&entry.path(), error))?;
             let directory = *stored.get_or_insert_with(|| signatures.directory(prefix));
             signatures.push_named(
                 directory,
                 &name.to_string_lossy(),
                 kind,
-                metadata.len(),
-                metadata_modified_nanos(&metadata),
+                size,
+                modified_nanos,
             );
         }
+        // Symbolic links and junctions are not followed.
+        DirEntryKind::Other => {}
     }
-    Ok(())
+    Ok(true)
 }
 
 /// A child directory's project-relative prefix from its parent's: what `project_relative_path`
@@ -288,7 +321,9 @@ fn directory_prefix(prefix: &str, name: &std::ffi::OsStr) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::metadata_modified_nanos;
     use super::*;
+    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     struct TemporaryProject(PathBuf);

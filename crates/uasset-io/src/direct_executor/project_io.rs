@@ -478,7 +478,7 @@ fn scan_one_path_with_cancellation(
             }
             let path_string = signature.path.to_string_lossy().into_owned();
             checkpoint(cancellation, "read")?;
-            let bytes = match fs::read(path) {
+            let bytes = match fast_fs::read_no_atime(path) {
                 Ok(bytes) => bytes,
                 Err(error) => {
                     return Ok(ScanWorkResult {
@@ -1673,7 +1673,7 @@ fn package_changed_failure(expected: &Expected) -> Failure {
     }
 }
 
-/// Reads and projects one staged package with a single `File::open`: verifies the open file's
+/// Reads and projects one staged package with a single open: verifies the open file's
 /// size and mtime before and after reading (catching in-place mutation during the read), reuses
 /// a bounded thread-local read buffer, and verifies the live bundle at `path` after projection
 /// so atomic replacements during extraction fail with `package_changed`.
@@ -1698,7 +1698,7 @@ fn project_one_staged_path_with_hook(
     let path_string = path.to_string_lossy().into_owned();
     checkpoint(cancellation, "read")?;
     let read_span = game_text_index::scan_timings::Span::new("extract.read");
-    let mut file = match fs::File::open(path) {
+    let mut file = match fast_fs::open_read_no_atime(path) {
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             return Err(package_changed_failure(expected));
@@ -1903,7 +1903,7 @@ fn project_one_path(
     }
     checkpoint(cancellation, "read")?;
     let read_span = game_text_index::scan_timings::Span::new("extract.read");
-    let bytes = match fs::read(path) {
+    let bytes = match fast_fs::read_no_atime(path) {
         Ok(bytes) => bytes,
         Err(error) => {
             return Ok(ProjectionWorkResult {
@@ -3452,7 +3452,7 @@ fn read_saved_world_package(
     cancellation: &CancellationToken,
 ) -> Result<SavedWorldPackageRead, Failure> {
     checkpoint(cancellation, "read")?;
-    let source = match fs::read(path) {
+    let source = match fast_fs::read_no_atime(path) {
         Ok(source) => source,
         Err(error) => {
             return Ok(SavedWorldPackageRead::failed(

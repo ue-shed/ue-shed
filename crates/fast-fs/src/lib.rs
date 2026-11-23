@@ -11,11 +11,23 @@
 //! reported per directory, and a directory renamed, moved or deleted below a root (which carries
 //! whatever lies under it) is a reason to fall back. Only Windows keeps such a journal; elsewhere
 //! every read falls back.
+//!
+//! The crate also reads content files in bulk ([`open_read_no_atime`], [`file_signature`],
+//! [`visit_dir_entries`]): the platform calls a cold walk of a large project needs, behind
+//! functions that behave like the standard library's.
 
 use std::path::PathBuf;
 
+mod files;
+#[cfg(windows)]
+mod files_windows;
 #[cfg(windows)]
 mod usn_windows;
+
+pub use files::{
+    DirEntryInfo, DirEntryKind, file_signature, open_read_no_atime, read_no_atime,
+    visit_dir_entries,
+};
 
 /// One root directory as its volume identifies it. A root reached through a junction or symbolic
 /// link is identified by its target, so a retargeted link no longer matches.

@@ -19,6 +19,7 @@
 #include "ImageCore.h"
 #include "ImageUtils.h"
 #include "Interfaces/IPluginManager.h"
+#include "LegacyScreenPercentageDriver.h"
 #include "LevelEditorViewport.h"
 #include "Misc/App.h"
 #include "Misc/EngineVersion.h"
@@ -457,7 +458,10 @@ TSharedPtr<FJsonObject> UEShedRenderFrame(const FString &Session, const FString 
 	return Out;
 }
 
-/** Marks only our offscreen target view family realtime without invalidating the live viewport. */
+/**
+ * Sets up only our offscreen target's view family: realtime, and 100% screen percentage without
+ * low-DPI scaling. Nothing is written to the live client, so its viewport keeps its own settings.
+ */
 class FUEShedOffscreenRealtimeExtension final : public FWorldSceneViewExtension
 {
 public:
@@ -465,6 +469,16 @@ public:
 	    : FWorldSceneViewExtension(AutoRegister, InWorld) {}
 	FViewport *ActiveTarget = nullptr;
 	virtual void SetupViewFamily(FSceneViewFamily &Family) override { Family.bRealtimeUpdate = true; }
+	// FEditorViewportClient::Draw applies low-DPI scaling after SetupViewFamily and keeps a screen
+	// percentage driver a view extension set in SetupView; without one the editor scales a large
+	// target down (39% at 4K).
+	virtual void SetupView(FSceneViewFamily &Family, FSceneView &View) override
+	{
+		Family.SecondaryViewFraction = 1.0f;
+		Family.EngineShowFlags.ScreenPercentage = false;
+		if (!Family.GetScreenPercentageInterface())
+			Family.SetScreenPercentageInterface(new FLegacyScreenPercentageDriver(Family, 1.0f));
+	}
 	virtual bool IsActiveThisFrame_Internal(const FSceneViewExtensionContext &Context) const override
 	{
 		return ActiveTarget != nullptr && Context.Viewport == ActiveTarget;
@@ -635,28 +649,11 @@ struct FUEShedCameraRenderSession::FState
 		// between draws; the view extension marks only this offscreen view family realtime, and
 		// DisableThrottle prevents Slate responsive-mode throttling from downgrading TSR to FXAA.
 		OffscreenRealtime->ActiveTarget = Target;
-		// Without a custom percentage the editor scales a large target down (39% at 4K). The setters
-		// only write fields, so the live viewport keeps its own scale between these draws and after
-		// a capture that ends without restoring the client.
-		const bool SavedPreviewing = Client->IsPreviewingScreenPercentage();
-		const int32 SavedPercentage = Client->GetPreviewScreenPercentage();
-		const bool LowDPI = Client->SupportsLowDPIPreview();
-		const bool SavedLowDPI = LowDPI && Client->IsLowDPIPreview();
-		Client->SetPreviewScreenPercentage(100);
-		Client->SetPreviewingScreenPercentage(true);
-		if (LowDPI)
-			Client->SetLowDPIPreview(false);
 		FSlateThrottleManager::Get().DisableThrottle(true);
 		ON_SCOPE_EXIT {
 			FSlateThrottleManager::Get().DisableThrottle(false);
 			if (OffscreenRealtime)
 				OffscreenRealtime->ActiveTarget = nullptr;
-			// The engine exposes the percentage only as a rounded value; an unset custom percentage
-			// comes back set to the value the editor showed.
-			Client->SetPreviewScreenPercentage(SavedPercentage);
-			Client->SetPreviewingScreenPercentage(SavedPreviewing);
-			if (LowDPI)
-				Client->SetLowDPIPreview(SavedLowDPI);
 		};
 		{
 			FCanvas Canvas(Target, nullptr, World.Get(), World->GetFeatureLevel());
@@ -859,10 +856,14 @@ struct FUEShedCameraRenderSession::FState
 			{
 				Restored = false;
 			}
-			// The realtime override is this session's own entry, so it goes even when another actor
-			// or the user took the viewport.
+			// The realtime override is this session's own entry and the session disabled input, so both
+			// go back even when another actor or the user took the viewport.
 			if (ClientAlive())
+			{
 				Client->RemoveRealtimeOverride(RealtimeOwner, false);
+				if (Client->bDisableInput && !DisableInput)
+					Client->bDisableInput = false;
+			}
 		}
 		EndUEShedOwnedMapFreeze(Id);
 		Capture.Reset();

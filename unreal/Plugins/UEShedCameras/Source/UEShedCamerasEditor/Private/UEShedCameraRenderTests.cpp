@@ -1478,10 +1478,20 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 		AddError(TEXT("Open a rendering editor fixture without Play or Simulate."));
 		return false;
 	}
+	// A live viewport previewing 50% must not scale the offscreen frame, and must keep its 50%.
+	const bool FixturePreviewing = Client->IsPreviewingScreenPercentage();
+	const int32 FixturePercentage = Client->GetPreviewScreenPercentage();
+	Client->SetPreviewScreenPercentage(50);
+	Client->SetPreviewingScreenPercentage(true);
+	ON_SCOPE_EXIT {
+		Client->SetPreviewScreenPercentage(FixturePercentage);
+		Client->SetPreviewingScreenPercentage(FixturePreviewing);
+	};
 	const bool BeforePreviewing = Client->IsPreviewingScreenPercentage();
 	const int32 BeforePercentage = Client->GetPreviewScreenPercentage();
 	const bool BeforeLowDPI = Client->IsLowDPIPreview();
 	const bool BeforeRealtime = Client->IsRealtime();
+	const bool BeforeDisableInput = Client->bDisableInput;
 	const FString BeforeFlags = Client->EngineShowFlags.ToString();
 	const FEngineShowFlags BeforeShowFlags = Client->EngineShowFlags;
 	const bool BeforeGameView = Client->IsInGameView();
@@ -1516,8 +1526,14 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 			LastAA = View.AntiAliasingMethod;
 			LastRealtime = Family.bRealtimeUpdate;
 		}
+		virtual void BeginRenderViewFamily(FSceneViewFamily &Family) override
+		{
+			LastScreenPercentage = Family.EngineShowFlags.ScreenPercentage;
+			LastSecondaryFraction = Family.SecondaryViewFraction;
+		}
 		EAntiAliasingMethod LastAA = AAM_None;
-		bool LastRealtime = false;
+		bool LastRealtime = false, LastScreenPercentage = true;
+		float LastSecondaryFraction = 0;
 	};
 	auto Probe = FSceneViewExtensions::NewExtension<FOffscreenAAProbe>(World);
 	const auto Pose = UEShedCameraPose(FVector(1000, 1000, 900), FRotator(-30, -135, 0), 60, false);
@@ -1556,6 +1572,8 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 		}
 		Untouched();
 		TestTrue(TEXT("Offscreen draw marks view family realtime despite Slate throttle"), Probe->LastRealtime);
+		TestFalse(TEXT("Offscreen draw ignores the live 50% preview"), Probe->LastScreenPercentage);
+		TestEqual(TEXT("Offscreen draw has no low-DPI scaling"), Probe->LastSecondaryFraction, 1.0f);
 		if (const auto *AACVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.AntiAliasingMethod"));
 		    AACVar && AACVar->GetValueOnGameThread() == AAM_TSR)
 			TestEqual(TEXT("Offscreen draw keeps TSR under Slate throttle"), static_cast<int32>(Probe->LastAA),
@@ -1650,6 +1668,7 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 			          BeforePreviewing);
 			TestEqual(TEXT("Unpilot: low DPI preview untouched"), Client->IsLowDPIPreview(), BeforeLowDPI);
 			TestEqual(TEXT("Unpilot: realtime override released"), Client->IsRealtime(), BeforeRealtime);
+			TestEqual(TEXT("Unpilot: input restored"), Client->bDisableInput, BeforeDisableInput);
 			// The view itself stays as the user left it; put the fixture back for the next case.
 			Client->DisableOverrideEngineShowFlags();
 			Client->SetGameView(BeforeGameView);

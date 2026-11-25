@@ -122,7 +122,10 @@ export const CameraRendererPolicy = Schema.Union([
 		editorPreviews: EditorPreviews,
 		/** Output pixels are rendered pixels; no editor screen-percentage scaling. */
 		resolution: Schema.Literal("native"),
-		/** `highest` draws every mesh at LOD 0; `natural` keeps the engine's LOD selection. */
+		/**
+		 * `highest` draws meshes with discrete LODs at LOD 0 (Nanite meshes keep choosing their own
+		 * detail); `natural` keeps the engine's LOD selection.
+		 */
 		lod: Schema.Literals(["highest", "natural"])
 	}),
 	Schema.Struct({

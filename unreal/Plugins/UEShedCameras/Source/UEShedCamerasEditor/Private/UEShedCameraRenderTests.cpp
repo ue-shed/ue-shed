@@ -1483,6 +1483,8 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 	const bool BeforeLowDPI = Client->IsLowDPIPreview();
 	const bool BeforeRealtime = Client->IsRealtime();
 	const FString BeforeFlags = Client->EngineShowFlags.ToString();
+	const FEngineShowFlags BeforeShowFlags = Client->EngineShowFlags;
+	const bool BeforeGameView = Client->IsInGameView();
 	const bool BeforeDirty = World->GetOutermost()->IsDirty();
 	const auto Screenshot = GetHighResScreenshotConfig();
 	const uint32 BeforeResolutionX = GScreenshotResolutionX;
@@ -1528,10 +1530,12 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 			return false;
 		}
 		ON_SCOPE_EXIT { Session->Close(); };
-		TestTrue(TEXT("Custom screen percentage while open"), Client->IsPreviewingScreenPercentage());
-		TestEqual(TEXT("100% while open"), Client->GetPreviewScreenPercentage(), 100);
-		if (Client->SupportsLowDPIPreview())
-			TestFalse(TEXT("No low DPI preview while open"), Client->IsLowDPIPreview());
+		// 100% and low DPI off apply only around the session's own offscreen draws.
+		TestEqual(TEXT("Live custom screen percentage untouched while open"), Client->IsPreviewingScreenPercentage(),
+		          BeforePreviewing);
+		TestEqual(TEXT("Live screen percentage untouched while open"), Client->GetPreviewScreenPercentage(),
+		          BeforePercentage);
+		TestEqual(TEXT("Live low DPI preview untouched while open"), Client->IsLowDPIPreview(), BeforeLowDPI);
 		TestFalse(TEXT("The live viewport is not realtime between offscreen draws"), Client->IsRealtime());
 		// Simulate an unfocused editor throttled by Slate responsive mode: offscreen draws must still
 		// render with bRealtimeUpdate=true so temporal anti-aliasing is not downgraded to FXAA.
@@ -1587,7 +1591,7 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 		UGameViewportClient::OnViewportRendered().Broadcast(const_cast<FViewport *>(Session->OffscreenTarget()));
 		TestTrue(TEXT("Offscreen draws keep settling"),
 		         Session->Poll(TEXT("smaller"))->GetNumberField(TEXT("renderedFrames")) > 0);
-		UGameViewportClient::OnViewportRendered().Broadcast(Client->Viewport);
+		Client->Viewport->Draw(false);
 		TestEqual(TEXT("A live viewport draw restarts settling"),
 		          Session->Poll(TEXT("smaller"))->GetNumberField(TEXT("renderedFrames")), 0.0);
 		TestEqual(TEXT("The frame still completes after a restart"),
@@ -1598,7 +1602,7 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 		Restored();
 		Untouched();
 	}
-	for (const FString Mode : {TEXT("cancel"), TEXT("encoding"), TEXT("lease"), TEXT("shutdown")})
+	for (const FString Mode : {TEXT("cancel"), TEXT("encoding"), TEXT("lease"), TEXT("shutdown"), TEXT("unpilot")})
 	{
 		auto Request = OffscreenRequest(World, TEXT("natural"));
 		if (Mode == TEXT("lease"))
@@ -1631,6 +1635,26 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 		}
 		else if (Mode == TEXT("shutdown"))
 			FUEShedCameraRenderSession::Shutdown();
+		else if (Mode == TEXT("unpilot"))
+		{
+			// The user unpilots mid-capture: the session fails without taking the viewport back, and
+			// leaves none of its capture settings on it.
+			Client->SetActorLock(nullptr);
+			Session->Tick(true);
+			TestEqual(TEXT("Unpilot is explicit"), Session->Poll(TEXT("interrupted"))->GetStringField(TEXT("code")),
+			          FString(TEXT("world_changed")));
+			Session->Close();
+			TestEqual(TEXT("Unpilot: screen percentage untouched"), Client->GetPreviewScreenPercentage(),
+			          BeforePercentage);
+			TestEqual(TEXT("Unpilot: custom screen percentage untouched"), Client->IsPreviewingScreenPercentage(),
+			          BeforePreviewing);
+			TestEqual(TEXT("Unpilot: low DPI preview untouched"), Client->IsLowDPIPreview(), BeforeLowDPI);
+			TestEqual(TEXT("Unpilot: realtime override released"), Client->IsRealtime(), BeforeRealtime);
+			// The view itself stays as the user left it; put the fixture back for the next case.
+			Client->DisableOverrideEngineShowFlags();
+			Client->SetGameView(BeforeGameView);
+			Client->EngineShowFlags = BeforeShowFlags;
+		}
 		else
 			Session->Close();
 		TestTrue(*(Mode + TEXT(": interrupted owner is closed")), Session->IsClosed());

@@ -513,9 +513,6 @@ struct FUEShedCameraRenderSession::FState
 	FIntPoint OffscreenSize = FIntPoint::ZeroValue, PhaseSize = FIntPoint::ZeroValue;
 	TFuture<bool> PendingEncode;
 	FDelegateHandle ViewportRenderedHandle;
-	bool ScreenPercentageApplied = false, SavedPreviewingScreenPercentage = false, LowDPIApplied = false,
-	     SavedLowDPIPreview = false;
-	int32 SavedScreenPercentage = 100;
 	FString WorldLeaseId;
 	TSharedPtr<FJsonObject> PreparedWorld;
 	int32 WorldRevision = 0, LayerCount = 0;
@@ -638,11 +635,28 @@ struct FUEShedCameraRenderSession::FState
 		// between draws; the view extension marks only this offscreen view family realtime, and
 		// DisableThrottle prevents Slate responsive-mode throttling from downgrading TSR to FXAA.
 		OffscreenRealtime->ActiveTarget = Target;
+		// Without a custom percentage the editor scales a large target down (39% at 4K). The setters
+		// only write fields, so the live viewport keeps its own scale between these draws and after
+		// a capture that ends without restoring the client.
+		const bool SavedPreviewing = Client->IsPreviewingScreenPercentage();
+		const int32 SavedPercentage = Client->GetPreviewScreenPercentage();
+		const bool LowDPI = Client->SupportsLowDPIPreview();
+		const bool SavedLowDPI = LowDPI && Client->IsLowDPIPreview();
+		Client->SetPreviewScreenPercentage(100);
+		Client->SetPreviewingScreenPercentage(true);
+		if (LowDPI)
+			Client->SetLowDPIPreview(false);
 		FSlateThrottleManager::Get().DisableThrottle(true);
 		ON_SCOPE_EXIT {
 			FSlateThrottleManager::Get().DisableThrottle(false);
 			if (OffscreenRealtime)
 				OffscreenRealtime->ActiveTarget = nullptr;
+			// The engine exposes the percentage only as a rounded value; an unset custom percentage
+			// comes back set to the value the editor showed.
+			Client->SetPreviewScreenPercentage(SavedPercentage);
+			Client->SetPreviewingScreenPercentage(SavedPreviewing);
+			if (LowDPI)
+				Client->SetLowDPIPreview(SavedLowDPI);
 		};
 		{
 			FCanvas Canvas(Target, nullptr, World.Get(), World->GetFeatureLevel());
@@ -840,22 +854,15 @@ struct FUEShedCameraRenderSession::FState
 				Client->bEnableFading = EnableFading;
 				Client->bDrawAxes = DrawAxes;
 				Client->bDrawAxesGame = DrawAxesGame;
-				Client->RemoveRealtimeOverride(RealtimeOwner, false);
-				// The engine exposes the percentage only as a rounded value; an unset custom
-				// percentage comes back set to the value the editor showed when the session opened.
-				if (ScreenPercentageApplied)
-				{
-					Client->SetPreviewScreenPercentage(SavedScreenPercentage);
-					Client->SetPreviewingScreenPercentage(SavedPreviewingScreenPercentage);
-				}
-				if (LowDPIApplied)
-					Client->SetLowDPIPreview(SavedLowDPIPreview);
 			}
 			else
 			{
 				Restored = false;
 			}
-			ScreenPercentageApplied = LowDPIApplied = false;
+			// The realtime override is this session's own entry, so it goes even when another actor
+			// or the user took the viewport.
+			if (ClientAlive())
+				Client->RemoveRealtimeOverride(RealtimeOwner, false);
 		}
 		EndUEShedOwnedMapFreeze(Id);
 		Capture.Reset();
@@ -1321,18 +1328,6 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 		});
 		if (Offscreen)
 		{
-			// Without a custom percentage the editor scales a large target down (39% at 4K).
-			S.SavedPreviewingScreenPercentage = C->IsPreviewingScreenPercentage();
-			S.SavedScreenPercentage = C->GetPreviewScreenPercentage();
-			S.ScreenPercentageApplied = true;
-			C->SetPreviewScreenPercentage(100);
-			C->SetPreviewingScreenPercentage(true);
-			if (C->SupportsLowDPIPreview())
-			{
-				S.SavedLowDPIPreview = C->IsLowDPIPreview();
-				S.LowDPIApplied = true;
-				C->SetLowDPIPreview(false);
-			}
 			// A live-viewport draw shares the view state at another size and resets temporal history,
 			// so settling starts over.
 			S.ViewportRenderedHandle = UGameViewportClient::OnViewportRendered().AddLambda(

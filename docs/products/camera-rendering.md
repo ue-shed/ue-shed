@@ -154,7 +154,8 @@ For sharper and faster viewport captures, choose `strategy: "offscreen_viewport"
 straight into an offscreen target of the requested size every settling frame, so temporal
 anti-aliasing builds up at output size, editor screen percentage stays at 100%, and an editor in the
 background keeps rendering in real time. The PNG is written off the game thread. `highest` draws
-every mesh at LOD 0 for that view only, without changing any console variable. Discover support
+meshes with discrete LODs at LOD 0 for that view only, without changing any console variable; Nanite
+meshes keep choosing their own detail. Discover support
 with `capabilities.offscreenViewport` (`GetCameraRenderCapabilitiesV3`, advertised as
 `cameras.render-session.capabilities.v3`); the SDK refuses the strategy before acquiring an editor
 whose plugin lacks it.

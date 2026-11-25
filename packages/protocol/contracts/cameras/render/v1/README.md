@@ -49,7 +49,7 @@ The viewport renderer has a second strategy, `offscreen_viewport`. It draws the 
 camera into an offscreen target of the requested size, keeps temporal anti-aliasing on while the
 editor is in the background, and renders at 100% screen percentage. It takes the same `profile`,
 `vignette`, `fog`, `volumetricFog`, `clouds` and `editorPreviews` fields, plus required
-`resolution: "native"` and `lod: "highest" | "natural"` (`highest` draws every mesh at LOD 0). It has
+`resolution: "native"` and `lod: "highest" | "natural"` (`highest` draws meshes with discrete LODs at LOD 0; Nanite meshes keep choosing their own detail). It has
 no `screenshotWarmupFrames`; `settling.minimumFrames` counts frames drawn at output size. Supporting
 Core manifests advertise `cameras.render-session.capabilities.v3`; `GetCameraRenderCapabilitiesV3`
 then lists `offscreen_viewport` in the viewport renderer's `strategies` and adds

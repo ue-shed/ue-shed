@@ -1495,6 +1495,12 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 	const FString BeforeFlags = Client->EngineShowFlags.ToString();
 	const FEngineShowFlags BeforeShowFlags = Client->EngineShowFlags;
 	const bool BeforeGameView = Client->IsInGameView();
+	// An unpilot leaves the view as the session set it; the unpilot case puts all of it back.
+	const ELevelViewportType BeforeViewportType = Client->GetViewportType();
+	const EViewModeIndex BeforePerspMode = Client->GetPerspViewMode(), BeforeOrthoMode = Client->GetOrthoViewMode();
+	const FExposureSettings BeforeExposure = Client->ExposureSettings;
+	const bool BeforeLockedCamera = Client->bLockedCameraView, BeforeEnableFading = Client->bEnableFading,
+	           BeforeDrawAxes = Client->bDrawAxes, BeforeDrawAxesGame = Client->bDrawAxesGame;
 	const bool BeforeDirty = World->GetOutermost()->IsDirty();
 	const auto Screenshot = GetHighResScreenshotConfig();
 	const uint32 BeforeResolutionX = GScreenshotResolutionX;
@@ -1671,8 +1677,15 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 			TestEqual(TEXT("Unpilot: input restored"), Client->bDisableInput, BeforeDisableInput);
 			// The view itself stays as the user left it; put the fixture back for the next case.
 			Client->DisableOverrideEngineShowFlags();
+			Client->SetViewportType(BeforeViewportType);
 			Client->SetGameView(BeforeGameView);
+			Client->SetViewModes(BeforePerspMode, BeforeOrthoMode);
 			Client->EngineShowFlags = BeforeShowFlags;
+			Client->ExposureSettings = BeforeExposure;
+			Client->bLockedCameraView = BeforeLockedCamera;
+			Client->bEnableFading = BeforeEnableFading;
+			Client->bDrawAxes = BeforeDrawAxes;
+			Client->bDrawAxesGame = BeforeDrawAxesGame;
 		}
 		else
 			Session->Close();

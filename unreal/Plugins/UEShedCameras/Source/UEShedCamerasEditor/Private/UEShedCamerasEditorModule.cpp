@@ -104,6 +104,9 @@ private:
     bool ShouldKeepEditorTicking() const
     {
         if (!GEditor) return false;
+        // An open render session keeps full speed in the background; its lease, Close, world
+        // cleanup and Play all end it.
+        if (FUEShedCameraRenderSession::IsBusy()) return true;
         UWorld* World = GEditor->GetEditorWorldContext().World();
         const auto* Cameras = World ? World->GetSubsystem<UUEShedCameraSubsystem>() : nullptr;
         return Cameras && Cameras->ShouldKeepEditorTicking();

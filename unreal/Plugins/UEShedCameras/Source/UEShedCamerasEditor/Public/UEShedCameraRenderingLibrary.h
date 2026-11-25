@@ -13,6 +13,9 @@ public:
 	/** Extended discovery is separate so existing strict v1 clients retain their response shape. */
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Rendering")
 	static void GetCameraRenderCapabilitiesV2(FString &ResultJson);
+	/** Adds the offscreen_viewport strategy; v1 and v2 responses are unchanged for strict clients. */
+	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Rendering")
+	static void GetCameraRenderCapabilitiesV3(FString &ResultJson);
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Rendering")
 	static void PreflightCameraRender(const FString& RequestJson, FString& ResultJson);
 	UFUNCTION(BlueprintCallable, Category = "UE Shed|Cameras|Rendering")

@@ -30,6 +30,7 @@ import {
 	CameraFrameOperationId,
 	CameraRenderCapabilities,
 	CameraRenderCapabilitiesV1,
+	CameraRenderCapabilitiesV2,
 	CameraRendererPolicy,
 	CameraRenderSessionId,
 	cameraRenderContract,
@@ -40,7 +41,7 @@ import {
 	type CameraRenderSessionRequest
 } from "./camera-render-schema.js";
 const decodeJsonEffect = Schema.decodeUnknownEffect(Schema.Json);
-const decodeCameraRenderCapabilitiesV = Schema.decodeResult(CameraRenderCapabilitiesV1);
+const decodeCameraRenderCapabilitiesV = Schema.decodeUnknownResult(CameraRenderCapabilitiesV1);
 const decodeReviewCaptureRequestCurrent = Schema.decodeSync(ReviewCaptureRequestCurrent);
 
 const request: CameraRenderSessionRequest = {
@@ -109,7 +110,7 @@ const failed = (code: "editor_busy" | "capture_failed" | "restoration_failed") =
 function harness(
 	override: (name: string) => Effect.Effect<unknown, RemoteControlClientError> | undefined = () =>
 		undefined,
-	extendedCapabilities = false,
+	extendedCapabilities: boolean | "v3" = false,
 	options?: CameraRendererOptions
 ) {
 	const calls: string[] = [];
@@ -124,15 +125,23 @@ function harness(
 						? {
 								schemaVersion: 1,
 								producerKind: "unreal_editor",
-								capabilities: extendedCapabilities
-									? [
-											"cameras.render-session.v1",
-											"cameras.render-session.capabilities.v2"
-										]
-									: ["cameras.render-session.v1"]
+								capabilities:
+									extendedCapabilities === "v3"
+										? [
+												"cameras.render-session.v1",
+												"cameras.render-session.capabilities.v2",
+												"cameras.render-session.capabilities.v3"
+											]
+										: extendedCapabilities
+											? [
+													"cameras.render-session.v1",
+													"cameras.render-session.capabilities.v2"
+												]
+											: ["cameras.render-session.v1"]
 							}
 						: call.functionName === "GetCameraRenderCapabilities" ||
-							  call.functionName === "GetCameraRenderCapabilitiesV2"
+							  call.functionName === "GetCameraRenderCapabilitiesV2" ||
+							  call.functionName === "GetCameraRenderCapabilitiesV3"
 							? capabilities
 							: call.functionName === "BeginCameraRender"
 								? {
@@ -665,6 +674,170 @@ describe("native screenshot warmup", () => {
 		expect(response.highResolutionScreenshot?.maximumWarmupFrames).toBe(256);
 		expect(h.calls).toContain("GetCameraRenderCapabilitiesV2");
 		expect(h.calls).not.toContain("GetCameraRenderCapabilities");
+	});
+});
+
+describe("offscreen viewport strategy", () => {
+	const offscreen = {
+		kind: "editor_viewport",
+		strategy: "offscreen_viewport",
+		profile: "lit",
+		vignette: "disabled",
+		fog: true,
+		volumetricFog: true,
+		resolution: "native",
+		lod: "highest"
+	} as const satisfies CameraRendererPolicy;
+	const session: CameraRenderSessionRequest = {
+		...request,
+		policy: { ...request.policy, renderer: offscreen }
+	};
+	const viewportRenderer = {
+		kind: "editor_viewport",
+		profiles: ["lit", "observation"],
+		reviewAssessment: [],
+		reviewClear: [],
+		projections: ["perspective", "orthographic"],
+		exposure: ["project_auto", "fixed_ev100", "meter_once"],
+		maximumDimension: 16384
+	} as const;
+	const v3 = (lods: ReadonlyArray<"highest" | "natural"> = ["highest", "natural"]) =>
+		CameraRenderCapabilities.make({
+			...capabilities,
+			renderers: [
+				{
+					...viewportRenderer,
+					strategies: ["high_resolution_screenshot", "offscreen_viewport"]
+				}
+			],
+			offscreenViewport: { version: 1, resolutions: ["native"], lods }
+		});
+	const v2 = CameraRenderCapabilitiesV2.make({
+		...capabilities,
+		renderers: [{ ...viewportRenderer, strategies: ["high_resolution_screenshot"] }]
+	});
+	it("accepts native resolution and highest or natural LOD, and no screenshot fields", () => {
+		const decode = Schema.decodeUnknownResult(CameraRendererPolicy);
+		const strict = { onExcessProperty: "error" } as const;
+		for (const lod of ["highest", "natural"])
+			expect(decode({ ...offscreen, lod }, strict)._tag).toBe("Success");
+		expect(decode({ ...offscreen, clouds: false, editorPreviews: true }, strict)._tag).toBe(
+			"Success"
+		);
+		for (const renderer of [
+			{ ...offscreen, screenshotWarmupFrames: 8 },
+			{ ...offscreen, resolution: "half" },
+			{ ...offscreen, lod: "lowest" },
+			{ ...offscreen, lod: undefined },
+			{ ...offscreen, resolution: undefined },
+			{ ...offscreen, clouds: "off" },
+			{ ...highResolutionReviewRenderer, lod: "highest" },
+			{ ...highResolutionReviewRenderer, resolution: "native" }
+		])
+			expect(decode(renderer, strict)._tag).toBe("Failure");
+	});
+	it("keeps v2 discovery strict: no offscreen strategy or options", () => {
+		const decode = Schema.decodeUnknownResult(CameraRenderCapabilitiesV2);
+		const strict = { onExcessProperty: "error" } as const;
+		expect(decode(v2, strict)._tag).toBe("Success");
+		expect(decode(v3(), strict)._tag).toBe("Failure");
+		const options = { version: 1, resolutions: ["native"], lods: [] };
+		expect(decode({ ...v2, offscreenViewport: options }, strict)._tag).toBe("Failure");
+	});
+	it("prefers v3 discovery when the plugin advertises it", async () => {
+		const h = harness(
+			(name) => (name === "GetCameraRenderCapabilitiesV3" ? Effect.succeed(v3()) : undefined),
+			"v3"
+		);
+		const response = await Effect.runPromise(h.renderer.capabilities);
+		expect(response.offscreenViewport).toEqual({
+			version: 1,
+			resolutions: ["native"],
+			lods: ["highest", "natural"]
+		});
+		expect(h.calls).toContain("GetCameraRenderCapabilitiesV3");
+		expect(h.calls).not.toContain("GetCameraRenderCapabilitiesV2");
+		expect(h.calls).not.toContain("GetCameraRenderCapabilities");
+	});
+	it("falls back to v2 and then v1 discovery", async () => {
+		const second = harness(
+			(name) => (name === "GetCameraRenderCapabilitiesV2" ? Effect.succeed(v2) : undefined),
+			true
+		);
+		await Effect.runPromise(second.renderer.capabilities);
+		expect(second.calls).toContain("GetCameraRenderCapabilitiesV2");
+		expect(second.calls).not.toContain("GetCameraRenderCapabilitiesV3");
+		const first = harness();
+		await Effect.runPromise(first.renderer.capabilities);
+		expect(first.calls).toContain("GetCameraRenderCapabilities");
+		expect(first.calls).not.toContain("GetCameraRenderCapabilitiesV3");
+	});
+	it("refuses the strategy before preflight or acquisition on older plugins", async () => {
+		for (const [extended, response] of [
+			[false, capabilities],
+			[true, v2]
+		] as const) {
+			const h = harness(
+				(name) =>
+					name === "GetCameraRenderCapabilitiesV2" ||
+					name === "GetCameraRenderCapabilities"
+						? Effect.succeed(response)
+						: undefined,
+				extended
+			);
+			const opened = await Effect.runPromise(
+				Effect.scoped(h.renderer.open(session)).pipe(Effect.flip)
+			);
+			expect(opened).toMatchObject({ code: "unsupported_capability", operation: "open" });
+			const checked = await Effect.runPromise(
+				h.renderer.preflight(session).pipe(Effect.flip)
+			);
+			expect(checked).toMatchObject({
+				code: "unsupported_capability",
+				operation: "preflight"
+			});
+			expect(h.calls).not.toContain("BeginCameraRender");
+			expect(h.calls).not.toContain("PreflightCameraRender");
+		}
+	});
+	it("refuses a LOD the plugin does not list", async () => {
+		const h = harness(
+			(name) =>
+				name === "GetCameraRenderCapabilitiesV3"
+					? Effect.succeed(v3(["natural"]))
+					: undefined,
+			"v3"
+		);
+		const refused = await Effect.runPromise(
+			Effect.scoped(h.renderer.open(session)).pipe(Effect.flip)
+		);
+		expect(refused.code).toBe("unsupported_capability");
+		expect(h.calls).not.toContain("BeginCameraRender");
+	});
+	it("renders with the exact policy on a v3 plugin", async () => {
+		const h = harness(
+			(name) =>
+				name === "GetCameraRenderCapabilitiesV3"
+					? Effect.succeed(v3())
+					: name === "BeginCameraRender"
+						? Effect.succeed({
+								status: "opened",
+								sessionId: session.sessionId,
+								resolvedPolicy: session.policy
+							})
+						: name === "StartCameraFrame"
+							? Effect.succeed({
+									...captured,
+									evidence: { ...captured.evidence, policy: session.policy }
+								})
+							: undefined,
+			"v3"
+		);
+		const result = await Effect.runPromise(
+			renderCamera({ session, frame }).pipe(Effect.provideService(CameraRenderer, h.renderer))
+		);
+		expect(result.evidence.policy.renderer).toEqual(offscreen);
+		expect(h.calls.at(-1)).toBe("EndCameraRender");
 	});
 });
 

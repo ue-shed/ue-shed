@@ -5,6 +5,7 @@
 
 class UWorld;
 class USceneCaptureComponent2D;
+class FViewport;
 
 /** One editor-world renderer owner, shared by wire sessions and legacy workflow adapters. */
 class FUEShedCameraRenderSession : public TSharedFromThis<FUEShedCameraRenderSession>
@@ -31,6 +32,9 @@ class FUEShedCameraRenderSession : public TSharedFromThis<FUEShedCameraRenderSes
 	USceneCaptureComponent2D *SceneComponent() const;
 	UWorld *World() const;
 	TSharedPtr<FJsonObject> CurrentFrame() const;
+	/** offscreen_viewport target and its size while one is allocated; null and zero otherwise. */
+	const FViewport *OffscreenTarget() const;
+	FIntPoint OffscreenTargetSize() const;
 
   private:
 	FUEShedCameraRenderSession();
@@ -47,5 +51,7 @@ TSharedPtr<FJsonObject> UEShedCameraPose(const FVector &Location, const FRotator
 										 double ProjectionValue, bool bOrthographic);
 TSharedPtr<FJsonObject> UEShedLegacyRenderRequest(const FString &Id, UWorld *World, bool bViewport,
 												  const FString &Profile = TEXT("scene_capture_defaults"));
+/** Width and height from a PNG's IHDR header without decoding it. False while unreadable. */
+bool UEShedCameraPngSizeForTests(const FString &Path, FIntPoint &Size);
 TSharedPtr<FJsonObject> UEShedRenderFrame(const FString &Session, const FString &Operation,
 										  const TSharedPtr<FJsonObject> &Camera, int32 Width, int32 Height);

@@ -47,6 +47,8 @@ const allTests = [
 	"UEShed.Cameras.Authoring.PanelRevision",
 	"UEShed.Cameras.Rendering.ViewLocalVisibilityProof",
 	"UEShed.Cameras.Rendering.HighResolutionCapture",
+	"UEShed.Cameras.Rendering.OffscreenViewportContract",
+	"UEShed.Cameras.Rendering.OffscreenViewportCapture",
 	"UEShed.Cameras.Rendering.WireConformance",
 	"UEShed.Cameras.MapCapture.LitValidation",
 	"UEShed.Cameras.MapCapture.FreezeState",

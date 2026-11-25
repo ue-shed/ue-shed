@@ -32,6 +32,7 @@ import {
 	CameraRenderBeginResult,
 	CameraRenderCapabilities,
 	CameraRenderCapabilitiesV1,
+	CameraRenderCapabilitiesV2,
 	CameraRenderEndResult,
 	CameraRenderFailure,
 	CameraFrameRequest,
@@ -272,8 +273,41 @@ function unsupportedRendererPolicy(
 	operation: "preflight" | "open"
 ): CameraRenderError | undefined {
 	const renderer = request.policy.renderer;
+	if (renderer.kind === "editor_viewport" && renderer.strategy === "offscreen_viewport") {
+		const offscreen = capabilities.offscreenViewport;
+		const advertised = capabilities.renderers.some(
+			(entry) =>
+				entry.kind === "editor_viewport" && entry.strategies.includes("offscreen_viewport")
+		);
+		if (offscreen === undefined || !advertised)
+			return new CameraRenderError({
+				code: "unsupported_capability",
+				operation,
+				sessionId: request.sessionId,
+				message: "The connected plugin does not support the offscreen_viewport strategy.",
+				recovery:
+					"Use the high_resolution_screenshot strategy or install a UE Shed Cameras plugin that advertises offscreenViewport.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
+		if (
+			!offscreen.resolutions.includes(renderer.resolution) ||
+			!offscreen.lods.includes(renderer.lod)
+		)
+			return new CameraRenderError({
+				code: "unsupported_capability",
+				operation,
+				sessionId: request.sessionId,
+				message: `The connected plugin does not support offscreen_viewport resolution ${renderer.resolution} with lod ${renderer.lod}.`,
+				recovery:
+					"Choose a resolution and lod listed in offscreenViewport, or install matching Cameras plugins.",
+				retrySafe: true,
+				nextStep: "fix_input"
+			});
+	}
 	if (
 		renderer.kind === "editor_viewport" &&
+		renderer.strategy === "high_resolution_screenshot" &&
 		renderer.screenshotWarmupFrames !== undefined &&
 		renderer.screenshotWarmupFrames >
 			(capabilities.highResolutionScreenshot?.maximumWarmupFrames ?? 0)
@@ -445,15 +479,18 @@ export function makeCameraRenderer(
 				retrySafe: true,
 				nextStep: "fix_input"
 			});
-		const extended = manifest.capabilities.includes("cameras.render-session.capabilities.v2");
-		return yield* call(
-			"capabilities",
-			"none",
-			extended ? "GetCameraRenderCapabilitiesV2" : "GetCameraRenderCapabilities",
-			{}
-		).pipe(
-			Effect.flatMap((input) =>
-				decode(extended ? CameraRenderCapabilities : CameraRenderCapabilitiesV1, input)
+		// Newest discovery the plugin advertises; each older response keeps its strict shape.
+		const [functionName, schema] = manifest.capabilities.includes(
+			"cameras.render-session.capabilities.v3"
+		)
+			? (["GetCameraRenderCapabilitiesV3", CameraRenderCapabilities] as const)
+			: manifest.capabilities.includes("cameras.render-session.capabilities.v2")
+				? (["GetCameraRenderCapabilitiesV2", CameraRenderCapabilitiesV2] as const)
+				: (["GetCameraRenderCapabilities", CameraRenderCapabilitiesV1] as const);
+		return yield* call("capabilities", "none", functionName, {}).pipe(
+			Effect.flatMap(
+				(input): Effect.Effect<CameraRenderCapabilities, Schema.SchemaError> =>
+					decode(schema, input)
 			),
 			Effect.mapError((cause) => renderError("capabilities", "none", cause))
 		);

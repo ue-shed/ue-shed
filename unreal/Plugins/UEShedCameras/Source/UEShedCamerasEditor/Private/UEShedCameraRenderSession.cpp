@@ -2,7 +2,11 @@
 #include "UEShedCameraEngine.h"
 #include "UEShedCameraVisibility.h"
 #include "UEShedCameraEditorOwnership.h"
+#include "Async/Async.h"
 #include "Camera/CameraActor.h"
+#include "CanvasTypes.h"
+#include "Engine/GameViewportClient.h"
+#include "Modules/ModuleManager.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "DataLayer/DataLayerEditorSubsystem.h"
@@ -12,8 +16,10 @@
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "HighResScreenshot.h"
+#include "ImageCore.h"
 #include "ImageUtils.h"
 #include "Interfaces/IPluginManager.h"
+#include "LegacyScreenPercentageDriver.h"
 #include "LevelEditorViewport.h"
 #include "Misc/App.h"
 #include "Misc/EngineVersion.h"
@@ -208,18 +214,34 @@ bool ValidPolicy(const TSharedPtr<FJsonObject> &P)
 	const FString Kind = String(R, TEXT("kind")), Mode = String(E, TEXT("mode"));
 	if (Kind == TEXT("editor_viewport"))
 	{
-		if (!Fields(R,
-		            {TEXT("kind"), TEXT("strategy"), TEXT("profile"), TEXT("vignette"), TEXT("fog"),
-		             TEXT("volumetricFog")},
-		            {TEXT("editorPreviews"), TEXT("screenshotWarmupFrames"), TEXT("clouds")}) ||
-		    String(R, TEXT("strategy")) != TEXT("high_resolution_screenshot") ||
-		    (String(R, TEXT("profile")) != TEXT("lit") &&
+		const FString Strategy = String(R, TEXT("strategy"));
+		if ((String(R, TEXT("profile")) != TEXT("lit") &&
 		     String(R, TEXT("profile")) != TEXT("observation")) ||
 		    (String(R, TEXT("vignette")) != TEXT("project") &&
-		     String(R, TEXT("vignette")) != TEXT("disabled")) ||
-		    (R->HasField(TEXT("screenshotWarmupFrames")) &&
-		     (R->TryGetField(TEXT("screenshotWarmupFrames"))->Type != EJson::Number ||
-		      !Number(R, TEXT("screenshotWarmupFrames"), 1, 256, true))))
+		     String(R, TEXT("vignette")) != TEXT("disabled")))
+			return false;
+		if (Strategy == TEXT("high_resolution_screenshot"))
+		{
+			if (!Fields(R,
+			            {TEXT("kind"), TEXT("strategy"), TEXT("profile"), TEXT("vignette"), TEXT("fog"),
+			             TEXT("volumetricFog")},
+			            {TEXT("editorPreviews"), TEXT("screenshotWarmupFrames"), TEXT("clouds")}) ||
+			    (R->HasField(TEXT("screenshotWarmupFrames")) &&
+			     (R->TryGetField(TEXT("screenshotWarmupFrames"))->Type != EJson::Number ||
+			      !Number(R, TEXT("screenshotWarmupFrames"), 1, 256, true))))
+				return false;
+		}
+		else if (Strategy == TEXT("offscreen_viewport"))
+		{
+			if (!Fields(R,
+			            {TEXT("kind"), TEXT("strategy"), TEXT("profile"), TEXT("vignette"), TEXT("fog"),
+			             TEXT("volumetricFog"), TEXT("resolution"), TEXT("lod")},
+			            {TEXT("editorPreviews"), TEXT("clouds")}) ||
+			    String(R, TEXT("resolution")) != TEXT("native") ||
+			    (String(R, TEXT("lod")) != TEXT("highest") && String(R, TEXT("lod")) != TEXT("natural")))
+				return false;
+		}
+		else
 			return false;
 	}
 	else if (Kind == TEXT("scene_capture"))
@@ -324,7 +346,42 @@ UDataLayerInstance *FindLayer(const UDataLayerManager *Manager, const FString &P
 	});
 	return Found;
 }
+/**
+ * Width and height from a PNG's signature and IHDR chunk (its first 33 bytes), without decoding
+ * pixels. Unset while the file is missing, shorter than that, or not a PNG.
+ */
+TOptional<FIntPoint> PngSize(const FString &Path)
+{
+	constexpr int32 HeaderBytes = 33;
+	TUniquePtr<FArchive> Reader(IFileManager::Get().CreateFileReader(*Path, FILEREAD_Silent | FILEREAD_AllowWrite));
+	if (!Reader || Reader->TotalSize() < HeaderBytes)
+		return {};
+	uint8 Header[HeaderBytes];
+	Reader->Serialize(Header, HeaderBytes);
+	if (Reader->IsError())
+		return {};
+	static const uint8 Signature[] = {137, 80, 78, 71, 13, 10, 26, 10};
+	auto BigEndian = [&Header](int32 Offset) {
+		return (uint32(Header[Offset]) << 24) | (uint32(Header[Offset + 1]) << 16) |
+		       (uint32(Header[Offset + 2]) << 8) | uint32(Header[Offset + 3]);
+	};
+	if (FMemory::Memcmp(Header, Signature, sizeof(Signature)) != 0 || BigEndian(8) != 13 ||
+	    FMemory::Memcmp(Header + 12, "IHDR", 4) != 0)
+		return {};
+	const uint32 Width = BigEndian(16), Height = BigEndian(20);
+	if (Width == 0 || Height == 0 || Width > MAX_int32 || Height > MAX_int32)
+		return {};
+	return FIntPoint(int32(Width), int32(Height));
+}
 } // namespace
+
+bool UEShedCameraPngSizeForTests(const FString &Path, FIntPoint &Size)
+{
+	const auto Found = PngSize(Path);
+	if (Found)
+		Size = *Found;
+	return Found.IsSet();
+}
 
 TSharedPtr<FJsonObject> UEShedCameraJson(const FString &Text)
 {
@@ -401,6 +458,33 @@ TSharedPtr<FJsonObject> UEShedRenderFrame(const FString &Session, const FString 
 	return Out;
 }
 
+/**
+ * Sets up only our offscreen target's view family: realtime, and 100% screen percentage without
+ * low-DPI scaling. Nothing is written to the live client, so its viewport keeps its own settings.
+ */
+class FUEShedOffscreenRealtimeExtension final : public FWorldSceneViewExtension
+{
+public:
+	FUEShedOffscreenRealtimeExtension(const FAutoRegister &AutoRegister, UWorld *InWorld)
+	    : FWorldSceneViewExtension(AutoRegister, InWorld) {}
+	FViewport *ActiveTarget = nullptr;
+	virtual void SetupViewFamily(FSceneViewFamily &Family) override { Family.bRealtimeUpdate = true; }
+	// FEditorViewportClient::Draw applies low-DPI scaling after SetupViewFamily and keeps a screen
+	// percentage driver a view extension set in SetupView; without one the editor scales a large
+	// target down (39% at 4K).
+	virtual void SetupView(FSceneViewFamily &Family, FSceneView &View) override
+	{
+		Family.SecondaryViewFraction = 1.0f;
+		Family.EngineShowFlags.ScreenPercentage = false;
+		if (!Family.GetScreenPercentageInterface())
+			Family.SetScreenPercentageInterface(new FLegacyScreenPercentageDriver(Family, 1.0f));
+	}
+	virtual bool IsActiveThisFrame_Internal(const FSceneViewExtensionContext &Context) const override
+	{
+		return ActiveTarget != nullptr && Context.Viewport == ActiveTarget;
+	}
+};
+
 struct FUEShedCameraRenderSession::FState
 {
 	FString Id, Operation, RawPath;
@@ -437,6 +521,12 @@ struct FUEShedCameraRenderSession::FState
 	TSharedPtr<FUEShedCameraVisibility, ESPMode::ThreadSafe> Visibility;
 	FUEShedResolvedVisibility ResolvedVisibility;
 	FUEShedEditorPreviews EditorPreviews;
+	// offscreen_viewport: one target reused while the output size stays the same.
+	TUniquePtr<FUEShedOffscreenViewport> OffscreenTarget;
+	TSharedPtr<FUEShedOffscreenRealtimeExtension, ESPMode::ThreadSafe> OffscreenRealtime;
+	FIntPoint OffscreenSize = FIntPoint::ZeroValue, PhaseSize = FIntPoint::ZeroValue;
+	TFuture<bool> PendingEncode;
+	FDelegateHandle ViewportRenderedHandle;
 	FString WorldLeaseId;
 	TSharedPtr<FJsonObject> PreparedWorld;
 	int32 WorldRevision = 0, LayerCount = 0;
@@ -490,6 +580,121 @@ struct FUEShedCameraRenderSession::FState
 	TSharedPtr<FJsonObject> Policy() const
 	{
 		return Child(Request, TEXT("policy"));
+	}
+	bool Offscreen() const
+	{
+		return Viewport() &&
+		       String(Child(Policy(), TEXT("renderer")), TEXT("strategy")) == TEXT("offscreen_viewport");
+	}
+	/** Puts this session's realtime override on top of the stack with the given value. */
+	void AssertRealtime(bool bRealtime) const
+	{
+		if (Client->IsRealtime() == bRealtime)
+			return;
+		Client->RemoveRealtimeOverride(RealtimeOwner, false);
+		Client->AddRealtimeOverride(bRealtime, RealtimeOwner);
+	}
+	FUEShedOffscreenViewport *EnsureOffscreenTarget(const FIntPoint Size)
+	{
+		if (OffscreenTarget && OffscreenSize == Size)
+			return OffscreenTarget.Get();
+		ReleaseOffscreenTarget();
+		OffscreenTarget = MakeUnique<FUEShedOffscreenViewport>(Client->Viewport, Client);
+		OffscreenTarget->BeginInit(Size);
+		OffscreenSize = Size;
+		return OffscreenTarget.Get();
+	}
+	void ReleaseOffscreenTarget()
+	{
+		if (!OffscreenTarget)
+			return;
+		OffscreenTarget->BeginRelease();
+		FlushRenderingCommands();
+		OffscreenTarget.Reset();
+		OffscreenSize = FIntPoint::ZeroValue;
+	}
+	/** Waits for a PNG still being written, so nothing touches files or state after cleanup. */
+	void ReleaseOffscreen()
+	{
+		if (PendingEncode.IsValid())
+		{
+			PendingEncode.Wait();
+			PendingEncode = TFuture<bool>();
+		}
+		if (ViewportRenderedHandle.IsValid())
+		{
+			UGameViewportClient::OnViewportRendered().Remove(ViewportRenderedHandle);
+			ViewportRenderedHandle.Reset();
+		}
+		OffscreenRealtime.Reset();
+		ReleaseOffscreenTarget();
+	}
+	enum class EOffscreenDraw
+	{
+		Drawn,
+		Skipped,
+		Failed
+	};
+	/** Draws one frame of the locked view into the offscreen target at the current phase size. */
+	EOffscreenDraw DrawOffscreen()
+	{
+		// FEditorViewportClient::Draw leaves its viewport swapped when it returns early here.
+		if (World->IsPreparingMapChange())
+			return EOffscreenDraw::Skipped;
+		FUEShedOffscreenViewport *Target = EnsureOffscreenTarget(PhaseSize);
+		FViewport *const RealViewport = Client->Viewport;
+		if (!OffscreenRealtime)
+			OffscreenRealtime = FSceneViewExtensions::NewExtension<FUEShedOffscreenRealtimeExtension>(World.Get());
+		// Keep Client non-realtime so AddRealtimeOverride never invalidates the live Slate viewport
+		// between draws; the view extension marks only this offscreen view family realtime, and
+		// DisableThrottle prevents Slate responsive-mode throttling from downgrading TSR to FXAA.
+		OffscreenRealtime->ActiveTarget = Target;
+		FSlateThrottleManager::Get().DisableThrottle(true);
+		ON_SCOPE_EXIT {
+			FSlateThrottleManager::Get().DisableThrottle(false);
+			if (OffscreenRealtime)
+				OffscreenRealtime->ActiveTarget = nullptr;
+		};
+		{
+			FCanvas Canvas(Target, nullptr, World.Get(), World->GetFeatureLevel());
+			// FLevelEditorViewportClient hides this overload behind its own Draw.
+			static_cast<FViewportClient *>(Client)->Draw(Target, &Canvas);
+			Canvas.Flush_GameThread();
+		}
+		// Discard stats and other debug drawing so they never reach the frame.
+		if (FCanvas *DebugCanvas = Target->GetDebugCanvas())
+		{
+			DebugCanvas->SetAllowedModes(FCanvas::Allow_DeleteOnRender);
+			DebugCanvas->Flush_GameThread(true);
+		}
+		if (Client->Viewport != RealViewport)
+		{
+			Client->Viewport = RealViewport;
+			Fail(TEXT("capture_failed"), TEXT("The editor viewport changed while drawing offscreen."));
+			return EOffscreenDraw::Failed;
+		}
+		return EOffscreenDraw::Drawn;
+	}
+	/** Reads the drawn frame and writes its PNG on a worker thread. */
+	bool BeginOffscreenEncode(int32 Width, int32 Height)
+	{
+		TArray<FColor> Bitmap;
+		if (!OffscreenTarget || OffscreenSize != FIntPoint(Width, Height) || !OffscreenTarget->ReadPixels(Bitmap) ||
+		    Bitmap.Num() != Width * Height)
+			return false;
+		FImage Image(Width, Height, ERawImageFormat::BGRA8, EGammaSpace::sRGB);
+		FColor *Pixels = reinterpret_cast<FColor *>(Image.RawData.GetData());
+		for (int32 I = 0; I < Bitmap.Num(); ++I)
+		{
+			Pixels[I] = Bitmap[I];
+			Pixels[I].A = 255;
+		}
+		// CompressImage can load the image wrapper only on the game thread.
+		FModuleManager::Get().LoadModule(TEXT("ImageWrapper"));
+		PendingEncode = Async(EAsyncExecution::ThreadPool, [Path = RawPath, Image = MoveTemp(Image)]() {
+			return FUEShedTransientCapture::WritePng(Path, Image);
+		});
+		return true;
 	}
 	bool ShowsEditorPreviews() const
 	{
@@ -612,6 +817,7 @@ struct FUEShedCameraRenderSession::FState
 		// A world being torn down discards its proxies; only the serialized flag needs restoring.
 		EditorPreviews.Restore(!WorldCleanup);
 		RestoreScreenshot();
+		ReleaseOffscreen();
 		// Snapshot/restore extracted from the Lit map renderer. No second viewport manager.
 		if (Client)
 		{
@@ -645,11 +851,18 @@ struct FUEShedCameraRenderSession::FState
 				Client->bEnableFading = EnableFading;
 				Client->bDrawAxes = DrawAxes;
 				Client->bDrawAxesGame = DrawAxesGame;
-				Client->RemoveRealtimeOverride(RealtimeOwner, false);
 			}
 			else
 			{
 				Restored = false;
+			}
+			// The realtime override is this session's own entry and the session disabled input, so both
+			// go back even when another actor or the user took the viewport.
+			if (ClientAlive())
+			{
+				Client->RemoveRealtimeOverride(RealtimeOwner, false);
+				if (Client->bDisableInput && !DisableInput)
+					Client->bDisableInput = false;
 			}
 		}
 		EndUEShedOwnedMapFreeze(Id);
@@ -673,6 +886,85 @@ struct FUEShedCameraRenderSession::FState
 		Result = Failure(Id, Code, Message, Clean ? TEXT("restored") : TEXT("failed"), Operation);
 		if (Frame)
 			Retained.Add(Operation, {UEShedCameraJsonText(Frame), Result, FPlatformTime::Seconds()});
+	}
+	/**
+	 * Records the captured frame once its PNG header is readable. False while the header is not
+	 * readable yet; a header of another size fails the frame.
+	 */
+	bool Complete(int32 Width, int32 Height, double Now)
+	{
+		const auto Found = PngSize(RawPath);
+		if (!Found)
+			return false;
+		if (*Found != FIntPoint(Width, Height))
+		{
+			Fail(TEXT("artifact_invalid"), TEXT("The produced image has different dimensions than requested."));
+			return true;
+		}
+		auto Out = Object(), Artifact = Object(), Evidence = Object(), Preparation = Object(), Settled = Object();
+		Out->SetStringField(TEXT("status"), TEXT("captured"));
+		Out->SetStringField(TEXT("sessionId"), Id);
+		Out->SetStringField(TEXT("operationId"), Operation);
+		Artifact->SetStringField(TEXT("relativePath"), Id + TEXT("/") + Operation + TEXT(".png"));
+		Artifact->SetNumberField(TEXT("bytes"), IFileManager::Get().FileSize(*RawPath));
+		Artifact->SetNumberField(TEXT("width"), Width);
+		Artifact->SetNumberField(TEXT("height"), Height);
+		Out->SetObjectField(TEXT("artifact"), Artifact);
+		auto EditorState = Object();
+		EditorState->SetBoolField(TEXT("mapPackageDirtyBefore"), DirtyBefore);
+		EditorState->SetBoolField(TEXT("mapPackageDirtyAfter"), World->GetOutermost()->IsDirty());
+		Evidence->SetObjectField(TEXT("editorState"), EditorState);
+		Evidence->SetObjectField(TEXT("camera"), Child(Frame, TEXT("camera")));
+		Evidence->SetObjectField(TEXT("size"), Child(Frame, TEXT("size")));
+		Evidence->SetObjectField(TEXT("policy"), Policy());
+		if (Policy()->HasField(TEXT("visibility"))) Evidence->SetArrayField(TEXT("visibilityDiagnostics"), ResolvedVisibility.Diagnostics);
+		if (ShowsEditorPreviews())
+		{
+			auto Previews = Object();
+			Previews->SetNumberField(TEXT("revealedChildActors"), EditorPreviews.Num());
+			Evidence->SetObjectField(TEXT("editorPreviews"), Previews);
+		}
+		if (EV.IsSet())
+			Evidence->SetNumberField(TEXT("exposureEV100"), EV.GetValue());
+		else
+			Evidence->SetField(TEXT("exposureEV100"), MakeShared<FJsonValueNull>());
+		Preparation->SetStringField(
+			TEXT("status"), RegionInputs.IsEmpty() && LayerCount == 0 ? TEXT("preserved") : TEXT("partial"));
+		Preparation->SetNumberField(TEXT("regionsHeld"), RegionInputs.Num());
+		Preparation->SetNumberField(TEXT("dataLayersApplied"), LayerCount);
+		Preparation->SetArrayField(
+			TEXT("limitations"),
+			{MakeShared<FJsonValueString>(TEXT("Explicit editor loading does not certify frustum completeness, "
+											   "shader convergence, or gameplay initialization."))});
+		Evidence->SetObjectField(TEXT("preparation"), Preparation);
+		Settled->SetNumberField(TEXT("renderedFrames"), Frames);
+		Settled->SetNumberField(TEXT("elapsedMs"), (FPlatformTime::Seconds() - Started) * 1000);
+		Settled->SetStringField(TEXT("convergence"), TEXT("not_assessed"));
+		Evidence->SetObjectField(TEXT("settling"), Settled);
+		Evidence->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
+		Evidence->SetStringField(TEXT("pluginVersion"), PluginVersion());
+		Out->SetObjectField(TEXT("evidence"), Evidence);
+		Pending = false;
+		RestoreScreenshot();
+		Result = Out;
+		++CompletedFrames;
+		Prune(Now);
+		if (Retained.Num() >= RetainedOperations)
+		{
+			FString Oldest;
+			double At = TNumericLimits<double>::Max();
+			for (const auto &Item : Retained)
+				if (Item.Value.At < At)
+				{
+					At = Item.Value.At;
+					Oldest = Item.Key;
+				}
+			IFileManager::Get().Delete(*FPaths::Combine(
+				FPaths::ProjectSavedDir(), TEXT("UEShed/CameraRenderStaging"), Id, Oldest + TEXT(".png")));
+			Retained.Remove(Oldest);
+		}
+		Retained.Add(Operation, {UEShedCameraJsonText(Frame), Out, Now});
+		return true;
 	}
 	void ApplyExposure(FPostProcessSettings &PP)
 	{
@@ -756,6 +1048,7 @@ struct FUEShedCameraRenderSession::FState
 			if (EV.IsSet())
 				Capture->Component()->PostProcessBlendWeight = 1;
 		}
+		PhaseSize = FIntPoint(Size->GetIntegerField(TEXT("width")), Size->GetIntegerField(TEXT("height")));
 		Frames = 0;
 		Pending = false;
 		return true;
@@ -804,6 +1097,14 @@ UWorld *FUEShedCameraRenderSession::World() const
 TSharedPtr<FJsonObject> FUEShedCameraRenderSession::CurrentFrame() const
 {
 	return State->Frame;
+}
+const FViewport *FUEShedCameraRenderSession::OffscreenTarget() const
+{
+	return State->OffscreenTarget.Get();
+}
+FIntPoint FUEShedCameraRenderSession::OffscreenTargetSize() const
+{
+	return State->OffscreenSize;
 }
 
 TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Preflight(const TSharedPtr<FJsonObject> &Request)
@@ -1001,7 +1302,10 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 		// Absent clouds keep the viewport's own Cloud show flag.
 		const TOptional<bool> Clouds =
 			R->HasField(TEXT("clouds")) ? TOptional<bool>(R->GetBoolField(TEXT("clouds"))) : TOptional<bool>();
-		C->EnableOverrideEngineShowFlags([Fog, VolumetricFog, Clouds, Observation](FEngineShowFlags &Flags) {
+		const bool Offscreen = S.Offscreen();
+		const bool HighestLod = Offscreen && String(R, TEXT("lod")) == TEXT("highest");
+		C->EnableOverrideEngineShowFlags(
+		    [Fog, VolumetricFog, Clouds, Observation, Offscreen, HighestLod](FEngineShowFlags &Flags) {
 			Flags.SetFog(Fog);
 			Flags.SetVolumetricFog(VolumetricFog);
 			if (Clouds.IsSet())
@@ -1009,6 +1313,11 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 			Flags.SetSelection(false);
 			Flags.SetSelectionOutline(false);
 			Flags.SetModeWidgets(false);
+			if (Offscreen)
+				Flags.SetMotionBlur(false);
+			// LOD off renders this view family at LOD 0 without touching r.ForceLOD.
+			if (HighestLod)
+				Flags.SetLOD(false);
 			if (Observation)
 			{
 				Flags.DisableAdvancedFeatures();
@@ -1018,7 +1327,19 @@ TSharedPtr<FUEShedCameraRenderSession> FUEShedCameraRenderSession::Open(
 				Flags.SetAntiAliasing(false);
 			}
 		});
-		C->AddRealtimeOverride(true, RealtimeOwner);
+		if (Offscreen)
+		{
+			// A live-viewport draw shares the view state at another size and resets temporal history,
+			// so settling starts over.
+			S.ViewportRenderedHandle = UGameViewportClient::OnViewportRendered().AddLambda(
+			    [State = &S](FViewport *Drawn) {
+				    if (!State->Closed && State->Client && Drawn == State->Client->Viewport && State->Frame &&
+				        !State->Result && !State->Pending)
+					    State->Frames = 0;
+			    });
+		}
+		// The offscreen strategy turns realtime on only around its own draws.
+		C->AddRealtimeOverride(!Offscreen, RealtimeOwner);
 		C->SetActorLock(S.CameraActor.Get());
 		C->UpdateViewForLockedActor();
 	}
@@ -1187,9 +1508,12 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	}
 	if (!S.Frame || S.Result)
 		return;
+	// The offscreen strategy owns no screenshot state; another screenshot would still draw this view.
 	if (S.Viewport() &&
-	    ((S.Pending && (!S.OwnsScreenshot() || !S.OwnsScreenshotWarmup())) ||
-	     (!S.Pending && (GIsHighResScreenshot || FScreenshotRequest::IsScreenshotRequested()))))
+	    (S.Offscreen()
+	         ? (GIsHighResScreenshot || FScreenshotRequest::IsScreenshotRequested())
+	         : ((S.Pending && (!S.OwnsScreenshot() || !S.OwnsScreenshotWarmup())) ||
+	            (!S.Pending && (GIsHighResScreenshot || FScreenshotRequest::IsScreenshotRequested())))))
 	{
 		S.Fail(TEXT("editor_busy"), TEXT("Another operation owns the screenshot state."));
 		return;
@@ -1198,6 +1522,25 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	if ((Now - S.Started) * 1000 > Settling->GetNumberField(TEXT("timeoutMs")))
 	{
 		S.Fail(TEXT("settling_timeout"), TEXT("The frame did not finish within its bounded deadline."));
+		return;
+	}
+	const auto Size = Child(S.Frame, TEXT("size"));
+	const int32 Width = Size->GetIntegerField(TEXT("width")), Height = Size->GetIntegerField(TEXT("height"));
+	// No frames are drawn while the captured frame's PNG is being written.
+	if (S.Offscreen() && S.Pending)
+	{
+		if (!S.PendingEncode.IsReady())
+			return;
+		const bool Written = S.PendingEncode.Get();
+		S.PendingEncode = TFuture<bool>();
+		if (!Written || !FPaths::FileExists(S.RawPath))
+		{
+			S.Fail(TEXT("capture_failed"), TEXT("The offscreen viewport PNG could not be written."));
+			return;
+		}
+		// The worker closed the file before its future completed; an unreadable header is final.
+		if (!S.Complete(Width, Height, Now))
+			S.Fail(TEXT("artifact_invalid"), TEXT("The offscreen viewport PNG has no readable header."));
 		return;
 	}
 	for (auto *L : S.World->GetStreamingLevels())
@@ -1223,9 +1566,22 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 		}
 		S.FrameConfigured = true;
 	}
-	if (S.Viewport())
+	if (S.Offscreen())
+	{
+		const auto Drawn = S.DrawOffscreen();
+		if (Drawn != FState::EOffscreenDraw::Drawn)
+			return;
+	}
+	else if (S.Viewport())
+	{
+		// Unreal's per-tick "Background Process" override would otherwise turn realtime off while the
+		// editor is unfocused, dropping temporal anti-aliasing to FXAA.
+		S.AssertRealtime(true);
+		FSlateThrottleManager::Get().DisableThrottle(true);
+		ON_SCOPE_EXIT { FSlateThrottleManager::Get().DisableThrottle(false); };
 		S.Client->Viewport->Draw(false);
-	if (!S.Viewport())
+	}
+	else
 		S.Capture->Capture();
 	++S.Frames;
 	if (S.InitialWarmup)
@@ -1272,8 +1628,17 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 	}
 	if (S.Frames < Settling->GetIntegerField(TEXT("minimumFrames")))
 		return;
-	const auto Size = Child(S.Frame, TEXT("size"));
-	const int32 Width = Size->GetIntegerField(TEXT("width")), Height = Size->GetIntegerField(TEXT("height"));
+	if (S.Offscreen())
+	{
+		// The frame drawn this tick is the settled one; read it before anything draws again.
+		if (!S.BeginOffscreenEncode(Width, Height))
+		{
+			S.Fail(TEXT("capture_failed"), TEXT("The offscreen viewport pixels could not be read."));
+			return;
+		}
+		S.Pending = true;
+		return;
+	}
 	if (S.Viewport())
 	{
 		if (!S.Pending)
@@ -1311,6 +1676,8 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 				return;
 			}
 			S.Pending = true;
+			FSlateThrottleManager::Get().DisableThrottle(true);
+			ON_SCOPE_EXIT { FSlateThrottleManager::Get().DisableThrottle(false); };
 			if (!S.Client->Viewport->TakeHighResScreenShot())
 			{
 				S.Fail(TEXT("capture_failed"), TEXT("The viewport rejected the screenshot."));
@@ -1328,77 +1695,7 @@ void FUEShedCameraRenderSession::Tick(bool bDrawViewport)
 		S.Fail(TEXT("capture_failed"), TEXT("The SceneCapture PNG could not be staged."));
 		return;
 	}
-	FImage Image;
-	if (!FImageUtils::LoadImage(*S.RawPath, Image))
-		return;
-	if (Image.SizeX != Width || Image.SizeY != Height)
-	{
-		S.Fail(TEXT("artifact_invalid"), TEXT("The produced image has different dimensions than requested."));
-		return;
-	}
-	auto Out = Object(), Artifact = Object(), Evidence = Object(), Preparation = Object(), Settled = Object();
-	Out->SetStringField(TEXT("status"), TEXT("captured"));
-	Out->SetStringField(TEXT("sessionId"), S.Id);
-	Out->SetStringField(TEXT("operationId"), S.Operation);
-	Artifact->SetStringField(TEXT("relativePath"), S.Id + TEXT("/") + S.Operation + TEXT(".png"));
-	Artifact->SetNumberField(TEXT("bytes"), IFileManager::Get().FileSize(*S.RawPath));
-	Artifact->SetNumberField(TEXT("width"), Width);
-	Artifact->SetNumberField(TEXT("height"), Height);
-	Out->SetObjectField(TEXT("artifact"), Artifact);
-	auto EditorState = Object();
-	EditorState->SetBoolField(TEXT("mapPackageDirtyBefore"), S.DirtyBefore);
-	EditorState->SetBoolField(TEXT("mapPackageDirtyAfter"), S.World->GetOutermost()->IsDirty());
-	Evidence->SetObjectField(TEXT("editorState"), EditorState);
-	Evidence->SetObjectField(TEXT("camera"), Child(S.Frame, TEXT("camera")));
-	Evidence->SetObjectField(TEXT("size"), Size);
-	Evidence->SetObjectField(TEXT("policy"), S.Policy());
-	if (S.Policy()->HasField(TEXT("visibility"))) Evidence->SetArrayField(TEXT("visibilityDiagnostics"), S.ResolvedVisibility.Diagnostics);
-	if (S.ShowsEditorPreviews())
-	{
-		auto Previews = Object();
-		Previews->SetNumberField(TEXT("revealedChildActors"), S.EditorPreviews.Num());
-		Evidence->SetObjectField(TEXT("editorPreviews"), Previews);
-	}
-	if (S.EV.IsSet())
-		Evidence->SetNumberField(TEXT("exposureEV100"), S.EV.GetValue());
-	else
-		Evidence->SetField(TEXT("exposureEV100"), MakeShared<FJsonValueNull>());
-	Preparation->SetStringField(
-		TEXT("status"), S.RegionInputs.IsEmpty() && S.LayerCount == 0 ? TEXT("preserved") : TEXT("partial"));
-	Preparation->SetNumberField(TEXT("regionsHeld"), S.RegionInputs.Num());
-	Preparation->SetNumberField(TEXT("dataLayersApplied"), S.LayerCount);
-	Preparation->SetArrayField(
-		TEXT("limitations"),
-		{MakeShared<FJsonValueString>(TEXT("Explicit editor loading does not certify frustum completeness, "
-										   "shader convergence, or gameplay initialization."))});
-	Evidence->SetObjectField(TEXT("preparation"), Preparation);
-	Settled->SetNumberField(TEXT("renderedFrames"), S.Frames);
-	Settled->SetNumberField(TEXT("elapsedMs"), (FPlatformTime::Seconds() - S.Started) * 1000);
-	Settled->SetStringField(TEXT("convergence"), TEXT("not_assessed"));
-	Evidence->SetObjectField(TEXT("settling"), Settled);
-	Evidence->SetStringField(TEXT("engineVersion"), FEngineVersion::Current().ToString());
-	Evidence->SetStringField(TEXT("pluginVersion"), PluginVersion());
-	Out->SetObjectField(TEXT("evidence"), Evidence);
-	S.Pending = false;
-	S.RestoreScreenshot();
-	S.Result = Out;
-	++S.CompletedFrames;
-	S.Prune(Now);
-	if (S.Retained.Num() >= RetainedOperations)
-	{
-		FString Oldest;
-		double At = TNumericLimits<double>::Max();
-		for (const auto &Item : S.Retained)
-			if (Item.Value.At < At)
-			{
-				At = Item.Value.At;
-				Oldest = Item.Key;
-			}
-		IFileManager::Get().Delete(*FPaths::Combine(
-			FPaths::ProjectSavedDir(), TEXT("UEShed/CameraRenderStaging"), S.Id, Oldest + TEXT(".png")));
-		S.Retained.Remove(Oldest);
-	}
-	S.Retained.Add(S.Operation, {UEShedCameraJsonText(S.Frame), Out, Now});
+	S.Complete(Width, Height, Now);
 }
 
 TSharedPtr<FJsonObject> FUEShedCameraRenderSession::Poll(const FString &OperationId, bool bRenewLease)
@@ -1545,6 +1842,24 @@ void UUEShedCameraRenderingLibrary::GetCameraRenderCapabilities(FString &ResultJ
 void UUEShedCameraRenderingLibrary::GetCameraRenderCapabilitiesV2(FString &ResultJson)
 {
 	ResultJson = UEShedCameraJsonText(FUEShedCameraRenderSession::Capabilities());
+}
+void UUEShedCameraRenderingLibrary::GetCameraRenderCapabilitiesV3(FString &ResultJson)
+{
+	// Built on the v2 response so v1 and v2 stay exactly as they were.
+	auto Capabilities = FUEShedCameraRenderSession::Capabilities();
+	for (const auto &Value : Capabilities->GetArrayField(TEXT("renderers")))
+	{
+		const auto Renderer = Value->AsObject();
+		if (Renderer->GetStringField(TEXT("kind")) != TEXT("editor_viewport"))
+			continue;
+		auto Strategies = Renderer->GetArrayField(TEXT("strategies"));
+		Strategies.Add(MakeShared<FJsonValueString>(TEXT("offscreen_viewport")));
+		Renderer->SetArrayField(TEXT("strategies"), Strategies);
+	}
+	Capabilities->SetObjectField(
+	    TEXT("offscreenViewport"),
+	    UEShedCameraJson(TEXT("{\"version\":1,\"resolutions\":[\"native\"],\"lods\":[\"highest\",\"natural\"]}")));
+	ResultJson = UEShedCameraJsonText(Capabilities);
 }
 void UUEShedCameraRenderingLibrary::PreflightCameraRender(const FString &RequestJson, FString &ResultJson)
 {

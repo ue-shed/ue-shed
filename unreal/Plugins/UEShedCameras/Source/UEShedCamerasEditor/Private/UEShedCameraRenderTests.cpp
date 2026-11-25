@@ -1505,8 +1505,11 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 		for (const auto &Saved : EditorScreenPercentage)
 			Saved.Variable->Set(*Saved.Value, Saved.SetBy);
 	};
-	const bool LiveDefaultScaled = EditorScreenPercentage.Num() == UE_ARRAY_COUNT(EditorDefaults) &&
-	                               !Client->IsPreviewingScreenPercentage();
+	// The default applies only while custom preview is off; that flag is a plain bool, restored exactly.
+	const bool FixturePreviewing = Client->IsPreviewingScreenPercentage();
+	Client->SetPreviewingScreenPercentage(false);
+	ON_SCOPE_EXIT { Client->SetPreviewingScreenPercentage(FixturePreviewing); };
+	const bool LiveDefaultScaled = EditorScreenPercentage.Num() == UE_ARRAY_COUNT(EditorDefaults);
 	const bool BeforePreviewing = Client->IsPreviewingScreenPercentage();
 	const int32 BeforePercentage = Client->GetPreviewScreenPercentage();
 	const bool BeforeLowDPI = Client->IsLowDPIPreview();

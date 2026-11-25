@@ -1478,15 +1478,35 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 		AddError(TEXT("Open a rendering editor fixture without Play or Simulate."));
 		return false;
 	}
-	// A live viewport previewing 50% must not scale the offscreen frame, and must keep its 50%.
-	const bool FixturePreviewing = Client->IsPreviewingScreenPercentage();
-	const int32 FixturePercentage = Client->GetPreviewScreenPercentage();
-	Client->SetPreviewScreenPercentage(50);
-	Client->SetPreviewingScreenPercentage(true);
-	ON_SCOPE_EXIT {
-		Client->SetPreviewScreenPercentage(FixturePercentage);
-		Client->SetPreviewingScreenPercentage(FixturePreviewing);
+	// The live viewport's default screen percentage is 50% here (editor cvars, restored exactly, so
+	// the shared viewport never stores a preview value); the offscreen frame must not be scaled by it.
+	struct FSavedCVar
+	{
+		IConsoleVariable *Variable;
+		FString Value;
+		EConsoleVariableFlags SetBy;
 	};
+	TArray<FSavedCVar> EditorScreenPercentage;
+	// Manual 50%, without the minimum rendering resolution that keeps small frames at 100%.
+	const TPair<const TCHAR *, const TCHAR *> EditorDefaults[] = {
+	    {TEXT("r.Editor.Viewport.ScreenPercentageMode.RealTime"), TEXT("0")},
+	    {TEXT("r.Editor.Viewport.ScreenPercentageMode.NonRealTime"), TEXT("0")},
+	    {TEXT("r.Editor.Viewport.ScreenPercentage"), TEXT("50")},
+	    {TEXT("r.Editor.Viewport.MinRenderingResolution"), TEXT("0")}};
+	for (const auto &[Name, Value] : EditorDefaults)
+		if (auto *Variable = IConsoleManager::Get().FindConsoleVariable(Name))
+		{
+			// Set and restored at the variable's own priority, so its set-by flags never move.
+			const auto SetBy = static_cast<EConsoleVariableFlags>(Variable->GetFlags() & ECVF_SetByMask);
+			EditorScreenPercentage.Add({Variable, Variable->GetString(), SetBy});
+			Variable->Set(Value, SetBy);
+		}
+	ON_SCOPE_EXIT {
+		for (const auto &Saved : EditorScreenPercentage)
+			Saved.Variable->Set(*Saved.Value, Saved.SetBy);
+	};
+	const bool LiveDefaultScaled = EditorScreenPercentage.Num() == UE_ARRAY_COUNT(EditorDefaults) &&
+	                               !Client->IsPreviewingScreenPercentage();
 	const bool BeforePreviewing = Client->IsPreviewingScreenPercentage();
 	const int32 BeforePercentage = Client->GetPreviewScreenPercentage();
 	const bool BeforeLowDPI = Client->IsLowDPIPreview();
@@ -1578,7 +1598,8 @@ bool FUEShedOffscreenViewportCaptureTest::RunTest(const FString &Parameters)
 		}
 		Untouched();
 		TestTrue(TEXT("Offscreen draw marks view family realtime despite Slate throttle"), Probe->LastRealtime);
-		TestFalse(TEXT("Offscreen draw ignores the live 50% preview"), Probe->LastScreenPercentage);
+		TestTrue(TEXT("The live viewport defaults to 50% for this check"), LiveDefaultScaled);
+		TestFalse(TEXT("Offscreen draw ignores the live 50% default"), Probe->LastScreenPercentage);
 		TestEqual(TEXT("Offscreen draw has no low-DPI scaling"), Probe->LastSecondaryFraction, 1.0f);
 		if (const auto *AACVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("r.AntiAliasingMethod"));
 		    AACVar && AACVar->GetValueOnGameThread() == AAM_TSR)

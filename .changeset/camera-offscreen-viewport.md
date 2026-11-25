@@ -3,11 +3,12 @@
 "@ue-shed/protocol": minor
 ---
 
-Viewport captures from an editor in the background keep temporal anti-aliasing. Unreal turns real
-time off for an unfocused editor every tick, which dropped TSR/TAA to FXAA; the render session now
-reasserts real time right before each frame it draws, and the editor no longer throttles its CPU
-while a render session is open. The plugin also checks a finished PNG's size from its header
-instead of decoding the whole image.
+Viewport captures from an editor in the background keep temporal anti-aliasing. An unfocused or
+throttled editor drew each frame as non-realtime, which dropped TSR/TAA to FXAA and left foliage
+speckled and edges jagged; the render session now marks only its own frames realtime and lifts Slate
+throttling while it draws, without redrawing the live viewport between frames (those redraws reset
+TSR history and restarted settling). The editor no longer throttles its CPU while a render session
+is open, and a finished PNG's size is checked from its header instead of decoding the whole image.
 
 New `offscreen_viewport` strategy for the viewport renderer. It draws the locked camera into an
 offscreen target of the requested size every settling frame, at 100% screen percentage, and writes

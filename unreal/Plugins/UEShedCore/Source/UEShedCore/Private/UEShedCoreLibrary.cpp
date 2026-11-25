@@ -137,6 +137,10 @@ void UUEShedCoreLibrary::GetCapabilityManifest(FString& ResultJson)
 		    RenderLibrary->FindFunctionByName(TEXT("GetCameraRenderCapabilitiesV2")))
 			Capabilities.Add(
 			    MakeShared<FJsonValueString>(TEXT("cameras.render-session.capabilities.v2")));
+		if (RenderLibrary &&
+		    RenderLibrary->FindFunctionByName(TEXT("GetCameraRenderCapabilitiesV3")))
+			Capabilities.Add(
+			    MakeShared<FJsonValueString>(TEXT("cameras.render-session.capabilities.v3")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.capture-selection.v1")));
 		Capabilities.Add(MakeShared<FJsonValueString>(TEXT("cameras.capture-readiness.v1")));
 	}

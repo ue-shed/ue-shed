@@ -1,0 +1,313 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://ue-shed.dev/contracts/cameras/render/v1/capabilities-v3.schema.json",
+	"type": "object",
+	"properties": {
+		"authoredVisibility": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"maximumActorsPerList": {
+					"type": "number",
+					"enum": [256]
+				},
+				"geometry": {
+					"type": "string",
+					"enum": ["loaded_non_nanite_opaque_static_mesh_actors"]
+				},
+				"viewport": {
+					"type": "boolean"
+				},
+				"sceneCapture": {
+					"type": "boolean"
+				}
+			},
+			"required": ["version", "maximumActorsPerList", "geometry", "viewport", "sceneCapture"],
+			"additionalProperties": false
+		},
+		"editorPreviews": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"subjects": {
+					"type": "string",
+					"enum": ["child_actors_of_editor_only_owners"]
+				},
+				"viewport": {
+					"type": "boolean"
+				},
+				"sceneCapture": {
+					"type": "boolean"
+				}
+			},
+			"required": ["version", "subjects", "viewport", "sceneCapture"],
+			"additionalProperties": false
+		},
+		"contract": {
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"enum": ["ue-shed-camera-render"]
+				},
+				"version": {
+					"type": "object",
+					"properties": {
+						"major": {
+							"type": "number",
+							"enum": [1]
+						},
+						"minor": {
+							"type": "number",
+							"enum": [0]
+						}
+					},
+					"required": ["major", "minor"],
+					"additionalProperties": false
+				}
+			},
+			"required": ["name", "version"],
+			"additionalProperties": false
+		},
+		"engineVersion": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 1024
+				}
+			]
+		},
+		"pluginVersion": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 1024
+				}
+			]
+		},
+		"projectName": {
+			"type": "string",
+			"allOf": [
+				{
+					"minLength": 1
+				},
+				{
+					"maxLength": 1024
+				}
+			]
+		},
+		"renderers": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"profiles": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": [
+								"lit",
+								"full_fidelity",
+								"seam_stable",
+								"scene_capture_defaults",
+								"observation"
+							]
+						}
+					},
+					"reviewAssessment": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["depth_compare", "ray_samples"]
+						}
+					},
+					"reviewClear": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["isolate_target", "hide_explicit"]
+						}
+					},
+					"kind": {
+						"type": "string",
+						"enum": ["editor_viewport", "scene_capture"]
+					},
+					"projections": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["perspective", "orthographic"]
+						}
+					},
+					"strategies": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": [
+								"high_resolution_screenshot",
+								"offscreen_viewport",
+								"render_target"
+							]
+						}
+					},
+					"exposure": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"enum": ["project_auto", "fixed_ev100", "meter_once"]
+						}
+					},
+					"maximumDimension": {
+						"type": "integer",
+						"allOf": [
+							{
+								"minimum": 16,
+								"maximum": 16384
+							}
+						]
+					}
+				},
+				"required": [
+					"profiles",
+					"reviewAssessment",
+					"reviewClear",
+					"kind",
+					"projections",
+					"strategies",
+					"exposure",
+					"maximumDimension"
+				],
+				"additionalProperties": false
+			}
+		},
+		"preparation": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": ["preserve_loading", "camera_regions", "editor_data_layers"]
+			}
+		},
+		"freeze": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"enum": ["freeze_materials_and_ticks"]
+			}
+		},
+		"maximumRetainedOperations": {
+			"type": "integer",
+			"allOf": [
+				{
+					"minimum": 1,
+					"maximum": 64
+				}
+			]
+		},
+		"maximumRetainedSessions": {
+			"type": "integer",
+			"allOf": [
+				{
+					"minimum": 1,
+					"maximum": 9
+				}
+			]
+		},
+		"retentionMs": {
+			"type": "integer",
+			"allOf": [
+				{
+					"minimum": 1000,
+					"maximum": 120000
+				}
+			]
+		},
+		"highResolutionScreenshot": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"maximumWarmupFrames": {
+					"type": "integer",
+					"allOf": [
+						{
+							"minimum": 1,
+							"maximum": 256
+						}
+					]
+				}
+			},
+			"required": ["version", "maximumWarmupFrames"],
+			"additionalProperties": false
+		},
+		"clouds": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"viewport": {
+					"type": "boolean"
+				},
+				"sceneCapture": {
+					"type": "boolean"
+				}
+			},
+			"required": ["version", "viewport", "sceneCapture"],
+			"additionalProperties": false
+		},
+		"offscreenViewport": {
+			"type": "object",
+			"properties": {
+				"version": {
+					"type": "number",
+					"enum": [1]
+				},
+				"resolutions": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": ["native"]
+					}
+				},
+				"lods": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": ["highest", "natural"]
+					}
+				}
+			},
+			"required": ["version", "resolutions", "lods"],
+			"additionalProperties": false
+		}
+	},
+	"required": [
+		"contract",
+		"engineVersion",
+		"pluginVersion",
+		"projectName",
+		"renderers",
+		"preparation",
+		"freeze",
+		"maximumRetainedOperations",
+		"maximumRetainedSessions",
+		"retentionMs"
+	],
+	"additionalProperties": false,
+	"$defs": {}
+}

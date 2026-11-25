@@ -123,6 +123,7 @@ export {
 	CameraRenderBeginResult,
 	CameraRenderCapabilities,
 	CameraRenderCapabilitiesV1,
+	CameraRenderCapabilitiesV2,
 	cameraRenderContract,
 	CameraRenderContract,
 	CameraRenderEndResult,

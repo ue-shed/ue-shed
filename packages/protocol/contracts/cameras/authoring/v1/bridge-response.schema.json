@@ -3394,6 +3394,73 @@
 																				"kind": {
 																					"type": "string",
 																					"enum": [
+																						"editor_viewport"
+																					]
+																				},
+																				"strategy": {
+																					"type": "string",
+																					"enum": [
+																						"offscreen_viewport"
+																					]
+																				},
+																				"profile": {
+																					"type": "string",
+																					"enum": [
+																						"lit",
+																						"observation"
+																					]
+																				},
+																				"vignette": {
+																					"type": "string",
+																					"enum": [
+																						"project",
+																						"disabled"
+																					]
+																				},
+																				"fog": {
+																					"type": "boolean"
+																				},
+																				"volumetricFog": {
+																					"type": "boolean"
+																				},
+																				"clouds": {
+																					"type": "boolean"
+																				},
+																				"editorPreviews": {
+																					"type": "boolean"
+																				},
+																				"resolution": {
+																					"type": "string",
+																					"enum": [
+																						"native"
+																					]
+																				},
+																				"lod": {
+																					"type": "string",
+																					"enum": [
+																						"highest",
+																						"natural"
+																					]
+																				}
+																			},
+																			"required": [
+																				"kind",
+																				"strategy",
+																				"profile",
+																				"vignette",
+																				"fog",
+																				"volumetricFog",
+																				"resolution",
+																				"lod"
+																			],
+																			"additionalProperties": false
+																		},
+																		{
+																			"type": "object",
+																			"properties": {
+																				"kind": {
+																					"type": "string",
+																					"enum": [
 																						"scene_capture"
 																					]
 																				},
@@ -6846,6 +6913,58 @@
 											"properties": {
 												"kind": {
 													"type": "string",
+													"enum": ["editor_viewport"]
+												},
+												"strategy": {
+													"type": "string",
+													"enum": ["offscreen_viewport"]
+												},
+												"profile": {
+													"type": "string",
+													"enum": ["lit", "observation"]
+												},
+												"vignette": {
+													"type": "string",
+													"enum": ["project", "disabled"]
+												},
+												"fog": {
+													"type": "boolean"
+												},
+												"volumetricFog": {
+													"type": "boolean"
+												},
+												"clouds": {
+													"type": "boolean"
+												},
+												"editorPreviews": {
+													"type": "boolean"
+												},
+												"resolution": {
+													"type": "string",
+													"enum": ["native"]
+												},
+												"lod": {
+													"type": "string",
+													"enum": ["highest", "natural"]
+												}
+											},
+											"required": [
+												"kind",
+												"strategy",
+												"profile",
+												"vignette",
+												"fog",
+												"volumetricFog",
+												"resolution",
+												"lod"
+											],
+											"additionalProperties": false
+										},
+										{
+											"type": "object",
+											"properties": {
+												"kind": {
+													"type": "string",
 													"enum": ["scene_capture"]
 												},
 												"profile": {
@@ -8723,6 +8842,58 @@
 														"vignette",
 														"fog",
 														"volumetricFog"
+													],
+													"additionalProperties": false
+												},
+												{
+													"type": "object",
+													"properties": {
+														"kind": {
+															"type": "string",
+															"enum": ["editor_viewport"]
+														},
+														"strategy": {
+															"type": "string",
+															"enum": ["offscreen_viewport"]
+														},
+														"profile": {
+															"type": "string",
+															"enum": ["lit", "observation"]
+														},
+														"vignette": {
+															"type": "string",
+															"enum": ["project", "disabled"]
+														},
+														"fog": {
+															"type": "boolean"
+														},
+														"volumetricFog": {
+															"type": "boolean"
+														},
+														"clouds": {
+															"type": "boolean"
+														},
+														"editorPreviews": {
+															"type": "boolean"
+														},
+														"resolution": {
+															"type": "string",
+															"enum": ["native"]
+														},
+														"lod": {
+															"type": "string",
+															"enum": ["highest", "natural"]
+														}
+													},
+													"required": [
+														"kind",
+														"strategy",
+														"profile",
+														"vignette",
+														"fog",
+														"volumetricFog",
+														"resolution",
+														"lod"
 													],
 													"additionalProperties": false
 												},

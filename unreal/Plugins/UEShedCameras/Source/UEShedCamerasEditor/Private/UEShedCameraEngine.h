@@ -1,8 +1,45 @@
 #pragma once
 
+#include "DummyViewport.h"
 #include "Engine/StaticMesh.h"
 #include "HAL/IConsoleManager.h"
 #include "Runtime/Launch/Resources/Version.h"
+
+/**
+ * Offscreen viewport for a client's view, never registered with Slate. FViewport keeps its render
+ * resource base protected, so only a subclass can initialize and release it.
+ */
+class FUEShedOffscreenViewport final : public FDummyViewport
+{
+public:
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 8)
+	// 5.8 hides the client constructor; without its debug canvas, editor stats are never drawn.
+	FUEShedOffscreenViewport(FViewport* RealViewport, FViewportClient* Client)
+	{
+		// Share the real viewport's owning reference to the client when it has one.
+		if (RealViewport && RealViewport->GetClientPtr().Get() == Client)
+			SetViewportClient(RealViewport->GetClientPtr());
+		else
+		{
+			PRAGMA_DISABLE_DEPRECATION_WARNINGS
+			SetViewportClient(Client);
+			PRAGMA_ENABLE_DEPRECATION_WARNINGS
+		}
+	}
+#else
+	FUEShedOffscreenViewport(FViewport*, FViewportClient* Client) : FDummyViewport(Client) {}
+#endif
+	/** Never calls SetupHDR: the target stays SDR (PF_A2B10G10R10). */
+	void BeginInit(const FIntPoint Size)
+	{
+		SetInitialSize(Size);
+		BeginInitResource(this);
+	}
+	void BeginRelease()
+	{
+		BeginReleaseResource(this);
+	}
+};
 
 namespace UEShedCameraEngine
 {

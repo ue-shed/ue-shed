@@ -1,5 +1,9 @@
 import * as stylex from "@stylexjs/stylex";
-import { highResolutionReviewRenderer, reviewCaptureRenderPolicy } from "@ue-shed/cameras/browser";
+import {
+	highResolutionReviewRenderer,
+	reviewCaptureRenderPolicy,
+	type CameraRendererPolicy
+} from "@ue-shed/cameras/browser";
 import { createEffectAction } from "@ue-shed/ui";
 import { tokens } from "@ue-shed/ui-theme/tokens.stylex.js";
 import { Cause } from "effect";
@@ -24,6 +28,14 @@ type WorkflowState =
 	  };
 
 const stageOrder = ["Prepare", "Preview", "Capture"] as const;
+
+function rendererLabel(renderer: CameraRendererPolicy | undefined): string {
+	if (renderer === undefined) return "Renderer information unavailable";
+	if (renderer.kind === "scene_capture") return "SceneCapture2D render";
+	return renderer.strategy === "offscreen_viewport"
+		? "Unreal offscreen viewport render"
+		: "Unreal high-resolution screenshot";
+}
 
 export function CaptureWorkflow(props: {
 	readonly client: MapReviewClientApi;
@@ -261,12 +273,9 @@ export function CaptureWorkflow(props: {
 													<span {...stylex.attrs(styles.viewCopy)}>
 														<strong>{view.displayName}</strong>
 														<small>
-															{capturePolicy(view)
-																? capturePolicy(view).renderer
-																		.kind === "editor_viewport"
-																	? "Unreal high-resolution screenshot"
-																	: "SceneCapture2D render"
-																: "Renderer information unavailable"}
+															{rendererLabel(
+																capturePolicy(view)?.renderer
+															)}
 														</small>
 														<Show when={capturePolicy(view)}>
 															{(policy) => (

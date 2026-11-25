@@ -11,6 +11,7 @@ Control library is `/Script/UEShedCamerasEditor.Default__UEShedCameraRenderingLi
 | ----------------------------- | ---------------------------- | --------------- |
 | GetCameraRenderCapabilities   | None                         | capabilities    |
 | GetCameraRenderCapabilitiesV2 | None                         | capabilities-v2 |
+| GetCameraRenderCapabilitiesV3 | None                         | capabilities-v3 |
 | PreflightCameraRender         | RequestJson: session-request | preflight       |
 | BeginCameraRender             | RequestJson: session-request | begin-result    |
 | StartCameraFrame              | RequestJson: frame-request   | frame-status    |
@@ -43,6 +44,19 @@ viewport's or SceneCapture's own setting. Plugins that support it advertise
 `clouds: { version: 1, viewport, sceneCapture }` through `GetCameraRenderCapabilitiesV2` (the v1
 getter omits it), and the SDK refuses the field before acquiring an editor whose plugin lacks it.
 Earlier plugins reject it as `invalid_policy`. Frame policy evidence carries the explicit choice.
+
+The viewport renderer has a second strategy, `offscreen_viewport`. It draws the locked viewport
+camera into an offscreen target of the requested size, keeps temporal anti-aliasing on while the
+editor is in the background, and renders at 100% screen percentage. It takes the same `profile`,
+`vignette`, `fog`, `volumetricFog`, `clouds` and `editorPreviews` fields, plus required
+`resolution: "native"` and `lod: "highest" | "natural"` (`highest` draws every mesh at LOD 0). It has
+no `screenshotWarmupFrames`; `settling.minimumFrames` counts frames drawn at output size. Supporting
+Core manifests advertise `cameras.render-session.capabilities.v3`; `GetCameraRenderCapabilitiesV3`
+then lists `offscreen_viewport` in the viewport renderer's `strategies` and adds
+`offscreenViewport: { version: 1, resolutions, lods }`. The v1 and v2 getters return exactly what
+they returned before, without the strategy or the options. The SDK prefers v3, falls back to v2 and
+then v1, and refuses `offscreen_viewport` as `unsupported_capability` before preflight or open when
+the plugin does not advertise it. Render requests keep contract 1.0.
 
 Request JSON rejects unknown fields. Native semantic validation additionally rejects duplicate Data
 Layer identities, unsupported renderer/exposure combinations, effective layer hierarchy conflicts,

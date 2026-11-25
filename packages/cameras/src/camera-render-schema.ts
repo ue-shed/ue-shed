@@ -106,6 +106,25 @@ export const CameraRendererPolicy = Schema.Union([
 		screenshotWarmupFrames: Schema.optionalKey(integer(1, 256)),
 		editorPreviews: EditorPreviews
 	}),
+	/**
+	 * Draws the viewport's view into an offscreen target at the requested size, with temporal
+	 * anti-aliasing and 100% screen percentage. Needs `offscreenViewport` (capabilities v3).
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("editor_viewport"),
+		strategy: Schema.Literal("offscreen_viewport"),
+		profile: Schema.Literals(["lit", "observation"]),
+		vignette: Schema.Literals(["project", "disabled"]),
+		fog: Schema.Boolean,
+		volumetricFog: Schema.Boolean,
+		/** Volumetric clouds; absence keeps the viewport's own setting. Needs `clouds` support. */
+		clouds: Schema.optionalKey(Schema.Boolean),
+		editorPreviews: EditorPreviews,
+		/** Output pixels are rendered pixels; no editor screen-percentage scaling. */
+		resolution: Schema.Literal("native"),
+		/** `highest` draws every mesh at LOD 0; `natural` keeps the engine's LOD selection. */
+		lod: Schema.Literals(["highest", "natural"])
+	}),
 	Schema.Struct({
 		kind: Schema.Literal("scene_capture"),
 		profile: Schema.Literals([
@@ -349,7 +368,7 @@ export const CameraRenderCapabilitiesV1 = Schema.Struct({
 	retentionMs: integer(1000, 120000)
 });
 /** V2 capability discovery; render requests and frame evidence retain contract 1.0. */
-export const CameraRenderCapabilities = CameraRenderCapabilitiesV1.mapFields((fields) => ({
+export const CameraRenderCapabilitiesV2 = CameraRenderCapabilitiesV1.mapFields((fields) => ({
 	...fields,
 	highResolutionScreenshot: Schema.optionalKey(
 		Schema.Struct({
@@ -363,6 +382,35 @@ export const CameraRenderCapabilities = CameraRenderCapabilitiesV1.mapFields((fi
 			version: Schema.Literal(1),
 			viewport: Schema.Boolean,
 			sceneCapture: Schema.Boolean
+		})
+	)
+}));
+export type CameraRenderCapabilitiesV2 = typeof CameraRenderCapabilitiesV2.Type;
+const CameraRendererCapability = CameraRenderCapabilitiesV1.fields.renderers.value;
+/**
+ * V3 capability discovery, the newest shape. Adds the `offscreen_viewport` strategy and its
+ * options. Render requests and frame evidence retain contract 1.0.
+ */
+export const CameraRenderCapabilities = CameraRenderCapabilitiesV2.mapFields((fields) => ({
+	...fields,
+	renderers: Schema.Array(
+		CameraRendererCapability.mapFields((renderer) => ({
+			...renderer,
+			strategies: Schema.Array(
+				Schema.Literals([
+					"high_resolution_screenshot",
+					"offscreen_viewport",
+					"render_target"
+				])
+			)
+		}))
+	),
+	/** Options of the `offscreen_viewport` strategy. Absent from plugins that predate it. */
+	offscreenViewport: Schema.optionalKey(
+		Schema.Struct({
+			version: Schema.Literal(1),
+			resolutions: Schema.Array(Schema.Literal("native")),
+			lods: Schema.Array(Schema.Literals(["highest", "natural"]))
 		})
 	)
 }));

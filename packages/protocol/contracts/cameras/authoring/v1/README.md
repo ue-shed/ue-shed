@@ -36,7 +36,8 @@ Native/package validation also enforces semantic rules not expressible in the ge
 revision freshness, unique IDs and scope membership, map/project ownership, immutable replacement,
 profile references, exact requested artifact variants, and matching renderer visibility evidence.
 GUIDs are authoritative; path aliases deduplicate only after resolving to the same loaded actor.
-Protection wins. Advertised geometry is loaded opaque non-Nanite static-mesh actors only.
+Protection wins. A loaded actor is hidden with everything it draws and its child actors; Nanite
+meshes and terrain are refused.
 
 Discovery also advertises `nativeSetup`. `setup_status` reads host availability and the editor's
 single selected subject before any set is attached. `setup_create` queues one explicit actor path,

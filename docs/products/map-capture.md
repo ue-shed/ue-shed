@@ -233,4 +233,4 @@ renderer resolves them before metering and applies them to every tile batch. Liv
 the same list through provisioning version 4. This does not alter orthographic framing or the grid.
 `mapCaptureVisibilityVariants` creates separate Pure/Authored plans with fixed shared exposure for
 pairs. Each plan publishes its own immutable run. See [camera authoring](camera-authoring.md) for the
-loaded opaque non-Nanite static-mesh capability boundary and immutable visibility presets.
+geometry that can be left out and immutable visibility presets.

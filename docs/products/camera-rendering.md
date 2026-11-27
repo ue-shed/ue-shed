@@ -364,8 +364,11 @@ setting.
 ## Authored actor visibility
 
 An optional `policy.visibility` contains loaded-actor hide/protect lists. Check the `authoredVisibility`
-capability first. The initial supported geometry is opaque non-Nanite static-mesh actors; unsupported,
-missing, unloaded or ambiguous references fail explicitly. Protection overrides hiding, including
+capability first. A hidden actor is left out with every component it draws and the child actors
+those components spawned, whatever the material. Nanite meshes and terrain are not supported yet, and
+an actor that draws nothing has nothing to leave out; these and missing, unloaded or ambiguous
+references fail explicitly. The capability's `geometry` value names the first proven scope and is
+kept unchanged for strict clients, so ask preflight about a particular actor. Protection overrides hiding, including
 GUID/path aliases that resolve to the same actor. Exclusions are per view or SceneCapture component;
 actor visibility flags and map packages are not changed. Frame evidence includes the exact policy
 and resolution diagnostics. Review labels these outputs Authored; Pure cannot carry exclusions.

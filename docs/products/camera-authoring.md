@@ -311,8 +311,10 @@ Save, disk restart, editor restart with the authoring plugins disabled, and capt
 camera. It records JSON evidence and a PNG. Set `UE_SHED_UNREAL_ENGINE_ROOT` before running it.
 
 The native proof now routes exclusions through real shared renderer sessions for both viewport and
-SceneCapture. The supported scope is loaded, opaque, non-Nanite static-mesh actors. Instanced meshes,
-translucency, and unloaded actors produce diagnostics instead of silently omitting an exclusion.
+SceneCapture. A loaded actor is left out with everything it draws: static, instanced and skeletal
+meshes with opaque, masked or translucent materials, and the child actors its components spawned.
+Nanite meshes, terrain, actors that draw nothing and unloaded actors produce diagnostics instead of
+silently omitting an exclusion.
 Crash, explicit conflict/file recovery, lease expiry, replacement-menu adoption and 1/6/37-camera
 fixture measurements are covered by the hardening runners. Larger production maps and broader
 geometry remain unclaimed; see the [native evidence](../engineering/camera-authoring-native-proof.md).

@@ -1199,7 +1199,8 @@ FString SCameraArrangementPanel::VisibilityProblem(const FString& Status)
     return Status == TEXT("missing_or_unloaded") ? TEXT("isn't in the open level, or isn't loaded. Load it before capturing.")
            : Status == TEXT("ambiguous")         ? TEXT("matches more than one actor. Hide or show the exact actor again.")
            : Status == TEXT("unsupported")
-               ? TEXT("can't be left out of shots yet. Only solid, non-Nanite static meshes can be hidden.")
+               ? TEXT("can't be left out of shots. Nanite meshes and terrain can't be hidden yet, and an actor that "
+                      "draws nothing has nothing to hide.")
                : TEXT("can't be found. Hide or show it again.");
 }
 FString SCameraArrangementPanel::ScopeName() const

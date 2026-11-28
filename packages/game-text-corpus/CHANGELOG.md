@@ -1,5 +1,14 @@
 # @ue-shed/game-text-corpus
 
+## 0.34.1
+
+### Patch Changes
+
+- @ue-shed/game-text@0.34.1
+    - @ue-shed/localization@0.34.1
+    - @ue-shed/protocol@0.34.1
+    - @ue-shed/unreal-assets@0.34.1
+
 ## 0.34.0
 
 ### Patch Changes

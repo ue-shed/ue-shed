@@ -1,11 +1,10 @@
 #include "UEShedCameraVisibility.h"
 #include "UEShedCameraEngine.h"
-#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
-#include "Materials/MaterialInterface.h"
+#include "LandscapeComponent.h"
 #include "SceneView.h"
 
 void FUEShedCameraVisibility::SetupView(FSceneViewFamily &Family, FSceneView &View)
@@ -58,11 +57,29 @@ TSharedPtr<FJsonObject> UEShedCameraActorEntry(AActor *Actor)
     Entry->SetStringField(TEXT("label"), Actor->GetActorLabel().Left(256));
     return Entry;
 }
+namespace
+{
+/**
+ * Why a component can't be left out, or null when it can. A view hides a component by its scene
+ * ID before the renderer looks at what kind of geometry or material it is, so every kind is left
+ * out the same way; these two are refused only because no pixel proof covers them yet.
+ */
+const TCHAR *UnsupportedGeometry(const UPrimitiveComponent *Component)
+{
+    if (const auto *Mesh = Cast<UStaticMeshComponent>(Component))
+        if (Mesh->GetStaticMesh() && UEShedCameraEngine::NaniteSettings(Mesh->GetStaticMesh()).bEnabled)
+            return TEXT("Nanite meshes can't be left out of shots yet.");
+    if (Component->IsA<ULandscapeComponent>())
+        return TEXT("Terrain can't be left out of shots yet.");
+    return nullptr;
+}
+} // namespace
 TSharedPtr<FJsonObject> UEShedCameraVisibilityCapabilities()
 {
     auto Result = MakeShared<FJsonObject>();
     Result->SetNumberField(TEXT("version"), 1);
     Result->SetNumberField(TEXT("maximumActorsPerList"), 256);
+    // The wire name of the first proven scope, kept for strict clients. Preflight answers per actor.
     Result->SetStringField(TEXT("geometry"), TEXT("loaded_non_nanite_opaque_static_mesh_actors"));
     Result->SetBoolField(TEXT("viewport"), true);
     Result->SetBoolField(TEXT("sceneCapture"), true);
@@ -140,27 +157,22 @@ FUEShedResolvedVisibility UEShedResolveCameraVisibility(UWorld *World, const TSh
         Hide.Remove(Actor);
     for (AActor *Actor : Hide)
     {
-        TInlineComponentArray<UPrimitiveComponent *> Components(Actor);
-        bool Supported = !Components.IsEmpty();
-        for (UPrimitiveComponent *Component : Components)
-        {
-            const auto *Mesh = Cast<UStaticMeshComponent>(Component);
-            if (!Mesh || Cast<UInstancedStaticMeshComponent>(Component) || !Mesh->GetStaticMesh() ||
-                UEShedCameraEngine::NaniteSettings(Mesh->GetStaticMesh()).bEnabled)
-            {
-                Supported = false;
-                break;
-            }
-            for (int32 Index = 0; Index < Mesh->GetNumMaterials(); ++Index)
-                if (const auto *Material = Mesh->GetMaterial(Index))
-                    if (Material->GetBlendMode() != BLEND_Opaque)
-                        Supported = false;
-        }
-        if (!Supported)
+        // What an actor draws includes the child actors its components spawned.
+        TArray<AActor *> Family{Actor};
+        Actor->GetAllChildActors(Family, true);
+        TArray<UPrimitiveComponent *> Components;
+        for (AActor *Member : Family)
+            if (Member && !Protect.Contains(Member))
+                Components.Append(TInlineComponentArray<UPrimitiveComponent *>(Member));
+        const TCHAR *Refusal = Components.IsEmpty() ? TEXT("This actor draws nothing, so there is nothing to leave out.")
+                                                    : nullptr;
+        for (const UPrimitiveComponent *Component : Components)
+            if (!Refusal)
+                Refusal = UnsupportedGeometry(Component);
+        if (Refusal)
         {
             Result.Valid = false;
-            Result.Message = TEXT("Authored exclusion currently supports loaded non-Nanite opaque static-mesh actors "
-                                  "only. Instanced geometry and translucency require separate evidence.");
+            Result.Message = Refusal;
             for (const auto &Value : Result.Diagnostics)
             {
                 const auto Diagnostic = Value->AsObject();
@@ -172,9 +184,11 @@ FUEShedResolvedVisibility UEShedResolveCameraVisibility(UWorld *World, const TSh
             }
             continue;
         }
-        Result.Hidden.Add(Actor);
+        for (AActor *Member : Family)
+            if (Member && !Protect.Contains(Member))
+                Result.Hidden.AddUnique(Member);
         for (UPrimitiveComponent *Component : Components)
-            Result.Components.Add(Component);
+            Result.Components.AddUnique(Component);
     }
     return Result;
 }

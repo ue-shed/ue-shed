@@ -36,16 +36,27 @@ The important hook is `FSceneView::State`, compared with the target viewport's `
 high-resolution screenshot views. The proof adds the component's **current** primitive scene ID to
 that view's `HiddenPrimitives`. SceneCapture uses its own `HiddenActors` list.
 
-| Geometry / operation                                                            | Evidence                                                                              | Advertised capability      |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------- |
-| Opaque engine cube used as a column                                             | Viewport screenshot exclusion and restoration; SceneCapture exclusion and restoration | Proof only                 |
-| Other view isolation                                                            | Independent SceneCapture pixels remain unaffected by the viewport hook                | Proof only                 |
-| Nanite-specific assets, instanced meshes, translucency, World Partition loading | Not established by this fixture                                                       | Unsupported / unadvertised |
-| Full authored viewport culling policy                                           | Shared policy integrated in phase 5                                                   | `viewportCulling: true`    |
+| Geometry / operation                                            | Evidence                                                                              | Advertised capability   |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------- |
+| Opaque engine cube used as a column                             | Viewport screenshot exclusion and restoration; SceneCapture exclusion and restoration | Proof only              |
+| Other view isolation                                            | Independent SceneCapture pixels remain unaffected by the viewport hook                | Proof only              |
+| Masked and translucent materials, instanced and skeletal meshes | Same visible / excluded / restored pixel comparison in both backends                  | Supported               |
+| A mesh beside a collision shape and an editor icon              | Same pixel comparison; components that draw nothing no longer refuse the actor        | Supported               |
+| A parent whose only geometry is a child actor                   | Same pixel comparison; a protected child stays in                                     | Supported               |
+| Nanite-specific assets, terrain, World Partition loading        | Not established by this fixture                                                       | Refused / unadvertised  |
+| Full authored viewport culling policy                           | Shared policy integrated in phase 5                                                   | `viewportCulling: true` |
 
 The phase-5 fixture uses actual shared render sessions for visible, excluded, and restored frames in
-both backends. It also checks protection and missing-reference failure. This advertises only the
-bounded loaded, opaque, non-Nanite static-mesh scope, not the untested geometry matrix.
+both backends. It also checks protection and missing-reference failure.
+
+A view hides a component by its primitive scene ID before the renderer considers the component's
+kind or material (`IsPrimitiveHidden` in `Renderer/Private/SceneVisibility.cpp`), and shadow setup
+skips the same IDs (`ShadowSetup.cpp`). A SceneCapture's `HiddenActors` adds every primitive
+component of each listed actor to that set (`GetShowOnlyAndHiddenComponents` in
+`SceneCaptureRendering.cpp`). So an actor is left out with all its primitive components and those
+of its child actors. The fixture proves that with pixels for each row marked Supported above.
+Nanite meshes and terrain stay refused: UE 5.7 and 5.8 pass the hidden set to Nanite's cull pass,
+but this fixture draws neither.
 
 ## Engine source checked
 
@@ -197,9 +208,9 @@ captures with Core+Cameras only. The reference menu and Workbench are absent fro
 
 `ScaleAndCleanup` measures transform callbacks against an unattached camera in the same stock scene,
 verifies per-camera coalescing and one live preview capture, completes 1/6/37-view batches, and checks
-cache release, PIE cleanup, unchanged viewport and map dirt. The existing visibility proof now also
-refuses Nanite-configured meshes, instances and translucency explicitly. This delimits support; it
-does not claim rendered exclusion support for those geometries.
+cache release, PIE cleanup, unchanged viewport and map dirt. The visibility proof refuses
+Nanite-configured meshes and actors that draw nothing explicitly. This delimits support; it does not
+claim rendered exclusion support for Nanite or terrain.
 
 Initial measurements on this machine:
 

@@ -323,6 +323,11 @@ export const CameraRenderCapabilitiesV1 = Schema.Struct({
 		Schema.Struct({
 			version: Schema.Literal(1),
 			maximumActorsPerList: Schema.Literal(256),
+			/**
+			 * The first proven scope, kept as the wire value for strict clients. Plugins since 0.34.1
+			 * leave out more (any loaded actor's drawn components, except Nanite meshes and terrain);
+			 * preflight answers for a particular actor.
+			 */
 			geometry: Schema.Literal("loaded_non_nanite_opaque_static_mesh_actors"),
 			viewport: Schema.Boolean,
 			sceneCapture: Schema.Boolean
